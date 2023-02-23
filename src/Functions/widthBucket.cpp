@@ -23,12 +23,13 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int BAD_ARGUMENTS;
 }
 
 class FunctionWidthBucket : public IFunction
 {
     template <typename TDataType>
-    static const typename ColumnVector<TDataType>::Container * getDataIfNotNull(const ColumnVector<TDataType> * col_vec)
+    const typename ColumnVector<TDataType>::Container * getDataIfNotNull(const ColumnVector<TDataType> * col_vec) const
     {
         if (nullptr == col_vec)
         {
@@ -49,8 +50,13 @@ class FunctionWidthBucket : public IFunction
     }
 
     template <typename TResultType, typename TCountType>
-    static TResultType calculate(const Float64 operand, const Float64 min, const Float64 max, const TCountType count)
+    TResultType calculate(const Float64 operand, const Float64 min, const Float64 max, const TCountType count) const
     {
+        if (count == 0)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Last argument (count) for function {} cannot be 0.", getName());
+        }
+
         if (operand < min || min >= max)
         {
             return 0;
@@ -64,7 +70,7 @@ class FunctionWidthBucket : public IFunction
     }
 
     template <is_any_of<UInt8, UInt16, UInt32, UInt64> TCountType>
-    static ColumnPtr executeForResultType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count)
+    ColumnPtr executeForResultType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         using ResultType = typename NumberTraits::Construct<false, false, NumberTraits::nextSize(sizeof(TCountType))>::Type;
         auto common_type = std::make_shared<DataTypeNumber<Float64>>();
