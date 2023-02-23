@@ -906,7 +906,7 @@ void TCPHandler::processTablesStatusRequest()
             status.absolute_delay = static_cast<UInt32>(replicated_table->getAbsoluteDelay());
         }
         else
-            status.is_replicated = false; //-V1048
+            status.is_replicated = false;
 
         response.table_states_by_id.emplace(table_name, std::move(status));
     }

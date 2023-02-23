@@ -368,7 +368,7 @@ Chain buildPushingToViewsChain(
             out = buildPushingToViewsChain(
                 view, view_metadata_snapshot, insert_context, ASTPtr(), false, thread_status_holder, view_counter_ms);
 
-        views_data->views.emplace_back(ViewRuntimeData{ //-V614
+        views_data->views.emplace_back(ViewRuntimeData{
             std::move(query),
             out.getInputHeader(),
             view_id,
