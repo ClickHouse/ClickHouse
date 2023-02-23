@@ -184,7 +184,7 @@ using AggregatedDataWithNullableStringKeyTwoLevel = AggregationDataWithNullKeyTw
 /// For the case where there is one numeric key.
 /// FieldType is UInt8/16/32/64 for any type with corresponding bit width.
 template <typename FieldType, typename TData,
-        bool consecutive_keys_optimization = true>
+        bool consecutive_keys_optimization = true, bool nullable = false>
 struct AggregationMethodOneNumber
 {
     using Data = TData;
@@ -204,11 +204,11 @@ struct AggregationMethodOneNumber
 
     /// To use one `Method` in different threads, use different `State`.
     using State = ColumnsHashing::HashMethodOneNumber<typename Data::value_type,
-        Mapped, FieldType, consecutive_keys_optimization>;
+        Mapped, FieldType, consecutive_keys_optimization, false, nullable>;
 
     /// Use optimization for low cardinality.
     static const bool low_cardinality_optimization = false;
-    static const bool one_key_nullable_optimization = false;
+    static const bool one_key_nullable_optimization = nullable;
 
     /// Shuffle key columns before `insertKeyIntoColumns` call if needed.
     std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
@@ -216,9 +216,21 @@ struct AggregationMethodOneNumber
     // Insert the key from the hash table into columns.
     static void insertKeyIntoColumns(const Key & key, std::vector<IColumn *> & key_columns, const Sizes & /*key_sizes*/)
     {
+        ColumnVectorHelper * column;
+        if constexpr (nullable)
+        {
+            ColumnNullable & nullable_col = assert_cast<ColumnNullable &>(*key_columns[0]);
+            IColumn * observed_column = &nullable_col.getNestedColumn();
+            ColumnUInt8 * null_map = assert_cast<ColumnUInt8 *>(&nullable_col.getNullMapColumn());
+            column = static_cast<ColumnVectorHelper *>(observed_column);
+            null_map->insertDefault();
+        }
+        else
+        {
+            column = static_cast<ColumnVectorHelper *>(key_columns[0]);
+        }
         static_assert(sizeof(FieldType) <= sizeof(Key));
         const auto * key_holder = reinterpret_cast<const char *>(&key);
-        auto * column = static_cast<ColumnVectorHelper *>(key_columns[0]);
         if constexpr (sizeof(FieldType) < sizeof(Key) && std::endian::native == std::endian::big)
             column->insertRawData<sizeof(FieldType)>(key_holder + (sizeof(Key) - sizeof(FieldType)));
         else
@@ -226,45 +238,6 @@ struct AggregationMethodOneNumber
     }
 };
 
-template <typename FieldType, typename TData,
-          bool consecutive_keys_optimization = true>
-struct AggregationMethodOneNumberNullable
-{
-    using Data = TData;
-    using Key = typename Data::key_type;
-    using Mapped = typename Data::mapped_type;
-    Data data;
-
-    AggregationMethodOneNumberNullable() = default;
-
-    explicit AggregationMethodOneNumberNullable(size_t size_hint) : data(size_hint) {}
-
-    template <typename Other>
-    explicit AggregationMethodOneNumberNullable(const Other & other) : data(other.data) {}
-
-    /// To use one `Method` in different threads, use different `State`.
-    using State = ColumnsHashing::HashMethodOneNumberNullable<typename Data::value_type,
-                                                              Mapped, Key, FieldType, consecutive_keys_optimization>;
-
-    /// Use optimization for low cardinality.
-    static const bool low_cardinality_optimization = false;
-    static const bool one_key_nullable_optimization = true;
-
-    /// Shuffle key columns before `insertKeyIntoColumns` call if needed.
-    std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
-
-    // Insert the key from the hash table into columns.
-    static void insertKeyIntoColumns(const Key & key, std::vector<IColumn *> & key_columns, const Sizes & /*key_sizes*/)
-    {
-        ColumnNullable & nullable_col = assert_cast<ColumnNullable &>(*key_columns[0]);
-        IColumn * observed_column = &nullable_col.getNestedColumn();
-        ColumnUInt8 * null_map = assert_cast<ColumnUInt8 *>(&nullable_col.getNullMapColumn());
-        const auto * key_holder = reinterpret_cast<const char *>(&key);
-        auto * column = static_cast<ColumnVectorHelper *>(observed_column);
-        null_map->insertDefault();
-        column->insertRawData<sizeof(FieldType)>(key_holder);
-    }
-};
 
 /// For the case where there is one string key.
 template <typename TData>
@@ -300,7 +273,7 @@ struct AggregationMethodString
 
 
 /// Same as above but without cache
-template <typename TData>
+template <typename TData, bool nullable = false>
 struct AggregationMethodStringNoCache
 {
     using Data = TData;
@@ -318,47 +291,23 @@ struct AggregationMethodStringNoCache
     {
     }
 
-    using State = ColumnsHashing::HashMethodString<typename Data::value_type, Mapped, true, false>;
+    using State = ColumnsHashing::HashMethodString<typename Data::value_type, Mapped, true, false, false ,nullable>;
 
     static const bool low_cardinality_optimization = false;
-    static const bool one_key_nullable_optimization = false;
+    static const bool one_key_nullable_optimization = nullable;
 
     std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
 
     static void insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
     {
-        static_cast<ColumnString *>(key_columns[0])->insertData(key.data, key.size);
-    }
-};
-
-template <typename TData>
-struct AggregationMethodStringNullableNoCache
-{
-    using Data = TData;
-    using Key = typename Data::key_type;
-    using Mapped = typename Data::mapped_type;
-
-    Data data;
-
-    AggregationMethodStringNullableNoCache() = default;
-
-    explicit AggregationMethodStringNullableNoCache(size_t size_hint) : data(size_hint) { }
-
-    template <typename Other>
-    explicit AggregationMethodStringNullableNoCache(const Other & other) : data(other.data)
-    {
-    }
-
-    using State = ColumnsHashing::HashMethodStringNullable<typename Data::value_type, Mapped, true, false>;
-
-    static const bool low_cardinality_optimization = false;
-    static const bool one_key_nullable_optimization = true;
-
-    std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
-
-    static void insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
-    {
-        static_cast<ColumnNullable *>(key_columns[0])->insertData(key.data, key.size);
+        if constexpr (nullable)
+        {
+            static_cast<ColumnNullable *>(key_columns[0])->insertData(key.data, key.size);
+        }
+        else
+        {
+            static_cast<ColumnString *>(key_columns[0])->insertData(key.data, key.size);
+        }
     }
 };
 
@@ -396,7 +345,7 @@ struct AggregationMethodFixedString
 };
 
 /// Same as above but without cache
-template <typename TData>
+template <typename TData, bool nullable = false>
 struct AggregationMethodFixedStringNoCache
 {
     using Data = TData;
@@ -414,47 +363,23 @@ struct AggregationMethodFixedStringNoCache
     {
     }
 
-    using State = ColumnsHashing::HashMethodFixedString<typename Data::value_type, Mapped, true, false>;
+    using State = ColumnsHashing::HashMethodFixedString<typename Data::value_type, Mapped, true, false, false, nullable>;
 
     static const bool low_cardinality_optimization = false;
-    static const bool one_key_nullable_optimization = false;
+    static const bool one_key_nullable_optimization = nullable;
 
     std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
 
     static void insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
     {
-        static_cast<ColumnFixedString *>(key_columns[0])->insertData(key.data, key.size);
-    }
-};
-
-template <typename TData>
-struct AggregationMethodFixedStringNullableNoCache
-{
-    using Data = TData;
-    using Key = typename Data::key_type;
-    using Mapped = typename Data::mapped_type;
-
-    Data data;
-
-    AggregationMethodFixedStringNullableNoCache() = default;
-
-    explicit AggregationMethodFixedStringNullableNoCache(size_t size_hint) : data(size_hint) { }
-
-    template <typename Other>
-    explicit AggregationMethodFixedStringNullableNoCache(const Other & other) : data(other.data)
-    {
-    }
-
-    using State = ColumnsHashing::HashMethodFixedStringNullable<typename Data::value_type, Mapped, true, false>;
-
-    static const bool low_cardinality_optimization = false;
-    static const bool one_key_nullable_optimization = true;
-
-    std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
-
-    static void insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
-    {
-        static_cast<ColumnNullable *>(key_columns[0])->insertData(key.data, key.size);
+        if constexpr (nullable)
+        {
+            static_cast<ColumnNullable *>(key_columns[0])->insertData(key.data, key.size);
+        }
+        else
+        {
+            static_cast<ColumnFixedString *>(key_columns[0])->insertData(key.data, key.size);
+        }
     }
 };
 
@@ -702,17 +627,17 @@ struct AggregatedDataVariants : private boost::noncopyable
     std::unique_ptr<AggregationMethodSerialized<AggregatedDataWithStringKeyHash64>>          serialized_hash64;
 
     /// Support for nullable keys.
-    std::unique_ptr<AggregationMethodOneNumberNullable<UInt8, AggregatedDataWithNullableUInt8Key, false>>         nullable_key8;
-    std::unique_ptr<AggregationMethodOneNumberNullable<UInt16, AggregatedDataWithNullableUInt16Key, false>>         nullable_key16;
-    std::unique_ptr<AggregationMethodOneNumberNullable<UInt32, AggregatedDataWithNullableUInt32Key>>         nullable_key32;
-    std::unique_ptr<AggregationMethodOneNumberNullable<UInt64, AggregatedDataWithNullableUInt64Key>>         nullable_key64;
-    std::unique_ptr<AggregationMethodOneNumberNullable<UInt32, AggregatedDataWithNullableUInt32KeyTwoLevel>>         nullable_key32_two_level;
-    std::unique_ptr<AggregationMethodOneNumberNullable<UInt64, AggregatedDataWithNullableUInt64KeyTwoLevel>>         nullable_key64_two_level;
+    std::unique_ptr<AggregationMethodOneNumber<UInt8, AggregatedDataWithNullableUInt8Key, false, true>>         nullable_key8;
+    std::unique_ptr<AggregationMethodOneNumber<UInt16, AggregatedDataWithNullableUInt16Key, false, true>>         nullable_key16;
+    std::unique_ptr<AggregationMethodOneNumber<UInt32, AggregatedDataWithNullableUInt32Key, true, true>>         nullable_key32;
+    std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithNullableUInt64Key, true, true>>         nullable_key64;
+    std::unique_ptr<AggregationMethodOneNumber<UInt32, AggregatedDataWithNullableUInt32KeyTwoLevel, true, true>>         nullable_key32_two_level;
+    std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithNullableUInt64KeyTwoLevel, true, true>>         nullable_key64_two_level;
 
-    std::unique_ptr<AggregationMethodStringNullableNoCache<AggregatedDataWithNullableShortStringKey>> nullable_key_string;
-    std::unique_ptr<AggregationMethodFixedStringNullableNoCache<AggregatedDataWithNullableShortStringKey>> nullable_key_fixed_string;
-    std::unique_ptr<AggregationMethodStringNullableNoCache<AggregatedDataWithNullableShortStringKeyTwoLevel>> nullable_key_string_two_level;
-    std::unique_ptr<AggregationMethodFixedStringNullableNoCache<AggregatedDataWithNullableShortStringKeyTwoLevel>> nullable_key_fixed_string_two_level;
+    std::unique_ptr<AggregationMethodStringNoCache<AggregatedDataWithNullableShortStringKey, true>> nullable_key_string;
+    std::unique_ptr<AggregationMethodFixedStringNoCache<AggregatedDataWithNullableShortStringKey, true>> nullable_key_fixed_string;
+    std::unique_ptr<AggregationMethodStringNoCache<AggregatedDataWithNullableShortStringKeyTwoLevel, true>> nullable_key_string_two_level;
+    std::unique_ptr<AggregationMethodFixedStringNoCache<AggregatedDataWithNullableShortStringKeyTwoLevel, true>> nullable_key_fixed_string_two_level;
 
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128, true>>             nullable_keys128;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256, true>>             nullable_keys256;
