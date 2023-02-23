@@ -91,7 +91,7 @@ clickhouse-benchmark connects to ClickHouse server, repeatedly sends specified q
 
 clickhouse server
 
-Usage: 
+usage: 
 clickhouse server [OPTION] [-- [ARG]...]
 positional arguments can be used to rewrite config.xml properties, for 
 example, --http_port=8010
@@ -178,7 +178,7 @@ Allowed options:
 
 clickhouse copier
 
-Usage: clickhouse copier --config-file <config-file> --task-path <task-path>
+usage: clickhouse copier --config-file <config-file> --task-path <task-path>
 Copies tables from one cluster to another
 
 -C<file>, --config-file=<file>                                                         
@@ -663,7 +663,7 @@ clickhouse git-import --skip-paths 'generated\.cpp|^(contrib|docs?|website|libs/
 
 clickhouse keeper
 
-Usage: 
+usage: 
 clickhouse keeper [OPTION] [-- [ARG]...]
 positional arguments can be used to rewrite config.xml properties, for 
 example, --http_port=8010
@@ -878,7 +878,7 @@ clickhouse-benchmark connects to ClickHouse server, repeatedly sends specified q
 
 clickhouse-server
 
-Usage: 
+usage: 
 clickhouse-server [OPTION] [-- [ARG]...]
 positional arguments can be used to rewrite config.xml properties, for 
 example, --http_port=8010
@@ -965,7 +965,7 @@ Allowed options:
 
 clickhouse-copier
 
-Usage: clickhouse-copier --config-file <config-file> --task-path <task-path>
+usage: clickhouse-copier --config-file <config-file> --task-path <task-path>
 Copies tables from one cluster to another
 
 -C<file>, --config-file=<file>                                                         
@@ -1450,7 +1450,7 @@ clickhouse git-import --skip-paths 'generated\.cpp|^(contrib|docs?|website|libs/
 
 clickhouse-keeper
 
-Usage: 
+usage: 
 clickhouse-keeper [OPTION] [-- [ARG]...]
 positional arguments can be used to rewrite config.xml properties, for 
 example, --http_port=8010
