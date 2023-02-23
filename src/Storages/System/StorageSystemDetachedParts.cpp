@@ -166,6 +166,8 @@ private:
 
         std::vector<std::future<void>> futures;
         SCOPE_EXIT_SAFE({
+            /// Cancel all workers
+            worker_state.next_task.store(worker_state.tasks.size());
             /// Exceptions are not propagated
             for (auto & future : futures)
                 if (future.valid())
