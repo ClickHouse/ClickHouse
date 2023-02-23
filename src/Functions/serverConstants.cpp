@@ -60,13 +60,22 @@ namespace
     };
 
 
-    /// Returns the server time zone.
+    /// Returns default timezone for current session.
     class FunctionTimezone : public FunctionConstantBase<FunctionTimezone, String, DataTypeString>
     {
     public:
         static constexpr auto name = "timezone";
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimezone>(context); }
-        explicit FunctionTimezone(ContextPtr context) : FunctionConstantBase(String{DateLUT::instance().getTimeZone()}, context->isDistributed()) {}
+        explicit FunctionTimezone(ContextPtr context) : FunctionConstantBase(String{DateLUT::instance("").getTimeZone()}, context->isDistributed()) {}
+    };
+
+    /// Returns the server time zone (timezone in which server runs).
+    class FunctionServerTimezone : public FunctionConstantBase<FunctionServerTimezone, String, DataTypeString>
+    {
+    public:
+        static constexpr auto name = "serverTimezone";
+        static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionServerTimezone>(context); }
+        explicit FunctionServerTimezone(ContextPtr context) : FunctionConstantBase(String{DateLUT::instance().getTimeZone()}, context->isDistributed()) {}
     };
 
 
@@ -153,6 +162,12 @@ REGISTER_FUNCTION(Timezone)
 {
     factory.registerFunction<FunctionTimezone>();
     factory.registerAlias("timeZone", "timezone");
+}
+
+REGISTER_FUNCTION(ServerTimezone)
+{
+    factory.registerFunction<FunctionServerTimezone>();
+    factory.registerAlias("serverTimeZone", "serverTimezone");
 }
 
 REGISTER_FUNCTION(Uptime)
