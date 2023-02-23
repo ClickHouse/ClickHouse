@@ -590,7 +590,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         bool async_insert = false;
         auto * queue = context->getAsynchronousInsertQueue();
-        auto * logger = &Poco::Logger::get("executeQuery");
 
         if (insert_query && settings.async_insert)
         {
@@ -606,62 +605,41 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 async_insert = true;
 
             if (!async_insert)
-                LOG_DEBUG(logger, "Setting async_insert=1, but INSERT query will be executed synchronously (reason: {})", reason);
+            {
+                LOG_DEBUG(&Poco::Logger::get("executeQuery"),
+                    "Setting async_insert=1, but INSERT query will be executed synchronously (reason: {})", reason);
+            }
         }
-
-        bool quota_checked = false;
-        std::unique_ptr<ReadBuffer> insert_data_buffer_holder;
 
         if (async_insert)
         {
-            if (context->getCurrentTransaction() && settings.throw_on_unsupported_query_inside_transaction)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts inside transactions are not supported");
-            if (settings.implicit_transaction && settings.throw_on_unsupported_query_inside_transaction)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts with 'implicit_transaction' are not supported");
-
             quota = context->getQuota();
             if (quota)
             {
-                quota_checked = true;
                 quota->used(QuotaType::QUERY_INSERTS, 1);
                 quota->used(QuotaType::QUERIES, 1);
                 quota->checkExceeded(QuotaType::ERRORS);
             }
 
-            auto result = queue->push(ast, context);
+            auto insert_future = queue->push(ast, context);
 
-            if (result.status == AsynchronousInsertQueue::PushResult::OK)
+            if (settings.wait_for_async_insert)
             {
-                if (settings.wait_for_async_insert)
-                {
-                    auto timeout = settings.wait_for_async_insert_timeout.totalMilliseconds();
-                    auto source = std::make_shared<WaitForAsyncInsertSource>(std::move(result.future), timeout);
-                    res.pipeline = QueryPipeline(Pipe(std::move(source)));
-                }
-
-                const auto & table_id = insert_query->table_id;
-                if (!table_id.empty())
-                    context->setInsertionTable(table_id);
+                auto timeout = settings.wait_for_async_insert_timeout.totalMilliseconds();
+                auto source = std::make_shared<WaitForAsyncInsertSource>(std::move(insert_future), timeout);
+                res.pipeline = QueryPipeline(Pipe(std::move(source)));
             }
-            else if (result.status == AsynchronousInsertQueue::PushResult::TOO_MUCH_DATA)
-            {
-                async_insert = false;
-                insert_data_buffer_holder = std::move(result.insert_data_buffer);
 
-                if (insert_query->data)
-                {
-                    /// Reset inlined data because it will be
-                    /// available from tail read buffer.
-                    insert_query->end = insert_query->data;
-                    insert_query->data = nullptr;
-                }
+            const auto & table_id = insert_query->table_id;
+            if (!table_id.empty())
+                context->setInsertionTable(table_id);
 
-                insert_query->tail = insert_data_buffer_holder.get();
-                LOG_DEBUG(logger, "Setting async_insert=1, but INSERT query will be executed synchronously because it has too much data");
-            }
+            if (context->getCurrentTransaction() && settings.throw_on_unsupported_query_inside_transaction)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts inside transactions are not supported");
+            if (settings.implicit_transaction && settings.throw_on_unsupported_query_inside_transaction)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts with 'implicit_transaction' are not supported");
         }
-
-        if (!async_insert)
+        else
         {
             /// We need to start the (implicit) transaction before getting the interpreter as this will get links to the latest snapshots
             if (!context->getCurrentTransaction() && settings.implicit_transaction && !ast->as<ASTTransactionControl>())
@@ -693,7 +671,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for this type of query ({})", ast->getID());
 
-            if (!interpreter->ignoreQuota() && !quota_checked)
+            if (!interpreter->ignoreQuota())
             {
                 quota = context->getQuota();
                 if (quota)
@@ -717,15 +695,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 limits.size_limits = SizeLimits(settings.max_result_rows, settings.max_result_bytes, settings.result_overflow_mode);
             }
 
-            if (auto * insert_interpreter = typeid_cast<InterpreterInsertQuery *>(&*interpreter))
+            if (const auto * insert_interpreter = typeid_cast<const InterpreterInsertQuery *>(&*interpreter))
             {
                 /// Save insertion table (not table function). TODO: support remote() table function.
                 auto table_id = insert_interpreter->getDatabaseTable();
                 if (!table_id.empty())
                     context->setInsertionTable(std::move(table_id));
-
-                if (insert_data_buffer_holder)
-                    insert_interpreter->addBuffer(std::move(insert_data_buffer_holder));
             }
 
             {
