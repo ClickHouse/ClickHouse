@@ -20,6 +20,9 @@ struct ChunkAndProgress
     Chunk chunk;
     size_t num_read_rows = 0;
     size_t num_read_bytes = 0;
+    /// Explicitly indicate that we have read all data.
+    /// This is needed to occasionally return empty chunk to indicate the progress while the rows are filtered out in PREWHERE.
+    bool is_finished = false;
 };
 
 struct ParallelReadingExtension

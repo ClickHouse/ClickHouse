@@ -6,7 +6,7 @@ CREATE TABLE t
 )
 ENGINE = MergeTree
 ORDER BY number
-SETTINGS index_granularity = 128;
+SETTINGS index_granularity = 128, index_granularity_bytes = '10Mi';
 
 SET min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
 INSERT INTO t SELECT number FROM numbers(10000000);
