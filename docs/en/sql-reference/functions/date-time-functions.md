@@ -26,7 +26,7 @@ SELECT
 
 ## timeZone
 
-Returns the timezone of the server.
+Returns the default timezone of the server for current session. This can be modified using `SET timezone = 'New/Value'`
 If it is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard. Otherwise it produces a constant value.
 
 **Syntax**
@@ -36,6 +36,25 @@ timeZone()
 ```
 
 Alias: `timezone`.
+
+**Returned value**
+
+-   Timezone.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+## serverTimeZone
+
+Returns the actual timezone in which the server runs in.
+If it is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard. Otherwise it produces a constant value.
+
+**Syntax**
+
+``` sql
+timeZone()
+```
+
+Alias: `ServerTimezone`, `servertimezone`.
 
 **Returned value**
 

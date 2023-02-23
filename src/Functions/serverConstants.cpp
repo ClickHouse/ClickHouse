@@ -160,14 +160,33 @@ REGISTER_FUNCTION(TcpPort)
 
 REGISTER_FUNCTION(Timezone)
 {
-    factory.registerFunction<FunctionTimezone>();
+    factory.registerFunction<FunctionTimezone>({
+        R"(
+Returns the default timezone for current session.
+Used as default timezone for parsing DateTime|DateTime64 without explicitly specified timezone.
+Can be changed with SET timezone = 'New/Tz'
+
+[example:timezone]
+)",
+        Documentation::Examples{{"serverTimezone", "SELECT timezone();"}},
+        Documentation::Categories{"Constant", "Miscellaneous"}
+    });
     factory.registerAlias("timeZone", "timezone");
 }
 
 REGISTER_FUNCTION(ServerTimezone)
 {
-    factory.registerFunction<FunctionServerTimezone>();
+    factory.registerFunction<FunctionServerTimezone>({
+        R"(
+Returns the timezone name in which server operates.
+
+[example:serverTimezone]
+)",
+         Documentation::Examples{{"serverTimezone", "SELECT serverTimezone();"}},
+         Documentation::Categories{"Constant", "Miscellaneous"}
+    });
     factory.registerAlias("serverTimeZone", "serverTimezone");
+    factory.registerAlias("servertimezone", "serverTimezone");
 }
 
 REGISTER_FUNCTION(Uptime)
