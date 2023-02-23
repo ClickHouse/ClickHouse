@@ -42,6 +42,7 @@ std::streamsize StreamCopier::copyStream(std::istream& istr, std::ostream& ostr,
 }
 
 
+#if defined(POCO_HAVE_INT64)
 Poco::UInt64 StreamCopier::copyStream64(std::istream& istr, std::ostream& ostr, std::size_t bufferSize)
 {
 	poco_assert (bufferSize > 0);
@@ -63,6 +64,7 @@ Poco::UInt64 StreamCopier::copyStream64(std::istream& istr, std::ostream& ostr, 
 	}
 	return len;
 }
+#endif
 
 
 std::streamsize StreamCopier::copyToString(std::istream& istr, std::string& str, std::size_t bufferSize)
@@ -88,6 +90,7 @@ std::streamsize StreamCopier::copyToString(std::istream& istr, std::string& str,
 }
 
 
+#if defined(POCO_HAVE_INT64)
 Poco::UInt64 StreamCopier::copyToString64(std::istream& istr, std::string& str, std::size_t bufferSize)
 {
 	poco_assert (bufferSize > 0);
@@ -109,6 +112,7 @@ Poco::UInt64 StreamCopier::copyToString64(std::istream& istr, std::string& str, 
 	}
 	return len;
 }
+#endif
 
 
 std::streamsize StreamCopier::copyStreamUnbuffered(std::istream& istr, std::ostream& ostr)
@@ -126,6 +130,7 @@ std::streamsize StreamCopier::copyStreamUnbuffered(std::istream& istr, std::ostr
 }
 
 
+#if defined(POCO_HAVE_INT64)
 Poco::UInt64 StreamCopier::copyStreamUnbuffered64(std::istream& istr, std::ostream& ostr)
 {
 	char c = 0;
@@ -139,6 +144,7 @@ Poco::UInt64 StreamCopier::copyStreamUnbuffered64(std::istream& istr, std::ostre
 	}
 	return len;
 }
+#endif
 
 
 } // namespace Poco

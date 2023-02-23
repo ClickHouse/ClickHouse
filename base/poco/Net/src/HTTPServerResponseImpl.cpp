@@ -92,7 +92,11 @@ std::ostream& HTTPServerResponseImpl::send()
 	{
 		Poco::CountingOutputStream cs;
 		write(cs);
+#if defined(POCO_HAVE_INT64)	
 		_pStream = new HTTPFixedLengthOutputStream(_session, getContentLength64() + cs.chars());
+#else
+		_pStream = new HTTPFixedLengthOutputStream(_session, getContentLength() + cs.chars());
+#endif
 		write(*_pStream);
 	}
 	else
@@ -149,7 +153,11 @@ void HTTPServerResponseImpl::sendFile(const std::string& path, const std::string
 	Timestamp dateTime    = f.getLastModified();
 	File::FileSize length = f.getSize();
 	set("Last-Modified", DateTimeFormatter::format(dateTime, DateTimeFormat::HTTP_FORMAT));
+#if defined(POCO_HAVE_INT64)	
 	setContentLength64(length);
+#else
+	setContentLength(static_cast<int>(length));
+#endif
 	setContentType(mediaType);
 	setChunkedTransferEncoding(false);
 

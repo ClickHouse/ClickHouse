@@ -146,7 +146,7 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
                     seen_columns[index] = read_columns[index] = true;
                     const auto & type = getPort().getHeader().getByPosition(index).type;
                     const auto & serialization = serializations[index];
-                    if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
+                    if (format_settings.null_as_default && !type->isNullable() && !type->isLowCardinalityNullable())
                         read_columns[index] = SerializationNullable::deserializeTextEscapedImpl(*columns[index], *in, format_settings, serialization);
                     else
                         serialization->deserializeTextEscaped(*columns[index], *in, format_settings);
@@ -193,10 +193,7 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
             header.getByPosition(i).type->insertDefaultInto(*columns[i]);
 
     /// return info about defaults set
-    if (format_settings.defaults_for_omitted_fields)
-        ext.read_columns = read_columns;
-    else
-        ext.read_columns.assign(num_columns, true);
+    ext.read_columns = read_columns;
 
     return true;
 }

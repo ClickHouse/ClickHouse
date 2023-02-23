@@ -15,4 +15,9 @@ class ASTFunction;
  */
 std::string getOrCreateDiskFromDiskAST(const ASTFunction & function, ContextPtr context);
 
+/*
+ * Is given ast has form of a disk(<disk_configuration>) function.
+ */
+bool isDiskFunction(ASTPtr ast);
+
 }

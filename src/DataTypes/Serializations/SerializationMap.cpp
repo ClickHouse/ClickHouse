@@ -1,5 +1,4 @@
 #include <DataTypes/Serializations/SerializationMap.h>
-#include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeMap.h>
 
 #include <Common/StringUtils/StringUtils.h>
@@ -212,10 +211,7 @@ void SerializationMap::deserializeTextJSON(IColumn & column, ReadBuffer & istr, 
     deserializeTextImpl(column, istr,
         [&settings](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn)
         {
-            if (settings.null_as_default)
-                SerializationNullable::deserializeTextJSONImpl(subcolumn, buf, settings, subcolumn_serialization);
-            else
-                subcolumn_serialization->deserializeTextJSON(subcolumn, buf, settings);
+            subcolumn_serialization->deserializeTextJSON(subcolumn, buf, settings);
         });
 }
 

@@ -8,7 +8,7 @@ DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE inverted(2))
             ENGINE = MergeTree() ORDER BY k
-            SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
+            SETTINGS index_granularity = 2;
 
 INSERT INTO tab VALUES (101, 'Alick a01'), (102, 'Blick a02'), (103, 'Click a03'), (104, 'Dlick a04'), (105, 'Elick a05'), (106, 'Alick a06'), (107, 'Blick a07'), (108, 'Click a08'), (109, 'Dlick a09'), (110, 'Elick a10'), (111, 'Alick b01'), (112, 'Blick b02'), (113, 'Click b03'), (114, 'Dlick b04'), (115, 'Elick b05'), (116, 'Alick b06'), (117, 'Blick b07'), (118, 'Click b08'), (119, 'Dlick b09'), (120, 'Elick b10');
 
@@ -61,7 +61,7 @@ DROP TABLE IF EXISTS tab_x;
 
 CREATE TABLE tab_x(k UInt64, s String, INDEX af(s) TYPE inverted())
     ENGINE = MergeTree() ORDER BY k
-    SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
+    SETTINGS index_granularity = 2;
 
 INSERT INTO tab_x VALUES (101, 'Alick a01'), (102, 'Blick a02'), (103, 'Click a03'), (104, 'Dlick a04'), (105, 'Elick a05'), (106, 'Alick a06'), (107, 'Blick a07'), (108, 'Click a08'), (109, 'Dlick a09'), (110, 'Elick a10'), (111, 'Alick b01'), (112, 'Blick b02'), (113, 'Click b03'), (114, 'Dlick b04'), (115, 'Elick b05'), (116, 'Alick b06'), (117, 'Blick b07'), (118, 'Click b08'), (119, 'Dlick b09'), (120, 'Elick b10');
 
@@ -114,7 +114,7 @@ DROP TABLE IF EXISTS tab;
 
 create table tab (k UInt64, s Array(String), INDEX af(s) TYPE inverted(2))
     ENGINE = MergeTree() ORDER BY k
-    SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
+    SETTINGS index_granularity = 2;
 
 INSERT INTO tab SELECT rowNumberInBlock(), groupArray(s) FROM tab_x GROUP BY k%10;
 
@@ -141,7 +141,7 @@ DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab (k UInt64, s Map(String,String), INDEX af(mapKeys(s)) TYPE inverted(2))
     ENGINE = MergeTree() ORDER BY k
-    SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
+    SETTINGS index_granularity = 2;
 
 INSERT INTO tab VALUES (101, {'Alick':'Alick a01'}), (102, {'Blick':'Blick a02'}), (103, {'Click':'Click a03'}), (104, {'Dlick':'Dlick a04'}), (105, {'Elick':'Elick a05'}), (106, {'Alick':'Alick a06'}), (107, {'Blick':'Blick a07'}), (108, {'Click':'Click a08'}), (109, {'Dlick':'Dlick a09'}), (110, {'Elick':'Elick a10'}), (111, {'Alick':'Alick b01'}), (112, {'Blick':'Blick b02'}), (113, {'Click':'Click b03'}), (114, {'Dlick':'Dlick b04'}), (115, {'Elick':'Elick b05'}), (116, {'Alick':'Alick b06'}), (117, {'Blick':'Blick b07'}), (118, {'Click':'Click b08'}), (119, {'Dlick':'Dlick b09'}), (120, {'Elick':'Elick b10'});
 
@@ -181,7 +181,7 @@ DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE inverted(2))
     ENGINE = MergeTree() ORDER BY k
-    SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
+    SETTINGS index_granularity = 2;
 
 INSERT INTO tab VALUES (101, 'Alick a01'), (102, 'Blick a02'), (103, 'Click a03'), (104, 'Dlick a04'), (105, 'Elick a05'), (106, 'Alick a06'), (107, 'Blick a07'), (108, 'Click a08'), (109, 'Dlick a09'), (110, 'Elick b10'), (111, 'Alick b01'), (112, 'Blick b02'), (113, 'Click b03'), (114, 'Dlick b04'), (115, 'Elick b05'), (116, 'Alick b06'), (117, 'Blick b07'), (118, 'Click b08'), (119, 'Dlick b09'), (120, 'Elick b10');
 INSERT INTO tab VALUES (201, 'rick c01'), (202, 'mick c02'), (203, 'nick c03');
@@ -210,7 +210,7 @@ DROP TABLE IF EXISTS tab;
 CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE inverted(2))
     ENGINE = MergeTree()
     ORDER BY k
-    SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
+    SETTINGS index_granularity = 2;
 
 INSERT INTO tab VALUES (101, 'Alick 好'), (102, 'clickhouse你好'), (103, 'Click 你'), (104, 'Dlick 你a好'), (105, 'Elick 好好你你'), (106, 'Alick 好a好a你a你');
 
@@ -332,3 +332,4 @@ SELECT read_rows==512 from system.query_log
             AND type='QueryFinish' 
             AND result_rows==1
         LIMIT 1;
+

@@ -198,7 +198,7 @@ namespace JSONUtils
     {
         try
         {
-            bool as_nullable = format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type);
+            bool as_nullable = format_settings.null_as_default && !type->isNullable() && !type->isLowCardinalityNullable();
 
             if (yield_strings)
             {

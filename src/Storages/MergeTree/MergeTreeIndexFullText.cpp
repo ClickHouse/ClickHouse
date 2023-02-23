@@ -740,7 +740,7 @@ void bloomFilterIndexValidator(const IndexDescription & index, bool /*attach*/)
             const auto & array_type = assert_cast<const DataTypeArray &>(*index_data_type);
             data_type = WhichDataType(array_type.getNestedType());
         }
-        else if (data_type.isLowCardinality())
+        else if (data_type.isLowCarnality())
         {
             const auto & low_cardinality = assert_cast<const DataTypeLowCardinality &>(*index_data_type);
             data_type = WhichDataType(low_cardinality.getDictionaryType());

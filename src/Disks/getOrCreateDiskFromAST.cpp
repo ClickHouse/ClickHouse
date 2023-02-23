@@ -7,7 +7,6 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/isDiskFunction.h>
 #include <Interpreters/Context.h>
 
 namespace DB
@@ -16,6 +15,15 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+}
+
+bool isDiskFunction(ASTPtr ast)
+{
+    if (!ast)
+        return false;
+
+    const auto * function = ast->as<ASTFunction>();
+    return function && function->name == "disk" && function->arguments->as<ASTExpressionList>();
 }
 
 std::string getOrCreateDiskFromDiskAST(const ASTFunction & function, ContextPtr context)

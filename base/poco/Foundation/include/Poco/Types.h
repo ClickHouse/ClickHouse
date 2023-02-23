@@ -46,6 +46,7 @@ typedef unsigned long UInt64;
 typedef signed long long Int64;
 typedef unsigned long long UInt64;
 #        endif
+#    define POCO_HAVE_INT64 1
 #endif
 
 

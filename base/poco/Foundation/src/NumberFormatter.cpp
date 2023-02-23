@@ -234,6 +234,7 @@ void NumberFormatter::appendHex(std::string& str, unsigned long value, int width
 }
 
 
+#ifdef POCO_HAVE_INT64
 
 #ifdef POCO_LONG_IS_64_BIT
 
@@ -423,6 +424,7 @@ void NumberFormatter::appendHex(std::string& str, UInt64 value, int width)
 
 #endif // ifdef POCO_LONG_IS_64_BIT
 
+#endif // ifdef POCO_HAVE_INT64
 
 
 void NumberFormatter::append(std::string& str, float value)

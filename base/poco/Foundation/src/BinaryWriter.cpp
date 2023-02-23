@@ -212,7 +212,7 @@ BinaryWriter& BinaryWriter::operator << (double value)
 }
 
 
-#if !defined(POCO_LONG_IS_64_BIT)
+#if defined(POCO_HAVE_INT64) && !defined(POCO_LONG_IS_64_BIT)
 
 
 BinaryWriter& BinaryWriter::operator << (Int64 value)
@@ -303,6 +303,7 @@ void BinaryWriter::write7BitEncoded(UInt32 value)
 }
 
 
+#if defined(POCO_HAVE_INT64)
 
 
 void BinaryWriter::write7BitEncoded(UInt64 value)
@@ -318,6 +319,7 @@ void BinaryWriter::write7BitEncoded(UInt64 value)
 }
 
 
+#endif
 
 
 void BinaryWriter::writeRaw(const std::string& rawData)

@@ -17,13 +17,7 @@ class NativeInputFormat final : public IInputFormat
 public:
     NativeInputFormat(ReadBuffer & buf, const Block & header_, const FormatSettings & settings)
         : IInputFormat(header_, buf)
-        , reader(std::make_unique<NativeReader>(
-              buf,
-              header_,
-              0,
-              settings.skip_unknown_fields,
-              settings.null_as_default,
-              settings.defaults_for_omitted_fields ? &block_missing_values : nullptr))
+        , reader(std::make_unique<NativeReader>(buf, header_, 0, settings.skip_unknown_fields))
         , header(header_) {}
 
     String getName() const override { return "Native"; }
@@ -36,7 +30,6 @@ public:
 
     Chunk generate() override
     {
-        block_missing_values.clear();
         auto block = reader->read();
         if (!block)
             return {};
@@ -54,12 +47,9 @@ public:
         IInputFormat::setReadBuffer(in_);
     }
 
-    const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
-
 private:
     std::unique_ptr<NativeReader> reader;
     Block header;
-    BlockMissingValues block_missing_values;
 };
 
 class NativeOutputFormat final : public IOutputFormat

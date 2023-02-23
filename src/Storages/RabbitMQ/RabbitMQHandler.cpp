@@ -56,10 +56,10 @@ int RabbitMQHandler::iterateLoop()
 
 /// Do not need synchronization as in iterateLoop(), because this method is used only for
 /// initial RabbitMQ setup - at this point there is no background loop thread.
-int RabbitMQHandler::startBlockingLoop()
+void RabbitMQHandler::startBlockingLoop()
 {
     LOG_DEBUG(log, "Started blocking loop.");
-    return uv_run(loop, UV_RUN_DEFAULT);
+    uv_run(loop, UV_RUN_DEFAULT);
 }
 
 void RabbitMQHandler::stopLoop()

@@ -170,7 +170,7 @@ BinaryReader& BinaryReader::operator >> (double& value)
 }
 
 
-#if !defined(POCO_LONG_IS_64_BIT)
+#if defined(POCO_HAVE_INT64) && !defined(POCO_LONG_IS_64_BIT)
 
 
 BinaryReader& BinaryReader::operator >> (Int64& value)
@@ -233,6 +233,7 @@ void BinaryReader::read7BitEncoded(UInt32& value)
 }
 
 
+#if defined(POCO_HAVE_INT64)
 
 
 void BinaryReader::read7BitEncoded(UInt64& value)
@@ -253,6 +254,7 @@ void BinaryReader::read7BitEncoded(UInt64& value)
 }
 
 
+#endif
 
 
 void BinaryReader::readRaw(std::streamsize length, std::string& value)

@@ -154,6 +154,7 @@ void PrintHandler::value(unsigned v)
 }
 
 
+#if defined(POCO_HAVE_INT64)
 void PrintHandler::value(Int64 v)
 {
 	arrayValue();
@@ -168,6 +169,7 @@ void PrintHandler::value(UInt64 v)
 	_out << v;
 	_objStart = false;
 }
+#endif
 
 
 void PrintHandler::value(const std::string& value)

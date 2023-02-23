@@ -10,7 +10,6 @@
 #include <Common/escapeForFileName.h>
 #include <Common/Increment.h>
 #include <Common/noexcept_scope.h>
-#include <Common/ProfileEventsScope.h>
 #include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/SimpleIncrement.h>
@@ -6431,21 +6430,17 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
     if (query_info.additional_filter_ast)
         return std::nullopt;
 
-    auto query_ptr = query_info.query;
-    auto original_query_ptr = query_info.original_query;
-
+    auto query_ptr = query_info.original_query;
     auto * select_query = query_ptr->as<ASTSelectQuery>();
-    auto * original_select_query = original_query_ptr->as<ASTSelectQuery>();
-
-    if (!original_select_query || !select_query)
+    if (!select_query)
         return std::nullopt;
 
     // Currently projections don't support final yet.
-    if (select_query->final() || original_select_query->final())
+    if (select_query->final())
         return std::nullopt;
 
     // Currently projections don't support sample yet.
-    if (original_select_query->sampleSize())
+    if (select_query->sampleSize())
         return std::nullopt;
 
     // Currently projection don't support deduplication when moving parts between shards.
@@ -6453,24 +6448,24 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
         return std::nullopt;
 
     // Currently projections don't support ARRAY JOIN yet.
-    if (original_select_query->arrayJoinExpressionList().first)
+    if (select_query->arrayJoinExpressionList().first)
         return std::nullopt;
 
     // In order to properly analyze joins, aliases should be recognized. However, aliases get lost during projection analysis.
     // Let's disable projection if there are any JOIN clauses.
     // TODO: We need a better identifier resolution mechanism for projection analysis.
-    if (original_select_query->hasJoin())
+    if (select_query->hasJoin())
         return std::nullopt;
 
     // INTERPOLATE expressions may include aliases, so aliases should be preserved
-    if (original_select_query->interpolate() && !original_select_query->interpolate()->children.empty())
+    if (select_query->interpolate() && !select_query->interpolate()->children.empty())
         return std::nullopt;
 
     // Projections don't support grouping sets yet.
-    if (original_select_query->group_by_with_grouping_sets
-        || original_select_query->group_by_with_totals
-        || original_select_query->group_by_with_rollup
-        || original_select_query->group_by_with_cube)
+    if (select_query->group_by_with_grouping_sets
+        || select_query->group_by_with_totals
+        || select_query->group_by_with_rollup
+        || select_query->group_by_with_cube)
         return std::nullopt;
 
     auto query_options = SelectQueryOptions(
@@ -6480,7 +6475,7 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
         ).ignoreProjections().ignoreAlias();
 
     InterpreterSelectQuery select(
-        original_query_ptr,
+        query_ptr,
         query_context,
         query_options,
         query_info.prepared_sets);
@@ -7325,8 +7320,7 @@ void MergeTreeData::writePartLog(
     const String & new_part_name,
     const DataPartPtr & result_part,
     const DataPartsVector & source_parts,
-    const MergeListEntry * merge_entry,
-    std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters)
+    const MergeListEntry * merge_entry)
 try
 {
     auto table_id = getStorageID();
@@ -7386,15 +7380,6 @@ try
         part_log_elem.rows = (*merge_entry)->rows_written;
         part_log_elem.bytes_uncompressed = (*merge_entry)->bytes_written_uncompressed;
         part_log_elem.peak_memory_usage = (*merge_entry)->memory_tracker.getPeak();
-    }
-
-    if (profile_counters)
-    {
-        part_log_elem.profile_counters = profile_counters;
-    }
-    else
-    {
-        LOG_WARNING(log, "Profile counters are not set");
     }
 
     part_log->add(part_log_elem);
@@ -7532,7 +7517,6 @@ bool MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagge
     {
         Stopwatch stopwatch;
         MutableDataPartPtr cloned_part;
-        ProfileEventsScope profile_events_scope;
 
         auto write_part_log = [&](const ExecutionStatus & execution_status)
         {
@@ -7543,8 +7527,7 @@ bool MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagge
                 moving_part.part->name,
                 cloned_part,
                 {moving_part.part},
-                nullptr,
-                profile_events_scope.getSnapshot());
+                nullptr);
         };
 
         // Register in global moves list (StorageSystemMoves)

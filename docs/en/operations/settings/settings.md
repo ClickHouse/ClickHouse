@@ -851,15 +851,6 @@ Result:
 └─────────────┴───────────┘
 ```
 
-## log_processors_profiles {#settings-log_processors_profiles}
-
-Write time that processor spent during execution/waiting for data to `system.processors_profile_log` table.
-
-See also:
-
--   [`system.processors_profile_log`](../../operations/system-tables/processors_profile_log.md#system-processors_profile_log)
--   [`EXPLAIN PIPELINE`](../../sql-reference/statements/explain.md#explain-pipeline)
-
 ## max_insert_block_size {#settings-max_insert_block_size}
 
 The size of blocks (in a count of rows) to form for insertion into a table.
@@ -1569,17 +1560,6 @@ Possible values:
 -   0 — Asynchronous insertions are disabled.
 
 Default value: `100000`.
-
-### async_insert_max_query_number {#async-insert-max-query-number}
-
-The maximum number of insert queries per block before being inserted. This setting takes effect only if [async_insert_deduplicate](#settings-async-insert-deduplicate) is enabled.
-
-Possible values:
-
--   Positive integer.
--   0 — Asynchronous insertions are disabled.
-
-Default value: `450`.
 
 ### async_insert_busy_timeout_ms {#async-insert-busy-timeout-ms}
 
