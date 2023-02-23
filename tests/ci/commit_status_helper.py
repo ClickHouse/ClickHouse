@@ -123,7 +123,14 @@ def set_mergeable_check(
 
 
 def update_mergeable_check(gh: Github, pr_info: PRInfo, check_name: str) -> None:
-    if SKIP_MERGEABLE_CHECK_LABEL in pr_info.labels:
+    not_run = (
+        pr_info.labels.intersection({SKIP_MERGEABLE_CHECK_LABEL, "release"})
+        or check_name not in REQUIRED_CHECKS
+        or pr_info.release_pr
+        or pr_info.number == 0
+    )
+    if not_run:
+        # Let's avoid unnecessary work
         return
 
     logging.info("Update Mergeable Check by %s", check_name)
