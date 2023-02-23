@@ -135,11 +135,14 @@ private:
     {
         chassert(detached_parts.empty());
 
-        current_info = state->next();
-        if (!current_info)
-            return;
+        while (detached_parts.empty())
+        {
+            current_info = state->next();
+            if (!current_info)
+                return;
 
-        detached_parts = current_info.data->getDetachedParts();
+            detached_parts = current_info.data->getDetachedParts();
+        }
     }
 
     void calculatePartSizeOnDisk(size_t begin, std::vector<std::atomic<size_t>> & parts_sizes)
