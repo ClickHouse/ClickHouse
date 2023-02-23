@@ -35,6 +35,8 @@ struct StoredObject
     using PathKeyForCacheCreator = std::function<std::string(const std::string &)>;
     PathKeyForCacheCreator path_key_for_cache_creator;
 
+    StoredObject() = default;
+
     explicit StoredObject(
         const std::string & absolute_path_,
         uint64_t bytes_size_ = 0,

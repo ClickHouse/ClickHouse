@@ -101,6 +101,7 @@ NamesAndTypesList StorageSystemDistributionQueue::getNamesAndTypes()
         { "broken_data_files",            std::make_shared<DataTypeUInt64>() },
         { "broken_data_compressed_bytes", std::make_shared<DataTypeUInt64>() },
         { "last_exception",        std::make_shared<DataTypeString>() },
+        { "last_exception_time",        std::make_shared<DataTypeDateTime>() },
     };
 }
 
@@ -190,6 +191,7 @@ void StorageSystemDistributionQueue::fillData(MutableColumns & res_columns, Cont
                 res_columns[col_num++]->insert(getExceptionMessage(status.last_exception, false));
             else
                 res_columns[col_num++]->insertDefault();
+            res_columns[col_num++]->insert(static_cast<UInt32>(std::chrono::system_clock::to_time_t(status.last_exception_time)));
         }
     }
 }

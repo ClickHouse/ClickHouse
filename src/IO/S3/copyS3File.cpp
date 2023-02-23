@@ -209,17 +209,29 @@ namespace
             size_t position = start_offset;
             size_t end_position = start_offset + size;
 
-            for (size_t part_number = 1; position < end_position; ++part_number)
+            try
             {
-                if (multipart_upload_aborted)
-                    break; /// No more part uploads.
+                for (size_t part_number = 1; position < end_position; ++part_number)
+                {
+                    if (multipart_upload_aborted)
+                        break; /// No more part uploads.
 
-                size_t next_position = std::min(position + normal_part_size, end_position);
-                size_t part_size = next_position - position; /// `part_size` is either `normal_part_size` or smaller if it's the final part.
+                    size_t next_position = std::min(position + normal_part_size, end_position);
+                    size_t part_size = next_position - position; /// `part_size` is either `normal_part_size` or smaller if it's the final part.
 
-                uploadPart(part_number, position, part_size);
+                    uploadPart(part_number, position, part_size);
 
-                position = next_position;
+                    position = next_position;
+                }
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+                // Multipart upload failed because it wasn't possible to schedule all the tasks.
+                // To avoid execution of already scheduled tasks we abort MultipartUpload.
+                abortMultipartUpload();
+                waitForAllBackGroundTasks();
+                throw;
             }
 
             waitForAllBackGroundTasks();

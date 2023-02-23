@@ -197,8 +197,8 @@ namespace VolnitskyTraits
                         chars.c1 = seq_l[seq_ngram_offset + 1];
                         putNGramBase(n, offset);
 
-                        chars.c0 = seq_r[seq_ngram_offset]; //-V519
-                        chars.c1 = seq_r[seq_ngram_offset + 1]; //-V519
+                        chars.c0 = seq_r[seq_ngram_offset];
+                        chars.c1 = seq_r[seq_ngram_offset + 1];
                         putNGramBase(n, offset);
 
                     }
@@ -321,7 +321,7 @@ namespace VolnitskyTraits
                     {
                         /// ngram for Ul
                         chars.c0 = c0u;
-                        chars.c1 = c1l; //-V1048
+                        chars.c1 = c1l;
                         putNGramBase(n, offset);
                     }
 

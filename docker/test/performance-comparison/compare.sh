@@ -538,7 +538,7 @@ unset IFS
 numactl --show
 numactl --cpunodebind=all --membind=all numactl --show
 # Use less jobs to avoid OOM. Some queries can consume 8+ GB of memory.
-jobs_count=$(($(grep -c ^processor /proc/cpuinfo) / 3))
+jobs_count=$(($(grep -c ^processor /proc/cpuinfo) / 4))
 numactl --cpunodebind=all --membind=all parallel --jobs  $jobs_count --joblog analyze/parallel-log.txt --null < analyze/commands.txt 2>> analyze/errors.log
 
 clickhouse-local --query "
