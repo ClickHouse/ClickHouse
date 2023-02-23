@@ -39,7 +39,7 @@
 #include <Analyzer/Passes/AutoFinalOnQueryPass.h>
 #include <Analyzer/Passes/ArrayExistsToHasPass.h>
 #include <Analyzer/Passes/ComparisonTupleEliminationPass.h>
-#include <Analyzer/Passes/OrEqualityChainToInPass.h>
+#include <Analyzer/Passes/LogicalExpressionOptimizerPass.h>
 
 
 namespace DB
@@ -264,7 +264,7 @@ void addQueryTreePasses(QueryTreePassManager & manager)
 
     manager.addPass(std::make_unique<ConvertOrLikeChainPass>());
 
-    manager.addPass(std::make_unique<OrEqualityChainToInPass>());
+    manager.addPass(std::make_unique<LogicalExpressionOptimizerPass>());
 
     manager.addPass(std::make_unique<GroupingFunctionsResolvePass>());
 

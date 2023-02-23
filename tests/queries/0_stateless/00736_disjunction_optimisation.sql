@@ -42,4 +42,8 @@ select s, (s=21 or s=22 or s=23) from bug;
 select s, (s=21 or s=22 or s=23) from bug SETTINGS allow_experimental_analyzer = 1;;
 explain query tree select s, (s=21 or s=22 or s=23) from bug SETTINGS allow_experimental_analyzer = 1;;
 
+select s, (s=21 or 22=s or 23=s) from bug;
+select s, (s=21 or 22=s or 23=s) from bug SETTINGS allow_experimental_analyzer = 1;;
+explain query tree select s, (s=21 or 22=s or 23=s) from bug SETTINGS allow_experimental_analyzer = 1;;
+
 DROP TABLE bug;
