@@ -10,12 +10,13 @@
         -->
         <debug>cgrp,consumer,topic,protocol</debug>
 
-        <topic name="consumer_hang">
+        <kafka_topic>
+            <name>consumer_hang</name>
             <!-- default: 3000 -->
             <heartbeat_interval_ms>300</heartbeat_interval_ms>
             <!-- default: 10000 -->
             <session_timeout_ms>6000</session_timeout_ms>
-        </topic>
+        </kafka_topic>
     </kafka>
 
 </clickhouse>
