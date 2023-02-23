@@ -260,6 +260,11 @@ public:
         return true;
     }
 
+    std::thread::id get_id() const
+    {
+        return state ? state->thread_id.load() : std::thread::id{};
+    }
+
 protected:
     struct State
     {
