@@ -31,6 +31,7 @@
 #include <Columns/ColumnNothing.h>
 #include <Interpreters/castColumn.h>
 #include <Common/quoteString.h>
+#include <Formats/insertNullAsDefaultIfNeeded.h>
 #include <algorithm>
 #include <arrow/builder.h>
 #include <arrow/array.h>
@@ -826,16 +827,18 @@ ArrowColumnToCHColumn::ArrowColumnToCHColumn(
     const std::string & format_name_,
     bool import_nested_,
     bool allow_missing_columns_,
+    bool null_as_default_,
     bool case_insensitive_matching_)
     : header(header_)
     , format_name(format_name_)
     , import_nested(import_nested_)
     , allow_missing_columns(allow_missing_columns_)
+    , null_as_default(null_as_default_)
     , case_insensitive_matching(case_insensitive_matching_)
 {
 }
 
-void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table, size_t num_rows)
+void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table, size_t num_rows, BlockMissingValues * block_missing_values)
 {
     NameToColumnPtr name_to_column_ptr;
     for (auto column_name : table->ColumnNames())
@@ -849,10 +852,10 @@ void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk & res, std::shared_ptr<arr
         name_to_column_ptr[std::move(column_name)] = arrow_column;
     }
 
-    arrowColumnsToCHChunk(res, name_to_column_ptr, num_rows);
+    arrowColumnsToCHChunk(res, name_to_column_ptr, num_rows, block_missing_values);
 }
 
-void ArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr & name_to_column_ptr, size_t num_rows)
+void ArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr & name_to_column_ptr, size_t num_rows, BlockMissingValues * block_missing_values)
 {
     Columns columns_list;
     columns_list.reserve(header.columns());
@@ -916,6 +919,8 @@ void ArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr &
                     column.type = header_column.type;
                     column.column = header_column.column->cloneResized(num_rows);
                     columns_list.push_back(std::move(column.column));
+                    if (block_missing_values)
+                        block_missing_values->setBits(column_i, num_rows);
                     continue;
                 }
             }
@@ -926,6 +931,9 @@ void ArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr &
             column = readColumnFromArrowColumn(
                 arrow_column, header_column.name, format_name, false, dictionary_infos, true, false, skipped, header_column.type);
         }
+
+        if (null_as_default)
+            insertNullAsDefaultIfNeeded(column, header_column, column_i, block_missing_values);
 
         try
         {
@@ -946,28 +954,6 @@ void ArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr &
     }
 
     res.setColumns(columns_list, num_rows);
-}
-
-std::vector<size_t> ArrowColumnToCHColumn::getMissingColumns(const arrow::Schema & schema) const
-{
-    std::vector<size_t> missing_columns;
-    auto block_from_arrow = arrowSchemaToCHHeader(schema, format_name, false, &header, case_insensitive_matching);
-    NestedColumnExtractHelper nested_columns_extractor(block_from_arrow, case_insensitive_matching);
-
-    for (size_t i = 0, columns = header.columns(); i < columns; ++i)
-    {
-        const auto & header_column = header.getByPosition(i);
-        if (!block_from_arrow.has(header_column.name, case_insensitive_matching))
-        {
-            if (!import_nested || !nested_columns_extractor.extractColumn(header_column.name))
-            {
-                if (!allow_missing_columns)
-                    throw Exception{ErrorCodes::THERE_IS_NO_COLUMN, "Column '{}' is not presented in input data.", header_column.name};
-                missing_columns.push_back(i);
-            }
-        }
-    }
-    return missing_columns;
 }
 
 }

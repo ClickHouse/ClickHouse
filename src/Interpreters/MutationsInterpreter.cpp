@@ -33,6 +33,11 @@
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Processors/Sources/ThrowingExceptionSource.h>
+#include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/QueryTreePassManager.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/TableNode.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 
 
 namespace DB
@@ -221,16 +226,32 @@ bool isStorageTouchedByMutations(
     if (all_commands_can_be_skipped)
         return false;
 
-    ASTPtr select_query = prepareQueryAffectedAST(commands, storage.shared_from_this(), context);
-
     auto storage_from_part = std::make_shared<StorageFromMergeTreeDataPart>(source_part);
 
-    /// Interpreter must be alive, when we use result of execute() method.
-    /// For some reason it may copy context and give it into ExpressionTransform
-    /// after that we will use context from destroyed stack frame in our stream.
-    InterpreterSelectQuery interpreter(
-        select_query, context, storage_from_part, metadata_snapshot, SelectQueryOptions().ignoreLimits().ignoreProjections());
-    auto io = interpreter.execute();
+    std::optional<InterpreterSelectQuery> interpreter_select_query;
+    BlockIO io;
+
+    ASTPtr select_query = prepareQueryAffectedAST(commands, storage.shared_from_this(), context);
+
+    if (context->getSettingsRef().allow_experimental_analyzer)
+    {
+        InterpreterSelectQueryAnalyzer interpreter(select_query,
+            context,
+            storage_from_part,
+            SelectQueryOptions().ignoreLimits().ignoreProjections());
+        io = interpreter.execute();
+    }
+    else
+    {
+        /// Interpreter must be alive, when we use result of execute() method.
+        /// For some reason it may copy context and give it into ExpressionTransform
+        /// after that we will use context from destroyed stack frame in our stream.
+        interpreter_select_query.emplace(
+            select_query, context, storage_from_part, metadata_snapshot, SelectQueryOptions().ignoreLimits().ignoreProjections());
+
+        io = interpreter_select_query->execute();
+    }
+
     PullingAsyncPipelineExecutor executor(io.pipeline);
 
     Block block;

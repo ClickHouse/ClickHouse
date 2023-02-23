@@ -393,7 +393,7 @@ struct WhichDataType
     constexpr bool isAggregateFunction() const { return idx == TypeIndex::AggregateFunction; }
     constexpr bool isSimple() const  { return isInt() || isUInt() || isFloat() || isString(); }
 
-    constexpr bool isLowCarnality() const { return idx == TypeIndex::LowCardinality; }
+    constexpr bool isLowCardinality() const { return idx == TypeIndex::LowCardinality; }
 };
 
 /// IDataType helpers (alternative for IDataType virtual methods with single point of truth)
@@ -547,6 +547,11 @@ inline bool isAggregateFunction(const DataTypePtr & data_type)
 {
     WhichDataType which(data_type);
     return which.isAggregateFunction();
+}
+
+inline bool isNullableOrLowCardinalityNullable(const DataTypePtr & data_type)
+{
+    return data_type->isNullable() || data_type->isLowCardinalityNullable();
 }
 
 template <typename DataType> constexpr bool IsDataTypeDecimal = false;

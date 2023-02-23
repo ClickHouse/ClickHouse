@@ -17,8 +17,9 @@ CREATE WINDOW VIEW wv TO dst AS SELECT count(a) AS count FROM mt GROUP BY tumble
 INSERT INTO mt VALUES (1);
 EOF
 
-while true; do
-	$CLICKHOUSE_CLIENT --query="SELECT count(*) FROM dst" | grep -q "1" && break || sleep .5 ||:
+for _ in {1..100}; do
+	$CLICKHOUSE_CLIENT --query="SELECT count(*) FROM dst" | grep -q "1" && echo 'OK' && break
+	sleep .5
 done
 
 $CLICKHOUSE_CLIENT --query="SELECT count FROM dst"

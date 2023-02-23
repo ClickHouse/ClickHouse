@@ -863,3 +863,41 @@ Result:
 │                             2 │
 └───────────────────────────────┘
 ```
+
+## regexpExtract(haystack, pattern[, index])
+
+Extracts the first string in haystack that matches the regexp pattern and corresponds to the regex group index.
+
+**Syntax**
+
+``` sql
+regexpExtract(haystack, pattern[, index])
+```
+
+Alias: `REGEXP_EXTRACT(haystack, pattern[, index])`.
+
+**Arguments**
+
+-   `haystack` — String, in which regexp pattern will to be matched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `pattern` — String, regexp expression, must be constant. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `index` – An integer number greater or equal 0 with default 1. It represents which regex group to extract. [UInt or Int](../../sql-reference/data-types/int-uint.md). Optional.
+
+**Returned values**
+
+`pattern` may contain multiple regexp groups, `index` indicates which regex group to extract. An index of 0 means matching the entire regular expression.
+
+Type: `String`.
+
+**Examples**
+
+``` sql
+SELECT
+    regexpExtract('100-200', '(\\d+)-(\\d+)', 1),
+    regexpExtract('100-200', '(\\d+)-(\\d+)', 2),
+    regexpExtract('100-200', '(\\d+)-(\\d+)', 0),
+    regexpExtract('100-200', '(\\d+)-(\\d+)')
+
+┌─regexpExtract('100-200', '(\\d+)-(\\d+)', 1)─┬─regexpExtract('100-200', '(\\d+)-(\\d+)', 2)─┬─regexpExtract('100-200', '(\\d+)-(\\d+)', 0)─┬─regexpExtract('100-200', '(\\d+)-(\\d+)')─┐
+│ 100                                          │ 200                                          │ 100-200                                      │ 100                                       │
+└──────────────────────────────────────────────┴──────────────────────────────────────────────┴──────────────────────────────────────────────┴───────────────────────────────────────────┘
+```

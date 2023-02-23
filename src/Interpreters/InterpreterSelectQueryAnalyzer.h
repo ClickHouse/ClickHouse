@@ -20,6 +20,15 @@ public:
         const ContextPtr & context_,
         const SelectQueryOptions & select_query_options_);
 
+    /** Initialize interpreter with query AST and storage.
+      * After query tree is built left most table expression is replaced with table node that
+      * is initialized with provided storage.
+      */
+    InterpreterSelectQueryAnalyzer(const ASTPtr & query_,
+        const ContextPtr & context_,
+        const StoragePtr & storage_,
+        const SelectQueryOptions & select_query_options_);
+
     /// Initialize interpreter with query tree
     InterpreterSelectQueryAnalyzer(const QueryTreeNodePtr & query_tree_,
         const ContextPtr & context_,
@@ -31,6 +40,14 @@ public:
     }
 
     Block getSampleBlock();
+
+    static Block getSampleBlock(const ASTPtr & query,
+        const ContextPtr & context,
+        const SelectQueryOptions & select_query_options = {});
+
+    static Block getSampleBlock(const QueryTreeNodePtr & query_tree,
+        const ContextPtr & context_,
+        const SelectQueryOptions & select_query_options = {});
 
     BlockIO execute() override;
 

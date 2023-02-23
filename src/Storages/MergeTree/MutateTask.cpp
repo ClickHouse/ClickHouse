@@ -21,6 +21,7 @@
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <boost/algorithm/string/replace.hpp>
+#include <Common/ProfileEventsScope.h>
 
 
 namespace CurrentMetrics
@@ -924,6 +925,7 @@ public:
                 ctx->space_reservation,
                 false, // TODO Do we need deduplicate for projections
                 {},
+                false, // no cleanup
                 projection_merging_params,
                 NO_TRANSACTION_PTR,
                 /* need_prefix */ true,
@@ -937,6 +939,7 @@ public:
         /// Need execute again
         return true;
     }
+
 private:
     String name;
     MergeTreeData::MutableDataPartsVector parts;
@@ -1291,6 +1294,7 @@ private:
 
     std::unique_ptr<PartMergerWriter> part_merger_writer_task;
 };
+
 
 class MutateSomePartColumnsTask : public IExecutableTask
 {
