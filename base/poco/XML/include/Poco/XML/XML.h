@@ -31,13 +31,6 @@
 // XML_API functions as being imported from a DLL, whereas this DLL sees symbols
 // defined with this macro as being exported.
 //
-#if defined(_WIN32) && defined(POCO_DLL)
-#    if defined(XML_EXPORTS)
-#        define XML_API __declspec(dllexport)
-#    else
-#        define XML_API __declspec(dllimport)
-#    endif
-#endif
 
 
 #if !defined(XML_API)
@@ -52,11 +45,6 @@
 //
 // Automatically link XML library.
 //
-#if defined(_MSC_VER)
-#    if !defined(POCO_NO_AUTOMATIC_LIBS) && !defined(XML_EXPORTS)
-#        pragma comment(lib, "PocoXML" POCO_LIB_SUFFIX)
-#    endif
-#endif
 
 
 #endif // XML_XML_INCLUDED
