@@ -175,26 +175,69 @@ namespace
     const auto CLEANUP_TIMEOUT_MS = 3000;
     const auto MAX_THREAD_WORK_DURATION_MS = 60000;  // once per minute leave do reschedule (we can't lock threads in pool forever)
 
-    const String CONFIG_PREFIX = "kafka";
-    const String CONFIG_TOPIC_TAG = "topic";
+    const String CONFIG_KAFKA_TAG = "kafka";
+    const String CONFIG_KAFKA_TOPIC_TAG = "kafka_topic";
+    const String CONFIG_NAME_TAG = "name";
 
-    /// Read server configuration into cppkafka configuration
+    /// Read server configuration into cppkafka configuration, used by global configuration and by legacy per-topic configuration
     void loadFromConfig(cppkafka::Configuration & kafka_config, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
     {
-        Poco::Util::AbstractConfiguration::Keys keys;
-        config.keys(config_prefix, keys);
+        /// Read all tags one level below <kafka>
+        Poco::Util::AbstractConfiguration::Keys tags;
+        config.keys(config_prefix, tags);
 
-        for (const auto & key : keys)
+        for (const auto & tag : tags)
         {
-            if (key == CONFIG_TOPIC_TAG)
-                continue; // special case: when loading the global config, cppkafka rightfully complains that "topic" isn't a valid kafka setting
-            const String key_path = config_prefix + "." + key;
-            // log_level has valid underscore, rest librdkafka setting use dot.separated.format
-            // which is not acceptable for XML.
-            // See also https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md
-            const String key_name = (key == "log_level") ? key : boost::replace_all_copy(key, "_", ".");
-            String value = config.getString(key_path);
-            kafka_config.set(key_name, value);
+            if (tag.starts_with(CONFIG_KAFKA_TOPIC_TAG)) ///  Multiple occurrences given as "kafka_topic", "kafka_topic[1]", etc.
+                continue; // used by new per-topic configuration, ignore
+
+            const String setting_path = config_prefix + "." + tag;
+            const String setting_value = config.getString(setting_path);
+
+            // "log_level" has valid underscore, the remaining librdkafka setting use dot.separated.format which isn't acceptable for XML.
+            // See https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md
+            const String setting_name_in_kafka_config = (tag == "log_level") ? tag : boost::replace_all_copy(tag, "_", ".");
+            kafka_config.set(setting_name_in_kafka_config, setting_value);
+        }
+    }
+
+    /// Read server configuration into cppkafa configuration, used by new per-topic configuration
+    void loadTopicConfig(cppkafka::Configuration & kafka_config, const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const String & topic)
+    {
+        /// Read all tags one level below <kafka>
+        Poco::Util::AbstractConfiguration::Keys tags;
+        config.keys(config_prefix, tags);
+
+        for (const auto & tag : tags)
+        {
+            /// Consider tag <kafka_topic>. Multiple occurrences given as "kafka_topic", "kafka_topic[1]", etc.
+            if (tag.starts_with(CONFIG_KAFKA_TOPIC_TAG))
+            {
+                /// Read topic name between <name>...</name>
+                const String kafka_topic_path = config_prefix + "." + tag;
+                const String kafpa_topic_name_path = kafka_topic_path + "." + CONFIG_NAME_TAG;
+
+                const String topic_name = config.getString(kafpa_topic_name_path);
+                if (topic_name == topic)
+                {
+                    /// Found it! Now read the per-topic configuration into cppkafka.
+                    Poco::Util::AbstractConfiguration::Keys inner_tags;
+                    config.keys(kafka_topic_path, inner_tags);
+                    for (const auto & inner_tag : inner_tags)
+                    {
+                        if (inner_tag == CONFIG_NAME_TAG)
+                            continue; // ignore <name>
+
+                        // "log_level" has valid underscore, the remaining librdkafka setting use dot.separated.format which isn't acceptable for XML.
+                        // See https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md
+                        const String setting_path = kafka_topic_path + "." + inner_tag;
+                        const String setting_value = config.getString(setting_path);
+
+                        const String setting_name_in_kafka_config = (inner_tag == "log_level") ? inner_tag : boost::replace_all_copy(inner_tag, "_", ".");
+                        kafka_config.set(setting_name_in_kafka_config, setting_value);
+                    }
+                }
+            }
         }
     }
 }
@@ -513,8 +556,8 @@ size_t StorageKafka::getPollTimeoutMillisecond() const
 String StorageKafka::getConfigPrefix() const
 {
     if (!collection_name.empty())
-        return "named_collections." + collection_name + "." + CONFIG_PREFIX; /// Add one more level to separate librdkafka configuration.
-    return CONFIG_PREFIX;
+        return "named_collections." + collection_name + "." + CONFIG_KAFKA_TAG; /// Add one more level to separate librdkafka configuration.
+    return CONFIG_KAFKA_TAG;
 }
 
 void StorageKafka::updateConfiguration(cppkafka::Configuration & kafka_config)
@@ -571,21 +614,24 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & kafka_config)
             loadFromConfig(kafka_config, config, topic_config_key);
     }
 
-    // Update consumer topic-specific configuration (new syntax). Example with topic "football":
+    // Update consumer topic-specific configuration (new syntax). Example with topics "football" and "baseball":
     //     <kafka>
-    //         <topic name="football">
+    //         <topic>
+    //             <name>football</name>
     //             <retry_backoff_ms>250</retry_backoff_ms>
-    //             <fetch_min_bytes>100000</fetch_min_bytes>
-    //         <topic name="football">
+    //             <fetch_min_bytes>5000</fetch_min_bytes>
+    //         </topic>
+    //         <topic>
+    //             <name>baseball</name>
+    //             <retry_backoff_ms>300</retry_backoff_ms>
+    //             <fetch_min_bytes>2000</fetch_min_bytes>
+    //         </topic>
     //     </kafka>
-    // Advantages: The period restriction doesn't apply to XML attributes (e.g. <topic name="sports.football"> works) and everything
-    // kafka-related is below <kafka>.
+    // Advantages: The period restriction no longer applies (e.g. <name>sports.football</name> will work), everything
+    // Kafka-related is below <kafka>.
     for (const auto & topic : topics)
-    {
-        const auto topic_config_key = config_prefix + ".topic[@name=" + topic + "]";
-        if (config.has(topic_config_key))
-            loadFromConfig(kafka_config, config, topic_config_key);
-    }
+        if (config.has(config_prefix))
+            loadTopicConfig(kafka_config, config, config_prefix, topic);
 
     // No need to add any prefix, messages can be distinguished
     kafka_config.set_log_callback([this](cppkafka::KafkaHandleBase &, int level, const std::string & facility, const std::string & message)
