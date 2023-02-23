@@ -13,10 +13,12 @@ on:  # yamllint disable-line rule:truthy
     branches:
       - master
     paths-ignore:
+      - 'CHANGELOG.md'
+      - 'README.md'
       - 'docker/docs/**'
       - 'docs/**'
-      - 'website/**'
       - 'utils/check-style/aspell-ignore/**'
+      - 'website/**'
 ##########################################################################################
 ##################################### SMALL CHECKS #######################################
 ##########################################################################################
