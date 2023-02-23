@@ -111,6 +111,12 @@ def fail_mergeable_check(commit: Commit, description: str) -> None:
     )
 
 
+def format_description(description: str) -> str:
+    if len(description) > 140:
+        description = description[:137] + "..."
+    return description
+
+
 def reset_mergeable_check(commit: Commit, description: str = "") -> None:
     commit.create_status(
         context="Mergeable Check",
@@ -149,12 +155,10 @@ def update_mergeable_check(gh: Github, pr_info: PRInfo, check_name: str) -> None
         description = "failed: " + ", ".join(fail)
         if success:
             description += "; succeeded: " + ", ".join(success)
-        if len(description) > 140:
-            description = description[:137] + "..."
+        description = format_description(description)
         fail_mergeable_check(commit, description)
         return
 
     description = ", ".join(success)
-    if len(description) > 140:
-        description = description[:137] + "..."
+    description = format_description(description)
     reset_mergeable_check(commit, description)
