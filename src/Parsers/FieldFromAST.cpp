@@ -36,16 +36,16 @@ String FieldFromASTImpl::toString(bool show_secrets) const
     if (!show_secrets && isDiskFunction(ast))
     {
         auto hidden = ast->clone();
-        auto & disk_function = assert_cast<const ASTFunction &>(*hidden);
-        auto * disk_function_args_expr = assert_cast<const ASTExpressionList *>(disk_function.arguments.get());
-        auto & disk_function_args = disk_function_args_expr->children;
+        const auto & disk_function = assert_cast<const ASTFunction &>(*hidden);
+        const auto * disk_function_args_expr = assert_cast<const ASTExpressionList *>(disk_function.arguments.get());
+        const auto & disk_function_args = disk_function_args_expr->children;
 
         auto is_secret_arg = [](const std::string & arg_name)
         {
             return arg_name != "type";
         };
 
-        for (auto & arg : disk_function_args)
+        for (const auto & arg : disk_function_args)
         {
             auto * setting_function = arg->as<ASTFunction>();
             if (!setting_function || setting_function->name != "equals")
