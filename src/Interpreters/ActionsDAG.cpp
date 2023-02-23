@@ -1943,8 +1943,7 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
     }
 
     auto conjunction = getConjunctionNodes(predicate, allowed_nodes);
-    if (conjunction.allowed.size() == 1 && conjunction.rejected.size() == 1
-        && WhichDataType{conjunction.rejected.front()->result_type}.isFloat())
+    if (conjunction.rejected.size() == 1 && WhichDataType{conjunction.rejected.front()->result_type}.isFloat())
         return nullptr;
 
     auto actions = cloneActionsForConjunction(conjunction.allowed, all_inputs);
