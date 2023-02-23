@@ -15,7 +15,7 @@ from github import Github
 from commit_status_helper import get_commit, post_commit_status
 from ci_config import CI_CONFIG
 from docker_pull_helper import get_image_with_version
-from env_helper import GITHUB_EVENT_PATH, GITHUB_RUN_URL
+from env_helper import GITHUB_EVENT_PATH, GITHUB_RUN_URL, S3_BUILDS_BUCKET, S3_DOWNLOAD
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from pr_info import PRInfo
 from rerun_helper import RerunHelper
@@ -80,13 +80,13 @@ if __name__ == "__main__":
     with open(GITHUB_EVENT_PATH, "r", encoding="utf-8") as event_file:
         event = json.load(event_file)
 
-    gh = Github(get_best_robot_token())
+    gh = Github(get_best_robot_token(), per_page=100)
     pr_info = PRInfo(event)
     commit = get_commit(gh, pr_info.sha)
 
     docker_env = ""
 
-    docker_env += " -e S3_URL=https://s3.amazonaws.com/clickhouse-builds"
+    docker_env += f" -e S3_URL={S3_DOWNLOAD}/{S3_BUILDS_BUCKET}"
     docker_env += f" -e BUILD_NAME={required_build}"
 
     if pr_info.number == 0:
@@ -111,6 +111,16 @@ if __name__ == "__main__":
         )
     else:
         check_name_with_group = check_name
+
+    is_aarch64 = "aarch64" in os.getenv("CHECK_NAME", "Performance Comparison").lower()
+    if pr_info.number != 0 and is_aarch64 and "pr-performance" not in pr_info.labels:
+        status = "success"
+        message = "Skipped, not labeled with 'pr-performance'"
+        report_url = GITHUB_RUN_URL
+        post_commit_status(
+            gh, pr_info.sha, check_name_with_group, message, status, report_url
+        )
+        sys.exit(0)
 
     test_grep_exclude_filter = CI_CONFIG["tests_config"][check_name][
         "test_grep_exclude_filter"
@@ -141,11 +151,19 @@ if __name__ == "__main__":
     if not os.path.exists(result_path):
         os.makedirs(result_path)
 
-    docker_env += (
-        " -e CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_URL"
-        " -e CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER"
-        " -e CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER_PASSWORD"
-    )
+    database_url = get_parameter_from_ssm("clickhouse-test-stat-url")
+    database_username = get_parameter_from_ssm("clickhouse-test-stat-login")
+    database_password = get_parameter_from_ssm("clickhouse-test-stat-password")
+
+    env_extra = {
+        "CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_URL": f"{database_url}:9440",
+        "CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER": database_username,
+        "CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER_PASSWORD": database_password,
+        "CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME": check_name_with_group,
+        "CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX": check_name_prefix,
+    }
+
+    docker_env += "".join([f" -e {name}" for name in env_extra])
 
     run_command = get_run_command(
         result_path,
@@ -158,23 +176,10 @@ if __name__ == "__main__":
     )
     logging.info("Going to run command %s", run_command)
 
+    run_log_path = os.path.join(temp_path, "run.log")
+
     popen_env = os.environ.copy()
-
-    database_url = get_parameter_from_ssm("clickhouse-test-stat-url")
-    database_username = get_parameter_from_ssm("clickhouse-test-stat-login")
-    database_password = get_parameter_from_ssm("clickhouse-test-stat-password")
-
-    popen_env.update(
-        {
-            "CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_URL": f"{database_url}:9440",
-            "CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER": database_username,
-            "CLICKHOUSE_PERFORMANCE_COMPARISON_DATABASE_USER_PASSWORD": database_password,
-            "CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME": check_name_with_group,
-            "CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX": check_name_prefix,
-        }
-    )
-
-    run_log_path = os.path.join(temp_path, "runlog.log")
+    popen_env.update(env_extra)
     with TeePopen(run_command, run_log_path, env=popen_env) as process:
         retcode = process.wait()
         if retcode == 0:
@@ -193,11 +198,11 @@ if __name__ == "__main__":
         "all-query-metrics.tsv": os.path.join(
             result_path, "report/all-query-metrics.tsv"
         ),
-        "runlog.log": run_log_path,
+        "run.log": run_log_path,
     }
 
     s3_prefix = f"{pr_info.number}/{pr_info.sha}/{check_name_prefix}/"
-    s3_helper = S3Helper("https://s3.amazonaws.com")
+    s3_helper = S3Helper()
     uploaded = {}  # type: Dict[str, str]
     for name, path in paths.items():
         try:
@@ -231,7 +236,7 @@ if __name__ == "__main__":
 
         # TODO: Remove me, always green mode for the first time, unless errors
         status = "success"
-        if "errors" in message:
+        if "errors" in message.lower():
             status = "failure"
         # TODO: Remove until here
     except Exception:
@@ -248,8 +253,8 @@ if __name__ == "__main__":
 
     report_url = GITHUB_RUN_URL
 
-    if uploaded["runlog.log"]:
-        report_url = uploaded["runlog.log"]
+    if uploaded["run.log"]:
+        report_url = uploaded["run.log"]
 
     if uploaded["compare.log"]:
         report_url = uploaded["compare.log"]

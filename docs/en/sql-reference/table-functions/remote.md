@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/table-functions/remote
 sidebar_position: 40
 sidebar_label: remote
 ---

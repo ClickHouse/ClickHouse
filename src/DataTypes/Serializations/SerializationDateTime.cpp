@@ -75,7 +75,7 @@ void SerializationDateTime::deserializeTextEscaped(IColumn & column, ReadBuffer 
     readText(x, istr, settings, time_zone, utc_time_zone);
     if (x < 0)
         x = 0;
-    assert_cast<ColumnType &>(column).getData().push_back(x);
+    assert_cast<ColumnType &>(column).getData().push_back(static_cast<UInt32>(x));
 }
 
 void SerializationDateTime::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -99,7 +99,9 @@ void SerializationDateTime::deserializeTextQuoted(IColumn & column, ReadBuffer &
     }
     if (x < 0)
         x = 0;
-    assert_cast<ColumnType &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
+
+    /// It's important to do this at the end - for exception safety.
+    assert_cast<ColumnType &>(column).getData().push_back(static_cast<UInt32>(x));
 }
 
 void SerializationDateTime::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -123,7 +125,7 @@ void SerializationDateTime::deserializeTextJSON(IColumn & column, ReadBuffer & i
     }
     if (x < 0)
         x = 0;
-    assert_cast<ColumnType &>(column).getData().push_back(x);
+    assert_cast<ColumnType &>(column).getData().push_back(static_cast<UInt32>(x));
 }
 
 void SerializationDateTime::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -153,7 +155,7 @@ void SerializationDateTime::deserializeTextCSV(IColumn & column, ReadBuffer & is
     if (x < 0)
         x = 0;
 
-    assert_cast<ColumnType &>(column).getData().push_back(x);
+    assert_cast<ColumnType &>(column).getData().push_back(static_cast<UInt32>(x));
 }
 
 }

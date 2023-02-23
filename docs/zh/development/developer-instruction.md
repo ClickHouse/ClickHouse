@@ -1,4 +1,7 @@
-ClickHose支持Linux,FreeBSD 及 Mac OS X 系统。
+---
+slug: /zh/development/developer-instruction
+---
+# ClickHose支持Linux,FreeBSD 及 Mac OS X 系统。
 
 # Windows使用指引 {#windowsshi-yong-zhi-yin}
 

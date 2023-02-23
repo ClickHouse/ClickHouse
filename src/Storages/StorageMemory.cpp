@@ -95,7 +95,7 @@ protected:
             ++name_and_type;
         }
 
-        fillMissingColumns(columns, src.rows(), column_names_and_types, /*metadata_snapshot=*/ nullptr);
+        fillMissingColumns(columns, src.rows(), column_names_and_types, column_names_and_types, {}, nullptr);
         assert(std::all_of(columns.begin(), columns.end(), [](const auto & column) { return column != nullptr; }));
 
         return Chunk(std::move(columns), src.rows());
@@ -146,7 +146,7 @@ public:
             auto extended_storage_columns = storage_snapshot->getColumns(
                 GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects());
 
-            convertObjectsToTuples(block, extended_storage_columns);
+            convertDynamicColumnsToTuples(block, storage_snapshot);
         }
 
         if (storage.compress)
@@ -212,10 +212,10 @@ StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & 
     auto snapshot_data = std::make_unique<SnapshotData>();
     snapshot_data->blocks = data.get();
 
-    if (!hasObjectColumns(metadata_snapshot->getColumns()))
+    if (!hasDynamicSubcolumns(metadata_snapshot->getColumns()))
         return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, ColumnsDescription{}, std::move(snapshot_data));
 
-    auto object_columns = getObjectColumns(
+    auto object_columns = getConcreteObjectColumns(
         snapshot_data->blocks->begin(),
         snapshot_data->blocks->end(),
         metadata_snapshot->getColumns(),
@@ -231,7 +231,7 @@ Pipe StorageMemory::read(
     ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t /*max_block_size*/,
-    unsigned num_streams)
+    size_t num_streams)
 {
     storage_snapshot->check(column_names);
 

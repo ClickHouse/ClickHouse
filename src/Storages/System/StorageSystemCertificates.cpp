@@ -1,4 +1,4 @@
-#include <Common/config.h>
+#include "config.h"
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>

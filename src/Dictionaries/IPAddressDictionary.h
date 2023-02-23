@@ -118,6 +118,8 @@ private:
             Float32,
             Float64,
             UUID,
+            IPv4,
+            IPv6,
             String,
             Array>
             null_values;
@@ -142,6 +144,8 @@ private:
             ContainerType<Float32>,
             ContainerType<Float64>,
             ContainerType<UUID>,
+            ContainerType<IPv4>,
+            ContainerType<IPv6>,
             ContainerType<StringRef>,
             ContainerType<Array>>
             maps;

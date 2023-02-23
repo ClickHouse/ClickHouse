@@ -25,7 +25,6 @@ public:
         bool with_names_,
         bool with_types_,
         bool is_raw_,
-        const RowOutputFormatParams & params_,
         const FormatSettings & format_settings_);
 
     String getName() const override { return "TabSeparatedRowOutputFormat"; }
@@ -37,6 +36,10 @@ protected:
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
     void writeFieldDelimiter() override final;
     void writeRowEndDelimiter() override;
+
+    bool supportTotals() const override { return true; }
+    bool supportExtremes() const override { return true; }
+
     void writeBeforeTotals() override final;
     void writeBeforeExtremes() override final;
 

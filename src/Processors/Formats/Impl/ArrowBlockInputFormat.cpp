@@ -3,7 +3,7 @@
 #if USE_ARROW
 
 #include <Formats/FormatFactory.h>
-#include <Formats/ReadSchemaUtils.h>
+#include <Formats/SchemaInferenceUtils.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
@@ -71,7 +71,7 @@ Chunk ArrowBlockInputFormat::generate()
 
     ++record_batch_current;
 
-    arrow_column_to_ch_column->arrowTableToCHChunk(res, *table_result);
+    arrow_column_to_ch_column->arrowTableToCHChunk(res, *table_result, (*table_result)->num_rows());
 
     /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
     /// Otherwise fill the missing columns with zero values of its type.
@@ -173,8 +173,9 @@ NamesAndTypesList ArrowSchemaReader::readSchema()
 
     auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(
         *schema, stream ? "ArrowStream" : "Arrow", format_settings.arrow.skip_columns_with_unsupported_types_in_schema_inference);
-    return getNamesAndRecursivelyNullableTypes(header);
-}
+    if (format_settings.schema_inference_make_columns_nullable)
+        return getNamesAndRecursivelyNullableTypes(header);
+    return header.getNamesAndTypesList();}
 
 void registerInputFormatArrow(FormatFactory & factory)
 {
@@ -187,6 +188,7 @@ void registerInputFormatArrow(FormatFactory & factory)
         {
             return std::make_shared<ArrowBlockInputFormat>(buf, sample, false, format_settings);
         });
+    factory.markFormatSupportsSubcolumns("Arrow");
     factory.markFormatSupportsSubsetOfColumns("Arrow");
     factory.registerInputFormat(
         "ArrowStream",
@@ -207,12 +209,24 @@ void registerArrowSchemaReader(FormatFactory & factory)
         {
             return std::make_shared<ArrowSchemaReader>(buf, false, settings);
         });
+
+    factory.registerAdditionalInfoForSchemaCacheGetter("Arrow", [](const FormatSettings & settings)
+    {
+        return fmt::format("schema_inference_make_columns_nullable={}", settings.schema_inference_make_columns_nullable);
+    });
     factory.registerSchemaReader(
         "ArrowStream",
         [](ReadBuffer & buf, const FormatSettings & settings)
         {
             return std::make_shared<ArrowSchemaReader>(buf, true, settings);
-        });}
+        });
+
+    factory.registerAdditionalInfoForSchemaCacheGetter("ArrowStream", [](const FormatSettings & settings)
+    {
+       return fmt::format("schema_inference_make_columns_nullable={}", settings.schema_inference_make_columns_nullable);
+    });
+}
+
 }
 #else
 

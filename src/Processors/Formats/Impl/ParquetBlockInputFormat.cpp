@@ -4,7 +4,7 @@
 #if USE_PARQUET
 
 #include <Formats/FormatFactory.h>
-#include <Formats/ReadSchemaUtils.h>
+#include <Formats/SchemaInferenceUtils.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/copyData.h>
 #include <arrow/api.h>
@@ -14,7 +14,9 @@
 #include <parquet/file_reader.h>
 #include "ArrowBufferedStreams.h"
 #include "ArrowColumnToCHColumn.h"
+#include "ArrowFieldIndexUtil.h"
 #include <DataTypes/NestedUtils.h>
+
 
 namespace DB
 {
@@ -29,7 +31,7 @@ namespace ErrorCodes
     do                                                                 \
     {                                                                  \
         if (::arrow::Status _s = (status); !_s.ok())                   \
-            throw Exception(_s.ToString(), ErrorCodes::BAD_ARGUMENTS); \
+            throw Exception::createDeprecated(_s.ToString(), ErrorCodes::BAD_ARGUMENTS); \
     } while (false)
 
 ParquetBlockInputFormat::ParquetBlockInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_)
@@ -43,31 +45,47 @@ Chunk ParquetBlockInputFormat::generate()
     block_missing_values.clear();
 
     if (!file_reader)
+    {
         prepareReader();
+        file_reader->set_batch_size(format_settings.parquet.max_block_size);
+        std::vector<int> row_group_indices;
+        for (int i = 0; i < row_group_total; ++i)
+        {
+            if (!skip_row_groups.contains(i))
+                row_group_indices.emplace_back(i);
+        }
+        auto read_status = file_reader->GetRecordBatchReader(row_group_indices, column_indices, &current_record_batch_reader);
+        if (!read_status.ok())
+            throw DB::ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading Parquet data: {}", read_status.ToString());
+    }
 
     if (is_stopped)
         return {};
 
-    for (; row_group_current < row_group_total && skip_row_groups.contains(row_group_current); ++row_group_current)
-        ;
-
-    if (row_group_current >= row_group_total)
-        return res;
-
-    std::shared_ptr<arrow::Table> table;
-    arrow::Status read_status = file_reader->ReadRowGroup(row_group_current, column_indices, &table);
-    if (!read_status.ok())
-        throw ParsingException{"Error while reading Parquet data: " + read_status.ToString(), ErrorCodes::CANNOT_READ_ALL_DATA};
-
-    ++row_group_current;
-
-    arrow_column_to_ch_column->arrowTableToCHChunk(res, table);
+    auto batch = current_record_batch_reader->Next();
+    if (!batch.ok())
+    {
+        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading Parquet data: {}",
+                               batch.status().ToString());
+    }
+    if (*batch)
+    {
+        auto tmp_table = arrow::Table::FromRecordBatches({*batch});
+        arrow_column_to_ch_column->arrowTableToCHChunk(res, *tmp_table, (*tmp_table)->num_rows());
+    }
+    else
+    {
+        current_record_batch_reader.reset();
+        file_reader.reset();
+        return {};
+    }
 
     /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
     /// Otherwise fill the missing columns with zero values of its type.
     if (format_settings.defaults_for_omitted_fields)
         for (const auto & column_idx : missing_columns)
             block_missing_values.setBits(column_idx, res.getNumRows());
+
     return res;
 }
 
@@ -84,29 +102,6 @@ void ParquetBlockInputFormat::resetParser()
 const BlockMissingValues & ParquetBlockInputFormat::getMissingValues() const
 {
     return block_missing_values;
-}
-
-static size_t countIndicesForType(std::shared_ptr<arrow::DataType> type)
-{
-    if (type->id() == arrow::Type::LIST)
-        return countIndicesForType(static_cast<arrow::ListType *>(type.get())->value_type());
-
-    if (type->id() == arrow::Type::STRUCT)
-    {
-        int indices = 0;
-        auto * struct_type = static_cast<arrow::StructType *>(type.get());
-        for (int i = 0; i != struct_type->num_fields(); ++i)
-            indices += countIndicesForType(struct_type->field(i)->type());
-        return indices;
-    }
-
-    if (type->id() == arrow::Type::MAP)
-    {
-        auto * map_type = static_cast<arrow::MapType *>(type.get());
-        return countIndicesForType(map_type->key_type()) + countIndicesForType(map_type->item_type());
-    }
-
-    return 1;
 }
 
 static void getFileReaderAndSchema(
@@ -141,28 +136,10 @@ void ParquetBlockInputFormat::prepareReader()
         format_settings.parquet.case_insensitive_column_matching);
     missing_columns = arrow_column_to_ch_column->getMissingColumns(*schema);
 
-    const bool ignore_case = format_settings.parquet.case_insensitive_column_matching;
-    std::unordered_set<String> nested_table_names;
-    if (format_settings.parquet.import_nested)
-        nested_table_names = Nested::getAllTableNames(getPort().getHeader(), ignore_case);
-
-    int index = 0;
-    for (int i = 0; i < schema->num_fields(); ++i)
-    {
-        /// STRUCT type require the number of indexes equal to the number of
-        /// nested elements, so we should recursively
-        /// count the number of indices we need for this type.
-        int indexes_count = countIndicesForType(schema->field(i)->type());
-        const auto & name = schema->field(i)->name();
-
-        if (getPort().getHeader().has(name, ignore_case) || nested_table_names.contains(ignore_case ? boost::to_lower_copy(name) : name))
-        {
-            for (int j = 0; j != indexes_count; ++j)
-                column_indices.push_back(index + j);
-        }
-
-        index += indexes_count;
-    }
+    ArrowFieldIndexUtil<false> field_util(
+        format_settings.parquet.case_insensitive_column_matching,
+        format_settings.parquet.allow_missing_columns);
+    column_indices = field_util.findRequiredIndices(getPort().getHeader(), *schema);
 }
 
 ParquetSchemaReader::ParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
@@ -178,7 +155,9 @@ NamesAndTypesList ParquetSchemaReader::readSchema()
     getFileReaderAndSchema(in, file_reader, schema, format_settings, is_stopped);
     auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(
         *schema, "Parquet", format_settings.parquet.skip_columns_with_unsupported_types_in_schema_inference);
-    return getNamesAndRecursivelyNullableTypes(header);
+    if (format_settings.schema_inference_make_columns_nullable)
+        return getNamesAndRecursivelyNullableTypes(header);
+    return header.getNamesAndTypesList();
 }
 
 void registerInputFormatParquet(FormatFactory & factory)
@@ -192,6 +171,7 @@ void registerInputFormatParquet(FormatFactory & factory)
             {
                 return std::make_shared<ParquetBlockInputFormat>(buf, sample, settings);
             });
+    factory.markFormatSupportsSubcolumns("Parquet");
     factory.markFormatSupportsSubsetOfColumns("Parquet");
 }
 
@@ -204,6 +184,11 @@ void registerParquetSchemaReader(FormatFactory & factory)
             return std::make_shared<ParquetSchemaReader>(buf, settings);
         }
         );
+
+    factory.registerAdditionalInfoForSchemaCacheGetter("Parquet", [](const FormatSettings & settings)
+    {
+        return fmt::format("schema_inference_make_columns_nullable={}", settings.schema_inference_make_columns_nullable);
+    });
 }
 
 }

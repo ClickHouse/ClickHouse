@@ -1,4 +1,5 @@
 ---
+slug: /en/interfaces/third-party/client-libraries
 sidebar_position: 26
 sidebar_label: Client Libraries
 ---
@@ -31,6 +32,7 @@ ClickHouse Inc does **not** maintain the libraries listed below and hasn’t don
     -   [chconn](https://github.com/vahid-sohrabloo/chconn)
     -   [mailrugo-clickhouse](https://github.com/mailru/go-clickhouse)
     -   [golang-clickhouse](https://github.com/leprosus/golang-clickhouse)
+    -   [uptrace/go-clickhouse](https://clickhouse.uptrace.dev/)
 -   Swift
     -   [ClickHouseNIO](https://github.com/patrick-zippenfenig/ClickHouseNIO)
     -   [ClickHouseVapor ORM](https://github.com/patrick-zippenfenig/ClickHouseVapor)
@@ -39,6 +41,7 @@ ClickHouse Inc does **not** maintain the libraries listed below and hasn’t don
     -   [node-clickhouse](https://github.com/apla/node-clickhouse)
     -   [nestjs-clickhouse](https://github.com/depyronick/nestjs-clickhouse)
     -   [clickhouse-client](https://github.com/depyronick/clickhouse-client)
+    -   [node-clickhouse-orm](https://github.com/zimv/node-clickhouse-orm)
 -   Perl
     -   [perl-DBD-ClickHouse](https://github.com/elcamlost/perl-DBD-ClickHouse)
     -   [HTTP-ClickHouse](https://metacpan.org/release/HTTP-ClickHouse)
@@ -71,5 +74,3 @@ ClickHouse Inc does **not** maintain the libraries listed below and hasn’t don
     -   [nim-clickhouse](https://github.com/leonardoce/nim-clickhouse)
 -   Haskell
     -   [hdbc-clickhouse](https://github.com/zaneli/hdbc-clickhouse)
-
-[Original article](https://clickhouse.com/docs/en/interfaces/third-party/client_libraries/) <!--hide-->

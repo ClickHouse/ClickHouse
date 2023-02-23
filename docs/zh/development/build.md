@@ -1,3 +1,6 @@
+---
+slug: /zh/development/build
+---
 # 如何构建 ClickHouse 发布包 {#ru-he-gou-jian-clickhouse-fa-bu-bao}
 
 ## 安装 Git 和 Pbuilder {#an-zhuang-git-he-pbuilder}
@@ -64,5 +67,3 @@ cd ..
 
 若要创建一个执行文件， 执行 `ninja clickhouse`。
 这个命令会使得 `programs/clickhouse` 文件可执行，您可以使用 `client` 或 `server` 参数运行。
-
-[来源文章](https://clickhouse.com/docs/en/development/build/) <!--hide-->

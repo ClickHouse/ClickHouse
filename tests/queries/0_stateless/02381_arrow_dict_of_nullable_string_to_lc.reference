@@ -1,0 +1,9 @@
+lc_nullable_string
+LowCardinality(Nullable(String))
+one
+\N
+three
+
+\N
+
+six

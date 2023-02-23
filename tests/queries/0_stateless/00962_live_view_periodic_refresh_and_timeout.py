@@ -29,7 +29,7 @@ with client(name="client1>", log=log) as client1, client(
     client1.send("DROP TABLE IF EXISTS test.lv")
     client1.expect(prompt)
     client1.send(
-        "CREATE LIVE VIEW test.lv WITH TIMEOUT 60 AND REFRESH 1"
+        "CREATE LIVE VIEW test.lv WITH REFRESH 1"
         " AS SELECT value FROM system.events WHERE event = 'OSCPUVirtualTimeMicroseconds'"
     )
     client1.expect(prompt)
@@ -43,16 +43,3 @@ with client(name="client1>", log=log) as client1, client(
     if match.groups()[1]:
         client1.send(client1.command)
         client1.expect(prompt)
-    # poll until live view table is dropped
-    start_time = time.time()
-    while True:
-        client1.send("SELECT * FROM test.lv FORMAT JSONEachRow")
-        client1.expect(prompt)
-        if "Table test.lv doesn't exist" in client1.before:
-            break
-        if time.time() - start_time > 90:
-            break
-    # check table is dropped
-    client1.send("DROP TABLE test.lv")
-    client1.expect("Table test.lv doesn't exist")
-    client1.expect(prompt)

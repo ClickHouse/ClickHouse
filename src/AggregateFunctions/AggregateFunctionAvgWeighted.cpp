@@ -71,11 +71,9 @@ createAggregateFunctionAvgWeighted(const std::string & name, const DataTypes & a
     const auto data_type_weight = static_cast<const DataTypePtr>(argument_types[1]);
 
     if (!allowTypes(data_type, data_type_weight))
-        throw Exception(
-            "Types " + data_type->getName() +
-            " and " + data_type_weight->getName() +
-            " are non-conforming as arguments for aggregate function " + name,
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Types {} and {} are non-conforming as arguments for aggregate function {}",
+                        data_type->getName(), data_type_weight->getName(), name);
 
     AggregateFunctionPtr ptr;
 

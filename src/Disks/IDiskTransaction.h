@@ -30,6 +30,8 @@ public:
     /// If something fails rollback and throw exception.
     virtual void commit() = 0;
 
+    virtual void undo() = 0;
+
     virtual ~IDiskTransaction() = default;
 
     /// Create directory.
@@ -102,6 +104,9 @@ public:
 
     /// Set last modified time to file or directory at `path`.
     virtual void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) = 0;
+
+    /// Just chmod.
+    virtual void chmod(const String & path, mode_t mode) = 0;
 
     /// Set file at `path` as read-only.
     virtual void setReadOnly(const std::string & path) = 0;

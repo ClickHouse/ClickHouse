@@ -24,7 +24,7 @@ void ReplicatedMergeTreeMutationEntry::writeText(WriteBuffer & out) const
     }
 
     out << "commands: ";
-    commands.writeText(out);
+    commands.writeText(out, /* with_pure_metadata_commands = */ false);
     out << "\n";
 
     out << "alter version: ";
@@ -93,7 +93,7 @@ std::shared_ptr<const IBackupEntry> ReplicatedMergeTreeMutationEntry::backup() c
     }
 
     out << "commands: ";
-    commands.writeText(out);
+    commands.writeText(out, /* with_pure_metadata_commands = */ false);
     out << "\n";
 
     return std::make_shared<BackupEntryFromMemory>(out.str());

@@ -12,6 +12,7 @@ ConnectionPoolPtr ConnectionPoolFactory::get(
     String default_database,
     String user,
     String password,
+    String quota_key,
     String cluster,
     String cluster_secret,
     String client_name,
@@ -20,7 +21,7 @@ ConnectionPoolPtr ConnectionPoolFactory::get(
     Int64 priority)
 {
     Key key{
-        max_connections, host, port, default_database, user, password, cluster, cluster_secret, client_name, compression, secure, priority};
+        max_connections, host, port, default_database, user, password, quota_key, cluster, cluster_secret, client_name, compression, secure, priority};
 
     std::lock_guard lock(mutex);
     auto [it, inserted] = pools.emplace(key, ConnectionPoolPtr{});
@@ -37,6 +38,7 @@ ConnectionPoolPtr ConnectionPoolFactory::get(
             default_database,
             user,
             password,
+            quota_key,
             cluster,
             cluster_secret,
             client_name,

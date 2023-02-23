@@ -4,6 +4,7 @@
 #include <Poco/Channel.h>
 #include <Poco/FormattingChannel.h>
 #include "ExtendedLogChannel.h"
+#include "OwnJSONPatternFormatter.h"
 #include "OwnPatternFormatter.h"
 
 

@@ -17,6 +17,20 @@ export RUNNER_URL="https://github.com/ClickHouse"
 INSTANCE_ID=$(ec2metadata --instance-id)
 export INSTANCE_ID
 
+# Add cloudflare DNS as a fallback
+# Get default gateway interface
+IFACE=$(ip --json route list | jq '.[]|select(.dst == "default").dev' --raw-output)
+# `Link 2 (eth0): 172.31.0.2`
+ETH_DNS=$(resolvectl dns "$IFACE") || :
+CLOUDFLARE_NS=1.1.1.1
+if [[ "$ETH_DNS" ]] && [[ "${ETH_DNS#*: }" != *"$CLOUDFLARE_NS"* ]]; then
+  # Cut the leading legend
+  ETH_DNS=${ETH_DNS#*: }
+  # shellcheck disable=SC2206
+  new_dns=(${ETH_DNS} "$CLOUDFLARE_NS")
+  resolvectl dns "$IFACE" "${new_dns[@]}"
+fi
+
 # combine labels
 RUNNER_TYPE=$(/usr/local/bin/aws ec2 describe-tags --filters "Name=resource-id,Values=$INSTANCE_ID" --query "Tags[?Key=='github:runner-type'].Value" --output text)
 LABELS="self-hosted,Linux,$(uname -m),$RUNNER_TYPE"
@@ -32,15 +46,17 @@ curl "${TEAM_KEYS_URL}" > /home/ubuntu/.ssh/authorized_keys2
 chown ubuntu: /home/ubuntu/.ssh -R
 
 
-# Create a pre-run script that will restart docker daemon before the job started
+# Create a pre-run script that will provide diagnostics info
 mkdir -p /tmp/actions-hooks
-cat > /tmp/actions-hooks/pre-run.sh << 'EOF'
+cat > /tmp/actions-hooks/pre-run.sh << EOF
 #!/bin/bash
-set -xuo pipefail
+set -uo pipefail
 
 echo "Runner's public DNS: $(ec2metadata --public-hostname)"
+echo "Runner's labels: ${LABELS}"
 EOF
 
+# Create a post-run script that will restart docker daemon before the job started
 cat > /tmp/actions-hooks/post-run.sh << 'EOF'
 #!/bin/bash
 set -xuo pipefail
@@ -62,13 +78,13 @@ if [[ ${ROOT_STAT[0]} -lt 3000000 ]] || [[ ${ROOT_STAT[1]} -lt 5 ]]; then
 fi
 
 # shellcheck disable=SC2046
-docker kill $(docker ps -q) ||:
+docker ps --quiet | xargs --no-run-if-empty docker kill ||:
 # shellcheck disable=SC2046
-docker rm -f $(docker ps -a -q) ||:
+docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
 
 # If we have hanged containers after the previous commands, than we have a hanged one
 # and should restart the daemon
-if [ "$(docker ps -a -q)" ]; then
+if [ "$(docker ps --all --quiet)" ]; then
   # Systemd service of docker has StartLimitBurst=3 and StartLimitInterval=60s,
   # that's why we try restarting it for long
   for i in {1..25};

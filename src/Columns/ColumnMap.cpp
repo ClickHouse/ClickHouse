@@ -74,7 +74,7 @@ void ColumnMap::get(size_t n, Field & res) const
     size_t size = offsets[n] - offsets[n - 1];
 
     res = Map();
-    auto & map = DB::get<Map &>(res);
+    auto & map = res.get<Map &>();
     map.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
@@ -88,17 +88,17 @@ bool ColumnMap::isDefaultAt(size_t n) const
 
 StringRef ColumnMap::getDataAt(size_t) const
 {
-    throw Exception("Method getDataAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());
 }
 
 void ColumnMap::insertData(const char *, size_t)
 {
-    throw Exception("Method insertData is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertData is not supported for {}", getName());
 }
 
 void ColumnMap::insert(const Field & x)
 {
-    const auto & map = DB::get<const Map &>(x);
+    const auto & map = x.get<const Map &>();
     nested->insert(Array(map.begin(), map.end()));
 }
 
@@ -273,9 +273,15 @@ void ColumnMap::getExtremes(Field & min, Field & max) const
     max = std::move(map_max_value);
 }
 
-void ColumnMap::forEachSubcolumn(ColumnCallback callback)
+void ColumnMap::forEachSubcolumn(ColumnCallback callback) const
 {
     callback(nested);
+}
+
+void ColumnMap::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
+{
+    callback(*nested);
+    nested->forEachSubcolumnRecursively(callback);
 }
 
 bool ColumnMap::structureEquals(const IColumn & rhs) const

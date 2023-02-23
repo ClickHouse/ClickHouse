@@ -89,3 +89,92 @@ select cutToFirstSignificantSubdomainCustom('city.kawasaki.jp', 'public_suffix_l
 city.kawasaki.jp
 select cutToFirstSignificantSubdomainCustom('some.city.kawasaki.jp', 'public_suffix_list');
 city.kawasaki.jp
+select '-- no-tld';
+-- no-tld
+-- even if there is no TLD, 2-nd level by default anyway
+-- FIXME: make this behavior optional (so that TLD for host never changed, either empty or something real)
+select cutToFirstSignificantSubdomainRFC('there-is-no-such-domain');
+
+select cutToFirstSignificantSubdomainRFC('foo.there-is-no-such-domain');
+foo.there-is-no-such-domain
+select cutToFirstSignificantSubdomainRFC('bar.foo.there-is-no-such-domain');
+foo.there-is-no-such-domain
+select cutToFirstSignificantSubdomainCustomRFC('there-is-no-such-domain', 'public_suffix_list');
+
+select cutToFirstSignificantSubdomainCustomRFC('foo.there-is-no-such-domain', 'public_suffix_list');
+foo.there-is-no-such-domain
+select cutToFirstSignificantSubdomainCustomRFC('bar.foo.there-is-no-such-domain', 'public_suffix_list');
+foo.there-is-no-such-domain
+select firstSignificantSubdomainCustomRFC('bar.foo.there-is-no-such-domain', 'public_suffix_list');
+foo
+select '-- generic';
+-- generic
+select firstSignificantSubdomainCustomRFC('foo.kernel.biz.ss', 'public_suffix_list'); -- kernel
+kernel
+select cutToFirstSignificantSubdomainCustomRFC('foo.kernel.biz.ss', 'public_suffix_list'); -- kernel.biz.ss
+kernel.biz.ss
+select '-- difference';
+-- difference
+-- biz.ss is not in the default TLD list, hence:
+select cutToFirstSignificantSubdomainRFC('foo.kernel.biz.ss'); -- biz.ss
+biz.ss
+select cutToFirstSignificantSubdomainCustomRFC('foo.kernel.biz.ss', 'public_suffix_list'); -- kernel.biz.ss
+kernel.biz.ss
+select '-- 3+level';
+-- 3+level
+select cutToFirstSignificantSubdomainCustomRFC('xx.blogspot.co.at', 'public_suffix_list'); -- xx.blogspot.co.at
+xx.blogspot.co.at
+select firstSignificantSubdomainCustomRFC('xx.blogspot.co.at', 'public_suffix_list'); -- blogspot
+blogspot
+select cutToFirstSignificantSubdomainCustomRFC('foo.bar.xx.blogspot.co.at', 'public_suffix_list'); -- xx.blogspot.co.at
+xx.blogspot.co.at
+select firstSignificantSubdomainCustomRFC('foo.bar.xx.blogspot.co.at', 'public_suffix_list'); -- blogspot
+blogspot
+select '-- url';
+-- url
+select cutToFirstSignificantSubdomainCustomRFC('http://foobar.com', 'public_suffix_list');
+foobar.com
+select cutToFirstSignificantSubdomainCustomRFC('http://foobar.com/foo', 'public_suffix_list');
+foobar.com
+select cutToFirstSignificantSubdomainCustomRFC('http://bar.foobar.com/foo', 'public_suffix_list');
+foobar.com
+select cutToFirstSignificantSubdomainCustomRFC('http://xx.blogspot.co.at', 'public_suffix_list');
+xx.blogspot.co.at
+select '-- www';
+-- www
+select cutToFirstSignificantSubdomainCustomWithWWWRFC('http://www.foo', 'public_suffix_list');
+www.foo
+select cutToFirstSignificantSubdomainCustomRFC('http://www.foo', 'public_suffix_list');
+foo
+select '-- vector';
+-- vector
+select cutToFirstSignificantSubdomainCustomRFC('http://xx.blogspot.co.at/' || toString(number), 'public_suffix_list') from numbers(1);
+xx.blogspot.co.at
+select cutToFirstSignificantSubdomainCustomRFC('there-is-no-such-domain' || toString(number), 'public_suffix_list') from numbers(1);
+
+select '-- no new line';
+-- no new line
+select cutToFirstSignificantSubdomainCustomRFC('foo.bar', 'no_new_line_list');
+foo.bar
+select cutToFirstSignificantSubdomainCustomRFC('a.foo.bar', 'no_new_line_list');
+a.foo.bar
+select cutToFirstSignificantSubdomainCustomRFC('a.foo.baz', 'no_new_line_list');
+foo.baz
+select '-- asterisk';
+-- asterisk
+select cutToFirstSignificantSubdomainCustomRFC('foo.something.sheffield.sch.uk', 'public_suffix_list');
+something.sheffield.sch.uk
+select cutToFirstSignificantSubdomainCustomRFC('something.sheffield.sch.uk', 'public_suffix_list');
+something.sheffield.sch.uk
+select cutToFirstSignificantSubdomainCustomRFC('sheffield.sch.uk', 'public_suffix_list');
+sheffield.sch.uk
+select '-- exclamation mark';
+-- exclamation mark
+select cutToFirstSignificantSubdomainCustomRFC('foo.kawasaki.jp', 'public_suffix_list');
+foo.kawasaki.jp
+select cutToFirstSignificantSubdomainCustomRFC('foo.foo.kawasaki.jp', 'public_suffix_list');
+foo.foo.kawasaki.jp
+select cutToFirstSignificantSubdomainCustomRFC('city.kawasaki.jp', 'public_suffix_list');
+city.kawasaki.jp
+select cutToFirstSignificantSubdomainCustomRFC('some.city.kawasaki.jp', 'public_suffix_list');
+city.kawasaki.jp

@@ -23,7 +23,7 @@
 #include <Core/MySQL/Authentication.h>
 #include <Common/logger_useful.h>
 
-#include <Common/config_version.h>
+#include "config_version.h"
 
 #if USE_SSL
 #    include <Poco/Crypto/RSAKey.h>
@@ -63,8 +63,11 @@ static String showTableStatusReplacementQuery(const String & query);
 static String killConnectionIdReplacementQuery(const String & query);
 static String selectLimitReplacementQuery(const String & query);
 
-MySQLHandler::MySQLHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_,
-    bool ssl_enabled, size_t connection_id_)
+MySQLHandler::MySQLHandler(
+    IServer & server_,
+    TCPServer & tcp_server_,
+    const Poco::Net::StreamSocket & socket_,
+    bool ssl_enabled, uint32_t connection_id_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
     , tcp_server(tcp_server_)
@@ -120,7 +123,7 @@ void MySQLHandler::run()
             handshake_response.auth_plugin_name);
 
         if (!(client_capabilities & CLIENT_PROTOCOL_41))
-            throw Exception("Required capability: CLIENT_PROTOCOL_41.", ErrorCodes::MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES);
+            throw Exception(ErrorCodes::MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES, "Required capability: CLIENT_PROTOCOL_41.");
 
         authenticate(handshake_response.username, handshake_response.auth_plugin_name, handshake_response.auth_response);
 
@@ -178,7 +181,7 @@ void MySQLHandler::run()
                         comPing();
                         break;
                     default:
-                        throw Exception(Poco::format("Command %d is not implemented.", command), ErrorCodes::NOT_IMPLEMENTED);
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Command {} is not implemented.", command);
                 }
             }
             catch (const NetException & exc)
@@ -215,10 +218,10 @@ void MySQLHandler::finishHandshake(MySQLProtocol::ConnectionPhase::HandshakeResp
     auto read_bytes = [this, &buf, &pos, &packet_size](size_t count) -> void {
         while (pos < count)
         {
-            int ret = socket().receiveBytes(buf + pos, packet_size - pos);
+            int ret = socket().receiveBytes(buf + pos, static_cast<uint32_t>(packet_size - pos));
             if (ret == 0)
             {
-                throw Exception("Cannot read all data. Bytes read: " + std::to_string(pos) + ". Bytes expected: 3", ErrorCodes::CANNOT_READ_ALL_DATA);
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all data. Bytes read: {}. Bytes expected: 3", std::to_string(pos));
             }
             pos += ret;
         }
@@ -365,18 +368,26 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
 
 void MySQLHandler::authPluginSSL()
 {
-    throw Exception("ClickHouse was built without SSL support. Try specifying password using double SHA1 in users.xml.", ErrorCodes::SUPPORT_IS_DISABLED);
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "ClickHouse was built without SSL support. Try specifying password using double SHA1 in users.xml.");
 }
 
 void MySQLHandler::finishHandshakeSSL(
     [[maybe_unused]] size_t packet_size, [[maybe_unused]] char * buf, [[maybe_unused]] size_t pos,
     [[maybe_unused]] std::function<void(size_t)> read_bytes, [[maybe_unused]] MySQLProtocol::ConnectionPhase::HandshakeResponse & packet)
 {
-    throw Exception("Client requested SSL, while it is disabled.", ErrorCodes::SUPPORT_IS_DISABLED);
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Client requested SSL, while it is disabled.");
 }
 
 #if USE_SSL
-MySQLHandlerSSL::MySQLHandlerSSL(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool ssl_enabled, size_t connection_id_, RSA & public_key_, RSA & private_key_)
+MySQLHandlerSSL::MySQLHandlerSSL(
+    IServer & server_,
+    TCPServer & tcp_server_,
+    const Poco::Net::StreamSocket & socket_,
+    bool ssl_enabled,
+    uint32_t connection_id_,
+    RSA & public_key_,
+    RSA & private_key_)
     : MySQLHandler(server_, tcp_server_, socket_, ssl_enabled, connection_id_)
     , public_key(public_key_)
     , private_key(private_key_)

@@ -1,8 +1,8 @@
 position: 37
-label: 'External Dictionaries'
+label: 'Dictionaries'
 collapsible: true
 collapsed: true
 link:
   type: generated-index
-  title: External Dictionaries
+  title: Dictionaries
   slug: /en/sql-reference/dictionaries/external-dictionaries

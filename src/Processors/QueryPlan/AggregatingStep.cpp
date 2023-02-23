@@ -1,24 +1,37 @@
 #include <cassert>
 #include <cstddef>
 #include <memory>
-#include <Processors/QueryPlan/AggregatingStep.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Processors/Transforms/CopyTransform.h>
-#include <Processors/Transforms/AggregatingTransform.h>
-#include <Processors/Transforms/AggregatingInOrderTransform.h>
-#include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
-#include <Processors/Transforms/ExpressionTransform.h>
+#include <Columns/ColumnFixedString.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
+#include <IO/Operators.h>
+#include <Interpreters/Aggregator.h>
+#include <Interpreters/Context.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
-#include <Interpreters/Aggregator.h>
-#include <Functions/FunctionFactory.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Columns/ColumnFixedString.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeFixedString.h>
+#include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/Transforms/AggregatingInOrderTransform.h>
+#include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/Transforms/CopyTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/MemoryBoundMerging.h>
+#include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Common/JSONBuilder.h>
 
 namespace DB
 {
+
+static bool memoryBoundMergingWillBeUsed(
+    bool should_produce_results_in_order_of_bucket_number,
+    bool memory_bound_merging_of_aggregation_results_enabled,
+    SortDescription sort_description_for_merging)
+{
+    return should_produce_results_in_order_of_bucket_number && memory_bound_merging_of_aggregation_results_enabled && !sort_description_for_merging.empty();
+}
 
 static ITransformingStep::Traits getTraits(bool should_produce_results_in_order_of_bucket_number)
 {
@@ -26,7 +39,7 @@ static ITransformingStep::Traits getTraits(bool should_produce_results_in_order_
     {
         {
             .preserves_distinct_columns = false, /// Actually, we may check that distinct names are in aggregation keys
-            .returns_single_stream = should_produce_results_in_order_of_bucket_number, /// Actually, may also return single stream if should_produce_results_in_order_of_bucket_number = false
+            .returns_single_stream = should_produce_results_in_order_of_bucket_number,
             .preserves_number_of_streams = false,
             .preserves_sorting = false,
         },
@@ -67,9 +80,9 @@ Block generateOutputHeader(const Block & input_header, const Names & keys, bool 
 }
 
 
-static Block appendGroupingColumn(Block block, const Names & keys, const GroupingSetsParamsList & params, bool use_nulls)
+Block AggregatingStep::appendGroupingColumn(Block block, const Names & keys, bool has_grouping, bool use_nulls)
 {
-    if (params.empty())
+    if (!has_grouping)
         return block;
 
     return generateOutputHeader(block, keys, use_nulls);
@@ -86,11 +99,16 @@ AggregatingStep::AggregatingStep(
     size_t temporary_data_merge_threads_,
     bool storage_has_evenly_distributed_read_,
     bool group_by_use_nulls_,
-    InputOrderInfoPtr group_by_info_,
+    SortDescription sort_description_for_merging_,
     SortDescription group_by_sort_description_,
-    bool should_produce_results_in_order_of_bucket_number_)
+    bool should_produce_results_in_order_of_bucket_number_,
+    bool memory_bound_merging_of_aggregation_results_enabled_,
+    bool explicit_sorting_required_for_aggregation_in_order_)
     : ITransformingStep(
-        input_stream_, appendGroupingColumn(params_.getHeader(input_stream_.header, final_), params_.keys, grouping_sets_params_, group_by_use_nulls_), getTraits(should_produce_results_in_order_of_bucket_number_), false)
+        input_stream_,
+        appendGroupingColumn(params_.getHeader(input_stream_.header, final_), params_.keys, !grouping_sets_params_.empty(), group_by_use_nulls_),
+        getTraits(should_produce_results_in_order_of_bucket_number_),
+        false)
     , params(std::move(params_))
     , grouping_sets_params(std::move(grouping_sets_params_))
     , final(final_)
@@ -100,10 +118,33 @@ AggregatingStep::AggregatingStep(
     , temporary_data_merge_threads(temporary_data_merge_threads_)
     , storage_has_evenly_distributed_read(storage_has_evenly_distributed_read_)
     , group_by_use_nulls(group_by_use_nulls_)
-    , group_by_info(std::move(group_by_info_))
+    , sort_description_for_merging(std::move(sort_description_for_merging_))
     , group_by_sort_description(std::move(group_by_sort_description_))
     , should_produce_results_in_order_of_bucket_number(should_produce_results_in_order_of_bucket_number_)
+    , memory_bound_merging_of_aggregation_results_enabled(memory_bound_merging_of_aggregation_results_enabled_)
+    , explicit_sorting_required_for_aggregation_in_order(explicit_sorting_required_for_aggregation_in_order_)
 {
+    if (memoryBoundMergingWillBeUsed())
+    {
+        output_stream->sort_description = group_by_sort_description;
+        output_stream->sort_scope = DataStream::SortScope::Global;
+        output_stream->has_single_port = true;
+    }
+}
+
+void AggregatingStep::applyOrder(SortDescription sort_description_for_merging_, SortDescription group_by_sort_description_)
+{
+    sort_description_for_merging = std::move(sort_description_for_merging_);
+    group_by_sort_description = std::move(group_by_sort_description_);
+
+    if (memoryBoundMergingWillBeUsed())
+    {
+        output_stream->sort_description = group_by_sort_description;
+        output_stream->sort_scope = DataStream::SortScope::Global;
+        output_stream->has_single_port = true;
+    }
+
+    explicit_sorting_required_for_aggregation_in_order = false;
 }
 
 void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
@@ -116,7 +157,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     bool allow_to_use_two_level_group_by = pipeline.getNumStreams() > 1 || params.max_bytes_before_external_group_by != 0;
 
     /// optimize_aggregation_in_order
-    if (group_by_info)
+    if (!sort_description_for_merging.empty())
     {
         /// two-level aggregation is not supported anyway for in order aggregation.
         allow_to_use_two_level_group_by = false;
@@ -177,11 +218,13 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     transform_params->params.group_by_two_level_threshold_bytes,
                     transform_params->params.max_bytes_before_external_group_by,
                     transform_params->params.empty_result_for_aggregation_by_empty_set,
-                    transform_params->params.tmp_volume,
+                    transform_params->params.tmp_data_scope,
                     transform_params->params.max_threads,
                     transform_params->params.min_free_disk_space,
                     transform_params->params.compile_aggregate_expressions,
                     transform_params->params.min_count_to_compile_aggregate_expression,
+                    transform_params->params.max_block_size,
+                    transform_params->params.enable_prefetch,
                     /* only_merge */ false,
                     transform_params->params.stats_collecting_params};
                 auto transform_params_for_set = std::make_shared<AggregatingTransformParams>(src_header, std::move(params_for_set), final);
@@ -191,7 +234,15 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     auto many_data = std::make_shared<ManyAggregatedData>(streams);
                     for (size_t j = 0; j < streams; ++j)
                     {
-                        auto aggregation_for_set = std::make_shared<AggregatingTransform>(input_header, transform_params_for_set, many_data, j, merge_threads, temporary_data_merge_threads);
+                        auto aggregation_for_set = std::make_shared<AggregatingTransform>(
+                            input_header,
+                            transform_params_for_set,
+                            many_data,
+                            j,
+                            merge_threads,
+                            temporary_data_merge_threads,
+                            should_produce_results_in_order_of_bucket_number,
+                            skip_merging);
                         // For each input stream we have `grouping_sets_size` copies, so port index
                         // for transform #j should skip ports of first (j-1) streams.
                         connect(*ports[i + grouping_sets_size * j], aggregation_for_set->getInputs().front());
@@ -239,44 +290,47 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
                 /// Here we create a DAG which fills missing keys and adds `__grouping_set` column
                 auto dag = std::make_shared<ActionsDAG>(header.getColumnsWithTypeAndName());
-                ActionsDAG::NodeRawConstPtrs index;
-                index.reserve(output_header.columns() + 1);
+                ActionsDAG::NodeRawConstPtrs outputs;
+                outputs.reserve(output_header.columns() + 1);
 
                 auto grouping_col = ColumnConst::create(ColumnUInt64::create(1, set_counter), 0);
                 const auto * grouping_node = &dag->addColumn(
                     {ColumnPtr(std::move(grouping_col)), std::make_shared<DataTypeUInt64>(), "__grouping_set"});
 
                 grouping_node = &dag->materializeNode(*grouping_node);
-                index.push_back(grouping_node);
+                outputs.push_back(grouping_node);
 
                 const auto & missing_columns = grouping_sets_params[set_counter].missing_keys;
+                const auto & used_keys = grouping_sets_params[set_counter].used_keys;
 
                 auto to_nullable_function = FunctionFactory::instance().get("toNullable", nullptr);
                 for (size_t i = 0; i < output_header.columns(); ++i)
                 {
                     auto & col = output_header.getByPosition(i);
-                    const auto it = std::find_if(
+                    const auto missing_it = std::find_if(
                         missing_columns.begin(), missing_columns.end(), [&](const auto & missing_col) { return missing_col == col.name; });
-                    if (it != missing_columns.end())
+                    const auto used_it = std::find_if(
+                        used_keys.begin(), used_keys.end(), [&](const auto & used_col) { return used_col == col.name; });
+                    if (missing_it != missing_columns.end())
                     {
                         auto column_with_default = col.column->cloneEmpty();
                         col.type->insertDefaultInto(*column_with_default);
                         auto column = ColumnConst::create(std::move(column_with_default), 0);
                         const auto * node = &dag->addColumn({ColumnPtr(std::move(column)), col.type, col.name});
                         node = &dag->materializeNode(*node);
-                        index.push_back(node);
+                        outputs.push_back(node);
                     }
                     else
                     {
-                        const auto * column_node = dag->getIndex()[header.getPositionByName(col.name)];
-                        if (group_by_use_nulls && column_node->result_type->canBeInsideNullable())
-                            index.push_back(&dag->addFunction(to_nullable_function, { column_node }, col.name));
+                        const auto * column_node = dag->getOutputs()[header.getPositionByName(col.name)];
+                        if (used_it != used_keys.end() && group_by_use_nulls && column_node->result_type->canBeInsideNullable())
+                            outputs.push_back(&dag->addFunction(to_nullable_function, { column_node }, col.name));
                         else
-                            index.push_back(column_node);
+                            outputs.push_back(column_node);
                     }
                 }
 
-                dag->getIndex().swap(index);
+                dag->getOutputs().swap(outputs);
                 auto expression = std::make_shared<ExpressionActions>(dag, settings.getActionsSettings());
                 auto transform = std::make_shared<ExpressionTransform>(header, expression);
 
@@ -291,8 +345,17 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         return;
     }
 
-    if (group_by_info)
+    if (!sort_description_for_merging.empty())
     {
+        /// We don't rely here on input_stream.sort_description because it is not correctly propagated for now in all cases
+        /// see https://github.com/ClickHouse/ClickHouse/pull/45892#discussion_r1094503048
+        if (explicit_sorting_required_for_aggregation_in_order)
+        {
+            /// We don't really care about optimality of this sorting, because it's required only in fairly marginal cases.
+            SortingStep::fullSortStreams(
+                pipeline, SortingStep::Settings(params.max_block_size), sort_description_for_merging, 0 /* limit */);
+        }
+
         if (pipeline.getNumStreams() > 1)
         {
             /** The pipeline is the following:
@@ -311,10 +374,19 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 /// So, we reduce 'max_bytes' value for aggregation in 'merge_threads' times.
                 return std::make_shared<AggregatingInOrderTransform>(
                     header, transform_params,
-                    group_by_info, group_by_sort_description,
+                    sort_description_for_merging, group_by_sort_description,
                     max_block_size, aggregation_in_order_max_block_bytes / merge_threads,
                     many_data, counter++);
             });
+
+            if (skip_merging)
+            {
+                pipeline.addSimpleTransform([&](const Block & header)
+                                            { return std::make_shared<FinalizeAggregatedTransform>(header, transform_params); });
+                pipeline.resize(params.max_threads);
+                aggregating_in_order = collector.detachProcessors(0);
+                return;
+            }
 
             aggregating_in_order = collector.detachProcessors(0);
 
@@ -331,10 +403,16 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             /// Do merge of aggregated data in parallel.
             pipeline.resize(merge_threads);
 
-            pipeline.addSimpleTransform([&](const Block &)
+            const auto & required_sort_description = memoryBoundMergingWillBeUsed() ? group_by_sort_description : SortDescription{};
+            pipeline.addSimpleTransform(
+                [&](const Block &)
+                { return std::make_shared<MergingAggregatedBucketTransform>(transform_params, required_sort_description); });
+
+            if (memoryBoundMergingWillBeUsed())
             {
-                return std::make_shared<MergingAggregatedBucketTransform>(transform_params);
-            });
+                pipeline.addTransform(
+                    std::make_shared<SortingAggregatedForMemoryBoundMergingTransform>(pipeline.getHeader(), pipeline.getNumStreams()));
+            }
 
             aggregating_sorted = collector.detachProcessors(1);
         }
@@ -344,7 +422,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             {
                 return std::make_shared<AggregatingInOrderTransform>(
                     header, transform_params,
-                    group_by_info, group_by_sort_description,
+                    sort_description_for_merging, group_by_sort_description,
                     max_block_size, aggregation_in_order_max_block_bytes);
             });
 
@@ -364,28 +442,36 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     if (pipeline.getNumStreams() > 1)
     {
         /// Add resize transform to uniformly distribute data between aggregating streams.
-        if (!storage_has_evenly_distributed_read)
+        /// But not if we execute aggregation over partitioned data in which case data streams shouldn't be mixed.
+        if (!storage_has_evenly_distributed_read && !skip_merging)
             pipeline.resize(pipeline.getNumStreams(), true, true);
 
         auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams());
 
         size_t counter = 0;
-        pipeline.addSimpleTransform([&](const Block & header)
-        {
-            return std::make_shared<AggregatingTransform>(header, transform_params, many_data, counter++, merge_threads, temporary_data_merge_threads);
-        });
+        pipeline.addSimpleTransform(
+            [&](const Block & header)
+            {
+                return std::make_shared<AggregatingTransform>(
+                    header,
+                    transform_params,
+                    many_data,
+                    counter++,
+                    merge_threads,
+                    temporary_data_merge_threads,
+                    should_produce_results_in_order_of_bucket_number,
+                    skip_merging);
+            });
 
-        /// We add the explicit resize here, but not in case of aggregating in order, since AIO don't use two-level hash tables and thus returns only buckets with bucket_number = -1.
-        pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : pipeline.getNumStreams(), true /* force */);
+        pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : params.max_threads, true /* force */);
 
         aggregating = collector.detachProcessors(0);
     }
     else
     {
-        pipeline.addSimpleTransform([&](const Block & header)
-        {
-            return std::make_shared<AggregatingTransform>(header, transform_params);
-        });
+        pipeline.addSimpleTransform([&](const Block & header) { return std::make_shared<AggregatingTransform>(header, transform_params); });
+
+        pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : params.max_threads, false /* force */);
 
         aggregating = collector.detachProcessors(0);
     }
@@ -394,11 +480,20 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 void AggregatingStep::describeActions(FormatSettings & settings) const
 {
     params.explain(settings.out, settings.offset);
+    String prefix(settings.offset, settings.indent_char);
+    if (!sort_description_for_merging.empty())
+    {
+        settings.out << prefix << "Order: " << dumpSortDescription(sort_description_for_merging) << '\n';
+    }
+    settings.out << prefix << "Skip merging: " << skip_merging << '\n';
 }
 
 void AggregatingStep::describeActions(JSONBuilder::JSONMap & map) const
 {
     params.explain(map);
+    if (!sort_description_for_merging.empty())
+        map.add("Order", dumpSortDescription(sort_description_for_merging));
+    map.add("Skip merging", skip_merging);
 }
 
 void AggregatingStep::describePipeline(FormatSettings & settings) const
@@ -418,8 +513,14 @@ void AggregatingStep::updateOutputStream()
 {
     output_stream = createOutputStream(
         input_streams.front(),
-        appendGroupingColumn(params.getHeader(input_streams.front().header, final), params.keys, grouping_sets_params, group_by_use_nulls),
+        appendGroupingColumn(params.getHeader(input_streams.front().header, final), params.keys, !grouping_sets_params.empty(), group_by_use_nulls),
         getDataStreamTraits());
+}
+
+bool AggregatingStep::memoryBoundMergingWillBeUsed() const
+{
+    return DB::memoryBoundMergingWillBeUsed(
+        should_produce_results_in_order_of_bucket_number, memory_bound_merging_of_aggregation_results_enabled, sort_description_for_merging);
 }
 
 }

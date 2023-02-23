@@ -46,6 +46,10 @@ std::string toContentEncodingName(CompressionMethod method);
   */
 CompressionMethod chooseCompressionMethod(const std::string & path, const std::string & hint);
 
+/** Choose a compression method from HTTP header list of supported compression methods.
+  */
+CompressionMethod chooseHTTPCompressionMethod(const std::string & list);
+
 /// Get a range of the valid compression levels for the compression method.
 std::pair<uint64_t, uint64_t> getCompressionLevelRange(const CompressionMethod & method);
 

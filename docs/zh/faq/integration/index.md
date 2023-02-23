@@ -1,4 +1,5 @@
 ---
+slug: /zh/faq/integration/
 title: 关于集成ClickHouse和其他系统的问题
 toc_hidden_folder: true
 sidebar_position: 4

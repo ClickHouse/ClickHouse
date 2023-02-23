@@ -31,6 +31,7 @@ sudo -H pip install \
     kafka-python \
     kazoo \
     minio \
+    lz4 \
     protobuf \
     psycopg2-binary \
     pymongo \
@@ -147,7 +148,7 @@ will automagically detect the types of variables and only the small diff of two 
 
 ### Troubleshooting
 
-If tests failing for misterious reasons, this may help:
+If tests failing for mysterious reasons, this may help:
 
 ```
 sudo service docker stop

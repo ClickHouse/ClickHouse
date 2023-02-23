@@ -58,11 +58,82 @@ using SettingFieldInt64 = SettingFieldNumber<Int64>;
 using SettingFieldFloat = SettingFieldNumber<float>;
 using SettingFieldBool = SettingFieldNumber<bool>;
 
-
-/** Unlike SettingFieldUInt64, supports the value of 'auto' - the number of processor cores without taking into account SMT.
-  * A value of 0 is also treated as auto.
-  * When serializing, `auto` is written in the same way as 0.
+/** Wraps any SettingField to support special value 'auto' that can be checked with `is_auto` flag.
+  * Note about serialization:
+  * The new versions with `SettingsWriteFormat::STRINGS_WITH_FLAGS` serialize values as a string.
+  * In legacy SettingsWriteFormat mode, functions `read/writeBinary` would serialize values as a binary, and 'is_auto' would be ignored.
+  * It's possible to upgrade settings from regular type to wrapped ones and keep compatibility with old versions,
+  * but when serializing 'auto' old version will see binary representation of the default value.
   */
+template <typename Base>
+struct SettingAutoWrapper
+{
+    constexpr static auto keyword = "auto";
+    static bool isAuto(const Field & f) { return f.getType() == Field::Types::String && f.safeGet<const String &>() == keyword; }
+    static bool isAuto(const String & str) { return str == keyword; }
+
+    using Type = typename Base::Type;
+
+    Base base;
+    bool is_auto = false;
+    bool changed = false;
+
+    explicit SettingAutoWrapper() : is_auto(true) {}
+    explicit SettingAutoWrapper(Type val) : is_auto(false) { base = Base(val); }
+
+    explicit SettingAutoWrapper(const Field & f)
+        : is_auto(isAuto(f))
+    {
+        if (!is_auto)
+            base = Base(f);
+    }
+
+    SettingAutoWrapper & operator=(const Field & f)
+    {
+        changed = true;
+        if (is_auto = isAuto(f); !is_auto)
+            base = f;
+        return *this;
+    }
+
+    explicit operator Field() const { return is_auto ? Field(keyword) : Field(base); }
+
+    String toString() const { return is_auto ? keyword : base.toString(); }
+
+    void parseFromString(const String & str)
+    {
+        changed = true;
+        if (is_auto = isAuto(str); !is_auto)
+            base.parseFromString(str);
+    }
+
+    void writeBinary(WriteBuffer & out) const
+    {
+        if (is_auto)
+            Base().writeBinary(out); /// serialize default value
+        else
+            base.writeBinary(out);
+    }
+
+    /*
+     * That it is fine to reset `is_auto` here and to use default value in case `is_auto`
+     * because settings will be serialized only if changed.
+     * If they were changed they were requested to use explicit value instead of `auto`.
+     * And so interactions between client-server, and server-server (distributed queries), should be OK.
+     */
+    void readBinary(ReadBuffer & in) { changed = true; is_auto = false; base.readBinary(in); }
+
+    Type valueOr(Type default_value) const { return is_auto ? default_value : base.value; }
+};
+
+using SettingFieldUInt64Auto = SettingAutoWrapper<SettingFieldUInt64>;
+using SettingFieldInt64Auto = SettingAutoWrapper<SettingFieldInt64>;
+using SettingFieldFloatAuto = SettingAutoWrapper<SettingFieldFloat>;
+
+/* Similar to SettingFieldUInt64Auto with small differences to behave like regular UInt64, supported to compatibility.
+ * When setting to 'auto' it becomes equal to  the number of processor cores without taking into account SMT.
+ * A value of 0 is also treated as 'auto', so 'auto' is parsed and serialized in the same way as 0.
+ */
 struct SettingFieldMaxThreads
 {
     bool is_auto;
@@ -168,8 +239,6 @@ struct SettingFieldString
     void readBinary(ReadBuffer & in);
 };
 
-#ifndef KEEPER_STANDALONE_BUILD
-
 struct SettingFieldMap
 {
 public:
@@ -192,8 +261,6 @@ public:
     void writeBinary(WriteBuffer & out) const;
     void readBinary(ReadBuffer & in);
 };
-
-#endif
 
 struct SettingFieldChar
 {
@@ -331,7 +398,7 @@ void SettingFieldEnum<EnumT, Traits>::readBinary(ReadBuffer & in)
         auto it = map.find(value); \
         if (it != map.end()) \
             return it->second; \
-        throw Exception( \
+        throw Exception::createDeprecated( \
             "Unexpected value of " #NEW_NAME ":" + std::to_string(std::underlying_type<EnumType>::type(value)), \
             ERROR_CODE_FOR_UNEXPECTED_NAME); \
     } \
@@ -357,7 +424,7 @@ void SettingFieldEnum<EnumT, Traits>::readBinary(ReadBuffer & in)
             msg += "'" + String{name} + "'"; \
         } \
         msg += "]"; \
-        throw Exception(msg, ERROR_CODE_FOR_UNEXPECTED_NAME); \
+        throw Exception::createDeprecated(msg, ERROR_CODE_FOR_UNEXPECTED_NAME); \
     }
 
 // Mostly like SettingFieldEnum, but can have multiple enum values (or none) set at once.

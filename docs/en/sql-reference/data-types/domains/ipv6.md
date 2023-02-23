@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/data-types/domains/ipv6
 sidebar_position: 60
 sidebar_label: IPv6
 ---
@@ -80,5 +81,3 @@ SELECT toTypeName(i), CAST(from as FixedString(16)) as i FROM hits LIMIT 1;
 │ FixedString(16)                           │  ��� │
 └───────────────────────────────────────────┴─────────┘
 ```
-
-[Original article](https://clickhouse.com/docs/en/data_types/domains/ipv6) <!--hide-->

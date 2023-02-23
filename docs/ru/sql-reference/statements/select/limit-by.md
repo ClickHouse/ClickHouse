@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/statements/select/limit-by
 sidebar_label: LIMIT BY
 ---
 

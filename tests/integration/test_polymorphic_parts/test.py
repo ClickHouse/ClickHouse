@@ -728,7 +728,7 @@ def test_polymorphic_parts_index(start_cluster):
         """
         CREATE TABLE test_index.index_compact(a UInt32, s String)
         ENGINE = MergeTree ORDER BY a
-        SETTINGS min_rows_for_wide_part = 1000, index_granularity = 128, merge_max_block_size = 100"""
+        SETTINGS min_rows_for_wide_part = 1000, index_granularity = 128, merge_max_block_size = 100, compress_marks=false, compress_primary_key=false"""
     )
 
     node1.query(

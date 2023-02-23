@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout
 machine_translated: true
 machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 sidebar_position: 41
@@ -398,5 +399,3 @@ dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
 还不支持其他类型。 该函数返回与此IP地址对应的前缀的属性。 如果有重叠的前缀，则返回最具体的前缀。
 
 数据存储在一个 `trie`. 它必须完全适合RAM。
-
-[原始文章](https://clickhouse.com/docs/en/query_language/dicts/external_dicts_dict_layout/) <!--hide-->

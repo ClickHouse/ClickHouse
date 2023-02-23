@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/functions/arithmetic-functions
 sidebar_position: 35
 sidebar_label: 算术函数
 ---
@@ -54,7 +55,7 @@ SELECT toTypeName(0), toTypeName(0 + 0), toTypeName(0 + 0 + 0), toTypeName(0 + 0
 ## modulo(a, b), a % b operator {#modulo}
 
 计算除法后的余数。
-如果参数是浮点数，则通过删除小数部分将它们预转换为整数。
+如果两个输入都是整数，结果类型是整数。如果其中一个输入是浮点数，则结果是浮点数。
 其余部分与C++中的含义相同。截断除法用于负数。
 除以零或将最小负数除以-1时抛出异常。
 
@@ -153,5 +154,3 @@ SELECT min2(-1, 2);
 │          -1 │
 └─────────────┘
 ```
-
-[来源文章](https://clickhouse.com/docs/en/query_language/functions/arithmetic_functions/) <!--hide-->

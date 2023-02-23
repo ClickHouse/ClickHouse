@@ -1,9 +1,13 @@
 ---
+slug: /en/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure
 sidebar_position: 44
 sidebar_label: Dictionary Key and Fields
 ---
+import CloudDetails from '@site/docs/en/sql-reference/dictionaries/external-dictionaries/_snippet_dictionary_in_cloud.md';
 
 # Dictionary Key and Fields
+
+<CloudDetails />
 
 The `structure` clause describes the dictionary key and fields available for queries.
 
@@ -170,5 +174,8 @@ Configuration fields:
 
 **See Also**
 
--   [Functions for working with external dictionaries](../../../sql-reference/functions/ext-dict-functions.md).
+-   [Functions for working with dictionaries](../../../sql-reference/functions/ext-dict-functions.md).
 
+## Related Content
+
+- [Using dictionaries to accelerate queries](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)

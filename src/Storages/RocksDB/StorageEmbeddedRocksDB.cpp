@@ -1,32 +1,25 @@
+#include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/RocksDB/StorageEmbeddedRocksDB.h>
 #include <Storages/RocksDB/EmbeddedRocksDBSink.h>
+#include <Storages/MutationCommands.h>
 
 #include <DataTypes/DataTypesNumber.h>
 
-#include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/KVStorageUtils.h>
 
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTSubquery.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTCreateQuery.h>
 
-#include <IO/WriteBufferFromString.h>
-#include <IO/ReadBufferFromString.h>
-
 #include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/ISource.h>
 
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/Set.h>
-#include <Interpreters/PreparedSets.h>
 #include <Interpreters/TreeRewriter.h>
-#include <Interpreters/convertFieldToType.h>
-#include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/MutationsInterpreter.h>
+
+#include <Processors/Executors/PullingPipelineExecutor.h>
 
 #include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -34,13 +27,13 @@
 #include <Common/Exception.h>
 #include <base/sort.h>
 
-#include <rocksdb/db.h>
 #include <rocksdb/table.h>
 #include <rocksdb/convenience.h>
+#include <rocksdb/utilities/db_ttl.h>
 
 #include <cstddef>
 #include <filesystem>
-#include <shared_mutex>
+#include <utility>
 
 
 namespace fs = std::filesystem;
@@ -73,177 +66,6 @@ static RocksDBOptions getOptionsFromConfig(const Poco::Util::AbstractConfigurati
     }
 
     return options;
-}
-
-// returns keys may be filter by condition
-static bool traverseASTFilter(
-    const String & primary_key, const DataTypePtr & primary_key_type, const ASTPtr & elem, const PreparedSets & sets, const ContextPtr & context, FieldVectorPtr & res)
-{
-    const auto * function = elem->as<ASTFunction>();
-    if (!function)
-        return false;
-
-    if (function->name == "and")
-    {
-        // one child has the key filter condition is ok
-        for (const auto & child : function->arguments->children)
-            if (traverseASTFilter(primary_key, primary_key_type, child, sets, context, res))
-                return true;
-        return false;
-    }
-    else if (function->name == "or")
-    {
-        // make sure every child has the key filter condition
-        for (const auto & child : function->arguments->children)
-            if (!traverseASTFilter(primary_key, primary_key_type, child, sets, context, res))
-                return false;
-        return true;
-    }
-    else if (function->name == "equals" || function->name == "in")
-    {
-        const auto & args = function->arguments->as<ASTExpressionList &>();
-        const ASTIdentifier * ident;
-        std::shared_ptr<IAST> value;
-
-        if (args.children.size() != 2)
-            return false;
-
-        if (function->name == "in")
-        {
-            ident = args.children.at(0)->as<ASTIdentifier>();
-            if (!ident)
-                return false;
-
-            if (ident->name() != primary_key)
-                return false;
-            value = args.children.at(1);
-
-            PreparedSetKey set_key;
-            if ((value->as<ASTSubquery>() || value->as<ASTIdentifier>()))
-                set_key = PreparedSetKey::forSubquery(*value);
-            else
-                set_key = PreparedSetKey::forLiteral(*value, {primary_key_type});
-
-            auto set_it = sets.find(set_key);
-            if (set_it == sets.end())
-                return false;
-            SetPtr prepared_set = set_it->second;
-
-            if (!prepared_set->hasExplicitSetElements())
-                return false;
-
-            prepared_set->checkColumnsNumber(1);
-            const auto & set_column = *prepared_set->getSetElements()[0];
-            for (size_t row = 0; row < set_column.size(); ++row)
-                res->push_back(set_column[row]);
-            return true;
-        }
-        else
-        {
-            if ((ident = args.children.at(0)->as<ASTIdentifier>()))
-                value = args.children.at(1);
-            else if ((ident = args.children.at(1)->as<ASTIdentifier>()))
-                value = args.children.at(0);
-            else
-                return false;
-
-            if (ident->name() != primary_key)
-                return false;
-
-            const auto node = evaluateConstantExpressionAsLiteral(value, context);
-            /// function->name == "equals"
-            if (const auto * literal = node->as<ASTLiteral>())
-            {
-                auto converted_field = convertFieldToType(literal->value, *primary_key_type);
-                if (!converted_field.isNull())
-                    res->push_back(converted_field);
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
-/** Retrieve from the query a condition of the form `key = 'key'`, `key in ('xxx_'), from conjunctions in the WHERE clause.
-  * TODO support key like search
-  */
-static std::pair<FieldVectorPtr, bool> getFilterKeys(
-    const String & primary_key, const DataTypePtr & primary_key_type, const SelectQueryInfo & query_info, const ContextPtr & context)
-{
-    const auto & select = query_info.query->as<ASTSelectQuery &>();
-    if (!select.where())
-        return {{}, true};
-
-    FieldVectorPtr res = std::make_shared<FieldVector>();
-    auto matched_keys = traverseASTFilter(primary_key, primary_key_type, select.where(), query_info.sets, context, res);
-    return std::make_pair(res, !matched_keys);
-}
-
-template <typename K, typename V>
-static void fillColumns(const K & key, const V & value, size_t key_pos, const Block & header, MutableColumns & columns)
-{
-    ReadBufferFromString key_buffer(key);
-    ReadBufferFromString value_buffer(value);
-    for (size_t i = 0; i < header.columns(); ++i)
-    {
-        const auto & serialization = header.getByPosition(i).type->getDefaultSerialization();
-        serialization->deserializeBinary(*columns[i], i == key_pos ? key_buffer : value_buffer);
-    }
-}
-
-static std::vector<std::string> serializeKeysToRawString(
-    FieldVector::const_iterator & it,
-    FieldVector::const_iterator end,
-    DataTypePtr key_column_type,
-    size_t max_block_size)
-{
-    size_t num_keys = end - it;
-
-    std::vector<std::string> result;
-    result.reserve(num_keys);
-
-    size_t rows_processed = 0;
-    while (it < end && (max_block_size == 0 || rows_processed < max_block_size))
-    {
-        std::string & serialized_key = result.emplace_back();
-        WriteBufferFromString wb(serialized_key);
-        key_column_type->getDefaultSerialization()->serializeBinary(*it, wb);
-        wb.finalize();
-
-        ++it;
-        ++rows_processed;
-    }
-    return result;
-}
-
-static std::vector<std::string> serializeKeysToRawString(const ColumnWithTypeAndName & keys)
-{
-    if (!keys.column)
-        return {};
-
-    size_t num_keys = keys.column->size();
-    std::vector<std::string> result;
-    result.reserve(num_keys);
-
-    for (size_t i = 0; i < num_keys; ++i)
-    {
-        std::string & serialized_key = result.emplace_back();
-        WriteBufferFromString wb(serialized_key);
-        Field field;
-        keys.column->get(i, field);
-        /// TODO(@vdimir): use serializeBinaryBulk
-        keys.type->getDefaultSerialization()->serializeBinary(field, wb);
-        wb.finalize();
-    }
-    return result;
-}
-
-/// In current implementation rocks db can have key with only one column.
-static size_t getPrimaryKeyPos(const Block & header, const Names & primary_key)
-{
-    if (primary_key.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "RocksDB: only one primary key is supported");
-    return header.getPositionByName(primary_key[0]);
 }
 
 class EmbeddedRocksDBSource : public ISource
@@ -318,8 +140,8 @@ public:
 
         if (!iterator->status().ok())
         {
-            throw Exception("Engine " + getName() + " got error while seeking key value data: " + iterator->status().ToString(),
-                ErrorCodes::ROCKSDB_ERROR);
+            throw Exception(ErrorCodes::ROCKSDB_ERROR, "Engine {} got error while seeking key value data: {}",
+                getName(), iterator->status().ToString());
         }
         Block block = sample_block.cloneWithColumns(std::move(columns));
         return Chunk(block.getColumns(), block.rows());
@@ -348,13 +170,22 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(const StorageID & table_id_,
         const StorageInMemoryMetadata & metadata_,
         bool attach,
         ContextPtr context_,
-        const String & primary_key_)
-    : IKeyValueStorage(table_id_)
+        const String & primary_key_,
+        Int32 ttl_,
+        String rocksdb_dir_,
+        bool read_only_)
+    : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , primary_key{primary_key_}
+    , rocksdb_dir(std::move(rocksdb_dir_))
+    , ttl(ttl_)
+    , read_only(read_only_)
 {
     setInMemoryMetadata(metadata_);
-    rocksdb_dir = context_->getPath() + relative_data_path_;
+    if (rocksdb_dir.empty())
+    {
+        rocksdb_dir = context_->getPath() + relative_data_path_;
+    }
     if (!attach)
     {
         fs::create_directories(rocksdb_dir);
@@ -373,11 +204,98 @@ void StorageEmbeddedRocksDB::truncate(const ASTPtr &, const StorageMetadataPtr &
     initDB();
 }
 
+void StorageEmbeddedRocksDB::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
+{
+    if (commands.empty())
+        return;
+
+    if (commands.size() > 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutations cannot be combined for EmbeddedRocksDB");
+
+    const auto command_type = commands.front().type;
+    if (command_type != MutationCommand::Type::UPDATE && command_type != MutationCommand::Type::DELETE)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only DELETE and UPDATE mutation supported for EmbeddedRocksDB");
+}
+
+void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPtr context_)
+{
+    if (commands.empty())
+        return;
+
+    assert(commands.size() == 1);
+
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto storage = getStorageID();
+    auto storage_ptr = DatabaseCatalog::instance().getTable(storage, context_);
+
+    if (commands.front().type == MutationCommand::Type::DELETE)
+    {
+        auto interpreter = std::make_unique<MutationsInterpreter>(
+            storage_ptr,
+            metadata_snapshot,
+            commands,
+            context_,
+            /*can_execute_*/ true,
+            /*return_all_columns_*/ true,
+            /*return_deleted_rows_*/ true);
+        auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
+        PullingPipelineExecutor executor(pipeline);
+
+        auto sink = std::make_shared<EmbeddedRocksDBSink>(*this, metadata_snapshot);
+
+        auto header = interpreter->getUpdatedHeader();
+        auto primary_key_pos = header.getPositionByName(primary_key);
+
+        Block block;
+        while (executor.pull(block))
+        {
+            auto & column_type_name = block.getByPosition(primary_key_pos);
+
+            auto column = column_type_name.column;
+            auto size = column->size();
+
+            rocksdb::WriteBatch batch;
+            WriteBufferFromOwnString wb_key;
+            for (size_t i = 0; i < size; ++i)
+            {
+                wb_key.restart();
+
+                column_type_name.type->getDefaultSerialization()->serializeBinary(*column, i, wb_key, {});
+                auto status = batch.Delete(wb_key.str());
+                if (!status.ok())
+                    throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
+            }
+
+            auto status = rocksdb_ptr->Write(rocksdb::WriteOptions(), &batch);
+            if (!status.ok())
+                throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
+        }
+
+        return;
+    }
+
+    assert(commands.front().type == MutationCommand::Type::UPDATE);
+    if (commands.front().column_to_update_expression.contains(primary_key))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key cannot be updated");
+
+    auto interpreter = std::make_unique<MutationsInterpreter>(
+        storage_ptr, metadata_snapshot, commands, context_, /*can_execute_*/ true, /*return_all_columns*/ true);
+    auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
+    PullingPipelineExecutor executor(pipeline);
+
+    auto sink = std::make_shared<EmbeddedRocksDBSink>(*this, metadata_snapshot);
+
+    Block block;
+    while (executor.pull(block))
+    {
+        sink->consume(Chunk{block.getColumns(), block.rows()});
+    }
+}
+
 void StorageEmbeddedRocksDB::initDB()
 {
     rocksdb::Status status;
     rocksdb::Options base;
-    rocksdb::DB * db;
 
     base.create_if_missing = true;
     base.compression = rocksdb::CompressionType::kZSTD;
@@ -448,15 +366,35 @@ void StorageEmbeddedRocksDB::initDB()
         }
     }
 
-    status = rocksdb::DB::Open(merged, rocksdb_dir, &db);
-
-    if (!status.ok())
+    if (ttl > 0)
     {
-        throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to open rocksdb path at: {}: {}",
-            rocksdb_dir, status.ToString());
+        rocksdb::DBWithTTL * db;
+        status = rocksdb::DBWithTTL::Open(merged, rocksdb_dir, &db, ttl, read_only);
+        if (!status.ok())
+        {
+            throw Exception(ErrorCodes::ROCKSDB_ERROR, "Failed to open rocksdb path at: {}: {}",
+                rocksdb_dir, status.ToString());
+        }
+        rocksdb_ptr = std::unique_ptr<rocksdb::DBWithTTL>(db);
     }
-    /// It's ok just to wrap db with unique_ptr, from rdb documentation: "when you are done with a database, just delete the database object"
-    rocksdb_ptr = std::unique_ptr<rocksdb::DB>(db);
+    else
+    {
+        rocksdb::DB * db;
+        if (read_only)
+        {
+            status = rocksdb::DB::OpenForReadOnly(merged, rocksdb_dir, &db);
+        }
+        else
+        {
+            status = rocksdb::DB::Open(merged, rocksdb_dir, &db);
+        }
+        if (!status.ok())
+        {
+            throw Exception(ErrorCodes::ROCKSDB_ERROR, "Failed to open rocksdb path at: {}: {}",
+                rocksdb_dir, status.ToString());
+        }
+        rocksdb_ptr = std::unique_ptr<rocksdb::DB>(db);
+    }
 }
 
 Pipe StorageEmbeddedRocksDB::read(
@@ -466,7 +404,7 @@ Pipe StorageEmbeddedRocksDB::read(
         ContextPtr context_,
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t max_block_size,
-        unsigned num_streams)
+        size_t num_streams)
 {
     storage_snapshot->check(column_names);
 
@@ -519,30 +457,44 @@ SinkToStoragePtr StorageEmbeddedRocksDB::write(
 static StoragePtr create(const StorageFactory::Arguments & args)
 {
     // TODO custom RocksDBSettings, table function
-    if (!args.engine_args.empty())
-        throw Exception(
-            "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    auto engine_args = args.engine_args;
+    if (engine_args.size() > 3)
+    {
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "Engine {} requires at most 3 parameters. "
+                        "({} given). Correct usage: EmbeddedRocksDB([ttl, rocksdb_dir, read_only])",
+                        args.engine_name, engine_args.size());
+    }
+
+    Int32 ttl{0};
+    String rocksdb_dir;
+    bool read_only{false};
+    if (!engine_args.empty())
+        ttl = static_cast<Int32>(checkAndGetLiteralArgument<UInt64>(engine_args[0], "ttl"));
+    if (engine_args.size() > 1)
+        rocksdb_dir = checkAndGetLiteralArgument<String>(engine_args[1], "rocksdb_dir");
+    if (engine_args.size() > 2)
+        read_only = checkAndGetLiteralArgument<bool>(engine_args[2], "read_only");
 
     StorageInMemoryMetadata metadata;
     metadata.setColumns(args.columns);
     metadata.setConstraints(args.constraints);
 
     if (!args.storage_def->primary_key)
-        throw Exception("StorageEmbeddedRocksDB must require one column in primary key", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageEmbeddedRocksDB must require one column in primary key");
 
     metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.getContext());
     auto primary_key_names = metadata.getColumnsRequiredForPrimaryKey();
     if (primary_key_names.size() != 1)
     {
-        throw Exception("StorageEmbeddedRocksDB must require one column in primary key", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageEmbeddedRocksDB must require one column in primary key");
     }
-    return std::make_shared<StorageEmbeddedRocksDB>(args.table_id, args.relative_data_path, metadata, args.attach, args.getContext(), primary_key_names[0]);
+    return std::make_shared<StorageEmbeddedRocksDB>(args.table_id, args.relative_data_path, metadata, args.attach, args.getContext(), primary_key_names[0], ttl, std::move(rocksdb_dir), read_only);
 }
 
 std::shared_ptr<rocksdb::Statistics> StorageEmbeddedRocksDB::getRocksDBStatistics() const
 {
-    std::shared_lock<std::shared_mutex> lock(rocksdb_ptr_mx);
+    std::shared_lock lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)
         return nullptr;
     return rocksdb_ptr->GetOptions().statistics;
@@ -550,7 +502,7 @@ std::shared_ptr<rocksdb::Statistics> StorageEmbeddedRocksDB::getRocksDBStatistic
 
 std::vector<rocksdb::Status> StorageEmbeddedRocksDB::multiGet(const std::vector<rocksdb::Slice> & slices_keys, std::vector<String> & values) const
 {
-    std::shared_lock<std::shared_mutex> lock(rocksdb_ptr_mx);
+    std::shared_lock lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)
         return {};
     return rocksdb_ptr->MultiGet(rocksdb::ReadOptions(), slices_keys, &values);
@@ -558,7 +510,8 @@ std::vector<rocksdb::Status> StorageEmbeddedRocksDB::multiGet(const std::vector<
 
 Chunk StorageEmbeddedRocksDB::getByKeys(
     const ColumnsWithTypeAndName & keys,
-    PaddedPODArray<UInt8> & null_map) const
+    PaddedPODArray<UInt8> & null_map,
+    const Names &) const
 {
     if (keys.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageEmbeddedRocksDB supports only one key, got: {}", keys.size());
@@ -569,6 +522,11 @@ Chunk StorageEmbeddedRocksDB::getByKeys(
         throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Assertion failed: {} != {}", raw_keys.size(), keys[0].column->size());
 
     return getBySerializedKeys(raw_keys, &null_map);
+}
+
+Block StorageEmbeddedRocksDB::getSampleBlock(const Names &) const
+{
+    return getInMemoryMetadataPtr()->getSampleBlock();
 }
 
 Chunk StorageEmbeddedRocksDB::getBySerializedKeys(
@@ -587,7 +545,6 @@ Chunk StorageEmbeddedRocksDB::getBySerializedKeys(
     slices_keys.reserve(keys.size());
     for (const auto & key : keys)
         slices_keys.emplace_back(key);
-
 
     auto statuses = multiGet(slices_keys, values);
     if (null_map)
@@ -627,6 +584,7 @@ void registerStorageEmbeddedRocksDB(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{
         .supports_sort_order = true,
+        .supports_ttl = true,
         .supports_parallel_insert = true,
     };
 

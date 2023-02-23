@@ -122,22 +122,22 @@ public:
             /// We don't expect a "name" contains a path.
             if (name.find('/') != std::string::npos)
             {
-                throw Exception("Column `name` should not contain '/'", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Column `name` should not contain '/'");
             }
 
             if (name.empty())
             {
-                throw Exception("Column `name` should not be empty", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Column `name` should not be empty");
             }
 
             if (path.empty())
             {
-                throw Exception("Column `path` should not be empty", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Column `path` should not be empty");
             }
 
             if (path.size() + name.size() > PATH_MAX)
             {
-                throw Exception("Sum of `name` length and `path` length should not exceed PATH_MAX", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sum of `name` length and `path` length should not exceed PATH_MAX");
             }
 
             std::vector<String> path_vec;
@@ -176,7 +176,7 @@ StorageSystemZooKeeper::StorageSystemZooKeeper(const StorageID & table_id_)
 SinkToStoragePtr StorageSystemZooKeeper::write(const ASTPtr &, const StorageMetadataPtr &, ContextPtr context)
 {
     if (!context->getConfigRef().getBool("allow_zookeeper_write", false))
-        throw Exception("Prohibit writing to system.zookeeper, unless config `allow_zookeeper_write` as true", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Prohibit writing to system.zookeeper, unless config `allow_zookeeper_write` as true");
     Block write_header;
     write_header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "name"));
     write_header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "value"));
@@ -404,7 +404,10 @@ void StorageSystemZooKeeper::fillData(MutableColumns & res_columns, ContextPtr c
     zkutil::ZooKeeperPtr zookeeper = context->getZooKeeper();
 
     if (paths.empty())
-        throw Exception("SELECT from system.zookeeper table must contain condition like path = 'path' or path IN ('path1','path2'...) or path IN (subquery) in WHERE clause unless `set allow_unrestricted_reads_from_keeper = 'true'`.", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "SELECT from system.zookeeper table must contain condition like path = 'path' "
+                        "or path IN ('path1','path2'...) or path IN (subquery) "
+                        "in WHERE clause unless `set allow_unrestricted_reads_from_keeper = 'true'`.");
 
     std::unordered_set<String> added;
     while (!paths.empty())

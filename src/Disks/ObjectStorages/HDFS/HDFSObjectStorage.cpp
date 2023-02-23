@@ -35,7 +35,7 @@ void HDFSObjectStorage::startup()
 
 std::string HDFSObjectStorage::generateBlobNameForPath(const std::string & /* path */)
 {
-    return getRandomASCIIString();
+    return getRandomASCIIString(32);
 }
 
 bool HDFSObjectStorage::exists(const StoredObject & object) const
@@ -61,8 +61,21 @@ std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObjects( /// NOLI
     std::optional<size_t>,
     std::optional<size_t>) const
 {
-    auto hdfs_impl = std::make_unique<ReadBufferFromHDFSGather>(config, objects, patchSettings(read_settings));
-    auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(hdfs_impl));
+    auto disk_read_settings = patchSettings(read_settings);
+    auto read_buffer_creator =
+        [this, disk_read_settings]
+        (const std::string & path, size_t /* read_until_position */) -> std::shared_ptr<ReadBufferFromFileBase>
+    {
+        size_t begin_of_path = path.find('/', path.find("//") + 2);
+        auto hdfs_path = path.substr(begin_of_path);
+        auto hdfs_uri = path.substr(0, begin_of_path);
+
+        return std::make_unique<ReadBufferFromHDFS>(
+            hdfs_uri, hdfs_path, config, disk_read_settings, /* read_until_position */0, /* use_external_buffer */true);
+    };
+
+    auto hdfs_impl = std::make_unique<ReadBufferFromRemoteFSGather>(std::move(read_buffer_creator), objects, disk_read_settings);
+    auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(hdfs_impl), read_settings);
     return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), settings->min_bytes_for_seek);
 }
 
@@ -88,18 +101,6 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
 }
 
 
-void HDFSObjectStorage::listPrefix(const std::string & path, RelativePathsWithSize & children) const
-{
-    const size_t begin_of_path = path.find('/', path.find("//") + 2);
-    int32_t num_entries;
-    auto * files_list = hdfsListDirectory(hdfs_fs.get(), path.substr(begin_of_path).c_str(), &num_entries);
-    if (num_entries == -1)
-        throw Exception(ErrorCodes::HDFS_ERROR, "HDFSDelete failed with path: " + path);
-
-    for (int32_t i = 0; i < num_entries; ++i)
-        children.emplace_back(files_list[i].mName, files_list[i].mSize);
-}
-
 /// Remove file. Throws exception if file doesn't exists or it's a directory.
 void HDFSObjectStorage::removeObject(const StoredObject & object)
 {
@@ -109,7 +110,7 @@ void HDFSObjectStorage::removeObject(const StoredObject & object)
     /// Add path from root to file name
     int res = hdfsDelete(hdfs_fs.get(), path.substr(begin_of_path).c_str(), 0);
     if (res == -1)
-        throw Exception(ErrorCodes::HDFS_ERROR, "HDFSDelete failed with path: " + path);
+        throw Exception(ErrorCodes::HDFS_ERROR, "HDFSDelete failed with path: {}", path);
 
 }
 

@@ -1,4 +1,5 @@
 ---
+slug: /ru/operations/backup
 sidebar_position: 49
 sidebar_label: "Резервное копирование данных"
 ---
@@ -35,4 +36,3 @@ ClickHouse позволяет использовать запрос `ALTER TABLE
 Дополнительные сведения о запросах, связанных с манипуляциями партициями, см. в разделе [ALTER](../sql-reference/statements/alter/partition.md#alter_manipulations-with-partitions).
 
 Для автоматизации этого подхода доступен инструмент от сторонних разработчиков: [clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup).
-

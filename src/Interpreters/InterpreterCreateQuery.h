@@ -18,7 +18,9 @@ class ASTExpressionList;
 class ASTConstraintDeclaration;
 class ASTStorage;
 class IDatabase;
+class DDLGuard;
 using DatabasePtr = std::shared_ptr<IDatabase>;
+using DDLGuardPtr = std::unique_ptr<DDLGuard>;
 
 
 /** Allows to create new table or database,
@@ -89,7 +91,7 @@ private:
     AccessRightsElements getRequiredAccess() const;
 
     /// Create IStorage and add it to database. If table already exists and IF NOT EXISTS specified, do nothing and return false.
-    bool doCreateTable(ASTCreateQuery & create, const TableProperties & properties);
+    bool doCreateTable(ASTCreateQuery & create, const TableProperties & properties, DDLGuardPtr & ddl_guard);
     BlockIO doCreateOrReplaceTable(ASTCreateQuery & create, const InterpreterCreateQuery::TableProperties & properties);
     /// Inserts data in created table if it's CREATE ... SELECT
     BlockIO fillTableIfNeeded(const ASTCreateQuery & create);
@@ -99,6 +101,8 @@ private:
     /// Update create query with columns description from storage if query doesn't have it.
     /// It's used to prevent automatic schema inference while table creation on each server startup.
     void addColumnsDescriptionToCreateQueryIfNecessary(ASTCreateQuery & create, const StoragePtr & storage);
+
+    BlockIO executeQueryOnCluster(ASTCreateQuery & create);
 
     ASTPtr query_ptr;
 

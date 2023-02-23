@@ -1,6 +1,7 @@
 /// This translation unit should be compiled multiple times
 /// with different values of NAMESPACE and machine flags (sse2, avx2).
 
+/// See also <libdivide-config.h>
 #if defined(__AVX2__)
     #define REG_SIZE 32
     #define LIBDIVIDE_AVX2
@@ -18,7 +19,7 @@ namespace NAMESPACE
 template <typename A, typename B, typename ResultType>
 void divideImpl(const A * __restrict a_pos, B b, ResultType * __restrict c_pos, size_t size)
 {
-    libdivide::divider<A> divider(b);
+    libdivide::divider<A> divider(static_cast<A>(b));
     const A * a_end = a_pos + size;
 
 #if defined(__SSE2__)

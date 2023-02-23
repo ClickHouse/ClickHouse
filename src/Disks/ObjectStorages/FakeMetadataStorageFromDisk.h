@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/SharedMutex.h>
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Disks/ObjectStorages/MetadataFromDiskTransactionState.h>
@@ -9,12 +10,13 @@
 namespace DB
 {
 
+/// Store metadata in the disk itself.
 class FakeMetadataStorageFromDisk final : public IMetadataStorage
 {
 private:
     friend class FakeMetadataStorageFromDiskTransaction;
 
-    mutable std::shared_mutex metadata_mutex;
+    mutable SharedMutex metadata_mutex;
 
     DiskPtr disk;
     ObjectStoragePtr object_storage;
@@ -26,7 +28,7 @@ public:
         ObjectStoragePtr object_storage_,
         const std::string & object_storage_root_path_);
 
-    MetadataTransactionPtr createTransaction() const override;
+    MetadataTransactionPtr createTransaction() override;
 
     const std::string & getPath() const override;
 
@@ -42,11 +44,19 @@ public:
 
     time_t getLastChanged(const std::string & path) const override;
 
+    bool supportsChmod() const override { return disk->supportsChmod(); }
+
+    bool supportsStat() const override { return disk->supportsStat(); }
+
+    struct stat stat(const String & path) const override { return disk->stat(path); }
+
     std::vector<std::string> listDirectory(const std::string & path) const override;
 
     DirectoryIteratorPtr iterateDirectory(const std::string & path) const override;
 
     std::string readFileToString(const std::string & path) const override;
+
+    std::string readInlineDataToString(const std::string & path) const override;
 
     std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & file_paths) const override;
 
@@ -81,6 +91,8 @@ public:
 
     void writeStringToFile(const std::string & path, const std::string & data) override;
 
+    void writeInlineDataToFile(const std::string & path, const std::string & data) override;
+
     void createEmptyMetadataFile(const std::string & path) override;
 
     void createMetadataFile(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes) override;
@@ -88,6 +100,10 @@ public:
     void addBlobToMetadata(const std::string & path, const std::string & blob_name, uint64_t size_in_bytes) override;
 
     void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) override;
+
+    bool supportsChmod() const override { return disk->supportsChmod(); }
+
+    void chmod(const String & path, mode_t mode) override { disk->chmod(path, mode); }
 
     void setReadOnly(const std::string & path) override;
 

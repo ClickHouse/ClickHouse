@@ -8,12 +8,12 @@
 #include <Databases/DatabaseMemory.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/scope_guard_safe.h>
-#include <Interpreters/UserDefinedSQLObjectsLoader.h>
 #include <Interpreters/Session.h>
 #include <Access/AccessControl.h>
 #include <Common/Exception.h>
@@ -32,6 +32,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Common/ErrorHandlers.h>
+#include <Functions/UserDefined/IUserDefinedSQLObjectsLoader.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
@@ -47,6 +48,10 @@
 
 #if defined(FUZZING_MODE)
     #include <Functions/getFuzzerData.h>
+#endif
+
+#if USE_AZURE_BLOB_STORAGE
+#   include <azure/storage/common/internal/xml_wrapper.hpp>
 #endif
 
 namespace fs = std::filesystem;
@@ -112,6 +117,14 @@ void LocalServer::initialize(Poco::Util::Application & self)
         config().getUInt("max_thread_pool_free_size", 1000),
         config().getUInt("thread_pool_queue_size", 10000)
     );
+
+#if USE_AZURE_BLOB_STORAGE
+    /// See the explanation near the same line in Server.cpp
+    GlobalThreadPool::instance().addOnDestroyCallback([]
+    {
+        Azure::Storage::_internal::XmlGlobalDeinitialize();
+    });
+#endif
 
     IOThreadPool::initialize(
         config().getUInt("max_io_thread_pool_size", 100),
@@ -203,7 +216,7 @@ void LocalServer::tryInitPath()
 
     global_context->setPath(path);
 
-    global_context->setTemporaryStorage(path + "tmp");
+    global_context->setTemporaryStoragePath(path + "tmp/", 0);
     global_context->setFlagsPath(path + "flags");
 
     global_context->setUserFilesPath(""); // user's files are everywhere
@@ -226,6 +239,8 @@ void LocalServer::cleanup()
             global_context->shutdown();
             global_context.reset();
         }
+
+        /// thread status should be destructed before shared context because it relies on process list.
 
         status.reset();
 
@@ -351,7 +366,7 @@ void LocalServer::setupUsers()
     if (users_config)
         global_context->setUsersConfig(users_config);
     else
-        throw Exception("Can't load config for users", ErrorCodes::CANNOT_LOAD_CONFIG);
+        throw Exception(ErrorCodes::CANNOT_LOAD_CONFIG, "Can't load config for users");
 }
 
 void LocalServer::connect()
@@ -366,7 +381,7 @@ int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
 {
     UseSSL use_ssl;
-    ThreadStatus thread_status;
+    thread_status.emplace();
 
     StackTrace::setShowAddresses(config().getBool("show_addresses_in_stack_traces", true));
 
@@ -407,10 +422,12 @@ try
     registerTableFunctions();
     registerStorages();
     registerDictionaries();
-    registerDisks();
+    registerDisks(/* global_skip_access_check= */ true);
     registerFormats();
 
     processConfig();
+    initTtyBuffer(toProgressOption(config().getString("progress", "default")));
+
     applyCmdSettings(global_context);
 
     if (is_interactive)
@@ -479,14 +496,13 @@ void LocalServer::processConfig()
     if (is_interactive && !delayed_interactive)
     {
         if (config().has("query") && config().has("queries-file"))
-            throw Exception("Specify either `query` or `queries-file` option", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Specify either `query` or `queries-file` option");
 
         if (config().has("multiquery"))
             is_multiquery = true;
     }
     else
     {
-        need_render_progress = config().getBool("progress", false);
         echo_queries = config().hasOption("echo") || config().hasOption("verbose");
         ignore_error = config().getBool("ignore-error", false);
         is_multiquery = true;
@@ -544,9 +560,14 @@ void LocalServer::processConfig()
 
     /// Setting value from cmd arg overrides one from config
     if (global_context->getSettingsRef().max_insert_block_size.changed)
+    {
         insert_format_max_block_size = global_context->getSettingsRef().max_insert_block_size;
+    }
     else
-        insert_format_max_block_size = config().getInt("insert_format_max_block_size", global_context->getSettingsRef().max_insert_block_size);
+    {
+        insert_format_max_block_size = config().getUInt64("insert_format_max_block_size",
+            global_context->getSettingsRef().max_insert_block_size);
+    }
 
     /// Sets external authenticators config (LDAP, Kerberos).
     global_context->setExternalAuthenticatorsConfig(config());
@@ -558,14 +579,16 @@ void LocalServer::processConfig()
     global_context->getProcessList().setMaxSize(0);
 
     /// Size of cache for uncompressed blocks. Zero means disabled.
+    String uncompressed_cache_policy = config().getString("uncompressed_cache_policy", "");
     size_t uncompressed_cache_size = config().getUInt64("uncompressed_cache_size", 0);
     if (uncompressed_cache_size)
-        global_context->setUncompressedCache(uncompressed_cache_size);
+        global_context->setUncompressedCache(uncompressed_cache_size, uncompressed_cache_policy);
 
     /// Size of cache for marks (index of MergeTree family of tables).
+    String mark_cache_policy = config().getString("mark_cache_policy", "");
     size_t mark_cache_size = config().getUInt64("mark_cache_size", 5368709120);
     if (mark_cache_size)
-        global_context->setMarkCache(mark_cache_size);
+        global_context->setMarkCache(mark_cache_size, mark_cache_policy);
 
     /// Size of cache for uncompressed blocks of MergeTree indices. Zero means disabled.
     size_t index_uncompressed_cache_size = config().getUInt64("index_uncompressed_cache_size", 0);
@@ -581,6 +604,18 @@ void LocalServer::processConfig()
     size_t mmap_cache_size = config().getUInt64("mmap_cache_size", 1000);   /// The choice of default is arbitrary.
     if (mmap_cache_size)
         global_context->setMMappedFileCache(mmap_cache_size);
+
+#if USE_EMBEDDED_COMPILER
+    /// 128 MB
+    constexpr size_t compiled_expression_cache_size_default = 1024 * 1024 * 128;
+    size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", compiled_expression_cache_size_default);
+
+    constexpr size_t compiled_expression_cache_elements_size_default = 10000;
+    size_t compiled_expression_cache_elements_size
+        = config().getUInt64("compiled_expression_cache_elements_size", compiled_expression_cache_elements_size_default);
+
+    CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_size, compiled_expression_cache_elements_size);
+#endif
 
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(config());
@@ -598,8 +633,6 @@ void LocalServer::processConfig()
     global_context->setCurrentDatabase(default_database);
     applyCmdOptions(global_context);
 
-    bool enable_objects_loader = false;
-
     if (config().has("path"))
     {
         String path = global_context->getPath();
@@ -607,20 +640,22 @@ void LocalServer::processConfig()
         /// Lock path directory before read
         status.emplace(fs::path(path) / "status", StatusFile::write_full_info);
 
-        LOG_DEBUG(log, "Loading user defined objects from {}", path);
-        Poco::File(path + "user_defined/").createDirectories();
-        UserDefinedSQLObjectsLoader::instance().loadObjects(global_context);
-        enable_objects_loader = true;
-        LOG_DEBUG(log, "Loaded user defined objects.");
-
         LOG_DEBUG(log, "Loading metadata from {}", path);
         loadMetadataSystem(global_context);
         attachSystemTablesLocal(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
-        loadMetadata(global_context);
         startupSystemTables();
-        DatabaseCatalog::instance().loadDatabases();
+
+        if (!config().has("only-system-tables"))
+        {
+            DatabaseCatalog::instance().createBackgroundTasks();
+            loadMetadata(global_context);
+            DatabaseCatalog::instance().startupBackgroundCleanup();
+        }
+
+        /// For ClickHouse local if path is not set the loader will be disabled.
+        global_context->getUserDefinedSQLObjectsLoader().loadObjects();
 
         LOG_DEBUG(log, "Loaded metadata.");
     }
@@ -630,9 +665,6 @@ void LocalServer::processConfig()
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
     }
-
-    /// Persist SQL user defined objects only if user_defined folder was created
-    UserDefinedSQLObjectsLoader::instance().enable(enable_objects_loader);
 
     server_display_name = config().getString("display_name", getFQDNOrHostName());
     prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name} :) ");
@@ -711,6 +743,7 @@ void LocalServer::addOptions(OptionsDescription & options_description)
 
         ("no-system-tables", "do not attach system tables (better startup time)")
         ("path", po::value<std::string>(), "Storage path")
+        ("only-system-tables", "attach only system tables from specified path")
         ("top_level_domains_path", po::value<std::string>(), "Path to lists with custom TLDs")
         ;
 }
@@ -739,6 +772,8 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
         config().setString("table-structure", options["structure"].as<std::string>());
     if (options.count("no-system-tables"))
         config().setBool("no-system-tables", true);
+    if (options.count("only-system-tables"))
+        config().setBool("only-system-tables", true);
 
     if (options.count("input-format"))
         config().setString("table-data-format", options["input-format"].as<std::string>());

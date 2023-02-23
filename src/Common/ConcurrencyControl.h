@@ -175,7 +175,7 @@ public:
     [[nodiscard]] AllocationPtr allocate(SlotCount min, SlotCount max)
     {
         if (min > max)
-            throw DB::Exception("ConcurrencyControl: invalid allocation requirements", DB::ErrorCodes::LOGICAL_ERROR);
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "ConcurrencyControl: invalid allocation requirements");
 
         std::unique_lock lock{mutex};
 
@@ -250,7 +250,7 @@ private:
         }
     }
 
-    SlotCount available(std::unique_lock<std::mutex> &)
+    SlotCount available(std::unique_lock<std::mutex> &) const
     {
         if (cur_concurrency < max_concurrency)
             return max_concurrency - cur_concurrency;

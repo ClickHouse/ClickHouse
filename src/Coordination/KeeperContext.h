@@ -8,7 +8,8 @@ struct KeeperContext
     enum class Phase : uint8_t
     {
         INIT,
-        RUNNING
+        RUNNING,
+        SHUTDOWN
     };
 
     Phase server_state{Phase::INIT};
