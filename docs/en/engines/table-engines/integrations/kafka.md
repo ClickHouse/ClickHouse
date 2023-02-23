@@ -165,8 +165,8 @@ If you want to change the target table by using `ALTER`, we recommend disabling 
 Similar to GraphiteMergeTree, the Kafka engine supports extended configuration using the ClickHouse config file. There are two configuration keys that you can use: global (below `<kafka>`) and topic-level (below `<kafka><kafka_topic>`). The global configuration is applied first, and then the topic-level configuration is applied (if it exists).
 
 ``` xml
-  <!-- Global configuration options for all tables of Kafka engine type -->
   <kafka>
+    <!-- Global configuration options for all tables of Kafka engine type -->
     <debug>cgrp</debug>
     <auto_offset_reset>smallest</auto_offset_reset>
 
@@ -192,8 +192,8 @@ Similar to GraphiteMergeTree, the Kafka engine supports extended configuration u
 <summary>Example in deprecated syntax</summary>
 
 ``` xml
-  <!-- Global configuration options for all tables of Kafka engine type -->
   <kafka>
+    <!-- Global configuration options for all tables of Kafka engine type -->
     <debug>cgrp</debug>
     <auto_offset_reset>smallest</auto_offset_reset>
   </kafka>
