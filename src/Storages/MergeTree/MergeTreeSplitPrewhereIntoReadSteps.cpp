@@ -197,10 +197,6 @@ bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionAction
     if (!prewhere_info || !prewhere_info->prewhere_actions)
         return true;
 
-    Poco::Logger * log = &Poco::Logger::get("tryBuildPrewhereSteps");
-
-    LOG_TRACE(log, "Original PREWHERE DAG:\n{}", prewhere_info->prewhere_actions->dumpDAG());
-
     /// 1. List all condition nodes that are combined with AND into PREWHERE condition
     const auto & condition_root = prewhere_info->prewhere_actions->findInOutputs(prewhere_info->prewhere_column_name);
     const bool is_conjunction = (condition_root.type == ActionsDAG::ActionType::FUNCTION && condition_root.function_base->getName() == "and");
@@ -338,8 +334,6 @@ bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionAction
         }
         prewhere.steps.back().need_filter = prewhere_info->need_filter;
     }
-
-    LOG_TRACE(log, "Resulting PREWHERE:\n{}", prewhere.dump());
 
     return true;
 }
