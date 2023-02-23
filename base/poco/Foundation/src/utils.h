@@ -33,14 +33,13 @@
 
 #include <assert.h>
 #ifndef ASSERT
-#define ASSERT(condition)         \
-    assert(condition);
+#    define ASSERT(condition) assert(condition);
 #endif
 #ifndef UNIMPLEMENTED
-#define UNIMPLEMENTED() (abort())
+#    define UNIMPLEMENTED() (abort())
 #endif
 #ifndef UNREACHABLE
-#define UNREACHABLE()   (abort())
+#    define UNREACHABLE() (abort())
 #endif
 
 // Double operations detection based on target architecture.
@@ -53,53 +52,27 @@
 // the output of the division with the expected result. (Inlining must be
 // disabled.)
 // On Linux,x86 89255e-22 != Div_double(89255.0/1e22)
-#if defined(_M_X64) || defined(__x86_64__) || \
-    defined(__ARMEL__) || defined(_M_ARM) || defined(__arm__) || defined(__arm64__) || \
-    defined(__avr32__) || \
-    defined(__hppa__) || defined(__ia64__) || \
-    defined(__mips__) || \
-    defined(__powerpc__) || defined(__ppc__) || defined(__ppc64__) || \
-    defined(__sparc__) || defined(__sparc) || defined(__s390__) || \
-    defined(__SH4__) || defined(__alpha__) || \
-    defined(_MIPS_ARCH_MIPS32R2) || \
-    defined(__riscv) || \
-	defined(__AARCH64EL__) || \
-    defined(nios2) || defined(__nios2) || defined(__nios2__)
-#define DOUBLE_CONVERSION_CORRECT_DOUBLE_OPERATIONS 1
+#if defined(_M_X64) || defined(__x86_64__) || defined(__ARMEL__) || defined(_M_ARM) || defined(__arm__) || defined(__arm64__) \
+    || defined(__avr32__) || defined(__hppa__) || defined(__ia64__) || defined(__mips__) || defined(__powerpc__) || defined(__ppc__) \
+    || defined(__ppc64__) || defined(__sparc__) || defined(__sparc) || defined(__s390__) || defined(__SH4__) || defined(__alpha__) \
+    || defined(_MIPS_ARCH_MIPS32R2) || defined(__riscv) || defined(__AARCH64EL__) || defined(nios2) || defined(__nios2) \
+    || defined(__nios2__)
+#    define DOUBLE_CONVERSION_CORRECT_DOUBLE_OPERATIONS 1
 #elif defined(_M_IX86) || defined(__i386__) || defined(__i386)
-#if defined(_WIN32)
-// Windows uses a 64bit wide floating point stack.
-#define DOUBLE_CONVERSION_CORRECT_DOUBLE_OPERATIONS 1
+#        undef DOUBLE_CONVERSION_CORRECT_DOUBLE_OPERATIONS
 #else
-#undef DOUBLE_CONVERSION_CORRECT_DOUBLE_OPERATIONS
-#endif  // _WIN32
-#else
-#error Target architecture was not detected as supported by Double-Conversion.
+#    error Target architecture was not detected as supported by Double-Conversion.
 #endif
 
 #if defined(__GNUC__)
-#define DOUBLE_CONVERSION_UNUSED __attribute__((unused))
+#    define DOUBLE_CONVERSION_UNUSED __attribute__((unused))
 #else
-#define DOUBLE_CONVERSION_UNUSED
+#    define DOUBLE_CONVERSION_UNUSED
 #endif
 
-#if defined(_WIN32) && !defined(__MINGW32__)
 
-typedef signed char int8_t;
-typedef unsigned char uint8_t;
-typedef short int16_t;  // NOLINT
-typedef unsigned short uint16_t;  // NOLINT
-typedef int int32_t;
-typedef unsigned int uint32_t;
-typedef __int64 int64_t;
-typedef unsigned __int64 uint64_t;
-// intptr_t and friends are defined in crtdefs.h through stdio.h.
+#    include <stdint.h>
 
-#else
-
-#include <stdint.h>
-
-#endif
 
 // The following macro works on both 32 and 64-bit platforms.
 // Usage: instead of writing 0x1234567890123456
@@ -112,17 +85,15 @@ typedef unsigned __int64 uint64_t;
 // array. You should only use ARRAY_SIZE on statically allocated
 // arrays.
 #ifndef ARRAY_SIZE
-#define ARRAY_SIZE(a)                                   \
-  ((sizeof(a) / sizeof(*(a))) /                         \
-  static_cast<size_t>(!(sizeof(a) % sizeof(*(a)))))
+#    define ARRAY_SIZE(a) ((sizeof(a) / sizeof(*(a))) / static_cast<size_t>(!(sizeof(a) % sizeof(*(a)))))
 #endif
 
 // A macro to disallow the evil copy constructor and operator= functions
 // This should be used in the private: declarations for a class
 #ifndef DISALLOW_COPY_AND_ASSIGN
-#define DISALLOW_COPY_AND_ASSIGN(TypeName)      \
-  TypeName(const TypeName&);                    \
-  void operator=(const TypeName&)
+#    define DISALLOW_COPY_AND_ASSIGN(TypeName) \
+        TypeName(const TypeName &); \
+        void operator=(const TypeName &)
 #endif
 
 // A macro to disallow all the implicit constructors, namely the
@@ -132,151 +103,164 @@ typedef unsigned __int64 uint64_t;
 // that wants to prevent anyone from instantiating it. This is
 // especially useful for classes containing only static methods.
 #ifndef DISALLOW_IMPLICIT_CONSTRUCTORS
-#define DISALLOW_IMPLICIT_CONSTRUCTORS(TypeName) \
-  TypeName();                                    \
-  DISALLOW_COPY_AND_ASSIGN(TypeName)
+#    define DISALLOW_IMPLICIT_CONSTRUCTORS(TypeName) \
+        TypeName(); \
+        DISALLOW_COPY_AND_ASSIGN(TypeName)
 #endif
 
-namespace double_conversion {
+namespace double_conversion
+{
 
 static const int kCharSize = sizeof(char);
 
 // Returns the maximum of the two parameters.
 template <typename T>
-static T Max(T a, T b) {
-  return a < b ? b : a;
+static T Max(T a, T b)
+{
+    return a < b ? b : a;
 }
 
 
 // Returns the minimum of the two parameters.
 template <typename T>
-static T Min(T a, T b) {
-  return a < b ? a : b;
+static T Min(T a, T b)
+{
+    return a < b ? a : b;
 }
 
 
-inline int StrLength(const char* string) {
-  size_t length = strlen(string);
-  ASSERT(length == static_cast<size_t>(static_cast<int>(length)));
-  return static_cast<int>(length);
+inline int StrLength(const char * string)
+{
+    size_t length = strlen(string);
+    ASSERT(length == static_cast<size_t>(static_cast<int>(length)));
+    return static_cast<int>(length);
 }
 
 // This is a simplified version of V8's Vector class.
 template <typename T>
-class Vector {
- public:
-  Vector() : start_(NULL), length_(0) {}
-  Vector(T* data, int length) : start_(data), length_(length) {
-    ASSERT(length == 0 || (length > 0 && data != NULL));
-  }
+class Vector
+{
+public:
+    Vector() : start_(NULL), length_(0) { }
+    Vector(T * data, int length) : start_(data), length_(length) { ASSERT(length == 0 || (length > 0 && data != NULL)); }
 
-  // Returns a vector using the same backing storage as this one,
-  // spanning from and including 'from', to but not including 'to'.
-  Vector<T> SubVector(int from, int to) {
-    ASSERT(to <= length_);
-    ASSERT(from < to);
-    ASSERT(0 <= from);
-    return Vector<T>(start() + from, to - from);
-  }
+    // Returns a vector using the same backing storage as this one,
+    // spanning from and including 'from', to but not including 'to'.
+    Vector<T> SubVector(int from, int to)
+    {
+        ASSERT(to <= length_);
+        ASSERT(from < to);
+        ASSERT(0 <= from);
+        return Vector<T>(start() + from, to - from);
+    }
 
-  // Returns the length of the vector.
-  int length() const { return length_; }
+    // Returns the length of the vector.
+    int length() const { return length_; }
 
-  // Returns whether or not the vector is empty.
-  bool is_empty() const { return length_ == 0; }
+    // Returns whether or not the vector is empty.
+    bool is_empty() const { return length_ == 0; }
 
-  // Returns the pointer to the start of the data in the vector.
-  T* start() const { return start_; }
+    // Returns the pointer to the start of the data in the vector.
+    T * start() const { return start_; }
 
-  // Access individual vector elements - checks bounds in debug mode.
-  T& operator[](int index) const {
-    ASSERT(0 <= index && index < length_);
-    return start_[index];
-  }
+    // Access individual vector elements - checks bounds in debug mode.
+    T & operator[](int index) const
+    {
+        ASSERT(0 <= index && index < length_);
+        return start_[index];
+    }
 
-  T& first() { return start_[0]; }
+    T & first() { return start_[0]; }
 
-  T& last() { return start_[length_ - 1]; }
+    T & last() { return start_[length_ - 1]; }
 
- private:
-  T* start_;
-  int length_;
+private:
+    T * start_;
+    int length_;
 };
 
 
 // Helper class for building result strings in a character buffer. The
 // purpose of the class is to use safe operations that checks the
 // buffer bounds on all operations in debug mode.
-class StringBuilder {
- public:
-  StringBuilder(char* buffer, int size)
-      : buffer_(buffer, size), position_(0) { }
+class StringBuilder
+{
+public:
+    StringBuilder(char * buffer, int size) : buffer_(buffer, size), position_(0) { }
 
-  ~StringBuilder() { if (!is_finalized()) Finalize(); }
-
-  int size() const { return buffer_.length(); }
-
-  // Get the current position in the builder.
-  int position() const {
-    ASSERT(!is_finalized());
-    return position_;
-  }
-
-  // Reset the position.
-  void Reset() { position_ = 0; }
-
-  // Add a single character to the builder. It is not allowed to add
-  // 0-characters; use the Finalize() method to terminate the string
-  // instead.
-  void AddCharacter(char c) {
-    ASSERT(c != '\0');
-    ASSERT(!is_finalized() && position_ < buffer_.length());
-    buffer_[position_++] = c;
-  }
-
-  // Add an entire string to the builder. Uses strlen() internally to
-  // compute the length of the input string.
-  void AddString(const char* s) {
-    AddSubstring(s, StrLength(s));
-  }
-
-  // Add the first 'n' characters of the given string 's' to the
-  // builder. The input string must have enough characters.
-  void AddSubstring(const char* s, int n) {
-    ASSERT(!is_finalized() && position_ + n < buffer_.length());
-    ASSERT(static_cast<size_t>(n) <= strlen(s));
-    memmove(&buffer_[position_], s, n * kCharSize);
-    position_ += n;
-  }
-
-
-  // Add character padding to the builder. If count is non-positive,
-  // nothing is added to the builder.
-  void AddPadding(char c, int count) {
-    for (int i = 0; i < count; i++) {
-      AddCharacter(c);
+    ~StringBuilder()
+    {
+        if (!is_finalized())
+            Finalize();
     }
-  }
 
-  // Finalize the string by 0-terminating it and returning the buffer.
-  char* Finalize() {
-    ASSERT(!is_finalized() && position_ < buffer_.length());
-    buffer_[position_] = '\0';
-    // Make sure nobody managed to add a 0-character to the
-    // buffer while building the string.
-    ASSERT(strlen(buffer_.start()) == static_cast<size_t>(position_));
-    position_ = -1;
-    ASSERT(is_finalized());
-    return buffer_.start();
-  }
+    int size() const { return buffer_.length(); }
 
- private:
-  Vector<char> buffer_;
-  int position_;
+    // Get the current position in the builder.
+    int position() const
+    {
+        ASSERT(!is_finalized());
+        return position_;
+    }
 
-  bool is_finalized() const { return position_ < 0; }
+    // Reset the position.
+    void Reset() { position_ = 0; }
 
-  DISALLOW_IMPLICIT_CONSTRUCTORS(StringBuilder);
+    // Add a single character to the builder. It is not allowed to add
+    // 0-characters; use the Finalize() method to terminate the string
+    // instead.
+    void AddCharacter(char c)
+    {
+        ASSERT(c != '\0');
+        ASSERT(!is_finalized() && position_ < buffer_.length());
+        buffer_[position_++] = c;
+    }
+
+    // Add an entire string to the builder. Uses strlen() internally to
+    // compute the length of the input string.
+    void AddString(const char * s) { AddSubstring(s, StrLength(s)); }
+
+    // Add the first 'n' characters of the given string 's' to the
+    // builder. The input string must have enough characters.
+    void AddSubstring(const char * s, int n)
+    {
+        ASSERT(!is_finalized() && position_ + n < buffer_.length());
+        ASSERT(static_cast<size_t>(n) <= strlen(s));
+        memmove(&buffer_[position_], s, n * kCharSize);
+        position_ += n;
+    }
+
+
+    // Add character padding to the builder. If count is non-positive,
+    // nothing is added to the builder.
+    void AddPadding(char c, int count)
+    {
+        for (int i = 0; i < count; i++)
+        {
+            AddCharacter(c);
+        }
+    }
+
+    // Finalize the string by 0-terminating it and returning the buffer.
+    char * Finalize()
+    {
+        ASSERT(!is_finalized() && position_ < buffer_.length());
+        buffer_[position_] = '\0';
+        // Make sure nobody managed to add a 0-character to the
+        // buffer while building the string.
+        ASSERT(strlen(buffer_.start()) == static_cast<size_t>(position_));
+        position_ = -1;
+        ASSERT(is_finalized());
+        return buffer_.start();
+    }
+
+private:
+    Vector<char> buffer_;
+    int position_;
+
+    bool is_finalized() const { return position_ < 0; }
+
+    DISALLOW_IMPLICIT_CONSTRUCTORS(StringBuilder);
 };
 
 // The type-based aliasing rule allows the compiler to assume that pointers of
@@ -304,22 +288,24 @@ class StringBuilder {
 // enough that it can no longer see that you have cast one pointer type to
 // another thus avoiding the warning.
 template <class Dest, class Source>
-inline Dest BitCast(const Source& source) {
-  // Compile time assertion: sizeof(Dest) == sizeof(Source)
-  // A compile error here means your Dest and Source have different sizes.
-  DOUBLE_CONVERSION_UNUSED
-      typedef char VerifySizesAreEqual[sizeof(Dest) == sizeof(Source) ? 1 : -1];
+inline Dest BitCast(const Source & source)
+{
+    // Compile time assertion: sizeof(Dest) == sizeof(Source)
+    // A compile error here means your Dest and Source have different sizes.
+    DOUBLE_CONVERSION_UNUSED
+    typedef char VerifySizesAreEqual[sizeof(Dest) == sizeof(Source) ? 1 : -1];
 
-  Dest dest;
-  memmove(&dest, &source, sizeof(dest));
-  return dest;
+    Dest dest;
+    memmove(&dest, &source, sizeof(dest));
+    return dest;
 }
 
 template <class Dest, class Source>
-inline Dest BitCast(Source* source) {
-  return BitCast<Dest>(reinterpret_cast<uintptr_t>(source));
+inline Dest BitCast(Source * source)
+{
+    return BitCast<Dest>(reinterpret_cast<uintptr_t>(source));
 }
 
-}  // namespace double_conversion
+} // namespace double_conversion
 
-#endif  // DOUBLE_CONVERSION_UTILS_H_
+#endif // DOUBLE_CONVERSION_UTILS_H_

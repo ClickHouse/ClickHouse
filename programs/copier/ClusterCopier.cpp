@@ -908,7 +908,7 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
     /// Exit if success
     if (task_status != TaskStatus::Finished)
     {
-        LOG_WARNING(log, "Create destination Tale Failed ");
+        LOG_WARNING(log, "Create destination table failed ");
         return false;
     }
 
@@ -1225,8 +1225,8 @@ TaskStatus ClusterCopier::iterateThroughAllPiecesInPartition(const ConnectionTim
             std::this_thread::sleep_for(retry_delay_ms);
         }
 
-        was_active_pieces = (res == TaskStatus::Active);
-        was_failed_pieces = (res == TaskStatus::Error);
+        was_active_pieces |= (res == TaskStatus::Active);
+        was_failed_pieces |= (res == TaskStatus::Error);
     }
 
     if (was_failed_pieces)
@@ -1473,7 +1473,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
 
         if (count != 0)
         {
-            LOG_INFO(log, "Partition {} piece {}is not empty. In contains {} rows.", task_partition.name, current_piece_number, count);
+            LOG_INFO(log, "Partition {} piece {} is not empty. In contains {} rows.", task_partition.name, current_piece_number, count);
             Coordination::Stat stat_shards{};
             zookeeper->get(partition_piece.getPartitionPieceShardsPath(), &stat_shards);
 

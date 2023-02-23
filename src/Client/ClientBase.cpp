@@ -481,7 +481,7 @@ void ClientBase::onLogData(Block & block)
 void ClientBase::onTotals(Block & block, ASTPtr parsed_query)
 {
     initOutputFormat(block, parsed_query);
-    output_format->setTotals(block);
+    output_format->setTotals(materializeBlock(block));
 }
 
 
