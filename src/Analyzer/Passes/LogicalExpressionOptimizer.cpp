@@ -7,6 +7,8 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/HashUtils.h>
 
+#include <DataTypes/DataTypeString.h>
+
 namespace DB
 {
 
@@ -17,21 +19,115 @@ public:
 
     explicit LogicalExpressionOptimizerVisitor(ContextPtr context)
         : Base(std::move(context))
+        , cast_function_resolver(FunctionFactory::instance().get("_CAST", getContext()))
     {}
-
 
     void visitImpl(QueryTreeNodePtr & node)
     {
         auto * function_node = node->as<FunctionNode>();
 
-        if (!function_node || function_node->getFunctionName() != "or")
+        if (!function_node)
             return;
+
+        if (function_node->getFunctionName() == "or")
+        {
+            tryReplaceOrEqualsChainWithIn(node);
+            return;
+        }
+
+        if (function_node->getFunctionName() == "and")
+        {
+            tryReplaceAndEqualsChainsWithConstant(node);
+            return;
+        }
+    }
+private:
+    void tryReplaceAndEqualsChainsWithConstant(QueryTreeNodePtr & node)
+    {
+        auto & function_node = node->as<FunctionNode &>();
+        assert(function_node.getFunctionName() == "and");
+
+        if (function_node.getResultType()->isNullable())
+            return;
+
+        QueryTreeNodes and_operands;
+
+        QueryTreeNodePtrWithHashMap<const ConstantNode *> node_to_constants;
+
+        for (const auto & argument : function_node.getArguments())
+        {
+            auto * argument_function = argument->as<FunctionNode>();
+            if (!argument_function || argument_function->getFunctionName() != "equals")
+            {
+                and_operands.push_back(argument);
+                continue;
+            }
+
+            const auto & equals_arguments = argument_function->getArguments().getNodes();
+            const auto & lhs = equals_arguments[0];
+            const auto & rhs = equals_arguments[1];
+
+            const auto has_and_with_different_constant = [&](const QueryTreeNodePtr & expression, const ConstantNode * constant)
+            {
+                if (auto it = node_to_constants.find(expression); it != node_to_constants.end())
+                {
+                    if (!it->second->isEqual(*constant))
+                        return true;
+                }
+                else
+                {
+                    node_to_constants.emplace(expression, constant);
+                    and_operands.push_back(argument);
+                }
+
+                return false;
+            };
+
+            bool collapse_to_false = false;
+
+            if (const auto * lhs_literal = lhs->as<ConstantNode>())
+            {
+                collapse_to_false = has_and_with_different_constant(rhs, lhs_literal);
+            }
+            else if (const auto * rhs_literal = rhs->as<ConstantNode>())
+            {
+                collapse_to_false = has_and_with_different_constant(lhs, rhs_literal);
+            }
+            else
+                continue;
+
+            if (collapse_to_false)
+            {
+                auto false_value = std::make_shared<ConstantValue>(0u, function_node.getResultType());
+                auto false_node = std::make_shared<ConstantNode>(std::move(false_value));
+                node = std::move(false_node);
+                return;
+            }
+        }
+
+        if (and_operands.size() == 1)
+        {
+            assert(!function_node.getResultType()->isNullable());
+            resolveAsCast(function_node, std::move(and_operands[0]));
+            return;
+        }
+
+        auto and_function_resolver = FunctionFactory::instance().get("and", getContext());
+        function_node.getArguments().getNodes() = std::move(and_operands);
+        function_node.resolveAsFunction(and_function_resolver);
+    }
+
+    void tryReplaceOrEqualsChainWithIn(QueryTreeNodePtr & node)
+    {
+        auto & function_node = node->as<FunctionNode &>();
+        assert(function_node.getFunctionName() == "or");
 
         QueryTreeNodes or_operands;
 
         QueryTreeNodePtrWithHashMap<QueryTreeNodes> node_to_equals_functions;
+        QueryTreeNodePtrWithHashMap<QueryTreeNodeConstRawPtrWithHashSet> node_to_constants;
 
-        for (const auto & argument : function_node->getArguments())
+        for (const auto & argument : function_node.getArguments())
         {
             auto * argument_function = argument->as<FunctionNode>();
             if (!argument_function || argument_function->getFunctionName() != "equals")
@@ -46,10 +142,20 @@ public:
             const auto & lhs = equals_arguments[0];
             const auto & rhs = equals_arguments[1];
 
-            if (lhs->as<ConstantNode>())
-                node_to_equals_functions[rhs].push_back(argument);
-            else if (rhs->as<ConstantNode>())
-                node_to_equals_functions[lhs].push_back(argument);
+            const auto add_equals_function_if_not_present = [&](const auto & expression_node, const ConstantNode * constant)
+            {
+                auto & constant_set = node_to_constants[expression_node];
+                if (!constant_set.contains(constant))
+                {
+                    constant_set.insert(constant);
+                    node_to_equals_functions[expression_node].push_back(argument);
+                }
+            };
+
+            if (const auto * lhs_literal = lhs->as<ConstantNode>())
+                add_equals_function_if_not_present(rhs, lhs_literal);
+            else if (const auto * rhs_literal = rhs->as<ConstantNode>())
+                add_equals_function_if_not_present(lhs, rhs_literal);
             else
                 or_operands.push_back(argument);
         }
@@ -102,12 +208,34 @@ public:
         }
 
         if (or_operands.size() == 1)
-            or_operands.push_back(std::make_shared<ConstantNode>(static_cast<UInt8>(0)));
+        {
+            assert(!function_node.getResultType()->isNullable());
+            resolveAsCast(function_node, std::move(or_operands[0]));
+            return;
+        }
 
         auto or_function_resolver = FunctionFactory::instance().get("or", getContext());
-        function_node->getArguments().getNodes() = std::move(or_operands);
-        function_node->resolveAsFunction(or_function_resolver);
+        function_node.getArguments().getNodes() = std::move(or_operands);
+        function_node.resolveAsFunction(or_function_resolver);
     }
+
+    void resolveAsCast(FunctionNode & function_node, QueryTreeNodePtr operand)
+    {
+        std::string cast_type = function_node.getResultType()->getName();
+        auto cast_type_constant_value = std::make_shared<ConstantValue>(std::move(cast_type), std::make_shared<DataTypeString>());
+        auto cast_type_constant_node = std::make_shared<ConstantNode>(std::move(cast_type_constant_value));
+
+        QueryTreeNodes arguments;
+        arguments.reserve(2);
+        arguments.push_back(std::move(operand));
+        arguments.push_back(std::move(cast_type_constant_node));
+
+        function_node.getArguments().getNodes() = std::move(arguments);
+
+        function_node.resolveAsFunction(cast_function_resolver);
+    }
+
+    const FunctionOverloadResolverPtr cast_function_resolver;
 };
 
 
