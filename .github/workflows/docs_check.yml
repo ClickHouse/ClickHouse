@@ -18,7 +18,6 @@ on:  # yamllint disable-line rule:truthy
       - 'docker/docs/**'
       - 'docs/**'
       - 'utils/check-style/aspell-ignore/**'
-      - 'website/**'
 jobs:
   CheckLabels:
     runs-on: [self-hosted, style-checker]
