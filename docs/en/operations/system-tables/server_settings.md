@@ -10,6 +10,7 @@ Columns:
 
 -   `name` ([String](../../sql-reference/data-types/string.md)) — Server setting name.
 -   `value` ([String](../../sql-reference/data-types/string.md)) — Server setting value.
+-   `default` ([String](../../sql-reference/data-types/string.md)) — Server setting default value.
 -   `changed` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Shows whether a setting was specified in `config.xml`
 -   `description` ([String](../../sql-reference/data-types/string.md)) — Short server setting description.
 -   `type` ([String](../../sql-reference/data-types/string.md)) — Server setting value type.
@@ -25,14 +26,14 @@ WHERE name LIKE '%thread_pool%'
 ```
 
 ``` text
-┌─name─────────────────────────┬─value─┬─changed─┬─description───────────────────────────┬─type───┐
-│ max_thread_pool_size         │ 10000 │       0 │ Max size for global thread pool.      │ UInt64 │
-│ max_thread_pool_free_size    │ 1000  │       0 │ Max free size for global thread pool. │ UInt64 │
-│ thread_pool_queue_size       │ 10000 │       0 │ Queue size for global thread pool.    │ UInt64 │
-│ max_io_thread_pool_size      │ 100   │       0 │ Max size for IO thread pool.          │ UInt64 │
-│ max_io_thread_pool_free_size │ 0     │       0 │ Max free size for IO thread pool.     │ UInt64 │
-│ io_thread_pool_queue_size    │ 10000 │       0 │ Queue size for IO thread pool.        │ UInt64 │
-└──────────────────────────────┴───────┴─────────┴───────────────────────────────────────┴────────┘
+┌─name─────────────────────────┬─value─┬─default─┬─changed─┬─description───────────────────────────┬─type───┐
+│ max_thread_pool_size         │ 10000 │ 10000   │       0 │ Max size for global thread pool.      │ UInt64 │
+│ max_thread_pool_free_size    │ 1000  │ 1000    │       0 │ Max free size for global thread pool. │ UInt64 │
+│ thread_pool_queue_size       │ 10000 │ 10000   │       0 │ Queue size for global thread pool.    │ UInt64 │
+│ max_io_thread_pool_size      │ 100   │ 100     │       0 │ Max size for IO thread pool.          │ UInt64 │
+│ max_io_thread_pool_free_size │ 0     │ 0       │       0 │ Max free size for IO thread pool.     │ UInt64 │
+│ io_thread_pool_queue_size    │ 10000 │ 10000   │       0 │ Queue size for IO thread pool.        │ UInt64 │
+└──────────────────────────────┴───────┴─────────┴─────────┴───────────────────────────────────────┴────────┘
 ```
 
 Using of `WHERE changed` can be useful, for example, when you want to check 
