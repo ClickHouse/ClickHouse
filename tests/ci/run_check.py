@@ -7,6 +7,7 @@ from typing import Tuple
 from github import Github
 
 from commit_status_helper import (
+    format_description,
     get_commit,
     post_labels,
     remove_labels,
@@ -157,7 +158,7 @@ def check_pr_description(pr_info: PRInfo) -> Tuple[str, str]:
                     + second_category
                     + "'"
                 )
-                return result_status[:140], category
+                return result_status, category
 
         elif re.match(
             r"(?i)^[#>*_ ]*(short\s*description|change\s*log\s*entry)", lines[i]
@@ -249,7 +250,7 @@ if __name__ == "__main__":
         )
         commit.create_status(
             context=NAME,
-            description=description_error[:139],
+            description=format_description(description_error),
             state="failure",
             target_url=url,
         )
