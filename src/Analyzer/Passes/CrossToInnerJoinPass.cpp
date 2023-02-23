@@ -155,7 +155,7 @@ public:
         QueryTreeNodes equi_conditions;
         QueryTreeNodes other_conditions;
         exctractJoinConditions(where_condition, equi_conditions, other_conditions);
-        bool can_join_on_anything = false;
+        bool can_convert_cross_to_inner = false;
         for (auto & cond : equi_conditions)
         {
             auto left_src = getExpressionSource(getEquiArgument(cond, 0));
@@ -167,7 +167,7 @@ public:
 
                 if (can_join_on)
                 {
-                    can_join_on_anything = true;
+                    can_convert_cross_to_inner = true;
                     continue;
                 }
             }
@@ -177,7 +177,7 @@ public:
             cond = nullptr;
         }
 
-        if (!can_join_on_anything)
+        if (!can_convert_cross_to_inner)
             return false;
 
         equi_conditions.erase(std::remove(equi_conditions.begin(), equi_conditions.end(), nullptr), equi_conditions.end());
@@ -191,33 +191,34 @@ public:
         if (!isEnabled())
             return;
 
-        if (auto * query_node = node->as<QueryNode>())
+        auto * query_node = node->as<QueryNode>();
+        if (!query_node)
+            return;
+
+        auto & where_node = query_node->getWhere();
+        if (!where_node)
+            return;
+
+        auto & join_tree_node = query_node->getJoinTree();
+        if (!join_tree_node || join_tree_node->getNodeType() != QueryTreeNodeType::JOIN)
+            return;
+
+        /// In case of multiple joins, we can try to rewrite all of them
+        /// Example: SELECT * FROM t1, t2, t3 WHERE t1.a = t2.a AND t2.a = t3.a
+        std::vector<JoinNode *> join_nodes;
+        getJoinNodes(join_tree_node, join_nodes);
+
+        for (auto * join_node : join_nodes)
         {
-            auto & where_node = query_node->getWhere();
-            if (!where_node)
-                return;
+            bool is_rewritten = tryRewrite(*join_node, where_node);
 
-            auto & join_tree_node = query_node->getJoinTree();
-            if (!join_tree_node || join_tree_node->getNodeType() != QueryTreeNodeType::JOIN)
-                return;
-
-            /// In case of multiple joins, we can try to rewrite all of them
-            /// Example: SELECT * FROM t1, t2, t3 WHERE t1.a = t2.a AND t2.a = t3.a
-            std::vector<JoinNode *> join_nodes;
-            getJoinNodes(join_tree_node, join_nodes);
-
-            for (auto * join_node : join_nodes)
+            if (!is_rewritten && forceRewrite(join_node->getKind()))
             {
-                bool is_rewritten = tryRewrite(*join_node, where_node);
-
-                if (!is_rewritten && forceRewrite(join_node->getKind()))
-                {
-                    throw Exception(ErrorCodes::INCORRECT_QUERY,
-                        "Failed to rewrite '{}' to INNER JOIN: "
-                        "no equi-join conditions found in WHERE clause. "
-                        "You may set setting `cross_to_inner_join_rewrite` to `1` to allow slow CROSS JOIN for this case",
-                        join_node->formatASTForErrorMessage());
-                }
+                throw Exception(ErrorCodes::INCORRECT_QUERY,
+                    "Failed to rewrite '{}' to INNER JOIN: "
+                    "no equi-join conditions found in WHERE clause. "
+                    "You may set setting `cross_to_inner_join_rewrite` to `1` to allow slow CROSS JOIN for this case",
+                    join_node->formatASTForErrorMessage());
             }
         }
     }
