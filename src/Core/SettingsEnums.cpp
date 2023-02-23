@@ -171,4 +171,12 @@ IMPLEMENT_SETTING_ENUM(LocalFSReadMethod, ErrorCodes::BAD_ARGUMENTS,
     {{"mmap", LocalFSReadMethod::mmap},
      {"pread", LocalFSReadMethod::pread},
      {"read", LocalFSReadMethod::read}})
+
+
+IMPLEMENT_SETTING_ENUM_WITH_RENAME(ParquetVersion, ErrorCodes::BAD_ARGUMENTS,
+    {{"v1_0",       FormatSettings::ParquetVersion::V1_0},
+     {"v2_4", FormatSettings::ParquetVersion::V2_4},
+     {"v2_6", FormatSettings::ParquetVersion::V2_6},
+     {"v2_latest", FormatSettings::ParquetVersion::V2_LATEST}})
+
 }
