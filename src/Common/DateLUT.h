@@ -42,6 +42,16 @@ public:
                     if (!implicit_timezone.empty())
                         return instance(implicit_timezone);
                 }
+
+                const auto global_context = DB::CurrentThread::get().getGlobalContext();
+                if (global_context)
+                {
+                    auto implicit_timezone = extractTimezoneFromContext(global_context);
+
+                    if (!implicit_timezone.empty())
+                        return instance(implicit_timezone);
+                }
+
             }
             return *date_lut.default_impl.load(std::memory_order_acquire);
         }
