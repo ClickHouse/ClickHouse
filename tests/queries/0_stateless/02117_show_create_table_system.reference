@@ -229,7 +229,8 @@ CREATE TABLE system.distribution_queue
     `data_compressed_bytes` UInt64,
     `broken_data_files` UInt64,
     `broken_data_compressed_bytes` UInt64,
-    `last_exception` String
+    `last_exception` String,
+    `last_exception_time` DateTime
 )
 ENGINE = SystemDistributionQueue
 COMMENT 'SYSTEM TABLE is built on the fly.'

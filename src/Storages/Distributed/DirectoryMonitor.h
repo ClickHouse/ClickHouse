@@ -58,6 +58,7 @@ public:
     struct InternalStatus
     {
         std::exception_ptr last_exception;
+        std::chrono::system_clock::time_point last_exception_time;
 
         size_t error_count = 0;
 
