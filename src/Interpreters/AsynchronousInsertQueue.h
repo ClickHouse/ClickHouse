@@ -20,7 +20,25 @@ public:
     AsynchronousInsertQueue(ContextPtr context_, size_t pool_size_);
     ~AsynchronousInsertQueue();
 
-    std::future<void> push(ASTPtr query, ContextPtr query_context);
+    struct PushResult
+    {
+        enum Status
+        {
+            OK,
+            TOO_MUCH_DATA,
+        };
+
+        Status status;
+
+        /// Future that allows to wait until the query is flushed.
+        std::future<void> future;
+
+        /// Read buffer that contains extracted
+        /// from query data in case of too much data.
+        std::unique_ptr<ReadBuffer> insert_data_buffer;
+    };
+
+    PushResult push(ASTPtr query, ContextPtr query_context);
     size_t getPoolSize() const { return pool_size; }
 
 private:
