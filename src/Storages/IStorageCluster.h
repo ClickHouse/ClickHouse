@@ -23,6 +23,18 @@ public:
     virtual RemoteQueryExecutor::Extension getTaskIteratorExtension(ASTPtr query, ContextPtr context) const = 0;
 
     bool isRemote() const override { return true; }
+
+    static ContextPtr updateSettingsForTableFunctionCluster(ContextPtr context, const Settings & settings)
+    {
+        Settings new_settings = settings;
+
+        /// Cluster table functions should always skip unavailable shards.
+        new_settings.skip_unavailable_shards = true;
+
+        auto new_context = Context::createCopy(context);
+        new_context->setSettings(new_settings);
+        return new_context;
+    }
 };
 
 
