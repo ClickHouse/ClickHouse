@@ -219,13 +219,9 @@ static ReturnType safeDeserialize(
 /// Deserialize value into non-nullable column. In case of NULL, insert default value and return false.
 template <typename ReturnType = void, typename CheckForNull, typename DeserializeNested, typename std::enable_if_t<std::is_same_v<ReturnType, bool>, ReturnType>* = nullptr>
 static ReturnType safeDeserialize(
-        IColumn & column, const ISerialization & nested,
+        IColumn & column, const ISerialization &,
         CheckForNull && check_for_null, DeserializeNested && deserialize_nested)
 {
-    assert(!dynamic_cast<ColumnNullable *>(&column));
-    assert(!dynamic_cast<const SerializationNullable *>(&nested));
-    UNUSED(nested);
-
     bool insert_default = check_for_null();
     if (insert_default)
         column.insertDefault();
