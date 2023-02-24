@@ -133,13 +133,13 @@ namespace detail
         ReadSettings settings;
         Poco::Logger * log;
 
-        bool withPartialContent() const
+        bool withPartialContent(const Range & range) const
         {
             /**
              * Add range header if we have some passed range (for disk web)
              * or if we want to retry GET request on purpose.
              */
-            return read_range.begin || read_range.end || retry_with_range_header;
+            return range.begin || range.end || retry_with_range_header;
         }
 
         size_t getRangeBegin() const { return read_range.begin.value_or(0); }
@@ -156,11 +156,6 @@ namespace detail
             Poco::Net::HTTPRequest request(method_, uri_.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
             request.setHost(uri_.getHost()); // use original, not resolved host name in header
 
-            Range range;
-            if constexpr (use_initial_range)
-                range = Range{initial_read_range.begin.value_or(0), initial_read_range.end};
-            else
-                range = Range{getOffset(), read_range.end};
 
             if (out_stream_callback)
                 request.setChunkedTransferEncoding(true);
@@ -168,13 +163,25 @@ namespace detail
             for (auto & [header, value] : http_header_entries)
                 request.set(header, value);
 
-            if (withPartialContent())
+            std::optional<Range> range;
+            if constexpr (use_initial_range)
+            {
+                if (withPartialContent(initial_read_range))
+                    range = initial_read_range;
+            }
+            else
+            {
+                if (withPartialContent(read_range))
+                    range = Range{getOffset(), read_range.end};
+            }
+
+            if (range)
             {
                 String range_header_value;
-                if (range.end)
-                    range_header_value = fmt::format("bytes={}-{}", *range.begin, *range.end);
+                if (range->end)
+                    range_header_value = fmt::format("bytes={}-{}", *range->begin, *range->end);
                 else
-                    range_header_value = fmt::format("bytes={}-", *range.begin);
+                    range_header_value = fmt::format("bytes={}-", *range->begin);
                 LOG_TEST(log, "Adding header: Range: {}", range_header_value);
                 request.set("Range", range_header_value);
             }
@@ -448,7 +455,7 @@ namespace detail
             if (response.hasContentLength())
                 LOG_DEBUG(log, "Received response with content length: {}", response.getContentLength());
 
-            if (withPartialContent() && response.getStatus() != Poco::Net::HTTPResponse::HTTPStatus::HTTP_PARTIAL_CONTENT)
+            if (withPartialContent(read_range) && response.getStatus() != Poco::Net::HTTPResponse::HTTPStatus::HTTP_PARTIAL_CONTENT)
             {
                 /// Having `200 OK` instead of `206 Partial Content` is acceptable in case we retried with range.begin == 0.
                 if (read_range.begin && *read_range.begin != 0)
