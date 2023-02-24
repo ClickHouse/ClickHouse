@@ -15,6 +15,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 JoinNode::JoinNode(QueryTreeNodePtr left_table_expression_,
     QueryTreeNodePtr right_table_expression_,
     QueryTreeNodePtr join_expression_,
@@ -111,6 +116,20 @@ ASTPtr JoinNode::toASTImpl() const
     table_element.table_join = table_element.children.back();
 
     return tables_in_select_query_ast;
+}
+
+void JoinNode::crossToInner(const QueryTreeNodePtr & join_expression_)
+{
+    if (kind != JoinKind::Cross && kind != JoinKind::Comma)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot rewrite {} to INNER JOIN, expected CROSS", toString(kind));
+
+    if (children[join_expression_child_index])
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Join expression is expected to be empty for CROSS JOIN, got '{}'",
+            children[join_expression_child_index]->formatConvertedASTForErrorMessage());
+
+    kind = JoinKind::Inner;
+    strictness = JoinStrictness::All;
+    children[join_expression_child_index] = join_expression_;
 }
 
 }
