@@ -2,6 +2,7 @@
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -32,7 +33,7 @@ namespace
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "ON " << (settings.hilite ? IAST::hilite_none : "");
         if (element.isGlobalWithParameter())
         {
-            if (element.any_global_with_parameter)
+            if (element.any_parameter)
                 settings.ostr << "*";
             else
                 settings.ostr << backQuoteIfNeed(element.parameter);
@@ -56,6 +57,8 @@ namespace
     void formatElementsWithoutOptions(const AccessRightsElements & elements, const IAST::FormatSettings & settings)
     {
         bool no_output = true;
+        auto * log = &Poco::Logger::get("kssenii");
+        LOG_TEST(log, "kssenii 0 - {}", elements.size());
         for (size_t i = 0; i != elements.size(); ++i)
         {
             const auto & element = elements[i];
@@ -77,12 +80,16 @@ namespace
             if (i != elements.size() - 1)
             {
                 const auto & next_element = elements[i + 1];
-                if (element.sameDatabaseAndTable(next_element))
+                if (element.sameDatabaseAndTableAndParameter(next_element))
+                {
+                    LOG_TEST(log, "kssenii 1");
                     next_element_on_same_db_and_table = true;
+                }
             }
 
             if (!next_element_on_same_db_and_table)
             {
+                LOG_TEST(log, "kssenii 2");
                 settings.ostr << " ";
                 formatONClause(element, settings);
             }

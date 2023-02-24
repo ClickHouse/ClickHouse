@@ -61,23 +61,24 @@ namespace
                     res.any_database = true;
                     res.any_table = true;
                     res.any_column = true;
-                    res.any_global_with_parameter = true;
+                    res.any_parameter = true;
                     break;
                 }
                 case 1:
                 {
                     if (access_flags.isGlobalWithParameter())
                     {
-                        res.any_global_with_parameter = false;
+                        res.any_parameter = false;
                         res.parameter = full_name[0];
                     }
                     else
                     {
                         res.any_database = false;
                         res.database = full_name[0];
+
+                        res.any_table = true;
+                        res.any_column = true;
                     }
-                    res.any_table = true;
-                    res.any_column = true;
                     break;
                 }
                 case 2:
@@ -119,10 +120,26 @@ namespace
                 size_t count_elements_with_diff_columns = sorted.countElementsWithDifferenceInColumnOnly(i);
                 if (count_elements_with_diff_columns == 1)
                 {
-                    /// Easy case: one Element is converted to one AccessRightsElement.
                     const auto & element = sorted[i];
                     if (element.access_flags)
-                        res.emplace_back(element.getResult());
+                    {
+                        auto per_parameter = element.access_flags.splitIntoParameterTypes();
+                        if (per_parameter.size() == 1)
+                        {
+                            /// Easy case: one Element is converted to one AccessRightsElement.
+                            res.emplace_back(element.getResult());
+                        }
+                        else
+                        {
+                            /// Difficult case: one element is converted into multiple AccessRightsElements.
+                            for (const auto & [_, parameter_flags] : per_parameter)
+                            {
+                                auto current_element{element};
+                                current_element.access_flags = parameter_flags;
+                                res.emplace_back(current_element.getResult());
+                            }
+                        }
+                    }
                     ++i;
                 }
                 else
@@ -146,6 +163,8 @@ namespace
             {
                 return (element.full_name.size() != 3) || (element.full_name[0] != start_element.full_name[0])
                     || (element.full_name[1] != start_element.full_name[1]) || (element.grant_option != start_element.grant_option)
+                    || (element.access_flags.isGlobalWithParameter() != start_element.access_flags.isGlobalWithParameter())
+                    || (element.access_flags.getParameterType() != start_element.access_flags.getParameterType())
                     || (element.is_partial_revoke != start_element.is_partial_revoke);
             });
 
@@ -792,8 +811,13 @@ void AccessRights::grantImplHelper(const AccessRightsElement & element)
 {
     assert(!element.is_partial_revoke);
     assert(!element.grant_option || with_grant_option);
-    if (!element.any_global_with_parameter)
-        grantImpl<with_grant_option>(element.access_flags, element.parameter);
+    if (element.isGlobalWithParameter())
+    {
+        if (element.any_parameter)
+            grantImpl<with_grant_option>(element.access_flags);
+        else
+            grantImpl<with_grant_option>(element.access_flags, element.parameter);
+    }
     else if (element.any_database)
         grantImpl<with_grant_option>(element.access_flags);
     else if (element.any_table)
@@ -869,8 +893,13 @@ template <bool grant_option>
 void AccessRights::revokeImplHelper(const AccessRightsElement & element)
 {
     assert(!element.grant_option || grant_option);
-    if (!element.any_global_with_parameter)
-        revokeImpl<grant_option>(element.access_flags, element.parameter);
+    if (element.isGlobalWithParameter())
+    {
+        if (element.any_parameter)
+            revokeImpl<grant_option>(element.access_flags);
+        else
+            revokeImpl<grant_option>(element.access_flags, element.parameter);
+    }
     else if (element.any_database)
         revokeImpl<grant_option>(element.access_flags);
     else if (element.any_table)
@@ -961,8 +990,13 @@ template <bool grant_option>
 bool AccessRights::isGrantedImplHelper(const AccessRightsElement & element) const
 {
     assert(!element.grant_option || grant_option);
-    if (!element.any_global_with_parameter)
-        return isGrantedImpl<grant_option>(element.access_flags, element.parameter);
+    if (element.isGlobalWithParameter())
+    {
+        if (element.any_parameter)
+            return isGrantedImpl<grant_option>(element.access_flags);
+        else
+            return isGrantedImpl<grant_option>(element.access_flags, element.parameter);
+    }
     else if (element.any_database)
         return isGrantedImpl<grant_option>(element.access_flags);
     else if (element.any_table)

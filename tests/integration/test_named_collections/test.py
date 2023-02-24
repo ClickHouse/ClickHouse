@@ -150,6 +150,10 @@ def test_granular_access_show_query(cluster):
         == node.query("select name from system.named_collections", user="kek").strip()
     )
 
+    # check:
+    # GRANT show named collections ON *
+    # REVOKE show named collections ON collection
+
     node.query("DROP USER IF EXISTS koko")
     node.query("CREATE USER koko")
     node.query("GRANT select ON *.* TO koko")
@@ -165,6 +169,35 @@ def test_granular_access_show_query(cluster):
     assert (
         "collection1\ncollection2"
         == node.query("select name from system.named_collections", user="koko").strip()
+    )
+
+    node.query("REVOKE show named collections ON collection1 FROM koko;")
+    assert (
+        "collection2"
+        == node.query("select name from system.named_collections", user="koko").strip()
+    )
+    node.restart_clickhouse()
+    assert (
+        "collection2"
+        == node.query("select name from system.named_collections", user="koko").strip()
+    )
+    node.query("REVOKE show named collections ON collection2 FROM koko;")
+    assert (
+        "" == node.query("select * from system.named_collections", user="koko").strip()
+    )
+
+    # check:
+    # GRANT show named collections ON collection
+    # REVOKE show named collections ON *
+
+    node.query("GRANT show named collections ON collection2 TO koko")
+    assert (
+        "collection2"
+        == node.query("select name from system.named_collections", user="koko").strip()
+    )
+    node.query("REVOKE show named collections ON * FROM koko;")
+    assert (
+        "" == node.query("select * from system.named_collections", user="koko").strip()
     )
 
     node.query("DROP NAMED COLLECTION collection2")
@@ -218,6 +251,13 @@ def test_granular_access_create_alter_drop_query(cluster):
         == node.query(
             "select collection['key1'] from system.named_collections where name = 'collection2'"
         ).strip()
+    )
+    node.query("REVOKE create named collection ON collection2 FROM kek")
+    assert (
+        "DB::Exception: kek: Not enough privileges. To execute this query it's necessary to have grant ALTER NAMED COLLECTION"
+        in node.query_and_get_error(
+            "ALTER NAMED COLLECTION collection2 SET key1=3", user="kek"
+        )
     )
 
     assert (

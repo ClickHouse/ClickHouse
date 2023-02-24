@@ -124,7 +124,7 @@ namespace
                     return false;
 
                 String database_name, table_name, parameter;
-                bool any_database = false, any_table = false, any_global_with_parameter = true;
+                bool any_database = false, any_table = false, any_parameter = false;
 
                 size_t is_global_with_parameter = 0;
                 for (const auto & elem : access_and_columns)
@@ -141,11 +141,11 @@ namespace
                     ASTPtr parameter_ast;
                     if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
                     {
-                        any_global_with_parameter = true;
+                        any_parameter = true;
                     }
                     else if (ParserIdentifier{}.parse(pos, parameter_ast, expected))
                     {
-                        any_global_with_parameter = false;
+                        any_parameter = false;
                         parameter = getIdentifierName(parameter_ast);
                     }
                     else
@@ -167,7 +167,7 @@ namespace
                     element.any_database = any_database;
                     element.database = database_name;
                     element.any_table = any_table;
-                    element.any_global_with_parameter = any_global_with_parameter;
+                    element.any_parameter = any_parameter;
                     element.table = table_name;
                     element.parameter = parameter;
                     res_elements.emplace_back(std::move(element));
@@ -202,7 +202,7 @@ namespace
                 throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted on the table level", old_flags.toString());
             else if (!element.any_database)
                 throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted on the database level", old_flags.toString());
-            else if (!element.any_global_with_parameter)
+            else if (!element.any_parameter)
                 throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted on the global with parameter level", old_flags.toString());
             else
                 throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted", old_flags.toString());

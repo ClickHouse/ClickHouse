@@ -20,7 +20,7 @@ struct AccessRightsElement
     bool any_database = true;
     bool any_table = true;
     bool any_column = true;
-    bool any_global_with_parameter = true;
+    bool any_parameter = false;
 
     bool grant_option = false;
     bool is_partial_revoke = false;
@@ -53,11 +53,11 @@ struct AccessRightsElement
     friend bool operator==(const AccessRightsElement & left, const AccessRightsElement & right) { return left.toTuple() == right.toTuple(); }
     friend bool operator!=(const AccessRightsElement & left, const AccessRightsElement & right) { return !(left == right); }
 
-    bool sameDatabaseAndTable(const AccessRightsElement & other) const
+    bool sameDatabaseAndTableAndParameter(const AccessRightsElement & other) const
     {
         return (database == other.database) && (any_database == other.any_database)
             && (table == other.table) && (any_table == other.any_table)
-            && (parameter == other.parameter) && (any_global_with_parameter == other.any_global_with_parameter)
+            && (parameter == other.parameter) && (any_parameter == other.any_parameter)
             && (access_flags.getParameterType() == other.access_flags.getParameterType())
             && (isGlobalWithParameter() == other.isGlobalWithParameter());
     }
@@ -91,7 +91,7 @@ public:
     using Base::Base;
 
     bool empty() const;
-    bool sameDatabaseAndTable() const;
+    bool sameDatabaseAndTableAndParameter() const;
     bool sameOptions() const;
 
     /// Resets flags which cannot be granted.

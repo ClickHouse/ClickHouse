@@ -58,6 +58,7 @@ public:
         NAMED_COLLECTION,
     };
     ParameterType getParameterType() const;
+    std::unordered_map<ParameterType, AccessFlags> splitIntoParameterTypes() const;
 
     friend bool operator ==(const AccessFlags & left, const AccessFlags & right) { return left.flags == right.flags; }
     friend bool operator !=(const AccessFlags & left, const AccessFlags & right) { return !(left == right); }
