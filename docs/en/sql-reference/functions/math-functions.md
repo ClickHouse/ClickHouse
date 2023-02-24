@@ -579,3 +579,25 @@ Result:
 │       3628800 │
 └───────────────┘
 ```
+
+## width_bucket(operand, low, high, integer)
+
+Returns the number of the bucket in which `operand` falls in a histogram having `count` equal-width buckets spanning the range `low` to `high`. Returns `0` if `operand < low`, and returns `count+1` if `operand >= high`.
+
+`operand`, `low`, `high` can be any native number type. `count` can only be unsigned native integer and its value cannot be zero.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT WIDTH_BUCKET(10.15, -8.6, 23, 18);
+```
+
+Result:
+
+``` text
+┌─width_bucket(10.15, -8.6, 23, 18)─┐
+│                                11 │
+└───────────────────────────────────┘
+```
