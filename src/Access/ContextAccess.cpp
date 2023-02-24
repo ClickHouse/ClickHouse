@@ -610,8 +610,13 @@ template <bool throw_if_denied, bool grant_option>
 bool ContextAccess::checkAccessImplHelper(const AccessRightsElement & element) const
 {
     assert(!element.grant_option || grant_option);
-    if (!element.any_global_with_parameter)
-        return checkAccessImpl<throw_if_denied, grant_option>(element.access_flags, element.parameter);
+    if (element.isGlobalWithParameter())
+    {
+        if (element.any_parameter)
+            return checkAccessImpl<throw_if_denied, grant_option>(element.access_flags);
+        else
+            return checkAccessImpl<throw_if_denied, grant_option>(element.access_flags, element.parameter);
+    }
     else if (element.any_database)
         return checkAccessImpl<throw_if_denied, grant_option>(element.access_flags);
     else if (element.any_table)

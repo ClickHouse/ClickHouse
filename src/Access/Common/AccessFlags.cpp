@@ -363,6 +363,21 @@ bool AccessFlags::isGlobalWithParameter() const
     return getParameterType() != AccessFlags::NONE;
 }
 
+std::unordered_map<AccessFlags::ParameterType, AccessFlags> AccessFlags::splitIntoParameterTypes() const
+{
+    std::unordered_map<ParameterType, AccessFlags> result;
+
+    auto named_collection_flags = AccessFlags::allNamedCollectionFlags() & *this;
+    if (named_collection_flags)
+        result.emplace(ParameterType::NAMED_COLLECTION, named_collection_flags);
+
+    auto other_flags = (~AccessFlags::allNamedCollectionFlags()) & *this;
+    if (other_flags)
+        result.emplace(ParameterType::NONE, other_flags);
+
+    return result;
+}
+
 AccessFlags::ParameterType AccessFlags::getParameterType() const
 {
     if (isEmpty() || !AccessFlags::allGlobalWithParameterFlags().contains(*this))

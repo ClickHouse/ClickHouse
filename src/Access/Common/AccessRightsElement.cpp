@@ -1,6 +1,7 @@
 #include <Access/Common/AccessRightsElement.h>
 #include <Common/quoteString.h>
 #include <boost/range/algorithm_ext/erase.hpp>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -26,7 +27,7 @@ namespace
         result += "ON ";
         if (element.isGlobalWithParameter())
         {
-            if (element.any_global_with_parameter)
+            if (element.any_parameter)
                 result += "*";
             else
                 result += backQuoteIfNeed(element.parameter);
@@ -129,8 +130,10 @@ namespace
             if (i != elements.size() - 1)
             {
                 const auto & next_element = elements[i + 1];
-                if (element.sameDatabaseAndTable(next_element) && element.sameOptions(next_element))
+                if (element.sameDatabaseAndTableAndParameter(next_element) && element.sameOptions(next_element))
+                {
                     next_element_uses_same_table_and_options = true;
+                }
             }
 
             if (!next_element_uses_same_table_and_options)
@@ -171,6 +174,7 @@ AccessRightsElement::AccessRightsElement(
     , any_database(false)
     , any_table(false)
     , any_column(false)
+    , any_parameter(false)
 {
 }
 
@@ -195,19 +199,20 @@ AccessRightsElement::AccessRightsElement(
     , any_database(false)
     , any_table(false)
     , any_column(false)
+    , any_parameter(false)
 {
 }
 
 void AccessRightsElement::eraseNonGrantable()
 {
-    if (!any_column)
+    if (isGlobalWithParameter() && !any_parameter)
+        access_flags &= AccessFlags::allFlagsGrantableOnGlobalWithParameterLevel();
+    else if (!any_column)
         access_flags &= AccessFlags::allFlagsGrantableOnColumnLevel();
     else if (!any_table)
         access_flags &= AccessFlags::allFlagsGrantableOnTableLevel();
     else if (!any_database)
         access_flags &= AccessFlags::allFlagsGrantableOnDatabaseLevel();
-    else if (!any_global_with_parameter)
-        access_flags &= AccessFlags::allFlagsGrantableOnGlobalWithParameterLevel();
     else
         access_flags &= AccessFlags::allFlagsGrantableOnGlobalLevel();
 }
@@ -224,9 +229,9 @@ String AccessRightsElement::toStringWithoutOptions() const { return toStringImpl
 
 bool AccessRightsElements::empty() const { return std::all_of(begin(), end(), [](const AccessRightsElement & e) { return e.empty(); }); }
 
-bool AccessRightsElements::sameDatabaseAndTable() const
+bool AccessRightsElements::sameDatabaseAndTableAndParameter() const
 {
-    return (size() < 2) || std::all_of(std::next(begin()), end(), [this](const AccessRightsElement & e) { return e.sameDatabaseAndTable(front()); });
+    return (size() < 2) || std::all_of(std::next(begin()), end(), [this](const AccessRightsElement & e) { return e.sameDatabaseAndTableAndParameter(front()); });
 }
 
 bool AccessRightsElements::sameOptions() const
