@@ -199,6 +199,10 @@ class Release:
                 raise ValueError(
                     "The relese type must be 'major' for minor versions>=12"
                 )
+            if self._version.minor < 12 and self.release_type == "major":
+                raise ValueError(
+                    "The relese type must be 'minor' for minor versions<12"
+                )
 
             with self._checkout(self.release_commit, True):
                 # Checkout to the commit, it will provide the correct current version
