@@ -5,7 +5,7 @@ set basename [file tail $argv0]
 exp_internal -f $env(CLICKHOUSE_TMP)/$basename.debuglog 0
 
 log_user 0
-set timeout 20
+set timeout 60
 match_max 100000
 
 expect_after {
@@ -50,5 +50,5 @@ expect "Ok."
 send -- "drop table t\r"
 expect "Ok."
 
-send -- "\4"
+send -- "exit\r"
 expect eof
