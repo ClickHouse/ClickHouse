@@ -17,6 +17,7 @@ class QueryPlan;
 
 class Set;
 using SetPtr = std::shared_ptr<Set>;
+using ConstSetPtr = std::shared_ptr<const Set>;
 class InterpreterSelectWithUnionQuery;
 
 /// Information on how to build set for the [GLOBAL] IN section.
@@ -74,8 +75,8 @@ public:
                                          SizeLimits set_size_limit, bool transform_null_in);
     SubqueryForSet & getSubquery(const String & subquery_id);
 
-    void set(const PreparedSetKey & key, SetPtr set_);
-    SetPtr & get(const PreparedSetKey & key);
+    void set(const PreparedSetKey & key, ConstSetPtr set_);
+    ConstSetPtr & get(const PreparedSetKey & key);
 
     /// Get subqueries and clear them.
     /// We need to build a plan for subqueries just once. That's why we can clear them after accessing them.
@@ -84,12 +85,12 @@ public:
 
     /// Returns all sets that match the given ast hash not checking types
     /// Used in KeyCondition and MergeTreeIndexConditionBloomFilter to make non exact match for types in PreparedSetKey
-    std::vector<SetPtr> getByTreeHash(IAST::Hash ast_hash);
+    std::vector<ConstSetPtr> getByTreeHash(IAST::Hash ast_hash);
 
     bool empty() const;
 
 private:
-    std::unordered_map<PreparedSetKey, SetPtr, PreparedSetKey::Hash> sets;
+    std::unordered_map<PreparedSetKey, ConstSetPtr, PreparedSetKey::Hash> sets;
 
     /// This is the information required for building sets
     SubqueriesForSets subqueries;

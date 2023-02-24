@@ -72,7 +72,7 @@ bool traverseASTFilter(
             else
                 set_key = PreparedSetKey::forLiteral(*value, {primary_key_type});
 
-            SetPtr set = prepared_sets->get(set_key);
+            ConstSetPtr set = prepared_sets->get(set_key);
             if (!set)
                 return false;
 

@@ -331,7 +331,7 @@ ConstSetPtr RPNBuilderTreeNode::tryGetPreparedSet(
         /// about types in left argument of the IN operator. Instead, we manually iterate through all the sets
         /// and find the one for the right arg based on the AST structure (getTreeHash), after that we check
         /// that the types it was prepared with are compatible with the types of the primary key.
-        auto types_match = [&indexes_mapping, &data_types](const SetPtr & candidate_set)
+        auto types_match = [&indexes_mapping, &data_types](const ConstSetPtr & candidate_set)
         {
             assert(indexes_mapping.size() == data_types.size());
 

@@ -62,13 +62,13 @@ SubqueryForSet & PreparedSets::createOrGetSubquery(const String & subquery_id, c
 /// It's aimed to fill external table passed to SubqueryForSet::createSource.
 SubqueryForSet & PreparedSets::getSubquery(const String & subquery_id) { return subqueries[subquery_id]; }
 
-void PreparedSets::set(const PreparedSetKey & key, SetPtr set_) { sets[key] = set_; }
+void PreparedSets::set(const PreparedSetKey & key, ConstSetPtr set_) { sets[key] = set_; }
 
-SetPtr & PreparedSets::get(const PreparedSetKey & key) { return sets[key]; }
+ConstSetPtr & PreparedSets::get(const PreparedSetKey & key) { return sets[key]; }
 
-std::vector<SetPtr> PreparedSets::getByTreeHash(IAST::Hash ast_hash)
+std::vector<ConstSetPtr> PreparedSets::getByTreeHash(IAST::Hash ast_hash)
 {
-    std::vector<SetPtr> res;
+    std::vector<ConstSetPtr> res;
     for (const auto & it : this->sets)
     {
         if (it.first.ast_hash == ast_hash)

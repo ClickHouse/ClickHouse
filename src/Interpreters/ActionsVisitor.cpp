@@ -421,7 +421,7 @@ Block createBlockForSet(
 }
 
 
-SetPtr makeExplicitSet(
+ConstSetPtr makeExplicitSet(
     const ASTFunction * node, const ActionsDAG & actions, bool create_ordered_set,
     ContextPtr context, const SizeLimits & size_limits, PreparedSets & prepared_sets)
 {
@@ -951,7 +951,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         return;
     }
 
-    SetPtr prepared_set;
+    ConstSetPtr prepared_set;
     if (checkFunctionIsInOrGlobalInOperator(node))
     {
         /// Let's find the type of the first argument (then getActionsImpl will be called again and will not affect anything).
@@ -1363,7 +1363,7 @@ void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
     data.addColumn(std::move(column));
 }
 
-SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_subqueries)
+ConstSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_subqueries)
 {
     if (!data.prepared_sets)
         return nullptr;
@@ -1383,7 +1383,7 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
         if (no_subqueries)
             return {};
         auto set_key = PreparedSetKey::forSubquery(*right_in_operand);
-        if (SetPtr set = data.prepared_sets->get(set_key))
+        if (auto set = data.prepared_sets->get(set_key))
             return set;
 
         /// A special case is if the name of the table is specified on the right side of the IN statement,
