@@ -18,6 +18,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Sources/MongoDBSource.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <unordered_set>
 
 namespace DB
 {
@@ -171,13 +172,6 @@ SinkToStoragePtr StorageMongoDB::write(const ASTPtr & /* query */, const Storage
     return std::make_shared<StorageMongoDBSink>(collection_name, database_name, metadata_snapshot, connection);
 }
 
-struct KeysCmp
-{
-    constexpr bool operator()(const auto & lhs, const auto & rhs) const
-    {
-        return lhs == rhs || ((lhs == "table") && (rhs == "collection")) || ((rhs == "table") && (lhs == "collection"));
-    }
-};
 StorageMongoDB::Configuration StorageMongoDB::getConfiguration(ASTs engine_args, ContextPtr context)
 {
     Configuration configuration;
@@ -186,14 +180,14 @@ StorageMongoDB::Configuration StorageMongoDB::getConfiguration(ASTs engine_args,
     {
         validateNamedCollection(
             *named_collection,
-            std::unordered_multiset<std::string_view, std::hash<std::string_view>, KeysCmp>{"host", "port", "user", "password", "database", "collection", "table"},
+            ValidateKeysMultiset<MongoDBEqualKeysSet>{"host", "port", "user", "username", "password", "database", "db", "collection", "table"},
             {"options"});
 
-        configuration.host = named_collection->get<String>("host");
+        configuration.host = named_collection->getOrDefault<String>("host", named_collection->getOrDefault<String>("hostname", ""));
         configuration.port = static_cast<UInt16>(named_collection->get<UInt64>("port"));
-        configuration.username = named_collection->get<String>("user");
+        configuration.username = named_collection->getOrDefault<String>("user", named_collection->getOrDefault<String>("username", ""));
         configuration.password = named_collection->get<String>("password");
-        configuration.database = named_collection->get<String>("database");
+        configuration.database = named_collection->getOrDefault<String>("database", named_collection->getOrDefault<String>("db", ""));
         configuration.table = named_collection->getOrDefault<String>("collection", named_collection->getOrDefault<String>("table", ""));
         configuration.options = named_collection->getOrDefault<String>("options", "");
     }

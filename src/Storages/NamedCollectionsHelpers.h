@@ -25,12 +25,42 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(const Poco::Util::A
 
 HTTPHeaderEntries getHeadersFromNamedCollection(const NamedCollection & collection);
 
-template <typename RequiredKeys = std::unordered_set<std::string>,
-          typename OptionalKeys = std::unordered_set<std::string>>
+struct ExternalDatabaseEqualKeysSet
+{
+    static constexpr std::array<std::pair<std::string_view, std::string_view>, 3> equal_keys{
+        std::pair{"username", "user"}, std::pair{"database", "db"}, std::pair{"hostname", "host"}};
+};
+struct MongoDBEqualKeysSet
+{
+    static constexpr std::array<std::pair<std::string_view, std::string_view>, 4> equal_keys{
+        std::pair{"username", "user"}, std::pair{"database", "db"}, std::pair{"hostname", "host"}, std::pair{"table", "collection"}};
+};
+
+template <typename EqualKeys> struct ValidateKeysCmp
+{
+    constexpr bool operator()(const auto & lhs, const auto & rhs) const
+    {
+        if (lhs == rhs)
+            return true;
+
+        for (const auto & equal : EqualKeys::equal_keys)
+        {
+            if (((equal.first == lhs) && (equal.second == rhs)) || ((equal.first == rhs) && (equal.second == lhs)))
+                return true;
+        }
+        return false;
+    }
+};
+
+template <class keys_cmp> using ValidateKeysMultiset = std::unordered_multiset<std::string_view, std::hash<std::string_view>, ValidateKeysCmp<keys_cmp>>;
+using ValidateKeysSet = std::unordered_multiset<std::string_view, std::hash<std::string_view>>;
+
+
+template <typename Keys = ValidateKeysSet>
 void validateNamedCollection(
     const NamedCollection & collection,
-    const RequiredKeys & required_keys,
-    const OptionalKeys & optional_keys,
+    const Keys & required_keys,
+    const Keys & optional_keys,
     const std::vector<std::regex> & optional_regex_keys = {})
 {
     NamedCollection::Keys keys = collection.getKeys();
