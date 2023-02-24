@@ -50,23 +50,23 @@ class FunctionWidthBucket : public IFunction
     }
 
     template <typename TResultType, typename TCountType>
-    TResultType calculate(const Float64 operand, const Float64 min, const Float64 max, const TCountType count) const
+    TResultType calculate(const Float64 operand, const Float64 low, const Float64 high, const TCountType count) const
     {
         if (count == 0)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Last argument (count) for function {} cannot be 0.", getName());
         }
 
-        if (operand < min || min >= max)
+        if (operand < low || low >= high)
         {
             return 0;
         }
-        else if (operand >= max)
+        else if (operand >= high)
         {
             return count + 1;
         }
 
-        return static_cast<TResultType>(count * ((operand - min) / (max - min)) + 1);
+        return static_cast<TResultType>(count * ((operand - low) / (high - low)) + 1);
     }
 
     template <is_any_of<UInt8, UInt16, UInt32, UInt64> TCountType>
@@ -83,22 +83,22 @@ class FunctionWidthBucket : public IFunction
         }
 
         const auto * operands_vec = getDataIfNotNull(checkAndGetColumn<ColumnVector<Float64>>(casted_columns[0].get()));
-        const auto * mins_vec = getDataIfNotNull(checkAndGetColumn<ColumnVector<Float64>>(casted_columns[1].get()));
-        const auto * maxs_vec = getDataIfNotNull(checkAndGetColumn<ColumnVector<Float64>>(casted_columns[2].get()));
+        const auto * lows_vec = getDataIfNotNull(checkAndGetColumn<ColumnVector<Float64>>(casted_columns[1].get()));
+        const auto * highs_vec = getDataIfNotNull(checkAndGetColumn<ColumnVector<Float64>>(casted_columns[2].get()));
         const auto * counts_vec = getDataIfNotNull(checkAndGetColumn<ColumnVector<TCountType>>(arguments[3].column.get()));
 
         const auto * operands_col_const = checkAndGetColumnConst<ColumnVector<Float64>>(casted_columns[0].get());
-        const auto * mins_col_const = checkAndGetColumnConst<ColumnVector<Float64>>(casted_columns[1].get());
-        const auto * maxs_col_const = checkAndGetColumnConst<ColumnVector<Float64>>(casted_columns[2].get());
+        const auto * lows_col_const = checkAndGetColumnConst<ColumnVector<Float64>>(casted_columns[1].get());
+        const auto * highs_col_const = checkAndGetColumnConst<ColumnVector<Float64>>(casted_columns[2].get());
         const auto * counts_col_const = checkAndGetColumnConst<ColumnVector<TCountType>>(arguments[3].column.get());
 
         assert((nullptr != operands_col_const) ^ (nullptr != operands_vec && operands_vec->size() == input_rows_count));
-        assert((nullptr != mins_col_const) ^ (nullptr != mins_vec && mins_vec->size() == input_rows_count));
-        assert((nullptr != maxs_col_const) ^ (nullptr != maxs_vec && maxs_vec->size() == input_rows_count));
+        assert((nullptr != lows_col_const) ^ (nullptr != lows_vec && lows_vec->size() == input_rows_count));
+        assert((nullptr != highs_col_const) ^ (nullptr != highs_vec && highs_vec->size() == input_rows_count));
         assert((nullptr != counts_col_const) ^ (nullptr != counts_vec && counts_vec->size() == input_rows_count));
 
         const auto are_all_const_cols
-            = nullptr != operands_col_const && nullptr != mins_col_const && nullptr != maxs_col_const && nullptr != counts_col_const;
+            = nullptr != operands_col_const && nullptr != lows_col_const && nullptr != highs_col_const && nullptr != counts_col_const;
 
 
         if (are_all_const_cols)
@@ -108,8 +108,8 @@ class FunctionWidthBucket : public IFunction
             auto & result_data = result_column->getData();
             result_data.push_back(calculate<ResultType>(
                 operands_col_const->getValue<Float64>(),
-                mins_col_const->getValue<Float64>(),
-                maxs_col_const->getValue<Float64>(),
+                lows_col_const->getValue<Float64>(),
+                highs_col_const->getValue<Float64>(),
                 counts_col_const->template getValue<TCountType>()));
 
             return ColumnConst::create(std::move(result_column), input_rows_count);
@@ -122,10 +122,10 @@ class FunctionWidthBucket : public IFunction
         for (const auto row_index : collections::range(0, input_rows_count))
         {
             const auto operand = getValue<Float64>(operands_col_const, operands_vec, row_index);
-            const auto min = getValue<Float64>(mins_col_const, mins_vec, row_index);
-            const auto max = getValue<Float64>(maxs_col_const, maxs_vec, row_index);
+            const auto low = getValue<Float64>(lows_col_const, lows_vec, row_index);
+            const auto high = getValue<Float64>(highs_col_const, highs_vec, row_index);
             const auto count = getValue<TCountType>(counts_col_const, counts_vec, row_index);
-            result_data.push_back(calculate<ResultType>(operand, min, max, count));
+            result_data.push_back(calculate<ResultType>(operand, low, high, count));
         }
 
         return result_column;
