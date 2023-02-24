@@ -4,7 +4,6 @@
 #include <Interpreters/ExpressionActionsSettings.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
-#include <Core/BackgroundSchedulePool.h>
 #include <IO/AsyncReadCounters.h>
 #include <queue>
 

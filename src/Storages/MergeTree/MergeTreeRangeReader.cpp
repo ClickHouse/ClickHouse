@@ -1430,4 +1430,14 @@ std::string PrewhereExprInfo::dump() const
     return s.str();
 }
 
+std::string PrewhereExprInfo::dumpConditions() const
+{
+    WriteBufferFromOwnString s;
+
+    for (size_t i = 0; i < steps.size(); ++i)
+        s << (i == 0 ? "\"" : ", \"") << steps[i].column_name << "\"";
+
+    return s.str();
+}
+
 }
