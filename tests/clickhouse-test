@@ -73,13 +73,7 @@ def stringhash(s):
 
 # First and last lines of the log
 def trim_for_log(s):
-    if not s:
-        return s
-    lines = s.splitlines()
-    if len(lines) > 100:
-        return "\n".join(lines[:50] + ["#" * 100] + lines[-50:])
-    else:
-        return "\n".join(lines)
+    return s
 
 
 class HTTPError(Exception):
