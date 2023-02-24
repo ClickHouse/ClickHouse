@@ -12,25 +12,26 @@ INSERT INTO mytable VALUES (3, -100, 200, 10), (0, 0, 10, 4), (3, 0, 10, 3), (4.
 SELECT operand, low, high, count, WIDTH_BUCKET(operand, low, high, count) FROM mytable WHERE count != 0;
 SELECT '----------';
 -- zero is not valid for count
-SELECT operand, low, high, count, WIDTH_BUCKET(operand, low, high, count) FROM mytable WHERE count = 0; -- { serverError 36}
+SELECT operand, low, high, count, WIDTH_BUCKET(operand, low, high, count) FROM mytable WHERE count = 0; -- { serverError BAD_ARGUMENTS}
 -- IntXX types
 SELECT toInt64(operand) AS operand, toInt32(low) AS low, toInt16(high) AS high, count, WIDTH_BUCKET(operand, low, high, count) FROM mytable WHERE count != 0;
 SELECT '----------';
 -- UIntXX types
 SELECT toUInt8(operand) AS operand, toUInt16(low) AS low, toUInt32(high) AS high, count, WIDTH_BUCKET(operand, low, high, count) FROM mytable WHERE count != 0;
 SELECT '----------';
--- Wrong argument types
-SELECT WIDTH_BUCKET(1, 2, 3, -1); -- { serverError 43 }
-SELECT WIDTH_BUCKET(1, 2, 3, 1.3); -- { serverError 43 }
-SELECT WIDTH_BUCKET('a', 1, 2, 3); -- { serverError 43 }
-SELECT WIDTH_BUCKET(1, toUInt128(42), 2, 3); -- { serverError 43 }
-SELECT WIDTH_BUCKET(1, 2, toInt128(42), 3); -- { serverError 43 }
-SELECT WIDTH_BUCKET(1, 2, 3, toInt256(42)); -- { serverError 43 }
+SELECT WIDTH_BUCKET(1, 2, 3, -1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT WIDTH_BUCKET(1, 2, 3, 1.3); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT WIDTH_BUCKET('a', 1, 2, 3); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT WIDTH_BUCKET(1, toUInt128(42), 2, 3); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT WIDTH_BUCKET(1, 2, toInt128(42), 3); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT WIDTH_BUCKET(1, 2, 3, toInt256(42)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT '----------';
 -- Return type checks
 SELECT toTypeName(WIDTH_BUCKET(1, 2, 3, toUInt8(1)));
 SELECT toTypeName(WIDTH_BUCKET(1, 2, 3, toUInt16(1)));
 SELECT toTypeName(WIDTH_BUCKET(1, 2, 3, toUInt32(1)));
 SELECT toTypeName(WIDTH_BUCKET(1, 2, 3, toUInt64(1)));
+SELECT '----------';
 -- Test handling ColumnConst
 SELECT WIDTH_BUCKET(1, low, high, count) FROM mytable WHERE count != 0;
 SELECT WIDTH_BUCKET(operand, 2, high, count) FROM mytable WHERE count != 0;
