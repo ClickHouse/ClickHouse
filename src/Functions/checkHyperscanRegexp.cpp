@@ -53,7 +53,7 @@ bool SlowWithHyperscanChecker::isSlowOneRepeat(std::string_view regexp)
         if (searcher_one_repeat.Match(haystack, start_pos, regexp.size(), re2_st::RE2::Anchor::UNANCHORED, matches, 2))
         {
             const auto & match = matches[0];
-            start_pos += (matches[0].data() - haystack.data()) + match.length(); // fwd by prefix + match length
+            start_pos = (matches[0].data() - haystack.data()) + match.length(); // new start pos = prefix before match + match length
             const auto & submatch = matches[1];
             if (isLargerThanFifty({submatch.data(), submatch.size()}))
                 return true;
@@ -75,7 +75,7 @@ bool SlowWithHyperscanChecker::isSlowTwoRepeats(std::string_view regexp)
         if (searcher_two_repeats.Match(haystack, start_pos, regexp.size(), re2_st::RE2::Anchor::UNANCHORED, matches, 3))
         {
             const auto & match = matches[0];
-            start_pos += (matches[0].data() - haystack.data()) + match.length(); // fwd by prefix + match length
+            start_pos = (matches[0].data() - haystack.data()) + match.length(); // new start pos = prefix before match + match length
             const auto & submatch1 = matches[1];
             const auto & submatch2 = matches[2];
             if (isLargerThanFifty({submatch1.data(), submatch1.size()})
