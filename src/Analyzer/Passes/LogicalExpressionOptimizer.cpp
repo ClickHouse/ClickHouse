@@ -19,7 +19,6 @@ public:
 
     explicit LogicalExpressionOptimizerVisitor(ContextPtr context)
         : Base(std::move(context))
-        , cast_function_resolver(FunctionFactory::instance().get("_CAST", getContext()))
     {}
 
     void visitImpl(QueryTreeNodePtr & node)
@@ -86,15 +85,11 @@ private:
             bool collapse_to_false = false;
 
             if (const auto * lhs_literal = lhs->as<ConstantNode>())
-            {
                 collapse_to_false = has_and_with_different_constant(rhs, lhs_literal);
-            }
             else if (const auto * rhs_literal = rhs->as<ConstantNode>())
-            {
                 collapse_to_false = has_and_with_different_constant(lhs, rhs_literal);
-            }
             else
-                continue;
+                and_operands.push_back(argument);
 
             if (collapse_to_false)
             {
@@ -108,7 +103,7 @@ private:
         if (and_operands.size() == 1)
         {
             assert(!function_node.getResultType()->isNullable());
-            resolveAsCast(function_node, std::move(and_operands[0]));
+            node = std::move(and_operands[0]);
             return;
         }
 
@@ -210,7 +205,7 @@ private:
         if (or_operands.size() == 1)
         {
             assert(!function_node.getResultType()->isNullable());
-            resolveAsCast(function_node, std::move(or_operands[0]));
+            node = std::move(or_operands[0]);
             return;
         }
 
@@ -218,26 +213,7 @@ private:
         function_node.getArguments().getNodes() = std::move(or_operands);
         function_node.resolveAsFunction(or_function_resolver);
     }
-
-    void resolveAsCast(FunctionNode & function_node, QueryTreeNodePtr operand)
-    {
-        std::string cast_type = function_node.getResultType()->getName();
-        auto cast_type_constant_value = std::make_shared<ConstantValue>(std::move(cast_type), std::make_shared<DataTypeString>());
-        auto cast_type_constant_node = std::make_shared<ConstantNode>(std::move(cast_type_constant_value));
-
-        QueryTreeNodes arguments;
-        arguments.reserve(2);
-        arguments.push_back(std::move(operand));
-        arguments.push_back(std::move(cast_type_constant_node));
-
-        function_node.getArguments().getNodes() = std::move(arguments);
-
-        function_node.resolveAsFunction(cast_function_resolver);
-    }
-
-    const FunctionOverloadResolverPtr cast_function_resolver;
 };
-
 
 void LogicalExpressionOptimizerPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
