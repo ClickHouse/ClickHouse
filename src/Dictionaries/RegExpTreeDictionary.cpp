@@ -509,7 +509,8 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::match(
             if (node_ptr->match(reinterpret_cast<const char *>(keys_data.data()) + offset, length))
             {
                 match_result.insertNodeID(node_ptr->id);
-                if (node_ptr->containsAll(attributes))
+                /// When this node is leaf and contains all the required attributes, it means a match.
+                if (node_ptr->containsAll(attributes) && node_ptr->children.empty())
                     break;
             }
         }
