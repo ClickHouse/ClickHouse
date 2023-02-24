@@ -566,14 +566,17 @@ private:
     const uint8_t * const needle;
     const uint8_t * const needle_end;
     /// first character in `needle`
-    uint8_t first{};
+    uint8_t first_needle_character = 0;
 
 #ifdef __SSE4_1__
-    /// vector filled `first` for determining leftmost position of the first symbol
-    __m128i pattern;
+    /// second character of "needle" (if its length is > 1)
+    uint8_t second_needle_character = 0;
+    /// The first/second needle character broadcasted into a 16 bytes vector
+    __m128i first_needle_character_vec;
+    __m128i second_needle_character_vec;
     /// vector of first 16 characters of `needle`
     __m128i cache = _mm_setzero_si128();
-    int cachemask{};
+    uint16_t cachemask = 0;
 #endif
 
 public:
@@ -585,14 +588,18 @@ public:
         if (0 == needle_size)
             return;
 
-        first = *needle;
+        first_needle_character = *needle;
 
 #ifdef __SSE4_1__
-        pattern = _mm_set1_epi8(first);
-
+        first_needle_character_vec = _mm_set1_epi8(first_needle_character);
+        if (needle_size > 1)
+        {
+            second_needle_character = *(needle + 1);
+            second_needle_character_vec = _mm_set1_epi8(second_needle_character);
+        }
         const auto * needle_pos = needle;
 
-        for (const auto i : collections::range(0, n))
+        for (uint8_t i = 0; i < n; ++i)
         {
             cache = _mm_srli_si128(cache, 1);
 
@@ -613,13 +620,13 @@ public:
 #ifdef __SSE4_1__
         if (pageSafe(pos))
         {
-            const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos));
-            const auto v_against_cache = _mm_cmpeq_epi8(v_haystack, cache);
-            const auto mask = _mm_movemask_epi8(v_against_cache);
+            const __m128i haystack_characters = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos));
+            const __m128i comparison_result = _mm_cmpeq_epi8(haystack_characters, cache);
+            const uint16_t comparison_result_mask = _mm_movemask_epi8(comparison_result);
 
             if (0xffff == cachemask)
             {
-                if (mask == cachemask)
+                if (comparison_result_mask == cachemask)
                 {
                     pos += n;
                     const auto * needle_pos = needle + n;
@@ -631,14 +638,14 @@ public:
                         return true;
                 }
             }
-            else if ((mask & cachemask) == cachemask)
+            else if ((comparison_result_mask & cachemask) == cachemask)
                 return true;
 
             return false;
         }
 #endif
 
-        if (*pos == first)
+        if (*pos == first_needle_character)
         {
             ++pos;
             const auto * needle_pos = needle + 1;
@@ -657,36 +664,78 @@ public:
     requires (sizeof(CharT) == 1)
     const CharT * search(const CharT * haystack, const CharT * const haystack_end) const
     {
+        const auto needle_size = needle_end - needle;
+
         if (needle == needle_end)
             return haystack;
 
-        while (haystack < haystack_end)
+#ifdef __SSE4_1__
+        /// Fast path for single-character needles. Compare 16 characters of the haystack against the needle character at once.
+        if (needle_size == 1)
+        {
+            while (haystack < haystack_end)
+            {
+                if (haystack + n <= haystack_end && pageSafe(haystack))
+                {
+                    const __m128i haystack_characters = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
+                    const __m128i comparison_result = _mm_cmpeq_epi8(haystack_characters, first_needle_character_vec);
+                    const uint16_t comparison_result_mask = _mm_movemask_epi8(comparison_result);
+                    if (comparison_result_mask == 0)
+                    {
+                        haystack += n;
+                        continue;
+                    }
+
+                    const auto offset = std::countr_zero(comparison_result_mask);
+                    haystack += offset;
+
+                    return haystack;
+                }
+
+                if (haystack == haystack_end)
+                    return haystack_end;
+
+                if (*haystack == first_needle_character)
+                    return haystack;
+
+                ++haystack;
+            }
+
+            return haystack_end;
+        }
+#endif
+
+        while (haystack < haystack_end && haystack_end - haystack >= needle_size)
         {
 #ifdef __SSE4_1__
-            if (haystack + n <= haystack_end && pageSafe(haystack))
+            /// Compare the [0:15] bytes from haystack and broadcasted 16 bytes vector from first character of needle.
+            /// Compare the [1:16] bytes from haystack and broadcasted 16 bytes vector from second character of needle.
+            /// Bit AND the results of above two comparisons and get the mask.
+            if ((haystack + 1 + n) <= haystack_end && pageSafe(haystack + 1))
             {
-                /// find first character
-                const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
-                const auto v_against_pattern = _mm_cmpeq_epi8(v_haystack, pattern);
-
-                const auto mask = _mm_movemask_epi8(v_against_pattern);
-
-                /// first character not present in 16 octets starting at `haystack`
-                if (mask == 0)
+                const __m128i haystack_characters_from_1st = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
+                const __m128i haystack_characters_from_2nd = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack + 1));
+                const __m128i comparison_result_1st = _mm_cmpeq_epi8(haystack_characters_from_1st, first_needle_character_vec);
+                const __m128i comparison_result_2nd = _mm_cmpeq_epi8(haystack_characters_from_2nd, second_needle_character_vec);
+                const __m128i comparison_result_combined = _mm_and_si128(comparison_result_1st, comparison_result_2nd);
+                const uint16_t comparison_result_mask = _mm_movemask_epi8(comparison_result_combined);
+                /// If the mask = 0, then first two characters [0:1] from needle are not in the [0:17] bytes of haystack.
+                if (comparison_result_mask == 0)
                 {
                     haystack += n;
                     continue;
                 }
 
-                const auto offset = __builtin_ctz(mask);
+                const auto offset = std::countr_zero(comparison_result_mask);
                 haystack += offset;
 
                 if (haystack + n <= haystack_end && pageSafe(haystack))
                 {
-                    /// check for first 16 octets
-                    const auto v_haystack_offset = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
-                    const auto v_against_cache = _mm_cmpeq_epi8(v_haystack_offset, cache);
-                    const auto mask_offset = _mm_movemask_epi8(v_against_cache);
+                    /// Already find the haystack position where the [pos:pos + 1] two characters exactly match the first two characters of needle.
+                    /// Compare the 16 bytes from needle (cache) and the first 16 bytes from haystack at once if the haystack size >= 16 bytes.
+                    const __m128i haystack_characters = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
+                    const __m128i comparison_result_cache = _mm_cmpeq_epi8(haystack_characters, cache);
+                    const uint16_t mask_offset = _mm_movemask_epi8(comparison_result_cache);
 
                     if (0xffff == cachemask)
                     {
@@ -715,7 +764,7 @@ public:
             if (haystack == haystack_end)
                 return haystack_end;
 
-            if (*haystack == first)
+            if (*haystack == first_needle_character)
             {
                 const auto * haystack_pos = haystack + 1;
                 const auto * needle_pos = needle + 1;
