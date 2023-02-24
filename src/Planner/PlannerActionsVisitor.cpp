@@ -65,6 +65,15 @@ public:
         return node_name_to_node.find(node_name) != node_name_to_node.end();
     }
 
+    [[maybe_unused]] bool containsInputNode(const std::string & node_name)
+    {
+        const auto * node = tryGetNode(node_name);
+        if (node && node->type == ActionsDAG::ActionType::INPUT)
+            return true;
+
+        return false;
+    }
+
     [[maybe_unused]] const ActionsDAG::Node * tryGetNode(const std::string & node_name)
     {
         auto it = node_name_to_node.find(node_name);
@@ -421,7 +430,16 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
     auto function_node_name = calculateActionNodeName(node, *planner_context, node_to_node_name);
 
-    if (function_node.isAggregateFunction() || function_node.isWindowFunction())
+    /* Aggregate functions, window functions, and GROUP BY expressions were already analyzed in the previous steps.
+     * If we have already visited some expression, we don't need to revisit it or its arguments again.
+     * For example, the expression from the aggregation step is also present in the projection:
+     *    SELECT foo(a, b, c) as x FROM table GROUP BY foo(a, b, c)
+     * In this case we should not analyze `a`, `b`, `c` again.
+     * Moreover, it can lead to an error if we have arrayJoin in the arguments because it will be calculated twice.
+     */
+    bool is_input_node = function_node.isAggregateFunction() || function_node.isWindowFunction()
+        || actions_stack.front().containsInputNode(function_node_name);
+    if (is_input_node)
     {
         size_t actions_stack_size = actions_stack.size();
 
