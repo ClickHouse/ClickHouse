@@ -3,6 +3,7 @@
 #include <Storages/PartitionedSink.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/ReadFromStorageProgress.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
@@ -17,6 +18,7 @@
 #include <IO/ParallelReadBuffer.h>
 #include <IO/WriteBufferFromHTTP.h>
 #include <IO/WriteHelpers.h>
+#include <IO/WithFileSize.h>
 
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
@@ -217,6 +219,8 @@ namespace
                     uri_options.size() == 1,
                     download_threads);
 
+                total_size += getFileSizeFromReadBuffer(*read_buf);
+
                 auto input_format
                     = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size, format_settings);
                 QueryPipelineBuilder builder;
@@ -257,7 +261,14 @@ namespace
 
                 Chunk chunk;
                 if (reader->pull(chunk))
+                {
+                    UInt64 num_rows = chunk.getNumRows();
+                    if (num_rows && total_size)
+                        updateRowsProgressApprox(
+                            *this, chunk, total_size, total_rows_approx_accumulated, total_rows_count_times, total_rows_approx_max);
+
                     return chunk;
+                }
 
                 pipeline->reset();
                 reader.reset();
@@ -447,6 +458,11 @@ namespace
         std::unique_ptr<PullingPipelineExecutor> reader;
 
         Poco::Net::HTTPBasicCredentials credentials;
+
+        size_t total_size = 0;
+        UInt64 total_rows_approx_max = 0;
+        size_t total_rows_count_times = 0;
+        UInt64 total_rows_approx_accumulated = 0;
     };
 }
 
