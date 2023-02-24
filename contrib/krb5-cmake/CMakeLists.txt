@@ -160,6 +160,8 @@ set(ALL_SRCS
 
     # "${KRB5_SOURCE_DIR}/lib/gssapi/spnego/negoex_trace.c"
 
+    "${KRB5_SOURCE_DIR}/lib/crypto/builtin/kdf.c"
+    "${KRB5_SOURCE_DIR}/lib/crypto/builtin/cmac.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/prng.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/enc_dk_cmac.c"
     # "${KRB5_SOURCE_DIR}/lib/crypto/krb/crc32.c"
@@ -684,15 +686,7 @@ target_include_directories(_krb5 PRIVATE
 
 target_compile_definitions(_krb5 PRIVATE
     KRB5_PRIVATE
-    K5_OPENSSL_DES
-    K5_OPENSSL_SHA1
-    K5_OPENSSL_SHA2
-    K5_OPENSSL_HMAC
-    K5_OPENSSL_RC4
-    K5_OPENSSL_MD4
-    K5_OPENSSL_MD5
-    K5_OPENSSL_AES
-    K5_OPENSSL_DES_KEY_PARITY
+    CRYPTO_OPENSSL
     _GSS_STATIC_LINK=1
     KRB5_DEPRECATED=1
     LOCALEDIR="/usr/local/share/locale"
