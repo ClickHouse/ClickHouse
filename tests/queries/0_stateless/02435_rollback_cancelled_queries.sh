@@ -42,7 +42,7 @@ function insert_data
         $CLICKHOUSE_CURL -sS -F 'file=@-' "$CLICKHOUSE_URL&$TRASH_SETTINGS&file_format=TSV&file_types=UInt64" -X POST --form-string 'query=insert into dedup_test select * from file' < $DATA_FILE
     else
         # client will send 1000-rows blocks, server will squash them into 110000-rows blocks (more chances to catch a bug on query cancellation)
-        $CLICKHOUSE_CLIENT --query_id="$ID" --throw_on_unsupported_query_inside_transaction=0 --implicit_transaction="$IMPLICIT" \
+        $CLICKHOUSE_CLIENT --stacktrace --query_id="$ID" --throw_on_unsupported_query_inside_transaction=0 --implicit_transaction="$IMPLICIT" \
             --max_block_size=1000 --max_insert_block_size=1000 --multiquery -q \
             "${BEGIN}insert into dedup_test settings max_insert_block_size=110000, min_insert_block_size_rows=110000 format TSV$COMMIT" < $DATA_FILE \
             | grep -Fv "Transaction is not in RUNNING state"
@@ -107,7 +107,8 @@ $CLICKHOUSE_CLIENT -q 'system flush logs'
 ID="02435_insert_last_${CLICKHOUSE_DATABASE}_$RANDOM"
 insert_data
 
-$CLICKHOUSE_CLIENT --implicit_transaction=1 -q 'select count() % 1000000, count() > 0 from dedup_test'
+$CLICKHOUSE_CLIENT --implicit_transaction=1 -q 'select throwIf(count() % 1000000 != 0 or count() = 0) from dedup_test' \
+  || $CLICKHOUSE_CLIENT -q "select name, rows, active, visible, creation_tid, creation_csn from system.parts where database=currentDatabase();"
 
 # We have to ignore stderr from thread_cancel, because our CI finds a bug in ps...
 # So use this query to check that thread_cancel do something
