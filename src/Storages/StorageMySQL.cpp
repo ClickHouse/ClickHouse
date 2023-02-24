@@ -259,9 +259,9 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
         configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
     }
 
-    configuration.username = named_collection.getOrDefault<String>("username", named_collection.getOrDefault<String>("user", ""));
+    configuration.username = named_collection.getAny<String>({"username", "user"});
     configuration.password = named_collection.get<String>("password");
-    configuration.database = named_collection.getOrDefault<String>("db", named_collection.getOrDefault<String>("database", ""));
+    configuration.database = named_collection.getAny<String>({"db", "database"});
     if (require_table)
         configuration.table = named_collection.get<String>("table");
     configuration.replace_query = named_collection.getOrDefault<UInt64>("replace_query", false);

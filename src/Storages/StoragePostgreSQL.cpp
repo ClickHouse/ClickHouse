@@ -400,14 +400,14 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
     configuration.addresses_expr = named_collection.getOrDefault<String>("addresses_expr", "");
     if (configuration.addresses_expr.empty())
     {
-        configuration.host = named_collection.getOrDefault<String>("host", named_collection.getOrDefault<String>("hostname", ""));
+        configuration.host = named_collection.getAny<String>({"host", "hostname"});
         configuration.port = static_cast<UInt16>(named_collection.get<UInt64>("port"));
         configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
     }
 
-    configuration.username = named_collection.getOrDefault<String>("username", named_collection.getOrDefault<String>("user", ""));
+    configuration.username = named_collection.getAny<String>({"username", "user"});
     configuration.password = named_collection.get<String>("password");
-    configuration.database = named_collection.getOrDefault<String>("db", named_collection.getOrDefault<String>("database", ""));
+    configuration.database = named_collection.getAny<String>({"db", "database"});
     if (require_table)
         configuration.table = named_collection.get<String>("table");
     configuration.schema = named_collection.getOrDefault<String>("schema", "");

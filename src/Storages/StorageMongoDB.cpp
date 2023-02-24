@@ -183,12 +183,12 @@ StorageMongoDB::Configuration StorageMongoDB::getConfiguration(ASTs engine_args,
             ValidateKeysMultiset<MongoDBEqualKeysSet>{"host", "port", "user", "username", "password", "database", "db", "collection", "table"},
             {"options"});
 
-        configuration.host = named_collection->getOrDefault<String>("host", named_collection->getOrDefault<String>("hostname", ""));
+        configuration.host = named_collection->getAny<String>({"host", "hostname"});
         configuration.port = static_cast<UInt16>(named_collection->get<UInt64>("port"));
-        configuration.username = named_collection->getOrDefault<String>("user", named_collection->getOrDefault<String>("username", ""));
+        configuration.username = named_collection->getAny<String>({"user", "username"});
         configuration.password = named_collection->get<String>("password");
-        configuration.database = named_collection->getOrDefault<String>("database", named_collection->getOrDefault<String>("db", ""));
-        configuration.table = named_collection->getOrDefault<String>("collection", named_collection->getOrDefault<String>("table", ""));
+        configuration.database = named_collection->getAny<String>({"database", "db"});
+        configuration.table = named_collection->getAny<String>({"collection", "table"});
         configuration.options = named_collection->getOrDefault<String>("options", "");
     }
     else
