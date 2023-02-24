@@ -112,10 +112,6 @@ bool findInTableExpression(const IQueryTreeNode * source, const QueryTreeNodePtr
             || findInTableExpression(source, join_node->getRightTableExpression());
     }
 
-    if (const auto * query_node = table_expression->as<QueryNode>())
-    {
-        return findInTableExpression(source, query_node->getJoinTree());
-    }
 
     return false;
 }
