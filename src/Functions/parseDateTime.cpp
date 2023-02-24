@@ -665,8 +665,7 @@ struct ParseDateTimeTraits
     };
 };
 
-#define ACTION_ARGS(func) &func, #func
-
+#define ACTION_ARGS(func) &(func), #func
 
 /// _FUNC_(str[, format, timezone])
 template <typename Name, /*ParseDateTimeTraits::SupportInteger support_integer, */ ParseDateTimeTraits::ParseSyntax parse_syntax>
