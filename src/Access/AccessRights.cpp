@@ -219,11 +219,19 @@ namespace
         }
     };
 
+    /**
+     *  Levels:
+     *                    1. GLOBAL
+     *  2. DATABASE_LEVEL          2. GLOBAL_WITH_PARAMETER (parameter example: named collection)
+     *  3. TABLE_LEVEL
+     *  4. COLUMN_LEVEL
+     */
 
     enum Level
     {
         GLOBAL_LEVEL,
         DATABASE_LEVEL,
+        GLOBAL_WITH_PARAMETER = DATABASE_LEVEL,
         TABLE_LEVEL,
         COLUMN_LEVEL,
     };
