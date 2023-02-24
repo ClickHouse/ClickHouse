@@ -37,7 +37,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
 
     String cluster_name;
     String cluster_description;
-    String database, table, username, password;
+    String database, table, username = "default", password;
 
     if (args_func.size() != 1)
         throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
