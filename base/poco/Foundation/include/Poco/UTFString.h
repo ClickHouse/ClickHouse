@@ -225,12 +225,7 @@ typedef std::basic_string<UTF16Char, UTF16CharTraits> UTF16String;
 typedef UInt32 UTF32Char;
 typedef std::basic_string<UTF32Char, UTF32CharTraits> UTF32String;
 #else // POCO_NO_WSTRING
-#    if defined(POCO_OS_FAMILY_WINDOWS)
-typedef wchar_t UTF16Char;
-typedef std::wstring UTF16String;
-typedef UInt32 UTF32Char;
-typedef std::basic_string<UTF32Char, UTF32CharTraits> UTF32String;
-#    elif defined(__SIZEOF_WCHAR_T__) //gcc
+#    if   defined(__SIZEOF_WCHAR_T__) //gcc
 #        if (__SIZEOF_WCHAR_T__ == 2)
 typedef wchar_t UTF16Char;
 typedef std::wstring UTF16String;

@@ -2,6 +2,11 @@
 
 ClickHouse® is an open-source column-oriented database management system that allows generating analytical data reports in real-time.
 
+## How To Install (Linux, macOS, FreeBSD)
+```
+curl https://clickhouse.com/ | sh
+```
+
 ## Useful Links
 
 * [Official website](https://clickhouse.com/) has a quick high-level overview of ClickHouse on the main page.
@@ -16,7 +21,6 @@ ClickHouse® is an open-source column-oriented database management system that a
 * [Contacts](https://clickhouse.com/company/contact) can help to get your questions answered if there are any.
 
 ## Upcoming Events
-* [**ClickHouse Workshop**](https://clickhouse.com/company/events/2023-02-15-clickhouse-workshop?utm_source=github&utm_medium=social&utm_campaign=workshop) - Feb 15 & 16 - In this 2-day (3 hrs per day) free training, topics range from introductory content to a deep dive on interacting with and understanding your data. There will be both live training and hands-on labs.
 * [**v23.2 Release Webinar**](https://clickhouse.com/company/events/v23-2-release-webinar?utm_source=github&utm_medium=social&utm_campaign=release-webinar-2023-02) - Feb 23 - 23.2 is rapidly approaching. Original creator, co-founder, and CTO of ClickHouse Alexey Milovidov will walk us through the highlights of the release.
 * [**ClickHouse Meetup in Amsterdam**](https://www.meetup.com/clickhouse-netherlands-user-group/events/291485868/) - Mar 9 - The first ClickHouse Amsterdam Meetup of 2023 is here! 🎉 Join us for short lightning talks and long discussions. Food, drinks & good times on us.
 * [**ClickHouse Meetup in SF Bay Area**](https://www.meetup.com/clickhouse-silicon-valley-meetup-group/events/291490121/) - Mar 14 - A night to meet with ClickHouse team in the San Francisco area! Food and drink are a given...but networking is the primary focus.

@@ -86,7 +86,8 @@ private:
     bool read_from_all_inputs = false;
     std::vector<bool> read_from_input;
 
-    bool expect_several_chunks_for_single_bucket_per_source = false;
+    /// If we aggregate partitioned data several chunks might be produced for the same bucket: one for each partition.
+    bool expect_several_chunks_for_single_bucket_per_source = true;
 
     /// Add chunk read from input to chunks_map, overflow_chunks or single_level_chunks according to it's chunk info.
     void addChunk(Chunk chunk, size_t input);
