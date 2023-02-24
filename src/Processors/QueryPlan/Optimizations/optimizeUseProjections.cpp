@@ -1095,13 +1095,10 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
         // LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"),
         //           "Marks for projection {} {}", projection->name ,candidate.sum_marks);
 
-        // if (candidate.sum_marks > ordinary_reading_marks)
-        //     continue;
+        if (candidate.sum_marks >= ordinary_reading_marks)
+            continue;
 
-        // if (best_candidate == nullptr || candidate.sum_marks < best_candidate->sum_marks)
-        //     best_candidate = &candidate;
-
-        if (candidate.sum_marks < ordinary_reading_marks && (best_candidate == nullptr || candidate.sum_marks < best_candidate->sum_marks))
+        if (best_candidate == nullptr || candidate.sum_marks < best_candidate->sum_marks)
             best_candidate = &candidate;
     }
 
