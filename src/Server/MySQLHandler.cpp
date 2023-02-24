@@ -354,9 +354,13 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
 
         auto set_result_details = [&with_output](const QueryResultDetails & details)
         {
-            if (details.format && *details.format != "MySQLWire")
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "MySQL protocol does not support custom output formats");
-            with_output = true;
+            if (details.format)
+            {
+                if (*details.format != "MySQLWire")
+                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "MySQL protocol does not support custom output formats");
+
+                with_output = true;
+            }
         };
 
         executeQuery(should_replace ? replacement : payload, *out, false, query_context, set_result_details, format_settings);
