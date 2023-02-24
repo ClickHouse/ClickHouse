@@ -69,6 +69,7 @@ namespace ErrorCodes
     extern const int TOO_DEEP_RECURSION;
     extern const int NETWORK_ERROR;
     extern const int AUTHENTICATION_FAILED;
+    extern const int NO_ELEMENTS_IN_CONFIG;
 }
 
 
@@ -134,29 +135,34 @@ void Client::parseConnectionsCredentials()
     if (hosts_and_ports.size() >= 2)
         return;
 
-    String host;
-    std::optional<UInt16> port;
+    std::optional<String> host;
     if (hosts_and_ports.empty())
     {
-        host = config().getString("host", "localhost");
-        if (config().has("port"))
-            port = config().getInt("port");
+        if (config().has("host"))
+            host = config().getString("host");
     }
     else
     {
         host = hosts_and_ports.front().host;
-        port = hosts_and_ports.front().port;
     }
+
+    String connection;
+    if (config().has("connection"))
+        connection = config().getString("connection");
+    else
+        connection = host.value_or("localhost");
 
     Strings keys;
     config().keys("connections_credentials", keys);
-    for (const auto & connection : keys)
+    bool connection_found = false;
+    for (const auto & key : keys)
     {
-        const String & prefix = "connections_credentials." + connection;
+        const String & prefix = "connections_credentials." + key;
 
         const String & connection_name = config().getString(prefix + ".name", "");
-        if (connection_name != host)
+        if (connection_name != connection)
             continue;
+        connection_found = true;
 
         String connection_hostname;
         if (config().has(prefix + ".hostname"))
@@ -164,14 +170,9 @@ void Client::parseConnectionsCredentials()
         else
             connection_hostname = connection_name;
 
-        /// Set "host" unconditionally (since it is used as a "name"), while
-        /// other options only if they are not set yet (config.xml/cli
-        /// options).
-        config().setString("host", connection_hostname);
-        if (!hosts_and_ports.empty())
-            hosts_and_ports.front().host = connection_hostname;
-
-        if (config().has(prefix + ".port") && !port.has_value())
+        if (hosts_and_ports.empty())
+            config().setString("host", connection_hostname);
+        if (config().has(prefix + ".port") && hosts_and_ports.empty())
             config().setInt("port", config().getInt(prefix + ".port"));
         if (config().has(prefix + ".secure") && !config().has("secure"))
             config().setBool("secure", config().getBool(prefix + ".secure"));
@@ -189,6 +190,9 @@ void Client::parseConnectionsCredentials()
             config().setString("history_file", history_file);
         }
     }
+
+    if (config().has("connection") && !connection_found)
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "No such connection '{}' in connections_credentials", connection);
 }
 
 /// Make query to get all server warnings
@@ -323,7 +327,21 @@ try
         showClientVersion();
     }
 
-    connect();
+    try
+    {
+        connect();
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() != DB::ErrorCodes::AUTHENTICATION_FAILED ||
+            config().has("password") ||
+            config().getBool("ask-password", false) ||
+            !is_interactive)
+            throw;
+
+        config().setBool("ask-password", true);
+        connect();
+    }
 
     /// Show warnings at the beginning of connection.
     if (is_interactive && !config().has("no-warnings"))
@@ -955,6 +973,7 @@ void Client::addOptions(OptionsDescription & options_description)
     /// Main commandline options related to client functionality and all parameters from Settings.
     options_description.main_description->add_options()
         ("config,c", po::value<std::string>(), "config-file path (another shorthand)")
+        ("connection", po::value<std::string>(), "connection to use (from the client config), by default connection name is hostname")
         ("secure,s", "Use TLS connection")
         ("user,u", po::value<std::string>()->default_value("default"), "user")
         /** If "--password [value]" is used but the value is omitted, the bad argument exception will be thrown.
@@ -1095,6 +1114,8 @@ void Client::processOptions(const OptionsDescription & options_description,
 
     if (options.count("config"))
         config().setString("config-file", options["config"].as<std::string>());
+    if (options.count("connection"))
+        config().setString("connection", options["connection"].as<std::string>());
     if (options.count("interleave-queries-file"))
         interleave_queries_files = options["interleave-queries-file"].as<std::vector<std::string>>();
     if (options.count("secure"))

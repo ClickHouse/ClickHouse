@@ -683,7 +683,7 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createAsyncS3ReadBuffer(
 
     async_reader->setReadUntilEnd();
     if (read_settings.remote_fs_prefetch)
-        async_reader->prefetch();
+        async_reader->prefetch(DEFAULT_PREFETCH_PRIORITY);
 
     return async_reader;
 }
@@ -954,14 +954,13 @@ StorageS3::StorageS3(
     context_->getGlobalContext()->getRemoteHostFilter().checkURL(s3_configuration.url.uri);
     StorageInMemoryMetadata storage_metadata;
 
-    updateS3Configuration(context_, s3_configuration);
+    updateConfiguration(context_, s3_configuration);
     if (columns_.empty())
     {
         auto columns = getTableStructureFromDataImpl(
             format_name,
             s3_configuration,
             compression_method,
-            distributed_processing_,
             is_key_with_globs,
             format_settings,
             context_,
@@ -1041,7 +1040,7 @@ Pipe StorageS3::read(
     if (partition_by && has_wildcards)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Reading from a partitioned S3 storage is not implemented yet");
 
-    updateS3Configuration(local_context, s3_configuration);
+    updateConfiguration(local_context, s3_configuration);
 
     Pipes pipes;
 
@@ -1116,7 +1115,7 @@ Pipe StorageS3::read(
 
 SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
-    updateS3Configuration(local_context, s3_configuration);
+    updateConfiguration(local_context, s3_configuration);
 
     auto sample_block = metadata_snapshot->getSampleBlock();
     auto chosen_compression_method = chooseCompressionMethod(keys.back(), compression_method);
@@ -1186,7 +1185,7 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
 
 void StorageS3::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
 {
-    updateS3Configuration(local_context, s3_configuration);
+    updateConfiguration(local_context, s3_configuration);
 
     if (is_key_with_globs)
         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
@@ -1218,7 +1217,14 @@ void StorageS3::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &,
 }
 
 
-void StorageS3::updateS3Configuration(ContextPtr ctx, StorageS3::Configuration & upd)
+StorageS3::Configuration StorageS3::updateConfiguration(ContextPtr local_context, const StorageS3::Configuration & configuration)
+{
+    StorageS3::Configuration new_configuration(configuration);
+    updateConfiguration(local_context, new_configuration);
+    return new_configuration;
+}
+
+void StorageS3::updateConfiguration(ContextPtr ctx, StorageS3::Configuration & upd)
 {
     auto settings = ctx->getStorageS3Settings().getSettings(upd.url.uri.toString());
     upd.request_settings = settings.request_settings;
@@ -1284,7 +1290,7 @@ void StorageS3::processNamedCollectionResult(StorageS3::Configuration & configur
     configuration.request_settings = S3Settings::RequestSettings(collection);
 }
 
-StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, ContextPtr local_context)
+StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, ContextPtr local_context, bool get_format_from_file)
 {
     StorageS3::Configuration configuration;
 
@@ -1299,13 +1305,15 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, Context
         /// S3('url')
         /// S3('url', 'format')
         /// S3('url', 'format', 'compression')
+        /// S3('url', 'aws_access_key_id', 'aws_secret_access_key')
         /// S3('url', 'aws_access_key_id', 'aws_secret_access_key', 'format')
         /// S3('url', 'aws_access_key_id', 'aws_secret_access_key', 'format', 'compression')
+        /// with optional headers() function
 
         if (engine_args.empty() || engine_args.size() > 5)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                             "Storage S3 requires 1 to 5 arguments: "
-                            "url, [access_key_id, secret_access_key], name of used format and [compression_method].");
+                            "url, [access_key_id, secret_access_key], name of used format and [compression_method]");
 
         auto * header_it = StorageURL::collectHeaders(engine_args, configuration.headers_from_ast, local_context);
         if (header_it != engine_args.end())
@@ -1314,27 +1322,52 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, Context
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, local_context);
 
-        configuration.url = S3::URI(checkAndGetLiteralArgument<String>(engine_args[0], "url"));
-        if (engine_args.size() >= 4)
+        /// Size -> argument indexes
+        static std::unordered_map<size_t, std::unordered_map<std::string_view, size_t>> size_to_engine_args
         {
-            configuration.auth_settings.access_key_id = checkAndGetLiteralArgument<String>(engine_args[1], "access_key_id");
-            configuration.auth_settings.secret_access_key = checkAndGetLiteralArgument<String>(engine_args[2], "secret_access_key");
+            {1, {{}}},
+            {2, {{"format", 1}}},
+            {4, {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}}},
+            {5, {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}, {"compression_method", 4}}}
+        };
+
+        std::unordered_map<std::string_view, size_t> engine_args_to_idx;
+        /// For 3 arguments we support 2 possible variants:
+        /// s3(source, format, compression_method) and s3(source, access_key_id, access_key_id)
+        /// We can distinguish them by looking at the 2-nd argument: check if it's a format name or not.
+        if (engine_args.size() == 3)
+        {
+            auto second_arg = checkAndGetLiteralArgument<String>(engine_args[1], "format/access_key_id");
+            if (second_arg == "auto" || FormatFactory::instance().getAllFormats().contains(second_arg))
+                engine_args_to_idx = {{"format", 1}, {"compression_method", 2}};
+
+            else
+                engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}};
+        }
+        else
+        {
+            engine_args_to_idx = size_to_engine_args[engine_args.size()];
         }
 
-        if (engine_args.size() == 3 || engine_args.size() == 5)
-        {
-            configuration.compression_method = checkAndGetLiteralArgument<String>(engine_args.back(), "compression_method");
-            configuration.format = checkAndGetLiteralArgument<String>(engine_args[engine_args.size() - 2], "format");
-        }
-        else if (engine_args.size() != 1)
-        {
-            configuration.compression_method = "auto";
-            configuration.format = checkAndGetLiteralArgument<String>(engine_args.back(), "format");
-        }
+        /// This argument is always the first
+        configuration.url = S3::URI(checkAndGetLiteralArgument<String>(engine_args[0], "url"));
+
+        if (engine_args_to_idx.contains("format"))
+            configuration.format = checkAndGetLiteralArgument<String>(engine_args[engine_args_to_idx["format"]], "format");
+
+        if (engine_args_to_idx.contains("compression_method"))
+            configuration.compression_method = checkAndGetLiteralArgument<String>(engine_args[engine_args_to_idx["compression_method"]], "compression_method");
+
+        if (engine_args_to_idx.contains("access_key_id"))
+            configuration.auth_settings.access_key_id = checkAndGetLiteralArgument<String>(engine_args[engine_args_to_idx["access_key_id"]], "access_key_id");
+
+        if (engine_args_to_idx.contains("secret_access_key"))
+            configuration.auth_settings.secret_access_key = checkAndGetLiteralArgument<String>(engine_args[engine_args_to_idx["secret_access_key"]], "secret_access_key");
     }
+
     configuration.static_configuration = !configuration.auth_settings.access_key_id.empty();
 
-    if (configuration.format == "auto")
+    if (configuration.format == "auto" && get_format_from_file)
         configuration.format = FormatFactory::instance().getFormatFromFileName(configuration.url.key, true);
 
     return configuration;
@@ -1342,14 +1375,13 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, Context
 
 ColumnsDescription StorageS3::getTableStructureFromData(
     StorageS3::Configuration & configuration,
-    bool distributed_processing,
     const std::optional<FormatSettings> & format_settings,
     ContextPtr ctx,
     ObjectInfos * object_infos)
 {
-    updateS3Configuration(ctx, configuration);
+    updateConfiguration(ctx, configuration);
     return getTableStructureFromDataImpl(
-        configuration.format, configuration, configuration.compression_method, distributed_processing,
+        configuration.format, configuration, configuration.compression_method,
         configuration.url.key.find_first_of("*?{") != std::string::npos, format_settings, ctx, object_infos);
 }
 
@@ -1357,7 +1389,6 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
     const String & format,
     const Configuration & s3_configuration,
     const String & compression_method,
-    bool distributed_processing,
     bool is_key_with_globs,
     const std::optional<FormatSettings> & format_settings,
     ContextPtr ctx,
@@ -1369,7 +1400,7 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
         s3_configuration,
         {s3_configuration.url.key},
         is_key_with_globs,
-        distributed_processing,
+        false,
         ctx, nullptr,
         {}, object_infos, &read_keys);
 

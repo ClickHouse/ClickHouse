@@ -1,9 +1,14 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Disks/getOrCreateDiskFromAST.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/FieldFromAST.h>
+#include <Parsers/isDiskFunction.h>
+#include <Core/Field.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <Core/Settings.h>
 
 
@@ -39,13 +44,51 @@ void MergeTreeSettings::loadFromConfig(const String & config_elem, const Poco::U
     }
 }
 
-void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def)
+void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr context)
 {
     if (storage_def.settings)
     {
         try
         {
-            applyChanges(storage_def.settings->changes);
+            bool found_disk_setting = false;
+            bool found_storage_policy_setting = false;
+
+            auto changes = storage_def.settings->changes;
+            for (auto & [name, value] : changes)
+            {
+                CustomType custom;
+                if (name == "disk")
+                {
+                    if (value.tryGet<CustomType>(custom) && 0 == strcmp(custom.getTypeName(), "AST"))
+                    {
+                        auto ast = dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast;
+                        if (ast && isDiskFunction(ast))
+                        {
+                            const auto & ast_function = assert_cast<const ASTFunction &>(*ast);
+                            auto disk_name = getOrCreateDiskFromDiskAST(ast_function, context);
+                            LOG_TRACE(&Poco::Logger::get("MergeTreeSettings"), "Created custom disk {}", disk_name);
+                            value = disk_name;
+                        }
+                    }
+
+                    if (has("storage_policy"))
+                        resetToDefault("storage_policy");
+
+                    found_disk_setting = true;
+                }
+                else if (name == "storage_policy")
+                    found_storage_policy_setting = true;
+
+                if (found_disk_setting && found_storage_policy_setting)
+                {
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "MergeTree settings `storage_policy` and `disk` cannot be specified at the same time");
+                }
+
+            }
+
+            applyChanges(changes);
         }
         catch (Exception & e)
         {

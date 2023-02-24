@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Storages/System/StorageSystemTables.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
@@ -49,6 +50,9 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"storage_policy", std::make_shared<DataTypeString>()},
         {"total_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
         {"total_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
+        {"parts", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
+        {"active_parts", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
+        {"total_marks", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
         {"lifetime_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
         {"lifetime_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
         {"comment", std::make_shared<DataTypeString>()},
@@ -451,6 +455,33 @@ protected:
                     auto total_bytes = table->totalBytes(settings);
                     if (total_bytes)
                         res_columns[res_index++]->insert(*total_bytes);
+                    else
+                        res_columns[res_index++]->insertDefault();
+                }
+
+                auto table_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(table);
+                if (columns_mask[src_index++])
+                {
+                    if (table_merge_tree)
+                        res_columns[res_index++]->insert(table_merge_tree->getAllPartsCount());
+                    else
+                        res_columns[res_index++]->insertDefault();
+                }
+
+                if (columns_mask[src_index++])
+                {
+                    if (table_merge_tree)
+                        res_columns[res_index++]->insert(table_merge_tree->getActivePartsCount());
+                    else
+                        res_columns[res_index++]->insertDefault();
+                }
+
+                if (columns_mask[src_index++])
+                {
+                    if (table_merge_tree)
+                    {
+                        res_columns[res_index++]->insert(table_merge_tree->getTotalMarksCount());
+                    }
                     else
                         res_columns[res_index++]->insertDefault();
                 }

@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Functions/Regexps.h>
+#include <Functions/checkHyperscanRegexp.h>
 #include <QueryPipeline/QueryPipeline.h>
 
 #include <Dictionaries/ClickHouseDictionarySource.h>
@@ -152,53 +153,6 @@ void RegExpTreeDictionary::calculateBytesAllocated()
     bytes_allocated += 2 * sizeof(UInt64) * topology_order.size();
 }
 
-namespace
-{
-    /// hyper scan is not good at processing regex containing {0, 200}
-    /// This will make re compilation slow and failed. So we select this heavy regular expressions and
-    /// process it with re2.
-    struct RegexChecker
-    {
-        re2_st::RE2 searcher;
-        RegexChecker() : searcher(R"(\{([\d]+),([\d]+)\})") {}
-
-        static bool isFigureLargerThanFifty(const String & str)
-        try
-        {
-            auto number = std::stoi(str);
-            return number > 50;
-        }
-        catch (std::exception &)
-        {
-            return false;
-        }
-
-        [[maybe_unused]]
-        bool isSimpleRegex(const String & regex) const
-        {
-
-            re2_st::StringPiece haystack(regex.data(), regex.size());
-            re2_st::StringPiece matches[10];
-            size_t start_pos = 0;
-            while (start_pos < regex.size())
-            {
-                if (searcher.Match(haystack, start_pos, regex.size(), re2_st::RE2::Anchor::UNANCHORED, matches, 10))
-                {
-                    const auto & match = matches[0];
-                    start_pos += match.length();
-                    const auto & match1 = matches[1];
-                    const auto & match2 = matches[2];
-                    if (isFigureLargerThanFifty(match1.ToString()) || isFigureLargerThanFifty(match2.ToString()))
-                        return false;
-                }
-                else
-                    break;
-            }
-            return true;
-        }
-    };
-}
-
 void RegExpTreeDictionary::initRegexNodes(Block & block)
 {
     auto id_column = block.getByName(kId).column;
@@ -207,7 +161,9 @@ void RegExpTreeDictionary::initRegexNodes(Block & block)
     auto keys_column = block.getByName(kKeys).column;
     auto values_column = block.getByName(kValues).column;
 
-    RegexChecker checker;
+#ifdef USE_VECTORSCAN
+    SlowWithHyperscanChecker checker;
+#endif
 
     size_t size = block.rows();
     for (size_t i = 0; i < size; i++)
@@ -253,7 +209,7 @@ void RegExpTreeDictionary::initRegexNodes(Block & block)
         }
         regex_nodes.emplace(id, node);
 #if USE_VECTORSCAN
-        if (use_vectorscan && checker.isSimpleRegex(regex))
+        if (use_vectorscan && !checker.isSlow(regex))
         {
             simple_regexps.push_back(regex);
             regexp_ids.push_back(id);

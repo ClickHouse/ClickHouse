@@ -56,7 +56,6 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.avro.schema_registry_url = settings.format_avro_schema_registry_url.toString();
     format_settings.avro.string_column_pattern = settings.output_format_avro_string_column_pattern.toString();
     format_settings.avro.output_rows_in_file = settings.output_format_avro_rows_in_file;
-    format_settings.avro.null_as_default = settings.input_format_avro_null_as_default;
     format_settings.csv.allow_double_quotes = settings.format_csv_allow_double_quotes;
     format_settings.csv.allow_single_quotes = settings.format_csv_allow_single_quotes;
     format_settings.csv.crlf_end_of_line = settings.output_format_csv_crlf_end_of_line;
@@ -116,6 +115,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.parquet.allow_missing_columns = settings.input_format_parquet_allow_missing_columns;
     format_settings.parquet.skip_columns_with_unsupported_types_in_schema_inference = settings.input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference;
     format_settings.parquet.output_string_as_string = settings.output_format_parquet_string_as_string;
+    format_settings.parquet.output_fixed_string_as_fixed_byte_array = settings.output_format_parquet_fixed_string_as_fixed_byte_array;
     format_settings.parquet.max_block_size = settings.input_format_parquet_max_block_size;
     format_settings.pretty.charset = settings.output_format_pretty_grid_charset.toString() == "ASCII" ? FormatSettings::Pretty::Charset::ASCII : FormatSettings::Pretty::Charset::UTF8;
     format_settings.pretty.color = settings.output_format_pretty_color;
@@ -156,6 +156,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.arrow.skip_columns_with_unsupported_types_in_schema_inference = settings.input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference;
     format_settings.arrow.case_insensitive_column_matching = settings.input_format_arrow_case_insensitive_column_matching;
     format_settings.arrow.output_string_as_string = settings.output_format_arrow_string_as_string;
+    format_settings.arrow.output_fixed_string_as_fixed_byte_array = settings.output_format_arrow_fixed_string_as_fixed_byte_array;
     format_settings.orc.import_nested = settings.input_format_orc_import_nested;
     format_settings.orc.allow_missing_columns = settings.input_format_orc_allow_missing_columns;
     format_settings.orc.row_batch_size = settings.input_format_orc_row_batch_size;
@@ -190,6 +191,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.bson.skip_fields_with_unsupported_types_in_schema_inference = settings.input_format_bson_skip_fields_with_unsupported_types_in_schema_inference;
     format_settings.max_binary_string_size = settings.format_binary_max_string_size;
     format_settings.max_parser_depth = context->getSettingsRef().max_parser_depth;
+    format_settings.client_protocol_version = context->getClientProtocolVersion();
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)

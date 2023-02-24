@@ -13,7 +13,7 @@ The supported formats are:
 | Format                                                                                    | Input | Output |
 |-------------------------------------------------------------------------------------------|------|--------|
 | [TabSeparated](#tabseparated)                                                             | ✔    | ✔      |
-| [TabSeparatedRaw](#tabseparatedraw)                                 | ✔    | ✔      |
+| [TabSeparatedRaw](#tabseparatedraw)                                                       | ✔    | ✔      |
 | [TabSeparatedWithNames](#tabseparatedwithnames)                                           | ✔    | ✔      |
 | [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes)                           | ✔    | ✔      |
 | [TabSeparatedRawWithNames](#tabseparatedrawwithnames)                                     | ✔    | ✔      |
@@ -33,7 +33,7 @@ The supported formats are:
 | [JSONAsString](#jsonasstring)                                                             | ✔    | ✗      |
 | [JSONStrings](#jsonstrings)                                                               | ✔    | ✔      |
 | [JSONColumns](#jsoncolumns)                                                               | ✔    | ✔      |
-| [JSONColumnsWithMetadata](#jsoncolumnswithmetadata)                                       | ✔    | ✔      |
+| [JSONColumnsWithMetadata](#jsoncolumnsmonoblock))                                         | ✔    | ✔      |
 | [JSONCompact](#jsoncompact)                                                               | ✔    | ✔      |
 | [JSONCompactStrings](#jsoncompactstrings)                                                 | ✗    | ✔      |
 | [JSONCompactColumns](#jsoncompactcolumns)                                                 | ✔    | ✔      |
@@ -1918,28 +1918,28 @@ Setting `format_avro_schema_registry_url` needs to be configured in `users.xml` 
 
 The table below shows supported data types and how they match ClickHouse [data types](/docs/en/sql-reference/data-types/index.md) in `INSERT` and `SELECT` queries.
 
-| Parquet data type (`INSERT`) | ClickHouse data type                                      | Parquet data type (`SELECT`) |
-|------------------------------|-----------------------------------------------------------|----------------------------|
-| `BOOL`                       | [Bool](/docs/en/sql-reference/data-types/boolean.md)            | `BOOL`                     |
-| `UINT8`, `BOOL`              | [UInt8](/docs/en/sql-reference/data-types/int-uint.md)          | `UINT8`                    |
-| `INT8`                       | [Int8](/docs/en/sql-reference/data-types/int-uint.md)           | `INT8`                     |
-| `UINT16`                     | [UInt16](/docs/en/sql-reference/data-types/int-uint.md)         | `UINT16`                   |
-| `INT16`                      | [Int16](/docs/en/sql-reference/data-types/int-uint.md)          | `INT16`                    |
-| `UINT32`                     | [UInt32](/docs/en/sql-reference/data-types/int-uint.md)         | `UINT32`                   |
-| `INT32`                      | [Int32](/docs/en/sql-reference/data-types/int-uint.md)          | `INT32`                    |
-| `UINT64`                     | [UInt64](/docs/en/sql-reference/data-types/int-uint.md)         | `UINT64`                   |
-| `INT64`                      | [Int64](/docs/en/sql-reference/data-types/int-uint.md)          | `INT64`                    |
-| `FLOAT`                      | [Float32](/docs/en/sql-reference/data-types/float.md)           | `FLOAT`                    |
-| `DOUBLE`                     | [Float64](/docs/en/sql-reference/data-types/float.md)           | `DOUBLE`                   |
-| `DATE`                       | [Date32](/docs/en/sql-reference/data-types/date.md)             | `DATE`                     |
-| `TIME (ms)`                  | [DateTime](/docs/en/sql-reference/data-types/datetime.md)       | `UINT32`                   |
-| `TIMESTAMP`, `TIME (us, ns)` | [DateTime64](/docs/en/sql-reference/data-types/datetime64.md)   | `TIMESTAMP`                |
-| `STRING`, `BINARY`           | [String](/docs/en/sql-reference/data-types/string.md)           | `BINARY`                   |
-| —                            | [FixedString](/docs/en/sql-reference/data-types/fixedstring.md) | `BINARY`                   |
-| `DECIMAL`                    | [Decimal](/docs/en/sql-reference/data-types/decimal.md)         | `DECIMAL`                  |
-| `LIST`                       | [Array](/docs/en/sql-reference/data-types/array.md)             | `LIST`                     |
-| `STRUCT`                     | [Tuple](/docs/en/sql-reference/data-types/tuple.md)             | `STRUCT`                   |
-| `MAP`                        | [Map](/docs/en/sql-reference/data-types/map.md)                 | `MAP`                      |
+| Parquet data type (`INSERT`)                  | ClickHouse data type                                            | Parquet data type (`SELECT`) |
+|-----------------------------------------------|-----------------------------------------------------------------|------------------------------|
+| `BOOL`                                        | [Bool](/docs/en/sql-reference/data-types/boolean.md)            | `BOOL`                       |
+| `UINT8`, `BOOL`                               | [UInt8](/docs/en/sql-reference/data-types/int-uint.md)          | `UINT8`                      |
+| `INT8`                                        | [Int8](/docs/en/sql-reference/data-types/int-uint.md)           | `INT8`                       |
+| `UINT16`                                      | [UInt16](/docs/en/sql-reference/data-types/int-uint.md)         | `UINT16`                     |
+| `INT16`                                       | [Int16](/docs/en/sql-reference/data-types/int-uint.md)          | `INT16`                      |
+| `UINT32`                                      | [UInt32](/docs/en/sql-reference/data-types/int-uint.md)         | `UINT32`                     |
+| `INT32`                                       | [Int32](/docs/en/sql-reference/data-types/int-uint.md)          | `INT32`                      |
+| `UINT64`                                      | [UInt64](/docs/en/sql-reference/data-types/int-uint.md)         | `UINT64`                     |
+| `INT64`                                       | [Int64](/docs/en/sql-reference/data-types/int-uint.md)          | `INT64`                      |
+| `FLOAT`                                       | [Float32](/docs/en/sql-reference/data-types/float.md)           | `FLOAT`                      |
+| `DOUBLE`                                      | [Float64](/docs/en/sql-reference/data-types/float.md)           | `DOUBLE`                     |
+| `DATE`                                        | [Date32](/docs/en/sql-reference/data-types/date.md)             | `DATE`                       |
+| `TIME (ms)`                                   | [DateTime](/docs/en/sql-reference/data-types/datetime.md)       | `UINT32`                     |
+| `TIMESTAMP`, `TIME (us, ns)`                  | [DateTime64](/docs/en/sql-reference/data-types/datetime64.md)   | `TIMESTAMP`                  |
+| `STRING`, `BINARY`                            | [String](/docs/en/sql-reference/data-types/string.md)           | `BINARY`                     |
+| `STRING`, `BINARY`, `FIXED_LENGTH_BYTE_ARRAY` | [FixedString](/docs/en/sql-reference/data-types/fixedstring.md) | `FIXED_LENGTH_BYTE_ARRAY`    |
+| `DECIMAL`                                     | [Decimal](/docs/en/sql-reference/data-types/decimal.md)         | `DECIMAL`                    |
+| `LIST`                                        | [Array](/docs/en/sql-reference/data-types/array.md)             | `LIST`                       |
+| `STRUCT`                                      | [Tuple](/docs/en/sql-reference/data-types/tuple.md)             | `STRUCT`                     |
+| `MAP`                                         | [Map](/docs/en/sql-reference/data-types/map.md)                 | `MAP`                        |
 
 Arrays can be nested and can have a value of the `Nullable` type as an argument. `Tuple` and `Map` types also can be nested.
 
@@ -1971,6 +1971,7 @@ To exchange data with Hadoop, you can use [HDFS table engine](/docs/en/engines/t
 - [input_format_parquet_case_insensitive_column_matching](/docs/en/operations/settings/settings-formats.md/#input_format_parquet_case_insensitive_column_matching) - ignore case when matching Parquet columns with ClickHouse columns. Default value - `false`.
 - [input_format_parquet_allow_missing_columns](/docs/en/operations/settings/settings-formats.md/#input_format_parquet_allow_missing_columns) - allow missing columns while reading Parquet data. Default value - `false`.
 - [input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference](/docs/en/operations/settings/settings-formats.md/#input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference) - allow skipping columns with unsupported types while schema inference for Parquet format. Default value - `false`.
+- [output_format_parquet_fixed_string_as_fixed_byte_array](/docs/en/operations/settings/settings-formats.md/#output_format_parquet_fixed_string_as_fixed_byte_array) -  use Parquet FIXED_LENGTH_BYTE_ARRAY type instead of Binary/String for FixedString columns. Default value - `true`.
 
 ## Arrow {#data-format-arrow}
 
@@ -1982,29 +1983,29 @@ To exchange data with Hadoop, you can use [HDFS table engine](/docs/en/engines/t
 
 The table below shows supported data types and how they match ClickHouse [data types](/docs/en/sql-reference/data-types/index.md) in `INSERT` and `SELECT` queries.
 
-| Arrow data type (`INSERT`)      | ClickHouse data type                                      | Arrow data type (`SELECT`) |
-|---------------------------------|-----------------------------------------------------------|----------------------------|
-| `BOOL`                          | [Bool](/docs/en/sql-reference/data-types/boolean.md)            | `BOOL`                     |
-| `UINT8`, `BOOL`                 | [UInt8](/docs/en/sql-reference/data-types/int-uint.md)          | `UINT8`                    |
-| `INT8`                          | [Int8](/docs/en/sql-reference/data-types/int-uint.md)           | `INT8`                     |
-| `UINT16`                        | [UInt16](/docs/en/sql-reference/data-types/int-uint.md)         | `UINT16`                   |
-| `INT16`                         | [Int16](/docs/en/sql-reference/data-types/int-uint.md)          | `INT16`                    |
-| `UINT32`                        | [UInt32](/docs/en/sql-reference/data-types/int-uint.md)         | `UINT32`                   |
-| `INT32`                         | [Int32](/docs/en/sql-reference/data-types/int-uint.md)          | `INT32`                    |
-| `UINT64`                        | [UInt64](/docs/en/sql-reference/data-types/int-uint.md)         | `UINT64`                   |
-| `INT64`                         | [Int64](/docs/en/sql-reference/data-types/int-uint.md)          | `INT64`                    |
-| `FLOAT`, `HALF_FLOAT`           | [Float32](/docs/en/sql-reference/data-types/float.md)           | `FLOAT32`                  |
-| `DOUBLE`                        | [Float64](/docs/en/sql-reference/data-types/float.md)           | `FLOAT64`                  |
-| `DATE32`                        | [Date32](/docs/en/sql-reference/data-types/date32.md)            | `UINT16`                   |
-| `DATE64`                        | [DateTime](/docs/en/sql-reference/data-types/datetime.md)       | `UINT32`                   |
-| `TIMESTAMP`, `TIME32`, `TIME64` | [DateTime64](/docs/en/sql-reference/data-types/datetime64.md)   | `UINT32`                   |
-| `STRING`, `BINARY`              | [String](/docs/en/sql-reference/data-types/string.md)           | `BINARY`                   |
-| `STRING`, `BINARY`              | [FixedString](/docs/en/sql-reference/data-types/fixedstring.md) | `BINARY`                   |
-| `DECIMAL`                       | [Decimal](/docs/en/sql-reference/data-types/decimal.md)         | `DECIMAL`                  |
-| `DECIMAL256`                    | [Decimal256](/docs/en/sql-reference/data-types/decimal.md)      | `DECIMAL256`               |
-| `LIST`                          | [Array](/docs/en/sql-reference/data-types/array.md)             | `LIST`                     |
-| `STRUCT`                        | [Tuple](/docs/en/sql-reference/data-types/tuple.md)             | `STRUCT`                   |
-| `MAP`                           | [Map](/docs/en/sql-reference/data-types/map.md)                 | `MAP`                      |
+| Arrow data type (`INSERT`)              | ClickHouse data type                                            | Arrow data type (`SELECT`) |
+|-----------------------------------------|-----------------------------------------------------------------|----------------------------|
+| `BOOL`                                  | [Bool](/docs/en/sql-reference/data-types/boolean.md)            | `BOOL`                     |
+| `UINT8`, `BOOL`                         | [UInt8](/docs/en/sql-reference/data-types/int-uint.md)          | `UINT8`                    |
+| `INT8`                                  | [Int8](/docs/en/sql-reference/data-types/int-uint.md)           | `INT8`                     |
+| `UINT16`                                | [UInt16](/docs/en/sql-reference/data-types/int-uint.md)         | `UINT16`                   |
+| `INT16`                                 | [Int16](/docs/en/sql-reference/data-types/int-uint.md)          | `INT16`                    |
+| `UINT32`                                | [UInt32](/docs/en/sql-reference/data-types/int-uint.md)         | `UINT32`                   |
+| `INT32`                                 | [Int32](/docs/en/sql-reference/data-types/int-uint.md)          | `INT32`                    |
+| `UINT64`                                | [UInt64](/docs/en/sql-reference/data-types/int-uint.md)         | `UINT64`                   |
+| `INT64`                                 | [Int64](/docs/en/sql-reference/data-types/int-uint.md)          | `INT64`                    |
+| `FLOAT`, `HALF_FLOAT`                   | [Float32](/docs/en/sql-reference/data-types/float.md)           | `FLOAT32`                  |
+| `DOUBLE`                                | [Float64](/docs/en/sql-reference/data-types/float.md)           | `FLOAT64`                  |
+| `DATE32`                                | [Date32](/docs/en/sql-reference/data-types/date32.md)           | `UINT16`                   |
+| `DATE64`                                | [DateTime](/docs/en/sql-reference/data-types/datetime.md)       | `UINT32`                   |
+| `TIMESTAMP`, `TIME32`, `TIME64`         | [DateTime64](/docs/en/sql-reference/data-types/datetime64.md)   | `UINT32`                   |
+| `STRING`, `BINARY`                      | [String](/docs/en/sql-reference/data-types/string.md)           | `BINARY`                   |
+| `STRING`, `BINARY`, `FIXED_SIZE_BINARY` | [FixedString](/docs/en/sql-reference/data-types/fixedstring.md) | `FIXED_SIZE_BINARY`        |
+| `DECIMAL`                               | [Decimal](/docs/en/sql-reference/data-types/decimal.md)         | `DECIMAL`                  |
+| `DECIMAL256`                            | [Decimal256](/docs/en/sql-reference/data-types/decimal.md)      | `DECIMAL256`               |
+| `LIST`                                  | [Array](/docs/en/sql-reference/data-types/array.md)             | `LIST`                     |
+| `STRUCT`                                | [Tuple](/docs/en/sql-reference/data-types/tuple.md)             | `STRUCT`                   |
+| `MAP`                                   | [Map](/docs/en/sql-reference/data-types/map.md)                 | `MAP`                      |
 
 Arrays can be nested and can have a value of the `Nullable` type as an argument. `Tuple` and `Map` types also can be nested.
 
@@ -2038,6 +2039,7 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Arrow" > {filenam
 - [input_format_arrow_case_insensitive_column_matching](/docs/en/operations/settings/settings-formats.md/#input_format_arrow_case_insensitive_column_matching) - ignore case when matching Arrow columns with ClickHouse columns. Default value - `false`.
 - [input_format_arrow_allow_missing_columns](/docs/en/operations/settings/settings-formats.md/#input_format_arrow_allow_missing_columns) - allow missing columns while reading Arrow data. Default value - `false`.
 - [input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference](/docs/en/operations/settings/settings-formats.md/#input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference) - allow skipping columns with unsupported types while schema inference for Arrow format. Default value - `false`.
+- [output_format_arrow_fixed_string_as_fixed_byte_array](/docs/en/operations/settings/settings-formats.md/#output_format_arrow_fixed_string_as_fixed_byte_array) - use Arrow FIXED_SIZE_BINARY type instead of Binary/String for FixedString columns. Default value - `true`.
 
 ## ArrowStream {#data-format-arrow-stream}
 

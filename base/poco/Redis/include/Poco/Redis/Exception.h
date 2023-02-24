@@ -18,19 +18,22 @@
 #define Redis_Exception_INCLUDED
 
 
-#include "Poco/Redis/Redis.h"
-#include "Poco/Exception.h"
 #include <typeinfo>
+#include "Poco/Exception.h"
+#include "Poco/Redis/Redis.h"
 
 
-namespace Poco {
-namespace Redis {
+namespace Poco
+{
+namespace Redis
+{
 
 
-POCO_DECLARE_EXCEPTION(Redis_API, RedisException, Exception)
+    POCO_DECLARE_EXCEPTION(Redis_API, RedisException, Exception)
 
 
-} } // namespace Poco::Redis
+}
+} // namespace Poco::Redis
 
 
 #endif // Redis_Exception_INCLUDED

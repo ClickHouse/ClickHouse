@@ -1,6 +1,7 @@
 -- Tags: no-random-merge-tree-settings
 
 SET use_uncompressed_cache = 0;
+SET allow_prefetched_read_pool_for_remote_filesystem=0;
 
 DROP TABLE IF EXISTS adaptive_table;
 

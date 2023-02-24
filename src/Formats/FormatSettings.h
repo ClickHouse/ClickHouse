@@ -82,6 +82,7 @@ struct FormatSettings
     Float32 input_allow_errors_ratio = 0;
 
     UInt64 max_binary_string_size = 0;
+    UInt64 client_protocol_version = 0;
 
     UInt64 max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH;
 
@@ -94,6 +95,7 @@ struct FormatSettings
         bool skip_columns_with_unsupported_types_in_schema_inference = false;
         bool case_insensitive_column_matching = false;
         bool output_string_as_string = false;
+        bool output_fixed_string_as_fixed_byte_array = true;
     } arrow;
 
     struct
@@ -104,7 +106,6 @@ struct FormatSettings
         bool allow_missing_fields = false;
         String string_column_pattern;
         UInt64 output_rows_in_file = 1;
-        bool null_as_default = false;
     } avro;
 
     String bool_true_representation = "true";
@@ -183,6 +184,7 @@ struct FormatSettings
         bool case_insensitive_column_matching = false;
         std::unordered_set<int> skip_row_groups = {};
         bool output_string_as_string = false;
+        bool output_fixed_string_as_fixed_byte_array = true;
         UInt64 max_block_size = 8192;
     } parquet;
 

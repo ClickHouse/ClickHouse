@@ -488,6 +488,23 @@ Possible values:
 
 Default value: 0.
 
+## group_by_use_nulls {#group_by_use_nulls}
+
+Changes the way the [GROUP BY clause](/docs/en/sql-reference/statements/select/group-by.md) treats the types of aggregation keys.
+When the `ROLLUP`, `CUBE`, or `GROUPING SETS` specifiers are used, some aggregation keys may not be used to produce some result rows.
+Columns for these keys are filled with either default value or `NULL` in corresponding rows depending on this setting.
+
+Possible values:
+
+-   0 — The default value for the aggregation key type is used to produce missing values.
+-   1 — ClickHouse executes `GROUP BY` the same way as the SQL standard says. The types of aggregation keys are converted to [Nullable](/docs/en/sql-reference/data-types/nullable.md/#data_type-nullable). Columns for corresponding aggregation keys are filled with [NULL](/docs/en/sql-reference/syntax.md) for rows that didn't use it.
+
+Default value: 0.
+
+See also:
+
+-   [GROUP BY clause](/docs/en/sql-reference/statements/select/group-by.md)
+
 ## partial_merge_join_optimizations {#partial_merge_join_optimizations}
 
 Disables optimizations in partial merge join algorithm for [JOIN](../../sql-reference/statements/select/join.md) queries.
@@ -833,6 +850,15 @@ Result:
 │ QueryFinish │ SELECT 1; │
 └─────────────┴───────────┘
 ```
+
+## log_processors_profiles {#settings-log_processors_profiles}
+
+Write time that processor spent during execution/waiting for data to `system.processors_profile_log` table.
+
+See also:
+
+-   [`system.processors_profile_log`](../../operations/system-tables/processors_profile_log.md#system-processors_profile_log)
+-   [`EXPLAIN PIPELINE`](../../sql-reference/statements/explain.md#explain-pipeline)
 
 ## max_insert_block_size {#settings-max_insert_block_size}
 
@@ -1543,6 +1569,17 @@ Possible values:
 -   0 — Asynchronous insertions are disabled.
 
 Default value: `100000`.
+
+### async_insert_max_query_number {#async-insert-max-query-number}
+
+The maximum number of insert queries per block before being inserted. This setting takes effect only if [async_insert_deduplicate](#settings-async-insert-deduplicate) is enabled.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Asynchronous insertions are disabled.
+
+Default value: `450`.
 
 ### async_insert_busy_timeout_ms {#async-insert-busy-timeout-ms}
 
@@ -3468,7 +3505,7 @@ Possible values:
 
 Default value: `0`.
 
-## replication_alter_partitions_sync {#replication-alter-partitions-sync}
+## alter_sync {#alter-sync}
 
 Allows to set up waiting for actions to be executed on replicas by [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) or [TRUNCATE](../../sql-reference/statements/truncate.md) queries.
 
