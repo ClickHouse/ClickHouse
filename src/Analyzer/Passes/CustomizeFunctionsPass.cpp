@@ -34,53 +34,6 @@ public:
         auto function_name = function_node->getFunctionName();
         auto function_name_lowercase = Poco::toLower(function_name);
 
-        if (function_node->isAggregateFunction() || function_node->isWindowFunction())
-        {
-            auto count_distinct_implementation_function_name = String(settings.count_distinct_implementation);
-
-            /// Replace aggregateFunctionIfDistinct into aggregateFunctionDistinctIf to make execution more optimal
-            if (function_name_lowercase.ends_with("ifdistinct"))
-            {
-                size_t prefix_length = function_name_lowercase.size() - strlen("ifdistinct");
-                auto updated_function_name = function_name_lowercase.substr(0, prefix_length) + "DistinctIf";
-                resolveAggregateOrWindowFunctionNode(*function_node, updated_function_name);
-                function_name = function_node->getFunctionName();
-                function_name_lowercase = Poco::toLower(function_name);
-            }
-
-            /** Move -OrNull suffix ahead, this should execute after add -OrNull suffix.
-              * Used to rewrite aggregate functions with -OrNull suffix in some cases.
-              * Example: sumIfOrNull.
-              * Result: sumOrNullIf.
-              */
-            if (function_name.ends_with("OrNull"))
-            {
-                auto function_properies = AggregateFunctionFactory::instance().tryGetProperties(function_name);
-                if (function_properies && !function_properies->returns_default_when_only_null)
-                {
-                    size_t function_name_size = function_name.size();
-
-                    static constexpr std::array<std::string_view, 4> suffixes_to_replace = {"MergeState", "Merge", "State", "If"};
-                    for (const auto & suffix : suffixes_to_replace)
-                    {
-                        auto suffix_string_value = String(suffix);
-                        auto suffix_to_check = suffix_string_value + "OrNull";
-
-                        if (!function_name.ends_with(suffix_to_check))
-                            continue;
-
-                        auto updated_function_name = function_name.substr(0, function_name_size - suffix_to_check.size()) + "OrNull" + suffix_string_value;
-                        resolveAggregateOrWindowFunctionNode(*function_node, updated_function_name);
-                        function_name = function_node->getFunctionName();
-                        function_name_lowercase = Poco::toLower(function_name);
-                        break;
-                    }
-                }
-            }
-
-            return;
-        }
-
         if (settings.transform_null_in)
         {
             auto function_result_type = function_node->getResultType();
@@ -104,22 +57,6 @@ public:
                 }
             }
         }
-    }
-
-    static inline void resolveAggregateOrWindowFunctionNode(FunctionNode & function_node, const String & aggregate_function_name)
-    {
-        auto function_aggregate_function = function_node.getAggregateFunction();
-
-        AggregateFunctionProperties properties;
-        auto aggregate_function = AggregateFunctionFactory::instance().get(aggregate_function_name,
-            function_aggregate_function->getArgumentTypes(),
-            function_aggregate_function->getParameters(),
-            properties);
-
-        if (function_node.isAggregateFunction())
-            function_node.resolveAsAggregateFunction(std::move(aggregate_function));
-        else if (function_node.isWindowFunction())
-            function_node.resolveAsWindowFunction(std::move(aggregate_function));
     }
 
     inline void resolveOrdinaryFunctionNode(FunctionNode & function_node, const String & function_name) const
