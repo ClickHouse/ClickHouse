@@ -15,8 +15,6 @@
 #include <IO/WriteHelpers.h>
 #include <base/types.h>
 
-#pragma GCC diagnostic ignored "-Wunneeded-member-function"
-
 namespace DB
 {
 
@@ -71,13 +69,31 @@ struct Date
     Int32 second = 0;
     // Int32 microsecond = 0;
     bool is_am = true; // AM -> true, PM -> false
-    std::optional<Int64> time_zone_offset = 0;
+    std::optional<Int64> time_zone_offset;
 
     bool is_clock_hour = false; // Whether most recent hour specifier is clockhour
     bool is_hour_of_half_day = false; // Whether most recent hour specifier is of half day.
 
     std::vector<Int32> day_of_month_values;
     std::vector<Int32> day_of_year_values;
+
+    /// For debug
+    [[maybe_unused]] String toString() const
+    {
+        String res;
+        res += "year:" + std::to_string(year);
+        res += ",";
+        res += "month:" + std::to_string(month);
+        res += ",";
+        res += "day:" + std::to_string(day);
+        res += ",";
+        res += "hour:" + std::to_string(hour);
+        res += ",";
+        res += "minute:" + std::to_string(minute);
+        res += ",";
+        res += "second:" + std::to_string(second);
+        return res;
+    }
 
     static bool isLeapYear(Int32 year_) { return year_ % 4 == 0 && (year_ % 100 != 0 || year_ % 400 == 0); }
 
@@ -206,12 +222,17 @@ struct Date
             days_since_epoch = daysSinceEpochFromDate(year, month, day);
 
         Int64 seconds_since_epoch = days_since_epoch * 86400 + hour * 3600 + minute * 60 + second;
+
         /// Time zone is not specified, use local time zone
         if (!time_zone_offset)
-            *time_zone_offset = time_zone.timezoneOffset(seconds_since_epoch);
+            *time_zone_offset = time_zone.getOffsetAtStartOfEpoch();
 
+        // std::cout << "timezonename:" << time_zone.getTimeZone() << std::endl;
+        // std::cout << "time_zone_offset:" << *time_zone_offset << time_zone.getOffsetAtStartOfEpoch() << std::endl;
+        // std::cout << "before timestamp:" << seconds_since_epoch << std::endl;
         /// Time zone is specified in format string.
         seconds_since_epoch -= *time_zone_offset;
+        // std::cout << "after timestamp:" << seconds_since_epoch << std::endl;
         return seconds_since_epoch;
     }
 };
@@ -231,6 +252,15 @@ public:
     template <typename Literal>
     explicit Action(const Literal & literal_) : literal(literal_)
     {
+    }
+
+    /// For debug
+    [[maybe_unused]] String toString()const
+    {
+        if (func)
+            return "func:" + func_name;
+        else
+            return "literal:" + literal;
     }
 
     Pos perform(Pos cur, Pos end, Date & date) const
@@ -254,7 +284,7 @@ public:
         ensureSpace(cur, end, 2, "readNumber2 requires size >= 2");
         res = (*cur - '0') * 10;
         ++cur;
-        res += *cur;
+        res += *cur - '0';
         ++cur;
         return cur;
     }
@@ -413,7 +443,9 @@ public:
     static Pos mysqlISO8601Date(Pos cur, Pos end, Date & date)
     {
         cur = readNumber4(cur, end, date.year);
+        cur = assertChar(cur, end, '-');
         cur = readNumber2(cur, end, date.month);
+        cur = assertChar(cur, end, '-');
         cur = readNumber2(cur, end, date.day);
 
         date.week_date_format = false;
@@ -596,13 +628,13 @@ public:
     static Pos mysqlISO8601Time(Pos cur, Pos end, Date & date)
     {
         cur = readNumber2(cur, end, date.hour);
-        date.is_clock_hour = false;
-        date.is_hour_of_half_day = false;
-
         cur = assertChar(cur, end, ':');
         cur = readNumber2(cur, end, date.minute);
         cur = assertChar(cur, end, ':');
         cur = readNumber2(cur, end, date.second);
+
+        date.is_clock_hour = false;
+        date.is_hour_of_half_day = false;
         return cur;
     }
 
@@ -700,6 +732,7 @@ public:
 
         String format = getFormat(arguments);
         const auto * time_zone = getTimeZone(arguments).first;
+        // std::cout << "timezonename:" << getTimeZone(arguments).second << std::endl;
 
         std::vector<Action> instructions;
         parseFormat(format, instructions);
@@ -710,11 +743,15 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             StringRef str_ref = col_str->getDataAt(i);
-            Date date;
             Pos cur = str_ref.data;
             Pos end = str_ref.data + str_ref.size;
+            Date date;
             for (const auto & instruction : instructions)
+            {
                 cur = instruction.perform(cur, end, date);
+                // std::cout << "instruction:" << instruction.toString() << std::endl;
+                // std::cout << "date:" << date.toString() << std::endl;
+            }
 
             // Ensure all input was consumed.
             if (cur < end)
@@ -767,37 +804,37 @@ private:
                 {
                     // Abbreviated weekday [Mon...Sun]
                     case 'a':
-                        instructions.emplace_back(&Action::mysqlDayOfWeekTextShort);
+                        instructions.emplace_back(ACTION_ARGS(Action::mysqlDayOfWeekTextShort));
                         break;
 
                     // Abbreviated month [Jan...Dec]
                     case 'b':
-                        instructions.emplace_back(&Action::mysqlMonthOfYearTextShort);
+                        instructions.emplace_back(ACTION_ARGS(Action::mysqlMonthOfYearTextShort));
                         break;
 
                     // Month as a decimal number (01-12)
                     case 'c':
-                        instructions.emplace_back(&Action::mysqlMonth);
+                        instructions.emplace_back(ACTION_ARGS(Action::mysqlMonth));
                         break;
 
                     // Year, divided by 100, zero-padded
                     case 'C':
-                        instructions.emplace_back(&Action::mysqlCentury);
+                        instructions.emplace_back(ACTION_ARGS(Action::mysqlCentury));
                         break;
 
                     // Day of month, zero-padded (01-31)
                     case 'd':
-                        instructions.emplace_back(&Action::mysqlDayOfMonth);
+                        instructions.emplace_back(ACTION_ARGS(Action::mysqlDayOfMonth));
                         break;
 
                     // Short MM/DD/YY date, equivalent to %m/%d/%y
                     case 'D':
-                        instructions.emplace_back(&Action::mysqlAmericanDate);
+                        instructions.emplace_back(ACTION_ARGS(Action::mysqlAmericanDate));
                         break;
 
                     // Day of month, space-padded ( 1-31)  23
                     case 'e':
-                        instructions.emplace_back(&Action::mysqlDayOfMonthSpacePadded);
+                        instructions.emplace_back(ACTION_ARGS(Action::mysqlDayOfMonthSpacePadded));
                         break;
 
                     // Fractional seconds
@@ -806,57 +843,57 @@ private:
 
                     // Short YYYY-MM-DD date, equivalent to %Y-%m-%d   2001-08-23
                     case 'F':
-                        instructions.emplace_back(&Action::mysqlISO8601Date);
+                        instructions.emplace_back(ACTION_ARGS(Action::mysqlISO8601Date));
                         break;
 
                     // Last two digits of year of ISO 8601 week number (see %G)
                     case 'g':
-                        instructions.emplace_back(&Action::mysqlISO8601Year2);
+                        instructions.emplace_back(ACTION_ARGS(Action::mysqlISO8601Year2));
                         break;
 
                     // Year of ISO 8601 week number (see %V)
                     case 'G':
-                        instructions.emplace_back(&Action::mysqlISO8601Year4);
+                        instructions.emplace_back(ACTION_ARGS(Action::mysqlISO8601Year4));
                         break;
 
                     // Day of the year (001-366)   235
                     case 'j':
-                        instructions.emplace_back(&Action::mysqlDayOfYear);
+                        instructions.emplace_back(ACTION_ARGS(Action::mysqlDayOfYear));
                         break;
 
                     // Month as a decimal number (01-12)
                     case 'm':
-                        instructions.emplace_back(&Action::mysqlMonth);
+                        instructions.emplace_back(ACTION_ARGS(Action::mysqlMonth));
                         break;
 
                     // ISO 8601 weekday as number with Monday as 1 (1-7)
                     case 'u':
-                        instructions.emplace_back(&Action::mysqlDayOfWeek);
+                        instructions.emplace_back(ACTION_ARGS(Action::mysqlDayOfWeek));
                         break;
 
                     // ISO 8601 week number (01-53)
                     case 'V':
-                        instructions.emplace_back(&Action::mysqlISO8601Week);
+                        instructions.emplace_back(ACTION_ARGS(Action::mysqlISO8601Week));
                         break;
 
                     // Weekday as a decimal number with Sunday as 0 (0-6)  4
                     case 'w':
-                        instructions.emplace_back(&Action::mysqlDayOfWeek0To6);
+                        instructions.emplace_back(ACTION_ARGS(Action::mysqlDayOfWeek0To6));
                         break;
 
                     // Full weekday [Monday...Sunday]
                     case 'W':
-                        instructions.emplace_back(&Action::mysqlDayOfWeekTextLong);
+                        instructions.emplace_back(ACTION_ARGS(Action::mysqlDayOfWeekTextLong));
                         break;
 
                     // Two digits year
                     case 'y':
-                        instructions.emplace_back(&Action::mysqlYear2);
+                        instructions.emplace_back(ACTION_ARGS(Action::mysqlYear2));
                         break;
 
                     // Four digits year
                     case 'Y':
-                        instructions.emplace_back(&Action::mysqlYear4);
+                        instructions.emplace_back(ACTION_ARGS(Action::mysqlYear4));
                         break;
 
                     // Quarter (1-4)
@@ -866,74 +903,74 @@ private:
 
                     // Offset from UTC timezone as +hhmm or -hhmm
                     case 'z':
-                        instructions.emplace_back(&Action::mysqlTimezoneOffset);
+                        instructions.emplace_back(ACTION_ARGS(Action::mysqlTimezoneOffset));
                         break;
 
                     /// Time components. If the argument is Date, not a DateTime, then this components will have default value.
 
                     // Minute (00-59)
                     case 'M':
-                        instructions.emplace_back(&Action::mysqlMinute);
+                        instructions.emplace_back(ACTION_ARGS(Action::mysqlMinute));
                         break;
 
                     // AM or PM
                     case 'p':
-                        instructions.emplace_back(&Action::mysqlAMPM);
+                        instructions.emplace_back(ACTION_ARGS(Action::mysqlAMPM));
                         break;
 
                     // 12-hour HH:MM time, equivalent to %h:%i %p 2:55 PM
                     case 'r':
-                        instructions.emplace_back(&Action::mysqlHHMM12);
+                        instructions.emplace_back(ACTION_ARGS(Action::mysqlHHMM12));
                         break;
 
                     // 24-hour HH:MM time, equivalent to %H:%i 14:55
                     case 'R':
-                        instructions.emplace_back(&Action::mysqlHHMM24);
+                        instructions.emplace_back(ACTION_ARGS(Action::mysqlHHMM24));
                         break;
 
                     // Seconds
                     case 's':
-                        instructions.emplace_back(&Action::mysqlSecond);
+                        instructions.emplace_back(ACTION_ARGS(Action::mysqlSecond));
                         break;
 
                     // Seconds
                     case 'S':
-                        instructions.emplace_back(&Action::mysqlSecond);
+                        instructions.emplace_back(ACTION_ARGS(Action::mysqlSecond));
                         break;
 
                     // ISO 8601 time format (HH:MM:SS), equivalent to %H:%i:%S 14:55:02
                     case 'T':
-                        instructions.emplace_back(&Action::mysqlISO8601Time);
+                        instructions.emplace_back(ACTION_ARGS(Action::mysqlISO8601Time));
                         break;
 
                     // Hour in 12h format (01-12)
                     case 'h':
-                        instructions.emplace_back(&Action::mysqlHour12);
+                        instructions.emplace_back(ACTION_ARGS(Action::mysqlHour12));
                         break;
 
                     // Hour in 24h format (00-23)
                     case 'H':
-                        instructions.emplace_back(&Action::mysqlHour24);
+                        instructions.emplace_back(ACTION_ARGS(Action::mysqlHour24));
                         break;
 
                     // Minute of hour range [0, 59]
                     case 'i':
-                        instructions.emplace_back(&Action::mysqlMinute);
+                        instructions.emplace_back(ACTION_ARGS(Action::mysqlMinute));
                         break;
 
                     // Hour in 12h format (01-12)
                     case 'I':
-                        instructions.emplace_back(&Action::mysqlHour12);
+                        instructions.emplace_back(ACTION_ARGS(Action::mysqlHour12));
                         break;
 
                     // Hour in 24h format (00-23)
                     case 'k':
-                        instructions.emplace_back(&Action::mysqlHour24);
+                        instructions.emplace_back(ACTION_ARGS(Action::mysqlHour24));
                         break;
 
                     // Hour in 12h format (01-12)
                     case 'l':
-                        instructions.emplace_back(&Action::mysqlHour12);
+                        instructions.emplace_back(ACTION_ARGS(Action::mysqlHour12));
                         break;
 
                     case 't':
@@ -972,7 +1009,8 @@ private:
             }
             else
             {
-                instructions.emplace_back(std::string_view(pos, end - pos));
+                if (pos < end)
+                    instructions.emplace_back(std::string_view(pos, end - pos));
                 break;
             }
         }
