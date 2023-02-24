@@ -41,6 +41,7 @@ SELECT netloc('svn+ssh://paul:zozo@example.ru/?q=hello%20world') AS Netloc;
 SELECT netloc('//www.example.com') AS Netloc;
 SELECT netloc('www.example.com') as Netloc;
 SELECT netloc('example.com') as Netloc;
+SELECT netloc('http://foo:foo%@foo.com') as Netloc;
 
 SELECT '====DOMAIN====';
 SELECT topLevelDomain('http://paul@www.example.com:80/') AS Domain;
