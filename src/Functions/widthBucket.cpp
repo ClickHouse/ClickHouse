@@ -24,10 +24,24 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGIC_ERROR;
 }
 
 class FunctionWidthBucket : public IFunction
 {
+    template <typename TDataType>
+    void throwIfInvalid( const size_t argument_index,
+        const ColumnConst * col_const,
+        const typename ColumnVector<TDataType>::Container * col_vec,
+        const size_t expected_size) const
+    {
+        if ((nullptr == col_const) ^ (nullptr != col_vec && col_vec->size() == expected_size))
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Logical error in function {}: argument {} has unexpected type or size!", getName(), argument_index);
+        }
+    }
+
     template <typename TDataType>
     const typename ColumnVector<TDataType>::Container * getDataIfNotNull(const ColumnVector<TDataType> * col_vec) const
     {
@@ -92,10 +106,10 @@ class FunctionWidthBucket : public IFunction
         const auto * highs_col_const = checkAndGetColumnConst<ColumnVector<Float64>>(casted_columns[2].get());
         const auto * counts_col_const = checkAndGetColumnConst<ColumnVector<TCountType>>(arguments[3].column.get());
 
-        assert((nullptr != operands_col_const) ^ (nullptr != operands_vec && operands_vec->size() == input_rows_count));
-        assert((nullptr != lows_col_const) ^ (nullptr != lows_vec && lows_vec->size() == input_rows_count));
-        assert((nullptr != highs_col_const) ^ (nullptr != highs_vec && highs_vec->size() == input_rows_count));
-        assert((nullptr != counts_col_const) ^ (nullptr != counts_vec && counts_vec->size() == input_rows_count));
+        throwIfInvalid<Float64>(0, operands_col_const, operands_vec, input_rows_count);
+        throwIfInvalid<Float64>(1, lows_col_const, lows_vec, input_rows_count);
+        throwIfInvalid<Float64>(2, highs_col_const, highs_vec, input_rows_count);
+        throwIfInvalid<TCountType>(4, counts_col_const, counts_vec, input_rows_count);
 
         const auto are_all_const_cols
             = nullptr != operands_col_const && nullptr != lows_col_const && nullptr != highs_col_const && nullptr != counts_col_const;
