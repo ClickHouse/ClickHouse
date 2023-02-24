@@ -155,7 +155,7 @@ public:
                     getName());
             }
         }
-        if (!isUnsignedInteger(arguments[3]) || arguments[3]->getSizeOfValueInMemory() > 8)
+        if (!WhichDataType(arguments[3]).isNativeUInt())
         {
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
