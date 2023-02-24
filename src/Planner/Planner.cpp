@@ -1178,36 +1178,14 @@ void Planner::buildPlanForQueryNode()
     collectTableExpressionData(query_tree, *planner_context);
     collectSets(query_tree, *planner_context);
 
-    QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
-
-    if (select_query_options.only_analyze)
-    {
-        Block join_tree_block;
-
-        for (const auto & [_, table_expression_data] : planner_context->getTableExpressionNodeToData())
-        {
-            for (const auto & [column_name, column] : table_expression_data.getColumnNameToColumn())
-            {
-                const auto & column_identifier = table_expression_data.getColumnIdentifierOrThrow(column_name);
-                join_tree_block.insert(ColumnWithTypeAndName(column.type, column_identifier));
-            }
-        }
-
-        auto read_nothing_step = std::make_unique<ReadNothingStep>(join_tree_block);
-        read_nothing_step->setStepDescription("Read nothing");
-        query_plan.addStep(std::move(read_nothing_step));
-    }
-    else
-    {
-        auto top_level_identifiers = collectTopLevelColumnIdentifiers(query_tree, planner_context);
-        auto join_tree_query_plan = buildJoinTreeQueryPlan(query_tree,
-            select_query_info,
-            select_query_options,
-            top_level_identifiers,
-            planner_context);
-        from_stage = join_tree_query_plan.from_stage;
-        query_plan = std::move(join_tree_query_plan.query_plan);
-    }
+    auto top_level_identifiers = collectTopLevelColumnIdentifiers(query_tree, planner_context);
+    auto join_tree_query_plan = buildJoinTreeQueryPlan(query_tree,
+        select_query_info,
+        select_query_options,
+        top_level_identifiers,
+        planner_context);
+    auto from_stage = join_tree_query_plan.from_stage;
+    query_plan = std::move(join_tree_query_plan.query_plan);
 
     LOG_TRACE(&Poco::Logger::get("Planner"), "Query {} from stage {} to stage {}{}",
         query_tree->formatConvertedASTForErrorMessage(),

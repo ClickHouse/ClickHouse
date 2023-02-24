@@ -1168,9 +1168,11 @@ private:
 
     static void validateJoinTableExpressionWithoutAlias(const QueryTreeNodePtr & join_node, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
 
+    static std::pair<bool, UInt64> recursivelyCollectMaxOrdinaryExpressions(QueryTreeNodePtr & node, QueryTreeNodes & into);
+
     static void expandGroupByAll(QueryNode & query_tree_node_typed);
 
-    static std::pair<bool, UInt64> recursivelyCollectMaxOrdinaryExpressions(QueryTreeNodePtr & node, QueryTreeNodes & into);
+    static std::string rewriteAggregateFunctionNameIfNeeded(const std::string & aggregate_function_name, const ContextPtr & context);
 
     /// Resolve identifier functions
 
@@ -2238,9 +2240,72 @@ void QueryAnalyzer::expandGroupByAll(QueryNode & query_tree_node_typed)
 
     for (auto & node : projection_list.getNodes())
         recursivelyCollectMaxOrdinaryExpressions(node, group_by_nodes);
-
 }
 
+std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(const std::string & aggregate_function_name, const ContextPtr & context)
+{
+    std::string result_aggregate_function_name = aggregate_function_name;
+    auto aggregate_function_name_lowercase = Poco::toLower(aggregate_function_name);
+
+    const auto & settings = context->getSettingsRef();
+
+    if (aggregate_function_name_lowercase == "countdistinct")
+    {
+        result_aggregate_function_name = settings.count_distinct_implementation;
+    }
+    else if (aggregate_function_name_lowercase == "countdistinctif" || aggregate_function_name_lowercase == "countifdistinct")
+    {
+        result_aggregate_function_name = settings.count_distinct_implementation;
+        result_aggregate_function_name += "If";
+    }
+
+    /// Replace aggregateFunctionIfDistinct into aggregateFunctionDistinctIf to make execution more optimal
+    if (result_aggregate_function_name.ends_with("ifdistinct"))
+    {
+        size_t prefix_length = result_aggregate_function_name.size() - strlen("ifdistinct");
+        result_aggregate_function_name = result_aggregate_function_name.substr(0, prefix_length) + "DistinctIf";
+   }
+
+    bool need_add_or_null = settings.aggregate_functions_null_for_empty && !result_aggregate_function_name.ends_with("OrNull");
+    if (need_add_or_null)
+    {
+        auto properties = AggregateFunctionFactory::instance().tryGetProperties(result_aggregate_function_name);
+        if (!properties->returns_default_when_only_null)
+            result_aggregate_function_name += "OrNull";
+    }
+
+    /** Move -OrNull suffix ahead, this should execute after add -OrNull suffix.
+      * Used to rewrite aggregate functions with -OrNull suffix in some cases.
+      * Example: sumIfOrNull.
+      * Result: sumOrNullIf.
+      */
+    if (result_aggregate_function_name.ends_with("OrNull"))
+    {
+        auto function_properies = AggregateFunctionFactory::instance().tryGetProperties(result_aggregate_function_name);
+        if (function_properies && !function_properies->returns_default_when_only_null)
+        {
+            size_t function_name_size = result_aggregate_function_name.size();
+
+            static constexpr std::array<std::string_view, 4> suffixes_to_replace = {"MergeState", "Merge", "State", "If"};
+            for (const auto & suffix : suffixes_to_replace)
+            {
+                auto suffix_string_value = String(suffix);
+                auto suffix_to_check = suffix_string_value + "OrNull";
+
+                if (!result_aggregate_function_name.ends_with(suffix_to_check))
+                    continue;
+
+                result_aggregate_function_name = result_aggregate_function_name.substr(0, function_name_size - suffix_to_check.size());
+                result_aggregate_function_name += "OrNull";
+                result_aggregate_function_name += suffix_string_value;
+
+                break;
+            }
+        }
+    }
+
+    return result_aggregate_function_name;
+}
 
 /// Resolve identifier functions implementation
 
@@ -3003,7 +3068,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
     {
         resolved_identifier = resolved_identifier->clone();
         auto & resolved_column = resolved_identifier->as<ColumnNode &>();
-        resolved_column.setColumnType(makeNullableSafe(resolved_column.getColumnType()));
+        resolved_column.setColumnType(makeNullableOrLowCardinalityNullable(resolved_column.getColumnType()));
     }
 
     return resolved_identifier;
@@ -3988,6 +4053,9 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 
                 node = replace_expression->clone();
                 node_projection_names = resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+                if (node_projection_names.size() == 1)
+                    node_projection_names[0] = column_name;
+
                 execute_replace_transformer = true;
             }
 
@@ -4678,8 +4746,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
     }
 
-    const auto & settings = scope.context->getSettingsRef();
-
     if (function_node.isWindowFunction())
     {
         if (!AggregateFunctionFactory::instance().isAggregateFunctionName(function_name))
@@ -4694,12 +4760,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 "Window function '{}' does not support lambda arguments",
                 function_name);
 
-        bool need_add_or_null = settings.aggregate_functions_null_for_empty && !function_name.ends_with("OrNull");
+        std::string aggregate_function_name = rewriteAggregateFunctionNameIfNeeded(function_name, scope.context);
 
         AggregateFunctionProperties properties;
-        auto aggregate_function = need_add_or_null
-            ? AggregateFunctionFactory::instance().get(function_name + "OrNull", argument_types, parameters, properties)
-            : AggregateFunctionFactory::instance().get(function_name, argument_types, parameters, properties);
+        auto aggregate_function = AggregateFunctionFactory::instance().get(aggregate_function_name, argument_types, parameters, properties);
 
         function_node.resolveAsWindowFunction(std::move(aggregate_function));
 
@@ -4758,24 +4822,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 "Aggregate function '{}' does not support lambda arguments",
                 function_name);
 
-        auto function_name_lowercase = Poco::toLower(function_name);
-
-        if (function_name_lowercase == "countdistinct")
-        {
-            function_name = scope.context->getSettingsRef().count_distinct_implementation;
-        }
-        else if (function_name_lowercase == "countdistinctif" || function_name_lowercase == "countifdistinct")
-        {
-            function_name = scope.context->getSettingsRef().count_distinct_implementation;
-            function_name += "If";
-        }
-
-        bool need_add_or_null = settings.aggregate_functions_null_for_empty && !function_name.ends_with("OrNull");
-        if (need_add_or_null)
-            function_name += "OrNull";
+        std::string aggregate_function_name = rewriteAggregateFunctionNameIfNeeded(function_name, scope.context);
 
         AggregateFunctionProperties properties;
-        auto aggregate_function = AggregateFunctionFactory::instance().get(function_name, argument_types, parameters, properties);
+        auto aggregate_function = AggregateFunctionFactory::instance().get(aggregate_function_name, argument_types, parameters, properties);
 
         function_node.resolveAsAggregateFunction(std::move(aggregate_function));
 
