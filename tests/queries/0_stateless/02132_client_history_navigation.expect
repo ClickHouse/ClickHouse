@@ -23,16 +23,16 @@ spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \
 expect ":) "
 
 # Make a query
-send -- "SELECT 1\r"
+send -- "SELECT unique1\r"
 expect "1"
 expect ":) "
-send -- "SELECT 2"
+send -- "SELECT unique2"
 # NOTE: it does not work for alacritty with TERM=xterm
 send -- "\033\[A"
-expect "SELECT 1"
+expect "SELECT unique1"
 send -- "\033\[B"
-expect "SELECT 2"
+expect "SELECT unique2"
 send -- "\r"
-expect "2"
+expect "unique2"
 send -- "exit\r"
 expect eof
