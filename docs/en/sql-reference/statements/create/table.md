@@ -174,7 +174,6 @@ SELECT * FROM test;
 │  1 │
 └────┘
 
-
 SELECT id, updated_at, updated_at_date FROM test;
 ┌─id─┬──────────updated_at─┬─updated_at_date─┐
 │  1 │ 2023-02-24 17:08:08 │      2023-02-24 │
