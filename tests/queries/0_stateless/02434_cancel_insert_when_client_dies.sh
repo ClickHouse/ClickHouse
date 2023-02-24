@@ -62,7 +62,7 @@ function thread_cancel
             SIGNAL="KILL"
         fi
         PID=$(ps -ef | grep "$TEST_MARK" | grep -v grep | awk '{print $2}')
-        if [ ! -z "$PID" ]; then kill -s "$SIGNAL" "$PID" || echo "$PID"; fi
+        if [ ! -z "$PID" ]; then kill -s "$SIGNAL" "$PID"; fi
         sleep 0.$RANDOM;
         sleep 0.$RANDOM;
         sleep 0.$RANDOM;
