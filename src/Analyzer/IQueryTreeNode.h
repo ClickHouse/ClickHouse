@@ -90,12 +90,17 @@ public:
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is not supported for {} query node", getNodeTypeName());
     }
 
+    struct CompareOptions
+    {
+        bool compare_aliases = true;
+    };
+
     /** Is tree equal to other tree with node root.
       *
-      * Aliases of query tree nodes are compared during isEqual call.
+      * With default compare options aliases of query tree nodes are compared during isEqual call.
       * Original ASTs of query tree nodes are not compared during isEqual call.
       */
-    bool isEqual(const IQueryTreeNode & rhs) const;
+    bool isEqual(const IQueryTreeNode & rhs, CompareOptions compare_options = { .compare_aliases = true }) const;
 
     using Hash = std::pair<UInt64, UInt64>;
     using HashState = SipHash;
@@ -116,6 +121,11 @@ public:
       */
     using ReplacementMap = std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr>;
     QueryTreeNodePtr cloneAndReplace(const ReplacementMap & replacement_map) const;
+
+    /** Get a deep copy of the query tree.
+      * If node to clone is node to replace, then instead of clone it use replacement node.
+      */
+    QueryTreeNodePtr cloneAndReplace(const QueryTreeNodePtr & node_to_replace, QueryTreeNodePtr replacement_node) const;
 
     /// Returns true if node has alias, false otherwise
     bool hasAlias() const

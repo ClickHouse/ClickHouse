@@ -38,22 +38,6 @@ public:
         {
             auto count_distinct_implementation_function_name = String(settings.count_distinct_implementation);
 
-            /// Replace countDistinct with countDistinct implementation
-            if (function_name_lowercase == "countdistinct")
-            {
-                resolveAggregateOrWindowFunctionNode(*function_node, count_distinct_implementation_function_name);
-                function_name = function_node->getFunctionName();
-                function_name_lowercase = Poco::toLower(function_name);
-            }
-
-            /// Replace countIfDistinct with countDistinctIf implementation
-            if (function_name_lowercase == "countifdistinct")
-            {
-                resolveAggregateOrWindowFunctionNode(*function_node, count_distinct_implementation_function_name + "If");
-                function_name = function_node->getFunctionName();
-                function_name_lowercase = Poco::toLower(function_name);
-            }
-
             /// Replace aggregateFunctionIfDistinct into aggregateFunctionDistinctIf to make execution more optimal
             if (function_name_lowercase.ends_with("ifdistinct"))
             {
@@ -62,19 +46,6 @@ public:
                 resolveAggregateOrWindowFunctionNode(*function_node, updated_function_name);
                 function_name = function_node->getFunctionName();
                 function_name_lowercase = Poco::toLower(function_name);
-            }
-
-            /// Rewrite all aggregate functions to add -OrNull suffix to them
-            if (settings.aggregate_functions_null_for_empty && !function_name.ends_with("OrNull"))
-            {
-                auto function_properies = AggregateFunctionFactory::instance().tryGetProperties(function_name);
-                if (function_properies && !function_properies->returns_default_when_only_null)
-                {
-                    auto updated_function_name = function_name + "OrNull";
-                    resolveAggregateOrWindowFunctionNode(*function_node, updated_function_name);
-                    function_name = function_node->getFunctionName();
-                    function_name_lowercase = Poco::toLower(function_name);
-                }
             }
 
             /** Move -OrNull suffix ahead, this should execute after add -OrNull suffix.
