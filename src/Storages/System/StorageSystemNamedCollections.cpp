@@ -10,6 +10,7 @@
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnMap.h>
 #include <Common/NamedCollections/NamedCollections.h>
+#include <Access/ContextAccess.h>
 
 
 namespace DB
@@ -53,7 +54,10 @@ void StorageSystemNamedCollections::fillData(MutableColumns & res_columns, Conte
         for (const auto & key : collection->getKeys())
         {
             key_column.insertData(key.data(), key.size());
-            value_column.insert(collection->get<String>(key));
+            if (access->isGranted(AccessType::SHOW_NAMED_COLLECTIONS_SECRETS))
+                value_column.insert(collection->get<String>(key));
+            else
+                value_column.insert("[HIDDEN]");
             size++;
         }
 

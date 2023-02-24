@@ -176,8 +176,9 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
         {
             auto & lc_column = assert_cast<ColumnLowCardinality &>(column);
             auto tmp_column = lc_column.getDictionary().getNestedColumn()->cloneEmpty();
-            dict_deserialize(*tmp_column, decoder);
+            auto res = dict_deserialize(*tmp_column, decoder);
             lc_column.insertFromFullColumn(*tmp_column, 0);
+            return res;
         };
     }
 
@@ -198,6 +199,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
                     UUID uuid;
                     parseUUID(reinterpret_cast<const UInt8 *>(tmp.data()), std::reverse_iterator<UInt8 *>(reinterpret_cast<UInt8 *>(&uuid) + 16));
                     assert_cast<DataTypeUUID::ColumnType &>(column).insertValue(uuid);
+                    return true;
                 };
             }
             if (target.isString() || target.isFixedString())
@@ -206,6 +208,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
                 {
                     decoder.decodeString(tmp);
                     column.insertData(tmp.c_str(), tmp.length());
+                    return true;
                 };
             }
             break;
@@ -215,6 +218,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
                 return [target](IColumn & column, avro::Decoder & decoder)
                 {
                     insertNumber(column, target, decoder.decodeInt());
+                    return true;
                 };
             }
             break;
@@ -224,6 +228,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
                 return [target](IColumn & column, avro::Decoder & decoder)
                 {
                     insertNumber(column, target, decoder.decodeLong());
+                    return true;
                 };
             }
             break;
@@ -233,6 +238,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
                 return [target](IColumn & column, avro::Decoder & decoder)
                 {
                     insertNumber(column, target, decoder.decodeFloat());
+                    return true;
                 };
             }
             break;
@@ -242,6 +248,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
                 return [target](IColumn & column, avro::Decoder & decoder)
                 {
                     insertNumber(column, target, decoder.decodeDouble());
+                    return true;
                 };
             }
             break;
@@ -251,6 +258,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
                 return [target](IColumn & column, avro::Decoder & decoder)
                 {
                     insertNumber(column, target, decoder.decodeBool());
+                    return true;
                 };
             }
             break;
@@ -275,6 +283,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
                         }
                     }
                     offsets.push_back(offsets.back() + total);
+                    return true;
                 };
             }
             break;
@@ -301,24 +310,33 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
                         {
                             col.insertDefault();
                         }
+                        return true;
                     };
                 }
-
-                /// If the Union is ['Null', Nested-Type], since the Nested-Type can not be inside
-                /// Nullable, so we will get Nested-Type, instead of Nullable type.
-                if (null_as_default || !target.isNullable())
+                else if (null_as_default)
                 {
                     auto nested_deserialize = this->createDeserializeFn(root_node->leafAt(non_null_union_index), target_type);
                     return [non_null_union_index, nested_deserialize](IColumn & column, avro::Decoder & decoder)
                     {
                         int union_index = static_cast<int>(decoder.decodeUnionIndex());
                         if (union_index == non_null_union_index)
+                        {
                             nested_deserialize(column, decoder);
-                        else
-                            column.insertDefault();
+                            return true;
+                        }
+                        column.insertDefault();
+                        return false;
                     };
                 }
-
+                else
+                {
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot insert Avro Union(Null, {}) into non-nullable type {}. To use default value on NULL, enable setting "
+                        "input_format_null_as_default",
+                        avro::toString(root_node->leafAt(non_null_union_index)->type()),
+                        target_type->getName());
+                }
             }
             break;
         }
@@ -331,6 +349,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
                     return [](IColumn &, avro::Decoder & decoder)
                     {
                         decoder.decodeNull();
+                        return true;
                     };
                 }
                 else
@@ -340,10 +359,26 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
                         ColumnNullable & col = assert_cast<ColumnNullable &>(column);
                         decoder.decodeNull();
                         col.insertDefault();
+                        return true;
                     };
                 }
             }
-            break;
+            else if (null_as_default)
+            {
+                return [](IColumn & column, avro::Decoder & decoder)
+                {
+                    decoder.decodeNull();
+                    column.insertDefault();
+                    return false;
+                };
+            }
+            else
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot insert Avro Null into non-nullable type {}. To use default value on NULL, enable setting "
+                    "input_format_null_as_default", target_type->getName());
+            }
         case avro::AVRO_ENUM:
             if (target.isString())
             {
@@ -358,6 +393,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
                     size_t enum_index = decoder.decodeEnum();
                     const auto & enum_symbol = symbols[enum_index];
                     column.insertData(enum_symbol.c_str(), enum_symbol.length());
+                    return true;
                 };
             }
             if (target.isEnum())
@@ -372,6 +408,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
                 {
                     size_t enum_index = decoder.decodeEnum();
                     column.insert(symbol_mapping[enum_index]);
+                    return true;
                 };
             }
             break;
@@ -384,6 +421,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
                 {
                     decoder.decodeFixed(tmp_fixed.size(), tmp_fixed);
                     column.insertData(reinterpret_cast<const char *>(tmp_fixed.data()), tmp_fixed.size());
+                    return true;
                 };
             }
             break;
@@ -415,6 +453,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
                     auto nested_columns = column_tuple.getColumns();
                     for (const auto & [nested_deserializer, pos] : nested_deserializers)
                         nested_deserializer(*nested_columns[pos], decoder);
+                    return true;
                 };
             }
             break;
@@ -449,6 +488,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
                         }
                     }
                     offsets.push_back(offsets.back() + total);
+                    return true;
                 };
             }
             break;
@@ -465,6 +505,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
             ColumnNullable & col = assert_cast<ColumnNullable &>(column);
             nested_deserialize(col.getNestedColumn(), decoder);
             col.getNullMapData().push_back(0);
+            return true;
         };
     }
 
@@ -593,7 +634,6 @@ void AvroDeserializer::Action::deserializeNested(MutableColumns & columns, avro:
         ColumnArray & column_array = assert_cast<ColumnArray &>(*columns[index]);
         arrays_offsets.push_back(&column_array.getOffsets());
         nested_columns.push_back(&column_array.getData());
-        ext.read_columns[index] = true;
     }
 
     size_t total = 0;
@@ -603,7 +643,7 @@ void AvroDeserializer::Action::deserializeNested(MutableColumns & columns, avro:
         for (size_t i = 0; i < n; ++i)
         {
             for (size_t j = 0; j != nested_deserializers.size(); ++j)
-                nested_deserializers[j](*nested_columns[j], decoder);
+                ext.read_columns[nested_column_indexes[j]] = nested_deserializers[j](*nested_columns[j], decoder);
         }
     }
 
@@ -738,14 +778,14 @@ AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schem
 
 void AvroDeserializer::deserializeRow(MutableColumns & columns, avro::Decoder & decoder, RowReadExtension & ext) const
 {
+    size_t row = columns[0]->size() + 1;
     ext.read_columns.assign(columns.size(), false);
     row_action.execute(columns, decoder, ext);
     for (size_t i = 0; i < ext.read_columns.size(); ++i)
     {
-        if (!ext.read_columns[i])
-        {
+        /// Insert default in missing columns.
+        if (columns[i]->size() != row)
             columns[i]->insertDefault();
-        }
     }
 }
 
@@ -759,7 +799,7 @@ void AvroRowInputFormat::readPrefix()
 {
     file_reader_ptr = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*in));
     deserializer_ptr = std::make_unique<AvroDeserializer>(
-        output.getHeader(), file_reader_ptr->dataSchema(), format_settings.avro.allow_missing_fields, format_settings.avro.null_as_default);
+        output.getHeader(), file_reader_ptr->dataSchema(), format_settings.avro.allow_missing_fields, format_settings.null_as_default);
     file_reader_ptr->init();
 }
 
@@ -950,7 +990,7 @@ const AvroDeserializer & AvroConfluentRowInputFormat::getOrCreateDeserializer(Sc
     {
         auto schema = schema_registry->getSchema(schema_id);
         AvroDeserializer deserializer(
-            output.getHeader(), schema, format_settings.avro.allow_missing_fields, format_settings.avro.null_as_default);
+            output.getHeader(), schema, format_settings.avro.allow_missing_fields, format_settings.null_as_default);
         it = deserializer_cache.emplace(schema_id, deserializer).first;
     }
     return it->second;
