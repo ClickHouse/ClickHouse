@@ -360,7 +360,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(const QueryTreeNodePtr & tabl
             auto projection_columns = query_node ? query_node->getProjectionColumns() : union_node->computeProjectionColumns();
             Block source_header;
             for (auto & projection_column : projection_columns)
-                source_header.insert(ColumnWithTypeAndName(nullptr, projection_column.type, projection_column.name));
+                source_header.insert(ColumnWithTypeAndName(projection_column.type, projection_column.name));
 
             Pipe pipe(std::make_shared<NullSource>(source_header));
             auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));

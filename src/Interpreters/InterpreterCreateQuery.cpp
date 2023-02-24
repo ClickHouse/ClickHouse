@@ -1224,6 +1224,12 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                     output_columns.push_back(output_column->cloneEmpty());
                 }
             }
+
+            ActionsDAG::makeConvertingActions(
+                input_columns,
+                output_columns,
+                ActionsDAG::MatchColumnsMode::Position
+            );
         }
     }
 

@@ -1440,7 +1440,8 @@ void Planner::buildPlanForQueryNode()
         }
     }
 
-    addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, result_actions_to_execute);
+    if (!select_query_options.only_analyze)
+        addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, result_actions_to_execute);
 }
 
 void Planner::addStorageLimits(const StorageLimitsList & limits)
