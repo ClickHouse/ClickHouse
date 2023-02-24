@@ -117,16 +117,8 @@ class FunctionWidthBucket : public IFunction
 
         if (are_all_const_cols)
         {
-            auto result_column = ColumnVector<ResultType>::create();
-            result_column->reserve(1);
-            auto & result_data = result_column->getData();
-            result_data.push_back(calculate<ResultType>(
-                operands_col_const->getValue<Float64>(),
-                lows_col_const->getValue<Float64>(),
-                highs_col_const->getValue<Float64>(),
-                counts_col_const->template getValue<TCountType>()));
-
-            return ColumnConst::create(std::move(result_column), input_rows_count);
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Logical error in function {}: unexpected combination of argument types!", getName());
         }
 
         auto result_column = ColumnVector<ResultType>::create();
