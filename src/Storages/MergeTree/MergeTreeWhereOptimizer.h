@@ -111,6 +111,7 @@ private:
     std::unordered_map<std::string, UInt64> column_sizes;
     UInt64 total_size_of_queried_columns = 0;
     NameSet array_joined_names;
+    const bool move_all_conditions_to_prewhere = false;
 };
 
 
