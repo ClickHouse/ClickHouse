@@ -61,9 +61,9 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
             {"username", "user", "password", "sharding_key"});
 
         cluster_description = named_collection->getOrDefault<String>("addresses_expr", "");
-        database = named_collection->getOrDefault<String>("db", named_collection->getOrDefault<String>("database", ""));
+        database = named_collection->getAnyOrDefault<String>({"db", "database"}, "default");
         table = named_collection->get<String>("table");
-        username = named_collection->getOrDefault<String>("username", named_collection->getOrDefault<String>("user", ""));
+        username = named_collection->getAnyOrDefault<String>({"username", "user"}, "default");
         password = named_collection->getOrDefault<String>("password", "");
     }
     else

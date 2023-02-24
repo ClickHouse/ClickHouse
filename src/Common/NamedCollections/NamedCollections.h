@@ -39,6 +39,10 @@ public:
 
     template <typename T> T getOrDefault(const Key & key, const T & default_value) const;
 
+    template <typename T> T getAny(const std::initializer_list<Key> & keys) const;
+
+    template <typename T> T getAnyOrDefault(const std::initializer_list<Key> & keys, const T & default_value) const;
+
     std::unique_lock<std::mutex> lock();
 
     template <typename T, bool locked = false> void set(const Key & key, const T & value);
