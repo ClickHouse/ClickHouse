@@ -12,7 +12,19 @@ INSERT INTO mytable VALUES (3, -100, 200, 10), (0, 0, 10, 4), (3, 0, 10, 3), (4.
 SELECT operand, low, high, count, WIDTH_BUCKET(operand, low, high, count) FROM mytable WHERE count != 0;
 SELECT '----------';
 -- zero is not valid for count
-SELECT operand, low, high, count, WIDTH_BUCKET(operand, low, high, count) FROM mytable WHERE count = 0; -- { serverError BAD_ARGUMENTS}
+SELECT operand, low, high, count, WIDTH_BUCKET(operand, low, high, count) FROM mytable WHERE count = 0; -- { serverError BAD_ARGUMENTS }
+-- operand, low and high cannot be NaN
+SELECT WIDTH_BUCKET(0, 10, NaN, 10); -- { serverError BAD_ARGUMENTS }
+SELECT WIDTH_BUCKET(NaN, 0, 10, 10); -- { serverError BAD_ARGUMENTS }
+SELECT WIDTH_BUCKET(0, NaN, 10, 10); -- { serverError BAD_ARGUMENTS }
+-- low and high cannot be Inf
+SELECT WIDTH_BUCKET(1, -Inf, 10, 10); -- { serverError BAD_ARGUMENTS }
+-- low and high cannot be Inf
+SELECT WIDTH_BUCKET(1, 0, Inf, 10); -- { serverError BAD_ARGUMENTS }
+-- operand can be Inf
+SELECT WIDTH_BUCKET(-Inf, 0, 10, 10);
+SELECT WIDTH_BUCKET(Inf, 0, 10, 10);
+SELECT '----------';
 -- IntXX types
 SELECT toInt64(operand) AS operand, toInt32(low) AS low, toInt16(high) AS high, count, WIDTH_BUCKET(operand, low, high, count) FROM mytable WHERE count != 0;
 SELECT '----------';
