@@ -144,7 +144,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        for (const auto argument_index : collections::range(0, arguments.size()))
+        for (const auto argument_index : collections::range(0, 3))
         {
             if (!isNativeNumber(arguments[argument_index]))
             {
