@@ -321,7 +321,7 @@ public:
         : needle(reinterpret_cast<const uint8_t *>(needle_))
         , needle_end(needle + needle_size)
     {
-        if (0 == needle_size)
+        if (needle_size == 0)
             return;
 
         l = static_cast<uint8_t>(std::tolower(*needle));
@@ -536,7 +536,7 @@ public:
         : needle(reinterpret_cast<const uint8_t *>(needle_))
         , needle_size(needle_size_)
     {
-        if (0 == needle_size)
+        if (needle_size == 0)
             return;
 
         UTF8SequenceBuffer l_seq;
@@ -718,7 +718,7 @@ public:
     requires (sizeof(CharT) == 1)
     const CharT * search(const CharT * haystack, const CharT * const haystack_end) const
     {
-        if (0 == needle_size)
+        if (needle_size == 0)
             return haystack;
 
         while (haystack < haystack_end)
