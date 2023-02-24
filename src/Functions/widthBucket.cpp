@@ -11,11 +11,14 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
+#include <Common/Exception.h>
+#include <Common/NaNUtils.h>
 #include <Common/register_objects.h>
 
 #include <algorithm>
 #include <iterator>
 #include <memory>
+#include <optional>
 #include <string>
 
 namespace DB
@@ -30,7 +33,8 @@ namespace ErrorCodes
 class FunctionWidthBucket : public IFunction
 {
     template <typename TDataType>
-    void throwIfInvalid( const size_t argument_index,
+    void throwIfInvalid(
+        const size_t argument_index,
         const ColumnConst * col_const,
         const typename ColumnVector<TDataType>::Container * col_vec,
         const size_t expected_size) const
@@ -38,7 +42,10 @@ class FunctionWidthBucket : public IFunction
         if ((nullptr == col_const) ^ (nullptr != col_vec && col_vec->size() == expected_size))
         {
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Logical error in function {}: argument {} has unexpected type or size!", getName(), argument_index);
+                ErrorCodes::LOGICAL_ERROR,
+                "Logical error in function {}: argument {} has unexpected type or size!",
+                getName(),
+                argument_index);
         }
     }
 
@@ -63,14 +70,28 @@ class FunctionWidthBucket : public IFunction
         return col_vec->data()[index];
     }
 
+    static Float64 calculateRelativeBucket(const Float64 operand, const Float64 low, const Float64 high)
+    {
+        return (operand - low) / (high - low);
+    }
+
     template <typename TResultType, typename TCountType>
-    TResultType calculate(const Float64 operand, const Float64 low, const Float64 high, const TCountType count) const
+    std::optional<TResultType> checkArguments(const Float64 operand, const Float64 low, const Float64 high, const TCountType count) const
     {
         if (count == 0)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Last argument (count) for function {} cannot be 0.", getName());
         }
-
+        if (isNaN(operand) || isNaN(low) || isNaN(high))
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "The first three arguments (operand, low, high) cannot be NaN in function {}", getName());
+        }
+        // operand can be infinity, the following conditions will take care of it
+        if (!isFinite(low) || !isFinite(high))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second and third arguments (low, high) cannot be Inf function {}", getName());
+        }
         if (operand < low || low >= high)
         {
             return 0;
@@ -79,8 +100,25 @@ class FunctionWidthBucket : public IFunction
         {
             return count + 1;
         }
+        return std::nullopt;
+    }
 
-        return static_cast<TResultType>(count * ((operand - low) / (high - low)) + 1);
+    template <typename TResultType, typename TCountType>
+    TResultType calculate(const Float64 operand, const Float64 low, const Float64 high, const TCountType count) const
+    {
+        if (const auto maybe_early_return = checkArguments<TResultType>(operand, low, high, count); maybe_early_return.has_value())
+        {
+            return *maybe_early_return;
+        }
+
+        const auto relative_bucket = calculateRelativeBucket(operand, low, high);
+
+        if (isNaN(relative_bucket) || !isFinite(relative_bucket))
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "The calculation resulted in NaN or Inf which is unexpected in function {}.", getName());
+        }
+        return static_cast<TResultType>(count * relative_bucket + 1);
     }
 
     template <is_any_of<UInt8, UInt16, UInt32, UInt64> TCountType>
