@@ -55,15 +55,15 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
         if (is_cluster_function)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Named collection cannot be used for table function cluster");
 
-        validateNamedCollection(
+        validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(
             *named_collection,
-            {"addresses_expr", "database", "table"},
-            {"username", "password", "sharding_key"});
+            {"addresses_expr", "database", "db", "table"},
+            {"username", "user", "password", "sharding_key"});
 
         cluster_description = named_collection->getOrDefault<String>("addresses_expr", "");
-        database = named_collection->get<String>("database");
+        database = named_collection->getOrDefault<String>("db", named_collection->getOrDefault<String>("database", ""));
         table = named_collection->get<String>("table");
-        username = named_collection->getOrDefault<String>("username", "");
+        username = named_collection->getOrDefault<String>("username", named_collection->getOrDefault<String>("user", ""));
         password = named_collection->getOrDefault<String>("password", "");
     }
     else

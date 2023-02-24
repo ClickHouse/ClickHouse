@@ -241,27 +241,27 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
 {
     StorageMySQL::Configuration configuration;
 
-    std::unordered_set<std::string> optional_arguments = {"replace_query", "on_duplicate_clause", "addresses_expr", "host", "port"};
+    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> optional_arguments = {"replace_query", "on_duplicate_clause", "addresses_expr", "host", "hostname", "port"};
     auto mysql_settings = storage_settings.all();
     for (const auto & setting : mysql_settings)
         optional_arguments.insert(setting.getName());
 
-    std::unordered_set<std::string_view> required_arguments = {"user", "password", "database", "table"};
+    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> required_arguments = {"user", "username", "password", "database", "db", "table"};
     if (require_table)
         required_arguments.insert("table");
-    validateNamedCollection(named_collection, required_arguments, optional_arguments);
+    validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(named_collection, required_arguments, optional_arguments);
 
     configuration.addresses_expr = named_collection.getOrDefault<String>("addresses_expr", "");
     if (configuration.addresses_expr.empty())
     {
-        configuration.host = named_collection.get<String>("host");
+        configuration.host = named_collection.getOrDefault<String>("host", named_collection.getOrDefault<String>("hostname", ""));
         configuration.port = static_cast<UInt16>(named_collection.get<UInt64>("port"));
         configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
     }
 
-    configuration.username = named_collection.get<String>("user");
+    configuration.username = named_collection.getOrDefault<String>("username", named_collection.getOrDefault<String>("user", ""));
     configuration.password = named_collection.get<String>("password");
-    configuration.database = named_collection.get<String>("database");
+    configuration.database = named_collection.getOrDefault<String>("db", named_collection.getOrDefault<String>("database", ""));
     if (require_table)
         configuration.table = named_collection.get<String>("table");
     configuration.replace_query = named_collection.getOrDefault<UInt64>("replace_query", false);

@@ -390,24 +390,24 @@ SinkToStoragePtr StoragePostgreSQL::write(
 StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult(const NamedCollection & named_collection, bool require_table)
 {
     StoragePostgreSQL::Configuration configuration;
-    std::unordered_set<std::string_view> required_arguments = {"user", "password", "database", "table"};
+    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> required_arguments = {"user", "username", "password", "database", "db", "table"};
     if (require_table)
         required_arguments.insert("table");
-    validateNamedCollection(
-        named_collection, required_arguments,
-        {"schema", "on_conflict", "addresses_expr", "host", "port"});
+
+    validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(
+        named_collection, required_arguments, {"schema", "on_conflict", "addresses_expr", "host", "hostname", "port"});
 
     configuration.addresses_expr = named_collection.getOrDefault<String>("addresses_expr", "");
     if (configuration.addresses_expr.empty())
     {
-        configuration.host = named_collection.get<String>("host");
+        configuration.host = named_collection.getOrDefault<String>("host", named_collection.getOrDefault<String>("hostname", ""));
         configuration.port = static_cast<UInt16>(named_collection.get<UInt64>("port"));
         configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
     }
 
-    configuration.username = named_collection.get<String>("user");
+    configuration.username = named_collection.getOrDefault<String>("username", named_collection.getOrDefault<String>("user", ""));
     configuration.password = named_collection.get<String>("password");
-    configuration.database = named_collection.get<String>("database");
+    configuration.database = named_collection.getOrDefault<String>("db", named_collection.getOrDefault<String>("database", ""));
     if (require_table)
         configuration.table = named_collection.get<String>("table");
     configuration.schema = named_collection.getOrDefault<String>("schema", "");
