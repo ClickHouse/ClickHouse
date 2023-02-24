@@ -132,7 +132,7 @@ class FunctionWidthBucket : public IFunction
     }
 
 public:
-    static inline const char * name = "width_bucket";
+    static inline const char * name = "widthBucket";
 
     explicit FunctionWidthBucket() = default;
 
@@ -207,7 +207,40 @@ public:
 
 REGISTER_FUNCTION(WidthBucket)
 {
-    factory.registerFunction<FunctionWidthBucket>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionWidthBucket>({
+        R"(
+Returns the number of the bucket in which `operand` falls in a histogram having `count` equal-width buckets spanning the range `low` to `high`. Returns `0` if `operand < low`, and returns `count+1` if `operand >= high`.
+
+`operand`, `low`, `high` can be any native number type. `count` can only be unsigned native integer and its value cannot be zero.
+
+**Syntax**
+
+```sql
+widthBucket(operand, low, high, count)
+```
+
+There is also a case insensitive alias called `WIDTH_BUCKET` to provide compatibility with other databases.
+
+**Example**
+
+Query:
+[example:simple]
+
+Result:
+
+``` text
+┌─widthBucket(10.15, -8.6, 23, 18)─┐
+│                               11 │
+└──────────────────────────────────┘
+```
+)",
+        Documentation::Examples{
+            {"simple", "SELECT widthBucket(10.15, -8.6, 23, 18)"},
+        },
+        Documentation::Categories{"Mathematical"},
+    });
+
+    factory.registerAlias("width_bucket", "widthBucket", FunctionFactory::CaseInsensitive);
 }
 
 }
