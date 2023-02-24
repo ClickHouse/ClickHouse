@@ -289,7 +289,7 @@ def test_show_grants(cluster):
     node.query("GRANT select ON * TO koko")
     node.query("GRANT CREATE NAMED COLLECTION ON * TO koko")
     assert (
-        "GRANT SELECT ON default.* TO koko\nGRANT CREATE NAMED COLLECTION ON * TO koko"
+        "GRANT CREATE NAMED COLLECTION ON * TO koko\nGRANT SELECT ON default.* TO koko"
         in node.query("SHOW GRANTS FOR koko;").strip()
     )
 
