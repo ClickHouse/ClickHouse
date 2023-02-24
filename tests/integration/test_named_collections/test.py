@@ -275,6 +275,24 @@ def test_show_grants(cluster):
         in node.query("SHOW GRANTS FOR koko;").strip()
     )
 
+    node.query("DROP USER IF EXISTS koko")
+    node.query("CREATE USER koko")
+    node.query("GRANT CREATE NAMED COLLECTION ON * TO koko")
+    node.query("GRANT select ON * TO koko")
+    assert (
+        "GRANT CREATE NAMED COLLECTION ON * TO koko\nGRANT SELECT ON default.* TO koko"
+        in node.query("SHOW GRANTS FOR koko;").strip()
+    )
+
+    node.query("DROP USER IF EXISTS koko")
+    node.query("CREATE USER koko")
+    node.query("GRANT select ON * TO koko")
+    node.query("GRANT CREATE NAMED COLLECTION ON * TO koko")
+    assert (
+        "GRANT SELECT ON default.* TO koko\nGRANT CREATE NAMED COLLECTION ON * TO koko"
+        in node.query("SHOW GRANTS FOR koko;").strip()
+    )
+
 
 def test_granular_access_create_alter_drop_query(cluster):
     node = cluster.instances["node"]
