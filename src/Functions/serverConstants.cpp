@@ -168,7 +168,7 @@ Can be changed with SET timezone = 'New/Tz'
 
 [example:timezone]
 )",
-        Documentation::Examples{{"serverTimezone", "SELECT timezone();"}},
+        Documentation::Examples{{"timezone", "SELECT timezone();"}},
         Documentation::Categories{"Constant", "Miscellaneous"}
     });
     factory.registerAlias("timeZone", "timezone");

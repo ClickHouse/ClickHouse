@@ -32,6 +32,7 @@ public:
     static ALWAYS_INLINE const DateLUTImpl & instance(const std::string & time_zone)
     {
         const auto & date_lut = getInstance();
+        std::string effective_time_zone;
 
         if (time_zone.empty())
         {
@@ -41,19 +42,19 @@ public:
 
                 if (query_context)
                 {
-                    auto implicit_timezone = extractTimezoneFromContext(query_context);
+                    effective_time_zone = extractTimezoneFromContext(query_context);
 
-                    if (!implicit_timezone.empty())
-                        return instance(implicit_timezone);
+                    if (!effective_time_zone.empty())
+                        return date_lut.getImplementation(effective_time_zone);
                 }
 
                 const auto global_context = DB::CurrentThread::get().getGlobalContext();
                 if (global_context)
                 {
-                    auto implicit_timezone = extractTimezoneFromContext(global_context);
+                    effective_time_zone = extractTimezoneFromContext(global_context);
 
-                    if (!implicit_timezone.empty())
-                        return instance(implicit_timezone);
+                    if (!effective_time_zone.empty())
+                        return date_lut.getImplementation(effective_time_zone);
                 }
 
             }

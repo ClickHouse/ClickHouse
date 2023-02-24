@@ -755,14 +755,14 @@ inline void writeDateTimeText(const LocalDateTime & datetime, WriteBuffer & buf)
 
 /// In the format YYYY-MM-DD HH:MM:SS, according to the specified time zone.
 template <char date_delimeter = '-', char time_delimeter = ':', char between_date_time_delimiter = ' '>
-inline void writeDateTimeText(time_t datetime, WriteBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance())
+inline void writeDateTimeText(time_t datetime, WriteBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance(""))
 {
     writeDateTimeText<date_delimeter, time_delimeter, between_date_time_delimiter>(LocalDateTime(datetime, time_zone), buf);
 }
 
 /// In the format YYYY-MM-DD HH:MM:SS.NNNNNNNNN, according to the specified time zone.
 template <char date_delimeter = '-', char time_delimeter = ':', char between_date_time_delimiter = ' ', char fractional_time_delimiter = '.'>
-inline void writeDateTimeText(DateTime64 datetime64, UInt32 scale, WriteBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance())
+inline void writeDateTimeText(DateTime64 datetime64, UInt32 scale, WriteBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance(""))
 {
     static constexpr UInt32 MaxScale = DecimalUtils::max_precision<DateTime64>;
     scale = scale > MaxScale ? MaxScale : scale;
@@ -796,7 +796,7 @@ inline void writeDateTimeText(DateTime64 datetime64, UInt32 scale, WriteBuffer &
 
 /// In the RFC 1123 format: "Tue, 03 Dec 2019 00:11:50 GMT". You must provide GMT DateLUT.
 /// This is needed for HTTP requests.
-inline void writeDateTimeTextRFC1123(time_t datetime, WriteBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance())
+inline void writeDateTimeTextRFC1123(time_t datetime, WriteBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance(""))
 {
     const auto & values = time_zone.getValues(datetime);
 
