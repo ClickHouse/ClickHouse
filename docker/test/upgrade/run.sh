@@ -14,6 +14,8 @@ ln -s /usr/share/clickhouse-test/clickhouse-test /usr/bin/clickhouse-test
 ln -s /usr/share/clickhouse-test/ci/download_release_packages.py /usr/bin/download_release_packages
 ln -s /usr/share/clickhouse-test/ci/get_previous_release_tag.py /usr/bin/get_previous_release_tag
 
+# Stress tests and upgrade check uses similar code that was placed
+# in a separate bash library. See tests/ci/stress_tests.lib
 source /usr/share/clickhouse-test/ci/stress_tests.lib
 
 azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &

@@ -75,8 +75,8 @@ def run_func_test(
         for i in range(num_processes)
     ]
     pipes = []
-    for i in range(0, len(output_paths)):
-        f = open(output_paths[i], "w")
+    for i, path in enumerate(output_paths):
+        f = open(path, "w")
         full_command = "{} {} {} {} {}".format(
             cmd,
             get_options(i, upgrade_check),
