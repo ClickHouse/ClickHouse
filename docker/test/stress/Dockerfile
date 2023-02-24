@@ -21,7 +21,6 @@ RUN apt-get update -y \
             openssl \
             netcat-openbsd \
             telnet \
-            llvm-9 \
             brotli \
     && apt-get clean
 
