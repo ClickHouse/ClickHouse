@@ -118,6 +118,7 @@ namespace detail
         bool use_external_buffer;
 
         size_t offset_from_begin_pos = 0;
+        const Range initial_read_range;
         Range read_range;
         std::optional<size_t> file_size;
 
@@ -145,6 +146,7 @@ namespace detail
 
         size_t getOffset() const { return getRangeBegin() + offset_from_begin_pos; }
 
+        template <bool use_initial_range = false>
         std::istream * callImpl(Poco::URI uri_, Poco::Net::HTTPResponse & response, const std::string & method_)
         {
             // With empty path poco will send "POST  HTTP/1.1" its bug.
@@ -153,6 +155,12 @@ namespace detail
 
             Poco::Net::HTTPRequest request(method_, uri_.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
             request.setHost(uri_.getHost()); // use original, not resolved host name in header
+
+            Range range;
+            if constexpr (use_initial_range)
+                range = Range{initial_read_range.begin.value_or(0), initial_read_range.end};
+            else
+                range = Range{getOffset(), read_range.end};
 
             if (out_stream_callback)
                 request.setChunkedTransferEncoding(true);
@@ -163,10 +171,10 @@ namespace detail
             if (withPartialContent())
             {
                 String range_header_value;
-                if (read_range.end)
-                    range_header_value = fmt::format("bytes={}-{}", getOffset(), *read_range.end);
+                if (range.end)
+                    range_header_value = fmt::format("bytes={}-{}", *range.begin, *range.end);
                 else
-                    range_header_value = fmt::format("bytes={}-", getOffset());
+                    range_header_value = fmt::format("bytes={}-", *range.begin);
                 LOG_TEST(log, "Adding header: Range: {}", range_header_value);
                 request.set("Range", range_header_value);
             }
@@ -206,7 +214,7 @@ namespace detail
                 return *file_size;
 
             Poco::Net::HTTPResponse response;
-            getHeadResponse(response);
+            getHeadResponse<true>(response);
 
             if (response.hasContentLength())
             {
@@ -235,13 +243,14 @@ namespace detail
         InitializeError initialization_error = InitializeError::NONE;
 
     private:
+        template <bool use_initial_range = false>
         void getHeadResponse(Poco::Net::HTTPResponse & response)
         {
             for (size_t i = 0; i < settings.http_max_tries; ++i)
             {
                 try
                 {
-                    callWithRedirects(response, Poco::Net::HTTPRequest::HTTP_HEAD);
+                    callWithRedirects<use_initial_range>(response, Poco::Net::HTTPRequest::HTTP_HEAD);
                     break;
                 }
                 catch (const Poco::Exception & e)
@@ -296,6 +305,7 @@ namespace detail
             , remote_host_filter {remote_host_filter_}
             , buffer_size {buffer_size_}
             , use_external_buffer {use_external_buffer_}
+            , initial_read_range(read_range_)
             , read_range(read_range_)
             , http_skip_not_found_url(http_skip_not_found_url_)
             , settings {settings_}
@@ -359,9 +369,10 @@ namespace detail
             return location_uri;
         }
 
+        template <bool use_initial_range = false>
         void callWithRedirects(Poco::Net::HTTPResponse & response, const String & method_, bool throw_on_all_errors = false)
         {
-            call(response, method_, throw_on_all_errors);
+            call<use_initial_range>(response, method_, throw_on_all_errors);
             Poco::URI prev_uri = uri;
 
             while (isRedirect(response.getStatus()))
@@ -373,15 +384,16 @@ namespace detail
 
                 session->updateSession(uri_redirect);
 
-                istr = callImpl(uri_redirect, response, method);
+                istr = callImpl<use_initial_range>(uri_redirect, response, method);
             }
         }
 
+        template <bool use_initial_range = false>
         void call(Poco::Net::HTTPResponse & response, const String & method_, bool throw_on_all_errors = false)
         {
             try
             {
-                istr = callImpl(saved_uri_redirect ? *saved_uri_redirect : uri, response, method_);
+                istr = callImpl<use_initial_range>(saved_uri_redirect ? *saved_uri_redirect : uri, response, method_);
             }
             catch (...)
             {
