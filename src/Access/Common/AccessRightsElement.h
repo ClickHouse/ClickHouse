@@ -49,7 +49,7 @@ struct AccessRightsElement
 
     bool empty() const { return !access_flags || (!any_column && columns.empty()); }
 
-    auto toTuple() const { return std::tie(access_flags, any_database, database, any_table, table, any_column, columns, grant_option, is_partial_revoke); }
+    auto toTuple() const { return std::tie(access_flags, any_database, database, any_table, table, any_column, columns, any_parameter, parameter, grant_option, is_partial_revoke); }
     friend bool operator==(const AccessRightsElement & left, const AccessRightsElement & right) { return left.toTuple() == right.toTuple(); }
     friend bool operator!=(const AccessRightsElement & left, const AccessRightsElement & right) { return !(left == right); }
 

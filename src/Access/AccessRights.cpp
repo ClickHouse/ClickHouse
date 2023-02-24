@@ -68,14 +68,15 @@ namespace
                 {
                     if (access_flags.isGlobalWithParameter())
                     {
-                        res.any_parameter = false;
                         res.parameter = full_name[0];
+                        res.any_parameter = false;
+                        res.any_database = false;
                     }
                     else
                     {
-                        res.any_database = false;
                         res.database = full_name[0];
-
+                        res.any_database = false;
+                        res.any_parameter = false;
                         res.any_table = true;
                         res.any_column = true;
                     }
