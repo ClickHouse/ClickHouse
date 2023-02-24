@@ -1,7 +1,6 @@
 #include <Access/Common/AccessRightsElement.h>
 #include <Common/quoteString.h>
 #include <boost/range/algorithm_ext/erase.hpp>
-#include <Common/logger_useful.h>
 
 
 namespace DB

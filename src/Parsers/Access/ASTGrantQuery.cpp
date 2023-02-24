@@ -2,7 +2,6 @@
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
-#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -57,8 +56,6 @@ namespace
     void formatElementsWithoutOptions(const AccessRightsElements & elements, const IAST::FormatSettings & settings)
     {
         bool no_output = true;
-        auto * log = &Poco::Logger::get("kssenii");
-        LOG_TEST(log, "kssenii 0 - {}", elements.size());
         for (size_t i = 0; i != elements.size(); ++i)
         {
             const auto & element = elements[i];
@@ -82,14 +79,12 @@ namespace
                 const auto & next_element = elements[i + 1];
                 if (element.sameDatabaseAndTableAndParameter(next_element))
                 {
-                    LOG_TEST(log, "kssenii 1");
                     next_element_on_same_db_and_table = true;
                 }
             }
 
             if (!next_element_on_same_db_and_table)
             {
-                LOG_TEST(log, "kssenii 2");
                 settings.ostr << " ";
                 formatONClause(element, settings);
             }
