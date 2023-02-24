@@ -27,6 +27,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int CANNOT_DLOPEN;
+    extern const int LOGICAL_ERROR;
 }
 
 
