@@ -86,7 +86,8 @@ using MutableSerializationInfoPtr = std::shared_ptr<SerializationInfo>;
 using SerializationInfos = std::vector<SerializationInfoPtr>;
 using MutableSerializationInfos = std::vector<MutableSerializationInfoPtr>;
 
-class SerializationInfoByName : public std::unordered_map<String, MutableSerializationInfoPtr>
+/// The order is important because info is serialized to part metadata.
+class SerializationInfoByName : public std::map<String, MutableSerializationInfoPtr>
 {
 public:
     SerializationInfoByName() = default;
