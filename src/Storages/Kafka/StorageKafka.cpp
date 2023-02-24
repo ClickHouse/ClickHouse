@@ -616,16 +616,16 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & kafka_config)
 
     // Update consumer topic-specific configuration (new syntax). Example with topics "football" and "baseball":
     //     <kafka>
-    //         <topic>
+    //         <kafka_topic>
     //             <name>football</name>
     //             <retry_backoff_ms>250</retry_backoff_ms>
     //             <fetch_min_bytes>5000</fetch_min_bytes>
-    //         </topic>
-    //         <topic>
+    //         </kafka_topic>
+    //         <kafka_topic>
     //             <name>baseball</name>
     //             <retry_backoff_ms>300</retry_backoff_ms>
     //             <fetch_min_bytes>2000</fetch_min_bytes>
-    //         </topic>
+    //         </kafka_topic>
     //     </kafka>
     // Advantages: The period restriction no longer applies (e.g. <name>sports.football</name> will work), everything
     // Kafka-related is below <kafka>.
