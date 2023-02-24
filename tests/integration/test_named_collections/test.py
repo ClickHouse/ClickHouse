@@ -228,6 +228,54 @@ def test_granular_access_show_query(cluster):
     node.query("DROP NAMED COLLECTION collection2")
 
 
+def test_show_grants(cluster):
+    node = cluster.instances["node"]
+    node.query("DROP USER IF EXISTS koko")
+    node.query("CREATE USER koko")
+    node.query("GRANT CREATE NAMED COLLECTION ON name1 TO koko")
+    node.query("GRANT select ON name1.* TO koko")
+    assert (
+        "GRANT SELECT ON name1.* TO koko\nGRANT CREATE NAMED COLLECTION ON name1 TO koko"
+        in node.query("SHOW GRANTS FOR koko;").strip()
+    )
+
+    node.query("DROP USER IF EXISTS koko")
+    node.query("CREATE USER koko")
+    node.query("GRANT CREATE NAMED COLLECTION ON name1 TO koko")
+    node.query("GRANT select ON name1 TO koko")
+    assert (
+        "GRANT SELECT ON default.name1 TO koko\nGRANT CREATE NAMED COLLECTION ON name1 TO koko"
+        in node.query("SHOW GRANTS FOR koko;").strip()
+    )
+
+    node.query("DROP USER IF EXISTS koko")
+    node.query("CREATE USER koko")
+    node.query("GRANT select ON name1 TO koko")
+    node.query("GRANT CREATE NAMED COLLECTION ON name1 TO koko")
+    assert (
+        "GRANT SELECT ON default.name1 TO koko\nGRANT CREATE NAMED COLLECTION ON name1 TO koko"
+        in node.query("SHOW GRANTS FOR koko;").strip()
+    )
+
+    node.query("DROP USER IF EXISTS koko")
+    node.query("CREATE USER koko")
+    node.query("GRANT select ON *.* TO koko")
+    node.query("GRANT CREATE NAMED COLLECTION ON * TO koko")
+    assert (
+        "GRANT SELECT ON *.* TO koko\nGRANT CREATE NAMED COLLECTION ON * TO koko"
+        in node.query("SHOW GRANTS FOR koko;").strip()
+    )
+
+    node.query("DROP USER IF EXISTS koko")
+    node.query("CREATE USER koko")
+    node.query("GRANT CREATE NAMED COLLECTION ON * TO koko")
+    node.query("GRANT select ON *.* TO koko")
+    assert (
+        "GRANT SELECT ON *.* TO koko\nGRANT CREATE NAMED COLLECTION ON * TO koko"
+        in node.query("SHOW GRANTS FOR koko;").strip()
+    )
+
+
 def test_granular_access_create_alter_drop_query(cluster):
     node = cluster.instances["node"]
     node.query("DROP USER IF EXISTS kek")
@@ -277,7 +325,7 @@ def test_granular_access_create_alter_drop_query(cluster):
             "select collection['key1'] from system.named_collections where name = 'collection2'"
         ).strip()
     )
-    node.query("REVOKE create named collection ON collection2 FROM kek")
+    node.query("REVOKE alter named collection ON collection2 FROM kek")
     assert (
         "DB::Exception: kek: Not enough privileges. To execute this query it's necessary to have grant ALTER NAMED COLLECTION"
         in node.query_and_get_error(
