@@ -40,11 +40,16 @@ def get_options(i, upgrade_check):
             client_options.append("join_algorithm='auto'")
             client_options.append("max_rows_in_join=1000")
 
-    if i == 13:
+    if i % 5 == 1:
         client_options.append("memory_tracker_fault_probability=0.001")
 
     if i % 2 == 1 and not upgrade_check:
         client_options.append("group_by_use_nulls=1")
+
+    # 12 % 3 == 0, so it's Atomic database
+    if i == 12 and not upgrade_check:
+        client_options.append("implicit_transaction=1")
+        client_options.append("throw_on_unsupported_query_inside_transaction=0")
 
     if client_options:
         options.append(" --client-option " + " ".join(client_options))
@@ -70,9 +75,9 @@ def run_func_test(
         for i in range(num_processes)
     ]
     pipes = []
-    for i, path in enumerate(output_paths):
-        f = open(path, "w")
-        full_command = "{} {} {} {} {} --stress".format(
+    for i in range(0, len(output_paths)):
+        f = open(output_paths[i], "w")
+        full_command = "{} {} {} {} {}".format(
             cmd,
             get_options(i, upgrade_check),
             global_time_limit_option,
@@ -224,7 +229,6 @@ if __name__ == "__main__":
     )
     parser.add_argument("--test-cmd", default="/usr/bin/clickhouse-test")
     parser.add_argument("--skip-func-tests", default="")
-    parser.add_argument("--client-cmd", default="clickhouse-client")
     parser.add_argument("--server-log-folder", default="/var/log/clickhouse-server")
     parser.add_argument("--output-folder")
     parser.add_argument("--global-time-limit", type=int, default=1800)
@@ -292,7 +296,6 @@ if __name__ == "__main__":
                 # Use system database to avoid CREATE/DROP DATABASE queries
                 "--database=system",
                 "--hung-check",
-                "--stress",
                 "--report-logs-stats",
                 "00001_select_1",
             ]

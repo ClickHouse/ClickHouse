@@ -489,8 +489,6 @@ do
     clickhouse-local --path /var/lib/clickhouse/ --only-system-tables -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst ||:
 done
 
-tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
-
 dmesg -T > /test_output/dmesg.log
 
 # OOM in dmesg -- those are real
@@ -502,7 +500,7 @@ mv /var/log/clickhouse-server/stderr.log /test_output/
 
 # Write check result into check_status.tsv
 # Try to choose most specific error for the whole check status
-clickhouse-local --structure "test String, res String" -q "SELECT 'failure', test FROM table WHERE res != 'OK' order by
+clickhouse-local --structure "test String, res String, time Nullable(Float32), desc String" -q "SELECT 'failure', test FROM table WHERE res != 'OK' order by
 (test like '%Sanitizer%') DESC,
 (test like '%Killed by signal%') DESC,
 (test like '%gdb.log%') DESC,
@@ -513,7 +511,7 @@ clickhouse-local --structure "test String, res String" -q "SELECT 'failure', tes
 (test like '%Signal 9%') DESC,
 (test like '%Fatal message%') DESC,
 rowNumberInAllBlocks()
-LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv
+LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv || echo "failure\tCannot parse test_results.tsv" > /test_output/check_status.tsv
 [ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found" > /test_output/check_status.tsv
 
 # Core dumps

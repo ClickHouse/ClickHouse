@@ -86,8 +86,8 @@ private:
     Queue queue;
 
     InsertsByTime inserts_by_time;
-    time_t min_unprocessed_insert_time = 0;
-    time_t max_processed_insert_time = 0;
+    std::atomic<time_t> min_unprocessed_insert_time = 0;
+    std::atomic<time_t> max_processed_insert_time = 0;
 
     time_t last_queue_update = 0;
 
@@ -340,8 +340,7 @@ public:
       */
     void removePartProducingOpsInRange(zkutil::ZooKeeperPtr zookeeper,
                                        const MergeTreePartInfo & part_info,
-                                       const std::optional<ReplicatedMergeTreeLogEntryData> & covering_entry,
-                                       const String & fetch_entry_znode);
+                                       const std::optional<ReplicatedMergeTreeLogEntryData> & covering_entry);
 
     /** In the case where there are not enough parts to perform the merge in part_name
       * - move actions with merged parts to the end of the queue

@@ -104,7 +104,6 @@ bool NumberParser::tryParseOct(const std::string& s, unsigned& value)
 }
 
 
-#if defined(POCO_HAVE_INT64)
 
 
 Int64 NumberParser::parse64(const std::string& s, char thSep)
@@ -173,7 +172,6 @@ bool NumberParser::tryParseOct64(const std::string& s, UInt64& value)
 }
 
 
-#endif // defined(POCO_HAVE_INT64)
 
 
 double NumberParser::parseFloat(const std::string& s, char decSep, char thSep)

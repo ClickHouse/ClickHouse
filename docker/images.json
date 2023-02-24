@@ -150,9 +150,5 @@
         "name": "clickhouse/docs-builder",
         "dependent": [
         ]
-    },
-    "docker/docs/release": {
-        "name": "clickhouse/docs-release",
-        "dependent": []
     }
 }

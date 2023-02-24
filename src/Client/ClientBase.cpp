@@ -481,14 +481,14 @@ void ClientBase::onLogData(Block & block)
 void ClientBase::onTotals(Block & block, ASTPtr parsed_query)
 {
     initOutputFormat(block, parsed_query);
-    output_format->setTotals(block);
+    output_format->setTotals(materializeBlock(block));
 }
 
 
 void ClientBase::onExtremes(Block & block, ASTPtr parsed_query)
 {
     initOutputFormat(block, parsed_query);
-    output_format->setExtremes(block);
+    output_format->setExtremes(materializeBlock(block));
 }
 
 
@@ -2359,6 +2359,22 @@ void ClientBase::showClientVersion()
     std::cout << DBMS_NAME << " " + getName() + " version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
 }
 
+namespace
+{
+
+/// Define transparent hash to we can use
+/// std::string_view with the containers
+struct TransparentStringHash
+{
+    using is_transparent = void;
+    size_t operator()(std::string_view txt) const
+    {
+        return std::hash<std::string_view>{}(txt);
+    }
+};
+
+}
+
 
 void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
 {
@@ -2374,19 +2390,35 @@ void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, 
         /// skip ambiguous merge tree settings.
         auto & main_options = options_description.main_description.value();
 
-        NameSet main_option_names;
+        std::unordered_set<std::string, TransparentStringHash, std::equal_to<>> main_option_names;
         for (const auto & option : main_options.options())
             main_option_names.insert(option->long_name());
 
         for (const auto & setting : cmd_merge_tree_settings.all())
         {
-            if (main_option_names.contains(setting.getName()))
-                continue;
+            const auto add_setting = [&](const std::string_view name)
+            {
+                if (auto it = main_option_names.find(name); it != main_option_names.end())
+                    return;
 
-            if (allow_repeated_settings)
-                cmd_merge_tree_settings.addProgramOptionAsMultitoken(main_options, setting);
-            else
-                cmd_merge_tree_settings.addProgramOption(main_options, setting);
+                if (allow_repeated_settings)
+                    cmd_merge_tree_settings.addProgramOptionAsMultitoken(main_options, name, setting);
+                else
+                    cmd_merge_tree_settings.addProgramOption(main_options, name, setting);
+            };
+
+            const auto & setting_name = setting.getName();
+
+            add_setting(setting_name);
+
+            const auto & settings_to_aliases = MergeTreeSettings::Traits::settingsToAliases();
+            if (auto it = settings_to_aliases.find(setting_name); it != settings_to_aliases.end())
+            {
+                for (const auto alias : it->second)
+                {
+                    add_setting(alias);
+                }
+            }
         }
     }
 

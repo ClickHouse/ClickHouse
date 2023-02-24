@@ -134,8 +134,8 @@ public:
     /// (Don't forget to call notify() on the `variables_map` after parsing it!)
     void addProgramOptionsAsMultitokens(boost::program_options::options_description & options);
 
-    void addProgramOption(boost::program_options::options_description & options, const SettingFieldRef & field);
-    void addProgramOptionAsMultitoken(boost::program_options::options_description & options, const SettingFieldRef & field);
+    void addProgramOption(boost::program_options::options_description & options, std::string_view name, const SettingFieldRef & field);
+    void addProgramOptionAsMultitoken(boost::program_options::options_description & options, std::string_view name, const SettingFieldRef & field);
 
     enum SkipFlags
     {
@@ -219,6 +219,7 @@ struct BaseSettingsHelpers
 template <typename TTraits>
 void BaseSettings<TTraits>::set(std::string_view name, const Field & value)
 {
+    name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         accessor.setValue(*this, index, value);
@@ -229,6 +230,7 @@ void BaseSettings<TTraits>::set(std::string_view name, const Field & value)
 template <typename TTraits>
 Field BaseSettings<TTraits>::get(std::string_view name) const
 {
+    name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         return accessor.getValue(*this, index);
@@ -239,6 +241,7 @@ Field BaseSettings<TTraits>::get(std::string_view name) const
 template <typename TTraits>
 void BaseSettings<TTraits>::setString(std::string_view name, const String & value)
 {
+    name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         accessor.setValueString(*this, index, value);
@@ -249,6 +252,7 @@ void BaseSettings<TTraits>::setString(std::string_view name, const String & valu
 template <typename TTraits>
 String BaseSettings<TTraits>::getString(std::string_view name) const
 {
+    name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         return accessor.getValueString(*this, index);
@@ -259,6 +263,7 @@ String BaseSettings<TTraits>::getString(std::string_view name) const
 template <typename TTraits>
 bool BaseSettings<TTraits>::tryGet(std::string_view name, Field & value) const
 {
+    name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
     {
@@ -276,6 +281,7 @@ bool BaseSettings<TTraits>::tryGet(std::string_view name, Field & value) const
 template <typename TTraits>
 bool BaseSettings<TTraits>::tryGetString(std::string_view name, String & value) const
 {
+    name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
     {
@@ -293,6 +299,7 @@ bool BaseSettings<TTraits>::tryGetString(std::string_view name, String & value) 
 template <typename TTraits>
 bool BaseSettings<TTraits>::isChanged(std::string_view name) const
 {
+    name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         return accessor.isValueChanged(*this, index);
@@ -345,6 +352,7 @@ void BaseSettings<TTraits>::resetToDefault()
 template <typename TTraits>
 void BaseSettings<TTraits>::resetToDefault(std::string_view name)
 {
+    name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         accessor.resetValueToDefault(*this, index);
@@ -353,6 +361,7 @@ void BaseSettings<TTraits>::resetToDefault(std::string_view name)
 template <typename TTraits>
 bool BaseSettings<TTraits>::hasBuiltin(std::string_view name)
 {
+    name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
     return (accessor.find(name) != static_cast<size_t>(-1));
 }
@@ -360,12 +369,14 @@ bool BaseSettings<TTraits>::hasBuiltin(std::string_view name)
 template <typename TTraits>
 bool BaseSettings<TTraits>::hasCustom(std::string_view name) const
 {
+    name = TTraits::resolveName(name);
     return tryGetCustomSetting(name);
 }
 
 template <typename TTraits>
 const char * BaseSettings<TTraits>::getTypeName(std::string_view name) const
 {
+    name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         return accessor.getTypeName(index);
@@ -378,6 +389,7 @@ const char * BaseSettings<TTraits>::getTypeName(std::string_view name) const
 template <typename TTraits>
 const char * BaseSettings<TTraits>::getDescription(std::string_view name) const
 {
+    name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         return accessor.getDescription(index);
@@ -390,18 +402,21 @@ const char * BaseSettings<TTraits>::getDescription(std::string_view name) const
 template <typename TTraits>
 void BaseSettings<TTraits>::checkCanSet(std::string_view name, const Field & value)
 {
+    name = TTraits::resolveName(name);
     castValueUtil(name, value);
 }
 
 template <typename TTraits>
 void BaseSettings<TTraits>::checkCanSetString(std::string_view name, const String & str)
 {
+    name = TTraits::resolveName(name);
     stringToValueUtil(name, str);
 }
 
 template <typename TTraits>
 Field BaseSettings<TTraits>::castValueUtil(std::string_view name, const Field & value)
 {
+    name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         return accessor.castValueUtil(index, value);
@@ -414,6 +429,7 @@ Field BaseSettings<TTraits>::castValueUtil(std::string_view name, const Field & 
 template <typename TTraits>
 String BaseSettings<TTraits>::valueToStringUtil(std::string_view name, const Field & value)
 {
+    name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
     if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
         return accessor.valueToStringUtil(index, value);
@@ -426,6 +442,7 @@ String BaseSettings<TTraits>::valueToStringUtil(std::string_view name, const Fie
 template <typename TTraits>
 Field BaseSettings<TTraits>::stringToValueUtil(std::string_view name, const String & str)
 {
+    name = TTraits::resolveName(name);
     try
     {
         const auto & accessor = Traits::Accessor::instance();
@@ -539,30 +556,49 @@ String BaseSettings<TTraits>::toString() const
 template <typename TTraits>
 void BaseSettings<TTraits>::addProgramOptions(boost::program_options::options_description & options)
 {
+    const auto & settings_to_aliases = TTraits::settingsToAliases();
     for (const auto & field : all())
-        addProgramOption(options, field);
+    {
+        std::string_view name = field.getName();
+        addProgramOption(options, name, field);
+
+        if (auto it = settings_to_aliases.find(name); it != settings_to_aliases.end())
+        {
+            for (const auto alias : it->second)
+                addProgramOption(options, alias, field);
+        }
+    }
 }
 
 template <typename TTraits>
 void BaseSettings<TTraits>::addProgramOptionsAsMultitokens(boost::program_options::options_description & options)
 {
+    const auto & settings_to_aliases = TTraits::settingsToAliases();
     for (const auto & field : all())
-        addProgramOptionAsMultitoken(options, field);
+    {
+        std::string_view name = field.getName();
+        addProgramOptionAsMultitoken(options, name, field);
+
+        if (auto it = settings_to_aliases.find(name); it != settings_to_aliases.end())
+        {
+            for (const auto alias : it->second)
+                addProgramOptionAsMultitoken(options, alias, field);
+        }
+    }
 }
 
+
 template <typename TTraits>
-void BaseSettings<TTraits>::addProgramOption(boost::program_options::options_description & options, const SettingFieldRef & field)
+void BaseSettings<TTraits>::addProgramOption(boost::program_options::options_description & options, std::string_view name, const SettingFieldRef & field)
 {
-    const std::string_view name = field.getName();
     auto on_program_option = boost::function1<void, const std::string &>([this, name](const std::string & value) { set(name, value); });
     options.add(boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
         name.data(), boost::program_options::value<std::string>()->composing()->notifier(on_program_option), field.getDescription())));
 }
 
 template <typename TTraits>
-void BaseSettings<TTraits>::addProgramOptionAsMultitoken(boost::program_options::options_description & options, const SettingFieldRef & field)
+void BaseSettings<TTraits>::addProgramOptionAsMultitoken(boost::program_options::options_description & options, std::string_view name, const SettingFieldRef & field)
 {
-    const std::string_view name = field.getName();
     auto on_program_option = boost::function1<void, const Strings &>([this, name](const Strings & values) { set(name, values.back()); });
     options.add(boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
         name.data(), boost::program_options::value<Strings>()->multitoken()->composing()->notifier(on_program_option), field.getDescription())));
@@ -825,6 +861,8 @@ bool BaseSettings<TTraits>::SettingFieldRef::isObsolete() const
     return accessor->isObsolete(index);
 }
 
+using AliasMap = std::unordered_map<std::string_view, std::string_view>;
+
 /// NOLINTNEXTLINE
 #define DECLARE_SETTINGS_TRAITS(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO) \
     DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, 0)
@@ -839,7 +877,7 @@ bool BaseSettings<TTraits>::SettingFieldRef::isObsolete() const
     { \
         struct Data \
         { \
-            LIST_OF_SETTINGS_MACRO(DECLARE_SETTINGS_TRAITS_) \
+            LIST_OF_SETTINGS_MACRO(DECLARE_SETTINGS_TRAITS_, SKIP_ALIAS) \
         }; \
         \
         class Accessor \
@@ -890,7 +928,59 @@ bool BaseSettings<TTraits>::SettingFieldRef::isObsolete() const
             std::unordered_map<std::string_view, size_t> name_to_index_map; \
         }; \
         static constexpr bool allow_custom_settings = ALLOW_CUSTOM_SETTINGS; \
+        \
+        static inline const AliasMap aliases_to_settings = \
+            DefineAliases() LIST_OF_SETTINGS_MACRO(ALIAS_TO, ALIAS_FROM); \
+        \
+        using SettingsToAliasesMap = std::unordered_map<std::string_view, std::vector<std::string_view>>; \
+        static inline const SettingsToAliasesMap & settingsToAliases() \
+        { \
+            static SettingsToAliasesMap setting_to_aliases_mapping = [] \
+            { \
+                std::unordered_map<std::string_view, std::vector<std::string_view>> map; \
+                for (const auto & [alias, destination] : aliases_to_settings) \
+                    map[destination].push_back(alias); \
+                return map; \
+            }(); \
+            return setting_to_aliases_mapping; \
+        } \
+        \
+        static std::string_view resolveName(std::string_view name) \
+        { \
+            if (auto it = aliases_to_settings.find(name); it != aliases_to_settings.end()) \
+                return it->second; \
+            return name; \
+        } \
     };
+
+
+/// NOLINTNEXTLINE
+#define SKIP_ALIAS(ALIAS_NAME)
+/// NOLINTNEXTLINE
+#define ALIAS_TO(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) .setName(#NAME)
+/// NOLINTNEXTLINE
+#define ALIAS_FROM(ALIAS) .addAlias(#ALIAS)
+
+struct DefineAliases
+{
+    std::string_view name;
+    AliasMap map;
+
+    DefineAliases & setName(std::string_view value)
+    {
+        name = value;
+        return *this;
+    }
+
+    DefineAliases & addAlias(std::string_view value)
+    {
+        map.emplace(value, name);
+        return *this;
+    }
+
+    /// NOLINTNEXTLINE(google-explicit-constructor)
+    operator AliasMap() { return std::move(map); }
+};
 
 /// NOLINTNEXTLINE
 #define DECLARE_SETTINGS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
@@ -905,7 +995,7 @@ bool BaseSettings<TTraits>::SettingFieldRef::isObsolete() const
             Accessor res; \
             constexpr int IMPORTANT = 0x01; \
             UNUSED(IMPORTANT); \
-            LIST_OF_SETTINGS_MACRO(IMPLEMENT_SETTINGS_TRAITS_) \
+            LIST_OF_SETTINGS_MACRO(IMPLEMENT_SETTINGS_TRAITS_, SKIP_ALIAS) \
             for (size_t i : collections::range(res.field_infos.size())) \
             { \
                 const auto & info = res.field_infos[i]; \
@@ -928,7 +1018,6 @@ bool BaseSettings<TTraits>::SettingFieldRef::isObsolete() const
     \
     template class BaseSettings<SETTINGS_TRAITS_NAME>;
 
-//-V:IMPLEMENT_SETTINGS:501
 /// NOLINTNEXTLINE
 #define IMPLEMENT_SETTINGS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
     res.field_infos.emplace_back( \

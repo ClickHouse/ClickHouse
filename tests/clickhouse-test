@@ -76,7 +76,10 @@ def trim_for_log(s):
     if not s:
         return s
     lines = s.splitlines()
-    return "\n".join(lines[:50] + ["#" * 100] + lines[-50:])
+    if len(lines) > 100:
+        return "\n".join(lines[:50] + ["#" * 100] + lines[-50:])
+    else:
+        return "\n".join(lines)
 
 
 class HTTPError(Exception):
@@ -446,7 +449,6 @@ class FailureReason(enum.Enum):
     NO_LONG = "not running long tests"
     REPLICATED_DB = "replicated-database"
     S3_STORAGE = "s3-storage"
-    STRESS = "stress"
     BUILD = "not running for current build"
     NO_UPGRADE_CHECK = "not running for upgrade check"
     NO_PARALLEL_REPLICAS = "smth in not supported with parallel replicas"
@@ -829,9 +831,6 @@ class TestCase:
         elif tags and ("no-s3-storage" in tags) and args.s3_storage:
             return FailureReason.S3_STORAGE
 
-        elif tags and ("no-stress" in tags) and args.stress:
-            return FailureReason.STRESS
-
         elif tags:
             for build_flag in args.build_flags:
                 if "no-" + build_flag in tags:
@@ -910,7 +909,9 @@ class TestCase:
             description += "\n"
             description += trim_for_log(stderr)
             description += "\n"
-            description += f"\nstdout:\n{stdout}\n"
+            description += "\nstdout:\n"
+            description += trim_for_log(stdout)
+            description += "\n"
             if debug_log:
                 description += "\n"
                 description += debug_log
@@ -2145,6 +2146,7 @@ def main(args):
             print(json.dumps(processlist, indent=4))
             print(get_transactions_list(args))
 
+            print_stacktraces()
             exit_code.value = 1
         else:
             print(colored("\nNo queries hung.", args, "green", attrs=["bold"]))
@@ -2195,8 +2197,16 @@ def find_binary(name):
     bin_path = os.path.join("/usr/bin", name)
     if os.access(bin_path, os.X_OK):
         return bin_path
-    return None
 
+    raise Exception(f"{name} was not found in PATH")
+
+def find_clickhouse_command(binary, command):
+    symlink = binary + "-" + command
+    if os.access(symlink, os.X_OK):
+        return symlink
+
+    # To avoid requiring symlinks (in case you download binary from CI)
+    return binary + " " + command
 
 def get_additional_client_options(args):
     if args.client_option:
@@ -2210,24 +2220,7 @@ def get_additional_client_options_url(args):
     return ""
 
 
-if __name__ == "__main__":
-    stop_time = None
-    exit_code = multiprocessing.Value("i", 0)
-    server_died = multiprocessing.Event()
-    stop_tests_triggered_lock = multiprocessing.Lock()
-    stop_tests_triggered = multiprocessing.Event()
-    queue = multiprocessing.Queue(maxsize=1)
-    multiprocessing_manager = multiprocessing.Manager()
-    restarted_tests = multiprocessing_manager.list()
-
-    # Move to a new process group and kill it at exit so that we don't have any
-    # infinite tests processes left
-    # (new process group is required to avoid killing some parent processes)
-    os.setpgid(0, 0)
-    signal.signal(signal.SIGTERM, signal_handler)
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGHUP, signal_handler)
-
+def parse_args():
     parser = ArgumentParser(description="ClickHouse functional tests")
     parser.add_argument("-q", "--queries", help="Path to queries dir")
     parser.add_argument("--tmp", help="Path to tmp dir")
@@ -2238,7 +2231,6 @@ if __name__ == "__main__":
         default=find_binary("clickhouse"),
         help="Path to clickhouse binary or name of binary in PATH",
     )
-
     parser.add_argument(
         "-c",
         "--client",
@@ -2384,12 +2376,6 @@ if __name__ == "__main__":
         help="Run tests over s3 storage",
     )
     parser.add_argument(
-        "--stress",
-        action="store_true",
-        default=False,
-        help="Run stress tests",
-    )
-    parser.add_argument(
         "--no-random-settings",
         action="store_true",
         default=False,
@@ -2482,7 +2468,32 @@ if __name__ == "__main__":
         help="Do not include tests that are not supported with parallel replicas feature",
     )
 
-    args = parser.parse_args()
+    return parser.parse_args()
+
+
+if __name__ == "__main__":
+    stop_time = None
+    exit_code = multiprocessing.Value("i", 0)
+    server_died = multiprocessing.Event()
+    stop_tests_triggered_lock = multiprocessing.Lock()
+    stop_tests_triggered = multiprocessing.Event()
+    queue = multiprocessing.Queue(maxsize=1)
+    multiprocessing_manager = multiprocessing.Manager()
+    restarted_tests = multiprocessing_manager.list()
+
+    # Move to a new process group and kill it at exit so that we don't have any
+    # infinite tests processes left
+    # (new process group is required to avoid killing some parent processes)
+    os.setpgid(0, 0)
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGHUP, signal_handler)
+
+    try:
+        args = parse_args()
+    except Exception as e:
+        print(e, file=sys.stderr)
+        sys.exit(1)
 
     if args.queries and not os.path.isdir(args.queries):
         print(
@@ -2523,21 +2534,21 @@ if __name__ == "__main__":
 
     if args.tmp is None:
         args.tmp = args.queries
-    if args.client is None:
-        client_bin = find_binary(args.binary + "-client")
-        if client_bin is not None:
-            args.client = client_bin
-            print("Using {args.client} as client program")
-        elif args.binary:
-            args.client = args.binary + " client"
-            print(f"Using {args.client} as client program (expecting monolithic build)")
-        else:
-            print(
-                "No 'clickhouse' or 'clickhouse-client' client binary found",
-                file=sys.stderr,
-            )
-            parser.print_help()
-            sys.exit(1)
+
+    if args.client:
+        print(
+            "WARNING: --client option is deprecated and will be removed the the future, use --binary instead",
+            file=sys.stderr,
+        )
+
+    args.client = find_clickhouse_command(args.binary, "client")
+
+    if args.extract_from_config:
+        print(
+            "WARNING: --extract_from_config option is deprecated and will be removed the the future",
+            file=sys.stderr,
+        )
+    args.extract_from_config = find_clickhouse_command(args.binary, "extract-from-config")
 
     if args.configclient:
         args.client += " --config-file=" + args.configclient
@@ -2599,12 +2610,6 @@ if __name__ == "__main__":
         os.environ["CLICKHOUSE_URL_PARAMS"] += client_options_query_str
     else:
         args.client_options_query_str = ""
-
-    if args.extract_from_config is None:
-        if os.access(args.binary + "-extract-from-config", os.X_OK):
-            args.extract_from_config = args.binary + "-extract-from-config"
-        else:
-            args.extract_from_config = args.binary + " extract-from-config"
 
     if args.jobs is None:
         args.jobs = multiprocessing.cpu_count()
