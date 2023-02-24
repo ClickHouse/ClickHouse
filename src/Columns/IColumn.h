@@ -212,6 +212,24 @@ public:
       */
     virtual void popBack(size_t n) = 0;
 
+    virtual bool supportDirectSerializeIntoMemory() const
+    {
+        return false;
+    }
+
+    [[nodiscard]] virtual size_t sizeOfSerializedValue(size_t n [[maybe_unused]]) const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method sizeOfSerializedValue is not supported for {}", getName());
+    }
+
+    /** Serializes n-th element. Serialized element should be placed in an existed memory region.
+     *  This function is mainly used to optimize the performance of serializeValueIntoArena of ColumnNullable.
+     */
+    virtual void serializeValueIntoExistedMemory(size_t n [[maybe_unused]], char* address [[maybe_unused]]) const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoExistedMemory is not supported for {}", getName());
+    }
+
     /** Serializes n-th element. Serialized element should be placed continuously inside Arena's memory.
       * Serialized value can be deserialized to reconstruct original object. Is used in aggregation.
       * The method is similar to getDataAt(), but can work when element's value cannot be mapped to existing continuous memory chunk,

@@ -137,18 +137,33 @@ void ColumnNullable::insertData(const char * pos, size_t length)
 StringRef ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     const auto & arr = getNullMapData();
+    const bool is_null = arr[n];
     static constexpr auto s = sizeof(arr[0]);
+    char * pos;
+    if (nested_column->supportDirectSerializeIntoMemory())
+    {
+        auto memory_size = is_null ? s : s + nested_column->sizeOfSerializedValue(n);
+        pos = arena.allocContinue(memory_size, begin);
+        memcpy(pos, &arr[n], s);
+        if (!is_null)
+        {
+            nested_column->serializeValueIntoExistedMemory(n, pos + s);
+        }
+        return StringRef(pos, memory_size);
+    }
+    else
+    {
+        pos = arena.allocContinue(s, begin);
+        memcpy(pos, &arr[n], s);
 
-    auto * pos = arena.allocContinue(s, begin);
-    memcpy(pos, &arr[n], s);
+        if (arr[n])
+            return StringRef(pos, s);
 
-    if (arr[n])
-        return StringRef(pos, s);
+        auto nested_ref = getNestedColumn().serializeValueIntoArena(n, arena, begin);
 
-    auto nested_ref = getNestedColumn().serializeValueIntoArena(n, arena, begin);
-
-    /// serializeValueIntoArena may reallocate memory. Have to use ptr from nested_ref.data and move it back.
-    return StringRef(nested_ref.data - s, nested_ref.size + s);
+        /// serializeValueIntoArena may reallocate memory. Have to use ptr from nested_ref.data and move it back.
+        return StringRef(nested_ref.data - s, nested_ref.size + s);
+    }
 }
 
 const char * ColumnNullable::deserializeAndInsertFromArena(const char * pos)

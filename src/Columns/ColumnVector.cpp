@@ -49,10 +49,22 @@ namespace ErrorCodes
 }
 
 template <typename T>
+size_t ColumnVector<T>::sizeOfSerializedValue(size_t /*n*/) const
+{
+    return sizeof(T);
+}
+
+template <typename T>
+void ColumnVector<T>::serializeValueIntoExistedMemory(size_t n, char* address) const
+{
+    unalignedStore<T>(address, data[n]);
+}
+
+template <typename T>
 StringRef ColumnVector<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
-    auto * pos = arena.allocContinue(sizeof(T), begin);
-    unalignedStore<T>(pos, data[n]);
+    auto * pos = arena.allocContinue(sizeOfSerializedValue(n), begin);
+    serializeValueIntoExistedMemory(n, pos);
     return StringRef(pos, sizeof(T));
 }
 

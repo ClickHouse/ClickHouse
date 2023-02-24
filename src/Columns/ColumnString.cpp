@@ -213,17 +213,27 @@ ColumnPtr ColumnString::permute(const Permutation & perm, size_t limit) const
     return permuteImpl(*this, perm, limit);
 }
 
+size_t ColumnString::sizeOfSerializedValue(size_t n) const
+{
+    size_t string_size = sizeAt(n);
+    return sizeof(string_size) + string_size;
+}
 
-StringRef ColumnString::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+void ColumnString::serializeValueIntoExistedMemory(size_t n, char* address) const
 {
     size_t string_size = sizeAt(n);
     size_t offset = offsetAt(n);
 
+    memcpy(address, &string_size, sizeof(string_size));
+    memcpy(address + sizeof(string_size), &chars[offset], string_size);
+}
+
+StringRef ColumnString::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+{
     StringRef res;
-    res.size = sizeof(string_size) + string_size;
+    res.size = sizeOfSerializedValue(n);
     char * pos = arena.allocContinue(res.size, begin);
-    memcpy(pos, &string_size, sizeof(string_size));
-    memcpy(pos + sizeof(string_size), &chars[offset], string_size);
+    serializeValueIntoExistedMemory(n, pos);
     res.data = pos;
 
     return res;

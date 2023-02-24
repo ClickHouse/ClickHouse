@@ -168,6 +168,15 @@ public:
         offsets.resize_assume_reserved(offsets.size() - n);
     }
 
+    bool supportDirectSerializeIntoMemory() const override
+    {
+        return true;
+    }
+
+    size_t sizeOfSerializedValue(size_t n) const override;
+
+    void serializeValueIntoExistedMemory(size_t n, char* address) const override;
+
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
