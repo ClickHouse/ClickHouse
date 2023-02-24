@@ -60,7 +60,7 @@ elseif (ARCH_AARCH64)
         set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8.2-a+simd+crypto+dotprod+ssbs -Xclang=-target-feature -Xclang=+ldapr -Wno-unused-command-line-argument")
     endif ()
 
-    # Quick-n-dirty check: The build generates and executes intermediate binaries, e.g. protoc and llvm-tablegen. If we build on ARM for ARM
+    # Best-effort check: The build generates and executes intermediate binaries, e.g. protoc and llvm-tablegen. If we build on ARM for ARM
     # and the build machine is too old, i.e. doesn't satisfy above modern profile, then these intermediate binaries will not run (dump
     # SIGILL). Even if they could run, the build machine wouldn't be able to run the ClickHouse binary. In that case, suggest to run the
     # build with the compat profile.
@@ -119,7 +119,7 @@ elseif (ARCH_AMD64)
         SET(ENABLE_AVX512_FOR_SPEC_OP 0)
     endif()
 
-    # Same quick-n-dirty check for x86 as above for ARM, see above.
+    # Same best-effort check for x86 as above for ARM, see above.
     if (OS_LINUX AND CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "amd64|x86_64" AND NOT NO_SSE3_OR_HIGHER)
         # Test for flags in standard profile but not in NO_SSE3_OR_HIGHER profile.
         # /proc/cpuid for Intel Xeon 8124: "fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse
