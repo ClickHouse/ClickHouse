@@ -53,7 +53,10 @@ paul:zozo@example.ru
 www.example.com
 www.example.com
 example.com
-foo:foo
+foo:foo%@foo.com
+foo:foo%41bar@foo.com
+foo:foo%41%42bar@foo.com
+foo:foo%41bar@foo
 ====DOMAIN====
 com
 
