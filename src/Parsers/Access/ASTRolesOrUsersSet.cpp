@@ -31,6 +31,31 @@ void ASTRolesOrUsersSet::formatImpl(const FormatSettings & settings, FormatState
 
     bool need_comma = false;
 
+    auto format_name = [&settings, this](const String & name, NameFilter filter)
+    {
+        if (filter == NameFilter::ANY || !enable_extended_subject_syntax)
+        {
+            formatNameOrID(name, id_mode, settings);
+        }
+        else
+        {
+            if (filter == NameFilter::USER)
+            {
+                formatNameOrID(name, id_mode, settings);
+                settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " AS USER" << (settings.hilite ? IAST::hilite_none : "");
+            }
+            else if (filter == NameFilter::ROLE)
+            {
+                formatNameOrID(name, id_mode, settings);
+                settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " AS ROLE" << (settings.hilite ? IAST::hilite_none : "");
+            }
+            else if (filter == NameFilter::BOTH)
+            {
+                formatNameOrID(name, id_mode, settings);
+                settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " AS BOTH" << (settings.hilite ? IAST::hilite_none : "");
+            }
+        }
+    };
     if (all)
     {
         if (std::exchange(need_comma, true))
@@ -44,7 +69,7 @@ void ASTRolesOrUsersSet::formatImpl(const FormatSettings & settings, FormatState
         {
             if (std::exchange(need_comma, true))
                 settings.ostr << ", ";
-            formatNameOrID(name, id_mode, settings);
+            format_name(name, getNameFilter(name));
         }
 
         if (current_user)
@@ -64,7 +89,7 @@ void ASTRolesOrUsersSet::formatImpl(const FormatSettings & settings, FormatState
         {
             if (std::exchange(need_comma, true))
                 settings.ostr << ", ";
-            formatNameOrID(name, id_mode, settings);
+            format_name(name, getExceptNameFilter(name));
         }
 
         if (except_current_user)
@@ -92,4 +117,25 @@ void ASTRolesOrUsersSet::replaceCurrentUserTag(const String & current_user_name)
     }
 }
 
+ASTRolesOrUsersSet::NameFilter ASTRolesOrUsersSet::getNameFilter(const String & name) const
+{
+    return getFromFilters(name, names_filters);
+}
+
+ASTRolesOrUsersSet::NameFilter ASTRolesOrUsersSet::getExceptNameFilter(const String & name) const
+{
+    return getFromFilters(name, except_names_filters);
+}
+
+ASTRolesOrUsersSet::NameFilter ASTRolesOrUsersSet::getFromFilters(const String & name, const NameFilters & filters) const
+{
+    const auto n = filters.find(name);
+    if (n != filters.end())
+        return n->second;
+    if (!allow_users && allow_roles)
+        return ASTRolesOrUsersSet::NameFilter::ROLE;
+    if (!allow_roles && allow_users)
+        return ASTRolesOrUsersSet::NameFilter::USER;
+    return {};
+}
 }

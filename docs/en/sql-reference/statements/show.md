@@ -229,15 +229,16 @@ SHOW DICTIONARIES FROM db LIKE '%reg%' LIMIT 2
 
 ## SHOW GRANTS
 
-Shows privileges for a user.
+Shows privileges for a user or a role.
 
 ### Syntax
 
 ``` sql
-SHOW GRANTS [FOR user1 [, user2 ...]]
+SHOW GRANTS [FOR {user [AS USER] | role [AS ROLE] | user_and_role AS BOTH | CURRENT_USER} [,...]]
 ```
 
 If user is not specified, the query returns privileges for the current user.
+If `AS {USER|ROLE|BOTH}` is not used and a user and a role with the same name exist, only user's permissions will be returned.
 
 ## SHOW CREATE USER
 

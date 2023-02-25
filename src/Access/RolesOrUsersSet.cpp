@@ -68,26 +68,47 @@ void RolesOrUsersSet::init(const ASTRolesOrUsersSet & ast, const AccessControl *
 {
     all = ast.all;
 
-    auto name_to_id = [&ast, access_control](const String & name) -> UUID
+    auto name_to_id
+        = [&ast, access_control](const String & name, boost::container::flat_set<UUID> & ids_, const ASTRolesOrUsersSet::NameFilter filter)
     {
         if (ast.id_mode)
-            return parse<UUID>(name);
-        assert(access_control);
-        if (ast.allow_users && ast.allow_roles)
         {
-            auto id = access_control->find<User>(name);
-            if (id)
-                return *id;
-            return access_control->getID<Role>(name);
+            ids_.insert(parse<UUID>(name));
+            return;
         }
-        else if (ast.allow_users)
+        assert(access_control);
+        if (filter == ASTRolesOrUsersSet::NameFilter::ANY)
         {
-            return access_control->getID<User>(name);
+            if (ast.allow_users && ast.allow_roles)
+            {
+                auto id = access_control->find<User>(name);
+                if (id)
+                    ids_.insert(*id);
+                else
+                    ids_.insert(access_control->getID<Role>(name));
+            }
+            else if (ast.allow_users)
+            {
+                ids_.insert(access_control->getID<User>(name));
+            }
+            else
+            {
+                assert(ast.allow_roles);
+                ids_.insert(access_control->getID<Role>(name));
+            }
         }
         else
         {
-            assert(ast.allow_roles);
-            return access_control->getID<Role>(name);
+            if (filter == ASTRolesOrUsersSet::NameFilter::USER || filter == ASTRolesOrUsersSet::NameFilter::BOTH)
+            {
+                assert(ast.allow_users);
+                ids_.insert(access_control->getID<User>(name));
+            }
+            if (filter == ASTRolesOrUsersSet::NameFilter::ROLE || filter == ASTRolesOrUsersSet::NameFilter::BOTH)
+            {
+                assert(ast.allow_roles);
+                ids_.insert(access_control->getID<Role>(name));
+            }
         }
     };
 
@@ -95,7 +116,7 @@ void RolesOrUsersSet::init(const ASTRolesOrUsersSet & ast, const AccessControl *
     {
         ids.reserve(ast.names.size());
         for (const String & name : ast.names)
-            ids.insert(name_to_id(name));
+            name_to_id(name, ids, ast.getNameFilter(name));
     }
 
     if (ast.current_user && !all)
@@ -108,7 +129,7 @@ void RolesOrUsersSet::init(const ASTRolesOrUsersSet & ast, const AccessControl *
     {
         except_ids.reserve(ast.except_names.size());
         for (const String & name : ast.except_names)
-            except_ids.insert(name_to_id(name));
+            name_to_id(name, except_ids, ast.getExceptNameFilter(name));
     }
 
     if (ast.except_current_user)
@@ -153,15 +174,40 @@ std::shared_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toASTWithNames(const Access
     auto ast = std::make_shared<ASTRolesOrUsersSet>();
     ast->all = all;
 
+    auto id_to_name = [&access_control](const UUID & id, Strings & names, ASTRolesOrUsersSet::NameFilters & names_filters)
+    {
+        const auto entity = access_control.tryRead(id);
+        auto filter = ASTRolesOrUsersSet::NameFilter::ROLE;
+        std::optional<String> name;
+        if (const User * user = typeid_cast<const User *>(entity.get()))
+        {
+            filter = ASTRolesOrUsersSet::NameFilter::USER;
+            name = user->getName();
+        }
+        else if (const Role * role = typeid_cast<const Role *>(entity.get()))
+        {
+            name = role->getName();
+        }
+        if (name)
+        {
+            auto prev_filter = names_filters.find(*name);
+            if (prev_filter == names_filters.end())
+                names_filters.emplace(*name, filter);
+            else if (
+                (filter != ASTRolesOrUsersSet::NameFilter::ROLE && prev_filter->second == ASTRolesOrUsersSet::NameFilter::ROLE)
+                || (filter == ASTRolesOrUsersSet::NameFilter::ROLE && prev_filter->second != ASTRolesOrUsersSet::NameFilter::ROLE))
+                prev_filter->second = ASTRolesOrUsersSet::NameFilter::BOTH;
+            else if ((filter == ASTRolesOrUsersSet::NameFilter::USER && prev_filter->second == ASTRolesOrUsersSet::NameFilter::ANY))
+                prev_filter->second = ASTRolesOrUsersSet::NameFilter::USER;
+            names.emplace_back(std::move(*name));
+        }
+    };
+
     if (!ids.empty() && !all)
     {
         ast->names.reserve(ids.size());
         for (const UUID & id : ids)
-        {
-            auto name = access_control.tryReadName(id);
-            if (name)
-                ast->names.emplace_back(std::move(*name));
-        }
+            id_to_name(id, ast->names, ast->names_filters);
         ::sort(ast->names.begin(), ast->names.end());
     }
 
@@ -169,11 +215,7 @@ std::shared_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toASTWithNames(const Access
     {
         ast->except_names.reserve(except_ids.size());
         for (const UUID & except_id : except_ids)
-        {
-            auto except_name = access_control.tryReadName(except_id);
-            if (except_name)
-                ast->except_names.emplace_back(std::move(*except_name));
-        }
+            id_to_name(except_id, ast->except_names, ast->except_names_filters);
         ::sort(ast->except_names.begin(), ast->except_names.end());
     }
 

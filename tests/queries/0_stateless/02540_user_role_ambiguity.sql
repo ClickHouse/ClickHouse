@@ -1,0 +1,89 @@
+-- Tags: no-parallel
+
+SELECT value FROM system.settings where name='enable_extended_subject_syntax';
+
+SET enable_extended_subject_syntax = 1;
+
+DROP USER IF EXISTS test_user_02540;
+DROP ROLE IF EXISTS test_user_02540;
+CREATE USER test_user_02540;
+CREATE ROLE test_user_02540;
+
+GRANT ALL on *.* TO test_user_02540 AS USER;
+GRANT SELECT on *.* TO test_user_02540 AS ROLE;
+SELECT 1;
+SHOW GRANTS FOR test_user_02540 AS USER;
+SHOW GRANTS FOR test_user_02540 AS ROLE;
+
+REVOKE SELECT on *.* FROM test_user_02540 AS ROLE;
+SELECT 2;
+SHOW GRANTS FOR test_user_02540 AS USER;
+SHOW GRANTS FOR test_user_02540 AS ROLE;
+
+GRANT ALL on *.* TO test_user_02540 AS ROLE;
+SELECT 3;
+SHOW GRANTS FOR test_user_02540 AS USER;
+SHOW GRANTS FOR test_user_02540 AS ROLE;
+
+REVOKE ALL on *.* FROM default AS USER, test_user_02540 AS ROLE EXCEPT default AS USER;
+SELECT 4;
+SHOW GRANTS FOR test_user_02540 AS USER;
+SHOW GRANTS FOR test_user_02540 AS ROLE;
+
+GRANT ALL on *.* TO test_user_02540 AS ROLE;
+SELECT 5;
+SHOW GRANTS FOR test_user_02540 AS USER;
+SHOW GRANTS FOR test_user_02540 AS ROLE;
+
+REVOKE ALL on *.* FROM test_user_02540 AS ROLE, test_user_02540 AS USER;
+SELECT 6;
+SHOW GRANTS FOR test_user_02540 AS USER;
+SHOW GRANTS FOR test_user_02540 AS ROLE;
+
+GRANT ALL on *.* TO test_user_02540, test_user_02540 AS ROLE, test_user_02540 AS USER;
+SELECT 7;
+SHOW GRANTS FOR test_user_02540 AS USER;
+SHOW GRANTS FOR test_user_02540 AS ROLE;
+SELECT 8;
+SHOW GRANTS FOR test_user_02540;
+
+REVOKE ALL on *.* FROM test_user_02540 AS ROLE, test_user_02540 AS USER;
+SELECT 9;
+SHOW GRANTS FOR test_user_02540 AS USER;
+SHOW GRANTS FOR test_user_02540 AS ROLE;
+
+GRANT ALL on *.* TO test_user_02540, test_user_02540 AS USER;
+SELECT 10;
+SHOW GRANTS FOR test_user_02540 AS USER;
+SHOW GRANTS FOR test_user_02540 AS ROLE;
+REVOKE ALL on *.* FROM test_user_02540 AS ROLE, test_user_02540 AS USER;
+
+GRANT ALL on *.* TO test_user_02540, test_user_02540 AS ROLE;
+SELECT 11;
+SHOW GRANTS FOR test_user_02540 AS USER;
+SHOW GRANTS FOR test_user_02540 AS ROLE;
+
+GRANT ALL on *.* TO test_user_02540;
+SELECT 12;
+SHOW GRANTS FOR test_user_02540 AS USER;
+SHOW GRANTS FOR test_user_02540 AS ROLE;
+
+REVOKE ALL on *.* FROM test_user_02540 AS BOTH;
+SELECT 13;
+SHOW GRANTS FOR test_user_02540 AS USER;
+SHOW GRANTS FOR test_user_02540 AS ROLE;
+
+GRANT ALL on *.* TO test_user_02540 AS BOTH;
+SELECT 14;
+SHOW GRANTS FOR test_user_02540 AS USER;
+SHOW GRANTS FOR test_user_02540 AS ROLE;
+SELECT 15;
+SHOW GRANTS FOR test_user_02540 AS BOTH;
+
+SET enable_extended_subject_syntax = 0;
+SELECT 16;
+SHOW GRANTS FOR test_user_02540 AS USER;
+SHOW GRANTS FOR test_user_02540 AS ROLE;
+
+DROP USER IF EXISTS test_user_02540;
+DROP ROLE IF EXISTS test_user_02540;

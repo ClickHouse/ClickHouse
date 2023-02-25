@@ -1,0 +1,38 @@
+0
+1
+GRANT ALL ON *.* TO test_user_02540 AS USER
+GRANT SELECT ON *.* TO test_user_02540 AS ROLE
+2
+GRANT ALL ON *.* TO test_user_02540 AS USER
+3
+GRANT ALL ON *.* TO test_user_02540 AS USER
+GRANT ALL ON *.* TO test_user_02540 AS ROLE
+4
+GRANT ALL ON *.* TO test_user_02540 AS USER
+5
+GRANT ALL ON *.* TO test_user_02540 AS USER
+GRANT ALL ON *.* TO test_user_02540 AS ROLE
+6
+7
+GRANT ALL ON *.* TO test_user_02540 AS USER
+GRANT ALL ON *.* TO test_user_02540 AS ROLE
+8
+GRANT ALL ON *.* TO test_user_02540 AS USER
+9
+10
+GRANT ALL ON *.* TO test_user_02540 AS USER
+11
+GRANT ALL ON *.* TO test_user_02540 AS ROLE
+12
+GRANT ALL ON *.* TO test_user_02540 AS USER
+GRANT ALL ON *.* TO test_user_02540 AS ROLE
+13
+14
+GRANT ALL ON *.* TO test_user_02540 AS USER
+GRANT ALL ON *.* TO test_user_02540 AS ROLE
+15
+GRANT ALL ON *.* TO test_user_02540 AS USER
+GRANT ALL ON *.* TO test_user_02540 AS ROLE
+16
+GRANT ALL ON *.* TO test_user_02540
+GRANT ALL ON *.* TO test_user_02540
