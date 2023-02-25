@@ -124,6 +124,10 @@ public:
 
     /// TODO: merge them into common entity
     ProfileEvents::Counters performance_counters{VariableContext::Thread};
+
+    /// Points to performance_counters by default.
+    /// Could be changed to point to another object to calculate performance counters for some narrow scope.
+    ProfileEvents::Counters * current_performance_counters{&performance_counters};
     MemoryTracker memory_tracker{VariableContext::Thread};
 
     /// Small amount of untracked memory (per thread atomic-less counter)
@@ -139,6 +143,7 @@ public:
     Deleter deleter;
 
 protected:
+    /// Group of threads, to which this thread attached
     ThreadGroupStatusPtr thread_group;
 
     std::atomic<int> thread_state{ThreadState::DetachedFromQuery};
@@ -243,6 +248,10 @@ public:
 
     /// Attaches slave thread to existing thread group
     void attachQuery(const ThreadGroupStatusPtr & thread_group_, bool check_detached = true);
+
+    /// Returns pointer to the current profile counters to restore them back.
+    /// Note: consequent call with new scope will detach previous scope.
+    ProfileEvents::Counters * attachProfileCountersScope(ProfileEvents::Counters * performance_counters_scope);
 
     InternalTextLogsQueuePtr getInternalTextLogsQueue() const
     {

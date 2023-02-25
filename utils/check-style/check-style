@@ -333,6 +333,18 @@ expect_tests=( $(find $ROOT_PATH/tests/queries -name '*.expect') )
 for test_case in "${expect_tests[@]}"; do
     pattern="^exp_internal -f \$env(CLICKHOUSE_TMP)/\$basename.debuglog 0$"
     grep -q "$pattern" "$test_case" || echo "Missing '$pattern' in '$test_case'"
+
+    if grep -q "^spawn.*CLICKHOUSE_CLIENT_BINARY$" "$test_case"; then
+        pattern="^spawn.*CLICKHOUSE_CLIENT_BINARY.*--history_file$"
+        grep -q "$pattern" "$test_case" || echo "Missing '$pattern' in '$test_case'"
+    fi
+
+    # Otherwise expect_after/expect_before will not bail without stdin attached
+    # (and actually this is a hack anyway, correct way is to use $any_spawn_id)
+    pattern="-i \$any_spawn_id timeout"
+    grep -q -- "$pattern" "$test_case" || echo "Missing '$pattern' in '$test_case'"
+    pattern="-i \$any_spawn_id eof"
+    grep -q -- "$pattern" "$test_case" || echo "Missing '$pattern' in '$test_case'"
 done
 
 # Conflict markers

@@ -3,12 +3,14 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
 #include <Common/TargetSpecific.h>
+#include <Core/UUID.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <base/range.h>
 #include <Interpreters/castColumn.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <bit>
+#include <boost/algorithm/string/replace.hpp>
 
 #ifdef __SSE2__
 #include <emmintrin.h>
@@ -920,6 +922,39 @@ bool MergeTreeRangeReader::isCurrentRangeFinished() const
     return prev_reader ? prev_reader->isCurrentRangeFinished() : stream.isFinished();
 }
 
+
+/// When executing ExpressionActions on an empty block, it is not possible to determine the number of rows
+/// in the block for the new columns so the result block will have 0 rows and it will not match the rest of
+/// the columns in the ReadResult.
+/// The dummy column is added to maintain the information about the number of rows in the block and to produce
+/// the result block with the correct number of rows.
+String addDummyColumnWithRowCount(Block & block, size_t num_rows)
+{
+    bool has_columns = false;
+    for (const auto & column : block)
+    {
+        if (column.column)
+        {
+            assert(column.column->size() == num_rows);
+            has_columns = true;
+            break;
+        }
+    }
+
+    if (has_columns)
+        return {};
+
+    ColumnWithTypeAndName dummy_column;
+    dummy_column.column = DataTypeUInt8().createColumnConst(num_rows, Field(1));
+    dummy_column.type = std::make_shared<DataTypeUInt8>();
+    /// Generate a random name to avoid collisions with real columns.
+    dummy_column.name = "....dummy...." + toString(UUIDHelpers::generateV4());
+    block.insert(dummy_column);
+
+    return dummy_column.name;
+}
+
+
 MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, MarkRanges & ranges)
 {
     if (max_rows == 0)
@@ -987,6 +1022,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
                 for (const auto & col : read_result.additional_columns)
                     additional_columns.insert(col);
 
+                addDummyColumnWithRowCount(additional_columns, read_result.num_rows);
                 merge_tree_reader->evaluateMissingDefaults(additional_columns, columns);
             }
 
@@ -1040,7 +1076,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
 
     read_result.checkInternalConsistency();
 
-    if (!read_result.can_return_prewhere_column_without_filtering)
+    if (!read_result.can_return_prewhere_column_without_filtering && last_reader_in_chain)
     {
         if (!read_result.filterWasApplied())
         {
@@ -1308,7 +1344,16 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
             Block additional_columns = block;
 
             if (prewhere_info->actions)
+            {
+                const String dummy_column = addDummyColumnWithRowCount(block, result.num_rows);
+
+                LOG_TEST(log, "Executing prewhere actions on block: {}", block.dumpStructure());
+
                 prewhere_info->actions->execute(block);
+
+                if (!dummy_column.empty())
+                    block.erase(dummy_column);
+            }
 
             result.additional_columns.clear();
             /// Additional columns might only be needed if there are more steps in the chain.
@@ -1335,17 +1380,14 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
         current_step_filter = result.columns[prewhere_column_pos];
     }
 
+    /// In case when we are returning prewhere column the caller expects it to serve as a final filter:
+    /// it must contain 0s not only from the current step but also from all the previous steps.
+    /// One way to achieve this is to apply the final_filter if we know that the final_filter was not applied at
+    /// several previous steps but was accumulated instead.
+    result.can_return_prewhere_column_without_filtering = result.filterWasApplied();
+
     if (prewhere_info->remove_column)
         result.columns.erase(result.columns.begin() + prewhere_column_pos);
-    else
-    {
-        /// In case when we are not removing prewhere column the caller expects it to serve as a final filter:
-        /// it must contain 0s not only from the current step but also from all the previous steps.
-        /// One way to achieve this is to apply the final_filter if we know that the final _filter was not applied at
-        /// several previous steps but was accumulated instead.
-        result.can_return_prewhere_column_without_filtering =
-            (!result.final_filter.present() || result.final_filter.countBytesInFilter() == result.num_rows);
-    }
 
     FilterWithCachedCount current_filter(current_step_filter);
 
@@ -1370,14 +1412,27 @@ std::string PrewhereExprInfo::dump() const
 {
     WriteBufferFromOwnString s;
 
+    const char indent[] = "\n      ";
     for (size_t i = 0; i < steps.size(); ++i)
     {
         s << "STEP " << i << ":\n"
-            << "  ACTIONS: " << (steps[i].actions ? steps[i].actions->dumpActions() : "nullptr") << "\n"
+            << "  ACTIONS: " << (steps[i].actions ?
+                (indent + boost::replace_all_copy(steps[i].actions->dumpActions(), "\n", indent)) :
+                "nullptr") << "\n"
             << "  COLUMN: " << steps[i].column_name << "\n"
             << "  REMOVE_COLUMN: " << steps[i].remove_column << "\n"
-            << "  NEED_FILTER: " << steps[i].need_filter << "\n";
+            << "  NEED_FILTER: " << steps[i].need_filter << "\n\n";
     }
+
+    return s.str();
+}
+
+std::string PrewhereExprInfo::dumpConditions() const
+{
+    WriteBufferFromOwnString s;
+
+    for (size_t i = 0; i < steps.size(); ++i)
+        s << (i == 0 ? "\"" : ", \"") << steps[i].column_name << "\"";
 
     return s.str();
 }

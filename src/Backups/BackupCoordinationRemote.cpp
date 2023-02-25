@@ -7,6 +7,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/escapeForFileName.h>
 #include <Common/hex.h>
+#include <Backups/BackupCoordinationStage.h>
 
 
 namespace DB
@@ -17,6 +18,8 @@ namespace ErrorCodes
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
     extern const int LOGICAL_ERROR;
 }
+
+namespace Stage = BackupCoordinationStage;
 
 /// zookeeper_path/file_names/file_name->checksum_and_size
 /// zookeeper_path/file_infos/checksum_and_size->info
@@ -160,27 +163,26 @@ namespace
     {
         return fmt::format("{:03}", counter); /// Outputs 001, 002, 003, ...
     }
-
-    /// We try to store data to zookeeper several times due to possible version conflicts.
-    constexpr size_t NUM_ATTEMPTS = 10;
 }
 
 BackupCoordinationRemote::BackupCoordinationRemote(
-    const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_, bool remove_zk_nodes_in_destructor_)
-    : zookeeper_path(zookeeper_path_)
+    const String & root_zookeeper_path_, const String & backup_uuid_, zkutil::GetZooKeeper get_zookeeper_, bool is_internal_)
+    : root_zookeeper_path(root_zookeeper_path_)
+    , zookeeper_path(root_zookeeper_path_ + "/backup-" + backup_uuid_)
+    , backup_uuid(backup_uuid_)
     , get_zookeeper(get_zookeeper_)
-    , remove_zk_nodes_in_destructor(remove_zk_nodes_in_destructor_)
+    , is_internal(is_internal_)
 {
     createRootNodes();
     stage_sync.emplace(
-        zookeeper_path_ + "/stage", [this] { return getZooKeeper(); }, &Poco::Logger::get("BackupCoordination"));
+        zookeeper_path + "/stage", [this] { return getZooKeeper(); }, &Poco::Logger::get("BackupCoordination"));
 }
 
 BackupCoordinationRemote::~BackupCoordinationRemote()
 {
     try
     {
-        if (remove_zk_nodes_in_destructor)
+        if (!is_internal)
             removeAllNodes();
     }
     catch (...)
@@ -468,7 +470,7 @@ void BackupCoordinationRemote::updateFileInfo(const FileInfo & file_info)
     auto zk = getZooKeeper();
     String size_and_checksum = serializeSizeAndChecksum(std::pair{file_info.size, file_info.checksum});
     String full_path = zookeeper_path + "/file_infos/" + size_and_checksum;
-    for (size_t attempt = 0; attempt < NUM_ATTEMPTS; ++attempt)
+    for (size_t attempt = 0; attempt < MAX_ZOOKEEPER_ATTEMPTS; ++attempt)
     {
         Coordination::Stat stat;
         auto new_info = deserializeFileInfo(zk->get(full_path, &stat));
@@ -476,7 +478,7 @@ void BackupCoordinationRemote::updateFileInfo(const FileInfo & file_info)
         auto code = zk->trySet(full_path, serializeFileInfo(new_info), stat.version);
         if (code == Coordination::Error::ZOK)
             return;
-        bool is_last_attempt = (attempt == NUM_ATTEMPTS - 1);
+        bool is_last_attempt = (attempt == MAX_ZOOKEEPER_ATTEMPTS - 1);
         if ((code != Coordination::Error::ZBADVERSION) || is_last_attempt)
             throw zkutil::KeeperException(code, full_path);
     }
@@ -594,5 +596,52 @@ Strings BackupCoordinationRemote::getAllArchiveSuffixes() const
         node_name = formatArchiveSuffix(extractCounterFromSequentialNodeName(node_name));
     return node_names;
 }
+
+bool BackupCoordinationRemote::hasConcurrentBackups(const std::atomic<size_t> &) const
+{
+    /// If its internal concurrency will be checked for the base backup
+    if (is_internal)
+        return false;
+
+    auto zk = getZooKeeper();
+    std::string backup_stage_path = zookeeper_path +"/stage";
+
+    if (!zk->exists(root_zookeeper_path))
+        zk->createAncestors(root_zookeeper_path);
+
+    for (size_t attempt = 0; attempt < MAX_ZOOKEEPER_ATTEMPTS; ++attempt)
+    {
+        Coordination::Stat stat;
+        zk->get(root_zookeeper_path, &stat);
+        Strings existing_backup_paths = zk->getChildren(root_zookeeper_path);
+
+        for (const auto & existing_backup_path : existing_backup_paths)
+        {
+            if (startsWith(existing_backup_path, "restore-"))
+                continue;
+
+            String existing_backup_uuid = existing_backup_path;
+            existing_backup_uuid.erase(0, String("backup-").size());
+
+            if (existing_backup_uuid == toString(backup_uuid))
+                continue;
+
+            const auto status = zk->get(root_zookeeper_path + "/" + existing_backup_path + "/stage");
+            if (status != Stage::COMPLETED)
+                return true;
+        }
+
+        zk->createIfNotExists(backup_stage_path, "");
+        auto code = zk->trySet(backup_stage_path, Stage::SCHEDULED_TO_START, stat.version);
+        if (code == Coordination::Error::ZOK)
+            break;
+        bool is_last_attempt = (attempt == MAX_ZOOKEEPER_ATTEMPTS - 1);
+        if ((code != Coordination::Error::ZBADVERSION) || is_last_attempt)
+            throw zkutil::KeeperException(code, backup_stage_path);
+    }
+
+    return false;
+}
+
 
 }

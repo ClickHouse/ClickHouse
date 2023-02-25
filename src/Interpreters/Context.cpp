@@ -1650,8 +1650,8 @@ void Context::setCurrentQueryId(const String & query_id)
         UUID uuid{};
     } random;
 
-    random.words.a = thread_local_rng(); //-V656
-    random.words.b = thread_local_rng(); //-V656
+    random.words.a = thread_local_rng();
+    random.words.b = thread_local_rng();
 
 
     String query_id_to_set = query_id;
@@ -4072,6 +4072,16 @@ bool Context::canUseParallelReplicasOnFollower() const
         && settings.max_parallel_replicas > 1
         && !settings.use_hedged_requests
         && getClientInfo().collaborate_with_initiator;
+}
+
+UInt64 Context::getClientProtocolVersion() const
+{
+    return client_protocol_version;
+}
+
+void Context::setClientProtocolVersion(UInt64 version)
+{
+    client_protocol_version = version;
 }
 
 }
