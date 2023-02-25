@@ -24,7 +24,7 @@ The quickest and easiest way to get up and running with ClickHouse is to create 
 ## Self-Managed Install
 
 :::tip
-For production installs of a specific release version see the [available versions](#available-installation-options) down below.
+For production installs of a specific release version see the [installation options](#available-installation-options) down below.
 :::
 
 <Tabs>
