@@ -2,6 +2,8 @@
 
 #include <Analyzer/IQueryTreeNode.h>
 
+#include <Interpreters/Context_fwd.h>
+
 namespace DB
 {
 
@@ -10,6 +12,15 @@ bool isNodePartOfTree(const IQueryTreeNode * node, const IQueryTreeNode * root);
 
 /// Returns true if function name is name of IN function or its variations, false otherwise
 bool isNameOfInFunction(const std::string & function_name);
+
+/** Build cast function that cast expression into type.
+  * If resolve = true, then result cast function is resolved during build, otherwise
+  * result cast function is not resolved during build.
+  */
+QueryTreeNodePtr buildCastFunction(const QueryTreeNodePtr & expression,
+    const DataTypePtr & type,
+    const ContextPtr & context,
+    bool resolve = true);
 
 /** Add table expression in tables in select query children.
   * If table expression node is not of identifier node, table node, query node, table function node, join node or array join node type throws logical error exception.

@@ -404,15 +404,18 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(const QueryTreeNodePtr & tabl
         auto expected_header = planner.getQueryPlan().getCurrentDataStream().header;
         materializeBlockInplace(expected_header);
 
-        auto rename_actions_dag = ActionsDAG::makeConvertingActions(
-            query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
-            expected_header.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Position,
-            true /*ignore_constant_values*/);
-        auto rename_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(rename_actions_dag));
-        std::string step_description = table_expression_data.isRemote() ? "Change remote column names to local column names" : "Change column names";
-        rename_step->setStepDescription(std::move(step_description));
-        query_plan.addStep(std::move(rename_step));
+        if (!blocksHaveEqualStructure(query_plan.getCurrentDataStream().header, expected_header))
+        {
+            auto rename_actions_dag = ActionsDAG::makeConvertingActions(
+                query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
+                expected_header.getColumnsWithTypeAndName(),
+                ActionsDAG::MatchColumnsMode::Position,
+                true /*ignore_constant_values*/);
+            auto rename_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(rename_actions_dag));
+            std::string step_description = table_expression_data.isRemote() ? "Change remote column names to local column names" : "Change column names";
+            rename_step->setStepDescription(std::move(step_description));
+            query_plan.addStep(std::move(rename_step));
+        }
     }
 
     return {std::move(query_plan), from_stage};
