@@ -1,0 +1,304 @@
+------ \\parts starts ------
+--- group 1 ---
+1	wwww\\wwww	%ww\\ww%
+1	wwww\\wwww	%ww\\ww%
+1	wwww\\wwww	%ww\\\\ww%
+1	wwww\\wwww	%ww\\\\ww%
+0	wwww\\wwww	%ww\\\\\\ww%
+--- group 2 ---
+1	wwww\\wwww	w%w\\w%w
+1	wwww\\wwww	w%w\\w%w
+1	wwww\\wwww	w%w\\\\w%w
+1	wwww\\wwww	w%w\\\\w%w
+0	wwww\\wwww	w%w\\\\\\w%w
+--- group 3 ---
+0	wwww\\wwww	ww%\\%ww
+0	wwww\\wwww	ww%\\%ww
+1	wwww\\wwww	ww%\\\\%ww
+1	wwww\\wwww	ww%\\\\%ww
+0	wwww\\wwww	ww%\\\\\\%ww
+--- group 1 ---
+1	wwww\\wwww	%ww\\ww%
+1	wwww\\wwww	%ww\\ww%
+1	wwww\\wwww	%ww\\\\ww%
+1	wwww\\wwww	%ww\\\\ww%
+0	wwww\\wwww	%ww\\\\\\ww%
+--- group 2 ---
+1	wwww\\wwww	w%w\\w%w
+1	wwww\\wwww	w%w\\w%w
+1	wwww\\wwww	w%w\\\\w%w
+1	wwww\\wwww	w%w\\\\w%w
+0	wwww\\wwww	w%w\\\\\\w%w
+--- group 3 ---
+0	wwww\\wwww	ww%\\%ww
+0	wwww\\wwww	ww%\\%ww
+1	wwww\\wwww	ww%\\\\%ww
+1	wwww\\wwww	ww%\\\\%ww
+0	wwww\\wwww	ww%\\\\\\%ww
+---\\parts ends---
+------ %parts starts ------
+--- group 1 ---
+1	wwww%wwww	%ww%ww%
+1	wwww%wwww	%ww\\%ww%
+1	wwww%wwww	%ww\\%ww%
+0	wwww%wwww	%ww\\\\%ww%
+0	wwww%wwww	%ww\\\\%ww%
+--- group 2 ---
+1	wwww%wwww	w%w%w%w
+1	wwww%wwww	w%w\\%w%w
+1	wwww%wwww	w%w\\%w%w
+0	wwww%wwww	w%w\\\\%w%w
+0	wwww%wwww	w%w\\\\%w%w
+--- group 3 ---
+1	wwww%wwww	ww%%%ww
+1	wwww%wwww	ww%\\%%ww
+1	wwww%wwww	ww%\\%%ww
+0	wwww%wwww	ww%\\\\%%ww
+0	wwww%wwww	ww%\\\\%%ww
+--- group 1 ---
+1	wwww\\%wwww	%ww%ww%
+0	wwww\\%wwww	%ww\\%ww%
+0	wwww\\%wwww	%ww\\%ww%
+1	wwww\\%wwww	%ww\\\\%ww%
+1	wwww\\%wwww	%ww\\\\%ww%
+--- group 2 ---
+1	wwww\\%wwww	w%w%w%w
+0	wwww\\%wwww	w%w\\%w%w
+0	wwww\\%wwww	w%w\\%w%w
+1	wwww\\%wwww	w%w\\\\%w%w
+1	wwww\\%wwww	w%w\\\\%w%w
+--- group 3 ---
+1	wwww\\%wwww	ww%%%ww
+1	wwww\\%wwww	ww%\\%%ww
+1	wwww\\%wwww	ww%\\%%ww
+1	wwww\\%wwww	ww%\\\\%%ww
+1	wwww\\%wwww	ww%\\\\%%ww
+---%parts ends---
+------ _parts starts ------
+--- group 1 ---
+1	wwww_wwww	%ww_ww%
+1	wwww_wwww	%ww\\_ww%
+1	wwww_wwww	%ww\\_ww%
+0	wwww_wwww	%ww\\\\_ww%
+0	wwww_wwww	%ww\\\\_ww%
+--- group 2 ---
+1	wwww_wwww	w%w_w%w
+1	wwww_wwww	w%w\\_w%w
+1	wwww_wwww	w%w\\_w%w
+0	wwww_wwww	w%w\\\\_w%w
+0	wwww_wwww	w%w\\\\_w%w
+--- group 3 ---
+1	wwww_wwww	ww%_%ww
+1	wwww_wwww	ww%\\_%ww
+1	wwww_wwww	ww%\\_%ww
+0	wwww_wwww	ww%\\\\_%ww
+0	wwww_wwww	ww%\\\\_%ww
+--- group 1 ---
+0	wwww\\_wwww	%ww_ww%
+0	wwww\\_wwww	%ww\\_ww%
+0	wwww\\_wwww	%ww\\_ww%
+1	wwww\\_wwww	%ww\\\\_ww%
+1	wwww\\_wwww	%ww\\\\_ww%
+--- group 2 ---
+1	wwww\\_wwww	w%w_w%w
+0	wwww\\_wwww	w%w\\_w%w
+0	wwww\\_wwww	w%w\\_w%w
+1	wwww\\_wwww	w%w\\\\_w%w
+1	wwww\\_wwww	w%w\\\\_w%w
+--- group 3 ---
+1	wwww\\_wwww	ww%_%ww
+1	wwww\\_wwww	ww%\\_%ww
+1	wwww\\_wwww	ww%\\_%ww
+1	wwww\\_wwww	ww%\\\\_%ww
+1	wwww\\_wwww	ww%\\\\_%ww
+---_parts ends---
+------ *parts starts ------
+--- group 1 ---
+1	wwww*wwww	%ww*ww%
+0	wwww*wwww	%ww\\*ww%
+0	wwww*wwww	%ww\\*ww%
+0	wwww*wwww	%ww\\\\*ww%
+0	wwww*wwww	%ww\\\\*ww%
+--- group 2 ---
+1	wwww*wwww	w%w*w%w
+0	wwww*wwww	w%w\\*w%w
+0	wwww*wwww	w%w\\*w%w
+0	wwww*wwww	w%w\\\\*w%w
+0	wwww*wwww	w%w\\\\*w%w
+--- group 3 ---
+1	wwww*wwww	ww%*%ww
+0	wwww*wwww	ww%\\*%ww
+0	wwww*wwww	ww%\\*%ww
+0	wwww*wwww	ww%\\\\*%ww
+0	wwww*wwww	ww%\\\\*%ww
+--- group 1 ---
+0	wwww\\*wwww	%ww*ww%
+1	wwww\\*wwww	%ww\\*ww%
+1	wwww\\*wwww	%ww\\*ww%
+1	wwww\\*wwww	%ww\\\\*ww%
+1	wwww\\*wwww	%ww\\\\*ww%
+--- group 2 ---
+0	wwww\\*wwww	w%w*w%w
+1	wwww\\*wwww	w%w\\*w%w
+1	wwww\\*wwww	w%w\\*w%w
+1	wwww\\*wwww	w%w\\\\*w%w
+1	wwww\\*wwww	w%w\\\\*w%w
+--- group 3 ---
+1	wwww\\*wwww	ww%*%ww
+1	wwww\\*wwww	ww%\\*%ww
+1	wwww\\*wwww	ww%\\*%ww
+1	wwww\\*wwww	ww%\\\\*%ww
+1	wwww\\*wwww	ww%\\\\*%ww
+---*parts ends---
+------ .parts starts ------
+--- group 1 ---
+1	wwww.wwww	%ww.ww%
+0	wwww.wwww	%ww\\.ww%
+0	wwww.wwww	%ww\\.ww%
+0	wwww.wwww	%ww\\\\.ww%
+0	wwww.wwww	%ww\\\\.ww%
+--- group 2 ---
+1	wwww.wwww	w%w.w%w
+0	wwww.wwww	w%w\\.w%w
+0	wwww.wwww	w%w\\.w%w
+0	wwww.wwww	w%w\\\\.w%w
+0	wwww.wwww	w%w\\\\.w%w
+--- group 3 ---
+1	wwww.wwww	ww%.%ww
+0	wwww.wwww	ww%\\.%ww
+0	wwww.wwww	ww%\\.%ww
+0	wwww.wwww	ww%\\\\.%ww
+0	wwww.wwww	ww%\\\\.%ww
+--- group 1 ---
+0	wwww\\.wwww	%ww.ww%
+1	wwww\\.wwww	%ww\\.ww%
+1	wwww\\.wwww	%ww\\.ww%
+1	wwww\\.wwww	%ww\\\\.ww%
+1	wwww\\.wwww	%ww\\\\.ww%
+--- group 2 ---
+0	wwww\\.wwww	w%w.w%w
+1	wwww\\.wwww	w%w\\.w%w
+1	wwww\\.wwww	w%w\\.w%w
+1	wwww\\.wwww	w%w\\\\.w%w
+1	wwww\\.wwww	w%w\\\\.w%w
+--- group 3 ---
+1	wwww\\.wwww	ww%.%ww
+1	wwww\\.wwww	ww%\\.%ww
+1	wwww\\.wwww	ww%\\.%ww
+1	wwww\\.wwww	ww%\\\\.%ww
+1	wwww\\.wwww	ww%\\\\.%ww
+---.parts ends---
+------ $parts starts ------
+--- group 1 ---
+1	wwww$wwww	%ww$ww%
+0	wwww$wwww	%ww\\$ww%
+0	wwww$wwww	%ww\\$ww%
+0	wwww$wwww	%ww\\\\$ww%
+0	wwww$wwww	%ww\\\\$ww%
+--- group 2 ---
+1	wwww$wwww	w%w$w%w
+0	wwww$wwww	w%w\\$w%w
+0	wwww$wwww	w%w\\$w%w
+0	wwww$wwww	w%w\\\\$w%w
+0	wwww$wwww	w%w\\\\$w%w
+--- group 3 ---
+1	wwww$wwww	ww%$%ww
+0	wwww$wwww	ww%\\$%ww
+0	wwww$wwww	ww%\\$%ww
+0	wwww$wwww	ww%\\\\$%ww
+0	wwww$wwww	ww%\\\\$%ww
+--- group 1 ---
+0	wwww\\$wwww	%ww$ww%
+1	wwww\\$wwww	%ww\\$ww%
+1	wwww\\$wwww	%ww\\$ww%
+0	wwww\\$wwww	%ww\\\\$ww%
+0	wwww\\$wwww	%ww\\\\$ww%
+--- group 2 ---
+0	wwww\\$wwww	w%w$w%w
+1	wwww\\$wwww	w%w\\$w%w
+1	wwww\\$wwww	w%w\\$w%w
+0	wwww\\$wwww	w%w\\\\$w%w
+0	wwww\\$wwww	w%w\\\\$w%w
+--- group 3 ---
+1	wwww\\$wwww	ww%$%ww
+1	wwww\\$wwww	ww%\\$%ww
+1	wwww\\$wwww	ww%\\$%ww
+0	wwww\\$wwww	ww%\\\\$%ww
+0	wwww\\$wwww	ww%\\\\$%ww
+---$parts ends---
+------ wparts starts ------
+--- group 1 ---
+1	wwwwwwwww	%wwwww%
+0	wwwwwwwww	%ww\\www%
+0	wwwwwwwww	%ww\\www%
+0	wwwwwwwww	%ww\\\\www%
+0	wwwwwwwww	%ww\\\\www%
+--- group 2 ---
+1	wwwwwwwww	w%www%w
+0	wwwwwwwww	w%w\\ww%w
+0	wwwwwwwww	w%w\\ww%w
+0	wwwwwwwww	w%w\\\\ww%w
+0	wwwwwwwww	w%w\\\\ww%w
+--- group 3 ---
+1	wwwwwwwww	ww%w%ww
+0	wwwwwwwww	ww%\\w%ww
+0	wwwwwwwww	ww%\\w%ww
+0	wwwwwwwww	ww%\\\\w%ww
+0	wwwwwwwww	ww%\\\\w%ww
+--- group 1 ---
+1	wwww\\wwwww	%wwwww%
+1	wwww\\wwwww	%ww\\www%
+1	wwww\\wwwww	%ww\\www%
+0	wwww\\wwwww	%ww\\\\www%
+0	wwww\\wwwww	%ww\\\\www%
+--- group 2 ---
+1	wwww\\wwwww	w%www%w
+1	wwww\\wwwww	w%w\\ww%w
+1	wwww\\wwwww	w%w\\ww%w
+0	wwww\\wwwww	w%w\\\\ww%w
+0	wwww\\wwwww	w%w\\\\ww%w
+--- group 3 ---
+1	wwww\\wwwww	ww%w%ww
+1	wwww\\wwwww	ww%\\w%ww
+1	wwww\\wwwww	ww%\\w%ww
+0	wwww\\wwwww	ww%\\\\w%ww
+0	wwww\\wwwww	ww%\\\\w%ww
+---wparts ends---
+------ sparts starts ------
+--- group 1 ---
+1	wwwwswwww	%wwsww%
+0	wwwwswwww	%ww\\sww%
+0	wwwwswwww	%ww\\sww%
+0	wwwwswwww	%ww\\\\sww%
+0	wwwwswwww	%ww\\\\sww%
+--- group 2 ---
+1	wwwwswwww	w%wsw%w
+0	wwwwswwww	w%w\\sw%w
+0	wwwwswwww	w%w\\sw%w
+0	wwwwswwww	w%w\\\\sw%w
+0	wwwwswwww	w%w\\\\sw%w
+--- group 3 ---
+1	wwwwswwww	ww%s%ww
+0	wwwwswwww	ww%\\s%ww
+0	wwwwswwww	ww%\\s%ww
+0	wwwwswwww	ww%\\\\s%ww
+0	wwwwswwww	ww%\\\\s%ww
+--- group 1 ---
+0	wwww\\swwww	%wwsww%
+1	wwww\\swwww	%ww\\sww%
+1	wwww\\swwww	%ww\\sww%
+0	wwww\\swwww	%ww\\\\sww%
+0	wwww\\swwww	%ww\\\\sww%
+--- group 2 ---
+0	wwww\\swwww	w%wsw%w
+1	wwww\\swwww	w%w\\sw%w
+1	wwww\\swwww	w%w\\sw%w
+0	wwww\\swwww	w%w\\\\sw%w
+0	wwww\\swwww	w%w\\\\sw%w
+--- group 3 ---
+1	wwww\\swwww	ww%s%ww
+1	wwww\\swwww	ww%\\s%ww
+1	wwww\\swwww	ww%\\s%ww
+0	wwww\\swwww	ww%\\\\s%ww
+0	wwww\\swwww	ww%\\\\s%ww
+---sparts ends---
