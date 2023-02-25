@@ -29,7 +29,7 @@
 * Add two new functions which allow for user-defined keys/seeds with SipHash{64,128}. [#45513](https://github.com/ClickHouse/ClickHouse/pull/45513) ([Salvatore Mesoraca](https://github.com/aiven-sal)).
 * Allow a three-argument version for table function `format`. close [#45808](https://github.com/ClickHouse/ClickHouse/issues/45808). [#45873](https://github.com/ClickHouse/ClickHouse/pull/45873) ([FFFFFFFHHHHHHH](https://github.com/FFFFFFFHHHHHHH)).
 * Add `JodaTime` format support for 'x','w','S'. Refer to https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html. [#46073](https://github.com/ClickHouse/ClickHouse/pull/46073) ([zk_kiger](https://github.com/zk-kiger)).
-* Support window function `ntile`.
+* Support window function `ntile`. ([lgbo](https://github.com/lgbo-ustc)).
 * Add setting `final` to implicitly apply the `FINAL` modifier to every table. [#40945](https://github.com/ClickHouse/ClickHouse/pull/40945) ([Arthur Passos](https://github.com/arthurpassos)).
 * Added `arrayPartialSort` and `arrayPartialReverseSort` functions. [#46296](https://github.com/ClickHouse/ClickHouse/pull/46296) ([Joanna Hulboj](https://github.com/jh0x)).
 * The new http parameter `client_protocol_version` allows setting a client protocol version for HTTP responses using the Native format. [#40397](https://github.com/ClickHouse/ClickHouse/issues/40397). [#46360](https://github.com/ClickHouse/ClickHouse/pull/46360) ([Geoff Genz](https://github.com/genzgd)).
