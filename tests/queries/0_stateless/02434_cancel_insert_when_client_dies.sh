@@ -40,6 +40,7 @@ export -f insert_data
 
 ID="02434_insert_init_${CLICKHOUSE_DATABASE}_$RANDOM"
 insert_data
+$CLICKHOUSE_CLIENT -q "system flush distributed dedup_dist"
 $CLICKHOUSE_CLIENT -q 'select count() from dedup_test'
 
 function thread_insert
