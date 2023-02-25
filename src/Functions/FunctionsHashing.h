@@ -1091,11 +1091,11 @@ private:
         else if (const auto * map = checkAndGetColumn<ColumnMap>(column))
         {
             const auto & type_map = assert_cast<const DataTypeMap &>(*type);
-            executeForArgument(key, type_map.getNestedType().get(), map->getNestedColumnPtr().get(), vec_to, is_first);
+            executeForArgument(type_map.getNestedType().get(), map->getNestedColumnPtr().get(), vec_to, is_first);
         }
         else if (const auto * const_map = checkAndGetColumnConst<ColumnMap>(column))
         {
-            executeForArgument(key, type, const_map->convertToFullColumnIfConst().get(), vec_to, is_first);
+            executeForArgument(type, const_map->convertToFullColumnIfConst().get(), vec_to, is_first);
         }
         else
         {
