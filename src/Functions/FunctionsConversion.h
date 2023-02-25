@@ -2749,7 +2749,7 @@ private:
             {
                 function->getReturnTypeImpl({from_type});
             }
-            catch (Exception &)
+            catch (const Exception &)
             {
                 throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE,
                     "Conversion from {} to {} is not supported",
