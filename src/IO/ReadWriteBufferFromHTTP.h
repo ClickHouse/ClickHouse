@@ -582,10 +582,13 @@ namespace detail
                 }
                 catch (const Poco::Exception & e)
                 {
-                    /**
-                     * Retry request unconditionally if nothing has been read yet.
-                     * Otherwise if it is GET method retry with range header.
-                     */
+                    /// Too many open files - non-retryable.
+                    if (e.code() == POCO_EMFILE)
+                        throw;
+
+                    /** Retry request unconditionally if nothing has been read yet.
+                      * Otherwise if it is GET method retry with range header.
+                      */
                     bool can_retry_request = !offset_from_begin_pos || method == Poco::Net::HTTPRequest::HTTP_GET;
                     if (!can_retry_request)
                         throw;
