@@ -114,6 +114,6 @@ $CLICKHOUSE_CLIENT --implicit_transaction=1 -q 'select throwIf(count() % 1000000
 # So use this query to check that thread_cancel do something
 $CLICKHOUSE_CLIENT -q "select count() > 0 from system.text_log where event_date >= yesterday() and query_id like '$TEST_MARK%' and (
   message_format_string in ('Unexpected end of file while reading chunk header of HTTP chunked data', 'Unexpected EOF, got {} of {} bytes') or
-  message like '%Connection reset by peer%')"
+  message like '%Connection reset by peer%' or message like '%Broken pipe, while writing to socket%')"
 
 $CLICKHOUSE_CLIENT --database_atomic_wait_for_drop_and_detach_synchronously=0 -q "drop table dedup_test"

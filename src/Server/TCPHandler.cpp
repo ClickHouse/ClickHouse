@@ -416,17 +416,25 @@ void TCPHandler::runImpl()
             after_check_cancelled.restart();
             after_send_progress.restart();
 
+            auto finish_or_cancel = [this]()
+            {
+                if (state.is_cancelled)
+                    state.io.onCancelOrConnectionLoss();
+                else
+                    state.io.onFinish();
+            };
+
             if (state.io.pipeline.pushing())
             {
                 /// FIXME: check explicitly that insert query suggests to receive data via native protocol,
                 state.need_receive_data_for_insert = true;
                 processInsertQuery();
-                state.io.onFinish();
+                finish_or_cancel();
             }
             else if (state.io.pipeline.pulling())
             {
                 processOrdinaryQueryWithProcessors();
-                state.io.onFinish();
+                finish_or_cancel();
             }
             else if (state.io.pipeline.completed())
             {
@@ -455,7 +463,7 @@ void TCPHandler::runImpl()
                     executor.execute();
                 }
 
-                state.io.onFinish();
+                finish_or_cancel();
 
                 std::lock_guard lock(task_callback_mutex);
 
@@ -469,7 +477,7 @@ void TCPHandler::runImpl()
             }
             else
             {
-                state.io.onFinish();
+                finish_or_cancel();
             }
 
             /// Do it before sending end of stream, to have a chance to show log message in client.
