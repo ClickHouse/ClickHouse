@@ -47,7 +47,11 @@ inline bool likePatternIsSubstring(std::string_view pattern, String & res)
                 if (pos == end)
                     return false;
                 else
-                    res += *pos;
+                    switch (condition)
+                    {
+                        
+                    }
+                res += *pos;
                 break;
             default:
                 res += *pos;
