@@ -24,15 +24,15 @@ AggregateFunctionPtr createAggregateFunctionStatisticsUnary(
     assertUnary(name, argument_types);
 
     AggregateFunctionPtr res;
-    const DataTypePtr & data_type = argument_types[0];
+    DataTypePtr data_type = argument_types[0];
     if (isDecimal(data_type))
         res.reset(createWithDecimalType<FunctionTemplate>(*data_type, *data_type, argument_types));
     else
         res.reset(createWithNumericType<FunctionTemplate>(*data_type, argument_types));
 
     if (!res)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}",
-                        argument_types[0]->getName(), name);
+        throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     return res;
 }
 
@@ -45,8 +45,8 @@ AggregateFunctionPtr createAggregateFunctionStatisticsBinary(
 
     AggregateFunctionPtr res(createWithTwoBasicNumericTypes<FunctionTemplate>(*argument_types[0], *argument_types[1], argument_types));
     if (!res)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types {} and {} of arguments for aggregate function {}",
-            argument_types[0]->getName(), argument_types[1]->getName(), name);
+        throw Exception("Illegal types " + argument_types[0]->getName() + " and " + argument_types[1]->getName()
+            + " of arguments for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     return res;
 }

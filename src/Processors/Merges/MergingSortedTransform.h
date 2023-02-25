@@ -14,9 +14,8 @@ public:
     MergingSortedTransform(
         const Block & header,
         size_t num_inputs,
-        const SortDescription & description,
+        SortDescription description,
         size_t max_block_size,
-        SortingQueueStrategy sorting_queue_strategy,
         UInt64 limit_ = 0,
         WriteBuffer * out_row_sources_buf_ = nullptr,
         bool quiet_ = false,

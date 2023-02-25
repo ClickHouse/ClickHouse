@@ -18,7 +18,7 @@ function test_db_comments()
     local ENGINE_NAME="$1"
     echo "engine : ${ENGINE_NAME}"
 
-    $CLICKHOUSE_CLIENT --allow_deprecated_database_ordinary=1 -nm <<EOF
+    $CLICKHOUSE_CLIENT -nm <<EOF
 DROP DATABASE IF EXISTS ${DB_NAME};
 CREATE DATABASE ${DB_NAME} ENGINE = ${ENGINE_NAME} COMMENT 'Test DB with comment';
 EOF

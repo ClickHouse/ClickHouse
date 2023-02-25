@@ -62,7 +62,7 @@ void removeRecursive(Coordination::ZooKeeper & zookeeper, const std::string & pa
 
         promise->set_value();
     };
-    zookeeper.list(path, ListRequestType::ALL, list_callback, nullptr);
+    zookeeper.list(path, list_callback, nullptr);
     future.get();
 
     while (!children.empty())
@@ -123,7 +123,7 @@ ZooKeeperRequestPtr CreateRequestGenerator::generate()
         plength = *path_length;
     auto path_candidate = generateRandomPath(path_prefix, plength);
 
-    while (paths_created.contains(path_candidate))
+    while (paths_created.count(path_candidate))
         path_candidate = generateRandomPath(path_prefix, plength);
 
     paths_created.insert(path_candidate);

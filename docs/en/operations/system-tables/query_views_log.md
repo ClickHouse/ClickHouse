@@ -1,7 +1,4 @@
----
-slug: /en/operations/system-tables/query_views_log
----
-# query_views_log
+# system.query_views_log {#system_tables-query_views_log}
 
 Contains information about the dependent views executed when running a query, for example, the view type or the execution time.
 
@@ -85,3 +82,5 @@ stack_trace:
 
 -   [system.query_log](../../operations/system-tables/query_log.md#system_tables-query_log) — Description of the `query_log` system table which contains common information about queries execution.
 -   [system.query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) — This table contains information about each query execution thread.
+
+[Original article](https://clickhouse.com/docs/en/operations/system_tables/query_thread_log) <!--hide-->

@@ -16,10 +16,7 @@ def start_cluster():
         for node in nodes:
             node.query("CREATE DATABASE IF NOT EXISTS test")
             # Different internal dictionary name with Atomic
-            node.query(
-                "CREATE DATABASE IF NOT EXISTS test_ordinary ENGINE=Ordinary",
-                settings={"allow_deprecated_database_ordinary": 1},
-            )
+            node.query("CREATE DATABASE IF NOT EXISTS test_ordinary ENGINE=Ordinary")
             node.query("CREATE DATABASE IF NOT EXISTS atest")
             node.query("CREATE DATABASE IF NOT EXISTS ztest")
             node.query("CREATE TABLE test.source(x UInt64, y UInt64) ENGINE=Log")

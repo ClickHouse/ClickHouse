@@ -26,10 +26,8 @@ public:
     String getID(char) const override;
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
-    ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTDropAccessEntityQuery>(clone()); }
+    ASTPtr getRewrittenASTWithoutOnCluster(const std::string &) const override { return removeOnCluster<ASTDropAccessEntityQuery>(clone()); }
 
     void replaceEmptyDatabase(const String & current_database) const;
-
-    QueryKind getQueryKind() const override { return QueryKind::Drop; }
 };
 }

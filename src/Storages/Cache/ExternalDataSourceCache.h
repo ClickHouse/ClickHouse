@@ -43,7 +43,7 @@ public:
     BackgroundSchedulePool * thread_pool;
 };
 
-class RemoteReadBuffer : public BufferWithOwnMemory<SeekableReadBuffer>, public WithFileSize
+class RemoteReadBuffer : public BufferWithOwnMemory<SeekableReadBufferWithSize>
 {
 public:
     explicit RemoteReadBuffer(size_t buff_size);
@@ -53,7 +53,7 @@ public:
     bool nextImpl() override;
     off_t seek(off_t off, int whence) override;
     off_t getPosition() override;
-    size_t getFileSize() override { return remote_file_size; }
+    std::optional<size_t> getTotalSize() override { return remote_file_size; }
 
 private:
     std::unique_ptr<LocalFileHolder> local_file_holder;
@@ -83,7 +83,7 @@ protected:
 
 private:
     // Root directory of local cache for remote filesystem.
-    Strings root_dirs;
+    String root_dir;
     size_t local_cache_bytes_read_before_flush = 0;
 
     std::atomic<bool> initialized = false;

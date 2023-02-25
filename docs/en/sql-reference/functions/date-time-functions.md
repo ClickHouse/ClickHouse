@@ -1,10 +1,9 @@
 ---
-slug: /en/sql-reference/functions/date-time-functions
-sidebar_position: 39
-sidebar_label: Dates and Times
+toc_priority: 39
+toc_title: Dates and Times
 ---
 
-# Functions for Working with Dates and Times
+# Functions for Working with Dates and Times {#functions-for-working-with-dates-and-times}
 
 Support for time zones.
 
@@ -24,7 +23,7 @@ SELECT
 └─────────────────────┴────────────┴────────────┴─────────────────────┘
 ```
 
-## timeZone
+## timeZone {#timezone}
 
 Returns the timezone of the server.
 If it is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard. Otherwise it produces a constant value.
@@ -43,7 +42,7 @@ Alias: `timezone`.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
-## toTimeZone
+## toTimeZone {#totimezone}
 
 Converts time or date and time to the specified time zone. The time zone is an attribute of the `Date` and `DateTime` data types. The internal value (number of seconds) of the table field or of the resultset's column does not change, the column's type changes and its string representation changes accordingly.
 
@@ -101,7 +100,7 @@ int32samoa: 1546300800
 
 `toTimeZone(time_utc, 'Asia/Yekaterinburg')` changes the `DateTime('UTC')` type to `DateTime('Asia/Yekaterinburg')`. The value (Unixtimestamp) 1546300800 stays the same, but the string representation (the result of the toString() function) changes from `time_utc:   2019-01-01 00:00:00` to `time_yekat: 2019-01-01 05:00:00`.
 
-## timeZoneOf
+## timeZoneOf {#timezoneof}
 
 Returns the timezone name of [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md) data types.
 
@@ -137,7 +136,7 @@ Result:
 └───────────────────┘
 ```
 
-## timeZoneOffset
+## timeZoneOffset {#timezoneoffset}
 
 Returns a timezone offset in seconds from [UTC](https://en.wikipedia.org/wiki/Coordinated_Universal_Time). The function takes into account [daylight saving time](https://en.wikipedia.org/wiki/Daylight_saving_time) and historical timezone changes at the specified date and time.
 [IANA timezone database](https://www.iana.org/time-zones) is used to calculate the offset.
@@ -177,78 +176,63 @@ Result:
 └─────────────────────┴──────────────────────────────┴───────────────────┴─────────────────┘
 ```
 
-## toYear
+## toYear {#toyear}
 
 Converts a date or date with time to a UInt16 number containing the year number (AD).
 
 Alias: `YEAR`.
 
-## toQuarter
+## toQuarter {#toquarter}
 
 Converts a date or date with time to a UInt8 number containing the quarter number.
 
 Alias: `QUARTER`.
 
-## toMonth
+## toMonth {#tomonth}
 
 Converts a date or date with time to a UInt8 number containing the month number (1-12).
 
 Alias: `MONTH`.
 
-## toDayOfYear
+## toDayOfYear {#todayofyear}
 
 Converts a date or date with time to a UInt16 number containing the number of the day of the year (1-366).
 
 Alias: `DAYOFYEAR`.
 
-## toDayOfMonth
+## toDayOfMonth {#todayofmonth}
 
 Converts a date or date with time to a UInt8 number containing the number of the day of the month (1-31).
 
 Aliases: `DAYOFMONTH`, `DAY`.
 
-## toDayOfWeek
+## toDayOfWeek {#todayofweek}
 
-Converts a date or date with time to a UInt8 number containing the number of the day of the week.
-
-The two-argument form of `toDayOfWeek()` enables you to specify whether the week starts on Monday or Sunday, and whether the return value should be in the range from 0 to 6 or 1 to 7. If the mode argument is ommited, the default mode is 0. The time zone of the date can be specified as the third argument.
-
-| Mode | First day of week | Range                                          |
-|------|-------------------|------------------------------------------------|
-| 0    | Monday            | 1-7: Monday = 1, Tuesday = 2, ..., Sunday = 7  |
-| 1    | Monday            | 0-6: Monday = 0, Tuesday = 1, ..., Sunday = 6  |
-| 2    | Sunday            | 0-6: Sunday = 0, Monday = 1, ..., Saturday = 6 |
-| 3    | Sunday            | 1-7: Sunday = 1, Monday = 2, ..., Saturday = 7 |
+Converts a date or date with time to a UInt8 number containing the number of the day of the week (Monday is 1, and Sunday is 7).
 
 Alias: `DAYOFWEEK`.
 
-**Syntax**
-
-``` sql
-toDayOfWeek(t[, mode[, timezone]])
-```
-
-## toHour
+## toHour {#tohour}
 
 Converts a date with time to a UInt8 number containing the number of the hour in 24-hour time (0-23).
 This function assumes that if clocks are moved ahead, it is by one hour and occurs at 2 a.m., and if clocks are moved back, it is by one hour and occurs at 3 a.m. (which is not always true – even in Moscow the clocks were twice changed at a different time).
 
 Alias: `HOUR`.
 
-## toMinute
+## toMinute {#tominute}
 
 Converts a date with time to a UInt8 number containing the number of the minute of the hour (0-59).
 
 Alias: `MINUTE`.
 
-## toSecond
+## toSecond {#tosecond}
 
 Converts a date with time to a UInt8 number containing the number of the second in the minute (0-59).
 Leap seconds are not accounted for.
 
 Alias: `SECOND`.
 
-## toUnixTimestamp
+## toUnixTimestamp {#to-unix-timestamp}
 
 For DateTime argument: converts value to the number with type UInt32 -- Unix Timestamp (https://en.wikipedia.org/wiki/Unix_time).
 For String argument: converts the input string to the datetime according to the timezone (optional second argument, server timezone is used by default) and returns the corresponding unix timestamp.
@@ -282,80 +266,57 @@ Result:
 └────────────────┘
 ```
 
-:::note
-The return type of `toStartOf*`, `toLastDayOfMonth`, `toMonday`, `timeSlot` functions described below is determined by the configuration parameter [enable_extended_results_for_datetime_functions](../../operations/settings/settings#enable-extended-results-for-datetime-functions) which is `0` by default.
+!!! attention "Attention"
+    The return type `toStartOf*` functions described below is `Date` or `DateTime`. Though these functions can take `DateTime64` as an argument, passing them a `DateTime64` that is out of the normal range (years 1925 - 2283) will give an incorrect result.
 
-Behavior for
-* `enable_extended_results_for_datetime_functions = 0`: Functions `toStartOfYear`, `toStartOfISOYear`, `toStartOfQuarter`, `toStartOfMonth`, `toStartOfWeek`, `toLastDayOfMonth`, `toMonday` return `Date` or `DateTime`. Functions `toStartOfDay`, `toStartOfHour`, `toStartOfFifteenMinutes`, `toStartOfTenMinutes`, `toStartOfFiveMinutes`, `toStartOfMinute`, `timeSlot` return `DateTime`. Though these functions can take values of the extended types `Date32` and `DateTime64` as an argument, passing them a time outside the normal range (year 1970 to 2149 for `Date` / 2106 for `DateTime`) will produce wrong results.
-* `enable_extended_results_for_datetime_functions = 1`:
-  * Functions `toStartOfYear`, `toStartOfISOYear`, `toStartOfQuarter`, `toStartOfMonth`, `toStartOfWeek`, `toLastDayOfMonth`, `toMonday` return `Date` or `DateTime` if their argument is a `Date` or `DateTime`, and they return `Date32` or `DateTime64` if their argument is a `Date32` or `DateTime64`.
-  * Functions `toStartOfDay`, `toStartOfHour`, `toStartOfFifteenMinutes`, `toStartOfTenMinutes`, `toStartOfFiveMinutes`, `toStartOfMinute`, `timeSlot` return `DateTime` if their argument is a `Date` or `DateTime`, and they return `DateTime64` if their argument is a `Date32` or `DateTime64`.
-:::
-
-## toStartOfYear
+## toStartOfYear {#tostartofyear}
 
 Rounds down a date or date with time to the first day of the year.
 Returns the date.
 
-## toStartOfISOYear
+## toStartOfISOYear {#tostartofisoyear}
 
 Rounds down a date or date with time to the first day of ISO year.
 Returns the date.
 
-## toStartOfQuarter
+## toStartOfQuarter {#tostartofquarter}
 
 Rounds down a date or date with time to the first day of the quarter.
 The first day of the quarter is either 1 January, 1 April, 1 July, or 1 October.
 Returns the date.
 
-## toStartOfMonth
+## toStartOfMonth {#tostartofmonth}
 
 Rounds down a date or date with time to the first day of the month.
 Returns the date.
 
-:::note
-The behavior of parsing incorrect dates is implementation specific. ClickHouse may return zero date, throw an exception or do “natural” overflow.
-:::
+!!! attention "Attention"
+    The behavior of parsing incorrect dates is implementation specific. ClickHouse may return zero date, throw an exception or do “natural” overflow.
 
-## toLastDayOfMonth
+## toMonday {#tomonday}
 
-Rounds a date, or date with time, to the last day of the month.
+Rounds down a date or date with time to the nearest Monday.
 Returns the date.
 
-Alias: `LAST_DAY`.
+## toStartOfWeek(t\[,mode\]) {#tostartofweektmode}
 
-If `toLastDayOfMonth` is called with an argument of type `Date` greater then 2149-05-31, the result will be calculated from the argument 2149-05-31 instead.
-
-## toMonday
-
-Rounds down a date, or date with time, to the nearest Monday.
+Rounds down a date or date with time to the nearest Sunday or Monday by mode.
 Returns the date.
+The mode argument works exactly like the mode argument to toWeek(). For the single-argument syntax, a mode value of 0 is used.
 
-## toStartOfWeek
-
-Rounds a date or date with time down to the nearest Sunday or Monday.
-Returns the date.
-The mode argument works exactly like the mode argument in function `toWeek()`. If no mode is specified, mode is assumed as 0.
-
-**Syntax**
-
-``` sql
-toStartOfWeek(t[, mode[, timezone]])
-```
-
-## toStartOfDay
+## toStartOfDay {#tostartofday}
 
 Rounds down a date with time to the start of the day.
 
-## toStartOfHour
+## toStartOfHour {#tostartofhour}
 
 Rounds down a date with time to the start of the hour.
 
-## toStartOfMinute
+## toStartOfMinute {#tostartofminute}
 
 Rounds down a date with time to the start of the minute.
 
-## toStartOfSecond
+## toStartOfSecond {#tostartofsecond}
 
 Truncates sub-seconds.
 
@@ -412,19 +373,19 @@ Result:
 
 -   [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) server configuration parameter.
 
-## toStartOfFiveMinutes
+## toStartOfFiveMinute {#tostartoffiveminute}
 
 Rounds down a date with time to the start of the five-minute interval.
 
-## toStartOfTenMinutes
+## toStartOfTenMinutes {#tostartoftenminutes}
 
 Rounds down a date with time to the start of the ten-minute interval.
 
-## toStartOfFifteenMinutes
+## toStartOfFifteenMinutes {#tostartoffifteenminutes}
 
 Rounds down the date with time to the start of the fifteen-minute interval.
 
-## toStartOfInterval(time_or_data, INTERVAL x unit \[, time_zone\])
+## toStartOfInterval(time_or_data, INTERVAL x unit \[, time_zone\]) {#tostartofintervaltime-or-data-interval-x-unit-time-zone}
 
 This is a generalization of other functions named `toStartOf*`. For example,
 `toStartOfInterval(t, INTERVAL 1 year)` returns the same as `toStartOfYear(t)`,
@@ -432,56 +393,54 @@ This is a generalization of other functions named `toStartOf*`. For example,
 `toStartOfInterval(t, INTERVAL 1 day)` returns the same as `toStartOfDay(t)`,
 `toStartOfInterval(t, INTERVAL 15 minute)` returns the same as `toStartOfFifteenMinutes(t)` etc.
 
-## toTime
+## toTime {#totime}
 
 Converts a date with time to a certain fixed date, while preserving the time.
 
-## toRelativeYearNum
+## toRelativeYearNum {#torelativeyearnum}
 
-Converts a date, or date with time, to the number of the year, starting from a certain fixed point in the past.
+Converts a date with time or date to the number of the year, starting from a certain fixed point in the past.
 
-## toRelativeQuarterNum
+## toRelativeQuarterNum {#torelativequarternum}
 
-Converts a date, or date with time, to the number of the quarter, starting from a certain fixed point in the past.
+Converts a date with time or date to the number of the quarter, starting from a certain fixed point in the past.
 
-## toRelativeMonthNum
+## toRelativeMonthNum {#torelativemonthnum}
 
-Converts a date, or date with time, to the number of the month, starting from a certain fixed point in the past.
+Converts a date with time or date to the number of the month, starting from a certain fixed point in the past.
 
-## toRelativeWeekNum
+## toRelativeWeekNum {#torelativeweeknum}
 
-Converts a date, or date with time, to the number of the week, starting from a certain fixed point in the past.
+Converts a date with time or date to the number of the week, starting from a certain fixed point in the past.
 
-## toRelativeDayNum
+## toRelativeDayNum {#torelativedaynum}
 
-Converts a date, or date with time, to the number of the day, starting from a certain fixed point in the past.
+Converts a date with time or date to the number of the day, starting from a certain fixed point in the past.
 
-## toRelativeHourNum
+## toRelativeHourNum {#torelativehournum}
 
-Converts a date, or date with time, to the number of the hour, starting from a certain fixed point in the past.
+Converts a date with time or date to the number of the hour, starting from a certain fixed point in the past.
 
-## toRelativeMinuteNum
+## toRelativeMinuteNum {#torelativeminutenum}
 
-Converts a date, or date with time, to the number of the minute, starting from a certain fixed point in the past.
+Converts a date with time or date to the number of the minute, starting from a certain fixed point in the past.
 
-## toRelativeSecondNum
+## toRelativeSecondNum {#torelativesecondnum}
 
-Converts a date, or date with time, to the number of the second, starting from a certain fixed point in the past.
+Converts a date with time or date to the number of the second, starting from a certain fixed point in the past.
 
-## toISOYear
+## toISOYear {#toisoyear}
 
-Converts a date, or date with time, to a UInt16 number containing the ISO Year number.
+Converts a date or date with time to a UInt16 number containing the ISO Year number.
 
-## toISOWeek
+## toISOWeek {#toisoweek}
 
-Converts a date, or date with time, to a UInt8 number containing the ISO Week number.
+Converts a date or date with time to a UInt8 number containing the ISO Week number.
 
-## toWeek
+## toWeek(date\[,mode\]) {#toweekdatemode}
 
-This function returns the week number for date or datetime. The two-argument form of `toWeek()` enables you to specify whether the week starts on Sunday or Monday and whether the return value should be in the range from 0 to 53 or from 1 to 53. If the mode argument is omitted, the default mode is 0.
-
-`toISOWeek()` is a compatibility function that is equivalent to `toWeek(date,3)`.
-
+This function returns the week number for date or datetime. The two-argument form of toWeek() enables you to specify whether the week starts on Sunday or Monday and whether the return value should be in the range from 0 to 53 or from 1 to 53. If the mode argument is omitted, the default mode is 0.
+`toISOWeek()`is a compatibility function that is equivalent to `toWeek(date,3)`.
 The following table describes how the mode argument works.
 
 | Mode | First day of week | Range | Week 1 is the first week …    |
@@ -505,15 +464,13 @@ For mode values with a meaning of “with 4 or more days this year,” weeks are
 
 For mode values with a meaning of “contains January 1”, the week contains January 1 is week 1. It does not matter how many days in the new year the week contained, even if it contained only one day.
 
-**Syntax**
-
 ``` sql
-toWeek(t[, mode[, time_zone]])
+toWeek(date, [, mode][, Timezone])
 ```
 
 **Arguments**
 
--   `t` – Date or DateTime.
+-   `date` – Date or DateTime.
 -   `mode` – Optional parameter, Range of values is \[0,9\], default is 0.
 -   `Timezone` – Optional parameter, it behaves like any other conversion function.
 
@@ -529,19 +486,13 @@ SELECT toDate('2016-12-27') AS date, toWeek(date) AS week0, toWeek(date,1) AS we
 └────────────┴───────┴───────┴───────┘
 ```
 
-## toYearWeek
+## toYearWeek(date\[,mode\]) {#toyearweekdatemode}
 
 Returns year and week for a date. The year in the result may be different from the year in the date argument for the first and the last week of the year.
 
-The mode argument works exactly like the mode argument to `toWeek()`. For the single-argument syntax, a mode value of 0 is used.
+The mode argument works exactly like the mode argument to toWeek(). For the single-argument syntax, a mode value of 0 is used.
 
-`toISOYear()` is a compatibility function that is equivalent to `intDiv(toYearWeek(date,3),100)`.
-
-**Syntax**
-
-``` sql
-toYearWeek(t[, mode[, timezone]])
-```
+`toISOYear()`is a compatibility function that is equivalent to `intDiv(toYearWeek(date,3),100)`.
 
 **Example**
 
@@ -555,160 +506,7 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 └────────────┴───────────┴───────────┴───────────┘
 ```
 
-## age
-
-Returns the `unit` component of the difference between `startdate` and `enddate`. The difference is calculated using a precision of 1 second.
-E.g. the difference between `2021-12-29` and `2022-01-01` is 3 days for `day` unit, 0 months for `month` unit, 0 years for `year` unit.
-
-For an alternative to `age`, see function `date\_diff`.
-
-**Syntax**
-
-``` sql
-age('unit', startdate, enddate, [timezone])
-```
-
-**Arguments**
-
--   `unit` — The type of interval for result. [String](../../sql-reference/data-types/string.md).
-    Possible values:
-
-    - `second` (possible abbreviations: `ss`, `s`)
-    - `minute` (possible abbreviations: `mi`, `n`)
-    - `hour` (possible abbreviations: `hh`, `h`)
-    - `day` (possible abbreviations: `dd`, `d`)
-    - `week` (possible abbreviations: `wk`, `ww`)
-    - `month` (possible abbreviations: `mm`, `m`)
-    - `quarter` (possible abbreviations: `qq`, `q`)
-    - `year` (possible abbreviations: `yyyy`, `yy`)
-
--   `startdate` — The first time value to subtract (the subtrahend). [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
-
--   `enddate` — The second time value to subtract from (the minuend). [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
-
--   `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) (optional). If specified, it is applied to both `startdate` and `enddate`. If not specified, timezones of `startdate` and `enddate` are used. If they are not the same, the result is unspecified. [String](../../sql-reference/data-types/string.md).
-
-**Returned value**
-
-Difference between `enddate` and `startdate` expressed in `unit`.
-
-Type: [Int](../../sql-reference/data-types/int-uint.md).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT age('hour', toDateTime('2018-01-01 22:30:00'), toDateTime('2018-01-02 23:00:00'));
-```
-
-Result:
-
-``` text
-┌─age('hour', toDateTime('2018-01-01 22:30:00'), toDateTime('2018-01-02 23:00:00'))─┐
-│                                                                                24 │
-└───────────────────────────────────────────────────────────────────────────────────┘
-```
-
-Query:
-
-``` sql
-SELECT
-    toDate('2022-01-01') AS e,
-    toDate('2021-12-29') AS s,
-    age('day', s, e) AS day_age,
-    age('month', s, e) AS month__age,
-    age('year', s, e) AS year_age;
-```
-
-Result:
-
-``` text
-┌──────────e─┬──────────s─┬─day_age─┬─month__age─┬─year_age─┐
-│ 2022-01-01 │ 2021-12-29 │       3 │          0 │        0 │
-└────────────┴────────────┴─────────┴────────────┴──────────┘
-```
-
-
-## date\_diff
-
-Returns the count of the specified `unit` boundaries crossed between the `startdate` and the `enddate`.
-The difference is calculated using relative units, e.g. the difference between `2021-12-29` and `2022-01-01` is 3 days for unit `day` (see [toRelativeDayNum](#torelativedaynum)), 1 month for unit `month` (see [toRelativeMonthNum](#torelativemonthnum)) and 1 year for unit `year` (see [toRelativeYearNum](#torelativeyearnum)).
-
-If unit `week` was specified, `date\_diff` assumes that weeks start on Monday. Note that this behavior is different from that of function `toWeek()` in which weeks start by default on Sunday.
-
-For an alternative to `date\_diff`, see function `age`.
-
-**Syntax**
-
-``` sql
-date_diff('unit', startdate, enddate, [timezone])
-```
-
-Aliases: `dateDiff`, `DATE_DIFF`.
-
-**Arguments**
-
--   `unit` — The type of interval for result. [String](../../sql-reference/data-types/string.md).
-    Possible values:
-
-    - `second` (possible abbreviations: `ss`, `s`)
-    - `minute` (possible abbreviations: `mi`, `n`)
-    - `hour` (possible abbreviations: `hh`, `h`)
-    - `day` (possible abbreviations: `dd`, `d`)
-    - `week` (possible abbreviations: `wk`, `ww`)
-    - `month` (possible abbreviations: `mm`, `m`)
-    - `quarter` (possible abbreviations: `qq`, `q`)
-    - `year` (possible abbreviations: `yyyy`, `yy`)
-
--   `startdate` — The first time value to subtract (the subtrahend). [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
-
--   `enddate` — The second time value to subtract from (the minuend). [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
-
--   `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) (optional). If specified, it is applied to both `startdate` and `enddate`. If not specified, timezones of `startdate` and `enddate` are used. If they are not the same, the result is unspecified. [String](../../sql-reference/data-types/string.md).
-
-**Returned value**
-
-Difference between `enddate` and `startdate` expressed in `unit`.
-
-Type: [Int](../../sql-reference/data-types/int-uint.md).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00'));
-```
-
-Result:
-
-``` text
-┌─dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00'))─┐
-│                                                                                     25 │
-└────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-Query:
-
-``` sql
-SELECT
-    toDate('2022-01-01') AS e,
-    toDate('2021-12-29') AS s,
-    dateDiff('day', s, e) AS day_diff,
-    dateDiff('month', s, e) AS month__diff,
-    dateDiff('year', s, e) AS year_diff;
-```
-
-Result:
-
-``` text
-┌──────────e─┬──────────s─┬─day_diff─┬─month__diff─┬─year_diff─┐
-│ 2022-01-01 │ 2021-12-29 │        3 │           1 │         1 │
-└────────────┴────────────┴──────────┴─────────────┴───────────┘
-```
-
-## date\_trunc
+## date\_trunc {#date_trunc}
 
 Truncates date and time data to the specified part of date.
 
@@ -741,7 +539,7 @@ Alias: `dateTrunc`.
 
 -   Value, truncated to the specified part of date.
 
-Type: [DateTime](../../sql-reference/data-types/datetime.md).
+Type: [Datetime](../../sql-reference/data-types/datetime.md).
 
 **Example**
 
@@ -777,7 +575,7 @@ Result:
 
 -   [toStartOfInterval](#tostartofintervaltime-or-data-interval-x-unit-time-zone)
 
-## date\_add
+## date\_add {#date_add}
 
 Adds the time interval or date interval to the provided date or date with time.
 
@@ -828,7 +626,61 @@ Result:
 └───────────────────────────────────────────────┘
 ```
 
-## date\_sub
+## date\_diff {#date_diff}
+
+Returns the difference between two dates or dates with time values.
+
+**Syntax**
+
+``` sql
+date_diff('unit', startdate, enddate, [timezone])
+```
+
+Aliases: `dateDiff`, `DATE_DIFF`.
+
+**Arguments**
+
+-   `unit` — The type of interval for result. [String](../../sql-reference/data-types/string.md).
+    Possible values:
+
+    - `second`
+    - `minute`
+    - `hour`
+    - `day`
+    - `week`
+    - `month`
+    - `quarter`
+    - `year`
+
+-   `startdate` — The first time value to subtract (the subtrahend). [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+
+-   `enddate` — The second time value to subtract from (the minuend). [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+
+-   `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) (optional). If specified, it is applied to both `startdate` and `enddate`. If not specified, timezones of `startdate` and `enddate` are used. If they are not the same, the result is unspecified. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+Difference between `enddate` and `startdate` expressed in `unit`.
+
+Type: [Int](../../sql-reference/data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00'));
+```
+
+Result:
+
+``` text
+┌─dateDiff('hour', toDateTime('2018-01-01 22:00:00'), toDateTime('2018-01-02 23:00:00'))─┐
+│                                                                                     25 │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+## date\_sub {#date_sub}
 
 Subtracts the time interval or date interval from the provided date or date with time.
 
@@ -842,8 +694,7 @@ Aliases: `dateSub`, `DATE_SUB`.
 
 **Arguments**
 
--   `unit` — The type of interval to subtract. Note: The unit should be unquoted.
-
+-   `unit` — The type of interval to subtract. [String](../../sql-reference/data-types/string.md).
     Possible values:
 
     - `second`
@@ -880,7 +731,7 @@ Result:
 └────────────────────────────────────────────────┘
 ```
 
-## timestamp\_add
+## timestamp\_add {#timestamp_add}
 
 Adds the specified time value with the provided date or date time value.
 
@@ -930,7 +781,7 @@ Result:
 └────────────────────────────────────────────────┘
 ```
 
-## timestamp\_sub
+## timestamp\_sub {#timestamp_sub}
 
 Subtracts the time interval from the provided date or date with time.
 
@@ -981,9 +832,9 @@ Result:
 └──────────────────────────────────────────────────────────────┘
 ```
 
-## now
+## now {#now}
 
-Returns the current date and time at the moment of query analysis. The function is a constant expression.
+Returns the current date and time.
 
 **Syntax**
 
@@ -999,7 +850,7 @@ now([timezone])
 
 -   Current date and time.
 
-Type: [DateTime](../../sql-reference/data-types/datetime.md).
+Type: [Datetime](../../sql-reference/data-types/datetime.md).
 
 **Example**
 
@@ -1031,112 +882,33 @@ Result:
 └──────────────────────┘
 ```
 
-## now64
+## today {#today}
 
-Returns the current date and time with sub-second precision at the moment of query analysis. The function is a constant expression.
-
-**Syntax**
-
-``` sql
-now64([scale], [timezone])
-```
-
-**Arguments**
-
--   `scale` - Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: [ 0 : 9 ]. Typically are used - 3 (default) (milliseconds), 6 (microseconds), 9 (nanoseconds).
--   `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). [String](../../sql-reference/data-types/string.md).
-
-**Returned value**
-
--   Current date and time with sub-second precision.
-
-Type: [DateTime64](../../sql-reference/data-types/datetime64.md).
-
-**Example**
-
-``` sql
-SELECT now64(), now64(9, 'Asia/Istanbul');
-```
-
-Result:
-
-``` text
-┌─────────────────now64()─┬─────now64(9, 'Asia/Istanbul')─┐
-│ 2022-08-21 19:34:26.196 │ 2022-08-21 22:34:26.196542766 │
-└─────────────────────────┴───────────────────────────────┘
-```
-
-## nowInBlock
-
-Returns the current date and time at the moment of processing of each block of data. In contrast to the function [now](#now), it is not a constant expression, and the returned value will be different in different blocks for long-running queries.
-
-It makes sense to use this function to generate the current time in long-running INSERT SELECT queries.
-
-**Syntax**
-
-``` sql
-nowInBlock([timezone])
-```
-
-**Arguments**
-
--   `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). [String](../../sql-reference/data-types/string.md).
-
-**Returned value**
-
--   Current date and time at the moment of processing of each block of data.
-
-Type: [DateTime](../../sql-reference/data-types/datetime.md).
-
-**Example**
-
-``` sql
-SELECT
-    now(),
-    nowInBlock(),
-    sleep(1)
-FROM numbers(3)
-SETTINGS max_block_size = 1
-FORMAT PrettyCompactMonoBlock
-```
-
-Result:
-
-``` text
-┌───────────────now()─┬────────nowInBlock()─┬─sleep(1)─┐
-│ 2022-08-21 19:41:19 │ 2022-08-21 19:41:19 │        0 │
-│ 2022-08-21 19:41:19 │ 2022-08-21 19:41:20 │        0 │
-│ 2022-08-21 19:41:19 │ 2022-08-21 19:41:21 │        0 │
-└─────────────────────┴─────────────────────┴──────────┘
-```
-
-## today
-
-Accepts zero arguments and returns the current date at one of the moments of query analysis.
+Accepts zero arguments and returns the current date at one of the moments of request execution.
 The same as ‘toDate(now())’.
 
-## yesterday
+## yesterday {#yesterday}
 
-Accepts zero arguments and returns yesterday’s date at one of the moments of query analysis.
+Accepts zero arguments and returns yesterday’s date at one of the moments of request execution.
 The same as ‘today() - 1’.
 
-## timeSlot
+## timeSlot {#timeslot}
 
 Rounds the time to the half hour.
 
-## toYYYYMM
+## toYYYYMM {#toyyyymm}
 
 Converts a date or date with time to a UInt32 number containing the year and month number (YYYY \* 100 + MM).
 
-## toYYYYMMDD
+## toYYYYMMDD {#toyyyymmdd}
 
 Converts a date or date with time to a UInt32 number containing the year and month number (YYYY \* 10000 + MM \* 100 + DD).
 
-## toYYYYMMDDhhmmss
+## toYYYYMMDDhhmmss {#toyyyymmddhhmmss}
 
 Converts a date or date with time to a UInt64 number containing the year and month number (YYYY \* 10000000000 + MM \* 100000000 + DD \* 1000000 + hh \* 10000 + mm \* 100 + ss).
 
-## addYears, addMonths, addWeeks, addDays, addHours, addMinutes, addSeconds, addQuarters
+## addYears, addMonths, addWeeks, addDays, addHours, addMinutes, addSeconds, addQuarters {#addyears-addmonths-addweeks-adddays-addhours-addminutes-addseconds-addquarters}
 
 Function adds a Date/DateTime interval to a Date/DateTime and then return the Date/DateTime. For example:
 
@@ -1155,7 +927,7 @@ SELECT
 └─────────────────────┴──────────────────────────┘
 ```
 
-## subtractYears, subtractMonths, subtractWeeks, subtractDays, subtractHours, subtractMinutes, subtractSeconds, subtractQuarters
+## subtractYears, subtractMonths, subtractWeeks, subtractDays, subtractHours, subtractMinutes, subtractSeconds, subtractQuarters {#subtractyears-subtractmonths-subtractweeks-subtractdays-subtracthours-subtractminutes-subtractseconds-subtractquarters}
 
 Function subtract a Date/DateTime interval to a Date/DateTime and then return the Date/DateTime. For example:
 
@@ -1174,43 +946,20 @@ SELECT
 └──────────────────────────┴───────────────────────────────┘
 ```
 
-## timeSlots(StartTime, Duration,\[, Size\])
+## timeSlots(StartTime, Duration,\[, Size\]) {#timeslotsstarttime-duration-size}
 
-For a time interval starting at ‘StartTime’ and continuing for ‘Duration’ seconds, it returns an array of moments in time, consisting of points from this interval rounded down to the ‘Size’ in seconds. ‘Size’ is an optional parameter set to 1800 (30 minutes) by default.
-This is necessary, for example, when searching for pageviews in the corresponding session.
-Accepts DateTime and DateTime64 as ’StartTime’ argument. For DateTime, ’Duration’ and ’Size’ arguments must be `UInt32`. For ’DateTime64’ they must be `Decimal64`.
-Returns an array of DateTime/DateTime64 (return type matches the type of ’StartTime’). For DateTime64, the return value's scale can differ from the scale of ’StartTime’ --- the highest scale among all given arguments is taken.
+For a time interval starting at ‘StartTime’ and continuing for ‘Duration’ seconds, it returns an array of moments in time, consisting of points from this interval rounded down to the ‘Size’ in seconds. ‘Size’ is an optional parameter: a constant UInt32, set to 1800 by default.
+For example, `timeSlots(toDateTime('2012-01-01 12:20:00'), 600) = [toDateTime('2012-01-01 12:00:00'), toDateTime('2012-01-01 12:30:00')]`.
+This is necessary for searching for pageviews in the corresponding session.
 
-Example:
-```sql
-SELECT timeSlots(toDateTime('2012-01-01 12:20:00'), toUInt32(600));
-SELECT timeSlots(toDateTime('1980-12-12 21:01:02', 'UTC'), toUInt32(600), 299);
-SELECT timeSlots(toDateTime64('1980-12-12 21:01:02.1234', 4, 'UTC'), toDecimal64(600.1, 1), toDecimal64(299, 0));
-```
-``` text
-┌─timeSlots(toDateTime('2012-01-01 12:20:00'), toUInt32(600))─┐
-│ ['2012-01-01 12:00:00','2012-01-01 12:30:00']               │
-└─────────────────────────────────────────────────────────────┘
-┌─timeSlots(toDateTime('1980-12-12 21:01:02', 'UTC'), toUInt32(600), 299)─┐
-│ ['1980-12-12 20:56:13','1980-12-12 21:01:12','1980-12-12 21:06:11']     │
-└─────────────────────────────────────────────────────────────────────────┘
-┌─timeSlots(toDateTime64('1980-12-12 21:01:02.1234', 4, 'UTC'), toDecimal64(600.1, 1), toDecimal64(299, 0))─┐
-│ ['1980-12-12 20:56:13.0000','1980-12-12 21:01:12.0000','1980-12-12 21:06:11.0000']                        │
-└───────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-## formatDateTime
+## formatDateTime {#formatdatetime}
 
 Formats a Time according to the given Format string. Format is a constant expression, so you cannot have multiple formats for a single result column.
-
-formatDateTime uses MySQL datetime format style, refer to https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format.
-
-Alias: `DATE_FORMAT`.
 
 **Syntax**
 
 ``` sql
-formatDateTime(Time, Format[, Timezone])
+formatDateTime(Time, Format\[, Timezone\])
 ```
 
 **Returned value(s)**
@@ -1222,42 +971,30 @@ Using replacement fields, you can define a pattern for the resulting string. “
 
 | Placeholder | Description                                             | Example    |
 |----------|---------------------------------------------------------|------------|
-| %a       | abbreviated weekday name (Mon-Sun)                      | Mon        |
-| %b       | abbreviated month name (Jan-Dec)                        | Jan        |
-| %c       | month as a decimal number (01-12)                       | 01         |
 | %C       | year divided by 100 and truncated to integer (00-99)    | 20         |
 | %d       | day of the month, zero-padded (01-31)                   | 02         |
 | %D       | Short MM/DD/YY date, equivalent to %m/%d/%y             | 01/02/18   |
-| %e       | day of the month, space-padded (1-31)                   | &nbsp; 2   |
-| %f       | fractional second from the fractional part of DateTime64 | 1234560   |
+| %e       | day of the month, space-padded ( 1-31)                  | &nbsp; 2   |
 | %F       | short YYYY-MM-DD date, equivalent to %Y-%m-%d           | 2018-01-02 |
 | %G       | four-digit year format for ISO week number, calculated from the week-based year [defined by the ISO 8601](https://en.wikipedia.org/wiki/ISO_8601#Week_dates) standard, normally useful only with %V  | 2018         |
 | %g       | two-digit year format, aligned to ISO 8601, abbreviated from four-digit notation                                | 18       |
-| %h       | hour in 12h format (01-12)                              | 09         |
 | %H       | hour in 24h format (00-23)                              | 22         |
-| %i       | minute (00-59)                                          | 33         |
 | %I       | hour in 12h format (01-12)                              | 10         |
 | %j       | day of the year (001-366)                               | 002        |
-| %k       | hour in 24h format (00-23)                              | 22         |
-| %l       | hour in 12h format (01-12)                              | 09         |
 | %m       | month as a decimal number (01-12)                       | 01         |
 | %M       | minute (00-59)                                          | 33         |
 | %n       | new-line character (‘’)                                 |            |
 | %p       | AM or PM designation                                    | PM         |
 | %Q       | Quarter (1-4)                                           | 1          |
-| %r       | 12-hour HH:MM AM/PM time, equivalent to %H:%M %p        | 10:30 PM   |
 | %R       | 24-hour HH:MM time, equivalent to %H:%M                 | 22:33      |
-| %s       | second (00-59)                                          | 44         |
 | %S       | second (00-59)                                          | 44         |
 | %t       | horizontal-tab character (’)                            |            |
 | %T       | ISO 8601 time format (HH:MM:SS), equivalent to %H:%M:%S | 22:33:44   |
 | %u       | ISO 8601 weekday as number with Monday as 1 (1-7)       | 2          |
 | %V       | ISO 8601 week number (01-53)                            | 01         |
 | %w       | weekday as a decimal number with Sunday as 0 (0-6)      | 2          |
-| %W       | full weekday name (Monday-Sunday)                       | Monday     |
 | %y       | Year, last two digits (00-99)                           | 18         |
 | %Y       | Year                                                    | 2018       |
-| %z       | Time offset from UTC as +HHMM or -HHMM                  | -0500      |
 | %%       | a % sign                                                | %          |
 
 **Example**
@@ -1276,79 +1013,7 @@ Result:
 └────────────────────────────────────────────┘
 ```
 
-Query:
-
-``` sql
-SELECT formatDateTime(toDateTime64('2010-01-04 12:34:56.123456', 7), '%f')
-```
-
-Result:
-
-```
-┌─formatDateTime(toDateTime64('2010-01-04 12:34:56.123456', 7), '%f')─┐
-│ 1234560                                                             │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-**See Also**
-
--   [formatDateTimeInJodaSyntax](##formatDateTimeInJodaSyntax)
-
-
-## formatDateTimeInJodaSyntax
-
-Similar to formatDateTime, except that it formats datetime in Joda style instead of MySQL style. Refer to https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html.
-
-
-**Replacement fields**
-
-Using replacement fields, you can define a pattern for the resulting string. 
-
-
-| Placeholder | Description                              | Presentation  | Examples                           |
-| ----------- | ---------------------------------------- | ------------- | ---------------------------------- |
-| G           | era                                      | text          | AD                                 |
-| C           | century of era (>=0)                     | number        | 20                                 |
-| Y           | year of era (>=0)                        | year          | 1996                               |
-| x           | weekyear (not supported yet)             | year          | 1996                               |
-| w           | week of weekyear (not supported yet)     | number        | 27                                 |
-| e           | day of week                              | number        | 2                                  |
-| E           | day of week                              | text          | Tuesday; Tue                       |
-| y           | year                                     | year          | 1996                               |
-| D           | day of year                              | number        | 189                                |
-| M           | month of year                            | month         | July; Jul; 07                      |
-| d           | day of month                             | number        | 10                                 |
-| a           | halfday of day                           | text          | PM                                 |
-| K           | hour of halfday (0~11)                   | number        | 0                                  |
-| h           | clockhour of halfday (1~12)              | number        | 12                                 |
-| H           | hour of day (0~23)                       | number        | 0                                  |
-| k           | clockhour of day (1~24)                  | number        | 24                                 |
-| m           | minute of hour                           | number        | 30                                 |
-| s           | second of minute                         | number        | 55                                 |
-| S           | fraction of second (not supported yet)   | number        | 978                                |
-| z           | time zone (short name not supported yet) | text          | Pacific Standard Time; PST         |
-| Z           | time zone offset/id (not supported yet)  | zone          | -0800; -08:00; America/Los_Angeles |
-| '           | escape for text                          | delimiter     |                                    |
-| ''          | single quote                             | literal       | '                                  |
-
-**Example**
-
-Query:
-
-``` sql
-SELECT formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd HH:mm:ss')
-```
-
-Result:
-
-```
-┌─formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd HH:mm:ss')─┐
-│ 2010-01-04 12:34:56                                                                     │
-└─────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-
-## dateName
+## dateName {#dataname}
 
 Returns specified part of date.
 
@@ -1361,7 +1026,7 @@ dateName(date_part, date)
 **Arguments**
 
 -   `date_part` — Date part. Possible values: 'year', 'quarter', 'month', 'week', 'dayofyear', 'day', 'weekday', 'hour', 'minute', 'second'. [String](../../sql-reference/data-types/string.md).
--   `date` — Date. [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
+-   `date` — Date. [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md).
 -   `timezone` — Timezone. Optional. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
@@ -1376,10 +1041,7 @@ Query:
 
 ```sql
 WITH toDateTime('2021-04-14 11:22:33') AS date_value
-SELECT
-    dateName('year', date_value),
-    dateName('month', date_value),
-    dateName('day', date_value);
+SELECT dateName('year', date_value), dateName('month', date_value), dateName('day', date_value);
 ```
 
 Result:
@@ -1387,53 +1049,12 @@ Result:
 ```text
 ┌─dateName('year', date_value)─┬─dateName('month', date_value)─┬─dateName('day', date_value)─┐
 │ 2021                         │ April                         │ 14                          │
-└──────────────────────────────┴───────────────────────────────┴─────────────────────────────┘
+└──────────────────────────────┴───────────────────────────────┴─────────────────────────────
 ```
 
-## monthName
-
-Returns name of the month.
-
-**Syntax**
-
-``` sql
-monthName(date)
-```
-
-**Arguments**
-
--   `date` — Date or date with time. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
-
-**Returned value**
-
--   The name of the month.
-
-Type: [String](../../sql-reference/data-types/string.md#string)
-
-**Example**
-
-Query:
-
-```sql
-WITH toDateTime('2021-04-14 11:22:33') AS date_value
-SELECT monthName(date_value);
-```
-
-Result:
-
-```text
-┌─monthName(date_value)─┐
-│ April                 │
-└───────────────────────┘
-```
-
-## FROM\_UNIXTIME
+## FROM\_UNIXTIME {#fromunixfime}
 
 Function converts Unix timestamp to a calendar date and a time of a day. When there is only a single argument of [Integer](../../sql-reference/data-types/int-uint.md) type, it acts in the same way as [toDateTime](../../sql-reference/functions/type-conversion-functions.md#todatetime) and return [DateTime](../../sql-reference/data-types/datetime.md) type.
-
-FROM_UNIXTIME uses MySQL datetime format style, refer to https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format.
-
-Alias: `fromUnixTimestamp`.
 
 **Example:**
 
@@ -1451,7 +1072,7 @@ Result:
 └──────────────────────────┘
 ```
 
-When there are two or three arguments, the first an [Integer](../../sql-reference/data-types/int-uint.md), [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md), the second a constant format string and the third an optional constant time zone string — it acts in the same way as [formatDateTime](#formatdatetime) and return [String](../../sql-reference/data-types/string.md#string) type.
+When there are two arguments: first is an [Integer](../../sql-reference/data-types/int-uint.md) or [DateTime](../../sql-reference/data-types/datetime.md), second is a constant format string — it acts in the same way as [formatDateTime](#formatdatetime) and return [String](../../sql-reference/data-types/string.md#string) type.
 
 For example:
 
@@ -1465,29 +1086,7 @@ SELECT FROM_UNIXTIME(1234334543, '%Y-%m-%d %R:%S') AS DateTime;
 └─────────────────────┘
 ```
 
-**See Also**
-
--   [fromUnixTimestampInJodaSyntax](##fromUnixTimestampInJodaSyntax)
-
-
-## fromUnixTimestampInJodaSyntax
-Similar to FROM_UNIXTIME, except that it formats time in Joda style instead of MySQL style. Refer to https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html.
-
-**Example:**
-Query:
-``` sql
-SELECT fromUnixTimestampInJodaSyntax(1669804872, 'yyyy-MM-dd HH:mm:ss', 'UTC');
-```
-
-Result:
-```
-┌─fromUnixTimestampInJodaSyntax(1669804872, 'yyyy-MM-dd HH:mm:ss', 'UTC')─┐
-│ 2022-11-30 10:41:12                                                        │
-└────────────────────────────────────────────────────────────────────────────┘
-```
-
-
-## toModifiedJulianDay
+## toModifiedJulianDay {#tomodifiedjulianday}
 
 Converts a [Proleptic Gregorian calendar](https://en.wikipedia.org/wiki/Proleptic_Gregorian_calendar) date in text form `YYYY-MM-DD` to a [Modified Julian Day](https://en.wikipedia.org/wiki/Julian_day#Variants) number in Int32. This function supports date from `0000-01-01` to `9999-12-31`. It raises an exception if the argument cannot be parsed as a date, or the date is invalid.
 
@@ -1523,7 +1122,7 @@ Result:
 └───────────────────────────────────┘
 ```
 
-## toModifiedJulianDayOrNull
+## toModifiedJulianDayOrNull {#tomodifiedjuliandayornull}
 
 Similar to [toModifiedJulianDay()](#tomodifiedjulianday), but instead of raising exceptions it returns `NULL`.
 
@@ -1559,7 +1158,7 @@ Result:
 └─────────────────────────────────────────┘
 ```
 
-## fromModifiedJulianDay
+## fromModifiedJulianDay {#frommodifiedjulianday}
 
 Converts a [Modified Julian Day](https://en.wikipedia.org/wiki/Julian_day#Variants) number to a [Proleptic Gregorian calendar](https://en.wikipedia.org/wiki/Proleptic_Gregorian_calendar) date in text form `YYYY-MM-DD`. This function supports day number from `-678941` to `2973119` (which represent 0000-01-01 and 9999-12-31 respectively). It raises an exception if the day number is outside of the supported range.
 
@@ -1595,7 +1194,7 @@ Result:
 └──────────────────────────────┘
 ```
 
-## fromModifiedJulianDayOrNull
+## fromModifiedJulianDayOrNull {#frommodifiedjuliandayornull}
 
 Similar to [fromModifiedJulianDayOrNull()](#frommodifiedjuliandayornull), but instead of raising exceptions it returns `NULL`.
 
@@ -1630,8 +1229,3 @@ Result:
 │ 2020-01-01                         │
 └────────────────────────────────────┘
 ```
-
-## Related content
-
-- Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
-

@@ -11,9 +11,9 @@ using FunctionLog10 = FunctionMathUnary<UnaryFunctionVectorized<Log10Name, log10
 
 }
 
-REGISTER_FUNCTION(Log10)
+void registerFunctionLog10(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionLog10>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionLog10>(FunctionFactory::CaseInsensitive);
 }
 
 }

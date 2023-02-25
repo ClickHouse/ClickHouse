@@ -8,8 +8,6 @@
 namespace DB
 {
 
-struct Array;
-
 Array getAggregateFunctionParametersArray(
     const ASTPtr & expression_list,
     const std::string & error_context,

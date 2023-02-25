@@ -49,13 +49,13 @@ public:
     void finishDataAlter(int alter_version, std::lock_guard<std::mutex> & /*state_lock*/);
 
     /// Check that we can execute this data alter. If it's metadata stage finished.
-    bool canExecuteDataAlter(int alter_version, std::unique_lock<std::mutex> & /*state_lock*/) const;
+    bool canExecuteDataAlter(int alter_version, std::lock_guard<std::mutex> & /*state_lock*/) const;
 
     /// Check that we can execute metadata alter with version.
-    bool canExecuteMetaAlter(int alter_version, std::unique_lock<std::mutex> & /*state_lock*/) const;
+    bool canExecuteMetaAlter(int alter_version, std::lock_guard<std::mutex> & /*state_lock*/) const;
 
     /// Just returns smallest alter version in sequence (first entry)
-    int getHeadAlterVersion(std::unique_lock<std::mutex> & /*state_lock*/) const;
+    int getHeadAlterVersion(std::lock_guard<std::mutex> & /*state_lock*/) const;
 };
 
 }

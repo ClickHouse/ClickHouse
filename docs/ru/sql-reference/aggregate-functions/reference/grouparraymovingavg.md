@@ -1,6 +1,5 @@
 ---
-slug: /ru/sql-reference/aggregate-functions/reference/grouparraymovingavg
-sidebar_position: 114
+toc_priority: 114
 ---
 
 # groupArrayMovingAvg {#agg_function-grouparraymovingavg}
@@ -77,3 +76,4 @@ FROM t
 │ [0,1,3,5] │ [0.55,1.6500001,3.3000002,6.085] │ [0.55,1.65,3.30,6.08] │
 └───────────┴──────────────────────────────────┴───────────────────────┘
 ```
+

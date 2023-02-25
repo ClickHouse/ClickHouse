@@ -7,10 +7,6 @@ import sys
 
 from github import Github
 
-from build_download_helper import get_build_name_for_check, read_build_urls
-from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
-from commit_status_helper import post_commit_status
-from docker_pull_helper import get_image_with_version
 from env_helper import (
     GITHUB_REPOSITORY,
     GITHUB_RUN_URL,
@@ -18,23 +14,22 @@ from env_helper import (
     REPO_COPY,
     TEMP_PATH,
 )
+from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
-from report import TestResult
-from rerun_helper import RerunHelper
-from s3_helper import S3Helper
+from build_download_helper import get_build_name_for_check, get_build_urls
+from docker_pull_helper import get_image_with_version
+from commit_status_helper import post_commit_status
+from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from stopwatch import Stopwatch
+from rerun_helper import RerunHelper
 
 IMAGE_NAME = "clickhouse/fuzzer"
 
 
 def get_run_command(pr_number, sha, download_url, workspace_path, image):
     return (
-        f"docker run "
-        # For sysctl
-        "--privileged "
-        "--network=host "
-        f"--volume={workspace_path}:/workspace "
+        f"docker run --network=host --volume={workspace_path}:/workspace "
         "--cap-add syslog --cap-add sys_admin --cap-add=SYS_PTRACE "
         f'-e PR_TO_TEST={pr_number} -e SHA_TO_TEST={sha} -e BINARY_URL_TO_DOWNLOAD="{download_url}" '
         f"{image}"
@@ -63,18 +58,18 @@ if __name__ == "__main__":
 
     pr_info = PRInfo()
 
-    gh = Github(get_best_robot_token(), per_page=100)
+    gh = Github(get_best_robot_token())
 
     rerun_helper = RerunHelper(gh, pr_info, check_name)
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
 
-    docker_image = get_image_with_version(reports_path, IMAGE_NAME)
+    docker_image = get_image_with_version(temp_path, IMAGE_NAME)
 
     build_name = get_build_name_for_check(check_name)
     print(build_name)
-    urls = read_build_urls(build_name, reports_path)
+    urls = get_build_urls(build_name, reports_path)
     if not urls:
         raise Exception("No build URLs found")
 
@@ -96,7 +91,7 @@ if __name__ == "__main__":
     )
     logging.info("Going to run %s", run_command)
 
-    run_log_path = os.path.join(temp_path, "run.log")
+    run_log_path = os.path.join(temp_path, "runlog.log")
     with open(run_log_path, "w", encoding="utf-8") as log:
         with subprocess.Popen(
             run_command, shell=True, stderr=log, stdout=log
@@ -114,24 +109,31 @@ if __name__ == "__main__":
     )
     s3_prefix = f"{pr_info.number}/{pr_info.sha}/fuzzer_{check_name_lower}/"
     paths = {
-        "run.log": run_log_path,
+        "runlog.log": run_log_path,
         "main.log": os.path.join(workspace_path, "main.log"),
-        "server.log.zst": os.path.join(workspace_path, "server.log.zst"),
+        "server.log": os.path.join(workspace_path, "server.log"),
         "fuzzer.log": os.path.join(workspace_path, "fuzzer.log"),
         "report.html": os.path.join(workspace_path, "report.html"),
-        "core.zst": os.path.join(workspace_path, "core.zst"),
-        "dmesg.log": os.path.join(workspace_path, "dmesg.log"),
+        "core.gz": os.path.join(workspace_path, "core.gz"),
     }
 
-    s3_helper = S3Helper()
+    s3_helper = S3Helper("https://s3.amazonaws.com")
     for f in paths:
         try:
-            paths[f] = s3_helper.upload_test_report_to_s3(paths[f], s3_prefix + f)
+            paths[f] = s3_helper.upload_test_report_to_s3(paths[f], s3_prefix + "/" + f)
         except Exception as ex:
             logging.info("Exception uploading file %s text %s", f, ex)
             paths[f] = ""
 
     report_url = GITHUB_RUN_URL
+    if paths["runlog.log"]:
+        report_url = paths["runlog.log"]
+    if paths["main.log"]:
+        report_url = paths["main.log"]
+    if paths["server.log"]:
+        report_url = paths["server.log"]
+    if paths["fuzzer.log"]:
+        report_url = paths["fuzzer.log"]
     if paths["report.html"]:
         report_url = paths["report.html"]
 
@@ -150,23 +152,22 @@ if __name__ == "__main__":
         status = "failure"
         description = "Task failed: $?=" + str(retcode)
 
-    test_result = TestResult(description, "OK")
     if "fail" in status:
-        test_result.status = "FAIL"
+        test_result = [(description, "FAIL")]
+    else:
+        test_result = [(description, "OK")]
 
     ch_helper = ClickHouseHelper()
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,
-        [test_result],
+        test_result,
         status,
         stopwatch.duration_seconds,
         stopwatch.start_time_str,
         report_url,
         check_name,
     )
-
-    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
 
     logging.info("Result: '%s', '%s', '%s'", status, description, report_url)
     print(f"::notice ::Report url: {report_url}")

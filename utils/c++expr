@@ -98,7 +98,7 @@ find_clickhouse_root () {
             echo "error: $DIR has no CMakeLists.txt"
             return 1
         fi
-        if grep "project(ClickHouse" "$DIR/CMakeLists.txt" >/dev/null 2>&1; then
+        if grep "project(ClickHouse)" "$DIR/CMakeLists.txt" >/dev/null 2>&1; then
             echo $DIR
             return 0
         fi

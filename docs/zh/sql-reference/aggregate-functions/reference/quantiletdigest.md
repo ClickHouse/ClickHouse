@@ -1,6 +1,5 @@
 ---
-slug: /zh/sql-reference/aggregate-functions/reference/quantiletdigest
-sidebar_position: 207
+toc_priority: 207
 ---
 
 # quantileTDigest {#quantiletdigest}

@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
+#include <base/shared_ptr_helper.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
 
@@ -45,7 +46,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t /*max_block_size*/,
-        size_t /*num_streams*/) override
+        unsigned /*num_streams*/) override
     {
         storage_snapshot->check(column_names);
 

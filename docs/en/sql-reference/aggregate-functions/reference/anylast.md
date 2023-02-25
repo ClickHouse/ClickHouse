@@ -1,9 +1,8 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/anylast
-sidebar_position: 104
+toc_priority: 104
 ---
 
-# anyLast
+## anyLast {#anylastx}
 
 Selects the last value encountered.
 The result is just as indeterminate as for the [any](../../../sql-reference/aggregate-functions/reference/any.md) function.

@@ -1,11 +1,10 @@
 ---
-slug: /en/operations/utilities/
-sidebar_position: 56
-sidebar_label: Overview
-pagination_next: 'en/operations/utilities/clickhouse-copier'
+toc_folder_title: Utilities
+toc_priority: 56
+toc_title: Overview
 ---
 
-# ClickHouse Utilities 
+# ClickHouse Utility {#clickhouse-utility}
 
 -   [clickhouse-local](../../operations/utilities/clickhouse-local.md) — Allows running SQL queries on data without starting the ClickHouse server, similar to how `awk` does this.
 -   [clickhouse-copier](../../operations/utilities/clickhouse-copier.md) — Copies (and reshards) data from one cluster to another cluster.
@@ -14,3 +13,4 @@ pagination_next: 'en/operations/utilities/clickhouse-copier'
 -   [ClickHouse obfuscator](../../operations/utilities/clickhouse-obfuscator.md) — Obfuscates data.
 -   [ClickHouse compressor](../../operations/utilities/clickhouse-compressor.md) — Compresses and decompresses data.
 -   [clickhouse-odbc-bridge](../../operations/utilities/odbc-bridge.md) — A proxy server for ODBC driver.
+

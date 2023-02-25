@@ -3,7 +3,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
-#include <Common/ProfileEventsScope.h>
 
 namespace DB
 {
@@ -28,9 +27,6 @@ void MergePlainMergeTreeTask::onCompleted()
 
 bool MergePlainMergeTreeTask::executeStep()
 {
-    /// Metrics will be saved in the thread_group.
-    ProfileEventsScope profile_events_scope(&profile_counters);
-
     /// Make out memory tracker a parent of current thread memory tracker
     MemoryTrackerThreadSwitcherPtr switcher;
     if (merge_list_entry)
@@ -56,7 +52,7 @@ bool MergePlainMergeTreeTask::executeStep()
             }
             catch (...)
             {
-                write_part_log(ExecutionStatus::fromCurrentException("", true));
+                write_part_log(ExecutionStatus::fromCurrentException());
                 throw;
             }
         }
@@ -89,7 +85,6 @@ void MergePlainMergeTreeTask::prepare()
 
     write_part_log = [this] (const ExecutionStatus & execution_status)
     {
-        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
         merge_task.reset();
         storage.writePartLog(
             PartLogElement::MERGE_PARTS,
@@ -98,8 +93,7 @@ void MergePlainMergeTreeTask::prepare()
             future_part->name,
             new_part,
             future_part->parts,
-            merge_list_entry.get(),
-            std::move(profile_counters_snapshot));
+            merge_list_entry.get());
     };
 
     merge_task = storage.merger_mutator.mergePartsToTemporaryPart(
@@ -113,22 +107,15 @@ void MergePlainMergeTreeTask::prepare()
             merge_mutate_entry->tagger->reserved_space,
             deduplicate,
             deduplicate_by_columns,
-            cleanup,
-            storage.merging_params,
-            txn);
+            storage.merging_params);
 }
 
 
 void MergePlainMergeTreeTask::finish()
 {
     new_part = merge_task->getFuture().get();
-
-    MergeTreeData::Transaction transaction(storage, txn.get());
-    storage.merger_mutator.renameMergedTemporaryPart(new_part, future_part->parts, txn, transaction);
-    transaction.commit();
-
+    storage.merger_mutator.renameMergedTemporaryPart(new_part, future_part->parts, nullptr);
     write_part_log({});
-    storage.incrementMergedPartsProfileEvent(new_part->getType());
 }
 
 }

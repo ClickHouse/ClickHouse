@@ -133,7 +133,7 @@ public:
     /// Converts != -> NOT =; <,>= -> (NOT) <; >,<= -> (NOT) <= for simpler matching
     CNFQuery & pullNotOutFunctions();
     /// Revert pullNotOutFunctions actions
-    CNFQuery & pushNotInFunctions();
+    CNFQuery & pushNotInFuntions();
 
     /// (a OR b OR ...) AND (NOT a OR b OR ...) -> (b OR ...)
     CNFQuery & reduce();

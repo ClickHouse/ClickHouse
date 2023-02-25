@@ -1,10 +1,9 @@
 ---
-slug: /en/engines/table-engines/integrations/kafka
-sidebar_position: 8
-sidebar_label: Kafka
+toc_priority: 8
+toc_title: Kafka
 ---
 
-# Kafka
+# Kafka {#kafka}
 
 This engine works with [Apache Kafka](http://kafka.apache.org/).
 
@@ -34,14 +33,7 @@ SETTINGS
     [kafka_max_block_size = 0,]
     [kafka_skip_broken_messages = N,]
     [kafka_commit_every_batch = 0,]
-    [kafka_client_id = '',]
-    [kafka_poll_timeout_ms = 0,]
-    [kafka_poll_max_batch_size = 0,]
-    [kafka_flush_interval_ms = 0,]
-    [kafka_thread_per_consumer = 0,]
-    [kafka_handle_error_mode = 'default',]
-    [kafka_commit_on_select = false,]
-    [kafka_max_rows_per_message = 1];
+    [kafka_thread_per_consumer = 0]
 ```
 
 Required parameters:
@@ -53,20 +45,13 @@ Required parameters:
 
 Optional parameters:
 
--   `kafka_row_delimiter` — Delimiter character, which ends the message. **This setting is deprecated and is no longer used, not left for compatibility reasons.**
+-   `kafka_row_delimiter` — Delimiter character, which ends the message.
 -   `kafka_schema` — Parameter that must be used if the format requires a schema definition. For example, [Cap’n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
--   `kafka_num_consumers` — The number of consumers per table. Specify more consumers if the throughput of one consumer is insufficient. The total number of consumers should not exceed the number of partitions in the topic, since only one consumer can be assigned per partition, and must not be greater than the number of physical cores on the server where ClickHouse is deployed. Default: `1`.
--   `kafka_max_block_size` — The maximum batch size (in messages) for poll. Default: [max_insert_block_size](../../../operations/settings/settings.md#setting-max_insert_block_size).
--   `kafka_skip_broken_messages` — Kafka message parser tolerance to schema-incompatible messages per block. If `kafka_skip_broken_messages = N` then the engine skips *N* Kafka messages that cannot be parsed (a message equals a row of data). Default: `0`.
--   `kafka_commit_every_batch` — Commit every consumed and handled batch instead of a single commit after writing a whole block. Default: `0`.
--   `kafka_client_id` — Client identifier. Empty by default.
--   `kafka_poll_timeout_ms` — Timeout for single poll from Kafka. Default: [stream_poll_timeout_ms](../../../operations/settings/settings.md#stream_poll_timeout_ms).
--   `kafka_poll_max_batch_size` — Maximum amount of messages to be polled in a single Kafka poll. Default: [max_block_size](../../../operations/settings/settings.md#setting-max_block_size).
--   `kafka_flush_interval_ms` — Timeout for flushing data from Kafka. Default: [stream_flush_interval_ms](../../../operations/settings/settings.md#stream-flush-interval-ms).
--   `kafka_thread_per_consumer` — Provide independent thread for each consumer. When enabled, every consumer flush the data independently, in parallel (otherwise — rows from several consumers squashed to form one block). Default: `0`.
--   `kafka_handle_error_mode` — How to handle errors for Kafka engine. Possible values: default, stream.
--   `kafka_commit_on_select` —  Commit messages when select query is made. Default: `false`.
--   `kafka_max_rows_per_message` — The maximum number of rows written in one kafka message for row-based formats. Default : `1`.
+-   `kafka_num_consumers` — The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient. The total number of consumers should not exceed the number of partitions in the topic, since only one consumer can be assigned per partition.
+-   `kafka_max_block_size` — The maximum batch size (in messages) for poll (default: `max_block_size`).
+-   `kafka_skip_broken_messages` — Kafka message parser tolerance to schema-incompatible messages per block. Default: `0`. If `kafka_skip_broken_messages = N` then the engine skips *N* Kafka messages that cannot be parsed (a message equals a row of data).
+-   `kafka_commit_every_batch` — Commit every consumed and handled batch instead of a single commit after writing a whole block (default: `0`).
+-   `kafka_thread_per_consumer` — Provide independent thread for each consumer (default: `0`). When enabled, every consumer flush the data independently, in parallel (otherwise — rows from several consumers squashed to form one block).
 
 Examples:
 
@@ -102,13 +87,12 @@ Examples:
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::warning
-Do not use this method in new projects. If possible, switch old projects to the method described above.
-:::
+!!! attention "Attention"
+    Do not use this method in new projects. If possible, switch old projects to the method described above.
 
 ``` sql
 Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
-      [, kafka_row_delimiter, kafka_schema, kafka_num_consumers, kafka_max_block_size,  kafka_skip_broken_messages, kafka_commit_every_batch, kafka_client_id, kafka_poll_timeout_ms, kafka_poll_max_batch_size, kafka_flush_interval_ms, kafka_thread_per_consumer, kafka_handle_error_mode, kafka_commit_on_select, kafka_max_rows_per_message]);
+      [, kafka_row_delimiter, kafka_schema, kafka_num_consumers, kafka_skip_broken_messages])
 ```
 
 </details>
@@ -149,7 +133,7 @@ Example:
 
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```
-To improve performance, received messages are grouped into blocks the size of [max_insert_block_size](../../../operations/settings/settings.md#settings-max_insert_block_size). If the block wasn’t formed within [stream_flush_interval_ms](../../../operations/settings/settings.md/#stream-flush-interval-ms) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
+To improve performance, received messages are grouped into blocks the size of [max_insert_block_size](../../../operations/settings/settings/#settings-max_insert_block_size). If the block wasn’t formed within [stream_flush_interval_ms](../../../operations/settings/settings/#stream-flush-interval-ms) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
 
 To stop receiving topic data or to change the conversion logic, detach the materialized view:
 
@@ -183,7 +167,7 @@ For a list of possible configuration options, see the [librdkafka configuration 
 ### Kerberos support {#kafka-kerberos-support}
 
 To deal with Kerberos-aware Kafka, add `security_protocol` child element with `sasl_plaintext` value. It is enough if Kerberos ticket-granting ticket is obtained and cached by OS facilities.
-ClickHouse is able to maintain Kerberos credentials using a keytab file. Consider `sasl_kerberos_service_name`, `sasl_kerberos_keytab` and `sasl_kerberos_principal` child elements.
+ClickHouse is able to maintain Kerberos credentials using a keytab file. Consider `sasl_kerberos_service_name`, `sasl_kerberos_keytab`, `sasl_kerberos_principal` and `sasl.kerberos.kinit.cmd` child elements.
 
 Example:
 
@@ -204,18 +188,10 @@ Example:
 -   `_timestamp` — Timestamp of the message.
 -   `_timestamp_ms` — Timestamp in milliseconds of the message.
 -   `_partition` — Partition of Kafka topic.
--   `_headers.name` — Array of message's headers keys.
--   `_headers.value` — Array of message's headers values.
-
-## Data formats support {#data-formats-support}
-
-Kafka engine supports all [formats](../../../interfaces/formats.md) supported in ClickHouse.
-The number of rows in one Kafka message depends on whether the format is row-based or block-based:
-
-- For row-based formats the number of rows in one Kafka message can be controlled by setting `kafka_max_rows_per_message`.
-- For block-based formats we cannot divide block into smaller parts, but the number of rows in one block can be controlled by general setting [max_block_size](../../../operations/settings/settings.md#setting-max_block_size).
 
 **See Also**
 
 -   [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
 -   [background_message_broker_schedule_pool_size](../../../operations/settings/settings.md#background_message_broker_schedule_pool_size)
+
+[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/kafka/) <!--hide-->

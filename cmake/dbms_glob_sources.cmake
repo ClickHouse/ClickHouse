@@ -1,5 +1,5 @@
 macro(add_glob cur_list)
-    file(GLOB __tmp CONFIGURE_DEPENDS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} ${ARGN})
+    file(GLOB __tmp RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} ${ARGN})
     list(APPEND ${cur_list} ${__tmp})
 endmacro()
 

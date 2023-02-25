@@ -1,12 +1,4 @@
 import pytest
-
-# FIXME Tests with MaterializedPostgresSQL are temporarily disabled
-# https://github.com/ClickHouse/ClickHouse/issues/36898
-# https://github.com/ClickHouse/ClickHouse/issues/38677
-# https://github.com/ClickHouse/ClickHouse/pull/39272#issuecomment-1190087190
-
-pytestmark = pytest.mark.skip
-
 import time
 import psycopg2
 import os.path as p
@@ -32,25 +24,25 @@ postgres_table_template = """
     """
 
 queries = [
-    "INSERT INTO {} select i, i from generate_series(0, 10000) as t(i);",
-    "DELETE FROM {} WHERE (value*value) % 3 = 0;",
-    "UPDATE {} SET value = value + 125 WHERE key % 2 = 0;",
-    "UPDATE {} SET key=key+20000 WHERE key%2=0",
-    "INSERT INTO {} select i, i from generate_series(40000, 50000) as t(i);",
-    "DELETE FROM {} WHERE key % 10 = 0;",
-    "UPDATE {} SET value = value + 101 WHERE key % 2 = 1;",
-    "UPDATE {} SET key=key+80000 WHERE key%2=1",
-    "DELETE FROM {} WHERE value % 2 = 0;",
-    "UPDATE {} SET value = value + 2000 WHERE key % 5 = 0;",
-    "INSERT INTO {} select i, i from generate_series(200000, 250000) as t(i);",
-    "DELETE FROM {} WHERE value % 3 = 0;",
-    "UPDATE {} SET value = value * 2 WHERE key % 3 = 0;",
-    "UPDATE {} SET key=key+500000 WHERE key%2=1",
-    "INSERT INTO {} select i, i from generate_series(1000000, 1050000) as t(i);",
-    "DELETE FROM {} WHERE value % 9 = 2;",
-    "UPDATE {} SET key=key+10000000",
-    "UPDATE {} SET value = value + 2  WHERE key % 3 = 1;",
-    "DELETE FROM {} WHERE value%5 = 0;",
+    "INSERT INTO postgresql_replica select i, i from generate_series(0, 10000) as t(i);",
+    "DELETE FROM postgresql_replica WHERE (value*value) % 3 = 0;",
+    "UPDATE postgresql_replica SET value = value + 125 WHERE key % 2 = 0;",
+    "UPDATE postgresql_replica SET key=key+20000 WHERE key%2=0",
+    "INSERT INTO postgresql_replica select i, i from generate_series(40000, 50000) as t(i);",
+    "DELETE FROM postgresql_replica WHERE key % 10 = 0;",
+    "UPDATE postgresql_replica SET value = value + 101 WHERE key % 2 = 1;",
+    "UPDATE postgresql_replica SET key=key+80000 WHERE key%2=1",
+    "DELETE FROM postgresql_replica WHERE value % 2 = 0;",
+    "UPDATE postgresql_replica SET value = value + 2000 WHERE key % 5 = 0;",
+    "INSERT INTO postgresql_replica select i, i from generate_series(200000, 250000) as t(i);",
+    "DELETE FROM postgresql_replica WHERE value % 3 = 0;",
+    "UPDATE postgresql_replica SET value = value * 2 WHERE key % 3 = 0;",
+    "UPDATE postgresql_replica SET key=key+500000 WHERE key%2=1",
+    "INSERT INTO postgresql_replica select i, i from generate_series(1000000, 1050000) as t(i);",
+    "DELETE FROM postgresql_replica WHERE value % 9 = 2;",
+    "UPDATE postgresql_replica SET key=key+10000000",
+    "UPDATE postgresql_replica SET value = value + 2  WHERE key % 3 = 1;",
+    "DELETE FROM postgresql_replica WHERE value%5 = 0;",
 ]
 
 
@@ -58,17 +50,20 @@ queries = [
 def check_tables_are_synchronized(
     table_name, order_by="key", postgres_database="postgres_database"
 ):
-    while True:
-        expected = instance.query(
-            "select * from {}.{} order by {};".format(
-                postgres_database, table_name, order_by
-            )
+    expected = instance.query(
+        "select * from {}.{} order by {};".format(
+            postgres_database, table_name, order_by
         )
+    )
+    result = instance.query(
+        "select * from test.{} order by {};".format(table_name, order_by)
+    )
+
+    while result != expected:
+        time.sleep(0.5)
         result = instance.query(
             "select * from test.{} order by {};".format(table_name, order_by)
         )
-        if result == expected:
-            break
 
     assert result == expected
 
@@ -108,13 +103,15 @@ def create_clickhouse_postgres_db(ip, port, name="postgres_database"):
     )
 
 
-def create_materialized_table(ip, port, table_name="postgresql_replica"):
+def create_materialized_table(ip, port):
     instance.query(
-        f"""
-        CREATE TABLE test.{table_name} (key Int64, value Int64)
+        """
+        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64)
             ENGINE = MaterializedPostgreSQL(
-            '{ip}:{port}', 'postgres_database', '{table_name}', 'postgres', 'mysecretpassword')
-            PRIMARY KEY key; """
+            '{}:{}', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
+            PRIMARY KEY key; """.format(
+            ip, port
+        )
     )
 
 
@@ -179,7 +176,6 @@ def test_initial_load_from_snapshot(started_cluster):
 
     cursor.execute("DROP TABLE postgresql_replica;")
     postgresql_replica_check_result(result, True)
-    instance.query(f"DROP TABLE test.postgresql_replica NO DELAY")
 
 
 @pytest.mark.timeout(320)
@@ -216,7 +212,6 @@ def test_no_connection_at_startup(started_cluster):
     result = instance.query("SELECT * FROM test.postgresql_replica ORDER BY key;")
     cursor.execute("DROP TABLE postgresql_replica;")
     postgresql_replica_check_result(result, True)
-    instance.query(f"DROP TABLE test.postgresql_replica NO DELAY")
 
 
 @pytest.mark.timeout(320)
@@ -255,7 +250,6 @@ def test_detach_attach_is_ok(started_cluster):
 
     cursor.execute("DROP TABLE postgresql_replica;")
     postgresql_replica_check_result(result, True)
-    instance.query(f"DROP TABLE test.postgresql_replica NO DELAY")
 
 
 @pytest.mark.timeout(320)
@@ -309,7 +303,6 @@ def test_replicating_insert_queries(started_cluster):
     result = instance.query("SELECT * FROM test.postgresql_replica ORDER BY key;")
     cursor.execute("DROP TABLE postgresql_replica;")
     postgresql_replica_check_result(result, True)
-    instance.query(f"DROP TABLE test.postgresql_replica NO DELAY")
 
 
 @pytest.mark.timeout(320)
@@ -553,7 +546,6 @@ def test_connection_loss(started_cluster):
 
 @pytest.mark.timeout(320)
 def test_clickhouse_restart(started_cluster):
-    pytest.skip("Temporary disabled (FIXME)")
     conn = get_postgres_conn(
         ip=started_cluster.postgres_ip,
         port=started_cluster.postgres_port,
@@ -667,7 +659,6 @@ def test_virtual_columns(started_cluster):
     )
     print(result)
     cursor.execute("DROP TABLE postgresql_replica;")
-    instance.query(f"DROP TABLE test.postgresql_replica NO DELAY")
 
 
 def test_abrupt_connection_loss_while_heavy_replication(started_cluster):
@@ -678,18 +669,17 @@ def test_abrupt_connection_loss_while_heavy_replication(started_cluster):
         database=True,
     )
     cursor = conn.cursor()
-    table_name = "postgresql_replica"
-    create_postgres_table(cursor, table_name)
+    create_postgres_table(cursor, "postgresql_replica")
 
-    instance.query(f"DROP TABLE IF EXISTS test.{table_name}")
+    instance.query("DROP TABLE IF EXISTS test.postgresql_replica")
     create_materialized_table(
         ip=started_cluster.postgres_ip, port=started_cluster.postgres_port
     )
 
     for i in range(len(queries)):
-        query = queries[i].format(table_name)
+        query = queries[i]
         cursor.execute(query)
-        print("query {}".format(query.format(table_name)))
+        print("query {}".format(query))
 
     started_cluster.pause_container("postgres1")
 
@@ -702,53 +692,35 @@ def test_abrupt_connection_loss_while_heavy_replication(started_cluster):
 
     result = instance.query("SELECT count() FROM test.postgresql_replica")
     print(result)  # Just debug
-    instance.query(f"DROP TABLE test.postgresql_replica NO DELAY")
 
 
 def test_abrupt_server_restart_while_heavy_replication(started_cluster):
-
-    # FIXME (kssenii) temporary disabled
-    if instance.is_built_with_sanitizer():
-        pytest.skip("Temporary disabled (FIXME)")
-
     conn = get_postgres_conn(
         ip=started_cluster.postgres_ip,
         port=started_cluster.postgres_port,
         database=True,
     )
     cursor = conn.cursor()
-    table_name = "postgresql_replica_697"
-    create_postgres_table(cursor, table_name)
+    create_postgres_table(cursor, "postgresql_replica")
 
-    instance.query(f"INSERT INTO postgres_database.{table_name} SELECT -1, 1")
-    instance.query(f"DROP TABLE IF EXISTS test.{table_name} NO DELAY")
+    instance.query("DROP TABLE IF EXISTS test.postgresql_replica")
     create_materialized_table(
-        ip=started_cluster.postgres_ip,
-        port=started_cluster.postgres_port,
-        table_name=table_name,
+        ip=started_cluster.postgres_ip, port=started_cluster.postgres_port
     )
 
-    n = 1
-    while int(instance.query(f"select count() from test.{table_name}")) != 1:
-        sleep(1)
-        n += 1
-        if n > 10:
-            break
-
     for query in queries:
-        cursor.execute(query.format(table_name))
-        print("query {}".format(query.format(table_name)))
+        cursor.execute(query)
+        print("query {}".format(query))
 
     instance.restart_clickhouse()
 
-    result = instance.query(f"SELECT count() FROM test.{table_name}")
+    result = instance.query("SELECT count() FROM test.postgresql_replica")
     print(result)  # Just debug
 
-    check_tables_are_synchronized(table_name)
+    check_tables_are_synchronized("postgresql_replica")
 
-    result = instance.query(f"SELECT count() FROM test.{table_name}")
+    result = instance.query("SELECT count() FROM test.postgresql_replica")
     print(result)  # Just debug
-    instance.query(f"DROP TABLE test.{table_name} NO DELAY")
 
 
 def test_drop_table_immediately(started_cluster):
@@ -772,7 +744,7 @@ def test_drop_table_immediately(started_cluster):
         ip=started_cluster.postgres_ip, port=started_cluster.postgres_port
     )
     check_tables_are_synchronized("postgresql_replica")
-    instance.query(f"DROP TABLE test.postgresql_replica NO DELAY")
+    instance.query("DROP TABLE test.postgresql_replica")
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/shared_ptr_helper.h>
 #include <Formats/FormatSettings.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -22,10 +23,9 @@ struct StoragesInfo
     bool need_inactive_parts = false;
     MergeTreeData * data = nullptr;
 
-    explicit operator bool() const { return storage != nullptr; }
-
-    MergeTreeData::DataPartsVector getParts(MergeTreeData::DataPartStateVector & state, bool has_state_column) const;
-    MergeTreeData::ProjectionPartsVector getProjectionParts(MergeTreeData::DataPartStateVector & state, bool has_state_column) const;
+    operator bool() const { return storage != nullptr; } /// NOLINT
+    MergeTreeData::DataPartsVector
+    getParts(MergeTreeData::DataPartStateVector & state, bool has_state_column, bool require_projection_parts = false) const;
 };
 
 /** A helper class that enumerates the storages that match given query. */
@@ -63,22 +63,22 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        size_t num_streams) override;
+        unsigned num_streams) override;
 
     NamesAndTypesList getVirtuals() const override;
 
     bool isSystemStorage() const override { return true; }
 
 private:
-    static bool hasStateColumn(const Names & column_names, const StorageSnapshotPtr & storage_snapshot);
+    bool hasStateColumn(const Names & column_names, const StorageSnapshotPtr & storage_snapshot) const;
 
 protected:
-    const FormatSettings format_settings = {};
+    const FormatSettings format_settings;
 
     StorageSystemPartsBase(const StorageID & table_id_, NamesAndTypesList && columns_);
 
     virtual void
-    processNextStorage(ContextPtr context, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column) = 0;
+    processNextStorage(MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column) = 0;
 };
 
 }

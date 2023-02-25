@@ -33,10 +33,7 @@ def create_force_drop_flag(node):
 
 @pytest.mark.parametrize("engine", ["Ordinary", "Atomic"])
 def test_drop_materialized_view(started_cluster, engine):
-    node.query(
-        "CREATE DATABASE d ENGINE={}".format(engine),
-        settings={"allow_deprecated_database_ordinary": 1},
-    )
+    node.query("CREATE DATABASE d ENGINE={}".format(engine))
     node.query(
         "CREATE TABLE d.rmt (n UInt64) ENGINE=ReplicatedMergeTree('/test/rmt', 'r1') ORDER BY n PARTITION BY n % 2"
     )

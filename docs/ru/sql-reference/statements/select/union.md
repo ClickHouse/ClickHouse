@@ -1,6 +1,5 @@
 ---
-slug: /ru/sql-reference/statements/select/union
-sidebar_label: UNION
+toc_title: UNION
 ---
 
 # Секция UNION {#union-clause}

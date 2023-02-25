@@ -1,4 +1,8 @@
 <test>
+    <preconditions>
+        <table_exists>hits_100m_single</table_exists>
+    </preconditions>
+
     <!--
         For some counters, find top 10 users by the numer of records.
         First with LIMIT BY, next with window functions.
