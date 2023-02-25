@@ -86,10 +86,10 @@ Examples: `1`, `10_000_000`, `0xffff_ffff`, `18446744073709551615`, `0xDEADBEEF`
 String literals must be enclosed in single quotes, double quotes are not supported.
 Escaping works either
 
--   in SQL-style based on a preceding single quote where the single-quote character `'` (and only this character) can be escaped as `''`, or
--   in C-style based on a preceding backslash with the following supported escape sequences: `\\`, `\'`, `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\a`, `\v`, `\xHH`. The backslash loses its special meaning and will be interpreted literally if it precedes characters different than the listed ones.
+-   using a preceding single quote where the single-quote character `'` (and only this character) can be escaped as `''`, or
+-   using a preceding backslash with the following supported escape sequences: `\\`, `\'`, `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\a`, `\v`, `\xHH`. The backslash loses its special meaning, i.e. will be interpreted literally, if it precedes characters different than the listed ones.
 
-In string literals, you need to escape at least `'` and `\` using escape codes `''` (or: `\'`) and `\\`.
+In string literals, you need to escape at least `'` and `\` using escape codes `\'` (or: `''`) and `\\`.
 
 ### Compound
 
