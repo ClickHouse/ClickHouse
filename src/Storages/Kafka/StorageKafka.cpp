@@ -188,14 +188,14 @@ namespace
 
         for (const auto & tag : tags)
         {
-            if (tag.starts_with(CONFIG_KAFKA_TOPIC_TAG)) ///  Multiple occurrences given as "kafka_topic", "kafka_topic[1]", etc.
-                continue; // used by new per-topic configuration, ignore
+            if (tag.starts_with(CONFIG_KAFKA_TOPIC_TAG)) /// multiple occurrences given as "kafka_topic", "kafka_topic[1]", etc.
+                continue; /// used by new per-topic configuration, ignore
 
             const String setting_path = config_prefix + "." + tag;
             const String setting_value = config.getString(setting_path);
 
-            // "log_level" has valid underscore, the remaining librdkafka setting use dot.separated.format which isn't acceptable for XML.
-            // See https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md
+            /// "log_level" has valid underscore, the remaining librdkafka setting use dot.separated.format which isn't acceptable for XML.
+            /// See https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md
             const String setting_name_in_kafka_config = (tag == "log_level") ? tag : boost::replace_all_copy(tag, "_", ".");
             kafka_config.set(setting_name_in_kafka_config, setting_value);
         }
@@ -210,32 +210,32 @@ namespace
 
         for (const auto & tag : tags)
         {
-            /// Consider tag <kafka_topic>. Multiple occurrences given as "kafka_topic", "kafka_topic[1]", etc.
-            if (tag.starts_with(CONFIG_KAFKA_TOPIC_TAG))
+            /// Only consider tag <kafka_topic>. Multiple occurrences given as "kafka_topic", "kafka_topic[1]", etc.
+            if (!tag.starts_with(CONFIG_KAFKA_TOPIC_TAG))
+                continue;
+
+            /// Read topic name between <name>...</name>
+            const String kafka_topic_path = config_prefix + "." + tag;
+            const String kafpa_topic_name_path = kafka_topic_path + "." + CONFIG_NAME_TAG;
+
+            const String topic_name = config.getString(kafpa_topic_name_path);
+            if (topic_name == topic)
             {
-                /// Read topic name between <name>...</name>
-                const String kafka_topic_path = config_prefix + "." + tag;
-                const String kafpa_topic_name_path = kafka_topic_path + "." + CONFIG_NAME_TAG;
-
-                const String topic_name = config.getString(kafpa_topic_name_path);
-                if (topic_name == topic)
+                /// Found it! Now read the per-topic configuration into cppkafka.
+                Poco::Util::AbstractConfiguration::Keys inner_tags;
+                config.keys(kafka_topic_path, inner_tags);
+                for (const auto & inner_tag : inner_tags)
                 {
-                    /// Found it! Now read the per-topic configuration into cppkafka.
-                    Poco::Util::AbstractConfiguration::Keys inner_tags;
-                    config.keys(kafka_topic_path, inner_tags);
-                    for (const auto & inner_tag : inner_tags)
-                    {
-                        if (inner_tag == CONFIG_NAME_TAG)
-                            continue; // ignore <name>
+                    if (inner_tag == CONFIG_NAME_TAG)
+                        continue; // ignore <name>
 
-                        // "log_level" has valid underscore, the remaining librdkafka setting use dot.separated.format which isn't acceptable for XML.
-                        // See https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md
-                        const String setting_path = kafka_topic_path + "." + inner_tag;
-                        const String setting_value = config.getString(setting_path);
+                    /// "log_level" has valid underscore, the remaining librdkafka setting use dot.separated.format which isn't acceptable for XML.
+                    /// See https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md
+                    const String setting_path = kafka_topic_path + "." + inner_tag;
+                    const String setting_value = config.getString(setting_path);
 
-                        const String setting_name_in_kafka_config = (inner_tag == "log_level") ? inner_tag : boost::replace_all_copy(inner_tag, "_", ".");
-                        kafka_config.set(setting_name_in_kafka_config, setting_value);
-                    }
+                    const String setting_name_in_kafka_config = (inner_tag == "log_level") ? inner_tag : boost::replace_all_copy(inner_tag, "_", ".");
+                    kafka_config.set(setting_name_in_kafka_config, setting_value);
                 }
             }
         }
