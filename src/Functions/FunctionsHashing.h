@@ -30,6 +30,7 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeMap.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
