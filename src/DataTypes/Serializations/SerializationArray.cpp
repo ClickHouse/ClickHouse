@@ -1,4 +1,5 @@
 #include <DataTypes/Serializations/SerializationArray.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/DataTypeArray.h>
@@ -510,7 +511,10 @@ void SerializationArray::deserializeTextJSON(IColumn & column, ReadBuffer & istr
     deserializeTextImpl(column, istr,
         [&](IColumn & nested_column)
         {
-            nested->deserializeTextJSON(nested_column, istr, settings);
+            if (settings.null_as_default)
+                SerializationNullable::deserializeTextJSONImpl(nested_column, istr, settings, nested);
+            else
+                nested->deserializeTextJSON(nested_column, istr, settings);
         }, false);
 }
 
