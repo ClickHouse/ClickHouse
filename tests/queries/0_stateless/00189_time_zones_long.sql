@@ -120,11 +120,11 @@ SELECT toDayOfMonth(toDateTime(1412106600), 'Pacific/Pitcairn');
 /* toDayOfWeek */
 
 SELECT 'toDayOfWeek';
-SELECT toDayOfWeek(toDateTime(1412106600), 0, 'Asia/Istanbul');
-SELECT toDayOfWeek(toDateTime(1412106600), 0, 'Europe/Paris');
-SELECT toDayOfWeek(toDateTime(1412106600), 0, 'Europe/London');
-SELECT toDayOfWeek(toDateTime(1412106600), 0, 'Asia/Tokyo');
-SELECT toDayOfWeek(toDateTime(1412106600), 0, 'Pacific/Pitcairn');
+SELECT toDayOfWeek(toDateTime(1412106600), 'Asia/Istanbul');
+SELECT toDayOfWeek(toDateTime(1412106600), 'Europe/Paris');
+SELECT toDayOfWeek(toDateTime(1412106600), 'Europe/London');
+SELECT toDayOfWeek(toDateTime(1412106600), 'Asia/Tokyo');
+SELECT toDayOfWeek(toDateTime(1412106600), 'Pacific/Pitcairn');
 
 /* toHour */
 

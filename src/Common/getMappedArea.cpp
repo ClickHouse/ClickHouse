@@ -58,7 +58,7 @@ std::pair<void *, size_t> getMappedArea(void * ptr)
             return {reinterpret_cast<void *>(begin), end - begin};
     }
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find mapped area for pointer");
+    throw Exception("Cannot find mapped area for pointer", ErrorCodes::LOGICAL_ERROR);
 }
 
 }
@@ -75,7 +75,7 @@ namespace ErrorCodes
 
 std::pair<void *, size_t> getMappedArea(void *)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The function getMappedArea is implemented only for Linux");
+    throw Exception("The function getMappedArea is implemented only for Linux", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 }

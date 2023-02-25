@@ -7,7 +7,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Interpreters/StorageID.h>
 #include <IO/Operators.h>
-#include <Parsers/QueryParameterVisitor.h>
+
 
 namespace DB
 {
@@ -115,8 +115,6 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
 
     if (group_by_with_grouping_sets)
     {
-        if (!groupBy()) /// sanity check, issue 43049
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Corrupt AST");
         auto nested_frame = frame;
         nested_frame.surround_each_list_element_with_parens = true;
         nested_frame.expression_list_prepend_whitespace = false;
@@ -258,7 +256,7 @@ static const ASTArrayJoin * getFirstArrayJoin(const ASTSelectQuery & select)
             if (!array_join)
                 array_join = tables_element.array_join->as<ASTArrayJoin>();
             else
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Support for more than one ARRAY JOIN in query is not implemented");
+                throw Exception("Support for more than one ARRAY JOIN in query is not implemented", ErrorCodes::NOT_IMPLEMENTED);
         }
     }
 
@@ -283,7 +281,7 @@ static const ASTTablesInSelectQueryElement * getFirstTableJoin(const ASTSelectQu
             if (!joined_table)
                 joined_table = &tables_element;
             else
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Multiple JOIN does not support the query.");
+                throw Exception("Multiple JOIN does not support the query.", ErrorCodes::NOT_IMPLEMENTED);
         }
     }
 
@@ -460,7 +458,7 @@ void ASTSelectQuery::setExpression(Expression expr, ASTPtr && ast)
 ASTPtr & ASTSelectQuery::getExpression(Expression expr)
 {
     if (!positions.contains(expr))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Get expression before set");
+        throw Exception("Get expression before set", ErrorCodes::LOGICAL_ERROR);
     return children[positions[expr]];
 }
 
@@ -477,16 +475,6 @@ void ASTSelectQuery::setFinal() // NOLINT method can be made const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no table expression, it's a bug");
 
     tables_element.table_expression->as<ASTTableExpression &>().final = true;
-}
-
-bool ASTSelectQuery::hasQueryParameters() const
-{
-    if (!has_query_parameters.has_value())
-    {
-        has_query_parameters = !analyzeReceiveQueryParams(std::make_shared<ASTSelectQuery>(*this)).empty();
-    }
-
-    return  has_query_parameters.value();
 }
 
 }

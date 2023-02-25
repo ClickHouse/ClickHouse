@@ -20,7 +20,7 @@ template <typename T>
 void expandDataByMask(PaddedPODArray<T> & data, const PaddedPODArray<UInt8> & mask, bool inverted)
 {
     if (mask.size() < data.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mask size should be no less than data size.");
+        throw Exception("Mask size should be no less than data size.", ErrorCodes::LOGICAL_ERROR);
 
     ssize_t from = data.size() - 1;
     ssize_t index = mask.size() - 1;
@@ -30,7 +30,7 @@ void expandDataByMask(PaddedPODArray<T> & data, const PaddedPODArray<UInt8> & ma
         if (!!mask[index] ^ inverted)
         {
             if (from < 0)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many bytes in mask");
+                throw Exception("Too many bytes in mask", ErrorCodes::LOGICAL_ERROR);
 
             /// Copy only if it makes sense.
             if (index != from)
@@ -44,7 +44,7 @@ void expandDataByMask(PaddedPODArray<T> & data, const PaddedPODArray<UInt8> & ma
     }
 
     if (from != -1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough bytes in mask");
+        throw Exception("Not enough bytes in mask", ErrorCodes::LOGICAL_ERROR);
 }
 
 /// Explicit instantiations - not to place the implementation of the function above in the header file.
@@ -72,8 +72,6 @@ INSTANTIATE(Decimal256)
 INSTANTIATE(DateTime64)
 INSTANTIATE(char *)
 INSTANTIATE(UUID)
-INSTANTIATE(IPv4)
-INSTANTIATE(IPv6)
 
 #undef INSTANTIATE
 
@@ -328,7 +326,7 @@ int checkShortCircuitArguments(const ColumnsWithTypeAndName & arguments)
 void copyMask(const PaddedPODArray<UInt8> & from, PaddedPODArray<UInt8> & to)
 {
     if (from.size() != to.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot copy mask, because source and destination have different size");
+        throw Exception("Cannot copy mask, because source and destination have different size", ErrorCodes::LOGICAL_ERROR);
 
     if (from.empty())
         return;

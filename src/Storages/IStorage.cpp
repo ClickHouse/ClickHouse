@@ -39,9 +39,12 @@ RWLockImpl::LockHolder IStorage::tryLockTimed(
     if (!lock_holder)
     {
         const String type_str = type == RWLockImpl::Type::Read ? "READ" : "WRITE";
-        throw Exception(ErrorCodes::DEADLOCK_AVOIDED,
-            "{} locking attempt on \"{}\" has timed out! ({}ms) Possible deadlock avoided. Client should retry.",
-            type_str, getStorageID(), acquire_timeout.count());
+        throw Exception(
+            type_str + " locking attempt on \"" + getStorageID().getFullTableName() + "\" has timed out! ("
+                + std::to_string(acquire_timeout.count())
+                + "ms) "
+                  "Possible deadlock avoided. Client should retry.",
+            ErrorCodes::DEADLOCK_AVOIDED);
     }
     return lock_holder;
 }
@@ -50,10 +53,10 @@ TableLockHolder IStorage::lockForShare(const String & query_id, const std::chron
 {
     TableLockHolder result = tryLockTimed(drop_lock, RWLockImpl::Read, query_id, acquire_timeout);
 
-    if (is_dropped || is_detached)
+    if (is_dropped)
     {
         auto table_id = getStorageID();
-        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {}.{} is dropped or detached", table_id.database_name, table_id.table_name);
+        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {}.{} is dropped", table_id.database_name, table_id.table_name);
     }
     return result;
 }
@@ -62,7 +65,7 @@ TableLockHolder IStorage::tryLockForShare(const String & query_id, const std::ch
 {
     TableLockHolder result = tryLockTimed(drop_lock, RWLockImpl::Read, query_id, acquire_timeout);
 
-    if (is_dropped || is_detached)
+    if (is_dropped)
     {
         // Table was dropped while acquiring the lock
         result = nullptr;
@@ -79,10 +82,10 @@ IStorage::AlterLockHolder IStorage::lockForAlter(const std::chrono::milliseconds
         throw Exception(ErrorCodes::DEADLOCK_AVOIDED,
                         "Locking attempt for ALTER on \"{}\" has timed out! ({} ms) "
                         "Possible deadlock avoided. Client should retry.",
-                        getStorageID().getFullTableName(), acquire_timeout.count());
+                        getStorageID().getFullTableName(), std::to_string(acquire_timeout.count()));
 
-    if (is_dropped || is_detached)
-        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is dropped or detached", getStorageID());
+    if (is_dropped)
+        throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
 
     return lock;
 }
@@ -93,8 +96,8 @@ TableExclusiveLockHolder IStorage::lockExclusively(const String & query_id, cons
     TableExclusiveLockHolder result;
     result.drop_lock = tryLockTimed(drop_lock, RWLockImpl::Write, query_id, acquire_timeout);
 
-    if (is_dropped || is_detached)
-        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is dropped or detached", getStorageID());
+    if (is_dropped)
+        throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
 
     return result;
 }
@@ -107,7 +110,7 @@ Pipe IStorage::watch(
     size_t /*max_block_size*/,
     size_t /*num_streams*/)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method watch is not supported by storage {}", getName());
+    throw Exception("Method watch is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
 Pipe IStorage::read(
@@ -119,7 +122,7 @@ Pipe IStorage::read(
     size_t /*max_block_size*/,
     size_t /*num_streams*/)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method read is not supported by storage {}", getName());
+    throw Exception("Method read is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
 void IStorage::read(
@@ -167,7 +170,7 @@ std::optional<QueryPipeline> IStorage::distributedWrite(
 Pipe IStorage::alterPartition(
     const StorageMetadataPtr & /* metadata_snapshot */, const PartitionCommands & /* commands */, ContextPtr /* context */)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Partition operations are not supported by storage {}", getName());
+    throw Exception("Partition operations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
 void IStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder &)
@@ -191,13 +194,13 @@ void IStorage::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /
 
 void IStorage::checkMutationIsPossible(const MutationCommands & /*commands*/, const Settings & /*settings*/) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support mutations", getName());
+    throw Exception("Table engine " + getName() + " doesn't support mutations", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 void IStorage::checkAlterPartitionIsPossible(
     const PartitionCommands & /*commands*/, const StorageMetadataPtr & /*metadata_snapshot*/, const Settings & /*settings*/) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitioning", getName());
+    throw Exception("Table engine " + getName() + " doesn't support partitioning", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 StorageID IStorage::getStorageID() const

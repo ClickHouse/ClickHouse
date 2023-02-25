@@ -72,3 +72,5 @@ title: "Geo Functions"
 -   [s2RectContains](./s2.md#s2rectcontains)
 -   [s2RectUnion](./s2.md#s2rectunion)
 -   [s2RectIntersection](./s2.md#s2rectintersection)
+
+

@@ -3,12 +3,10 @@
 #include <cstdint>
 #include <string>
 #include <vector>
-#include <unordered_set>
 #include <base/strong_typedef.h>
 #include <base/Decimal.h>
 #include <base/defines.h>
 #include <base/UUID.h>
-#include <base/IPv4andIPv6.h>
 
 
 namespace DB
@@ -85,8 +83,6 @@ enum class TypeIndex
     LowCardinality,
     Map,
     Object,
-    IPv4,
-    IPv6,
 };
 
 
@@ -97,5 +93,4 @@ using Int256 = ::Int256;
 
 /// Not a data type in database, defined just for convenience.
 using Strings = std::vector<String>;
-using TypeIndexesSet = std::unordered_set<TypeIndex>;
 }

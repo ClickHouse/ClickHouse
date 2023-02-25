@@ -40,17 +40,12 @@ BlockIO InterpreterCreateRoleQuery::execute()
     else
         getContext()->checkAccess(AccessType::CREATE_ROLE);
 
-    std::optional<SettingsProfileElements> settings_from_query;
-    if (query.settings)
-    {
-        settings_from_query = SettingsProfileElements{*query.settings, access_control};
-
-        if (!query.attach)
-            getContext()->checkSettingsConstraints(*settings_from_query);
-    }
-
     if (!query.cluster.empty())
         return executeDDLQueryOnCluster(query_ptr, getContext());
+
+    std::optional<SettingsProfileElements> settings_from_query;
+    if (query.settings)
+        settings_from_query = SettingsProfileElements{*query.settings, access_control};
 
     if (query.alter)
     {

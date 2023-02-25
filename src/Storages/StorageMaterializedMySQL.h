@@ -44,7 +44,7 @@ public:
 private:
     [[noreturn]] static void throwNotAllowed()
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This method is not allowed for MaterializedMySQL");
+        throw Exception("This method is not allowed for MaterializedMySQL", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     StoragePtr nested_storage;

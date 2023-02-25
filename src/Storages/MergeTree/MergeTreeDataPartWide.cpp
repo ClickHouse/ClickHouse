@@ -17,6 +17,16 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+
+MergeTreeDataPartWide::MergeTreeDataPartWide(
+       MergeTreeData & storage_,
+        const String & name_,
+        const MutableDataPartStoragePtr & data_part_storage_,
+        const IMergeTreeDataPart * parent_part_)
+    : IMergeTreeDataPart(storage_, name_, data_part_storage_, Type::Wide, parent_part_)
+{
+}
+
 MergeTreeDataPartWide::MergeTreeDataPartWide(
         const MergeTreeData & storage_,
         const String & name_,
@@ -150,7 +160,7 @@ void MergeTreeDataPartWide::loadIndexGranularityImpl(
 void MergeTreeDataPartWide::loadIndexGranularity()
 {
     if (columns.empty())
-        throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns in part {}", name);
+        throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
     loadIndexGranularityImpl(index_granularity, index_granularity_info, getDataPartStorage(), getFileNameForColumn(columns.front()));
 }
@@ -197,7 +207,7 @@ void MergeTreeDataPartWide::checkConsistency(bool require_part_metadata) const
                     if (!checksums.files.contains(bin_file_name))
                         throw Exception(
                             ErrorCodes::NO_FILE_IN_DATA_PART,
-                            "No {} file checksum for column {} in part {}",
+                            "No {} file checksum for column {} in part ",
                             bin_file_name, name_type.name, getDataPartStorage().getFullPath());
                 });
             }
@@ -292,8 +302,7 @@ void MergeTreeDataPartWide::calculateEachColumnSizes(ColumnSizeByName & each_col
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Column {} has rows count {} according to size in memory "
-                    "and size of single value, but data part {} has {} rows",
-                    backQuote(column.name), rows_in_column, name, rows_count);
+                    "and size of single value, but data part {} has {} rows", backQuote(column.name), rows_in_column, name, rows_count);
             }
         }
 #endif

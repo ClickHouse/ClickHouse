@@ -22,3 +22,4 @@ sidebar_label: "Эксплуатация"
 - [Тестирование серверов с помощью ClickHouse](performance-test.mdx)
 - [Настройки](settings/index.md#settings)
 - [Утилиты](utilities/index.md)
+

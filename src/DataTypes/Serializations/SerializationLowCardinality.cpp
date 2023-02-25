@@ -79,7 +79,7 @@ struct KeysSerializationVersion
     static void checkVersion(UInt64 version)
     {
         if (version != SharedDictionariesWithAdditionalKeys)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid version for SerializationLowCardinality key column.");
+            throw Exception("Invalid version for SerializationLowCardinality key column.", ErrorCodes::INCORRECT_DATA);
     }
 
     explicit KeysSerializationVersion(UInt64 version) : value(static_cast<Value>(version)) { checkVersion(version); }
@@ -120,7 +120,7 @@ struct IndexesSerializationType
         if (value <= TUInt64)
             return;
 
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid type for SerializationLowCardinality index column.");
+        throw Exception("Invalid type for SerializationLowCardinality index column.", ErrorCodes::INCORRECT_DATA);
     }
 
     void serialize(WriteBuffer & buffer) const
@@ -172,8 +172,8 @@ struct IndexesSerializationType
         else if (typeid_cast<const ColumnUInt64 *>(&column))
             type = TUInt64;
         else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid Indexes column for IndexesSerializationType. "
-                            "Expected ColumnUInt*, got {}", column.getName());
+            throw Exception("Invalid Indexes column for IndexesSerializationType. Expected ColumnUInt*, got "
+                            + column.getName(), ErrorCodes::LOGICAL_ERROR);
     }
 
     DataTypePtr getDataType() const
@@ -184,10 +184,10 @@ struct IndexesSerializationType
             return std::make_shared<DataTypeUInt16>();
         if (type == TUInt32)
             return std::make_shared<DataTypeUInt32>();
-        if (type == TUInt64)
+        if (type == TUInt64) //-V547
             return std::make_shared<DataTypeUInt64>();
 
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't create DataType from IndexesSerializationType.");
+        throw Exception("Can't create DataType from IndexesSerializationType.", ErrorCodes::LOGICAL_ERROR);
     }
 
     IndexesSerializationType() = default;
@@ -230,7 +230,8 @@ void SerializationLowCardinality::serializeBinaryBulkStatePrefix(
     settings.path.pop_back();
 
     if (!stream)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream in SerializationLowCardinality::serializeBinaryBulkStatePrefix");
+        throw Exception("Got empty stream in SerializationLowCardinality::serializeBinaryBulkStatePrefix",
+                        ErrorCodes::LOGICAL_ERROR);
 
     /// Write version and create SerializeBinaryBulkState.
     UInt64 key_version = KeysSerializationVersion::SharedDictionariesWithAdditionalKeys;
@@ -256,7 +257,8 @@ void SerializationLowCardinality::serializeBinaryBulkStateSuffix(
         settings.path.pop_back();
 
         if (!stream)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream in SerializationLowCardinality::serializeBinaryBulkStateSuffix");
+            throw Exception("Got empty stream in SerializationLowCardinality::serializeBinaryBulkStateSuffix",
+                            ErrorCodes::LOGICAL_ERROR);
 
         UInt64 num_keys = nested_column->size();
         writeIntBinary(num_keys, *stream);
@@ -336,7 +338,7 @@ namespace
             T expected = index[i] < dict_data.size() ? dict_data[index[i]]
                                                      : add_keys_data[index[i] - dict_data.size()] + dict_size;
             if (expected != copy[i])
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected {}, but got {}", toString(expected), toString(copy[i]));
+                throw Exception("Expected " + toString(expected) + ", but got " + toString(copy[i]), ErrorCodes::LOGICAL_ERROR);
 
         }
 
@@ -453,8 +455,8 @@ namespace
         else if (auto * data_uint64 = getIndexesData<UInt64>(column))
             return mapIndexWithAdditionalKeys(*data_uint64, dict_size);
         else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Indexes column for mapIndexWithAdditionalKeys must be UInt, got {}",
-                            column.getName());
+            throw Exception("Indexes column for mapIndexWithAdditionalKeys must be UInt, got " + column.getName(),
+                            ErrorCodes::LOGICAL_ERROR);
     }
 }
 
@@ -475,10 +477,10 @@ void SerializationLowCardinality::serializeBinaryBulkWithMultipleStreams(
         return;
 
     if (!keys_stream)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for SerializationLowCardinality keys.");
+        throw Exception("Got empty stream for SerializationLowCardinality keys.", ErrorCodes::LOGICAL_ERROR);
 
     if (!indexes_stream)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for SerializationLowCardinality indexes.");
+        throw Exception("Got empty stream for SerializationLowCardinality indexes.", ErrorCodes::LOGICAL_ERROR);
 
     const ColumnLowCardinality & low_cardinality_column = typeid_cast<const ColumnLowCardinality &>(column);
 
@@ -508,16 +510,17 @@ void SerializationLowCardinality::serializeBinaryBulkWithMultipleStreams(
                                                                                       settings.low_cardinality_max_dictionary_size);
 
         if (global_dictionary->size() > settings.low_cardinality_max_dictionary_size)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Got dictionary with size {} but max dictionary size is {}",
-                            global_dictionary->size(), settings.low_cardinality_max_dictionary_size);
+            throw Exception("Got dictionary with size " + toString(global_dictionary->size()) +
+                            " but max dictionary size is " + toString(settings.low_cardinality_max_dictionary_size),
+                            ErrorCodes::LOGICAL_ERROR);
 
         positions = indexes_with_overflow.indexes->index(*positions, 0);
         keys = std::move(indexes_with_overflow.overflowed_keys);
 
         if (global_dictionary->size() < settings.low_cardinality_max_dictionary_size && !keys->empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Has additional keys, but dict size is {} which is less "
-                            "then max dictionary size ({})", global_dictionary->size(),
-                            settings.low_cardinality_max_dictionary_size);
+            throw Exception("Has additional keys, but dict size is " + toString(global_dictionary->size()) +
+                            " which is less then max dictionary size (" + toString(settings.low_cardinality_max_dictionary_size) + ")",
+                            ErrorCodes::LOGICAL_ERROR);
     }
 
     if (const auto * nullable_keys = checkAndGetColumn<ColumnNullable>(*keys))
@@ -573,10 +576,10 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
         return;
 
     if (!keys_stream)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for SerializationLowCardinality keys.");
+        throw Exception("Got empty stream for SerializationLowCardinality keys.", ErrorCodes::LOGICAL_ERROR);
 
     if (!indexes_stream)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for SerializationLowCardinality indexes.");
+        throw Exception("Got empty stream for SerializationLowCardinality indexes.", ErrorCodes::LOGICAL_ERROR);
 
     auto * low_cardinality_state = checkAndGetState<DeserializeStateLowCardinality>(state);
     KeysSerializationVersion::checkVersion(low_cardinality_state->key_version.value);
@@ -629,7 +632,7 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
         if (!low_cardinality_state->index_type.need_global_dictionary)
         {
             if (additional_keys == nullptr)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "No additional keys found.");
+                throw Exception("No additional keys found.", ErrorCodes::INCORRECT_DATA);
 
             ColumnPtr keys_column = additional_keys;
             if (low_cardinality_state->null_map)
@@ -653,7 +656,7 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
             if (!maps.additional_keys_map->empty())
             {
                 if (additional_keys == nullptr)
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "No additional keys found.");
+                    throw Exception("No additional keys found.", ErrorCodes::INCORRECT_DATA);
 
                 auto used_add_keys = additional_keys->index(*maps.additional_keys_map, 0);
 
