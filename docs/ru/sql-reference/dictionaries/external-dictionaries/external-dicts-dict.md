@@ -48,4 +48,3 @@ LIFETIME(...) -- Lifetime of dictionary in memory
 -   [layout](external-dicts-dict-layout.md) — Размещение словаря в памяти.
 -   [structure](external-dicts-dict-structure.md) — Структура словаря. Ключ и атрибуты, которые можно получить по ключу.
 -   [lifetime](external-dicts-dict-lifetime.md) — Периодичность обновления словарей.
-

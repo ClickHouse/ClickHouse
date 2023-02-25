@@ -17,7 +17,7 @@ class WriteBuffer;
 class BinaryRowOutputFormat final: public IRowOutputFormat
 {
 public:
-    BinaryRowOutputFormat(WriteBuffer & out_, const Block & header, bool with_names_, bool with_types_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_);
+    BinaryRowOutputFormat(WriteBuffer & out_, const Block & header, bool with_names_, bool with_types_, const FormatSettings & format_settings_);
 
     String getName() const override { return "BinaryRowOutputFormat"; }
 

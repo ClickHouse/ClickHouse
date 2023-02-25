@@ -24,6 +24,7 @@ CapnProto
 CentOS
 ClickHouse
 ClickHouse's
+CodeBlock
 Config
 ConnectionDetails
 Contrib
@@ -33,6 +34,7 @@ CustomSeparatedWithNames
 CustomSeparatedWithNamesAndTypes
 DBMSs
 DateTime
+DateTimes
 DockerHub
 Doxygen
 Encodings
@@ -55,6 +57,7 @@ IPv
 IntN
 Integrations
 JSONAsString
+JSONAsObject
 JSONColumns
 JSONColumnsWithMetadata
 JSONCompact
@@ -102,6 +105,8 @@ NYPD
 NuRaft
 ObjectId
 Ok
+OLAP
+OLTP
 OpenSUSE
 OpenStack
 OpenTelemetry
@@ -123,6 +128,8 @@ PrettySpaceNoEscapesMonoBlock
 Protobuf
 ProtobufSingle
 QTCreator
+QueryCacheHits
+QueryCacheMisses
 RBAC
 RawBLOB
 RedHat
@@ -145,6 +152,7 @@ Submodules
 Subqueries
 TSVRaw
 TSan
+TabItem
 TabSeparated
 TabSeparatedRaw
 TabSeparatedRawWithNames
@@ -171,8 +179,10 @@ Werror
 Woboq
 WriteBuffer
 WriteBuffers
+WithNamesAndTypes
 XCode
 YAML
+Yasm
 YYYY
 Zipkin
 ZooKeeper
@@ -247,6 +257,7 @@ datafiles
 dataset
 datasets
 datetime
+datetimes
 dbms
 ddl
 deallocation
@@ -321,6 +332,7 @@ kafka
 kafkacat
 konsole
 latencies
+laion
 lexicographically
 libFuzzer
 libc
@@ -361,6 +373,7 @@ mysqldump
 mysqljs
 noop
 nullable
+nullability
 num
 obfuscator
 odbc
@@ -485,6 +498,7 @@ tokenization
 toml
 toolchain
 toolset
+transactionally
 tskv
 tsv
 tui

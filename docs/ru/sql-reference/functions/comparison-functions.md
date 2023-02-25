@@ -34,4 +34,3 @@ sidebar_label: "Функции сравнения"
 ## lessOrEquals, оператор `<=` {#function-lessorequals}
 
 ## greaterOrEquals, оператор `>=` {#function-greaterorequals}
-

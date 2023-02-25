@@ -7,6 +7,10 @@ import sys
 
 from github import Github
 
+from build_download_helper import get_build_name_for_check, read_build_urls
+from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
+from commit_status_helper import post_commit_status
+from docker_pull_helper import get_image_with_version
 from env_helper import (
     GITHUB_REPOSITORY,
     GITHUB_RUN_URL,
@@ -14,15 +18,12 @@ from env_helper import (
     REPO_COPY,
     TEMP_PATH,
 )
-from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
-from build_download_helper import get_build_name_for_check, read_build_urls
-from docker_pull_helper import get_image_with_version
-from commit_status_helper import post_commit_status
-from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
-from stopwatch import Stopwatch
+from report import TestResult
 from rerun_helper import RerunHelper
+from s3_helper import S3Helper
+from stopwatch import Stopwatch
 
 IMAGE_NAME = "clickhouse/fuzzer"
 
@@ -115,29 +116,22 @@ if __name__ == "__main__":
     paths = {
         "run.log": run_log_path,
         "main.log": os.path.join(workspace_path, "main.log"),
-        "server.log.gz": os.path.join(workspace_path, "server.log.gz"),
+        "server.log.zst": os.path.join(workspace_path, "server.log.zst"),
         "fuzzer.log": os.path.join(workspace_path, "fuzzer.log"),
         "report.html": os.path.join(workspace_path, "report.html"),
-        "core.gz": os.path.join(workspace_path, "core.gz"),
+        "core.zst": os.path.join(workspace_path, "core.zst"),
+        "dmesg.log": os.path.join(workspace_path, "dmesg.log"),
     }
 
     s3_helper = S3Helper()
     for f in paths:
         try:
-            paths[f] = s3_helper.upload_test_report_to_s3(paths[f], s3_prefix + "/" + f)
+            paths[f] = s3_helper.upload_test_report_to_s3(paths[f], s3_prefix + f)
         except Exception as ex:
             logging.info("Exception uploading file %s text %s", f, ex)
             paths[f] = ""
 
     report_url = GITHUB_RUN_URL
-    if paths["run.log"]:
-        report_url = paths["run.log"]
-    if paths["main.log"]:
-        report_url = paths["main.log"]
-    if paths["server.log.gz"]:
-        report_url = paths["server.log.gz"]
-    if paths["fuzzer.log"]:
-        report_url = paths["fuzzer.log"]
     if paths["report.html"]:
         report_url = paths["report.html"]
 
@@ -156,16 +150,15 @@ if __name__ == "__main__":
         status = "failure"
         description = "Task failed: $?=" + str(retcode)
 
+    test_result = TestResult(description, "OK")
     if "fail" in status:
-        test_result = [(description, "FAIL")]
-    else:
-        test_result = [(description, "OK")]
+        test_result.status = "FAIL"
 
     ch_helper = ClickHouseHelper()
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,
-        test_result,
+        [test_result],
         status,
         stopwatch.duration_seconds,
         stopwatch.start_time_str,

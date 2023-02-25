@@ -85,7 +85,7 @@ public:
     {
         if (!arguments.empty())
         {
-            throw Exception("Arguments size of function " + getName() + " should be 0", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Arguments size of function {} should be 0", getName());
         }
 
         return std::make_shared<DataTypeDateTime>();
@@ -95,7 +95,7 @@ public:
     {
         if (!arguments.empty())
         {
-            throw Exception("Arguments size of function " + getName() + " should be 0", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Arguments size of function {} should be 0", getName());
         }
 
         return std::make_unique<FunctionBaseUTCTimestamp>(time(nullptr), DataTypes(), std::make_shared<DataTypeDateTime>("UTC"));

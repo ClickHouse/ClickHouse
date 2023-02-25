@@ -1,15 +1,16 @@
 #pragma once
 
-#include <Interpreters/PreparedSets.h>
-#include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Core/SortDescription.h>
-#include <Core/Names.h>
-#include <Storages/ProjectionsDescription.h>
-#include <Interpreters/AggregateDescription.h>
-#include <QueryPipeline/StreamLocalLimits.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/TableExpressionModifiers.h>
+#include <Core/Names.h>
+#include <Core/SortDescription.h>
+#include <Interpreters/AggregateDescription.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/PreparedSets.h>
 #include <Planner/PlannerContext.h>
+#include <QueryPipeline/StreamLocalLimits.h>
+#include <Storages/ProjectionsDescription.h>
+#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
 #include <memory>
 
@@ -163,6 +164,9 @@ struct ProjectionCandidate
     SortDescription group_by_elements_order_descr;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_projection_select_result_ptr;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_normal_select_result_ptr;
+
+    /// Because projection analysis uses a separate interpreter.
+    ContextPtr context;
 };
 
 /** Query along with some additional data,
@@ -179,6 +183,9 @@ struct SelectQueryInfo
     ASTPtr view_query; /// Optimized VIEW query
     ASTPtr original_query; /// Unmodified query for projection analysis
 
+    /// Query tree
+    QueryTreeNodePtr query_tree;
+
     /// Planner context
     PlannerContextPtr planner_context;
 
@@ -190,6 +197,9 @@ struct SelectQueryInfo
 
     std::shared_ptr<const StorageLimitsList> storage_limits;
 
+    /// Local storage limits
+    StorageLimits local_storage_limits;
+
     /// Cluster for the query.
     ClusterPtr cluster;
     /// Optimized cluster for the query.
@@ -197,6 +207,8 @@ struct SelectQueryInfo
     ///
     /// Configured in StorageDistributed::getQueryProcessingStage()
     ClusterPtr optimized_cluster;
+
+    mutable ParallelReplicasReadingCoordinatorPtr coordinator;
 
     TreeRewriterResultPtr syntax_analyzer_result;
 
@@ -223,6 +235,9 @@ struct SelectQueryInfo
     bool need_aggregate = false;
     PrewhereInfoPtr prewhere_info;
 
+    /// If query has aggregate functions
+    bool has_aggregates = false;
+
     ClusterPtr getCluster() const { return !optimized_cluster ? cluster : optimized_cluster; }
 
     /// If not null, it means we choose a projection to execute current query.
@@ -233,6 +248,8 @@ struct SelectQueryInfo
     bool settings_limit_offset_done = false;
     Block minmax_count_projection_block;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr;
+
+    bool is_parameterized_view = false;
 
     // If limit is not 0, that means it's a trivial limit query.
     UInt64 limit = 0;

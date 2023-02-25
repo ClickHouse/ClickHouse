@@ -1,42 +1,30 @@
 #include <Client/ClientBase.h>
+#include <Client/LineReader.h>
+#include <Client/ClientBaseHelpers.h>
+#include <Client/TestHint.h>
+#include <Client/InternalTextLogs.h>
+#include <Client/TestTags.h>
 
-#include <iostream>
-#include <filesystem>
-#include <map>
-#include <unordered_map>
-
-#include "config.h"
-
+#include <base/argsToConfig.h>
+#include <base/safeExit.h>
+#include <Core/Block.h>
+#include <Core/Protocol.h>
 #include <Common/DateLUT.h>
 #include <Common/MemoryTracker.h>
-#include <base/argsToConfig.h>
-#include <base/LineReader.h>
 #include <Common/scope_guard_safe.h>
-#include <base/safeExit.h>
 #include <Common/Exception.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/typeid_cast.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
-#include <Core/Block.h>
-#include <Core/Protocol.h>
-#include <Formats/FormatFactory.h>
-#include <Access/AccessControl.h>
-
-#include "config_version.h"
-
 #include <Common/UTF8Helpers.h>
 #include <Common/TerminalSize.h>
 #include <Common/clearPasswordFromCommandLine.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/NetException.h>
-#include <Storages/ColumnsDescription.h>
-
-#include <Client/ClientBaseHelpers.h>
-#include <Client/TestHint.h>
-#include "TestTags.h"
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <Formats/FormatFactory.h>
 
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
@@ -53,26 +41,37 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/Kusto/ParserKQLStatement.h>
 
 #include <Processors/Formats/Impl/NullFormat.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
-#include <QueryPipeline/QueryPipeline.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/CompressionMethod.h>
-#include <Client/InternalTextLogs.h>
 #include <IO/ForkWriteBuffer.h>
-#include <Parsers/Kusto/ParserKQLStatement.h>
+
+#include <Access/AccessControl.h>
+#include <Storages/ColumnsDescription.h>
+
 #include <boost/algorithm/string/case_conv.hpp>
+#include <iostream>
+#include <filesystem>
+#include <map>
+#include <unordered_map>
+
+#include "config_version.h"
+#include "config.h"
 
 
 namespace fs = std::filesystem;
@@ -415,7 +414,7 @@ void ClientBase::sendExternalTables(ASTPtr parsed_query)
 {
     const auto * select = parsed_query->as<ASTSelectWithUnionQuery>();
     if (!select && !external_tables.empty())
-        throw Exception("External tables could be sent only with select query", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "External tables could be sent only with select query");
 
     std::vector<ExternalTableDataPtr> data;
     for (auto & table : external_tables)
@@ -453,7 +452,7 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     catch (const Exception &)
     {
         /// Catch client errors like NO_ROW_DELIMITER
-        throw LocalFormatError(getCurrentExceptionMessage(print_stack_trace), getCurrentExceptionCode());
+        throw LocalFormatError(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
     }
 
     /// Received data block is immediately displayed to the user.
@@ -482,14 +481,14 @@ void ClientBase::onLogData(Block & block)
 void ClientBase::onTotals(Block & block, ASTPtr parsed_query)
 {
     initOutputFormat(block, parsed_query);
-    output_format->setTotals(block);
+    output_format->setTotals(materializeBlock(block));
 }
 
 
 void ClientBase::onExtremes(Block & block, ASTPtr parsed_query)
 {
     initOutputFormat(block, parsed_query);
-    output_format->setExtremes(block);
+    output_format->setExtremes(materializeBlock(block));
 }
 
 
@@ -597,7 +596,7 @@ try
             if (query_with_output->format != nullptr)
             {
                 if (has_vertical_output_suffix)
-                    throw Exception("Output format already specified", ErrorCodes::CLIENT_OUTPUT_FORMAT_SPECIFIED);
+                    throw Exception(ErrorCodes::CLIENT_OUTPUT_FORMAT_SPECIFIED, "Output format already specified");
                 const auto & id = query_with_output->format->as<ASTIdentifier &>();
                 current_format = id.name();
             }
@@ -631,7 +630,7 @@ try
 }
 catch (...)
 {
-    throw LocalFormatError(getCurrentExceptionMessage(print_stack_trace), getCurrentExceptionCode());
+    throw LocalFormatError(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
 }
 
 
@@ -818,17 +817,15 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
 
 void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query)
 {
-    if (fake_drop)
-    {
-        if (parsed_query->as<ASTDropQuery>())
-            return;
-    }
+    if (fake_drop && parsed_query->as<ASTDropQuery>())
+        return;
+
+    auto query = query_to_execute;
 
     /// Rewrite query only when we have query parameters.
     /// Note that if query is rewritten, comments in query are lost.
     /// But the user often wants to see comments in server logs, query log, processlist, etc.
     /// For recent versions of the server query parameters will be transferred by network and applied on the server side.
-    auto query = query_to_execute;
     if (!query_parameters.empty()
         && connection->getServerRevision(connection_parameters.timeouts) < DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
     {
@@ -838,6 +835,22 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
 
         /// Get new query after substitutions.
         query = serializeAST(*parsed_query);
+    }
+
+    if (allow_merge_tree_settings && parsed_query->as<ASTCreateQuery>())
+    {
+        /// Rewrite query if new settings were added.
+        if (addMergeTreeSettings(*parsed_query->as<ASTCreateQuery>()))
+        {
+            /// Replace query parameters because AST cannot be serialized otherwise.
+            if (!query_parameters.empty())
+            {
+                ReplaceQueryParameterVisitor visitor(query_parameters);
+                visitor.visit(parsed_query);
+            }
+
+            query = serializeAST(*parsed_query);
+        }
     }
 
     int retries_left = 10;
@@ -1036,7 +1049,13 @@ void ClientBase::onEndOfStream()
         progress_indication.clearProgressOutput(*tty_buf);
 
     if (output_format)
+    {
+        /// Do our best to estimate the start of the query so the output format matches the one reported by the server
+        bool is_running = false;
+        output_format->setStartTime(
+            clock_gettime_ns(CLOCK_MONOTONIC) - static_cast<UInt64>(progress_indication.elapsedSeconds() * 1000000000), is_running);
         output_format->finalize();
+    }
 
     resetOutput();
 
@@ -1112,6 +1131,8 @@ void ClientBase::onProfileEvents(Block & block)
 /// Flush all buffers.
 void ClientBase::resetOutput()
 {
+    if (output_format)
+        output_format->finalize();
     output_format.reset();
     logs_out_stream.reset();
 
@@ -1164,10 +1185,9 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
                 return receiveSampleBlock(out, columns_description, parsed_query);
 
             default:
-                throw NetException(
-                    "Unexpected packet from server (expected Data, Exception or Log, got "
-                        + String(Protocol::Server::toString(packet.type)) + ")",
-                    ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+                throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
+                    "Unexpected packet from server (expected Data, Exception or Log, got {})",
+                    String(Protocol::Server::toString(packet.type)));
         }
     }
 }
@@ -1207,7 +1227,7 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
     {
         const auto & settings = global_context->getSettingsRef();
         if (settings.throw_if_no_data_to_insert)
-            throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
+            throw Exception(ErrorCodes::NO_DATA_TO_INSERT, "No data to insert");
         else
             return;
     }
@@ -1250,7 +1270,9 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     auto columns_description_for_query = columns_description.empty() ? ColumnsDescription(sample.getNamesAndTypesList()) : columns_description;
     if (columns_description_for_query.empty())
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column description is empty and it can't be built from sample from table. Cannot execute query.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Column description is empty and it can't be built from sample from table. "
+                        "Cannot execute query.");
     }
 
     /// If INSERT data must be sent.
@@ -1368,7 +1390,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         sendDataFromStdin(sample, columns_description_for_query, parsed_query);
     }
     else
-        throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
+        throw Exception(ErrorCodes::NO_DATA_TO_INSERT, "No data to insert");
 }
 
 
@@ -1508,10 +1530,9 @@ bool ClientBase::receiveEndOfQuery()
                 break;
 
             default:
-                throw NetException(
-                    "Unexpected packet from server (expected Exception, EndOfStream, Log, Progress or ProfileEvents. Got "
-                        + String(Protocol::Server::toString(packet.type)) + ")",
-                    ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+                throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
+                    "Unexpected packet from server (expected Exception, EndOfStream, Log, Progress or ProfileEvents. Got {})",
+                    String(Protocol::Server::toString(packet.type)));
         }
     }
 }
@@ -1595,13 +1616,27 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         };
 
         const auto * insert = parsed_query->as<ASTInsertQuery>();
-        if (insert && insert->settings_ast)
+        if (const auto * select = parsed_query->as<ASTSelectQuery>(); select && select->settings())
+            apply_query_settings(*select->settings());
+        else if (const auto * select_with_union = parsed_query->as<ASTSelectWithUnionQuery>())
+        {
+            const ASTs & children = select_with_union->list_of_selects->children;
+            if (!children.empty())
+            {
+                // On the client it is enough to apply settings only for the
+                // last SELECT, since the only thing that is important to apply
+                // on the client is format settings.
+                const auto * last_select = children.back()->as<ASTSelectQuery>();
+                if (last_select && last_select->settings())
+                {
+                    apply_query_settings(*last_select->settings());
+                }
+            }
+        }
+        else if (const auto * query_with_output = parsed_query->as<ASTQueryWithOutput>(); query_with_output && query_with_output->settings_ast)
+            apply_query_settings(*query_with_output->settings_ast);
+        else if (insert && insert->settings_ast)
             apply_query_settings(*insert->settings_ast);
-
-        /// FIXME: try to prettify this cast using `as<>()`
-        const auto * with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get());
-        if (with_output && with_output->settings_ast)
-            apply_query_settings(*with_output->settings_ast);
 
         if (!connection->checkConnected(connection_parameters.timeouts))
             connect();
@@ -1616,7 +1651,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         if (insert && (!insert->select || input_function) && !insert->watch && !is_async_insert)
         {
             if (input_function && insert->format.empty())
-                throw Exception("FORMAT must be specified for function input()", ErrorCodes::INVALID_USAGE_OF_INPUT);
+                throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "FORMAT must be specified for function input()");
 
             processInsertQuery(query_to_execute, parsed_query);
         }
@@ -1891,7 +1926,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 {
                     // Surprisingly, this is a client error. A server error would
                     // have been reported without throwing (see onReceiveSeverException()).
-                    client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(print_stack_trace), getCurrentExceptionCode());
+                    client_exception = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
                     have_error = true;
                 }
 
@@ -2059,12 +2094,47 @@ void ClientBase::initQueryIdFormats()
 }
 
 
+bool ClientBase::addMergeTreeSettings(ASTCreateQuery & ast_create)
+{
+    if (ast_create.attach
+        || !ast_create.storage
+        || !ast_create.storage->isExtendedStorageDefinition()
+        || !ast_create.storage->engine
+        || ast_create.storage->engine->name.find("MergeTree") == std::string::npos)
+        return false;
+
+    auto all_changed = cmd_merge_tree_settings.allChanged();
+    if (all_changed.begin() == all_changed.end())
+        return false;
+
+    if (!ast_create.storage->settings)
+    {
+        auto settings_ast = std::make_shared<ASTSetQuery>();
+        settings_ast->is_standalone = false;
+        ast_create.storage->set(ast_create.storage->settings, settings_ast);
+    }
+
+    auto & storage_settings = *ast_create.storage->settings;
+    bool added_new_setting = false;
+
+    for (const auto & setting : all_changed)
+    {
+        if (!storage_settings.changes.tryGet(setting.getName()))
+        {
+            storage_settings.changes.emplace_back(setting.getName(), setting.getValue());
+            added_new_setting = true;
+        }
+    }
+
+    return added_new_setting;
+}
+
 void ClientBase::runInteractive()
 {
     if (config().has("query_id"))
-        throw Exception("query_id could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "query_id could be specified only in non-interactive mode");
     if (print_time_to_stderr)
-        throw Exception("time option could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "time option could be specified only in non-interactive mode");
 
     initQueryIdFormats();
 
@@ -2289,6 +2359,22 @@ void ClientBase::showClientVersion()
     std::cout << DBMS_NAME << " " + getName() + " version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
 }
 
+namespace
+{
+
+/// Define transparent hash to we can use
+/// std::string_view with the containers
+struct TransparentStringHash
+{
+    using is_transparent = void;
+    size_t operator()(std::string_view txt) const
+    {
+        return std::hash<std::string_view>{}(txt);
+    }
+};
+
+}
+
 
 void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
 {
@@ -2296,6 +2382,46 @@ void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, 
         cmd_settings.addProgramOptionsAsMultitokens(options_description.main_description.value());
     else
         cmd_settings.addProgramOptions(options_description.main_description.value());
+
+    if (allow_merge_tree_settings)
+    {
+        /// Add merge tree settings manually, because names of some settings
+        /// may clash. Query settings have higher priority and we just
+        /// skip ambiguous merge tree settings.
+        auto & main_options = options_description.main_description.value();
+
+        std::unordered_set<std::string, TransparentStringHash, std::equal_to<>> main_option_names;
+        for (const auto & option : main_options.options())
+            main_option_names.insert(option->long_name());
+
+        for (const auto & setting : cmd_merge_tree_settings.all())
+        {
+            const auto add_setting = [&](const std::string_view name)
+            {
+                if (auto it = main_option_names.find(name); it != main_option_names.end())
+                    return;
+
+                if (allow_repeated_settings)
+                    cmd_merge_tree_settings.addProgramOptionAsMultitoken(main_options, name, setting);
+                else
+                    cmd_merge_tree_settings.addProgramOption(main_options, name, setting);
+            };
+
+            const auto & setting_name = setting.getName();
+
+            add_setting(setting_name);
+
+            const auto & settings_to_aliases = MergeTreeSettings::Traits::settingsToAliases();
+            if (auto it = settings_to_aliases.find(setting_name); it != settings_to_aliases.end())
+            {
+                for (const auto alias : it->second)
+                {
+                    add_setting(alias);
+                }
+            }
+        }
+    }
+
     /// Parse main commandline options.
     auto parser = po::command_line_parser(arguments).options(options_description.main_description.value()).allow_unregistered();
     po::parsed_options parsed = parser.run();
@@ -2306,7 +2432,8 @@ void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, 
     {
         auto hints = this->getHints(unrecognized_options[0]);
         if (!hints.empty())
-            throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'. Maybe you meant {}", unrecognized_options[0], toString(hints));
+            throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'. Maybe you meant {}",
+                            unrecognized_options[0], toString(hints));
 
         throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'", unrecognized_options[0]);
     }

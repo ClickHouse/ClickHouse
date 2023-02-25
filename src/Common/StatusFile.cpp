@@ -5,9 +5,10 @@
 #include <cerrno>
 
 #include <Common/logger_useful.h>
-#include <base/errnoToString.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/LocalDateTime.h>
+#include <base/errnoToString.h>
+#include <base/defines.h>
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/LimitReadBuffer.h>
@@ -71,7 +72,7 @@ StatusFile::StatusFile(std::string path_, FillFunction fill_)
         if (-1 == flock_ret)
         {
             if (errno == EWOULDBLOCK)
-                throw Exception("Cannot lock file " + path + ". Another server instance in same directory is already running.", ErrorCodes::CANNOT_OPEN_FILE);
+                throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Cannot lock file {}. Another server instance in same directory is already running.", path);
             else
                 throwFromErrnoWithPath("Cannot lock file " + path, path, ErrorCodes::CANNOT_OPEN_FILE);
         }
@@ -88,7 +89,8 @@ StatusFile::StatusFile(std::string path_, FillFunction fill_)
     }
     catch (...)
     {
-        close(fd);
+        int err = close(fd);
+        chassert(!err || errno == EINTR);
         throw;
     }
 }

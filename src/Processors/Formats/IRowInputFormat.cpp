@@ -26,6 +26,8 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int INCORRECT_DATA;
     extern const int CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING;
+    extern const int CANNOT_PARSE_IPV4;
+    extern const int CANNOT_PARSE_IPV6;
 }
 
 
@@ -44,7 +46,9 @@ bool isParseError(int code)
         || code == ErrorCodes::TOO_LARGE_STRING_SIZE
         || code == ErrorCodes::ARGUMENT_OUT_OF_BOUND       /// For Decimals
         || code == ErrorCodes::INCORRECT_DATA              /// For some ReadHelpers
-        || code == ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING;
+        || code == ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING
+        || code == ErrorCodes::CANNOT_PARSE_IPV4
+        || code == ErrorCodes::CANNOT_PARSE_IPV6;
 }
 
 IRowInputFormat::IRowInputFormat(Block header, ReadBuffer & in_, Params params_)
@@ -110,7 +114,7 @@ Chunk IRowInputFormat::generate()
                     {
                         size_t column_size = columns[column_idx]->size();
                         if (column_size == 0)
-                            throw Exception("Unexpected empty column", ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);
+                            throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Unexpected empty column");
                         block_missing_values.setBit(column_idx, column_size - 1);
                     }
                 }
@@ -241,7 +245,7 @@ Chunk IRowInputFormat::generate()
 
 void IRowInputFormat::syncAfterError()
 {
-    throw Exception("Method syncAfterError is not implemented for input format", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method syncAfterError is not implemented for input format");
 }
 
 void IRowInputFormat::resetParser()

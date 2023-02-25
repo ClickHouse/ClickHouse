@@ -121,7 +121,7 @@ Accepts an empty array and returns a one-element array that is equal to the defa
 
 ## range(end), range(\[start, \] end \[, step\])
 
-Returns an array of `UInt` numbers from `start` to `end - 1` by `step`.
+Returns an array of numbers from `start` to `end - 1` by `step`. The supported types are [UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64](../data-types/int-uint.md).
 
 **Syntax**
 ``` sql
@@ -130,31 +130,30 @@ range([start, ] end [, step])
 
 **Arguments**
 
--   `start` — The first element of the array. Optional, required if `step` is used. Default value: 0. [UInt](../data-types/int-uint.md)
--   `end` — The number before which the array is constructed. Required. [UInt](../data-types/int-uint.md)
--   `step` — Determines the incremental step between each element in the array. Optional. Default value: 1. [UInt](../data-types/int-uint.md)
+-   `start` — The first element of the array. Optional, required if `step` is used. Default value: 0.
+-   `end` — The number before which the array is constructed. Required.
+-   `step` — Determines the incremental step between each element in the array. Optional. Default value: 1.
 
 **Returned value**
 
--   Array of `UInt` numbers from `start` to `end - 1` by `step`.
+-   Array of numbers from `start` to `end - 1` by `step`.
 
 **Implementation details**
 
--   All arguments must be positive values: `start`, `end`, `step` are `UInt` data types, as well as elements of the returned array.
+-   All arguments `start`, `end`, `step` must be below data types: `UInt8`, `UInt16`, `UInt32`, `UInt64`,`Int8`, `Int16`, `Int32`, `Int64`, as well as elements of the returned array, which's type is a super type of all arguments's.
 -   An exception is thrown if query results in arrays with a total length of more than number of elements specified by the [function_range_max_elements_in_block](../../operations/settings/settings.md#settings-function_range_max_elements_in_block) setting.
-
 
 **Examples**
 
 Query:
 ``` sql
-SELECT range(5), range(1, 5), range(1, 5, 2);
+SELECT range(5), range(1, 5), range(1, 5, 2), range(-1, 5, 2);
 ```
 Result:
 ```txt
-┌─range(5)────┬─range(1, 5)─┬─range(1, 5, 2)─┐
-│ [0,1,2,3,4] │ [1,2,3,4]   │ [1,3]          │
-└─────────────┴─────────────┴────────────────┘
+┌─range(5)────┬─range(1, 5)─┬─range(1, 5, 2)─┬─range(-1, 5, 2)─┐
+│ [0,1,2,3,4] │ [1,2,3,4]   │ [1,3]          │ [-1,1,3]        │
+└─────────────┴─────────────┴────────────────┴─────────────────┘
 ```
 
 ## array(x1, …), operator \[x1, …\]

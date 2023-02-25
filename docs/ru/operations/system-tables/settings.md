@@ -52,4 +52,3 @@ SELECT * FROM system.settings WHERE changed AND name='load_balancing'
 -   [Разрешения для запросов](../settings/permissions-for-queries.md#settings_readonly)
 -   [Ограничения для значений настроек](../settings/constraints-on-settings.md)
 -   Выражение [SHOW SETTINGS](../../sql-reference/statements/show.md#show-settings)
-

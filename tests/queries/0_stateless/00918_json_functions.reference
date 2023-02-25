@@ -25,6 +25,7 @@ Array
 300
 1
 0
+1
 --JSONExtractString--
 hello
 hello
@@ -102,6 +103,10 @@ hello
 0	UInt64
 false	Bool
 true	Bool
+-123456789012	Int64
+123456789012	UInt64
+0	UInt64
+0	Int8
 --JSONExtractKeysAndValues--
 [('a','hello'),('b','[-100,200,300]')]
 [('b',[-100,200,300])]
@@ -173,6 +178,11 @@ Array
 300
 1
 0
+1
+-123456789012	Int64
+123456789012	UInt64
+0	UInt64
+0	Int8
 --JSONExtractString--
 hello
 hello

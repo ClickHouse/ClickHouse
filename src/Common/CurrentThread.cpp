@@ -33,14 +33,14 @@ bool CurrentThread::isInitialized()
 ThreadStatus & CurrentThread::get()
 {
     if (unlikely(!current_thread))
-        throw Exception("Thread #" + std::to_string(getThreadId()) + " status was not initialized", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Thread #{} status was not initialized", std::to_string(getThreadId()));
 
     return *current_thread;
 }
 
 ProfileEvents::Counters & CurrentThread::getProfileEvents()
 {
-    return current_thread ? current_thread->performance_counters : ProfileEvents::global_counters;
+    return current_thread ? *current_thread->current_performance_counters : ProfileEvents::global_counters;
 }
 
 void CurrentThread::updateProgressIn(const Progress & value)
@@ -108,6 +108,29 @@ ThreadGroupStatusPtr CurrentThread::getGroup()
         return nullptr;
 
     return current_thread->getThreadGroup();
+}
+
+MemoryTracker * CurrentThread::getUserMemoryTracker()
+{
+    if (unlikely(!current_thread))
+        return nullptr;
+
+    auto * tracker = current_thread->memory_tracker.getParent();
+    while (tracker && tracker->level != VariableContext::User)
+        tracker = tracker->getParent();
+
+    return tracker;
+}
+
+void CurrentThread::flushUntrackedMemory()
+{
+    if (unlikely(!current_thread))
+        return;
+    if (current_thread->untracked_memory == 0)
+        return;
+
+    current_thread->memory_tracker.adjustWithUntrackedMemory(current_thread->untracked_memory);
+    current_thread->untracked_memory = 0;
 }
 
 }

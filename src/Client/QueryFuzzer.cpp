@@ -327,9 +327,7 @@ void QueryFuzzer::fuzzOrderByList(IAST * ast)
     // Add element
     if (fuzz_rand() % 50 == 0)
     {
-        auto pos = list->children.empty()
-                ? list->children.begin()
-                : list->children.begin() + fuzz_rand() % list->children.size();
+        auto * pos = list->children.empty() ? list->children.begin() : list->children.begin() + fuzz_rand() % list->children.size();
         auto col = getRandomColumnLike();
         if (col)
         {
@@ -373,9 +371,7 @@ void QueryFuzzer::fuzzColumnLikeExpressionList(IAST * ast)
     // Add element
     if (fuzz_rand() % 50 == 0)
     {
-        auto pos = impl->children.empty()
-                ? impl->children.begin()
-                : impl->children.begin() + fuzz_rand() % impl->children.size();
+        auto * pos = impl->children.empty() ? impl->children.begin() : impl->children.begin() + fuzz_rand() % impl->children.size();
         auto col = getRandomColumnLike();
         if (col)
             impl->children.insert(pos, col);
@@ -909,11 +905,51 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 select->where()->children.clear();
                 select->setExpression(ASTSelectQuery::Expression::WHERE, {});
             }
+            else if (!select->prewhere().get())
+            {
+                if (fuzz_rand() % 50 == 0)
+                {
+                    select->setExpression(ASTSelectQuery::Expression::PREWHERE, select->where()->clone());
+
+                    if (fuzz_rand() % 2 == 0)
+                    {
+                        select->where()->children.clear();
+                        select->setExpression(ASTSelectQuery::Expression::WHERE, {});
+                    }
+                }
+            }
         }
         else if (fuzz_rand() % 50 == 0)
         {
             select->setExpression(ASTSelectQuery::Expression::WHERE, getRandomColumnLike());
         }
+
+        if (select->prewhere().get())
+        {
+            if (fuzz_rand() % 50 == 0)
+            {
+                select->prewhere()->children.clear();
+                select->setExpression(ASTSelectQuery::Expression::PREWHERE, {});
+            }
+            else if (!select->where().get())
+            {
+                if (fuzz_rand() % 50 == 0)
+                {
+                    select->setExpression(ASTSelectQuery::Expression::WHERE, select->prewhere()->clone());
+
+                    if (fuzz_rand() % 2 == 0)
+                    {
+                        select->prewhere()->children.clear();
+                        select->setExpression(ASTSelectQuery::Expression::PREWHERE, {});
+                    }
+                }
+            }
+        }
+        else if (fuzz_rand() % 50 == 0)
+        {
+            select->setExpression(ASTSelectQuery::Expression::PREWHERE, getRandomColumnLike());
+        }
+
         fuzzOrderByList(select->orderBy().get());
 
         fuzz(select->children);

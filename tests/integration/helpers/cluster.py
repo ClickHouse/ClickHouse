@@ -207,6 +207,32 @@ def check_kafka_is_available(kafka_id, kafka_port):
     return p.returncode == 0
 
 
+def check_kerberos_kdc_is_available(kerberos_kdc_id):
+    p = subprocess.Popen(
+        (
+            "docker",
+            "exec",
+            "-i",
+            kerberos_kdc_id,
+            "/etc/rc.d/init.d/krb5kdc",
+            "status",
+        ),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    p.communicate()
+    return p.returncode == 0
+
+
+def check_postgresql_java_client_is_available(postgresql_java_client_id):
+    p = subprocess.Popen(
+        ("docker", "exec", "-i", postgresql_java_client_id, "java", "-version"),
+        stdout=subprocess.PIPE,
+    )
+    p.communicate()
+    return p.returncode == 0
+
+
 def check_rabbitmq_is_available(rabbitmq_id):
     p = subprocess.Popen(
         ("docker", "exec", "-i", rabbitmq_id, "rabbitmqctl", "await_startup"),
@@ -259,11 +285,7 @@ def enable_consistent_hash_plugin(rabbitmq_id):
 def get_instances_dir(name):
     instances_dir_name = "_instances"
 
-    worker_name = os.environ.get("PYTEST_XDIST_WORKER", "")
     run_id = os.environ.get("INTEGRATION_TESTS_RUN_ID", "")
-
-    if worker_name:
-        instances_dir_name += "_" + worker_name
 
     if name:
         instances_dir_name += "_" + name
@@ -351,6 +373,7 @@ class ClickHouseCluster:
         self.env_file = p.join(self.instances_dir, DEFAULT_ENV_NAME)
         self.env_variables = {}
         self.env_variables["TSAN_OPTIONS"] = "second_deadlock_stack=1"
+        self.env_variables["ASAN_OPTIONS"] = "use_sigaltstack=0"
         self.env_variables["CLICKHOUSE_WATCHDOG_ENABLE"] = "0"
         self.env_variables["CLICKHOUSE_NATS_TLS_SECURE"] = "0"
         self.up_called = False
@@ -371,6 +394,7 @@ class ClickHouseCluster:
         self.base_mysql_cmd = []
         self.base_kafka_cmd = []
         self.base_kerberized_kafka_cmd = []
+        self.base_kerberos_kdc_cmd = []
         self.base_rabbitmq_cmd = []
         self.base_nats_cmd = []
         self.base_cassandra_cmd = []
@@ -386,8 +410,10 @@ class ClickHouseCluster:
         self.with_mysql_cluster = False
         self.with_postgres = False
         self.with_postgres_cluster = False
+        self.with_postgresql_java_client = False
         self.with_kafka = False
         self.with_kerberized_kafka = False
+        self.with_kerberos_kdc = False
         self.with_rabbitmq = False
         self.with_nats = False
         self.with_odbc_drivers = False
@@ -404,9 +430,11 @@ class ClickHouseCluster:
         self.with_hive = False
         self.with_coredns = False
 
+        # available when with_minio == True
         self.with_minio = False
         self.minio_dir = os.path.join(self.instances_dir, "minio")
         self.minio_certs_dir = None  # source for certificates
+        self.minio_data_dir = p.join(self.minio_dir, "data")
         self.minio_host = "minio1"
         self.minio_ip = None
         self.minio_bucket = "root"
@@ -440,6 +468,7 @@ class ClickHouseCluster:
 
         # available when with_kafka == True
         self.kafka_host = "kafka1"
+        self.kafka_dir = os.path.join(self.instances_dir, "kafka")
         self.kafka_port = get_free_port()
         self.kafka_docker_id = None
         self.schema_registry_host = "schema-registry"
@@ -449,11 +478,16 @@ class ClickHouseCluster:
         self.coredns_host = "coredns"
 
         # available when with_kerberozed_kafka == True
+        # reuses kafka_dir
         self.kerberized_kafka_host = "kerberized_kafka1"
         self.kerberized_kafka_port = get_free_port()
         self.kerberized_kafka_docker_id = self.get_instance_docker_id(
             self.kerberized_kafka_host
         )
+
+        # available when with_kerberos_kdc == True
+        self.kerberos_kdc_host = "kerberoskdc"
+        self.keberos_kdc_docker_id = self.get_instance_docker_id(self.kerberos_kdc_host)
 
         # available when with_mongo == True
         self.mongo_host = "mongo1"
@@ -516,6 +550,13 @@ class ClickHouseCluster:
         self.postgres2_logs_dir = os.path.join(self.postgres_dir, "postgres2")
         self.postgres3_logs_dir = os.path.join(self.postgres_dir, "postgres3")
         self.postgres4_logs_dir = os.path.join(self.postgres_dir, "postgres4")
+        self.postgres_id = self.get_instance_docker_id(self.postgres_host)
+
+        # available when with_postgresql_java_client = True
+        self.postgresql_java_client_host = "java"
+        self.postgresql_java_client_docker_id = self.get_instance_docker_id(
+            self.postgresql_java_client_host
+        )
 
         # available when with_mysql_client == True
         self.mysql_client_host = "mysql_client"
@@ -573,7 +614,6 @@ class ClickHouseCluster:
         if p.exists(self.instances_dir):
             shutil.rmtree(self.instances_dir, ignore_errors=True)
             logging.debug(f"Removed :{self.instances_dir}")
-        os.mkdir(self.instances_dir)
 
     def print_all_docker_pieces(self):
         res_networks = subprocess.check_output(
@@ -964,6 +1004,28 @@ class ClickHouseCluster:
             p.join(docker_compose_yml_dir, "docker_compose_postgres_cluster.yml"),
         ]
 
+    def setup_postgresql_java_client_cmd(
+        self, instance, env_variables, docker_compose_yml_dir
+    ):
+        self.with_postgresql_java_client = True
+        self.base_cmd.extend(
+            [
+                "--file",
+                p.join(
+                    docker_compose_yml_dir, "docker_compose_postgresql_java_client.yml"
+                ),
+            ]
+        )
+        self.base_postgresql_java_client_cmd = [
+            "docker-compose",
+            "--env-file",
+            instance.env_file,
+            "--project-name",
+            self.project_name,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_postgresql_java_client.yml"),
+        ]
+
     def setup_hdfs_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_hdfs = True
         env_variables["HDFS_HOST"] = self.hdfs_host
@@ -1058,6 +1120,27 @@ class ClickHouseCluster:
             p.join(docker_compose_yml_dir, "docker_compose_kerberized_kafka.yml"),
         ]
         return self.base_kerberized_kafka_cmd
+
+    def setup_kerberos_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_kerberos_kdc = True
+        env_variables["KERBEROS_KDC_DIR"] = self.instances_dir + "/"
+        env_variables["KERBEROS_KDC_HOST"] = self.kerberos_kdc_host
+        self.base_cmd.extend(
+            [
+                "--file",
+                p.join(docker_compose_yml_dir, "docker_compose_kerberos_kdc.yml"),
+            ]
+        )
+        self.base_kerberos_kdc_cmd = [
+            "docker-compose",
+            "--env-file",
+            instance.env_file,
+            "--project-name",
+            self.project_name,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_kerberos_kdc.yml"),
+        ]
+        return self.base_kerberos_kdc_cmd
 
     def setup_redis_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_redis = True
@@ -1212,6 +1295,7 @@ class ClickHouseCluster:
         self.with_minio = True
         cert_d = p.join(self.minio_dir, "certs")
         env_variables["MINIO_CERTS_DIR"] = cert_d
+        env_variables["MINIO_DATA_DIR"] = self.minio_data_dir
         env_variables["MINIO_PORT"] = str(self.minio_port)
         env_variables["SSL_CERT_FILE"] = p.join(self.base_dir, cert_d, "public.crt")
 
@@ -1329,12 +1413,14 @@ class ClickHouseCluster:
         with_mysql_cluster=False,
         with_kafka=False,
         with_kerberized_kafka=False,
+        with_kerberos_kdc=False,
         with_rabbitmq=False,
         with_nats=False,
         clickhouse_path_dir=None,
         with_odbc_drivers=False,
         with_postgres=False,
         with_postgres_cluster=False,
+        with_postgresql_java_client=False,
         with_hdfs=False,
         with_kerberized_hdfs=False,
         with_mongo=False,
@@ -1360,6 +1446,7 @@ class ClickHouseCluster:
         tmpfs=None,
         zookeeper_docker_compose_path=None,
         minio_certs_dir=None,
+        minio_data_dir=None,
         use_keeper=True,
         main_config_name="config.xml",
         users_config_name="users.xml",
@@ -1420,6 +1507,7 @@ class ClickHouseCluster:
             with_mysql_cluster=with_mysql_cluster,
             with_kafka=with_kafka,
             with_kerberized_kafka=with_kerberized_kafka,
+            with_kerberos_kdc=with_kerberos_kdc,
             with_rabbitmq=with_rabbitmq,
             with_nats=with_nats,
             with_nginx=with_nginx,
@@ -1440,6 +1528,7 @@ class ClickHouseCluster:
             with_odbc_drivers=with_odbc_drivers,
             with_postgres=with_postgres,
             with_postgres_cluster=with_postgres_cluster,
+            with_postgresql_java_client=with_postgresql_java_client,
             hostname=hostname,
             env_variables=env_variables,
             image=image,
@@ -1526,6 +1615,13 @@ class ClickHouseCluster:
                 )
             )
 
+        if with_postgresql_java_client and not self.with_postgresql_java_client:
+            cmds.append(
+                self.setup_postgresql_java_client_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
+            )
+
         if with_odbc_drivers and not self.with_odbc_drivers:
             self.with_odbc_drivers = True
             if not self.with_mysql:
@@ -1552,6 +1648,11 @@ class ClickHouseCluster:
                 self.setup_kerberized_kafka_cmd(
                     instance, env_variables, docker_compose_yml_dir
                 )
+            )
+
+        if with_kerberos_kdc and not self.with_kerberos_kdc:
+            cmds.append(
+                self.setup_kerberos_cmd(instance, env_variables, docker_compose_yml_dir)
             )
 
         if with_rabbitmq and not self.with_rabbitmq:
@@ -1633,6 +1734,12 @@ class ClickHouseCluster:
                 self.minio_certs_dir = minio_certs_dir
             else:
                 raise Exception("Overwriting minio certs dir")
+
+        if minio_data_dir is not None:
+            if self.minio_data_dir is None:
+                self.minio_data_dir = minio_data_dir
+            else:
+                raise Exception("Overwriting minio data dir")
 
         if with_cassandra and not self.with_cassandra:
             cmds.append(
@@ -1748,6 +1855,8 @@ class ClickHouseCluster:
             exec_cmd = ["docker", "exec"]
             if "user" in kwargs:
                 exec_cmd += ["-u", kwargs["user"]]
+            if "privileged" in kwargs:
+                exec_cmd += ["--privileged"]
             result = subprocess_check_call(
                 exec_cmd + [container_id] + cmd, detach=detach, nothrow=nothrow
             )
@@ -2007,6 +2116,21 @@ class ClickHouseCluster:
 
         raise Exception("Cannot wait Postgres container")
 
+    def wait_postgresql_java_client(self, timeout=180):
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                if check_postgresql_java_client_is_available(
+                    self.postgresql_java_client_docker_id
+                ):
+                    logging.debug("PostgreSQL Java Client is available")
+                    return True
+                time.sleep(0.5)
+            except Exception as ex:
+                logging.debug("Can't find PostgreSQL Java Client" + str(ex))
+                time.sleep(0.5)
+        raise Exception("Cannot wait PostgreSQL Java Client container")
+
     def wait_rabbitmq_to_start(self, timeout=180, throw=True):
         self.rabbitmq_ip = self.get_instance_ip(self.rabbitmq_host)
 
@@ -2116,12 +2240,33 @@ class ClickHouseCluster:
         retries = 0
         while True:
             if check_kafka_is_available(kafka_docker_id, kafka_port):
+                return
+            else:
+                retries += 1
+                if retries > max_retries:
+                    break
+                logging.debug("Waiting for Kafka to start up")
+                time.sleep(1)
+
+        try:
+            with open(os.path.join(self.kafka_dir, "docker.log"), "w+") as f:
+                subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
+                    self.base_kafka_cmd + ["logs"], stdout=f
+                )
+        except Exception as e:
+            logging.debug("Unable to get logs from docker.")
+        raise Exception("Kafka is not available")
+
+    def wait_kerberos_kdc_is_available(self, kerberos_kdc_docker_id, max_retries=50):
+        retries = 0
+        while True:
+            if check_kerberos_kdc_is_available(kerberos_kdc_docker_id):
                 break
             else:
                 retries += 1
                 if retries > max_retries:
-                    raise Exception("Kafka is not available")
-                logging.debug("Waiting for Kafka to start up")
+                    raise Exception("Kerberos KDC is not available")
+                logging.debug("Waiting for Kerberos KDC to start up")
                 time.sleep(1)
 
     def wait_hdfs_to_start(self, timeout=300, check_marker=False):
@@ -2306,7 +2451,12 @@ class ClickHouseCluster:
     def start(self):
         pytest_xdist_logging_to_separate_files.setup()
         logging.info("Running tests in {}".format(self.base_path))
-
+        if not os.path.exists(self.instances_dir):
+            os.mkdir(self.instances_dir)
+        else:
+            logging.warning(
+                "Instance directory already exists. Did you call cluster.start() for second time?"
+            )
         logging.debug(f"Cluster start called. is_up={self.is_up}")
         self.print_all_docker_pieces()
 
@@ -2441,7 +2591,7 @@ class ClickHouseCluster:
                 self.wait_postgres_to_start()
 
             if self.with_postgres_cluster and self.base_postgres_cluster_cmd:
-                print("Setup Postgres")
+                logging.debug("Setup Postgres")
                 os.makedirs(self.postgres2_logs_dir)
                 os.chmod(self.postgres2_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
                 os.makedirs(self.postgres3_logs_dir)
@@ -2452,8 +2602,20 @@ class ClickHouseCluster:
                 self.up_called = True
                 self.wait_postgres_cluster_to_start()
 
+            if (
+                self.with_postgresql_java_client
+                and self.base_postgresql_java_client_cmd
+            ):
+                logging.debug("Setup Postgres Java Client")
+                subprocess_check_call(
+                    self.base_postgresql_java_client_cmd + common_opts
+                )
+                self.up_called = True
+                self.wait_postgresql_java_client()
+
             if self.with_kafka and self.base_kafka_cmd:
                 logging.debug("Setup Kafka")
+                os.mkdir(self.kafka_dir)
                 subprocess_check_call(
                     self.base_kafka_cmd + common_opts + ["--renew-anon-volumes"]
                 )
@@ -2463,6 +2625,7 @@ class ClickHouseCluster:
 
             if self.with_kerberized_kafka and self.base_kerberized_kafka_cmd:
                 logging.debug("Setup kerberized kafka")
+                os.mkdir(self.kafka_dir)
                 run_and_check(
                     self.base_kerberized_kafka_cmd
                     + common_opts
@@ -2472,6 +2635,14 @@ class ClickHouseCluster:
                 self.wait_kafka_is_available(
                     self.kerberized_kafka_docker_id, self.kerberized_kafka_port, 100
                 )
+
+            if self.with_kerberos_kdc and self.base_kerberos_kdc_cmd:
+                logging.debug("Setup Kerberos KDC")
+                run_and_check(
+                    self.base_kerberos_kdc_cmd + common_opts + ["--renew-anon-volumes"]
+                )
+                self.up_called = True
+                self.wait_kerberos_kdc_is_available(self.keberos_kdc_docker_id)
 
             if self.with_rabbitmq and self.base_rabbitmq_cmd:
                 logging.debug("Setup RabbitMQ")
@@ -2575,6 +2746,8 @@ class ClickHouseCluster:
                         os.path.join(self.base_dir, self.minio_certs_dir),
                         os.path.join(self.minio_dir, "certs"),
                     )
+                os.mkdir(self.minio_data_dir)
+                os.chmod(self.minio_data_dir, stat.S_IRWXU | stat.S_IRWXO)
 
                 minio_start_cmd = self.base_minio_cmd + common_opts
 
@@ -2684,7 +2857,10 @@ class ClickHouseCluster:
                     SANITIZER_SIGN, from_host=True, filename="stderr.log"
                 ):
                     sanitizer_assert_instance = instance.grep_in_log(
-                        SANITIZER_SIGN, from_host=True, filename="stderr.log"
+                        SANITIZER_SIGN,
+                        from_host=True,
+                        filename="stderr.log",
+                        after=1000,
                     )
                     logging.error(
                         "Sanitizer in instance %s log %s",
@@ -2725,8 +2901,8 @@ class ClickHouseCluster:
 
         if sanitizer_assert_instance is not None:
             raise Exception(
-                "Sanitizer assert found in {} for instance {}".format(
-                    self.docker_logs_path, sanitizer_assert_instance
+                "Sanitizer assert found for instance {}".format(
+                    sanitizer_assert_instance
                 )
             )
         if fatal_log is not None:
@@ -2833,6 +3009,8 @@ services:
             - NET_ADMIN
             - IPC_LOCK
             - SYS_NICE
+            # for umount/mount on fly
+            - SYS_ADMIN
         depends_on: {depends_on}
         user: '{user}'
         env_file:
@@ -2872,6 +3050,7 @@ class ClickHouseInstance:
         with_mysql_cluster,
         with_kafka,
         with_kerberized_kafka,
+        with_kerberos_kdc,
         with_rabbitmq,
         with_nats,
         with_nginx,
@@ -2892,6 +3071,7 @@ class ClickHouseInstance:
         with_odbc_drivers,
         with_postgres,
         with_postgres_cluster,
+        with_postgresql_java_client,
         clickhouse_start_command=CLICKHOUSE_START_COMMAND,
         main_config_name="config.xml",
         users_config_name="users.xml",
@@ -2953,8 +3133,10 @@ class ClickHouseInstance:
         self.with_mysql_cluster = with_mysql_cluster
         self.with_postgres = with_postgres
         self.with_postgres_cluster = with_postgres_cluster
+        self.with_postgresql_java_client = with_postgresql_java_client
         self.with_kafka = with_kafka
         self.with_kerberized_kafka = with_kerberized_kafka
+        self.with_kerberos_kdc = with_kerberos_kdc
         self.with_rabbitmq = with_rabbitmq
         self.with_nats = with_nats
         self.with_nginx = with_nginx
@@ -2988,16 +3170,14 @@ class ClickHouseInstance:
         else:
             self.odbc_ini_path = ""
 
-        if with_kerberized_kafka or with_kerberized_hdfs:
-            self.keytab_path = (
-                "- "
-                + os.path.dirname(self.docker_compose_path)
-                + "/secrets:/tmp/keytab"
-            )
+        if with_kerberized_kafka or with_kerberized_hdfs or with_kerberos_kdc:
+            if with_kerberos_kdc:
+                base_secrets_dir = self.cluster.instances_dir
+            else:
+                base_secrets_dir = os.path.dirname(self.docker_compose_path)
+            self.keytab_path = "- " + base_secrets_dir + "/secrets:/tmp/keytab"
             self.krb5_conf = (
-                "- "
-                + os.path.dirname(self.docker_compose_path)
-                + "/secrets/krb.conf:/etc/krb5.conf:ro"
+                "- " + base_secrets_dir + "/secrets/krb.conf:/etc/krb5.conf:ro"
             )
         else:
             self.keytab_path = ""
@@ -3137,6 +3317,40 @@ class ClickHouseInstance:
             database=database,
         )
 
+    def query_and_get_error_with_retry(
+        self,
+        sql,
+        stdin=None,
+        timeout=None,
+        settings=None,
+        user=None,
+        password=None,
+        database=None,
+        retry_count=20,
+        sleep_time=0.5,
+    ):
+        logging.debug(f"Executing query {sql} on {self.name}")
+        result = None
+        for i in range(retry_count):
+            try:
+                result = self.client.query_and_get_error(
+                    sql,
+                    stdin=stdin,
+                    timeout=timeout,
+                    settings=settings,
+                    user=user,
+                    password=password,
+                    database=database,
+                )
+                time.sleep(sleep_time)
+            except QueryRuntimeException as ex:
+                logging.debug("Retry {} got exception {}".format(i + 1, ex))
+                time.sleep(sleep_time)
+
+        if result is not None:
+            return result
+        raise Exception("Query {sql} did not fail".format(sql))
+
     # The same as query_and_get_error but ignores successful query.
     def query_and_get_answer_with_error(
         self,
@@ -3171,6 +3385,7 @@ class ClickHouseInstance:
         port=8123,
         timeout=None,
         retry_strategy=None,
+        content=False,
     ):
         output, error = self.http_query_and_get_answer_with_error(
             sql,
@@ -3182,6 +3397,7 @@ class ClickHouseInstance:
             port=port,
             timeout=timeout,
             retry_strategy=retry_strategy,
+            content=content,
         )
 
         if error:
@@ -3234,6 +3450,7 @@ class ClickHouseInstance:
         port=8123,
         timeout=None,
         retry_strategy=None,
+        content=False,
     ):
         logging.debug(f"Executing query {sql} on {self.name} via HTTP interface")
         if params is None:
@@ -3265,7 +3482,7 @@ class ClickHouseInstance:
         r = requester.request(method, url, data=data, auth=auth, timeout=timeout)
 
         if r.ok:
-            return (r.text, None)
+            return (r.content if content else r.text, None)
 
         code = r.status_code
         return (None, str(code) + " " + http.client.responses[code] + ": " + r.text)
@@ -3442,15 +3659,21 @@ class ClickHouseInstance:
             )
         return len(result) > 0
 
-    def grep_in_log(self, substring, from_host=False, filename="clickhouse-server.log"):
+    def grep_in_log(
+        self, substring, from_host=False, filename="clickhouse-server.log", after=None
+    ):
         logging.debug(f"grep in log called %s", substring)
+        if after is not None:
+            after_opt = "-A{}".format(after)
+        else:
+            after_opt = ""
         if from_host:
             # We check fist file exists but want to look for all rotated logs as well
             result = subprocess_check_call(
                 [
                     "bash",
                     "-c",
-                    f'[ -f {self.logs_dir}/{filename} ] && zgrep -a "{substring}" {self.logs_dir}/{filename}* || true',
+                    f'[ -f {self.logs_dir}/{filename} ] && zgrep {after_opt} -a "{substring}" {self.logs_dir}/{filename}* || true',
                 ]
             )
         else:
@@ -3458,7 +3681,7 @@ class ClickHouseInstance:
                 [
                     "bash",
                     "-c",
-                    f'[ -f /var/log/clickhouse-server/{filename} ] && zgrep -a "{substring}" /var/log/clickhouse-server/{filename}* || true',
+                    f'[ -f /var/log/clickhouse-server/{filename} ] && zgrep {after_opt} -a "{substring}" /var/log/clickhouse-server/{filename}* || true',
                 ]
             )
         logging.debug("grep result %s", result)
@@ -3906,9 +4129,19 @@ class ClickHouseInstance:
         if self.with_zookeeper:
             shutil.copy(self.zookeeper_config_path, conf_d_dir)
 
-        if self.with_kerberized_kafka or self.with_kerberized_hdfs:
+        if (
+            self.with_kerberized_kafka
+            or self.with_kerberized_hdfs
+            or self.with_kerberos_kdc
+        ):
+            if self.with_kerberos_kdc:
+                base_secrets_dir = self.cluster.instances_dir
+            else:
+                base_secrets_dir = self.path
             shutil.copytree(
-                self.kerberos_secrets_dir, p.abspath(p.join(self.path, "secrets"))
+                self.kerberos_secrets_dir,
+                p.abspath(p.join(base_secrets_dir, "secrets")),
+                dirs_exist_ok=True,
             )
 
         if self.with_coredns:
@@ -3977,6 +4210,9 @@ class ClickHouseInstance:
 
         if self.with_kerberized_kafka:
             depends_on.append("kerberized_kafka1")
+
+        if self.with_kerberos_kdc:
+            depends_on.append("kerberoskdc")
 
         if self.with_kerberized_hdfs:
             depends_on.append("kerberizedhdfs1")

@@ -1,6 +1,7 @@
 #include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/misc.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -52,23 +53,41 @@ bool DDLMatcherBase::needChildVisit(const ASTPtr & node, const ASTPtr & child)
     return true;
 }
 
-ssize_t DDLMatcherBase::getPositionOfTableNameArgument(const ASTFunction & function)
+ssize_t DDLMatcherBase::getPositionOfTableNameArgumentToEvaluate(const ASTFunction & function)
 {
-    if (function.name == "joinGet" ||
-        function.name == "dictHas" ||
-        function.name == "dictIsIn" ||
-        function.name.starts_with("dictGet"))
+    if (functionIsJoinGet(function.name) || functionIsDictGet(function.name))
         return 0;
 
-    if (Poco::toLower(function.name) == "in")
+    return -1;
+}
+
+ssize_t DDLMatcherBase::getPositionOfTableNameArgumentToVisit(const ASTFunction & function)
+{
+    ssize_t maybe_res = getPositionOfTableNameArgumentToEvaluate(function);
+    if (0 <= maybe_res)
+        return maybe_res;
+
+    if (functionIsInOrGlobalInOperator(function.name))
+    {
+        if (function.children.empty())
+            return -1;
+
+        const auto * args = function.children[0]->as<ASTExpressionList>();
+        if (!args || args->children.size() != 2)
+            return -1;
+
+        if (args->children[1]->as<ASTFunction>())
+            return -1;
+
         return 1;
+    }
 
     return -1;
 }
 
 void DDLLoadingDependencyVisitor::visit(const ASTFunction & function, Data & data)
 {
-    ssize_t table_name_arg_idx = getPositionOfTableNameArgument(function);
+    ssize_t table_name_arg_idx = getPositionOfTableNameArgumentToVisit(function);
     if (table_name_arg_idx < 0)
         return;
     extractTableNameFromArgument(function, data, table_name_arg_idx);

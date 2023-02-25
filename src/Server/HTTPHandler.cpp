@@ -15,7 +15,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/QueryParameterVisitor.h>
+#include <Parsers/QueryParameterVisitor.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Session.h>
 #include <Server/HTTPHandlerFactory.h>
@@ -41,6 +41,7 @@
 #include <Poco/MemoryStream.h>
 #include <Poco/StreamCopier.h>
 #include <Poco/String.h>
+#include <Poco/Net/SocketAddress.h>
 
 #include <chrono>
 #include <sstream>
@@ -62,6 +63,9 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_DATE;
     extern const int CANNOT_PARSE_DATETIME;
     extern const int CANNOT_PARSE_NUMBER;
+    extern const int CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING;
+    extern const int CANNOT_PARSE_IPV4;
+    extern const int CANNOT_PARSE_IPV6;
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
     extern const int CANNOT_OPEN_FILE;
     extern const int CANNOT_COMPILE_REGEXP;
@@ -187,6 +191,9 @@ static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int excepti
              exception_code == ErrorCodes::CANNOT_PARSE_DATE ||
              exception_code == ErrorCodes::CANNOT_PARSE_DATETIME ||
              exception_code == ErrorCodes::CANNOT_PARSE_NUMBER ||
+             exception_code == ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING ||
+             exception_code == ErrorCodes::CANNOT_PARSE_IPV4 ||
+             exception_code == ErrorCodes::CANNOT_PARSE_IPV6 ||
              exception_code == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED ||
              exception_code == ErrorCodes::UNKNOWN_ELEMENT_IN_AST ||
              exception_code == ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE ||
@@ -253,12 +260,12 @@ static std::chrono::steady_clock::duration parseSessionTimeout(
 
         ReadBufferFromString buf(session_timeout_str);
         if (!tryReadIntText(session_timeout, buf) || !buf.eof())
-            throw Exception("Invalid session timeout: '" + session_timeout_str + "'", ErrorCodes::INVALID_SESSION_TIMEOUT);
+            throw Exception(ErrorCodes::INVALID_SESSION_TIMEOUT, "Invalid session timeout: '{}'", session_timeout_str);
 
         if (session_timeout > max_session_timeout)
-            throw Exception("Session timeout '" + session_timeout_str + "' is larger than max_session_timeout: " + toString(max_session_timeout)
-                + ". Maximum session timeout could be modified in configuration file.",
-                ErrorCodes::INVALID_SESSION_TIMEOUT);
+            throw Exception(ErrorCodes::INVALID_SESSION_TIMEOUT, "Session timeout '{}' is larger than max_session_timeout: {}. "
+                "Maximum session timeout could be modified in configuration file.",
+                session_timeout_str, max_session_timeout);
     }
 
     return std::chrono::seconds(session_timeout);
@@ -272,12 +279,12 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
 
     auto * cascade_buffer = typeid_cast<CascadeWriteBuffer *>(used_output.out_maybe_delayed_and_compressed.get());
     if (!cascade_buffer)
-        throw Exception("Expected CascadeWriteBuffer", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected CascadeWriteBuffer");
 
     cascade_buffer->getResultBuffers(write_buffers);
 
     if (write_buffers.empty())
-        throw Exception("At least one buffer is expected to overwrite result into HTTP response", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "At least one buffer is expected to overwrite result into HTTP response");
 
     for (auto & write_buf : write_buffers)
     {
@@ -345,25 +352,31 @@ bool HTTPHandler::authenticateUser(
     {
         /// It is prohibited to mix different authorization schemes.
         if (has_http_credentials)
-            throw Exception("Invalid authentication: it is not allowed to use SSL certificate authentication and Authorization HTTP header simultaneously", ErrorCodes::AUTHENTICATION_FAILED);
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                            "Invalid authentication: it is not allowed "
+                            "to use SSL certificate authentication and Authorization HTTP header simultaneously");
         if (has_credentials_in_query_params)
-            throw Exception("Invalid authentication: it is not allowed to use SSL certificate authentication and authentication via parameters simultaneously simultaneously", ErrorCodes::AUTHENTICATION_FAILED);
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                            "Invalid authentication: it is not allowed "
+                            "to use SSL certificate authentication and authentication via parameters simultaneously simultaneously");
 
         if (has_ssl_certificate_auth)
         {
 #if USE_SSL
             if (!password.empty())
-                throw Exception("Invalid authentication: it is not allowed to use SSL certificate authentication and authentication via password simultaneously", ErrorCodes::AUTHENTICATION_FAILED);
+                throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                                "Invalid authentication: it is not allowed "
+                                "to use SSL certificate authentication and authentication via password simultaneously");
 
             if (request.havePeerCertificate())
                 certificate_common_name = request.peerCertificate().commonName();
 
             if (certificate_common_name.empty())
-                throw Exception("Invalid authentication: SSL certificate authentication requires nonempty certificate's Common Name", ErrorCodes::AUTHENTICATION_FAILED);
+                throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                                "Invalid authentication: SSL certificate authentication requires nonempty certificate's Common Name");
 #else
-            throw Exception(
-                "SSL certificate authentication disabled because ClickHouse was built without SSL library",
-                ErrorCodes::SUPPORT_IS_DISABLED);
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                            "SSL certificate authentication disabled because ClickHouse was built without SSL library");
 #endif
         }
     }
@@ -371,7 +384,9 @@ bool HTTPHandler::authenticateUser(
     {
         /// It is prohibited to mix different authorization schemes.
         if (has_credentials_in_query_params)
-            throw Exception("Invalid authentication: it is not allowed to use Authorization HTTP header and authentication via parameters simultaneously", ErrorCodes::AUTHENTICATION_FAILED);
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                            "Invalid authentication: it is not allowed "
+                            "to use Authorization HTTP header and authentication via parameters simultaneously");
 
         std::string scheme;
         std::string auth_info;
@@ -388,11 +403,11 @@ bool HTTPHandler::authenticateUser(
             spnego_challenge = auth_info;
 
             if (spnego_challenge.empty())
-                throw Exception("Invalid authentication: SPNEGO challenge is empty", ErrorCodes::AUTHENTICATION_FAILED);
+                throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: SPNEGO challenge is empty");
         }
         else
         {
-            throw Exception("Invalid authentication: '" + scheme + "' HTTP Authorization scheme is not supported", ErrorCodes::AUTHENTICATION_FAILED);
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: '{}' HTTP Authorization scheme is not supported", scheme);
         }
 
         quota_key = params.get("quota_key", "");
@@ -412,7 +427,7 @@ bool HTTPHandler::authenticateUser(
 
         auto * certificate_credentials = dynamic_cast<SSLCertificateCredentials *>(request_credentials.get());
         if (!certificate_credentials)
-            throw Exception("Invalid authentication: expected SSL certificate authorization scheme", ErrorCodes::AUTHENTICATION_FAILED);
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: expected SSL certificate authorization scheme");
     }
     else if (!spnego_challenge.empty())
     {
@@ -421,7 +436,7 @@ bool HTTPHandler::authenticateUser(
 
         auto * gss_acceptor_context = dynamic_cast<GSSAcceptorContext *>(request_credentials.get());
         if (!gss_acceptor_context)
-            throw Exception("Invalid authentication: unexpected 'Negotiate' HTTP Authorization scheme expected", ErrorCodes::AUTHENTICATION_FAILED);
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: unexpected 'Negotiate' HTTP Authorization scheme expected");
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunreachable-code"
@@ -434,7 +449,7 @@ bool HTTPHandler::authenticateUser(
         if (!gss_acceptor_context->isFailed() && !gss_acceptor_context->isReady())
         {
             if (spnego_response.empty())
-                throw Exception("Invalid authentication: 'Negotiate' HTTP Authorization failure", ErrorCodes::AUTHENTICATION_FAILED);
+                throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: 'Negotiate' HTTP Authorization failure");
 
             response.setStatusAndReason(HTTPResponse::HTTP_UNAUTHORIZED);
             response.send();
@@ -448,7 +463,7 @@ bool HTTPHandler::authenticateUser(
 
         auto * basic_credentials = dynamic_cast<BasicCredentials *>(request_credentials.get());
         if (!basic_credentials)
-            throw Exception("Invalid authentication: expected 'Basic' HTTP Authorization scheme", ErrorCodes::AUTHENTICATION_FAILED);
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: expected 'Basic' HTTP Authorization scheme");
 
         basic_credentials->setUserName(user);
         basic_credentials->setPassword(password);
@@ -469,9 +484,15 @@ bool HTTPHandler::authenticateUser(
     client_info.forwarded_for = request.get("X-Forwarded-For", "");
     client_info.quota_key = quota_key;
 
+    /// Extract the last entry from comma separated list of forwarded_for addresses.
+    /// Only the last proxy can be trusted (if any).
+    String forwarded_address = client_info.getLastForwardedFor();
     try
     {
-        session->authenticate(*request_credentials, request.clientAddress());
+        if (!forwarded_address.empty() && server.config().getBool("auth_use_forwarded_address", false))
+            session->authenticate(*request_credentials, Poco::Net::SocketAddress(forwarded_address, request.clientAddress().port()));
+        else
+            session->authenticate(*request_credentials, request.clientAddress());
     }
     catch (const Authentication::Require<BasicCredentials> & required_credentials)
     {
@@ -533,9 +554,21 @@ void HTTPHandler::processQuery(
         std::string session_check = params.get("session_check", "");
         session->makeSessionContext(session_id, session_timeout, session_check == "1");
     }
+    else
+    {
+        /// We should create it even if we don't have a session_id
+        session->makeSessionContext();
+    }
 
     auto client_info = session->getClientInfo();
     auto context = session->makeQueryContext(std::move(client_info));
+
+    /// This parameter is used to tune the behavior of output formats (such as Native) for compatibility.
+    if (params.has("client_protocol_version"))
+    {
+        UInt64 version_param = parse<UInt64>(params.get("client_protocol_version"));
+        context->setClientProtocolVersion(version_param);
+    }
 
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
     String http_response_compression_methods = request.get("Accept-Encoding", "");
@@ -601,7 +634,7 @@ void HTTPHandler::processQuery(
             {
                 auto * prev_memory_buffer = typeid_cast<MemoryWriteBuffer *>(prev_buf.get());
                 if (!prev_memory_buffer)
-                    throw Exception("Expected MemoryWriteBuffer", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected MemoryWriteBuffer");
 
                 auto rdbuf = prev_memory_buffer->tryGetReadBuffer();
                 copyData(*rdbuf , *next_buffer);
@@ -642,7 +675,7 @@ void HTTPHandler::processQuery(
     std::unique_ptr<ReadBuffer> in;
 
     static const NameSet reserved_param_names{"compress", "decompress", "user", "password", "quota_key", "query_id", "stacktrace",
-        "buffer_size", "wait_end_of_query", "session_id", "session_timeout", "session_check"};
+        "buffer_size", "wait_end_of_query", "session_id", "session_timeout", "session_check", "client_protocol_version"};
 
     Names reserved_param_suffixes;
 
@@ -798,12 +831,20 @@ void HTTPHandler::processQuery(
     customizeContext(request, context);
 
     executeQuery(*in, *used_output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, context,
-        [&response, this] (const String & current_query_id, const String & content_type, const String & format, const String & timezone)
+        [&response, this] (const QueryResultDetails & details)
         {
-            response.setContentType(content_type_override.value_or(content_type));
-            response.add("X-ClickHouse-Query-Id", current_query_id);
-            response.add("X-ClickHouse-Format", format);
-            response.add("X-ClickHouse-Timezone", timezone);
+            response.add("X-ClickHouse-Query-Id", details.query_id);
+
+            if (content_type_override)
+                response.setContentType(*content_type_override);
+            else if (details.content_type)
+                response.setContentType(*details.content_type);
+
+            if (details.format)
+                response.add("X-ClickHouse-Format", *details.format);
+
+            if (details.timezone)
+                response.add("X-ClickHouse-Timezone", *details.timezone);
         }
     );
 
@@ -967,9 +1008,9 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         /// Workaround. Poco does not detect 411 Length Required case.
         if (request.getMethod() == HTTPRequest::HTTP_POST && !request.getChunkedTransferEncoding() && !request.hasContentLength())
         {
-            throw Exception(
-                "The Transfer-Encoding is not chunked and there is no Content-Length header for POST request",
-                ErrorCodes::HTTP_LENGTH_REQUIRED);
+            throw Exception(ErrorCodes::HTTP_LENGTH_REQUIRED,
+                            "The Transfer-Encoding is not chunked and there "
+                            "is no Content-Length header for POST request");
         }
 
         processQuery(request, params, response, used_output, query_scope);
@@ -1176,10 +1217,8 @@ static inline CompiledRegexPtr getCompiledRegex(const std::string & expression)
     auto compiled_regex = std::make_shared<const re2::RE2>(expression);
 
     if (!compiled_regex->ok())
-        throw Exception(
-            "Cannot compile re2: " + expression + " for http handling rule, error: " + compiled_regex->error()
-                + ". Look at https://github.com/google/re2/wiki/Syntax for reference.",
-            ErrorCodes::CANNOT_COMPILE_REGEXP);
+        throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile re2: {} for http handling rule, error: {}. "
+            "Look at https://github.com/google/re2/wiki/Syntax for reference.", expression, compiled_regex->error());
 
     return compiled_regex;
 }
@@ -1189,7 +1228,7 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
     const std::string & config_prefix)
 {
     if (!config.has(config_prefix + ".handler.query"))
-        throw Exception("There is no path '" + config_prefix + ".handler.query' in configuration file.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no path '{}.handler.query' in configuration file.", config_prefix);
 
     std::string predefined_query = config.getString(config_prefix + ".handler.query");
     NameSet analyze_receive_params = analyzeReceiveQueryParams(predefined_query);

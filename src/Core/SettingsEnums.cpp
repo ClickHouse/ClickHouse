@@ -109,6 +109,10 @@ IMPLEMENT_SETTING_ENUM_WITH_RENAME(DefaultTableEngine, ErrorCodes::BAD_ARGUMENTS
      {"ReplicatedReplacingMergeTree", DefaultTableEngine::ReplicatedReplacingMergeTree},
      {"Memory", DefaultTableEngine::Memory}})
 
+IMPLEMENT_SETTING_ENUM(CleanDeletedRows, ErrorCodes::BAD_ARGUMENTS,
+    {{"Never", CleanDeletedRows::Never},
+     {"Always", CleanDeletedRows::Always}})
+
 IMPLEMENT_SETTING_MULTI_ENUM(MySQLDataTypesSupport, ErrorCodes::UNKNOWN_MYSQL_DATATYPES_SUPPORT_LEVEL,
     {{"decimal",    MySQLDataTypesSupport::DECIMAL},
      {"datetime64", MySQLDataTypesSupport::DATETIME64},
@@ -162,4 +166,9 @@ IMPLEMENT_SETTING_ENUM(MsgPackUUIDRepresentation , ErrorCodes::BAD_ARGUMENTS,
 IMPLEMENT_SETTING_ENUM(Dialect, ErrorCodes::BAD_ARGUMENTS,
     {{"clickhouse", Dialect::clickhouse},
      {"kusto", Dialect::kusto}})
+
+IMPLEMENT_SETTING_ENUM(LocalFSReadMethod, ErrorCodes::BAD_ARGUMENTS,
+    {{"mmap", LocalFSReadMethod::mmap},
+     {"pread", LocalFSReadMethod::pread},
+     {"read", LocalFSReadMethod::read}})
 }

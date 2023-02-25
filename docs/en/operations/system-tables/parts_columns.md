@@ -147,4 +147,3 @@ column_marks_bytes:                    48
 **See Also**
 
 -   [MergeTree family](../../engines/table-engines/mergetree-family/mergetree.md)
-

@@ -271,5 +271,3 @@ SELECT * FROM mysql.test;
 │ 2 │ 222 │ Wow! │
 └───┴─────┴──────┘
 ```
-
-[来源文章](https://clickhouse.com/docs/en/engines/database-engines/materialized-mysql/) <!--hide-->

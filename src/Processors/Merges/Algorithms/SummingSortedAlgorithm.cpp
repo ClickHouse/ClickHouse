@@ -486,9 +486,8 @@ static void setRow(Row & row, const ColumnRawPtrs & raw_columns, size_t row_num,
             if (i < column_names.size())
                 column_name = column_names[i];
 
-            throw Exception("SummingSortedAlgorithm failed to read row " + toString(row_num)
-                            + " of column " + toString(i) + (column_name.empty() ? "" : " (" + column_name + ")"),
-                            ErrorCodes::CORRUPTED_DATA);
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "SummingSortedAlgorithm failed to read row {} of column {})",
+                            toString(row_num), toString(i) + (column_name.empty() ? "" : " (" + column_name));
         }
     }
 }
@@ -630,8 +629,7 @@ void SummingSortedAlgorithm::SummingMergedData::addRowImpl(ColumnRawPtrs & raw_c
     for (auto & desc : def.columns_to_aggregate)
     {
         if (!desc.created)
-            throw Exception("Logical error in SummingSortedAlgorithm, there are no description",
-                            ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error in SummingSortedAlgorithm, there are no description");
 
         if (desc.is_agg_func_type)
         {

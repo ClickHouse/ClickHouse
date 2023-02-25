@@ -110,12 +110,19 @@ public:
     /// Get description of processors added in current step. Should be called after updatePipeline().
     virtual void describePipeline(FormatSettings & /*settings*/) const {}
 
+    /// Append extra processors for this step.
+    void appendExtraProcessors(const Processors & extra_processors);
+
 protected:
     DataStreams input_streams;
     std::optional<DataStream> output_stream;
 
     /// Text description about what current step does.
     std::string step_description;
+
+    /// This field is used to store added processors from this step.
+    /// It is used only for introspection (EXPLAIN PIPELINE).
+    Processors processors;
 
     static void describePipeline(const Processors & processors, FormatSettings & settings);
 };

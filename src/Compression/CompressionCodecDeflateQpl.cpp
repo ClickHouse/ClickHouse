@@ -289,7 +289,10 @@ qpl_job * SoftwareCodecDeflateQpl::getJobCodecPtr()
         // Job initialization
         if (auto status = qpl_init_job(qpl_path_software, sw_job); status != QPL_STS_OK)
             throw Exception(ErrorCodes::CANNOT_COMPRESS,
-                "Initialization of DeflateQpl software fallback codec failed. (Details: qpl_init_job with error code: {} - please refer to qpl_status in ./contrib/qpl/include/qpl/c_api/status.h)", static_cast<UInt32>(status));
+                            "Initialization of DeflateQpl software fallback codec failed. "
+                            "(Details: qpl_init_job with error code: "
+                            "{} - please refer to qpl_status in ./contrib/qpl/include/qpl/c_api/status.h)",
+                            static_cast<UInt32>(status));
     }
     return sw_job;
 }
@@ -308,7 +311,10 @@ UInt32 SoftwareCodecDeflateQpl::doCompressData(const char * source, UInt32 sourc
 
     if (auto status = qpl_execute_job(job_ptr); status != QPL_STS_OK)
         throw Exception(ErrorCodes::CANNOT_COMPRESS,
-            "Execution of DeflateQpl software fallback codec failed. (Details: qpl_execute_job with error code: {} - please refer to qpl_status in ./contrib/qpl/include/qpl/c_api/status.h)", static_cast<UInt32>(status));
+                        "Execution of DeflateQpl software fallback codec failed. "
+                        "(Details: qpl_execute_job with error code: "
+                        "{} - please refer to qpl_status in ./contrib/qpl/include/qpl/c_api/status.h)",
+                        static_cast<UInt32>(status));
 
     return job_ptr->total_out;
 }
@@ -327,7 +333,10 @@ void SoftwareCodecDeflateQpl::doDecompressData(const char * source, UInt32 sourc
 
     if (auto status = qpl_execute_job(job_ptr); status != QPL_STS_OK)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
-            "Execution of DeflateQpl software fallback codec failed. (Details: qpl_execute_job with error code: {} - please refer to qpl_status in ./contrib/qpl/include/qpl/c_api/status.h)", static_cast<UInt32>(status));
+                        "Execution of DeflateQpl software fallback codec failed. "
+                        "(Details: qpl_execute_job with error code: "
+                        "{} - please refer to qpl_status in ./contrib/qpl/include/qpl/c_api/status.h)",
+                        static_cast<UInt32>(status));
 }
 
 CompressionCodecDeflateQpl::CompressionCodecDeflateQpl()

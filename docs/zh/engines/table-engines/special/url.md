@@ -70,5 +70,3 @@ SELECT * FROM url_engine_table
     -   `ALTER` 和 `SELECT...SAMPLE` 操作。
     -   索引。
     -   副本。
-
-[来源文章](https://clickhouse.com/docs/en/operations/table_engines/url/) <!--hide-->

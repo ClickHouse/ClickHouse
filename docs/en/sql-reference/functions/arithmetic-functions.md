@@ -65,10 +65,27 @@ An exception is thrown when dividing by zero or when dividing a minimal negative
 
 Differs from [modulo](#modulo) in that it returns zero when the divisor is zero.
 
-## positive_modulo(a, b)
-Calculates the remainder when dividing `a` by `b`. Similar to function `modulo` except that `positive_modulo` always return non-negative number.
+## positiveModulo(a, b), positive_modulo(a, b), pmod(a, b)
+Calculates the remainder when dividing `a` by `b`. Similar to the function `modulo` except that `positive_modulo` always returns a non-negative number.
 
-Notice that `positive_modulo` is 4-5 times slower than `modulo`. You should not use `positive_modulo` unless you want to get positive result and don't care about performance too much.
+Notice that `positive_modulo` is 4-5 times slower than `modulo`. You should not use `positive_modulo` unless you want to get a positive result and don't care about performance too much.
+
+**Example**
+
+Query:
+
+```sql
+SELECT positiveModulo(-1, 10)
+```
+
+Result:
+
+```text
+
+┌─positiveModulo(-1, 10)─┐
+│                      9 │
+└────────────────────────┘
+```
 
 ## negate(a), -a operator
 
@@ -132,7 +149,7 @@ Compares two values and returns the minimum. The returned value is converted to 
 **Syntax**
 
 ```sql
-max2(value1, value2)
+min2(value1, value2)
 ```
 
 **Arguments**

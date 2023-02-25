@@ -33,5 +33,3 @@ Columns:
 ## See Also {#see-also}
 
 -   [SHOW USERS](../../sql-reference/statements/show.md#show-users-statement)
-
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/users) <!--hide-->

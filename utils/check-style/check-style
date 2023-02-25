@@ -13,7 +13,7 @@
 #  and then to run formatter only for the specified files.
 
 ROOT_PATH=$(git rev-parse --show-toplevel)
-EXCLUDE_DIRS='build/|integration/|widechar_width/|glibc-compatibility/|memcpy/|consistent-hashing|benchmark|tests/'
+EXCLUDE_DIRS='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/'
 
 # From [1]:
 #     But since array_to_string_internal() in array.c still loops over array
@@ -244,7 +244,7 @@ find $ROOT_PATH/{src,base,programs} -name '*.h' -or -name '*.cpp' 2>/dev/null | 
 find $ROOT_PATH -not -path $ROOT_PATH'/tests/ci*' -not -path $ROOT_PATH'/docker*' -not -path $ROOT_PATH'/contrib*' -name Dockerfile -type f 2>/dev/null | xargs --no-run-if-empty -n1 echo "Please move Dockerfile to docker directory:"
 
 # There shouldn't be any docker compose files outside docker directory
-#find $ROOT_PATH -not -path $ROOT_PATH'/tests/testflows*' -not -path $ROOT_PATH'/docker*' -not -path $ROOT_PATH'/contrib*' -name '*compose*.yml' -type f 2>/dev/null | xargs --no-run-if-empty grep -l "version:" | xargs --no-run-if-empty -n1 echo "Please move docker compose to docker directory:"
+find $ROOT_PATH -name '*compose*.yml' -type f -not -path $ROOT_PATH'/docker' -not -path $ROOT_PATH'/tests/integration*' -not -path $ROOT_PATH'/docker*' -not -path $ROOT_PATH'/contrib*' 2>/dev/null | grep -vP $EXCLUDE_DIRS | xargs --no-run-if-empty grep -l "version:" | xargs --no-run-if-empty -n1 echo "Please move docker compose to the 'docker' or 'tests' directory:"
 
 # Check that every header file has #pragma once in first line
 find $ROOT_PATH/{src,programs,utils} -name '*.h' |
@@ -252,12 +252,12 @@ find $ROOT_PATH/{src,programs,utils} -name '*.h' |
     while read file; do [[ $(head -n1 $file) != '#pragma once' ]] && echo "File $file must have '#pragma once' in first line"; done
 
 # Check for executable bit on non-executable files
-find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} '(' -name '*.cpp' -or -name '*.h' -or -name '*.sql' -or -name '*.j2' -or -name '*.xml' -or -name '*.reference' -or -name '*.txt' -or -name '*.md' ')' -and -executable | grep -P '.' && echo "These files should not be executable."
+find $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} '(' -name '*.cpp' -or -name '*.h' -or -name '*.sql' -or -name '*.j2' -or -name '*.xml' -or -name '*.reference' -or -name '*.txt' -or -name '*.md' ')' -and -executable | grep -P '.' && echo "These files should not be executable."
 
 # Check for BOM
-find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' | xargs grep -l -F $'\xEF\xBB\xBF' | grep -P '.' && echo "Files should not have UTF-8 BOM"
-find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' | xargs grep -l -F $'\xFF\xFE' | grep -P '.' && echo "Files should not have UTF-16LE BOM"
-find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' | xargs grep -l -F $'\xFE\xFF' | grep -P '.' && echo "Files should not have UTF-16BE BOM"
+find $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' | xargs grep -l -F $'\xEF\xBB\xBF' | grep -P '.' && echo "Files should not have UTF-8 BOM"
+find $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' | xargs grep -l -F $'\xFF\xFE' | grep -P '.' && echo "Files should not have UTF-16LE BOM"
+find $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' | xargs grep -l -F $'\xFE\xFF' | grep -P '.' && echo "Files should not have UTF-16BE BOM"
 
 # Too many exclamation marks
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
@@ -279,6 +279,8 @@ std_cerr_cout_excludes=(
     /examples/
     /tests/
     _fuzzer
+    # DUMP()
+    base/base/iostream_debug_helpers.h
     # OK
     src/Common/ProgressIndication.cpp
     # only under #ifdef DBMS_HASH_MAP_DEBUG_RESIZES, that is used only in tests
@@ -292,6 +294,7 @@ std_cerr_cout_excludes=(
     # IProcessor::dump()
     src/Processors/IProcessor.cpp
     src/Client/ClientBase.cpp
+    src/Client/LineReader.cpp
     src/Client/QueryFuzzer.cpp
     src/Client/Suggest.cpp
     src/Bridge/IBridge.cpp
@@ -299,7 +302,7 @@ std_cerr_cout_excludes=(
     src/Loggers/Loggers.cpp
 )
 sources_with_std_cerr_cout=( $(
-    find $ROOT_PATH/src -name '*.h' -or -name '*.cpp' | \
+    find $ROOT_PATH/{src,base} -name '*.h' -or -name '*.cpp' | \
         grep -vP $EXCLUDE_DIRS | \
         grep -F -v $(printf -- "-e %s " "${std_cerr_cout_excludes[@]}") | \
         xargs grep -F --with-filename -e std::cerr -e std::cout | cut -d: -f1 | sort -u
@@ -330,10 +333,22 @@ expect_tests=( $(find $ROOT_PATH/tests/queries -name '*.expect') )
 for test_case in "${expect_tests[@]}"; do
     pattern="^exp_internal -f \$env(CLICKHOUSE_TMP)/\$basename.debuglog 0$"
     grep -q "$pattern" "$test_case" || echo "Missing '$pattern' in '$test_case'"
+
+    if grep -q "^spawn.*CLICKHOUSE_CLIENT_BINARY$" "$test_case"; then
+        pattern="^spawn.*CLICKHOUSE_CLIENT_BINARY.*--history_file$"
+        grep -q "$pattern" "$test_case" || echo "Missing '$pattern' in '$test_case'"
+    fi
+
+    # Otherwise expect_after/expect_before will not bail without stdin attached
+    # (and actually this is a hack anyway, correct way is to use $any_spawn_id)
+    pattern="-i \$any_spawn_id timeout"
+    grep -q -- "$pattern" "$test_case" || echo "Missing '$pattern' in '$test_case'"
+    pattern="-i \$any_spawn_id eof"
+    grep -q -- "$pattern" "$test_case" || echo "Missing '$pattern' in '$test_case'"
 done
 
 # Conflict markers
-find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' |
+find $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' |
     xargs grep -P '^(<<<<<<<|=======|>>>>>>>)$' | grep -P '.' && echo "Conflict markers are found in files"
 
 # Forbid subprocess.check_call(...) in integration tests because it does not provide enough information on errors
@@ -368,6 +383,12 @@ find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
 find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
     grep -vP $EXCLUDE_DIRS |
     xargs grep -P '__builtin_unreachable' && echo "Use UNREACHABLE() from defines.h instead"
+
+# Require checking return value of close(),
+# since it can hide fd misuse and break other places.
+find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
+    grep -vP $EXCLUDE_DIRS |
+    xargs grep -e ' close(.*fd' -e ' ::close(' | grep -v = && echo "Return value of close() should be checked"
 
 # Check for existence of __init__.py files
 for i in "${ROOT_PATH}"/tests/integration/test_*; do FILE="${i}/__init__.py"; [ ! -f "${FILE}" ] && echo "${FILE} should exist for every integration test"; done

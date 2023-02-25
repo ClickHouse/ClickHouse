@@ -59,5 +59,3 @@ ClickHouse:
 -   [外部字典的来源](external-dicts-dict-sources.md)
 -   [字典键和字段](external-dicts-dict-structure.md)
 -   [使用外部字典的函数](../../../sql-reference/functions/ext-dict-functions.md)
-
-[原始文章](https://clickhouse.com/docs/en/query_language/dicts/external_dicts/) <!--hide-->

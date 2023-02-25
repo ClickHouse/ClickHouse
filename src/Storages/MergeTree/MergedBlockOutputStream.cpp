@@ -200,7 +200,9 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     const MergeTreeMutableDataPartPtr & new_part,
     MergeTreeData::DataPart::Checksums & checksums)
 {
+    /// NOTE: You do not need to call fsync here, since it will be called later for the all written_files.
     WrittenFiles written_files;
+
     if (new_part->isProjectionPart())
     {
         if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || isCompactPart(new_part))
@@ -240,8 +242,8 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
                     written_files.emplace_back(std::move(file));
             }
             else if (rows_count)
-                throw Exception("MinMax index was not initialized for new non-empty part " + new_part->name
-                    + ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "MinMax index was not initialized for new non-empty part {}. It is a bug.",
+                    new_part->name);
         }
 
         {
@@ -296,8 +298,8 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     }
     else
     {
-        throw Exception("Compression codec have to be specified for part on disk, empty for" + new_part->name
-                + ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Compression codec have to be specified for part on disk, empty for{}. "
+                "It is a bug.", new_part->name);
     }
 
     {

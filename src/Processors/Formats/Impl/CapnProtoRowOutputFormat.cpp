@@ -42,10 +42,9 @@ void CapnProtoOutputStream::write(const void * buffer, size_t size)
 CapnProtoRowOutputFormat::CapnProtoRowOutputFormat(
     WriteBuffer & out_,
     const Block & header_,
-    const RowOutputFormatParams & params_,
     const FormatSchemaInfo & info,
     const FormatSettings & format_settings_)
-    : IRowOutputFormat(header_, out_, params_), column_names(header_.getNames()), column_types(header_.getDataTypes()), output_stream(std::make_unique<CapnProtoOutputStream>(out_)), format_settings(format_settings_)
+    : IRowOutputFormat(header_, out_), column_names(header_.getNames()), column_types(header_.getDataTypes()), output_stream(std::make_unique<CapnProtoOutputStream>(out_)), format_settings(format_settings_)
 {
     schema = schema_parser.getMessageSchema(info);
     checkCapnProtoSchemaStructure(schema, getPort(PortKind::Main).getHeader(), format_settings.capn_proto.enum_comparing_mode);
@@ -264,10 +263,9 @@ void registerOutputFormatCapnProto(FormatFactory & factory)
     factory.registerOutputFormat("CapnProto", [](
         WriteBuffer & buf,
         const Block & sample,
-        const RowOutputFormatParams & params,
         const FormatSettings & format_settings)
     {
-        return std::make_shared<CapnProtoRowOutputFormat>(buf, sample, params, FormatSchemaInfo(format_settings, "CapnProto", true), format_settings);
+        return std::make_shared<CapnProtoRowOutputFormat>(buf, sample, FormatSchemaInfo(format_settings, "CapnProto", true), format_settings);
     });
 }
 

@@ -870,5 +870,3 @@ function(
       const & RangesInDataParts ranges,
       size_t limit)
 ```
-
-[Original article](https://clickhouse.com/docs/en/development/style/) <!--hide-->

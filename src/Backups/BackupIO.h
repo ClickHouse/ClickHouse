@@ -24,6 +24,8 @@ public:
 class IBackupWriter /// BackupWriterFile, BackupWriterDisk
 {
 public:
+    using CreateReadBufferFunction = std::function<std::unique_ptr<SeekableReadBuffer>()>;
+
     virtual ~IBackupWriter() = default;
     virtual bool fileExists(const String & file_name) = 0;
     virtual UInt64 getFileSize(const String & file_name) = 0;
@@ -32,14 +34,9 @@ public:
     virtual void removeFile(const String & file_name) = 0;
     virtual void removeFiles(const Strings & file_names) = 0;
     virtual DataSourceDescription getDataSourceDescription() const = 0;
-    virtual void copyFileThroughBuffer(std::unique_ptr<SeekableReadBuffer> && source, const String & file_name);
-
-    virtual bool supportNativeCopy(DataSourceDescription /* data_source_description */) const
-    {
-        return false;
-    }
-
-    virtual void copyFileNative(DiskPtr from_disk, const String & file_name_from, const String & file_name_to);
+    virtual void copyDataToFile(const CreateReadBufferFunction & create_read_buffer, UInt64 offset, UInt64 size, const String & dest_file_name);
+    virtual bool supportNativeCopy(DataSourceDescription /* data_source_description */) const { return false; }
+    virtual void copyFileNative(DiskPtr src_disk, const String & src_file_name, UInt64 src_offset, UInt64 src_size, const String & dest_file_name);
 };
 
 }

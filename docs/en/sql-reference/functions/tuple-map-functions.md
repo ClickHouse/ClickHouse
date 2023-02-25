@@ -440,7 +440,7 @@ mapApply(func, map)
   
 **Parameters**
   
--   `func`  - [Lamda function](../../sql-reference/functions/index.md#higher-order-functions---operator-and-lambdaparams-expr-function).
+-   `func`  - [Lambda function](../../sql-reference/functions/index.md#higher-order-functions---operator-and-lambdaparams-expr-function).
 -   `map` — [Map](../../sql-reference/data-types/map.md).
 
 **Returned value**
@@ -480,7 +480,7 @@ mapFilter(func, map)
   
 **Parameters**
 
--   `func`  - [Lamda function](../../sql-reference/functions/index.md#higher-order-functions---operator-and-lambdaparams-expr-function).
+-   `func`  - [Lambda function](../../sql-reference/functions/index.md#higher-order-functions---operator-and-lambdaparams-expr-function).
 -   `map` — [Map](../../sql-reference/data-types/map.md).  
 
 **Returned value**
@@ -544,5 +544,3 @@ Result:
 │ {'key3':0,'key1':10,'key2':10} │
 └────────────────────────────────┘
 ```  
-
-[Original article](https://clickhouse.com/docs/en/sql-reference/functions/tuple-map-functions/) <!--hide-->

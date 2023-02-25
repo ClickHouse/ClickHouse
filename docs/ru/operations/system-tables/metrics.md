@@ -40,4 +40,3 @@ SELECT * FROM system.metrics LIMIT 10
 -   [system.events](#system_tables-events) — таблица с количеством произошедших событий.
 -   [system.metric_log](#system_tables-metric_log) — таблица фиксирующая историю значений метрик из `system.metrics` и `system.events`.
 -   [Мониторинг](../../operations/monitoring.md) — основы мониторинга в ClickHouse.
-

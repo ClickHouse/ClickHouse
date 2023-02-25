@@ -12,6 +12,9 @@ using DataTypes = std::vector<DataTypePtr>;
 
 struct Array;
 
+/* Generic class for all functions.
+ * Represents interface for function signature.
+ */
 class IResolvedFunction
 {
 public:

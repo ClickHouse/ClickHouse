@@ -342,7 +342,6 @@ ZooKeeper::ZooKeeper(
         default_acls.emplace_back(std::move(acl));
     }
 
-
     /// It makes sense (especially, for async requests) to inject a fault in two places:
     /// pushRequest (before request is sent) and receiveEvent (after request was executed).
     if (0 < args.send_fault_probability && args.send_fault_probability <= 1)
@@ -509,7 +508,9 @@ void ZooKeeper::receiveHandshake()
         /// It's better for faster failover than just connection drop.
         /// Implemented in clickhouse-keeper.
         if (protocol_version_read == KEEPER_PROTOCOL_VERSION_CONNECTION_REJECT)
-            throw Exception(Error::ZCONNECTIONLOSS, "Keeper server rejected the connection during the handshake. Possibly it's overloaded, doesn't see leader or stale");
+            throw Exception(Error::ZCONNECTIONLOSS,
+                            "Keeper server rejected the connection during the handshake. "
+                            "Possibly it's overloaded, doesn't see leader or stale");
         else
             throw Exception(Error::ZMARSHALLINGERROR, "Unexpected protocol version: {}", protocol_version_read);
     }
@@ -825,7 +826,7 @@ void ZooKeeper::receiveEvent()
         if (length != actual_length)
             throw Exception(Error::ZMARSHALLINGERROR, "Response length doesn't match. Expected: {}, actual: {}", length, actual_length);
 
-        logOperationIfNeeded(request_info.request, response, /* finalize= */ false, elapsed_ms);   //-V614
+        logOperationIfNeeded(request_info.request, response, /* finalize= */ false, elapsed_ms);
     }
     catch (...)
     {

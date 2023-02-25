@@ -32,8 +32,8 @@ public:
         : IAggregateFunctionDataHelper<ExponentiallySmoothedAverage, AggregateFunctionExponentialMovingAverage>(argument_types_, params, createResultType())
     {
         if (params.size() != 1)
-            throw Exception{"Aggregate function " + getName() + " requires exactly one parameter: half decay time.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires exactly one parameter: "
+                "half decay time.", getName());
 
         half_decay = applyVisitor(FieldVisitorConvertToNumber<Float64>(), params[0]);
     }

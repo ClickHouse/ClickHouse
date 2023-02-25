@@ -44,6 +44,12 @@ bool ProtobufRowInputFormat::readRow(MutableColumns & columns, RowReadExtension 
     return true;
 }
 
+void ProtobufRowInputFormat::setReadBuffer(ReadBuffer & in_)
+{
+    reader->setReadBuffer(in_);
+    IRowInputFormat::setReadBuffer(in_);
+}
+
 bool ProtobufRowInputFormat::allowSyncAfterError() const
 {
     return true;

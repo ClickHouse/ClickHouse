@@ -62,5 +62,3 @@ slug: /zh/engines/table-engines/special/merge
 `Merge` 类型的表包括一个 `String` 类型的 `_table` 虚拟列。（如果该表本来已有了一个 `_table` 的列，那这个虚拟列会命名为 `_table1` ；如果 `_table1` 也本就存在了，那这个虚拟列会被命名为 `_table2` ，依此类推）该列包含被读数据的表名。
 
 如果 `WHERE/PREWHERE` 子句包含了带 `_table` 的条件，并且没有依赖其他的列（如作为表达式谓词链接的一个子项或作为整个的表达式），这些条件的作用会像索引一样。这些条件会在那些可能被读数据的表的表名上执行，并且读操作只会在那些满足了该条件的表上去执行。
-
-[来源文章](https://clickhouse.com/docs/en/operations/table_engines/merge/) <!--hide-->

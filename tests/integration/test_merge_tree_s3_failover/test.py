@@ -182,7 +182,7 @@ def test_move_failover(cluster):
             data String
         ) ENGINE=MergeTree()
         ORDER BY id
-        TTL dt + INTERVAL 3 SECOND TO VOLUME 'external'
+        TTL dt + INTERVAL 4 SECOND TO VOLUME 'external'
         SETTINGS storage_policy='s3_cold'
         """
     )
@@ -191,7 +191,7 @@ def test_move_failover(cluster):
     fail_request(cluster, 1)
 
     node.query(
-        "INSERT INTO s3_failover_test VALUES (now() - 2, 0, 'data'), (now() - 2, 1, 'data')"
+        "INSERT INTO s3_failover_test VALUES (now() - 1, 0, 'data'), (now() - 1, 1, 'data')"
     )
 
     # Wait for part move to S3.

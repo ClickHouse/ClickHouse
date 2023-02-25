@@ -126,12 +126,6 @@ Contribute all new information in English language. Other languages are translat
 
 ### Adding a New File
 
-When you add a new file, it should end with a link like:
-
-`[Original article](https://clickhouse.com/docs/<path-to-the-page>) <!--hide-->`
-
-and there should be **a new empty line** after it.
-
 {## When adding a new file:
 
 - Make symbolic links for all other languages. You can use the following commands:

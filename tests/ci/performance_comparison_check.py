@@ -236,7 +236,7 @@ if __name__ == "__main__":
 
         # TODO: Remove me, always green mode for the first time, unless errors
         status = "success"
-        if "errors" in message:
+        if "errors" in message.lower():
             status = "failure"
         # TODO: Remove until here
     except Exception:

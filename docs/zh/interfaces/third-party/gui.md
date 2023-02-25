@@ -129,5 +129,3 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
 -   数据编辑器。
 -   重构。
 -   搜索和导航。
-
-[来源文章](https://clickhouse.com/docs/zh/interfaces/third-party/gui/) <!--hide-->

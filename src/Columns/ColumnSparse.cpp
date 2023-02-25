@@ -23,7 +23,7 @@ ColumnSparse::ColumnSparse(MutableColumnPtr && values_)
     : values(std::move(values_)), _size(0)
 {
     if (!values->empty())
-        throw Exception("Not empty values passed to ColumnSparse, but no offsets passed", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not empty values passed to ColumnSparse, but no offsets passed");
 
     values->insertDefault();
     offsets = ColumnUInt64::create();
@@ -173,8 +173,7 @@ void ColumnSparse::insertRangeFrom(const IColumn & src, size_t start, size_t len
         return;
 
     if (start + length > src.size())
-        throw Exception("Parameter out of bound in IColumnString::insertRangeFrom method.",
-            ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Parameter out of bound in IColumnString::insertRangeFrom method.");
 
     auto & offsets_data = getOffsetsData();
 
@@ -336,7 +335,7 @@ ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
 void ColumnSparse::expand(const Filter & mask, bool inverted)
 {
     if (mask.size() < _size)
-        throw Exception("Mask size should be no less than data size.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mask size should be no less than data size.");
 
     auto res_offsets = offsets->cloneEmpty();
     auto & res_offsets_data = assert_cast<ColumnUInt64 &>(*res_offsets).getData();
@@ -347,7 +346,7 @@ void ColumnSparse::expand(const Filter & mask, bool inverted)
         if (!!mask[i] ^ inverted)
         {
             if (it.getCurrentRow() == _size)
-                throw Exception("Too many bytes in mask", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many bytes in mask");
 
             if (!it.isDefault())
                 res_offsets_data[it.getCurrentOffset()] = i;
@@ -613,7 +612,7 @@ ColumnPtr ColumnSparse::replicate(const Offsets & replicate_offsets) const
 {
     /// TODO: implement specializations.
     if (_size != replicate_offsets.size())
-        throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets doesn't match size of column.");
 
     if (_size == 0)
         return ColumnSparse::create(values->cloneEmpty());

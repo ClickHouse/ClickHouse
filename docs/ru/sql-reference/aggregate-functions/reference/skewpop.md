@@ -24,4 +24,3 @@ skewPop(expr)
 ``` sql
 SELECT skewPop(value) FROM series_with_value_column;
 ```
-

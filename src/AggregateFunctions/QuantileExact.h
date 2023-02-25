@@ -38,7 +38,7 @@ struct QuantileExactBase
     template <typename Weight>
     void add(const Value &, const Weight &)
     {
-        throw Exception("Method add with weight is not implemented for QuantileExact", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method add with weight is not implemented for QuantileExact");
     }
 
     void merge(const QuantileExactBase & rhs) { array.insert(rhs.array.begin(), rhs.array.end()); }
@@ -133,15 +133,15 @@ struct QuantileExactExclusive : public QuantileExact<Value>
         if (!array.empty())
         {
             if (level == 0. || level == 1.)
-                throw Exception("QuantileExactExclusive cannot interpolate for the percentiles 1 and 0", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "QuantileExactExclusive cannot interpolate for the percentiles 1 and 0");
 
             Float64 h = level * (array.size() + 1);
             auto n = static_cast<size_t>(h);
 
             if (n >= array.size())
-                return static_cast<Float64>(array[array.size() - 1]);
+                return static_cast<Float64>(*std::max_element(array.begin(), array.end()));
             else if (n < 1)
-                return static_cast<Float64>(array[0]);
+                return static_cast<Float64>(*std::min_element(array.begin(), array.end()));
 
             ::nth_element(array.begin(), array.begin() + n - 1, array.end());
             auto nth_elem = std::min_element(array.begin() + n, array.end());
@@ -161,15 +161,15 @@ struct QuantileExactExclusive : public QuantileExact<Value>
             {
                 auto level = levels[indices[i]];
                 if (level == 0. || level == 1.)
-                    throw Exception("QuantileExactExclusive cannot interpolate for the percentiles 1 and 0", ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "QuantileExactExclusive cannot interpolate for the percentiles 1 and 0");
 
                 Float64 h = level * (array.size() + 1);
                 auto n = static_cast<size_t>(h);
 
                 if (n >= array.size())
-                    result[indices[i]] = static_cast<Float64>(array[array.size() - 1]);
+                    result[indices[i]] = static_cast<Float64>(*std::max_element(array.begin(), array.end()));
                 else if (n < 1)
-                    result[indices[i]] = static_cast<Float64>(array[0]);
+                    result[indices[i]] = static_cast<Float64>(*std::min_element(array.begin(), array.end()));
                 else
                 {
                     ::nth_element(array.begin() + prev_n, array.begin() + n - 1, array.end());
@@ -204,9 +204,9 @@ struct QuantileExactInclusive : public QuantileExact<Value>
             auto n = static_cast<size_t>(h);
 
             if (n >= array.size())
-                return static_cast<Float64>(array[array.size() - 1]);
+                return static_cast<Float64>(*std::max_element(array.begin(), array.end()));
             else if (n < 1)
-                return static_cast<Float64>(array[0]);
+                return static_cast<Float64>(*std::min_element(array.begin(), array.end()));
             ::nth_element(array.begin(), array.begin() + n - 1, array.end());
             auto nth_elem = std::min_element(array.begin() + n, array.end());
 
@@ -229,9 +229,9 @@ struct QuantileExactInclusive : public QuantileExact<Value>
                 auto n = static_cast<size_t>(h);
 
                 if (n >= array.size())
-                    result[indices[i]] = static_cast<Float64>(array[array.size() - 1]);
+                    result[indices[i]] = static_cast<Float64>(*std::max_element(array.begin(), array.end()));
                 else if (n < 1)
-                    result[indices[i]] = static_cast<Float64>(array[0]);
+                    result[indices[i]] = static_cast<Float64>(*std::min_element(array.begin(), array.end()));
                 else
                 {
                     ::nth_element(array.begin() + prev_n, array.begin() + n - 1, array.end());

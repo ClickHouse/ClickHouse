@@ -27,16 +27,16 @@ struct RepeatImpl
     {
         static constexpr UInt64 max_repeat_times = 1000000;
         if (repeat_time > max_repeat_times)
-            throw Exception("Too many times to repeat (" + std::to_string(repeat_time) + "), maximum is: " + std::to_string(max_repeat_times),
-                ErrorCodes::TOO_LARGE_STRING_SIZE);
+            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too many times to repeat ({}), maximum is: {}",
+                std::to_string(repeat_time), std::to_string(max_repeat_times));
     }
 
     static inline void checkStringSize(UInt64 size)
     {
         static constexpr UInt64 max_string_size = 1 << 30;
         if (size > max_string_size)
-            throw Exception("Too large string size (" + std::to_string(size) + ") in function repeat, maximum is: " + std::to_string(max_string_size),
-                ErrorCodes::TOO_LARGE_STRING_SIZE);
+            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size ({}) in function repeat, maximum is: {}",
+                size, max_string_size);
     }
 
     static void vectorStrConstRepeat(
@@ -184,11 +184,11 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
-            throw Exception(
-                "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                arguments[0]->getName(), getName());
         if (!isUnsignedInteger(arguments[1]))
-            throw Exception(
-                "Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                arguments[1]->getName(), getName());
         return arguments[0];
     }
 
@@ -244,9 +244,8 @@ public:
             }
         }
 
-        throw Exception(
-            "Illegal column " + arguments[0].column->getName() + " of argument of function " + getName(),
-            ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+            arguments[0].column->getName(), getName());
     }
 };
 

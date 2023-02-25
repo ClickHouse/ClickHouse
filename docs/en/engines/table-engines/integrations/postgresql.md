@@ -176,4 +176,5 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 -   [The `postgresql` table function](../../../sql-reference/table-functions/postgresql.md)
 -   [Using PostgreSQL as a dictionary source](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-postgresql)
 
-[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/postgresql/) <!--hide-->
+## Related content
+- Blog: [ClickHouse and PostgreSQL - a match made in data heaven - part 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)

@@ -84,5 +84,3 @@ CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
 `CREATE ROW POLICY filter2 ON mydb.mytable USING a<1000 AND b=5 TO ALL EXCEPT mira`
 
 `CREATE ROW POLICY filter3 ON mydb.mytable USING 1 TO admin`
-
-<!--hide-->

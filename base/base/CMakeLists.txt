@@ -1,3 +1,7 @@
+if (USE_CLANG_TIDY)
+    set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
+endif ()
+
 set (SRCS
     argsToConfig.cpp
     coverage.cpp
@@ -8,16 +12,13 @@ set (SRCS
     getPageSize.cpp
     getThreadId.cpp
     JSON.cpp
-    LineReader.cpp
     mremap.cpp
     phdr_cache.cpp
     preciseExp10.cpp
-    setTerminalEcho.cpp
     shift10.cpp
     sleep.cpp
     terminalColors.cpp
     errnoToString.cpp
-    ReplxxLineReader.cpp
     StringRef.cpp
     safeExit.cpp
     throwError.cpp
@@ -40,16 +41,7 @@ else ()
     target_compile_definitions(common PUBLIC WITH_COVERAGE=0)
 endif ()
 
-# FIXME: move libraries for line reading out from base
-if (TARGET ch_rust::skim)
-    target_link_libraries(common PUBLIC ch_rust::skim)
-endif()
-
 target_include_directories(common PUBLIC .. "${CMAKE_CURRENT_BINARY_DIR}/..")
-
-if (OS_DARWIN AND NOT USE_STATIC_LIBRARIES)
-    target_link_libraries(common PUBLIC -Wl,-U,_inside_main)
-endif()
 
 target_link_libraries (common
     PUBLIC

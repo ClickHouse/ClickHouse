@@ -50,4 +50,3 @@ CurrentMetric_ReplicatedChecks:                             0
 -   [system.events](#system_tables-events) — таблица с количеством произошедших событий.
 -   [system.metrics](#system_tables-metrics) — таблица с мгновенно вычисляемыми метриками.
 -   [Мониторинг](../../operations/monitoring.md) — основы мониторинга в ClickHouse.
-

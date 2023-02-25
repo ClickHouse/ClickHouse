@@ -21,6 +21,13 @@ ENGINE = HDFS(URI, format)
 `SELECT` queries, the format must be supported for input, and to perform
 `INSERT` queries – for output. The available formats are listed in the
 [Formats](../../../interfaces/formats.md#formats) section.
+- [PARTITION BY expr]
+
+### PARTITION BY
+
+`PARTITION BY` — Optional. In most cases you don't need a partition key, and if it is needed you generally don't need a partition key more granular than by month. Partitioning does not speed up queries (in contrast to the ORDER BY expression). You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead, make client identifier or name the first column in the ORDER BY expression).
+
+For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/docs/en/sql-reference/data-types/date.md). The partition names here have the `"YYYYMM"` format.
 
 **Example:**
 
@@ -229,5 +236,3 @@ libhdfs3 support HDFS namenode HA.
 **See Also**
 
 -   [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
-
-[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/hdfs/) <!--hide-->

@@ -116,9 +116,9 @@ void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, F
                   << (settings.hilite ? IAST::hilite_none : "");
 
     if (!access_rights_elements.sameOptions())
-        throw Exception("Elements of an ASTGrantQuery are expected to have the same options", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Elements of an ASTGrantQuery are expected to have the same options");
     if (!access_rights_elements.empty() &&  access_rights_elements[0].is_partial_revoke && !is_revoke)
-        throw Exception("A partial revoke should be revoked, not granted", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A partial revoke should be revoked, not granted");
     bool grant_option = !access_rights_elements.empty() && access_rights_elements[0].grant_option;
 
     formatOnCluster(settings);
@@ -136,7 +136,9 @@ void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, F
     {
         roles->format(settings);
         if (!access_rights_elements.empty())
-            throw Exception("ASTGrantQuery can contain either roles or access rights elements to grant or revoke, not both of them", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "ASTGrantQuery can contain either roles or access rights elements "
+                            "to grant or revoke, not both of them");
     }
     else
         formatElementsWithoutOptions(access_rights_elements, settings);

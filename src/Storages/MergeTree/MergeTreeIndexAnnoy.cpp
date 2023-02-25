@@ -142,7 +142,7 @@ void MergeTreeIndexAggregatorAnnoy<Distance>::update(const Block & block, size_t
         return;
 
     if (index_sample_block.columns() > 1)
-        throw Exception("Only one column is supported", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Only one column is supported");
 
     auto index_column_name = index_sample_block.getByPosition(0).name;
     const auto & column_cut = block.getByName(index_column_name).column->cut(*pos, rows_read);
@@ -208,7 +208,7 @@ MergeTreeIndexConditionAnnoy::MergeTreeIndexConditionAnnoy(
 
 bool MergeTreeIndexConditionAnnoy::mayBeTrueOnGranule(MergeTreeIndexGranulePtr /* idx_granule */) const
 {
-    throw Exception("mayBeTrueOnGranule is not supported for ANN skip indexes", ErrorCodes::LOGICAL_ERROR);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "mayBeTrueOnGranule is not supported for ANN skip indexes");
 }
 
 bool MergeTreeIndexConditionAnnoy::alwaysUnknownOrTrue() const
@@ -248,13 +248,14 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRangesImpl(MergeTreeI
 
     auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleAnnoy<Distance> >(idx_granule);
     if (granule == nullptr)
-        throw Exception("Granule has the wrong type", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Granule has the wrong type");
 
     auto annoy = granule->index;
 
     if (condition.getNumOfDimensions() != annoy->getNumOfDimensions())
-        throw Exception("The dimension of the space in the request (" + toString(condition.getNumOfDimensions()) + ") "
-            + "does not match with the dimension in the index (" + toString(annoy->getNumOfDimensions()) + ")", ErrorCodes::INCORRECT_QUERY);
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "The dimension of the space in the request ({}) "
+                        "does not match with the dimension in the index ({})",
+                        toString(condition.getNumOfDimensions()), toString(annoy->getNumOfDimensions()));
 
     /// neighbors contain indexes of dots which were closest to target vector
     std::vector<UInt64> neighbors;
@@ -273,7 +274,7 @@ std::vector<size_t> MergeTreeIndexConditionAnnoy::getUsefulRangesImpl(MergeTreeI
         }
         catch (...)
         {
-            throw Exception("Setting of the annoy index should be int", ErrorCodes::INCORRECT_QUERY);
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Setting of the annoy index should be int");
         }
     }
     annoy->get_nns_by_vector(target_vec.data(), limit, k_search, &neighbors, &distances);
@@ -333,12 +334,12 @@ MergeTreeIndexPtr annoyIndexCreator(const IndexDescription & index)
     {
         if (!index.arguments[0].tryGet<String>(distance_name))
         {
-            throw Exception("Can't parse first argument", ErrorCodes::INCORRECT_DATA);
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Can't parse first argument");
         }
     }
     if (index.arguments.size() > 1 && !index.arguments[1].tryGet<String>(distance_name))
     {
-        throw Exception("Can't parse second argument", ErrorCodes::INCORRECT_DATA);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Can't parse second argument");
     }
     return std::make_shared<MergeTreeIndexAnnoy>(index, param, distance_name);
 }
@@ -381,20 +382,20 @@ void annoyIndexValidator(const IndexDescription & index, bool /* attach */)
 {
     if (index.arguments.size() > 2)
     {
-        throw Exception("Annoy index must not have more than two parameters", ErrorCodes::INCORRECT_QUERY);
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Annoy index must not have more than two parameters");
     }
     if (!index.arguments.empty() && index.arguments[0].getType() != Field::Types::UInt64
         && index.arguments[0].getType() != Field::Types::String)
     {
-        throw Exception("Annoy index first argument must be UInt64 or String.", ErrorCodes::INCORRECT_QUERY);
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Annoy index first argument must be UInt64 or String.");
     }
     if (index.arguments.size() > 1 && index.arguments[1].getType() != Field::Types::String)
     {
-        throw Exception("Annoy index second argument must be String.", ErrorCodes::INCORRECT_QUERY);
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Annoy index second argument must be String.");
     }
 
     if (index.column_names.size() != 1 || index.data_types.size() != 1)
-        throw Exception("Annoy indexes must be created on a single column", ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);
+        throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Annoy indexes must be created on a single column");
 
     assertIndexColumnsType(index.sample_block);
 }

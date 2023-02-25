@@ -264,9 +264,9 @@ StorageMySQLConfiguration StorageMySQL::getConfiguration(ASTs engine_args, Conte
     else
     {
         if (engine_args.size() < 5 || engine_args.size() > 7)
-            throw Exception(
-                "Storage MySQL requires 5-7 parameters: MySQL('host:port' (or 'addresses_pattern'), database, table, 'user', 'password'[, replace_query, 'on_duplicate_clause']).",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage MySQL requires 5-7 parameters: "
+                            "MySQL('host:port' (or 'addresses_pattern'), database, table, "
+                            "'user', 'password'[, replace_query, 'on_duplicate_clause']).");
 
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context_);
@@ -305,7 +305,7 @@ void registerStorageMySQL(StorageFactory & factory)
             mysql_settings.loadFromQuery(*args.storage_def);
 
         if (!mysql_settings.connection_pool_size)
-            throw Exception("connection_pool_size cannot be zero.", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "connection_pool_size cannot be zero.");
 
         mysqlxx::PoolWithFailover pool = createMySQLPoolWithFailover(configuration, mysql_settings);
 

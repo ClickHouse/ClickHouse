@@ -300,7 +300,7 @@ void PointInPolygonWithGrid<CoordinateType>::calcGridAttributes(
         && isFinite(x_shift)
         && isFinite(y_shift)
         && isFinite(grid_size)))
-        throw Exception("Polygon is not valid: bounding box is unbounded", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Polygon is not valid: bounding box is unbounded");
 }
 
 template <typename CoordinateType>
@@ -600,13 +600,13 @@ struct CallPointInPolygon<>
     template <typename T, typename PointInPolygonImpl>
     static ColumnPtr call(const ColumnVector<T> &, const IColumn & y, PointInPolygonImpl &&)
     {
-        throw Exception(std::string("Unknown numeric column type: ") + demangle(typeid(y).name()), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown numeric column type: {}", demangle(typeid(y).name()));
     }
 
     template <typename PointInPolygonImpl>
     static ColumnPtr call(const IColumn & x, const IColumn &, PointInPolygonImpl &&)
     {
-        throw Exception(std::string("Unknown numeric column type: ") + demangle(typeid(x).name()), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown numeric column type: {}", demangle(typeid(x).name()));
     }
 };
 

@@ -21,6 +21,7 @@ void registerAggregateFunctionsQuantile(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantileDeterministic(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantileExact(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantileExactWeighted(AggregateFunctionFactory &);
+void registerAggregateFunctionsQuantileInterpolatedWeighted(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantileExactLow(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantileExactHigh(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantileExactInclusive(AggregateFunctionFactory &);
@@ -39,6 +40,7 @@ void registerAggregateFunctionsMax(AggregateFunctionFactory &);
 void registerAggregateFunctionsAny(AggregateFunctionFactory &);
 void registerAggregateFunctionsStatisticsStable(AggregateFunctionFactory &);
 void registerAggregateFunctionsStatisticsSimple(AggregateFunctionFactory &);
+void registerAggregateFunctionsVarianceMatrix(AggregateFunctionFactory &);
 void registerAggregateFunctionSum(AggregateFunctionFactory &);
 void registerAggregateFunctionSumCount(AggregateFunctionFactory &);
 void registerAggregateFunctionSumMap(AggregateFunctionFactory &);
@@ -73,7 +75,6 @@ void registerAggregateFunctionExponentialMovingAverage(AggregateFunctionFactory 
 void registerAggregateFunctionSparkbar(AggregateFunctionFactory &);
 void registerAggregateFunctionIntervalLengthSum(AggregateFunctionFactory &);
 void registerAggregateFunctionAnalysisOfVariance(AggregateFunctionFactory &);
-void registerAggregateFunctionFlameGraph(AggregateFunctionFactory &);
 
 class AggregateFunctionCombinatorFactory;
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory &);
@@ -107,6 +108,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionsQuantileDeterministic(factory);
         registerAggregateFunctionsQuantileExact(factory);
         registerAggregateFunctionsQuantileExactWeighted(factory);
+        registerAggregateFunctionsQuantileInterpolatedWeighted(factory);
         registerAggregateFunctionsQuantileExactLow(factory);
         registerAggregateFunctionsQuantileExactHigh(factory);
         registerAggregateFunctionsQuantileExactInclusive(factory);
@@ -125,6 +127,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionsAny(factory);
         registerAggregateFunctionsStatisticsStable(factory);
         registerAggregateFunctionsStatisticsSimple(factory);
+        registerAggregateFunctionsVarianceMatrix(factory);
         registerAggregateFunctionSum(factory);
         registerAggregateFunctionSumCount(factory);
         registerAggregateFunctionSumMap(factory);
@@ -159,7 +162,6 @@ void registerAggregateFunctions()
         registerAggregateFunctionExponentialMovingAverage(factory);
         registerAggregateFunctionSparkbar(factory);
         registerAggregateFunctionAnalysisOfVariance(factory);
-        registerAggregateFunctionFlameGraph(factory);
 
         registerWindowFunctions(factory);
     }

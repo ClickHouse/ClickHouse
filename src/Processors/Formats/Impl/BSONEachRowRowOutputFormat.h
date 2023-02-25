@@ -47,7 +47,7 @@ class BSONEachRowRowOutputFormat final : public IRowOutputFormat
 {
 public:
     BSONEachRowRowOutputFormat(
-        WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & settings_);
+        WriteBuffer & out_, const Block & header_, const FormatSettings & settings_);
 
     String getName() const override { return "BSONEachRowRowOutputFormat"; }
 

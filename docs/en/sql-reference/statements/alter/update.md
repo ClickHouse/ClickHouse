@@ -27,4 +27,3 @@ The synchronicity of the query processing is defined by the [mutations_sync](/do
 -   [Mutations](/docs/en/sql-reference/statements/alter/index.md#mutations)
 -   [Synchronicity of ALTER Queries](/docs/en/sql-reference/statements/alter/index.md#synchronicity-of-alter-queries)
 -   [mutations_sync](/docs/en/operations/settings/settings.md/#mutations_sync) setting
-

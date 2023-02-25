@@ -29,5 +29,3 @@ SELECT * FROM system.time_zones LIMIT 10
 │ Africa/Bissau      │
 └────────────────────┘
 ```
-
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/time_zones) <!--hide-->

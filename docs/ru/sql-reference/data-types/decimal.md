@@ -111,5 +111,3 @@ DB::Exception: Can't compare.
 **Смотрите также**
 -   [isDecimalOverflow](../../sql-reference/functions/other-functions.md#is-decimal-overflow)
 -   [countDigits](../../sql-reference/functions/other-functions.md#count-digits)
-
-

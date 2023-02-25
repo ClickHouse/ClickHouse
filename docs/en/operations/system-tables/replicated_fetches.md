@@ -69,4 +69,3 @@ thread_id:                   54
 **See Also**
 
 -   [Managing ReplicatedMergeTree Tables](../../sql-reference/statements/system.md/#managing-replicatedmergetree-tables)
-

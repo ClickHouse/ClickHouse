@@ -26,5 +26,3 @@ slug: /zh/operations/system-tables/clusters
 -   [表引擎分布式](../../engines/table-engines/special/distributed.md)
 -   [distributed_replica_error_cap设置](../../operations/settings/settings.md#settings-distributed_replica_error_cap)
 -   [distributed_replica_error_half_life设置](../../operations/settings/settings.md#settings-distributed_replica_error_half_life)
-
-[原文](https://clickhouse.com/docs/zh/operations/system-tables/clusters) <!--hide-->

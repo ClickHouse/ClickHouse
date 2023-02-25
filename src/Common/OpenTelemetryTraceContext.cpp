@@ -14,76 +14,82 @@ namespace OpenTelemetry
 
 thread_local TracingContextOnThread current_thread_trace_context;
 
-void Span::addAttribute(std::string_view name, UInt64 value)
+bool Span::addAttribute(std::string_view name, UInt64 value) noexcept
 {
     if (!this->isTraceEnabled() || name.empty())
-        return;
+        return false;
 
-    this->attributes.push_back(Tuple{name, toString(value)});
+    return addAttributeImpl(name, toString(value));
 }
 
-void Span::addAttributeIfNotZero(std::string_view name, UInt64 value)
+bool Span::addAttributeIfNotZero(std::string_view name, UInt64 value) noexcept
 {
-    if (value != 0)
-        addAttribute(name, value);
+    if (!this->isTraceEnabled() || name.empty() || value == 0)
+        return false;
+
+    return addAttributeImpl(name, toString(value));
 }
 
-void Span::addAttribute(std::string_view name, std::string_view value)
+bool Span::addAttribute(std::string_view name, std::string_view value) noexcept
 {
     if (!this->isTraceEnabled() || name.empty())
-        return;
+        return false;
 
-    this->attributes.push_back(Tuple{name, value});
+    return addAttributeImpl(name, value);
 }
 
-void Span::addAttributeIfNotEmpty(std::string_view name, std::string_view value)
+bool Span::addAttributeIfNotEmpty(std::string_view name, std::string_view value) noexcept
 {
     if (!this->isTraceEnabled() || name.empty() || value.empty())
-        return;
+        return false;
 
-    this->attributes.push_back(Tuple{name, value});
+    return addAttributeImpl(name, value);
 }
 
-void Span::addAttribute(std::string_view name, std::function<String()> value_supplier)
+bool Span::addAttribute(std::string_view name, std::function<String()> value_supplier) noexcept
 {
-    if (!this->isTraceEnabled() || !value_supplier)
-        return;
+    if (!this->isTraceEnabled() || name.empty() || !value_supplier)
+        return false;
 
-    String value = value_supplier();
-    if (value.empty())
-        return;
-
-    this->attributes.push_back(Tuple{name, value});
+    try
+    {
+        auto value = value_supplier();
+        return value.empty() ? false : addAttributeImpl(name, value);
+    }
+    catch (...)
+    {
+        /// Ignore exception raised by value_supplier
+        return false;
+    }
 }
 
-void Span::addAttribute(const Exception & e) noexcept
+bool Span::addAttribute(const Exception & e) noexcept
 {
     if (!this->isTraceEnabled())
-        return;
+        return false;
 
-    try
-    {
-        this->attributes.push_back(Tuple{"clickhouse.exception", getExceptionMessage(e, false)});
-    }
-    catch (...)
-    {
-        /// Ignore exceptions
-    }
+    return addAttributeImpl("clickhouse.exception", getExceptionMessage(e, false));
 }
 
-void Span::addAttribute(std::exception_ptr e) noexcept
+bool Span::addAttribute(std::exception_ptr e) noexcept
 {
     if (!this->isTraceEnabled() || e == nullptr)
-        return;
+        return false;
 
+    return addAttributeImpl("clickhouse.exception", getExceptionMessage(e, false));
+}
+
+bool Span::addAttributeImpl(std::string_view name, std::string_view value) noexcept
+{
     try
     {
-        this->attributes.push_back(Tuple{"clickhouse.exception", getExceptionMessage(e, false)});
+        this->attributes.push_back(Tuple{name, value});
     }
     catch (...)
     {
-        /// Ignore exceptions
+        return false;
     }
+    return true;
 }
 
 SpanHolder::SpanHolder(std::string_view _operation_name)
@@ -314,8 +320,8 @@ TracingContextHolder::TracingContextHolder(
             while (_parent_trace_context.trace_id == UUID())
             {
                 // Make sure the random generated trace_id is not 0 which is an invalid id.
-                _parent_trace_context.trace_id.toUnderType().items[0] = thread_local_rng(); //-V656
-                _parent_trace_context.trace_id.toUnderType().items[1] = thread_local_rng(); //-V656
+                _parent_trace_context.trace_id.toUnderType().items[0] = thread_local_rng();
+                _parent_trace_context.trace_id.toUnderType().items[1] = thread_local_rng();
             }
             _parent_trace_context.span_id = 0;
         }

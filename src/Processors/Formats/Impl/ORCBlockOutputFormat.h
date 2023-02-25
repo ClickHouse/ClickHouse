@@ -44,6 +44,7 @@ public:
 private:
     void consume(Chunk chunk) override;
     void finalizeImpl() override;
+    void resetFormatterImpl() override;
 
     std::unique_ptr<orc::Type> getORCType(const DataTypePtr & type);
 

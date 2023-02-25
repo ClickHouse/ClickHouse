@@ -91,9 +91,8 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorFullText::getGranuleAndReset()
 void MergeTreeIndexAggregatorFullText::update(const Block & block, size_t * pos, size_t limit)
 {
     if (*pos >= block.rows())
-        throw Exception(
-                "The provided position is not less than the number of block rows. Position: "
-                + toString(*pos) + ", Block rows: " + toString(block.rows()) + ".", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The provided position is not less than the number of block rows. "
+                "Position: {}, Block rows: {}.", toString(*pos), toString(block.rows()));
 
     size_t rows_read = std::min(limit, block.rows() - *pos);
 
@@ -183,6 +182,7 @@ MergeTreeConditionFullText::MergeTreeConditionFullText(
     rpn = std::move(builder).extractRPN();
 }
 
+/// Keep in-sync with MergeTreeConditionGinFilter::alwaysUnknownOrTrue
 bool MergeTreeConditionFullText::alwaysUnknownOrTrue() const
 {
     /// Check like in KeyCondition.
@@ -224,19 +224,19 @@ bool MergeTreeConditionFullText::alwaysUnknownOrTrue() const
             rpn_stack.back() = arg1 || arg2;
         }
         else
-            throw Exception("Unexpected function type in KeyCondition::RPNElement", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
     }
 
     return rpn_stack[0];
 }
 
+/// Keep in-sync with MergeTreeIndexConditionGin::mayBeTrueOnTranuleInPart
 bool MergeTreeConditionFullText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
 {
     std::shared_ptr<MergeTreeIndexGranuleFullText> granule
             = std::dynamic_pointer_cast<MergeTreeIndexGranuleFullText>(idx_granule);
     if (!granule)
-        throw Exception(
-                "BloomFilter index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "BloomFilter index condition got a granule with the wrong type.");
 
     /// Check like in KeyCondition.
     std::vector<BoolMask> rpn_stack;
@@ -313,11 +313,11 @@ bool MergeTreeConditionFullText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
             rpn_stack.emplace_back(true, false);
         }
         else
-            throw Exception("Unexpected function type in BloomFilterCondition::RPNElement", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in BloomFilterCondition::RPNElement");
     }
 
     if (rpn_stack.size() != 1)
-        throw Exception("Unexpected stack size in BloomFilterCondition::mayBeTrueOnGranule", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in BloomFilterCondition::mayBeTrueOnGranule");
 
     return rpn_stack[0].can_be_true;
 }
@@ -468,6 +468,10 @@ bool MergeTreeConditionFullText::traverseTreeEquals(
                 {
                     key_column_num = map_keys_key_column_num;
                     key_exists = true;
+
+                    auto const_data_type = WhichDataType(const_type);
+                    if (!const_data_type.isStringOrFixedString() && !const_data_type.isArray())
+                        return false;
                 }
                 else
                 {
@@ -634,17 +638,22 @@ bool MergeTreeConditionFullText::tryPrepareSetBloomFilter(
         return false;
 
     auto prepared_set = right_argument.tryGetPreparedSet(data_types);
-    if (!prepared_set)
+    if (!prepared_set || !prepared_set->hasExplicitSetElements())
         return false;
 
-    for (const auto & data_type : prepared_set->getDataTypes())
-        if (data_type->getTypeId() != TypeIndex::String && data_type->getTypeId() != TypeIndex::FixedString)
+    for (const auto & prepared_set_data_type : prepared_set->getDataTypes())
+    {
+        auto prepared_set_data_type_id = prepared_set_data_type->getTypeId();
+        if (prepared_set_data_type_id != TypeIndex::String && prepared_set_data_type_id != TypeIndex::FixedString)
             return false;
+    }
 
     std::vector<std::vector<BloomFilter>> bloom_filters;
     std::vector<size_t> key_position;
 
     Columns columns = prepared_set->getSetElements();
+    size_t prepared_set_total_row_count = prepared_set->getTotalRowCount();
+
     for (const auto & elem : key_tuple_mapping)
     {
         bloom_filters.emplace_back();
@@ -652,7 +661,8 @@ bool MergeTreeConditionFullText::tryPrepareSetBloomFilter(
 
         size_t tuple_idx = elem.tuple_index;
         const auto & column = columns[tuple_idx];
-        for (size_t row = 0; row < prepared_set->getTotalRowCount(); ++row)
+
+        for (size_t row = 0; row < prepared_set_total_row_count; ++row)
         {
             bloom_filters.back().emplace_back(params);
             auto ref = column->getDataAt(row);
@@ -715,7 +725,7 @@ MergeTreeIndexPtr bloomFilterIndexCreator(
     }
     else
     {
-        throw Exception("Unknown index type: " + backQuote(index.name), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index type: {}", backQuote(index.name));
     }
 }
 
@@ -730,36 +740,39 @@ void bloomFilterIndexValidator(const IndexDescription & index, bool /*attach*/)
             const auto & array_type = assert_cast<const DataTypeArray &>(*index_data_type);
             data_type = WhichDataType(array_type.getNestedType());
         }
-        else if (data_type.isLowCarnality())
+        else if (data_type.isLowCardinality())
         {
             const auto & low_cardinality = assert_cast<const DataTypeLowCardinality &>(*index_data_type);
             data_type = WhichDataType(low_cardinality.getDictionaryType());
         }
 
         if (!data_type.isString() && !data_type.isFixedString())
-            throw Exception("Bloom filter index can be used only with `String`, `FixedString`, `LowCardinality(String)`, `LowCardinality(FixedString)` column or Array with `String` or `FixedString` values column.", ErrorCodes::INCORRECT_QUERY);
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                            "Bloom filter index can be used only with `String`, `FixedString`, "
+                            "`LowCardinality(String)`, `LowCardinality(FixedString)` column "
+                            "or Array with `String` or `FixedString` values column.");
     }
 
     if (index.type == NgramTokenExtractor::getName())
     {
         if (index.arguments.size() != 4)
-            throw Exception("`ngrambf` index must have exactly 4 arguments.", ErrorCodes::INCORRECT_QUERY);
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "`ngrambf` index must have exactly 4 arguments.");
     }
     else if (index.type == SplitTokenExtractor::getName())
     {
         if (index.arguments.size() != 3)
-            throw Exception("`tokenbf` index must have exactly 3 arguments.", ErrorCodes::INCORRECT_QUERY);
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "`tokenbf` index must have exactly 3 arguments.");
     }
     else
     {
-        throw Exception("Unknown index type: " + backQuote(index.name), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index type: {}", backQuote(index.name));
     }
 
     assert(index.arguments.size() >= 3);
 
     for (const auto & arg : index.arguments)
         if (arg.getType() != Field::Types::UInt64)
-            throw Exception("All parameters to *bf_v1 index must be unsigned integers", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "All parameters to *bf_v1 index must be unsigned integers");
 
     /// Just validate
     BloomFilterParameters params(

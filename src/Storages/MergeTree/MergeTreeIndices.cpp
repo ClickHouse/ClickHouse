@@ -3,7 +3,6 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
-
 #include <numeric>
 
 #include <boost/algorithm/string.hpp>
@@ -21,13 +20,13 @@ namespace ErrorCodes
 void MergeTreeIndexFactory::registerCreator(const std::string & index_type, Creator creator)
 {
     if (!creators.emplace(index_type, std::move(creator)).second)
-        throw Exception("MergeTreeIndexFactory: the Index creator name '" + index_type + "' is not unique",
-                        ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeIndexFactory: the Index creator name '{}' is not unique",
+                        index_type);
 }
 void MergeTreeIndexFactory::registerValidator(const std::string & index_type, Validator validator)
 {
     if (!validators.emplace(index_type, std::move(validator)).second)
-        throw Exception("MergeTreeIndexFactory: the Index validator name '" + index_type + "' is not unique", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeIndexFactory: the Index validator name '{}' is not unique", index_type);
 }
 
 
@@ -36,8 +35,8 @@ MergeTreeIndexPtr MergeTreeIndexFactory::get(
 {
     auto it = creators.find(index.type);
     if (it == creators.end())
-        throw Exception(
-                "Unknown Index type '" + index.type + "'. Available index types: " +
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "Unknown Index type '{}'. Available index types: {}", index.type,
                 std::accumulate(creators.cbegin(), creators.cend(), std::string{},
                         [] (auto && left, const auto & right) -> std::string
                         {
@@ -45,8 +44,8 @@ MergeTreeIndexPtr MergeTreeIndexFactory::get(
                                 return right.first;
                             else
                                 return left + ", " + right.first;
-                        }),
-                ErrorCodes::INCORRECT_QUERY);
+                        })
+                );
 
     return it->second(index);
 }
@@ -64,9 +63,9 @@ void MergeTreeIndexFactory::validate(const IndexDescription & index, bool attach
 {
     auto it = validators.find(index.type);
     if (it == validators.end())
-        throw Exception(
-            "Unknown Index type '" + index.type + "'. Available index types: "
-                + std::accumulate(
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+            "Unknown Index type '{}'. Available index types: {}", index.type,
+                std::accumulate(
                     validators.cbegin(),
                     validators.cend(),
                     std::string{},
@@ -76,8 +75,8 @@ void MergeTreeIndexFactory::validate(const IndexDescription & index, bool attach
                             return right.first;
                         else
                             return left + ", " + right.first;
-                    }),
-            ErrorCodes::INCORRECT_QUERY);
+                    })
+            );
 
     it->second(index, attach);
 }
@@ -106,6 +105,10 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerCreator("annoy", annoyIndexCreator);
     registerValidator("annoy", annoyIndexValidator);
 #endif
+
+    registerCreator("inverted", invertedIndexCreator);
+    registerValidator("inverted", invertedIndexValidator);
+
 }
 
 MergeTreeIndexFactory & MergeTreeIndexFactory::instance()

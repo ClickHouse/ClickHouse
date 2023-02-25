@@ -36,6 +36,18 @@ This query is fully equivalent to using the subquery:
 SELECT a, b, c FROM (SELECT ...)
 ```
 
+## Parameterized View
+Parametrized views are similar to normal views, but can be created with parameters which are not resolved immediately. These views can be used with table functions, which specify the name of the view as function name and the parameter values as its arguments.
+
+``` sql
+CREATE VIEW view AS SELECT * FROM TABLE WHERE Column1={column1:datatype1} and Column2={column2:datatype2} ...
+```
+The above creates a view for table which can be used as table function by substituting parameters as shown below.
+
+``` sql
+SELECT * FROM view(column1=value1, column2=value2 ...)
+```
+
 ## Materialized View
 
 ``` sql
@@ -338,3 +350,7 @@ The window view is useful in the following scenarios:
 
 * **Monitoring**: Aggregate and calculate the metrics logs by time, and output the results to a target table. The dashboard can use the target table as a source table.
 * **Analyzing**: Automatically aggregate and preprocess data in the time window. This can be useful when analyzing a large number of logs. The preprocessing eliminates repeated calculations in multiple queries and reduces query latency.
+
+## Related Content
+
+- Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)

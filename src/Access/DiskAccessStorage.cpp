@@ -172,7 +172,8 @@ DiskAccessStorage::DiskAccessStorage(const String & storage_name_, const String 
     std::filesystem::create_directories(directory_path, create_dir_error_code);
 
     if (!std::filesystem::exists(directory_path) || !std::filesystem::is_directory(directory_path) || create_dir_error_code)
-        throw Exception("Couldn't create directory " + directory_path + " reason: '" + create_dir_error_code.message() + "'", ErrorCodes::DIRECTORY_DOESNT_EXIST);
+        throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Couldn't create directory {} reason: '{}'",
+                        directory_path, create_dir_error_code.message());
 
     bool should_rebuild_lists = std::filesystem::exists(getNeedRebuildListsMarkFilePath(directory_path));
     if (!should_rebuild_lists)
@@ -722,7 +723,7 @@ void DiskAccessStorage::deleteAccessEntityOnDisk(const UUID & id) const
 {
     auto file_path = getEntityFilePath(directory_path, id);
     if (!std::filesystem::remove(file_path))
-        throw Exception("Couldn't delete " + file_path, ErrorCodes::FILE_DOESNT_EXIST);
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Couldn't delete {}", file_path);
 }
 
 

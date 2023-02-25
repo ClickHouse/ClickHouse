@@ -36,4 +36,3 @@ WHERE name in ('Kafka', 'MergeTree', 'ReplicatedCollapsingMergeTree')
 -   [Секции движка](../../engines/table-engines/mergetree-family/mergetree.md#mergetree-query-clauses) семейства MergeTree
 -   [Настройки](../../engines/table-engines/integrations/kafka.md#table_engine-kafka-creating-a-table) Kafka
 -   [Настройки](../../engines/table-engines/special/join.md#join-limitations-and-settings) Join
-

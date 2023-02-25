@@ -14,6 +14,7 @@ from commit_status_helper import post_commit_status
 from env_helper import RUNNER_TEMP
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from pr_info import PRInfo
+from report import TestResults, TestResult
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from upload_result_helper import upload_results
@@ -26,7 +27,7 @@ Images = Dict[str, List[str]]
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        description="The program gets images from changed_images_*.json, merges imeges "
+        description="The program gets images from changed_images_*.json, merges images "
         "with different architectures into one manifest and pushes back to docker hub",
     )
 
@@ -189,11 +190,11 @@ def main():
     merged = merge_images(to_merge)
 
     status = "success"
-    test_results = []  # type: List[Tuple[str, str]]
+    test_results = []  # type: TestResults
     for image, versions in merged.items():
         for tags in versions:
             manifest, test_result = create_manifest(image, tags, args.push)
-            test_results.append((manifest, test_result))
+            test_results.append(TestResult(manifest, test_result))
             if test_result != "OK":
                 status = "failure"
 

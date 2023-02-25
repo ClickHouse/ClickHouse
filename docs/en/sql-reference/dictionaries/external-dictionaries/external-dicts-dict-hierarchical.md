@@ -65,4 +65,3 @@ For our example, the structure of dictionary can be the following:
     </structure>
 </dictionary>
 ```
-

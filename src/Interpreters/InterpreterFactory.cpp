@@ -17,6 +17,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTShowEngineQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/ASTUseQuery.h>
@@ -73,6 +74,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
+#include <Interpreters/InterpreterShowEngineQuery.h>
 #include <Interpreters/InterpreterShowProcesslistQuery.h>
 #include <Interpreters/InterpreterShowTablesQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
@@ -126,7 +128,7 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     if (query->as<ASTSelectQuery>())
     {
         if (context->getSettingsRef().allow_experimental_analyzer)
-            return std::make_unique<InterpreterSelectQueryAnalyzer>(query, options, context);
+            return std::make_unique<InterpreterSelectQueryAnalyzer>(query, context, options);
 
         /// This is internal part of ASTSelectWithUnionQuery.
         /// Even if there is SELECT without union, it is represented by ASTSelectWithUnionQuery with single ASTSelectQuery as a child.
@@ -137,7 +139,7 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
         ProfileEvents::increment(ProfileEvents::SelectQuery);
 
         if (context->getSettingsRef().allow_experimental_analyzer)
-            return std::make_unique<InterpreterSelectQueryAnalyzer>(query, options, context);
+            return std::make_unique<InterpreterSelectQueryAnalyzer>(query, context, options);
 
         return std::make_unique<InterpreterSelectWithUnionQuery>(query, context, options);
     }
@@ -166,6 +168,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     else if (query->as<ASTShowTablesQuery>())
     {
         return std::make_unique<InterpreterShowTablesQuery>(query, context);
+    }
+    else if (query->as<ASTShowEnginesQuery>())
+    {
+        return std::make_unique<InterpreterShowEnginesQuery>(query, context);
     }
     else if (query->as<ASTUseQuery>())
     {
@@ -346,7 +352,7 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     }
     else
     {
-        throw Exception("Unknown type of query: " + query->getID(), ErrorCodes::UNKNOWN_TYPE_OF_QUERY);
+        throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Unknown type of query: {}", query->getID());
     }
 }
 }

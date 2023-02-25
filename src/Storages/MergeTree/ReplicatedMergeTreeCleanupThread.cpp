@@ -75,8 +75,8 @@ void ReplicatedMergeTreeCleanupThread::iterate()
     {
         clearOldLogs();
         auto storage_settings = storage.getSettings();
-        clearOldBlocks("blocks", storage_settings->replicated_deduplication_window_seconds, storage_settings->replicated_deduplication_window);
-        clearOldBlocks("async_blocks", storage_settings->replicated_deduplication_window_seconds_for_async_inserts, storage_settings->replicated_deduplication_window_for_async_inserts);
+        clearOldBlocks("blocks", storage_settings->replicated_deduplication_window_seconds, storage_settings->replicated_deduplication_window, cached_block_stats_for_sync_inserts);
+        clearOldBlocks("async_blocks", storage_settings->replicated_deduplication_window_seconds_for_async_inserts, storage_settings->replicated_deduplication_window_for_async_inserts, cached_block_stats_for_async_inserts);
         clearOldMutations();
         storage.clearEmptyParts();
     }
@@ -90,7 +90,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
 
     Coordination::Stat stat;
     if (!zookeeper->exists(storage.zookeeper_path + "/log", &stat))
-        throw Exception(storage.zookeeper_path + "/log doesn't exist", ErrorCodes::NOT_FOUND_NODE);
+        throw Exception(ErrorCodes::NOT_FOUND_NODE, "{}/log doesn't exist", storage.zookeeper_path);
 
     int children_count = stat.numChildren;
 
@@ -293,7 +293,7 @@ void ReplicatedMergeTreeCleanupThread::markLostReplicas(const std::unordered_map
     }
 
     if (candidate_lost_replicas.size() == replicas_count)
-        throw Exception("All replicas are stale: we won't mark any replica as lost", ErrorCodes::ALL_REPLICAS_LOST);
+        throw Exception(ErrorCodes::ALL_REPLICAS_LOST, "All replicas are stale: we won't mark any replica as lost");
 
     std::vector<zkutil::ZooKeeper::FutureMulti> futures;
     for (size_t i = 0; i < candidate_lost_replicas.size(); ++i)
@@ -303,7 +303,7 @@ void ReplicatedMergeTreeCleanupThread::markLostReplicas(const std::unordered_map
     {
         auto multi_responses = futures[i].get();
         if (multi_responses.responses[0]->error == Coordination::Error::ZBADVERSION)
-            throw Exception(candidate_lost_replicas[i] + " became active when we marked lost replicas.", DB::ErrorCodes::REPLICA_STATUS_CHANGED);
+            throw Exception(DB::ErrorCodes::REPLICA_STATUS_CHANGED, "{} became active when we marked lost replicas.", candidate_lost_replicas[i]);
         zkutil::KeeperMultiException::check(multi_responses.error, requests[i], multi_responses.responses);
     }
 }
@@ -323,12 +323,12 @@ struct ReplicatedMergeTreeCleanupThread::NodeWithStat
     }
 };
 
-void ReplicatedMergeTreeCleanupThread::clearOldBlocks(const String & blocks_dir_name, UInt64 window_seconds, UInt64 window_size)
+void ReplicatedMergeTreeCleanupThread::clearOldBlocks(const String & blocks_dir_name, UInt64 window_seconds, UInt64 window_size, NodeCTimeAndVersionCache & cached_block_stats)
 {
     auto zookeeper = storage.getZooKeeper();
 
     std::vector<NodeWithStat> timed_blocks;
-    getBlocksSortedByTime(*zookeeper, timed_blocks);
+    getBlocksSortedByTime(blocks_dir_name, *zookeeper, timed_blocks, cached_block_stats);
 
     if (timed_blocks.empty())
         return;
@@ -391,14 +391,14 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks(const String & blocks_dir_
 }
 
 
-void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeper & zookeeper, std::vector<NodeWithStat> & timed_blocks)
+void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(const String & blocks_dir_name, zkutil::ZooKeeper & zookeeper, std::vector<NodeWithStat> & timed_blocks, NodeCTimeAndVersionCache & cached_block_stats)
 {
     timed_blocks.clear();
 
     Strings blocks;
     Coordination::Stat stat;
-    if (Coordination::Error::ZOK != zookeeper.tryGetChildren(storage.zookeeper_path + "/blocks", blocks, &stat))
-        throw Exception(storage.zookeeper_path + "/blocks doesn't exist", ErrorCodes::NOT_FOUND_NODE);
+    if (Coordination::Error::ZOK != zookeeper.tryGetChildren(storage.zookeeper_path + "/" + blocks_dir_name, blocks, &stat))
+        throw Exception(ErrorCodes::NOT_FOUND_NODE, "{}/{} doesn't exist", storage.zookeeper_path, blocks_dir_name);
 
     /// Seems like this code is obsolete, because we delete blocks from cache
     /// when they are deleted from zookeeper. But we don't know about all (maybe future) places in code
@@ -417,7 +417,7 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeper &
     auto not_cached_blocks = stat.numChildren - cached_block_stats.size();
     if (not_cached_blocks)
     {
-        LOG_TRACE(log, "Checking {} blocks ({} are not cached){}", stat.numChildren, not_cached_blocks, " to clear old ones from ZooKeeper.");
+        LOG_TRACE(log, "Checking {} {} ({} are not cached){}, path is {}", stat.numChildren, blocks_dir_name, not_cached_blocks, " to clear old ones from ZooKeeper.", storage.zookeeper_path + "/" + blocks_dir_name);
     }
 
     std::vector<std::string> exists_paths;
@@ -427,7 +427,7 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeper &
         if (it == cached_block_stats.end())
         {
             /// New block. Fetch its stat asynchronously.
-            exists_paths.emplace_back(storage.zookeeper_path + "/blocks/" + block);
+            exists_paths.emplace_back(storage.zookeeper_path + "/" + blocks_dir_name + "/" + block);
         }
         else
         {

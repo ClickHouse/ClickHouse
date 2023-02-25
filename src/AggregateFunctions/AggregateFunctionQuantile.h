@@ -232,6 +232,9 @@ struct NameQuantilesExactInclusive { static constexpr auto name = "quantilesExac
 struct NameQuantileExactWeighted { static constexpr auto name = "quantileExactWeighted"; };
 struct NameQuantilesExactWeighted { static constexpr auto name = "quantilesExactWeighted"; };
 
+struct NameQuantileInterpolatedWeighted { static constexpr auto name = "quantileInterpolatedWeighted"; };
+struct NameQuantilesInterpolatedWeighted { static constexpr auto name = "quantilesInterpolatedWeighted"; };
+
 struct NameQuantileTiming { static constexpr auto name = "quantileTiming"; };
 struct NameQuantileTimingWeighted { static constexpr auto name = "quantileTimingWeighted"; };
 struct NameQuantilesTiming { static constexpr auto name = "quantilesTiming"; };

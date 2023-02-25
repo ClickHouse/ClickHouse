@@ -199,4 +199,3 @@ Accepts a number. If the number is less than 18, it returns 0. Otherwise, it rou
 ## roundDown(num, arr)
 
 Accepts a number and rounds it down to an element in the specified array. If the value is less than the lowest bound, the lowest bound is returned.
-
