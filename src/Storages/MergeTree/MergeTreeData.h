@@ -19,7 +19,6 @@
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Storages/MergeTree/MergeTreeWriteAheadLog.h>
@@ -225,9 +224,21 @@ public:
     using OperationDataPartsLock = std::unique_lock<std::mutex>;
     OperationDataPartsLock lockOperationsWithParts() const { return OperationDataPartsLock(operation_with_data_parts_mutex); }
 
-    MergeTreeDataPartFormat choosePartFormat(size_t bytes_uncompressed, size_t rows_count, bool only_on_disk = false) const;
-    MergeTreeDataPartFormat choosePartFormatOnDisk(size_t bytes_uncompressed, size_t rows_count) const;
-    MergeTreeDataPartBuilder getDataPartBuilder(const String & name, const VolumePtr & volume, const String & part_dir) const;
+    MergeTreeDataPartType choosePartType(size_t bytes_uncompressed, size_t rows_count) const;
+    MergeTreeDataPartType choosePartTypeOnDisk(size_t bytes_uncompressed, size_t rows_count) const;
+
+    /// After this method setColumns must be called
+    MutableDataPartPtr createPart(const String & name,
+        MergeTreeDataPartType type, const MergeTreePartInfo & part_info,
+        const MutableDataPartStoragePtr & data_part_storage, const IMergeTreeDataPart * parent_part = nullptr) const;
+
+    /// Create part, that already exists on filesystem.
+    /// After this methods 'loadColumnsChecksumsIndexes' must be called.
+    MutableDataPartPtr createPart(const String & name,
+        const MutableDataPartStoragePtr & data_part_storage, const IMergeTreeDataPart * parent_part = nullptr) const;
+
+    MutableDataPartPtr createPart(const String & name, const MergeTreePartInfo & part_info,
+        const MutableDataPartStoragePtr & data_part_storage, const IMergeTreeDataPart * parent_part = nullptr) const;
 
     /// Auxiliary object to add a set of parts into the working set in two steps:
     /// * First, as PreActive parts (the parts are ready, but not yet in the active set).
@@ -333,9 +344,6 @@ public:
 
         /// For Collapsing and VersionedCollapsing mode.
         String sign_column;
-
-        /// For Replacing mode. Can be empty for Replacing.
-        String is_deleted_column;
 
         /// For Summing mode. If empty - columns_to_sum is determined automatically.
         Names columns_to_sum;
@@ -477,12 +485,6 @@ public:
 
     /// Returns absolutely all parts (and snapshot of their states)
     DataPartsVector getAllDataPartsVector(DataPartStateVector * out_states = nullptr) const;
-
-    size_t getAllPartsCount() const;
-
-    /// Return the number of marks in all parts
-    size_t getTotalMarksCount() const;
-
     /// Same as above but only returns projection parts
     ProjectionPartsVector getAllProjectionPartsVector(MergeTreeData::DataPartStateVector * out_states = nullptr) const;
 
@@ -527,7 +529,7 @@ public:
 
     size_t getTotalActiveSizeInRows() const;
 
-    size_t getActivePartsCount() const;
+    size_t getPartsCount() const;
 
     /// Returns a pair with: max number of parts in partition across partitions; sum size of parts inside that partition.
     /// (if there are multiple partitions with max number of parts, the sum size of parts is returned for arbitrary of them)
@@ -1052,7 +1054,6 @@ public:
     scope_guard getTemporaryPartDirectoryHolder(const String & part_dir_name) const;
 
     void waitForOutdatedPartsToBeLoaded() const;
-    bool canUsePolymorphicParts() const;
 
 protected:
     friend class IMergeTreeDataPart;
@@ -1301,8 +1302,7 @@ protected:
         const String & new_part_name,
         const DataPartPtr & result_part,
         const DataPartsVector & source_parts,
-        const MergeListEntry * merge_entry,
-        std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters);
+        const MergeListEntry * merge_entry);
 
     /// If part is assigned to merge or mutation (possibly replicated)
     /// Should be overridden by children, because they can have different
@@ -1427,7 +1427,6 @@ private:
     /// Checking that candidate part doesn't break invariants: correct partition
     void checkPartPartition(MutableDataPartPtr & part, DataPartsLock & lock) const;
     void checkPartDuplicate(MutableDataPartPtr & part, Transaction & transaction, DataPartsLock & lock) const;
-    void checkPartDynamicColumns(MutableDataPartPtr & part, DataPartsLock & lock) const;
 
     /// Preparing itself to be committed in memory: fill some fields inside part, add it to data_parts_indexes
     /// in precommitted state and to transaction

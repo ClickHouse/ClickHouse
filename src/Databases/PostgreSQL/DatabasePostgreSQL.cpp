@@ -214,12 +214,12 @@ void DatabasePostgreSQL::attachTable(ContextPtr /* context_ */, const String & t
 
     if (!checkPostgresTable(table_name))
         throw Exception(ErrorCodes::UNKNOWN_TABLE,
-                        "Cannot attach PostgreSQL table {} because it does not exist in PostgreSQL (database: {})",
+                        "Cannot attach PostgreSQL table {} because it does not exist in PostgreSQL",
                         getTableNameForLogs(table_name), database_name);
 
     if (!detached_or_dropped.contains(table_name))
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
-                        "Cannot attach PostgreSQL table {} because it already exists (database: {})",
+                        "Cannot attach PostgreSQL table {} because it already exists",
                         getTableNameForLogs(table_name), database_name);
 
     if (cache_tables)

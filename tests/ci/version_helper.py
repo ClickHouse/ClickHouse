@@ -88,13 +88,6 @@ class ClickHouseVersion:
             self.major, self.minor, self.patch + 1, self.revision, self._git
         )
 
-    def reset_tweak(self) -> "ClickHouseVersion":
-        if self._git is not None:
-            self._git.update()
-        return ClickHouseVersion(
-            self.major, self.minor, self.patch, self.revision, self._git, "1"
-        )
-
     @property
     def major(self) -> int:
         return self._major

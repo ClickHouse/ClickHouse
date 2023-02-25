@@ -15,11 +15,6 @@ QueryTreeNodes collectWindowFunctionNodes(const QueryTreeNodePtr & node);
   */
 void collectWindowFunctionNodes(const QueryTreeNodePtr & node, QueryTreeNodes & result);
 
-/** Returns true if there are window function nodes in node children, false otherwise.
-  * Do not visit subqueries.
-  */
-bool hasWindowFunctionNodes(const QueryTreeNodePtr & node);
-
 /** Assert that there are no window function nodes in node children.
   * Do not visit subqueries.
   */

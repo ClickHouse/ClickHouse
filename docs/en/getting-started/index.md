@@ -22,7 +22,6 @@ functions in ClickHouse. The sample datasets include:
 - The [Cell Towers dataset](../getting-started/example-datasets/cell-towers.md) imports a CSV into ClickHouse
 - The [NYPD Complaint Data](../getting-started/example-datasets/nypd_complaint_data.md) demonstrates how to use data inference to simplify creating tables
 - The ["What's on the Menu?" dataset](../getting-started/example-datasets/menus.md) has an example of denormalizing data
-- The [Laion dataset](../getting-started/example-datasets/laion.md) has an example of [Approximate nearest neighbor search indexes](../engines/table-engines/mergetree-family/annindexes.md) usage
 - [Getting Data Into ClickHouse - Part 1](https://clickhouse.com/blog/getting-data-into-clickhouse-part-1) provides examples of defining a schema and loading a small Hacker News dataset 
 - [Getting Data Into ClickHouse - Part 3 - Using S3](https://clickhouse.com/blog/getting-data-into-clickhouse-part-3-s3) has examples of loading data from s3
 - [Generating random data in ClickHouse](https://clickhouse.com/blog/generating-random-test-distribution-data-for-clickhouse) shows how to generate random data if none of the above fit your needs.

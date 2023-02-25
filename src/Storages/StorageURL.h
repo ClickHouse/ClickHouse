@@ -10,7 +10,6 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/Cache/SchemaCache.h>
-#include <Storages/StorageConfiguration.h>
 
 
 namespace DB
@@ -182,10 +181,15 @@ public:
 
     static FormatSettings getFormatSettingsFromArgs(const StorageFactory::Arguments & args);
 
-    struct Configuration : public StatelessTableEngineConfiguration
+    struct Configuration
     {
         std::string url;
         std::string http_method;
+
+        std::string format = "auto";
+        std::string compression_method = "auto";
+        std::string structure = "auto";
+
         HTTPHeaderEntries headers;
     };
 

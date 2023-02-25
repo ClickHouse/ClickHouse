@@ -37,14 +37,14 @@ std::string AsynchronousReadBufferFromFileDescriptor::getFileName() const
 }
 
 
-std::future<IAsynchronousReader::Result> AsynchronousReadBufferFromFileDescriptor::asyncReadInto(char * data, size_t size, int64_t priority)
+std::future<IAsynchronousReader::Result> AsynchronousReadBufferFromFileDescriptor::asyncReadInto(char * data, size_t size)
 {
     IAsynchronousReader::Request request;
     request.descriptor = std::make_shared<IAsynchronousReader::LocalFileDescriptor>(fd);
     request.buf = data;
     request.size = size;
     request.offset = file_offset_of_buffer_end;
-    request.priority = base_priority + priority;
+    request.priority = priority;
     request.ignore = bytes_to_ignore;
     bytes_to_ignore = 0;
 
@@ -58,14 +58,14 @@ std::future<IAsynchronousReader::Result> AsynchronousReadBufferFromFileDescripto
 }
 
 
-void AsynchronousReadBufferFromFileDescriptor::prefetch(int64_t priority)
+void AsynchronousReadBufferFromFileDescriptor::prefetch()
 {
     if (prefetch_future.valid())
         return;
 
     /// Will request the same amount of data that is read in nextImpl.
     prefetch_buffer.resize(internal_buffer.size());
-    prefetch_future = asyncReadInto(prefetch_buffer.data(), prefetch_buffer.size(), priority);
+    prefetch_future = asyncReadInto(prefetch_buffer.data(), prefetch_buffer.size());
 }
 
 
@@ -108,9 +108,8 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
     else
     {
         /// No pending request. Do synchronous read.
-
         Stopwatch watch;
-        auto [size, offset, _] = asyncReadInto(memory.data(), memory.size(), DEFAULT_PREFETCH_PRIORITY).get();
+        auto [size, offset] = asyncReadInto(memory.data(), memory.size()).get();
         ProfileEvents::increment(ProfileEvents::AsynchronousReadWaitMicroseconds, watch.elapsedMicroseconds());
 
         file_offset_of_buffer_end += size;
@@ -152,7 +151,7 @@ AsynchronousReadBufferFromFileDescriptor::AsynchronousReadBufferFromFileDescript
     std::optional<size_t> file_size_)
     : ReadBufferFromFileBase(buf_size, existing_memory, alignment, file_size_)
     , reader(reader_)
-    , base_priority(priority_)
+    , priority(priority_)
     , required_alignment(alignment)
     , fd(fd_)
 {

@@ -18,7 +18,7 @@ cat > "$yaml" <<EOL
   version: '\1'
 
 - regexp: '\d+/tclwebkit(?:\d+[\.\d]*)'
-  name: 'Android'
+  name: 'Andriod'
   versions:
     - regexp: '33/tclwebkit'
       version: '13'
@@ -42,8 +42,7 @@ create dictionary regexp_dict1
 PRIMARY KEY(regexp)
 SOURCE(YAMLRegExpTree(PATH '$yaml'))
 LIFETIME(0)
-LAYOUT(regexp_tree)
-SETTINGS(regexp_dict_allow_hyperscan = true);
+LAYOUT(regexp_tree);
 
 select dictGet('regexp_dict1', ('name', 'version'), 'Linux/123.45.67 tlinux');
 select dictGet('regexp_dict1', ('name', 'version'), '31/tclwebkit1024');
@@ -57,7 +56,7 @@ cat > "$yaml" <<EOL
   version: '\1'
 
 - regexp: '\d+/tclwebkit(?:\d+[\.\d]*)'
-  name: 'Android'
+  name: 'Andriod'
   versions:
     - regexp: '33/tclwebkit'
       version: '13'
@@ -85,22 +84,6 @@ EOL
 $CLICKHOUSE_CLIENT -n --query="
 system reload dictionary regexp_dict1; -- { serverError 318 }
 "
-
-cat > "$yaml" <<EOL
-- name: BlackBerry WebKit
-  regexp: (PlayBook).{1,200}RIM Tablet OS (\d+)\.(\d+)\.(\d+)
-  version: '\2.\3'
-- name: BlackBerry WebKit
-  regexp: (Black[bB]erry|BB10).{1,200}Version/(\d+)\.(\d+)\.(\d+)
-  version: '\2.\3'
-EOL
-
-$CLICKHOUSE_CLIENT -n --query="
-system reload dictionary regexp_dict1;
-select dictGet('regexp_dict1', ('name', 'version'), 'Mozilla/5.0 (BB10; Touch) AppleWebKit/537.3+ (KHTML, like Gecko) Version/10.0.9.388 Mobile Safari/537.3+');
-select dictGet('regexp_dict1', ('name', 'version'), 'Mozilla/5.0 (PlayBook; U; RIM Tablet OS 1.0.0; en-US) AppleWebKit/534.8+ (KHTML, like Gecko) Version/0.0.1 Safari/534.8+');
-"
-
 cat > "$yaml" <<EOL
 - regexp: 'abc'
   col_bool: 'true'

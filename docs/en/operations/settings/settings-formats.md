@@ -15,12 +15,11 @@ When writing data, ClickHouse throws an exception if input data contain columns 
 
 Supported formats:
 
-- [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) (and other JSON formats)
-- [BSONEachRow](../../interfaces/formats.md/#bsoneachrow) (and other JSON formats)
+- [JSONEachRow](../../interfaces/formats.md/#jsoneachrow)
 - [TSKV](../../interfaces/formats.md/#tskv)
 - All formats with suffixes WithNames/WithNamesAndTypes
+- [JSONColumns](../../interfaces/formats.md/#jsoncolumns)
 - [MySQLDump](../../interfaces/formats.md/#mysqldump)
-- [Native](../../interfaces/formats.md/#native)
 
 Possible values:
 
@@ -79,7 +78,7 @@ Default value: 1.
 
 ## input_format_defaults_for_omitted_fields {#input_format_defaults_for_omitted_fields}
 
-When performing `INSERT` queries, replace omitted input column values with default values of the respective columns. This option applies to [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) (and other JSON formats), [CSV](../../interfaces/formats.md/#csv), [TabSeparated](../../interfaces/formats.md/#tabseparated), [TSKV](../../interfaces/formats.md/#tskv), [Parquet](../../interfaces/formats.md/#parquet), [Arrow](../../interfaces/formats.md/#arrow), [Avro](../../interfaces/formats.md/#avro), [ORC](../../interfaces/formats.md/#orc), [Native](../../interfaces/formats.md/#native) formats and formats with `WithNames`/`WithNamesAndTypes` suffixes.
+When performing `INSERT` queries, replace omitted input column values with default values of the respective columns. This option only applies to [JSONEachRow](../../interfaces/formats.md/#jsoneachrow), [CSV](../../interfaces/formats.md/#csv), [TabSeparated](../../interfaces/formats.md/#tabseparated) formats and formats with `WithNames`/`WithNamesAndTypes` suffixes.
 
 :::note
 When this option is enabled, extended table metadata are sent from server to client. It consumes additional computing resources on the server and can reduce performance.
@@ -97,9 +96,7 @@ Default value: 1.
 Enables or disables the initialization of [NULL](../../sql-reference/syntax.md/#null-literal) fields with [default values](../../sql-reference/statements/create/table.md/#create-default-values), if data type of these fields is not [nullable](../../sql-reference/data-types/nullable.md/#data_type-nullable).
 If column type is not nullable and this setting is disabled, then inserting `NULL` causes an exception. If column type is nullable, then `NULL` values are inserted as is, regardless of this setting.
 
-This setting is applicable for most input formats.
-
-For complex default expressions `input_format_defaults_for_omitted_fields` must be enabled too.
+This setting is applicable to [INSERT ... VALUES](../../sql-reference/statements/insert-into.md) queries for text input formats.
 
 Possible values:
 
@@ -502,12 +499,6 @@ Enabled by default.
 Parse named tuple columns as JSON objects.
 
 Enabled by default.
-
-## input_format_json_ignore_unknown_keys_in_named_tuple {#input_format_json_ignore_unknown_keys_in_named_tuple}
-
-Ignore unknown keys in json object for named tuples.
-
-Disabled by default.
 
 ## input_format_json_defaults_for_missing_elements_in_named_tuple {#input_format_json_defaults_for_missing_elements_in_named_tuple}
 
@@ -1004,12 +995,6 @@ Use Arrow String type instead of Binary for String columns.
 
 Disabled by default.
 
-### output_format_arrow_fixed_string_as_fixed_byte_array (#output_format_arrow_fixed_string_as_fixed_byte_array)
-
-Use Arrow FIXED_SIZE_BINARY type instead of Binary/String for FixedString columns.
-
-Enabled by default.
-
 ## ORC format settings {#orc-format-settings}
 
 ### input_format_orc_import_nested {#input_format_orc_import_nested}
@@ -1095,12 +1080,6 @@ Disabled by default.
 Use Parquet String type instead of Binary for String columns.
 
 Disabled by default.
-
-### output_format_parquet_fixed_string_as_fixed_byte_array (#output_format_parquet_fixed_string_as_fixed_byte_array)
-
-Use Parquet FIXED_LENGTH_BYTE_ARRAY type instead of Binary/String for FixedString columns.
-
-Enabled by default.
 
 ## Hive format settings {#hive-format-settings}
 

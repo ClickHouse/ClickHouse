@@ -16,11 +16,12 @@ namespace DB
 namespace
 {
 
-class CustomizeFunctionsVisitor : public InDepthQueryTreeVisitorWithContext<CustomizeFunctionsVisitor>
+class CustomizeFunctionsVisitor : public InDepthQueryTreeVisitor<CustomizeFunctionsVisitor>
 {
 public:
-    using Base = InDepthQueryTreeVisitorWithContext<CustomizeFunctionsVisitor>;
-    using Base::Base;
+    explicit CustomizeFunctionsVisitor(ContextPtr & context_)
+        : context(context_)
+    {}
 
     void visitImpl(QueryTreeNodePtr & node) const
     {
@@ -28,7 +29,7 @@ public:
         if (!function_node)
             return;
 
-        const auto & settings = getSettings();
+        const auto & settings = context->getSettingsRef();
 
         /// After successful function replacement function name and function name lowercase must be recalculated
         auto function_name = function_node->getFunctionName();
@@ -38,6 +39,22 @@ public:
         {
             auto count_distinct_implementation_function_name = String(settings.count_distinct_implementation);
 
+            /// Replace countDistinct with countDistinct implementation
+            if (function_name_lowercase == "countdistinct")
+            {
+                resolveAggregateOrWindowFunctionNode(*function_node, count_distinct_implementation_function_name);
+                function_name = function_node->getFunctionName();
+                function_name_lowercase = Poco::toLower(function_name);
+            }
+
+            /// Replace countIfDistinct with countDistinctIf implementation
+            if (function_name_lowercase == "countifdistinct")
+            {
+                resolveAggregateOrWindowFunctionNode(*function_node, count_distinct_implementation_function_name + "If");
+                function_name = function_node->getFunctionName();
+                function_name_lowercase = Poco::toLower(function_name);
+            }
+
             /// Replace aggregateFunctionIfDistinct into aggregateFunctionDistinctIf to make execution more optimal
             if (function_name_lowercase.ends_with("ifdistinct"))
             {
@@ -46,6 +63,19 @@ public:
                 resolveAggregateOrWindowFunctionNode(*function_node, updated_function_name);
                 function_name = function_node->getFunctionName();
                 function_name_lowercase = Poco::toLower(function_name);
+            }
+
+            /// Rewrite all aggregate functions to add -OrNull suffix to them
+            if (settings.aggregate_functions_null_for_empty && !function_name.ends_with("OrNull"))
+            {
+                auto function_properies = AggregateFunctionFactory::instance().tryGetProperties(function_name);
+                if (function_properies && !function_properies->returns_default_when_only_null)
+                {
+                    auto updated_function_name = function_name + "OrNull";
+                    resolveAggregateOrWindowFunctionNode(*function_node, updated_function_name);
+                    function_name = function_node->getFunctionName();
+                    function_name_lowercase = Poco::toLower(function_name);
+                }
             }
 
             /** Move -OrNull suffix ahead, this should execute after add -OrNull suffix.
@@ -124,16 +154,19 @@ public:
 
     inline void resolveOrdinaryFunctionNode(FunctionNode & function_node, const String & function_name) const
     {
-        auto function = FunctionFactory::instance().get(function_name, getContext());
+        auto function = FunctionFactory::instance().get(function_name, context);
         function_node.resolveAsFunction(function->build(function_node.getArgumentColumns()));
     }
+
+private:
+    ContextPtr & context;
 };
 
 }
 
 void CustomizeFunctionsPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
-    CustomizeFunctionsVisitor visitor(std::move(context));
+    CustomizeFunctionsVisitor visitor(context);
     visitor.visit(query_tree_node);
 }
 

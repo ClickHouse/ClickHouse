@@ -554,21 +554,9 @@ void HTTPHandler::processQuery(
         std::string session_check = params.get("session_check", "");
         session->makeSessionContext(session_id, session_timeout, session_check == "1");
     }
-    else
-    {
-        /// We should create it even if we don't have a session_id
-        session->makeSessionContext();
-    }
 
     auto client_info = session->getClientInfo();
     auto context = session->makeQueryContext(std::move(client_info));
-
-    /// This parameter is used to tune the behavior of output formats (such as Native) for compatibility.
-    if (params.has("client_protocol_version"))
-    {
-        UInt64 version_param = parse<UInt64>(params.get("client_protocol_version"));
-        context->setClientProtocolVersion(version_param);
-    }
 
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
     String http_response_compression_methods = request.get("Accept-Encoding", "");
@@ -675,7 +663,7 @@ void HTTPHandler::processQuery(
     std::unique_ptr<ReadBuffer> in;
 
     static const NameSet reserved_param_names{"compress", "decompress", "user", "password", "quota_key", "query_id", "stacktrace",
-        "buffer_size", "wait_end_of_query", "session_id", "session_timeout", "session_check", "client_protocol_version"};
+        "buffer_size", "wait_end_of_query", "session_id", "session_timeout", "session_check"};
 
     Names reserved_param_suffixes;
 
@@ -831,20 +819,12 @@ void HTTPHandler::processQuery(
     customizeContext(request, context);
 
     executeQuery(*in, *used_output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, context,
-        [&response, this] (const QueryResultDetails & details)
+        [&response, this] (const String & current_query_id, const String & content_type, const String & format, const String & timezone)
         {
-            response.add("X-ClickHouse-Query-Id", details.query_id);
-
-            if (content_type_override)
-                response.setContentType(*content_type_override);
-            else if (details.content_type)
-                response.setContentType(*details.content_type);
-
-            if (details.format)
-                response.add("X-ClickHouse-Format", *details.format);
-
-            if (details.timezone)
-                response.add("X-ClickHouse-Timezone", *details.timezone);
+            response.setContentType(content_type_override.value_or(content_type));
+            response.add("X-ClickHouse-Query-Id", current_query_id);
+            response.add("X-ClickHouse-Format", format);
+            response.add("X-ClickHouse-Timezone", timezone);
         }
     );
 

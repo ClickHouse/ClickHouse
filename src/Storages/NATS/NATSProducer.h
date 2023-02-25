@@ -50,6 +50,8 @@ private:
      *      - payloads are pushed to queue in countRow and popped by another thread in writingFunc, each payload gets into queue only once
      */
     ConcurrentBoundedQueue<String> payloads;
+
+    Poco::Logger * log;
 };
 
 }

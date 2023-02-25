@@ -13,6 +13,7 @@
 #include <Parsers/ASTIdentifier.h>
 
 #include <IO/ConnectionTimeouts.h>
+#include <IO/ConnectionTimeoutsContext.h>
 #include <IO/IOThreadPool.h>
 #include <IO/ParallelReadBuffer.h>
 #include <IO/WriteBufferFromHTTP.h>
@@ -81,10 +82,6 @@ static bool urlWithGlobs(const String & uri)
     return (uri.find('{') != std::string::npos && uri.find('}') != std::string::npos) || uri.find('|') != std::string::npos;
 }
 
-static ConnectionTimeouts getHTTPTimeouts(ContextPtr context)
-{
-    return ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), {context->getConfigRef().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT), 0});
-}
 
 IStorageURLBase::IStorageURLBase(
     const String & uri_,
@@ -159,6 +156,13 @@ namespace
             std::atomic<size_t> next_uri_to_read = 0;
         };
         using URIInfoPtr = std::shared_ptr<URIInfo>;
+
+        void onCancel() override
+        {
+            std::lock_guard lock(reader_mutex);
+            if (reader)
+                reader->cancel();
+        }
 
         static void setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri)
         {
@@ -237,13 +241,6 @@ namespace
         {
             while (true)
             {
-                if (isCancelled())
-                {
-                    if (reader)
-                        reader->cancel();
-                    break;
-                }
-
                 if (!reader)
                 {
                     auto current_uri_pos = uri_info->next_uri_to_read.fetch_add(1);
@@ -252,17 +249,18 @@ namespace
 
                     auto current_uri = uri_info->uri_list_to_read[current_uri_pos];
 
+                    std::lock_guard lock(reader_mutex);
                     initialize(current_uri);
                 }
 
                 Chunk chunk;
+                std::lock_guard lock(reader_mutex);
                 if (reader->pull(chunk))
                     return chunk;
 
                 pipeline->reset();
                 reader.reset();
             }
-            return {};
         }
 
         static std::unique_ptr<ReadBuffer> getFirstAvailableURLReadBuffer(
@@ -445,6 +443,9 @@ namespace
         std::unique_ptr<ReadBuffer> read_buf;
         std::unique_ptr<QueryPipeline> pipeline;
         std::unique_ptr<PullingPipelineExecutor> reader;
+        /// onCancell and generate can be called concurrently and both of them
+        /// have R/W access to reader pointer.
+        std::mutex reader_mutex;
 
         Poco::Net::HTTPBasicCredentials credentials;
     };
@@ -635,7 +636,7 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
             {},
             Poco::Net::HTTPRequest::HTTP_GET,
             {},
-            getHTTPTimeouts(context),
+            ConnectionTimeouts::getHTTPTimeouts(context),
             compression_method,
             credentials,
             headers,
@@ -719,7 +720,7 @@ Pipe IStorageURLBase::read(
                 local_context,
                 columns_description,
                 max_block_size,
-                getHTTPTimeouts(local_context),
+                ConnectionTimeouts::getHTTPTimeouts(local_context),
                 compression_method,
                 download_threads,
                 headers,
@@ -743,7 +744,7 @@ Pipe IStorageURLBase::read(
             local_context,
             columns_description,
             max_block_size,
-            getHTTPTimeouts(local_context),
+            ConnectionTimeouts::getHTTPTimeouts(local_context),
             compression_method,
             max_download_threads,
             headers,
@@ -778,7 +779,6 @@ Pipe StorageURLWithFailover::read(
 
     auto uri_info = std::make_shared<StorageURLSource::URIInfo>();
     uri_info->uri_list_to_read.emplace_back(uri_options);
-
     auto pipe = Pipe(std::make_shared<StorageURLSource>(
         uri_info,
         getReadMethod(),
@@ -790,7 +790,7 @@ Pipe StorageURLWithFailover::read(
         local_context,
         columns_description,
         max_block_size,
-        getHTTPTimeouts(local_context),
+        ConnectionTimeouts::getHTTPTimeouts(local_context),
         compression_method,
         local_context->getSettingsRef().max_download_threads,
         headers,
@@ -819,7 +819,7 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
             format_settings,
             metadata_snapshot->getSampleBlock(),
             context,
-            getHTTPTimeouts(context),
+            ConnectionTimeouts::getHTTPTimeouts(context),
             compression_method,
             http_method);
     }
@@ -831,7 +831,7 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
             format_settings,
             metadata_snapshot->getSampleBlock(),
             context,
-            getHTTPTimeouts(context),
+            ConnectionTimeouts::getHTTPTimeouts(context),
             compression_method,
             http_method);
     }
@@ -900,7 +900,7 @@ std::optional<time_t> IStorageURLBase::getLastModificationTime(
             Poco::URI(url),
             Poco::Net::HTTPRequest::HTTP_GET,
             {},
-            getHTTPTimeouts(context),
+            ConnectionTimeouts::getHTTPTimeouts(context),
             credentials,
             settings.max_http_get_redirects,
             settings.max_read_buffer_size,

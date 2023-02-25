@@ -772,10 +772,10 @@ void registerStorageKafka(StorageFactory & factory)
             if (args_count < (ARG_NUM) && (ARG_NUM) <= 4 &&                 \
                 !kafka_settings->PAR_NAME.changed)                          \
             {                                                               \
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,\
-                    "Required parameter '{}' "                              \
+                throw Exception(                                            \
+                    "Required parameter '" #PAR_NAME "' "                   \
                     "for storage Kafka not specified",                      \
-                    #PAR_NAME);                                             \
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);          \
             }                                                               \
             if (args_count >= (ARG_NUM))                                    \
             {                                                               \
@@ -783,11 +783,11 @@ void registerStorageKafka(StorageFactory & factory)
                 if (has_settings &&                                         \
                     kafka_settings->PAR_NAME.changed)                       \
                 {                                                           \
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,              \
-                        "The argument №{} of storage Kafka "                \
-                        "and the parameter '{}' "                           \
+                    throw Exception(                                        \
+                        "The argument №" #ARG_NUM " of storage Kafka "      \
+                        "and the parameter '" #PAR_NAME "' "                \
                         "in SETTINGS cannot be specified at the same time", \
-                        #ARG_NUM, #PAR_NAME);                               \
+                        ErrorCodes::BAD_ARGUMENTS);                         \
                 }                                                           \
                 /* move engine args to settings */                          \
                 else                                                        \

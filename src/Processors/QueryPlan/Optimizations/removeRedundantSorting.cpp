@@ -188,14 +188,7 @@ private:
             return false;
 
         /// remove sorting
-        for (auto & child : parent_node->children)
-        {
-            if (child == sorting_node)
-            {
-                child = sorting_node->children.front();
-                break;
-            }
-        }
+        parent_node->children.front() = sorting_node->children.front();
 
         /// sorting removed, so need to update sorting traits for upstream steps
         const DataStream * input_stream = &parent_node->children.front()->step->getOutputStream();
@@ -261,18 +254,6 @@ private:
                 auto aggregate_function_properties = AggregateFunctionFactory::instance().tryGetProperties(aggregate.function->getName());
                 if (aggregate_function_properties && aggregate_function_properties->is_order_dependent)
                     return false;
-
-                /// sum*() with Floats depends on order
-                /// but currently, there is no way to specify property `is_order_dependent` for combination of aggregating function and data type as argument
-                /// so, we check explicitly for sum*() functions with Floats here
-                const auto aggregate_function = aggregate.function;
-                const String & func_name = aggregate_function->getName();
-                if (func_name.starts_with("sum"))
-                {
-                    DataTypePtr data_type = aggregate_function->getArgumentTypes().front();
-                    if (WhichDataType(removeNullable(data_type)).isFloat())
-                        return false;
-                }
             }
             return true;
         }

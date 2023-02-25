@@ -18,9 +18,8 @@ CREATE WINDOW VIEW wv TO dst AS SELECT tumbleStart(w_id) AS time, colA, colB FRO
 INSERT INTO mt VALUES ('test1', 'test2');
 EOF
 
-for _ in {1..100}; do
-	$CLICKHOUSE_CLIENT --query="SELECT count(*) FROM dst" | grep -q "1" && echo 'OK' && break
-	sleep .5
+while true; do
+	$CLICKHOUSE_CLIENT --query="SELECT count(*) FROM dst" | grep -q "1" && break || sleep .1 ||:
 done
 
 $CLICKHOUSE_CLIENT --query="SELECT colA, colB FROM dst"

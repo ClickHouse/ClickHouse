@@ -99,7 +99,7 @@ void DuplicateOrderByData::visit(ASTSelectQuery & select_query, ASTPtr &)
                 bool is_stateful = false;
                 ASTFunctionStatefulVisitor::Data data{context, is_stateful};
                 ASTFunctionStatefulVisitor(data).visit(elem);
-                if (is_stateful)
+                if (is_stateful) //-V547
                     return;
             }
         }
@@ -119,3 +119,4 @@ void DuplicateOrderByData::visit(ASTSelectQuery & select_query, ASTPtr &)
 }
 
 }
+

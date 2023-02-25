@@ -16,10 +16,13 @@
 #include <IO/WriteBufferFromS3.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/SeekAvoidingReadBuffer.h>
-#include <IO/S3/getObjectInfo.h>
 #include <IO/S3/copyS3File.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
 #include <Disks/ObjectStorages/S3/diskSettings.h>
+
+#include <aws/s3/model/ListObjectsV2Request.h>
+#include <aws/s3/model/DeleteObjectRequest.h>
+#include <aws/s3/model/DeleteObjectsRequest.h>
 
 #include <Common/getRandomASCIIString.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -106,8 +109,7 @@ std::string S3ObjectStorage::generateBlobNameForPath(const std::string & /* path
 
 bool S3ObjectStorage::exists(const StoredObject & object) const
 {
-    auto settings_ptr = s3_settings.get();
-    return S3::objectExists(*client.get(), bucket, object.absolute_path, {}, settings_ptr->request_settings, /* for_disk_s3= */ true);
+    return S3::objectExists(*client.get(), bucket, object.absolute_path, {}, /* for_disk_s3= */ true);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
@@ -209,7 +211,7 @@ void S3ObjectStorage::findAllFiles(const std::string & path, RelativePathsWithSi
     auto settings_ptr = s3_settings.get();
     auto client_ptr = client.get();
 
-    S3::ListObjectsV2Request request;
+    Aws::S3::Model::ListObjectsV2Request request;
     request.SetBucket(bucket);
     request.SetPrefix(path);
     if (max_keys)
@@ -253,7 +255,7 @@ void S3ObjectStorage::getDirectoryContents(const std::string & path,
     auto settings_ptr = s3_settings.get();
     auto client_ptr = client.get();
 
-    S3::ListObjectsV2Request request;
+    Aws::S3::Model::ListObjectsV2Request request;
     request.SetBucket(bucket);
     /// NOTE: if you do "ls /foo" instead of "ls /foo/" over S3 with this API
     /// it will return only "/foo" itself without any underlying nodes.
@@ -300,7 +302,7 @@ void S3ObjectStorage::removeObjectImpl(const StoredObject & object, bool if_exis
 
     ProfileEvents::increment(ProfileEvents::S3DeleteObjects);
     ProfileEvents::increment(ProfileEvents::DiskS3DeleteObjects);
-    S3::DeleteObjectRequest request;
+    Aws::S3::Model::DeleteObjectRequest request;
     request.SetBucket(bucket);
     request.SetKey(object.absolute_path);
     auto outcome = client_ptr->DeleteObject(request);
@@ -348,7 +350,7 @@ void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_e
 
             ProfileEvents::increment(ProfileEvents::S3DeleteObjects);
             ProfileEvents::increment(ProfileEvents::DiskS3DeleteObjects);
-            S3::DeleteObjectsRequest request;
+            Aws::S3::Model::DeleteObjectsRequest request;
             request.SetBucket(bucket);
             request.SetDelete(delkeys);
             auto outcome = client_ptr->DeleteObjects(request);
@@ -382,13 +384,12 @@ void S3ObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 
 ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path) const
 {
-    auto settings_ptr = s3_settings.get();
-    auto object_info = S3::getObjectInfo(*client.get(), bucket, path, {}, settings_ptr->request_settings, /* with_metadata= */ true, /* for_disk_s3= */ true);
-
     ObjectMetadata result;
+
+    auto object_info = S3::getObjectInfo(*client.get(), bucket, path, {}, /* for_disk_s3= */ true);
     result.size_bytes = object_info.size;
     result.last_modified = object_info.last_modification_time;
-    result.attributes = object_info.metadata;
+    result.attributes = S3::getObjectMetadata(*client.get(), bucket, path, {}, /* for_disk_s3= */ true);
 
     return result;
 }
@@ -403,8 +404,8 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
     if (auto * dest_s3 = dynamic_cast<S3ObjectStorage * >(&object_storage_to); dest_s3 != nullptr)
     {
         auto client_ptr = client.get();
+        auto size = S3::getObjectSize(*client_ptr, bucket, object_from.absolute_path, {}, /* for_disk_s3= */ true);
         auto settings_ptr = s3_settings.get();
-        auto size = S3::getObjectSize(*client_ptr, bucket, object_from.absolute_path, {}, settings_ptr->request_settings, /* for_disk_s3= */ true);
         auto scheduler = threadPoolCallbackRunner<void>(getThreadPoolWriter(), "S3ObjStor_copy");
         copyS3File(client_ptr, bucket, object_from.absolute_path, 0, size, dest_s3->bucket, object_to.absolute_path,
                    settings_ptr->request_settings, object_to_attributes, scheduler, /* for_disk_s3= */ true);
@@ -419,8 +420,8 @@ void S3ObjectStorage::copyObject( // NOLINT
     const StoredObject & object_from, const StoredObject & object_to, std::optional<ObjectAttributes> object_to_attributes)
 {
     auto client_ptr = client.get();
+    auto size = S3::getObjectSize(*client_ptr, bucket, object_from.absolute_path, {}, /* for_disk_s3= */ true);
     auto settings_ptr = s3_settings.get();
-    auto size = S3::getObjectSize(*client_ptr, bucket, object_from.absolute_path, {}, settings_ptr->request_settings, /* for_disk_s3= */ true);
     auto scheduler = threadPoolCallbackRunner<void>(getThreadPoolWriter(), "S3ObjStor_copy");
     copyS3File(client_ptr, bucket, object_from.absolute_path, 0, size, bucket, object_to.absolute_path,
                settings_ptr->request_settings, object_to_attributes, scheduler, /* for_disk_s3= */ true);
@@ -431,7 +432,7 @@ void S3ObjectStorage::setNewSettings(std::unique_ptr<S3ObjectStorageSettings> &&
     s3_settings.set(std::move(s3_settings_));
 }
 
-void S3ObjectStorage::setNewClient(std::unique_ptr<S3::Client> && client_)
+void S3ObjectStorage::setNewClient(std::unique_ptr<Aws::S3::S3Client> && client_)
 {
     client.set(std::move(client_));
 }
@@ -443,7 +444,7 @@ void S3ObjectStorage::shutdown()
     /// If S3 request is failed and the method below is executed S3 client immediately returns the last failed S3 request outcome.
     /// If S3 is healthy nothing wrong will be happened and S3 requests will be processed in a regular way without errors.
     /// This should significantly speed up shutdown process if S3 is unhealthy.
-    const_cast<S3::Client &>(*client_ptr).DisableRequestProcessing();
+    const_cast<Aws::S3::S3Client &>(*client_ptr).DisableRequestProcessing();
 }
 
 void S3ObjectStorage::startup()
@@ -451,7 +452,7 @@ void S3ObjectStorage::startup()
     auto client_ptr = client.get();
 
     /// Need to be enabled if it was disabled during shutdown() call.
-    const_cast<S3::Client &>(*client_ptr).EnableRequestProcessing();
+    const_cast<Aws::S3::S3Client &>(*client_ptr).EnableRequestProcessing();
 }
 
 void S3ObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)
