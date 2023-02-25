@@ -1,5 +1,5 @@
 #pragma once
-#include "config.h"
+#include "config_formats.h"
 
 #if USE_ARROW
 
@@ -47,6 +47,7 @@ private:
     int record_batch_total = 0;
     int record_batch_current = 0;
 
+    std::vector<size_t> missing_columns;
     BlockMissingValues block_missing_values;
 
     const FormatSettings format_settings;

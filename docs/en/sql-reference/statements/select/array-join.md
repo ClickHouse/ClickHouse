@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/statements/select/array-join
 sidebar_label: ARRAY JOIN
 ---
 
@@ -299,8 +298,3 @@ ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num;
 ## Implementation Details
 
 The query execution order is optimized when running `ARRAY JOIN`. Although `ARRAY JOIN` must always be specified before the [WHERE](../../../sql-reference/statements/select/where.md)/[PREWHERE](../../../sql-reference/statements/select/prewhere.md) clause in a query, technically they can be performed in any order, unless result of `ARRAY JOIN` is used for filtering. The processing order is controlled by the query optimizer.
-
-
-## Related content
-
-- Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)

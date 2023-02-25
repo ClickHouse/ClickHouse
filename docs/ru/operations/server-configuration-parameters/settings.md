@@ -1,5 +1,4 @@
 ---
-slug: /ru/operations/server-configuration-parameters/settings
 sidebar_position: 57
 sidebar_label: "Конфигурационные параметры сервера"
 ---
@@ -412,8 +411,6 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 ## interserver_listen_host {#interserver-listen-host}
 
 Ограничение по хостам, для обмена между серверами ClickHouse.
-Если используется Keeper, то такое же ограничение будет применяться к обмену данными
-между различными экземплярами Keeper.
 Значение по умолчанию совпадает со значением параметра listen_host
 
 Примеры:
@@ -624,7 +621,6 @@ ClickHouse поддерживает динамическое изменение 
 -   `http_proxy` - Настройка HTTP proxy для отсылки отчетов о сбоях.
 -   `debug` - Настроить клиентскую библиотеку Sentry в debug режим.
 -   `tmp_path` - Путь в файловой системе для временного хранения состояния отчетов о сбоях перед отправкой на сервер Sentry.
--   `environment` - Произвольное название среды, в которой запущен сервер ClickHouse, которое будет упомянуто в каждом отчете от сбое. По умолчанию имеет значение `test` или `prod` в зависимости от версии ClickHouse.
 
 **Рекомендованные настройки**
 
@@ -1343,13 +1339,12 @@ TCP порт для защищённого обмена данными с кли
 
 Если политика не задана, используется [tmp_path](#tmp-path). В противном случае `tmp_path` игнорируется.
 
-:::note "Примечание"
-- `move_factor` игнорируется.
-- `keep_free_space_bytes` игнорируется.
-- `max_data_part_size_bytes` игнорируется.
-- В данной политике должен быть ровно один том, содержащий только локальный диски.
-:::
-
+    :::note "Примечание"
+    - `move_factor` игнорируется.
+    - `keep_free_space_bytes` игнорируется.
+    - `max_data_part_size_bytes` игнорируется.
+    - В данной политике у вас должен быть ровно один том.
+    :::
 ## uncompressed_cache_size {#server-settings-uncompressed_cache_size}
 
 Размер кеша (в байтах) для несжатых данных, используемых движками таблиц семейства [MergeTree](../../operations/server-configuration-parameters/settings.md).

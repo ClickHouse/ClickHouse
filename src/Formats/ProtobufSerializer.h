@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include "config_formats.h"
 
 #if USE_PROTOBUF
 #   include <Columns/IColumn.h>
@@ -27,7 +27,6 @@ public:
     virtual void setColumns(const ColumnPtr * columns, size_t num_columns) = 0;
     virtual void writeRow(size_t row_num) = 0;
     virtual void finalizeWrite() {}
-    virtual void reset() {}
 
     virtual void setColumns(const MutableColumnPtr * columns, size_t num_columns) = 0;
     virtual void readRow(size_t row_num) = 0;
