@@ -19,31 +19,32 @@ namespace DB
 namespace
 {
 
-void partFilesOnDiskImpl(const DiskPtr & disk, const String & from, std::vector<String> & files)
+void calculateTotalSizeOnDiskImpl(const DiskPtr & disk, const String & from, UInt64 & total_size)
 {
+    /// Files or directories of detached part may not exist. Only count the size of existing files.
     if (disk->isFile(from))
     {
-        files.push_back(from);
+        total_size += disk->getFileSize(from);
     }
     else
     {
         for (auto it = disk->iterateDirectory(from); it->isValid(); it->next())
-            partFilesOnDiskImpl(disk, fs::path(from) / it->name(), files);
+            calculateTotalSizeOnDiskImpl(disk, fs::path(from) / it->name(), total_size);
     }
 }
 
-std::vector<String> partFilesOnDisk(const DiskPtr & disk, const String & from)
+UInt64 calculateTotalSizeOnDisk(const DiskPtr & disk, const String & from)
 {
-    std::vector<String> files;
+    UInt64 total_size = 0;
     try
     {
-        partFilesOnDiskImpl(disk, from, files);
+        calculateTotalSizeOnDiskImpl(disk, from, total_size);
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
-    return files;
+    return total_size;
 }
 
 class SourceState
@@ -63,26 +64,14 @@ public:
     }
 };
 
-struct FileSizeWorkerState
-{
-    struct Task
-    {
-        DiskPtr disk;
-        String file;
-        std::atomic<size_t> * counter = nullptr;
-    };
 
-    std::vector<Task> tasks;
-    std::atomic<size_t> next_task = {0};
-};
-
-struct ListingWorkerState
+struct WorkerState
 {
     struct Task
     {
         DiskPtr disk;
         String path;
-        std::vector<String> & files;
+        std::atomic<size_t> * counter = nullptr;
     };
 
     std::vector<Task> tasks;
@@ -158,82 +147,19 @@ private:
         }
     }
 
-    std::vector<std::vector<String>> collectListings(size_t begin)
-    {
-        std::vector<std::vector<String>> listings(detached_parts.size() - begin);
-
-        ListingWorkerState worker_state;
-
-        for (auto p_id = begin; p_id < detached_parts.size(); ++p_id)
-        {
-            auto & part = detached_parts[p_id];
-
-            auto part_path = fs::path(MergeTreeData::DETACHED_DIR_NAME) / part.dir_name;
-            auto relative_path = fs::path(current_info.data->getRelativeDataPath()) / part_path;
-
-            worker_state.tasks.push_back({part.disk, relative_path, listings.at(p_id - begin)});
-        }
-
-        std::vector<std::future<void>> futures;
-        SCOPE_EXIT_SAFE({
-            /// Cancel all workers
-            worker_state.next_task.store(worker_state.tasks.size());
-            /// Exceptions are not propagated
-            for (auto & future : futures)
-                if (future.valid())
-                    future.wait();
-            futures.clear();
-        });
-
-        auto max_thread_to_run = std::max(size_t(1), std::min(support_threads, detached_parts.size() / 10));
-        futures.reserve(max_thread_to_run);
-
-        for (size_t i = 0; i < max_thread_to_run; ++i)
-        {
-            if (worker_state.next_task.load() >= worker_state.tasks.size())
-                break;
-
-            auto worker = [&worker_state] ()
-            {
-                for (auto id = worker_state.next_task++; id < worker_state.tasks.size(); id = worker_state.next_task++)
-                {
-                    auto & task = worker_state.tasks.at(id);
-                    task.files = partFilesOnDisk(task.disk, task.path);
-                }
-            };
-
-            futures.push_back(
-                        scheduleFromThreadPool<void>(
-                            std::move(worker),
-                            IOThreadPool::get(),
-                            "DP_BytesOnDisk"));
-        }
-
-        /// Exceptions are propagated
-        for (auto & future : futures)
-            future.get();
-
-        return listings;
-
-    }
-
     void calculatePartSizeOnDisk(size_t begin, std::vector<std::atomic<size_t>> & parts_sizes)
     {
         if (!has_bytes_on_disk_column)
             return;
 
-        auto listings = collectListings(begin);
-
-        FileSizeWorkerState worker_state;
+        WorkerState worker_state;
 
         for (auto p_id = begin; p_id < detached_parts.size(); ++p_id)
         {
-            auto & p = detached_parts.at(p_id);
-            auto & disk = p.disk;
-            auto * counter = &parts_sizes[p_id - begin];
-
-            for (auto & file : listings[p_id - begin])
-                worker_state.tasks.push_back({disk, file, counter});
+            auto & part = detached_parts[p_id];
+            auto part_path = fs::path(MergeTreeData::DETACHED_DIR_NAME) / part.dir_name;
+            auto relative_path = fs::path(current_info.data->getRelativeDataPath()) / part_path;
+            worker_state.tasks.push_back({part.disk, relative_path, &parts_sizes.at(p_id - begin)});
         }
 
         std::vector<std::future<void>> futures;
@@ -260,8 +186,8 @@ private:
                 for (auto id = worker_state.next_task++; id < worker_state.tasks.size(); id = worker_state.next_task++)
                 {
                     auto & task = worker_state.tasks.at(id);
-                    auto size = task.disk->getFileSize(task.file);
-                    task.counter->fetch_add(size);
+                    size_t size = calculateTotalSizeOnDisk(task.disk, task.path);
+                    task.counter->store(size);
                 }
             };
 
