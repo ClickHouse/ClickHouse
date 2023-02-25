@@ -1,5 +1,6 @@
 SELECT cityHash64(map(1, 'Hello'), CAST(materialize('World') AS LowCardinality(String)));
 SELECT cityHash64(map(), CAST(materialize('') AS LowCardinality(Nullable(String))));
+SELECT materialize(42) as last_element, cityHash64(map(), CAST(materialize('') AS LowCardinality(Nullable(String))), last_element) from numbers(3);
 
 SET allow_suspicious_low_cardinality_types = 1;
 CREATE TEMPORARY TABLE datetime__fuzz_14 (`d` LowCardinality(Nullable(UInt128)));
