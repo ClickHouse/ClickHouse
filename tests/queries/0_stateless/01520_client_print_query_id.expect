@@ -21,10 +21,12 @@ expect ":) "
 # Make a query
 send -- "SELECT 'print query id'\r"
 expect {
-    "Query id: *" { }
+    # (?n) - Do not match new lines [1]
+    #   [1]: https://www.tcl.tk/man/tcl8.6/TclCmd/re_syntax.html
+    -re "(?n)Query id: .*" { }
     timeout { exit 1 }
 }
-expect "print query id"
+expect "'print query id"
 expect ":) "
 
 send -- "\4"
