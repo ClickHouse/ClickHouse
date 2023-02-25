@@ -8,7 +8,7 @@
 #if USE_LIBPQXX
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
-#include <Processors/Transforms/PostgreSQLSource.h>
+#include <Processors/Sources/PostgreSQLSource.h>
 #include "readInvalidateQuery.h"
 #include <Interpreters/Context.h>
 #include <QueryPipeline/QueryPipeline.h>
@@ -117,7 +117,7 @@ bool PostgreSQLDictionarySource::isModified() const
     if (!configuration.invalidate_query.empty())
     {
         auto response = doInvalidateQuery(configuration.invalidate_query);
-        if (response == invalidate_query_response) //-V1051
+        if (response == invalidate_query_response)
             return false;
         invalidate_query_response = response;
     }
@@ -185,13 +185,21 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
                                  Block & sample_block,
                                  ContextPtr context,
                                  const std::string & /* default_database */,
-                                 bool /* created_from_ddl */) -> DictionarySourcePtr
+                                 [[maybe_unused]] bool created_from_ddl) -> DictionarySourcePtr
     {
 #if USE_LIBPQXX
         const auto settings_config_prefix = config_prefix + ".postgresql";
         auto has_config_key = [](const String & key) { return dictionary_allowed_keys.contains(key) || key.starts_with("replica"); };
         auto configuration = getExternalDataSourceConfigurationByPriority(config, settings_config_prefix, context, has_config_key);
         const auto & settings = context->getSettingsRef();
+
+        if (created_from_ddl)
+        {
+            for (const auto & replicas : configuration.replicas_configurations)
+                for (const auto & replica : replicas.second)
+                    context->getRemoteHostFilter().checkHostAndPort(replica.host, toString(replica.port));
+        }
+
         auto pool = std::make_shared<postgres::PoolWithFailover>(
             configuration.replicas_configurations,
             settings.postgresql_connection_pool_size,

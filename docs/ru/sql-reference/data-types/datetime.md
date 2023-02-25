@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/data-types/datetime
 sidebar_position: 48
 sidebar_label: DateTime
 ---
@@ -124,4 +125,3 @@ FROM dt
 -   [Операторы для работы с датой и временем](../../sql-reference/operators/index.md#operators-datetime)
 -   [Тип данных `Date`](date.md)
 -   [Тип данных `DateTime64`](datetime64.md)
-

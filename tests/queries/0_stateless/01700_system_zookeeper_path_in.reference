@@ -9,6 +9,8 @@ r1
 block_numbers
 blocks
 ========
+abandonable_lock-insert
+abandonable_lock-other
 failed_parts
 last_part
 parallel

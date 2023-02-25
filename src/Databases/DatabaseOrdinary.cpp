@@ -5,6 +5,7 @@
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/DDLDependencyVisitor.h>
+#include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Databases/TablesLoader.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -82,7 +83,7 @@ DatabaseOrdinary::DatabaseOrdinary(
 }
 
 void DatabaseOrdinary::loadStoredObjects(
-    ContextMutablePtr local_context, bool force_restore, bool force_attach, bool skip_startup_tables)
+    ContextMutablePtr local_context, LoadingStrictnessLevel mode, bool skip_startup_tables)
 {
     /** Tables load faster if they are loaded in sorted (by name) order.
       * Otherwise (for the ext4 filesystem), `DirectoryIterator` iterates through them in some order,
@@ -90,6 +91,7 @@ void DatabaseOrdinary::loadStoredObjects(
       */
 
     ParsedTablesMetadata metadata;
+    bool force_attach = LoadingStrictnessLevel::FORCE_ATTACH <= mode;
     loadTablesMetadata(local_context, metadata, force_attach);
 
     size_t total_tables = metadata.parsed_tables.size() - metadata.total_dictionaries;
@@ -119,7 +121,7 @@ void DatabaseOrdinary::loadStoredObjects(
         {
             pool.scheduleOrThrowOnError([&]()
             {
-                loadTableFromMetadata(local_context, path, name, ast, force_restore);
+                loadTableFromMetadata(local_context, path, name, ast, mode);
 
                 /// Messages, so that it's not boring to wait for the server to load for a long time.
                 logAboutProgress(log, ++dictionaries_processed, metadata.total_dictionaries, watch);
@@ -141,7 +143,7 @@ void DatabaseOrdinary::loadStoredObjects(
         {
             pool.scheduleOrThrowOnError([&]()
             {
-                loadTableFromMetadata(local_context, path, name, ast, force_restore);
+                loadTableFromMetadata(local_context, path, name, ast, mode);
 
                 /// Messages, so that it's not boring to wait for the server to load for a long time.
                 logAboutProgress(log, ++tables_processed, total_tables, watch);
@@ -154,7 +156,7 @@ void DatabaseOrdinary::loadStoredObjects(
     if (!skip_startup_tables)
     {
         /// After all tables was basically initialized, startup them.
-        startupTables(pool, force_restore, force_attach);
+        startupTables(pool, mode);
     }
 }
 
@@ -200,26 +202,15 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
                 if (fs::exists(full_path.string() + detached_suffix))
                 {
                     const std::string table_name = unescapeForFileName(file_name.substr(0, file_name.size() - 4));
+                    permanently_detached_tables.push_back(table_name);
                     LOG_DEBUG(log, "Skipping permanently detached table {}.", backQuote(table_name));
                     return;
                 }
 
                 QualifiedTableName qualified_name{TSA_SUPPRESS_WARNING_FOR_READ(database_name), create_query->getTable()};
-                TableNamesSet loading_dependencies = getDependenciesSetFromCreateQuery(getContext(), qualified_name, ast);
 
                 std::lock_guard lock{metadata.mutex};
                 metadata.parsed_tables[qualified_name] = ParsedTableMetadata{full_path.string(), ast};
-                if (loading_dependencies.empty())
-                {
-                    metadata.independent_database_objects.emplace_back(std::move(qualified_name));
-                }
-                else
-                {
-                    for (const auto & dependency : loading_dependencies)
-                        metadata.dependencies_info[dependency].dependent_database_objects.insert(qualified_name);
-                    assert(metadata.dependencies_info[qualified_name].dependencies.empty());
-                    metadata.dependencies_info[qualified_name].dependencies = std::move(loading_dependencies);
-                }
                 metadata.total_dictionaries += create_query->is_dictionary;
             }
         }
@@ -240,7 +231,8 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
              TSA_SUPPRESS_WARNING_FOR_READ(database_name), tables_in_database, dictionaries_in_database);
 }
 
-void DatabaseOrdinary::loadTableFromMetadata(ContextMutablePtr local_context, const String & file_path, const QualifiedTableName & name, const ASTPtr & ast, bool force_restore)
+void DatabaseOrdinary::loadTableFromMetadata(ContextMutablePtr local_context, const String & file_path, const QualifiedTableName & name, const ASTPtr & ast,
+    LoadingStrictnessLevel mode)
 {
     assert(name.database == TSA_SUPPRESS_WARNING_FOR_READ(database_name));
     const auto & create_query = ast->as<const ASTCreateQuery &>();
@@ -250,11 +242,10 @@ void DatabaseOrdinary::loadTableFromMetadata(ContextMutablePtr local_context, co
         create_query,
         *this,
         name.database,
-        file_path,
-        force_restore);
+        file_path, LoadingStrictnessLevel::FORCE_RESTORE <= mode);
 }
 
-void DatabaseOrdinary::startupTables(ThreadPool & thread_pool, bool /*force_restore*/, bool /*force_attach*/)
+void DatabaseOrdinary::startupTables(ThreadPool & thread_pool, LoadingStrictnessLevel /*mode*/)
 {
     LOG_INFO(log, "Starting up tables.");
 
@@ -268,6 +259,9 @@ void DatabaseOrdinary::startupTables(ThreadPool & thread_pool, bool /*force_rest
 
     auto startup_one_table = [&](const StoragePtr & table)
     {
+        /// Since startup() method can use physical paths on disk we don't allow any exclusive actions (rename, drop so on)
+        /// until startup finished.
+        auto table_lock_holder = table->lockForShare(RWLockImpl::NO_QUERY, getContext()->getSettingsRef().lock_acquire_timeout);
         table->startup();
         logAboutProgress(log, ++tables_processed, total_tables, watch);
     };
@@ -321,8 +315,10 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
         out.close();
     }
 
-    TableNamesSet new_dependencies = getDependenciesSetFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast);
-    DatabaseCatalog::instance().updateLoadingDependencies(table_id, std::move(new_dependencies));
+    /// The create query of the table has been just changed, we need to update dependencies too.
+    auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast);
+    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast);
+    DatabaseCatalog::instance().updateDependencies(table_id, ref_dependencies, loading_dependencies);
 
     commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path, statement, local_context);
 }

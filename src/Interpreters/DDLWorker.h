@@ -61,18 +61,23 @@ public:
         return host_fqdn_id;
     }
 
+    std::string getQueueDir() const
+    {
+        return queue_dir;
+    }
+
     void startup();
     virtual void shutdown();
 
     bool isCurrentlyActive() const { return initialized && !stop_flag; }
 
-protected:
 
     /// Returns cached ZooKeeper session (possibly expired).
     ZooKeeperPtr tryGetZooKeeper() const;
     /// If necessary, creates a new session and caches it.
     ZooKeeperPtr getAndSetZooKeeper();
 
+protected:
     /// Iterates through queue tasks in ZooKeeper, runs execution of new tasks
     void scheduleTasks(bool reinitialized);
 
@@ -96,12 +101,11 @@ protected:
     bool tryExecuteQueryOnLeaderReplica(
         DDLTaskBase & task,
         StoragePtr storage,
-        const String & rewritten_query,
         const String & node_path,
         const ZooKeeperPtr & zookeeper,
         std::unique_ptr<zkutil::ZooKeeperLock> & execute_on_leader_lock);
 
-    bool tryExecuteQuery(const String & query, DDLTaskBase & task, const ZooKeeperPtr & zookeeper);
+    bool tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeeper);
 
     /// Checks and cleanups queue's nodes
     void cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zookeeper);
@@ -138,7 +142,7 @@ protected:
     std::shared_ptr<Poco::Event> queue_updated_event = std::make_shared<Poco::Event>();
     std::shared_ptr<Poco::Event> cleanup_event = std::make_shared<Poco::Event>();
     std::atomic<bool> initialized = false;
-    std::atomic<bool> stop_flag = false;
+    std::atomic<bool> stop_flag = true;
 
     ThreadFromGlobalPool main_thread;
     ThreadFromGlobalPool cleanup_thread;
@@ -154,7 +158,7 @@ protected:
     /// How many tasks could be in the queue
     size_t max_tasks_in_queue = 1000;
 
-    std::atomic<UInt64> max_id = 0;
+    std::atomic<UInt32> max_id = 0;
     const CurrentMetrics::Metric * max_entry_metric;
     const CurrentMetrics::Metric * max_pushed_entry_metric;
 };

@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/aggregate-functions/reference/stddevsamp
 sidebar_position: 31
 ---
 

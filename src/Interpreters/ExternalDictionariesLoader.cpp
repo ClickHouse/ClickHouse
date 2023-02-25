@@ -6,7 +6,7 @@
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
 
-#include "config_core.h"
+#include "config.h"
 
 #if USE_MYSQL
 #   include <mysqlxx/PoolFactory.h>

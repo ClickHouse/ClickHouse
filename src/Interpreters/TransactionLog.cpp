@@ -116,32 +116,31 @@ String TransactionLog::serializeTID(const TransactionID & tid)
 
 void TransactionLog::loadEntries(Strings::const_iterator beg, Strings::const_iterator end)
 {
-    std::vector<std::future<Coordination::GetResponse>> futures;
     size_t entries_count = std::distance(beg, end);
     if (!entries_count)
         return;
 
     String last_entry = *std::prev(end);
     LOG_TRACE(log, "Loading {} entries from {}: {}..{}", entries_count, zookeeper_path_log, *beg, last_entry);
-    futures.reserve(entries_count);
+    std::vector<std::string> entry_paths;
+    entry_paths.reserve(entries_count);
     for (auto it = beg; it != end; ++it)
-        futures.emplace_back(TSA_READ_ONE_THREAD(zookeeper)->asyncGet(fs::path(zookeeper_path_log) / *it));
+        entry_paths.emplace_back(fs::path(zookeeper_path_log) / *it);
 
+    auto entries = TSA_READ_ONE_THREAD(zookeeper)->get(entry_paths);
     std::vector<std::pair<TIDHash, CSNEntry>> loaded;
     loaded.reserve(entries_count);
     auto it = beg;
     for (size_t i = 0; i < entries_count; ++i, ++it)
     {
-        auto res = futures[i].get();
+        auto res = entries[i];
         CSN csn = deserializeCSN(*it);
         TransactionID tid = deserializeTID(res.data);
         loaded.emplace_back(tid.getHash(), CSNEntry{csn, tid});
         LOG_TEST(log, "Got entry {} -> {}", tid, csn);
     }
-    futures.clear();
 
-    NOEXCEPT_SCOPE_STRICT;
-    {
+    NOEXCEPT_SCOPE_STRICT({
         std::lock_guard lock{mutex};
         for (const auto & entry : loaded)
         {
@@ -151,7 +150,8 @@ void TransactionLog::loadEntries(Strings::const_iterator beg, Strings::const_ite
             tid_to_csn.emplace(entry.first, entry.second);
         }
         last_loaded_entry = last_entry;
-    }
+    });
+
     {
         std::lock_guard lock{running_list_mutex};
         latest_snapshot = loaded.back().second.csn;
@@ -405,7 +405,7 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool 
         String csn_path_created;
         try
         {
-            if (unlikely(fault_probability_before_commit))
+            if (unlikely(fault_probability_before_commit > 0.0))
             {
                 std::bernoulli_distribution fault(fault_probability_before_commit);
                 if (fault(thread_local_rng))
@@ -415,7 +415,7 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool 
             /// Commit point
             csn_path_created = current_zookeeper->create(zookeeper_path_log + "/csn-", serializeTID(txn->tid), zkutil::CreateMode::PersistentSequential);
 
-            if (unlikely(fault_probability_after_commit))
+            if (unlikely(fault_probability_after_commit > 0.0))
             {
                 std::bernoulli_distribution fault(fault_probability_after_commit);
                 if (fault(thread_local_rng))
@@ -445,10 +445,11 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool 
 
         /// Do not allow exceptions between commit point and the and of transaction finalization
         /// (otherwise it may stuck in COMMITTING state holding snapshot).
-        NOEXCEPT_SCOPE_STRICT;
-        /// FIXME Transactions: Sequential node numbers in ZooKeeper are Int32, but 31 bit is not enough for production use
-        /// (overflow is possible in a several weeks/months of active usage)
-        allocated_csn = deserializeCSN(csn_path_created.substr(zookeeper_path_log.size() + 1));
+        NOEXCEPT_SCOPE_STRICT({
+            /// FIXME Transactions: Sequential node numbers in ZooKeeper are Int32, but 31 bit is not enough for production use
+            /// (overflow is possible in a several weeks/months of active usage)
+            allocated_csn = deserializeCSN(csn_path_created.substr(zookeeper_path_log.size() + 1));
+        });
     }
 
     return finalizeCommittedTransaction(txn.get(), allocated_csn, state_guard);
@@ -456,6 +457,7 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool 
 
 CSN TransactionLog::finalizeCommittedTransaction(MergeTreeTransaction * txn, CSN allocated_csn, scope_guard & state_guard) noexcept
 {
+    LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
     chassert(!allocated_csn == txn->isReadOnly());
     if (allocated_csn)
     {
@@ -501,6 +503,7 @@ bool TransactionLog::waitForCSNLoaded(CSN csn) const
 
 void TransactionLog::rollbackTransaction(const MergeTreeTransactionPtr & txn) noexcept
 {
+    LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
     LOG_TRACE(log, "Rolling back transaction {}{}", txn->tid,
               std::uncaught_exceptions() ? fmt::format(" due to uncaught exception (code: {})", getCurrentExceptionCode()) : "");
 
@@ -531,36 +534,64 @@ MergeTreeTransactionPtr TransactionLog::tryGetRunningTransaction(const TIDHash &
     return it->second;
 }
 
-CSN TransactionLog::getCSN(const TransactionID & tid)
+CSN TransactionLog::getCSN(const TransactionID & tid, const std::atomic<CSN> * failback_with_strict_load_csn)
 {
     /// Avoid creation of the instance if transactions are not actually involved
     if (tid == Tx::PrehistoricTID)
         return Tx::PrehistoricCSN;
-    return instance().getCSNImpl(tid.getHash());
+    return instance().getCSNImpl(tid.getHash(), failback_with_strict_load_csn);
 }
 
-CSN TransactionLog::getCSN(const TIDHash & tid)
+CSN TransactionLog::getCSN(const TIDHash & tid, const std::atomic<CSN> * failback_with_strict_load_csn)
 {
     /// Avoid creation of the instance if transactions are not actually involved
     if (tid == Tx::PrehistoricTID.getHash())
         return Tx::PrehistoricCSN;
-    return instance().getCSNImpl(tid);
+    return instance().getCSNImpl(tid, failback_with_strict_load_csn);
 }
 
-CSN TransactionLog::getCSNImpl(const TIDHash & tid_hash) const
+CSN TransactionLog::getCSNImpl(const TIDHash & tid_hash, const std::atomic<CSN> * failback_with_strict_load_csn) const
 {
     chassert(tid_hash);
     chassert(tid_hash != Tx::EmptyTID.getHash());
 
-    std::lock_guard lock{mutex};
-    auto it = tid_to_csn.find(tid_hash);
-    if (it != tid_to_csn.end())
-        return it->second.csn;
+    {
+        std::lock_guard lock{mutex};
+        auto it = tid_to_csn.find(tid_hash);
+        if (it != tid_to_csn.end())
+            return it->second.csn;
+    }
+
+    /// Usually commit csn checked by load memory with memory_order_relaxed option just for performance improvements
+    /// If fast loading fails than getCSN is called.
+    /// There is a race possible, transaction could be committed concurrently. Right before getCSN has been called. In that case tid_to_csn has no tid_hash but commit csn is set.
+    /// In order to be sure, commit csn has to be loaded with memory_order_seq_cst after lookup at tid_to_csn
+    if (failback_with_strict_load_csn)
+        if (CSN maybe_csn = failback_with_strict_load_csn->load())
+            return maybe_csn;
 
     return Tx::UnknownCSN;
 }
 
-void TransactionLog::assertTIDIsNotOutdated(const TransactionID & tid)
+CSN TransactionLog::getCSNAndAssert(const TransactionID & tid, std::atomic<CSN> & failback_with_strict_load_csn)
+{
+    /// failback_with_strict_load_csn is not provided to getCSN
+    /// Because it would be checked after assertTIDIsNotOutdated
+    if (CSN maybe_csn = getCSN(tid))
+        return maybe_csn;
+
+    assertTIDIsNotOutdated(tid, &failback_with_strict_load_csn);
+
+   /// If transaction is not outdated then it might be already committed
+   /// We should load CSN again to distinguish it
+   /// Otherwise the transactiuon hasn't been committed yet
+    if (CSN maybe_csn = failback_with_strict_load_csn.load())
+        return maybe_csn;
+
+    return Tx::UnknownCSN;
+}
+
+void TransactionLog::assertTIDIsNotOutdated(const TransactionID & tid, const std::atomic<CSN> * failback_with_strict_load_csn)
 {
     if (tid == Tx::PrehistoricTID)
         return;
@@ -569,6 +600,14 @@ void TransactionLog::assertTIDIsNotOutdated(const TransactionID & tid)
     CSN tail = instance().tail_ptr.load();
     if (tail <= tid.start_csn)
         return;
+
+    /// At this point of execution tail is lesser that tid.start_csn
+    /// This mean that transaction is either outdated or just has been committed concurrently and the tail moved forward.
+    /// If the second case takes place transaction's commit csn has to be set.
+    /// We should load CSN again to distinguish the second case.
+    if (failback_with_strict_load_csn)
+        if (CSN maybe_csn = failback_with_strict_load_csn->load())
+            return;
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get CSN for too old TID {}, current tail_ptr is {}, probably it's a bug", tid, tail);
 }

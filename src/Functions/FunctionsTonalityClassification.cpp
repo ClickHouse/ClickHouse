@@ -52,9 +52,9 @@ struct FunctionDetectTonalityImpl
         /// Calculate average value of tonality.
         /// Convert values -12..6 to -1..1
         if (weight > 0)
-            return weight / count_words / 6;
+            return static_cast<Float32>(weight / count_words / 6);
         else
-            return weight / count_words / 12;
+            return static_cast<Float32>(weight / count_words / 12);
     }
 
     static void vector(
@@ -81,7 +81,7 @@ struct NameDetectTonality
 
 using FunctionDetectTonality = FunctionTextClassificationFloat<FunctionDetectTonalityImpl, NameDetectTonality>;
 
-void registerFunctionDetectTonality(FunctionFactory & factory)
+REGISTER_FUNCTION(DetectTonality)
 {
     factory.registerFunction<FunctionDetectTonality>();
 }

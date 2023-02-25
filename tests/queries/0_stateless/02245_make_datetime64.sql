@@ -10,10 +10,10 @@ select toTypeName(makeDateTime64(1991, 8, 24, 21, 4, 0, 1234, 6));
 select toTypeName(makeDateTime64(1991, 8, 24, 21, 4, 0, 1234, 7, 'CET'));
 select toTypeName(cast(makeDateTime64(1991, 8, 24, 21, 4, 0, 1234, 7, 'CET') as DateTime64(7, 'UTC')));
 
-select makeDateTime64(1925, 1, 1, 0, 0, 0, 0, 9, 'UTC');
-select makeDateTime64(1924, 12, 31, 23, 59, 59, 999999999, 9, 'UTC');
-select makeDateTime64(2283, 11, 11, 23, 59, 59, 99999999, 8, 'UTC');
-select makeDateTime64(2283, 11, 11, 23, 59, 59, 999999999, 9, 'UTC'); -- { serverError 407 }
+select makeDateTime64(1900, 1, 1, 0, 0, 0, 0, 9, 'UTC');
+select makeDateTime64(1899, 12, 31, 23, 59, 59, 999999999, 9, 'UTC');
+select makeDateTime64(2299, 12, 31, 23, 59, 59, 99999999, 8, 'UTC');
+select makeDateTime64(2299, 12, 31, 23, 59, 59, 999999999, 9, 'UTC'); -- { serverError 407 }
 select makeDateTime64(2262, 4, 11, 23, 47, 16, 854775807, 9, 'UTC');
 select makeDateTime64(2262, 4, 11, 23, 47, 16, 854775808, 9, 'UTC'); -- { serverError 407 }
 select makeDateTime64(2262, 4, 11, 23, 47, 16, 85477581, 8, 'UTC');

@@ -4,6 +4,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
 #include <Parsers/ASTCreateIndexQuery.h>
+#include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTDropFunctionQuery.h>
 #include <Parsers/ASTDropIndexQuery.h>
 #include <Parsers/ASTDropQuery.h>
@@ -16,10 +17,14 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTShowEngineQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTWatchQuery.h>
+#include <Parsers/ASTCreateNamedCollectionQuery.h>
+#include <Parsers/ASTDropNamedCollectionQuery.h>
+#include <Parsers/ASTAlterNamedCollectionQuery.h>
 #include <Parsers/MySQL/ASTCreateQuery.h>
 #include <Parsers/ASTTransactionControl.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
@@ -46,6 +51,10 @@
 #include <Interpreters/InterpreterCreateFunctionQuery.h>
 #include <Interpreters/InterpreterCreateIndexQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/InterpreterCreateNamedCollectionQuery.h>
+#include <Interpreters/InterpreterDropNamedCollectionQuery.h>
+#include <Interpreters/InterpreterAlterNamedCollectionQuery.h>
+#include <Interpreters/InterpreterDeleteQuery.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <Interpreters/InterpreterDescribeCacheQuery.h>
 #include <Interpreters/InterpreterDropFunctionQuery.h>
@@ -61,9 +70,11 @@
 #include <Interpreters/InterpreterOptimizeQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
+#include <Interpreters/InterpreterShowEngineQuery.h>
 #include <Interpreters/InterpreterShowProcesslistQuery.h>
 #include <Interpreters/InterpreterShowTablesQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
@@ -112,12 +123,13 @@ namespace ErrorCodes
 
 std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMutablePtr context, const SelectQueryOptions & options)
 {
-    OpenTelemetrySpanHolder span("InterpreterFactory::get()");
-
     ProfileEvents::increment(ProfileEvents::Query);
 
     if (query->as<ASTSelectQuery>())
     {
+        if (context->getSettingsRef().allow_experimental_analyzer)
+            return std::make_unique<InterpreterSelectQueryAnalyzer>(query, context, options);
+
         /// This is internal part of ASTSelectWithUnionQuery.
         /// Even if there is SELECT without union, it is represented by ASTSelectWithUnionQuery with single ASTSelectQuery as a child.
         return std::make_unique<InterpreterSelectQuery>(query, context, options);
@@ -125,6 +137,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     else if (query->as<ASTSelectWithUnionQuery>())
     {
         ProfileEvents::increment(ProfileEvents::SelectQuery);
+
+        if (context->getSettingsRef().allow_experimental_analyzer)
+            return std::make_unique<InterpreterSelectQueryAnalyzer>(query, context, options);
+
         return std::make_unique<InterpreterSelectWithUnionQuery>(query, context, options);
     }
     else if (query->as<ASTSelectIntersectExceptQuery>())
@@ -152,6 +168,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     else if (query->as<ASTShowTablesQuery>())
     {
         return std::make_unique<InterpreterShowTablesQuery>(query, context);
+    }
+    else if (query->as<ASTShowEnginesQuery>())
+    {
+        return std::make_unique<InterpreterShowEnginesQuery>(query, context);
     }
     else if (query->as<ASTUseQuery>())
     {
@@ -222,6 +242,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     {
         return std::make_unique<InterpreterAlterQuery>(query, context);
     }
+    else if (query->as<ASTAlterNamedCollectionQuery>())
+    {
+        return std::make_unique<InterpreterAlterNamedCollectionQuery>(query, context);
+    }
     else if (query->as<ASTCheckQuery>())
     {
         return std::make_unique<InterpreterCheckQuery>(query, context);
@@ -262,6 +286,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     {
         return std::make_unique<InterpreterDropAccessEntityQuery>(query, context);
     }
+    else if (query->as<ASTDropNamedCollectionQuery>())
+    {
+        return std::make_unique<InterpreterDropNamedCollectionQuery>(query, context);
+    }
     else if (query->as<ASTGrantQuery>())
     {
         return std::make_unique<InterpreterGrantQuery>(query, context);
@@ -296,7 +324,7 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     }
     else if (query->as<ASTCreateFunctionQuery>())
     {
-        return std::make_unique<InterpreterCreateFunctionQuery>(query, context, true /*persist_function*/);
+        return std::make_unique<InterpreterCreateFunctionQuery>(query, context);
     }
     else if (query->as<ASTDropFunctionQuery>())
     {
@@ -306,6 +334,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     {
         return std::make_unique<InterpreterCreateIndexQuery>(query, context);
     }
+    else if (query->as<ASTCreateNamedCollectionQuery>())
+    {
+        return std::make_unique<InterpreterCreateNamedCollectionQuery>(query, context);
+    }
     else if (query->as<ASTDropIndexQuery>())
     {
         return std::make_unique<InterpreterDropIndexQuery>(query, context);
@@ -314,9 +346,13 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     {
         return std::make_unique<InterpreterBackupQuery>(query, context);
     }
+    else if (query->as<ASTDeleteQuery>())
+    {
+        return std::make_unique<InterpreterDeleteQuery>(query, context);
+    }
     else
     {
-        throw Exception("Unknown type of query: " + query->getID(), ErrorCodes::UNKNOWN_TYPE_OF_QUERY);
+        throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Unknown type of query: {}", query->getID());
     }
 }
 }

@@ -58,7 +58,7 @@ FailuresCount countFailures(const ::testing::TestResult & test_result)
     const size_t count = test_result.total_part_count();
     for (size_t i = 0; i < count; ++i)
     {
-        const auto & part = test_result.GetTestPartResult(i);
+        const auto & part = test_result.GetTestPartResult(static_cast<int>(i));
         if (part.nonfatally_failed())
         {
             ++failures.non_fatal;
@@ -79,12 +79,13 @@ FailuresCount countFailures(const ::testing::TestResult & test_result)
 TEST(DateLUTTest, makeDayNumTest)
 {
     const DateLUTImpl & lut = DateLUT::instance("UTC");
-    EXPECT_EQ(0, lut.makeDayNum(1924, 12, 31));
-    EXPECT_EQ(-1, lut.makeDayNum(1924, 12, 31, -1));
+    EXPECT_EQ(0, lut.makeDayNum(1899, 12, 31));
+    EXPECT_EQ(-1, lut.makeDayNum(1899, 12, 31, -1));
+    EXPECT_EQ(-25567, lut.makeDayNum(1900, 1, 1));
     EXPECT_EQ(-16436, lut.makeDayNum(1925, 1, 1));
     EXPECT_EQ(0, lut.makeDayNum(1970, 1, 1));
-    EXPECT_EQ(114635, lut.makeDayNum(2283, 11, 11));
-    EXPECT_EQ(114635, lut.makeDayNum(2500, 12, 25));
+    EXPECT_EQ(120529, lut.makeDayNum(2300, 12, 31));
+    EXPECT_EQ(120529, lut.makeDayNum(2500, 12, 25));
 }
 
 
@@ -133,6 +134,7 @@ TEST(DateLUTTest, TimeValuesInMiddleOfRange)
     EXPECT_EQ(lut.toRelativeMonthNum(time), 24237 /*unsigned*/);
     EXPECT_EQ(lut.toRelativeQuarterNum(time), 8078 /*unsigned*/);
     EXPECT_EQ(lut.toRelativeHourNum(time), 435736 /*time_t*/);
+    EXPECT_EQ(lut.toStableRelativeHourNum(time), 435757 /*time_t*/);
     EXPECT_EQ(lut.toRelativeMinuteNum(time), 26144180 /*time_t*/);
     EXPECT_EQ(lut.toStartOfMinuteInterval(time, 6), 1568650680 /*time_t*/);
     EXPECT_EQ(lut.toStartOfSecondInterval(time, 7), 1568650811 /*time_t*/);
@@ -195,6 +197,7 @@ TEST(DateLUTTest, TimeValuesAtLeftBoderOfRange)
     EXPECT_EQ(lut.toRelativeMonthNum(time), 23641 /*unsigned*/); // ?
     EXPECT_EQ(lut.toRelativeQuarterNum(time), 7880 /*unsigned*/); // ?
     EXPECT_EQ(lut.toRelativeHourNum(time), 0 /*time_t*/);
+    EXPECT_EQ(lut.toStableRelativeHourNum(time), 24 /*time_t*/);
     EXPECT_EQ(lut.toRelativeMinuteNum(time), 0 /*time_t*/);
     EXPECT_EQ(lut.toStartOfMinuteInterval(time, 6), 0 /*time_t*/);
     EXPECT_EQ(lut.toStartOfSecondInterval(time, 7), 0 /*time_t*/);
@@ -258,6 +261,7 @@ TEST(DateLUTTest, TimeValuesAtRightBoderOfRangeOfOldLUT)
     EXPECT_EQ(lut.toRelativeMonthNum(time), 25273 /*unsigned*/);
     EXPECT_EQ(lut.toRelativeQuarterNum(time), 8424 /*unsigned*/);
     EXPECT_EQ(lut.toRelativeHourNum(time), 1192873 /*time_t*/);
+    EXPECT_EQ(lut.toStableRelativeHourNum(time), 1192897 /*time_t*/);
     EXPECT_EQ(lut.toRelativeMinuteNum(time), 71572397 /*time_t*/);
     EXPECT_EQ(lut.toStartOfMinuteInterval(time, 6), 4294343520 /*time_t*/);
     EXPECT_EQ(lut.toStartOfSecondInterval(time, 7), 4294343872 /*time_t*/);

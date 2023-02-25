@@ -4,6 +4,7 @@
 #include <Poco/Channel.h>
 #include <Poco/FormattingChannel.h>
 #include "ExtendedLogChannel.h"
+#include "OwnJSONPatternFormatter.h"
 #include "OwnPatternFormatter.h"
 
 
@@ -36,6 +37,12 @@ public:
     {
         if (pChannel)
             pChannel->close();
+    }
+
+    void setProperty(const std::string& name, const std::string& value) override
+    {
+        if (pChannel)
+            pChannel->setProperty(name, value);
     }
 
     void log(const Poco::Message & msg) override;

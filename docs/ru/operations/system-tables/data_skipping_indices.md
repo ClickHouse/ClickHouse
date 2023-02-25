@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/data_skipping_indices
+---
 # system.data_skipping_indices {#system-data-skipping-indices}
 
 Содержит информацию о существующих индексах пропуска данных во всех таблицах.

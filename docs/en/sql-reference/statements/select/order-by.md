@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/statements/select/order-by
 sidebar_label: ORDER BY
 ---
 
@@ -543,4 +544,6 @@ Result:
 └─────┴──────────┴───────┘
 ```
 
-[Original article](https://clickhouse.com/docs/en/sql-reference/statements/select/order-by/) <!--hide-->
+## Related content
+
+- Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)

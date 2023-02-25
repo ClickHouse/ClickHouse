@@ -2,6 +2,7 @@
 
 #include <Core/Field.h>
 #include <Core/UUID.h>
+#include <Common/SettingConstraintWritability.h>
 #include <optional>
 #include <unordered_map>
 #include <vector>
@@ -25,9 +26,9 @@ struct SettingsProfileElement
     Field value;
     Field min_value;
     Field max_value;
-    std::optional<bool> readonly;
+    std::optional<SettingConstraintWritability> writability;
 
-    auto toTuple() const { return std::tie(parent_profile, setting_name, value, min_value, max_value, readonly); }
+    auto toTuple() const { return std::tie(parent_profile, setting_name, value, min_value, max_value, writability); }
     friend bool operator==(const SettingsProfileElement & lhs, const SettingsProfileElement & rhs) { return lhs.toTuple() == rhs.toTuple(); }
     friend bool operator!=(const SettingsProfileElement & lhs, const SettingsProfileElement & rhs) { return !(lhs == rhs); }
     friend bool operator <(const SettingsProfileElement & lhs, const SettingsProfileElement & rhs) { return lhs.toTuple() < rhs.toTuple(); }
@@ -42,6 +43,8 @@ struct SettingsProfileElement
     SettingsProfileElement(const ASTSettingsProfileElement & ast, const AccessControl & access_control);
     std::shared_ptr<ASTSettingsProfileElement> toAST() const;
     std::shared_ptr<ASTSettingsProfileElement> toASTWithNames(const AccessControl & access_control) const;
+
+    bool isConstraint() const;
 
 private:
     void init(const ASTSettingsProfileElement & ast, const AccessControl * access_control);
@@ -70,6 +73,8 @@ public:
     std::vector<UUID> toProfileIDs() const;
 
     bool isBackupAllowed() const;
+
+    static bool isAllowBackupSetting(const String & setting_name);
 };
 
 }

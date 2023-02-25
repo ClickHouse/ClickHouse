@@ -291,7 +291,7 @@ OptimizedRegularExpressionImpl<thread_safe>::OptimizedRegularExpressionImpl(cons
 
     /// Just three following options are supported
     if (options & (~(RE_CASELESS | RE_NO_CAPTURE | RE_DOT_NL)))
-        throw DB::Exception("OptimizedRegularExpression: Unsupported option.", DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
+        throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP, "OptimizedRegularExpression: Unsupported option.");
 
     is_case_insensitive = options & RE_CASELESS;
     bool is_no_capture = options & RE_NO_CAPTURE;
@@ -315,21 +315,21 @@ OptimizedRegularExpressionImpl<thread_safe>::OptimizedRegularExpressionImpl(cons
         re2 = std::make_unique<RegexType>(regexp_, regexp_options);
         if (!re2->ok())
         {
-            throw DB::Exception("OptimizedRegularExpression: cannot compile re2: "
-                + regexp_ + ", error: " + re2->error()
-                + ". Look at https://github.com/google/re2/wiki/Syntax "
+            throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP,
+                "OptimizedRegularExpression: cannot compile re2: {}, error: {}. "
+                "Look at https://github.com/google/re2/wiki/Syntax "
                 "for reference. Please note that if you specify regex as an SQL "
                 "string literal, the slashes have to be additionally escaped. "
                 "For example, to match an opening brace, write '\\(' -- "
                 "the first slash is for SQL and the second one is for regex",
-                DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
+                regexp_, re2->error());
         }
 
         if (!is_no_capture)
         {
             number_of_subpatterns = re2->NumberOfCapturingGroups();
             if (number_of_subpatterns > MAX_SUBPATTERNS)
-                throw DB::Exception("OptimizedRegularExpression: too many subpatterns in regexp: " + regexp_, DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
+                throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP, "OptimizedRegularExpression: too many subpatterns in regexp: {}", regexp_);
         }
     }
 
@@ -342,6 +342,23 @@ OptimizedRegularExpressionImpl<thread_safe>::OptimizedRegularExpressionImpl(cons
     }
 }
 
+template <bool thread_safe>
+OptimizedRegularExpressionImpl<thread_safe>::OptimizedRegularExpressionImpl(OptimizedRegularExpressionImpl && rhs) noexcept
+    : is_trivial(rhs.is_trivial)
+    , required_substring_is_prefix(rhs.required_substring_is_prefix)
+    , is_case_insensitive(rhs.is_case_insensitive)
+    , required_substring(std::move(rhs.required_substring))
+    , re2(std::move(rhs.re2))
+    , number_of_subpatterns(rhs.number_of_subpatterns)
+{
+    if (!required_substring.empty())
+    {
+        if (is_case_insensitive)
+            case_insensitive_substring_searcher.emplace(required_substring.data(), required_substring.size());
+        else
+            case_sensitive_substring_searcher.emplace(required_substring.data(), required_substring.size());
+    }
+}
 
 template <bool thread_safe>
 bool OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, size_t subject_size) const
@@ -489,8 +506,16 @@ unsigned OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject
 
         DB::PODArrayWithStackMemory<StringPieceType, 128> pieces(limit);
 
-        if (!re2->Match(StringPieceType(subject, subject_size), 0, subject_size, RegexType::UNANCHORED, pieces.data(), pieces.size()))
+        if (!re2->Match(
+            StringPieceType(subject, subject_size),
+            0,
+            subject_size,
+            RegexType::UNANCHORED,
+            pieces.data(),
+            static_cast<int>(pieces.size())))
+        {
             return 0;
+        }
         else
         {
             matches.resize(limit);

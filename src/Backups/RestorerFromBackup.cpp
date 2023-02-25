@@ -1,5 +1,6 @@
 #include <Backups/RestorerFromBackup.h>
 #include <Backups/IRestoreCoordination.h>
+#include <Backups/BackupCoordinationStage.h>
 #include <Backups/BackupSettings.h>
 #include <Backups/IBackup.h>
 #include <Backups/IBackupEntry.h>
@@ -38,23 +39,10 @@ namespace ErrorCodes
 }
 
 
+namespace Stage = BackupCoordinationStage;
+
 namespace
 {
-    /// Finding databases and tables in the backup which we're going to restore.
-    constexpr const char * kFindingTablesInBackupStatus = "finding tables in backup";
-
-    /// Creating databases or finding them and checking their definitions.
-    constexpr const char * kCreatingDatabasesStatus = "creating databases";
-
-    /// Creating tables or finding them and checking their definition.
-    constexpr const char * kCreatingTablesStatus = "creating tables";
-
-    /// Inserting restored data to tables.
-    constexpr const char * kInsertingDataToTablesStatus = "inserting data to tables";
-
-    /// Error status.
-    constexpr const char * kErrorStatus = IRestoreCoordination::kErrorStatus;
-
     /// Uppercases the first character of a passed string.
     String toUpperFirst(const String & str)
     {
@@ -105,8 +93,10 @@ RestorerFromBackup::RestorerFromBackup(
     , restore_coordination(restore_coordination_)
     , backup(backup_)
     , context(context_)
+    , on_cluster_first_sync_timeout(context->getConfigRef().getUInt64("backups.on_cluster_first_sync_timeout", 180000))
     , create_table_timeout(context->getConfigRef().getUInt64("backups.create_table_timeout", 300000))
     , log(&Poco::Logger::get("RestorerFromBackup"))
+    , tables_dependencies("RestorerFromBackup")
 {
 }
 
@@ -114,73 +104,57 @@ RestorerFromBackup::~RestorerFromBackup() = default;
 
 RestorerFromBackup::DataRestoreTasks RestorerFromBackup::run(Mode mode)
 {
-    try
-    {
-        /// run() can be called onle once.
-        if (!current_status.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Already restoring");
+    /// run() can be called onle once.
+    if (!current_stage.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Already restoring");
 
-        /// Find other hosts working along with us to execute this ON CLUSTER query.
-        all_hosts = BackupSettings::Util::filterHostIDs(
-            restore_settings.cluster_host_ids, restore_settings.shard_num, restore_settings.replica_num);
+    /// Find other hosts working along with us to execute this ON CLUSTER query.
+    all_hosts = BackupSettings::Util::filterHostIDs(
+        restore_settings.cluster_host_ids, restore_settings.shard_num, restore_settings.replica_num);
 
-        /// Do renaming in the create queries according to the renaming config.
-        renaming_map = makeRenamingMapFromBackupQuery(restore_query_elements);
+    /// Do renaming in the create queries according to the renaming config.
+    renaming_map = makeRenamingMapFromBackupQuery(restore_query_elements);
 
-        /// Calculate the root path in the backup for restoring, it's either empty or has the format "shards/<shard_num>/replicas/<replica_num>/".
-        findRootPathsInBackup();
+    /// Calculate the root path in the backup for restoring, it's either empty or has the format "shards/<shard_num>/replicas/<replica_num>/".
+    findRootPathsInBackup();
 
-        /// Find all the databases and tables which we will read from the backup.
-        setStatus(kFindingTablesInBackupStatus);
-        findDatabasesAndTablesInBackup();
+    /// Find all the databases and tables which we will read from the backup.
+    setStage(Stage::FINDING_TABLES_IN_BACKUP);
+    findDatabasesAndTablesInBackup();
 
-        /// Check access rights.
-        checkAccessForObjectsFoundInBackup();
+    /// Check access rights.
+    checkAccessForObjectsFoundInBackup();
 
-        if (mode == Mode::CHECK_ACCESS_ONLY)
-            return {};
+    if (mode == Mode::CHECK_ACCESS_ONLY)
+        return {};
 
-        /// Create databases using the create queries read from the backup.
-        setStatus(kCreatingDatabasesStatus);
-        createDatabases();
+    /// Create databases using the create queries read from the backup.
+    setStage(Stage::CREATING_DATABASES);
+    createDatabases();
 
-        /// Create tables using the create queries read from the backup.
-        setStatus(kCreatingTablesStatus);
-        createTables();
+    /// Create tables using the create queries read from the backup.
+    setStage(Stage::CREATING_TABLES);
+    removeUnresolvedDependencies();
+    createTables();
 
-        /// All what's left is to insert data to tables.
-        /// No more data restoring tasks are allowed after this point.
-        setStatus(kInsertingDataToTablesStatus);
-        return getDataRestoreTasks();
-    }
-    catch (...)
-    {
-        try
-        {
-            /// Other hosts should know that we've encountered an error.
-            setStatus(kErrorStatus, getCurrentExceptionMessage(false));
-        }
-        catch (...)
-        {
-        }
-        throw;
-    }
+    /// All what's left is to insert data to tables.
+    /// No more data restoring tasks are allowed after this point.
+    setStage(Stage::INSERTING_DATA_TO_TABLES);
+    return getDataRestoreTasks();
 }
 
-void RestorerFromBackup::setStatus(const String & new_status, const String & message)
+void RestorerFromBackup::setStage(const String & new_stage, const String & message)
 {
-    if (new_status == kErrorStatus)
+    LOG_TRACE(log, fmt::runtime(toUpperFirst(new_stage)));
+    current_stage = new_stage;
+
+    if (restore_coordination)
     {
-        LOG_ERROR(log, "{} failed with {}", toUpperFirst(current_status), message);
-        if (restore_coordination)
-            restore_coordination->setStatus(restore_settings.host_id, new_status, message);
-    }
-    else
-    {
-        LOG_TRACE(log, "{}", toUpperFirst(new_status));
-        current_status = new_status;
-        if (restore_coordination)
-            restore_coordination->setStatusAndWait(restore_settings.host_id, new_status, message, all_hosts);
+        restore_coordination->setStage(restore_settings.host_id, new_stage, message);
+        if (new_stage == Stage::FINDING_TABLES_IN_BACKUP)
+            restore_coordination->waitForStage(all_hosts, new_stage, on_cluster_first_sync_timeout);
+        else
+            restore_coordination->waitForStage(all_hosts, new_stage);
     }
 }
 
@@ -369,9 +343,10 @@ void RestorerFromBackup::findTableInBackup(const QualifiedTableName & table_name
     TableInfo & res_table_info = table_infos[table_name];
     res_table_info.create_table_query = create_table_query;
     res_table_info.is_predefined_table = DatabaseCatalog::instance().isPredefinedTable(StorageID{table_name.database, table_name.table});
-    res_table_info.dependencies = getDependenciesSetFromCreateQuery(context->getGlobalContext(), table_name, create_table_query);
     res_table_info.has_data = backup->hasFiles(data_path_in_backup);
     res_table_info.data_path_in_backup = data_path_in_backup;
+
+    tables_dependencies.addDependencies(table_name, getDependenciesFromCreateQuery(context, table_name, create_table_query));
 
     if (partitions)
     {
@@ -650,21 +625,63 @@ void RestorerFromBackup::checkDatabase(const String & database_name)
     }
 }
 
+void RestorerFromBackup::removeUnresolvedDependencies()
+{
+    auto need_exclude_dependency = [this](const StorageID & table_id)
+    {
+        /// Table will be restored.
+        if (table_infos.contains(table_id.getQualifiedName()))
+            return false;
+
+        /// Table exists and it already exists
+        if (!DatabaseCatalog::instance().isTableExist(table_id, context))
+        {
+            LOG_WARNING(
+                log,
+                "Tables {} in backup depend on {}, but seems like {} is not in the backup and does not exist. "
+                "Will try to ignore that and restore tables",
+                fmt::join(tables_dependencies.getDependents(table_id), ", "),
+                table_id,
+                table_id);
+        }
+
+        size_t num_dependencies, num_dependents;
+        tables_dependencies.getNumberOfAdjacents(table_id, num_dependencies, num_dependents);
+        if (num_dependencies || !num_dependents)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Table {} in backup doesn't have dependencies and dependent tables as it expected to. It's a bug",
+                table_id);
+
+        return true; /// Exclude this dependency.
+    };
+
+    tables_dependencies.removeTablesIf(need_exclude_dependency);
+
+    if (tables_dependencies.getNumberOfTables() != table_infos.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of tables to be restored is not as expected. It's a bug");
+
+    if (tables_dependencies.hasCyclicDependencies())
+    {
+        LOG_WARNING(
+            log,
+            "Tables {} in backup have cyclic dependencies: {}. Will try to ignore that and restore tables",
+            fmt::join(tables_dependencies.getTablesWithCyclicDependencies(), ", "),
+            tables_dependencies.describeCyclicDependencies());
+    }
+}
+
 void RestorerFromBackup::createTables()
 {
-    while (true)
+    /// We need to create tables considering their dependencies.
+    tables_dependencies.log();
+    auto tables_to_create = tables_dependencies.getTablesSortedByDependency();
+    for (const auto & table_id : tables_to_create)
     {
-        /// We need to create tables considering their dependencies.
-        auto tables_to_create = findTablesWithoutDependencies();
-        if (tables_to_create.empty())
-            break; /// We've already created all the tables.
-
-        for (const auto & table_name : tables_to_create)
-        {
-            createTable(table_name);
-            checkTable(table_name);
-            insertDataToTable(table_name);
-        }
+        auto table_name = table_id.getQualifiedName();
+        createTable(table_name);
+        checkTable(table_name);
+        insertDataToTable(table_name);
     }
 }
 
@@ -780,72 +797,16 @@ void RestorerFromBackup::insertDataToTable(const QualifiedTableName & table_name
     }
 }
 
-/// Returns the list of tables without dependencies or those which dependencies have been created before.
-std::vector<QualifiedTableName> RestorerFromBackup::findTablesWithoutDependencies() const
-{
-    std::vector<QualifiedTableName> tables_without_dependencies;
-    bool all_tables_created = true;
-
-    for (const auto & [key, table_info] : table_infos)
-    {
-        if (table_info.storage)
-            continue;
-
-        /// Found a table which is not created yet.
-        all_tables_created = false;
-
-        /// Check if all dependencies have been created before.
-        bool all_dependencies_met = true;
-        for (const auto & dependency : table_info.dependencies)
-        {
-            auto it = table_infos.find(dependency);
-            if ((it != table_infos.end()) && !it->second.storage)
-            {
-                all_dependencies_met = false;
-                break;
-            }
-        }
-
-        if (all_dependencies_met)
-            tables_without_dependencies.push_back(key);
-    }
-
-    if (!tables_without_dependencies.empty())
-        return tables_without_dependencies;
-
-    if (all_tables_created)
-        return {};
-
-    /// Cyclic dependency? We'll try to create those tables anyway but probably it's going to fail.
-    std::vector<QualifiedTableName> tables_with_cyclic_dependencies;
-    for (const auto & [key, table_info] : table_infos)
-    {
-        if (!table_info.storage)
-            tables_with_cyclic_dependencies.push_back(key);
-    }
-
-    /// Only show a warning here, proper exception will be thrown later on creating those tables.
-    LOG_WARNING(
-        log,
-        "Some tables have cyclic dependency from each other: {}",
-        boost::algorithm::join(
-            tables_with_cyclic_dependencies
-                | boost::adaptors::transformed([](const QualifiedTableName & table_name) -> String { return table_name.getFullName(); }),
-            ", "));
-
-    return tables_with_cyclic_dependencies;
-}
-
 void RestorerFromBackup::addDataRestoreTask(DataRestoreTask && new_task)
 {
-    if (current_status == kInsertingDataToTablesStatus)
+    if (current_stage == Stage::INSERTING_DATA_TO_TABLES)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding of data-restoring tasks is not allowed");
     data_restore_tasks.push_back(std::move(new_task));
 }
 
 void RestorerFromBackup::addDataRestoreTasks(DataRestoreTasks && new_tasks)
 {
-    if (current_status == kInsertingDataToTablesStatus)
+    if (current_stage == Stage::INSERTING_DATA_TO_TABLES)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adding of data-restoring tasks is not allowed");
     insertAtEnd(data_restore_tasks, std::move(new_tasks));
 }

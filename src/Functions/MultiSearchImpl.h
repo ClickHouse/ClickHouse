@@ -32,13 +32,14 @@ struct MultiSearchImpl
         PaddedPODArray<UInt64> & /*offsets*/,
         bool /*allow_hyperscan*/,
         size_t /*max_hyperscan_regexp_length*/,
-        size_t /*max_hyperscan_regexp_total_length*/)
+        size_t /*max_hyperscan_regexp_total_length*/,
+        bool /*reject_expensive_hyperscan_regexps*/)
     {
         // For performance of Volnitsky search, it is crucial to save only one byte for pattern number.
         if (needles_arr.size() > std::numeric_limits<UInt8>::max())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Number of arguments for function {} doesn't match: passed {}, should be at most {}",
-                name, std::to_string(needles_arr.size()), std::to_string(std::numeric_limits<UInt8>::max()));
+                name, needles_arr.size(), std::to_string(std::numeric_limits<UInt8>::max()));
 
         std::vector<std::string_view> needles;
         needles.reserve(needles_arr.size());
@@ -77,7 +78,8 @@ struct MultiSearchImpl
         PaddedPODArray<UInt64> & /*offsets*/,
         bool /*allow_hyperscan*/,
         size_t /*max_hyperscan_regexp_length*/,
-        size_t /*max_hyperscan_regexp_total_length*/)
+        size_t /*max_hyperscan_regexp_total_length*/,
+        bool /*reject_expensive_hyperscan_regexps*/)
     {
         const size_t haystack_size = haystack_offsets.size();
         res.resize(haystack_size);

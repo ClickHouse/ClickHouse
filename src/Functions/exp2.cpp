@@ -11,7 +11,7 @@ using FunctionExp2 = FunctionMathUnary<UnaryFunctionVectorized<Exp2Name, exp2>>;
 
 }
 
-void registerFunctionExp2(FunctionFactory & factory)
+REGISTER_FUNCTION(Exp2)
 {
     factory.registerFunction<FunctionExp2>();
 }

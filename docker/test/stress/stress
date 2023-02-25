@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 from multiprocessing import cpu_count
-from subprocess import Popen, call, check_output, STDOUT
+from subprocess import Popen, call, check_output, STDOUT, PIPE
 import os
 import argparse
 import logging
@@ -13,9 +13,6 @@ def get_options(i, backward_compatibility_check):
     client_options = []
     if 0 < i:
         options.append("--order=random")
-
-    if i % 3 == 1:
-        options.append("--db-engine=Ordinary")
 
     if i % 3 == 2 and not backward_compatibility_check:
         options.append(
@@ -43,8 +40,16 @@ def get_options(i, backward_compatibility_check):
             client_options.append("join_algorithm='auto'")
             client_options.append('max_rows_in_join=1000')
 
-    if i == 13:
+    if i % 5 == 1:
         client_options.append("memory_tracker_fault_probability=0.001")
+
+    if i % 2 == 1 and not backward_compatibility_check:
+        client_options.append("group_by_use_nulls=1")
+
+    # 12 % 3 == 0, so it's Atomic database
+    if i == 12 and not backward_compatibility_check:
+        client_options.append("implicit_transaction=1")
+        client_options.append("throw_on_unsupported_query_inside_transaction=0")
 
     if client_options:
         options.append(" --client-option " + " ".join(client_options))
@@ -89,7 +94,7 @@ def run_func_test(
 
 
 def compress_stress_logs(output_path, files_prefix):
-    cmd = f"cd {output_path} && tar -zcf stress_run_logs.tar.gz {files_prefix}* && rm {files_prefix}*"
+    cmd = f"cd {output_path} && tar --zstd --create --file=stress_run_logs.tar.zst {files_prefix}* && rm {files_prefix}*"
     check_output(cmd, shell=True)
 
 
@@ -146,6 +151,12 @@ def prepare_for_hung_check(drop_databases):
             "KILL QUERY WHERE query LIKE 'SELECT URL, uniq(SearchPhrase) AS u FROM test.hits GROUP BY URL ORDER BY u %'"
         )
     )
+    # Long query from 02136_kill_scalar_queries
+    call_with_retry(
+        make_query_command(
+            "KILL QUERY WHERE query LIKE 'SELECT (SELECT number FROM system.numbers WHERE number = 1000000000000)%'"
+        )
+    )
 
     if drop_databases:
         for i in range(5):
@@ -165,7 +176,7 @@ def prepare_for_hung_check(drop_databases):
                 for db in databases:
                     if db == "system":
                         continue
-                    command = make_query_command(f"DROP DATABASE {db}")
+                    command = make_query_command(f'DETACH DATABASE {db}')
                     # we don't wait for drop
                     Popen(command, shell=True)
                 break
@@ -220,7 +231,6 @@ if __name__ == "__main__":
     )
     parser.add_argument("--test-cmd", default="/usr/bin/clickhouse-test")
     parser.add_argument("--skip-func-tests", default="")
-    parser.add_argument("--client-cmd", default="clickhouse-client")
     parser.add_argument("--server-log-folder", default="/var/log/clickhouse-server")
     parser.add_argument("--output-folder")
     parser.add_argument("--global-time-limit", type=int, default=1800)
@@ -283,25 +293,28 @@ if __name__ == "__main__":
                 # But right now it should work, since neither hung check, nor 00001_select_1 has GROUP BY.
                 "--client-option",
                 "max_untracked_memory=1Gi",
-                "--client-option",
                 "max_memory_usage_for_user=0",
-                "--client-option",
                 "memory_profiler_step=1Gi",
                 # Use system database to avoid CREATE/DROP DATABASE queries
                 "--database=system",
                 "--hung-check",
-                "--stress",
+                "--report-logs-stats",
                 "00001_select_1",
             ]
         )
-        res = call(cmd, shell=True, stderr=STDOUT)
-        hung_check_status = "No queries hung\tOK\n"
+        hung_check_log = os.path.join(args.output_folder, "hung_check.log")
+        tee = Popen(['/usr/bin/tee', hung_check_log], stdin=PIPE)
+        res = call(cmd, shell=True, stdout=tee.stdin, stderr=STDOUT)
+        tee.stdin.close()
         if res != 0 and have_long_running_queries:
             logging.info("Hung check failed with exit code {}".format(res))
-            hung_check_status = "Hung check failed\tFAIL\n"
-        with open(
-            os.path.join(args.output_folder, "test_results.tsv"), "w+"
-        ) as results:
-            results.write(hung_check_status)
+        else:
+            hung_check_status = "No queries hung\tOK\t\\N\t\n"
+            with open(
+                os.path.join(args.output_folder, "test_results.tsv"), "w+"
+            ) as results:
+                results.write(hung_check_status)
+            os.remove(hung_check_log)
+
 
     logging.info("Stress test finished")

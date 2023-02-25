@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/aggregate-functions/reference/skewpop
 sidebar_position: 150
 ---
 
@@ -23,4 +24,3 @@ skewPop(expr)
 ``` sql
 SELECT skewPop(value) FROM series_with_value_column;
 ```
-

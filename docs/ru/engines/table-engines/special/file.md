@@ -1,4 +1,5 @@
 ---
+slug: /ru/engines/table-engines/special/file
 sidebar_position: 37
 sidebar_label: File
 ---
@@ -80,4 +81,3 @@ $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64
     -   использование операций `ALTER` и `SELECT...SAMPLE`;
     -   индексы;
     -   репликация.
-

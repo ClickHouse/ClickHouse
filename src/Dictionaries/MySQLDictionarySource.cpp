@@ -78,6 +78,9 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                               : std::nullopt;
         if (named_collection)
         {
+            if (created_from_ddl)
+                global_context->getRemoteHostFilter().checkHostAndPort(configuration.host, toString(configuration.port));
+
             mysql_settings.applyChanges(named_collection->settings_changes);
             configuration.set(named_collection->configuration);
             configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
@@ -90,6 +93,12 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
         }
         else
         {
+            if (created_from_ddl)
+            {
+                for (auto & address : configuration.addresses)
+                    global_context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
+            }
+
             configuration.database = config.getString(settings_config_prefix + ".db", "");
             configuration.table = config.getString(settings_config_prefix + ".table", "");
             pool = std::make_shared<mysqlxx::PoolWithFailover>(mysqlxx::PoolFactory::instance().get(config, settings_config_prefix));
@@ -224,7 +233,7 @@ bool MySQLDictionarySource::isModified() const
     if (!configuration.invalidate_query.empty())
     {
         auto response = doInvalidateQuery(configuration.invalidate_query);
-        if (response == invalidate_query_response) //-V1051
+        if (response == invalidate_query_response)
             return false;
 
         invalidate_query_response = response;

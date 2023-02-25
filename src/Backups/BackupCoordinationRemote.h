@@ -3,22 +3,26 @@
 #include <Backups/IBackupCoordination.h>
 #include <Backups/BackupCoordinationReplicatedAccess.h>
 #include <Backups/BackupCoordinationReplicatedTables.h>
-#include <Backups/BackupCoordinationStatusSync.h>
+#include <Backups/BackupCoordinationStageSync.h>
 
 
 namespace DB
 {
 
+/// We try to store data to zookeeper several times due to possible version conflicts.
+constexpr size_t MAX_ZOOKEEPER_ATTEMPTS = 10;
+
 /// Implementation of the IBackupCoordination interface performing coordination via ZooKeeper. It's necessary for "BACKUP ON CLUSTER".
 class BackupCoordinationRemote : public IBackupCoordination
 {
 public:
-    BackupCoordinationRemote(const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_);
+    BackupCoordinationRemote(const String & root_zookeeper_path_, const String & backup_uuid_, zkutil::GetZooKeeper get_zookeeper_, bool is_internal_);
     ~BackupCoordinationRemote() override;
 
-    void setStatus(const String & current_host, const String & new_status, const String & message) override;
-    Strings setStatusAndWait(const String & current_host, const String & new_status, const String & message, const Strings & all_hosts) override;
-    Strings setStatusAndWaitFor(const String & current_host, const String & new_status, const String & message, const Strings & all_hosts, UInt64 timeout_ms) override;
+    void setStage(const String & current_host, const String & new_stage, const String & message) override;
+    void setError(const String & current_host, const Exception & exception) override;
+    Strings waitForStage(const Strings & all_hosts, const String & stage_to_wait) override;
+    Strings waitForStage(const Strings & all_hosts, const String & stage_to_wait, std::chrono::milliseconds timeout) override;
 
     void addReplicatedPartNames(
         const String & table_shared_id,
@@ -50,25 +54,30 @@ public:
     bool hasFiles(const String & directory) const override;
     std::optional<FileInfo> getFileInfo(const String & file_name) const override;
     std::optional<FileInfo> getFileInfo(const SizeAndChecksum & size_and_checksum) const override;
-    std::optional<SizeAndChecksum> getFileSizeAndChecksum(const String & file_name) const override;
 
     String getNextArchiveSuffix() override;
     Strings getAllArchiveSuffixes() const override;
 
-    void drop() override;
+    bool hasConcurrentBackups(const std::atomic<size_t> & num_active_backups) const override;
 
 private:
+    zkutil::ZooKeeperPtr getZooKeeper() const;
+    zkutil::ZooKeeperPtr getZooKeeperNoLock() const;
     void createRootNodes();
     void removeAllNodes();
     void prepareReplicatedTables() const;
     void prepareReplicatedAccess() const;
 
+    const String root_zookeeper_path;
     const String zookeeper_path;
+    const String backup_uuid;
     const zkutil::GetZooKeeper get_zookeeper;
+    const bool is_internal;
 
-    BackupCoordinationStatusSync status_sync;
+    std::optional<BackupCoordinationStageSync> stage_sync;
 
     mutable std::mutex mutex;
+    mutable zkutil::ZooKeeperPtr zookeeper;
     mutable std::optional<BackupCoordinationReplicatedTables> replicated_tables;
     mutable std::optional<BackupCoordinationReplicatedAccess> replicated_access;
 };

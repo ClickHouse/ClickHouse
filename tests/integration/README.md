@@ -31,6 +31,7 @@ sudo -H pip install \
     kafka-python \
     kazoo \
     minio \
+    lz4 \
     protobuf \
     psycopg2-binary \
     pymongo \
@@ -44,7 +45,9 @@ sudo -H pip install \
     dict2xml \
     hypothesis \
     pyhdfs \
-    pika
+    pika \
+    meilisearch \
+    nats-py
 ```
 
 (highly not recommended) If you really want to use OS packages on modern debian/ubuntu instead of "pip": `sudo apt install -y docker docker-compose python3-pytest python3-dicttoxml python3-docker python3-pymysql python3-protobuf python3-pymongo python3-tzlocal python3-kazoo python3-psycopg2 kafka-python python3-pytest-timeout python3-minio`
@@ -145,7 +148,7 @@ will automagically detect the types of variables and only the small diff of two 
 
 ### Troubleshooting
 
-If tests failing for misterious reasons, this may help:
+If tests failing for mysterious reasons, this may help:
 
 ```
 sudo service docker stop

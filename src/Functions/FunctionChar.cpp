@@ -36,16 +36,17 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.empty())
-            throw Exception("Number of arguments for function " + getName() + " can't be " + toString(arguments.size())
-                            + ", should be at least 1", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Number of arguments for function {} can't be {}, should be at least 1",
+                            getName(), arguments.size());
 
         for (const auto & arg : arguments)
         {
             WhichDataType which(arg);
             if (!(which.isInt() || which.isUInt() || which.isFloat()))
-                throw Exception("Illegal type " + arg->getName() + " of argument of function " + getName()
-                                + ", must be Int, UInt or Float number",
-                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "Illegal type {} of argument of function {}, must be Int, UInt or Float number",
+                                arg->getName(), getName());
         }
         return std::make_shared<DataTypeString>();
     }
@@ -86,8 +87,8 @@ public:
                   || executeNumber<Float32>(*column, out_vec, idx, input_rows_count, size_per_row)
                   || executeNumber<Float64>(*column, out_vec, idx, input_rows_count, size_per_row)))
             {
-                throw Exception{"Illegal column " + arguments[idx].column->getName()
-                                + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                                arguments[idx].column->getName(), getName());
             }
         }
 
@@ -113,9 +114,9 @@ private:
     }
 };
 
-void registerFunctionChar(FunctionFactory & factory)
+REGISTER_FUNCTION(Char)
 {
-    factory.registerFunction<FunctionChar>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionChar>({}, FunctionFactory::CaseInsensitive);
 }
 
 }

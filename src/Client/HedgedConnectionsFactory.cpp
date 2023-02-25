@@ -41,7 +41,7 @@ HedgedConnectionsFactory::HedgedConnectionsFactory(
 HedgedConnectionsFactory::~HedgedConnectionsFactory()
 {
     /// Stop anything that maybe in progress,
-    /// to avoid interfer with the subsequent connections.
+    /// to avoid interference with the subsequent connections.
     ///
     /// I.e. some replcas may be in the establishing state,
     /// this means that hedged connection is waiting for TablesStatusResponse,
@@ -110,16 +110,14 @@ std::vector<Connection *> HedgedConnectionsFactory::getManyConnections(PoolMode 
 
             /// Determine the reason of not enough replicas.
             if (!fallback_to_stale_replicas && up_to_date_count < min_entries)
-                throw Exception(
-                    "Could not find enough connections to up-to-date replicas. Got: " + std::to_string(connections.size())
-                    + ", needed: " + std::to_string(min_entries),
-                    DB::ErrorCodes::ALL_REPLICAS_ARE_STALE);
+                throw Exception(DB::ErrorCodes::ALL_REPLICAS_ARE_STALE,
+                    "Could not find enough connections to up-to-date replicas. Got: {}, needed: {}",
+                    connections.size(), min_entries);
             if (usable_count < min_entries)
-                throw NetException(
-                    "All connection tries failed. Log: \n\n" + fail_messages + "\n",
-                    DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED);
+                throw NetException(DB::ErrorCodes::ALL_CONNECTION_TRIES_FAILED,
+                    "All connection tries failed. Log: \n\n{}\n", fail_messages);
 
-            throw Exception("Unknown reason of not enough replicas.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown reason of not enough replicas.");
         }
     }
 
@@ -240,7 +238,7 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::processEpollEvents(boo
             ProfileEvents::increment(ProfileEvents::HedgedRequestsChangeReplica);
         }
         else
-            throw Exception("Unknown event from epoll", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown event from epoll");
 
         /// We reach this point only if we need to start new connection
         /// (Special timeout expired or one of the previous connections failed).
@@ -362,7 +360,7 @@ void HedgedConnectionsFactory::removeReplicaFromEpoll(int index, int fd)
     timeout_fd_to_replica_index.erase(replicas[index].change_replica_timeout.getDescriptor());
 }
 
-int HedgedConnectionsFactory::numberOfProcessingReplicas() const
+size_t HedgedConnectionsFactory::numberOfProcessingReplicas() const
 {
     if (epoll.empty())
         return 0;
@@ -381,7 +379,7 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::setBestUsableReplica(C
             && result.is_usable
             && !replicas[i].is_ready
             && (!skip_replicas_with_two_level_aggregation_incompatibility || !isTwoLevelAggregationIncompatible(&*result.entry)))
-            indexes.push_back(i);
+            indexes.push_back(static_cast<int>(i));
     }
 
     if (indexes.empty())

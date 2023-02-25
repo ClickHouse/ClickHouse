@@ -40,7 +40,7 @@ public:
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Number of arguments for function {} doesn't match: passed {}, should be 1",
                 getName(),
-                toString(arguments.size()));
+                arguments.size());
 
         WhichDataType argument_type(arguments[0].type);
         if (!argument_type.isDate() && !argument_type.isDateTime() && !argument_type.isDateTime64())
@@ -72,9 +72,9 @@ private:
     FunctionOverloadResolverPtr function_resolver;
 };
 
-void registerFunctionMonthName(FunctionFactory & factory)
+REGISTER_FUNCTION(MonthName)
 {
-    factory.registerFunction<FunctionMonthName>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionMonthName>({}, FunctionFactory::CaseInsensitive);
 }
 
 }

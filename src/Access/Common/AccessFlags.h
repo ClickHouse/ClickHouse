@@ -21,7 +21,7 @@ public:
     AccessFlags() = default;
 
     /// Constructs from a string like "SELECT".
-    AccessFlags(const std::string_view & keyword); /// NOLINT
+    AccessFlags(std::string_view keyword); /// NOLINT
 
     /// Constructs from a list of strings like "SELECT, UPDATE, INSERT".
     AccessFlags(const std::vector<std::string_view> & keywords); /// NOLINT
@@ -104,7 +104,7 @@ public:
     /// The same as allColumnFlags().
     static AccessFlags allFlagsGrantableOnColumnLevel();
 
-    static constexpr size_t SIZE = 128;
+    static constexpr size_t SIZE = 256;
 private:
     using Flags = std::bitset<SIZE>;
     Flags flags;

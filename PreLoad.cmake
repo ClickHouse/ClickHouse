@@ -7,12 +7,8 @@
 # How to install Ninja on Ubuntu:
 #  sudo apt-get install ninja-build
 
-# CLion does not support Ninja
-# You can add your vote on CLion task tracker:
-# https://youtrack.jetbrains.com/issue/CPP-2659
-# https://youtrack.jetbrains.com/issue/CPP-870
 
-if (NOT DEFINED ENV{CLION_IDE} AND NOT DEFINED ENV{XCODE_IDE})
+if (NOT DEFINED ENV{XCODE_IDE})
     find_program(NINJA_PATH ninja)
     if (NINJA_PATH)
         set(CMAKE_GENERATOR "Ninja" CACHE INTERNAL "")
@@ -88,7 +84,10 @@ if (OS MATCHES "Linux"
         set (CMAKE_TOOLCHAIN_FILE "cmake/linux/toolchain-aarch64.cmake" CACHE INTERNAL "")
     elseif (ARCH MATCHES "^(ppc64le.*|PPC64LE.*)")
         set (CMAKE_TOOLCHAIN_FILE "cmake/linux/toolchain-ppc64le.cmake" CACHE INTERNAL "")
+    elseif (ARCH MATCHES "^(s390x.*|S390X.*)")
+        set (CMAKE_TOOLCHAIN_FILE "cmake/linux/toolchain-s390x.cmake" CACHE INTERNAL "")
     else ()
         message (FATAL_ERROR "Unsupported architecture: ${ARCH}")
     endif ()
+
 endif()

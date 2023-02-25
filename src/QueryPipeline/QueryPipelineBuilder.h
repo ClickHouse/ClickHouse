@@ -20,8 +20,7 @@ class QueryPlan;
 class PipelineExecutor;
 using PipelineExecutorPtr = std::shared_ptr<PipelineExecutor>;
 
-struct SubqueryForSet;
-using SubqueriesForSets = std::unordered_map<String, SubqueryForSet>;
+class SubqueryForSet;
 
 struct SizeLimits;
 
@@ -70,7 +69,7 @@ public:
 
     using Transformer = std::function<Processors(OutputPortRawPtrs ports)>;
     /// Transform pipeline in general way.
-    void transform(const Transformer & transformer);
+    void transform(const Transformer & transformer, bool check_ports = true);
 
     /// Add TotalsHavingTransform. Resize pipeline to single input. Adds totals port.
     void addTotalsHavingTransform(ProcessorPtr transform);
@@ -94,6 +93,11 @@ public:
     /// Changes the number of output ports if needed. Adds ResizeTransform.
     void resize(size_t num_streams, bool force = false, bool strict = false);
 
+    /// Concat some ports to have no more then size outputs.
+    /// This method is needed for Merge table engine in case of reading from many tables.
+    /// It prevents opening too many files at the same time.
+    void narrow(size_t size);
+
     /// Unite several pipelines together. Result pipeline would have common_header structure.
     /// If collector is used, it will collect only newly-added processors, but not processors from pipelines.
     static QueryPipelineBuilder unitePipelines(
@@ -114,6 +118,7 @@ public:
         std::unique_ptr<QueryPipelineBuilder> left,
         std::unique_ptr<QueryPipelineBuilder> right,
         JoinPtr join,
+        const Block & output_header,
         size_t max_block_size,
         size_t max_streams,
         bool keep_left_read_in_order,
@@ -135,6 +140,12 @@ public:
 
     void addCreatingSetsTransform(const Block & res_header, SubqueryForSet subquery_for_set, const SizeLimits & limits, ContextPtr context);
 
+    /// Finds all processors for reading from MergeTree
+    /// And explicitly connects them with all RemoteSources
+    /// using a ResizeProcessor. This is needed not to let
+    /// the RemoteSource to starve for CPU time
+    void connectDependencies();
+
     PipelineExecutorPtr execute();
 
     size_t getNumStreams() const { return pipe.numOutputPorts(); }
@@ -143,14 +154,15 @@ public:
 
     const Block & getHeader() const { return pipe.getHeader(); }
 
-    void setProcessListElement(QueryStatus * elem);
+    void setProcessListElement(QueryStatusPtr elem);
+    void setProgressCallback(ProgressCallback callback);
 
     /// Recommend number of threads for pipeline execution.
     size_t getNumThreads() const
     {
         auto num_threads = pipe.maxParallelStreams();
 
-        if (max_threads) //-V1051
+        if (max_threads)
             num_threads = std::min(num_threads, max_threads);
 
         return std::max<size_t>(1, num_threads);
@@ -183,7 +195,8 @@ private:
     /// Sometimes, more streams are created then the number of threads for more optimal execution.
     size_t max_threads = 0;
 
-    QueryStatus * process_list_element = nullptr;
+    QueryStatusPtr process_list_element;
+    ProgressCallback progress_callback = nullptr;
 
     void checkInitialized();
     void checkInitializedAndNotCompleted();

@@ -1,7 +1,8 @@
 #pragma once
 
 #include <Common/RangeGenerator.h>
-#include <Common/config.h>
+#include <Storages/StorageS3Settings.h>
+#include "config.h"
 
 #if USE_AWS_S3
 
@@ -11,14 +12,14 @@
 #include <IO/ParallelReadBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadSettings.h>
-#include <IO/SeekableReadBuffer.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <IO/WithFileName.h>
 
 #include <aws/s3/model/GetObjectResult.h>
 
 namespace Aws::S3
 {
-class S3Client;
+class Client;
 }
 
 namespace DB
@@ -26,14 +27,14 @@ namespace DB
 /**
  * Perform S3 HTTP GET request and provide response to read.
  */
-class ReadBufferFromS3 : public SeekableReadBuffer, public WithFileName, public WithFileSize
+class ReadBufferFromS3 : public ReadBufferFromFileBase
 {
 private:
-    std::shared_ptr<const Aws::S3::S3Client> client_ptr;
+    std::shared_ptr<const S3::Client> client_ptr;
     String bucket;
     String key;
     String version_id;
-    UInt64 max_single_read_retries;
+    const S3Settings::RequestSettings request_settings;
 
     /// These variables are atomic because they can be used for `logging only`
     /// (where it is not important to get consistent result)
@@ -48,11 +49,11 @@ private:
 
 public:
     ReadBufferFromS3(
-        std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
+        std::shared_ptr<const S3::Client> client_ptr_,
         const String & bucket_,
         const String & key_,
         const String & version_id_,
-        UInt64 max_single_read_retries_,
+        const S3Settings::RequestSettings & request_settings_,
         const ReadSettings & settings_,
         bool use_external_buffer = false,
         size_t offset_ = 0,
@@ -73,6 +74,8 @@ public:
 
     size_t getFileOffsetOfBufferEnd() const override { return offset; }
 
+    bool supportsRightBoundedReads() const override { return true; }
+
     String getFileName() const override { return bucket + "/" + key; }
 
 private:
@@ -85,8 +88,6 @@ private:
     /// There is different seek policy for disk seek and for non-disk seek
     /// (non-disk seek is applied for seekable input formats: orc, arrow, parquet).
     bool restricted_seek;
-
-    std::optional<size_t> file_size;
 };
 
 /// Creates separate ReadBufferFromS3 for sequence of ranges of particular object
@@ -94,13 +95,13 @@ class ReadBufferS3Factory : public ParallelReadBuffer::ReadBufferFactory, public
 {
 public:
     explicit ReadBufferS3Factory(
-        std::shared_ptr<const Aws::S3::S3Client> client_ptr_,
+        std::shared_ptr<const S3::Client> client_ptr_,
         const String & bucket_,
         const String & key_,
         const String & version_id_,
         size_t range_step_,
         size_t object_size_,
-        UInt64 s3_max_single_read_retries_,
+        const S3Settings::RequestSettings & request_settings_,
         const ReadSettings & read_settings_)
         : client_ptr(client_ptr_)
         , bucket(bucket_)
@@ -110,7 +111,7 @@ public:
         , range_generator(object_size_, range_step_)
         , range_step(range_step_)
         , object_size(object_size_)
-        , s3_max_single_read_retries(s3_max_single_read_retries_)
+        , request_settings(request_settings_)
     {
         assert(range_step > 0);
         assert(range_step < object_size);
@@ -125,7 +126,7 @@ public:
     String getFileName() const override { return bucket + "/" + key; }
 
 private:
-    std::shared_ptr<const Aws::S3::S3Client> client_ptr;
+    std::shared_ptr<const S3::Client> client_ptr;
     const String bucket;
     const String key;
     const String version_id;
@@ -135,7 +136,7 @@ private:
     size_t range_step;
     size_t object_size;
 
-    UInt64 s3_max_single_read_retries;
+    const S3Settings::RequestSettings request_settings;
 };
 
 }

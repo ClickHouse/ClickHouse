@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/table-functions/hdfs
 sidebar_position: 45
 sidebar_label: hdfs
 ---
@@ -99,4 +100,3 @@ FROM hdfs('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name Strin
 **See Also**
 
 -   [Virtual columns](../../engines/table-engines/index.md#table_engines-virtual_columns)
-

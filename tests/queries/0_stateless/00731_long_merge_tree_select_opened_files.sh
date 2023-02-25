@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: long, no-s3-storage
+# no-s3 because read FileOpen metric
 
 set -e
 

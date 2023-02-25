@@ -10,6 +10,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadSettings.h>
 #include <IO/WithFileName.h>
+#include <IO/HTTPHeaderEntries.h>
 #include <Common/logger_useful.h>
 #include <base/sleep.h>
 #include <base/types.h>
@@ -23,9 +24,10 @@
 #include <Poco/Version.h>
 #include <Common/DNSResolver.h>
 #include <Common/RemoteHostFilter.h>
-#include <Common/config.h>
-#include <Common/config_version.h>
+#include "config.h"
+#include "config_version.h"
 
+#include <filesystem>
 
 namespace ProfileEvents
 {
@@ -44,6 +46,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
+    extern const int UNKNOWN_FILE_SIZE;
 }
 
 template <typename SessionPtr>
@@ -89,9 +92,6 @@ namespace detail
     class ReadWriteBufferFromHTTPBase : public SeekableReadBuffer, public WithFileName, public WithFileSize
     {
     public:
-        using HTTPHeaderEntry = std::tuple<std::string, std::string>;
-        using HTTPHeaderEntries = std::vector<HTTPHeaderEntry>;
-
         /// HTTP range, including right bound [begin, end].
         struct Range
         {
@@ -119,6 +119,7 @@ namespace detail
 
         size_t offset_from_begin_pos = 0;
         Range read_range;
+        std::optional<size_t> file_size;
 
         /// Delayed exception in case retries with partial content are not satisfiable.
         std::exception_ptr exception;
@@ -156,8 +157,8 @@ namespace detail
             if (out_stream_callback)
                 request.setChunkedTransferEncoding(true);
 
-            for (auto & http_header_entry : http_header_entries)
-                request.set(std::get<0>(http_header_entry), std::get<1>(http_header_entry));
+            for (auto & [header, value] : http_header_entries)
+                request.set(header, value);
 
             if (withPartialContent())
             {
@@ -201,35 +202,31 @@ namespace detail
 
         size_t getFileSize() override
         {
-            if (read_range.end)
-                return *read_range.end - getRangeBegin();
+            if (file_size)
+                return *file_size;
 
             Poco::Net::HTTPResponse response;
-            for (size_t i = 0; i < 10; ++i)
-            {
-                try
-                {
-                    callWithRedirects(response, Poco::Net::HTTPRequest::HTTP_HEAD);
-                    break;
-                }
-                catch (const Poco::Exception & e)
-                {
-                    LOG_ERROR(log, "Failed to make HTTP_HEAD request to {}. Error: {}", uri.toString(), e.displayText());
-                }
-            }
+            getHeadResponse(response);
 
             if (response.hasContentLength())
-                read_range.end = getRangeBegin() + response.getContentLength();
+            {
+                if (!read_range.end)
+                    read_range.end = getRangeBegin() + response.getContentLength();
 
-            return *read_range.end;
+                file_size = response.getContentLength();
+                return *file_size;
+            }
+
+            throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot find out file size for: {}", uri.toString());
         }
 
         String getFileName() const override { return uri.toString(); }
 
         enum class InitializeError
         {
+            RETRYABLE_ERROR,
             /// If error is not retriable, `exception` variable must be set.
-            NON_RETRIABLE_ERROR,
+            NON_RETRYABLE_ERROR,
             /// Allows to skip not found urls for globs
             SKIP_NOT_FOUND_URL,
             NONE,
@@ -238,6 +235,25 @@ namespace detail
         InitializeError initialization_error = InitializeError::NONE;
 
     private:
+        void getHeadResponse(Poco::Net::HTTPResponse & response)
+        {
+            for (size_t i = 0; i < settings.http_max_tries; ++i)
+            {
+                try
+                {
+                    callWithRedirects(response, Poco::Net::HTTPRequest::HTTP_HEAD);
+                    break;
+                }
+                catch (const Poco::Exception & e)
+                {
+                    if (i == settings.http_max_tries - 1)
+                        throw;
+
+                    LOG_ERROR(log, "Failed to make HTTP_HEAD request to {}. Error: {}", uri.toString(), e.displayText());
+                }
+            }
+        }
+
         void setupExternalBuffer()
         {
             /**
@@ -301,11 +317,11 @@ namespace detail
             auto iter = std::find_if(
                 http_header_entries.begin(),
                 http_header_entries.end(),
-                [&user_agent](const HTTPHeaderEntry & entry) { return std::get<0>(entry) == user_agent; });
+                [&user_agent](const HTTPHeaderEntry & entry) { return entry.name == user_agent; });
 
             if (iter == http_header_entries.end())
             {
-                http_header_entries.emplace_back(std::make_pair("User-Agent", fmt::format("ClickHouse/{}", VERSION_STRING)));
+                http_header_entries.emplace_back("User-Agent", fmt::format("ClickHouse/{}", VERSION_STRING));
             }
 
             if (!delay_initialization)
@@ -329,13 +345,29 @@ namespace detail
                 non_retriable_errors.begin(), non_retriable_errors.end(), [&](const auto status) { return http_status != status; });
         }
 
+        Poco::URI getUriAfterRedirect(const Poco::URI & prev_uri, Poco::Net::HTTPResponse & response)
+        {
+            auto location = response.get("Location");
+            auto location_uri = Poco::URI(location);
+            if (!location_uri.isRelative())
+                return location_uri;
+            /// Location header contains relative path. So we need to concatenate it
+            /// with path from the original URI and normalize it.
+            auto path = std::filesystem::weakly_canonical(std::filesystem::path(prev_uri.getPath()) / location);
+            location_uri = prev_uri;
+            location_uri.setPath(path);
+            return location_uri;
+        }
+
         void callWithRedirects(Poco::Net::HTTPResponse & response, const String & method_, bool throw_on_all_errors = false)
         {
             call(response, method_, throw_on_all_errors);
+            Poco::URI prev_uri = uri;
 
             while (isRedirect(response.getStatus()))
             {
-                Poco::URI uri_redirect(response.get("Location"));
+                Poco::URI uri_redirect = getUriAfterRedirect(prev_uri, response);
+                prev_uri = uri_redirect;
                 if (remote_host_filter)
                     remote_host_filter->checkURL(uri_redirect);
 
@@ -366,7 +398,7 @@ namespace detail
                 }
                 else if (!isRetriableError(http_status))
                 {
-                    initialization_error = InitializeError::NON_RETRIABLE_ERROR;
+                    initialization_error = InitializeError::NON_RETRYABLE_ERROR;
                     exception = std::current_exception();
                 }
                 else
@@ -377,7 +409,7 @@ namespace detail
         }
 
         /**
-         * Throws if error is retriable, otherwise sets initialization_error = NON_RETRIABLE_ERROR and
+         * Throws if error is retryable, otherwise sets initialization_error = NON_RETRYABLE_ERROR and
          * saves exception into `exception` variable. In case url is not found and skip_not_found_url == true,
          * sets initialization_error = SKIP_NOT_FOUND_URL, otherwise throws.
          */
@@ -391,7 +423,7 @@ namespace detail
 
             while (isRedirect(response.getStatus()))
             {
-                Poco::URI uri_redirect(response.get("Location"));
+                Poco::URI uri_redirect = getUriAfterRedirect(saved_uri_redirect.value_or(uri), response);
                 if (remote_host_filter)
                     remote_host_filter->checkURL(uri_redirect);
 
@@ -401,19 +433,30 @@ namespace detail
                 saved_uri_redirect = uri_redirect;
             }
 
+            if (response.hasContentLength())
+                LOG_DEBUG(log, "Received response with content length: {}", response.getContentLength());
+
             if (withPartialContent() && response.getStatus() != Poco::Net::HTTPResponse::HTTPStatus::HTTP_PARTIAL_CONTENT)
             {
                 /// Having `200 OK` instead of `206 Partial Content` is acceptable in case we retried with range.begin == 0.
                 if (read_range.begin && *read_range.begin != 0)
                 {
                     if (!exception)
+                    {
                         exception = std::make_exception_ptr(Exception(
                             ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
-                            "Cannot read with range: [{}, {}]",
+                            "Cannot read with range: [{}, {}] (response status: {}, reason: {})",
                             *read_range.begin,
-                            read_range.end ? *read_range.end : '-'));
+                            read_range.end ? toString(*read_range.end) : "-",
+                            toString(response.getStatus()), response.getReason()));
+                    }
 
-                    initialization_error = InitializeError::NON_RETRIABLE_ERROR;
+                    /// Retry 200OK
+                    if (response.getStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_OK)
+                        initialization_error = InitializeError::RETRYABLE_ERROR;
+                    else
+                        initialization_error = InitializeError::NON_RETRYABLE_ERROR;
+
                     return;
                 }
                 else if (read_range.end)
@@ -481,14 +524,27 @@ namespace detail
             bool result = false;
             size_t milliseconds_to_wait = settings.http_retry_initial_backoff_ms;
 
+            auto on_retriable_error = [&]()
+            {
+                retry_with_range_header = true;
+                impl.reset();
+                auto http_session = session->getSession();
+                http_session->reset();
+                sleepForMilliseconds(milliseconds_to_wait);
+            };
+
             for (size_t i = 0; i < settings.http_max_tries; ++i)
             {
+                exception = nullptr;
+                initialization_error = InitializeError::NONE;
+
                 try
                 {
                     if (!impl)
                     {
                         initialize();
-                        if (initialization_error == InitializeError::NON_RETRIABLE_ERROR)
+
+                        if (initialization_error == InitializeError::NON_RETRYABLE_ERROR)
                         {
                             assert(exception);
                             break;
@@ -497,6 +553,22 @@ namespace detail
                         {
                             return false;
                         }
+                        else if (initialization_error == InitializeError::RETRYABLE_ERROR)
+                        {
+                            LOG_ERROR(
+                                log,
+                                "HTTP request to `{}` failed at try {}/{} with bytes read: {}/{}. "
+                                "(Current backoff wait is {}/{} ms)",
+                                uri.toString(), i + 1, settings.http_max_tries, getOffset(),
+                                read_range.end ? toString(*read_range.end) : "unknown",
+                                milliseconds_to_wait, settings.http_retry_max_backoff_ms);
+
+                            assert(exception);
+                            on_retriable_error();
+                            continue;
+                        }
+
+                        assert(!exception);
 
                         if (use_external_buffer)
                         {
@@ -510,10 +582,13 @@ namespace detail
                 }
                 catch (const Poco::Exception & e)
                 {
-                    /**
-                     * Retry request unconditionally if nothing has been read yet.
-                     * Otherwise if it is GET method retry with range header.
-                     */
+                    /// Too many open files - non-retryable.
+                    if (e.code() == POCO_EMFILE)
+                        throw;
+
+                    /** Retry request unconditionally if nothing has been read yet.
+                      * Otherwise if it is GET method retry with range header.
+                      */
                     bool can_retry_request = !offset_from_begin_pos || method == Poco::Net::HTTPRequest::HTTP_GET;
                     if (!can_retry_request)
                         throw;
@@ -531,12 +606,8 @@ namespace detail
                         milliseconds_to_wait,
                         settings.http_retry_max_backoff_ms);
 
-                    retry_with_range_header = true;
+                    on_retriable_error();
                     exception = std::current_exception();
-                    impl.reset();
-                    auto http_session = session->getSession();
-                    http_session->reset();
-                    sleepForMilliseconds(milliseconds_to_wait);
                 }
 
                 milliseconds_to_wait = std::min(milliseconds_to_wait * 2, settings.http_retry_max_backoff_ms);
@@ -559,11 +630,11 @@ namespace detail
         off_t seek(off_t offset_, int whence) override
         {
             if (whence != SEEK_SET)
-                throw Exception("Only SEEK_SET mode is allowed.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+                throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET mode is allowed.");
 
             if (offset_ < 0)
-                throw Exception(
-                    "Seek position is out of bounds. Offset: " + std::to_string(offset_), ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
+                throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position is out of bounds. Offset: {}",
+                    offset_);
 
             off_t current_offset = getOffset();
             if (!working_buffer.empty() && size_t(offset_) >= current_offset - working_buffer.size() && offset_ < current_offset)
@@ -622,6 +693,22 @@ namespace detail
         }
 
         const std::string & getCompressionMethod() const { return content_encoding; }
+
+        std::optional<time_t> getLastModificationTime()
+        {
+            Poco::Net::HTTPResponse response;
+            getHeadResponse(response);
+            if (!response.has("Last-Modified"))
+                return std::nullopt;
+
+            String date_str = response.get("Last-Modified");
+            struct tm info;
+            char * res = strptime(date_str.data(), "%a, %d %b %Y %H:%M:%S %Z", &info);
+            if (!res || res != date_str.data() + date_str.size())
+                return std::nullopt;
+
+            return timegm(&info);
+        }
     };
 }
 
@@ -693,7 +780,7 @@ public:
         UInt64 max_redirects_ = 0,
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
         ReadSettings settings_ = {},
-        ReadWriteBufferFromHTTP::HTTPHeaderEntries http_header_entries_ = {},
+        HTTPHeaderEntries http_header_entries_ = {},
         const RemoteHostFilter * remote_host_filter_ = nullptr,
         bool delay_initialization_ = true,
         bool use_external_buffer_ = false,
@@ -765,7 +852,7 @@ private:
     UInt64 max_redirects;
     size_t buffer_size;
     ReadSettings settings;
-    ReadWriteBufferFromHTTP::HTTPHeaderEntries http_header_entries;
+    HTTPHeaderEntries http_header_entries;
     const RemoteHostFilter * remote_host_filter;
     bool delay_initialization;
     bool use_external_buffer;

@@ -10,7 +10,7 @@ namespace DB
 MergingSortedTransform::MergingSortedTransform(
     const Block & header,
     size_t num_inputs,
-    SortDescription  description_,
+    const SortDescription & description_,
     size_t max_block_size,
     SortingQueueStrategy sorting_queue_strategy,
     UInt64 limit_,
@@ -19,10 +19,14 @@ MergingSortedTransform::MergingSortedTransform(
     bool use_average_block_sizes,
     bool have_all_inputs_)
     : IMergingTransform(
-        num_inputs, header, header, have_all_inputs_, limit_,
+        num_inputs,
+        header,
+        header,
+        have_all_inputs_,
+        limit_,
         header,
         num_inputs,
-        std::move(description_),
+        description_,
         max_block_size,
         sorting_queue_strategy,
         limit_,
@@ -48,7 +52,7 @@ void MergingSortedTransform::onFinish()
 
     double seconds = total_stopwatch.elapsedSeconds();
 
-    if (!seconds)
+    if (seconds == 0.0)
         LOG_DEBUG(log, "Merge sorted {} blocks, {} rows in 0 sec.", merged_data.totalChunks(), merged_data.totalMergedRows());
     else
         LOG_DEBUG(log, "Merge sorted {} blocks, {} rows in {} sec., {} rows/sec., {}/sec",

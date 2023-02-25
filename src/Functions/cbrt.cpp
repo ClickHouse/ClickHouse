@@ -11,7 +11,7 @@ using FunctionCbrt = FunctionMathUnary<UnaryFunctionVectorized<CbrtName, cbrt>>;
 
 }
 
-void registerFunctionCbrt(FunctionFactory & factory)
+REGISTER_FUNCTION(Cbrt)
 {
     factory.registerFunction<FunctionCbrt>();
 }

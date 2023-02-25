@@ -41,6 +41,9 @@ using RestoreUDFCreationMode = RestoreAccessCreationMode;
 /// Settings specified in the "SETTINGS" clause of a RESTORE query.
 struct RestoreSettings
 {
+    /// ID of the restore operation, to identify it in the system.backups table. Auto-generated if not set.
+    String id;
+
     /// Base backup, with this setting we can override the location of the base backup while restoring.
     /// Any incremental backup keeps inside the information about its base backup, so using this setting is optional.
     std::optional<BackupInfo> base_backup_info;
@@ -116,8 +119,9 @@ struct RestoreSettings
     std::vector<Strings> cluster_host_ids;
 
     /// Internal, should not be specified by user.
-    /// Path in Zookeeper used to coordinate restoring process while executing by RESTORE ON CLUSTER.
-    String coordination_zk_path;
+    /// UUID of the restore. If it's not set it will be generated randomly.
+    /// This is used to generate coordination path and for concurrency check
+    std::optional<UUID> restore_uuid;
 
     static RestoreSettings fromRestoreQuery(const ASTBackupQuery & query);
     void copySettingsToQuery(ASTBackupQuery & query) const;

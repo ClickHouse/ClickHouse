@@ -1,3 +1,6 @@
+---
+slug: /zh/operations/system-tables/zookeeper_log
+---
 # system.zookeeper_log {#system-zookeeper_log}
 
 此表包含有关对 ZooKeeper 服务器的请求及其响应的参数的信息.

@@ -3,10 +3,12 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <unordered_set>
 #include <base/strong_typedef.h>
 #include <base/Decimal.h>
 #include <base/defines.h>
 #include <base/UUID.h>
+#include <base/IPv4andIPv6.h>
 
 
 namespace DB
@@ -42,11 +44,6 @@ struct Null
     }
 };
 
-/// Ignore strange gcc warning https://gcc.gnu.org/bugzilla/show_bug.cgi?id=55776
-#if !defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-#endif
 /// @note Except explicitly described you should not assume on TypeIndex numbers and/or their orders in this enum.
 enum class TypeIndex
 {
@@ -88,10 +85,9 @@ enum class TypeIndex
     LowCardinality,
     Map,
     Object,
+    IPv4,
+    IPv6,
 };
-#if !defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
 
 
 using UInt128 = ::UInt128;
@@ -101,4 +97,5 @@ using Int256 = ::Int256;
 
 /// Not a data type in database, defined just for convenience.
 using Strings = std::vector<String>;
+using TypeIndexesSet = std::unordered_set<TypeIndex>;
 }

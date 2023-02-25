@@ -39,9 +39,10 @@ std::set<String> fetchPostgreSQLTablesList(T & tx, const String & postgres_schem
     std::set<std::string> tables;
     if (schemas.size() <= 1)
     {
-        std::string query = fmt::format("SELECT tablename FROM pg_catalog.pg_tables "
-                                        "WHERE schemaname != 'pg_catalog' AND {}",
-                                        postgres_schema.empty() ? "schemaname != 'information_schema'" : "schemaname = " + quoteString(postgres_schema));
+        std::string query = fmt::format(
+            "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = {}",
+            postgres_schema.empty() ? quoteString("public") : quoteString(postgres_schema));
+
         for (auto table_name : tx.template stream<std::string>(query))
             tables.insert(std::get<0>(table_name));
 
@@ -53,9 +54,10 @@ std::set<String> fetchPostgreSQLTablesList(T & tx, const String & postgres_schem
     /// If we add schema to table name then table can be accessed only this way: database_name.`schema_name.table_name`
     for (const auto & schema : schemas)
     {
-        std::string query = fmt::format("SELECT tablename FROM pg_catalog.pg_tables "
-                                        "WHERE schemaname != 'pg_catalog' AND {}",
-                                        postgres_schema.empty() ? "schemaname != 'information_schema'" : "schemaname = " + quoteString(schema));
+        std::string query = fmt::format(
+            "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = {}",
+            quoteString(schema));
+
         for (auto table_name : tx.template stream<std::string>(query))
             tables.insert(schema + '.' + std::get<0>(table_name));
     }
@@ -113,11 +115,11 @@ static DataTypePtr convertPostgreSQLDataType(String & type, Fn<void()> auto && r
 
             if (precision <= DecimalUtils::max_precision<Decimal32>)
                 res = std::make_shared<DataTypeDecimal<Decimal32>>(precision, scale);
-            else if (precision <= DecimalUtils::max_precision<Decimal64>) //-V547
+            else if (precision <= DecimalUtils::max_precision<Decimal64>)
                 res = std::make_shared<DataTypeDecimal<Decimal64>>(precision, scale);
-            else if (precision <= DecimalUtils::max_precision<Decimal128>) //-V547
+            else if (precision <= DecimalUtils::max_precision<Decimal128>)
                 res = std::make_shared<DataTypeDecimal<Decimal128>>(precision, scale);
-            else if (precision <= DecimalUtils::max_precision<Decimal256>) //-V547
+            else if (precision <= DecimalUtils::max_precision<Decimal256>)
                 res = std::make_shared<DataTypeDecimal<Decimal256>>(precision, scale);
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Precision {} and scale {} are too big and not supported", precision, scale);

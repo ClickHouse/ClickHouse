@@ -46,24 +46,40 @@ void InternalTextLogsQueue::pushBlock(Block && log_block)
         LOG_WARNING(&Poco::Logger::get("InternalTextLogsQueue"), "Log block have different structure");
 }
 
-const char * InternalTextLogsQueue::getPriorityName(int priority)
+std::string_view InternalTextLogsQueue::getPriorityName(int priority)
 {
+    using namespace std::literals;
+
     /// See Poco::Message::Priority
-
-    static constexpr const char * const PRIORITIES[] =
+    static constexpr std::array PRIORITIES =
     {
-        "Unknown",
-        "Fatal",
-        "Critical",
-        "Error",
-        "Warning",
-        "Notice",
-        "Information",
-        "Debug",
-        "Trace"
+        "Unknown"sv,
+        "Fatal"sv,
+        "Critical"sv,
+        "Error"sv,
+        "Warning"sv,
+        "Notice"sv,
+        "Information"sv,
+        "Debug"sv,
+        "Trace"sv,
+        "Test"sv,
     };
+    return (priority >= 1 && priority < static_cast<int>(PRIORITIES.size())) ? PRIORITIES[priority] : PRIORITIES[0];
+}
 
-    return (priority >= 1 && priority <= 8) ? PRIORITIES[priority] : PRIORITIES[0];
+bool InternalTextLogsQueue::isNeeded(int priority, const String & source) const
+{
+    bool is_needed = priority <= max_priority;
+
+    if (is_needed && source_regexp)
+        is_needed = re2::RE2::PartialMatch(source, *source_regexp);
+
+    return is_needed;
+}
+
+void InternalTextLogsQueue::setSourceRegexp(const String & regexp)
+{
+    source_regexp = std::make_unique<re2::RE2>(regexp);
 }
 
 }

@@ -7,7 +7,7 @@ namespace DB
 
 using FunctionLess = FunctionComparison<LessOp, NameLess>;
 
-void registerFunctionLess(FunctionFactory & factory)
+REGISTER_FUNCTION(Less)
 {
     factory.registerFunction<FunctionLess>();
 }

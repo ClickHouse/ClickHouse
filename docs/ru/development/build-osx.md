@@ -1,5 +1,6 @@
 ---
-sidebar_position: 65
+slug: /ru/development/build-osx
+sidebar_position: 66
 sidebar_label: Сборка на Mac OS X
 ---
 
@@ -8,6 +9,7 @@ sidebar_label: Сборка на Mac OS X
 :::info "Вам не нужно собирать ClickHouse самостоятельно"
      Вы можете установить предварительно собранный ClickHouse, как описано в [Быстром старте](https://clickhouse.com/#quick-start).
      Следуйте инструкциям по установке для `macOS (Intel)` или `macOS (Apple Silicon)`.
+:::
 
 Сборка должна запускаться с x86_64 (Intel) на macOS версии 10.15 (Catalina) и выше в последней версии компилятора Xcode's native AppleClang, Homebrew's vanilla Clang или в GCC-компиляторах.
 
@@ -90,6 +92,7 @@ $ /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/
 
 :::info "Note"
     Вам понадобится команда `sudo`.
+:::
 
 1. Создайте файл `/Library/LaunchDaemons/limit.maxfiles.plist` и поместите в него следующее:
 
@@ -126,5 +129,3 @@ $ /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/
 3. Перезагрузитесь.
 
 4. Чтобы проверить, как это работает, выполните команду `ulimit -n`.
-
-[Original article](https://clickhouse.com/docs/en/development/build_osx/) <!--hide-->

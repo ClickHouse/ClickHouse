@@ -11,12 +11,15 @@ RUN apt-get update -y \
         apt-get install --yes --no-install-recommends \
             awscli \
             brotli \
+            lz4 \
             expect \
             golang \
             lsof \
             mysql-client=8.0* \
             ncdu \
             netcat-openbsd \
+            nodejs \
+            npm \
             openjdk-11-jre-headless \
             openssl \
             postgresql-client \
@@ -33,9 +36,12 @@ RUN apt-get update -y \
             tree \
             unixodbc \
             wget \
+            rustc \
+            cargo \
             zstd \
+            file \
+            pv \
     && apt-get clean
-
 
 RUN pip3 install numpy scipy pandas Jinja2
 
@@ -72,6 +78,9 @@ RUN wget 'https://dlcdn.apache.org/hadoop/common/hadoop-3.3.1/hadoop-3.3.1.tar.g
 ENV MINIO_ROOT_USER="clickhouse"
 ENV MINIO_ROOT_PASSWORD="clickhouse"
 ENV EXPORT_S3_STORAGE_POLICIES=1
+
+RUN npm install -g azurite
+RUN npm install tslib
 
 COPY run.sh /
 COPY setup_minio.sh /

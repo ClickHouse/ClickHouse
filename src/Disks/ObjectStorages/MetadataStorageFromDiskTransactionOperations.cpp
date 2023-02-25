@@ -1,8 +1,10 @@
 #include <Disks/ObjectStorages/MetadataStorageFromDiskTransactionOperations.h>
+#include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
 #include <Disks/IDisk.h>
 #include <Common/getRandomASCIIString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <optional>
 #include <ranges>
 #include <filesystem>
 
@@ -14,7 +16,7 @@ namespace DB
 
 static std::string getTempFileName(const std::string & dir)
 {
-    return fs::path(dir) / getRandomASCIIString();
+    return fs::path(dir) / getRandomASCIIString(32);
 }
 
 SetLastModifiedOperation::SetLastModifiedOperation(const std::string & path_, Poco::Timestamp new_timestamp_, IDisk & disk_)
@@ -24,7 +26,7 @@ SetLastModifiedOperation::SetLastModifiedOperation(const std::string & path_, Po
 {
 }
 
-void SetLastModifiedOperation::execute()
+void SetLastModifiedOperation::execute(std::unique_lock<SharedMutex> &)
 {
     old_timestamp = disk.getLastModified(path);
     disk.setLastModified(path, new_timestamp);
@@ -35,15 +37,33 @@ void SetLastModifiedOperation::undo()
     disk.setLastModified(path, old_timestamp);
 }
 
+ChmodOperation::ChmodOperation(const std::string & path_, mode_t mode_, IDisk & disk_)
+    : path(path_)
+    , mode(mode_)
+    , disk(disk_)
+{
+}
+
+void ChmodOperation::execute(std::unique_lock<SharedMutex> &)
+{
+    old_mode = disk.stat(path).st_mode;
+    disk.chmod(path, mode);
+}
+
+void ChmodOperation::undo()
+{
+    disk.chmod(path, old_mode);
+}
+
 UnlinkFileOperation::UnlinkFileOperation(const std::string & path_, IDisk & disk_)
     : path(path_)
     , disk(disk_)
 {
 }
 
-void UnlinkFileOperation::execute()
+void UnlinkFileOperation::execute(std::unique_lock<SharedMutex> &)
 {
-    auto buf = disk.readFile(path);
+    auto buf = disk.readFile(path, ReadSettings{}, std::nullopt, disk.getFileSize(path));
     readStringUntilEOF(prev_data, *buf);
     disk.removeFile(path);
 }
@@ -61,7 +81,7 @@ CreateDirectoryOperation::CreateDirectoryOperation(const std::string & path_, ID
 {
 }
 
-void CreateDirectoryOperation::execute()
+void CreateDirectoryOperation::execute(std::unique_lock<SharedMutex> &)
 {
     disk.createDirectory(path);
 }
@@ -77,7 +97,7 @@ CreateDirectoryRecursiveOperation::CreateDirectoryRecursiveOperation(const std::
 {
 }
 
-void CreateDirectoryRecursiveOperation::execute()
+void CreateDirectoryRecursiveOperation::execute(std::unique_lock<SharedMutex> &)
 {
     namespace fs = std::filesystem;
     fs::path p(path);
@@ -104,7 +124,7 @@ RemoveDirectoryOperation::RemoveDirectoryOperation(const std::string & path_, ID
 {
 }
 
-void RemoveDirectoryOperation::execute()
+void RemoveDirectoryOperation::execute(std::unique_lock<SharedMutex> &)
 {
     disk.removeDirectory(path);
 }
@@ -121,7 +141,7 @@ RemoveRecursiveOperation::RemoveRecursiveOperation(const std::string & path_, ID
 {
 }
 
-void RemoveRecursiveOperation:: execute()
+void RemoveRecursiveOperation::execute(std::unique_lock<SharedMutex> &)
 {
     if (disk.isFile(path))
         disk.moveFile(path, temp_path);
@@ -146,20 +166,31 @@ void RemoveRecursiveOperation::finalize()
         disk.removeRecursive(path);
 }
 
-CreateHardlinkOperation::CreateHardlinkOperation(const std::string & path_from_, const std::string & path_to_, IDisk & disk_)
+CreateHardlinkOperation::CreateHardlinkOperation(const std::string & path_from_, const std::string & path_to_, IDisk & disk_, const MetadataStorageFromDisk & metadata_storage_)
     : path_from(path_from_)
     , path_to(path_to_)
     , disk(disk_)
+    , metadata_storage(metadata_storage_)
 {
 }
 
-void CreateHardlinkOperation::execute()
+void CreateHardlinkOperation::execute(std::unique_lock<SharedMutex> & lock)
 {
+    auto metadata = metadata_storage.readMetadataUnlocked(path_from, lock);
+
+    metadata->incrementRefCount();
+
+    write_operation = std::make_unique<WriteFileOperation>(path_from, disk, metadata->serializeToString());
+
+    write_operation->execute(lock);
+
     disk.createHardLink(path_from, path_to);
 }
 
 void CreateHardlinkOperation::undo()
 {
+    if (write_operation)
+        write_operation->undo();
     disk.removeFile(path_to);
 }
 
@@ -170,7 +201,7 @@ MoveFileOperation::MoveFileOperation(const std::string & path_from_, const std::
 {
 }
 
-void MoveFileOperation::execute()
+void MoveFileOperation::execute(std::unique_lock<SharedMutex> &)
 {
     disk.moveFile(path_from, path_to);
 }
@@ -187,7 +218,7 @@ MoveDirectoryOperation::MoveDirectoryOperation(const std::string & path_from_, c
 {
 }
 
-void MoveDirectoryOperation::execute()
+void MoveDirectoryOperation::execute(std::unique_lock<SharedMutex> &)
 {
     disk.moveDirectory(path_from, path_to);
 }
@@ -197,7 +228,6 @@ void MoveDirectoryOperation::undo()
     disk.moveDirectory(path_to, path_from);
 }
 
-
 ReplaceFileOperation::ReplaceFileOperation(const std::string & path_from_, const std::string & path_to_, IDisk & disk_)
     : path_from(path_from_)
     , path_to(path_to_)
@@ -206,7 +236,7 @@ ReplaceFileOperation::ReplaceFileOperation(const std::string & path_from_, const
 {
 }
 
-void ReplaceFileOperation::execute()
+void ReplaceFileOperation::execute(std::unique_lock<SharedMutex> &)
 {
     if (disk.exists(path_to))
         disk.moveFile(path_to, temp_path_to);
@@ -232,7 +262,7 @@ WriteFileOperation::WriteFileOperation(const std::string & path_, IDisk & disk_,
 {
 }
 
-void WriteFileOperation::execute()
+void WriteFileOperation::execute(std::unique_lock<SharedMutex> &)
 {
     if (disk.exists(path))
     {
@@ -256,6 +286,68 @@ void WriteFileOperation::undo()
         auto buf = disk.writeFile(path);
         writeString(prev_data, *buf);
     }
+}
+
+void AddBlobOperation::execute(std::unique_lock<SharedMutex> & metadata_lock)
+{
+    DiskObjectStorageMetadataPtr metadata;
+    if (metadata_storage.exists(path))
+        metadata = metadata_storage.readMetadataUnlocked(path, metadata_lock);
+    else
+        metadata = std::make_unique<DiskObjectStorageMetadata>(disk.getPath(), root_path, path);
+
+    metadata->addObject(blob_name, size_in_bytes);
+
+    write_operation = std::make_unique<WriteFileOperation>(path, disk, metadata->serializeToString());
+
+    write_operation->execute(metadata_lock);
+}
+
+void AddBlobOperation::undo()
+{
+    if (write_operation)
+        write_operation->undo();
+}
+
+void UnlinkMetadataFileOperation::execute(std::unique_lock<SharedMutex> & metadata_lock)
+{
+    auto metadata = metadata_storage.readMetadataUnlocked(path, metadata_lock);
+    uint32_t ref_count = metadata->getRefCount();
+    if (ref_count != 0)
+    {
+        metadata->decrementRefCount();
+        write_operation = std::make_unique<WriteFileOperation>(path, disk, metadata->serializeToString());
+        write_operation->execute(metadata_lock);
+    }
+    unlink_operation = std::make_unique<UnlinkFileOperation>(path, disk);
+    unlink_operation->execute(metadata_lock);
+}
+
+void UnlinkMetadataFileOperation::undo()
+{
+    /// Operations MUST be reverted in the reversed order, so
+    /// when we apply operation #1 (write) and operation #2 (unlink)
+    /// we should revert #2 and only after it #1. Otherwise #1 will overwrite
+    /// file with incorrect data.
+    if (unlink_operation)
+        unlink_operation->undo();
+
+    if (write_operation)
+        write_operation->undo();
+}
+
+void SetReadonlyFileOperation::execute(std::unique_lock<SharedMutex> & metadata_lock)
+{
+    auto metadata = metadata_storage.readMetadataUnlocked(path, metadata_lock);
+    metadata->setReadOnly();
+    write_operation = std::make_unique<WriteFileOperation>(path, disk, metadata->serializeToString());
+    write_operation->execute(metadata_lock);
+}
+
+void SetReadonlyFileOperation::undo()
+{
+    if (write_operation)
+        write_operation->undo();
 }
 
 }
