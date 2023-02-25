@@ -675,27 +675,28 @@ private:
         return impl.isInjective(sample_columns);
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        DataTypePtr result;
+        DataTypePtr result_type;
 
         if constexpr (IsDataTypeDecimal<DataType>)
-            result = std::make_shared<DataType>(DataType::maxPrecision(), 0);
+            result_type = std::make_shared<DataType>(DataType::maxPrecision(), 0);
         else
-            result = std::make_shared<DataType>();
+            result_type = std::make_shared<DataType>();
 
-        return result;
+        auto return_type = impl.getReturnTypeImpl(arguments);
+        if (!return_type->equals(*result_type))
+            throw Exception(ErrorCodes::TYPE_MISMATCH, "Function {} dictionary attribute has different type {} expected {}",
+                    getName(),
+                    return_type->getName(),
+                    result_type->getName());
+
+        return result_type;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        auto return_type = impl.getReturnTypeImpl(arguments);
-
-        if (!return_type->equals(*result_type))
-            throw Exception(ErrorCodes::TYPE_MISMATCH, "Dictionary attribute has different type {} expected {}",
-                    return_type->getName(), result_type->getName());
-
-        return impl.executeImpl(arguments, return_type, input_rows_count);
+        return impl.executeImpl(arguments, result_type, input_rows_count);
     }
 
     const FunctionDictGetNoType<dictionary_get_function_type> impl;
