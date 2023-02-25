@@ -530,7 +530,7 @@ Result:
 ## like(haystack, pattern), haystack LIKE pattern operator
 
 Checks whether a string matches a LIKE expression.
-LIKE expression contains a mix of normal characters and the following metasymbols:
+A LIKE expression contains a mix of normal characters and the following metasymbols:
 
 -   `%` indicates an arbitrary number of arbitrary characters (including zero characters).
 
@@ -542,8 +542,9 @@ Matching is based on UTF-8, e.g. `_` matches the Unicode code point `¥` which i
 If the haystack or the pattern are not valid UTF-8, then the behavior is undefined.
 No automatic Unicode normalization is performed, you can use the [normalizeUTF8*()](https://clickhouse.com/docs/en/sql-reference/functions/string-functions/) functions for that.
 
-To match against literals `%`, `_` and `/` (which are LIKE metacharacters), prepend them with a backslash, i.e. `\%`, `\_` and
-`\\`. Note that ClickHouse requires backslashes in strings [to be quoted as well](../syntax.md#String), so you would actually need to write `\\%`, `\\_` and `\\\\`.
+To match against literals `%`, `_` and `/` (which are LIKE metacharacters), prepend them with a backslash, i.e. `\%`, `\_` and `\\`.
+The backslash loses its special meaning, i.e. is interpreted literally, if it prepends a character different than `%`, `_` or `\`.
+Note that ClickHouse requires backslashes in strings [to be quoted as well](../syntax.md#string), so you would actually need to write `\\%`, `\\_` and `\\\\`.
 
 For patterns of the form `%needle%`, the function is as fast as the `position` function.
 Other LIKE expressions are internally converted to a regular expression and executed with a performance similar to function `match`.
