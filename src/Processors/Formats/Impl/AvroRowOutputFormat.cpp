@@ -49,10 +49,9 @@ public:
         : string_to_string_regexp(settings_.avro.string_column_pattern)
     {
         if (!string_to_string_regexp.ok())
-            throw DB::Exception(
-                "Avro: cannot compile re2: " + settings_.avro.string_column_pattern + ", error: " + string_to_string_regexp.error()
-                    + ". Look at https://github.com/google/re2/wiki/Syntax for reference.",
-                DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
+            throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP, "Avro: cannot compile re2: {}, error: {}. "
+                "Look at https://github.com/google/re2/wiki/Syntax for reference.",
+                settings_.avro.string_column_pattern, string_to_string_regexp.error());
     }
 
     bool isStringAsString(const String & column_name)
@@ -97,6 +96,12 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
     switch (data_type->getTypeId())
     {
         case TypeIndex::UInt8:
+            if (isBool(data_type))
+                return {avro::BoolSchema(), [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
+                {
+                    encoder.encodeBool(assert_cast<const ColumnUInt8 &>(column).getElement(row_num));
+                }};
+
             return {avro::IntSchema(), [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
             {
                 encoder.encodeInt(assert_cast<const ColumnUInt8 &>(column).getElement(row_num));
@@ -193,7 +198,7 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
         case TypeIndex::FixedString:
         {
             auto size = data_type->getSizeOfValueInMemory();
-            auto schema = avro::FixedSchema(size, "fixed_" + toString(type_name_increment));
+            auto schema = avro::FixedSchema(static_cast<int>(size), "fixed_" + toString(type_name_increment));
             return {schema, [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
             {
                 const std::string_view & s = assert_cast<const ColumnFixedString &>(column).getDataAt(row_num).toView();
@@ -378,7 +383,7 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
         default:
             break;
     }
-    throw Exception("Type " + data_type->getName() + " is not supported for Avro output", ErrorCodes::ILLEGAL_COLUMN);
+    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} is not supported for Avro output", data_type->getName());
 }
 
 
@@ -432,12 +437,12 @@ static avro::Codec getCodec(const std::string & codec_name)
     if (codec_name == "snappy")  return avro::Codec::SNAPPY_CODEC;
 #endif
 
-    throw Exception("Avro codec " + codec_name + " is not available", ErrorCodes::BAD_ARGUMENTS);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Avro codec {} is not available", codec_name);
 }
 
 AvroRowOutputFormat::AvroRowOutputFormat(
-    WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & settings_)
-    : IRowOutputFormat(header_, out_, params_)
+    WriteBuffer & out_, const Block & header_, const FormatSettings & settings_)
+    : IRowOutputFormat(header_, out_)
     , settings(settings_)
     , serializer(header_.getColumnsWithTypeAndName(), std::make_unique<AvroSerializerTraits>(settings))
 {
@@ -471,56 +476,14 @@ void AvroRowOutputFormat::write(const Columns & columns, size_t row_num)
     file_writer_ptr->incr();
 }
 
-void AvroRowOutputFormat::writeSuffix()
+void AvroRowOutputFormat::finalizeImpl()
+{
+    file_writer_ptr->close();
+}
+
+void AvroRowOutputFormat::resetFormatterImpl()
 {
     file_writer_ptr.reset();
-}
-
-void AvroRowOutputFormat::consume(DB::Chunk chunk)
-{
-    if (params.callback)
-        consumeImplWithCallback(std::move(chunk));
-    else
-        consumeImpl(std::move(chunk));
-}
-
-void AvroRowOutputFormat::consumeImpl(DB::Chunk chunk)
-{
-    auto num_rows = chunk.getNumRows();
-    const auto & columns = chunk.getColumns();
-
-    for (size_t row = 0; row < num_rows; ++row)
-    {
-        write(columns, row);
-    }
-
-}
-
-void AvroRowOutputFormat::consumeImplWithCallback(DB::Chunk chunk)
-{
-    auto num_rows = chunk.getNumRows();
-    const auto & columns = chunk.getColumns();
-
-    for (size_t row = 0; row < num_rows;)
-    {
-        size_t current_row = row;
-        /// used by WriteBufferToKafkaProducer to obtain auxiliary data
-        ///   from the starting row of a file
-
-        writePrefixIfNot();
-        for (size_t row_in_file = 0;
-             row_in_file < settings.avro.output_rows_in_file && row < num_rows;
-             ++row, ++row_in_file)
-        {
-            write(columns, row);
-        }
-
-        file_writer_ptr->flush();
-        writeSuffix();
-        need_write_prefix = true;
-
-        params.callback(columns, current_row);
-    }
 }
 
 void registerOutputFormatAvro(FormatFactory & factory)
@@ -528,10 +491,9 @@ void registerOutputFormatAvro(FormatFactory & factory)
     factory.registerOutputFormat("Avro", [](
         WriteBuffer & buf,
         const Block & sample,
-        const RowOutputFormatParams & params,
         const FormatSettings & settings)
     {
-        return std::make_shared<AvroRowOutputFormat>(buf, sample, params, settings);
+        return std::make_shared<AvroRowOutputFormat>(buf, sample, settings);
     });
     factory.markFormatHasNoAppendSupport("Avro");
 }

@@ -59,15 +59,27 @@ void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const Strin
 {
     /// Do not apply this check in ATTACH queries for compatibility reasons.
     if (!is_attach)
-        ttl_expression->getActionsDAG().assertDeterministic();
+    {
+        for (const auto & action : ttl_expression->getActions())
+        {
+            if (action.node->type == ActionsDAG::ActionType::FUNCTION)
+            {
+                const IFunctionBase & func = *action.node->function_base;
+                if (!func.isDeterministic())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "TTL expression cannot contain non-deterministic functions, but contains function {}",
+                                    func.getName());
+            }
+        }
+    }
 
     const auto & result_column = ttl_expression->getSampleBlock().getByName(result_column_name);
     if (!typeid_cast<const DataTypeDateTime *>(result_column.type.get())
         && !typeid_cast<const DataTypeDate *>(result_column.type.get()))
     {
-        throw Exception(
-            "TTL expression result column should have DateTime or Date type, but has " + result_column.type->getName(),
-            ErrorCodes::BAD_TTL_EXPRESSION);
+        throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
+                        "TTL expression result column should have DateTime or Date type, but has {}",
+                        result_column.type->getName());
     }
 }
 
@@ -196,7 +208,7 @@ TTLDescription TTLDescription::getTTLFromAST(
             const auto & pk_columns = primary_key.column_names;
 
             if (ttl_element->group_by_key.size() > pk_columns.size())
-                throw Exception("TTL Expression GROUP BY key should be a prefix of primary key", ErrorCodes::BAD_TTL_EXPRESSION);
+                throw Exception(ErrorCodes::BAD_TTL_EXPRESSION, "TTL Expression GROUP BY key should be a prefix of primary key");
 
             NameSet aggregation_columns_set;
             NameSet used_primary_key_columns_set;
@@ -204,9 +216,7 @@ TTLDescription TTLDescription::getTTLFromAST(
             for (size_t i = 0; i < ttl_element->group_by_key.size(); ++i)
             {
                 if (ttl_element->group_by_key[i]->getColumnName() != pk_columns[i])
-                    throw Exception(
-                        "TTL Expression GROUP BY key should be a prefix of primary key",
-                        ErrorCodes::BAD_TTL_EXPRESSION);
+                    throw Exception(ErrorCodes::BAD_TTL_EXPRESSION, "TTL Expression GROUP BY key should be a prefix of primary key");
 
                 used_primary_key_columns_set.insert(pk_columns[i]);
             }
@@ -230,9 +240,7 @@ TTLDescription TTLDescription::getTTLFromAST(
             }
 
             if (aggregation_columns_set.size() != ttl_element->group_by_assignments.size())
-                throw Exception(
-                    "Multiple aggregations set for one column in TTL Expression",
-                    ErrorCodes::BAD_TTL_EXPRESSION);
+                throw Exception(ErrorCodes::BAD_TTL_EXPRESSION, "Multiple aggregations set for one column in TTL Expression");
 
             result.group_by_keys = Names(pk_columns.begin(), pk_columns.begin() + ttl_element->group_by_key.size());
 
@@ -341,7 +349,7 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
             if (!ttl.where_expression)
             {
                 if (have_unconditional_delete_ttl)
-                    throw Exception("More than one DELETE TTL expression without WHERE expression is not allowed", ErrorCodes::BAD_TTL_EXPRESSION);
+                    throw Exception(ErrorCodes::BAD_TTL_EXPRESSION, "More than one DELETE TTL expression without WHERE expression is not allowed");
 
                 have_unconditional_delete_ttl = true;
                 result.rows_ttl = ttl;

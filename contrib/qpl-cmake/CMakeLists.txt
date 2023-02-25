@@ -10,12 +10,31 @@ if (NOT ENABLE_QPL)
     return()
 endif()
 
+## QPL has build dependency on libaccel-config. Here is to build libaccel-config which is required by QPL.
+## libaccel-config is the utility library for controlling and configuring Intel® In-Memory Analytics Accelerator (Intel® IAA).
+set (LIBACCEL_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/idxd-config")
+set (UUID_DIR "${ClickHouse_SOURCE_DIR}/contrib/qpl-cmake")
+set (LIBACCEL_HEADER_DIR "${ClickHouse_SOURCE_DIR}/contrib/qpl-cmake/idxd-header")
+set (SRCS
+    "${LIBACCEL_SOURCE_DIR}/accfg/lib/libaccfg.c"
+    "${LIBACCEL_SOURCE_DIR}/util/log.c"
+    "${LIBACCEL_SOURCE_DIR}/util/sysfs.c"
+)
+
+add_library(accel-config ${SRCS})
+
+target_compile_options(accel-config PRIVATE "-D_GNU_SOURCE")
+
+target_include_directories(accel-config BEFORE
+    PRIVATE ${UUID_DIR}
+    PRIVATE ${LIBACCEL_HEADER_DIR}
+    PRIVATE ${LIBACCEL_SOURCE_DIR})
+
+## QPL build start here.
 set (QPL_PROJECT_DIR "${ClickHouse_SOURCE_DIR}/contrib/qpl")
 set (QPL_SRC_DIR "${ClickHouse_SOURCE_DIR}/contrib/qpl/sources")
 set (QPL_BINARY_DIR "${ClickHouse_BINARY_DIR}/build/contrib/qpl")
-set (UUID_DIR "${ClickHouse_SOURCE_DIR}/contrib/qpl-cmake")
-
-set (EFFICIENT_WAIT ON)
+set (EFFICIENT_WAIT OFF)
 set (BLOCK_ON_FAULT ON)
 set (LOG_HW_INIT OFF)
 set (SANITIZE_MEMORY OFF)
@@ -42,7 +61,7 @@ include("${QPL_PROJECT_DIR}/cmake/CompileOptions.cmake")
 include(CheckLanguage)
 check_language(ASM_NASM)
 if(NOT CMAKE_ASM_NASM_COMPILER)
-  message(FATAL_ERROR "Please install NASM from 'https://www.nasm.us/' because NASM compiler can not be found!")
+    message(FATAL_ERROR "Please install NASM from 'https://www.nasm.us/' because NASM compiler can not be found!")
 endif()
 
 # [SUBDIR]isal
@@ -110,18 +129,18 @@ target_compile_options(isal PRIVATE
                        "$<$<CONFIG:Debug>:>"
                        "$<$<CONFIG:Release>:>")
 
-target_compile_options(isal_asm PUBLIC "-I${QPL_SRC_DIR}/isal/include/"
-                       PUBLIC "-I${QPL_SRC_DIR}/isal/igzip/"
-                       PUBLIC "-I${QPL_SRC_DIR}/isal/crc/"
-                       PUBLIC "-DQPL_LIB")
+target_compile_options(isal_asm PRIVATE "-I${QPL_SRC_DIR}/isal/include/"
+                       PRIVATE "-I${QPL_SRC_DIR}/isal/igzip/"
+                       PRIVATE "-I${QPL_SRC_DIR}/isal/crc/"
+                       PRIVATE "-DQPL_LIB")
 
 # AS_FEATURE_LEVEL=10 means "Check SIMD capabilities of the target system at runtime and use up to AVX512 if available".
 # AS_FEATURE_LEVEL=5 means "Check SIMD capabilities of the target system at runtime and use up to AVX2 if available".
 # HAVE_KNOWS_AVX512 means rely on AVX512 being available on the target system.
 if (ENABLE_AVX512)
-    target_compile_options(isal_asm PUBLIC "-DHAVE_AS_KNOWS_AVX512" "-DAS_FEATURE_LEVEL=10")
+    target_compile_options(isal_asm PRIVATE "-DHAVE_AS_KNOWS_AVX512" "-DAS_FEATURE_LEVEL=10")
 else()
-    target_compile_options(isal_asm PUBLIC "-DAS_FEATURE_LEVEL=5")
+    target_compile_options(isal_asm PRIVATE "-DAS_FEATURE_LEVEL=5")
 endif()
 
 # Here must remove "-fno-sanitize=undefined" from COMPILE_OPTIONS.
@@ -316,6 +335,7 @@ target_compile_definitions(_qpl
         PUBLIC -DENABLE_QPL_COMPRESSION)
 
 target_link_libraries(_qpl
+        PRIVATE accel-config
         PRIVATE ${CMAKE_DL_LIBS})
 
 add_library (ch_contrib::qpl ALIAS _qpl)

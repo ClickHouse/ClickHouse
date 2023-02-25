@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/data-types/special-data-types/nothing
 sidebar_position: 60
 sidebar_label: Nothing
 ---
@@ -20,5 +21,3 @@ SELECT toTypeName(array())
 │ Array(Nothing)      │
 └─────────────────────┘
 ```
-
-[Original article](https://clickhouse.com/docs/en/data_types/special_data_types/nothing/) <!--hide-->

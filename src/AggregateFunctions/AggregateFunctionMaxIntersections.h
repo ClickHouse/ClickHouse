@@ -62,16 +62,17 @@ private:
 
 public:
     AggregateFunctionIntersectionsMax(AggregateFunctionIntersectionsKind kind_, const DataTypes & arguments)
-        : IAggregateFunctionDataHelper<MaxIntersectionsData<PointType>, AggregateFunctionIntersectionsMax<PointType>>(arguments, {}), kind(kind_)
+        : IAggregateFunctionDataHelper<MaxIntersectionsData<PointType>, AggregateFunctionIntersectionsMax<PointType>>(arguments, {}, createResultType(kind_))
+        , kind(kind_)
     {
         if (!isNativeNumber(arguments[0]))
-            throw Exception{getName() + ": first argument must be represented by integer", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{}: first argument must be represented by integer", getName());
 
         if (!isNativeNumber(arguments[1]))
-            throw Exception{getName() + ": second argument must be represented by integer", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{}: second argument must be represented by integer", getName());
 
         if (!arguments[0]->equals(*arguments[1]))
-            throw Exception{getName() + ": arguments must have the same type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{}: arguments must have the same type", getName());
     }
 
     String getName() const override
@@ -81,9 +82,9 @@ public:
             : "maxIntersectionsPosition";
     }
 
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType(AggregateFunctionIntersectionsKind kind_)
     {
-        if (kind == AggregateFunctionIntersectionsKind::Count)
+        if (kind_ == AggregateFunctionIntersectionsKind::Count)
             return std::make_shared<DataTypeUInt64>();
         else
             return std::make_shared<DataTypeNumber<PointType>>();
@@ -116,7 +117,16 @@ public:
         const auto & value = this->data(place).value;
         size_t size = value.size();
         writeVarUInt(size, buf);
-        buf.write(reinterpret_cast<const char *>(value.data()), size * sizeof(value[0]));
+
+        for (size_t i = 0; i < size; ++i)
+        {
+            /// In this version, pairs were serialized with padding.
+            /// We must ensure that padding bytes are zero-filled.
+            char bytes[sizeof(value[0])]{};
+            unalignedStore<PointType>(&bytes[offsetof(typename MaxIntersectionsData<PointType>::Value, first)], value[i].first);
+            unalignedStore<Int64>(&bytes[offsetof(typename MaxIntersectionsData<PointType>::Value, second)], value[i].second);
+            buf.write(bytes, sizeof(value[0]));
+        }
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
@@ -125,12 +135,12 @@ public:
         readVarUInt(size, buf);
 
         if (unlikely(size > AGGREGATE_FUNCTION_MAX_INTERSECTIONS_MAX_ARRAY_SIZE))
-            throw Exception("Too large array size", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size");
 
         auto & value = this->data(place).value;
 
         value.resize(size, arena);
-        buf.read(reinterpret_cast<char *>(value.data()), size * sizeof(value[0]));
+        buf.readStrict(reinterpret_cast<char *>(value.data()), size * sizeof(value[0]));
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override

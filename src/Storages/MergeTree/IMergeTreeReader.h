@@ -4,6 +4,8 @@
 #include <Common/HashTable/HashMap.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 
 namespace DB
 {
@@ -20,7 +22,7 @@ public:
     using DeserializeBinaryBulkStateMap = std::map<std::string, ISerialization::DeserializeBinaryBulkStatePtr>;
 
     IMergeTreeReader(
-        const MergeTreeData::DataPartPtr & data_part_,
+        MergeTreeDataPartInfoForReaderPtr data_part_info_for_read_,
         const NamesAndTypesList & columns_,
         const StorageMetadataPtr & metadata_snapshot_,
         UncompressedCache * uncompressed_cache_,
@@ -57,7 +59,9 @@ public:
 
     size_t getFirstMarkToRead() const { return all_mark_ranges.front().begin; }
 
-    MergeTreeData::DataPartPtr data_part;
+    MergeTreeDataPartInfoForReaderPtr data_part_info_for_read;
+
+    virtual void prefetchBeginOfRange(int64_t /* priority */) {}
 
 protected:
     /// Returns actual column name in part, which can differ from table metadata.
@@ -86,22 +90,27 @@ protected:
 
     MergeTreeReaderSettings settings;
 
-    const MergeTreeData & storage;
     StorageMetadataPtr metadata_snapshot;
     MarkRanges all_mark_ranges;
 
-    using ColumnPosition = std::optional<size_t>;
-    ColumnPosition findColumnForOffsets(const String & column_name) const;
+    /// Position and level (of nesting).
+    using ColumnPositionLevel = std::optional<std::pair<size_t, size_t>>;
+    /// In case of part of the nested column does not exists, offsets should be
+    /// read, but only the offsets for the current column, that is why it
+    /// returns pair of size_t, not just one.
+    ColumnPositionLevel findColumnForOffsets(const NameAndTypePair & column) const;
+
+    NameSet partially_read_columns;
 
 private:
     /// Alter conversions, which must be applied on fly if required
-    MergeTreeData::AlterConversions alter_conversions;
+    AlterConversions alter_conversions;
 
     /// Columns that are requested to read.
     NamesAndTypesList requested_columns;
 
     /// Actual columns description in part.
-    ColumnsDescription part_columns;
+    const ColumnsDescription & part_columns;
 };
 
 }

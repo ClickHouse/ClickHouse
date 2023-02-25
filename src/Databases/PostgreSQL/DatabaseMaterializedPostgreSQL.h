@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config_core.h"
+#include "config.h"
 
 #if USE_LIBPQXX
 
@@ -40,7 +40,7 @@ public:
 
     String getMetadataPath() const override { return metadata_path; }
 
-    void startupTables(ThreadPool & thread_pool, bool force_restore, bool force_attach) override;
+    void startupTables(ThreadPool & thread_pool, LoadingStrictnessLevel mode) override;
 
     DatabaseTablesIteratorPtr
     getTablesIterator(ContextPtr context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const override;

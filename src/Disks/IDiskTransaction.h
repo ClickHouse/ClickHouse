@@ -30,6 +30,8 @@ public:
     /// If something fails rollback and throw exception.
     virtual void commit() = 0;
 
+    virtual void undo() = 0;
+
     virtual ~IDiskTransaction() = default;
 
     /// Create directory.

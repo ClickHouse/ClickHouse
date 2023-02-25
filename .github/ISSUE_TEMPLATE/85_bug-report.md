@@ -13,6 +13,8 @@ assignees: ''
 
 > A clear and concise description of what works not as it is supposed to.
 
+> A link to reproducer in [https://fiddle.clickhouse.com/](https://fiddle.clickhouse.com/).
+
 **Does it reproduce on recent release?**
 
 [The list of releases](https://github.com/ClickHouse/ClickHouse/blob/master/utils/list-versions/version_date.tsv)

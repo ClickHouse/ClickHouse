@@ -1,2 +1,0 @@
-# clang-tidy has been integrated into CMake:
-# --> Build ClickHouse with -DENABLE_CLANG_TIDY=1 and see cmake/clang_tidy.cmake for details

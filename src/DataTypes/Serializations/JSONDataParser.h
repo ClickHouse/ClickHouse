@@ -34,7 +34,7 @@ private:
 
     using PathPartsWithArray = std::pair<PathInData::Parts, Array>;
     using PathToArray = HashMapWithStackMemory<UInt128, PathPartsWithArray, UInt128TrivialHash, 5>;
-    using KeyToSizes = HashMapWithStackMemory<StringRef, std::vector<size_t>, StringRefHash, 5>;
+    using PathToSizes = HashMapWithStackMemory<UInt128, std::vector<size_t>, UInt128TrivialHash, 5>;
 
     struct ParseArrayContext
     {
@@ -42,7 +42,7 @@ private:
         size_t total_size = 0;
 
         PathToArray arrays_by_path;
-        KeyToSizes nested_sizes_by_key;
+        PathToSizes nested_sizes_by_path;
         Arena strings_pool;
     };
 
@@ -56,7 +56,7 @@ private:
         ParseArrayContext & ctx, const PathInData::Parts & path, Array & array);
 
     static Field getValueAsField(const Element & element);
-    static StringRef getNameOfNested(const PathInData::Parts & path, const Field & value);
+    static std::optional<UInt128> getHashOfNestedPath(const PathInData::Parts & path, const Field & value);
 
     ParserImpl parser;
 };

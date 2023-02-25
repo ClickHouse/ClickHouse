@@ -44,8 +44,32 @@ struct ClearableHashTableCell : public BaseCell
     /// Do I need to store the zero key separately (that is, can a zero key be inserted into the hash table).
     static constexpr bool need_zero_value_storage = false;
 
-    ClearableHashTableCell() {} //-V730 /// NOLINT
+    ClearableHashTableCell() {} /// NOLINT
     ClearableHashTableCell(const Key & key_, const State & state) : BaseCell(key_, state), version(state.version) {}
+};
+
+using StringRefBaseCell = HashSetCellWithSavedHash<StringRef, DefaultHash<StringRef>, ClearableHashSetState>;
+
+/// specialization for StringRef to allow zero size key (empty string)
+template <>
+struct ClearableHashTableCell<StringRef, StringRefBaseCell> : public StringRefBaseCell
+{
+    using State = ClearableHashSetState;
+    using value_type = typename StringRefBaseCell::value_type;
+
+    UInt32 version;
+
+    bool isZero(const State & state) const { return version != state.version; }
+    static bool isZero(const StringRef & key_, const State & state_) { return StringRefBaseCell::isZero(key_, state_); }
+
+    /// Set the key value to zero.
+    void setZero() { version = 0; }
+
+    /// Do I need to store the zero key separately (that is, can a zero key be inserted into the hash table).
+    static constexpr bool need_zero_value_storage = true;
+
+    ClearableHashTableCell() { } /// NOLINT
+    ClearableHashTableCell(const StringRef & key_, const State & state) : StringRefBaseCell(key_, state), version(state.version) { }
 };
 
 template <

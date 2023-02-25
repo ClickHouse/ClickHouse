@@ -180,7 +180,7 @@ namespace detail
 
     /** Returns array with UInt8 represent if key from in_keys array is in hierarchy of key from keys column.
       * If value in result array is 1 that means key from in_keys array is in hierarchy of key from
-      * keys array with same index, 0 therwise.
+      * keys array with same index, 0 otherwise.
       * For getting hierarchy implementation uses getKeysHierarchy function.
       *
       * Not: keys size must be equal to in_keys_size.

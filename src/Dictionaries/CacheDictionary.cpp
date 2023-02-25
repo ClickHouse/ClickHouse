@@ -685,9 +685,11 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
     {
         /// Won't request source for keys
         throw DB::Exception(ErrorCodes::CACHE_DICTIONARY_UPDATE_FAIL,
-            "Query contains keys that are not present in cache or expired. Could not update cache dictionary {} now, because nearest update is scheduled at {}. Try again later.",
-            getDictionaryID().getNameForLogs(),
-            to_string(backoff_end_time.load()));
+                            "Query contains keys that are not present in cache or expired. "
+                            "Could not update cache dictionary {} now, because nearest update is scheduled at {}. "
+                            "Try again later.",
+                            getDictionaryID().getNameForLogs(),
+                            to_string(backoff_end_time.load()));
     }
 }
 

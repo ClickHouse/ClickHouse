@@ -50,15 +50,16 @@ private:
 public:
     AggregateFunctionGroupUniqArray(const DataTypePtr & argument_type, const Array & parameters_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
         : IAggregateFunctionDataHelper<AggregateFunctionGroupUniqArrayData<T>,
-          AggregateFunctionGroupUniqArray<T, LimitNumElems>>({argument_type}, parameters_),
+          AggregateFunctionGroupUniqArray<T, LimitNumElems>>({argument_type}, parameters_, std::make_shared<DataTypeArray>(argument_type)),
           max_elems(max_elems_) {}
 
-    String getName() const override { return "groupUniqArray"; }
+    AggregateFunctionGroupUniqArray(const DataTypePtr & argument_type, const Array & parameters_, const DataTypePtr & result_type_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
+        : IAggregateFunctionDataHelper<AggregateFunctionGroupUniqArrayData<T>,
+          AggregateFunctionGroupUniqArray<T, LimitNumElems>>({argument_type}, parameters_, result_type_),
+          max_elems(max_elems_) {}
 
-    DataTypePtr getReturnType() const override
-    {
-        return std::make_shared<DataTypeArray>(this->argument_types[0]);
-    }
+
+    String getName() const override { return "groupUniqArray"; }
 
     bool allocatesMemoryInArena() const override { return false; }
 
@@ -153,16 +154,11 @@ class AggregateFunctionGroupUniqArrayGeneric
 
 public:
     AggregateFunctionGroupUniqArrayGeneric(const DataTypePtr & input_data_type_, const Array & parameters_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
-        : IAggregateFunctionDataHelper<AggregateFunctionGroupUniqArrayGenericData, AggregateFunctionGroupUniqArrayGeneric<is_plain_column, LimitNumElems>>({input_data_type_}, parameters_)
+        : IAggregateFunctionDataHelper<AggregateFunctionGroupUniqArrayGenericData, AggregateFunctionGroupUniqArrayGeneric<is_plain_column, LimitNumElems>>({input_data_type_}, parameters_, std::make_shared<DataTypeArray>(input_data_type_))
         , input_data_type(this->argument_types[0])
         , max_elems(max_elems_) {}
 
     String getName() const override { return "groupUniqArray"; }
-
-    DataTypePtr getReturnType() const override
-    {
-        return std::make_shared<DataTypeArray>(input_data_type);
-    }
 
     bool allocatesMemoryInArena() const override
     {

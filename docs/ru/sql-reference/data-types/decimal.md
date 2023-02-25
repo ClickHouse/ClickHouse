@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/data-types/decimal
 sidebar_position: 42
 sidebar_label: Decimal
 ---
@@ -110,5 +111,3 @@ DB::Exception: Can't compare.
 **Смотрите также**
 -   [isDecimalOverflow](../../sql-reference/functions/other-functions.md#is-decimal-overflow)
 -   [countDigits](../../sql-reference/functions/other-functions.md#count-digits)
-
-

@@ -124,7 +124,7 @@ void SerializationInfoTuple::fromJSON(const Poco::JSON::Object & object)
             "Expected: {}, got: {}", elems.size(), subcolumns->size());
 
     for (size_t i = 0; i < elems.size(); ++i)
-        elems[i]->fromJSON(*subcolumns->getObject(i));
+        elems[i]->fromJSON(*subcolumns->getObject(static_cast<unsigned>(i)));
 }
 
 }

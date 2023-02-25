@@ -99,7 +99,7 @@ using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
 
 /// Tree Rewriter in terms of CMU slides @sa https://15721.courses.cs.cmu.edu/spring2020/slides/19-optimizer1.pdf
 ///
-/// Optimises AST tree and collect information for further expression analysis in ExpressionAnalyzer.
+/// Optimizes AST tree and collect information for further expression analysis in ExpressionAnalyzer.
 /// Result AST has the following invariants:
 ///  * all aliases are substituted
 ///  * qualified names are translated
@@ -119,7 +119,8 @@ public:
         const StorageSnapshotPtr & storage_snapshot = {},
         bool allow_aggregations = false,
         bool allow_self_aliases = true,
-        bool execute_scalar_subqueries = true) const;
+        bool execute_scalar_subqueries = true,
+        bool is_create_parameterized_view = false) const;
 
     /// Analyze and rewrite select query
     TreeRewriterResultPtr analyzeSelect(
@@ -128,10 +129,13 @@ public:
         const SelectQueryOptions & select_options = {},
         const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns = {},
         const Names & required_result_columns = {},
-        std::shared_ptr<TableJoin> table_join = {}) const;
+        std::shared_ptr<TableJoin> table_join = {},
+        bool is_parameterized_view = false,
+        const NameToNameMap parameter_values = {},
+        const NameToNameMap parameter_types = {}) const;
 
 private:
-    static void normalize(ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings, bool allow_self_aliases, ContextPtr context_);
+    static void normalize(ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings, bool allow_self_aliases, ContextPtr context_, bool is_create_parameterized_view = false);
 };
 
 }

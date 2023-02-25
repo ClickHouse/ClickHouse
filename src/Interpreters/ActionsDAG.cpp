@@ -9,8 +9,11 @@
 #include <Functions/FunctionsLogical.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ArrayJoinAction.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <Core/SortDescription.h>
+#include <Planner/PlannerActionsVisitor.h>
 
 #include <stack>
 #include <base/sort.h>
@@ -31,6 +34,35 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+
+std::pair<ColumnsWithTypeAndName, bool> getFunctionArguments(const ActionsDAG::NodeRawConstPtrs & children)
+{
+    size_t num_arguments = children.size();
+
+    bool all_const = true;
+    ColumnsWithTypeAndName arguments(num_arguments);
+
+    for (size_t i = 0; i < num_arguments; ++i)
+    {
+        const auto & child = *children[i];
+
+        ColumnWithTypeAndName argument;
+        argument.column = child.column;
+        argument.type = child.result_type;
+        argument.name = child.result_name;
+
+        if (!argument.column || !isColumnConst(*argument.column))
+            all_const = false;
+
+        arguments[i] = std::move(argument);
+    }
+    return { std::move(arguments), all_const };
+}
+
+}
+
 void ActionsDAG::Node::toTree(JSONBuilder::JSONMap & map) const
 {
     map.add("Node Type", magic_enum::enum_name(type));
@@ -46,8 +78,6 @@ void ActionsDAG::Node::toTree(JSONBuilder::JSONMap & map) const
 
     if (function_base)
         map.add("Function", function_base->getName());
-    else if (function_builder)
-        map.add("Function", function_builder->getName());
 
     if (type == ActionType::FUNCTION)
         map.add("Compiled", is_function_compiled);
@@ -140,9 +170,9 @@ const ActionsDAG::Node & ActionsDAG::addAlias(const Node & child, std::string al
 
 const ActionsDAG::Node & ActionsDAG::addArrayJoin(const Node & child, std::string result_name)
 {
-    const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(child.result_type.get());
+    const auto & array_type = getArrayJoinDataType(child.result_type);
     if (!array_type)
-        throw Exception("ARRAY JOIN requires array argument", ErrorCodes::TYPE_MISMATCH);
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "ARRAY JOIN requires array argument");
 
     if (result_name.empty())
         result_name = "arrayJoin(" + child.result_name + ")";
@@ -161,32 +191,62 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
         NodeRawConstPtrs children,
         std::string result_name)
 {
+    auto [arguments, all_const] = getFunctionArguments(children);
+
+    auto function_base = function->build(arguments);
+    return addFunctionImpl(
+        function_base,
+        std::move(children),
+        std::move(arguments),
+        std::move(result_name),
+        all_const);
+}
+
+const ActionsDAG::Node & ActionsDAG::addFunction(
+    const FunctionBasePtr & function_base,
+    NodeRawConstPtrs children,
+    std::string result_name)
+{
+    auto [arguments, all_const] = getFunctionArguments(children);
+
+    return addFunctionImpl(
+        function_base,
+        std::move(children),
+        std::move(arguments),
+        std::move(result_name),
+        all_const);
+}
+
+const ActionsDAG::Node & ActionsDAG::addCast(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name)
+{
+    Field cast_type_constant_value(cast_type->getName());
+
+    ColumnWithTypeAndName column;
+    column.name = calculateConstantActionNodeName(cast_type_constant_value);
+    column.column = DataTypeString().createColumnConst(0, cast_type_constant_value);
+    column.type = std::make_shared<DataTypeString>();
+
+    const auto * cast_type_constant_node = &addColumn(std::move(column));
+    ActionsDAG::NodeRawConstPtrs children = {&node_to_cast, cast_type_constant_node};
+    FunctionOverloadResolverPtr func_builder_cast = CastInternalOverloadResolver<CastType::nonAccurate>::createImpl();
+
+    return addFunction(func_builder_cast, std::move(children), result_name);
+}
+
+const ActionsDAG::Node & ActionsDAG::addFunctionImpl(
+    const FunctionBasePtr & function_base,
+    NodeRawConstPtrs children,
+    ColumnsWithTypeAndName arguments,
+    std::string result_name,
+    bool all_const)
+{
     size_t num_arguments = children.size();
 
     Node node;
     node.type = ActionType::FUNCTION;
-    node.function_builder = function;
     node.children = std::move(children);
 
-    bool all_const = true;
-    ColumnsWithTypeAndName arguments(num_arguments);
-
-    for (size_t i = 0; i < num_arguments; ++i)
-    {
-        const auto & child = *node.children[i];
-
-        ColumnWithTypeAndName argument;
-        argument.column = child.column;
-        argument.type = child.result_type;
-        argument.name = child.result_name;
-
-        if (!argument.column || !isColumnConst(*argument.column))
-            all_const = false;
-
-        arguments[i] = std::move(argument);
-    }
-
-    node.function_base = function->build(arguments);
+    node.function_base = function_base;
     node.result_type = node.function_base->getResultType();
     node.function = node.function_base->prepare(arguments);
     node.is_deterministic = node.function_base->isDeterministic();
@@ -222,7 +282,7 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
 
     if (result_name.empty())
     {
-        result_name = function->getName() + "(";
+        result_name = function_base->getName() + "(";
         for (size_t i = 0; i < num_arguments; ++i)
         {
             if (i)
@@ -462,11 +522,10 @@ static ColumnWithTypeAndName executeActionForHeader(const ActionsDAG::Node * nod
             auto key = arguments.at(0);
             key.column = key.column->convertToFullColumnIfConst();
 
-            const ColumnArray * array = typeid_cast<const ColumnArray *>(key.column.get());
+            const auto * array = getArrayJoinColumnRawPtr(key.column);
             if (!array)
                 throw Exception(ErrorCodes::TYPE_MISMATCH,
-                                "ARRAY JOIN of not array: {}", node->result_name);
-
+                                "ARRAY JOIN of not array nor map: {}", node->result_name);
             res_column.column = array->getDataPtr()->cloneEmpty();
             break;
         }
@@ -562,8 +621,14 @@ Block ActionsDAG::updateHeader(Block header) const
                         arguments[i] = node_to_column[node->children[i]];
                         if (!arguments[i].column)
                             throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
-                                            "Not found column {} in block", node->children[i]->result_name);
+                                            "Not found column {} in block {}", node->children[i]->result_name,
+                                            header.dumpStructure());
                     }
+
+                    if (node->type == ActionsDAG::ActionType::INPUT)
+                        throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
+                                        "Not found column {} in block {}",
+                                        node->result_name, header.dumpStructure());
 
                     node_to_column[node] = executeActionForHeader(node, std::move(arguments));
                 }
@@ -952,6 +1017,9 @@ std::string ActionsDAG::dumpDAG() const
         out << ' ' << map[node];
     out << '\n';
 
+    out << "Project input: " << project_input << '\n';
+    out << "Projected output: " << projected_output << '\n';
+
     return out.str();
 }
 
@@ -990,6 +1058,14 @@ void ActionsDAG::assertDeterministic() const
                 "Expression must be deterministic but it contains non-deterministic part `{}`", node.result_name);
 }
 
+bool ActionsDAG::hasNonDeterministic() const
+{
+    for (const auto & node : nodes)
+        if (!node.is_deterministic)
+            return true;
+    return false;
+}
+
 void ActionsDAG::addMaterializingOutputActions()
 {
     for (auto & output_node : outputs)
@@ -1018,10 +1094,10 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
     size_t num_result_columns = result.size();
 
     if (mode == MatchColumnsMode::Position && num_input_columns != num_result_columns)
-        throw Exception("Number of columns doesn't match", ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH, "Number of columns doesn't match");
 
     if (add_casted_columns && mode != MatchColumnsMode::Name)
-        throw Exception("Converting with add_casted_columns supported only for MatchColumnsMode::Name", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Converting with add_casted_columns supported only for MatchColumnsMode::Name");
 
     auto actions_dag = std::make_shared<ActionsDAG>(source);
     NodeRawConstPtrs projection(num_result_columns);
@@ -1168,6 +1244,17 @@ ActionsDAGPtr ActionsDAG::makeAddingColumnActions(ColumnWithTypeAndName column)
 
 ActionsDAGPtr ActionsDAG::merge(ActionsDAG && first, ActionsDAG && second)
 {
+    first.mergeInplace(std::move(second));
+
+    /// Drop unused inputs and, probably, some actions.
+    first.removeUnusedActions();
+
+    return std::make_shared<ActionsDAG>(std::move(first));
+}
+
+void ActionsDAG::mergeInplace(ActionsDAG && second)
+{
+    auto & first = *this;
     /// first: x (1), x (2), y ==> x (2), z, x (3)
     /// second: x (1), x (2), x (3) ==> x (3), x (2), x (1)
     /// merge: x (1), x (2), x (3), y =(first)=> x (2), z, x (4), x (3) =(second)=> x (3), x (4), x (2), z
@@ -1193,7 +1280,7 @@ ActionsDAGPtr ActionsDAG::merge(ActionsDAG && first, ActionsDAG && second)
             if (it == first_result.end() || it->second.empty())
             {
                 if (first.project_input)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
                                     "Cannot find column {} in ActionsDAG result", input_node->result_name);
 
                 first.inputs.push_back(input_node);
@@ -1255,11 +1342,6 @@ ActionsDAGPtr ActionsDAG::merge(ActionsDAG && first, ActionsDAG && second)
     first.nodes.splice(first.nodes.end(), std::move(second.nodes));
 
     first.projected_output = second.projected_output;
-
-    /// Drop unused inputs and, probably, some actions.
-    first.removeUnusedActions();
-
-    return std::make_shared<ActionsDAG>(std::move(first));
 }
 
 ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split_nodes) const
@@ -1530,12 +1612,39 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const NameSet & 
     return res;
 }
 
+ActionsDAG::NodeRawConstPtrs ActionsDAG::getParents(const Node * target) const
+{
+    NodeRawConstPtrs parents;
+    for (const auto & node : getNodes())
+    {
+        for (const auto & child : node.children)
+        {
+            if (child == target)
+            {
+                parents.push_back(&node);
+                break;
+            }
+        }
+    }
+    return parents;
+}
+
 ActionsDAG::SplitResult ActionsDAG::splitActionsBySortingDescription(const NameSet & sort_columns) const
 {
     std::unordered_set<const Node *> split_nodes;
     for (const auto & sort_column : sort_columns)
         if (const auto * node = tryFindInOutputs(sort_column))
+        {
             split_nodes.insert(node);
+            /// Sorting can materialize const columns, so if we have const expression used in sorting,
+            /// we should also add all it's parents, otherwise, we can break the header
+            /// (function can expect const column, but will get materialized).
+            if (node->column && isColumnConst(*node->column))
+            {
+                auto parents = getParents(node);
+                split_nodes.insert(parents.begin(), parents.end());
+            }
+        }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Sorting column {} wasn't found in the ActionsDAG's outputs. DAG:\n{}",
@@ -1920,8 +2029,7 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
 
                 FunctionOverloadResolverPtr func_builder_cast = CastInternalOverloadResolver<CastType::nonAccurate>::createImpl();
 
-                predicate->function_builder = func_builder_cast;
-                predicate->function_base = predicate->function_builder->build(arguments);
+                predicate->function_base = func_builder_cast->build(arguments);
                 predicate->function = predicate->function_base->prepare(arguments);
             }
         }
@@ -1932,13 +2040,235 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
             predicate->children.swap(new_children);
             auto arguments = prepareFunctionArguments(predicate->children);
 
-            predicate->function_base = predicate->function_builder->build(arguments);
+            FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+
+            predicate->function_base = func_builder_and->build(arguments);
             predicate->function = predicate->function_base->prepare(arguments);
         }
     }
 
     removeUnusedActions(false);
     return actions;
+}
+
+static bool isColumnSortingPreserved(const ActionsDAG::Node * start_node, const String & sorted_column)
+{
+    /// only function node can several children
+    /// but we support monotonicity check only for functions with one argument
+    /// so, currently we consider just first child - it covers majority of cases
+    /// TODO: if one parameter is variable and other are constant then we can try to check monotonicity as well
+
+    /// first find the column
+    const ActionsDAG::Node * node = start_node;
+    bool found = false;
+    while (node)
+    {
+        /// if column found
+        if (node->type == ActionsDAG::ActionType::INPUT && node->result_name == sorted_column)
+        {
+            found = true;
+            break;
+        }
+
+        if (node->children.empty())
+            break; /// column not found
+
+        node = node->children.front();
+    }
+    if (!found)
+        return false;
+
+    /// if column found, check if sorting is preserved
+    const Field field{};
+    node = start_node;
+    while (node)
+    {
+        if (node->type == ActionsDAG::ActionType::FUNCTION)
+        {
+            auto func = node->function_base;
+            if (func)
+            {
+                if (!func->hasInformationAboutMonotonicity())
+                    return false;
+
+                const auto & types = func->getArgumentTypes();
+                if (types.empty())
+                    return false;
+
+                const auto monotonicity = func->getMonotonicityForRange(*types.front(), field, field);
+                if (!monotonicity.is_always_monotonic)
+                    return false;
+            }
+        }
+
+        if (node->children.empty())
+            break;
+
+        node = node->children.front();
+    }
+    return true;
+}
+
+bool ActionsDAG::isSortingPreserved(
+    const Block & input_header, const SortDescription & sort_description, const String & ignore_output_column) const
+{
+    if (sort_description.empty())
+        return true;
+
+    if (hasArrayJoin())
+        return false;
+
+    const Block & output_header = updateHeader(input_header);
+    for (const auto & desc : sort_description)
+    {
+        /// header contains column with the same name
+        if (output_header.findByName(desc.column_name))
+        {
+            /// find the corresponding node in output
+            const auto * output_node = tryFindInOutputs(desc.column_name);
+            if (!output_node)
+            {
+                /// sorted column name in header but NOT in expression output -> no expression is applied to it -> sorting preserved
+                continue;
+            }
+        }
+
+        /// check if any output node is related to the sorted column and sorting order is preserved
+        bool preserved = false;
+        for (const auto * output_node : outputs)
+        {
+            if (output_node->result_name == ignore_output_column)
+                continue;
+
+            if (isColumnSortingPreserved(output_node, desc.column_name))
+            {
+                preserved = true;
+                break;
+            }
+        }
+        if (!preserved)
+            return false;
+    }
+
+    return true;
+}
+
+ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
+    const NodeRawConstPtrs & filter_nodes,
+    const std::unordered_map<std::string, ColumnWithTypeAndName> & node_name_to_input_node_column,
+    const ContextPtr & context)
+{
+    if (filter_nodes.empty())
+        return nullptr;
+
+    struct Frame
+    {
+        const ActionsDAG::Node * node = nullptr;
+        bool visited_children = false;
+    };
+
+    auto result_dag = std::make_shared<ActionsDAG>();
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> node_to_result_node;
+
+    size_t filter_nodes_size = filter_nodes.size();
+
+    std::vector<Frame> nodes_to_process;
+    nodes_to_process.reserve(filter_nodes_size);
+
+    for (const auto & node : filter_nodes)
+        nodes_to_process.push_back({node, false /*visited_children*/});
+
+    while (!nodes_to_process.empty())
+    {
+        auto & node_to_process = nodes_to_process.back();
+        const auto * node = node_to_process.node;
+
+        /// Already visited node
+        if (node_to_result_node.contains(node))
+        {
+            nodes_to_process.pop_back();
+            continue;
+        }
+
+        const ActionsDAG::Node * result_node = nullptr;
+
+        auto input_node_it = node_name_to_input_node_column.find(node->result_name);
+        if (input_node_it != node_name_to_input_node_column.end())
+        {
+            result_node = &result_dag->addInput(input_node_it->second);
+            node_to_result_node.emplace(node, result_node);
+            nodes_to_process.pop_back();
+            continue;
+        }
+
+        if (!node_to_process.visited_children)
+        {
+            node_to_process.visited_children = true;
+
+            for (const auto & child : node->children)
+                nodes_to_process.push_back({child, false /*visited_children*/});
+
+            /// If node has children process them first
+            if (!node->children.empty())
+                continue;
+        }
+
+        auto node_type = node->type;
+
+        switch (node_type)
+        {
+            case ActionsDAG::ActionType::INPUT:
+            {
+                result_node = &result_dag->addInput({node->column, node->result_type, node->result_name});
+                break;
+            }
+            case ActionsDAG::ActionType::COLUMN:
+            {
+                result_node = &result_dag->addColumn({node->column, node->result_type, node->result_name});
+                break;
+            }
+            case ActionsDAG::ActionType::ALIAS:
+            {
+                const auto * child = node->children.front();
+                result_node = &result_dag->addAlias(*(node_to_result_node.find(child)->second), node->result_name);
+                break;
+            }
+            case ActionsDAG::ActionType::ARRAY_JOIN:
+            {
+                const auto * child = node->children.front();
+                result_node = &result_dag->addArrayJoin(*(node_to_result_node.find(child)->second), {});
+                break;
+            }
+            case ActionsDAG::ActionType::FUNCTION:
+            {
+                NodeRawConstPtrs function_children;
+                function_children.reserve(node->children.size());
+
+                for (const auto & child : node->children)
+                    function_children.push_back(node_to_result_node.find(child)->second);
+
+                result_node = &result_dag->addFunction(node->function_base, std::move(function_children), {});
+                break;
+            }
+        }
+
+        node_to_result_node.emplace(node, result_node);
+        nodes_to_process.pop_back();
+    }
+
+    auto & result_dag_outputs = result_dag->getOutputs();
+    result_dag_outputs.reserve(filter_nodes_size);
+
+    for (const auto & node : filter_nodes)
+        result_dag_outputs.push_back(node_to_result_node.find(node)->second);
+
+    if (result_dag_outputs.size() > 1)
+    {
+        auto function_builder = FunctionFactory::instance().get("and", context);
+        result_dag_outputs = { &result_dag->addFunction(function_builder, result_dag_outputs, {}) };
+    }
+
+    return result_dag;
 }
 
 }

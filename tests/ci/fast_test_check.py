@@ -6,28 +6,31 @@ import os
 import csv
 import sys
 import atexit
+from pathlib import Path
+from typing import List, Tuple
 
 from github import Github
 
-from env_helper import CACHES_PATH, TEMP_PATH
-from pr_info import FORCE_TESTS_LABEL, PRInfo
-from s3_helper import S3Helper
-from get_robot_token import get_best_robot_token
-from upload_result_helper import upload_results
-from docker_pull_helper import get_image_with_version
-from commit_status_helper import (
-    post_commit_status,
-    update_mergeable_check,
-)
+from ccache_utils import get_ccache_if_not_exists, upload_ccache
 from clickhouse_helper import (
     ClickHouseHelper,
     mark_flaky_tests,
     prepare_tests_results_for_clickhouse,
 )
-from stopwatch import Stopwatch
+from commit_status_helper import (
+    post_commit_status,
+    update_mergeable_check,
+)
+from docker_pull_helper import get_image_with_version
+from env_helper import CACHES_PATH, TEMP_PATH
+from get_robot_token import get_best_robot_token
+from pr_info import FORCE_TESTS_LABEL, PRInfo
+from report import TestResults, read_test_results
 from rerun_helper import RerunHelper
+from s3_helper import S3Helper
+from stopwatch import Stopwatch
 from tee_popen import TeePopen
-from ccache_utils import get_ccache_if_not_exists, upload_ccache
+from upload_result_helper import upload_results
 
 NAME = "Fast test"
 
@@ -50,8 +53,10 @@ def get_fasttest_cmd(
     )
 
 
-def process_results(result_folder):
-    test_results = []
+def process_results(
+    result_folder: str,
+) -> Tuple[str, str, TestResults, List[str]]:
+    test_results = []  # type: TestResults
     additional_files = []
     # Just upload all files from result_folder.
     # If task provides processed results, then it's responsible for content of
@@ -75,17 +80,23 @@ def process_results(result_folder):
         return "error", "Invalid check_status.tsv", test_results, additional_files
     state, description = status[0][0], status[0][1]
 
-    results_path = os.path.join(result_folder, "test_results.tsv")
-    if os.path.exists(results_path):
-        with open(results_path, "r", encoding="utf-8") as results_file:
-            test_results = list(csv.reader(results_file, delimiter="\t"))
-    if len(test_results) == 0:
-        return "error", "Empty test_results.tsv", test_results, additional_files
+    try:
+        results_path = Path(result_folder) / "test_results.tsv"
+        test_results = read_test_results(results_path)
+        if len(test_results) == 0:
+            return "error", "Empty test_results.tsv", test_results, additional_files
+    except Exception as e:
+        return (
+            "error",
+            f"Cannot parse test_results.tsv ({e})",
+            test_results,
+            additional_files,
+        )
 
     return state, description, test_results, additional_files
 
 
-if __name__ == "__main__":
+def main():
     logging.basicConfig(level=logging.INFO)
 
     stopwatch = Stopwatch()
@@ -125,7 +136,7 @@ if __name__ == "__main__":
 
     logging.info("Will try to fetch cache for our build")
     ccache_for_pr = get_ccache_if_not_exists(
-        cache_path, s3_helper, pr_info.number, temp_path
+        cache_path, s3_helper, pr_info.number, temp_path, pr_info.release_pr
     )
     upload_master_ccache = ccache_for_pr in (-1, 0)
 
@@ -152,7 +163,7 @@ if __name__ == "__main__":
     if not os.path.exists(logs_path):
         os.makedirs(logs_path)
 
-    run_log_path = os.path.join(logs_path, "runlog.log")
+    run_log_path = os.path.join(logs_path, "run.log")
     with TeePopen(run_cmd, run_log_path, timeout=40 * 60) as process:
         retcode = process.wait()
         if retcode == 0:
@@ -172,7 +183,7 @@ if __name__ == "__main__":
         "test_log.txt" in test_output_files or "test_result.txt" in test_output_files
     )
     test_result_exists = "test_results.tsv" in test_output_files
-    test_results = []
+    test_results = []  # type: TestResults
     if "submodule_log.txt" not in test_output_files:
         description = "Cannot clone repository"
         state = "failure"
@@ -207,7 +218,6 @@ if __name__ == "__main__":
         test_results,
         [run_log_path] + additional_logs,
         NAME,
-        True,
     )
     print(f"::notice ::Report url: {report_url}")
     post_commit_status(gh, pr_info.sha, NAME, description, state, report_url)
@@ -229,3 +239,7 @@ if __name__ == "__main__":
             print(f"'{FORCE_TESTS_LABEL}' enabled, will report success")
         else:
             sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

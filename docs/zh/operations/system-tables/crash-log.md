@@ -1,11 +1,14 @@
+---
+slug: /zh/operations/system-tables/crash-log
+---
 # system.crash_log {#system-tables_crash_log}
 
 包含有关致命错误堆栈跟踪的信息.该表默认不存在于数据库中, 仅在发生致命错误时才创建.
 
 列信息:
 
--   `event_date` ([Datetime](../../sql-reference/data-types/datetime.md)) — 事件日期.
--   `event_time` ([Datetime](../../sql-reference/data-types/datetime.md)) — 事件时间.
+-   `event_date` ([DateTime](../../sql-reference/data-types/datetime.md)) — 事件日期.
+-   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — 事件时间.
 -   `timestamp_ns` ([UInt64](../../sql-reference/data-types/int-uint.md)) — 以纳秒为单位的事件时间戳.
 -   `signal` ([Int32](../../sql-reference/data-types/int-uint.md)) — 信号编号.
 -   `thread_id` ([UInt64](../../sql-reference/data-types/int-uint.md)) — 线程ID.

@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/functions/ip-address-functions
 sidebar_position: 55
 sidebar_label: IP Addresses
 ---
@@ -491,4 +492,42 @@ Result:
 ┌─isIPAddressInRange('::ffff:192.168.0.1', '::ffff:192.168.0.4/128')─┐
 │                                                                  0 │
 └────────────────────────────────────────────────────────────────────┘
+```
+
+## reverseDNSQuery
+
+Performs a reverse DNS query to get the PTR records associated with the IP address.
+
+**Syntax**
+
+``` sql
+reverseDNSQuery(address)
+```
+
+This function performs reverse DNS resolutions on both IPv4 and IPv6.
+
+**Arguments**
+
+-   `address` — An IPv4 or IPv6 address. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   Associated domains (PTR records).
+
+Type: Type: [Array(String)](../../sql-reference/data-types/array.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT reverseDNSQuery('192.168.0.2');
+```
+
+Result:
+
+``` text
+┌─reverseDNSQuery('192.168.0.2')────────────┐
+│ ['test2.example.com','test3.example.com'] │
+└───────────────────────────────────────────┘
 ```

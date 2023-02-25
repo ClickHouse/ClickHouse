@@ -1,4 +1,5 @@
 ---
+slug: /ru/interfaces/third-party/client-libraries
 sidebar_position: 26
 sidebar_label: "Клиентские библиотеки от сторонних разработчиков"
 ---
@@ -33,6 +34,7 @@ sidebar_label: "Клиентские библиотеки от сторонни�
     -   [node-clickhouse](https://github.com/apla/node-clickhouse)
     -   [nestjs-clickhouse](https://github.com/depyronick/nestjs-clickhouse)
     -   [clickhouse-client](https://github.com/depyronick/clickhouse-client)
+    -   [node-clickhouse-orm](https://github.com/zimv/node-clickhouse-orm)
 -   Perl
     -   [perl-DBD-ClickHouse](https://github.com/elcamlost/perl-DBD-ClickHouse)
     -   [HTTP-ClickHouse](https://metacpan.org/release/HTTP-ClickHouse)
@@ -62,4 +64,3 @@ sidebar_label: "Клиентские библиотеки от сторонни�
     -   [pillar](https://github.com/sofakingworld/pillar)
 -   Nim
     -   [nim-clickhouse](https://github.com/leonardoce/nim-clickhouse)
-

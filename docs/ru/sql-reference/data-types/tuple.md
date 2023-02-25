@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/data-types/tuple
 sidebar_position: 54
 sidebar_label: Tuple(T1, T2, ...)
 ---

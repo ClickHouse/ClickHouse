@@ -1,9 +1,9 @@
 ---
+slug: /en/sql-reference/functions/tuple-functions
 sidebar_position: 66
 sidebar_label: Tuples
+title: "Functions for Working with Tuples"
 ---
-
-# Functions for Working with Tuples
 
 ## tuple
 

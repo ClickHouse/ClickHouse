@@ -8,8 +8,10 @@
 
 namespace DB
 {
+
 struct DictionaryStructure;
 class TableFunctionDictionary;
+class IDictionary;
 
 class StorageDictionary final : public IStorage, public WithContext
 {
@@ -69,7 +71,9 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned threads) override;
+        size_t threads) override;
+
+    std::shared_ptr<const IDictionary> getDictionary() const;
 
     static NamesAndTypesList getNamesAndTypes(const DictionaryStructure & dictionary_structure);
     static String generateNamesAndTypesDescription(const NamesAndTypesList & list);

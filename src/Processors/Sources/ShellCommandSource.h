@@ -58,7 +58,7 @@ public:
         /// Pool size valid only if executable_pool = true
         size_t pool_size = 16;
 
-        /// Max command execution time in milliseconds. Valid only if executable_pool = true
+        /// Max command execution time in seconds. Valid only if executable_pool = true
         size_t max_command_execution_time_seconds = 10;
 
         /// Should pool of processes be created.

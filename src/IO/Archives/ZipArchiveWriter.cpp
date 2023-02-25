@@ -3,6 +3,7 @@
 #if USE_MINIZIP
 #include <IO/WriteBufferFromFileBase.h>
 #include <Common/quoteString.h>
+#include <base/errnoToString.h>
 #include <zip.h>
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -133,7 +134,8 @@ private:
         if (!offset())
             return;
         RawHandle raw_handle = handle.getRawHandle();
-        checkResult(zipWriteInFileInZip(raw_handle, working_buffer.begin(), offset()));
+        int code = zipWriteInFileInZip(raw_handle, working_buffer.begin(), static_cast<uint32_t>(offset()));
+        checkResult(code);
     }
 
     void checkResult(int code) const { handle.checkResult(code); }
@@ -341,7 +343,7 @@ void ZipArchiveWriter::checkCompressionMethodIsEnabled(int compression_method_)
 #if USE_BZIP2
             return;
 #else
-            throw Exception("bzip2 compression method is disabled", ErrorCodes::SUPPORT_IS_DISABLED);
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "bzip2 compression method is disabled");
 #endif
         }
     }
@@ -352,7 +354,7 @@ void ZipArchiveWriter::checkCompressionMethodIsEnabled(int compression_method_)
 void ZipArchiveWriter::checkEncryptionIsEnabled()
 {
 #if !USE_SSL
-    throw Exception("Encryption in zip archive is disabled", ErrorCodes::SUPPORT_IS_DISABLED);
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Encryption in zip archive is disabled");
 #endif
 }
 
@@ -380,10 +382,10 @@ void ZipArchiveWriter::checkResult(int code) const
     if (code >= ZIP_OK)
         return;
 
-    String message = "Code= ";
+    String message = "Code = ";
     switch (code)
     {
-        case ZIP_ERRNO: message += "ERRNO, errno= " + String{strerror(errno)}; break;
+        case ZIP_ERRNO: message += "ERRNO, errno = " + errnoToString(); break;
         case ZIP_PARAMERROR: message += "PARAMERROR"; break;
         case ZIP_BADZIPFILE: message += "BADZIPFILE"; break;
         case ZIP_INTERNALERROR: message += "INTERNALERROR"; break;

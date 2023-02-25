@@ -3,7 +3,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/StorageNull.h>
-#include <TableFunctions/parseColumnsListForTableFunction.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionNull.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -21,13 +21,12 @@ void TableFunctionNull::parseArguments(const ASTPtr & ast_function, ContextPtr c
 {
     const auto * function = ast_function->as<ASTFunction>();
     if (!function || !function->arguments)
-        throw Exception("Table function '" + getName() + "' requires 'structure'", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' requires 'structure'", getName());
 
     const auto & arguments = function->arguments->children;
     if (!arguments.empty() && arguments.size() != 1)
-        throw Exception(
-            "Table function '" + getName() + "' requires 'structure' argument or empty argument",
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Table function '{}' requires 'structure' argument or empty argument", getName());
 
     if (!arguments.empty())
         structure = checkAndGetLiteralArgument<String>(evaluateConstantExpressionOrIdentifierAsLiteral(arguments[0], context), "structure");
@@ -52,6 +51,6 @@ StoragePtr TableFunctionNull::executeImpl(const ASTPtr & /*ast_function*/, Conte
 
 void registerTableFunctionNull(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionNull>();
+    factory.registerFunction<TableFunctionNull>({.documentation = {}, .allow_readonly = true});
 }
 }

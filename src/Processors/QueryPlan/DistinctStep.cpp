@@ -103,12 +103,17 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
                             return nullptr;
 
                         return std::make_shared<DistinctSortedChunkTransform>(
-                            header, set_size_limits, limit_hint, distinct_sort_desc, columns, false);
+                            header,
+                            set_size_limits,
+                            limit_hint,
+                            distinct_sort_desc,
+                            columns,
+                            input_stream.sort_scope == DataStream::SortScope::Stream);
                     });
                 return;
             }
             /// final distinct for sorted stream (sorting inside and among chunks)
-            if (input_stream.sort_mode == DataStream::SortMode::Stream)
+            if (input_stream.sort_scope == DataStream::SortScope::Global)
             {
                 assert(input_stream.has_single_port);
 

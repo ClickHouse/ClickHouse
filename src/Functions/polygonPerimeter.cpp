@@ -72,16 +72,15 @@ public:
             using Converter = typename TypeConverter::Type;
 
             if constexpr (std::is_same_v<ColumnToPointsConverter<Point>, Converter>)
-                throw Exception(fmt::format("The argument of function {} must not be Point", getName()), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument of function {} must not be Point", getName());
             else
             {
                 auto geometries = Converter::convert(arguments[0].column->convertToFullColumnIfConst());
 
                 for (size_t i = 0; i < input_rows_count; ++i)
-                    res_data.emplace_back(boost::geometry::perimeter(geometries[i]));
+                    res_data.emplace_back(static_cast<Float64>(boost::geometry::perimeter(geometries[i])));
             }
-        }
-        );
+        });
 
         return res_column;
     }

@@ -8,10 +8,11 @@ namespace DB
 enum class KeeperApiVersion : uint8_t
 {
     ZOOKEEPER_COMPATIBLE = 0,
-    WITH_FILTERED_LIST
+    WITH_FILTERED_LIST,
+    WITH_MULTI_READ
 };
 
-inline constexpr auto current_keeper_api_version = KeeperApiVersion::WITH_FILTERED_LIST;
+inline constexpr auto current_keeper_api_version = KeeperApiVersion::WITH_MULTI_READ;
 
 const std::string keeper_system_path = "/keeper";
 const std::string keeper_api_version_path = keeper_system_path + "/api_version";

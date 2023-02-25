@@ -1,7 +1,8 @@
 DROP TABLE IF EXISTS select_final;
 
+SET allow_asynchronous_read_from_io_pool_for_merge_tree = 0;
 SET do_not_merge_across_partitions_select_final = 1;
-SET max_threads = 0;
+SET max_threads = 16;
 
 CREATE TABLE select_final (t DateTime, x Int32, string String) ENGINE = ReplacingMergeTree() PARTITION BY toYYYYMM(t) ORDER BY (x, t);
 
@@ -33,6 +34,7 @@ OPTIMIZE TABLE select_final FINAL;
 
 SET remote_filesystem_read_method = 'read';
 SET local_filesystem_read_method = 'pread';
+set load_marks_asynchronously = 0;
 
 SELECT max(x) FROM select_final FINAL;
 

@@ -34,7 +34,7 @@ private:
 
     std::vector<std::vector<ASTPtr>> index_to_compare_atomic_hypotheses;
     std::vector<std::vector<CNFQuery::OrGroup>> index_to_atomic_hypotheses;
-    std::vector<ASTPtr> atomic_constraints;
+    ASTs atomic_constraints;
 };
 
 }
