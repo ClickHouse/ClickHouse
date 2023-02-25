@@ -47,11 +47,20 @@ inline bool likePatternIsSubstring(std::string_view pattern, String & res)
                 if (pos == end)
                     return false;
                 else
-                    switch (condition)
+                    switch (*pos)
                     {
-                        
+                        case '%':
+                        case '_':
+                        case '\\':
+                            res += *pos;
+                            ++pos;
+                            break;
+                        default:
+                            res += '\\';
+                            res += *pos;
+                            ++pos;
+                            break;
                     }
-                res += *pos;
                 break;
             default:
                 res += *pos;

@@ -76,7 +76,13 @@ inline String likePatternToRegexp(std::string_view pattern)
                         res += *pos;
                         ++pos;
                         break;
+                    case '%':
+                    case '_':
+                        res += *pos;
+                        ++pos;
+                        break;
                     default:
+                        res += "\\\\";
                         res += *pos;
                         ++pos;
                         break;
