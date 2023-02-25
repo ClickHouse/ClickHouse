@@ -1287,6 +1287,10 @@ private:
     {
         WhichDataType which(from_type);
 
+        if (icolumn->size() != vec_to.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Argument column '{}' size {} doesn't match result column size {} of function {}",
+                    icolumn->getName(), icolumn->size(), vec_to.size(), getName());
+
         if      (which.isUInt8()) executeIntType<UInt8, first>(key, icolumn, vec_to);
         else if (which.isUInt16()) executeIntType<UInt16, first>(key, icolumn, vec_to);
         else if (which.isUInt32()) executeIntType<UInt32, first>(key, icolumn, vec_to);
