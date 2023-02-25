@@ -17,8 +17,7 @@ def started_cluster():
 def replace_substring_to_substr(node):
     node.exec_in_container(["bash", "-c", "sed -i 's/substring/substr/g' /var/lib/clickhouse/metadata/default/file.sql"], user="root")
 
-@pytest.mark.parametrize("engine", ['Ordinary', 'Atomic'])
-def test_attach_substr(started_cluster, engine):
+def test_attach_substr(started_cluster):
     # Initialize
     node.query("DROP TABLE IF EXISTS default.file")
     node.query("CREATE TABLE default.file(`s` String, `n` UInt8) ENGINE = MergeTree PARTITION BY substring(s, 1, 2) ORDER BY n ")
@@ -32,8 +31,7 @@ def test_attach_substr(started_cluster, engine):
     # Attach table file
     node.query("ATTACH TABLE file")
 
-@pytest.mark.parametrize("engine", ['Ordinary', 'Atomic'])
-def test_attach_substr_restart(started_cluster, engine):
+def test_attach_substr_restart(started_cluster):
     # Initialize
     node.query("DROP TABLE IF EXISTS default.file")
     node.query("CREATE TABLE default.file(`s` String, `n` UInt8) ENGINE = MergeTree PARTITION BY substring(s, 1, 2) ORDER BY n ")
