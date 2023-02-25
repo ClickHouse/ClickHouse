@@ -647,9 +647,7 @@ QueryTreeNodePtr buildQueryTreeDistributedTableReplacedWithLocalTable(const Sele
     else
     {
         auto resolved_remote_storage_id = query_context->resolveStorageID(remote_storage_id);
-        auto storage = DatabaseCatalog::instance().tryGetTable(resolved_remote_storage_id, query_context);
-        if (!storage)
-            storage = std::make_shared<StorageDummy>(resolved_remote_storage_id, distributed_storage_snapshot->metadata->getColumns());
+        auto storage = std::make_shared<StorageDummy>(resolved_remote_storage_id, distributed_storage_snapshot->metadata->getColumns());
 
         replacement_table_expression = std::make_shared<TableNode>(std::move(storage), query_context);
     }
