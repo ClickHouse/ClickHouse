@@ -6,7 +6,6 @@
 #include <sys/types.h>
 #include <pwd.h>
 #include <unistd.h>
-#include <Poco/Version.h>
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
