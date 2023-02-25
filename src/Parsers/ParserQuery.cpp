@@ -5,6 +5,8 @@
 #include <Parsers/ParserCreateIndexQuery.h>
 #include <Parsers/ParserDropFunctionQuery.h>
 #include <Parsers/ParserDropIndexQuery.h>
+#include <Parsers/ParserDropNamedCollectionQuery.h>
+#include <Parsers/ParserAlterNamedCollectionQuery.h>
 #include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserOptimizeQuery.h>
@@ -16,6 +18,7 @@
 #include <Parsers/ParserUseQuery.h>
 #include <Parsers/ParserExternalDDLQuery.h>
 #include <Parsers/ParserTransactionControl.h>
+#include <Parsers/ParserDeleteQuery.h>
 
 #include <Parsers/Access/ParserCreateQuotaQuery.h>
 #include <Parsers/Access/ParserCreateRoleQuery.h>
@@ -45,6 +48,9 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserCreateSettingsProfileQuery create_settings_profile_p;
     ParserCreateFunctionQuery create_function_p;
     ParserDropFunctionQuery drop_function_p;
+    ParserCreateNamedCollectionQuery create_named_collection_p;
+    ParserDropNamedCollectionQuery drop_named_collection_p;
+    ParserAlterNamedCollectionQuery alter_named_collection_p;
     ParserCreateIndexQuery create_index_p;
     ParserDropIndexQuery drop_index_p;
     ParserDropAccessEntityQuery drop_access_entity_p;
@@ -52,6 +58,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserSetRoleQuery set_role_p;
     ParserExternalDDLQuery external_ddl_p;
     ParserTransactionControl transaction_control_p;
+    ParserDeleteQuery delete_p;
     ParserBackupQuery backup_p;
 
     bool res = query_with_output_p.parse(pos, node, expected)
@@ -67,12 +74,16 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || create_settings_profile_p.parse(pos, node, expected)
         || create_function_p.parse(pos, node, expected)
         || drop_function_p.parse(pos, node, expected)
+        || create_named_collection_p.parse(pos, node, expected)
+        || drop_named_collection_p.parse(pos, node, expected)
+        || alter_named_collection_p.parse(pos, node, expected)
         || create_index_p.parse(pos, node, expected)
         || drop_index_p.parse(pos, node, expected)
         || drop_access_entity_p.parse(pos, node, expected)
         || grant_p.parse(pos, node, expected)
         || external_ddl_p.parse(pos, node, expected)
         || transaction_control_p.parse(pos, node, expected)
+        || delete_p.parse(pos, node, expected)
         || backup_p.parse(pos, node, expected);
 
     return res;

@@ -1,23 +1,50 @@
 #include <Common/StackTrace.h>
 
-#include <Core/Defines.h>
 #include <Common/Dwarf.h>
 #include <Common/Elf.h>
 #include <Common/SymbolIndex.h>
 #include <Common/MemorySanitizer.h>
-#include <base/CachedFn.h>
 #include <base/demangle.h>
 
+#include <atomic>
 #include <cstring>
 #include <filesystem>
+#include <mutex>
 #include <sstream>
 #include <unordered_map>
+#include <map>
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_UNWIND
 #    include <libunwind.h>
 #endif
+
+
+namespace
+{
+    /// Currently this variable is set up once on server startup.
+    /// But we use atomic just in case, so it is possible to be modified at runtime.
+    std::atomic<bool> show_addresses = true;
+
+    bool shouldShowAddress(const void * addr)
+    {
+        /// If the address is less than 4096, most likely it is a nullptr dereference with offset,
+        /// and showing this offset is secure nevertheless.
+        /// NOTE: 4096 is the page size on x86 and it can be different on other systems,
+        /// but for the purpose of this branch, it does not matter.
+        if (reinterpret_cast<uintptr_t>(addr) < 4096)
+            return true;
+
+        return show_addresses.load(std::memory_order_relaxed);
+    }
+}
+
+void StackTrace::setShowAddresses(bool show)
+{
+    show_addresses.store(show, std::memory_order_relaxed);
+}
+
 
 std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused]] const ucontext_t & context)
 {
@@ -30,7 +57,7 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused
             /// Print info about address and reason.
             if (nullptr == info.si_addr)
                 error << "Address: NULL pointer.";
-            else
+            else if (shouldShowAddress(info.si_addr))
                 error << "Address: " << info.si_addr;
 
 #if defined(__x86_64__) && !defined(OS_FREEBSD) && !defined(OS_DARWIN) && !defined(__arm__) && !defined(__powerpc__)
@@ -188,10 +215,14 @@ static void * getCallerAddress(const ucontext_t & context)
     return reinterpret_cast<void *>(context.uc_mcontext.mc_gpregs.gp_elr);
 #elif defined(__aarch64__)
     return reinterpret_cast<void *>(context.uc_mcontext.pc);
-#elif defined(__powerpc64__)
+#elif defined(__powerpc64__) && defined(__linux__)
     return reinterpret_cast<void *>(context.uc_mcontext.gp_regs[PT_NIP]);
+#elif defined(__powerpc64__) && defined(__FreeBSD__)
+    return reinterpret_cast<void *>(context.uc_mcontext.mc_srr0);
 #elif defined(__riscv)
     return reinterpret_cast<void *>(context.uc_mcontext.__gregs[REG_PC]);
+#elif defined(__s390x__)
+    return reinterpret_cast<void *>(context.uc_mcontext.psw.addr);
 #else
     return nullptr;
 #endif
@@ -372,7 +403,9 @@ static void toStringEveryLineImpl(
         else
             out << "?";
 
-        out << " @ " << physical_addr;
+        if (shouldShowAddress(physical_addr))
+            out << " @ " << physical_addr;
+
         out << " in " << (object ? object->name : "?");
 
         for (size_t j = 0; j < inline_frames.size(); ++j)
@@ -393,10 +426,13 @@ static void toStringEveryLineImpl(
     for (size_t i = offset; i < size; ++i)
     {
         const void * addr = frame_pointers[i];
-        out << i << ". " << addr;
+        if (shouldShowAddress(addr))
+        {
+            out << i << ". " << addr;
 
-        callback(out.str());
-        out.str({});
+            callback(out.str());
+            out.str({});
+        }
     }
 #endif
 }
@@ -431,20 +467,36 @@ std::string StackTrace::toString(void ** frame_pointers_, size_t offset, size_t 
     return toStringStatic(frame_pointers_copy, offset, size);
 }
 
-static CachedFn<&toStringImpl> & cacheInstance()
+using StackTraceRepresentation = std::tuple<StackTrace::FramePointers, size_t, size_t>;
+using StackTraceCache = std::map<StackTraceRepresentation, std::string>;
+
+static StackTraceCache & cacheInstance()
 {
-    static CachedFn<&toStringImpl> cache;
+    static StackTraceCache cache;
     return cache;
 }
+
+static std::mutex stacktrace_cache_mutex;
 
 std::string StackTrace::toStringStatic(const StackTrace::FramePointers & frame_pointers, size_t offset, size_t size)
 {
     /// Calculation of stack trace text is extremely slow.
     /// We use simple cache because otherwise the server could be overloaded by trash queries.
-    return cacheInstance()(frame_pointers, offset, size);
+    /// Note that this cache can grow unconditionally, but practically it should be small.
+    std::lock_guard lock{stacktrace_cache_mutex};
+
+    StackTraceRepresentation key{frame_pointers, offset, size};
+    auto & cache = cacheInstance();
+    if (cache.contains(key))
+        return cache[key];
+
+    auto result = toStringImpl(frame_pointers, offset, size);
+    cache[key] = result;
+    return result;
 }
 
 void StackTrace::dropCache()
 {
-    cacheInstance().drop();
+    std::lock_guard lock{stacktrace_cache_mutex};
+    cacheInstance().clear();
 }

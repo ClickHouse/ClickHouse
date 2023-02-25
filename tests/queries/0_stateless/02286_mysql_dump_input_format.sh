@@ -23,7 +23,7 @@ $CLICKHOUSE_CLIENT -q "desc file(dump1.sql, MySQLDump) settings input_format_mys
 $CLICKHOUSE_CLIENT -q "select * from file(dump1.sql, MySQLDump) settings input_format_mysql_dump_table_name='test'"
 $CLICKHOUSE_CLIENT -q "desc file(dump1.sql, MySQLDump) settings input_format_mysql_dump_table_name='test2'"
 $CLICKHOUSE_CLIENT -q "select * from file(dump1.sql, MySQLDump) settings input_format_mysql_dump_table_name='test2'"
-$CLICKHOUSE_CLIENT -q "desc file(dump1.sql, MySQLDump) settings input_format_mysql_dump_table_name='test 3'"  2>&1 | grep -F -q 'CANNOT_EXTRACT_TABLE_STRUCTURE' && echo 'OK' || echo 'FAIL'
+$CLICKHOUSE_CLIENT -q "desc file(dump1.sql, MySQLDump) settings input_format_mysql_dump_table_name='test 3'"  2>&1 | grep -F -q 'Cannot extract table structure' && echo 'OK' || echo 'FAIL'
 $CLICKHOUSE_CLIENT -q "select * from file(dump1.sql, MySQLDump, 'x Nullable(Int32)') settings input_format_mysql_dump_table_name='test 3'" 2>&1 | grep -F -q 'EMPTY_DATA_PASSED' && echo 'OK' || echo 'FAIL'
 
 echo "dump2"
@@ -146,4 +146,3 @@ $CLICKHOUSE_CLIENT -q "desc file(dump15.sql, MySQLDump) settings input_format_my
 $CLICKHOUSE_CLIENT -q "select * from file(dump15.sql, MySQLDump) settings input_format_mysql_dump_table_name='test 3'"
 
 rm $USER_FILES_PATH/dump*.sql
-

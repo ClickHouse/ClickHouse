@@ -9,26 +9,30 @@ import time
 from shutil import rmtree
 from typing import List, Tuple
 
+from ccache_utils import get_ccache_if_not_exists, upload_ccache
+from ci_config import CI_CONFIG, BuildConfig
+from commit_status_helper import get_commit_filtered_statuses, get_commit
+from docker_pull_helper import get_image_with_version
 from env_helper import (
     CACHES_PATH,
     GITHUB_JOB,
     IMAGES_PATH,
     REPO_COPY,
     S3_BUILDS_BUCKET,
+    S3_DOWNLOAD,
     TEMP_PATH,
 )
-from s3_helper import S3Helper
+from get_robot_token import get_best_robot_token
+from github_helper import GitHub
 from pr_info import PRInfo
+from s3_helper import S3Helper
+from tee_popen import TeePopen
 from version_helper import (
     ClickHouseVersion,
     Git,
     get_version_from_repo,
     update_version_local,
 )
-from ccache_utils import get_ccache_if_not_exists, upload_ccache
-from ci_config import CI_CONFIG, BuildConfig
-from docker_pull_helper import get_image_with_version
-from tee_popen import TeePopen
 
 IMAGE_NAME = "clickhouse/binary-builder"
 BUILD_LOG_NAME = "build_log.log"
@@ -36,10 +40,6 @@ BUILD_LOG_NAME = "build_log.log"
 
 def _can_export_binaries(build_config: BuildConfig) -> bool:
     if build_config["package_type"] != "deb":
-        return False
-    if build_config["bundled"] != "bundled":
-        return False
-    if build_config["splitted"] == "splitted":
         return False
     if build_config["sanitizer"] != "":
         return True
@@ -59,8 +59,9 @@ def get_packager_cmd(
 ) -> str:
     package_type = build_config["package_type"]
     comp = build_config["compiler"]
+    cmake_flags = "-DENABLE_CLICKHOUSE_SELF_EXTRACTING=1"
     cmd = (
-        f"cd {packager_path} && ./packager --output-dir={output_path} "
+        f"cd {packager_path} && CMAKE_FLAGS='{cmake_flags}' ./packager --output-dir={output_path} "
         f"--package-type={package_type} --compiler={comp}"
     )
 
@@ -68,8 +69,6 @@ def get_packager_cmd(
         cmd += f" --build-type={build_config['build_type']}"
     if build_config["sanitizer"]:
         cmd += f" --sanitizer={build_config['sanitizer']}"
-    if build_config["splitted"] == "splitted":
-        cmd += " --split-binary"
     if build_config["tidy"] == "enable":
         cmd += " --clang-tidy"
 
@@ -121,12 +120,12 @@ def check_for_success_run(
     s3_prefix: str,
     build_name: str,
     build_config: BuildConfig,
-):
-    logged_prefix = os.path.join(S3_BUILDS_BUCKET, s3_prefix)
+) -> None:
+    # the final empty argument is necessary for distinguish build and build_suffix
+    logged_prefix = os.path.join(S3_BUILDS_BUCKET, s3_prefix, "")
     logging.info("Checking for artifacts in %s", logged_prefix)
     try:
-        # TODO: theoretically, it would miss performance artifact for pr==0,
-        # but luckily we rerun only really failed tasks now, so we're safe
+        # Performance artifacts are now part of regular build, so we're safe
         build_results = s3_helper.list_prefix(s3_prefix)
     except Exception as ex:
         logging.info("Got exception while listing %s: %s\nRerun", logged_prefix, ex)
@@ -142,11 +141,9 @@ def check_for_success_run(
     for url in build_results:
         url_escaped = url.replace("+", "%2B").replace(" ", "%20")
         if BUILD_LOG_NAME in url:
-            log_url = f"https://s3.amazonaws.com/{S3_BUILDS_BUCKET}/{url_escaped}"
+            log_url = f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/{url_escaped}"
         else:
-            build_urls.append(
-                f"https://s3.amazonaws.com/{S3_BUILDS_BUCKET}/{url_escaped}"
-            )
+            build_urls.append(f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/{url_escaped}")
     if not log_url:
         # log is uploaded the last, so if there's no log we need to rerun the build
         return
@@ -176,7 +173,7 @@ def create_json_artifact(
     build_config: BuildConfig,
     elapsed: int,
     success: bool,
-):
+) -> None:
     subprocess.check_call(
         f"echo 'BUILD_URLS=build_urls_{build_name}' >> $GITHUB_ENV", shell=True
     )
@@ -220,7 +217,7 @@ def upload_master_static_binaries(
     build_config: BuildConfig,
     s3_helper: S3Helper,
     build_output_path: str,
-):
+) -> None:
     """Upload binary artifacts to a static S3 links"""
     static_binary_name = build_config.get("static_binary_name", False)
     if pr_info.number != 0:
@@ -234,6 +231,29 @@ def upload_master_static_binaries(
     binary = os.path.join(build_output_path, "clickhouse")
     url = s3_helper.upload_build_file_to_s3(binary, s3_path)
     print(f"::notice ::Binary static URL: {url}")
+
+
+def mark_failed_reports_pending(build_name: str, sha: str) -> None:
+    try:
+        gh = GitHub(get_best_robot_token())
+        commit = get_commit(gh, sha)
+        statuses = get_commit_filtered_statuses(commit)
+        report_status = [
+            name
+            for name, builds in CI_CONFIG["builds_report_config"].items()
+            if build_name in builds
+        ][0]
+        for status in statuses:
+            if status.context == report_status and status.state in ["failure", "error"]:
+                logging.info(
+                    "Commit already have failed status for '%s', setting it to 'pending'",
+                    report_status,
+                )
+                commit.create_status(
+                    "pending", status.url, "Set to pending on rerun", report_status
+                )
+    except:  # we do not care about any exception here
+        logging.info("Failed to get or mark the reports status as pending, continue")
 
 
 def main():
@@ -250,7 +270,7 @@ def main():
 
     logging.info("Repo copy path %s", REPO_COPY)
 
-    s3_helper = S3Helper("https://s3.amazonaws.com")
+    s3_helper = S3Helper()
 
     version = get_version_from_repo(git=Git(True))
     release_or_pr, performance_pr = get_release_or_pr(pr_info, version)
@@ -258,12 +278,15 @@ def main():
     s3_path_prefix = "/".join((release_or_pr, pr_info.sha, build_name))
     # FIXME performance
     s3_performance_path = "/".join(
-        (performance_pr, pr_info.sha, build_name, "performance.tgz")
+        (performance_pr, pr_info.sha, build_name, "performance.tar.zst")
     )
 
     # If this is rerun, then we try to find already created artifacts and just
     # put them as github actions artifact (result)
     check_for_success_run(s3_helper, s3_path_prefix, build_name, build_config)
+
+    # If it's a latter running, we need to mark possible failed status
+    mark_failed_reports_pending(build_name, pr_info.sha)
 
     docker_image = get_image_with_version(IMAGES_PATH, IMAGE_NAME)
     image_version = docker_image.version
@@ -293,7 +316,9 @@ def main():
 
     logging.info("Will try to fetch cache for our build")
     try:
-        get_ccache_if_not_exists(ccache_path, s3_helper, pr_info.number, TEMP_PATH)
+        get_ccache_if_not_exists(
+            ccache_path, s3_helper, pr_info.number, TEMP_PATH, pr_info.release_pr
+        )
     except Exception as e:
         # In case there are issues with ccache, remove the path and do not fail a build
         logging.info("Failed to get ccache, building without it. Error: %s", e)
@@ -334,13 +359,13 @@ def main():
 
     # FIXME performance
     performance_urls = []
-    performance_path = os.path.join(build_output_path, "performance.tgz")
+    performance_path = os.path.join(build_output_path, "performance.tar.zst")
     if os.path.exists(performance_path):
         performance_urls.append(
             s3_helper.upload_build_file_to_s3(performance_path, s3_performance_path)
         )
         logging.info(
-            "Uploaded performance.tgz to %s, now delete to avoid duplication",
+            "Uploaded performance.tar.zst to %s, now delete to avoid duplication",
             performance_urls[0],
         )
         os.remove(performance_path)

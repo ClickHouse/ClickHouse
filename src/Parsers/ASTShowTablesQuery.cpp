@@ -57,7 +57,7 @@ void ASTShowTablesQuery::formatQueryImpl(const FormatSettings & settings, Format
     }
     else if (caches)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "SHOW CACHES" << (settings.hilite ? hilite_none : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "SHOW FILESYSTEM CACHES" << (settings.hilite ? hilite_none : "");
         formatLike(settings);
         formatLimit(settings, state, frame);
     }

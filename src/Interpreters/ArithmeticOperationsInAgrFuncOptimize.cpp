@@ -70,7 +70,7 @@ Field zeroField(const Field & value)
             break;
     }
 
-    throw Exception("Unexpected literal type in function", ErrorCodes::BAD_TYPE_OF_FIELD);
+    throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Unexpected literal type in function");
 }
 
 const String & changeNameIfNeeded(const String & func_name, const String & child_name, const ASTLiteral & literal)

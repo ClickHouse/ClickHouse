@@ -1,3 +1,6 @@
+---
+slug: /zh/engines/table-engines/mergetree-family/mergetree
+---
 # MergeTree {#table_engines-mergetree}
 
 Clickhouse 中最强大的表引擎当属 `MergeTree` （合并树）引擎及该系列（`*MergeTree`）中的其他引擎。
@@ -61,6 +64,8 @@ ORDER BY expr
      如果不需要排序，可以使用 `ORDER BY tuple()`. 参考 [选择主键](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/mergetree/#selecting-the-primary-key)
 
 - `PARTITION BY` — [分区键](custom-partitioning-key.md) ，可选项。
+
+     大多数情况下，不需要分使用区键。即使需要使用，也不需要使用比月更细粒度的分区键。分区不会加快查询（这与 ORDER BY 表达式不同）。永远也别使用过细粒度的分区键。不要使用客户端指定分区标识符或分区字段名称来对数据进行分区（而是将分区字段标识或名称作为 ORDER BY 表达式的第一列来指定分区）。
 
      要按月分区，可以使用表达式 `toYYYYMM(date_column)` ，这里的 `date_column` 是一个 [Date](../../../engines/table-engines/mergetree-family/mergetree.md) 类型的列。分区名的格式会是 `"YYYYMM"` 。
 
@@ -474,7 +479,7 @@ CREATE TABLE example_table
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(d)
 ORDER BY d
-TTL d + INTERVAL 1 MONTH [DELETE],
+TTL d + INTERVAL 1 MONTH DELETE,
     d + INTERVAL 1 WEEK TO VOLUME 'aaa',
     d + INTERVAL 2 WEEK TO DISK 'bbb';
 ```
@@ -814,4 +819,3 @@ S3磁盘也可以设置冷热存储：
 -    `_partition_value` — `partition by` 表达式的值（元组）。
 -    `_sample_factor` - 采样因子（来自请求）。
 
-[原始文章](https://clickhouse.com/docs/en/operations/table_engines/mergetree/) <!--hide-->

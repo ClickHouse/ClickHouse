@@ -44,9 +44,9 @@ getJoin(const ColumnsWithTypeAndName & arguments, ContextPtr context)
         join_name = name_col->getValue<String>();
     }
     else
-        throw Exception(
-            "Illegal type " + arguments[0].type->getName() + " of first argument of function joinGet, expected a const string.",
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Illegal type {} of first argument of function joinGet, expected a const string.",
+                        arguments[0].type->getName());
 
     auto qualified_name = QualifiedTableName::parseFromString(join_name);
     if (qualified_name.database.empty())
@@ -55,7 +55,7 @@ getJoin(const ColumnsWithTypeAndName & arguments, ContextPtr context)
     auto table = DatabaseCatalog::instance().getTable({qualified_name.database, qualified_name.table}, std::const_pointer_cast<Context>(context));
     auto storage_join = std::dynamic_pointer_cast<StorageJoin>(table);
     if (!storage_join)
-        throw Exception("Table " + join_name + " should have engine StorageJoin", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Table {} should have engine StorageJoin", join_name);
 
     String attr_name;
     if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()))
@@ -63,9 +63,9 @@ getJoin(const ColumnsWithTypeAndName & arguments, ContextPtr context)
         attr_name = name_col->getValue<String>();
     }
     else
-        throw Exception(
-            "Illegal type " + arguments[1].type->getName() + " of second argument of function joinGet, expected a const string.",
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Illegal type {} of second argument of function joinGet, expected a const string.",
+                        arguments[1].type->getName());
     return std::make_pair(storage_join, attr_name);
 }
 
@@ -96,7 +96,7 @@ FunctionBasePtr JoinGetOverloadResolver<or_null>::buildImpl(const ColumnsWithTyp
     return std::make_unique<FunctionJoinGet<or_null>>(getContext(), table_lock, storage_join, attr_name, argument_types, return_type);
 }
 
-void registerFunctionJoinGet(FunctionFactory & factory)
+REGISTER_FUNCTION(JoinGet)
 {
     // joinGet
     factory.registerFunction<JoinGetOverloadResolver<false>>();

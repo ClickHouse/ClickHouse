@@ -9,6 +9,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
+
 static GraphiteRollupSortedAlgorithm::ColumnsDefinition defineColumns(
     const Block & header, const Graphite::Params & params)
 {
@@ -25,6 +31,9 @@ static GraphiteRollupSortedAlgorithm::ColumnsDefinition defineColumns(
     for (size_t i = 0; i < num_columns; ++i)
         if (i != def.time_column_num && i != def.value_column_num && i != def.version_column_num)
             def.unmodified_column_numbers.push_back(i);
+
+    if (!WhichDataType(header.getByPosition(def.value_column_num).type).isFloat64())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only `Float64` data type is allowed for the value column of GraphiteMergeTree");
 
     return def;
 }
@@ -120,7 +129,7 @@ IMergingAlgorithm::Status GraphiteRollupSortedAlgorithm::merge()
             return Status(current.impl->order);
         }
 
-        StringRef next_path = current->all_columns[columns_definition.path_column_num]->getDataAt(current->getRow());
+        std::string_view next_path = current->all_columns[columns_definition.path_column_num]->getDataAt(current->getRow()).toView();
         bool new_path = is_first || next_path != current_group_path;
 
         is_first = false;
@@ -190,7 +199,7 @@ IMergingAlgorithm::Status GraphiteRollupSortedAlgorithm::merge()
             current_subgroup_newest_row.set(current, sources[current.impl->order].chunk);
 
             /// Small hack: group and subgroups have the same path, so we can set current_group_path here instead of startNextGroup
-            /// But since we keep in memory current_subgroup_newest_row's block, we could use StringRef for current_group_path and don't
+            /// But since we keep in memory current_subgroup_newest_row's block, we could use string_view for current_group_path and don't
             ///  make deep copy of the path.
             current_group_path = next_path;
         }

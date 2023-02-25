@@ -18,15 +18,14 @@ public:
     DataTypes transformArguments(const DataTypes & arguments) const override
     {
         if (arguments.empty())
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Incorrect number of arguments for aggregate function with " + getName() + " suffix");
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Incorrect number of arguments for aggregate function with {} suffix", getName());
 
         const auto * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].get());
         if (map_type)
         {
             if (arguments.size() > 1)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, getName() + " combinator takes only one map argument");
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "{} combinator takes only one map argument", getName());
 
             return DataTypes({map_type->getValueType()});
         }
@@ -55,7 +54,7 @@ public:
             }
         }
 
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function " + getName() + " requires map as argument");
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function {} requires map as argument", getName());
     }
 
     AggregateFunctionPtr transformAggregateFunction(
@@ -107,7 +106,7 @@ public:
                 default:
                     throw Exception(
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Map key type " + key_type->getName() + " is not is not supported by combinator " + getName());
+                        "Map key type {} is not is not supported by combinator {}", key_type->getName(), getName());
             }
         }
         else
@@ -121,8 +120,8 @@ public:
                 return aggr_func_factory.get(nested_func_name + "MappedArrays", arguments, params, out_properties);
             }
             else
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregation '" + nested_func_name + "Map' is not implemented for mapped arrays");
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregation '{}Map' is not implemented for mapped arrays",
+                                 nested_func_name);
         }
     }
 };

@@ -29,9 +29,8 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isArray(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() +
-                            " of argument of function " + getName() +
-                            ", expected Array", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}, expected Array",
+                            arguments[0]->getName(), getName());
 
         DataTypePtr nested_type = arguments[0];
         while (isArray(nested_type))
@@ -83,8 +82,8 @@ result: Row 1: [1, 2, 3], Row2: [4]
         const ColumnArray * src_col = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
 
         if (!src_col)
-            throw Exception("Illegal column " + arguments[0].column->getName() + " in argument of function 'arrayFlatten'",
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} in argument of function 'arrayFlatten'",
+                arguments[0].column->getName());
 
         const IColumn::Offsets & src_offsets = src_col->getOffsets();
 
@@ -121,7 +120,7 @@ private:
 };
 
 
-void registerFunctionArrayFlatten(FunctionFactory & factory)
+REGISTER_FUNCTION(ArrayFlatten)
 {
     factory.registerFunction<ArrayFlatten>();
     factory.registerAlias("flatten", "arrayFlatten", FunctionFactory::CaseInsensitive);

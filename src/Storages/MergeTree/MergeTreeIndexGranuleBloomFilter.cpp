@@ -5,7 +5,6 @@
 #include <Columns/ColumnFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/HashTable/Hash.h>
-#include <base/bit_cast.h>
 #include <Interpreters/BloomFilterHash.h>
 #include <IO/WriteHelpers.h>
 
@@ -44,7 +43,7 @@ MergeTreeIndexGranuleBloomFilter::MergeTreeIndexGranuleBloomFilter(
         : total_rows(total_rows_), bits_per_row(bits_per_row_), hash_functions(hash_functions_)
 {
     if (granule_index_blocks_.empty() || !total_rows)
-        throw Exception("LOGICAL ERROR: granule_index_blocks empty or total_rows is zero.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "LOGICAL ERROR: granule_index_blocks empty or total_rows is zero.");
 
     assertGranuleBlocksStructure(granule_index_blocks_);
 
@@ -53,7 +52,7 @@ MergeTreeIndexGranuleBloomFilter::MergeTreeIndexGranuleBloomFilter(
         Block granule_index_block = granule_index_blocks_[index];
 
         if (unlikely(!granule_index_block || !granule_index_block.rows()))
-            throw Exception("LOGICAL ERROR: granule_index_block is empty.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "LOGICAL ERROR: granule_index_block is empty.");
 
         if (index == 0)
         {
@@ -92,12 +91,17 @@ void MergeTreeIndexGranuleBloomFilter::deserializeBinary(ReadBuffer & istr, Merg
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", version);
 
     readVarUInt(total_rows, istr);
+
+    static size_t atom_size = 8;
+    size_t bytes_size = (bits_per_row * total_rows + atom_size - 1) / atom_size;
+    size_t read_size = bytes_size;
     for (auto & filter : bloom_filters)
     {
-        static size_t atom_size = 8;
-        size_t bytes_size = (bits_per_row * total_rows + atom_size - 1) / atom_size;
         filter = std::make_shared<BloomFilter>(bytes_size, hash_functions, 0);
-        istr.read(reinterpret_cast<char *>(filter->getFilter().data()), bytes_size);
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+        read_size = filter->getFilter().size() * sizeof(BloomFilter::UnderType);
+#endif
+        istr.readStrict(reinterpret_cast<char *>(filter->getFilter().data()), read_size);
     }
 }
 
@@ -106,11 +110,17 @@ void MergeTreeIndexGranuleBloomFilter::serializeBinary(WriteBuffer & ostr) const
     if (empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty bloom filter index.");
 
-    static size_t atom_size = 8;
     writeVarUInt(total_rows, ostr);
-    size_t bytes_size = (bits_per_row * total_rows + atom_size - 1) / atom_size;
+
+    static size_t atom_size = 8;
+    size_t write_size = (bits_per_row * total_rows + atom_size - 1) / atom_size;
     for (const auto & bloom_filter : bloom_filters)
-        ostr.write(reinterpret_cast<const char *>(bloom_filter->getFilter().data()), bytes_size);
+    {
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+        write_size = bloom_filter->getFilter().size() * sizeof(BloomFilter::UnderType);
+#endif
+        ostr.write(reinterpret_cast<const char *>(bloom_filter->getFilter().data()), write_size);
+    }
 }
 
 void MergeTreeIndexGranuleBloomFilter::fillingBloomFilter(BloomFilterPtr & bf, const Block & granule_index_block, size_t index_hash_column) const

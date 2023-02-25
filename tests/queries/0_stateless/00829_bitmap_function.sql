@@ -20,7 +20,7 @@ INSERT INTO bitmap_test SELECT '2019-01-03', 2, number FROM numbers(1,10);
 
 SELECT groupBitmap( uid ) AS user_num FROM bitmap_test;
 
-SELECT pickup_date, groupBitmap( uid ) AS user_num, bitmapToArray(groupBitmapState( uid )) AS users FROM bitmap_test GROUP BY pickup_date;
+SELECT pickup_date, groupBitmap( uid ) AS user_num, bitmapToArray(groupBitmapState( uid )) AS users FROM bitmap_test GROUP BY pickup_date ORDER BY pickup_date;
 
 SELECT
     bitmapCardinality(day_today) AS today_users,
@@ -31,11 +31,11 @@ SELECT
     bitmapXorCardinality(day_today, day_before) AS diff_users
 FROM
 (
- SELECT city_id, groupBitmapState( uid ) AS day_today FROM bitmap_test WHERE pickup_date = '2019-01-02' GROUP BY city_id
+ SELECT city_id, groupBitmapState( uid ) AS day_today FROM bitmap_test WHERE pickup_date = '2019-01-02' GROUP BY city_id ORDER BY city_id
 ) js1
 ALL LEFT JOIN
 (
- SELECT city_id, groupBitmapState( uid ) AS day_before FROM bitmap_test WHERE pickup_date = '2019-01-01' GROUP BY city_id
+ SELECT city_id, groupBitmapState( uid ) AS day_before FROM bitmap_test WHERE pickup_date = '2019-01-01' GROUP BY city_id ORDER BY city_id
 ) js2
 USING city_id;
 
@@ -48,11 +48,11 @@ SELECT
     bitmapCardinality(bitmapXor(day_today, day_before)) AS diff_users
 FROM
 (
- SELECT city_id, groupBitmapState( uid ) AS day_today FROM bitmap_test WHERE pickup_date = '2019-01-02' GROUP BY city_id
+ SELECT city_id, groupBitmapState( uid ) AS day_today FROM bitmap_test WHERE pickup_date = '2019-01-02' GROUP BY city_id ORDER BY city_id
 ) js1
 ALL LEFT JOIN
 (
- SELECT city_id, groupBitmapState( uid ) AS day_before FROM bitmap_test WHERE pickup_date = '2019-01-01' GROUP BY city_id
+ SELECT city_id, groupBitmapState( uid ) AS day_before FROM bitmap_test WHERE pickup_date = '2019-01-01' GROUP BY city_id ORDER BY city_id
 ) js2
 USING city_id;
 
@@ -67,7 +67,7 @@ SELECT count(*) FROM bitmap_test WHERE bitmapContains((SELECT groupBitmapState(u
 SELECT count(*) FROM bitmap_test WHERE 0 = bitmapContains((SELECT groupBitmapState(uid) FROM bitmap_test WHERE pickup_date = '2019-01-01'), uid);
 
 -- PR#8082
-SELECT bitmapToArray(bitmapAnd(groupBitmapState(uid), bitmapBuild(CAST([1, 2, 3], 'Array(UInt32)')))) FROM bitmap_test GROUP BY city_id;
+SELECT bitmapToArray(bitmapAnd(groupBitmapState(uid), bitmapBuild(CAST([1, 2, 3], 'Array(UInt32)')))) FROM bitmap_test GROUP BY city_id ORDER BY city_id;
 
 -- bitmap state test
 DROP TABLE IF EXISTS bitmap_state_test;
@@ -87,7 +87,7 @@ INSERT INTO bitmap_state_test SELECT
 FROM bitmap_test
 GROUP BY pickup_date, city_id;
 
-SELECT pickup_date, groupBitmapMerge(uv) AS users from bitmap_state_test group by pickup_date;
+SELECT pickup_date, groupBitmapMerge(uv) AS users from bitmap_state_test group by pickup_date order by pickup_date;
 
 -- between column and expression test
 DROP TABLE IF EXISTS bitmap_column_expr_test;

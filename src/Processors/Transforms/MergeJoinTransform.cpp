@@ -30,8 +30,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-using JoinKind = ASTTableJoin::Kind;
-
 namespace
 {
 
@@ -278,10 +276,10 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
     , log(&Poco::Logger::get("MergeJoinAlgorithm"))
 {
     if (input_headers.size() != 2)
-        throw Exception("MergeJoinAlgorithm requires exactly two inputs", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeJoinAlgorithm requires exactly two inputs");
 
     auto strictness = table_join->getTableJoin().strictness();
-    if (strictness != ASTTableJoin::Strictness::Any && strictness != ASTTableJoin::Strictness::All)
+    if (strictness != JoinStrictness::Any && strictness != JoinStrictness::All)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeJoinAlgorithm is not implemented for strictness {}", strictness);
 
     auto kind = table_join->getTableJoin().kind();
@@ -320,14 +318,10 @@ static void prepareChunk(Chunk & chunk)
 void MergeJoinAlgorithm::initialize(Inputs inputs)
 {
     if (inputs.size() != 2)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Two inputs  arerequired, got {}", inputs.size());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Two inputs are required, got {}", inputs.size());
 
-    LOG_DEBUG(log, "Initialize, number of inputs: {}", inputs.size());
     for (size_t i = 0; i < inputs.size(); ++i)
     {
-        assert(inputs[i].chunk.getNumColumns() == cursors[i]->sampleBlock().columns());
-        prepareChunk(inputs[i].chunk);
-        copyColumnsResized(inputs[i].chunk.getColumns(), 0, 0, sample_chunks.emplace_back());
         consume(inputs[i], i);
     }
 }
@@ -335,10 +329,10 @@ void MergeJoinAlgorithm::initialize(Inputs inputs)
 void MergeJoinAlgorithm::consume(Input & input, size_t source_num)
 {
     if (input.skip_last_row)
-        throw Exception("skip_last_row is not supported", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "skip_last_row is not supported");
 
     if (input.permutation)
-        throw DB::Exception("permutation is not supported", ErrorCodes::NOT_IMPLEMENTED);
+        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "permutation is not supported");
 
     if (input.chunk)
     {
@@ -476,7 +470,7 @@ std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAllJoinState
         MutableColumns result_cols;
         for (size_t i = 0; i < 2; ++i)
         {
-            for (const auto & col : sample_chunks[i].getColumns())
+            for (const auto & col : cursors[i]->sampleColumns())
                 result_cols.push_back(col->cloneEmpty());
         }
 
@@ -519,7 +513,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::allJoin(JoinKind kind)
     Columns lcols;
     if (!left_to_right_key_remap.empty())
     {
-        /// If we have remapped columns, then we need to get values from right columns insead of defaults
+        /// If we have remapped columns, then we need to get values from right columns instead of defaults
         const auto & indices = idx_map[0];
 
         const auto & left_src = cursors[0]->getCurrent().getColumns();
@@ -750,8 +744,8 @@ Chunk MergeJoinAlgorithm::createBlockWithDefaults(size_t source_num, size_t star
 {
     ColumnRawPtrs cols;
     {
-        const auto & columns_left = source_num == 0 ? cursors[0]->getCurrent().getColumns() : sample_chunks[0].getColumns();
-        const auto & columns_right = source_num == 1 ? cursors[1]->getCurrent().getColumns() : sample_chunks[1].getColumns();
+        const auto & columns_left = source_num == 0 ? cursors[0]->getCurrent().getColumns() : cursors[0]->sampleColumns();
+        const auto & columns_right = source_num == 1 ? cursors[1]->getCurrent().getColumns() : cursors[1]->sampleColumns();
 
         for (size_t i = 0; i < columns_left.size(); ++i)
         {
@@ -830,10 +824,10 @@ IMergingAlgorithm::Status MergeJoinAlgorithm::merge()
 
     auto strictness = table_join->getTableJoin().strictness();
 
-    if (strictness == ASTTableJoin::Strictness::Any)
+    if (strictness == JoinStrictness::Any)
         return anyJoin(kind);
 
-    if (strictness == ASTTableJoin::Strictness::All)
+    if (strictness == JoinStrictness::All)
         return allJoin(kind);
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported strictness '{}'", strictness);
@@ -859,7 +853,7 @@ MergeJoinTransform::MergeJoinTransform(
 
 void MergeJoinTransform::onFinish()
 {
-    algorithm.logElapsed(total_stopwatch.elapsedSeconds(), true);
+    algorithm.logElapsed(total_stopwatch.elapsedSeconds());
 }
 
 }

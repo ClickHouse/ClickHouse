@@ -58,7 +58,7 @@ PushingPipelineExecutor::PushingPipelineExecutor(QueryPipeline & pipeline_) : pi
 
     pushing_source = std::make_shared<PushingSource>(pipeline.input->getHeader(), input_wait_flag);
     connect(pushing_source->getPort(), *pipeline.input);
-    pipeline.processors.emplace_back(pushing_source);
+    pipeline.processors->emplace_back(pushing_source);
 }
 
 PushingPipelineExecutor::~PushingPipelineExecutor()

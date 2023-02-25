@@ -91,9 +91,12 @@ public:
 
     const String & getDescription() const override { return description; }
 
+    std::vector<std::pair<String, String>> getPasswordComplexityRules() const override { return {}; }
+
     void sendQuery(
         const ConnectionTimeouts & timeouts,
         const String & query,
+        const NameToNameMap & query_parameters,
         const String & query_id/* = "" */,
         UInt64 stage/* = QueryProcessingStage::Complete */,
         const Settings * settings/* = nullptr */,
@@ -107,7 +110,7 @@ public:
 
     void sendExternalTablesData(ExternalTablesData &) override;
 
-    void sendMergeTreeReadTaskResponse(const PartitionReadResponse & response) override;
+    void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
 
     bool poll(size_t timeout_microseconds/* = 0 */) override;
 
@@ -121,7 +124,7 @@ public:
 
     bool isConnected() const override { return true; }
 
-    bool checkConnected() override { return true; }
+    bool checkConnected(const ConnectionTimeouts & /*timeouts*/) override { return true; }
 
     void disconnect() override {}
 
@@ -155,7 +158,6 @@ private:
     String description = "clickhouse-local";
 
     std::optional<LocalQueryState> state;
-    std::optional<ThreadStatus> thread_status;
 
     /// Last "server" packet.
     std::optional<UInt64> next_packet_type;

@@ -1,4 +1,5 @@
 ---
+slug: /en/engines/table-engines/integrations/mysql
 sidebar_position: 4
 sidebar_label: MySQL
 ---
@@ -179,6 +180,4 @@ Default value: `300`.
 ## See Also {#see-also}
 
 -   [The mysql table function](../../../sql-reference/table-functions/mysql.md)
--   [Using MySQL as a source of external dictionary](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-mysql)
-
-[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/mysql/) <!--hide-->
+-   [Using MySQL as a dictionary source](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-mysql)

@@ -1,4 +1,5 @@
 ---
+slug: /zh/faq/general/dbms-naming
 title: "\u201CClickHouse\u201D 有什么含义?"
 toc_hidden: true
 sidebar_position: 10
@@ -10,7 +11,7 @@ sidebar_position: 10
 
 这个由两部分组成的意思有两个结果:
 
-- 唯一正确的写“Click**H** house”的方式是用大写H。
+- 唯一正确的写“Click**H**ouse”的方式是用大写H。
 - 如果需要缩写，请使用“**CH**”。由于一些历史原因，缩写CK在中国也很流行，主要是因为中文中最早的一个关于ClickHouse的演讲使用了这种形式。
 
 !!! info “有趣的事实”

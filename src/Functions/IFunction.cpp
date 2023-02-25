@@ -2,7 +2,6 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Common/LRUCache.h>
 #include <Common/SipHash.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
@@ -18,7 +17,7 @@
 #include <cstdlib>
 #include <memory>
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_EMBEDDED_COMPILER
 #    pragma GCC diagnostic push
@@ -26,6 +25,7 @@
 #    include <llvm/IR/IRBuilder.h>
 #    pragma GCC diagnostic pop
 #endif
+
 
 namespace DB
 {
@@ -67,12 +67,12 @@ ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
 
             if (!low_cardinality_type)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Incompatible type for low cardinality column: {}",
+                    "Incompatible type for LowCardinality column: {}",
                     column.type->getName());
 
             if (can_be_executed_on_default_arguments)
             {
-                /// Normal case, when function can be executed on values's default.
+                /// Normal case, when function can be executed on values' default.
                 column.column = low_cardinality_column->getDictionary().getNestedColumn();
                 indexes = low_cardinality_column->getIndexesPtr();
             }
@@ -124,7 +124,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForConstantArguments(
         if (arg_num < args.size() && !isColumnConst(*args[arg_num].column))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                 "Argument at index {} for function {} must be constant",
-                toString(arg_num),
+                arg_num,
                 getName());
 
     if (args.empty() || !useDefaultImplementationForConstants() || !allArgumentsAreConstants(args))
@@ -281,6 +281,7 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(const ColumnsWithType
 
             auto res = executeWithoutLowCardinalityColumns(columns_without_low_cardinality, dictionary_type, new_input_rows_count, dry_run);
             bool res_is_constant = isColumnConst(*res);
+
             auto keys = res_is_constant
                 ? res->cloneResized(1)->convertToFullColumnIfConst()
                 : res;
@@ -387,8 +388,8 @@ void IFunctionOverloadResolver::checkNumberOfArguments(size_t number_of_argument
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Number of arguments for function {} doesn't match: passed {}, should be {}",
             getName(),
-            toString(number_of_arguments),
-            toString(expected_number_of_arguments));
+            number_of_arguments,
+            expected_number_of_arguments);
 }
 
 DataTypePtr IFunctionOverloadResolver::getReturnType(const ColumnsWithTypeAndName & arguments) const

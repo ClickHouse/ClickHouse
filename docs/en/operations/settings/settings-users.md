@@ -1,4 +1,5 @@
 ---
+slug: /en/operations/settings/settings-users
 sidebar_position: 63
 sidebar_label: User Settings
 ---
@@ -29,12 +30,12 @@ Structure of the `users` section:
         <profile>profile_name</profile>
 
         <quota>default</quota>
-        <default_database>default<default_database>
+        <default_database>default</default_database>
         <databases>
             <database_name>
                 <table_name>
                     <filter>expression</filter>
-                <table_name>
+                </table_name>
             </database_name>
         </databases>
     </user_name>
@@ -160,5 +161,3 @@ The following configuration forces that user `user1` can only see the rows of `t
 ```
 
 The `filter` can be any expression resulting in a [UInt8](../../sql-reference/data-types/int-uint.md)-type value. It usually contains comparisons and logical operators. Rows from `database_name.table1` where filter results to 0 are not returned for this user. The filtering is incompatible with `PREWHERE` operations and disables `WHERE→PREWHERE` optimization.
-
-[Original article](https://clickhouse.com/docs/en/operations/settings/settings_users/) <!--hide-->

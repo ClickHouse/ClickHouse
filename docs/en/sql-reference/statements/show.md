@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/statements/show
 sidebar_position: 37
 sidebar_label: SHOW
 ---
@@ -197,7 +198,7 @@ Result:
 
 ## SHOW DICTIONARIES
 
-Displays a list of [external dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
+Displays a list of [Dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
 
 ``` sql
 SHOW DICTIONARIES [FROM <db>] [LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
@@ -302,7 +303,7 @@ SHOW USERS
 
 ## SHOW ROLES
 
-Returns a list of [roles](../../operations/access-rights.md#role-management). To view another parameters, see system tables [system.roles](../../operations/system-tables/roles.md#system_tables-roles) and [system.role-grants](../../operations/system-tables/role-grants.md#system_tables-role_grants).
+Returns a list of [roles](../../operations/access-rights.md#role-management). To view another parameters, see system tables [system.roles](../../operations/system-tables/roles.md#system_tables-roles) and [system.role_grants](../../operations/system-tables/role-grants.md#system_tables-role_grants).
 
 ### Syntax
 
@@ -361,7 +362,7 @@ SHOW ACCESS
 
 Returns a list of clusters. All available clusters are listed in the [system.clusters](../../operations/system-tables/clusters.md) table.
 
-:::note    
+:::note
 `SHOW CLUSTER name` query displays the contents of system.clusters table for this cluster.
 :::
 
@@ -492,8 +493,32 @@ Result:
 └──────────────────┴────────┴─────────────┘
 ```
 
+## SHOW FILESYSTEM CACHES
+
+```sql
+SHOW FILESYSTEM CACHES
+```
+
+Result:
+
+``` text
+┌─Caches────┐
+│ s3_cache  │
+└───────────┘
+```
+
 **See Also**
 
 -   [system.settings](../../operations/system-tables/settings.md) table
 
-[Original article](https://clickhouse.com/docs/en/sql-reference/statements/show/) <!--hide-->
+## SHOW ENGINES
+
+``` sql
+SHOW ENGINES [INTO OUTFILE filename] [FORMAT format]
+```
+
+Outputs the content of the [system.table_engines](../../operations/system-tables/table_engines.md) table, that contains description of table engines supported by server and their feature support information.
+
+**See Also**
+
+-   [system.table_engines](../../operations/system-tables/table_engines.md) table

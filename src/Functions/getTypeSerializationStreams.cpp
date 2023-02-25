@@ -79,7 +79,7 @@ private:
 
 }
 
-void registerFunctionGetTypeSerializationStreams(FunctionFactory & factory)
+REGISTER_FUNCTION(GetTypeSerializationStreams)
 {
     factory.registerFunction<FunctionGetTypeSerializationStreams>();
 }

@@ -54,7 +54,7 @@ public:
 
         auto serialization = elem.type->getDefaultSerialization();
 
-        serialization->serializeBinaryBulkStatePrefix(settings, state);
+        serialization->serializeBinaryBulkStatePrefix(*full_column, settings, state);
         serialization->serializeBinaryBulkWithMultipleStreams(*full_column,
             0 /** offset */, 0 /** limit */,
             settings, state);
@@ -66,7 +66,7 @@ public:
 
 }
 
-void registerFunctionBlockSerializedSize(FunctionFactory & factory)
+REGISTER_FUNCTION(BlockSerializedSize)
 {
     factory.registerFunction<FunctionBlockSerializedSize>();
 }

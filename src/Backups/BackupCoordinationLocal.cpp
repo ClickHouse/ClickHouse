@@ -13,16 +13,20 @@ using FileInfo = IBackupCoordination::FileInfo;
 BackupCoordinationLocal::BackupCoordinationLocal() = default;
 BackupCoordinationLocal::~BackupCoordinationLocal() = default;
 
-void BackupCoordinationLocal::setStatus(const String &, const String &, const String &)
+void BackupCoordinationLocal::setStage(const String &, const String &, const String &)
 {
 }
 
-Strings BackupCoordinationLocal::setStatusAndWait(const String &, const String &, const String &, const Strings &)
+void BackupCoordinationLocal::setError(const String &, const Exception &)
+{
+}
+
+Strings BackupCoordinationLocal::waitForStage(const Strings &, const String &)
 {
     return {};
 }
 
-Strings BackupCoordinationLocal::setStatusAndWaitFor(const String &, const String &, const String &, const Strings &, UInt64)
+Strings BackupCoordinationLocal::waitForStage(const Strings &, const String &, std::chrono::milliseconds)
 {
     return {};
 }
@@ -184,15 +188,6 @@ std::optional<FileInfo> BackupCoordinationLocal::getFileInfo(const SizeAndChecks
     return it->second;
 }
 
-std::optional<SizeAndChecksum> BackupCoordinationLocal::getFileSizeAndChecksum(const String & file_name) const
-{
-    std::lock_guard lock{mutex};
-    auto it = file_names.find(file_name);
-    if (it == file_names.end())
-        return std::nullopt;
-    return it->second;
-}
-
 String BackupCoordinationLocal::getNextArchiveSuffix()
 {
     std::lock_guard lock{mutex};
@@ -205,6 +200,11 @@ Strings BackupCoordinationLocal::getAllArchiveSuffixes() const
 {
     std::lock_guard lock{mutex};
     return archive_suffixes;
+}
+
+bool BackupCoordinationLocal::hasConcurrentBackups(const std::atomic<size_t> & num_active_backups) const
+{
+    return (num_active_backups > 1);
 }
 
 }

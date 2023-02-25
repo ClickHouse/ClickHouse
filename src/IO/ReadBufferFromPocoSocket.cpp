@@ -29,6 +29,7 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int SOCKET_TIMEOUT;
     extern const int CANNOT_READ_FROM_SOCKET;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -54,25 +55,28 @@ bool ReadBufferFromPocoSocket::nextImpl()
         while (async_callback && !socket.poll(0, Poco::Net::Socket::SELECT_READ))
             async_callback(socket.impl()->sockfd(), socket.getReceiveTimeout(), socket_description);
 
-        bytes_read = socket.impl()->receiveBytes(internal_buffer.begin(), internal_buffer.size());
+        if (internal_buffer.size() > INT_MAX)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Buffer overflow");
+
+        bytes_read = socket.impl()->receiveBytes(internal_buffer.begin(), static_cast<int>(internal_buffer.size()));
     }
     catch (const Poco::Net::NetException & e)
     {
-        throw NetException(e.displayText() + ", while reading from socket (" + peer_address.toString() + ")", ErrorCodes::NETWORK_ERROR);
+        throw NetException(ErrorCodes::NETWORK_ERROR, "{}, while reading from socket ({})", e.displayText(), peer_address.toString());
     }
     catch (const Poco::TimeoutException &)
     {
-        throw NetException(fmt::format("Timeout exceeded while reading from socket ({}, {} ms)",
+        throw NetException(ErrorCodes::SOCKET_TIMEOUT, "Timeout exceeded while reading from socket ({}, {} ms)",
             peer_address.toString(),
-            socket.impl()->getReceiveTimeout().totalMilliseconds()), ErrorCodes::SOCKET_TIMEOUT);
+            socket.impl()->getReceiveTimeout().totalMilliseconds());
     }
     catch (const Poco::IOException & e)
     {
-        throw NetException(e.displayText() + ", while reading from socket (" + peer_address.toString() + ")", ErrorCodes::NETWORK_ERROR);
+        throw NetException(ErrorCodes::NETWORK_ERROR, "{}, while reading from socket ({})", e.displayText(), peer_address.toString());
     }
 
     if (bytes_read < 0)
-        throw NetException("Cannot read from socket (" + peer_address.toString() + ")", ErrorCodes::CANNOT_READ_FROM_SOCKET);
+        throw NetException(ErrorCodes::CANNOT_READ_FROM_SOCKET, "Cannot read from socket ({})", peer_address.toString());
 
     if (bytes_read)
         working_buffer.resize(bytes_read);

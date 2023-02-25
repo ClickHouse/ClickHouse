@@ -1,18 +1,16 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_HDFS
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
-#include <IO/AsynchronousReader.h>
 #include <string>
 #include <memory>
 #include <hdfs/hdfs.h>
 #include <base/types.h>
 #include <Interpreters/Context.h>
-#include <IO/SeekableReadBuffer.h>
-#include <IO/WithFileName.h>
+#include <IO/ReadBufferFromFileBase.h>
 
 
 namespace DB
@@ -20,15 +18,18 @@ namespace DB
 /** Accepts HDFS path to file and opens it.
  * Closes file by himself (thus "owns" a file descriptor).
  */
-class ReadBufferFromHDFS : public SeekableReadBuffer, public WithFileName, public WithFileSize
+class ReadBufferFromHDFS : public ReadBufferFromFileBase
 {
 struct ReadBufferFromHDFSImpl;
 
 public:
-    ReadBufferFromHDFS(const String & hdfs_uri_, const String & hdfs_file_path_,
-                       const Poco::Util::AbstractConfiguration & config_,
-                       size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE,
-                       size_t read_until_position_ = 0);
+    ReadBufferFromHDFS(
+        const String & hdfs_uri_,
+        const String & hdfs_file_path_,
+        const Poco::Util::AbstractConfiguration & config_,
+        const ReadSettings & read_settings_,
+        size_t read_until_position_ = 0,
+        bool use_external_buffer = false);
 
     ~ReadBufferFromHDFS() override;
 
@@ -48,6 +49,7 @@ public:
 
 private:
     std::unique_ptr<ReadBufferFromHDFSImpl> impl;
+    bool use_external_buffer;
 };
 }
 

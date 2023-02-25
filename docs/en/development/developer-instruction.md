@@ -1,4 +1,5 @@
 ---
+slug: /en/development/developer-instruction
 sidebar_position: 61
 sidebar_label: Getting Started
 description: Prerequisites and an overview of how to build ClickHouse
@@ -6,7 +7,7 @@ description: Prerequisites and an overview of how to build ClickHouse
 
 # Getting Started Guide for Building ClickHouse
 
-The building of ClickHouse is supported on Linux, FreeBSD and Mac OS X.
+The building of ClickHouse is supported on Linux, FreeBSD and macOS.
 
 If you use Windows, you need to create a virtual machine with Ubuntu. To start working with a virtual machine please install VirtualBox. You can download Ubuntu from the website: https://www.ubuntu.com/#download. Please create a virtual machine from the downloaded image (you should reserve at least 4GB of RAM for it). To run a command-line terminal in Ubuntu, please locate a program containing the word “terminal” in its name (gnome-terminal, konsole etc.) or just press Ctrl+Alt+T.
 
@@ -38,7 +39,7 @@ Next, you need to download the source files onto your working machine. This is c
 
 In the command line terminal run:
 
-    git clone --recursive git@github.com:your_github_username/ClickHouse.git
+    git clone --recursive --shallow-submodules git@github.com:your_github_username/ClickHouse.git
     cd ClickHouse
 
 Note: please, substitute *your_github_username* with what is appropriate!
@@ -66,7 +67,7 @@ It generally means that the SSH keys for connecting to GitHub are missing. These
 
 You can also clone the repository via https protocol:
 
-    git clone --recursive https://github.com/ClickHouse/ClickHouse.git
+    git clone --recursive--shallow-submodules https://github.com/ClickHouse/ClickHouse.git
 
 This, however, will not let you send your changes to the server. You can still use it temporarily and add the SSH keys later replacing the remote address of the repository with `git remote` command.
 
@@ -119,16 +120,9 @@ On CentOS, RedHat run `sudo yum install cmake ninja-build`.
 
 If you use Arch or Gentoo, you probably know it yourself how to install CMake.
 
-For installing CMake and Ninja on Mac OS X first install Homebrew and then install everything else via brew:
-
-    /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
-    brew install cmake ninja
-
-Next, check the version of CMake: `cmake --version`. If it is below 3.12, you should install a newer version from the website: https://cmake.org/download/.
-
 ## C++ Compiler {#c-compiler}
 
-Compilers Clang starting from version 11 is supported for building ClickHouse.
+Compilers Clang starting from version 15 is supported for building ClickHouse.
 
 Clang should be used instead of gcc. Though, our continuous integration (CI) platform runs checks for about a dozen of build combinations.
 
@@ -137,9 +131,6 @@ On Ubuntu/Debian you can use the automatic installation script (check [official 
 ```bash
 sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
 ```
-
-Mac OS X build is also supported. Just run `brew install llvm`
-
 
 ## The Building Process {#the-building-process}
 
@@ -155,7 +146,7 @@ While inside the `build` directory, configure your build by running CMake. Befor
     export CC=clang CXX=clang++
     cmake ..
 
-If you installed clang using the automatic installation script above, also specify the version of clang installed in the first command, e.g. `export CC=clang-14 CXX=clang++-14`. The clang version will be in the script output.
+If you installed clang using the automatic installation script above, also specify the version of clang installed in the first command, e.g. `export CC=clang-15 CXX=clang++-15`. The clang version will be in the script output.
 
 The `CC` variable specifies the compiler for C (short for C Compiler), and `CXX` variable instructs which C++ compiler is to be used for building.
 
@@ -187,7 +178,7 @@ If you get the message: `ninja: error: loading 'build.ninja': No such file or di
 
 Upon the successful start of the building process, you’ll see the build progress - the number of processed tasks and the total number of tasks.
 
-While building messages about protobuf files in libhdfs2 library like `libprotobuf WARNING` may show up. They affect nothing and are safe to be ignored.
+While building messages about LLVM library may show up. They affect nothing and are safe to be ignored.
 
 Upon successful build you get an executable file `ClickHouse/<build_dir>/programs/clickhouse`:
 
@@ -203,7 +194,7 @@ In this case, ClickHouse will use config files located in the current directory.
 
 To connect to ClickHouse with clickhouse-client in another terminal navigate to `ClickHouse/build/programs/` and run `./clickhouse client`.
 
-If you get `Connection refused` message on Mac OS X or FreeBSD, try specifying host address 127.0.0.1:
+If you get `Connection refused` message on macOS or FreeBSD, try specifying host address 127.0.0.1:
 
     clickhouse client --host 127.0.0.1
 
@@ -222,7 +213,7 @@ You can also run your custom-built ClickHouse binary with the config file from t
 
 ## IDE (Integrated Development Environment) {#ide-integrated-development-environment}
 
-If you do not know which IDE to use, we recommend that you use CLion. CLion is commercial software, but it offers 30 days free trial period. It is also free of charge for students. CLion can be used both on Linux and on Mac OS X.
+If you do not know which IDE to use, we recommend that you use CLion. CLion is commercial software, but it offers 30 days free trial period. It is also free of charge for students. CLion can be used both on Linux and on macOS.
 
 KDevelop and QTCreator are other great alternatives of an IDE for developing ClickHouse. KDevelop comes in as a very handy IDE although unstable. If KDevelop crashes after a while upon opening project, you should click “Stop All” button as soon as it has opened the list of project’s files. After doing so KDevelop should be fine to work with.
 
@@ -277,18 +268,13 @@ The system will prepare ClickHouse binary builds for your pull request individua
 
 Most probably some of the builds will fail at first times. This is due to the fact that we check builds both with gcc as well as with clang, with almost all of existing warnings (always with the `-Werror` flag) enabled for clang. On that same page, you can find all of the build logs so that you do not have to build ClickHouse in all of the possible ways.
 
-## Faster builds for development: Split build configuration {#split-build}
+## Browse ClickHouse Source Code {#browse-clickhouse-source-code}
 
-ClickHouse is normally statically linked into a single static `clickhouse` binary with minimal dependencies. This is convenient for distribution, but it means that for every change the entire binary needs to be re-linked, which is slow and inconvenient for development. As an alternative, you can instead build dynamically linked shared libraries and separate binaries `clickhouse-server`, `clickhouse-client` etc., allowing for faster incremental builds. To use it, add the following flags to your `cmake` invocation:
-```
--DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 -DCLICKHOUSE_SPLIT_BINARY=1
-```
+You can use the **Woboq** online code browser available [here](https://clickhouse.com/codebrowser/ClickHouse/src/index.html). It provides code navigation, semantic highlighting, search and indexing. The code snapshot is updated daily.
 
-Note that the split build has several drawbacks:
-* There is no single `clickhouse` binary, and you have to run `clickhouse-server`, `clickhouse-client`, etc.
-* Risk of segfault if you run any of the programs while rebuilding the project.
-* You cannot run the integration tests since they only work a single complete binary.
-* You can't easily copy the binaries elsewhere. Instead of moving a single binary you'll need to copy all binaries and libraries.
+You can use GitHub integrated code browser [here](https://github.dev/ClickHouse/ClickHouse).
+
+Also, you can browse sources on [GitHub](https://github.com/ClickHouse/ClickHouse) as usual.
 
 If you are not interested in functionality provided by third-party libraries, you can further speed up the build using `cmake` options
 ```

@@ -1,5 +1,6 @@
 #include <iostream>
 #include <string>
+#include <bit>
 
 #include <fmt/format.h>
 
@@ -424,7 +425,7 @@ Float NO_INLINE microsort(const PODArray<UInt8> & keys, const PODArray<Float> & 
     for (size_t i = 1; i < HISTOGRAM_SIZE; ++i)
         positions[i] = positions[i - 1] + count[i - 1];
 
-    for (size_t i = 0; i < size; ++i)
+    for (UInt32 i = 0; i < size; ++i)
         *positions[keys[i]]++ = i;
 
     /// Update states.
@@ -561,7 +562,7 @@ int main(int argc, char ** argv)
     /// Fill source data
     for (size_t i = 0; i < size; ++i)
     {
-        keys[i] = __builtin_ctz(i + 1); /// Make keys to have just slightly more realistic distribution.
+        keys[i] = std::countr_zero(i + 1); /// Make keys to have just slightly more realistic distribution.
         values[i] = 1234.5; /// The distribution of values does not affect execution speed.
     }
 

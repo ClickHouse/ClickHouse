@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/dictionaries/external-dictionaries/external-dicts
 sidebar_position: 39
 sidebar_label: "Внешние словари"
 ---
@@ -60,4 +61,3 @@ ClickHouse:
 -   [Источники внешних словарей](external-dicts-dict-sources.md)
 -   [Ключ и поля словаря](external-dicts-dict-structure.md)
 -   [Функции для работы с внешними словарями](../../../sql-reference/functions/ext-dict-functions.md)
-

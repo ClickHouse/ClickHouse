@@ -66,7 +66,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
     std::optional<UInt64> totalRows(const Settings &) const override;
     std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo &, ContextPtr) const override;
@@ -83,9 +83,12 @@ public:
         bool final,
         bool deduplicate,
         const Names & deduplicate_by_columns,
+        bool cleanup,
         ContextPtr context) override;
 
     void mutate(const MutationCommands & commands, ContextPtr context) override;
+
+    bool hasLightweightDeletedMask() const override;
 
     /// Return introspection information about currently processing or recently processed mutations.
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const override;
@@ -145,11 +148,6 @@ private:
 
     std::map<UInt64, MergeTreeMutationEntry> current_mutations_by_version;
 
-    /// We store information about mutations which are not applicable to the partition of each part.
-    /// The value is a maximum version for a part which will be the same as his current version,
-    /// that is, to which version it can be upgraded without any change.
-    std::map<std::pair<Int64, Int64>, UInt64> updated_version_by_block_range;
-
     std::atomic<bool> shutdown_called {false};
     std::atomic<bool> flush_called {false};
 
@@ -168,14 +166,17 @@ private:
             const String & partition_id,
             bool final, bool deduplicate,
             const Names & deduplicate_by_columns,
+            bool cleanup,
             const MergeTreeTransactionPtr & txn,
             String * out_disable_reason = nullptr,
             bool optimize_skip_merged_partitions = false);
 
+    void renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction);
+
     /// Make part state outdated and queue it to remove without timeout
     /// If force, then stop merges and block them until part state became outdated. Throw exception if part doesn't exists
     /// If not force, then take merges selector and check that part is not participating in background operations.
-    MergeTreeDataPartPtr outdatePart(MergeTreeTransaction * txn, const String & part_name, bool force);
+    MergeTreeDataPartPtr outdatePart(MergeTreeTransaction * txn, const String & part_name, bool force, bool clear_without_timeout = true);
     ActionLock stopMergesAndWait();
 
     /// Allocate block number for new mutation, write mutation to disk
@@ -184,23 +185,13 @@ private:
     /// Wait until mutation with version will finish mutation for all parts
     void waitForMutation(Int64 version);
     void waitForMutation(const String & mutation_id) override;
+    void waitForMutation(Int64 version, const String & mutation_id);
     void setMutationCSN(const String & mutation_id, CSN csn) override;
 
 
     friend struct CurrentlyMergingPartsTagger;
 
-    struct PartVersionWithName
-    {
-        Int64 version;
-        String name;
-
-        bool operator <(const PartVersionWithName & s) const
-        {
-            return version < s.version;
-        }
-    };
-
-    std::shared_ptr<MergeMutateSelectedEntry> selectPartsToMerge(
+    MergeMutateSelectedEntryPtr selectPartsToMerge(
         const StorageMetadataPtr & metadata_snapshot,
         bool aggressive,
         const String & partition_id,
@@ -213,7 +204,9 @@ private:
         SelectPartsDecision * select_decision_out = nullptr);
 
 
-    std::shared_ptr<MergeMutateSelectedEntry> selectPartsToMutate(const StorageMetadataPtr & metadata_snapshot, String * disable_reason, TableLockHolder & table_lock_holder, std::unique_lock<std::mutex> & currently_processing_in_background_mutex_lock, bool & were_some_mutations_for_some_parts_skipped);
+    MergeMutateSelectedEntryPtr selectPartsToMutate(
+        const StorageMetadataPtr & metadata_snapshot, String * disable_reason,
+        TableLockHolder & table_lock_holder, std::unique_lock<std::mutex> & currently_processing_in_background_mutex_lock);
 
     /// For current mutations queue, returns maximum version of mutation for a part,
     /// with respect of mutations which would not change it.
@@ -222,20 +215,21 @@ private:
         const DataPartPtr & part,
         std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
 
-    /// Returns maximum version of a part, with respect of mutations which would not change it.
-    Int64 getUpdatedDataVersion(
-        const DataPartPtr & part,
-        std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
+    /// Returns the maximum level of all outdated parts in a range (left; right), or 0 in case if empty range.
+    /// Merges have to be aware of the outdated part's levels inside designated merge range.
+    /// When two parts all_1_1_0, all_3_3_0 are merged into all_1_3_1, the gap between those parts have to be verified.
+    /// There should not be an unactive part all_1_1_1. Otherwise it is impossible to load parts after restart, they intersects.
+    /// Therefore this function is used in merge predicate in order to prevent merges over the gaps with high level outdated parts.
+    UInt32 getMaxLevelInBetween(
+        const DataPartPtr & left,
+        const DataPartPtr & right) const;
 
     size_t clearOldMutations(bool truncate = false);
-
-    std::vector<PartVersionWithName> getSortedPartVersionsWithNames(std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
 
     // Partition helpers
     void dropPartNoWaitNoThrow(const String & part_name) override;
     void dropPart(const String & part_name, bool detach, ContextPtr context) override;
     void dropPartition(const ASTPtr & partition, bool detach, ContextPtr context) override;
-    void dropPartsImpl(DataPartsVector && parts_to_remove, bool detach);
     PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, ContextPtr context) override;
 
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr context) override;

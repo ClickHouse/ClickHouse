@@ -4,8 +4,14 @@
 #include <Interpreters/SystemLog.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
+#include <Core/UUID.h>
 #include <Storages/MergeTree/MergeType.h>
+#include <Storages/MergeTree/MergeAlgorithm.h>
 
+namespace ProfileEvents
+{
+    class Counters;
+}
 
 namespace DB
 {
@@ -20,6 +26,14 @@ struct PartLogElement
         REMOVE_PART = 4,
         MUTATE_PART = 5,
         MOVE_PART = 6,
+    };
+
+    /// Copy of MergeAlgorithm since values are written to disk.
+    enum PartMergeAlgorithm
+    {
+        UNDECIDED = 0,
+        VERTICAL = 1,
+        HORIZONTAL = 2,
     };
 
     enum MergeReasonType
@@ -38,6 +52,7 @@ struct PartLogElement
 
     Type event_type = NEW_PART;
     MergeReasonType merge_reason = NOT_A_MERGE;
+    PartMergeAlgorithm merge_algorithm = UNDECIDED;
 
     time_t event_time = 0;
     Decimal64 event_time_microseconds = 0;
@@ -45,6 +60,7 @@ struct PartLogElement
 
     String database_name;
     String table_name;
+    UUID table_uuid{UUIDHelpers::Nil};
     String part_name;
     String partition_id;
     String disk_name;
@@ -69,11 +85,15 @@ struct PartLogElement
     UInt16 error = 0;
     String exception;
 
+    std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
+
     static std::string name() { return "PartLog"; }
 
     static MergeReasonType getMergeReasonType(MergeType merge_type);
+    static PartMergeAlgorithm getMergeAlgorithm(MergeAlgorithm merge_algorithm_);
+
     static NamesAndTypesList getNamesAndTypes();
-    static NamesAndAliases getNamesAndAliases() { return {}; }
+    static NamesAndAliases getNamesAndAliases();
     void appendToBlock(MutableColumns & columns) const;
     static const char * getCustomColumnList() { return nullptr; }
 };
@@ -89,11 +109,37 @@ class PartLog : public SystemLog<PartLogElement>
     using MutableDataPartPtr = std::shared_ptr<IMergeTreeDataPart>;
     using MutableDataPartsVector = std::vector<MutableDataPartPtr>;
 
+    using ProfileCountersSnapshotPtr = std::shared_ptr<ProfileEvents::Counters::Snapshot>;
+
 public:
+    struct PartLogEntry
+    {
+        std::shared_ptr<IMergeTreeDataPart> part;
+        ProfileCountersSnapshotPtr profile_counters;
+        UInt64 elapsed_ns;
+
+        PartLogEntry(std::shared_ptr<IMergeTreeDataPart> part_, UInt64 elapsed_ns_)
+            : part(std::move(part_)), elapsed_ns(elapsed_ns_)
+        {
+        }
+
+        PartLogEntry(std::shared_ptr<IMergeTreeDataPart> part_, UInt64 elapsed_ns_, ProfileCountersSnapshotPtr profile_counters_)
+            : part(std::move(part_))
+            , profile_counters(std::move(profile_counters_))
+            , elapsed_ns(elapsed_ns_)
+        {
+        }
+    };
+
+    using PartLogEntries = std::vector<PartLogEntry>;
+
+    static PartLogEntries createPartLogEntries(const MutableDataPartsVector & parts, UInt64 elapsed_ns, ProfileCountersSnapshotPtr profile_counters = {});
+
     /// Add a record about creation of new part.
-    static bool addNewPart(ContextPtr context, const MutableDataPartPtr & part, UInt64 elapsed_ns,
+    static bool addNewPart(ContextPtr context, const PartLogEntry & part,
                            const ExecutionStatus & execution_status = {});
-    static bool addNewParts(ContextPtr context, const MutableDataPartsVector & parts, UInt64 elapsed_ns,
+
+    static bool addNewParts(ContextPtr context, const PartLogEntries & parts,
                             const ExecutionStatus & execution_status = {});
 };
 

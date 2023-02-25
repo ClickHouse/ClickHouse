@@ -28,8 +28,8 @@
 #define NO_INLINE __attribute__((__noinline__))
 #define MAY_ALIAS __attribute__((__may_alias__))
 
-#if !defined(__x86_64__) && !defined(__aarch64__) && !defined(__PPC__) && !(defined(__riscv) && (__riscv_xlen == 64))
-#    error "The only supported platforms are x86_64 and AArch64, PowerPC (work in progress) and RISC-V 64 (experimental)"
+#if !defined(__x86_64__) && !defined(__aarch64__) && !defined(__PPC__) && !defined(__s390x__) && !(defined(__riscv) && (__riscv_xlen == 64))
+#    error "The only supported platforms are x86_64 and AArch64, PowerPC (work in progress), s390x (work in progress) and RISC-V 64 (experimental)"
 #endif
 
 /// Check for presence of address sanitizer
@@ -93,13 +93,19 @@
 #    define NO_SANITIZE_ADDRESS __attribute__((__no_sanitize__("address")))
 #    define NO_SANITIZE_THREAD __attribute__((__no_sanitize__("thread")))
 #    define ALWAYS_INLINE_NO_SANITIZE_UNDEFINED __attribute__((__always_inline__, __no_sanitize__("undefined")))
-#    define DISABLE_SANITIZER_INSTRUMENTATION __attribute__((disable_sanitizer_instrumentation))
 #else  /// It does not work in GCC. GCC 7 cannot recognize this attribute and GCC 8 simply ignores it.
 #    define NO_SANITIZE_UNDEFINED
 #    define NO_SANITIZE_ADDRESS
 #    define NO_SANITIZE_THREAD
 #    define ALWAYS_INLINE_NO_SANITIZE_UNDEFINED ALWAYS_INLINE
 #endif
+
+#if defined(__clang__) && defined(__clang_major__) && __clang_major__ >= 14
+#    define DISABLE_SANITIZER_INSTRUMENTATION __attribute__((disable_sanitizer_instrumentation))
+#else
+#    define DISABLE_SANITIZER_INSTRUMENTATION
+#endif
+
 
 #if !__has_include(<sanitizer/asan_interface.h>) || !defined(ADDRESS_SANITIZER)
 #   define ASAN_UNPOISON_MEMORY_REGION(a, b)
@@ -117,11 +123,19 @@
 ///     - tries to print failed assertion into server log
 /// It can be used for all assertions except heavy ones.
 /// Heavy assertions (that run loops or call complex functions) are allowed in debug builds only.
+/// Also it makes sense to call abort() instead of __builtin_unreachable() in debug builds,
+/// because SIGABRT is easier to debug than SIGTRAP (the second one makes gdb crazy)
 #if !defined(chassert)
     #if defined(ABORT_ON_LOGICAL_ERROR)
-        #define chassert(x) static_cast<bool>(x) ? void(0) : abortOnFailedAssertion(#x)
+        #define chassert(x) static_cast<bool>(x) ? void(0) : ::DB::abortOnFailedAssertion(#x)
+        #define UNREACHABLE() abort()
     #else
-        #define chassert(x) ((void)0)
+        /// Here sizeof() trick is used to suppress unused warning for result,
+        /// since simple "(void)x" will evaluate the expression, while
+        /// "sizeof(!(x))" will not.
+        #define NIL_EXPRESSION(x) (void)sizeof(!(x))
+        #define chassert(x) NIL_EXPRESSION(x)
+        #define UNREACHABLE() __builtin_unreachable()
     #endif
 #endif
 
@@ -134,11 +148,20 @@
 #    define TSA_REQUIRES_SHARED(...) __attribute__((requires_shared_capability(__VA_ARGS__)))  /// thread needs shared possession of given capability
 #    define TSA_ACQUIRED_AFTER(...) __attribute__((acquired_after(__VA_ARGS__)))               /// annotated lock must be locked after given lock
 #    define TSA_NO_THREAD_SAFETY_ANALYSIS __attribute__((no_thread_safety_analysis))           /// disable TSA for a function
+#    define TSA_CAPABILITY(...) __attribute__((capability(__VA_ARGS__)))                       /// object of a class can be used as capability
+#    define TSA_ACQUIRE(...) __attribute__((acquire_capability(__VA_ARGS__)))                        /// function acquires a capability, but does not release it
+#    define TSA_TRY_ACQUIRE(...) __attribute__((try_acquire_capability(__VA_ARGS__)))                /// function tries to acquire a capability and returns a boolean value indicating success or failure
+#    define TSA_RELEASE(...) __attribute__((release_capability(__VA_ARGS__)))                        /// function releases the given capability
+#    define TSA_ACQUIRE_SHARED(...) __attribute__((acquire_shared_capability(__VA_ARGS__)))          /// function acquires a shared capability, but does not release it
+#    define TSA_TRY_ACQUIRE_SHARED(...) __attribute__((try_acquire_shared_capability(__VA_ARGS__)))  /// function tries to acquire a shared capability and returns a boolean value indicating success or failure
+#    define TSA_RELEASE_SHARED(...) __attribute__((release_shared_capability(__VA_ARGS__)))          /// function releases the given shared capability
 
 /// Macros for suppressing TSA warnings for specific reads/writes (instead of suppressing it for the whole function)
-/// Consider adding a comment before using these macros.
-#   define TSA_SUPPRESS_WARNING_FOR_READ(x) [&]() TSA_NO_THREAD_SAFETY_ANALYSIS -> const auto & { return (x); }()
-#   define TSA_SUPPRESS_WARNING_FOR_WRITE(x) [&]() TSA_NO_THREAD_SAFETY_ANALYSIS -> auto & { return (x); }()
+/// They use a lambda function to apply function attribute to a single statement. This enable us to suppress warnings locally instead of
+/// suppressing them in the whole function
+/// Consider adding a comment when using these macros.
+#   define TSA_SUPPRESS_WARNING_FOR_READ(x) ([&]() TSA_NO_THREAD_SAFETY_ANALYSIS -> const auto & { return (x); }())
+#   define TSA_SUPPRESS_WARNING_FOR_WRITE(x) ([&]() TSA_NO_THREAD_SAFETY_ANALYSIS -> auto & { return (x); }())
 
 /// This macro is useful when only one thread writes to a member
 /// and you want to read this member from the same thread without locking a mutex.
@@ -152,10 +175,17 @@
 #    define TSA_REQUIRES(...)
 #    define TSA_REQUIRES_SHARED(...)
 #    define TSA_NO_THREAD_SAFETY_ANALYSIS
+#    define TSA_CAPABILITY(...)
+#    define TSA_ACQUIRE(...)
+#    define TSA_TRY_ACQUIRE(...)
+#    define TSA_RELEASE(...)
+#    define TSA_ACQUIRE_SHARED(...)
+#    define TSA_TRY_ACQUIRE_SHARED(...)
+#    define TSA_RELEASE_SHARED(...)
 
-#    define TSA_SUPPRESS_WARNING_FOR_READ(x)
-#    define TSA_SUPPRESS_WARNING_FOR_WRITE(x)
-#    define TSA_READ_ONE_THREAD(x)
+#    define TSA_SUPPRESS_WARNING_FOR_READ(x) (x)
+#    define TSA_SUPPRESS_WARNING_FOR_WRITE(x) (x)
+#    define TSA_READ_ONE_THREAD(x) TSA_SUPPRESS_WARNING_FOR_READ(x)
 #endif
 
 /// A template function for suppressing warnings about unused variables or function results.

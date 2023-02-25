@@ -15,17 +15,17 @@ execute_process(COMMAND ${CMAKE_CXX_COMPILER} --version OUTPUT_VARIABLE COMPILER
 message (STATUS "Using compiler:\n${COMPILER_SELF_IDENTIFICATION}")
 
 # Require minimum compiler versions
-set (CLANG_MINIMUM_VERSION 12)
+set (CLANG_MINIMUM_VERSION 15)
 set (XCODE_MINIMUM_VERSION 12.0)
 set (APPLE_CLANG_MINIMUM_VERSION 12.0.0)
 set (GCC_MINIMUM_VERSION 11)
 
 if (COMPILER_GCC)
+    message (FATAL_ERROR "Compilation with GCC is unsupported. Please use Clang instead.")
+
     if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS ${GCC_MINIMUM_VERSION})
         message (FATAL_ERROR "Compilation with GCC version ${CMAKE_CXX_COMPILER_VERSION} is unsupported, the minimum required version is ${GCC_MINIMUM_VERSION}.")
     endif ()
-
-    message (WARNING "Compilation with GCC is unsupported. Please use Clang instead.")
 
 elseif (COMPILER_CLANG)
     if (CMAKE_CXX_COMPILER_ID MATCHES "AppleClang")
@@ -53,18 +53,27 @@ list (GET COMPILER_VERSION_LIST 0 COMPILER_VERSION_MAJOR)
 # Example values: `lld-10`, `gold`.
 option (LINKER_NAME "Linker name or full path")
 
-if (NOT LINKER_NAME)
-    if (COMPILER_GCC)
-        find_program (LLD_PATH NAMES "ld.lld")
-        find_program (GOLD_PATH NAMES "ld.gold")
-    elseif (COMPILER_CLANG)
-        find_program (LLD_PATH NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "lld-${COMPILER_VERSION_MAJOR}" "ld.lld" "lld")
-        find_program (GOLD_PATH NAMES "ld.gold" "gold")
-    endif ()
+# s390x doesnt support lld
+if (NOT ARCH_S390X)
+    if (NOT LINKER_NAME)
+        if (COMPILER_GCC)
+            find_program (LLD_PATH NAMES "ld.lld")
+            find_program (GOLD_PATH NAMES "ld.gold")
+        elseif (COMPILER_CLANG)
+            # llvm lld is a generic driver.
+            # Invoke ld.lld (Unix), ld64.lld (macOS), lld-link (Windows), wasm-ld (WebAssembly) instead
+            if (OS_LINUX)
+                find_program (LLD_PATH NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "ld.lld")
+            elseif (OS_DARWIN)
+                find_program (LLD_PATH NAMES "ld64.lld-${COMPILER_VERSION_MAJOR}" "ld64.lld")
+            endif ()
+            find_program (GOLD_PATH NAMES "ld.gold" "gold")
+        endif ()
+    endif()
 endif()
 
-if (OS_LINUX AND NOT LINKER_NAME)
-    # prefer lld linker over gold or ld on linux
+if ((OS_LINUX OR OS_DARWIN) AND NOT LINKER_NAME)
+    # prefer lld linker over gold or ld on linux and macos
     if (LLD_PATH)
         if (COMPILER_GCC)
             # GCC driver requires one of supported linker names like "lld".
@@ -77,7 +86,7 @@ if (OS_LINUX AND NOT LINKER_NAME)
 
     if (NOT LINKER_NAME)
         if (GOLD_PATH)
-            message (WARNING "Linking with gold is not recommended. Please use lld.")
+            message (FATAL_ERROR "Linking with gold is unsupported. Please use lld.")
             if (COMPILER_GCC)
                 set (LINKER_NAME "gold")
             else ()
@@ -94,8 +103,13 @@ if (LINKER_NAME)
         if (NOT LLD_PATH)
             message (FATAL_ERROR "Using linker ${LINKER_NAME} but can't find its path.")
         endif ()
-        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --ld-path=${LLD_PATH}")
-        set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} --ld-path=${LLD_PATH}")
+
+        # This a temporary quirk to emit .debug_aranges with ThinLTO
+        set (LLD_WRAPPER "${CMAKE_CURRENT_BINARY_DIR}/ld.lld")
+        configure_file ("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ld.lld.in" "${LLD_WRAPPER}" @ONLY)
+
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --ld-path=${LLD_WRAPPER}")
+        set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} --ld-path=${LLD_WRAPPER}")
     else ()
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=${LINKER_NAME}")
         set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=${LINKER_NAME}")
@@ -112,7 +126,7 @@ endif()
 # Archiver
 
 if (COMPILER_GCC)
-    find_program (LLVM_AR_PATH NAMES "llvm-ar" "llvm-ar-14" "llvm-ar-13" "llvm-ar-12")
+    find_program (LLVM_AR_PATH NAMES "llvm-ar" "llvm-ar-15" "llvm-ar-14" "llvm-ar-13" "llvm-ar-12")
 else ()
     find_program (LLVM_AR_PATH NAMES "llvm-ar-${COMPILER_VERSION_MAJOR}" "llvm-ar")
 endif ()
@@ -126,7 +140,7 @@ message(STATUS "Using archiver: ${CMAKE_AR}")
 # Ranlib
 
 if (COMPILER_GCC)
-    find_program (LLVM_RANLIB_PATH NAMES "llvm-ranlib" "llvm-ranlib-14" "llvm-ranlib-13" "llvm-ranlib-12")
+    find_program (LLVM_RANLIB_PATH NAMES "llvm-ranlib" "llvm-ranlib-15" "llvm-ranlib-14" "llvm-ranlib-13" "llvm-ranlib-12")
 else ()
     find_program (LLVM_RANLIB_PATH NAMES "llvm-ranlib-${COMPILER_VERSION_MAJOR}" "llvm-ranlib")
 endif ()
@@ -140,7 +154,7 @@ message(STATUS "Using ranlib: ${CMAKE_RANLIB}")
 # Install Name Tool
 
 if (COMPILER_GCC)
-    find_program (LLVM_INSTALL_NAME_TOOL_PATH NAMES "llvm-install-name-tool" "llvm-install-name-tool-14" "llvm-install-name-tool-13" "llvm-install-name-tool-12")
+    find_program (LLVM_INSTALL_NAME_TOOL_PATH NAMES "llvm-install-name-tool" "llvm-install-name-tool-15" "llvm-install-name-tool-14" "llvm-install-name-tool-13" "llvm-install-name-tool-12")
 else ()
     find_program (LLVM_INSTALL_NAME_TOOL_PATH NAMES "llvm-install-name-tool-${COMPILER_VERSION_MAJOR}" "llvm-install-name-tool")
 endif ()
@@ -154,7 +168,7 @@ message(STATUS "Using install-name-tool: ${CMAKE_INSTALL_NAME_TOOL}")
 # Objcopy
 
 if (COMPILER_GCC)
-    find_program (OBJCOPY_PATH NAMES "llvm-objcopy" "llvm-objcopy-14" "llvm-objcopy-13" "llvm-objcopy-12" "objcopy")
+    find_program (OBJCOPY_PATH NAMES "llvm-objcopy" "llvm-objcopy-15" "llvm-objcopy-14" "llvm-objcopy-13" "llvm-objcopy-12" "objcopy")
 else ()
     find_program (OBJCOPY_PATH NAMES "llvm-objcopy-${COMPILER_VERSION_MAJOR}" "llvm-objcopy" "objcopy")
 endif ()
@@ -168,7 +182,7 @@ endif ()
 # Strip
 
 if (COMPILER_GCC)
-    find_program (STRIP_PATH NAMES "llvm-strip" "llvm-strip-14" "llvm-strip-13" "llvm-strip-12" "strip")
+    find_program (STRIP_PATH NAMES "llvm-strip" "llvm-strip-15" "llvm-strip-14" "llvm-strip-13" "llvm-strip-12" "strip")
 else ()
     find_program (STRIP_PATH NAMES "llvm-strip-${COMPILER_VERSION_MAJOR}" "llvm-strip" "strip")
 endif ()

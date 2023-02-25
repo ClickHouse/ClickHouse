@@ -55,11 +55,12 @@ public:
     /// tuple(..., Nothing, ...) -> Tuple(..., Nothing, ...)
     bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.empty())
-            throw Exception("Function " + getName() + " requires at least one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument.", getName());
 
         return std::make_shared<DataTypeTuple>(arguments);
     }
@@ -82,7 +83,7 @@ public:
 
 }
 
-void registerFunctionTuple(FunctionFactory & factory)
+REGISTER_FUNCTION(Tuple)
 {
     factory.registerFunction<FunctionTuple>();
 }

@@ -14,6 +14,18 @@
 7	[7,8]	val27
 8	[8,9]	val28
 9	[9,10]	val29
+-- left semi
+0
+2
+3
+6
+7
+8
+9
+-- left anti
+1
+4
+5
 -- join_use_nulls left
 0	0	Nullable(String)	val20
 1	\N	Nullable(String)	\N

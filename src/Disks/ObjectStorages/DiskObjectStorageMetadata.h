@@ -16,14 +16,14 @@ private:
     static constexpr uint32_t VERSION_ABSOLUTE_PATHS = 1;
     static constexpr uint32_t VERSION_RELATIVE_PATHS = 2;
     static constexpr uint32_t VERSION_READ_ONLY_FLAG = 3;
+    static constexpr uint32_t VERSION_INLINE_DATA = 4;
 
     const std::string & common_metadata_path;
 
     /// Relative paths of blobs.
     RelativePathsWithSize storage_objects;
 
-    /// URI
-    const std::string & remote_fs_root_path;
+    const std::string object_storage_root_path;
 
     /// Relative path to metadata file on local FS.
     const std::string metadata_file_path;
@@ -40,11 +40,14 @@ private:
     /// Flag indicates that file is read only.
     bool read_only = false;
 
+    /// This data will be stored inline
+    std::string inline_data;
+
 public:
 
     DiskObjectStorageMetadata(
         const std::string & common_metadata_path_,
-        const std::string & remote_fs_root_path_,
+        const std::string & object_storage_root_path_,
         const std::string & metadata_file_path_);
 
     void addObject(const std::string & path, size_t size);
@@ -57,7 +60,7 @@ public:
 
     std::string getBlobsCommonPrefix() const
     {
-        return remote_fs_root_path;
+        return object_storage_root_path;
     }
 
     RelativePathsWithSize getBlobsRelativePaths() const
@@ -100,6 +103,15 @@ public:
         read_only = true;
     }
 
+    void setInlineData(const std::string & data)
+    {
+        inline_data = data;
+    }
+
+    const std::string & getInlineData() const
+    {
+        return inline_data;
+    }
 };
 
 using DiskObjectStorageMetadataPtr = std::unique_ptr<DiskObjectStorageMetadata>;

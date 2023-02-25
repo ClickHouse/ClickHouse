@@ -12,8 +12,8 @@ struct Exception : public Poco::Exception
 {
     explicit Exception(const std::string & msg, int code = 0) : Poco::Exception(msg, code) {}
     int errnum() const { return code(); }
-    const char * name() const throw() override { return "mysqlxx::Exception"; }
-    const char * className() const throw() override { return "mysqlxx::Exception"; }
+    const char * name() const noexcept override { return "mysqlxx::Exception"; }
+    const char * className() const noexcept override { return "mysqlxx::Exception"; }
 };
 
 
@@ -21,8 +21,8 @@ struct Exception : public Poco::Exception
 struct ConnectionFailed : public Exception
 {
     explicit ConnectionFailed(const std::string & msg, int code = 0) : Exception(msg, code) {}
-    const char * name() const throw() override { return "mysqlxx::ConnectionFailed"; }
-    const char * className() const throw() override { return "mysqlxx::ConnectionFailed"; }
+    const char * name() const noexcept override { return "mysqlxx::ConnectionFailed"; }
+    const char * className() const noexcept override { return "mysqlxx::ConnectionFailed"; }
 };
 
 
@@ -30,8 +30,8 @@ struct ConnectionFailed : public Exception
 struct ConnectionLost : public Exception
 {
     explicit ConnectionLost(const std::string & msg, int code = 0) : Exception(msg, code) {}
-    const char * name() const throw() override { return "mysqlxx::ConnectionLost"; }
-    const char * className() const throw() override { return "mysqlxx::ConnectionLost"; }
+    const char * name() const noexcept override { return "mysqlxx::ConnectionLost"; }
+    const char * className() const noexcept override { return "mysqlxx::ConnectionLost"; }
 };
 
 
@@ -39,8 +39,8 @@ struct ConnectionLost : public Exception
 struct BadQuery : public Exception
 {
     explicit BadQuery(const std::string & msg, int code = 0) : Exception(msg, code) {}
-    const char * name() const throw() override { return "mysqlxx::BadQuery"; }
-    const char * className() const throw() override { return "mysqlxx::BadQuery"; }
+    const char * name() const noexcept override { return "mysqlxx::BadQuery"; }
+    const char * className() const noexcept override { return "mysqlxx::BadQuery"; }
 };
 
 
@@ -48,8 +48,8 @@ struct BadQuery : public Exception
 struct CannotParseValue : public Exception
 {
     explicit CannotParseValue(const std::string & msg, int code = 0) : Exception(msg, code) {}
-    const char * name() const throw() override { return "mysqlxx::CannotParseValue"; }
-    const char * className() const throw() override { return "mysqlxx::CannotParseValue"; }
+    const char * name() const noexcept override { return "mysqlxx::CannotParseValue"; }
+    const char * className() const noexcept override { return "mysqlxx::CannotParseValue"; }
 };
 
 

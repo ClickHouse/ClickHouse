@@ -7,6 +7,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Common/typeid_cast.h>
 
 
@@ -114,7 +115,7 @@ void ASTProjectionSelectQuery::setExpression(Expression expr, ASTPtr && ast)
 ASTPtr & ASTProjectionSelectQuery::getExpression(Expression expr)
 {
     if (!positions.contains(expr))
-        throw Exception("Get expression before set", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Get expression before set");
     return children[positions[expr]];
 }
 
@@ -125,10 +126,22 @@ ASTPtr ASTProjectionSelectQuery::cloneToASTSelect() const
     if (with())
         select_query->setExpression(ASTSelectQuery::Expression::WITH, with()->clone());
     if (select())
-        select_query->setExpression(ASTSelectQuery::Expression::SELECT, select()->clone());
+    {
+        ASTPtr select_list = select()->clone();
+        if (orderBy())
+        {
+            /// Add ORDER BY list to SELECT for simplicity. It is Ok because we only uses this to find all required columns.
+            auto * expressions = select_list->as<ASTExpressionList>();
+            if (!expressions)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Unexpected structure of SELECT clause in projection definition {}; Expression list expected",
+                    select_list->dumpTree(0));
+            expressions->children.emplace_back(orderBy()->clone());
+        }
+        select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list));
+    }
     if (groupBy())
         select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, groupBy()->clone());
-    // Get rid of orderBy. It's used for projection definition only
     return node;
 }
 

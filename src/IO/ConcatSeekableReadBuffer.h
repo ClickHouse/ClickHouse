@@ -30,7 +30,7 @@ private:
     struct BufferInfo
     {
         BufferInfo() = default;
-        BufferInfo(BufferInfo &&) = default;
+        BufferInfo(BufferInfo && src) noexcept;
         ~BufferInfo();
         SeekableReadBuffer * in = nullptr;
         bool own_in = false;

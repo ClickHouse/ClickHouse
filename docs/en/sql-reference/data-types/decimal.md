@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/data-types/decimal
 sidebar_position: 42
 sidebar_label: Decimal
 ---
@@ -45,7 +46,7 @@ Binary operations on Decimal result in wider result type (with any order of argu
 Rules for scale:
 
 -   add, subtract: S = max(S1, S2).
--   multuply: S = S1 + S2.
+-   multiply: S = S1 + S2.
 -   divide: S = S1.
 
 For similar operations between Decimal and integers, the result is Decimal of the same size as an argument.
@@ -110,5 +111,3 @@ DB::Exception: Can't compare.
 **See also**
 -   [isDecimalOverflow](../../sql-reference/functions/other-functions.md#is-decimal-overflow)
 -   [countDigits](../../sql-reference/functions/other-functions.md#count-digits)
-
-[Original article](https://clickhouse.com/docs/en/data_types/decimal/) <!--hide-->

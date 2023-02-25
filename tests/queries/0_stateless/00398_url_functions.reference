@@ -8,6 +8,32 @@ http
 ====HOST====
 www.example.com
 
+
+
+
+
+
+
+
+
+www.example.com
+127.0.0.1
+www.example.com
+www.example.com
+www.example.com
+example.com
+example.com
+example.com
+www.example.com
+example.com
+example.com
+example.com
+example.com
+example.com
+example.com
+
+
+
 www.example.com
 127.0.0.1
 www.example.com
@@ -98,7 +124,24 @@ example.com
 example.com
 com
 
+example.com
+example.com
+example.com
+example.com
+example.com
+example.com
+example.com
+example.com
+example.com
+com
+
 ====CUT TO FIRST SIGNIFICANT SUBDOMAIN WITH WWW====
+
+www.com
+example.com
+example.com
+example.com
+example.com
 
 www.com
 example.com
