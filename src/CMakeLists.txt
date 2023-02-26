@@ -196,6 +196,11 @@ endif ()
 
 add_library(clickhouse_common_io ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
 
+if (TARGET enet_static)
+    message(STATUS "WHAT HOW?")
+    target_link_libraries (clickhouse_common_io PUBLIC enet_static)
+endif()
+
 add_library (clickhouse_malloc OBJECT Common/malloc.cpp)
 set_source_files_properties(Common/malloc.cpp PROPERTIES COMPILE_FLAGS "-fno-builtin")
 

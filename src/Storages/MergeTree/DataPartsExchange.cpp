@@ -17,6 +17,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
+#include <IO/ReadWriteBufferFromHTTPEnet.h>
 #include <base/scope_guard.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <boost/algorithm/string/join.hpp>

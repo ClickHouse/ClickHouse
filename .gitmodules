@@ -335,3 +335,6 @@
 [submodule "contrib/liburing"]
 	path = contrib/liburing
 	url = https://github.com/axboe/liburing
+[submodule "contrib/enet"]
+	path = contrib/enet
+	url = https://github.com/zpl-c/enet.git
