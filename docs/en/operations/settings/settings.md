@@ -3954,6 +3954,13 @@ Use this setting only for backward compatibility if your use cases depend on old
 Automatically applies [FINAL](../../sql-reference/statements/select/from/#final-modifier) modifier to all tables in a query, to tables where [FINAL](../../sql-reference/statements/select/from/#final-modifier) is applicable, including joined tables and tables in sub-queries, and 
 distributed tables.
 
+Possible values:
+
+- 0 - disabled
+- 1 - enabled
+
+Default value: `0`.
+
 Example:
 
 ```sql
@@ -3987,3 +3994,25 @@ SELECT * FROM test;
 │   1 │ second │
 └─────┴────────┘
 ```
+
+## asterisk_include_materialized_columns {#asterisk_include_materialized_columns}
+
+Include [MATERIALIZED](../../sql-reference/statements/create/table/#materialized) columns for wildcard query (`SELECT *`).
+
+Possible values:
+
+- 0 - disabled
+- 1 - enabled
+
+Default value: `0`.
+
+## asterisk_include_alias_columns {#asterisk_include_alias_columns}
+
+Include [ALIAS](../../sql-reference/statements/create/table/#alias) columns for wildcard query (`SELECT *`).
+
+Possible values:
+
+- 0 - disabled
+- 1 - enabled
+
+Default value: `0`.
