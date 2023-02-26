@@ -82,10 +82,12 @@ def drop_after_test():
     try:
         yield
     finally:
-        node0.query("DROP TABLE IF EXISTS tbl ON CLUSTER 'cluster' NO DELAY",
-                    settings={
-                        "distributed_ddl_task_timeout": 360,
-                    })
+        node0.query(
+            "DROP TABLE IF EXISTS tbl ON CLUSTER 'cluster' NO DELAY",
+            settings={
+                "distributed_ddl_task_timeout": 360,
+            },
+        )
 
 
 backup_id_counter = 0
@@ -140,10 +142,12 @@ def test_concurrent_backups_on_same_node():
 
     # This restore part is added to confirm creating an internal backup & restore work
     # even when a concurrent backup is stopped
-    nodes[0].query(f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY",
-                   settings={
-                       "distributed_ddl_task_timeout": 360,
-                   })
+    nodes[0].query(
+        f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY",
+        settings={
+            "distributed_ddl_task_timeout": 360,
+        },
+    )
     nodes[0].query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
     nodes[0].query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
 
@@ -195,10 +199,12 @@ def test_concurrent_restores_on_same_node():
         "BACKUP_CREATED",
     )
 
-    nodes[0].query(f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY",
-                   settings={
-                       "distributed_ddl_task_timeout": 360,
-                   })
+    nodes[0].query(
+        f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY",
+        settings={
+            "distributed_ddl_task_timeout": 360,
+        },
+    )
     restore_id = (
         nodes[0]
         .query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name} ASYNC")
@@ -236,10 +242,12 @@ def test_concurrent_restores_on_different_node():
         "BACKUP_CREATED",
     )
 
-    nodes[0].query(f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY",
-                   settings={
-                       "distributed_ddl_task_timeout": 360,
-                   })
+    nodes[0].query(
+        f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY",
+        settings={
+            "distributed_ddl_task_timeout": 360,
+        },
+    )
     restore_id = (
         nodes[0]
         .query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name} ASYNC")
