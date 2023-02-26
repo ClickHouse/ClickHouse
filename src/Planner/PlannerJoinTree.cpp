@@ -39,6 +39,14 @@
 #include <Planner/PlannerJoins.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/Utils.h>
+#include <AggregateFunctions/AggregateFunctionCount.h>
+#include <Interpreters/TreeRewriter.h>
+#include "Analyzer/AggregationUtils.h"
+#include "Analyzer/FunctionNode.h"
+#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Columns/ColumnAggregateFunction.h>
+#include <Common/scope_guard_safe.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 
 namespace DB
 {
@@ -141,6 +149,119 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
         result = ExpressionActions::getSmallestColumn(column_names_and_types);
 
     return result;
+}
+
+bool applyTrivialCountIfPossible(
+    QueryPlan & query_plan,
+    const TableNode & table_node,
+    const SelectQueryInfo & select_query_info,
+    const ContextPtr & query_context,
+    const Names & columns_names)
+{
+    const auto & settings = query_context->getSettingsRef();
+    if (!settings.optimize_trivial_count_query)
+        return false;
+
+    const auto & storage = table_node.getStorage();
+    const auto & storage_snapshot = table_node.getStorageSnapshot();
+
+    bool can_apply_trivial_count = (settings.max_parallel_replicas <= 1) && //
+        !settings.allow_experimental_query_deduplication && //
+        !settings.empty_result_for_aggregation_by_empty_set && //
+        storage && //
+        storage->getName() != "MaterializedMySQL" && //
+        !storage->hasLightweightDeletedMask() && //
+        select_query_info.filter_asts.empty() && // ???
+        select_query_info.has_aggregates;
+    if (!can_apply_trivial_count)
+        return false;
+
+    QueryTreeNodes aggregates = collectAggregateFunctionNodes(select_query_info.query_tree);
+    if (aggregates.size() != 1)
+        return false;
+
+    auto & main_query_node = select_query_info.query_tree->as<QueryNode &>();
+    /// dump main query tree
+    {
+        WriteBufferFromOwnString buffer;
+        IQueryTreeNode::FormatState format_state;
+        main_query_node.dumpTreeImpl(buffer, format_state, 0);
+
+        LOG_ERROR(&Poco::Logger::get(__PRETTY_FUNCTION__), "main_query_node:\n{}", buffer.str());
+        LOG_ERROR(&Poco::Logger::get(__PRETTY_FUNCTION__), "Projection column:\n{}", main_query_node.getProjectionColumns().front().dump());
+    }
+
+    {
+        WriteBufferFromOwnString buffer;
+        buffer << columns_names;
+        LOG_ERROR(&Poco::Logger::get(__PRETTY_FUNCTION__), "{}", buffer.str());
+    }
+
+    const auto * function_node = typeid_cast<const FunctionNode *>(aggregates.front().get());
+    if (!function_node)
+        return false;
+
+    if (!function_node->getAggregateFunction())
+        return false;
+
+    LOG_ERROR(&Poco::Logger::get(__PRETTY_FUNCTION__), "Aggregation: {}", function_node->getFunctionName());
+
+    const auto * count_func = typeid_cast<const AggregateFunctionCount *>(function_node->getAggregateFunction().get());
+    if (!count_func)
+        return false;
+
+    /// get number of rows
+    std::optional<UInt64> num_rows{};
+    // if (!query_tree.  prewhere() && !query.where() && !context->getCurrentTransaction())
+    if (!main_query_node.hasPrewhere() && !main_query_node.hasWhere())
+    {
+        num_rows = storage->totalRows(settings);
+    }
+    // else // It's possible to optimize count() given only partition predicates
+    // {
+    //     SelectQueryInfo temp_query_info;
+    //     temp_query_info.query = query_ptr;
+    //     temp_query_info.syntax_analyzer_result = syntax_analyzer_result;
+    //     temp_query_info.prepared_sets = query_analyzer->getPreparedSets();
+    //     num_rows = storage->totalRowsByPartitionPredicate(temp_query_info, context);
+    // }
+
+    if (!num_rows)
+        return false;
+
+    LOG_ERROR(&Poco::Logger::get(__PRETTY_FUNCTION__), "Number of rows: {}", num_rows.value());
+
+    /// set aggregation state
+    const AggregateFunctionCount & agg_count = *count_func;
+    std::vector<char> state(agg_count.sizeOfData());
+    AggregateDataPtr place = state.data();
+    agg_count.create(place);
+    // SCOPE_EXIT_MEMORY_SAFE(agg_count.destroy(place));
+    agg_count.set(place, num_rows.value());
+
+    auto column = ColumnAggregateFunction::create(function_node->getAggregateFunction());
+    column->insertFrom(place);
+
+    /// get count() argument type
+    DataTypes argument_types;
+    argument_types.reserve(columns_names.size());
+    {
+        const Block source_header = storage_snapshot->getSampleBlockForColumns(columns_names);
+        for (const auto & column_name : columns_names)
+            argument_types.push_back(source_header.getByName(column_name).type);
+    }
+
+    Block block_with_count{
+        {std::move(column),
+         std::make_shared<DataTypeAggregateFunction>(function_node->getAggregateFunction(), argument_types, Array{}),
+         columns_names.front()}};
+
+    auto source = std::make_shared<SourceFromSingleChunk>(block_with_count);
+    auto prepared_count = std::make_unique<ReadFromPreparedSource>(Pipe(std::move(source)));
+    prepared_count->setStepDescription("Optimized trivial count");
+    query_plan.addStep(std::move(prepared_count));
+
+    return true;
 }
 
 JoinTreeQueryPlan buildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expression,
@@ -286,6 +407,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(const QueryTreeNodePtr & tabl
             columns_names.push_back(additional_column_to_read.name);
             table_expression_data.addColumn(additional_column_to_read, column_identifier);
         }
+
+        /// apply trivial_count optimization if possible
+        if (is_single_table_expression && table_node
+            && applyTrivialCountIfPossible(query_plan, *table_node, select_query_info, planner_context->getQueryContext(), columns_names))
+            return {std::move(query_plan), from_stage};
 
         bool need_rewrite_query_with_final = storage->needRewriteQueryWithFinal(columns_names);
         if (need_rewrite_query_with_final)
