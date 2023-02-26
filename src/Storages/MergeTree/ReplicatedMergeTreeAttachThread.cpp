@@ -149,7 +149,7 @@ void ReplicatedMergeTreeAttachThread::runImpl()
     const bool replica_metadata_version_exists = zookeeper->tryGet(replica_path + "/metadata_version", replica_metadata_version);
     if (replica_metadata_version_exists)
     {
-        storage.setInMemoryMetadata(metadata_snapshot->withMetadataVersion(parse<int>(replica_metadata_version)));
+        storage.metadata_version = parse<int>(replica_metadata_version);
     }
     else
     {
