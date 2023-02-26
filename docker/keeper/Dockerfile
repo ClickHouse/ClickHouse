@@ -29,7 +29,7 @@ RUN arch=${TARGETARCH:-amd64} \
     esac
 
 ARG REPOSITORY="https://s3.amazonaws.com/clickhouse-builds/22.4/31c367d3cd3aefd316778601ff6565119fe36682/package_release"
-ARG VERSION="23.1.3.5"
+ARG VERSION="23.2.1.2537"
 ARG PACKAGES="clickhouse-keeper"
 
 # user/group precreated explicitly with fixed uid/gid on purpose.

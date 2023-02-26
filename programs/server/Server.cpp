@@ -6,7 +6,6 @@
 #include <sys/types.h>
 #include <pwd.h>
 #include <unistd.h>
-#include <Poco/Version.h>
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
@@ -770,8 +769,6 @@ try
         config().getUInt("max_io_thread_pool_free_size", 0),
         config().getUInt("io_thread_pool_queue_size", 10000));
 
-    NamedCollectionUtils::loadFromConfig(config());
-
     /// Initialize global local cache for remote filesystem.
     if (config().has("local_cache_for_remote_fs"))
     {
@@ -1176,8 +1173,6 @@ try
     {
         SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(config(), "query_masking_rules"));
     }
-
-    NamedCollectionUtils::loadFromSQL(global_context);
 
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
