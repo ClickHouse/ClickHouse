@@ -683,7 +683,6 @@ throwIf
 tid
 timeSlot
 timeSlots
-timezone
 timezoneOf
 timezoneOffset
 toBool
