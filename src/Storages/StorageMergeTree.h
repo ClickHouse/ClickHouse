@@ -267,7 +267,7 @@ private:
 
 protected:
 
-    MutationCommands getFirstAlterMutationCommandsForPart(const DataPartPtr & part) const override;
+    std::map<int64_t, MutationCommands> getAlterMutationCommandsForPart(const DataPartPtr & part) const override;
 };
 
 }
