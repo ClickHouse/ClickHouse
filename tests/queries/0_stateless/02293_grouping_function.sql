@@ -1,3 +1,5 @@
+SET allow_experimental_analyzer = 1;
+
 SELECT
     number,
     grouping(number, number % 2, number % 3) AS gr
@@ -7,7 +9,7 @@ GROUP BY
         (number),
         (number % 2)
     )
-ORDER BY number, gr; -- { serverError BAD_ARGUMENTS }
+ORDER BY number, gr; -- { serverError NOT_AN_AGGREGATE }
 
 -- { echoOn }
 SELECT

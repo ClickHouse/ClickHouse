@@ -16,3 +16,4 @@ SELECT s FROM t1 PREWHERE e; -- { serverError 59 }
 SELECT s FROM t1 PREWHERE e WHERE (e = 1); -- { serverError 59 }
 SELECT s FROM t1 PREWHERE e WHERE f AND (e = 1); -- { serverError 59 }
 
+

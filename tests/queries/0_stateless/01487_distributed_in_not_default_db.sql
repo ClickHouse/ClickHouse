@@ -20,6 +20,7 @@ INSERT INTO shard_0.l VALUES (0);
 INSERT INTO shard_1.l VALUES (1);
 INSERT INTO t VALUES (0), (1), (2);
 
+
 CREATE TABLE d AS t ENGINE = Distributed(test_cluster_two_shards_different_databases, currentDatabase(), t);
 
 USE test_01487;
