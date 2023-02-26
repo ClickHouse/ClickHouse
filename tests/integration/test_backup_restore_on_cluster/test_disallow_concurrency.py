@@ -167,7 +167,7 @@ def test_concurrent_backups_on_different_nodes():
         f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}"
     )
     assert_eq_with_retry(
-        nodes[0],
+        nodes[1],
         f"SELECT status FROM system.backups WHERE status == 'BACKUP_CREATED' AND id = '{id}'",
         "BACKUP_CREATED",
     )
