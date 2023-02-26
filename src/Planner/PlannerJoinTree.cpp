@@ -408,11 +408,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(const QueryTreeNodePtr & tabl
             table_expression_data.addColumn(additional_column_to_read, column_identifier);
         }
 
-        /// apply trivial_count optimization if possible
-        if (is_single_table_expression && table_node
-            && applyTrivialCountIfPossible(query_plan, *table_node, select_query_info, planner_context->getQueryContext(), columns_names))
-            return {std::move(query_plan), from_stage};
-
         bool need_rewrite_query_with_final = storage->needRewriteQueryWithFinal(columns_names);
         if (need_rewrite_query_with_final)
         {
@@ -434,28 +429,39 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(const QueryTreeNodePtr & tabl
             }
         }
 
-        storage->read(query_plan, columns_names, storage_snapshot, table_expression_query_info, query_context, from_stage, max_block_size, max_streams);
+        /// apply trivial_count optimization if possible
+        bool is_trivial_count_applied = (is_single_table_expression && table_node
+            && applyTrivialCountIfPossible(query_plan, *table_node, select_query_info, planner_context->getQueryContext(), columns_names));
 
-        if (query_plan.isInitialized())
+        if (is_trivial_count_applied)
         {
-            /** Specify the number of threads only if it wasn't specified in storage.
-              *
-              * But in case of remote query and prefer_localhost_replica=1 (default)
-              * The inner local query (that is done in the same process, without
-              * network interaction), it will setMaxThreads earlier and distributed
-              * query will not update it.
-              */
-            if (!query_plan.getMaxThreads() || is_remote)
-                query_plan.setMaxThreads(max_threads_execute_query);
+            from_stage = QueryProcessingStage::WithMergeableState;
         }
         else
         {
-            /// Create step which reads from empty source if storage has no data.
-            auto source_header = storage_snapshot->getSampleBlockForColumns(columns_names);
-            Pipe pipe(std::make_shared<NullSource>(source_header));
-            auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
-            read_from_pipe->setStepDescription("Read from NullSource");
-            query_plan.addStep(std::move(read_from_pipe));
+            storage->read(query_plan, columns_names, storage_snapshot, table_expression_query_info, query_context, from_stage, max_block_size, max_streams);
+
+            if (query_plan.isInitialized())
+            {
+                /** Specify the number of threads only if it wasn't specified in storage.
+                  *
+                  * But in case of remote query and prefer_localhost_replica=1 (default)
+                  * The inner local query (that is done in the same process, without
+                  * network interaction), it will setMaxThreads earlier and distributed
+                  * query will not update it.
+                  */
+                if (!query_plan.getMaxThreads() || is_remote)
+                    query_plan.setMaxThreads(max_threads_execute_query);
+            }
+            else
+            {
+                /// Create step which reads from empty source if storage has no data.
+                auto source_header = storage_snapshot->getSampleBlockForColumns(columns_names);
+                Pipe pipe(std::make_shared<NullSource>(source_header));
+                auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+                read_from_pipe->setStepDescription("Read from NullSource");
+                query_plan.addStep(std::move(read_from_pipe));
+            }
         }
     }
     else if (query_node || union_node)
