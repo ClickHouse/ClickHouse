@@ -398,6 +398,8 @@ void InterpreterSelectWithUnionQuery::ignoreWithTotals()
 
 void InterpreterSelectWithUnionQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr /*context_*/) const
 {
+    elem.query_kind = "Select";
+
     for (const auto & interpreter : nested_interpreters)
     {
         if (const auto * select_interpreter = dynamic_cast<const InterpreterSelectQuery *>(interpreter.get()))

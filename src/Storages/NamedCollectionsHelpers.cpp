@@ -58,8 +58,6 @@ NamedCollectionPtr tryGetNamedCollectionWithOverrides(ASTs asts)
     if (asts.empty())
         return nullptr;
 
-    NamedCollectionUtils::loadIfNot();
-
     auto collection = tryGetNamedCollectionFromASTs(asts);
     if (!collection)
         return nullptr;

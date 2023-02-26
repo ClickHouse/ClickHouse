@@ -107,7 +107,7 @@ std::shared_ptr<S3::ProxyConfiguration> getProxyConfiguration(const String & pre
 }
 
 
-std::unique_ptr<S3::Client> getClient(
+std::unique_ptr<Aws::S3::S3Client> getClient(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
     ContextPtr context,

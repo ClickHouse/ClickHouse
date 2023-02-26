@@ -51,9 +51,9 @@ CompressedReadBufferFromFile::CompressedReadBufferFromFile(std::unique_ptr<ReadB
 }
 
 
-void CompressedReadBufferFromFile::prefetch(int64_t priority)
+void CompressedReadBufferFromFile::prefetch()
 {
-    file_in.prefetch(priority);
+    file_in.prefetch();
 }
 
 

@@ -10,7 +10,6 @@
 #include <Planner/PlannerContext.h>
 #include <Planner/PlannerAggregation.h>
 #include <Planner/PlannerWindowFunctions.h>
-#include <Planner/PlannerQueryProcessingInfo.h>
 
 namespace DB
 {
@@ -171,7 +170,6 @@ private:
 /// Build expression analysis result for query tree, join tree input columns and planner context
 PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNodePtr & query_tree,
     const ColumnsWithTypeAndName & join_tree_input_columns,
-    const PlannerContextPtr & planner_context,
-    const PlannerQueryProcessingInfo & planner_query_processing_info);
+    const PlannerContextPtr & planner_context);
 
 }

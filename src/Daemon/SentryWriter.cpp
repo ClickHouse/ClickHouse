@@ -74,7 +74,7 @@ void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config)
 
     if (config.getBool("send_crash_reports.enabled", false))
     {
-        if (debug || (strlen(VERSION_OFFICIAL) > 0))
+        if (debug || (strlen(VERSION_OFFICIAL) > 0)) //-V560
             enabled = true;
     }
 

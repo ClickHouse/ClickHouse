@@ -188,7 +188,7 @@ static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string 
     {
         PreformattedMessage message = getCurrentExceptionMessageAndPattern(true);
         if (!start_of_message.empty())
-            message.text = fmt::format("{}: {}", start_of_message, message.text);
+            message.message = fmt::format("{}: {}", start_of_message, message.message);
 
         LOG_ERROR(logger, message);
     }
@@ -339,7 +339,7 @@ std::string getExtraExceptionInfo(const std::exception & e)
 
 std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded_stacktrace /*= false*/, bool with_extra_info /*= true*/)
 {
-    return getCurrentExceptionMessageAndPattern(with_stacktrace, check_embedded_stacktrace, with_extra_info).text;
+    return getCurrentExceptionMessageAndPattern(with_stacktrace, check_embedded_stacktrace, with_extra_info).message;
 }
 
 PreformattedMessage getCurrentExceptionMessageAndPattern(bool with_stacktrace, bool check_embedded_stacktrace /*= false*/, bool with_extra_info /*= true*/)
@@ -481,7 +481,7 @@ void tryLogException(std::exception_ptr e, Poco::Logger * logger, const std::str
 
 std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace)
 {
-    return getExceptionMessageAndPattern(e, with_stacktrace, check_embedded_stacktrace).text;
+    return getExceptionMessageAndPattern(e, with_stacktrace, check_embedded_stacktrace).message;
 }
 
 PreformattedMessage getExceptionMessageAndPattern(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace)
@@ -559,9 +559,9 @@ bool ExecutionStatus::tryDeserializeText(const std::string & data)
     return true;
 }
 
-ExecutionStatus ExecutionStatus::fromCurrentException(const std::string & start_of_message, bool with_stacktrace)
+ExecutionStatus ExecutionStatus::fromCurrentException(const std::string & start_of_message)
 {
-    String msg = (start_of_message.empty() ? "" : (start_of_message + ": ")) + getCurrentExceptionMessage(with_stacktrace, true);
+    String msg = (start_of_message.empty() ? "" : (start_of_message + ": ")) + getCurrentExceptionMessage(false, true);
     return ExecutionStatus(getCurrentExceptionCode(), msg);
 }
 
@@ -575,6 +575,10 @@ ExecutionStatus ExecutionStatus::fromText(const std::string & data)
 ParsingException::ParsingException() = default;
 ParsingException::ParsingException(const std::string & msg, int code)
     : Exception(msg, code)
+{
+}
+ParsingException::ParsingException(int code, const std::string & message)
+    : Exception(message, code)
 {
 }
 

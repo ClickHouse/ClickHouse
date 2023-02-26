@@ -440,7 +440,7 @@ mapApply(func, map)
   
 **Parameters**
   
--   `func`  - [Lambda function](../../sql-reference/functions/index.md#higher-order-functions---operator-and-lambdaparams-expr-function).
+-   `func`  - [Lamda function](../../sql-reference/functions/index.md#higher-order-functions---operator-and-lambdaparams-expr-function).
 -   `map` — [Map](../../sql-reference/data-types/map.md).
 
 **Returned value**
@@ -480,7 +480,7 @@ mapFilter(func, map)
   
 **Parameters**
 
--   `func`  - [Lambda function](../../sql-reference/functions/index.md#higher-order-functions---operator-and-lambdaparams-expr-function).
+-   `func`  - [Lamda function](../../sql-reference/functions/index.md#higher-order-functions---operator-and-lambdaparams-expr-function).
 -   `map` — [Map](../../sql-reference/data-types/map.md).  
 
 **Returned value**

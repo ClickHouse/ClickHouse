@@ -47,7 +47,6 @@ public:
     bool supportsIndexForIn() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
     bool supportsPrewhere() const override { return true; }
-    std::optional<NameSet> supportedPrewhereColumns() const override;
 
     bool canMoveConditionsToPrewhere() const override;
 
@@ -149,9 +148,7 @@ public:
 
     const StorageListWithLocks & getSelectedTables() const { return selected_tables; }
 
-    /// Returns `false` if requested reading cannot be performed.
-    bool requestReadingInOrder(InputOrderInfoPtr order_info_);
-    static bool isFinal(const SelectQueryInfo & query_info);
+    void requestReadingInOrder(InputOrderInfoPtr order_info_) { order_info = order_info_; }
 
 private:
     const size_t required_max_block_size;
@@ -185,11 +182,6 @@ private:
 
     using Aliases = std::vector<AliasData>;
 
-    static SelectQueryInfo getModifiedQueryInfo(const SelectQueryInfo & query_info,
-        const ContextPtr & modified_context,
-        const StorageWithLockAndName & storage_with_lock_and_name,
-        const StorageSnapshotPtr & storage_snapshot);
-
     QueryPipelineBuilderPtr createSources(
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
@@ -198,18 +190,15 @@ private:
         const Block & header,
         const Aliases & aliases,
         const StorageWithLockAndName & storage_with_lock,
-        Names real_column_names,
+        Names & real_column_names,
         ContextMutablePtr modified_context,
         size_t streams_num,
         bool concat_streams = false);
 
     static void convertingSourceStream(
-        const Block & header,
-        const StorageMetadataPtr & metadata_snapshot,
-        const Aliases & aliases,
+        const Block & header, const StorageMetadataPtr & metadata_snapshot, const Aliases & aliases,
         ContextPtr context,
-        QueryPipelineBuilder & builder,
-        const QueryProcessingStage::Enum & processed_stage);
+        QueryPipelineBuilder & builder);
 };
 
 }

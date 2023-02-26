@@ -140,7 +140,7 @@ void CancelToken::raise()
 {
     std::unique_lock lock(signal_mutex);
     if (exception_code != 0)
-        throw DB::Exception::createRuntime(
+        throw DB::Exception(
             std::exchange(exception_code, 0),
             std::exchange(exception_message, {}));
     else

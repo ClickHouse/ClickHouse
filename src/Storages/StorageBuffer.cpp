@@ -691,7 +691,7 @@ void StorageBuffer::flush()
 
     try
     {
-        optimize(nullptr /*query*/, getInMemoryMetadataPtr(), {} /*partition*/, false /*final*/, false /*deduplicate*/, {}, false /*cleanup*/, getContext());
+        optimize(nullptr /*query*/, getInMemoryMetadataPtr(), {} /*partition*/, false /*final*/, false /*deduplicate*/, {}, getContext());
     }
     catch (...)
     {
@@ -717,7 +717,6 @@ bool StorageBuffer::optimize(
     bool final,
     bool deduplicate,
     const Names & /* deduplicate_by_columns */,
-    bool cleanup,
     ContextPtr /*context*/)
 {
     if (partition)
@@ -728,9 +727,6 @@ bool StorageBuffer::optimize(
 
     if (deduplicate)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DEDUPLICATE cannot be specified when optimizing table of type Buffer");
-
-    if (cleanup)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CLEANUP cannot be specified when optimizing table of type Buffer");
 
     flushAllBuffers(false);
     return true;
@@ -879,7 +875,7 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 
         buffer.data.swap(block_to_write);
 
-        if (!buffer.first_write_time)
+        if (!buffer.first_write_time) // -V547
             buffer.first_write_time = current_time;
 
         /// After a while, the next write attempt will happen.
@@ -1061,7 +1057,7 @@ void StorageBuffer::alter(const AlterCommands & params, ContextPtr local_context
     /// Flush all buffers to storages, so that no non-empty blocks of the old
     /// structure remain. Structure of empty blocks will be updated during first
     /// insert.
-    optimize({} /*query*/, metadata_snapshot, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, {}, false /*cleanup*/, local_context);
+    optimize({} /*query*/, metadata_snapshot, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, {}, local_context);
 
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, local_context);

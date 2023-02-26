@@ -216,7 +216,7 @@ struct ConvertImpl
                 }
                 else if constexpr (
                     (std::is_same_v<FromDataType, DataTypeIPv4> != std::is_same_v<ToDataType, DataTypeIPv4>)
-                    && !(is_any_of<FromDataType, DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64> || is_any_of<ToDataType, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256>)
+                    && !(is_any_of<FromDataType, DataTypeUInt8, DataTypeUInt16, DataTypeUInt32> || is_any_of<ToDataType, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256>)
                 )
                 {
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Conversion from {} to {} is not supported",
@@ -303,10 +303,7 @@ struct ConvertImpl
                         }
                         else
                         {
-                            if constexpr (std::is_same_v<ToDataType, DataTypeIPv4> && std::is_same_v<FromDataType, DataTypeUInt64>)
-                                vec_to[i] = static_cast<ToFieldType>(static_cast<IPv4::UnderlyingType>(vec_from[i]));
-                            else
-                                vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
+                            vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
                         }
                     }
                 }
@@ -377,7 +374,7 @@ struct ToDateTransform32Or64
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
     {
         // since converting to Date, no need in values outside of default LUT range.
-        return (from <= DATE_LUT_MAX_DAY_NUM)
+        return (from < DATE_LUT_MAX_DAY_NUM)
             ? from
             : time_zone.toDayNum(std::min(time_t(from), time_t(0xFFFFFFFF)));
     }
@@ -394,7 +391,7 @@ struct ToDateTransform32Or64Signed
         /// The function should be monotonic (better for query optimizations), so we saturate instead of overflow.
         if (from < 0)
             return 0;
-        return (from <= DATE_LUT_MAX_DAY_NUM)
+        return (from < DATE_LUT_MAX_DAY_NUM)
             ? static_cast<ToType>(from)
             : time_zone.toDayNum(std::min(time_t(from), time_t(0xFFFFFFFF)));
     }
@@ -3184,8 +3181,8 @@ private:
 
         const auto * from_type = checkAndGetDataType<DataTypeTuple>(from_type_untyped.get());
         if (!from_type)
-            throw Exception(ErrorCodes::TYPE_MISMATCH, "CAST AS Tuple can only be performed between tuple types or from String.\n"
-                            "Left type: {}, right type: {}", from_type_untyped->getName(), to_type->getName());
+            throw Exception{"CAST AS Tuple can only be performed between tuple types or from String.\nLeft type: "
+                + from_type_untyped->getName() + ", right type: " + to_type->getName(), ErrorCodes::TYPE_MISMATCH};
 
         const auto & from_element_types = from_type->getElements();
         const auto & to_element_types = to_type->getElements();
@@ -3226,9 +3223,8 @@ private:
         else
         {
             if (from_element_types.size() != to_element_types.size())
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "CAST AS Tuple can only be performed between tuple types "
-                                "with the same number of elements or from String.\nLeft type: {}, right type: {}",
-                                from_type->getName(), to_type->getName());
+                throw Exception{"CAST AS Tuple can only be performed between tuple types with the same number of elements or from String.\n"
+                    "Left type: " + from_type->getName() + ", right type: " + to_type->getName(), ErrorCodes::TYPE_MISMATCH};
 
             element_wrappers = getElementWrappers(from_element_types, to_element_types);
             to_reverse_index.reserve(to_element_types.size());
@@ -3341,8 +3337,8 @@ private:
         if (const auto * from_tuple = checkAndGetDataType<DataTypeTuple>(from_type_untyped.get()))
         {
             if (from_tuple->getElements().size() != 2)
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "CAST AS Map from tuple requeires 2 elements. "
-                    "Left type: {}, right type: {}", from_tuple->getName(), to_type->getName());
+                throw Exception{"CAST AS Map from tuple requeires 2 elements.\n"
+                    "Left type: " + from_tuple->getName() + ", right type: " + to_type->getName(), ErrorCodes::TYPE_MISMATCH};
 
             DataTypes from_kv_types;
             const auto & to_kv_types = to_type->getKeyValueTypes();
@@ -3363,8 +3359,8 @@ private:
         {
             const auto * nested_tuple = typeid_cast<const DataTypeTuple *>(from_array->getNestedType().get());
             if (!nested_tuple || nested_tuple->getElements().size() != 2)
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "CAST AS Map from array requeires nested tuple of 2 elements. "
-                    "Left type: {}, right type: {}", from_array->getName(), to_type->getName());
+                throw Exception{"CAST AS Map from array requeires nested tuple of 2 elements.\n"
+                    "Left type: " + from_array->getName() + ", right type: " + to_type->getName(), ErrorCodes::TYPE_MISMATCH};
 
             return createArrayToMapWrrapper(nested_tuple->getElements(), to_type->getKeyValueTypes());
         }
@@ -3374,8 +3370,8 @@ private:
         }
         else
         {
-            throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported types to CAST AS Map. "
-                "Left type: {}, right type: {}", from_type_untyped->getName(), to_type->getName());
+            throw Exception{"Unsupported types to CAST AS Map\n"
+                "Left type: " + from_type_untyped->getName() + ", right type: " + to_type->getName(), ErrorCodes::TYPE_MISMATCH};
         }
     }
 

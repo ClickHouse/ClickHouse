@@ -186,14 +186,10 @@ def test_concurrent_restores_on_same_node():
     )
 
     nodes[0].query(f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
-    restore_id = (
-        nodes[0]
-        .query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name} ASYNC")
-        .split("\t")[0]
-    )
+    nodes[0].query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name} ASYNC")
     assert_eq_with_retry(
         nodes[0],
-        f"SELECT status FROM system.backups WHERE status == 'RESTORING' AND id == '{restore_id}'",
+        f"SELECT status FROM system.backups WHERE status == 'RESTORING'",
         "RESTORING",
     )
     assert "Concurrent restores not supported" in nodes[0].query_and_get_error(
@@ -224,11 +220,7 @@ def test_concurrent_restores_on_different_node():
     )
 
     nodes[0].query(f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
-    restore_id = (
-        nodes[0]
-        .query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name} ASYNC")
-        .split("\t")[0]
-    )
+    nodes[0].query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name} ASYNC")
     assert_eq_with_retry(
         nodes[0],
         f"SELECT status FROM system.backups WHERE status == 'RESTORING'",
@@ -236,10 +228,4 @@ def test_concurrent_restores_on_different_node():
     )
     assert "Concurrent restores not supported" in nodes[1].query_and_get_error(
         f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}"
-    )
-
-    assert_eq_with_retry(
-        nodes[0],
-        f"SELECT status FROM system.backups WHERE status == 'RESTORED' AND id == '{restore_id}'",
-        "RESTORED",
     )

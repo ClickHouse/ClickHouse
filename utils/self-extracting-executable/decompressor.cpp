@@ -264,8 +264,7 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
                 perror("mkstemp");
                 return 1;
             }
-            if (0 != close(fd))
-                perror("close");
+            close(fd);
             strncpy(decompressed_suffix, file_name + strlen(file_name) - 6, 6);
             *decompressed_umask = le64toh(file_info.umask);
             have_compressed_analoge = true;

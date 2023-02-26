@@ -149,11 +149,9 @@ public:
 class Momentum : public IWeightsUpdater
 {
 public:
+    Momentum() = default;
 
-    explicit Momentum(size_t num_params, Float64 alpha_ = 0.1) : alpha(alpha_)
-    {
-        accumulated_gradient.resize(num_params + 1, 0);
-    }
+    explicit Momentum(Float64 alpha_) : alpha(alpha_) {}
 
     void update(UInt64 batch_size, std::vector<Float64> & weights, Float64 & bias, Float64 learning_rate, const std::vector<Float64> & batch_gradient) override;
 
@@ -172,10 +170,9 @@ private:
 class Nesterov : public IWeightsUpdater
 {
 public:
-    explicit Nesterov(size_t num_params, Float64 alpha_ = 0.9) : alpha(alpha_)
-    {
-        accumulated_gradient.resize(num_params + 1, 0);
-    }
+    Nesterov() = default;
+
+    explicit Nesterov(Float64 alpha_) : alpha(alpha_) {}
 
     void addToBatch(
         std::vector<Float64> & batch_gradient,
@@ -204,14 +201,10 @@ private:
 class Adam : public IWeightsUpdater
 {
 public:
-    Adam(size_t num_params)
+    Adam()
     {
         beta1_powered = beta1;
         beta2_powered = beta2;
-
-
-        average_gradient.resize(num_params + 1, 0);
-        average_squared_gradient.resize(num_params + 1, 0);
     }
 
     void addToBatch(
@@ -345,11 +338,11 @@ public:
         if (weights_updater_name == "SGD")
             new_weights_updater = std::make_shared<StochasticGradientDescent>();
         else if (weights_updater_name == "Momentum")
-            new_weights_updater = std::make_shared<Momentum>(param_num);
+            new_weights_updater = std::make_shared<Momentum>();
         else if (weights_updater_name == "Nesterov")
-            new_weights_updater = std::make_shared<Nesterov>(param_num);
+            new_weights_updater = std::make_shared<Nesterov>();
         else if (weights_updater_name == "Adam")
-            new_weights_updater = std::make_shared<Adam>(param_num);
+            new_weights_updater = std::make_shared<Adam>();
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Illegal name of weights updater (should have been checked earlier)");
 
