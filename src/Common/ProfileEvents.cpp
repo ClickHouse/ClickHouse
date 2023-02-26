@@ -10,7 +10,6 @@
     M(InsertQuery, "Same as Query, but only for INSERT queries.") \
     M(AsyncInsertQuery, "Same as InsertQuery, but only for asynchronous INSERT queries.") \
     M(AsyncInsertBytes, "Data size in bytes of asynchronous INSERT queries.") \
-    M(AsyncInsertCacheHits, "Number of times a duplicate hash id has been found in asynchronous INSERT hash id cache.") \
     M(FailedQuery, "Number of failed queries.") \
     M(FailedSelectQuery, "Same as FailedQuery, but only for SELECT queries.") \
     M(FailedInsertQuery, "Same as FailedQuery, but only for INSERT queries.") \
@@ -53,8 +52,6 @@
     M(TableFunctionExecute, "Number of table function calls.") \
     M(MarkCacheHits, "Number of times an entry has been found in the mark cache, so we didn't have to load a mark file.") \
     M(MarkCacheMisses, "Number of times an entry has not been found in the mark cache, so we had to load a mark file in memory, which is a costly operation, adding to query latency.") \
-    M(QueryCacheHits, "Number of times a query result has been found in the query cache (and query computation was avoided).") \
-    M(QueryCacheMisses, "Number of times a query result has not been found in the query cache (and required query computation).") \
     M(CreatedReadBufferOrdinary, "Number of times ordinary read buffer was created for reading data (while choosing among other read methods).") \
     M(CreatedReadBufferDirectIO, "Number of times a read buffer with O_DIRECT was created for reading data (while choosing among other read methods).") \
     M(CreatedReadBufferDirectIOFailed, "Number of times a read buffer with O_DIRECT was attempted to be created for reading data (while choosing among other read methods), but the OS did not allow it (due to lack of filesystem support or other reasons) and we fallen back to the ordinary reading method.") \
@@ -66,20 +63,7 @@
     M(NetworkSendElapsedMicroseconds, "Total time spent waiting for data to send to network or sending data to network. Only ClickHouse-related network interaction is included, not by 3rd party libraries..") \
     M(NetworkReceiveBytes, "Total number of bytes received from network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \
     M(NetworkSendBytes, "Total number of bytes send to network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \
-    \
-    M(DiskS3GetRequestThrottlerCount, "Number of DiskS3 GET and SELECT requests passed through throttler.") \
-    M(DiskS3GetRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform DiskS3 GET and SELECT request throttling.") \
-    M(DiskS3PutRequestThrottlerCount, "Number of DiskS3 PUT, COPY, POST and LIST requests passed through throttler.") \
-    M(DiskS3PutRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform DiskS3 PUT, COPY, POST and LIST request throttling.") \
-    M(S3GetRequestThrottlerCount, "Number of S3 GET and SELECT requests passed through throttler.") \
-    M(S3GetRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform S3 GET and SELECT request throttling.") \
-    M(S3PutRequestThrottlerCount, "Number of S3 PUT, COPY, POST and LIST requests passed through throttler.") \
-    M(S3PutRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform S3 PUT, COPY, POST and LIST request throttling.") \
-    M(RemoteReadThrottlerBytes, "Bytes passed through 'max_remote_read_network_bandwidth_for_server' throttler.") \
-    M(RemoteReadThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_remote_read_network_bandwidth_for_server' throttling.") \
-    M(RemoteWriteThrottlerBytes, "Bytes passed through 'max_remote_write_network_bandwidth_for_server' throttler.") \
-    M(RemoteWriteThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_remote_write_network_bandwidth_for_server' throttling.") \
-    M(ThrottlerSleepMicroseconds, "Total time a query was sleeping to conform all throttling settings.") \
+    M(ThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_network_bandwidth' and other throttling settings.") \
     \
     M(QueryMaskingRulesMatch, "Number of times query masking rules was successfully matched.") \
     \
@@ -325,7 +309,6 @@ The server successfully detected this situation and will download merged part fr
     M(S3CopyObject, "Number of S3 API CopyObject calls.") \
     M(S3ListObjects, "Number of S3 API ListObjects calls.") \
     M(S3HeadObject,  "Number of S3 API HeadObject calls.") \
-    M(S3GetObjectAttributes, "Number of S3 API GetObjectAttributes calls.") \
     M(S3CreateMultipartUpload, "Number of S3 API CreateMultipartUpload calls.") \
     M(S3UploadPartCopy, "Number of S3 API UploadPartCopy calls.") \
     M(S3UploadPart, "Number of S3 API UploadPart calls.") \
@@ -338,7 +321,6 @@ The server successfully detected this situation and will download merged part fr
     M(DiskS3CopyObject, "Number of DiskS3 API CopyObject calls.") \
     M(DiskS3ListObjects, "Number of DiskS3 API ListObjects calls.") \
     M(DiskS3HeadObject,  "Number of DiskS3 API HeadObject calls.") \
-    M(DiskS3GetObjectAttributes, "Number of DiskS3 API GetObjectAttributes calls.") \
     M(DiskS3CreateMultipartUpload, "Number of DiskS3 API CreateMultipartUpload calls.") \
     M(DiskS3UploadPartCopy, "Number of DiskS3 API UploadPartCopy calls.") \
     M(DiskS3UploadPart, "Number of DiskS3 API UploadPart calls.") \
@@ -348,7 +330,6 @@ The server successfully detected this situation and will download merged part fr
     M(DiskS3GetObject, "Number of DiskS3 API GetObject calls.") \
     \
     M(ReadBufferFromS3Microseconds, "Time spend in reading from S3.") \
-    M(ReadBufferFromS3InitMicroseconds, "Time spend initializing connection to S3.") \
     M(ReadBufferFromS3Bytes, "Bytes read from S3.") \
     M(ReadBufferFromS3RequestsErrors, "Number of exceptions while reading from S3.") \
     \
@@ -370,18 +351,13 @@ The server successfully detected this situation and will download merged part fr
     M(RemoteFSCancelledPrefetches, "Number of cancelled prefecthes (because of seek)") \
     M(RemoteFSUnusedPrefetches, "Number of prefetches pending at buffer destruction") \
     M(RemoteFSPrefetchedReads, "Number of reads from prefecthed buffer") \
-    M(RemoteFSPrefetchedBytes, "Number of bytes from prefecthed buffer") \
     M(RemoteFSUnprefetchedReads, "Number of reads from unprefetched buffer") \
-    M(RemoteFSUnprefetchedBytes, "Number of bytes from unprefetched buffer") \
     M(RemoteFSLazySeeks, "Number of lazy seeks") \
     M(RemoteFSSeeksWithReset, "Number of seeks which lead to a new connection") \
     M(RemoteFSBuffers, "Number of buffers created for asynchronous reading from remote filesystem") \
-    M(MergeTreePrefetchedReadPoolInit, "Time spent preparing tasks in MergeTreePrefetchedReadPool") \
-    M(WaitPrefetchTaskMicroseconds, "Time spend waiting for prefetched reader") \
     \
     M(ThreadpoolReaderTaskMicroseconds, "Time spent getting the data in asynchronous reading") \
     M(ThreadpoolReaderReadBytes, "Bytes read from a threadpool task in asynchronous reading") \
-    M(ThreadpoolReaderSubmit, "Bytes read from a threadpool task in asynchronous reading") \
     \
     M(FileSegmentWaitReadBufferMicroseconds, "Metric per file segment. Time spend waiting for internal read buffer (includes cache waiting)") \
     M(FileSegmentReadMicroseconds, "Metric per file segment. Time spend reading from file") \
@@ -403,8 +379,6 @@ The server successfully detected this situation and will download merged part fr
     M(ThreadPoolReaderPageCacheMissElapsedMicroseconds, "Time spent reading data inside the asynchronous job in ThreadPoolReader - when read was not done from page cache.") \
     \
     M(AsynchronousReadWaitMicroseconds, "Time spent in waiting for asynchronous reads.") \
-    M(AsynchronousRemoteReadWaitMicroseconds, "Time spent in waiting for asynchronous remote reads.") \
-    M(SynchronousRemoteReadWaitMicroseconds, "Time spent in waiting for synchronous remote reads.") \
     \
     M(ExternalDataSourceLocalCacheReadBytes, "Bytes read from local cache buffer in RemoteReadBufferCache")\
     \
@@ -473,22 +447,7 @@ The server successfully detected this situation and will download merged part fr
     M(OverflowBreak, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'break' and the result is incomplete.") \
     M(OverflowThrow, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'throw' and exception was thrown.") \
     M(OverflowAny, "Number of times approximate GROUP BY was in effect: when aggregation was performed only on top of first 'max_rows_to_group_by' unique keys and other keys were ignored due to 'group_by_overflow_mode' = 'any'.") \
-    \
-    M(ServerStartupMilliseconds, "Time elapsed from starting server to listening to sockets in milliseconds")\
-    M(IOUringSQEsSubmitted, "Total number of io_uring SQEs submitted") \
-    M(IOUringSQEsResubmits, "Total number of io_uring SQE resubmits performed") \
-    M(IOUringCQEsCompleted, "Total number of successfully completed io_uring CQEs") \
-    M(IOUringCQEsFailed, "Total number of completed io_uring CQEs with failures") \
-    \
-    M(ReadTaskRequestsReceived, "The number of callbacks requested from the remote server back to the initiator server to choose the read task (for s3Cluster table function and similar). Measured on the initiator server side.") \
-    M(MergeTreeReadTaskRequestsReceived, "The number of callbacks requested from the remote server back to the initiator server to choose the read task (for MergeTree tables). Measured on the initiator server side.") \
-    \
-    M(ReadTaskRequestsSent, "The number of callbacks requested from the remote server back to the initiator server to choose the read task (for s3Cluster table function and similar). Measured on the remote server side.") \
-    M(MergeTreeReadTaskRequestsSent, "The number of callbacks requested from the remote server back to the initiator server to choose the read task (for MergeTree tables). Measured on the remote server side.") \
-    M(MergeTreeAllRangesAnnouncementsSent, "The number of announcement sent from the remote server to the initiator server about the set of data parts (for MergeTree tables). Measured on the remote server side.") \
-    M(ReadTaskRequestsSentElapsedMicroseconds, "Time spent in callbacks requested from the remote server back to the initiator server to choose the read task (for s3Cluster table function and similar). Measured on the remote server side.") \
-    M(MergeTreeReadTaskRequestsSentElapsedMicroseconds, "Time spent in callbacks requested from the remote server back to the initiator server to choose the read task (for MergeTree tables). Measured on the remote server side.") \
-    M(MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds, "Time spent in sending the announcement from the remote server to the initiator server about the set of data parts (for MergeTree tables). Measured on the remote server side.")
+
 
 namespace ProfileEvents
 {

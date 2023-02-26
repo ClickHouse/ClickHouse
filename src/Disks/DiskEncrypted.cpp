@@ -189,7 +189,7 @@ public:
     DiskPtr getDisk(size_t i) const override
     {
         if (i != 0)
-            throw Exception(ErrorCodes::INCORRECT_DISK_INDEX, "Can't use i != 0 with single disk reservation");
+            throw Exception("Can't use i != 0 with single disk reservation", ErrorCodes::INCORRECT_DISK_INDEX);
         return disk;
     }
 
@@ -209,8 +209,7 @@ DiskEncrypted::DiskEncrypted(
 }
 
 DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEncryptedSettings> settings_)
-    : IDisk(name_)
-    , delegate(settings_->wrapped_disk)
+    : DiskDecorator(settings_->wrapped_disk)
     , encrypted_name(name_)
     , disk_path(settings_->disk_path)
     , disk_absolute_path(settings_->wrapped_disk->getPath() + settings_->disk_path)
@@ -289,12 +288,6 @@ std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
     std::optional<size_t> read_hint,
     std::optional<size_t> file_size) const
 {
-    if (read_hint && *read_hint > 0)
-        read_hint = *read_hint + FileEncryption::Header::kSize;
-
-    if (file_size && *file_size > 0)
-        file_size = *file_size + FileEncryption::Header::kSize;
-
     auto wrapped_path = wrappedPath(path);
     auto buffer = delegate->readFile(wrapped_path, settings, read_hint, file_size);
     if (buffer->eof())

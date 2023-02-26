@@ -18,6 +18,16 @@ namespace ErrorCodes
     extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
 }
 
+
+MergeTreeDataPartCompact::MergeTreeDataPartCompact(
+       MergeTreeData & storage_,
+        const String & name_,
+        const MutableDataPartStoragePtr & data_part_storage_,
+        const IMergeTreeDataPart * parent_part_)
+    : IMergeTreeDataPart(storage_, name_, data_part_storage_, Type::Compact, parent_part_)
+{
+}
+
 MergeTreeDataPartCompact::MergeTreeDataPartCompact(
         const MergeTreeData & storage_,
         const String & name_,
@@ -89,7 +99,7 @@ void MergeTreeDataPartCompact::loadIndexGranularityImpl(
     size_t columns_count, const IDataPartStorage & data_part_storage_)
 {
     if (!index_granularity_info_.mark_type.adaptive)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeTreeDataPartCompact cannot be created with non-adaptive granulary.");
+        throw Exception("MergeTreeDataPartCompact cannot be created with non-adaptive granulary.", ErrorCodes::NOT_IMPLEMENTED);
 
     auto marks_file_path = index_granularity_info_.getMarksFilePath("data");
     if (!data_part_storage_.exists(marks_file_path))
@@ -127,7 +137,7 @@ void MergeTreeDataPartCompact::loadIndexGranularityImpl(
 void MergeTreeDataPartCompact::loadIndexGranularity()
 {
     if (columns.empty())
-        throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns in part {}", name);
+        throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
     loadIndexGranularityImpl(index_granularity, index_granularity_info, columns.size(), getDataPartStorage());
 }
@@ -152,7 +162,7 @@ void MergeTreeDataPartCompact::checkConsistency(bool require_part_metadata) cons
     {
         /// count.txt should be present even in non custom-partitioned parts
         if (!checksums.files.contains("count.txt"))
-            throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No checksum for count.txt");
+            throw Exception("No checksum for count.txt", ErrorCodes::NO_FILE_IN_DATA_PART);
 
         if (require_part_metadata)
         {
@@ -200,7 +210,7 @@ void MergeTreeDataPartCompact::checkConsistency(bool require_part_metadata) cons
                     "Part {} is broken: bad size of marks file '{}': {}, must be: {}",
                     getDataPartStorage().getRelativePath(),
                     std::string(fs::path(getDataPartStorage().getFullPath()) / mrk_file_name),
-                    file_size, expected_file_size);
+                    std::to_string(file_size), std::to_string(expected_file_size));
         }
     }
 }

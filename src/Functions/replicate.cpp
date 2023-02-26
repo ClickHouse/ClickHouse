@@ -46,7 +46,7 @@ ColumnPtr FunctionReplicate::executeImpl(const ColumnsWithTypeAndName & argument
         {
             const auto * const_array_column = checkAndGetColumnConst<ColumnArray>(arguments[i].column.get());
             if (!const_array_column)
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column for replicate");
+                throw Exception("Unexpected column for replicate", ErrorCodes::ILLEGAL_COLUMN);
             temp_column = const_array_column->convertToFullColumn();
             array_column = checkAndGetColumn<ColumnArray>(temp_column.get());
         }

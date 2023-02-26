@@ -26,7 +26,6 @@
 #    pragma GCC diagnostic pop
 #endif
 
-
 namespace DB
 {
 
@@ -67,12 +66,12 @@ ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
 
             if (!low_cardinality_type)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Incompatible type for LowCardinality column: {}",
+                    "Incompatible type for low cardinality column: {}",
                     column.type->getName());
 
             if (can_be_executed_on_default_arguments)
             {
-                /// Normal case, when function can be executed on values' default.
+                /// Normal case, when function can be executed on values's default.
                 column.column = low_cardinality_column->getDictionary().getNestedColumn();
                 indexes = low_cardinality_column->getIndexesPtr();
             }
@@ -124,7 +123,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForConstantArguments(
         if (arg_num < args.size() && !isColumnConst(*args[arg_num].column))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                 "Argument at index {} for function {} must be constant",
-                arg_num,
+                toString(arg_num),
                 getName());
 
     if (args.empty() || !useDefaultImplementationForConstants() || !allArgumentsAreConstants(args))
@@ -281,7 +280,6 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(const ColumnsWithType
 
             auto res = executeWithoutLowCardinalityColumns(columns_without_low_cardinality, dictionary_type, new_input_rows_count, dry_run);
             bool res_is_constant = isColumnConst(*res);
-
             auto keys = res_is_constant
                 ? res->cloneResized(1)->convertToFullColumnIfConst()
                 : res;
@@ -388,8 +386,8 @@ void IFunctionOverloadResolver::checkNumberOfArguments(size_t number_of_argument
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Number of arguments for function {} doesn't match: passed {}, should be {}",
             getName(),
-            number_of_arguments,
-            expected_number_of_arguments);
+            toString(number_of_arguments),
+            toString(expected_number_of_arguments));
 }
 
 DataTypePtr IFunctionOverloadResolver::getReturnType(const ColumnsWithTypeAndName & arguments) const

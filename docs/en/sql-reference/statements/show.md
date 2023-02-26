@@ -511,14 +511,4 @@ Result:
 
 -   [system.settings](../../operations/system-tables/settings.md) table
 
-## SHOW ENGINES
-
-``` sql
-SHOW ENGINES [INTO OUTFILE filename] [FORMAT format]
-```
-
-Outputs the content of the [system.table_engines](../../operations/system-tables/table_engines.md) table, that contains description of table engines supported by server and their feature support information.
-
-**See Also**
-
--   [system.table_engines](../../operations/system-tables/table_engines.md) table
+[Original article](https://clickhouse.com/docs/en/sql-reference/statements/show/) <!--hide-->

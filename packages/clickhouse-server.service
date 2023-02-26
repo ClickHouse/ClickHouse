@@ -11,16 +11,13 @@ Wants=time-sync.target
 [Service]
 Type=notify
 
-# NOTE: we leave clickhouse watchdog process enabled to be able to see OOM/SIGKILL traces in clickhouse-server.log files.
-# If you wish to disable the watchdog and rely on systemd logs just add "Environment=CLICKHOUSE_WATCHDOG_ENABLE=0" line.
+# Switching off watchdog is very important for sd_notify to work correctly.
+Environment=CLICKHOUSE_WATCHDOG_ENABLE=0
 User=clickhouse
 Group=clickhouse
 Restart=always
 RestartSec=30
-# Since ClickHouse is systemd aware default 1m30sec may not be enough
-TimeoutStartSec=inifinity
-# %p is resolved to the systemd unit name
-RuntimeDirectory=%p 
+RuntimeDirectory=%p  # %p is resolved to the systemd unit name
 ExecStart=/usr/bin/clickhouse-server --config=/etc/clickhouse-server/config.xml --pid-file=%t/%p/%p.pid
 # Minus means that this file is optional.
 EnvironmentFile=-/etc/default/%p

@@ -10,7 +10,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadSettings.h>
 #include <IO/WithFileName.h>
-#include <IO/HTTPHeaderEntries.h>
 #include <Common/logger_useful.h>
 #include <base/sleep.h>
 #include <base/types.h>
@@ -92,6 +91,9 @@ namespace detail
     class ReadWriteBufferFromHTTPBase : public SeekableReadBuffer, public WithFileName, public WithFileSize
     {
     public:
+        using HTTPHeaderEntry = std::tuple<std::string, std::string>;
+        using HTTPHeaderEntries = std::vector<HTTPHeaderEntry>;
+
         /// HTTP range, including right bound [begin, end].
         struct Range
         {
@@ -157,8 +159,8 @@ namespace detail
             if (out_stream_callback)
                 request.setChunkedTransferEncoding(true);
 
-            for (auto & [header, value] : http_header_entries)
-                request.set(header, value);
+            for (auto & http_header_entry : http_header_entries)
+                request.set(std::get<0>(http_header_entry), std::get<1>(http_header_entry));
 
             if (withPartialContent())
             {
@@ -224,9 +226,9 @@ namespace detail
 
         enum class InitializeError
         {
-            RETRYABLE_ERROR,
+            RETRIABLE_ERROR,
             /// If error is not retriable, `exception` variable must be set.
-            NON_RETRYABLE_ERROR,
+            NON_RETRIABLE_ERROR,
             /// Allows to skip not found urls for globs
             SKIP_NOT_FOUND_URL,
             NONE,
@@ -317,11 +319,11 @@ namespace detail
             auto iter = std::find_if(
                 http_header_entries.begin(),
                 http_header_entries.end(),
-                [&user_agent](const HTTPHeaderEntry & entry) { return entry.name == user_agent; });
+                [&user_agent](const HTTPHeaderEntry & entry) { return std::get<0>(entry) == user_agent; });
 
             if (iter == http_header_entries.end())
             {
-                http_header_entries.emplace_back("User-Agent", fmt::format("ClickHouse/{}", VERSION_STRING));
+                http_header_entries.emplace_back(std::make_pair("User-Agent", fmt::format("ClickHouse/{}", VERSION_STRING)));
             }
 
             if (!delay_initialization)
@@ -398,7 +400,7 @@ namespace detail
                 }
                 else if (!isRetriableError(http_status))
                 {
-                    initialization_error = InitializeError::NON_RETRYABLE_ERROR;
+                    initialization_error = InitializeError::NON_RETRIABLE_ERROR;
                     exception = std::current_exception();
                 }
                 else
@@ -409,7 +411,7 @@ namespace detail
         }
 
         /**
-         * Throws if error is retryable, otherwise sets initialization_error = NON_RETRYABLE_ERROR and
+         * Throws if error is retriable, otherwise sets initialization_error = NON_RETRIABLE_ERROR and
          * saves exception into `exception` variable. In case url is not found and skip_not_found_url == true,
          * sets initialization_error = SKIP_NOT_FOUND_URL, otherwise throws.
          */
@@ -453,9 +455,9 @@ namespace detail
 
                     /// Retry 200OK
                     if (response.getStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_OK)
-                        initialization_error = InitializeError::RETRYABLE_ERROR;
+                        initialization_error = InitializeError::RETRIABLE_ERROR;
                     else
-                        initialization_error = InitializeError::NON_RETRYABLE_ERROR;
+                        initialization_error = InitializeError::NON_RETRIABLE_ERROR;
 
                     return;
                 }
@@ -544,7 +546,7 @@ namespace detail
                     {
                         initialize();
 
-                        if (initialization_error == InitializeError::NON_RETRYABLE_ERROR)
+                        if (initialization_error == InitializeError::NON_RETRIABLE_ERROR)
                         {
                             assert(exception);
                             break;
@@ -553,7 +555,7 @@ namespace detail
                         {
                             return false;
                         }
-                        else if (initialization_error == InitializeError::RETRYABLE_ERROR)
+                        else if (initialization_error == InitializeError::RETRIABLE_ERROR)
                         {
                             LOG_ERROR(
                                 log,
@@ -582,13 +584,10 @@ namespace detail
                 }
                 catch (const Poco::Exception & e)
                 {
-                    /// Too many open files - non-retryable.
-                    if (e.code() == POCO_EMFILE)
-                        throw;
-
-                    /** Retry request unconditionally if nothing has been read yet.
-                      * Otherwise if it is GET method retry with range header.
-                      */
+                    /**
+                     * Retry request unconditionally if nothing has been read yet.
+                     * Otherwise if it is GET method retry with range header.
+                     */
                     bool can_retry_request = !offset_from_begin_pos || method == Poco::Net::HTTPRequest::HTTP_GET;
                     if (!can_retry_request)
                         throw;
@@ -630,11 +629,11 @@ namespace detail
         off_t seek(off_t offset_, int whence) override
         {
             if (whence != SEEK_SET)
-                throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET mode is allowed.");
+                throw Exception("Only SEEK_SET mode is allowed.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
             if (offset_ < 0)
-                throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position is out of bounds. Offset: {}",
-                    offset_);
+                throw Exception(
+                    "Seek position is out of bounds. Offset: " + std::to_string(offset_), ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
 
             off_t current_offset = getOffset();
             if (!working_buffer.empty() && size_t(offset_) >= current_offset - working_buffer.size() && offset_ < current_offset)
@@ -780,7 +779,7 @@ public:
         UInt64 max_redirects_ = 0,
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
         ReadSettings settings_ = {},
-        HTTPHeaderEntries http_header_entries_ = {},
+        ReadWriteBufferFromHTTP::HTTPHeaderEntries http_header_entries_ = {},
         const RemoteHostFilter * remote_host_filter_ = nullptr,
         bool delay_initialization_ = true,
         bool use_external_buffer_ = false,
@@ -852,7 +851,7 @@ private:
     UInt64 max_redirects;
     size_t buffer_size;
     ReadSettings settings;
-    HTTPHeaderEntries http_header_entries;
+    ReadWriteBufferFromHTTP::HTTPHeaderEntries http_header_entries;
     const RemoteHostFilter * remote_host_filter;
     bool delay_initialization;
     bool use_external_buffer;

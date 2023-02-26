@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
-#include <Storages/MergeTree/MergeTreeIndexInverted.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+
 #include <utility>
 #include "IO/WriteBufferFromFileDecorator.h"
 
@@ -112,8 +112,7 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     , compress_primary_key(settings.compress_primary_key)
 {
     if (settings.blocks_are_granules_size && !index_granularity.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Can't take information about index granularity from blocks, when non empty index_granularity array specified");
+        throw Exception("Can't take information about index granularity from blocks, when non empty index_granularity array specified", ErrorCodes::LOGICAL_ERROR);
 
     if (!data_part->getDataPartStorage().exists())
         data_part->getDataPartStorage().createDirectories();
@@ -135,18 +134,13 @@ static size_t computeIndexGranularityImpl(
 {
     size_t rows_in_block = block.rows();
     size_t index_granularity_for_block;
-
     if (!can_use_adaptive_index_granularity)
-    {
         index_granularity_for_block = fixed_index_granularity_rows;
-    }
     else
     {
         size_t block_size_in_memory = block.bytes();
         if (blocks_are_granules)
-        {
             index_granularity_for_block = rows_in_block;
-        }
         else if (block_size_in_memory >= index_granularity_bytes)
         {
             size_t granules_in_block = block_size_in_memory / index_granularity_bytes;
@@ -158,17 +152,11 @@ static size_t computeIndexGranularityImpl(
             index_granularity_for_block = index_granularity_bytes / size_of_row_in_bytes;
         }
     }
-
-    /// We should be less or equal than fixed index granularity.
-    /// But if block size is a granule size then do not adjust it.
-    /// Granularity greater than fixed granularity might come from compact part.
-    if (!blocks_are_granules)
-        index_granularity_for_block = std::min(fixed_index_granularity_rows, index_granularity_for_block);
-
-    /// Very rare case when index granularity bytes less than single row.
-    if (index_granularity_for_block == 0)
+    if (index_granularity_for_block == 0) /// very rare case when index granularity bytes less then single row
         index_granularity_for_block = 1;
 
+    /// We should be less or equal than fixed index granularity
+    index_granularity_for_block = std::min(fixed_index_granularity_rows, index_granularity_for_block);
     return index_granularity_for_block;
 }
 
@@ -220,14 +208,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
                         default_codec, settings.max_compress_block_size,
                         marks_compression_codec, settings.marks_compress_block_size,
                         settings.query_write_settings));
-
-        GinIndexStorePtr store = nullptr;
-        if (dynamic_cast<const MergeTreeIndexInverted *>(&*index_helper) != nullptr)
-        {
-            store = std::make_shared<GinIndexStore>(stream_name, data_part->getDataPartStoragePtr(), data_part->getDataPartStoragePtr(), storage.getSettings()->max_digestion_size_per_segment);
-            gin_index_stores[stream_name] = store;
-        }
-        skip_indices_aggregators.push_back(index_helper->createIndexAggregatorForPart(store));
+        skip_indices_aggregators.push_back(index_helper->createIndexAggregator());
         skip_index_accumulated_marks.push_back(0);
     }
 }
@@ -283,16 +264,6 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
         auto & stream = *skip_indices_streams[i];
         WriteBuffer & marks_out = stream.compress_marks ? stream.marks_compressed_hashing : stream.marks_hashing;
 
-        GinIndexStorePtr store;
-        if (dynamic_cast<const MergeTreeIndexInverted *>(&*index_helper) != nullptr)
-        {
-            String stream_name = index_helper->getFileName();
-            auto it = gin_index_stores.find(stream_name);
-            if (it == gin_index_stores.end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Index '{}' does not exist", stream_name);
-            store = it->second;
-        }
-
         for (const auto & granule : granules_to_write)
         {
             if (skip_index_accumulated_marks[i] == index_helper->index.granularity)
@@ -303,7 +274,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
 
             if (skip_indices_aggregators[i]->empty() && granule.mark_on_start)
             {
-                skip_indices_aggregators[i] = index_helper->createIndexAggregatorForPart(store);
+                skip_indices_aggregators[i] = index_helper->createIndexAggregator();
 
                 if (stream.compressed_hashing.offset() >= settings.min_compress_block_size)
                     stream.compressed_hashing.next();
@@ -405,9 +376,7 @@ void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(bool sync)
         if (sync)
             stream->sync();
     }
-    for (auto & store: gin_index_stores)
-        store.second->finalize();
-    gin_index_stores.clear();
+
     skip_indices_streams.clear();
     skip_indices_aggregators.clear();
     skip_index_accumulated_marks.clear();

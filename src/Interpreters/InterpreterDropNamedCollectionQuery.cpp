@@ -3,7 +3,7 @@
 #include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
-#include <Common/NamedCollections/NamedCollectionUtils.h>
+#include <Storages/NamedCollectionUtils.h>
 
 
 namespace DB

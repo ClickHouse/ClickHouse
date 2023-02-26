@@ -41,3 +41,5 @@ Features:
 -   Basic authentication.
 
 Implemented in Go.
+
+[Original article](https://clickhouse.com/docs/en/interfaces/third-party/proxy/) <!--hide-->

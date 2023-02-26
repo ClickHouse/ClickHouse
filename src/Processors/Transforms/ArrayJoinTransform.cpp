@@ -19,7 +19,7 @@ ArrayJoinTransform::ArrayJoinTransform(
 {
     /// TODO
 //    if (on_totals_)
-//        throw Exception(ErrorCodes::LOGICAL_ERROR, "ARRAY JOIN is not supported for totals");
+//        throw Exception("ARRAY JOIN is not supported for totals", ErrorCodes::LOGICAL_ERROR);
 }
 
 void ArrayJoinTransform::transform(Chunk & chunk)

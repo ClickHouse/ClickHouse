@@ -56,7 +56,7 @@ std::optional<size_t> tryChooseTable(const ASTIdentifier & identifier, const std
     if ((best_match != ColumnMatch::NoMatch) && same_match)
     {
         if (!allow_ambiguous)
-            throw Exception(ErrorCodes::AMBIGUOUS_COLUMN_NAME, "Ambiguous column '{}'", identifier.name());
+            throw Exception("Ambiguous column '" + identifier.name() + "'", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
         best_match = ColumnMatch::Ambiguous;
         return {};
     }
@@ -348,7 +348,7 @@ void splitConjunctionsAst(const ASTPtr & node, ASTs & result)
 
 ASTs splitConjunctionsAst(const ASTPtr & node)
 {
-    ASTs result;
+    std::vector<ASTPtr> result;
     splitConjunctionsAst(node, result);
     return result;
 }

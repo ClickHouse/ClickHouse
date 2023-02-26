@@ -131,20 +131,27 @@ LAYOUT(FLAT(INITIAL_ARRAY_SIZE 50000 MAX_ARRAY_SIZE 5000000))
 
 Ключ словаря имеет тип [UInt64](../../../sql-reference/data-types/int-uint.md).
 
+Если `preallocate` имеет значение `true` (по умолчанию `false`), хеш-таблица будет предварительно определена (это ускорит загрузку словаря). Используйте этот метод только в случае, если:
+
+- Источник поддерживает произвольное количество элементов (пока поддерживается только источником `ClickHouse`).
+- В данных нет дубликатов (иначе это может увеличить объем используемой памяти хеш-таблицы).
+
 Поддерживаются все виды источников. При обновлении данные (из файла, из таблицы) читаются целиком.
 
 Пример конфигурации:
 
 ``` xml
 <layout>
-  <hashed/>
+   <hashed>
+    <preallocate>0</preallocate>
+  </hashed>
 </layout>
 ```
 
 или
 
 ``` sql
-LAYOUT(HASHED())
+LAYOUT(HASHED(PREALLOCATE 0))
 ```
 
 ### sparse_hashed {#dicts-external_dicts_dict_layout-sparse_hashed}
@@ -152,6 +159,8 @@ LAYOUT(HASHED())
 Аналогичен `hashed`, но при этом занимает меньше места в памяти и генерирует более высокую загрузку CPU.
 
 Ключ словаря имеет тип [UInt64](../../../sql-reference/data-types/int-uint.md).
+
+Для этого типа размещения также можно задать `preallocate` в значении `true`. В данном случае это более важно, чем для типа `hashed`.
 
 Пример конфигурации:
 
@@ -164,7 +173,7 @@ LAYOUT(HASHED())
 или
 
 ``` sql
-LAYOUT(SPARSE_HASHED())
+LAYOUT(SPARSE_HASHED([PREALLOCATE 0]))
 ```
 
 ### complex_key_hashed {#complex-key-hashed}

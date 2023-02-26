@@ -16,17 +16,11 @@ namespace DB
 namespace
 {
 
-class CountDistinctVisitor : public InDepthQueryTreeVisitorWithContext<CountDistinctVisitor>
+class CountDistinctVisitor : public InDepthQueryTreeVisitor<CountDistinctVisitor>
 {
 public:
-    using Base = InDepthQueryTreeVisitorWithContext<CountDistinctVisitor>;
-    using Base::Base;
-
-    void visitImpl(QueryTreeNodePtr & node)
+    static void visitImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().count_distinct_optimization)
-            return;
-
         auto * query_node = node->as<QueryNode>();
 
         /// Check that query has only SELECT clause
@@ -77,16 +71,16 @@ public:
         auto result_type = function_node->getResultType();
         AggregateFunctionProperties properties;
         auto aggregate_function = AggregateFunctionFactory::instance().get("count", {}, {}, properties);
-        function_node->resolveAsAggregateFunction(std::move(aggregate_function));
+        function_node->resolveAsAggregateFunction(std::move(aggregate_function), std::move(result_type));
         function_node->getArguments().getNodes().clear();
     }
 };
 
 }
 
-void CountDistinctPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void CountDistinctPass::run(QueryTreeNodePtr query_tree_node, ContextPtr)
 {
-    CountDistinctVisitor visitor(std::move(context));
+    CountDistinctVisitor visitor;
     visitor.visit(query_tree_node);
 }
 

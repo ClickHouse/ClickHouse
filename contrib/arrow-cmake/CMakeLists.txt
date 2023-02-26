@@ -78,14 +78,23 @@ set(FLATBUFFERS_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/flatbuffers")
 set(FLATBUFFERS_INCLUDE_DIR "${FLATBUFFERS_SRC_DIR}/include")
 
 # set flatbuffers CMake options
-set(FLATBUFFERS_BUILD_FLATLIB ON CACHE BOOL "Enable the build of the flatbuffers library")
-set(FLATBUFFERS_BUILD_SHAREDLIB OFF CACHE BOOL "Disable the build of the flatbuffers shared library")
+if (USE_STATIC_LIBRARIES)
+    set(FLATBUFFERS_BUILD_FLATLIB ON CACHE BOOL "Enable the build of the flatbuffers library")
+    set(FLATBUFFERS_BUILD_SHAREDLIB OFF CACHE BOOL "Disable the build of the flatbuffers shared library")
+else ()
+    set(FLATBUFFERS_BUILD_SHAREDLIB ON CACHE BOOL "Enable the build of the flatbuffers shared library")
+    set(FLATBUFFERS_BUILD_FLATLIB OFF CACHE BOOL "Disable the build of the flatbuffers library")
+endif ()
 set(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL "Skip flatbuffers tests")
 
 add_subdirectory(${FLATBUFFERS_SRC_DIR} "${FLATBUFFERS_BINARY_DIR}")
 
 add_library(_flatbuffers INTERFACE)
-target_link_libraries(_flatbuffers INTERFACE flatbuffers)
+if(USE_STATIC_LIBRARIES)
+    target_link_libraries(_flatbuffers INTERFACE flatbuffers)
+else()
+    target_link_libraries(_flatbuffers INTERFACE flatbuffers_shared)
+endif()
 target_include_directories(_flatbuffers INTERFACE ${FLATBUFFERS_INCLUDE_DIR})
 
 # ===  hdfs

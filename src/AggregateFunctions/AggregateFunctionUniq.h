@@ -358,11 +358,16 @@ private:
 
 public:
     explicit AggregateFunctionUniq(const DataTypes & argument_types_)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionUniq<T, Data>>(argument_types_, {}, std::make_shared<DataTypeUInt64>())
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionUniq<T, Data>>(argument_types_, {})
     {
     }
 
     String getName() const override { return Data::getName(); }
+
+    DataTypePtr getReturnType() const override
+    {
+        return std::make_shared<DataTypeUInt64>();
+    }
 
     bool allocatesMemoryInArena() const override { return false; }
 
@@ -457,7 +462,7 @@ private:
 
 public:
     explicit AggregateFunctionUniqVariadic(const DataTypes & arguments)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionUniqVariadic<Data>>(arguments, {}, std::make_shared<DataTypeUInt64>())
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionUniqVariadic<Data>>(arguments, {})
     {
         if (argument_is_tuple)
             num_args = typeid_cast<const DataTypeTuple &>(*arguments[0]).getElements().size();
@@ -466,6 +471,11 @@ public:
     }
 
     String getName() const override { return Data::getName(); }
+
+    DataTypePtr getReturnType() const override
+    {
+        return std::make_shared<DataTypeUInt64>();
+    }
 
     bool allocatesMemoryInArena() const override { return false; }
 

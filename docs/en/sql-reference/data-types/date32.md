@@ -38,3 +38,4 @@ SELECT * FROM new;
 -   [toDate32](../../sql-reference/functions/type-conversion-functions.md#todate32)
 -   [toDate32OrZero](../../sql-reference/functions/type-conversion-functions.md#todate32-or-zero)
 -   [toDate32OrNull](../../sql-reference/functions/type-conversion-functions.md#todate32-or-null)
+
