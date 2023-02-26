@@ -163,11 +163,15 @@ IMergeTreeDataPart::Checksums checkDataPart(
         auto file_name = it->name();
 
         /// We will check projections later.
-        if (data_part_storage.isDirectory(file_name) && endsWith(file_name, ".proj"))
+        if (data_part_storage.isDirectory(file_name) && file_name.ends_with(".proj"))
         {
             projections_on_disk.insert(file_name);
             continue;
         }
+
+        /// Exclude files written by inverted index from check. No correct checksums are available for them currently.
+        if (file_name.ends_with(".gin_dict") || file_name.ends_with(".gin_post") || file_name.ends_with(".gin_seg") || file_name.ends_with(".gin_sid"))
+            continue;
 
         auto checksum_it = checksums_data.files.find(file_name);
 
