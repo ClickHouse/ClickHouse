@@ -1532,11 +1532,11 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 /// (Only files on the first level of nesting are considered).
 static bool isOldPartDirectory(const DiskPtr & disk, const String & directory_path, time_t threshold)
 {
-    if (disk->getLastModified(directory_path).epochTime() >= threshold)
+    if (disk->getLastModified(directory_path).epochTime() > threshold)
         return false;
 
     for (auto it = disk->iterateDirectory(directory_path); it->isValid(); it->next())
-        if (disk->getLastModified(it->path()).epochTime() >= threshold)
+        if (disk->getLastModified(it->path()).epochTime() > threshold)
             return false;
 
     return true;

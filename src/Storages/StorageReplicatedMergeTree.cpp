@@ -865,11 +865,11 @@ void StorageReplicatedMergeTree::drop()
     /// in this case, has_metadata_in_zookeeper = false, and we also permit to drop the table.
 
     bool maybe_has_metadata_in_zookeeper = !has_metadata_in_zookeeper.has_value() || *has_metadata_in_zookeeper;
+    zkutil::ZooKeeperPtr zookeeper;
     if (maybe_has_metadata_in_zookeeper)
     {
         /// Table can be shut down, restarting thread is not active
         /// and calling StorageReplicatedMergeTree::getZooKeeper()/getAuxiliaryZooKeeper() won't suffice.
-        zkutil::ZooKeeperPtr zookeeper;
         if (zookeeper_name == default_zookeeper_name)
             zookeeper = getContext()->getZooKeeper();
         else
@@ -877,17 +877,21 @@ void StorageReplicatedMergeTree::drop()
 
         /// If probably there is metadata in ZooKeeper, we don't allow to drop the table.
         if (!zookeeper)
-            throw Exception("Can't drop readonly replicated table (need to drop data in ZooKeeper as well)", ErrorCodes::TABLE_IS_READ_ONLY);
-
-        shutdown();
-        dropReplica(zookeeper, zookeeper_path, replica_name, log, getSettings());
+            throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Can't drop readonly replicated table (need to drop data in ZooKeeper as well)");
     }
 
     dropAllData();
+
+    if (maybe_has_metadata_in_zookeeper)
+    {
+        /// Session could expire, get it again
+        zookeeper = getZooKeeperIfTableShutDown();
+        dropReplica(zookeeper, zookeeper_path, replica_name, log, getSettings(), &has_metadata_in_zookeeper);
+    }
 }
 
 void StorageReplicatedMergeTree::dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica,
-                                             Poco::Logger * logger, MergeTreeSettingsPtr table_settings)
+                                             Poco::Logger * logger, MergeTreeSettingsPtr table_settings, std::optional<bool> * has_metadata_out)
 {
     if (zookeeper->expired())
         throw Exception("Table was not dropped because ZooKeeper session has expired.", ErrorCodes::TABLE_WAS_NOT_DROPPED);
@@ -955,12 +959,16 @@ void StorageReplicatedMergeTree::dropReplica(zkutil::ZooKeeperPtr zookeeper, con
                         Coordination::errorMessage(code), remote_replica_path);
 
         /// And finally remove everything else recursively
-        zookeeper->tryRemoveRecursive(remote_replica_path);
-    }
+        /// It may left some garbage if replica_path subtree is concurrently modified
+        zookeeper->tryRemoveChildrenRecursive(remote_replica_path);
 
-    /// It may left some garbage if replica_path subtree are concurrently modified
-    if (zookeeper->exists(remote_replica_path))
-        LOG_ERROR(logger, "Replica was not completely removed from ZooKeeper, {} still exists and may contain some garbage.", remote_replica_path);
+        /// Update has_metadata_in_zookeeper to avoid retries. Otherwise we can accidentally remove metadata of a new table on retries
+        if (has_metadata_out)
+            *has_metadata_out = false;
+
+        if (zookeeper->tryRemove(remote_replica_path) != Coordination::Error::ZOK)
+            LOG_ERROR(logger, "Replica was not completely removed from ZooKeeper, {} still exists and may contain some garbage.", remote_replica_path);
+    }
 
     /// Check that `zookeeper_path` exists: it could have been deleted by another replica after execution of previous line.
     Strings replicas;
@@ -7680,6 +7688,19 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedData(const IMer
     else
     {
         /// Temporary part with some absent file cannot be locked in shared mode
+        return std::make_pair(true, NameSet{});
+    }
+
+    if (has_metadata_in_zookeeper.has_value() && !has_metadata_in_zookeeper)
+    {
+        if (zookeeper->exists(zookeeper_path))
+        {
+            LOG_WARNING(log, "Not removing shared data for part {} because replica does not have metadata in ZooKeeper, "
+                             "but table path exist and other replicas may exist. It may leave some garbage on S3", part.name);
+            return std::make_pair(false, NameSet{});
+        }
+
+        /// If table was completely dropped (no meta in zookeeper) we can safely remove parts
         return std::make_pair(true, NameSet{});
     }
 
