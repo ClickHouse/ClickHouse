@@ -4519,14 +4519,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
     }
 
-    /// Resolve function arguments
-
-    bool allow_table_expressions = is_special_function_in || is_special_function_exists;
-    auto arguments_projection_names = resolveExpressionNodeList(function_node_ptr->getArgumentsNode(),
-        scope,
-        true /*allow_lambda_expression*/,
-        allow_table_expressions /*allow_table_expression*/);
-
     if (is_special_function_exists)
     {
         /// Rewrite EXISTS (subquery) into 1 IN (SELECT 1 FROM (subquery) LIMIT 1).
@@ -4535,19 +4527,25 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         auto constant_data_type = std::make_shared<DataTypeUInt64>();
 
         auto in_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
+        in_subquery->setIsSubquery(true);
         in_subquery->getProjection().getNodes().push_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
         in_subquery->getJoinTree() = exists_subquery_argument;
         in_subquery->getLimit() = std::make_shared<ConstantNode>(1UL, constant_data_type);
-        in_subquery->resolveProjectionColumns({NameAndTypePair("1", constant_data_type)});
-        in_subquery->setIsSubquery(true);
 
         function_node_ptr = std::make_shared<FunctionNode>("in");
         function_node_ptr->getArguments().getNodes() = {std::make_shared<ConstantNode>(1UL, constant_data_type), in_subquery};
         node = function_node_ptr;
         function_name = "in";
-
         is_special_function_in = true;
     }
+
+    /// Resolve function arguments
+
+    bool allow_table_expressions = is_special_function_in;
+    auto arguments_projection_names = resolveExpressionNodeList(function_node_ptr->getArgumentsNode(),
+        scope,
+        true /*allow_lambda_expression*/,
+        allow_table_expressions /*allow_table_expression*/);
 
     auto & function_node = *function_node_ptr;
 
