@@ -19,7 +19,7 @@ class ASTSettingsProfileElements;
   *     [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
   *     [DEFAULT ROLE role [,...]]
   *     [DEFAULT DATABASE database | NONE]
-  *     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
+  *     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
   *     [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
   *
   * ALTER USER [IF EXISTS] name
@@ -28,7 +28,7 @@ class ASTSettingsProfileElements;
   *     [[ADD|DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
   *     [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
   *     [DEFAULT DATABASE database | NONE]
-  *     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
+  *     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
   *     [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
   */
 class ASTCreateUserQuery : public IAST, public ASTQueryWithOnCluster
@@ -45,8 +45,7 @@ public:
     std::optional<String> new_name;
 
     std::optional<AuthenticationData> auth_data;
-
-    mutable std::optional<String> temporary_password_for_checks;
+    bool show_password = true; /// formatImpl() will show the password or hash.
 
     std::optional<AllowedClientHosts> hosts;
     std::optional<AllowedClientHosts> add_hosts;
@@ -61,9 +60,6 @@ public:
     String getID(char) const override;
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const override;
-    bool hasSecretParts() const override;
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTCreateUserQuery>(clone()); }
-
-    QueryKind getQueryKind() const override { return QueryKind::Create; }
 };
 }

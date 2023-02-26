@@ -1,4 +1,4 @@
-#include "config.h"
+#include "config_core.h"
 
 #if USE_NLP
 
@@ -61,9 +61,7 @@ public:
     static FunctionPtr create(ContextPtr context)
     {
         if (!context->getSettingsRef().allow_experimental_nlp_functions)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                            "Natural language processing function '{}' is experimental. "
-                            "Set `allow_experimental_nlp_functions` setting to enable it", name);
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Natural language processing function '{}' is experimental. Set `allow_experimental_nlp_functions` setting to enable it", name);
 
         return std::make_shared<FunctionLemmatize>(context->getLemmatizers());
     }
@@ -84,11 +82,11 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                arguments[0]->getName(), getName());
+            throw Exception(
+                "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         if (!isString(arguments[1]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                arguments[1]->getName(), getName());
+            throw Exception(
+                "Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         return arguments[1];
     }
 
@@ -105,11 +103,11 @@ public:
         const ColumnString * words_col = checkAndGetColumn<ColumnString>(strcolumn.get());
 
         if (!lang_col)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-                arguments[0].column->getName(), getName());
+            throw Exception(
+                "Illegal column " + arguments[0].column->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
         if (!words_col)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-                arguments[1].column->getName(), getName());
+            throw Exception(
+                "Illegal column " + arguments[1].column->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
 
         String language = lang_col->getValue<String>();
         auto lemmatizer = lemmatizers.getLemmatizer(language);
@@ -124,7 +122,7 @@ public:
 
 REGISTER_FUNCTION(Lemmatize)
 {
-    factory.registerFunction<FunctionLemmatize>();
+    factory.registerFunction<FunctionLemmatize>(FunctionFactory::CaseInsensitive);
 }
 
 }

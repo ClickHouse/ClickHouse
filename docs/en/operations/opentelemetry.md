@@ -1,9 +1,9 @@
 ---
-slug: /en/operations/opentelemetry
 sidebar_position: 62
-sidebar_label: Tracing ClickHouse with OpenTelemetry
-title: "[experimental] Tracing ClickHouse with OpenTelemetry"
+sidebar_label: OpenTelemetry Support
 ---
+
+# [experimental] OpenTelemetry Support
 
 [OpenTelemetry](https://opentelemetry.io/) is an open standard for collecting traces and metrics from the distributed application. ClickHouse has some support for OpenTelemetry.
 
@@ -61,3 +61,5 @@ FROM system.opentelemetry_span_log
 ```
 
 In case of any errors, the part of the log data for which the error has occurred will be silently lost. Check the server log for error messages if the data does not arrive.
+
+[Original article](https://clickhouse.com/docs/en/operations/opentelemetry/) <!--hide-->

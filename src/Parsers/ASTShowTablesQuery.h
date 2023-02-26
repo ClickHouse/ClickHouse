@@ -22,7 +22,6 @@ public:
     bool changed{false};
     bool temporary{false};
     bool caches{false};
-    bool full{false};
 
     String cluster_str;
     String from;
@@ -38,8 +37,6 @@ public:
     String getID(char) const override { return "ShowTables"; }
 
     ASTPtr clone() const override;
-
-    QueryKind getQueryKind() const override { return QueryKind::Show; }
 
 protected:
     void formatLike(const FormatSettings & settings) const;

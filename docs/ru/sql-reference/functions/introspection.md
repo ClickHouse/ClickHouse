@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/functions/introspection
 sidebar_position: 65
 sidebar_label: "Функции интроспекции"
 ---
@@ -10,7 +9,6 @@ sidebar_label: "Функции интроспекции"
 
 :::danger "Предупреждение"
     Эти функции выполняются медленно и могут приводить к нежелательным последствиям в плане безопасности.
-:::
 
 Для правильной работы функций интроспекции:
 
@@ -372,3 +370,5 @@ SELECT logTrace('logTrace message');
 │                            0 │
 └──────────────────────────────┘
 ```
+
+[Original article](https://clickhouse.com/docs/en/query_language/functions/introspection/) <!--hide-->

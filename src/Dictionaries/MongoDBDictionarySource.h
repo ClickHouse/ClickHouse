@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Processors/Sources/MongoDBSource.h>
 #include <Core/Block.h>
 
 #include "DictionaryStructure.h"

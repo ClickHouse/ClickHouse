@@ -78,7 +78,7 @@ Pipe StorageMySQL::read(
     ContextPtr context_,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t /*max_block_size*/,
-    size_t /*num_streams*/)
+    unsigned)
 {
     storage_snapshot->check(column_names_);
     String query = transformQueryForExternalDatabase(
@@ -178,7 +178,7 @@ public:
         if (block.rows() <= max_rows)
             return {block};
 
-        const size_t split_block_size = static_cast<size_t>(ceil(block.rows() * 1.0 / max_rows));
+        const size_t split_block_size = ceil(block.rows() * 1.0 / max_rows);
         Blocks split_blocks(split_block_size);
 
         for (size_t idx = 0; idx < split_block_size; ++idx)
@@ -264,9 +264,9 @@ StorageMySQLConfiguration StorageMySQL::getConfiguration(ASTs engine_args, Conte
     else
     {
         if (engine_args.size() < 5 || engine_args.size() > 7)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage MySQL requires 5-7 parameters: "
-                            "MySQL('host:port' (or 'addresses_pattern'), database, table, "
-                            "'user', 'password'[, replace_query, 'on_duplicate_clause']).");
+            throw Exception(
+                "Storage MySQL requires 5-7 parameters: MySQL('host:port' (or 'addresses_pattern'), database, table, 'user', 'password'[, replace_query, 'on_duplicate_clause']).",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context_);
@@ -305,7 +305,7 @@ void registerStorageMySQL(StorageFactory & factory)
             mysql_settings.loadFromQuery(*args.storage_def);
 
         if (!mysql_settings.connection_pool_size)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "connection_pool_size cannot be zero.");
+            throw Exception("connection_pool_size cannot be zero.", ErrorCodes::BAD_ARGUMENTS);
 
         mysqlxx::PoolWithFailover pool = createMySQLPoolWithFailover(configuration, mysql_settings);
 

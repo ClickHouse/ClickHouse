@@ -27,7 +27,7 @@ Block FillingTransform::transformHeader(Block header, const SortDescription & so
     /// Columns which are not from sorting key may not be constant anymore.
     for (auto & column : header)
         if (column.column && isColumnConst(*column.column) && !sort_keys.contains(column.name))
-            column.column = column.column->convertToFullColumnIfConst();
+            column.column = column.type->createColumn();
 
     return header;
 }
@@ -40,14 +40,12 @@ static FillColumnDescription::StepFunction getStepFunction(
     {
 #define DECLARE_CASE(NAME) \
         case IntervalKind::NAME: \
-            return [step, scale, &date_lut](Field & field) { \
-                field = Add##NAME##sImpl::execute(static_cast<T>(\
-                    field.get<T>()), static_cast<Int32>(step), date_lut, scale); };
+            return [step, scale, &date_lut](Field & field) { field = Add##NAME##sImpl::execute(get<T>(field), step, date_lut, scale); };
 
         FOR_EACH_INTERVAL_KIND(DECLARE_CASE)
 #undef DECLARE_CASE
     }
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & type)
@@ -61,7 +59,7 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
     {
         WhichDataType which_from(descr.fill_from_type);
         if ((which_from.isDateOrDate32() || which_from.isDateTime() || which_from.isDateTime64()) &&
-            !descr.fill_from_type->equals(*removeNullable(type)))
+            !descr.fill_from_type->equals(*type))
                 return false;
     }
 
@@ -73,17 +71,8 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
                 return false;
     }
 
-    if (which.isInt128() || which.isUInt128())
-    {
-        max_type = Field::Types::Int128;
-        to_type = type;
-    }
-    else if (which.isInt256() || which.isUInt256())
-    {
-        max_type = Field::Types::Int256;
-        to_type = type;
-    }
-    else if (isInteger(type) || which.isDate() || which.isDate32() || which.isDateTime())
+    /// TODO Wrong results for big integers.
+    if (isInteger(type) || which.isDate() || which.isDate32() || which.isDateTime())
     {
         max_type = Field::Types::Int64;
         to_type = std::make_shared<DataTypeInt64>();
@@ -109,32 +98,29 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
         || descr.fill_step.getType() > max_type)
         return false;
 
-    if (!descr.fill_from.isNull())
-        descr.fill_from = convertFieldToTypeOrThrow(descr.fill_from, *to_type);
-    if (!descr.fill_to.isNull())
-        descr.fill_to = convertFieldToTypeOrThrow(descr.fill_to, *to_type);
-    if (!descr.fill_step.isNull())
-        descr.fill_step = convertFieldToTypeOrThrow(descr.fill_step, *to_type);
+    descr.fill_from = convertFieldToType(descr.fill_from, *to_type);
+    descr.fill_to = convertFieldToType(descr.fill_to, *to_type);
+    descr.fill_step = convertFieldToType(descr.fill_step, *to_type);
 
     if (descr.step_kind)
     {
         if (which.isDate() || which.isDate32())
         {
-            Int64 avg_seconds = descr.fill_step.get<Int64>() * descr.step_kind->toAvgSeconds();
+            Int64 avg_seconds = get<Int64>(descr.fill_step) * descr.step_kind->toAvgSeconds();
             if (std::abs(avg_seconds) < 86400)
                 throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                                 "Value of step is to low ({} seconds). Must be >= 1 day", std::abs(avg_seconds));
         }
 
         if (which.isDate())
-            descr.step_func = getStepFunction<UInt16>(*descr.step_kind, descr.fill_step.get<Int64>(), DateLUT::instance());
+            descr.step_func = getStepFunction<UInt16>(*descr.step_kind, get<Int64>(descr.fill_step), DateLUT::instance());
         else if (which.isDate32())
-            descr.step_func = getStepFunction<Int32>(*descr.step_kind, descr.fill_step.get<Int64>(), DateLUT::instance());
+            descr.step_func = getStepFunction<Int32>(*descr.step_kind, get<Int64>(descr.fill_step), DateLUT::instance());
         else if (const auto * date_time = checkAndGetDataType<DataTypeDateTime>(type.get()))
-            descr.step_func = getStepFunction<UInt32>(*descr.step_kind, descr.fill_step.get<Int64>(), date_time->getTimeZone());
+            descr.step_func = getStepFunction<UInt32>(*descr.step_kind, get<Int64>(descr.fill_step), date_time->getTimeZone());
         else if (const auto * date_time64 = checkAndGetDataType<DataTypeDateTime64>(type.get()))
         {
-            const auto & step_dec = descr.fill_step.get<const DecimalField<Decimal64> &>();
+            const auto & step_dec = get<const DecimalField<Decimal64> &>(descr.fill_step);
             Int64 step = DecimalUtils::convertTo<Int64>(step_dec.getValue(), step_dec.getScale());
 
             switch (*descr.step_kind)
@@ -143,7 +129,7 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
                 case IntervalKind::NAME: \
                     descr.step_func = [step, &time_zone = date_time64->getTimeZone()](Field & field) \
                     { \
-                        auto field_decimal = field.get<DecimalField<DateTime64>>(); \
+                        auto field_decimal = get<DecimalField<DateTime64>>(field); \
                         auto res = Add##NAME##sImpl::execute(field_decimal.getValue(), step, time_zone, field_decimal.getScale()); \
                         field = DecimalField(res, field_decimal.getScale()); \
                     }; \
@@ -196,27 +182,25 @@ FillingTransform::FillingTransform(
         fill_column_positions.push_back(block_position);
 
         auto & descr = filling_row.getFillDescription(i);
-
-        const Block & output_header = getOutputPort().getHeader();
-        const DataTypePtr & type = removeNullable(output_header.getByPosition(block_position).type);
+        const auto & type = header_.getByPosition(block_position).type;
 
         if (!tryConvertFields(descr, type))
-            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                "Incompatible types of WITH FILL expression values with column type {}", type->getName());
+            throw Exception("Incompatible types of WITH FILL expression values with column type "
+                                + type->getName(), ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
 
-        if (isUnsignedInteger(type) &&
+        if (type->isValueRepresentedByUnsignedInteger() &&
             ((!descr.fill_from.isNull() && less(descr.fill_from, Field{0}, 1)) ||
              (!descr.fill_to.isNull() && less(descr.fill_to, Field{0}, 1))))
         {
-            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                "WITH FILL bound values cannot be negative for unsigned type {}", type->getName());
+            throw Exception("WITH FILL bound values cannot be negative for unsigned type "
+                                + type->getName(), ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
         }
     }
 
     std::set<size_t> unique_positions;
     for (auto pos : fill_column_positions)
         if (!unique_positions.insert(pos).second)
-            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "Multiple WITH FILL for identical expressions is not supported in ORDER BY");
+            throw Exception("Multiple WITH FILL for identical expressions is not supported in ORDER BY", ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
 
     size_t idx = 0;
     for (const ColumnWithTypeAndName & column : header_.getColumnsWithTypeAndName())
@@ -227,7 +211,7 @@ FillingTransform::FillingTransform(
                     input_positions.emplace_back(idx, p->second);
 
         if (!is_fill_column[idx] && !(interpolate_description && interpolate_description->result_columns_set.contains(column.name)))
-            other_column_positions.push_back(idx);
+                other_column_positions.push_back(idx);
 
         ++idx;
     }
@@ -349,8 +333,8 @@ void FillingTransform::transform(Chunk & chunk)
         interpolate();
         while (filling_row.next(next_row))
         {
-            insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
-            interpolate();
+                insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
+                interpolate();
         }
 
         setResultColumns(chunk, res_fill_columns, res_interpolate_columns, res_other_columns);
@@ -366,7 +350,7 @@ void FillingTransform::transform(Chunk & chunk)
 
     if (first)
     {
-        for (size_t i = 0, size = filling_row.size(); i < size; ++i)
+        for (size_t i = 0; i < filling_row.size(); ++i)
         {
             auto current_value = (*old_fill_columns[i])[0];
             const auto & fill_from = filling_row.getFillDescription(i).fill_from;

@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/statements/alter/update
 sidebar_position: 40
 sidebar_label: UPDATE
 ---
@@ -27,3 +26,4 @@ ALTER TABLE [db.]table UPDATE column1 = expr1 [, ...] WHERE filter_expr
 -   [变更 Mutations](../../../sql-reference/statements/alter/index.md#mutations)
 -   [ALTER查询的同步性问题](../../../sql-reference/statements/alter/index.md#synchronicity-of-alter-queries)
 -   [mutations_sync](../../../operations/settings/settings.md#mutations_sync) setting
+

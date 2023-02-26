@@ -1,6 +1,3 @@
----
-slug: /zh/sql-reference/functions/functions-for-nulls
----
 # Nullable处理函数 {#nullablechu-li-han-shu}
 
 ## isNull {#isnull}
@@ -22,24 +19,24 @@ slug: /zh/sql-reference/functions/functions-for-nulls
 
 存在以下内容的表
 
-```response
-┌─x─┬────y─┐
-│ 1 │ ᴺᵁᴸᴸ │
-│ 2 │    3 │
-└───┴──────┘
-```
+    ┌─x─┬────y─┐
+    │ 1 │ ᴺᵁᴸᴸ │
+    │ 2 │    3 │
+    └───┴──────┘
 
 对其进行查询
 
-```sql
-SELECT x FROM t_null WHERE isNull(y)
-```
+    :) SELECT x FROM t_null WHERE isNull(y)
 
-```response
-┌─x─┐
-│ 1 │
-└───┘
-```
+    SELECT x
+    FROM t_null
+    WHERE isNull(y)
+
+    ┌─x─┐
+    │ 1 │
+    └───┘
+
+    1 rows in set. Elapsed: 0.010 sec.
 
 ## isNotNull {#isnotnull}
 
@@ -60,24 +57,24 @@ SELECT x FROM t_null WHERE isNull(y)
 
 存在以下内容的表
 
-```response
-┌─x─┬────y─┐
-│ 1 │ ᴺᵁᴸᴸ │
-│ 2 │    3 │
-└───┴──────┘
-```
+    ┌─x─┬────y─┐
+    │ 1 │ ᴺᵁᴸᴸ │
+    │ 2 │    3 │
+    └───┴──────┘
 
 对其进行查询
 
-```sql
-SELECT x FROM t_null WHERE isNotNull(y)
-```
+    :) SELECT x FROM t_null WHERE isNotNull(y)
 
-```response
-┌─x─┐
-│ 2 │
-└───┘
-```
+    SELECT x
+    FROM t_null
+    WHERE isNotNull(y)
+
+    ┌─x─┐
+    │ 2 │
+    └───┘
+
+    1 rows in set. Elapsed: 0.010 sec.
 
 ## 合并 {#coalesce}
 
@@ -98,27 +95,26 @@ SELECT x FROM t_null WHERE isNotNull(y)
 
 考虑可以指定多种联系客户的方式的联系人列表。
 
-```response
-┌─name─────┬─mail─┬─phone─────┬──icq─┐
-│ client 1 │ ᴺᵁᴸᴸ │ 123-45-67 │  123 │
-│ client 2 │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ      │ ᴺᵁᴸᴸ │
-└──────────┴──────┴───────────┴──────┘
-```
+    ┌─name─────┬─mail─┬─phone─────┬──icq─┐
+    │ client 1 │ ᴺᵁᴸᴸ │ 123-45-67 │  123 │
+    │ client 2 │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ      │ ᴺᵁᴸᴸ │
+    └──────────┴──────┴───────────┴──────┘
 
 `mail`和`phone`字段是String类型，但`icq`字段是`UInt32`，所以它需要转换为`String`。
 
 从联系人列表中获取客户的第一个可用联系方式：
 
-```sql
-SELECT coalesce(mail, phone, CAST(icq,'Nullable(String)')) FROM aBook
-```
+    :) SELECT coalesce(mail, phone, CAST(icq,'Nullable(String)')) FROM aBook
 
-```response
-┌─name─────┬─coalesce(mail, phone, CAST(icq, 'Nullable(String)'))─┐
-│ client 1 │ 123-45-67                                            │
-│ client 2 │ ᴺᵁᴸᴸ                                                 │
-└──────────┴──────────────────────────────────────────────────────┘
-```
+    SELECT coalesce(mail, phone, CAST(icq, 'Nullable(String)'))
+    FROM aBook
+
+    ┌─name─────┬─coalesce(mail, phone, CAST(icq, 'Nullable(String)'))─┐
+    │ client 1 │ 123-45-67                                            │
+    │ client 2 │ ᴺᵁᴸᴸ                                                 │
+    └──────────┴──────────────────────────────────────────────────────┘
+
+    2 rows in set. Elapsed: 0.006 sec.
 
 ## ifNull {#ifnull}
 
@@ -252,3 +248,5 @@ SELECT coalesce(mail, phone, CAST(icq,'Nullable(String)')) FROM aBook
     ┌─toTypeName(toNullable(10))─┐
     │ Nullable(UInt8)            │
     └────────────────────────────┘
+
+[来源文章](https://clickhouse.com/docs/en/query_language/functions/functions_for_nulls/) <!--hide-->
