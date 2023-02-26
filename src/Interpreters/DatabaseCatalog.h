@@ -279,7 +279,6 @@ private:
     bool maybeRemoveDirectory(const String & disk_name, const DiskPtr & disk, const String & unused_dir);
 
     static constexpr size_t reschedule_time_ms = 100;
-    static constexpr time_t drop_error_cooldown_sec = 5;
 
     mutable std::mutex databases_mutex;
 
@@ -326,6 +325,9 @@ private:
     time_t unused_dir_rm_timeout_sec = default_unused_dir_rm_timeout_sec;
     static constexpr time_t default_unused_dir_cleanup_period_sec = 24 * 60 * 60;       /// 1 day
     time_t unused_dir_cleanup_period_sec = default_unused_dir_cleanup_period_sec;
+
+    static constexpr time_t default_drop_error_cooldown_sec = 5;
+    time_t drop_error_cooldown_sec = default_drop_error_cooldown_sec;
 };
 
 /// This class is useful when creating a table or database.
