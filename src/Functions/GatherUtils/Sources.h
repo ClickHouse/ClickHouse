@@ -182,9 +182,10 @@ struct ConstSource : public Base
         if constexpr (std::is_base_of_v<IArraySource, Base>)
             visitor.visit(*this);
         else
-            throw Exception(
-                    "accept(ArraySourceVisitor &) is not implemented for " + demangle(typeid(ConstSource<Base>).name())
-                    + " because " + demangle(typeid(Base).name()) + " is not derived from IArraySource", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                            "accept(ArraySourceVisitor &) is not implemented for {} because {} "
+                            "is not derived from IArraySource",
+                            demangle(typeid(ConstSource<Base>).name()), demangle(typeid(Base).name()));
     }
 
     virtual void accept(ValueSourceVisitor & visitor) // override
@@ -192,9 +193,10 @@ struct ConstSource : public Base
         if constexpr (std::is_base_of_v<IValueSource, Base>)
             visitor.visit(*this);
         else
-            throw Exception(
-                    "accept(ValueSourceVisitor &) is not implemented for " + demangle(typeid(ConstSource<Base>).name())
-                    + " because " + demangle(typeid(Base).name()) + " is not derived from IValueSource", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                            "accept(ValueSourceVisitor &) is not implemented for {} because {} "
+                            "is not derived from IValueSource",
+                            demangle(typeid(ConstSource<Base>).name()), demangle(typeid(Base).name()));
     }
 
     void next()
@@ -532,7 +534,7 @@ inline std::unique_ptr<IStringSource> createDynamicStringSource(const IColumn & 
         return std::make_unique<DynamicStringSource<ConstSource<StringSource>>>(col);
     if (checkColumnConst<ColumnFixedString>(&col))
         return std::make_unique<DynamicStringSource<ConstSource<FixedStringSource>>>(col);
-    throw Exception("Unexpected type of string column: " + col.getName(), ErrorCodes::ILLEGAL_COLUMN);
+    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type of string column: {}", col.getName());
 }
 
 using StringSources = std::vector<std::unique_ptr<IStringSource>>;

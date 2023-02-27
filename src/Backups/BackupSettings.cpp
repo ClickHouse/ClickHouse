@@ -28,7 +28,6 @@ namespace ErrorCodes
     M(UInt64, replica_num) \
     M(Bool, internal) \
     M(String, host_id) \
-    M(String, coordination_zk_path) \
     M(OptionalUUID, backup_uuid)
     /// M(Int64, compression_level)
 
@@ -168,7 +167,9 @@ std::pair<size_t, size_t> BackupSettings::Util::findShardNumAndReplicaNum(const 
             if (cluster_host_ids[i][j] == host_id)
                 return {i + 1, j + 1};
     }
-    throw Exception(ErrorCodes::WRONG_BACKUP_SETTINGS, "Cannot determine shard number or replica number, the current host {} is not found in the cluster's hosts", host_id);
+    throw Exception(ErrorCodes::WRONG_BACKUP_SETTINGS,
+                    "Cannot determine shard number or replica number, the current host {} is not found "
+                    "in the cluster's hosts", host_id);
 }
 
 Strings BackupSettings::Util::filterHostIDs(const std::vector<Strings> & cluster_host_ids, size_t only_shard_num, size_t only_replica_num)

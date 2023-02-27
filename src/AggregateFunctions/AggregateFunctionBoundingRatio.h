@@ -20,7 +20,7 @@ namespace ErrorCodes
 
 /** Tracks the leftmost and rightmost (x, y) data points.
   */
-struct AggregateFunctionBoundingRatioData //-V730
+struct AggregateFunctionBoundingRatioData
 {
     struct Point
     {
@@ -118,7 +118,9 @@ public:
         const auto * y_arg = arguments.at(1).get();
 
         if (!x_arg->isValueRepresentedByNumber() || !y_arg->isValueRepresentedByNumber())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal types of arguments of aggregate function {}, must have number representation.", getName());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Illegal types of arguments of aggregate function {}, must have number representation.",
+                            getName());
     }
 
     bool allocatesMemoryInArena() const override { return false; }

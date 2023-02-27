@@ -83,12 +83,13 @@ public:
             to->reserve(input_rows_count);
 
             if (arguments.empty())
-                throw Exception{"Function " + String(Name::name) + " requires at least one argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument", String(Name::name));
 
             const auto & first_column = arguments[0];
             if (!isString(first_column.type))
-                throw Exception{"The first argument of function " + String(Name::name) + " should be a string containing JSON, illegal type: " + first_column.type->getName(),
-                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "The first argument of function {} should be a string containing JSON, illegal type: "
+                                "{}", String(Name::name), first_column.type->getName());
 
             const ColumnPtr & arg_json = first_column.column;
             const auto * col_json_const = typeid_cast<const ColumnConst *>(arg_json.get());
@@ -96,7 +97,7 @@ public:
                 = typeid_cast<const ColumnString *>(col_json_const ? col_json_const->getDataColumnPtr().get() : arg_json.get());
 
             if (!col_json_string)
-                throw Exception{"Illegal column " + arg_json->getName(), ErrorCodes::ILLEGAL_COLUMN};
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {}", arg_json->getName());
 
             const ColumnString::Chars & chars = col_json_string->getChars();
             const ColumnString::Offsets & offsets = col_json_string->getOffsets();
@@ -194,9 +195,10 @@ private:
         {
             const auto & column = columns[i];
             if (!isString(column.type) && !isNativeInteger(column.type))
-                throw Exception{"The argument " + std::to_string(i + 1) + " of function " + String(function_name)
-                                    + " should be a string specifying key or an integer specifying index, illegal type: " + column.type->getName(),
-                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "The argument {} of function {} should be a string specifying key "
+                                "or an integer specifying index, illegal type: {}",
+                                std::to_string(i + 1), String(function_name), column.type->getName());
 
             if (column.column && isColumnConst(*column.column))
             {
@@ -526,8 +528,8 @@ public:
         if (arguments.size() != 1)
         {
             /// IsValidJSON() shouldn't get parameters other than JSON.
-            throw Exception{"Function " + String(function_name) + " needs exactly one argument",
-                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} needs exactly one argument",
+                            String(function_name));
         }
         return std::make_shared<DataTypeUInt8>();
     }
@@ -980,7 +982,7 @@ struct JSONExtractTree
                     return false;
             }
 
-            assert_cast<ColumnDecimal<DecimalType> &>(dest).insert(value);
+            assert_cast<ColumnDecimal<DecimalType> &>(dest).insertValue(value);
             return true;
         }
 
@@ -1279,7 +1281,9 @@ struct JSONExtractTree
                 return std::make_unique<TupleNode>(std::move(elements), tuple.haveExplicitNames() ? tuple.getElementNames() : Strings{});
             }
             default:
-                throw Exception{"Function " + String(function_name) + " doesn't support the return type schema: " + type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "Function {} doesn't support the return type schema: {}",
+                                String(function_name), type->getName());
         }
     }
 };
@@ -1294,14 +1298,15 @@ public:
     static DataTypePtr getReturnType(const char * function_name, const ColumnsWithTypeAndName & arguments)
     {
         if (arguments.size() < 2)
-            throw Exception{"Function " + String(function_name) + " requires at least two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least two arguments", String(function_name));
 
         const auto & col = arguments.back();
         const auto * col_type_const = typeid_cast<const ColumnConst *>(col.column.get());
         if (!col_type_const || !isString(col.type))
-            throw Exception{"The last argument of function " + String(function_name)
-                                + " should be a constant string specifying the return data type, illegal value: " + col.name,
-                            ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                            "The last argument of function {} should "
+                            "be a constant string specifying the return data type, illegal value: {}",
+                            String(function_name), col.name);
 
         return DataTypeFactory::instance().get(col_type_const->getValue<String>());
     }
@@ -1332,14 +1337,15 @@ public:
     static DataTypePtr getReturnType(const char * function_name, const ColumnsWithTypeAndName & arguments)
     {
         if (arguments.size() < 2)
-            throw Exception{"Function " + String(function_name) + " requires at least two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least two arguments", String(function_name));
 
         const auto & col = arguments.back();
         const auto * col_type_const = typeid_cast<const ColumnConst *>(col.column.get());
         if (!col_type_const || !isString(col.type))
-            throw Exception{"The last argument of function " + String(function_name)
-                                + " should be a constant string specifying the values' data type, illegal value: " + col.name,
-                            ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                            "The last argument of function {} should "
+                            "be a constant string specifying the values' data type, illegal value: {}",
+                            String(function_name), col.name);
 
         DataTypePtr key_type = std::make_unique<DataTypeString>();
         DataTypePtr value_type = DataTypeFactory::instance().get(col_type_const->getValue<String>());

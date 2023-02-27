@@ -21,12 +21,14 @@ void checkFinalInferredType(DataTypePtr & type, const String & name, const Forma
     {
         if (!default_type)
             throw Exception(
-                ErrorCodes::ONLY_NULLS_WHILE_READING_SCHEMA,
-                "Cannot determine type for column '{}' by first {} rows of data, most likely this column contains only Nulls or empty "
-                "Arrays/Maps. You can specify the type for this column using setting schema_inference_hints. "
-                "If your data contains complex JSON objects, try enabling one of the settings allow_experimental_object_type/input_format_json_read_objects_as_strings",
-                name,
-                rows_read);
+                            ErrorCodes::ONLY_NULLS_WHILE_READING_SCHEMA,
+                            "Cannot determine type for column '{}' by first {} rows "
+                            "of data, most likely this column contains only Nulls or empty "
+                            "Arrays/Maps. You can specify the type for this column using setting schema_inference_hints. "
+                            "If your data contains complex JSON objects, try enabling one "
+                            "of the settings allow_experimental_object_type/input_format_json_read_objects_as_strings",
+                            name,
+                            rows_read);
 
         type = default_type;
     }

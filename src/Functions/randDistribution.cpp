@@ -210,12 +210,14 @@ private:
     {
         if (parameter_number >= arguments.size())
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Parameter number ({}) is greater than the size of arguments ({}). This is a bug", parameter_number, arguments.size());
+                            ErrorCodes::LOGICAL_ERROR,
+                            "Parameter number ({}) is greater than the size of arguments ({}). This is a bug",
+                            parameter_number, arguments.size());
 
         const IColumn * col = arguments[parameter_number].column.get();
 
         if (!isColumnConst(*col))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Parameter number {} of function must be constant.", parameter_number, getName());
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Parameter number {} of function {} must be constant.", parameter_number, getName());
 
         auto parameter = applyVisitor(FieldVisitorConvertToNumber<ResultType>(), assert_cast<const ColumnConst &>(*col).getField());
 
@@ -243,7 +245,9 @@ public:
     {
         auto desired = Distribution::getNumberOfArguments();
         if (arguments.size() != desired && arguments.size() != desired + 1)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong number of arguments for function {}. Should be {} or {}", getName(), desired, desired + 1);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Wrong number of arguments for function {}. Should be {} or {}",
+                            getName(), desired, desired + 1);
 
         for (size_t i = 0; i < Distribution::getNumberOfArguments(); ++i)
         {

@@ -59,11 +59,12 @@ bool RegexpFieldExtractor::parseRow(PeekableReadBuffer & buf)
         static_cast<int>(re2_arguments_ptrs.size()));
 
     if (!match && !skip_unmatched)
-        throw Exception("Line \"" + std::string(buf.position(), line_to_match) + "\" doesn't match the regexp.", ErrorCodes::INCORRECT_DATA);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Line \"{}\" doesn't match the regexp.",
+                        std::string(buf.position(), line_to_match));
 
     buf.position() += line_size;
     if (!buf.eof() && !checkChar('\n', buf))
-        throw Exception("No \\n at the end of line.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No \\n at the end of line.");
 
     return match;
 }
@@ -109,7 +110,7 @@ bool RegexpRowInputFormat::readField(size_t index, MutableColumns & columns)
 void RegexpRowInputFormat::readFieldsFromMatch(MutableColumns & columns, RowReadExtension & ext)
 {
     if (field_extractor.getMatchedFieldsSize() != columns.size())
-        throw Exception("The number of matched fields in line doesn't match the number of columns.", ErrorCodes::INCORRECT_DATA);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "The number of matched fields in line doesn't match the number of columns.");
 
     ext.read_columns.assign(columns.size(), false);
     for (size_t columns_index = 0; columns_index < columns.size(); ++columns_index)

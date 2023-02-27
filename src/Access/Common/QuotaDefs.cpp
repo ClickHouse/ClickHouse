@@ -113,7 +113,7 @@ const QuotaTypeInfo & QuotaTypeInfo::get(QuotaType type)
         }
         case QuotaType::MAX: break;
     }
-    throw Exception("Unexpected quota type: " + std::to_string(static_cast<int>(type)), ErrorCodes::LOGICAL_ERROR);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected quota type: {}", static_cast<int>(type));
 }
 
 String toString(QuotaKeyType type)
@@ -187,7 +187,7 @@ const QuotaKeyTypeInfo & QuotaKeyTypeInfo::get(QuotaKeyType type)
         }
         case QuotaKeyType::MAX: break;
     }
-    throw Exception("Unexpected quota key type: " + std::to_string(static_cast<int>(type)), ErrorCodes::LOGICAL_ERROR);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected quota key type: {}", static_cast<int>(type));
 }
 
 }

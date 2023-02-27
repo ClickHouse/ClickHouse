@@ -40,7 +40,7 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
     if (config.getBool("ask-password", false))
     {
         if (config.has("password"))
-            throw Exception("Specified both --password and --ask-password. Remove one of them", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Specified both --password and --ask-password. Remove one of them");
         password_prompt = true;
     }
     else

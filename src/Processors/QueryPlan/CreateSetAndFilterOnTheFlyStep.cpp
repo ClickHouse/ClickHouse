@@ -198,7 +198,7 @@ void CreateSetAndFilterOnTheFlyStep::updateOutputStream()
 
     own_set->setHeader(getColumnSubset(input_streams[0].header, column_names));
 
-    output_stream = input_streams[0];
+    output_stream = createOutputStream(input_streams.front(), input_streams.front().header, getDataStreamTraits());
 }
 
 

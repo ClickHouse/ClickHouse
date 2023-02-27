@@ -1,4 +1,5 @@
 #pragma once
+
 #include <Processors/ISource.h>
 
 
@@ -7,13 +8,14 @@ namespace DB
 
 class SourceFromSingleChunk : public ISource
 {
+/// If the source consists of multiple chunks you can instead use SourceFromChunks.
 public:
-    explicit SourceFromSingleChunk(Block header, Chunk chunk_);
+    SourceFromSingleChunk(Block header, Chunk chunk_);
     explicit SourceFromSingleChunk(Block data);
-    String getName() const override { return "SourceFromSingleChunk"; }
+    String getName() const override;
 
 protected:
-    Chunk generate() override { return std::move(chunk); }
+    Chunk generate() override;
 
 private:
     Chunk chunk;

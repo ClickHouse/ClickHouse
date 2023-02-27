@@ -83,7 +83,7 @@ std::string MetadataStorageFromDisk::readInlineDataToString(const std::string & 
     return readMetadata(path)->getInlineData();
 }
 
-DiskObjectStorageMetadataPtr MetadataStorageFromDisk::readMetadataUnlocked(const std::string & path, std::shared_lock<std::shared_mutex> &) const
+DiskObjectStorageMetadataPtr MetadataStorageFromDisk::readMetadataUnlocked(const std::string & path, std::shared_lock<SharedMutex> &) const
 {
     auto metadata = std::make_unique<DiskObjectStorageMetadata>(disk->getPath(), object_storage_root_path, path);
     auto str = readFileToString(path);
@@ -91,7 +91,7 @@ DiskObjectStorageMetadataPtr MetadataStorageFromDisk::readMetadataUnlocked(const
     return metadata;
 }
 
-DiskObjectStorageMetadataPtr MetadataStorageFromDisk::readMetadataUnlocked(const std::string & path, std::unique_lock<std::shared_mutex> &) const
+DiskObjectStorageMetadataPtr MetadataStorageFromDisk::readMetadataUnlocked(const std::string & path, std::unique_lock<SharedMutex> &) const
 {
     auto metadata = std::make_unique<DiskObjectStorageMetadata>(disk->getPath(), object_storage_root_path, path);
     auto str = readFileToString(path);
@@ -145,7 +145,7 @@ StoredObjects MetadataStorageFromDisk::getStorageObjects(const std::string & pat
     for (auto & [object_relative_path, size] : object_storage_relative_paths)
     {
         auto object_path = fs::path(metadata->getBlobsCommonPrefix()) / object_relative_path;
-        StoredObject object{ object_path, size, [](const String & path_){ return path_; }};
+        StoredObject object{ object_path, size, path, [](const String & path_){ return path_; }};
         object_storage_paths.push_back(object);
     }
 

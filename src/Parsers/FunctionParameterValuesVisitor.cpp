@@ -58,7 +58,7 @@ private:
                 {
                     const auto * cast_expression = assert_cast<ASTExpressionList*>(function->arguments.get());
                     if (cast_expression->children.size() != 2)
-                        throw Exception("Function CAST must have exactly two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function CAST must have exactly two arguments");
                     if (const auto * cast_literal = cast_expression->children[0]->as<ASTLiteral>())
                     {
                         parameter_values[identifier->name()] = convertFieldToString(cast_literal->value);

@@ -125,17 +125,24 @@ bool BackupWriterFile::supportNativeCopy(DataSourceDescription data_source_descr
     return data_source_description == getDataSourceDescription();
 }
 
-void BackupWriterFile::copyFileNative(DiskPtr from_disk, const String & file_name_from, const String & file_name_to)
+void BackupWriterFile::copyFileNative(DiskPtr src_disk, const String & src_file_name, UInt64 src_offset, UInt64 src_size, const String & dest_file_name)
 {
-    auto file_path = path / file_name_to;
-    fs::create_directories(file_path.parent_path());
     std::string abs_source_path;
-    if (from_disk)
-        abs_source_path = fullPath(from_disk, file_name_from);
+    if (src_disk)
+        abs_source_path = fullPath(src_disk, src_file_name);
     else
-        abs_source_path = fs::absolute(file_name_from);
+        abs_source_path = fs::absolute(src_file_name);
 
-    fs::copy(abs_source_path, file_path, fs::copy_options::recursive | fs::copy_options::overwrite_existing);
+    if ((src_offset != 0) || (src_size != fs::file_size(abs_source_path)))
+    {
+        auto create_read_buffer = [abs_source_path] { return createReadBufferFromFileBase(abs_source_path, {}); };
+        copyDataToFile(create_read_buffer, src_offset, src_size, dest_file_name);
+        return;
+    }
+
+    auto file_path = path / dest_file_name;
+    fs::create_directories(file_path.parent_path());
+    fs::copy(abs_source_path, file_path, fs::copy_options::overwrite_existing);
 }
 
 }

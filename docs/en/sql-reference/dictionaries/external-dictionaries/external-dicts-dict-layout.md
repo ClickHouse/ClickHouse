@@ -5,7 +5,7 @@ sidebar_label: Storing Dictionaries in Memory
 ---
 import CloudDetails from '@site/docs/en/sql-reference/dictionaries/external-dictionaries/_snippet_dictionary_in_cloud.md';
 
-# Storing Dictionaries in Memory 
+# Storing Dictionaries in Memory
 
 There are a variety of ways to store dictionaries in memory.
 
@@ -25,7 +25,7 @@ ClickHouse generates an exception for errors with dictionaries. Examples of erro
 
 You can view the list of dictionaries and their statuses in the [system.dictionaries](../../../operations/system-tables/dictionaries.md) table.
 
-<CloudDetails /> 
+<CloudDetails />
 
 The configuration looks like this:
 
@@ -290,36 +290,38 @@ This storage method works the same way as hashed and allows using date/time (arb
 Example: The table contains discounts for each advertiser in the format:
 
 ``` text
-+---------|-------------|-------------|------+
-| advertiser id | discount start date | discount end date | amount |
-+===============+=====================+===================+========+
-| 123           | 2015-01-01          | 2015-01-15        | 0.15   |
-+---------|-------------|-------------|------+
-| 123           | 2015-01-16          | 2015-01-31        | 0.25   |
-+---------|-------------|-------------|------+
-| 456           | 2015-01-01          | 2015-01-15        | 0.05   |
-+---------|-------------|-------------|------+
+┌─advertiser_id─┬─discount_start_date─┬─discount_end_date─┬─amount─┐
+│           123 │          2015-01-16 │        2015-01-31 │   0.25 │
+│           123 │          2015-01-01 │        2015-01-15 │   0.15 │
+│           456 │          2015-01-01 │        2015-01-15 │   0.05 │
+└───────────────┴─────────────────────┴───────────────────┴────────┘
 ```
 
 To use a sample for date ranges, define the `range_min` and `range_max` elements in the [structure](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). These elements must contain elements `name` and `type` (if `type` is not specified, the default type will be used - Date). `type` can be any numeric type (Date / DateTime / UInt64 / Int32 / others).
 
-:::warning    
+:::warning
 Values of `range_min` and `range_max` should fit in `Int64` type.
 :::
 
 Example:
 
 ``` xml
+<layout>
+    <range_hashed>
+        <!-- Strategy for overlapping ranges (min/max). Default: min (return a matching range with the min(range_min -> range_max) value) -->
+        <range_lookup_strategy>min</range_lookup_strategy>
+    </range_hashed>
+</layout>
 <structure>
     <id>
-        <name>Id</name>
+        <name>advertiser_id</name>
     </id>
     <range_min>
-        <name>first</name>
+        <name>discount_start_date</name>
         <type>Date</type>
     </range_min>
     <range_max>
-        <name>last</name>
+        <name>discount_end_date</name>
         <type>Date</type>
     </range_max>
     ...
@@ -328,17 +330,17 @@ Example:
 or
 
 ``` sql
-CREATE DICTIONARY somedict (
-    id UInt64,
-    first Date,
-    last Date,
-    advertiser_id UInt64
+CREATE DICTIONARY discounts_dict (
+    advertiser_id UInt64,
+    discount_start_date Date,
+    discount_end_date Date,
+    amount Float64
 )
 PRIMARY KEY id
-SOURCE(CLICKHOUSE(TABLE 'date_table'))
+SOURCE(CLICKHOUSE(TABLE 'discounts'))
 LIFETIME(MIN 1 MAX 1000)
-LAYOUT(RANGE_HASHED())
-RANGE(MIN first MAX last)
+LAYOUT(RANGE_HASHED(range_lookup_strategy 'max'))
+RANGE(MIN discount_start_date MAX discount_end_date)
 ```
 
 To work with these dictionaries, you need to pass an additional argument to the `dictGet` function, for which a range is selected:
@@ -349,16 +351,17 @@ dictGet('dict_name', 'attr_name', id, date)
 Query example:
 
 ``` sql
-SELECT dictGet('somedict', 'advertiser_id', 1, '2022-10-20 23:20:10.000'::DateTime64::UInt64);
+SELECT dictGet('discounts_dict', 'amount', 1, '2022-10-20'::Date);
 ```
 
 This function returns the value for the specified `id`s and the date range that includes the passed date.
 
 Details of the algorithm:
 
--   If the `id` is not found or a range is not found for the `id`, it returns the default value for the dictionary.
--   If there are overlapping ranges, it returns value for any (random) range.
--   If the range delimiter is `NULL` or an invalid date (such as 1900-01-01), the range is open. The range can be open on both sides.
+-   If the `id` is not found or a range is not found for the `id`, it returns the default value of the attribute's type.
+-   If there are overlapping ranges and `range_lookup_strategy=min`, it returns a matching range with minimal `range_min`, if several ranges found, it returns a range with minimal `range_max`, if again several ranges found (several ranges had the same `range_min` and `range_max` it returns a random range of them.
+-   If there are overlapping ranges and `range_lookup_strategy=max`, it returns a matching range with maximal `range_min`, if several ranges found, it returns a range with maximal `range_max`, if again several ranges found (several ranges had the same `range_min` and `range_max` it returns a random range of them.
+-   If the `range_max` is `NULL`, the range is open. `NULL` is treated as maximal possible value. For the `range_min` `1970-01-01` or `0` (-MAX_INT) can be used as the open value.
 
 Configuration example:
 
@@ -405,6 +408,108 @@ CREATE DICTIONARY somedict(
 )
 PRIMARY KEY Abcdef
 RANGE(MIN StartTimeStamp MAX EndTimeStamp)
+```
+
+Configuration example with overlapping ranges and open ranges:
+
+```sql
+CREATE TABLE discounts
+(
+    advertiser_id UInt64,
+    discount_start_date Date,
+    discount_end_date Nullable(Date),
+    amount Float64
+)
+ENGINE = Memory;
+
+INSERT INTO discounts VALUES (1, '2015-01-01', Null, 0.1);
+INSERT INTO discounts VALUES (1, '2015-01-15', Null, 0.2);
+INSERT INTO discounts VALUES (2, '2015-01-01', '2015-01-15', 0.3);
+INSERT INTO discounts VALUES (2, '2015-01-04', '2015-01-10', 0.4);
+INSERT INTO discounts VALUES (3, '1970-01-01', '2015-01-15', 0.5);
+INSERT INTO discounts VALUES (3, '1970-01-01', '2015-01-10', 0.6);
+
+SELECT * FROM discounts ORDER BY advertiser_id, discount_start_date;
+┌─advertiser_id─┬─discount_start_date─┬─discount_end_date─┬─amount─┐
+│             1 │          2015-01-01 │              ᴺᵁᴸᴸ │    0.1 │
+│             1 │          2015-01-15 │              ᴺᵁᴸᴸ │    0.2 │
+│             2 │          2015-01-01 │        2015-01-15 │    0.3 │
+│             2 │          2015-01-04 │        2015-01-10 │    0.4 │
+│             3 │          1970-01-01 │        2015-01-15 │    0.5 │
+│             3 │          1970-01-01 │        2015-01-10 │    0.6 │
+└───────────────┴─────────────────────┴───────────────────┴────────┘
+
+-- RANGE_LOOKUP_STRATEGY 'max'
+
+CREATE DICTIONARY discounts_dict
+(
+    advertiser_id UInt64,
+    discount_start_date Date,
+    discount_end_date Nullable(Date),
+    amount Float64
+)
+PRIMARY KEY advertiser_id
+SOURCE(CLICKHOUSE(TABLE discounts))
+LIFETIME(MIN 600 MAX 900)
+LAYOUT(RANGE_HASHED(RANGE_LOOKUP_STRATEGY 'max'))
+RANGE(MIN discount_start_date MAX discount_end_date);
+
+select dictGet('discounts_dict', 'amount', 1, toDate('2015-01-14')) res;
+┌─res─┐
+│ 0.1 │ -- the only one range is matching: 2015-01-01 - Null
+└─────┘
+
+select dictGet('discounts_dict', 'amount', 1, toDate('2015-01-16')) res;
+┌─res─┐
+│ 0.2 │ -- two ranges are matching, range_min 2015-01-15 (0.2) is bigger than 2015-01-01 (0.1)
+└─────┘
+
+select dictGet('discounts_dict', 'amount', 2, toDate('2015-01-06')) res;
+┌─res─┐
+│ 0.4 │ -- two ranges are matching, range_min 2015-01-04 (0.4) is bigger than 2015-01-01 (0.3)
+└─────┘
+
+select dictGet('discounts_dict', 'amount', 3, toDate('2015-01-01')) res;
+┌─res─┐
+│ 0.5 │ -- two ranges are matching, range_min are equal, 2015-01-15 (0.5) is bigger than 2015-01-10 (0.6)
+└─────┘
+
+DROP DICTIONARY discounts_dict;
+
+-- RANGE_LOOKUP_STRATEGY 'min'
+
+CREATE DICTIONARY discounts_dict
+(
+    advertiser_id UInt64,
+    discount_start_date Date,
+    discount_end_date Nullable(Date),
+    amount Float64
+)
+PRIMARY KEY advertiser_id
+SOURCE(CLICKHOUSE(TABLE discounts))
+LIFETIME(MIN 600 MAX 900)
+LAYOUT(RANGE_HASHED(RANGE_LOOKUP_STRATEGY 'min'))
+RANGE(MIN discount_start_date MAX discount_end_date);
+
+select dictGet('discounts_dict', 'amount', 1, toDate('2015-01-14')) res;
+┌─res─┐
+│ 0.1 │ -- the only one range is matching: 2015-01-01 - Null
+└─────┘
+
+select dictGet('discounts_dict', 'amount', 1, toDate('2015-01-16')) res;
+┌─res─┐
+│ 0.1 │ -- two ranges are matching, range_min 2015-01-01 (0.1) is less than 2015-01-15 (0.2)
+└─────┘
+
+select dictGet('discounts_dict', 'amount', 2, toDate('2015-01-06')) res;
+┌─res─┐
+│ 0.3 │ -- two ranges are matching, range_min 2015-01-01 (0.3) is less than 2015-01-04 (0.4)
+└─────┘
+
+select dictGet('discounts_dict', 'amount', 3, toDate('2015-01-01')) res;
+┌─res─┐
+│ 0.6 │ -- two ranges are matching, range_min are equal, 2015-01-10 (0.6) is less than 2015-01-15 (0.5)
+└─────┘
 ```
 
 ### complex_key_range_hashed
@@ -483,7 +588,7 @@ Set a large enough cache size. You need to experiment to select the number of ce
 3.  Assess memory consumption using the `system.dictionaries` table.
 4.  Increase or decrease the number of cells until the required memory consumption is reached.
 
-:::warning    
+:::warning
 Do not use ClickHouse as a source, because it is slow to process queries with random reads.
 :::
 
@@ -555,25 +660,30 @@ This type of storage is for use with composite [keys](../../../sql-reference/dic
 
 This type of storage is for mapping network prefixes (IP addresses) to metadata such as ASN.
 
-Example: The table contains network prefixes and their corresponding AS number and country code:
+**Example**
 
-``` text
-  +-----------|-----|------+
-  | prefix          | asn   | cca2   |
-  +=================+=======+========+
-  | 202.79.32.0/20  | 17501 | NP     |
-  +-----------|-----|------+
-  | 2620:0:870::/48 | 3856  | US     |
-  +-----------|-----|------+
-  | 2a02:6b8:1::/48 | 13238 | RU     |
-  +-----------|-----|------+
-  | 2001:db8::/32   | 65536 | ZZ     |
-  +-----------|-----|------+
+Suppose we have a table in ClickHouse that contains our IP prefixes and mappings:
+
+```sql
+CREATE TABLE my_ip_addresses (
+	prefix String,
+	asn UInt32,
+	cca2 String
+)
+ENGINE = MergeTree
+PRIMARY KEY prefix;
 ```
 
-When using this type of layout, the structure must have a composite key.
+```sql
+INSERT INTO my_ip_addresses VALUES
+	('202.79.32.0/20', 17501, 'NP'),
+    ('2620:0:870::/48', 3856, 'US'),
+    ('2a02:6b8:1::/48', 13238, 'RU'),
+    ('2001:db8::/32', 65536, 'ZZ')
+;
+```
 
-Example:
+Let's define an `ip_trie` dictionary for this table. The `ip_trie` layout requires a composite key:
 
 ``` xml
 <structure>
@@ -607,26 +717,29 @@ Example:
 or
 
 ``` sql
-CREATE DICTIONARY somedict (
+CREATE DICTIONARY my_ip_trie_dictionary (
     prefix String,
     asn UInt32,
     cca2 String DEFAULT '??'
 )
 PRIMARY KEY prefix
+SOURCE(CLICKHOUSE(TABLE 'my_ip_addresses'))
+LAYOUT(IP_TRIE)
+LIFETIME(3600);
 ```
 
-The key must have only one String type attribute that contains an allowed IP prefix. Other types are not supported yet.
+The key must have only one `String` type attribute that contains an allowed IP prefix. Other types are not supported yet.
 
-For queries, you must use the same functions (`dictGetT` with a tuple) as for dictionaries with composite keys:
+For queries, you must use the same functions (`dictGetT` with a tuple) as for dictionaries with composite keys. The syntax is:
 
 ``` sql
 dictGetT('dict_name', 'attr_name', tuple(ip))
 ```
 
-The function takes either `UInt32` for IPv4, or `FixedString(16)` for IPv6:
+The function takes either `UInt32` for IPv4, or `FixedString(16)` for IPv6. For example:
 
 ``` sql
-dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
+select dictGet('my_ip_trie_dictionary', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
 ```
 
 Other types are not supported yet. The function returns the attribute for the prefix that corresponds to this IP address. If there are overlapping prefixes, the most specific one is returned.

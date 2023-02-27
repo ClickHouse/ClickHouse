@@ -148,6 +148,16 @@ ASTPtr UnionNode::toASTImpl() const
     select_with_union_query->children.push_back(getQueriesNode()->toAST());
     select_with_union_query->list_of_selects = select_with_union_query->children.back();
 
+    if (is_subquery)
+    {
+        auto subquery = std::make_shared<ASTSubquery>();
+
+        subquery->cte_name = cte_name;
+        subquery->children.push_back(std::move(select_with_union_query));
+
+        return subquery;
+    }
+
     return select_with_union_query;
 }
 

@@ -6,7 +6,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Processors/Transforms/buildPushingToViewsChain.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <IO/ConnectionTimeoutsContext.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
 #include <Interpreters/QueryLog.h>
@@ -14,6 +13,7 @@
 #include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/processColumnTransformers.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -63,39 +63,54 @@ InterpreterInsertQuery::InterpreterInsertQuery(
 
 StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
 {
+    auto current_context = getContext();
+
     if (query.table_function)
     {
         const auto & factory = TableFunctionFactory::instance();
-        TableFunctionPtr table_function_ptr = factory.get(query.table_function, getContext());
+        TableFunctionPtr table_function_ptr = factory.get(query.table_function, current_context);
 
         /// If table function needs structure hint from select query
         /// we can create a temporary pipeline and get the header.
         if (query.select && table_function_ptr->needStructureHint())
         {
-            InterpreterSelectWithUnionQuery interpreter_select{
-                query.select, getContext(), SelectQueryOptions(QueryProcessingStage::Complete, 1)};
-            auto tmp_pipeline = interpreter_select.buildQueryPipeline();
-            ColumnsDescription structure_hint{tmp_pipeline.getHeader().getNamesAndTypesList()};
+            Block header_block;
+            auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
+
+            if (current_context->getSettingsRef().allow_experimental_analyzer)
+            {
+                InterpreterSelectQueryAnalyzer interpreter_select(query.select, current_context, select_query_options);
+                header_block = interpreter_select.getSampleBlock();
+            }
+            else
+            {
+                InterpreterSelectWithUnionQuery interpreter_select{
+                    query.select, current_context, select_query_options};
+                auto tmp_pipeline = interpreter_select.buildQueryPipeline();
+                header_block = tmp_pipeline.getHeader();
+            }
+
+            ColumnsDescription structure_hint{header_block.getNamesAndTypesList()};
             table_function_ptr->setStructureHint(structure_hint);
         }
 
-        return table_function_ptr->execute(query.table_function, getContext(), table_function_ptr->getName(),
+        return table_function_ptr->execute(query.table_function, current_context, table_function_ptr->getName(),
                                            /* cached_columns */ {}, /* use_global_context */ false, /* is_insert_query */true);
     }
 
     if (query.table_id)
     {
-        query.table_id = getContext()->resolveStorageID(query.table_id);
+        query.table_id = current_context->resolveStorageID(query.table_id);
     }
     else
     {
         /// Insert query parser does not fill table_id because table and
         /// database can be parameters and be filled after parsing.
         StorageID local_table_id(query.getDatabase(), query.getTable());
-        query.table_id = getContext()->resolveStorageID(local_table_id);
+        query.table_id = current_context->resolveStorageID(local_table_id);
     }
 
-    return DatabaseCatalog::instance().getTable(query.table_id, getContext());
+    return DatabaseCatalog::instance().getTable(query.table_id, current_context);
 }
 
 Block InterpreterInsertQuery::getSampleBlock(
@@ -137,7 +152,7 @@ Block InterpreterInsertQuery::getSampleBlock(
     for (const auto & current_name : names)
     {
         if (res.has(current_name))
-            throw Exception("Column " + current_name + " specified more than once", ErrorCodes::DUPLICATE_COLUMN);
+            throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Column {} specified more than once", current_name);
 
         /// Column is not ordinary or ephemeral
         if (!table_sample_insertable.has(current_name))
@@ -146,13 +161,13 @@ Block InterpreterInsertQuery::getSampleBlock(
             if (table_sample_physical.has(current_name))
             {
                 if (!allow_materialized)
-                    throw Exception("Cannot insert column " + current_name + ", because it is MATERIALIZED column.",
-                        ErrorCodes::ILLEGAL_COLUMN);
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert column {}, because it is MATERIALIZED column.",
+                        current_name);
                 res.insert(ColumnWithTypeAndName(table_sample_physical.getByName(current_name).type, current_name));
             }
             else /// The table does not have a column with that name
-                throw Exception("No such column " + current_name + " in table " + table->getStorageID().getNameForLogs(),
-                    ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+                throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "No such column {} in table {}",
+                    current_name, table->getStorageID().getNameForLogs());
         }
         else
             res.insert(ColumnWithTypeAndName(table_sample_insertable.getByName(current_name).type, current_name));
@@ -384,16 +399,34 @@ BlockIO InterpreterInsertQuery::execute()
                 new_context->setSettings(new_settings);
                 new_context->setInsertionTable(getContext()->getInsertionTable());
 
-                InterpreterSelectWithUnionQuery interpreter_select{
-                    query.select, new_context, SelectQueryOptions(QueryProcessingStage::Complete, 1)};
-                pipeline = interpreter_select.buildQueryPipeline();
+                auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
+
+                if (settings.allow_experimental_analyzer)
+                {
+                    InterpreterSelectQueryAnalyzer interpreter_select_analyzer(query.select, new_context, select_query_options);
+                    pipeline = interpreter_select_analyzer.buildQueryPipeline();
+                }
+                else
+                {
+                    InterpreterSelectWithUnionQuery interpreter_select(query.select, new_context, select_query_options);
+                    pipeline = interpreter_select.buildQueryPipeline();
+                }
             }
             else
             {
                 /// Passing 1 as subquery_depth will disable limiting size of intermediate result.
-                InterpreterSelectWithUnionQuery interpreter_select{
-                    query.select, getContext(), SelectQueryOptions(QueryProcessingStage::Complete, 1)};
-                pipeline = interpreter_select.buildQueryPipeline();
+                auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
+
+                if (settings.allow_experimental_analyzer)
+                {
+                    InterpreterSelectQueryAnalyzer interpreter_select_analyzer(query.select, getContext(), select_query_options);
+                    pipeline = interpreter_select_analyzer.buildQueryPipeline();
+                }
+                else
+                {
+                    InterpreterSelectWithUnionQuery interpreter_select(query.select, getContext(), select_query_options);
+                    pipeline = interpreter_select.buildQueryPipeline();
+                }
             }
 
             pipeline.dropTotalsAndExtremes();
@@ -416,8 +449,8 @@ BlockIO InterpreterInsertQuery::execute()
                     {
                         /// Change query sample block columns to Nullable to allow inserting nullable columns, where NULL values will be substituted with
                         /// default column values (in AddingDefaultsTransform), so all values will be cast correctly.
-                        if (input_columns[col_idx].type->isNullable() && !query_columns[col_idx].type->isNullable() && output_columns.hasDefault(query_columns[col_idx].name))
-                            query_sample_block.setColumn(col_idx, ColumnWithTypeAndName(makeNullable(query_columns[col_idx].column), makeNullable(query_columns[col_idx].type), query_columns[col_idx].name));
+                        if (isNullableOrLowCardinalityNullable(input_columns[col_idx].type) && !isNullableOrLowCardinalityNullable(query_columns[col_idx].type) && output_columns.has(query_columns[col_idx].name))
+                            query_sample_block.setColumn(col_idx, ColumnWithTypeAndName(makeNullableOrLowCardinalityNullable(query_columns[col_idx].column), makeNullableOrLowCardinalityNullable(query_columns[col_idx].type), query_columns[col_idx].name));
                     }
                 }
             }
@@ -494,7 +527,7 @@ BlockIO InterpreterInsertQuery::execute()
         {
             for (const auto & column : metadata_snapshot->getColumns())
                 if (column.default_desc.kind == ColumnDefaultKind::Materialized && header.has(column.name))
-                    throw Exception("Cannot insert column " + column.name + ", because it is MATERIALIZED column.", ErrorCodes::ILLEGAL_COLUMN);
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert column {}, because it is MATERIALIZED column.", column.name);
         }
 
         res.pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline));
@@ -507,7 +540,11 @@ BlockIO InterpreterInsertQuery::execute()
         if (query.hasInlinedData() && !async_insert)
         {
             /// can execute without additional data
-            auto pipe = getSourceFromASTInsertQuery(query_ptr, true, query_sample_block, getContext(), nullptr);
+            auto format = getInputFormatFromASTInsertQuery(query_ptr, true, query_sample_block, getContext(), nullptr);
+            for (auto && buffer : owned_buffers)
+                format->addBuffer(std::move(buffer));
+
+            auto pipe = getSourceFromInputFormat(query_ptr, std::move(format), getContext(), nullptr);
             res.pipeline.complete(std::move(pipe));
         }
     }
@@ -527,10 +564,8 @@ StorageID InterpreterInsertQuery::getDatabaseTable() const
     return query_ptr->as<ASTInsertQuery &>().table_id;
 }
 
-
 void InterpreterInsertQuery::extendQueryLogElemImpl(QueryLogElement & elem, ContextPtr context_)
 {
-    elem.query_kind = "Insert";
     const auto & insert_table = context_->getInsertionTable();
     if (!insert_table.empty())
     {

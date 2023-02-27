@@ -2,6 +2,7 @@
 
 #include "Epoll.h"
 #include <Common/Exception.h>
+#include <base/defines.h>
 #include <unistd.h>
 
 namespace DB
@@ -59,7 +60,7 @@ void Epoll::remove(int fd)
 size_t Epoll::getManyReady(int max_events, epoll_event * events_out, bool blocking) const
 {
     if (events_count == 0)
-        throw Exception("There are no events in epoll", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There are no events in epoll");
 
     int ready_size;
     int timeout = blocking ? -1 : 0;
@@ -78,7 +79,10 @@ size_t Epoll::getManyReady(int max_events, epoll_event * events_out, bool blocki
 Epoll::~Epoll()
 {
     if (epoll_fd != -1)
-        close(epoll_fd);
+    {
+        int err = close(epoll_fd);
+        chassert(!err || errno == EINTR);
+    }
 }
 
 }

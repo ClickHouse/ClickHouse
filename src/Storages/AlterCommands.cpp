@@ -101,7 +101,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         if (ast_col_decl.codec)
         {
             if (ast_col_decl.default_specifier == "ALIAS")
-                throw Exception{"Cannot specify codec for column type ALIAS", ErrorCodes::BAD_ARGUMENTS};
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
             command.codec = ast_col_decl.codec;
         }
         if (command_ast->column)
@@ -347,8 +347,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             const auto & identifier = identifier_ast->as<ASTIdentifier &>();
             auto insertion = command.settings_resets.emplace(identifier.name());
             if (!insertion.second)
-                throw Exception("Duplicate setting name " + backQuote(identifier.name()),
-                                ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate setting name {}", backQuote(identifier.name()));
         }
         return command;
     }
@@ -497,8 +496,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             if (if_not_exists)
                 return;
             else
-                throw Exception{"Cannot add index " + index_name + ": index with this name already exists",
-                                ErrorCodes::ILLEGAL_COLUMN};
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot add index {}: index with this name already exists", index_name);
         }
 
         auto insert_it = metadata.secondary_indices.end();
@@ -521,9 +519,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             {
                 auto hints = metadata.secondary_indices.getHints(after_index_name);
                 auto hints_string = !hints.empty() ? ", may be you meant: " + toString(hints) : "";
-                throw Exception(
-                    "Wrong index name. Cannot find index " + backQuote(after_index_name) + " to insert after" + hints_string,
-                    ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong index name. Cannot find index {} to insert after{}",
+                    backQuote(after_index_name), hints_string);
             }
 
             ++insert_it;
@@ -549,8 +546,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                     return;
                 auto hints = metadata.secondary_indices.getHints(index_name);
                 auto hints_string = !hints.empty() ? ", may be you meant: " + toString(hints) : "";
-                throw Exception(
-                    "Wrong index name. Cannot find index " + backQuote(index_name) + " to drop" + hints_string, ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong index name. Cannot find index {} to drop{}",
+                    backQuote(index_name), hints_string);
             }
 
             metadata.secondary_indices.erase(erase_it);
@@ -569,8 +566,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         {
             if (if_not_exists)
                 return;
-            throw Exception("Cannot add constraint " + constraint_name + ": constraint with this name already exists",
-                        ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot add constraint {}: constraint with this name already exists",
+                        constraint_name);
         }
 
         auto * insert_it = constraints.end();
@@ -589,8 +586,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         {
             if (if_exists)
                 return;
-            throw Exception("Wrong constraint name. Cannot find constraint `" + constraint_name + "` to drop",
-                    ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong constraint name. Cannot find constraint `{}` to drop",
+                    constraint_name);
         }
         constraints.erase(erase_it);
         metadata.constraints = ConstraintsDescription(constraints);
@@ -684,7 +681,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             rename_visitor.visit(index.definition_ast);
     }
     else
-        throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong parameter type in ALTER query");
 }
 
 namespace
@@ -905,30 +902,20 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
     return result;
 }
 
-bool AlterCommands::hasInvertedIndex(const StorageInMemoryMetadata & metadata, ContextPtr context)
+bool AlterCommands::hasInvertedIndex(const StorageInMemoryMetadata & metadata)
 {
     for (const auto & index : metadata.secondary_indices)
     {
-        IndexDescription index_desc;
-        try
-        {
-            index_desc = IndexDescription::getIndexFromAST(index.definition_ast, metadata.columns, context);
-        }
-        catch (...)
-        {
-            continue;
-        }
-        if (index.type == GinFilter::FilterName)
-        {
+        if (index.type == INVERTED_INDEX_NAME)
             return true;
-        }
     }
     return false;
 }
+
 void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
     if (!prepared)
-        throw DB::Exception("Alter commands is not prepared. Cannot apply. It's a bug", ErrorCodes::LOGICAL_ERROR);
+        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Alter commands is not prepared. Cannot apply. It's a bug");
 
     auto metadata_copy = metadata;
 
@@ -1057,7 +1044,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         const auto & command = (*this)[i];
 
         if (command.ttl && !table->supportsTTL())
-            throw Exception("Engine " + table->getName() + " doesn't support TTL clause", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine {} doesn't support TTL clause", table->getName());
 
         const auto & column_name = command.column_name;
         if (command.type == AlterCommand::ADD_COLUMN)
@@ -1093,8 +1080,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 {
                     String exception_message = fmt::format("Wrong column. Cannot find column {} to modify", backQuote(column_name));
                     all_columns.appendHintsMessage(exception_message, column_name);
-                    throw Exception{exception_message,
-                        ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK};
+                    throw Exception::createDeprecated(exception_message, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
                 }
                 else
                     continue;
@@ -1193,9 +1179,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                             const auto required_columns = actions->getRequiredColumns();
 
                             if (required_columns.end() != std::find(required_columns.begin(), required_columns.end(), command.column_name))
-                                throw Exception("Cannot drop column " + backQuote(command.column_name)
-                                        + ", because column " + backQuote(column.name) + " depends on it",
-                                    ErrorCodes::ILLEGAL_COLUMN);
+                                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot drop column {}, because column {} depends on it",
+                                        backQuote(command.column_name), backQuote(column.name));
                         }
                     }
                 }
@@ -1203,9 +1188,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             }
             else if (!command.if_exists)
             {
-                String exception_message = fmt::format("Wrong column name. Cannot find column {} to drop", backQuote(command.column_name));
-                all_columns.appendHintsMessage(exception_message, command.column_name);
-                throw Exception(exception_message, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+                 auto message = PreformattedMessage::create(
+                    "Wrong column name. Cannot find column {} to drop", backQuote(command.column_name));
+                all_columns.appendHintsMessage(message.text, command.column_name);
+                throw Exception(std::move(message), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
             }
         }
         else if (command.type == AlterCommand::COMMENT_COLUMN)
@@ -1214,16 +1200,17 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             {
                 if (!command.if_exists)
                 {
-                    String exception_message = fmt::format("Wrong column name. Cannot find column {} to comment", backQuote(command.column_name));
-                    all_columns.appendHintsMessage(exception_message, command.column_name);
-                    throw Exception(exception_message, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+                    auto message = PreformattedMessage::create(
+                        "Wrong column name. Cannot find column {} to comment", backQuote(command.column_name));
+                    all_columns.appendHintsMessage(message.text, command.column_name);
+                    throw Exception(std::move(message), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
                 }
             }
         }
         else if (command.type == AlterCommand::MODIFY_SETTING || command.type == AlterCommand::RESET_SETTING)
         {
             if (metadata.settings_changes == nullptr)
-                throw Exception{"Cannot alter settings, because table engine doesn't support settings changes", ErrorCodes::BAD_ARGUMENTS};
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot alter settings, because table engine doesn't support settings changes");
         }
         else if (command.type == AlterCommand::RENAME_COLUMN)
         {
@@ -1233,28 +1220,27 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                if (next_command.type == AlterCommand::RENAME_COLUMN)
                {
                    if (next_command.column_name == command.rename_to)
-                       throw Exception{"Transitive renames in a single ALTER query are not allowed (don't make sense)",
-                                                            ErrorCodes::NOT_IMPLEMENTED};
+                       throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transitive renames in a single ALTER query are not allowed (don't make sense)");
                    else if (next_command.column_name == command.column_name)
-                       throw Exception{"Cannot rename column '" + backQuote(command.column_name)
-                                           + "' to two different names in a single ALTER query",
-                                       ErrorCodes::BAD_ARGUMENTS};
+                       throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot rename column '{}' to two different names in a single ALTER query",
+                                           backQuote(command.column_name));
                }
            }
 
             /// TODO Implement nested rename
             if (all_columns.hasNested(command.column_name))
             {
-                throw Exception{"Cannot rename whole Nested struct", ErrorCodes::NOT_IMPLEMENTED};
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot rename whole Nested struct");
             }
 
             if (!all_columns.has(command.column_name))
             {
                 if (!command.if_exists)
                 {
-                    String exception_message = fmt::format("Wrong column name. Cannot find column {} to rename", backQuote(command.column_name));
-                    all_columns.appendHintsMessage(exception_message, command.column_name);
-                    throw Exception(exception_message, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+                    auto message = PreformattedMessage::create(
+                       "Wrong column name. Cannot find column {} to rename", backQuote(command.column_name));
+                    all_columns.appendHintsMessage(message.text, command.column_name);
+                    throw Exception(std::move(message), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
                 }
                 else
                     continue;

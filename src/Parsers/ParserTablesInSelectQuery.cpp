@@ -190,11 +190,11 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
 
             if (table_join->strictness != JoinStrictness::Unspecified
                 && table_join->kind == JoinKind::Cross)
-                throw Exception("You must not specify ANY or ALL for CROSS JOIN.", ErrorCodes::SYNTAX_ERROR);
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "You must not specify ANY or ALL for CROSS JOIN.");
 
             if ((table_join->strictness == JoinStrictness::Semi || table_join->strictness == JoinStrictness::Anti) &&
                 (table_join->kind != JoinKind::Left && table_join->kind != JoinKind::Right))
-                throw Exception("SEMI|ANTI JOIN should be LEFT or RIGHT.", ErrorCodes::SYNTAX_ERROR);
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "SEMI|ANTI JOIN should be LEFT or RIGHT.");
 
             if (!ParserKeyword("JOIN").ignore(pos, expected))
                 return false;

@@ -78,7 +78,7 @@ ClientConfigurationPerRequest ProxyResolverConfiguration::getConfiguration(const
         auto & response_body_stream = session->receiveResponse(response);
 
         if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
-            throw Exception("Proxy resolver returned not OK status: " + response.getReason(), ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Proxy resolver returned not OK status: {}", response.getReason());
 
         String proxy_host;
         /// Read proxy host as string from response body.

@@ -797,7 +797,7 @@ template <bool with_grant_option>
 void AccessRights::grantImpl(const AccessRightsElement & element)
 {
     if (element.is_partial_revoke)
-        throw Exception("A partial revoke should be revoked, not granted", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "A partial revoke should be revoked, not granted");
     if constexpr (with_grant_option)
     {
         grantImplHelper<true>(element);

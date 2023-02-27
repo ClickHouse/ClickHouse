@@ -106,7 +106,9 @@ BlockIO InterpreterCreateUserQuery::execute()
 
      if (!query.attach && !query.alter && !query.auth_data && !implicit_no_password_allowed)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Authentication type NO_PASSWORD must be explicitly specified, check the setting allow_implicit_no_password in the server configuration");
+                        "Authentication type NO_PASSWORD must "
+                        "be explicitly specified, check the setting allow_implicit_no_password "
+                        "in the server configuration");
 
     if (!query.attach && query.temporary_password_for_checks)
     {

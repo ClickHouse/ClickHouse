@@ -10,6 +10,7 @@
 #include <base/range.h>
 
 #include <Formats/NativeReader.h>
+#include <Formats/insertNullAsDefaultIfNeeded.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -32,8 +33,19 @@ NativeReader::NativeReader(ReadBuffer & istr_, UInt64 server_revision_)
 {
 }
 
-NativeReader::NativeReader(ReadBuffer & istr_, const Block & header_, UInt64 server_revision_, bool skip_unknown_columns_)
-    : istr(istr_), header(header_), server_revision(server_revision_), skip_unknown_columns(skip_unknown_columns_)
+NativeReader::NativeReader(
+    ReadBuffer & istr_,
+    const Block & header_,
+    UInt64 server_revision_,
+    bool skip_unknown_columns_,
+    bool null_as_default_,
+    BlockMissingValues * block_missing_values_)
+    : istr(istr_)
+    , header(header_)
+    , server_revision(server_revision_)
+    , skip_unknown_columns(skip_unknown_columns_)
+    , null_as_default(null_as_default_)
+    , block_missing_values(block_missing_values_)
 {
 }
 
@@ -45,7 +57,7 @@ NativeReader::NativeReader(ReadBuffer & istr_, UInt64 server_revision_,
 {
     istr_concrete = typeid_cast<CompressedReadBufferFromFile *>(&istr);
     if (!istr_concrete)
-        throw Exception("When need to use index for NativeReader, istr must be CompressedReadBufferFromFile.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "When need to use index for NativeReader, istr must be CompressedReadBufferFromFile.");
 
     if (index_block_it == index_block_end)
         return;
@@ -103,7 +115,7 @@ Block NativeReader::read()
     if (istr.eof())
     {
         if (use_index)
-            throw ParsingException("Input doesn't contain all data for index.", ErrorCodes::CANNOT_READ_ALL_DATA);
+            throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Input doesn't contain all data for index.");
 
         return res;
     }
@@ -168,9 +180,9 @@ Block NativeReader::read()
         {
             /// Index allows to do more checks.
             if (index_column_it->name != column.name)
-                throw Exception("Index points to column with wrong name: corrupted index or data", ErrorCodes::INCORRECT_INDEX);
+                throw Exception(ErrorCodes::INCORRECT_INDEX, "Index points to column with wrong name: corrupted index or data");
             if (index_column_it->type != type_name)
-                throw Exception("Index points to column with wrong type: corrupted index or data", ErrorCodes::INCORRECT_INDEX);
+                throw Exception(ErrorCodes::INCORRECT_INDEX, "Index points to column with wrong type: corrupted index or data");
         }
 
         /// Data
@@ -187,8 +199,12 @@ Block NativeReader::read()
         {
             if (header.has(column.name))
             {
-                /// Support insert from old clients without low cardinality type.
                 auto & header_column = header.getByName(column.name);
+
+                if (null_as_default)
+                    insertNullAsDefaultIfNeeded(column, header_column, header.getPositionByName(column.name), block_missing_values);
+
+                /// Support insert from old clients without low cardinality type.
                 if (!header_column.type->equals(*column.type))
                 {
                     column.column = recursiveTypeConversion(column.column, column.type, header.safeGetByPosition(i).type);
@@ -213,7 +229,7 @@ Block NativeReader::read()
     if (use_index)
     {
         if (index_column_it != index_block_it->columns.end())
-            throw Exception("Inconsistent index: not all columns were read", ErrorCodes::INCORRECT_INDEX);
+            throw Exception(ErrorCodes::INCORRECT_INDEX, "Inconsistent index: not all columns were read");
 
         ++index_block_it;
         if (index_block_it != index_block_end)
@@ -225,12 +241,19 @@ Block NativeReader::read()
         /// Allow to skip columns. Fill them with default values.
         Block tmp_res;
 
-        for (auto & col : header)
+        for (size_t column_i = 0; column_i != header.columns(); ++column_i)
         {
+            auto & col = header.getByPosition(column_i);
             if (res.has(col.name))
+            {
                 tmp_res.insert(res.getByName(col.name));
+            }
             else
+            {
                 tmp_res.insert({col.type->createColumn()->cloneResized(rows), col.type, col.name});
+                if (block_missing_values)
+                    block_missing_values->setBits(column_i, rows);
+            }
         }
         tmp_res.info = res.info;
 

@@ -239,8 +239,6 @@ struct SettingFieldString
     void readBinary(ReadBuffer & in);
 };
 
-#ifndef KEEPER_STANDALONE_BUILD
-
 struct SettingFieldMap
 {
 public:
@@ -263,8 +261,6 @@ public:
     void writeBinary(WriteBuffer & out) const;
     void readBinary(ReadBuffer & in);
 };
-
-#endif
 
 struct SettingFieldChar
 {
@@ -402,7 +398,7 @@ void SettingFieldEnum<EnumT, Traits>::readBinary(ReadBuffer & in)
         auto it = map.find(value); \
         if (it != map.end()) \
             return it->second; \
-        throw Exception( \
+        throw Exception::createDeprecated( \
             "Unexpected value of " #NEW_NAME ":" + std::to_string(std::underlying_type<EnumType>::type(value)), \
             ERROR_CODE_FOR_UNEXPECTED_NAME); \
     } \
@@ -428,7 +424,7 @@ void SettingFieldEnum<EnumT, Traits>::readBinary(ReadBuffer & in)
             msg += "'" + String{name} + "'"; \
         } \
         msg += "]"; \
-        throw Exception(msg, ERROR_CODE_FOR_UNEXPECTED_NAME); \
+        throw Exception::createDeprecated(msg, ERROR_CODE_FOR_UNEXPECTED_NAME); \
     }
 
 // Mostly like SettingFieldEnum, but can have multiple enum values (or none) set at once.

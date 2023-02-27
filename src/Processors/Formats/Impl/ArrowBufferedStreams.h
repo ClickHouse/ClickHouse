@@ -62,6 +62,11 @@ public:
 
     arrow::Result<std::shared_ptr<arrow::Buffer>> Read(int64_t nbytes) override;
 
+    /// Override async reading to avoid using internal arrow thread pool.
+    /// In our code we don't use async reading, so implementation is sync,
+    /// we just call ReadAt and return future with ready value.
+    arrow::Future<std::shared_ptr<arrow::Buffer>> ReadAsync(const arrow::io::IOContext&, int64_t position, int64_t nbytes) override;
+
     arrow::Status Seek(int64_t position) override;
 
 private:

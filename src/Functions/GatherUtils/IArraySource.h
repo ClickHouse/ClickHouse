@@ -26,7 +26,7 @@ struct IArraySource
 
     virtual void accept(ArraySourceVisitor &)
     {
-        throw Exception("Accept not implemented for " + demangle(typeid(*this).name()), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Accept not implemented for {}", demangle(typeid(*this).name()));
     }
 };
 

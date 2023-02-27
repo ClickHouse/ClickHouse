@@ -254,13 +254,13 @@ struct ExpressionActionsChain : WithContext
         steps.clear();
     }
 
-    ActionsDAGPtr getLastActions(bool allow_empty = false)  // -V1071
+    ActionsDAGPtr getLastActions(bool allow_empty = false)
     {
         if (steps.empty())
         {
             if (allow_empty)
                 return {};
-            throw Exception("Empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty ExpressionActionsChain");
         }
 
         return typeid_cast<ExpressionActionsStep *>(steps.back().get())->actions_dag;
@@ -269,7 +269,7 @@ struct ExpressionActionsChain : WithContext
     Step & getLastStep()
     {
         if (steps.empty())
-            throw Exception("Empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty ExpressionActionsChain");
 
         return *steps.back();
     }

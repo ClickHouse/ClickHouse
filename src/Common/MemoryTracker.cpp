@@ -68,17 +68,17 @@ inline std::string_view toDescription(OvercommitResult result)
     switch (result)
     {
     case OvercommitResult::NONE:
-        return "Memory overcommit isn't used. OvercommitTracker isn't set";
+        return "";
     case OvercommitResult::DISABLED:
-        return "Memory overcommit isn't used. Waiting time or overcommit denominator are set to zero";
+        return "Memory overcommit isn't used. Waiting time or overcommit denominator are set to zero.";
     case OvercommitResult::MEMORY_FREED:
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "OvercommitResult::MEMORY_FREED shouldn't be asked for description");
     case OvercommitResult::SELECTED:
-        return "Query was selected to stop by OvercommitTracker";
+        return "Query was selected to stop by OvercommitTracker.";
     case OvercommitResult::TIMEOUTED:
-        return "Waiting timeout for memory to be freed is reached";
+        return "Waiting timeout for memory to be freed is reached.";
     case OvercommitResult::NOT_ENOUGH_FREED:
-        return "Memory overcommit has freed not enough memory";
+        return "Memory overcommit has freed not enough memory.";
     }
 }
 
@@ -261,14 +261,17 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
                 ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
                 const auto * description = description_ptr.load(std::memory_order_relaxed);
                 throw DB::Exception(
-                    DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
-                    "Memory limit{}{} exceeded: would use {} (attempt to allocate chunk of {} bytes), maximum: {}. OvercommitTracker decision: {}.",
-                    description ? " " : "",
-                    description ? description : "",
-                    formatReadableSizeWithBinarySuffix(will_be),
-                    size,
-                    formatReadableSizeWithBinarySuffix(current_hard_limit),
-                    toDescription(overcommit_result));
+                                    DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
+                                    "Memory limit{}{} exceeded: "
+                                    "would use {} (attempt to allocate chunk of {} bytes), maximum: {}."
+                                    "{}{}",
+                                    description ? " " : "",
+                                    description ? description : "",
+                                    formatReadableSizeWithBinarySuffix(will_be),
+                                    size,
+                                    formatReadableSizeWithBinarySuffix(current_hard_limit),
+                                    overcommit_result == OvercommitResult::NONE ? "" : " OvercommitTracker decision: ",
+                                    toDescription(overcommit_result));
             }
             else
             {

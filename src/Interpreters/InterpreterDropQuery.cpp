@@ -70,7 +70,7 @@ BlockIO InterpreterDropQuery::execute()
     else if (drop.database)
         return executeToDatabase(drop);
     else
-        throw Exception("Nothing to drop, both names are empty", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Nothing to drop, both names are empty");
 }
 
 
@@ -120,10 +120,10 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
     auto [database, table] = query.if_exists ? DatabaseCatalog::instance().tryGetDatabaseAndTable(table_id, context_)
                                              : DatabaseCatalog::instance().getDatabaseAndTable(table_id, context_);
 
-    checkStorageSupportsTransactionsIfNeeded(table, context_);
-
     if (database && table)
     {
+        checkStorageSupportsTransactionsIfNeeded(table, context_);
+
         auto & ast_drop_query = query.as<ASTDropQuery &>();
 
         if (ast_drop_query.is_view && !table->isView())
@@ -187,8 +187,9 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
             if (query.permanently)
             {
                 /// Server may fail to restart of DETACH PERMANENTLY if table has dependent ones
-                DatabaseCatalog::instance().removeDependencies(table_id, getContext()->getSettingsRef().check_table_dependencies,
-                                                               is_drop_or_detach_database);
+                bool check_ref_deps = getContext()->getSettingsRef().check_referential_table_dependencies;
+                bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef().check_table_dependencies;
+                DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
                 /// Drop table from memory, don't touch data, metadata file renamed and will be skipped during server restart
                 database->detachTablePermanently(context_, table_id.table_name);
             }
@@ -201,7 +202,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
         else if (query.kind == ASTDropQuery::Kind::Truncate)
         {
             if (table->isDictionary())
-                throw Exception("Cannot TRUNCATE dictionary", ErrorCodes::SYNTAX_ERROR);
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot TRUNCATE dictionary");
 
             context_->checkAccess(AccessType::TRUNCATE, table_id);
             if (table->isStaticStorage())
@@ -233,8 +234,9 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
                 table->checkTableCanBeDropped();
 
             /// Check dependencies before shutting table down
-            if (context_->getSettingsRef().check_table_dependencies)
-                DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(table_id, is_drop_or_detach_database);
+            bool check_ref_deps = getContext()->getSettingsRef().check_referential_table_dependencies;
+            bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef().check_table_dependencies;
+            DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
 
             table->flushAndShutdown();
 
@@ -242,8 +244,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
             if (database->getUUID() == UUIDHelpers::Nil)
                 table_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef().lock_acquire_timeout);
 
-            DatabaseCatalog::instance().removeDependencies(table_id, getContext()->getSettingsRef().check_table_dependencies,
-                                                           is_drop_or_detach_database);
+            DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
             database->dropTable(context_, table_id.table_name, query.sync);
 
             /// We have to drop mmapio cache when dropping table from Ordinary database
@@ -262,7 +263,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
 BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name, ASTDropQuery::Kind kind)
 {
     if (kind == ASTDropQuery::Kind::Detach)
-        throw Exception("Unable to detach temporary table.", ErrorCodes::SYNTAX_ERROR);
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Unable to detach temporary table.");
     else
     {
         auto context_handle = getContext()->hasSessionContext() ? getContext()->getSessionContext() : getContext();
@@ -286,6 +287,10 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
                 /// Delete table data
                 table->drop();
                 table->is_dropped = true;
+            }
+            else if (kind == ASTDropQuery::Kind::Detach)
+            {
+                table->is_detached = true;
             }
         }
     }
@@ -331,7 +336,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
     {
         if (query.kind == ASTDropQuery::Kind::Truncate)
         {
-            throw Exception("Unable to truncate database", ErrorCodes::SYNTAX_ERROR);
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Unable to truncate database");
         }
         else if (query.kind == ASTDropQuery::Kind::Detach || query.kind == ASTDropQuery::Kind::Drop)
         {
@@ -339,7 +344,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             getContext()->checkAccess(AccessType::DROP_DATABASE, database_name);
 
             if (query.kind == ASTDropQuery::Kind::Detach && query.permanently)
-                throw Exception("DETACH PERMANENTLY is not implemented for databases", ErrorCodes::NOT_IMPLEMENTED);
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DETACH PERMANENTLY is not implemented for databases");
 
             if (database->hasReplicationThread())
                 database->stopReplication();
@@ -426,11 +431,6 @@ AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() co
     }
 
     return required_access;
-}
-
-void InterpreterDropQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr) const
-{
-    elem.query_kind = "Drop";
 }
 
 void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr global_context, ContextPtr current_context, const StorageID & target_table_id, bool sync)

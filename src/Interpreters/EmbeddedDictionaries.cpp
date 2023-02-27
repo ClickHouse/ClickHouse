@@ -143,7 +143,7 @@ EmbeddedDictionaries::~EmbeddedDictionaries()
 void EmbeddedDictionaries::reload()
 {
     if (!reloadImpl(true, true))
-        throw Exception("Some embedded dictionaries were not successfully reloaded", ErrorCodes::UNFINISHED);
+        throw Exception(ErrorCodes::UNFINISHED, "Some embedded dictionaries were not successfully reloaded");
 }
 
 
