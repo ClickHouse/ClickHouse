@@ -157,6 +157,7 @@ T combineHashesFunc(T t1, T t2)
         reverseMemcpy(&tmp, &t2, sizeof(T));
         t2 = tmp;
 #endif
+
     T hashes[] = {t1, t2};
     return HashFunction::apply(reinterpret_cast<const char *>(hashes), 2 * sizeof(T));
 }
