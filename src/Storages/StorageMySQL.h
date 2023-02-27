@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include "config_core.h"
 
 #if USE_MYSQL
 
@@ -46,7 +46,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        size_t num_streams) override;
+        unsigned num_streams) override;
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 

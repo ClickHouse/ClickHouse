@@ -1,6 +1,7 @@
 #pragma once
 
-#include "config.h"
+#include <Common/config.h>
+#include "config_core.h"
 
 namespace DB
 {
@@ -24,12 +25,6 @@ void registerTableFunctionMeiliSearch(TableFunctionFactory & factory);
 void registerTableFunctionS3(TableFunctionFactory & factory);
 void registerTableFunctionS3Cluster(TableFunctionFactory & factory);
 void registerTableFunctionCOS(TableFunctionFactory & factory);
-void registerTableFunctionOSS(TableFunctionFactory & factory);
-void registerTableFunctionHudi(TableFunctionFactory & factory);
-void registerTableFunctionDeltaLake(TableFunctionFactory & factory);
-#if USE_AVRO
-void registerTableFunctionIceberg(TableFunctionFactory & factory);
-#endif
 #endif
 
 #if USE_HDFS
@@ -62,8 +57,6 @@ void registerTableFunctionSQLite(TableFunctionFactory & factory);
 void registerTableFunctionDictionary(TableFunctionFactory & factory);
 
 void registerTableFunctionFormat(TableFunctionFactory & factory);
-
-void registerTableFunctionExplain(TableFunctionFactory & factory);
 
 void registerTableFunctions();
 

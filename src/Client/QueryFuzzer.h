@@ -1,6 +1,5 @@
 #pragma once
 
-#include <DataTypes/IDataType.h>
 #include <unordered_set>
 #include <unordered_map>
 #include <vector>
@@ -8,7 +7,6 @@
 #include <pcg-random/pcg_random.hpp>
 
 #include <Common/randomSeed.h>
-#include "Parsers/IAST_fwd.h"
 #include <Core/Field.h>
 #include <Parsers/IAST.h>
 
@@ -18,11 +16,6 @@ namespace DB
 
 class ASTExpressionList;
 class ASTOrderByElement;
-class ASTCreateQuery;
-class ASTInsertQuery;
-class ASTColumnDeclaration;
-class ASTDropQuery;
-struct ASTTableExpression;
 struct ASTWindowDefinition;
 
 /*
@@ -61,9 +54,6 @@ struct QueryFuzzer
     std::unordered_set<const IAST *> debug_visited_nodes;
     ASTPtr * debug_top_ast = nullptr;
 
-    std::unordered_map<std::string, std::unordered_set<std::string>> original_table_name_to_fuzzed;
-    std::unordered_map<std::string, size_t> index_of_fuzzed_table;
-    std::set<IAST::Hash> created_tables_hashes;
 
     // This is the only function you have to call -- it will modify the passed
     // ASTPtr to point to new AST with some random changes.
@@ -73,29 +63,18 @@ struct QueryFuzzer
     Field getRandomField(int type);
     Field fuzzField(Field field);
     ASTPtr getRandomColumnLike();
-    ASTPtr getRandomExpressionList();
-    DataTypePtr fuzzDataType(DataTypePtr type);
-    DataTypePtr getRandomType();
-    ASTs getInsertQueriesForFuzzedTables(const String & full_query);
-    ASTs getDropQueriesForFuzzedTables(const ASTDropQuery & drop_query);
-    void notifyQueryFailed(ASTPtr ast);
     void replaceWithColumnLike(ASTPtr & ast);
     void replaceWithTableLike(ASTPtr & ast);
     void fuzzOrderByElement(ASTOrderByElement * elem);
     void fuzzOrderByList(IAST * ast);
     void fuzzColumnLikeExpressionList(IAST * ast);
     void fuzzWindowFrame(ASTWindowDefinition & def);
-    void fuzzCreateQuery(ASTCreateQuery & create);
-    void fuzzColumnDeclaration(ASTColumnDeclaration & column);
-    void fuzzTableName(ASTTableExpression & table);
     void fuzz(ASTs & asts);
     void fuzz(ASTPtr & ast);
     void collectFuzzInfoMain(ASTPtr ast);
     void addTableLike(ASTPtr ast);
     void addColumnLike(ASTPtr ast);
     void collectFuzzInfoRecurse(ASTPtr ast);
-
-    static bool isSuitableForFuzzing(const ASTCreateQuery & create);
 };
 
 }

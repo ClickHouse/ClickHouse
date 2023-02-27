@@ -11,7 +11,7 @@ namespace DB
 class RestoreCoordinationRemote : public IRestoreCoordination
 {
 public:
-    RestoreCoordinationRemote(const String & root_zookeeper_path_, const String & restore_uuid_, zkutil::GetZooKeeper get_zookeeper_, bool is_internal_);
+    RestoreCoordinationRemote(const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_, bool remove_zk_nodes_in_destructor_);
     ~RestoreCoordinationRemote() override;
 
     /// Sets the current stage and waits for other hosts to come to this stage too.
@@ -31,8 +31,6 @@ public:
     /// The function returns false if this access storage is being already restored by another replica.
     bool acquireReplicatedAccessStorage(const String & access_storage_zk_path) override;
 
-    bool hasConcurrentRestores(const std::atomic<size_t> & num_active_restores) const override;
-
 private:
     zkutil::ZooKeeperPtr getZooKeeper() const;
     void createRootNodes();
@@ -40,11 +38,9 @@ private:
 
     class ReplicatedDatabasesMetadataSync;
 
-    const String root_zookeeper_path;
     const String zookeeper_path;
-    const String restore_uuid;
     const zkutil::GetZooKeeper get_zookeeper;
-    const bool is_internal;
+    const bool remove_zk_nodes_in_destructor;
 
     std::optional<BackupCoordinationStageSync> stage_sync;
 

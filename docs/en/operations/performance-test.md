@@ -1,13 +1,9 @@
 ---
-slug: /en/operations/performance-test
 sidebar_position: 54
 sidebar_label: Testing Hardware
-title: "How to Test Your Hardware with ClickHouse"
 ---
 
-import SelfManaged from '@site/docs/en/_snippets/_self_managed_only_no_roadmap.md';
-
-<SelfManaged />
+# How to Test Your Hardware with ClickHouse
 
 You can run a basic ClickHouse performance test on any server without installation of ClickHouse packages.
 

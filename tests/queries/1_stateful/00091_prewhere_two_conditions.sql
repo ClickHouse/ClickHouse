@@ -1,6 +1,3 @@
--- Tags: no-parallel-replicas
--- Requires investigation (max_bytes_to_read is not respected)
-
 SET max_bytes_to_read = 600000000;
 
 SET optimize_move_to_prewhere = 1;

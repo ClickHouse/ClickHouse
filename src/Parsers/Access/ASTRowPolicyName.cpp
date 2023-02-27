@@ -34,7 +34,7 @@ void ASTRowPolicyName::replaceEmptyDatabase(const String & current_database)
 void ASTRowPolicyNames::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
     if (full_names.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No names of row policies in AST");
+        throw Exception("No names of row policies in AST", ErrorCodes::LOGICAL_ERROR);
 
     bool same_short_name = true;
     if (full_names.size() > 1)

@@ -1,5 +1,4 @@
 ---
-slug: /zh/operations/server-configuration-parameters/settings
 sidebar_position: 57
 sidebar_label: "\u670D\u52A1\u5668\u8BBE\u7F6E"
 ---
@@ -867,3 +866,5 @@ ZooKeeper中数据部分头的存储方法。
 更新是在一个单独的系统线程中异步执行的。
 
 **默认值**: 15.
+
+[原始文章](https://clickhouse.com/docs/en/operations/server_configuration_parameters/settings/) <!--hide-->

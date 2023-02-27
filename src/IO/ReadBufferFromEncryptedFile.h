@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_SSL
 #include <IO/ReadBufferFromFileBase.h>

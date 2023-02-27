@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/functions/bit-functions
 sidebar_position: 48
 sidebar_label: Bit
 ---
