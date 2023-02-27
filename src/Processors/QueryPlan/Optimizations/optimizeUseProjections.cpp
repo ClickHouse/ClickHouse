@@ -951,10 +951,14 @@ static ActionsDAGPtr makeMaterializingDAG(const Block & proj_header, const Block
     if (const_positions.empty())
         return nullptr;
 
-    ActionsDAGPtr dag = std::make_unique<ActionsDAG>(proj_header.getColumnsWithTypeAndName());
+    ActionsDAGPtr dag = std::make_unique<ActionsDAG>();
+    auto & outputs = dag->getOutputs();
+    for (const auto & col : proj_header.getColumnsWithTypeAndName())
+        outputs.push_back(&dag->addInput(col));
+
     for (auto pos : const_positions)
     {
-        auto & output = dag->getOutputs()[pos];
+        auto & output = outputs[pos];
         output = &dag->materializeNode(*output);
     }
 
