@@ -13,9 +13,10 @@ The following versions of ClickHouse server are currently being supported with s
 
 | Version | Supported |
 |:-|:-|
+| 23.2 | ✔️ |
 | 23.1 | ✔️ |
 | 22.12 | ✔️ |
-| 22.11 | ✔️ |
+| 22.11 | ❌ |
 | 22.10 | ❌ |
 | 22.9 | ❌ |
 | 22.8 | ✔️ |
