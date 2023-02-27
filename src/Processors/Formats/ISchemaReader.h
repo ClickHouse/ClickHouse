@@ -170,10 +170,10 @@ void chooseResultColumnType(
             ErrorCodes::TYPE_MISMATCH,
             "Automatically defined type {} for column '{}' in row {} differs from type defined by previous rows: {}. "
             "You can specify the type for this column using setting schema_inference_hints",
-            type->getName(),
+            new_type->getName(),
             column_name,
             row,
-            new_type->getName());
+            type->getName());
     }
 }
 
