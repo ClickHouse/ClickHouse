@@ -3264,7 +3264,7 @@ class ClickHouseInstance:
         sleep_time=0.5,
         check_callback=lambda x: True,
     ):
-        logging.debug(f"Executing query {sql} on {self.name}")
+        # logging.debug(f"Executing query {sql} on {self.name}")
         result = None
         for i in range(retry_count):
             try:
@@ -3283,7 +3283,7 @@ class ClickHouseInstance:
                     return result
                 time.sleep(sleep_time)
             except Exception as ex:
-                logging.debug("Retry {} got exception {}".format(i + 1, ex))
+                # logging.debug("Retry {} got exception {}".format(i + 1, ex))
                 time.sleep(sleep_time)
 
         if result is not None:
@@ -3385,6 +3385,7 @@ class ClickHouseInstance:
         port=8123,
         timeout=None,
         retry_strategy=None,
+        content=False,
     ):
         output, error = self.http_query_and_get_answer_with_error(
             sql,
@@ -3396,6 +3397,7 @@ class ClickHouseInstance:
             port=port,
             timeout=timeout,
             retry_strategy=retry_strategy,
+            content=content,
         )
 
         if error:
@@ -3448,6 +3450,7 @@ class ClickHouseInstance:
         port=8123,
         timeout=None,
         retry_strategy=None,
+        content=False,
     ):
         logging.debug(f"Executing query {sql} on {self.name} via HTTP interface")
         if params is None:
@@ -3479,7 +3482,7 @@ class ClickHouseInstance:
         r = requester.request(method, url, data=data, auth=auth, timeout=timeout)
 
         if r.ok:
-            return (r.text, None)
+            return (r.content if content else r.text, None)
 
         code = r.status_code
         return (None, str(code) + " " + http.client.responses[code] + ": " + r.text)

@@ -41,6 +41,7 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     , block_with_constants{KeyCondition::getBlockWithConstants(query_info.query->clone(), query_info.syntax_analyzer_result, context)}
     , log{log_}
     , column_sizes{std::move(column_sizes_)}
+    , move_all_conditions_to_prewhere(context->getSettingsRef().move_all_conditions_to_prewhere)
 {
     for (const auto & name : queried_columns)
     {
@@ -272,23 +273,26 @@ void MergeTreeWhereOptimizer::optimize(ASTSelectQuery & select) const
         if (!it->viable)
             break;
 
-        bool moved_enough = false;
-        if (total_size_of_queried_columns > 0)
+        if (!move_all_conditions_to_prewhere)
         {
-            /// If we know size of queried columns use it as threshold. 10% ratio is just a guess.
-            moved_enough = total_size_of_moved_conditions > 0
-                && (total_size_of_moved_conditions + it->columns_size) * 10 > total_size_of_queried_columns;
-        }
-        else
-        {
-            /// Otherwise, use number of moved columns as a fallback.
-            /// It can happen, if table has only compact parts. 25% ratio is just a guess.
-            moved_enough = total_number_of_moved_columns > 0
-                && (total_number_of_moved_columns + it->identifiers.size()) * 4 > queried_columns.size();
-        }
+            bool moved_enough = false;
+            if (total_size_of_queried_columns > 0)
+            {
+                /// If we know size of queried columns use it as threshold. 10% ratio is just a guess.
+                moved_enough = total_size_of_moved_conditions > 0
+                    && (total_size_of_moved_conditions + it->columns_size) * 10 > total_size_of_queried_columns;
+            }
+            else
+            {
+                /// Otherwise, use number of moved columns as a fallback.
+                /// It can happen, if table has only compact parts. 25% ratio is just a guess.
+                moved_enough = total_number_of_moved_columns > 0
+                    && (total_number_of_moved_columns + it->identifiers.size()) * 4 > queried_columns.size();
+            }
 
-        if (moved_enough)
-            break;
+            if (moved_enough)
+                break;
+        }
 
         move_condition(it);
     }

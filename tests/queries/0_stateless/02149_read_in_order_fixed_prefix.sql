@@ -38,7 +38,7 @@ DROP TABLE IF EXISTS t_read_in_order;
 
 CREATE TABLE t_read_in_order(a UInt32, b UInt32)
 ENGINE = MergeTree ORDER BY (a, b)
-SETTINGS index_granularity = 3;
+SETTINGS index_granularity = 3, index_granularity_bytes = '10Mi';
 
 SYSTEM STOP MERGES t_read_in_order;
 

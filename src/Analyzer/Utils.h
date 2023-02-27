@@ -19,6 +19,9 @@ void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_q
 /// Extract table, table function, query, union from join tree
 QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node);
 
+/// Extract left table expression from join tree
+QueryTreeNodePtr extractLeftTableExpression(const QueryTreeNodePtr & join_tree_node);
+
 /** Build table expressions stack that consists from table, table function, query, union, join, array join from join tree.
   *
   * Example: SELECT * FROM t1 INNER JOIN t2 INNER JOIN t3.
@@ -38,5 +41,28 @@ QueryTreeNodes buildTableExpressionsStack(const QueryTreeNodePtr & join_tree_nod
   * Result: true.
   */
 bool nestedIdentifierCanBeResolved(const DataTypePtr & compound_type, IdentifierView nested_identifier);
+
+/** Assert that there are no function nodes with specified function name in node children.
+  * Do not visit subqueries.
+  */
+void assertNoFunctionNodes(const QueryTreeNodePtr & node,
+    std::string_view function_name,
+    int exception_code,
+    std::string_view exception_function_name,
+    std::string_view exception_place_message);
+
+/** Returns true if there is function node with specified function name in node children, false otherwise.
+  * Do not visit subqueries.
+  */
+bool hasFunctionNode(const QueryTreeNodePtr & node, std::string_view function_name);
+
+/** Replace columns in node children.
+  * If there is column node and its source is specified table expression node and there is
+  * node for column name in map replace column node with node from map.
+  * Do not visit subqueries.
+  */
+void replaceColumns(QueryTreeNodePtr & node,
+    const QueryTreeNodePtr & table_expression_node,
+    const std::unordered_map<std::string, QueryTreeNodePtr> & column_name_to_node);
 
 }

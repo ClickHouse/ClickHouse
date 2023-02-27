@@ -279,6 +279,9 @@ private:
     std::optional<MergeTreeAllRangesCallback> merge_tree_all_ranges_callback;
     UUID parallel_replicas_group_uuid{UUIDHelpers::Nil};
 
+    /// This parameter can be set by the HTTP client to tune the behavior of output formats for compatibility.
+    UInt64 client_protocol_version = 0;
+
     /// Record entities accessed by current query, and store this information in system.query_log.
     struct QueryAccessInfo
     {
@@ -828,6 +831,8 @@ public:
     bool tryCheckClientConnectionToMyKeeperCluster() const;
 
     UInt32 getZooKeeperSessionUptime() const;
+    UInt64 getClientProtocolVersion() const;
+    void setClientProtocolVersion(UInt64 version);
 
 #if USE_ROCKSDB
     MergeTreeMetadataCachePtr getMergeTreeMetadataCache() const;
