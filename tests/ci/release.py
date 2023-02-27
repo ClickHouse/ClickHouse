@@ -273,7 +273,9 @@ class Release:
         self, version: ClickHouseVersion, reset_tweak: bool = True
     ) -> None:
         if reset_tweak:
+            desc = version.description
             version = version.reset_tweak()
+            version.with_description(desc)
         update_cmake_version(version)
         update_contributors(raise_error=True)
         if self.dry_run:
