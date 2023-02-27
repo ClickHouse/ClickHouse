@@ -52,18 +52,8 @@ def cluster():
 
 FILES_OVERHEAD = 1
 FILES_OVERHEAD_PER_COLUMN = 2  # Data and mark files
-FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC = 1
-FILES_OVERHEAD_METADATA_VERSION = 1
-FILES_OVERHEAD_PER_PART_WIDE = (
-    FILES_OVERHEAD_PER_COLUMN * 3
-    + 2
-    + 6
-    + FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC
-    + FILES_OVERHEAD_METADATA_VERSION
-)
-FILES_OVERHEAD_PER_PART_COMPACT = (
-    10 + FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC + FILES_OVERHEAD_METADATA_VERSION
-)
+FILES_OVERHEAD_PER_PART_WIDE = FILES_OVERHEAD_PER_COLUMN * 3 + 2 + 6 + 1
+FILES_OVERHEAD_PER_PART_COMPACT = 10 + 1
 
 
 def create_table(node, table_name, **additional_settings):
@@ -242,6 +232,7 @@ def test_insert_same_partition_and_merge(cluster, merge_vertical, node_name):
 def test_alter_table_columns(cluster, node_name):
     node = cluster.instances[node_name]
     create_table(node, "s3_test")
+    minio = cluster.minio_client
 
     node.query(
         "INSERT INTO s3_test VALUES {}".format(generate_values("2020-01-03", 4096))

@@ -44,9 +44,8 @@ expect ":) "
 
 # Generate UIUD to avoid matching old database/tables/columns from previous test runs.
 send -- "select 'begin-' || replace(toString(generateUUIDv4()), '-', '') || '-end' format TSV\r"
-expect -re TSV.*TSV.*begin-(.*)-end.*
+expect -re "TSV.*TSV.*begin-(.*)-end.*:\\) "
 set uuid $expect_out(1,string)
-expect ":) "
 
 # CREATE DATABASE
 send -- "create database new_${uuid}_database\r"
