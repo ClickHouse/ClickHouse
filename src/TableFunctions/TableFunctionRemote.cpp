@@ -57,10 +57,12 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
 
         validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(
             *named_collection,
-            {"addresses_expr", "database", "db", "table"},
-            {"username", "user", "password", "sharding_key"});
+            {"addresses_expr", "host", "database", "db", "table"},
+            {"username", "user", "password", "sharding_key", "port"});
 
         cluster_description = named_collection->getOrDefault<String>("addresses_expr", "");
+        if (cluster_description.empty() && named_collection->hasAny({"host", "hostname"}))
+            cluster_description = named_collection->has("port") ? named_collection->getAny<String>({"host", "hostname"}) + ':' + toString(named_collection->get<UInt64>("port")) : named_collection->getAny<String>({"host", "hostname"});
         database = named_collection->getAnyOrDefault<String>({"db", "database"}, "default");
         table = named_collection->get<String>("table");
         username = named_collection->getAnyOrDefault<String>({"username", "user"}, "default");

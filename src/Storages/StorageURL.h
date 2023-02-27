@@ -184,7 +184,7 @@ public:
     struct Configuration : public StatelessTableEngineConfiguration
     {
         std::string url;
-        std::string http_method = "auto";
+        std::string http_method;
         HTTPHeaderEntries headers;
         std::string addresses_expr;
     };
