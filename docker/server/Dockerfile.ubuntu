@@ -81,7 +81,7 @@ RUN arch=${TARGETARCH:-amd64} \
     && mkdir -p /var/lib/clickhouse /var/log/clickhouse-server /etc/clickhouse-server /etc/clickhouse-client \
     && chmod ugo+Xrw -R /var/lib/clickhouse /var/log/clickhouse-server /etc/clickhouse-server /etc/clickhouse-client
 
-RUN apt-get autoremove --purge -yq libksba8 && \
+RUN apt-get autoremove --purge -yq libksba8 wget && \
     apt-get autoremove -yq
 
 # we need to allow "others" access to clickhouse folder, because docker container
