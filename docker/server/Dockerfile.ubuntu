@@ -15,6 +15,7 @@ RUN sed -i "s|http://archive.ubuntu.com|${apt_archive}|g" /etc/apt/sources.list 
         ca-certificates \
         dirmngr \
         gnupg2 \
+        wget \
         locales \
         tzdata \
     && apt-get clean
