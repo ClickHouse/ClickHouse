@@ -211,7 +211,7 @@ def prepare_for_hung_check(drop_databases):
     # Even if all clickhouse-test processes are finished, there are probably some sh scripts,
     # which still run some new queries. Let's ignore them.
     try:
-        query = """clickhouse client -q "SELECT count() FROM system.processes where where elapsed > 300" """
+        query = """clickhouse client -q "SELECT count() FROM system.processes where elapsed > 300" """
         output = (
             check_output(query, shell=True, stderr=STDOUT, timeout=30)
             .decode("utf-8")
