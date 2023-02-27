@@ -142,6 +142,10 @@ y	Nullable(String)
 z	IPv4
 ```
 
+:::warning
+If the `schema_inference_hints` is not formated properly, or if there is a typo or a wrong datatype, etc... the whole schema_inference_hints will be ignored.
+:::
+
 ## schema_inference_make_columns_nullable {#schema_inference_make_columns_nullable}
 
 Controls making inferred types `Nullable` in schema inference for formats without information about nullability.
@@ -507,7 +511,7 @@ Enabled by default.
 
 Ignore unknown keys in json object for named tuples.
 
-Disabled by default.
+Enabled by default.
 
 ## input_format_json_defaults_for_missing_elements_in_named_tuple {#input_format_json_defaults_for_missing_elements_in_named_tuple}
 
