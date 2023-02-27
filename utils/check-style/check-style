@@ -13,7 +13,7 @@
 #  and then to run formatter only for the specified files.
 
 ROOT_PATH=$(git rev-parse --show-toplevel)
-EXCLUDE_DIRS='build/|integration/|widechar_width/|glibc-compatibility/|memcpy/|consistent-hashing|benchmark|tests/'
+EXCLUDE_DIRS='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/'
 
 # From [1]:
 #     But since array_to_string_internal() in array.c still loops over array
@@ -333,6 +333,18 @@ expect_tests=( $(find $ROOT_PATH/tests/queries -name '*.expect') )
 for test_case in "${expect_tests[@]}"; do
     pattern="^exp_internal -f \$env(CLICKHOUSE_TMP)/\$basename.debuglog 0$"
     grep -q "$pattern" "$test_case" || echo "Missing '$pattern' in '$test_case'"
+
+    if grep -q "^spawn.*CLICKHOUSE_CLIENT_BINARY$" "$test_case"; then
+        pattern="^spawn.*CLICKHOUSE_CLIENT_BINARY.*--history_file$"
+        grep -q "$pattern" "$test_case" || echo "Missing '$pattern' in '$test_case'"
+    fi
+
+    # Otherwise expect_after/expect_before will not bail without stdin attached
+    # (and actually this is a hack anyway, correct way is to use $any_spawn_id)
+    pattern="-i \$any_spawn_id timeout"
+    grep -q -- "$pattern" "$test_case" || echo "Missing '$pattern' in '$test_case'"
+    pattern="-i \$any_spawn_id eof"
+    grep -q -- "$pattern" "$test_case" || echo "Missing '$pattern' in '$test_case'"
 done
 
 # Conflict markers
@@ -371,6 +383,12 @@ find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
 find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
     grep -vP $EXCLUDE_DIRS |
     xargs grep -P '__builtin_unreachable' && echo "Use UNREACHABLE() from defines.h instead"
+
+# Require checking return value of close(),
+# since it can hide fd misuse and break other places.
+find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
+    grep -vP $EXCLUDE_DIRS |
+    xargs grep -e ' close(.*fd' -e ' ::close(' | grep -v = && echo "Return value of close() should be checked"
 
 # Check for existence of __init__.py files
 for i in "${ROOT_PATH}"/tests/integration/test_*; do FILE="${i}/__init__.py"; [ ! -f "${FILE}" ] && echo "${FILE} should exist for every integration test"; done

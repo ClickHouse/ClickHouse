@@ -148,7 +148,7 @@ def main():
     if args.push:
         checkout_head(pr_info)
 
-    gh = GitHub(get_best_robot_token(), per_page=100, create_cache_dir=False)
+    gh = GitHub(get_best_robot_token(), create_cache_dir=False)
 
     atexit.register(update_mergeable_check, gh, pr_info, NAME)
 

@@ -2,9 +2,13 @@
 
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
+#include <Common/getRandomASCIIString.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
+#include <Interpreters/FilesystemReadPrefetchesLog.h>
+#include <Interpreters/Context.h>
+#include <base/getThreadId.h>
 
 
 namespace CurrentMetrics
@@ -47,10 +51,13 @@ AsynchronousReadIndirectBufferFromRemoteFS::AsynchronousReadIndirectBufferFromRe
     : ReadBufferFromFileBase(settings_.remote_fs_buffer_size, nullptr, 0)
     , read_settings(settings_)
     , reader(reader_)
-    , priority(settings_.priority)
+    , base_priority(settings_.priority)
     , impl(impl_)
     , prefetch_buffer(settings_.remote_fs_buffer_size)
     , min_bytes_for_seek(min_bytes_for_seek_)
+    , query_id(CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() != nullptr
+               ? CurrentThread::getQueryId() : "")
+    , current_reader_id(getRandomASCIIString(8))
 #ifndef NDEBUG
     , log(&Poco::Logger::get("AsynchronousBufferFromRemoteFS"))
 #else
@@ -101,14 +108,14 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::hasPendingDataToRead()
 }
 
 
-std::future<IAsynchronousReader::Result> AsynchronousReadIndirectBufferFromRemoteFS::asyncReadInto(char * data, size_t size)
+std::future<IAsynchronousReader::Result> AsynchronousReadIndirectBufferFromRemoteFS::asyncReadInto(char * data, size_t size, int64_t priority)
 {
     IAsynchronousReader::Request request;
     request.descriptor = std::make_shared<RemoteFSFileDescriptor>(*impl);
     request.buf = data;
     request.size = size;
     request.offset = file_offset_of_buffer_end;
-    request.priority = priority;
+    request.priority = base_priority + priority;
 
     if (bytes_to_ignore)
     {
@@ -119,7 +126,7 @@ std::future<IAsynchronousReader::Result> AsynchronousReadIndirectBufferFromRemot
 }
 
 
-void AsynchronousReadIndirectBufferFromRemoteFS::prefetch()
+void AsynchronousReadIndirectBufferFromRemoteFS::prefetch(int64_t priority)
 {
     if (prefetch_future.valid())
         return;
@@ -128,9 +135,12 @@ void AsynchronousReadIndirectBufferFromRemoteFS::prefetch()
     if (!hasPendingDataToRead())
         return;
 
+    last_prefetch_info.submit_time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    last_prefetch_info.priority = priority;
+
     /// Prefetch even in case hasPendingData() == true.
     chassert(prefetch_buffer.size() == read_settings.remote_fs_buffer_size);
-    prefetch_future = asyncReadInto(prefetch_buffer.data(), prefetch_buffer.size());
+    prefetch_future = asyncReadInto(prefetch_buffer.data(), prefetch_buffer.size(), priority);
     ProfileEvents::increment(ProfileEvents::RemoteFSPrefetches);
 }
 
@@ -163,6 +173,29 @@ void AsynchronousReadIndirectBufferFromRemoteFS::setReadUntilEnd()
 }
 
 
+void AsynchronousReadIndirectBufferFromRemoteFS::appendToPrefetchLog(FilesystemPrefetchState state, int64_t size, const std::unique_ptr<Stopwatch> & execution_watch)
+{
+    const auto & object = impl->getCurrentObject();
+    FilesystemReadPrefetchesLogElement elem
+    {
+        .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
+        .query_id = query_id,
+        .path = object.getMappedPath(),
+        .offset = file_offset_of_buffer_end,
+        .size = size,
+        .prefetch_submit_time = last_prefetch_info.submit_time,
+        .execution_watch = execution_watch ? std::optional<Stopwatch>(*execution_watch) : std::nullopt,
+        .priority = last_prefetch_info.priority,
+        .state = state,
+        .thread_id = getThreadId(),
+        .reader_id = current_reader_id,
+    };
+
+    if (auto prefetch_log = Context::getGlobalContextInstance()->getFilesystemReadPrefetchesLog())
+        prefetch_log->add(elem);
+}
+
+
 bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
 {
     if (!hasPendingDataToRead())
@@ -176,9 +209,18 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::AsynchronousRemoteReadWaitMicroseconds);
         CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
 
-        std::tie(size, offset) = prefetch_future.get();
+        auto result = prefetch_future.get();
+        size = result.size;
+        offset = result.offset;
+
         prefetch_future = {};
         prefetch_buffer.swap(memory);
+
+        if (read_settings.enable_filesystem_read_prefetches_log)
+        {
+            appendToPrefetchLog(FilesystemPrefetchState::USED, size, result.execution_watch);
+        }
+        last_prefetch_info = {};
 
         ProfileEvents::increment(ProfileEvents::RemoteFSPrefetchedReads);
         ProfileEvents::increment(ProfileEvents::RemoteFSPrefetchedBytes, size);
@@ -196,6 +238,7 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
     }
 
     chassert(size >= offset);
+
     size_t bytes_read = size - offset;
     if (bytes_read)
     {
@@ -265,7 +308,13 @@ off_t AsynchronousReadIndirectBufferFromRemoteFS::seek(off_t offset, int whence)
 
         /// Prefetch is cancelled because of seek.
         if (read_from_prefetch)
+        {
             ProfileEvents::increment(ProfileEvents::RemoteFSCancelledPrefetches);
+            if (read_settings.enable_filesystem_read_prefetches_log)
+            {
+                appendToPrefetchLog(FilesystemPrefetchState::CANCELLED_WITH_SEEK, -1, nullptr);
+            }
+        }
 
         break;
     }
@@ -333,8 +382,9 @@ void AsynchronousReadIndirectBufferFromRemoteFS::resetPrefetch(FilesystemPrefetc
     if (!prefetch_future.valid())
         return;
 
-    auto [size, _] = prefetch_future.get();
+    auto [size, offset, _] = prefetch_future.get();
     prefetch_future = {};
+    last_prefetch_info = {};
 
     ProfileEvents::increment(ProfileEvents::RemoteFSPrefetchedBytes, size);
 

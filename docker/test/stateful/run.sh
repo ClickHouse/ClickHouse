@@ -155,7 +155,7 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
     sudo clickhouse stop --pid-path /var/run/clickhouse-server2 ||:
 fi
 
-rg -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server.log ||:
+rg -Fa "<Fatal>" /var/log/clickhouse-server/clickhouse-server.log ||:
 
 zstd --threads=0 < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.zst ||:
 # FIXME: remove once only github actions will be left
@@ -166,8 +166,8 @@ if [[ -n "$WITH_COVERAGE" ]] && [[ "$WITH_COVERAGE" -eq 1 ]]; then
     tar --zstd -c -h -f /test_output/clickhouse_coverage.tar.zst /profraw ||:
 fi
 if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
-    rg -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server1.log ||:
-    rg -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server2.log ||:
+    rg -Fa "<Fatal>" /var/log/clickhouse-server/clickhouse-server1.log ||:
+    rg -Fa "<Fatal>" /var/log/clickhouse-server/clickhouse-server2.log ||:
     zstd --threads=0 < /var/log/clickhouse-server/clickhouse-server1.log > /test_output/clickhouse-server1.log.zst ||:
     zstd --threads=0 < /var/log/clickhouse-server/clickhouse-server2.log > /test_output/clickhouse-server2.log.zst ||:
     # FIXME: remove once only github actions will be left
