@@ -1832,15 +1832,7 @@ MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
     for (auto it = begin; it != end; ++it)
     {
         const auto & commands_from_entry = it->second->entry->commands;
-
-        if (commands_from_entry.containBarrierCommand())
-        {
-            if (commands.empty())
-                commands.insert(commands.end(), commands_from_entry.begin(), commands_from_entry.end());
-            break;
-        }
-        else
-            commands.insert(commands.end(), commands_from_entry.begin(), commands_from_entry.end());
+        commands.insert(commands.end(), commands_from_entry.begin(), commands_from_entry.end());
     }
 
     return commands;
