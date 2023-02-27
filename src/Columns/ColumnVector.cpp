@@ -747,7 +747,7 @@ namespace
       */
     template<typename IntType>
     requires (std::is_same_v<IntType, Int32> || std::is_same_v<IntType, UInt32>)
-    void replicateSSE42Int32(const IntType * __restrict data, IntType * __restrict result_data, const IColumn::Offsets & offsets)
+    void replicateSSE2Int32(const IntType * __restrict data, IntType * __restrict result_data, const IColumn::Offsets & offsets)
     {
         const IntType * data_copy_begin_ptr = nullptr;
         size_t offsets_size = offsets.size();
@@ -842,7 +842,7 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
 #ifdef __SSE2__
     if constexpr (std::is_same_v<T, UInt32>)
     {
-        replicateSSE42Int32(getData().data(), res->getData().data(), offsets);
+        replicateSSE2Int32(getData().data(), res->getData().data(), offsets);
         return res;
     }
 #endif
