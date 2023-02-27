@@ -50,19 +50,19 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
      * For now named collection can be used only for remote as cluster does not require credentials.
      */
     size_t max_args = is_cluster_function ? 4 : 6;
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(args, false))
+    NamedCollectionPtr named_collection;
+    if (!is_cluster_function && (named_collection = tryGetNamedCollectionWithOverrides(args)))
     {
-        if (is_cluster_function)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Named collection cannot be used for table function cluster");
-
         validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(
             *named_collection,
-            {"addresses_expr", "host", "database", "db", "table"},
-            {"username", "user", "password", "sharding_key", "port"});
+            {"addresses_expr", "host", "hostname", "table"},
+            {"username", "user", "password", "sharding_key", "port", "database", "db"});
 
         cluster_description = named_collection->getOrDefault<String>("addresses_expr", "");
         if (cluster_description.empty() && named_collection->hasAny({"host", "hostname"}))
-            cluster_description = named_collection->has("port") ? named_collection->getAny<String>({"host", "hostname"}) + ':' + toString(named_collection->get<UInt64>("port")) : named_collection->getAny<String>({"host", "hostname"});
+            cluster_description = named_collection->has("port")
+                ? named_collection->getAny<String>({"host", "hostname"}) + ':' + toString(named_collection->get<UInt64>("port"))
+                : named_collection->getAny<String>({"host", "hostname"});
         database = named_collection->getAnyOrDefault<String>({"db", "database"}, "default");
         table = named_collection->get<String>("table");
         username = named_collection->getAnyOrDefault<String>({"username", "user"}, "default");

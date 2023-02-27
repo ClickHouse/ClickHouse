@@ -36,24 +36,40 @@ struct MongoDBEqualKeysSet
         std::pair{"username", "user"}, std::pair{"database", "db"}, std::pair{"hostname", "host"}, std::pair{"table", "collection"}};
 };
 
-template <typename EqualKeys> struct ValidateKeysCmp
+template <typename EqualKeys> struct NamedCollectionValidateKey
 {
-    constexpr bool operator()(const auto & lhs, const auto & rhs) const
+    NamedCollectionValidateKey() = default;
+    NamedCollectionValidateKey(const char * value_) : value(value_) {}
+    NamedCollectionValidateKey(std::string_view value_) : value(value_) {}
+    NamedCollectionValidateKey(const String & value_) : value(value_) {}
+
+    std::string_view value;
+
+    bool operator==(const auto & other) const
     {
-        if (lhs == rhs)
+        if (value == other.value)
             return true;
 
         for (const auto & equal : EqualKeys::equal_keys)
         {
-            if (((equal.first == lhs) && (equal.second == rhs)) || ((equal.first == rhs) && (equal.second == lhs)))
+            if (((equal.first == value) && (equal.second == other.value)) || ((equal.first == other.value) && (equal.second == value)))
+            {
                 return true;
+            }
         }
         return false;
     }
+
+    bool operator<(const auto & other) const
+    {
+        if (*this == other)
+            return false;
+        return value < other.value;
+    }
 };
 
-template <class keys_cmp> using ValidateKeysMultiset = std::unordered_multiset<std::string_view, std::hash<std::string_view>, ValidateKeysCmp<keys_cmp>>;
-using ValidateKeysSet = std::unordered_multiset<std::string_view, std::hash<std::string_view>>;
+template <class keys_cmp> using ValidateKeysMultiset = std::multiset<NamedCollectionValidateKey<keys_cmp>>;
+using ValidateKeysSet = std::multiset<std::string_view>;
 
 
 template <typename Keys = ValidateKeysSet>
@@ -84,10 +100,10 @@ void validateNamedCollection(
 
         if (!match)
         {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Unexpected key {} in named collection. Required keys: {}, optional keys: {}",
-                backQuoteIfNeed(key), fmt::join(required_keys, ", "), fmt::join(optional_keys, ", "));
+             throw Exception(
+                 ErrorCodes::BAD_ARGUMENTS,
+                 "Unexpected key {} in named collection. Required keys: {}, optional keys: {}",
+                 backQuoteIfNeed(key), fmt::join(required_keys, ", "), fmt::join(optional_keys, ", "));
         }
     }
 
@@ -101,3 +117,18 @@ void validateNamedCollection(
 }
 
 }
+
+template <typename T>
+struct fmt::formatter<DB::NamedCollectionValidateKey<T>>
+{
+    constexpr static auto parse(format_parse_context & context)
+    {
+        return context.begin();
+    }
+
+    template <typename FormatContext>
+    auto format(const DB::NamedCollectionValidateKey<T> & elem, FormatContext & context)
+    {
+        return fmt::format_to(context.out(), "{}", elem.value);
+    }
+};
