@@ -1841,6 +1841,10 @@ Result:
 
 ## catboostEvaluate(path_to_model, feature_1, feature_2, …, feature_n)
 
+:::note
+This function is not available in ClickHouse Cloud.
+:::
+
 Evaluate external catboost model. [CatBoost](https://catboost.ai) is an open-source gradient boosting library developed by Yandex for machine learing.
 Accepts a path to a catboost model and model arguments (features). Returns Float64.
 

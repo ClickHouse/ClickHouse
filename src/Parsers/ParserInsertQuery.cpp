@@ -256,14 +256,21 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (infile)
     {
         query->infile = infile;
+        query->compression = compression;
+
+        query->children.push_back(infile);
         if (compression)
-            query->compression = compression;
+            query->children.push_back(compression);
     }
 
     if (table_function)
     {
         query->table_function = table_function;
         query->partition_by = partition_by_expr;
+
+        query->children.push_back(table_function);
+        if (partition_by_expr)
+            query->children.push_back(partition_by_expr);
     }
     else
     {

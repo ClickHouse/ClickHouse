@@ -92,7 +92,7 @@ static bool readName(ReadBuffer & buf, StringRef & ref, String & tmp)
         }
     }
 
-    throw ParsingException("Unexpected end of stream while reading key name from TSKV format", ErrorCodes::CANNOT_READ_ALL_DATA);
+    throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected end of stream while reading key name from TSKV format");
 }
 
 
@@ -146,7 +146,7 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
                     seen_columns[index] = read_columns[index] = true;
                     const auto & type = getPort().getHeader().getByPosition(index).type;
                     const auto & serialization = serializations[index];
-                    if (format_settings.null_as_default && !type->isNullable() && !type->isLowCardinalityNullable())
+                    if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
                         read_columns[index] = SerializationNullable::deserializeTextEscapedImpl(*columns[index], *in, format_settings, serialization);
                     else
                         serialization->deserializeTextEscaped(*columns[index], *in, format_settings);
@@ -161,7 +161,7 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
 
             if (in->eof())
             {
-                throw ParsingException("Unexpected end of stream after field in TSKV format: " + name_ref.toString(), ErrorCodes::CANNOT_READ_ALL_DATA);
+                throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected end of stream after field in TSKV format: {}", name_ref.toString());
             }
             else if (*in->position() == '\t')
             {
@@ -193,7 +193,10 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
             header.getByPosition(i).type->insertDefaultInto(*columns[i]);
 
     /// return info about defaults set
-    ext.read_columns = read_columns;
+    if (format_settings.defaults_for_omitted_fields)
+        ext.read_columns = read_columns;
+    else
+        ext.read_columns.assign(num_columns, true);
 
     return true;
 }

@@ -60,7 +60,7 @@ sidebar_label: ALTER
 
 对于非复制表，所有的 `ALTER` 查询都是同步执行的。对于复制表，查询只是向“ZooKeeper”添加相应动作的指令，动作本身会尽快执行。但是，查询可以等待所有副本上的这些操作完成。
 
-对于所有的“ALTER”查询，您可以使用[replication_alter_partitions_sync](../../../operations/settings/settings.md#replication-alter-partitions-sync)设置等待。
+对于所有的“ALTER”查询，您可以使用[alter_sync](../../../operations/settings/settings.md#alter-sync)设置等待。
 
 通过[replication_wait_for_inactive_replica_timeout](../../../operations/settings/settings.md#replication-wait-for-inactive-replica-timeout]设置，可以指定不活动的副本执行所有 `ALTER` 查询的等待时间(以秒为单位)。
 
@@ -68,7 +68,7 @@ sidebar_label: ALTER
 
 !!! info "备注"
 
-    对于所有的 `ALTER` 查询，如果  `replication_alter_partitions_sync = 2`  和一些副本的不激活时间超过时间(在 `replication_wait_for_inactive_replica_timeout` 设置中指定)，那么将抛出一个异常 `UNFINISHED`。
+    对于所有的 `ALTER` 查询，如果  `alter_sync = 2`  和一些副本的不激活时间超过时间(在 `replication_wait_for_inactive_replica_timeout` 设置中指定)，那么将抛出一个异常 `UNFINISHED`。
 
 
 

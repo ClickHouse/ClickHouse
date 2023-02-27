@@ -110,7 +110,7 @@ LIFETIME(MIN 0 MAX 1000)
 ### Create a dictionary from a file available by HTTP(S)
 
 ```sql
-statement: CREATE DICTIONARY default.taxi_zone_dictionary
+CREATE DICTIONARY default.taxi_zone_dictionary
 (
     `LocationID` UInt16 DEFAULT 0,
     `Borough` String,

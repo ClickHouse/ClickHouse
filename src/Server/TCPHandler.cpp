@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <iomanip>
 #include <iterator>
 #include <memory>
 #include <mutex>
@@ -24,7 +23,6 @@
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/copyData.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
 #include <Interpreters/executeQuery.h>
@@ -39,9 +37,7 @@
 #include <Core/ExternalTable.h>
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
-#include <Storages/ColumnDefault.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeEnum.h>
 #include <Compression/CompressionFactory.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
@@ -54,6 +50,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 
 #include "Core/Protocol.h"
+#include "Storages/MergeTree/RequestResponse.h"
 #include "TCPHandler.h"
 
 #include "config_version.h"
@@ -65,6 +62,19 @@ using namespace DB;
 namespace CurrentMetrics
 {
     extern const Metric QueryThread;
+    extern const Metric ReadTaskRequestsSent;
+    extern const Metric MergeTreeReadTaskRequestsSent;
+    extern const Metric MergeTreeAllRangesAnnouncementsSent;
+}
+
+namespace ProfileEvents
+{
+    extern const Event ReadTaskRequestsSent;
+    extern const Event MergeTreeReadTaskRequestsSent;
+    extern const Event MergeTreeAllRangesAnnouncementsSent;
+    extern const Event ReadTaskRequestsSentElapsedMicroseconds;
+    extern const Event MergeTreeReadTaskRequestsSentElapsedMicroseconds;
+    extern const Event MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds;
 }
 
 namespace
@@ -354,24 +364,49 @@ void TCPHandler::runImpl()
             /// This callback is needed for requesting read tasks inside pipeline for distributed processing
             query_context->setReadTaskCallback([this]() -> String
             {
+                Stopwatch watch;
+                CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::ReadTaskRequestsSent);
+
                 std::lock_guard lock(task_callback_mutex);
 
                 if (state.is_cancelled)
                     return {};
 
                 sendReadTaskRequestAssumeLocked();
-                return receiveReadTaskResponseAssumeLocked();
+                ProfileEvents::increment(ProfileEvents::ReadTaskRequestsSent);
+                auto res = receiveReadTaskResponseAssumeLocked();
+                ProfileEvents::increment(ProfileEvents::ReadTaskRequestsSentElapsedMicroseconds, watch.elapsedMicroseconds());
+                return res;
             });
 
-            query_context->setMergeTreeReadTaskCallback([this](PartitionReadRequest request) -> std::optional<PartitionReadResponse>
+            query_context->setMergeTreeAllRangesCallback([this](InitialAllRangesAnnouncement announcement)
             {
+                Stopwatch watch;
+                CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::MergeTreeAllRangesAnnouncementsSent);
+                std::lock_guard lock(task_callback_mutex);
+
+                if (state.is_cancelled)
+                    return;
+
+                sendMergeTreeAllRangesAnnounecementAssumeLocked(announcement);
+                ProfileEvents::increment(ProfileEvents::MergeTreeAllRangesAnnouncementsSent);
+                ProfileEvents::increment(ProfileEvents::MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds, watch.elapsedMicroseconds());
+            });
+
+            query_context->setMergeTreeReadTaskCallback([this](ParallelReadRequest request) -> std::optional<ParallelReadResponse>
+            {
+                Stopwatch watch;
+                CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::MergeTreeReadTaskRequestsSent);
                 std::lock_guard lock(task_callback_mutex);
 
                 if (state.is_cancelled)
                     return std::nullopt;
 
                 sendMergeTreeReadTaskRequestAssumeLocked(std::move(request));
-                return receivePartitionMergeTreeReadTaskResponseAssumeLocked();
+                ProfileEvents::increment(ProfileEvents::MergeTreeReadTaskRequestsSent);
+                auto res = receivePartitionMergeTreeReadTaskResponseAssumeLocked();
+                ProfileEvents::increment(ProfileEvents::MergeTreeReadTaskRequestsSentElapsedMicroseconds, watch.elapsedMicroseconds());
+                return res;
             });
 
             /// Processing Query
@@ -515,7 +550,7 @@ void TCPHandler::runImpl()
         catch (...)
         {
             state.io.onException();
-            exception = std::make_unique<DB::Exception>("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+            exception = std::make_unique<DB::Exception>(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception");
         }
 
         try
@@ -566,26 +601,17 @@ void TCPHandler::runImpl()
             LOG_DEBUG(log, "Processed in {} sec.", state.watch.elapsedSeconds());
         }
 
-        try
-        {
-            /// QueryState should be cleared before QueryScope, since otherwise
-            /// the MemoryTracker will be wrong for possible deallocations.
-            /// (i.e. deallocations from the Aggregator with two-level aggregation)
-            state.reset();
-            query_scope.reset();
-            thread_trace_context.reset();
-        }
-        catch (...)
-        {
-            /** During the processing of request, there was an exception that we caught and possibly sent to client.
-             *  When destroying the request pipeline execution there was a second exception.
-             *  For example, a pipeline could run in multiple threads, and an exception could occur in each of them.
-             *  Ignore it.
-             */
-        }
+        /// QueryState should be cleared before QueryScope, since otherwise
+        /// the MemoryTracker will be wrong for possible deallocations.
+        /// (i.e. deallocations from the Aggregator with two-level aggregation)
+        state.reset();
+        query_scope.reset();
+        thread_trace_context.reset();
 
         /// It is important to destroy query context here. We do not want it to live arbitrarily longer than the query.
         query_context.reset();
+
+        CurrentThread::setFatalErrorCallback({});
 
         if (is_interserver_mode)
         {
@@ -871,7 +897,7 @@ void TCPHandler::processTablesStatusRequest()
             status.absolute_delay = static_cast<UInt32>(replicated_table->getAbsoluteDelay());
         }
         else
-            status.is_replicated = false; //-V1048
+            status.is_replicated = false;
 
         response.table_states_by_id.emplace(table_name, std::move(status));
     }
@@ -920,7 +946,15 @@ void TCPHandler::sendReadTaskRequestAssumeLocked()
 }
 
 
-void TCPHandler::sendMergeTreeReadTaskRequestAssumeLocked(PartitionReadRequest request)
+void TCPHandler::sendMergeTreeAllRangesAnnounecementAssumeLocked(InitialAllRangesAnnouncement announcement)
+{
+    writeVarUInt(Protocol::Server::MergeTreeAllRangesAnnounecement, *out);
+    announcement.serialize(*out);
+    out->next();
+}
+
+
+void TCPHandler::sendMergeTreeReadTaskRequestAssumeLocked(ParallelReadRequest request)
 {
     writeVarUInt(Protocol::Server::MergeTreeReadTaskRequest, *out);
     request.serialize(*out);
@@ -1348,7 +1382,7 @@ String TCPHandler::receiveReadTaskResponseAssumeLocked()
 }
 
 
-std::optional<PartitionReadResponse> TCPHandler::receivePartitionMergeTreeReadTaskResponseAssumeLocked()
+std::optional<ParallelReadResponse> TCPHandler::receivePartitionMergeTreeReadTaskResponseAssumeLocked()
 {
     UInt64 packet_type = 0;
     readVarUInt(packet_type, *in);
@@ -1371,7 +1405,7 @@ std::optional<PartitionReadResponse> TCPHandler::receivePartitionMergeTreeReadTa
                     Protocol::Client::toString(packet_type));
         }
     }
-    PartitionReadResponse response;
+    ParallelReadResponse response;
     response.deserialize(*in);
     return response;
 }
@@ -1475,9 +1509,8 @@ void TCPHandler::receiveQuery()
             session->authenticate(AlwaysAllowCredentials{client_info.initial_user}, client_info.initial_address);
         }
 #else
-        auto exception = Exception(
-            "Inter-server secret support is disabled, because ClickHouse was built without SSL library",
-            ErrorCodes::AUTHENTICATION_FAILED);
+        auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED,
+            "Inter-server secret support is disabled, because ClickHouse was built without SSL library");
         session->onAuthenticationFailure(/* user_name */ std::nullopt, socket().peerAddress(), exception);
         throw exception; /// NOLINT
 #endif

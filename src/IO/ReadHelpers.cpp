@@ -95,14 +95,14 @@ void parseUUIDWithoutSeparator(const UInt8 * src36, std::reverse_iterator<UInt8 
 void NO_INLINE throwAtAssertionFailed(const char * s, ReadBuffer & buf)
 {
     WriteBufferFromOwnString out;
-    out << "Cannot parse input: expected " << quote << s;
+    out << quote << s;
 
     if (buf.eof())
         out << " at end of stream.";
     else
         out << " before: " << quote << String(buf.position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf.buffer().end() - buf.position()));
 
-    throw ParsingException(out.str(), ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+    throw ParsingException(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Cannot parse input: expected {}", out.str());
 }
 
 
@@ -381,7 +381,7 @@ static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
     auto error = [](const char * message [[maybe_unused]], int code [[maybe_unused]])
     {
         if constexpr (throw_exception)
-            throw Exception(message, code);
+            throw Exception::createDeprecated(message, code);
         return ReturnType(false);
     };
 
@@ -603,8 +603,7 @@ static ReturnType readAnyQuotedStringInto(Vector & s, ReadBuffer & buf)
     }
 
     if constexpr (throw_exception)
-        throw ParsingException("Cannot parse quoted string: expected closing quote",
-            ErrorCodes::CANNOT_PARSE_QUOTED_STRING);
+        throw ParsingException(ErrorCodes::CANNOT_PARSE_QUOTED_STRING, "Cannot parse quoted string: expected closing quote");
     else
         return ReturnType(false);
 }
@@ -939,10 +938,10 @@ ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    auto error = [](const char * message [[maybe_unused]], int code [[maybe_unused]])
+    auto error = [](FormatStringHelper<> message [[maybe_unused]], int code [[maybe_unused]])
     {
         if constexpr (throw_exception)
-            throw ParsingException(message, code);
+            throw ParsingException(code, std::move(message));
         return ReturnType(false);
     };
 
@@ -990,10 +989,10 @@ ReturnType readJSONObjectPossiblyInvalid(Vector & s, ReadBuffer & buf)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    auto error = [](const char * message [[maybe_unused]], int code [[maybe_unused]])
+    auto error = [](FormatStringHelper<> message [[maybe_unused]], int code [[maybe_unused]])
     {
         if constexpr (throw_exception)
-            throw ParsingException(message, code);
+            throw ParsingException(code, std::move(message));
         return ReturnType(false);
     };
 
@@ -1161,7 +1160,7 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
             s_pos[size] = 0;
 
             if constexpr (throw_exception)
-                throw ParsingException(std::string("Cannot parse DateTime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
+                throw ParsingException(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime {}", s);
             else
                 return false;
         }
@@ -1184,7 +1183,7 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
                 s_pos[size] = 0;
 
                 if constexpr (throw_exception)
-                    throw ParsingException(std::string("Cannot parse time component of DateTime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
+                    throw ParsingException(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse time component of DateTime {}", s);
                 else
                     return false;
             }
@@ -1211,7 +1210,7 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
         else
         {
             if constexpr (throw_exception)
-                throw ParsingException("Cannot parse datetime", ErrorCodes::CANNOT_PARSE_DATETIME);
+                throw ParsingException(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse datetime");
             else
                 return false;
         }
@@ -1357,7 +1356,7 @@ Exception readException(ReadBuffer & buf, const String & additional_message, boo
     if (!stack_trace.empty())
         out << " Stack trace:\n\n" << stack_trace;
 
-    return Exception(out.str(), code, remote_exception);
+    return Exception::createDeprecated(out.str(), code, remote_exception);
 }
 
 void readAndThrowException(ReadBuffer & buf, const String & additional_message)

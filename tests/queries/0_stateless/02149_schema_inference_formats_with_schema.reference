@@ -20,7 +20,7 @@ date32	Nullable(Date32)
 0	1970-01-01
 1	1970-01-02
 str	Nullable(String)					
-fixed_string	Nullable(String)					
+fixed_string	Nullable(FixedString(3))					
 Str: 0	100
 Str: 1	200
 array	Array(Nullable(UInt64))					
@@ -54,7 +54,7 @@ date32	Nullable(Date32)
 0	1970-01-01
 1	1970-01-02
 str	Nullable(String)					
-fixed_string	Nullable(String)					
+fixed_string	Nullable(FixedString(3))					
 Str: 0	100
 Str: 1	200
 array	Array(Nullable(UInt64))					
@@ -88,7 +88,7 @@ date32	Nullable(Date32)
 0	1970-01-01
 1	1970-01-02
 str	Nullable(String)					
-fixed_string	Nullable(String)					
+fixed_string	Nullable(FixedString(3))					
 Str: 0	100
 Str: 1	200
 array	Array(Nullable(UInt64))					

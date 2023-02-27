@@ -1,5 +1,6 @@
-#include <memory>
 #include <Analyzer/QueryTreePassManager.h>
+
+#include <memory>
 
 #include <Common/Exception.h>
 
@@ -7,6 +8,7 @@
 #include <IO/Operators.h>
 
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Interpreters/Context.h>
 
@@ -17,6 +19,7 @@
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/Passes/CountDistinctPass.h>
 #include <Analyzer/Passes/FunctionToSubcolumnsPass.h>
+#include <Analyzer/Passes/RewriteAggregateFunctionWithIfPass.h>
 #include <Analyzer/Passes/SumIfToCountIfPass.h>
 #include <Analyzer/Passes/MultiIfToIfPass.h>
 #include <Analyzer/Passes/IfConstantConditionPass.h>
@@ -33,6 +36,11 @@
 #include <Analyzer/Passes/ConvertOrLikeChainPass.h>
 #include <Analyzer/Passes/OptimizeRedundantFunctionsInOrderByPass.h>
 #include <Analyzer/Passes/GroupingFunctionsResolvePass.h>
+#include <Analyzer/Passes/AutoFinalOnQueryPass.h>
+#include <Analyzer/Passes/ArrayExistsToHasPass.h>
+#include <Analyzer/Passes/ComparisonTupleEliminationPass.h>
+#include <Analyzer/Passes/CrossToInnerJoinPass.h>
+
 
 namespace DB
 {
@@ -57,6 +65,14 @@ public:
     explicit ValidationChecker(String pass_name_)
         : pass_name(std::move(pass_name_))
     {}
+
+    static bool needChildVisit(VisitQueryTreeNodeType & parent, VisitQueryTreeNodeType &)
+    {
+        if (parent->getNodeType() == QueryTreeNodeType::TABLE_FUNCTION)
+            return false;
+
+        return true;
+    }
 
     void visitImpl(QueryTreeNodePtr & node) const
     {
@@ -102,14 +118,22 @@ private:
             if (WhichDataType(expected_argument_types[i]).isFunction())
                 continue;
 
-            if (!expected_argument_types[i]->equals(*actual_argument_columns[i].type))
+            const auto & expected_argument_type = expected_argument_types[i];
+            const auto & actual_argument_type = actual_argument_columns[i].type;
+
+            if (!expected_argument_type->equals(*actual_argument_type))
             {
+                /// Aggregate functions remove low cardinality for their argument types
+                if ((function->isAggregateFunction() || function->isWindowFunction()) &&
+                    expected_argument_type->equals(*recursiveRemoveLowCardinality(actual_argument_type)))
+                    continue;
+
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "Function {} expects {} argument to have {} type but receives {} after running {} pass",
                     function->toAST()->formatForErrorMessage(),
                     i + 1,
-                    expected_argument_types[i]->getName(),
-                    actual_argument_columns[i].type->getName(),
+                    expected_argument_type->getName(),
+                    actual_argument_type->getName(),
                     pass_name);
             }
         }
@@ -133,7 +157,6 @@ private:
   * TODO: Support setting optimize_aggregators_of_group_by_keys.
   * TODO: Support setting optimize_duplicate_order_by_and_distinct.
   * TODO: Support setting optimize_monotonous_functions_in_order_by.
-  * TODO: Support settings.optimize_or_like_chain.
   * TODO: Add optimizations based on function semantics. Example: SELECT * FROM test_table WHERE id != id. (id is not nullable column).
   */
 
@@ -210,57 +233,43 @@ void QueryTreePassManager::dump(WriteBuffer & buffer, size_t up_to_pass_index)
 
 void addQueryTreePasses(QueryTreePassManager & manager)
 {
-    auto context = manager.getContext();
-    const auto & settings = context->getSettingsRef();
-
     manager.addPass(std::make_unique<QueryAnalysisPass>());
+    manager.addPass(std::make_unique<FunctionToSubcolumnsPass>());
 
-    if (settings.optimize_functions_to_subcolumns)
-        manager.addPass(std::make_unique<FunctionToSubcolumnsPass>());
-
-    if (settings.count_distinct_optimization)
-        manager.addPass(std::make_unique<CountDistinctPass>());
-
-    if (settings.optimize_rewrite_sum_if_to_count_if)
-        manager.addPass(std::make_unique<SumIfToCountIfPass>());
-
-    if (settings.optimize_normalize_count_variants)
-        manager.addPass(std::make_unique<NormalizeCountVariantsPass>());
+    manager.addPass(std::make_unique<CountDistinctPass>());
+    manager.addPass(std::make_unique<RewriteAggregateFunctionWithIfPass>());
+    manager.addPass(std::make_unique<SumIfToCountIfPass>());
+    manager.addPass(std::make_unique<RewriteArrayExistsToHasPass>());
+    manager.addPass(std::make_unique<NormalizeCountVariantsPass>());
 
     manager.addPass(std::make_unique<CustomizeFunctionsPass>());
 
-    if (settings.optimize_arithmetic_operations_in_aggregate_functions)
-        manager.addPass(std::make_unique<AggregateFunctionsArithmericOperationsPass>());
+    manager.addPass(std::make_unique<AggregateFunctionsArithmericOperationsPass>());
+    manager.addPass(std::make_unique<UniqInjectiveFunctionsEliminationPass>());
+    manager.addPass(std::make_unique<OptimizeGroupByFunctionKeysPass>());
 
-    if (settings.optimize_injective_functions_inside_uniq)
-        manager.addPass(std::make_unique<UniqInjectiveFunctionsEliminationPass>());
-
-    if (settings.optimize_group_by_function_keys)
-        manager.addPass(std::make_unique<OptimizeGroupByFunctionKeysPass>());
-
-    if (settings.optimize_multiif_to_if)
-        manager.addPass(std::make_unique<MultiIfToIfPass>());
-
+    manager.addPass(std::make_unique<MultiIfToIfPass>());
     manager.addPass(std::make_unique<IfConstantConditionPass>());
+    manager.addPass(std::make_unique<IfChainToMultiIfPass>());
 
-    if (settings.optimize_if_chain_to_multiif)
-        manager.addPass(std::make_unique<IfChainToMultiIfPass>());
+    manager.addPass(std::make_unique<ComparisonTupleEliminationPass>());
 
-    if (settings.optimize_redundant_functions_in_order_by)
-        manager.addPass(std::make_unique<OptimizeRedundantFunctionsInOrderByPass>());
+    manager.addPass(std::make_unique<OptimizeRedundantFunctionsInOrderByPass>());
 
     manager.addPass(std::make_unique<OrderByTupleEliminationPass>());
     manager.addPass(std::make_unique<OrderByLimitByDuplicateEliminationPass>());
 
-    if (settings.optimize_syntax_fuse_functions)
-        manager.addPass(std::make_unique<FuseFunctionsPass>());
+    manager.addPass(std::make_unique<FuseFunctionsPass>());
 
-    if (settings.optimize_if_transform_strings_to_enum)
-        manager.addPass(std::make_unique<IfTransformStringsToEnumPass>());
+    manager.addPass(std::make_unique<IfTransformStringsToEnumPass>());
 
     manager.addPass(std::make_unique<ConvertOrLikeChainPass>());
 
     manager.addPass(std::make_unique<GroupingFunctionsResolvePass>());
+
+    manager.addPass(std::make_unique<AutoFinalOnQueryPass>());
+
+    manager.addPass(std::make_unique<CrossToInnerJoinPass>());
 }
 
 }

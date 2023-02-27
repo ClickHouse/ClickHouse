@@ -4,6 +4,7 @@
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabasesCommon.h>
+#include <Databases/DDLDependencyVisitor.h>
 #include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Databases/TablesLoader.h>
 #include <IO/ReadBufferFromFile.h>
@@ -312,8 +313,10 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
         out.close();
     }
 
-    auto new_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast);
-    DatabaseCatalog::instance().updateDependencies(table_id, new_dependencies);
+    /// The create query of the table has been just changed, we need to update dependencies too.
+    auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast);
+    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast);
+    DatabaseCatalog::instance().updateDependencies(table_id, ref_dependencies, loading_dependencies);
 
     commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path, statement, local_context);
 }

@@ -82,6 +82,8 @@ ASTPtr LambdaNode::toASTImpl() const
     lambda_function_ast->children.push_back(std::move(lambda_function_arguments_ast));
     lambda_function_ast->arguments = lambda_function_ast->children.back();
 
+    lambda_function_ast->is_lambda_function = true;
+
     return lambda_function_ast;
 }
 

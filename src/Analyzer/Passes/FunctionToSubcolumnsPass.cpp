@@ -2,6 +2,7 @@
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 
 #include <Storages/IStorage.h>
@@ -22,15 +23,17 @@ namespace DB
 namespace
 {
 
-class FunctionToSubcolumnsVisitor : public InDepthQueryTreeVisitor<FunctionToSubcolumnsVisitor>
+class FunctionToSubcolumnsVisitor : public InDepthQueryTreeVisitorWithContext<FunctionToSubcolumnsVisitor>
 {
 public:
-    explicit FunctionToSubcolumnsVisitor(ContextPtr & context_)
-        : context(context_)
-    {}
+    using Base = InDepthQueryTreeVisitorWithContext<FunctionToSubcolumnsVisitor>;
+    using Base::Base;
 
     void visitImpl(QueryTreeNodePtr & node) const
     {
+        if (!getSettings().optimize_functions_to_subcolumns)
+            return;
+
         auto * function_node = node->as<FunctionNode>();
         if (!function_node)
             return;
@@ -179,7 +182,7 @@ public:
 
                 /// Replace `mapContains(map_argument, argument)` with `has(map_argument.keys, argument)`
                 column.name += ".keys";
-                column.type = data_type_map.getKeyType();
+                column.type = std::make_shared<DataTypeArray>(data_type_map.getKeyType());
 
                 auto has_function_argument = std::make_shared<ColumnNode>(column, column_source);
                 function_arguments_nodes[0] = std::move(has_function_argument);
@@ -192,11 +195,9 @@ public:
 private:
     inline void resolveOrdinaryFunctionNode(FunctionNode & function_node, const String & function_name) const
     {
-        auto function = FunctionFactory::instance().get(function_name, context);
+        auto function = FunctionFactory::instance().get(function_name, getContext());
         function_node.resolveAsFunction(function->build(function_node.getArgumentColumns()));
     }
-
-    ContextPtr & context;
 };
 
 }
