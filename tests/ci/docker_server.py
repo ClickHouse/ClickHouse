@@ -346,7 +346,7 @@ def main():
 
     description = f"Processed tags: {', '.join(tags)}"
 
-    format_description(description)
+    description = format_description(description)
 
     gh = Github(get_best_robot_token(), per_page=100)
     post_commit_status(gh, pr_info.sha, NAME, description, status, url)

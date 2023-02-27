@@ -197,6 +197,7 @@ if __name__ == "__main__":
 
     pr_info = PRInfo(need_orgs=True, pr_event_from_api=True, need_changed_files=True)
     can_run, description, labels_state = should_run_checks_for_pr(pr_info)
+    description = format_description(description)
     gh = Github(get_best_robot_token(), per_page=100)
     commit = get_commit(gh, pr_info.sha)
 
