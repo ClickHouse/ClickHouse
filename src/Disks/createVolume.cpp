@@ -2,6 +2,7 @@
 
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/VolumeJBOD.h>
+#include <Disks/VolumeRAID1.h>
 
 #include <boost/algorithm/string.hpp>
 
@@ -22,6 +23,11 @@ VolumePtr createVolumeFromReservation(const ReservationPtr & reservation, Volume
         /// for such type of reservation will be with one disk.
         return std::make_shared<SingleDiskVolume>(other_volume->getName(), reservation->getDisk(), other_volume->max_data_part_size);
     }
+    if (other_volume->getType() == VolumeType::RAID1)
+    {
+        auto volume = std::dynamic_pointer_cast<VolumeRAID1>(other_volume);
+        return std::make_shared<VolumeRAID1>(volume->getName(), reservation->getDisks(), volume->max_data_part_size, volume->are_merges_avoided);
+    }
     return nullptr;
 }
 
@@ -37,7 +43,7 @@ VolumePtr createVolumeFromConfig(
     {
         return std::make_shared<VolumeJBOD>(name, config, config_prefix, disk_selector);
     }
-    throw Exception(ErrorCodes::UNKNOWN_RAID_TYPE, "Unknown RAID type '{}'", raid_type);
+    throw Exception("Unknown RAID type '" + raid_type + "'", ErrorCodes::UNKNOWN_RAID_TYPE);
 }
 
 VolumePtr updateVolumeFromConfig(
@@ -52,11 +58,11 @@ VolumePtr updateVolumeFromConfig(
     {
         VolumeJBODPtr volume_jbod = std::dynamic_pointer_cast<VolumeJBOD>(volume);
         if (!volume_jbod)
-            throw Exception(ErrorCodes::INVALID_RAID_TYPE, "Invalid RAID type '{}', shall be JBOD", raid_type);
+            throw Exception("Invalid RAID type '" + raid_type + "', shall be JBOD", ErrorCodes::INVALID_RAID_TYPE);
 
         return std::make_shared<VolumeJBOD>(*volume_jbod, config, config_prefix, disk_selector);
     }
-    throw Exception(ErrorCodes::UNKNOWN_RAID_TYPE, "Unknown RAID type '{}'", raid_type);
+    throw Exception("Unknown RAID type '" + raid_type + "'", ErrorCodes::UNKNOWN_RAID_TYPE);
 }
 
 }

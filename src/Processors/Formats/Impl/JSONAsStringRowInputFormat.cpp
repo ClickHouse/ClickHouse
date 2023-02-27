@@ -1,5 +1,5 @@
 #include <Processors/Formats/Impl/JSONAsStringRowInputFormat.h>
-#include <Formats/JSONUtils.h>
+#include <Formats/JSONEachRowUtils.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <base/find_symbols.h>
@@ -12,7 +12,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
-    extern const int ILLEGAL_COLUMN;
 }
 
 JSONAsRowInputFormat::JSONAsRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_)
@@ -53,7 +52,6 @@ void JSONAsRowInputFormat::readSuffix()
     {
         assertChar(']', *buf);
         skipWhitespaceIfAny(*buf);
-        data_in_square_brackets = false;
     }
     if (!buf->eof() && *buf->position() == ';')
     {
@@ -99,7 +97,8 @@ bool JSONAsRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
 
 void JSONAsRowInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    buf->setSubBuffer(in_);
+    buf = std::make_unique<PeekableReadBuffer>(in_);
+    IInputFormat::setReadBuffer(*buf);
 }
 
 
@@ -120,7 +119,7 @@ void JSONAsStringRowInputFormat::readJSONObject(IColumn & column)
     bool quotes = false;
 
     if (*buf->position() != '{')
-        throw Exception(ErrorCodes::INCORRECT_DATA, "JSON object must begin with '{'.");
+        throw Exception("JSON object must begin with '{'.", ErrorCodes::INCORRECT_DATA);
 
     ++buf->position();
     ++balance;
@@ -130,7 +129,7 @@ void JSONAsStringRowInputFormat::readJSONObject(IColumn & column)
     while (balance)
     {
         if (buf->eof())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected end of file while parsing JSON object.");
+            throw Exception("Unexpected end of file while parsing JSON object.", ErrorCodes::INCORRECT_DATA);
 
         if (quotes)
         {
@@ -207,15 +206,6 @@ void JSONAsObjectRowInputFormat::readJSONObject(IColumn & column)
     serializations[0]->deserializeTextJSON(column, *buf, format_settings);
 }
 
-JSONAsObjectExternalSchemaReader::JSONAsObjectExternalSchemaReader(const FormatSettings & settings)
-{
-    if (!settings.json.allow_object_type)
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN,
-            "Cannot infer the data structure in JSONAsObject format because experimental Object type is not allowed. Set setting "
-            "allow_experimental_object_type = 1 in order to allow it");
-}
-
 void registerInputFormatJSONAsString(FormatFactory & factory)
 {
     factory.registerInputFormat("JSONAsString", [](
@@ -230,20 +220,12 @@ void registerInputFormatJSONAsString(FormatFactory & factory)
 
 void registerFileSegmentationEngineJSONAsString(FormatFactory & factory)
 {
-    factory.registerFileSegmentationEngine("JSONAsString", &JSONUtils::fileSegmentationEngineJSONEachRow);
+    factory.registerFileSegmentationEngine("JSONAsString", &fileSegmentationEngineJSONEachRow);
 }
 
 void registerNonTrivialPrefixAndSuffixCheckerJSONAsString(FormatFactory & factory)
 {
-    factory.registerNonTrivialPrefixAndSuffixChecker("JSONAsString", JSONUtils::nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
-}
-
-void registerJSONAsStringSchemaReader(FormatFactory & factory)
-{
-    factory.registerExternalSchemaReader("JSONAsString", [](const FormatSettings &)
-    {
-        return std::make_shared<JSONAsStringExternalSchemaReader>();
-    });
+    factory.registerNonTrivialPrefixAndSuffixChecker("JSONAsString", nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
 }
 
 void registerInputFormatJSONAsObject(FormatFactory & factory)
@@ -260,19 +242,14 @@ void registerInputFormatJSONAsObject(FormatFactory & factory)
 
 void registerNonTrivialPrefixAndSuffixCheckerJSONAsObject(FormatFactory & factory)
 {
-    factory.registerNonTrivialPrefixAndSuffixChecker("JSONAsObject", JSONUtils::nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
+    factory.registerNonTrivialPrefixAndSuffixChecker("JSONAsObject", nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
 }
 
-void registerFileSegmentationEngineJSONAsObject(FormatFactory & factory)
+void registerJSONAsStringSchemaReader(FormatFactory & factory)
 {
-    factory.registerFileSegmentationEngine("JSONAsObject", &JSONUtils::fileSegmentationEngineJSONEachRow);
-}
-
-void registerJSONAsObjectSchemaReader(FormatFactory & factory)
-{
-    factory.registerExternalSchemaReader("JSONAsObject", [](const FormatSettings & settings)
+    factory.registerExternalSchemaReader("JSONAsString", [](const FormatSettings &)
     {
-        return std::make_shared<JSONAsObjectExternalSchemaReader>(settings);
+        return std::make_shared<JSONAsStringExternalSchemaReader>();
     });
 }
 

@@ -6,9 +6,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
-#include "config.h"
-
-
 class Collator;
 
 namespace DB
@@ -44,8 +41,7 @@ public:
         return ColumnNullable::create(nested_column_->assumeMutable(), null_map_->assumeMutable());
     }
 
-    template <typename ... Args>
-    requires (IsMutableColumns<Args ...>::value)
+    template <typename ... Args, typename = typename std::enable_if<IsMutableColumns<Args ...>::value>::type>
     static MutablePtr create(Args &&... args) { return Base::create(std::forward<Args>(args)...); }
 
     const char * getFamilyName() const override { return "Nullable"; }
@@ -85,15 +81,6 @@ public:
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const override;
-
-#if USE_EMBEDDED_COMPILER
-
-    bool isComparatorCompilable() const override;
-
-    llvm::Value * compileComparator(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*lhs*/, llvm::Value * /*rhs*/, llvm::Value * /*nan_direction_hint*/) const override;
-
-#endif
-
     void compareColumn(const IColumn & rhs, size_t rhs_row_num,
                        PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                        int direction, int nan_direction_hint) const override;
@@ -130,17 +117,17 @@ public:
 
     ColumnPtr compress() const override;
 
-    void forEachSubcolumn(ColumnCallback callback) const override
+    void forEachSubcolumn(ColumnCallback callback) override
     {
         callback(nested_column);
         callback(null_map);
     }
 
-    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override
+    void forEachSubcolumnRecursively(ColumnCallback callback) override
     {
-        callback(*nested_column);
+        callback(nested_column);
         nested_column->forEachSubcolumnRecursively(callback);
-        callback(*null_map);
+        callback(null_map);
         null_map->forEachSubcolumnRecursively(callback);
     }
 
@@ -188,8 +175,6 @@ public:
     NullMap & getNullMapData() { return getNullMapColumn().getData(); }
     const NullMap & getNullMapData() const { return getNullMapColumn().getData(); }
 
-    ColumnPtr getNestedColumnWithDefaultOnNull() const;
-
     /// Apply the null byte map of a specified nullable column onto the
     /// null byte map of the current column by performing an element-wise OR
     /// between both byte maps. This method is used to determine the null byte
@@ -197,9 +182,7 @@ public:
     /// columns.
     void applyNullMap(const ColumnNullable & other);
     void applyNullMap(const ColumnUInt8 & map);
-    void applyNullMap(const NullMap & map);
     void applyNegatedNullMap(const ColumnUInt8 & map);
-    void applyNegatedNullMap(const NullMap & map);
 
     /// Check that size of null map equals to size of nested column.
     void checkConsistency() const;
@@ -209,7 +192,7 @@ private:
     WrappedPtr null_map;
 
     template <bool negative>
-    void applyNullMapImpl(const NullMap & map);
+    void applyNullMapImpl(const ColumnUInt8 & map);
 
     int compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint, const Collator * collator=nullptr) const;
 
@@ -221,7 +204,5 @@ private:
 };
 
 ColumnPtr makeNullable(const ColumnPtr & column);
-ColumnPtr makeNullableSafe(const ColumnPtr & column);
-ColumnPtr makeNullableOrLowCardinalityNullable(const ColumnPtr & column);
 
 }

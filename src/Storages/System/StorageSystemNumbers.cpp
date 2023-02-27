@@ -2,9 +2,8 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/System/StorageSystemNumbers.h>
-#include <Storages/SelectQueryInfo.h>
 
-#include <Processors/ISource.h>
+#include <Processors/Sources/SourceWithProgress.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/LimitTransform.h>
 
@@ -15,11 +14,11 @@ namespace DB
 namespace
 {
 
-class NumbersSource : public ISource
+class NumbersSource : public SourceWithProgress
 {
 public:
     NumbersSource(UInt64 block_size_, UInt64 offset_, UInt64 step_)
-        : ISource(createHeader()), block_size(block_size_), next(offset_), step(step_) {}
+        : SourceWithProgress(createHeader()), block_size(block_size_), next(offset_), step(step_) {}
 
     String getName() const override { return "Numbers"; }
 
@@ -37,7 +36,7 @@ protected:
 
         next += step;
 
-        progress(column->size(), column->byteSize());
+        progress({column->size(), column->byteSize()});
 
         return { Columns {std::move(column)}, block_size };
     }
@@ -62,11 +61,11 @@ struct NumbersMultiThreadedState
 
 using NumbersMultiThreadedStatePtr = std::shared_ptr<NumbersMultiThreadedState>;
 
-class NumbersMultiThreadedSource : public ISource
+class NumbersMultiThreadedSource : public SourceWithProgress
 {
 public:
     NumbersMultiThreadedSource(NumbersMultiThreadedStatePtr state_, UInt64 block_size_, UInt64 max_counter_)
-        : ISource(createHeader())
+        : SourceWithProgress(createHeader())
         , state(std::move(state_))
         , block_size(block_size_)
         , max_counter(max_counter_) {}
@@ -95,7 +94,7 @@ protected:
         while (pos < end)
             *pos++ = curr++;
 
-        progress(column->size(), column->byteSize());
+        progress({column->size(), column->byteSize()});
 
         return { Columns {std::move(column)}, block_size };
     }
@@ -126,11 +125,11 @@ StorageSystemNumbers::StorageSystemNumbers(const StorageID & table_id, bool mult
 Pipe StorageSystemNumbers::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & query_info,
+    SelectQueryInfo &,
     ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    size_t num_streams)
+    unsigned num_streams)
 {
     storage_snapshot->check(column_names);
 
@@ -155,12 +154,7 @@ Pipe StorageSystemNumbers::read(
             auto source = std::make_shared<NumbersMultiThreadedSource>(state, max_block_size, max_counter);
 
             if (i == 0)
-            {
-                auto rows_appr = *limit;
-                if (query_info.limit > 0 && query_info.limit < rows_appr)
-                    rows_appr = query_info.limit;
-                source->addTotalRowsApprox(rows_appr);
-            }
+                source->addTotalRowsApprox(*limit);
 
             pipe.addSource(std::move(source));
         }
@@ -173,12 +167,7 @@ Pipe StorageSystemNumbers::read(
         auto source = std::make_shared<NumbersSource>(max_block_size, offset + i * max_block_size, num_streams * max_block_size);
 
         if (limit && i == 0)
-        {
-            auto rows_appr = *limit;
-            if (query_info.limit > 0 && query_info.limit < rows_appr)
-                rows_appr = query_info.limit;
-            source->addTotalRowsApprox(rows_appr);
-        }
+            source->addTotalRowsApprox(*limit);
 
         pipe.addSource(std::move(source));
     }

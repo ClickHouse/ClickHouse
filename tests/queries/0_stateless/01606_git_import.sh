@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-debug, no-tsan, no-msan, no-ubsan, no-asan
-# ^ because inserting a 50 MB file can be slow.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -120,10 +118,11 @@ ${CLICKHOUSE_CLIENT} --query "INSERT INTO line_changes FORMAT TSV" < line_change
 
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM commits"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM file_changes"
-${CLICKHOUSE_CLIENT} --query "SELECT count(), round(avg(indent), 1) FROM line_changes"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM line_changes"
 
 ${CLICKHOUSE_CLIENT} --multiline --multiquery --query "
 DROP TABLE commits;
 DROP TABLE file_changes;
 DROP TABLE line_changes;
 "
+

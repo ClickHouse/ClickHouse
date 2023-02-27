@@ -1,6 +1,5 @@
 ---
-slug: /ru/sql-reference/statements/select/having
-sidebar_label: HAVING
+toc_title: HAVING
 ---
 
 # Секция HAVING {#having-clause}

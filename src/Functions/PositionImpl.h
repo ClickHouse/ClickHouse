@@ -26,7 +26,7 @@ struct PositionCaseSensitiveASCII
     using MultiSearcherInBigHaystack = MultiVolnitsky;
 
     /// For searching single substring, that is different each time. This object is created for each row of data. It must have cheap initialization.
-    using SearcherInSmallHaystack = StdLibASCIIStringSearcher</*CaseInsensitive*/ false>;
+    using SearcherInSmallHaystack = LibCASCIICaseSensitiveStringSearcher;
 
     static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t haystack_size_hint)
     {
@@ -38,7 +38,7 @@ struct PositionCaseSensitiveASCII
         return SearcherInSmallHaystack(needle_data, needle_size);
     }
 
-    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<std::string_view> & needles)
+    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<StringRef> & needles)
     {
         return MultiSearcherInBigHaystack(needles);
     }
@@ -62,7 +62,7 @@ struct PositionCaseInsensitiveASCII
     /// `Volnitsky` is not used here, because one person has measured that this is better. It will be good if you question it.
     using SearcherInBigHaystack = ASCIICaseInsensitiveStringSearcher;
     using MultiSearcherInBigHaystack = MultiVolnitskyCaseInsensitive;
-    using SearcherInSmallHaystack = StdLibASCIIStringSearcher</*CaseInsensitive*/ true>;
+    using SearcherInSmallHaystack = LibCASCIICaseInsensitiveStringSearcher;
 
     static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t /*haystack_size_hint*/)
     {
@@ -74,7 +74,7 @@ struct PositionCaseInsensitiveASCII
         return SearcherInSmallHaystack(needle_data, needle_size);
     }
 
-    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<std::string_view> & needles)
+    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<StringRef> & needles)
     {
         return MultiSearcherInBigHaystack(needles);
     }
@@ -94,7 +94,7 @@ struct PositionCaseSensitiveUTF8
 {
     using SearcherInBigHaystack = VolnitskyUTF8;
     using MultiSearcherInBigHaystack = MultiVolnitskyUTF8;
-    using SearcherInSmallHaystack = StdLibASCIIStringSearcher</*CaseInsensitive*/ false>;
+    using SearcherInSmallHaystack = LibCASCIICaseSensitiveStringSearcher;
 
     static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t haystack_size_hint)
     {
@@ -106,14 +106,14 @@ struct PositionCaseSensitiveUTF8
         return SearcherInSmallHaystack(needle_data, needle_size);
     }
 
-    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<std::string_view> & needles)
+    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<StringRef> & needles)
     {
         return MultiSearcherInBigHaystack(needles);
     }
 
     static const char * advancePos(const char * pos, const char * end, size_t n)
     {
-        for (const auto *it = pos; it != end; ++it)
+        for (auto it = pos; it != end; ++it)
         {
             if (!UTF8::isContinuationOctet(static_cast<UInt8>(*it)))
             {
@@ -128,7 +128,7 @@ struct PositionCaseSensitiveUTF8
     static size_t countChars(const char * begin, const char * end)
     {
         size_t res = 0;
-        for (const auto *it = begin; it != end; ++it)
+        for (auto it = begin; it != end; ++it)
             if (!UTF8::isContinuationOctet(static_cast<UInt8>(*it)))
                 ++res;
         return res;
@@ -154,7 +154,7 @@ struct PositionCaseInsensitiveUTF8
         return SearcherInSmallHaystack(needle_data, needle_size);
     }
 
-    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<std::string_view> & needles)
+    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<StringRef> & needles)
     {
         return MultiSearcherInBigHaystack(needles);
     }
@@ -182,72 +182,19 @@ struct PositionImpl
     static constexpr bool supports_start_pos = true;
     static constexpr auto name = Name::name;
 
-    static ColumnNumbers getArgumentsThatAreAlwaysConstant() { return {};}
-
     using ResultType = UInt64;
 
     /// Find one substring in many strings.
     static void vectorConstant(
-        const ColumnString::Chars & haystack_data,
-        const ColumnString::Offsets & haystack_offsets,
+        const ColumnString::Chars & data,
+        const ColumnString::Offsets & offsets,
         const std::string & needle,
         const ColumnPtr & start_pos,
-        PaddedPODArray<UInt64> & res,
-        [[maybe_unused]] ColumnUInt8 * res_null)
+        PaddedPODArray<UInt64> & res)
     {
-        /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
-        assert(!res_null);
-
-        const UInt8 * const begin = haystack_data.data();
-        const UInt8 * const end = haystack_data.data() + haystack_data.size();
+        const UInt8 * begin = data.data();
         const UInt8 * pos = begin;
-
-        /// Fast path when needle is empty
-        if (needle.empty())
-        {
-            /// Needle is empty and start_pos doesn't exist --> always return 1
-            if (start_pos == nullptr)
-            {
-                for (auto & r : res)
-                    r = 1;
-                return;
-            }
-
-            ColumnString::Offset prev_offset = 0;
-            size_t rows = haystack_offsets.size();
-
-            if (const ColumnConst * start_pos_const = typeid_cast<const ColumnConst *>(&*start_pos))
-            {
-                /// Needle is empty and start_pos is constant
-                UInt64 start = std::max(start_pos_const->getUInt(0), static_cast<UInt64>(1));
-                for (size_t i = 0; i < rows; ++i)
-                {
-                    size_t haystack_size = Impl::countChars(
-                        reinterpret_cast<const char *>(pos), reinterpret_cast<const char *>(pos + haystack_offsets[i] - prev_offset - 1));
-                    res[i] = (start <= haystack_size + 1) ? start : 0;
-
-                    pos = begin + haystack_offsets[i];
-                    prev_offset = haystack_offsets[i];
-                }
-                return;
-            }
-            else
-            {
-                /// Needle is empty and start_pos is not constant
-                for (size_t i = 0; i < rows; ++i)
-                {
-                    size_t haystack_size = Impl::countChars(
-                        reinterpret_cast<const char *>(pos), reinterpret_cast<const char *>(pos + haystack_offsets[i] - prev_offset - 1));
-                    UInt64 start = start_pos->getUInt(i);
-                    start = std::max(static_cast<UInt64>(1), start);
-                    res[i] = (start <= haystack_size + 1) ? start : 0;
-
-                    pos = begin + haystack_offsets[i];
-                    prev_offset = haystack_offsets[i];
-                }
-                return;
-            }
-        }
+        const UInt8 * end = pos + data.size();
 
         /// Current index in the array of strings.
         size_t i = 0;
@@ -258,7 +205,7 @@ struct PositionImpl
         while (pos < end && end != (pos = searcher.search(pos, end - pos)))
         {
             /// Determine which index it refers to.
-            while (begin + haystack_offsets[i] <= pos)
+            while (begin + offsets[i] <= pos)
             {
                 res[i] = 0;
                 ++i;
@@ -266,14 +213,14 @@ struct PositionImpl
             auto start = start_pos != nullptr ? start_pos->getUInt(i) : 0;
 
             /// We check that the entry does not pass through the boundaries of strings.
-            if (pos + needle.size() < begin + haystack_offsets[i])
+            if (pos + needle.size() < begin + offsets[i])
             {
-                auto res_pos = 1 + Impl::countChars(reinterpret_cast<const char *>(begin + haystack_offsets[i - 1]), reinterpret_cast<const char *>(pos));
+                auto res_pos = 1 + Impl::countChars(reinterpret_cast<const char *>(begin + offsets[i - 1]), reinterpret_cast<const char *>(pos));
                 if (res_pos < start)
                 {
                     pos = reinterpret_cast<const UInt8 *>(Impl::advancePos(
                         reinterpret_cast<const char *>(pos),
-                        reinterpret_cast<const char *>(begin + haystack_offsets[i]),
+                        reinterpret_cast<const char *>(begin + offsets[i]),
                         start - res_pos));
                     continue;
                 }
@@ -283,7 +230,7 @@ struct PositionImpl
             {
                 res[i] = 0;
             }
-            pos = begin + haystack_offsets[i];
+            pos = begin + offsets[i];
             ++i;
         }
 
@@ -300,7 +247,7 @@ struct PositionImpl
     {
         auto start = std::max(start_pos, UInt64(1));
 
-        if (needle.empty())
+        if (needle.size() == 0)
         {
             size_t haystack_size = Impl::countChars(data.data(), data.data() + data.size());
             res = start <= haystack_size + 1 ? start : 0;
@@ -320,12 +267,8 @@ struct PositionImpl
         std::string data,
         std::string needle,
         const ColumnPtr & start_pos,
-        PaddedPODArray<UInt64> & res,
-        [[maybe_unused]] ColumnUInt8 * res_null)
+        PaddedPODArray<UInt64> & res)
     {
-        /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
-        assert(!res_null);
-
         Impl::toLowerIfNeed(data);
         Impl::toLowerIfNeed(needle);
 
@@ -358,12 +301,8 @@ struct PositionImpl
         const ColumnString::Chars & needle_data,
         const ColumnString::Offsets & needle_offsets,
         const ColumnPtr & start_pos,
-        PaddedPODArray<UInt64> & res,
-        [[maybe_unused]] ColumnUInt8 * res_null)
+        PaddedPODArray<UInt64> & res)
     {
-        /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
-        assert(!res_null);
-
         ColumnString::Offset prev_haystack_offset = 0;
         ColumnString::Offset prev_needle_offset = 0;
 
@@ -422,13 +361,10 @@ struct PositionImpl
         const ColumnString::Chars & needle_data,
         const ColumnString::Offsets & needle_offsets,
         const ColumnPtr & start_pos,
-        PaddedPODArray<UInt64> & res,
-        [[maybe_unused]] ColumnUInt8 * res_null)
+        PaddedPODArray<UInt64> & res)
     {
-        /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
-        assert(!res_null);
-
         /// NOTE You could use haystack indexing. But this is a rare case.
+
         ColumnString::Offset prev_needle_offset = 0;
 
         size_t size = needle_offsets.size();
@@ -472,12 +408,6 @@ struct PositionImpl
 
     template <typename... Args>
     static void vectorFixedConstant(Args &&...)
-    {
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support FixedString haystack argument", name);
-    }
-
-    template <typename... Args>
-    static void vectorFixedVector(Args &&...)
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support FixedString haystack argument", name);
     }

@@ -1,9 +1,8 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/grouparraysample
-sidebar_position: 114
+toc_priority: 114
 ---
 
-# groupArraySample
+# groupArraySample {#grouparraysample}
 
 Creates an array of sample argument values. The size of the resulting array is limited to `max_size` elements. Argument values are selected and added to the array randomly.
 

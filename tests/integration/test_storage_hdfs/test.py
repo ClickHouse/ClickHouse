@@ -1,21 +1,11 @@
 import os
 
 import pytest
-import time
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
 from pyhdfs import HdfsClient
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance(
-    "node1",
-    main_configs=[
-        "configs/macro.xml",
-        "configs/schema_cache.xml",
-        "configs/cluster.xml",
-    ],
-    with_hdfs=True,
-)
+node1 = cluster.add_instance("node1", with_hdfs=True)
 
 
 @pytest.fixture(scope="module")
@@ -544,36 +534,12 @@ def test_schema_inference_with_globs(started_cluster):
     )
 
     result = node1.query(f"desc hdfs('hdfs://hdfs1:9000/data*.jsoncompacteachrow')")
-    assert result.strip() == "c1\tNullable(Int64)"
+    assert result.strip() == "c1\tNullable(Float64)"
 
     result = node1.query(
         f"select * from hdfs('hdfs://hdfs1:9000/data*.jsoncompacteachrow')"
     )
     assert sorted(result.split()) == ["0", "\\N"]
-
-    node1.query(
-        f"insert into table function hdfs('hdfs://hdfs1:9000/data3.jsoncompacteachrow', 'JSONCompactEachRow', 'x Nullable(UInt32)') select NULL"
-    )
-
-    filename = "data{1,3}.jsoncompacteachrow"
-
-    result = node1.query_and_get_error(
-        f"desc hdfs('hdfs://hdfs1:9000/{filename}') settings schema_inference_use_cache_for_hdfs=0"
-    )
-
-    assert "All attempts to extract table structure from files failed" in result
-
-    node1.query(
-        f"insert into table function hdfs('hdfs://hdfs1:9000/data0.jsoncompacteachrow', 'TSV', 'x String') select '[123;]'"
-    )
-
-    result = node1.query_and_get_error(
-        f"desc hdfs('hdfs://hdfs1:9000/data*.jsoncompacteachrow') settings schema_inference_use_cache_for_hdfs=0"
-    )
-
-    assert (
-        "Cannot extract table structure from JSONCompactEachRow format file" in result
-    )
 
 
 def test_insert_select_schema_inference(started_cluster):
@@ -586,231 +552,6 @@ def test_insert_select_schema_inference(started_cluster):
 
     result = node1.query(f"select * from hdfs('hdfs://hdfs1:9000/test.native.zst')")
     assert int(result) == 1
-
-
-def test_cluster_join(started_cluster):
-    result = node1.query(
-        """
-        SELECT l.id,r.id FROM hdfsCluster('test_cluster_two_shards', 'hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32') as l
-        JOIN hdfsCluster('test_cluster_two_shards', 'hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32') as r
-        ON l.id = r.id
-    """
-    )
-    assert "AMBIGUOUS_COLUMN_NAME" not in result
-
-
-def test_cluster_macro(started_cluster):
-    with_macro = node1.query(
-        """
-        SELECT id FROM hdfsCluster('{default_cluster_macro}', 'hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32')
-    """
-    )
-
-    no_macro = node1.query(
-        """
-        SELECT id FROM hdfsCluster('test_cluster_two_shards', 'hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32')
-    """
-    )
-
-    assert TSV(with_macro) == TSV(no_macro)
-
-
-def test_virtual_columns_2(started_cluster):
-    hdfs_api = started_cluster.hdfs_api
-
-    table_function = (
-        f"hdfs('hdfs://hdfs1:9000/parquet_2', 'Parquet', 'a Int32, b String')"
-    )
-    node1.query(f"insert into table function {table_function} SELECT 1, 'kek'")
-
-    result = node1.query(f"SELECT _path FROM {table_function}")
-    assert result.strip() == "hdfs://hdfs1:9000/parquet_2"
-
-    table_function = (
-        f"hdfs('hdfs://hdfs1:9000/parquet_3', 'Parquet', 'a Int32, _path String')"
-    )
-    node1.query(f"insert into table function {table_function} SELECT 1, 'kek'")
-
-    result = node1.query(f"SELECT _path FROM {table_function}")
-    assert result.strip() == "kek"
-
-
-def get_profile_event_for_query(node, query, profile_event):
-    node.query("system flush logs")
-    query = query.replace("'", "\\'")
-    return int(
-        node.query(
-            f"select ProfileEvents['{profile_event}'] from system.query_log where query='{query}' and type = 'QueryFinish' order by query_start_time_microseconds desc limit 1"
-        )
-    )
-
-
-def check_cache_misses(node1, file, amount=1):
-    assert (
-        get_profile_event_for_query(
-            node1,
-            f"desc hdfs('hdfs://hdfs1:9000/{file}')",
-            "SchemaInferenceCacheMisses",
-        )
-        == amount
-    )
-
-
-def check_cache_hits(node1, file, amount=1):
-    assert (
-        get_profile_event_for_query(
-            node1, f"desc hdfs('hdfs://hdfs1:9000/{file}')", "SchemaInferenceCacheHits"
-        )
-        == amount
-    )
-
-
-def check_cache_invalidations(node1, file, amount=1):
-    assert (
-        get_profile_event_for_query(
-            node1,
-            f"desc hdfs('hdfs://hdfs1:9000/{file}')",
-            "SchemaInferenceCacheInvalidations",
-        )
-        == amount
-    )
-
-
-def check_cache_evictions(node1, file, amount=1):
-    assert (
-        get_profile_event_for_query(
-            node1,
-            f"desc hdfs('hdfs://hdfs1:9000/{file}')",
-            "SchemaInferenceCacheEvictions",
-        )
-        == amount
-    )
-
-
-def check_cache(node1, expected_files):
-    sources = node1.query("select source from system.schema_inference_cache")
-    assert sorted(map(lambda x: x.strip().split("/")[-1], sources.split())) == sorted(
-        expected_files
-    )
-
-
-def run_describe_query(node, file):
-    query = f"desc hdfs('hdfs://hdfs1:9000/{file}')"
-    node.query(query)
-
-
-def test_schema_inference_cache(started_cluster):
-    node1.query("system drop schema cache")
-    node1.query(
-        f"insert into function hdfs('hdfs://hdfs1:9000/test_cache0.jsonl') select * from numbers(100) settings hdfs_truncate_on_insert=1"
-    )
-    time.sleep(1)
-
-    run_describe_query(node1, "test_cache0.jsonl")
-    check_cache(node1, ["test_cache0.jsonl"])
-    check_cache_misses(node1, "test_cache0.jsonl")
-
-    run_describe_query(node1, "test_cache0.jsonl")
-    check_cache_hits(node1, "test_cache0.jsonl")
-
-    node1.query(
-        f"insert into function hdfs('hdfs://hdfs1:9000/test_cache0.jsonl') select * from numbers(100) settings hdfs_truncate_on_insert=1"
-    )
-    time.sleep(1)
-
-    run_describe_query(node1, "test_cache0.jsonl")
-    check_cache_invalidations(node1, "test_cache0.jsonl")
-
-    node1.query(
-        f"insert into function hdfs('hdfs://hdfs1:9000/test_cache1.jsonl') select * from numbers(100) settings hdfs_truncate_on_insert=1"
-    )
-    time.sleep(1)
-
-    run_describe_query(node1, "test_cache1.jsonl")
-    check_cache(node1, ["test_cache0.jsonl", "test_cache1.jsonl"])
-    check_cache_misses(node1, "test_cache1.jsonl")
-
-    run_describe_query(node1, "test_cache1.jsonl")
-    check_cache_hits(node1, "test_cache1.jsonl")
-
-    node1.query(
-        f"insert into function hdfs('hdfs://hdfs1:9000/test_cache2.jsonl') select * from numbers(100) settings hdfs_truncate_on_insert=1"
-    )
-    time.sleep(1)
-
-    run_describe_query(node1, "test_cache2.jsonl")
-    check_cache(node1, ["test_cache1.jsonl", "test_cache2.jsonl"])
-    check_cache_misses(node1, "test_cache2.jsonl")
-    check_cache_evictions(node1, "test_cache2.jsonl")
-
-    run_describe_query(node1, "test_cache2.jsonl")
-    check_cache_hits(node1, "test_cache2.jsonl")
-
-    run_describe_query(node1, "test_cache1.jsonl")
-    check_cache_hits(node1, "test_cache1.jsonl")
-
-    run_describe_query(node1, "test_cache0.jsonl")
-    check_cache(node1, ["test_cache0.jsonl", "test_cache1.jsonl"])
-    check_cache_misses(node1, "test_cache0.jsonl")
-    check_cache_evictions(node1, "test_cache0.jsonl")
-
-    run_describe_query(node1, "test_cache2.jsonl")
-    check_cache(node1, ["test_cache0.jsonl", "test_cache2.jsonl"])
-    check_cache_misses(node1, "test_cache2.jsonl")
-    check_cache_evictions(node1, "test_cache2.jsonl")
-
-    run_describe_query(node1, "test_cache2.jsonl")
-    check_cache_hits(node1, "test_cache2.jsonl")
-
-    run_describe_query(node1, "test_cache0.jsonl")
-    check_cache_hits(node1, "test_cache0.jsonl")
-
-    node1.query(
-        f"insert into function hdfs('hdfs://hdfs1:9000/test_cache3.jsonl') select * from numbers(100) settings hdfs_truncate_on_insert=1"
-    )
-    time.sleep(1)
-
-    files = "test_cache{0,1,2,3}.jsonl"
-    run_describe_query(node1, files)
-    check_cache_hits(node1, files)
-
-    node1.query(f"system drop schema cache for hdfs")
-    check_cache(node1, [])
-
-    run_describe_query(node1, files)
-    check_cache_misses(node1, files, 4)
-
-    node1.query("system drop schema cache")
-    check_cache(node1, [])
-
-    run_describe_query(node1, files)
-    check_cache_misses(node1, files, 4)
-
-
-def test_hdfsCluster_skip_unavailable_shards(started_cluster):
-    hdfs_api = started_cluster.hdfs_api
-    node = started_cluster.instances["node1"]
-    data = "1\tSerialize\t555.222\n2\tData\t777.333\n"
-    hdfs_api.write_data("/skip_unavailable_shards", data)
-
-    assert (
-        node1.query(
-            "select * from hdfsCluster('cluster_non_existent_port', 'hdfs://hdfs1:9000/skip_unavailable_shards', 'TSV', 'id UInt64, text String, number Float64') settings skip_unavailable_shards = 1"
-        )
-        == data
-    )
-
-
-def test_hdfsCluster_unskip_unavailable_shards(started_cluster):
-    hdfs_api = started_cluster.hdfs_api
-    node = started_cluster.instances["node1"]
-    data = "1\tSerialize\t555.222\n2\tData\t777.333\n"
-    hdfs_api.write_data("/unskip_unavailable_shards", data)
-    error = node.query_and_get_error(
-        "select * from hdfsCluster('cluster_non_existent_port', 'hdfs://hdfs1:9000/unskip_unavailable_shards', 'TSV', 'id UInt64, text String, number Float64')"
-    )
-
-    assert "NETWORK_ERROR" in error
 
 
 if __name__ == "__main__":

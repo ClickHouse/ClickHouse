@@ -38,7 +38,7 @@ struct ArrayFilterImpl
             const auto * column_filter_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
 
             if (!column_filter_const)
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type of filter column");
+                throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
 
             if (column_filter_const->getValue<UInt8>())
                 return array.clone();
@@ -74,7 +74,7 @@ struct ArrayFilterImpl
 struct NameArrayFilter { static constexpr auto name = "arrayFilter"; };
 using FunctionArrayFilter = FunctionArrayMapped<ArrayFilterImpl, NameArrayFilter>;
 
-REGISTER_FUNCTION(ArrayFilter)
+void registerFunctionArrayFilter(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArrayFilter>();
 }

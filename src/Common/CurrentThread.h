@@ -2,6 +2,7 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Common/ThreadStatus.h>
+#include <base/StringRef.h>
 
 #include <memory>
 #include <string>
@@ -40,12 +41,6 @@ public:
     /// Group to which belongs current thread
     static ThreadGroupStatusPtr getGroup();
 
-    /// MemoryTracker for user that owns current thread if any
-    static MemoryTracker * getUserMemoryTracker();
-
-    /// Adjust counters in MemoryTracker hierarchy if untracked_memory is not 0.
-    static void flushUntrackedMemory();
-
     /// A logs queue used by TCPHandler to pass logs to a client
     static void attachInternalTextLogsQueue(const std::shared_ptr<InternalTextLogsQueue> & logs_queue,
                                             LogsLevel client_logs_level);
@@ -60,12 +55,7 @@ public:
     static void updatePerformanceCounters();
 
     static ProfileEvents::Counters & getProfileEvents();
-    inline ALWAYS_INLINE static MemoryTracker * getMemoryTracker()
-    {
-        if (unlikely(!current_thread))
-            return nullptr;
-        return &current_thread->memory_tracker;
-    }
+    static MemoryTracker * getMemoryTracker();
 
     /// Update read and write rows (bytes) statistics (used in system.query_thread_log)
     static void updateProgressIn(const Progress & value);
@@ -86,7 +76,7 @@ public:
     static void finalizePerformanceCounters();
 
     /// Returns a non-empty string if the thread is attached to a query
-    static std::string_view getQueryId()
+    static StringRef getQueryId()
     {
         if (unlikely(!current_thread))
             return {};
@@ -98,10 +88,9 @@ public:
     static void detachQueryIfNotDetached();
 
     /// Initializes query with current thread as master thread in constructor, and detaches it in destructor
-    struct QueryScope : private boost::noncopyable
+    struct QueryScope
     {
         explicit QueryScope(ContextMutablePtr query_context);
-        explicit QueryScope(ContextPtr query_context);
         ~QueryScope();
 
         void logPeakMemoryUsage();

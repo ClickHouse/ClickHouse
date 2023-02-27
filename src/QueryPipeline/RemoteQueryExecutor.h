@@ -10,7 +10,6 @@
 #include <Interpreters/StorageID.h>
 #include <Common/TimerDescriptor.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
-#include <sys/types.h>
 
 
 namespace DB
@@ -46,9 +45,9 @@ public:
     /// decide whether to deny or to accept that request.
     struct Extension
     {
-        std::shared_ptr<TaskIterator> task_iterator;
-        std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator;
-        std::optional<IConnections::ReplicaInfo> replica_info;
+      std::shared_ptr<TaskIterator> task_iterator{nullptr};
+      std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator;
+      std::optional<IConnections::ReplicaInfo> replica_info;
     };
 
     /// Takes already set connection.
@@ -95,60 +94,12 @@ public:
     /// Query is resent to a replica, the query itself can be modified.
     std::atomic<bool> resent_query { false };
 
-    struct ReadResult
-    {
-        enum class Type : uint8_t
-        {
-            Data,
-            ParallelReplicasToken,
-            FileDescriptor,
-            Finished,
-            Nothing
-        };
-
-        explicit ReadResult(Block block_)
-            : type(Type::Data)
-            , block(std::move(block_))
-        {}
-
-        explicit ReadResult(int fd_)
-            : type(Type::FileDescriptor)
-            , fd(fd_)
-        {}
-
-        explicit ReadResult(Type type_)
-            : type(type_)
-        {
-            assert(type != Type::Data && type != Type::FileDescriptor);
-        }
-
-        Type getType() const { return type; }
-
-        Block getBlock()
-        {
-            chassert(type == Type::Data);
-            return std::move(block);
-        }
-
-        int getFileDescriptor() const
-        {
-            chassert(type == Type::FileDescriptor);
-            return fd;
-        }
-
-        Type type;
-        Block block;
-        int fd{-1};
-    };
-
     /// Read next block of data. Returns empty block if query is finished.
-    Block readBlock();
-
-    ReadResult read();
+    Block read();
 
     /// Async variant of read. Returns ready block or file descriptor which may be used for polling.
     /// ReadContext is an internal read state. Pass empty ptr first time, reuse created one for every call.
-    ReadResult read(std::unique_ptr<ReadContext> & read_context);
+    std::variant<Block, int> read(std::unique_ptr<ReadContext> & read_context);
 
     /// Receive all remain packets and finish query.
     /// It should be cancelled after read returned empty block.
@@ -280,12 +231,11 @@ private:
 
     void processReadTaskRequest();
 
-    void processMergeTreeReadTaskRequest(ParallelReadRequest request);
-    void processMergeTreeInitialReadAnnounecement(InitialAllRangesAnnouncement announcement);
+    void processMergeTreeReadTaskRequest(PartitionReadRequest request);
 
     /// Cancel query and restart it with info about duplicate UUIDs
     /// only for `allow_experimental_query_deduplication`.
-    ReadResult restartQueryWithoutDuplicatedUUIDs(std::unique_ptr<ReadContext> * read_context = nullptr);
+    std::variant<Block, int> restartQueryWithoutDuplicatedUUIDs(std::unique_ptr<ReadContext> * read_context = nullptr);
 
     /// If wasn't sent yet, send request to cancel all connections to replicas
     void tryCancel(const char * reason, std::unique_ptr<ReadContext> * read_context);
@@ -297,10 +247,11 @@ private:
     bool hasThrownException() const;
 
     /// Process packet for read and return data block if possible.
-    ReadResult processPacket(Packet packet);
+    std::optional<Block> processPacket(Packet packet);
 
     /// Reads packet by packet
     Block readPackets();
+
 };
 
 }

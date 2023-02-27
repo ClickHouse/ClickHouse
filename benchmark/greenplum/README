@@ -1,0 +1,43 @@
+Folder structure
+______________
+dump_dataset_from_ch.sh - bash script that dumps a dataset from Clickhouse
+schema.sql - schema for a Greenplum cluster to load dumped dataset in
+load_data_set.sql - the script that loads up a dumped dataset 
+queries.sql - SQL statements used in the benchmark
+benchmark.sh - this piece of bash conducts a benchmark
+result_parser.py - script to parse benchmark.sh's output and produce python code to build a graph to compare up to 4 benchmark results. 
+Requirements
+____________
+
+Greenplum uses a separate server as a point of entry, so you need 2 servers at least to run a cluster: master and segment hosts. 2 segments host and 56 segments(28 per host) had been used while conducting the test.
+You has has to put segment hostnames in the benchmark.sh.  
+Greenplum quick installation instructions
+_________________________________________
+
+Obtain a stable Greenplum version here(4.3.9.1 was used while conducting the benchmark):
+https://network.pivotal.io/products/pivotal-gpdb
+
+and install it using this detailed guide: 
+http://gpdb.docs.pivotal.io/4340/install_guide/install_guide.html
+
+You should change gp_interconnect_type to 'tcp' if cluster members are connected via 1GB link or lower. 
+There are some variables that has to be changed prior the first benchmark run: gp_vmem_protect_limit and max_statement_mem to allow each segment to use more virtual memory. Here are commands to change this GUCS that has to be executed as gpadmin at the master host:
+
+    gpconfig -c gp_interconnect_type -v tcp
+    gpconfig -c gp_vmem_protect_limit -v 3000
+    gpconfig -c max_statement_mem -v '4000MB'
+
+How to prepare data
+-------------------
+
+One can prepare datasets to run the benchmark on using dump_dataset_from_ch.sh script from this repo. The script has to be run at at Clickhouse host. It takes a long time to get dumps. 
+
+Upload the datasets into Greenplum master.Then run schema.sql to prepare schema and load_data_set.sql to load data up. This operation also takes a long time.  
+
+How to conduct the benchmark
+__________________________
+There is a benchmark.sh that take some arguments. Here is the syntax: 
+
+./benchmark.sh sql_statements_file tablename dbname orca_switch
+
+If you don't know about the last one then just use a default value. 

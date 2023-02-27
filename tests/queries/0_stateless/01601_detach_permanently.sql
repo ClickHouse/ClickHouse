@@ -72,7 +72,6 @@ SELECT '-----------------------';
 SELECT 'database ordinary tests';
 
 DROP DATABASE IF EXISTS test1601_detach_permanently_ordinary;
-set allow_deprecated_database_ordinary=1;
 CREATE DATABASE test1601_detach_permanently_ordinary Engine=Ordinary;
 
 create table test1601_detach_permanently_ordinary.test_name_reuse (number UInt64) engine=MergeTree order by tuple();

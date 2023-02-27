@@ -23,6 +23,10 @@ namespace ErrorCodes
     extern const int CORRUPTED_DATA;
 }
 
+SummingSortedAlgorithm::ColumnsDefinition::ColumnsDefinition() = default;
+SummingSortedAlgorithm::ColumnsDefinition::ColumnsDefinition(ColumnsDefinition &&) noexcept = default;
+SummingSortedAlgorithm::ColumnsDefinition::~ColumnsDefinition() = default;
+
 /// Stores numbers of key-columns and value-columns.
 struct SummingSortedAlgorithm::MapDescription
 {
@@ -97,10 +101,10 @@ struct SummingSortedAlgorithm::AggregateDescription
 };
 
 
-static bool isInPrimaryKey(const SortDescription & description, const std::string & name)
+static bool isInPrimaryKey(const SortDescription & description, const std::string & name, const size_t number)
 {
     for (const auto & desc : description)
-        if (desc.column_name == name)
+        if (desc.column_name == name || (desc.column_name.empty() && desc.column_number == number))
             return true;
 
     return false;
@@ -247,7 +251,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
             }
 
             /// Are they inside the primary key or partition key?
-            if (isInPrimaryKey(description, column.name) || isInPartitionKey(column.name, partition_key_columns))
+            if (isInPrimaryKey(description, column.name, i) ||  isInPartitionKey(column.name, partition_key_columns))
             {
                 def.column_numbers_not_to_aggregate.push_back(i);
                 continue;
@@ -262,17 +266,17 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
                 desc.is_agg_func_type = is_agg_func;
                 desc.column_numbers = {i};
 
-                desc.real_type = column.type;
-                desc.nested_type = recursiveRemoveLowCardinality(desc.real_type);
-                if (desc.real_type.get() == desc.nested_type.get())
-                    desc.nested_type = nullptr;
-
                 if (simple)
                 {
                     // simple aggregate function
                     desc.init(simple->getFunction(), true);
                     if (desc.function->allocatesMemoryInArena())
                         def.allocates_memory_in_arena = true;
+
+                    desc.real_type = column.type;
+                    desc.nested_type = recursiveRemoveLowCardinality(desc.real_type);
+                    if (desc.real_type.get() == desc.nested_type.get())
+                        desc.nested_type = nullptr;
                 }
                 else if (!is_agg_func)
                 {
@@ -303,7 +307,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
         /// no elements of map could be in primary key
         auto column_num_it = map.second.begin();
         for (; column_num_it != map.second.end(); ++column_num_it)
-            if (isInPrimaryKey(description, header.safeGetByPosition(*column_num_it).name))
+            if (isInPrimaryKey(description, header.safeGetByPosition(*column_num_it).name, *column_num_it))
                 break;
         if (column_num_it != map.second.end())
         {
@@ -382,7 +386,7 @@ static MutableColumns getMergedDataColumns(
     for (const auto & desc : def.columns_to_aggregate)
     {
         // Wrap aggregated columns in a tuple to match function signature
-        if (!desc.is_agg_func_type && !desc.is_simple_agg_func_type && isTuple(desc.function->getResultType()))
+        if (!desc.is_agg_func_type && !desc.is_simple_agg_func_type && isTuple(desc.function->getReturnType()))
         {
             size_t tuple_size = desc.column_numbers.size();
             MutableColumns tuple_columns(tuple_size);
@@ -391,11 +395,14 @@ static MutableColumns getMergedDataColumns(
 
             columns.emplace_back(ColumnTuple::create(std::move(tuple_columns)));
         }
-        else
+        else if (desc.is_simple_agg_func_type)
         {
-            const auto & type = desc.nested_type ? desc.nested_type : desc.real_type;
+            const auto & type = desc.nested_type ? desc.nested_type
+                                                 : desc.real_type;
             columns.emplace_back(type->createColumn());
         }
+        else
+            columns.emplace_back(header.safeGetByPosition(desc.column_numbers[0]).column->cloneEmpty());
     }
 
     for (const auto & column_number : def.column_numbers_not_to_aggregate)
@@ -414,7 +421,7 @@ static void preprocessChunk(Chunk & chunk, const SummingSortedAlgorithm::Columns
 
     for (const auto & desc : def.columns_to_aggregate)
     {
-        if (desc.nested_type)
+        if (desc.is_simple_agg_func_type && desc.nested_type)
         {
             auto & col = columns[desc.column_numbers[0]];
             col = recursiveRemoveLowCardinality(col);
@@ -439,14 +446,14 @@ static void postprocessChunk(
         auto column = std::move(columns[next_column]);
         ++next_column;
 
-        if (!desc.is_agg_func_type && !desc.is_simple_agg_func_type && isTuple(desc.function->getResultType()))
+        if (!desc.is_agg_func_type && !desc.is_simple_agg_func_type && isTuple(desc.function->getReturnType()))
         {
             /// Unpack tuple into block.
             size_t tuple_size = desc.column_numbers.size();
             for (size_t i = 0; i < tuple_size; ++i)
                 res_columns[desc.column_numbers[i]] = assert_cast<const ColumnTuple &>(*column).getColumnPtr(i);
         }
-        else if (desc.nested_type)
+        else if (desc.is_simple_agg_func_type && desc.nested_type)
         {
             const auto & from_type = desc.nested_type;
             const auto & to_type = desc.real_type;
@@ -486,8 +493,9 @@ static void setRow(Row & row, const ColumnRawPtrs & raw_columns, size_t row_num,
             if (i < column_names.size())
                 column_name = column_names[i];
 
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "SummingSortedAlgorithm failed to read row {} of column {})",
-                            toString(row_num), toString(i) + (column_name.empty() ? "" : " (" + column_name));
+            throw Exception("SummingSortedAlgorithm failed to read row " + toString(row_num)
+                            + " of column " + toString(i) + (column_name.empty() ? "" : " (" + column_name + ")"),
+                            ErrorCodes::CORRUPTED_DATA);
         }
     }
 }
@@ -629,7 +637,8 @@ void SummingSortedAlgorithm::SummingMergedData::addRowImpl(ColumnRawPtrs & raw_c
     for (auto & desc : def.columns_to_aggregate)
     {
         if (!desc.created)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error in SummingSortedAlgorithm, there are no description");
+            throw Exception("Logical error in SummingSortedBlockInputStream, there are no description",
+                            ErrorCodes::LOGICAL_ERROR);
 
         if (desc.is_agg_func_type)
         {
@@ -678,15 +687,14 @@ Chunk SummingSortedAlgorithm::SummingMergedData::pull()
 
 
 SummingSortedAlgorithm::SummingSortedAlgorithm(
-    const Block & header_,
-    size_t num_inputs,
+    const Block & header, size_t num_inputs,
     SortDescription description_,
     const Names & column_names_to_sum,
     const Names & partition_key_columns,
     size_t max_block_size)
-    : IMergingAlgorithmWithDelayedChunk(header_, num_inputs, std::move(description_))
-    , columns_definition(defineColumns(header_, description, column_names_to_sum, partition_key_columns))
-    , merged_data(getMergedDataColumns(header_, columns_definition), max_block_size, columns_definition)
+    : IMergingAlgorithmWithDelayedChunk(num_inputs, std::move(description_))
+    , columns_definition(defineColumns(header, description, column_names_to_sum, partition_key_columns))
+    , merged_data(getMergedDataColumns(header, columns_definition), max_block_size, columns_definition)
 {
 }
 
@@ -770,9 +778,5 @@ IMergingAlgorithm::Status SummingSortedAlgorithm::merge()
     last_chunk_sort_columns.clear();
     return Status(merged_data.pull(), true);
 }
-
-SummingSortedAlgorithm::ColumnsDefinition::ColumnsDefinition() = default;
-SummingSortedAlgorithm::ColumnsDefinition::ColumnsDefinition(ColumnsDefinition &&) noexcept = default;
-SummingSortedAlgorithm::ColumnsDefinition::~ColumnsDefinition() = default;
 
 }

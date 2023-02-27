@@ -1,4 +1,9 @@
 <test>
+    <tags>
+        <tag>sorting</tag>
+        <tag>comparison</tag>
+    </tags>
+
     <query>SELECT toInt32(number)          AS n FROM numbers(10000000) ORDER BY n DESC FORMAT Null</query>
     <query>SELECT toDecimal32(number, 0)   AS n FROM numbers(10000000) ORDER BY n      FORMAT Null</query>
 

@@ -12,12 +12,32 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
-CheckSortedTransform::CheckSortedTransform(const Block & header, const SortDescription & sort_description)
-    : ISimpleTransform(header, header, false)
+CheckSortedTransform::CheckSortedTransform(
+    const Block & header_,
+    const SortDescription & sort_description_)
+    : ISimpleTransform(header_, header_, false)
+    , sort_description_map(addPositionsToSortDescriptions(sort_description_))
 {
-    for (const auto & column_description : sort_description)
-        sort_description_map.emplace_back(column_description, header.getPositionByName(column_description.column_name));
 }
+
+SortDescriptionsWithPositions
+CheckSortedTransform::addPositionsToSortDescriptions(const SortDescription & sort_description)
+{
+    SortDescriptionsWithPositions result;
+    result.reserve(sort_description.size());
+    const auto & header = getInputPort().getHeader();
+
+    for (SortColumnDescription description_copy : sort_description)
+    {
+        if (!description_copy.column_name.empty())
+            description_copy.column_number = header.getPositionByName(description_copy.column_name);
+
+        result.push_back(description_copy);
+    }
+
+    return result;
+}
+
 
 void CheckSortedTransform::transform(Chunk & chunk)
 {
@@ -34,7 +54,7 @@ void CheckSortedTransform::transform(Chunk & chunk)
             const IColumn * left_col = left[column_number].get();
             const IColumn * right_col = right[column_number].get();
 
-            int res = elem.base.direction * left_col->compareAt(left_index, right_index, *right_col, elem.base.nulls_direction);
+            int res = elem.direction * left_col->compareAt(left_index, right_index, *right_col, elem.nulls_direction);
             if (res < 0)
             {
                 return;

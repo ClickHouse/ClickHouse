@@ -36,7 +36,7 @@ String ISerialization::kindToString(Kind kind)
         case Kind::SPARSE:
             return "Sparse";
     }
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 ISerialization::Kind ISerialization::stringToKind(const String & str)
@@ -73,24 +73,24 @@ String ISerialization::SubstreamPath::toString() const
 }
 
 void ISerialization::enumerateStreams(
-    EnumerateStreamsSettings & settings,
+    SubstreamPath & path,
     const StreamCallback & callback,
     const SubstreamData & data) const
 {
-    settings.path.push_back(Substream::Regular);
-    settings.path.back().data = data;
-    callback(settings.path);
-    settings.path.pop_back();
+    path.push_back(Substream::Regular);
+    path.back().data = data;
+    callback(path);
+    path.pop_back();
 }
 
-void ISerialization::enumerateStreams(
-    const StreamCallback & callback,
-    const DataTypePtr & type,
-    const ColumnPtr & column) const
+void ISerialization::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
 {
-    EnumerateStreamsSettings settings;
-    auto data = SubstreamData(getPtr()).withType(type).withColumn(column);
-    enumerateStreams(settings, callback, data);
+    enumerateStreams(path, callback, {getPtr(), nullptr, nullptr, nullptr});
+}
+
+void ISerialization::enumerateStreams(SubstreamPath & path, const StreamCallback & callback, const DataTypePtr & type) const
+{
+    enumerateStreams(path, callback, {getPtr(), type, nullptr, nullptr});
 }
 
 void ISerialization::serializeBinaryBulk(const IColumn & column, WriteBuffer &, size_t, size_t) const
@@ -172,6 +172,10 @@ String getNameForSubstreamPath(
             else
                 stream_name += "." + it->tuple_element_name;
         }
+        else if (it->type == Substream::ObjectElement)
+        {
+            stream_name += escapeForFileName(".") + escapeForFileName(it->object_key_name);
+        }
     }
 
     return stream_name;
@@ -184,7 +188,7 @@ String ISerialization::getFileNameForStream(const NameAndTypePair & column, cons
     return getFileNameForStream(column.getNameInStorage(), path);
 }
 
-bool isOffsetsOfNested(const ISerialization::SubstreamPath & path)
+static size_t isOffsetsOfNested(const ISerialization::SubstreamPath & path)
 {
     if (path.empty())
         return false;
@@ -224,10 +228,8 @@ String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, siz
 
 void ISerialization::addToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column)
 {
-    if (!cache || path.empty())
-        return;
-
-    cache->emplace(getSubcolumnNameForStream(path), column);
+    if (cache && !path.empty())
+        cache->emplace(getSubcolumnNameForStream(path), column);
 }
 
 ColumnPtr ISerialization::getFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path)
@@ -236,7 +238,10 @@ ColumnPtr ISerialization::getFromSubstreamsCache(SubstreamsCache * cache, const 
         return nullptr;
 
     auto it = cache->find(getSubcolumnNameForStream(path));
-    return it == cache->end() ? nullptr : it->second;
+    if (it == cache->end())
+        return nullptr;
+
+    return it->second;
 }
 
 bool ISerialization::isSpecialCompressionAllowed(const SubstreamPath & path)
@@ -287,13 +292,10 @@ bool ISerialization::hasSubcolumnForPath(const SubstreamPath & path, size_t pref
 
 ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath & path, size_t prefix_len)
 {
-    assert(prefix_len <= path.size());
-    if (prefix_len == 0)
-        return {};
+    assert(prefix_len < path.size());
 
-    ssize_t last_elem = prefix_len - 1;
-    auto res = path[last_elem].data;
-    for (ssize_t i = last_elem - 1; i >= 0; --i)
+    SubstreamData res = path[prefix_len].data;
+    for (ssize_t i = static_cast<ssize_t>(prefix_len) - 1; i >= 0; --i)
     {
         const auto & creator = path[i].creator;
         if (creator)

@@ -45,13 +45,13 @@ struct Impl
 
     [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
     {
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot apply function normalizeQuery to fixed string.");
+        throw Exception("Cannot apply function normalizeQuery to fixed string.", ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 
 }
 
-REGISTER_FUNCTION(NormalizeQuery)
+void registerFunctionNormalizeQuery(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionStringToString<Impl<true>, Impl<true>>>();
     factory.registerFunction<FunctionStringToString<Impl<false>, Impl<false>>>();

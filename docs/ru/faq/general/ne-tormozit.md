@@ -1,7 +1,7 @@
 ---
-slug: /ru/faq/general/ne-tormozit
 title: "What does “не тормозит” mean?"
-sidebar_position: 11
+toc_hidden: true
+toc_priority: 11
 ---
 
 # Что значит “Не тормозит”? {#what-does-ne-tormozit-mean}

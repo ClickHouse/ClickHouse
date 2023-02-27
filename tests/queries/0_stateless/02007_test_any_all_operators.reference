@@ -49,7 +49,3 @@ select 11 > all (select 11 from numbers(10));
 0
 select 11 >= all (select 11 from numbers(10));
 1
-select sum(number) = any(number) from numbers(1) group by number;
-1
-select 1 == any (1);
-1

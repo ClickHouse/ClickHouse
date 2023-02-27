@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_HDFS
 #include <memory>
@@ -9,6 +9,7 @@
 
 #include <hdfs/hdfs.h>
 #include <base/types.h>
+#include <mutex>
 
 #include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -40,7 +41,11 @@ struct HDFSFileInfo
     HDFSFileInfo(HDFSFileInfo && other) = default;
     HDFSFileInfo & operator=(const HDFSFileInfo & other) = delete;
     HDFSFileInfo & operator=(HDFSFileInfo && other) = default;
-    ~HDFSFileInfo();
+
+    ~HDFSFileInfo()
+    {
+        hdfsFreeFileInfo(file_info, length);
+    }
 };
 
 
@@ -62,7 +67,11 @@ public:
     hdfsBuilder * get() { return hdfs_builder; }
 
 private:
-    void loadFromConfig(const Poco::Util::AbstractConfiguration & config, const String & prefix, bool isUser = false);
+    void loadFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_path, bool isUser = false);
+
+    String getKinitCmd();
+
+    void runKinit();
 
     // hdfs builder relies on an external config data storage
     std::pair<String, String>& keep(const String & k, const String & v)
@@ -71,15 +80,14 @@ private:
     }
 
     hdfsBuilder * hdfs_builder;
-    std::vector<std::pair<String, String>> config_stor;
-
-    #if USE_KRB5
-    void runKinit();
     String hadoop_kerberos_keytab;
     String hadoop_kerberos_principal;
+    String hadoop_kerberos_kinit_command = "kinit";
     String hadoop_security_kerberos_ticket_cache_path;
+
+    static std::mutex kinit_mtx;
+    std::vector<std::pair<String, String>> config_stor;
     bool need_kinit{false};
-    #endif // USE_KRB5
 };
 
 using HDFSFSPtr = std::unique_ptr<std::remove_pointer_t<hdfsFS>, detail::HDFSFsDeleter>;
