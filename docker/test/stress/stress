@@ -30,13 +30,15 @@ def get_options(i, backward_compatibility_check):
 
     if i % 2 == 1:
         join_alg_num = i // 2
-        if join_alg_num % 4 == 0:
+        if join_alg_num % 5 == 0:
             client_options.append("join_algorithm='parallel_hash'")
-        if join_alg_num % 4 == 1:
+        if join_alg_num % 5 == 1:
             client_options.append("join_algorithm='partial_merge'")
-        if join_alg_num % 4 == 2:
+        if join_alg_num % 5 == 2:
             client_options.append("join_algorithm='full_sorting_merge'")
-        if join_alg_num % 4 == 3:
+        if join_alg_num % 5 == 3:
+            client_options.append("join_algorithm='grace_hash'")
+        if join_alg_num % 5 == 4:
             client_options.append("join_algorithm='auto'")
             client_options.append('max_rows_in_join=1000')
 
@@ -211,7 +213,7 @@ def prepare_for_hung_check(drop_databases):
     # Even if all clickhouse-test processes are finished, there are probably some sh scripts,
     # which still run some new queries. Let's ignore them.
     try:
-        query = """clickhouse client -q "SELECT count() FROM system.processes where where elapsed > 300" """
+        query = """clickhouse client -q "SELECT count() FROM system.processes where elapsed > 300" """
         output = (
             check_output(query, shell=True, stderr=STDOUT, timeout=30)
             .decode("utf-8")
