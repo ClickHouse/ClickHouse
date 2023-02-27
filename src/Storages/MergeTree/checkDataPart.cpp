@@ -157,7 +157,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
     }
 
     NameSet projections_on_disk;
-    const auto & checksum_files_txt = checksums_txt.files;
+    const auto & checksums_txt_files = checksums_txt.files;
     for (auto it = data_part_storage.iterate(); it->isValid(); it->next())
     {
         auto file_name = it->name();
@@ -178,8 +178,8 @@ IMergeTreeDataPart::Checksums checkDataPart(
         /// Skip files that we already calculated. Also skip metadata files that are not checksummed.
         if (checksum_it == checksums_data.files.end() && !files_without_checksums.contains(file_name))
         {
-            auto txt_checksum_it = checksum_files_txt.find(file_name);
-            if (txt_checksum_it == checksum_files_txt.end() || txt_checksum_it->second.uncompressed_size == 0)
+            auto txt_checksum_it = checksums_txt_files.find(file_name);
+            if (txt_checksum_it == checksums_txt_files.end() || txt_checksum_it->second.uncompressed_size == 0)
             {
                 /// The file is not compressed.
                 checksum_file(file_name);
