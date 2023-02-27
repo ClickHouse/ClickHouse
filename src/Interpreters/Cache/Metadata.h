@@ -2,6 +2,7 @@
 #include <boost/noncopyable.hpp>
 #include <Interpreters/Cache/Guards.h>
 #include <Interpreters/Cache/IFileCachePriority.h>
+#include <Interpreters/Cache/FileCacheKey.h>
 
 namespace DB
 {
@@ -9,6 +10,7 @@ class FileSegment;
 using FileSegmentPtr = std::shared_ptr<FileSegment>;
 struct LockedKey;
 class LockedCachePriority;
+
 
 struct FileSegmentMetadata : private boost::noncopyable
 {
@@ -34,7 +36,7 @@ struct FileSegmentMetadata : private boost::noncopyable
 };
 
 
-struct KeyMetadata : public std::map<size_t, FileSegmentMetadata>
+struct KeyMetadata : public std::map<size_t, FileSegmentMetadata>, private boost::noncopyable
 {
     const FileSegmentMetadata * getByOffset(size_t offset) const;
     FileSegmentMetadata * getByOffset(size_t offset);
@@ -50,5 +52,15 @@ struct KeyMetadata : public std::map<size_t, FileSegmentMetadata>
     bool removed = false;
 };
 using KeyMetadataPtr = std::shared_ptr<KeyMetadata>;
+
+
+struct CacheMetadata : public std::unordered_map<FileCacheKey, KeyMetadataPtr>, private boost::noncopyable
+{
+public:
+    CacheMetadataGuard::Lock lock() { return guard.lock(); }
+
+private:
+    CacheMetadataGuard guard;
+};
 
 }

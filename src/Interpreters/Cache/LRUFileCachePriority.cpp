@@ -17,7 +17,7 @@ namespace ErrorCodes
 }
 
 IFileCachePriority::Iterator LRUFileCachePriority::add(
-    const Key & key, size_t offset, size_t size, LockedKeyCreatorPtr key_transaction_creator)
+    const Key & key, size_t offset, size_t size, std::weak_ptr<KeyMetadata> key_metadata)
 {
 #ifndef NDEBUG
     for (const auto & entry : queue)
@@ -41,7 +41,7 @@ IFileCachePriority::Iterator LRUFileCachePriority::add(
 
     current_size += size;
 
-    auto iter = queue.insert(queue.end(), Entry(key, offset, size, std::move(key_transaction_creator)));
+    auto iter = queue.insert(queue.end(), Entry(key, offset, size, key_metadata));
 
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheSize, size);
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheElements);

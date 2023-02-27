@@ -32,8 +32,7 @@ using FileSegmentPtr = std::shared_ptr<FileSegment>;
 using FileSegments = std::list<FileSegmentPtr>;
 struct LockedKey;
 using LockedKeyPtr = std::shared_ptr<LockedKey>;
-struct LockedKeyCreator;
-using LockedKeyCreatorPtr = std::unique_ptr<LockedKeyCreator>;
+struct KeyMetadata;
 
 /*
  * FileSegmentKind is used to specify the eviction policy for file segments.
@@ -117,14 +116,14 @@ public:
          * If file segment cannot possibly be downloaded (first space reservation attempt failed), mark
          * this file segment as out of cache scope.
          */
-        SKIP_CACHE,
+        DETACHED,
     };
 
     FileSegment(
         size_t offset_,
         size_t size_,
         const Key & key_,
-        LockedKeyCreatorPtr locked_key_creator,
+        std::weak_ptr<KeyMetadata> key_metadata,
         FileCache * cache_,
         State download_state_,
         const CreateFileSegmentSettings & create_settings);
@@ -282,7 +281,7 @@ private:
     /// Finalized state is such a state that does not need to be completed (with complete()).
     bool hasFinalizedStateUnlocked(const FileSegmentGuard::Lock &) const;
 
-    bool isDetached(const FileSegmentGuard::Lock &) const { return is_detached; }
+    bool isDetached(const FileSegmentGuard::Lock &) const { return download_state == State::DETACHED; }
     void detachAssumeStateFinalized(const FileSegmentGuard::Lock &);
     [[noreturn]] void throwIfDetachedUnlocked(const FileSegmentGuard::Lock &) const;
 
@@ -320,12 +319,8 @@ private:
     std::atomic<size_t> downloaded_size = 0;
     std::atomic<size_t> reserved_size = 0;
 
-    /// global locking order rule:
-    /// 1. cache lock
-    /// 2. segment lock
-
     mutable FileSegmentGuard segment_guard;
-    LockedKeyCreatorPtr locked_key_creator;
+    std::weak_ptr<KeyMetadata> key_metadata;
     std::condition_variable cv;
 
     Key file_key;
@@ -334,9 +329,8 @@ private:
 
     Poco::Logger * log;
 
-    /// "detached" file segment means that it is not owned by cache ("detached" from cache).
-    /// In general case, all file segments are owned by cache.
-    bool is_detached = false;
+    /// Does the file segment have completed state?
+    /// If so, complete() call can be omitted.
     std::atomic<bool> is_completed = false;
 
     std::atomic<size_t> hits_count = 0; /// cache hits.
