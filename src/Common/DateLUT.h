@@ -17,49 +17,46 @@
 class DateLUT : private boost::noncopyable
 {
 public:
-    /// Return singleton DateLUTImpl instance for server's timezone (the one which server has).
+    /// Return singleton DateLUTImpl instance for timezone set by `timezone` setting for current session is used.
+    /// If it is not set, server's timezone (the one which server has) is being used.
     static ALWAYS_INLINE const DateLUTImpl & instance()
     {
+        std::string effective_time_zone;
         const auto & date_lut = getInstance();
+
+        if (DB::CurrentThread::isInitialized())
+        {
+            const auto query_context = DB::CurrentThread::get().getQueryContext();
+
+            if (query_context)
+            {
+                effective_time_zone = extractTimezoneFromContext(query_context);
+
+                if (!effective_time_zone.empty())
+                    return date_lut.getImplementation(effective_time_zone);
+            }
+
+            const auto global_context = DB::CurrentThread::get().getGlobalContext();
+            if (global_context)
+            {
+                effective_time_zone = extractTimezoneFromContext(global_context);
+
+                if (!effective_time_zone.empty())
+                    return date_lut.getImplementation(effective_time_zone);
+            }
+
+        }
         return *date_lut.default_impl.load(std::memory_order_acquire);
     }
 
-    /*
-    Return singleton DateLUTImpl instance for a given time zone. If timezone is an empty string,
-    timezone set by `timezone` setting for current session is used. If it is not set, server's timezone is used,
-    and return is the same as calling instance().
-    */
+    /// Return singleton DateLUTImpl instance for a given time zone. If timezone is an empty string,
+    /// server's timezone is used. The `timezone` setting is not considered here.
     static ALWAYS_INLINE const DateLUTImpl & instance(const std::string & time_zone)
     {
         const auto & date_lut = getInstance();
-        std::string effective_time_zone;
 
         if (time_zone.empty())
-        {
-            if (DB::CurrentThread::isInitialized())
-            {
-                const auto query_context = DB::CurrentThread::get().getQueryContext();
-
-                if (query_context)
-                {
-                    effective_time_zone = extractTimezoneFromContext(query_context);
-
-                    if (!effective_time_zone.empty())
-                        return date_lut.getImplementation(effective_time_zone);
-                }
-
-                const auto global_context = DB::CurrentThread::get().getGlobalContext();
-                if (global_context)
-                {
-                    effective_time_zone = extractTimezoneFromContext(global_context);
-
-                    if (!effective_time_zone.empty())
-                        return date_lut.getImplementation(effective_time_zone);
-                }
-
-            }
             return *date_lut.default_impl.load(std::memory_order_acquire);
-        }
 
         return date_lut.getImplementation(time_zone);
     }

@@ -2139,7 +2139,7 @@ void ClientBase::runInteractive()
     initQueryIdFormats();
 
     /// Initialize DateLUT here to avoid counting time spent here as query execution time.
-    const auto local_tz = DateLUT::instance("").getTimeZone();
+    const auto local_tz = DateLUT::instance().getTimeZone();
 
     suggest.emplace();
     if (load_suggestions)
