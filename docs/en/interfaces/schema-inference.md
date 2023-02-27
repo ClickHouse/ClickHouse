@@ -1177,8 +1177,7 @@ This setting can be used to specify the types of columns that could not be deter
 **Example**
 
 ```sql
-DESC format(JSONEachRow, '{"id" :  1, "age" :  25, "name" : "Josh", "status" : null, "hobbies" : ["football", "cooking"]}'
-SETTINGS schema_inference_hints = 'age LowCardinality(UInt8), status Nullable(String)'
+DESC format(JSONEachRow, '{"id" : 1, "age" : 25, "name" : "Josh", "status" : null, "hobbies" : ["football", "cooking"]}') SETTINGS schema_inference_hints = 'age LowCardinality(UInt8), status Nullable(String)', allow_suspicious_low_cardinality_types=1
 ```
 ```response
 ┌─name────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐

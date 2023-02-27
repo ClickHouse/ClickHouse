@@ -1,7 +1,7 @@
 ---
 slug: /en/sql-reference/functions/string-search-functions
 sidebar_position: 41
-sidebar_label: For Searching in Strings
+sidebar_label: Searching in Strings
 ---
 
 # Functions for Searching in Strings
@@ -382,12 +382,12 @@ Checks whether string `haystack` matches the regular expression `pattern`. The p
 Returns 1 in case of a match, and 0 otherwise.
 
 Matching is based on UTF-8, e.g. `.` matches the Unicode code point `¥` which is represented in UTF-8 using two bytes. The regular expression must not contain null bytes.
-If the haystack or pattern contain a sequence of bytes that are not valid UTF-8, the behavior is undefined.
-No automatic Unicode normalization is performed, if you need it you can use the [normalizeUTF8*()](https://clickhouse.com/docs/en/sql-reference/functions/string-functions/) functions for that.
+If the haystack or the pattern are not valid UTF-8, then the behavior is undefined.
+No automatic Unicode normalization is performed, you can use the [normalizeUTF8*()](https://clickhouse.com/docs/en/sql-reference/functions/string-functions/) functions for that.
 
 Unlike re2's default behavior, `.` matches line breaks. To disable this, prepend the pattern with `(?-s)`.
 
-For patterns to search for substrings in a string, it is better to use LIKE or ‘position’, since they work much faster.
+For patterns to search for substrings in a string, it is better to use functions [like](#like) or [position](#position) since they work much faster.
 
 ## multiMatchAny(haystack, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\])
 
@@ -529,21 +529,25 @@ Result:
 
 ## like(haystack, pattern), haystack LIKE pattern operator
 
-Checks whether a string matches a simple regular expression.
-The regular expression can contain the metasymbols `%` and `_`.
+Checks whether a string matches a LIKE expression.
+A LIKE expression contains a mix of normal characters and the following metasymbols:
 
-`%` indicates any quantity of any bytes (including zero characters).
+-   `%` indicates an arbitrary number of arbitrary characters (including zero characters).
 
-`_` indicates any one byte.
+-   `_` indicates a single arbitrary character.
 
-Use the backslash (`\`) for escaping metasymbols. See the note on escaping in the description of the ‘match’ function.
+-   `\` is for escaping literals `%`, `_` and `\`.
 
 Matching is based on UTF-8, e.g. `_` matches the Unicode code point `¥` which is represented in UTF-8 using two bytes.
-If the haystack or pattern contain a sequence of bytes that are not valid UTF-8, then the behavior is undefined.
-No automatic Unicode normalization is performed, if you need it you can use the [normalizeUTF8*()](https://clickhouse.com/docs/en/sql-reference/functions/string-functions/) functions for that.
+If the haystack or the pattern are not valid UTF-8, then the behavior is undefined.
+No automatic Unicode normalization is performed, you can use the [normalizeUTF8*()](https://clickhouse.com/docs/en/sql-reference/functions/string-functions/) functions for that.
 
-For regular expressions like `%needle%`, the code is more optimal and works as fast as the `position` function.
-For other regular expressions, the code is the same as for the ‘match’ function.
+To match against literals `%`, `_` and `/` (which are LIKE metacharacters), prepend them with a backslash, i.e. `\%`, `\_` and `\\`.
+The backslash loses its special meaning, i.e. is interpreted literally, if it prepends a character different than `%`, `_` or `\`.
+Note that ClickHouse requires backslashes in strings [to be quoted as well](../syntax.md#string), so you would actually need to write `\\%`, `\\_` and `\\\\`.
+
+For patterns of the form `%needle%`, the function is as fast as the `position` function.
+Other LIKE expressions are internally converted to a regular expression and executed with a performance similar to function `match`.
 
 ## notLike(haystack, pattern), haystack NOT LIKE pattern operator
 
