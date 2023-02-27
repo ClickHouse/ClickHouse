@@ -8,6 +8,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnCompressed.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 
 #if USE_EMBEDDED_COMPILER
@@ -781,6 +782,29 @@ ColumnPtr ColumnNullable::createWithOffsets(const IColumn::Offsets & offsets, co
     return ColumnNullable::create(new_values, new_null_map);
 }
 
+ColumnPtr ColumnNullable::getNestedColumnWithDefaultOnNull() const
+{
+    auto res = nested_column->cloneEmpty();
+    const auto & null_map_data = getNullMapData();
+    size_t start = 0;
+    size_t end = null_map->size();
+    while (start < nested_column->size())
+    {
+        size_t next_null_index = start;
+        while (next_null_index < end && !null_map_data[next_null_index])
+            ++next_null_index;
+
+        if (next_null_index != start)
+            res->insertRangeFrom(*nested_column, start, next_null_index - start);
+
+        if (next_null_index < end)
+            res->insertDefault();
+
+        start = next_null_index + 1;
+    }
+    return res;
+}
+
 ColumnPtr makeNullable(const ColumnPtr & column)
 {
     if (isColumnNullable(*column))
@@ -788,6 +812,23 @@ ColumnPtr makeNullable(const ColumnPtr & column)
 
     if (isColumnConst(*column))
         return ColumnConst::create(makeNullable(assert_cast<const ColumnConst &>(*column).getDataColumnPtr()), column->size());
+
+    return ColumnNullable::create(column, ColumnUInt8::create(column->size(), 0));
+}
+
+ColumnPtr makeNullableOrLowCardinalityNullable(const ColumnPtr & column)
+{
+    if (isColumnNullable(*column))
+        return column;
+
+    if (isColumnLowCardinalityNullable(*column))
+        return column;
+
+    if (isColumnConst(*column))
+        return ColumnConst::create(makeNullable(assert_cast<const ColumnConst &>(*column).getDataColumnPtr()), column->size());
+
+    if (column->lowCardinality())
+        return assert_cast<const ColumnLowCardinality &>(*column).cloneNullable();
 
     return ColumnNullable::create(column, ColumnUInt8::create(column->size(), 0));
 }
