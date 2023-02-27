@@ -13,40 +13,16 @@ using LockedKeyPtr = std::shared_ptr<LockedKey>;
 struct KeysQueue;
 using KeysQueuePtr = std::shared_ptr<KeysQueue>;
 
-struct LockedKeyCreator
-{
-    LockedKeyCreator(
-        const FileCacheKey & key_,
-        KeyMetadata & key_metadata_,
-        KeysQueuePtr cleanup_keys_metadata_queue_,
-        const FileCache * cache_)
-        : key(key_)
-        , key_metadata(key_metadata_)
-        , cleanup_keys_metadata_queue(cleanup_keys_metadata_queue_)
-        , cache(cache_) {}
-
-    LockedKeyPtr create();
-
-    FileCacheKey key;
-    KeyMetadata & key_metadata;
-    KeysQueuePtr cleanup_keys_metadata_queue;
-    const FileCache * cache;
-};
-using LockedKeyCreatorPtr = std::unique_ptr<LockedKeyCreator>;
-
-
 struct LockedKey : private boost::noncopyable
 {
     LockedKey(
         const FileCacheKey & key_,
-        KeyMetadata & key_metadata_,
+        std::weak_ptr<KeyMetadata> key_metadata_,
         KeyGuard::Lock && key_lock_,
         KeysQueuePtr cleanup_keys_metadata_queue_,
         const FileCache * cache_);
 
     ~LockedKey();
-
-    LockedKeyCreatorPtr getCreator() const { return std::make_unique<LockedKeyCreator>(key, key_metadata, cleanup_keys_metadata_queue, cache); }
 
     void reduceSizeToDownloaded(size_t offset, const FileSegmentGuard::Lock &, const CacheGuard::Lock &);
 
@@ -56,20 +32,18 @@ struct LockedKey : private boost::noncopyable
 
     bool isLastHolder(size_t offset);
 
-    KeyMetadata & getKeyMetadata() { return key_metadata; }
-    const KeyMetadata & getKeyMetadata() const { return key_metadata; }
+    const KeyMetadataPtr getKeyMetadata() const { return key_metadata.lock(); }
 
     std::vector<size_t> delete_offsets;
 
 private:
     void cleanupKeyDirectory() const;
-    void relockWithLockedCache();
 
     FileCacheKey key;
     const FileCache * cache;
 
     KeyGuard::Lock lock;
-    KeyMetadata & key_metadata;
+    mutable std::weak_ptr<KeyMetadata> key_metadata;
     KeysQueuePtr cleanup_keys_metadata_queue;
 
     Poco::Logger * log;

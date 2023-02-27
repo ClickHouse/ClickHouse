@@ -256,9 +256,9 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegment & file_s
     {
         switch (download_state)
         {
-            case FileSegment::State::SKIP_CACHE:
+            case FileSegment::State::DETACHED:
             {
-                LOG_TRACE(log, "Bypassing cache because file segment state is `SKIP_CACHE`");
+                LOG_TRACE(log, "Bypassing cache because file segment state is `DETACHED`");
                 read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
                 return getRemoteReadBuffer(file_segment, read_type);
             }

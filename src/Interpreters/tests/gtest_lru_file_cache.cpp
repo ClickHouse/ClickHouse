@@ -259,7 +259,7 @@ TEST_F(FileCacheTest, get)
             assertDownloadFails(get(holder, 4));
             assertEqual(holder,
                         { Range(0, 9),       Range(10, 14),     Range(15, 16),     Range(17, 20),     Range(21, 23),     Range(24, 26) },
-                        { State::DOWNLOADED, State::DOWNLOADED, State::DOWNLOADED, State::DOWNLOADED, State::SKIP_CACHE, State::DOWNLOADED });
+                        { State::DOWNLOADED, State::DOWNLOADED, State::DOWNLOADED, State::DOWNLOADED, State::DETACHED, State::DOWNLOADED });
 
             /// Range [27, 27] must be evicted in previous getOrSet [0, 25].
             /// Let's not invalidate pointers to returned segments from range [0, 25] and
@@ -268,12 +268,12 @@ TEST_F(FileCacheTest, get)
             auto holder2 = cache.getOrSet(key, 27, 1, {});
             assertEqual(holder2, { Range(27, 27) }, { State::EMPTY });
             assertDownloadFails(holder2->front());
-            assertEqual(holder2, { Range(27, 27) }, { State::SKIP_CACHE });
+            assertEqual(holder2, { Range(27, 27) }, { State::DETACHED });
 
             auto holder3 = cache.getOrSet(key, 28, 3, {});
             assertEqual(holder3, { Range(28, 30) }, { State::EMPTY });
             assertDownloadFails(holder3->front());
-            assertEqual(holder3, { Range(28, 30) }, { State::SKIP_CACHE });
+            assertEqual(holder3, { Range(28, 30) }, { State::DETACHED });
         }
 
         /// Current cache:    [__________][_____][   ][____]    [___]

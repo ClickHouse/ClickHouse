@@ -14,14 +14,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-LockedKeyPtr LockedKeyCreator::create()
-{
-    return std::make_unique<LockedKey>(key, key_metadata, key_metadata.guard->lock(), cleanup_keys_metadata_queue, cache);
-}
-
 LockedKey::LockedKey(
     const FileCacheKey & key_,
-    KeyMetadata & key_metadata_,
+    std::weak_ptr<KeyMetadata> key_metadata_,
     KeyGuard::Lock && lock_,
     KeysQueuePtr cleanup_keys_metadata_queue_,
     const FileCache * cache_)
@@ -48,8 +43,8 @@ void LockedKey::remove(FileSegmentPtr file_segment, const CacheGuard::Lock & cac
 
 bool LockedKey::isLastHolder(size_t offset)
 {
-    const auto * cell = getKeyMetadata().getByOffset(offset);
-    return cell->file_segment.use_count() == 2;
+    const auto * file_segment_metadata = getKeyMetadata()->getByOffset(offset);
+    return file_segment_metadata->file_segment.use_count() == 2;
 }
 
 void LockedKey::remove(
@@ -61,15 +56,16 @@ void LockedKey::remove(
         log, "Remove from cache. Key: {}, offset: {}",
         key.toString(), offset);
 
-    auto * cell = key_metadata.getByOffset(offset);
+    auto metadata = getKeyMetadata();
+    auto * file_segment_metadata = metadata->getByOffset(offset);
 
-    if (cell->queue_iterator)
-        LockedCachePriorityIterator(cache_lock, cell->queue_iterator).remove();
+    if (file_segment_metadata->queue_iterator)
+        LockedCachePriorityIterator(cache_lock, file_segment_metadata->queue_iterator).remove();
 
-    const auto cache_file_path = cell->file_segment->getPathInLocalCache();
-    cell->file_segment->detach(segment_lock, *this);
+    const auto cache_file_path = file_segment_metadata->file_segment->getPathInLocalCache();
+    file_segment_metadata->file_segment->detach(segment_lock, *this);
 
-    key_metadata.erase(offset);
+    metadata->erase(offset);
 
     if (fs::exists(cache_file_path))
     {
@@ -94,11 +90,11 @@ void LockedKey::reduceSizeToDownloaded(
 {
     /**
      * In case file was partially downloaded and it's download cannot be continued
-     * because of no space left in cache, we need to be able to cut cell's size to downloaded_size.
+     * because of no space left in cache, we need to be able to cut file segment's size to downloaded_size.
      */
 
-    auto * cell = key_metadata.getByOffset(offset);
-    const auto & file_segment = cell->file_segment;
+    auto * file_segment_metadata = getKeyMetadata()->getByOffset(offset);
+    const auto & file_segment = file_segment_metadata->file_segment;
 
     size_t downloaded_size = file_segment->downloaded_size;
     size_t full_size = file_segment->range().size();
@@ -111,24 +107,23 @@ void LockedKey::reduceSizeToDownloaded(
             file_segment->getInfoForLogUnlocked(segment_lock));
     }
 
-    [[maybe_unused]] const auto & entry = *LockedCachePriorityIterator(cache_lock, cell->queue_iterator);
+    [[maybe_unused]] const auto & entry = *LockedCachePriorityIterator(cache_lock, file_segment_metadata->queue_iterator);
     assert(file_segment->downloaded_size <= file_segment->reserved_size);
     assert(entry.size == file_segment->reserved_size);
     assert(entry.size >= file_segment->downloaded_size);
 
     if (file_segment->reserved_size > file_segment->downloaded_size)
     {
-        int64_t extra_size = static_cast<ssize_t>(cell->file_segment->reserved_size) - static_cast<ssize_t>(file_segment->downloaded_size);
-        LockedCachePriorityIterator(cache_lock, cell->queue_iterator).incrementSize(-extra_size);
+        int64_t extra_size = static_cast<ssize_t>(file_segment_metadata->file_segment->reserved_size) - static_cast<ssize_t>(file_segment->downloaded_size);
+        LockedCachePriorityIterator(cache_lock, file_segment_metadata->queue_iterator).incrementSize(-extra_size);
     }
 
     CreateFileSegmentSettings create_settings(file_segment->getKind());
-    cell->file_segment = std::make_shared<FileSegment>(
-        offset, downloaded_size, key, getCreator(), file_segment->cache,
-        FileSegment::State::DOWNLOADED, create_settings);
+    file_segment_metadata->file_segment = std::make_shared<FileSegment>(
+        offset, downloaded_size, key, getKeyMetadata(), file_segment->cache, FileSegment::State::DOWNLOADED, create_settings);
 
     assert(file_segment->reserved_size == downloaded_size);
-    assert(cell->size() == entry.size);
+    assert(file_segment_metadata->size() == entry.size);
 }
 
 void LockedKey::cleanupKeyDirectory() const
@@ -138,11 +133,12 @@ void LockedKey::cleanupKeyDirectory() const
     if (!cache->isInitialized())
         return;
 
+    auto metadata = getKeyMetadata();
     /// Someone might still need this directory.
-    if (!key_metadata.empty())
+    if (!metadata->empty())
         return;
 
-    key_metadata.removed = true;
+    metadata->removed = true;
 
     /// Now `key_metadata` empty and the key lock is still locked.
     /// So it is guaranteed that no one will add something.
@@ -150,7 +146,7 @@ void LockedKey::cleanupKeyDirectory() const
     fs::path key_path = cache->getPathInLocalCache(key);
     if (fs::exists(key_path))
     {
-        key_metadata.created_base_directory = false;
+        metadata->created_base_directory = false;
         fs::remove_all(key_path);
     }
     cleanup_keys_metadata_queue->add(key);

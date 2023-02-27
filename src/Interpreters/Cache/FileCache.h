@@ -114,6 +114,8 @@ public:
 
     CacheGuard::Lock cacheLock() { return cache_guard.lock(); }
 
+    LockedKeyPtr createLockedKey(const Key & key, KeyMetadataPtr key_metadata) const;
+
     /// For per query cache limit.
     struct QueryContextHolder : private boost::noncopyable
     {
@@ -144,9 +146,7 @@ private:
     std::atomic<bool> is_initialized = false;
     mutable std::mutex init_mutex;
 
-    using CacheMetadata = std::unordered_map<Key, KeyMetadataPtr>;
     CacheMetadata metadata;
-    CacheMetadataGuard metadata_guard;
 
     enum class KeyNotFoundPolicy
     {
@@ -157,9 +157,7 @@ private:
 
     LockedKeyPtr createLockedKey(const Key & key, KeyNotFoundPolicy key_not_found_policy);
 
-    LockedKeyCreatorPtr getLockedKeyCreator(const Key & key, LockedKey & locked_key);
-
-    KeysQueuePtr cleanup_keys_metadata_queue;
+    mutable KeysQueuePtr cleanup_keys_metadata_queue;
 
     FileCachePriorityPtr main_priority;
     mutable CacheGuard cache_guard;
@@ -240,10 +238,10 @@ private:
     };
 
     using IterateAndCollectLocksFunc = std::function<IterateAndLockResult(const IFileCachePriority::Entry &, LockedKey &)>;
-    static void iterateAndCollectKeyLocks(
+    void iterateAndCollectKeyLocks(
         LockedCachePriority & priority,
         IterateAndCollectLocksFunc && func,
-        LockedKeysMap & locked_map);
+        LockedKeysMap & locked_map) const;
 
     void performDelayedRemovalOfDeletedKeysFromMetadata(const CacheMetadataGuard::Lock &);
 };

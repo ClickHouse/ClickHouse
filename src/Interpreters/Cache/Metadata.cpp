@@ -34,11 +34,10 @@ FileSegmentMetadata::FileSegmentMetadata(
                     "Adding file segment with state DOWNLOADED requires locked queue lock");
             }
             queue_iterator = locked_queue->add(
-                file_segment->key(), file_segment->offset(), file_segment->range().size(), locked_key.getCreator());
+                file_segment->key(), file_segment->offset(), file_segment->range().size(), locked_key.getKeyMetadata());
 
             break;
         }
-        case FileSegment::State::SKIP_CACHE:
         case FileSegment::State::EMPTY:
         case FileSegment::State::DOWNLOADING:
         {
