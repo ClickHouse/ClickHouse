@@ -106,6 +106,7 @@ std::future<MergeTreeReaderPtr> MergeTreePrefetchedReadPool::createPrefetchedRea
         reader->prefetchBeginOfRange(priority);
         return std::move(reader);
     };
+    LOG_TEST(log, "Created prefetch for {} ({})", data_part->name, toString(required_ranges));
     return scheduleFromThreadPool<IMergeTreeDataPart::MergeTreeReaderPtr>(std::move(task), prefetch_threadpool, "ReadPrepare", priority);
 }
 
