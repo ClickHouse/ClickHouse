@@ -187,14 +187,14 @@ bool applyTrivialCountIfPossible(
         IQueryTreeNode::FormatState format_state;
         main_query_node.dumpTreeImpl(buffer, format_state, 0);
 
-        LOG_ERROR(&Poco::Logger::get(__PRETTY_FUNCTION__), "main_query_node:\n{}", buffer.str());
-        LOG_ERROR(&Poco::Logger::get(__PRETTY_FUNCTION__), "Projection column:\n{}", main_query_node.getProjectionColumns().front().dump());
+        LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "main_query_node:\n{}", buffer.str());
+        LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "Projection column:\n{}", main_query_node.getProjectionColumns().front().dump());
     }
 
     {
         WriteBufferFromOwnString buffer;
         buffer << columns_names;
-        LOG_ERROR(&Poco::Logger::get(__PRETTY_FUNCTION__), "{}", buffer.str());
+        LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "{}", buffer.str());
     }
 
     const auto * function_node = typeid_cast<const FunctionNode *>(aggregates.front().get());
@@ -204,7 +204,7 @@ bool applyTrivialCountIfPossible(
     if (!function_node->getAggregateFunction())
         return false;
 
-    LOG_ERROR(&Poco::Logger::get(__PRETTY_FUNCTION__), "Aggregation: {}", function_node->getFunctionName());
+    LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "Aggregation: {}", function_node->getFunctionName());
 
     const auto * count_func = typeid_cast<const AggregateFunctionCount *>(function_node->getAggregateFunction().get());
     if (!count_func)
@@ -229,7 +229,7 @@ bool applyTrivialCountIfPossible(
     if (!num_rows)
         return false;
 
-    LOG_ERROR(&Poco::Logger::get(__PRETTY_FUNCTION__), "Number of rows: {}", num_rows.value());
+    LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "Number of rows: {}", num_rows.value());
 
     /// set aggregation state
     const AggregateFunctionCount & agg_count = *count_func;
