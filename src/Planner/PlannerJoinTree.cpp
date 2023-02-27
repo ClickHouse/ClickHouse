@@ -154,7 +154,7 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
 bool applyTrivialCountIfPossible(
     QueryPlan & query_plan,
     const TableNode & table_node,
-    const SelectQueryInfo & select_query_info,
+    const QueryTreeNodePtr & query_tree,
     const ContextPtr & query_context,
     const Names & columns_names)
 {
@@ -163,28 +163,26 @@ bool applyTrivialCountIfPossible(
         return false;
 
     /// can't apply if FINAL
-    if (select_query_info.table_expression_modifiers.has_value() && select_query_info.table_expression_modifiers.value().hasFinal())
+    if (table_node.getTableExpressionModifiers().has_value() && table_node.getTableExpressionModifiers()->hasFinal())
+        return false;
+
+    auto & main_query_node = query_tree->as<QueryNode &>();
+    if (main_query_node.hasGroupBy())
         return false;
 
     const auto & storage = table_node.getStorage();
-    const auto & storage_snapshot = table_node.getStorageSnapshot();
-
-    bool can_apply_trivial_count = (settings.max_parallel_replicas <= 1) && //
-        !settings.allow_experimental_query_deduplication && //
-        !settings.empty_result_for_aggregation_by_empty_set && //
-        storage && //
-        storage->getName() != "MaterializedMySQL" && //
-        !storage->hasLightweightDeletedMask() && //
-        select_query_info.filter_asts.empty() && // ???
-        select_query_info.has_aggregates;
-    if (!can_apply_trivial_count)
+    if (!storage || storage->hasLightweightDeletedMask())
         return false;
 
-    QueryTreeNodes aggregates = collectAggregateFunctionNodes(select_query_info.query_tree);
+    if (settings.max_parallel_replicas > 1 || //
+        settings.allow_experimental_query_deduplication || //
+        settings.empty_result_for_aggregation_by_empty_set)
+        return false;
+
+    QueryTreeNodes aggregates = collectAggregateFunctionNodes(query_tree);
     if (aggregates.size() != 1)
         return false;
 
-    auto & main_query_node = select_query_info.query_tree->as<QueryNode &>();
     /// dump main query tree
     {
         WriteBufferFromOwnString buffer;
@@ -250,7 +248,7 @@ bool applyTrivialCountIfPossible(
     DataTypes argument_types;
     argument_types.reserve(columns_names.size());
     {
-        const Block source_header = storage_snapshot->getSampleBlockForColumns(columns_names);
+        const Block source_header = table_node.getStorageSnapshot()->getSampleBlockForColumns(columns_names);
         for (const auto & column_name : columns_names)
             argument_types.push_back(source_header.getByName(column_name).type);
     }
@@ -434,8 +432,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(const QueryTreeNodePtr & tabl
         }
 
         /// apply trivial_count optimization if possible
-        bool is_trivial_count_applied = is_single_table_expression && table_node
-            && applyTrivialCountIfPossible(query_plan, *table_node, select_query_info, planner_context->getQueryContext(), columns_names);
+        bool is_trivial_count_applied = is_single_table_expression && table_node && select_query_info.has_aggregates
+            && applyTrivialCountIfPossible(query_plan, *table_node, select_query_info.query_tree, planner_context->getQueryContext(), columns_names);
 
         if (is_trivial_count_applied)
         {
