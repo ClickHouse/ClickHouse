@@ -25,22 +25,22 @@ def cluster():
             stay_alive=True,
         )
         cluster.add_instance(
+            "node_only_named_collection_control",
+            main_configs=[
+                "configs/config.d/named_collections.xml",
+            ],
+            user_configs=[
+                "configs/users.d/users_only_named_collection_control.xml",
+            ],
+            stay_alive=True,
+        )
+        cluster.add_instance(
             "node_no_default_access",
             main_configs=[
                 "configs/config.d/named_collections.xml",
             ],
             user_configs=[
                 "configs/users.d/users_no_default_access.xml",
-            ],
-            stay_alive=True,
-        )
-        cluster.add_instance(
-            "node_no_default_access_but_with_access_management",
-            main_configs=[
-                "configs/config.d/named_collections.xml",
-            ],
-            user_configs=[
-                "configs/users.d/users_no_default_access_with_access_management.xml",
             ],
             stay_alive=True,
         )
@@ -73,25 +73,29 @@ def replace_in_users_config(node, old, new):
 def test_default_access(cluster):
     node = cluster.instances["node_no_default_access"]
     assert 0 == int(node.query("select count() from system.named_collections"))
-    node = cluster.instances["node_no_default_access_but_with_access_management"]
-    assert 0 == int(node.query("select count() from system.named_collections"))
+    node = cluster.instances["node_only_named_collection_control"]
+    assert 1 == int(node.query("select count() from system.named_collections"))
+    assert (
+        node.query("select collection['key1'] from system.named_collections").strip()
+        == "[HIDDEN]"
+    )
 
     node = cluster.instances["node"]
     assert int(node.query("select count() from system.named_collections")) > 0
 
     replace_in_users_config(
-        node, "show_named_collections>1", "show_named_collections>0"
+        node, "named_collection_control>1", "named_collection_control>0"
     )
-    assert "show_named_collections>0" in node.exec_in_container(
+    assert "named_collection_control>0" in node.exec_in_container(
         ["bash", "-c", f"cat /etc/clickhouse-server/users.d/users.xml"]
     )
     node.restart_clickhouse()
     assert 0 == int(node.query("select count() from system.named_collections"))
 
     replace_in_users_config(
-        node, "show_named_collections>0", "show_named_collections>1"
+        node, "named_collection_control>0", "named_collection_control>1"
     )
-    assert "show_named_collections>1" in node.exec_in_container(
+    assert "named_collection_control>1" in node.exec_in_container(
         ["bash", "-c", f"cat /etc/clickhouse-server/users.d/users.xml"]
     )
     node.restart_clickhouse()
