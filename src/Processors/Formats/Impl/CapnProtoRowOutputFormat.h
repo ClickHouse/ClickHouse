@@ -29,6 +29,7 @@ public:
     CapnProtoRowOutputFormat(
         WriteBuffer & out_,
         const Block & header_,
+        const RowOutputFormatParams & params_,
         const FormatSchemaInfo & info,
         const FormatSettings & format_settings_);
 

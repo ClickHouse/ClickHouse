@@ -58,7 +58,7 @@ def test_create_replicated(started_cluster, entity):
     node1.query(f"CREATE {entity.keyword} {entity.name} {entity.options}")
     assert (
         f"cannot insert because {entity.keyword.lower()} `{entity.name}{entity.options}` already exists in replicated"
-        in node2.query_and_get_error_with_retry(
+        in node2.query_and_get_error(
             f"CREATE {entity.keyword} {entity.name} {entity.options}"
         )
     )
@@ -68,7 +68,7 @@ def test_create_replicated(started_cluster, entity):
 @pytest.mark.parametrize("entity", entities, ids=get_entity_id)
 def test_create_and_delete_replicated(started_cluster, entity):
     node1.query(f"CREATE {entity.keyword} {entity.name} {entity.options}")
-    node2.query_with_retry(f"DROP {entity.keyword} {entity.name} {entity.options}")
+    node2.query(f"DROP {entity.keyword} {entity.name} {entity.options}")
 
 
 @pytest.mark.parametrize("entity", entities, ids=get_entity_id)
@@ -93,10 +93,9 @@ def test_create_replicated_if_not_exists_on_cluster(started_cluster, entity):
 @pytest.mark.parametrize("entity", entities, ids=get_entity_id)
 def test_rename_replicated(started_cluster, entity):
     node1.query(f"CREATE {entity.keyword} {entity.name} {entity.options}")
-    node2.query_with_retry(
+    node2.query(
         f"ALTER {entity.keyword} {entity.name} {entity.options} RENAME TO {entity.name}2"
     )
-    node1.query("SYSTEM RELOAD USERS")
     node1.query(f"DROP {entity.keyword} {entity.name}2 {entity.options}")
 
 

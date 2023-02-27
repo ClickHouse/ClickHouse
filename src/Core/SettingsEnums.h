@@ -4,7 +4,6 @@
 #include <Core/Joins.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Formats/FormatSettings.h>
-#include <IO/ReadSettings.h>
 
 
 namespace DB
@@ -121,14 +120,6 @@ enum class DefaultTableEngine
 
 DECLARE_SETTING_ENUM(DefaultTableEngine)
 
-enum class CleanDeletedRows
-{
-    Never = 0, /// Disable.
-    Always,
-};
-
-DECLARE_SETTING_ENUM(CleanDeletedRows)
-
 enum class MySQLDataTypesSupport
 {
     DECIMAL, // convert MySQL's decimal and number to ClickHouse Decimal when applicable
@@ -200,6 +191,4 @@ enum class Dialect
 };
 
 DECLARE_SETTING_ENUM(Dialect)
-
-DECLARE_SETTING_ENUM(LocalFSReadMethod)
 }

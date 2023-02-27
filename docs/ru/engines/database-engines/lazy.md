@@ -15,3 +15,4 @@ sidebar_label: Lazy
 ``` sql
 CREATE DATABASE testlazy ENGINE = Lazy(expiration_time_in_seconds);
 ```
+

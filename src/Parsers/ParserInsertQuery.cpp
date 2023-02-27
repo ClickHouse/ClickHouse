@@ -198,9 +198,11 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (allow_settings_after_format_in_insert && s_settings.ignore(pos, expected))
     {
         if (settings_ast)
-            throw Exception(ErrorCodes::SYNTAX_ERROR,
-                            "You have SETTINGS before and after FORMAT, this is not allowed. "
-                            "Consider switching to SETTINGS before FORMAT and disable allow_settings_after_format_in_insert.");
+            throw Exception("You have SETTINGS before and after FORMAT, "
+                            "this is not allowed. "
+                            "Consider switching to SETTINGS before FORMAT "
+                            "and disable allow_settings_after_format_in_insert.",
+                            ErrorCodes::SYNTAX_ERROR);
 
         /// Settings are written like SET query, so parse them with ParserSetQuery
         ParserSetQuery parser_settings(true);
@@ -228,14 +230,14 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         /// If format name is followed by ';' (end of query symbol) there is no data to insert.
         if (data < end && *data == ';')
-            throw Exception(ErrorCodes::SYNTAX_ERROR, "You have excessive ';' symbol before data for INSERT.\n"
+            throw Exception("You have excessive ';' symbol before data for INSERT.\n"
                                     "Example:\n\n"
                                     "INSERT INTO t (x, y) FORMAT TabSeparated\n"
                                     ";\tHello\n"
                                     "2\tWorld\n"
                                     "\n"
                                     "Note that there is no ';' just after format name, "
-                                    "you need to put at least one whitespace symbol before the data.");
+                                    "you need to put at least one whitespace symbol before the data.", ErrorCodes::SYNTAX_ERROR);
 
         while (data < end && (*data == ' ' || *data == '\t' || *data == '\f'))
             ++data;

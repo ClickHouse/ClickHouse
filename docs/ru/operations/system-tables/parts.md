@@ -166,3 +166,4 @@ move_ttl_info.max:                     []
 
 -   [Движок MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)
 -   [TTL для столбцов и таблиц](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl)
+
