@@ -1468,7 +1468,7 @@ Default value: `65505`.
 
 The name of table that will be used in the output INSERT statement.
 
-Default value: `'table''`.
+Default value: `table`.
 
 ### output_format_sql_insert_include_column_names {#output_format_sql_insert_include_column_names}
 
@@ -1508,4 +1508,12 @@ Disabled by default.
 
 The maximum allowed size for String in RowBinary format. It prevents allocating large amount of memory in case of corrupted data. 0 means there is no limit.
 
-Default value: `1GiB`
+Default value: `1GiB`.
+
+## Native format settings {#native-format-settings}
+
+### input_format_native_allow_types_conversion {#input_format_native_allow_types_conversion}
+
+Allow types conversion in Native input format between columns from input data and requested columns. 
+
+Enabled by default.
