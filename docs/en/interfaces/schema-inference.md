@@ -1178,21 +1178,6 @@ This setting can be used to specify the types of columns that could not be deter
 
 ```sql
 DESC format(JSONEachRow, '{"id" : 1, "age" : 25, "name" : "Josh", "status" : null, "hobbies" : ["football", "cooking"]}') SETTINGS schema_inference_hints = 'age LowCardinality(UInt8), status Nullable(String)', allow_suspicious_low_cardinality_types=1
-
-DESCRIBE TABLE format(JSONEachRow, '{"id" : 1, "age" : 25, "name" : "Josh", "status" : null, "hobbies" : ["football", "cooking"]}')
-SETTINGS schema_inference_hints = 'age LowCardinality(UInt8), status Nullable(String)', allow_suspicious_low_cardinality_types = 1
-
-Query id: 1752429f-1cd3-4d61-97af-8324ff97ee25
-
-┌─name────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
-│ id      │ Nullable(Int64)         │              │                    │         │                  │                │
-│ age     │ LowCardinality(UInt8)   │              │                    │         │                  │                │
-│ name    │ Nullable(String)        │              │                    │         │                  │                │
-│ status  │ Nullable(String)        │              │                    │         │                  │                │
-│ hobbies │ Array(Nullable(String)) │              │                    │         │                  │                │
-└─────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
-
-
 ```
 ```response
 ┌─name────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
