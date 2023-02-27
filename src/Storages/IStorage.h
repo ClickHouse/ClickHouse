@@ -98,7 +98,7 @@ public:
     /// Storage metadata can be set separately in setInMemoryMetadata method
     explicit IStorage(StorageID storage_id_)
         : storage_id(std::move(storage_id_))
-        , metadata(std::make_unique<StorageInMemoryMetadata>()) {} //-V730
+        , metadata(std::make_unique<StorageInMemoryMetadata>()) {}
 
     IStorage(const IStorage &) = delete;
     IStorage & operator=(const IStorage &) = delete;

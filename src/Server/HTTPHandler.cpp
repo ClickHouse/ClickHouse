@@ -554,6 +554,11 @@ void HTTPHandler::processQuery(
         std::string session_check = params.get("session_check", "");
         session->makeSessionContext(session_id, session_timeout, session_check == "1");
     }
+    else
+    {
+        /// We should create it even if we don't have a session_id
+        session->makeSessionContext();
+    }
 
     auto client_info = session->getClientInfo();
     auto context = session->makeQueryContext(std::move(client_info));
@@ -826,12 +831,20 @@ void HTTPHandler::processQuery(
     customizeContext(request, context);
 
     executeQuery(*in, *used_output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, context,
-        [&response, this] (const String & current_query_id, const String & content_type, const String & format, const String & timezone)
+        [&response, this] (const QueryResultDetails & details)
         {
-            response.setContentType(content_type_override.value_or(content_type));
-            response.add("X-ClickHouse-Query-Id", current_query_id);
-            response.add("X-ClickHouse-Format", format);
-            response.add("X-ClickHouse-Timezone", timezone);
+            response.add("X-ClickHouse-Query-Id", details.query_id);
+
+            if (content_type_override)
+                response.setContentType(*content_type_override);
+            else if (details.content_type)
+                response.setContentType(*details.content_type);
+
+            if (details.format)
+                response.add("X-ClickHouse-Format", *details.format);
+
+            if (details.timezone)
+                response.add("X-ClickHouse-Timezone", *details.timezone);
         }
     );
 
