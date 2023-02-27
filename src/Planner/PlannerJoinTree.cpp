@@ -162,6 +162,10 @@ bool applyTrivialCountIfPossible(
     if (!settings.optimize_trivial_count_query)
         return false;
 
+    /// can't apply if FINAL
+    if (select_query_info.table_expression_modifiers.has_value() && select_query_info.table_expression_modifiers.value().hasFinal())
+        return false;
+
     const auto & storage = table_node.getStorage();
     const auto & storage_snapshot = table_node.getStorageSnapshot();
 
@@ -430,8 +434,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(const QueryTreeNodePtr & tabl
         }
 
         /// apply trivial_count optimization if possible
-        bool is_trivial_count_applied = (is_single_table_expression && table_node
-            && applyTrivialCountIfPossible(query_plan, *table_node, select_query_info, planner_context->getQueryContext(), columns_names));
+        bool is_trivial_count_applied = is_single_table_expression && table_node
+            && applyTrivialCountIfPossible(query_plan, *table_node, select_query_info, planner_context->getQueryContext(), columns_names);
 
         if (is_trivial_count_applied)
         {
