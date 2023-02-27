@@ -222,7 +222,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
                         settings.query_write_settings));
 
         GinIndexStorePtr store = nullptr;
-        if (dynamic_cast<const MergeTreeIndexInverted *>(&*skip_index) != nullptr)
+        if (typeid_cast<const MergeTreeIndexInverted *>(&*skip_index) != nullptr)
         {
             store = std::make_shared<GinIndexStore>(stream_name, data_part->getDataPartStoragePtr(), data_part->getDataPartStoragePtr(), storage.getSettings()->max_digestion_size_per_segment);
             gin_index_stores[stream_name] = store;
@@ -284,7 +284,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
         WriteBuffer & marks_out = stream.compress_marks ? stream.marks_compressed_hashing : stream.marks_hashing;
 
         GinIndexStorePtr store;
-        if (dynamic_cast<const MergeTreeIndexInverted *>(&*index_helper) != nullptr)
+        if (typeid_cast<const MergeTreeIndexInverted *>(&*index_helper) != nullptr)
         {
             String stream_name = index_helper->getFileName();
             auto it = gin_index_stores.find(stream_name);
@@ -392,7 +392,7 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
         /// Register additional files written only by the inverted index. Required because otherwise DROP TABLE complains about unknown
         /// files. Note that the provided actual checksums are bogus. The problem is that at this point the file writes happened already and
         /// we'd need to re-open + hash the files (fixing this is TODO). For now, CHECK TABLE skips these four files.
-        if (dynamic_cast<const MergeTreeIndexInverted *>(&*skip_indices[i]) != nullptr)
+        if (typeid_cast<const MergeTreeIndexInverted *>(&*skip_indices[i]) != nullptr)
         {
             String filename_without_extension = skip_indices[i]->getFileName();
             checksums.files[filename_without_extension + ".gin_dict"] = MergeTreeDataPartChecksums::Checksum();
