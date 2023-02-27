@@ -136,7 +136,6 @@ struct AlignedCharArrayImpl;
 
 // MSVC requires special handling here.
 
-#        ifdef POCO_COMPILER_CLANG
 
 #            if __has_feature(cxx_alignas)
 #                define POCO_ALIGNEDCHARARRAY_TEMPLATE_ALIGNMENT(x) \
@@ -148,17 +147,6 @@ struct AlignedCharArrayImpl;
 #                define POCO_HAVE_ALIGNMENT
 #            endif
 
-#        elif defined(__GNUC__) || defined(__IBM_ATTRIBUTES)
-
-#            define POCO_ALIGNEDCHARARRAY_TEMPLATE_ALIGNMENT(x) \
-                template <> \
-                struct AlignedCharArrayImpl<x> \
-                { \
-                    char aligned __attribute__((aligned(x))); \
-                }
-#            define POCO_HAVE_ALIGNMENT
-
-#        endif
 
 #        ifdef POCO_HAVE_ALIGNMENT
 POCO_ALIGNEDCHARARRAY_TEMPLATE_ALIGNMENT(1);

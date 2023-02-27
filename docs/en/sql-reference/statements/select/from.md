@@ -36,6 +36,8 @@ Queries that use `FINAL` are executed slightly slower than similar queries that 
 
 **In most cases, avoid using `FINAL`.** The common approach is to use different queries that assume the background processes of the `MergeTree` engine have’t happened yet and deal with it by applying aggregation (for example, to discard duplicates).
 
+`FINAL` can be applied automatically using [FINAL](../../../operations/settings/settings.md#final) setting to all tables in a query using a session or a user profile.
+
 ## Implementation Details
 
 If the `FROM` clause is omitted, data will be read from the `system.one` table.
