@@ -239,6 +239,8 @@ public:
 
     bool isDropPartitionAlter() const;
 
+    bool isMovePartitionToDiskOrVolumeAlter() const;
+
     String getID(char) const override;
 
     ASTPtr clone() const override;
