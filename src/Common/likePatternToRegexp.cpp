@@ -1,4 +1,4 @@
-#include <Functions/likePatternToRegexp.h>
+#include <Common/likePatternToRegexp.h>
 
 #include <Common/Exception.h>
 
