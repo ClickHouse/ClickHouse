@@ -1,8 +1,6 @@
-select value from system.settings where name = 'interval_format';
-
-{% for format in ['kql', 'numeric'] -%}
-select '{{ format }}';
-set interval_format = '{{ format }}';
+{% for dialect in ['clickhouse', 'kusto_auto'] -%}
+select '{{ dialect }}';
+set dialect = '{{ dialect }}';
 select toIntervalNanosecond(99);
 select toIntervalNanosecond(100);
 select toIntervalMillisecond(1);

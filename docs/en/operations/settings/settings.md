@@ -98,6 +98,26 @@ Default value: 0.
 </profiles>
 ```
 
+## dialect {#dialect}
+
+Allows choosing support for different query languages.
+
+Possible values:
+
+-   `clickhouse` - ClickHouse SQL.
+-   `kusto` - Microsoft KQL.
+-   `kusto_auto` - Tries ClickHouse SQL first, then Microsoft KQL.
+
+In mode `clickhouse`, ClickHouse outputs intervals as their underlying numeric representation. For example, `toIntervalDay(2)` would be formatted as `2`.
+
+In modes `kusto` and `kusto_auto`, ClickHouse outputs intervals in [KQL format](https://learn.microsoft.com/en-us/dotnet/standard/base-types/standard-timespan-format-strings#the-constant-c-format-specifier). For example, `toIntervalDay(2)` would be formatted as `2.00:00:00`. Please note that for interval types of varying length (ie. `IntervalMonth` and `IntervalYear`) the average number of seconds per interval is taken into account.
+
+Default value: `clickhouse`.
+
+See also:
+
+-   [Interval](../../sql-reference/data-types/special-data-types/interval.md)
+
 ## distributed_product_mode {#distributed-product-mode}
 
 Changes the behaviour of [distributed subqueries](../../sql-reference/operators/in.md).

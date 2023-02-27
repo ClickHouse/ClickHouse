@@ -19,6 +19,15 @@
 
 #include <boost/algorithm/string/case_conv.hpp>
 
+namespace
+{
+DB::FormatSettings::IntervalFormat convert(const DB::Dialect dialect)
+{
+    return dialect == DB::Dialect::kusto || dialect == DB::Dialect::kusto_auto ? DB::FormatSettings::IntervalFormat::KQL
+                                                                               : DB::FormatSettings::IntervalFormat::Numeric;
+}
+}
+
 namespace DB
 {
 
@@ -86,7 +95,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.custom.skip_trailing_empty_lines = settings.input_format_custom_skip_trailing_empty_lines;
     format_settings.date_time_input_format = settings.date_time_input_format;
     format_settings.date_time_output_format = settings.date_time_output_format;
-    format_settings.interval.format = settings.interval_format;
+    format_settings.interval.format = convert(context->getSettingsRef().dialect);
     format_settings.input_format_ipv4_default_on_conversion_error = settings.input_format_ipv4_default_on_conversion_error;
     format_settings.input_format_ipv6_default_on_conversion_error = settings.input_format_ipv6_default_on_conversion_error;
     format_settings.bool_true_representation = settings.bool_true_representation;

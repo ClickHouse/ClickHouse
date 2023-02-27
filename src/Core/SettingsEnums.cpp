@@ -79,10 +79,6 @@ IMPLEMENT_SETTING_ENUM(DateTimeOutputFormat, ErrorCodes::BAD_ARGUMENTS,
      {"iso",            FormatSettings::DateTimeOutputFormat::ISO},
      {"unix_timestamp", FormatSettings::DateTimeOutputFormat::UnixTimestamp}})
 
-IMPLEMENT_SETTING_ENUM_WITH_RENAME(IntervalFormat, ErrorCodes::BAD_ARGUMENTS,
-    {{"kql",     FormatSettings::IntervalFormat::KQL},
-     {"numeric", FormatSettings::IntervalFormat::Numeric}})
-
 IMPLEMENT_SETTING_AUTO_ENUM(LogsLevel, ErrorCodes::BAD_ARGUMENTS)
 
 IMPLEMENT_SETTING_AUTO_ENUM(LogQueriesType, ErrorCodes::BAD_ARGUMENTS)
