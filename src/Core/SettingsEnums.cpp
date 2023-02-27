@@ -174,9 +174,9 @@ IMPLEMENT_SETTING_ENUM(LocalFSReadMethod, ErrorCodes::BAD_ARGUMENTS,
 
 
 IMPLEMENT_SETTING_ENUM_WITH_RENAME(ParquetVersion, ErrorCodes::BAD_ARGUMENTS,
-    {{"v1_0",       FormatSettings::ParquetVersion::V1_0},
-     {"v2_4", FormatSettings::ParquetVersion::V2_4},
-     {"v2_6", FormatSettings::ParquetVersion::V2_6},
-     {"v2_latest", FormatSettings::ParquetVersion::V2_LATEST}})
+    {{"1.0",       FormatSettings::ParquetVersion::V1_0},
+     {"2.4", FormatSettings::ParquetVersion::V2_4},
+     {"2.6", FormatSettings::ParquetVersion::V2_6},
+     {"2.latest", FormatSettings::ParquetVersion::V2_LATEST}})
 
 }
