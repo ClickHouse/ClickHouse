@@ -121,8 +121,6 @@ mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/c
 # FIXME Not sure if it's expected, but some tests from stress test may not be finished yet when we restarting server.
 #       Let's just ignore all errors from queries ("} <Error> TCPHandler: Code:", "} <Error> executeQuery: Code:")
 # FIXME https://github.com/ClickHouse/ClickHouse/issues/39197 ("Missing columns: 'v3' while processing query: 'v3, k, v1, v2, p'")
-# NOTE  Incompatibility was introduced in https://github.com/ClickHouse/ClickHouse/pull/39263, it's expected
-#       ("This engine is deprecated and is not supported in transactions", "[Queue = DB::MergeMutateRuntimeQueue]: Code: 235. DB::Exception: Part")
 # FIXME https://github.com/ClickHouse/ClickHouse/issues/39174 - bad mutation does not indicate backward incompatibility
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
@@ -152,8 +150,6 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "} <Error> TCPHandler: Code:" \
            -e "} <Error> executeQuery: Code:" \
            -e "Missing columns: 'v3' while processing query: 'v3, k, v1, v2, p'" \
-           -e "This engine is deprecated and is not supported in transactions" \
-           -e "[Queue = DB::MergeMutateRuntimeQueue]: Code: 235. DB::Exception: Part" \
            -e "The set of parts restored in place of" \
            -e "(ReplicatedMergeTreeAttachThread): Initialization failed. Error" \
            -e "Code: 269. DB::Exception: Destination table is myself" \
@@ -201,8 +197,4 @@ rowNumberInAllBlocks()
 LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv || echo "failure\tCannot parse test_results.tsv" > /test_output/check_status.tsv
 [ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found" > /test_output/check_status.tsv
 
-# Core dumps
-find . -type f -maxdepth 1 -name 'core.*' | while read core; do
-    zstd --threads=0 $core
-    mv $core.zst /test_output/
-done
+collect_core_dumps
