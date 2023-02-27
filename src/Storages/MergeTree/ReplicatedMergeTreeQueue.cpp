@@ -2412,12 +2412,26 @@ std::optional<std::pair<Int64, int>> ReplicatedMergeTreeMergePredicate::getDesir
         return {};
 
     Int64 current_version = queue.getCurrentMutationVersionImpl(part->info.partition_id, part->info.getDataVersion(), lock);
-    Int64 max_version = in_partition->second.rbegin()->first;
+    Int64 max_version = in_partition->second.begin()->first;
 
     int alter_version = -1;
+    bool barrier_found = false;
     for (auto [mutation_version, mutation_status] : in_partition->second)
     {
+        /// Some commands cannot stick together with other commands
+        if (mutation_status->entry->commands.containBarrierCommand())
+        {
+            /// We already collected some mutation, we don't want to stick it with barrier
+            if (max_version != mutation_version && max_version > current_version)
+                break;
+
+            /// This mutations is fresh, but it's barrier, let's execute only it
+            if (mutation_version > current_version)
+                barrier_found = true;
+        }
+
         max_version = mutation_version;
+
         if (mutation_status->entry->isAlterMutation())
         {
             /// We want to assign mutations for part which version is bigger
@@ -2430,6 +2444,9 @@ std::optional<std::pair<Int64, int>> ReplicatedMergeTreeMergePredicate::getDesir
                 break;
             }
         }
+
+        if (barrier_found == true)
+            break;
     }
 
     if (current_version >= max_version)
