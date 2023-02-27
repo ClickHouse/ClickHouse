@@ -5,6 +5,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/FieldFromAST.h>
+#include <Parsers/isDiskFunction.h>
 #include <Core/Field.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
