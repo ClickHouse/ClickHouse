@@ -52,8 +52,8 @@ public:
     void deserializeRow(MutableColumns & columns, avro::Decoder & decoder, RowReadExtension & ext) const;
 
 private:
-    using DeserializeFn = std::function<void(IColumn & column, avro::Decoder & decoder)>;
-    using DeserializeNestedFn = std::function<void(IColumn & column, avro::Decoder & decoder)>;
+    using DeserializeFn = std::function<bool(IColumn & column, avro::Decoder & decoder)>;
+    using DeserializeNestedFn = std::function<bool(IColumn & column, avro::Decoder & decoder)>;
 
     using SkipFn = std::function<void(avro::Decoder & decoder)>;
     DeserializeFn createDeserializeFn(avro::NodePtr root_node, DataTypePtr target_type);
@@ -103,8 +103,7 @@ private:
                 case Noop:
                     break;
                 case Deserialize:
-                    deserialize_fn(*columns[target_column_idx], decoder);
-                    ext.read_columns[target_column_idx] = true;
+                    ext.read_columns[target_column_idx] = deserialize_fn(*columns[target_column_idx], decoder);
                     break;
                 case Skip:
                     skip_fn(decoder);

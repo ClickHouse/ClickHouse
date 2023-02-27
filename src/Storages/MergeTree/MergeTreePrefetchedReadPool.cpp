@@ -509,7 +509,7 @@ MergeTreePrefetchedReadPool::ThreadsTasks MergeTreePrefetchedReadPool::createThr
 
             auto read_task = std::make_unique<MergeTreeReadTask>(
                 part.data_part, ranges_to_get_from_part, part.part_index_in_query,
-                part.column_name_set, part.task_columns, prewhere_info && prewhere_info->remove_prewhere_column,
+                part.column_name_set, part.task_columns,
                 std::move(curr_task_size_predictor));
 
             read_task->priority = priority;
