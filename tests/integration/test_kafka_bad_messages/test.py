@@ -13,6 +13,7 @@ instance = cluster.add_instance(
     with_kafka=True,
 )
 
+
 def kafka_create_topic(
     admin_client,
     topic_name,
@@ -49,7 +50,7 @@ def kafka_create_topic(
 
 def kafka_delete_topic(admin_client, topic, max_retries=50):
     result = admin_client.delete_topics([topic])
-    for (topic, e) in result.topic_error_codes:
+    for topic, e in result.topic_error_codes:
         if e == 0:
             logging.debug(f"Topic {topic} deleted")
         else:
@@ -141,7 +142,6 @@ def test_bad_messages_parsing(kafka_cluster):
         "BSONEachRow",
         "MySQLDump",
     ]:
-
         print(format_name)
 
         kafka_create_topic(admin_client, f"{format_name}_err")
