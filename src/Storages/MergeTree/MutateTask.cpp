@@ -183,40 +183,6 @@ static void splitAndModifyMutationCommands(
     }
 }
 
-/// It's legal to squash renames because commands with rename are always "barrier"
-/// and executed separately from other types of commands.
-static MutationCommands squashRenamesInCommands(const MutationCommands & commands)
-{
-    NameToNameMap squashed_renames;
-    for (const auto & command : commands)
-    {
-        std::string result_name = command.rename_to;
-
-        bool squashed = false;
-        for (const auto & [name_from, name_to] : squashed_renames)
-        {
-            if (name_to == command.column_name)
-            {
-                squashed = true;
-                squashed_renames[name_from] = result_name;
-                break;
-            }
-        }
-        if (!squashed)
-            squashed_renames[command.column_name] = result_name;
-    }
-
-    MutationCommands squashed_commands;
-    for (const auto & command : commands)
-    {
-        if (squashed_renames.contains(command.column_name))
-        {
-            squashed_commands.push_back(command);
-            squashed_commands.back().rename_to = squashed_renames[command.column_name];
-        }
-    }
-    return squashed_commands;
-}
 
 /// Get the columns list of the resulting part in the same order as storage_columns.
 static std::pair<NamesAndTypesList, SerializationInfoByName>
@@ -247,9 +213,7 @@ getColumnsForNewDataPart(
             storage_columns.emplace_back(column);
     }
 
-    MutationCommands squashed_commands = squashRenamesInCommands(all_commands);
-
-    for (const auto & command : squashed_commands)
+    for (const auto & command : all_commands)
     {
         if (command.type == MutationCommand::UPDATE)
         {
@@ -647,10 +611,8 @@ static NameToNameVector collectFilesForRenames(
             rename_vector.emplace_back(file_rename_from, file_rename_to);
     };
 
-    MutationCommands squashed_commands = squashRenamesInCommands(commands_for_removes);
-
     /// Remove old data
-    for (const auto & command : squashed_commands)
+    for (const auto & command : commands_for_removes)
     {
         if (command.type == MutationCommand::Type::DROP_INDEX)
         {
