@@ -26,14 +26,14 @@ WHERE name LIKE '%thread_pool%'
 ```
 
 ``` text
-┌─name─────────────────────────┬─value─┬─default─┬─changed─┬─description───────────────────────────┬─type───┐
-│ max_thread_pool_size         │ 5000  │ 10000   │       1 │ Max size for global thread pool.      │ UInt64 │
-│ max_thread_pool_free_size    │ 1000  │ 1000    │       0 │ Max free size for global thread pool. │ UInt64 │
-│ thread_pool_queue_size       │ 10000 │ 10000   │       0 │ Queue size for global thread pool.    │ UInt64 │
-│ max_io_thread_pool_size      │ 100   │ 100     │       0 │ Max size for IO thread pool.          │ UInt64 │
-│ max_io_thread_pool_free_size │ 0     │ 0       │       0 │ Max free size for IO thread pool.     │ UInt64 │
-│ io_thread_pool_queue_size    │ 10000 │ 10000   │       0 │ Queue size for IO thread pool.        │ UInt64 │
-└──────────────────────────────┴───────┴─────────┴─────────┴───────────────────────────────────────┴────────┘
+┌─name─────────────────────────┬─value─┬─default─┬─changed─┬─description─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─type───┐
+│ max_thread_pool_size         │ 5000  │ 10000   │       1 │ The maximum number of threads that could be allocated from the OS and used for query execution and background operations.                           │ UInt64 │
+│ max_thread_pool_free_size    │ 1000  │ 1000    │       0 │ The maximum number of threads that will always stay in a global thread pool once allocated and remain idle in case of insufficient number of tasks. │ UInt64 │
+│ thread_pool_queue_size       │ 10000 │ 10000   │       0 │ The maximum number of tasks that will be placed in a queue and wait for execution.                                                                  │ UInt64 │
+│ max_io_thread_pool_size      │ 100   │ 100     │       0 │ The maximum number of threads that would be used for IO operations                                                                                  │ UInt64 │
+│ max_io_thread_pool_free_size │ 0     │ 0       │       0 │ Max free size for IO thread pool.                                                                                                                   │ UInt64 │
+│ io_thread_pool_queue_size    │ 10000 │ 10000   │       0 │ Queue size for IO thread pool.                                                                                                                      │ UInt64 │
+└──────────────────────────────┴───────┴─────────┴─────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴────────┘
 ```
 
 Using of `WHERE changed` can be useful, for example, when you want to check 
