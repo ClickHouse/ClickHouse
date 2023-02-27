@@ -155,7 +155,7 @@ public:
     {
         if constexpr (nullable)
         {
-            if (has_null_data && isNullAt(row))
+            if (isNullAt(row))
             {
                 bool has_null_key = data.hasNullKeyData();
                 data.hasNullKeyData() = true;
@@ -175,7 +175,7 @@ public:
     {
         if constexpr (nullable)
         {
-            if (has_null_data && isNullAt(row))
+            if (isNullAt(row))
             {
                 if constexpr (has_mapped)
                     return FindResult(data.hasNullKeyData() ? &data.getNullKeyData() : nullptr, data.hasNullKeyData(), 0);
@@ -198,7 +198,7 @@ public:
     {
         if constexpr (nullable)
         {
-            return assert_cast<const ColumnUInt8 &>(*null_map).getData()[row] != 0;
+            return null_map->getBool(row);
         }
         else
         {
@@ -229,7 +229,6 @@ protected:
         {
 
             null_map = &checkAndGetColumn<ColumnNullable>(column)->getNullMapColumn();
-            has_null_data = (null_map->getRatioOfDefaultRows() < 1.0);
         }
     }
 

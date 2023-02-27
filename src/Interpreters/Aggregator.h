@@ -220,10 +220,9 @@ struct AggregationMethodOneNumber
         if constexpr (nullable)
         {
             ColumnNullable & nullable_col = assert_cast<ColumnNullable &>(*key_columns[0]);
-            IColumn * observed_column = &nullable_col.getNestedColumn();
             ColumnUInt8 * null_map = assert_cast<ColumnUInt8 *>(&nullable_col.getNullMapColumn());
-            column = static_cast<ColumnVectorHelper *>(observed_column);
             null_map->insertDefault();
+            column = static_cast<ColumnVectorHelper *>(&nullable_col.getNestedColumn());
         }
         else
         {

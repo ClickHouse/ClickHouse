@@ -4,6 +4,22 @@
         <allow_experimental_projection_optimization>0</allow_experimental_projection_optimization>
     </settings>
 
+    <substitutions>
+        <substitution>
+            <name>key_type</name>
+            <values>
+                <value>key_string</value>
+                <value>key_string_two_level</value>
+                <value>key_fixed_string</value>
+                <value>key_int64</value>
+                <value>key_int64_two_level</value>
+                <value>key_int32</value>
+                <value>key_int32_two_level</value>
+                <value>Key_int16</value>
+                <value>key_int8</value>
+            </values>
+        </substitution>
+    </substitutions>
     <create_query>
         CREATE TABLE t_nullable
         (
@@ -27,15 +43,7 @@
     <fill_query>insert into t_nullable select ['aa','bb','cc','dd'][number % 10000 + 1], ['aa','bb','cc','dd'][number % 200000 + 1], ['aa','bb','cc','dd'][number % 4 + 1], toInt64(number%10000), toInt64(number%200000), toInt32(number%10000), toInt32(number%200000), toInt16(number%10000), toInt8(number%100), number%6000+1, number%5000+2 from numbers_mt(20000000)</fill_query>
     <fill_query>insert into t_nullable select ['aa','bb','cc','dd'][number % 10000 + 1], ['aa','bb','cc','dd'][number % 200000 + 1], ['aa','bb','cc','dd'][number % 4 + 1], toInt64(number%10000), toInt64(number%200000), toInt32(number%10000), toInt32(number%200000), toInt16(number%10000), toInt8(number%100), number%6000+1, number%5000+2 from numbers_mt(20000000)</fill_query>
     <fill_query>OPTIMIZE TABLE t_nullable FINAL</fill_query>
-    <query>select min(i1), min(i2) from t_nullable group by key_string format Null</query>
-    <query>select min(i1), min(i2) from t_nullable group by key_string_two_level format Null</query>
-    <query>select min(i1), min(i2) from t_nullable group by key_fixed_string format Null</query>
-    <query>select min(i1), min(i2) from t_nullable group by key_int64 format Null</query>
-    <query>select min(i1), min(i2) from t_nullable group by key_int64_two_level format Null</query>
-    <query>select min(i1), min(i2) from t_nullable group by key_int32 format Null</query>
-    <query>select min(i1), min(i2) from t_nullable group by key_int32_two_level format Null</query>
-    <query>select min(i1), min(i2) from t_nullable group by Key_int16 format Null</query>
-    <query>select min(i1), min(i2) from t_nullable group by key_int8 format Null</query>
+    <query>select min(i1), min(i2) from t_nullable group by {key_type} format Null</query>
 
     <drop_query>drop table if exists t_nullable</drop_query>
 </test>

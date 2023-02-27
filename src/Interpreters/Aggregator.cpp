@@ -1937,6 +1937,10 @@ Block Aggregator::insertResultsIntoColumns(PaddedPODArray<AggregateDataPtr> & pl
                     continue;
 
                 auto & final_aggregate_column = out_cols.final_aggregate_columns[i];
+                /**
+                 * In convertToBlockImplFinal, additional data with a key of null may be written,
+                 * and additional memory for null data needs to be allocated when using the compiled function
+                 */
                 final_aggregate_column = final_aggregate_column->cloneResized(places.size() + (has_null_key_data ? 1 : 0));
                 columns_data.emplace_back(getColumnData(final_aggregate_column.get(), (has_null_key_data ? 1 : 0)));
             }
@@ -2015,6 +2019,10 @@ Aggregator::convertToBlockImplFinal(Method & method, Table & data, Arena * arena
 
         if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
         {
+            /**
+             * When one_key_nullable_optimization is enabled, null data will be written to the key column and result column in advance.
+             * And in insertResultsIntoColumns need to allocate memory for null data.
+             */
             if (data.hasNullKeyData())
             {
                 has_null_key_data = Method::one_key_nullable_optimization;
