@@ -9,16 +9,6 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <IO/WriteBufferFromString.h>
 
-#if USE_AMQPCPP
-#include <Storages/RabbitMQ/RabbitMQSettings.h>
-#endif
-#if USE_RDKAFKA
-#include <Storages/Kafka/KafkaSettings.h>
-#endif
-#if USE_NATSIO
-#include <Storages/NATS/NATSSettings.h>
-#endif
-
 #include <re2/re2.h>
 
 namespace DB
