@@ -11,7 +11,6 @@
 #include <Parsers/formatAST.h>
 #include <base/sort.h>
 
-#include <ranges>
 
 namespace DB
 {
@@ -1755,40 +1754,19 @@ ReplicatedMergeTreeMergePredicate ReplicatedMergeTreeQueue::getMergePredicate(zk
 }
 
 
-std::map<int64_t, MutationCommands> ReplicatedMergeTreeQueue::getAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const
+MutationCommands ReplicatedMergeTreeQueue::getFirstAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const
 {
-    std::unique_lock lock(state_mutex);
+    std::lock_guard lock(state_mutex);
     auto in_partition = mutations_by_partition.find(part->info.partition_id);
     if (in_partition == mutations_by_partition.end())
-        return {};
+        return MutationCommands{};
 
-    Int64 part_metadata_version = part->getMetadataVersion();
-    std::map<int64_t, MutationCommands> result;
-    /// Here we return mutation commands for part which has bigger alter version than part metadata version.
-    /// Please note, we don't use getDataVersion(). It's because these alter commands are used for in-fly conversions
-    /// of part's metadata.
-    for (const auto & [mutation_version, mutation_status] : in_partition->second | std::views::reverse)
-    {
-        int32_t alter_version = mutation_status->entry->alter_version;
-        if (alter_version != -1)
-        {
-            if (!alter_sequence.canExecuteDataAlter(alter_version, lock))
-                continue;
+    Int64 part_version = part->info.getDataVersion();
+    for (auto [mutation_version, mutation_status] : in_partition->second)
+        if (mutation_version > part_version && mutation_status->entry->alter_version != -1)
+            return mutation_status->entry->commands;
 
-            /// we take commands with bigger metadata version
-            if (alter_version > part_metadata_version)
-            {
-                result[mutation_version] = mutation_status->entry->commands;
-            }
-            else
-            {
-                /// entries are ordered, we processing them in reverse order so we can break
-                break;
-            }
-        }
-    }
-
-    return result;
+    return MutationCommands{};
 }
 
 MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
@@ -1830,18 +1808,7 @@ MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
 
     MutationCommands commands;
     for (auto it = begin; it != end; ++it)
-    {
-        const auto & commands_from_entry = it->second->entry->commands;
-
-        if (commands_from_entry.containBarrierCommand())
-        {
-            if (commands.empty())
-                commands.insert(commands.end(), commands_from_entry.begin(), commands_from_entry.end());
-            break;
-        }
-        else
-            commands.insert(commands.end(), commands_from_entry.begin(), commands_from_entry.end());
-    }
+        commands.insert(commands.end(), it->second->entry->commands.begin(), it->second->entry->commands.end());
 
     return commands;
 }

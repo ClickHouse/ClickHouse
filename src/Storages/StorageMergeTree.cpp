@@ -1143,24 +1143,9 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             if (current_ast_elements + commands_size >= max_ast_elements)
                 break;
 
-            const auto & single_mutation_commands = it->second.commands;
-
-            if (single_mutation_commands.containBarrierCommand())
-            {
-                if (commands->empty())
-                {
-                    commands->insert(commands->end(), single_mutation_commands.begin(), single_mutation_commands.end());
-                    last_mutation_to_apply = it;
-                }
-                break;
-            }
-            else
-            {
-                current_ast_elements += commands_size;
-                commands->insert(commands->end(), single_mutation_commands.begin(), single_mutation_commands.end());
-                last_mutation_to_apply = it;
-            }
-
+            current_ast_elements += commands_size;
+            commands->insert(commands->end(), it->second.commands.begin(), it->second.commands.end());
+            last_mutation_to_apply = it;
         }
 
         assert(commands->empty() == (last_mutation_to_apply == mutations_end_it));
@@ -1255,10 +1240,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     }
     if (mutate_entry)
     {
-        /// We take new metadata snapshot here. It's because mutation commands can be executed only with metadata snapshot
-        /// which is equal or more fresh than commands themselves. In extremely rare case it can happen that we will have alter
-        /// in between we took snapshot above and selected commands. That is why we take new snapshot here.
-        auto task = std::make_shared<MutatePlainMergeTreeTask>(*this, getInMemoryMetadataPtr(), mutate_entry, shared_lock, common_assignee_trigger);
+        auto task = std::make_shared<MutatePlainMergeTreeTask>(*this, metadata_snapshot, mutate_entry, shared_lock, common_assignee_trigger);
         assignee.scheduleMergeMutateTask(task);
         return true;
     }
@@ -2127,22 +2109,14 @@ void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts)
 }
 
 
-std::map<int64_t, MutationCommands> StorageMergeTree::getAlterMutationCommandsForPart(const DataPartPtr & part) const
+MutationCommands StorageMergeTree::getFirstAlterMutationCommandsForPart(const DataPartPtr & part) const
 {
     std::lock_guard lock(currently_processing_in_background_mutex);
 
-    Int64 part_data_version = part->info.getDataVersion();
-
-    std::map<int64_t, MutationCommands> result;
-    if (!current_mutations_by_version.empty())
-    {
-        const auto & [latest_mutation_id, latest_commands] = *current_mutations_by_version.rbegin();
-        if (part_data_version < static_cast<int64_t>(latest_mutation_id))
-        {
-            result[latest_mutation_id] = latest_commands.commands;
-        }
-    }
-    return result;
+    auto it = current_mutations_by_version.upper_bound(part->info.getDataVersion());
+    if (it == current_mutations_by_version.end())
+        return {};
+    return it->second.commands;
 }
 
 void StorageMergeTree::startBackgroundMovesIfNeeded()
