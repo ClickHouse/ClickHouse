@@ -16,7 +16,7 @@ public:
     struct DrainCallback
     {
         Poco::Timespan drain_timeout;
-        void operator()(int fd, Poco::Timespan, const std::string fd_description = "") const;
+        void operator()(int fd, Poco::Timespan, const std::string & fd_description = "") const;
     };
 
     /// Send all scalars to replicas.
@@ -34,7 +34,7 @@ public:
         bool with_pending_data) = 0;
 
     virtual void sendReadTaskResponse(const String &) = 0;
-    virtual void sendMergeTreeReadTaskResponse(PartitionReadResponse response) = 0;
+    virtual void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) = 0;
 
     /// Get packet from any replica.
     virtual Packet receivePacket() = 0;
@@ -60,9 +60,9 @@ public:
     /// Get the replica addresses as a string.
     virtual std::string dumpAddresses() const = 0;
 
-
     struct ReplicaInfo
     {
+        bool collaborate_with_initiator{false};
         size_t all_replicas_count{0};
         size_t number_of_current_replica{0};
     };

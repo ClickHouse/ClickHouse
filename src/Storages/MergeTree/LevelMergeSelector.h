@@ -21,7 +21,7 @@ public:
 
     PartsRange select(
         const PartsRanges & parts_ranges,
-        const size_t max_total_size_to_merge) override;
+        size_t max_total_size_to_merge) override;
 
 private:
     const Settings settings;

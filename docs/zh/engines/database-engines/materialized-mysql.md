@@ -1,6 +1,7 @@
 ---
-toc_priority: 29
-toc_title: MaterializedMySQL
+slug: /zh/engines/database-engines/materialized-mysql
+sidebar_position: 29
+sidebar_label: MaterializedMySQL
 ---
 
 # [experimental] MaterializedMySQL {#materialized-mysql}
@@ -53,7 +54,7 @@ CREATE DATABASE mysql ENGINE = MaterializedMySQL('localhost:3306', 'db', 'user',
 - `default_authentication_plugin = mysql_native_password `，因为 `MaterializedMySQL` 只能授权使用该方法。
 - `gtid_mode = on`，因为基于GTID的日志记录是提供正确的 `MaterializedMySQL`复制的强制要求。
 
-!!! attention "注意"
+    :::info "注意"
     当打开`gtid_mode`时，您还应该指定`enforce_gtid_consistency = on`。
 
 ## 虚拟列 {#virtual-columns}
@@ -108,7 +109,7 @@ MySQL中的Time 类型，会被ClickHouse转换成微秒来存储
 
 ### DDL Queries {#ddl-queries}
 
-MySQL DDL 语句会被转换成对应的ClickHouse DDL 语句，比如： ([ALTER](../../sql-reference/statements/alter/index.md), [CREATE](../../sql-reference/statements/create/index.md), [DROP](../../sql-reference/statements/drop.md), [RENAME](../../sql-reference/statements/rename.md)). 如果ClickHouse 无法解析某些语句DDL 操作，则会跳过。
+MySQL DDL 语句会被转换成对应的ClickHouse DDL 语句，比如： ([ALTER](../../sql-reference/statements/alter/index.md), [CREATE](../../sql-reference/statements/create/index.md), [DROP](../../sql-reference/statements/drop), [RENAME](../../sql-reference/statements/rename.md)). 如果ClickHouse 无法解析某些语句DDL 操作，则会跳过。
 
 
 ### 数据复制 {#data-replication}
@@ -152,8 +153,8 @@ ClickHouse只有一个物理排序，由 `order by` 条件决定。要创建一�
 
  * 修改列类型。必须与原始类型兼容，否则复制将失败。例如，可以将`UInt32`列修改为`UInt64`，不能将 `String` 列修改为 `Array(String)`。
  * 修改 [column TTL](../table-engines/mergetree-family/mergetree/#mergetree-column-ttl).
- * 修改 [column compression codec](../../sql-reference/statements/create/table/#codecs).
- * 增加 [ALIAS columns](../../sql-reference/statements/create/table/#alias).
+ * 修改 [column compression codec](../../sql-reference/statements/create/table.mdx#codecs).
+ * 增加 [ALIAS columns](../../sql-reference/statements/create/table.mdx#alias).
  * 增加 [skipping indexes](../table-engines/mergetree-family/mergetree/#table_engine-mergetree-data_skipping-indexes)
  * 增加 [projections](../table-engines/mergetree-family/mergetree/#projections). 
  请注意，当使用 `SELECT ... FINAL ` (MaterializedMySQL默认是这样做的) 时，预测优化是被禁用的，所以这里是受限的， `INDEX ... TYPE hypothesis `[在v21.12的博客文章中描述]](https://clickhouse.com/blog/en/2021/clickhouse-v21.12-released/)可能在这种情况下更有用。
@@ -270,5 +271,3 @@ SELECT * FROM mysql.test;
 │ 2 │ 222 │ Wow! │
 └───┴─────┴──────┘
 ```
-
-[来源文章](https://clickhouse.com/docs/en/engines/database-engines/materialized-mysql/) <!--hide-->

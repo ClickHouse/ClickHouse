@@ -16,11 +16,11 @@ struct FixedClearableHashMapCell
     UInt32 version;
     Mapped mapped;
 
-    FixedClearableHashMapCell() {}
+    FixedClearableHashMapCell() {} /// NOLINT
     FixedClearableHashMapCell(const Key &, const State & state) : version(state.version) {}
     FixedClearableHashMapCell(const value_type & value_, const State & state) : version(state.version), mapped(value_.second) {}
 
-    const VoidKey getKey() const { return {}; }
+    const VoidKey getKey() const { return {}; } /// NOLINT
     Mapped & getMapped() { return mapped; }
     const Mapped & getMapped() const { return mapped; }
 
@@ -29,7 +29,7 @@ struct FixedClearableHashMapCell
 
     struct CellExt
     {
-        CellExt() {}
+        CellExt() {} /// NOLINT
         CellExt(Key && key_, FixedClearableHashMapCell * ptr_) : key(key_), ptr(ptr_) {}
         void update(Key && key_, FixedClearableHashMapCell * ptr_)
         {
@@ -41,7 +41,7 @@ struct FixedClearableHashMapCell
         const Key & getKey() const { return key; }
         Mapped & getMapped() { return ptr->mapped; }
         const Mapped & getMapped() const { return *ptr->mapped; }
-        const value_type getValue() const { return {key, *ptr->mapped}; }
+        const value_type getValue() const { return {key, *ptr->mapped}; } /// NOLINT
     };
 };
 

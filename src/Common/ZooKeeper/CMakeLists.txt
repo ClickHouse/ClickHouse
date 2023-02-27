@@ -22,7 +22,6 @@ target_link_libraries (clickhouse_common_zookeeper_no_log
     PRIVATE
         string_utils
 )
-
 if (ENABLE_EXAMPLES)
     add_subdirectory(examples)
 endif()

@@ -21,11 +21,12 @@ public:
 
     ASTPtr clone() const override { return std::make_shared<ASTUseQuery>(*this); }
 
+    QueryKind getQueryKind() const override { return QueryKind::Use; }
+
 protected:
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "USE " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(database);
-        return;
     }
 };
 

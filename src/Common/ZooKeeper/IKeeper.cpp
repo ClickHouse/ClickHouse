@@ -112,7 +112,7 @@ const char * errorMessage(Error code)
         case Error::ZSESSIONMOVED:            return "Session moved to another server, so operation is ignored";
     }
 
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 bool isHardwareError(Error zk_return_code)
@@ -144,6 +144,7 @@ void ListRequest::addRootPath(const String & root_path) { Coordination::addRootP
 void CheckRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 void SetACLRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 void GetACLRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
+void SyncRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 
 void MultiRequest::addRootPath(const String & root_path)
 {

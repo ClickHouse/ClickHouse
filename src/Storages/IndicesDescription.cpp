@@ -19,7 +19,7 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
-};
+}
 
 IndexDescription::IndexDescription(const IndexDescription & other)
     : definition_ast(other.definition_ast ? other.definition_ast->clone() : nullptr)
@@ -72,16 +72,16 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
 {
     const auto * index_definition = definition_ast->as<ASTIndexDeclaration>();
     if (!index_definition)
-        throw Exception("Cannot create skip index from non ASTIndexDeclaration AST", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create skip index from non ASTIndexDeclaration AST");
 
     if (index_definition->name.empty())
-        throw Exception("Skip index must have name in definition.", ErrorCodes::INCORRECT_QUERY);
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Skip index must have name in definition.");
 
     if (!index_definition->type)
-        throw Exception("TYPE is required for index", ErrorCodes::INCORRECT_QUERY);
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "TYPE is required for index");
 
     if (index_definition->type->parameters && !index_definition->type->parameters->children.empty())
-        throw Exception("Index type cannot have parameters", ErrorCodes::INCORRECT_QUERY);
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Index type cannot have parameters");
 
     IndexDescription result;
     result.definition_ast = index_definition->clone();
@@ -111,7 +111,7 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
         {
             const auto * argument = definition_arguments->children[i]->as<ASTLiteral>();
             if (!argument)
-                throw Exception("Only literals can be skip index arguments", ErrorCodes::INCORRECT_QUERY);
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Only literals can be skip index arguments");
             result.arguments.emplace_back(argument->value);
         }
     }

@@ -1,5 +1,6 @@
 ---
-toc_priority: 190
+slug: /zh/sql-reference/aggregate-functions/reference/uniq
+sidebar_position: 190
 ---
 
 # uniq {#agg_function-uniq}

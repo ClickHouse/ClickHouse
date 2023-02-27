@@ -1,12 +1,10 @@
 #include "StorageSQLite.h"
 
 #if USE_SQLITE
-#include <base/range.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Processors/Sources/SQLiteSource.h>
 #include <Databases/SQLite/SQLiteUtils.h>
 #include <DataTypes/DataTypeString.h>
-#include <Interpreters/Context.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <IO/Operators.h>
@@ -16,6 +14,8 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/transformQueryForExternalDatabase.h>
+#include <Storages/checkAndGetLiteralArgument.h>
+#include <QueryPipeline/Pipe.h>
 #include <Common/filesystemHelpers.h>
 
 
@@ -52,21 +52,21 @@ StorageSQLite::StorageSQLite(
 
 Pipe StorageSQLite::read(
     const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr context_,
     QueryProcessingStage::Enum,
     size_t max_block_size,
-    unsigned int)
+    size_t /*num_streams*/)
 {
     if (!sqlite_db)
         sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */true);
 
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    storage_snapshot->check(column_names);
 
     String query = transformQueryForExternalDatabase(
         query_info,
-        metadata_snapshot->getColumns().getOrdinary(),
+        storage_snapshot->metadata->getColumns().getOrdinary(),
         IdentifierQuotingStyle::DoubleQuotes,
         "",
         remote_table_name,
@@ -76,7 +76,7 @@ Pipe StorageSQLite::read(
     Block sample_block;
     for (const String & column_name : column_names)
     {
-        auto column_data = metadata_snapshot->getColumns().getPhysical(column_name);
+        auto column_data = storage_snapshot->metadata->getColumns().getPhysical(column_name);
         sample_block.insert({column_data.type, column_data.name});
     }
 
@@ -161,18 +161,17 @@ void registerStorageSQLite(StorageFactory & factory)
         ASTs & engine_args = args.engine_args;
 
         if (engine_args.size() != 2)
-            throw Exception("SQLite database requires 2 arguments: database path, table name",
-                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "SQLite database requires 2 arguments: database path, table name");
 
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getLocalContext());
 
-        const auto database_path = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
-        const auto table_name = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
+        const auto database_path = checkAndGetLiteralArgument<String>(engine_args[0], "database_path");
+        const auto table_name = checkAndGetLiteralArgument<String>(engine_args[1], "table_name");
 
         auto sqlite_db = openSQLiteDB(database_path, args.getContext(), /* throw_on_error */!args.attach);
 
-        return StorageSQLite::create(args.table_id, sqlite_db, database_path,
+        return std::make_shared<StorageSQLite>(args.table_id, sqlite_db, database_path,
                                      table_name, args.columns, args.constraints, args.getContext());
     },
     {

@@ -1,8 +1,9 @@
 ---
-toc_priority: 206
+slug: /en/sql-reference/aggregate-functions/reference/quantiledeterministic
+sidebar_position: 206
 ---
 
-# quantileDeterministic {#quantiledeterministic}
+# quantileDeterministic
 
 Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 

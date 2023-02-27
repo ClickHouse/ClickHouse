@@ -1,1 +1,0 @@
-../../../en/operations/system-tables/stack_trace.md

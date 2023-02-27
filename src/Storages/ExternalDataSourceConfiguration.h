@@ -2,12 +2,14 @@
 
 #include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Storages/StorageS3Settings.h>
+#include <IO/HTTPHeaderEntries.h>
 
 
 namespace DB
 {
 
-#define EMPTY_SETTINGS(M)
+#define EMPTY_SETTINGS(M, ALIAS)
 DECLARE_SETTINGS_TRAITS(EmptySettingsTraits, EMPTY_SETTINGS)
 
 struct EmptySettings : public BaseSettings<EmptySettingsTraits> {};
@@ -18,6 +20,7 @@ struct ExternalDataSourceConfiguration
     UInt16 port = 0;
     String username = "default";
     String password;
+    String quota_key;
     String database;
     String table;
     String schema;
@@ -42,12 +45,6 @@ struct StorageMySQLConfiguration : ExternalDataSourceConfiguration
     bool replace_query = false;
     String on_duplicate_clause;
 };
-
-struct StorageMongoDBConfiguration : ExternalDataSourceConfiguration
-{
-    String options;
-};
-
 
 using StorageSpecificArgs = std::vector<std::pair<String, ASTPtr>>;
 
@@ -98,20 +95,18 @@ getExternalDataSourceConfigurationByPriority(const Poco::Util::AbstractConfigura
 struct URLBasedDataSourceConfiguration
 {
     String url;
+    String endpoint;
     String format = "auto";
     String compression_method = "auto";
     String structure = "auto";
 
-    std::vector<std::pair<String, Field>> headers;
+    String user;
+    String password;
+
+    HTTPHeaderEntries headers;
     String http_method;
 
     void set(const URLBasedDataSourceConfiguration & conf);
-};
-
-struct StorageS3Configuration : URLBasedDataSourceConfiguration
-{
-    String access_key_id;
-    String secret_access_key;
 };
 
 struct URLBasedDataSourceConfig
@@ -120,7 +115,8 @@ struct URLBasedDataSourceConfig
     StorageSpecificArgs specific_args;
 };
 
-std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(const ASTs & args, ContextPtr context);
+std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(
+    const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context);
 
 template<typename T>
 bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<T> & settings, ContextPtr context);

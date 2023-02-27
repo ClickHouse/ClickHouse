@@ -1,9 +1,7 @@
 ---
-toc_priority: 65
-toc_title: clickhouse-format
+slug: /en/operations/utilities/clickhouse-format
+title: clickhouse-format
 ---
-
-# clickhouse-format {#clickhouse-format}
 
 Allows formatting input queries.
 

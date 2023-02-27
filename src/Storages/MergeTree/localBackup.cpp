@@ -13,15 +13,19 @@ namespace ErrorCodes
     extern const int DIRECTORY_ALREADY_EXISTS;
 }
 
+namespace
+{
 
-static void localBackupImpl(const DiskPtr & disk, const String & source_path, const String & destination_path, size_t level,
-                            std::optional<size_t> max_level)
+void localBackupImpl(
+    const DiskPtr & disk, const String & source_path,
+    const String & destination_path, bool make_source_readonly, size_t level,
+    std::optional<size_t> max_level, const NameSet & files_to_copy_instead_of_hardlinks)
 {
     if (max_level && level > *max_level)
         return;
 
     if (level >= 1000)
-        throw DB::Exception("Too deep recursion", DB::ErrorCodes::TOO_DEEP_RECURSION);
+        throw DB::Exception(DB::ErrorCodes::TOO_DEEP_RECURSION, "Too deep recursion");
 
     disk->createDirectories(destination_path);
 
@@ -32,18 +36,20 @@ static void localBackupImpl(const DiskPtr & disk, const String & source_path, co
 
         if (!disk->isDirectory(source))
         {
-            disk->setReadOnly(source);
-            disk->createHardLink(source, destination);
+            if (make_source_readonly)
+                disk->setReadOnly(source);
+            if (files_to_copy_instead_of_hardlinks.contains(it->name()))
+                disk->copyFile(source, *disk, destination);
+            else
+                disk->createHardLink(source, destination);
         }
         else
         {
-            localBackupImpl(disk, source, destination, level + 1, max_level);
+            localBackupImpl(disk, source, destination, make_source_readonly, level + 1, max_level, files_to_copy_instead_of_hardlinks);
         }
     }
 }
 
-namespace
-{
 class CleanupOnFail
 {
 public:
@@ -80,11 +86,15 @@ private:
 };
 }
 
-void localBackup(const DiskPtr & disk, const String & source_path, const String & destination_path, std::optional<size_t> max_level)
+void localBackup(
+    const DiskPtr & disk, const String & source_path,
+    const String & destination_path, bool make_source_readonly,
+    std::optional<size_t> max_level, bool copy_instead_of_hardlinks, const NameSet & files_to_copy_intead_of_hardlinks)
 {
     if (disk->exists(destination_path) && !disk->isDirectoryEmpty(destination_path))
     {
-        throw DB::Exception("Directory " + fullPath(disk, destination_path) + " already exists and is not empty.", DB::ErrorCodes::DIRECTORY_ALREADY_EXISTS);
+        throw DB::Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Directory {} already exists and is not empty.",
+                            DB::fullPath(disk, destination_path));
     }
 
     size_t try_no = 0;
@@ -100,7 +110,10 @@ void localBackup(const DiskPtr & disk, const String & source_path, const String 
     {
         try
         {
-            localBackupImpl(disk, source_path, destination_path, 0, max_level);
+            if (copy_instead_of_hardlinks)
+                disk->copyDirectoryContent(source_path, disk, destination_path);
+            else
+                localBackupImpl(disk, source_path, destination_path, make_source_readonly, 0, max_level, files_to_copy_intead_of_hardlinks);
         }
         catch (const DB::ErrnoException & e)
         {

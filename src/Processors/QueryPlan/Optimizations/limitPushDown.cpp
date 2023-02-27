@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/WindowStep.h>
 #include <Common/typeid_cast.h>
 
 namespace DB::QueryPlanOptimizations
@@ -64,6 +65,11 @@ size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
 
     /// Special case for TotalsHaving. Totals may be incorrect if we push down limit.
     if (typeid_cast<const TotalsHavingStep *>(child.get()))
+        return 0;
+
+    /// Disable for WindowStep.
+    /// TODO: we can push down limit in some cases if increase the limit value.
+    if (typeid_cast<const WindowStep *>(child.get()))
         return 0;
 
     /// Now we should decide if pushing down limit possible for this step.

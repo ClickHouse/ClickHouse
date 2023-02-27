@@ -20,7 +20,7 @@ struct Estimator
     {
         double current_score = sum_size;
 
-        if (!min_score || current_score < min_score)
+        if (min_score == 0.0 || current_score < min_score)
         {
             min_score = current_score;
             best_begin = begin;
@@ -33,7 +33,7 @@ struct Estimator
         return LevelMergeSelector::PartsRange(best_begin, best_end);
     }
 
-    double min_score = 0;
+    double min_score = 0.0;
     Iterator best_begin {};
     Iterator best_end {};
 };
@@ -105,7 +105,7 @@ void selectWithinPartition(
 
 LevelMergeSelector::PartsRange LevelMergeSelector::select(
     const PartsRanges & parts_ranges,
-    const size_t max_total_size_to_merge)
+    size_t max_total_size_to_merge)
 {
     Estimator estimator;
 

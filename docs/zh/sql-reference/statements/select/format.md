@@ -1,5 +1,6 @@
 ---
-toc_title: FORMAT
+slug: /zh/sql-reference/statements/select/format
+sidebar_label: FORMAT
 ---
 
 # 格式化子句 {#format-clause}

@@ -54,15 +54,15 @@ MutableColumnPtr ColumnFixedString::cloneResized(size_t size) const
 bool ColumnFixedString::isDefaultAt(size_t index) const
 {
     assert(index < size());
-    return memoryIsZero(chars.data() + index * n, n);
+    return memoryIsZero(chars.data() + index * n, 0, n);
 }
 
 void ColumnFixedString::insert(const Field & x)
 {
-    const String & s = DB::get<const String &>(x);
+    const String & s = x.get<const String &>();
 
     if (s.size() > n)
-        throw Exception("Too large string '" + s + "' for FixedString column", ErrorCodes::TOO_LARGE_STRING_SIZE);
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string '{}' for FixedString column", s);
 
     size_t old_size = chars.size();
     chars.resize_fill(old_size + n);
@@ -74,7 +74,7 @@ void ColumnFixedString::insertFrom(const IColumn & src_, size_t index)
     const ColumnFixedString & src = assert_cast<const ColumnFixedString &>(src_);
 
     if (n != src.getN())
-        throw Exception("Size of FixedString doesn't match", ErrorCodes::SIZE_OF_FIXED_STRING_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZE_OF_FIXED_STRING_DOESNT_MATCH, "Size of FixedString doesn't match");
 
     size_t old_size = chars.size();
     chars.resize(old_size + n);
@@ -84,7 +84,7 @@ void ColumnFixedString::insertFrom(const IColumn & src_, size_t index)
 void ColumnFixedString::insertData(const char * pos, size_t length)
 {
     if (length > n)
-        throw Exception("Too large string for FixedString column", ErrorCodes::TOO_LARGE_STRING_SIZE);
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string for FixedString column");
 
     size_t old_size = chars.size();
     chars.resize_fill(old_size + n);
@@ -121,8 +121,9 @@ void ColumnFixedString::updateWeakHash32(WeakHash32 & hash) const
     auto s = size();
 
     if (hash.getData().size() != s)
-        throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
-                        ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
+                        "column size is {}, "
+                        "hash size is {}", std::to_string(s), std::to_string(hash.getData().size()));
 
     const UInt8 * pos = chars.data();
     UInt32 * hash_data = hash.getData().data();
@@ -142,68 +143,49 @@ void ColumnFixedString::updateHashFast(SipHash & hash) const
     hash.update(reinterpret_cast<const char *>(chars.data()), size() * n);
 }
 
-template <bool positive>
-struct ColumnFixedString::Cmp
+struct ColumnFixedString::ComparatorBase
 {
     const ColumnFixedString & parent;
-    explicit Cmp(const ColumnFixedString & parent_) : parent(parent_) {}
-    int operator()(size_t lhs, size_t rhs) const
+
+    explicit ComparatorBase(const ColumnFixedString & parent_)
+        : parent(parent_)
+    {
+    }
+
+    ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
     {
         int res = memcmpSmallAllowOverflow15(parent.chars.data() + lhs * parent.n, parent.chars.data() + rhs * parent.n, parent.n);
 
-        if constexpr (positive)
-            return res;
-        else
-            return -res;
+        return res;
     }
 };
 
-struct ColumnFixedString::less
+void ColumnFixedString::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                                    size_t limit, int /*nan_direction_hint*/, Permutation & res) const
 {
-    Cmp<true> cmp;
-    explicit less(const ColumnFixedString & parent_) : cmp(parent_) {}
-    int operator()(size_t lhs, size_t rhs) const { return cmp(lhs, rhs) < 0; }
-};
-
-struct ColumnFixedString::greater
-{
-    Cmp<true> cmp;
-    explicit greater(const ColumnFixedString & parent_) : cmp(parent_) {}
-    int operator()(size_t lhs, size_t rhs) const { return cmp(lhs, rhs) > 0; }
-};
-
-void ColumnFixedString::getPermutation(bool reverse, size_t limit, int /*nan_direction_hint*/, Permutation & res) const
-{
-    size_t s = size();
-    res.resize(s);
-    for (size_t i = 0; i < s; ++i)
-        res[i] = i;
-
-    if (limit >= s)
-        limit = 0;
-
-    if (limit)
-    {
-        if (reverse)
-            ::partial_sort(res.begin(), res.begin() + limit, res.end(), greater(*this));
-        else
-            ::partial_sort(res.begin(), res.begin() + limit, res.end(), less(*this));
-    }
-    else
-    {
-        if (reverse)
-            ::sort(res.begin(), res.end(), greater(*this));
-        else
-            ::sort(res.begin(), res.end(), less(*this));
-    }
+    if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
+        getPermutationImpl(limit, res, ComparatorAscendingUnstable(*this), DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
+        getPermutationImpl(limit, res, ComparatorAscendingStable(*this), DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
+        getPermutationImpl(limit, res, ComparatorDescendingUnstable(*this), DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
+        getPermutationImpl(limit, res, ComparatorDescendingStable(*this), DefaultSort(), DefaultPartialSort());
 }
 
-void ColumnFixedString::updatePermutation(bool reverse, size_t limit, int, Permutation & res, EqualRanges & equal_ranges) const
+void ColumnFixedString::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                                    size_t limit, int /*nan_direction_hint*/, Permutation & res, EqualRanges & equal_ranges) const
 {
-    if (reverse)
-        updatePermutationImpl(limit, res, equal_ranges, Cmp<false>(*this));
-    else
-        updatePermutationImpl(limit, res, equal_ranges, Cmp<true>(*this));
+    auto comparator_equal = ComparatorEqual(*this);
+
+    if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
+        updatePermutationImpl(limit, res, equal_ranges, ComparatorAscendingUnstable(*this), comparator_equal, DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
+        updatePermutationImpl(limit, res, equal_ranges, ComparatorAscendingStable(*this), comparator_equal, DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
+        updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingUnstable(*this), comparator_equal, DefaultSort(), DefaultPartialSort());
+    else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
+        updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingStable(*this), comparator_equal, DefaultSort(), DefaultPartialSort());
 }
 
 void ColumnFixedString::insertRangeFrom(const IColumn & src, size_t start, size_t length)
@@ -211,11 +193,9 @@ void ColumnFixedString::insertRangeFrom(const IColumn & src, size_t start, size_
     const ColumnFixedString & src_concrete = assert_cast<const ColumnFixedString &>(src);
 
     if (start + length > src_concrete.size())
-        throw Exception("Parameters start = "
-            + toString(start) + ", length = "
-            + toString(length) + " are out of bound in ColumnFixedString::insertRangeFrom method"
-            " (size() = " + toString(src_concrete.size()) + ").",
-            ErrorCodes::PARAMETER_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameters start = {}, length = {} are out of bound "
+                        "in ColumnFixedString::insertRangeFrom method (size() = {}).",
+                        toString(start), toString(length), toString(src_concrete.size()));
 
     size_t old_size = chars.size();
     chars.resize(old_size + length * n);
@@ -226,7 +206,7 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
 {
     size_t col_size = size();
     if (col_size != filt.size())
-        throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), col_size);
 
     auto res = ColumnFixedString::create(n);
 
@@ -259,7 +239,7 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
             size_t res_chars_size = res->chars.size();
             while (mask)
             {
-                size_t index = __builtin_ctzll(mask);
+                size_t index = std::countr_zero(mask);
                 res->chars.resize(res_chars_size + n);
                 memcpySmallAllowReadWriteOverflow15(&res->chars[res_chars_size], data_pos + index * n, n);
                 res_chars_size += n;
@@ -294,17 +274,17 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
 void ColumnFixedString::expand(const IColumn::Filter & mask, bool inverted)
 {
     if (mask.size() < size())
-        throw Exception("Mask size should be no less than data size.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mask size should be no less than data size.");
 
-    int index = mask.size() - 1;
-    int from = size() - 1;
+    ssize_t index = mask.size() - 1;
+    ssize_t from = size() - 1;
     chars.resize_fill(mask.size() * n, 0);
     while (index >= 0)
     {
         if (!!mask[index] ^ inverted)
         {
             if (from < 0)
-                throw Exception("Too many bytes in mask", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many bytes in mask");
 
             memcpy(&chars[index * n], &chars[from * n], n);
             --from;
@@ -314,7 +294,7 @@ void ColumnFixedString::expand(const IColumn::Filter & mask, bool inverted)
     }
 
     if (from != -1)
-        throw Exception("Not enough bytes in mask", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough bytes in mask");
 }
 
 ColumnPtr ColumnFixedString::permute(const Permutation & perm, size_t limit) const
@@ -353,7 +333,7 @@ ColumnPtr ColumnFixedString::replicate(const Offsets & offsets) const
 {
     size_t col_size = size();
     if (col_size != offsets.size())
-        throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets doesn't match size of column.");
 
     auto res = ColumnFixedString::create(n);
 
@@ -389,7 +369,7 @@ void ColumnFixedString::getExtremes(Field & min, Field & max) const
     size_t min_idx = 0;
     size_t max_idx = 0;
 
-    auto cmp_less = less(*this);
+    auto cmp_less = ComparatorAscendingUnstable(*this);
     for (size_t i = 1; i < col_size; ++i)
     {
         if (cmp_less(i, min_idx))

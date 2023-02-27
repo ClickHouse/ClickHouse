@@ -5,6 +5,7 @@
 #include <Common/quoteString.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Core/ColumnWithTypeAndName.h>
+#include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -79,7 +80,7 @@ void StorageInMemoryMetadata::setComment(const String & comment_)
 void StorageInMemoryMetadata::setColumns(ColumnsDescription columns_)
 {
     if (columns_.getAllPhysical().empty())
-        throw Exception("Empty list of columns passed", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
+        throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Empty list of columns passed");
     columns = std::move(columns_);
 }
 
@@ -238,7 +239,7 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(const NameSet 
         auto required_columns = expression->getRequiredColumns();
         for (const auto & dependency : required_columns)
         {
-            if (updated_columns.count(dependency))
+            if (updated_columns.contains(dependency))
             {
                 to_set.insert(required_columns.begin(), required_columns.end());
                 return true;
@@ -338,39 +339,6 @@ Block StorageInMemoryMetadata::getSampleBlock() const
 
     for (const auto & column : getColumns().getAllPhysical())
         res.insert({column.type->createColumn(), column.type, column.name});
-
-    return res;
-}
-
-Block StorageInMemoryMetadata::getSampleBlockForColumns(
-    const Names & column_names, const NamesAndTypesList & virtuals, const StorageID & storage_id) const
-{
-    Block res;
-
-    HashMapWithSavedHash<StringRef, const DataTypePtr *, StringRefHash> virtuals_map;
-
-    /// Virtual columns must be appended after ordinary, because user can
-    /// override them.
-    for (const auto & column : virtuals)
-        virtuals_map[column.name] = &column.type;
-
-    for (const auto & name : column_names)
-    {
-        auto column = getColumns().tryGetColumnOrSubcolumn(ColumnsDescription::All, name);
-        if (column)
-        {
-            res.insert({column->type->createColumn(), column->type, column->name});
-        }
-        else if (auto * it = virtuals_map.find(name); it != virtuals_map.end())
-        {
-            const auto & type = *it->getMapped();
-            res.insert({type->createColumn(), type, name});
-        }
-        else
-            throw Exception(
-                "Column " + backQuote(name) + " not found in table " + (storage_id.empty() ? "" : storage_id.getNameForLogs()),
-                ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
-    }
 
     return res;
 }
@@ -499,18 +467,6 @@ namespace
     using NamesAndTypesMap = HashMapWithSavedHash<StringRef, const IDataType *, StringRefHash>;
     using UniqueStrings = HashSetWithSavedHash<StringRef, StringRefHash>;
 
-    String listOfColumns(const NamesAndTypesList & available_columns)
-    {
-        WriteBufferFromOwnString ss;
-        for (auto it = available_columns.begin(); it != available_columns.end(); ++it)
-        {
-            if (it != available_columns.begin())
-                ss << ", ";
-            ss << it->name;
-        }
-        return ss.str();
-    }
-
     NamesAndTypesMap getColumnsMap(const NamesAndTypesList & columns)
     {
         NamesAndTypesMap res;
@@ -539,36 +495,16 @@ namespace
     }
 }
 
-void StorageInMemoryMetadata::check(const Names & column_names, const NamesAndTypesList & virtuals, const StorageID & storage_id) const
+String listOfColumns(const NamesAndTypesList & available_columns)
 {
-    if (column_names.empty())
+    WriteBufferFromOwnString ss;
+    for (auto it = available_columns.begin(); it != available_columns.end(); ++it)
     {
-        auto list_of_columns = listOfColumns(getColumns().getAllPhysicalWithSubcolumns());
-        throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED,
-            "Empty list of columns queried. There are columns: {}", list_of_columns);
+        if (it != available_columns.begin())
+            ss << ", ";
+        ss << it->name;
     }
-
-    const auto virtuals_map = getColumnsMap(virtuals);
-    UniqueStrings unique_names;
-
-    for (const auto & name : column_names)
-    {
-        bool has_column = getColumns().hasColumnOrSubcolumn(ColumnsDescription::AllPhysical, name)
-            || virtuals_map.find(name) != nullptr;
-
-        if (!has_column)
-        {
-            auto list_of_columns = listOfColumns(getColumns().getAllPhysicalWithSubcolumns());
-            throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
-                "There is no column with name {} in table {}. There are columns: {}",
-                backQuote(name), storage_id.getNameForLogs(), list_of_columns);
-        }
-
-        if (unique_names.end() != unique_names.find(name))
-            throw Exception(ErrorCodes::COLUMN_QUERIED_MORE_THAN_ONCE, "Column {} queried more than once", name);
-
-        unique_names.insert(name);
-    }
+    return ss.str();
 }
 
 void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns) const
@@ -589,7 +525,10 @@ void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns) 
                 listOfColumns(available_columns));
 
         const auto * available_type = it->getMapped();
-        if (!column.type->equals(*available_type) && !isCompatibleEnumTypes(available_type, column.type.get()))
+
+        if (!available_type->hasDynamicSubcolumns()
+            && !column.type->equals(*available_type)
+            && !isCompatibleEnumTypes(available_type, column.type.get()))
             throw Exception(
                 ErrorCodes::TYPE_MISMATCH,
                 "Type mismatch for column {}. Column has type {}, got type {}",
@@ -613,9 +552,8 @@ void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns, 
     const auto & provided_columns_map = getColumnsMap(provided_columns);
 
     if (column_names.empty())
-        throw Exception(
-            "Empty list of columns queried. There are columns: " + listOfColumns(available_columns),
-            ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED);
+        throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED, "Empty list of columns queried. There are columns: {}",
+            listOfColumns(available_columns));
 
     UniqueStrings unique_names;
 
@@ -636,7 +574,9 @@ void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns, 
         const auto * provided_column_type = it->getMapped();
         const auto * available_column_type = jt->getMapped();
 
-        if (!provided_column_type->equals(*available_column_type) && !isCompatibleEnumTypes(available_column_type, provided_column_type))
+        if (!provided_column_type->hasDynamicSubcolumns()
+            && !provided_column_type->equals(*available_column_type)
+            && !isCompatibleEnumTypes(available_column_type, provided_column_type))
             throw Exception(
                 ErrorCodes::TYPE_MISMATCH,
                 "Type mismatch for column {}. Column has type {}, got type {}",
@@ -664,8 +604,8 @@ void StorageInMemoryMetadata::check(const Block & block, bool need_all) const
 
     for (const auto & column : block)
     {
-        if (names_in_block.count(column.name))
-            throw Exception("Duplicate column " + column.name + " in block", ErrorCodes::DUPLICATE_COLUMN);
+        if (names_in_block.contains(column.name))
+            throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Duplicate column {} in block", column.name);
 
         names_in_block.insert(column.name);
 
@@ -678,7 +618,9 @@ void StorageInMemoryMetadata::check(const Block & block, bool need_all) const
                 listOfColumns(available_columns));
 
         const auto * available_type = it->getMapped();
-        if (!column.type->equals(*available_type) && !isCompatibleEnumTypes(available_type, column.type.get()))
+        if (!available_type->hasDynamicSubcolumns()
+            && !column.type->equals(*available_type)
+            && !isCompatibleEnumTypes(available_type, column.type.get()))
             throw Exception(
                 ErrorCodes::TYPE_MISMATCH,
                 "Type mismatch for column {}. Column has type {}, got type {}",
@@ -691,8 +633,8 @@ void StorageInMemoryMetadata::check(const Block & block, bool need_all) const
     {
         for (const auto & available_column : available_columns)
         {
-            if (!names_in_block.count(available_column.name))
-                throw Exception("Expected column " + available_column.name, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+            if (!names_in_block.contains(available_column.name))
+                throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Expected column {}", available_column.name);
         }
     }
 }

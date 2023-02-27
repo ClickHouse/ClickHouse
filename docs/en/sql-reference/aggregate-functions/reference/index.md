@@ -1,10 +1,11 @@
 ---
+slug: /en/sql-reference/aggregate-functions/reference/
 toc_folder_title: Reference
-toc_priority: 36
+sidebar_position: 36
 toc_hidden: true
 ---
 
-# List of Aggregate Functions {#aggregate-functions-reference}
+# List of Aggregate Functions
 
 Standard aggregate functions:
 
@@ -31,6 +32,7 @@ ClickHouse-specific aggregate functions:
 -   [topK](../../../sql-reference/aggregate-functions/reference/topk.md)
 -   [topKWeighted](../../../sql-reference/aggregate-functions/reference/topkweighted.md)
 -   [groupArray](../../../sql-reference/aggregate-functions/reference/grouparray.md)
+-   [groupArrayLast](../../../sql-reference/aggregate-functions/reference/grouparraylast.md)
 -   [groupUniqArray](../../../sql-reference/aggregate-functions/reference/groupuniqarray.md)
 -   [groupArrayInsertAt](../../../sql-reference/aggregate-functions/reference/grouparrayinsertat.md)
 -   [groupArrayMovingAvg](../../../sql-reference/aggregate-functions/reference/grouparraymovingavg.md)
@@ -55,6 +57,7 @@ ClickHouse-specific aggregate functions:
 -   [uniqCombined](../../../sql-reference/aggregate-functions/reference/uniqcombined.md)
 -   [uniqCombined64](../../../sql-reference/aggregate-functions/reference/uniqcombined64.md)
 -   [uniqHLL12](../../../sql-reference/aggregate-functions/reference/uniqhll12.md)
+-   [uniqTheta](../../../sql-reference/aggregate-functions/reference/uniqthetasketch.md)
 -   [quantile](../../../sql-reference/aggregate-functions/reference/quantile.md)
 -   [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md)
 -   [quantileExact](../../../sql-reference/aggregate-functions/reference/quantileexact.md)
@@ -72,5 +75,9 @@ ClickHouse-specific aggregate functions:
 -   [stochasticLinearRegression](../../../sql-reference/aggregate-functions/reference/stochasticlinearregression.md)
 -   [stochasticLogisticRegression](../../../sql-reference/aggregate-functions/reference/stochasticlogisticregression.md)
 -   [categoricalInformationValue](../../../sql-reference/aggregate-functions/reference/categoricalinformationvalue.md)
-
-[Original article](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/) <!--hide-->
+-   [contingency](./contingency.md)
+-   [cramersV](./cramersv.md)
+-   [cramersVBiasCorrected](./cramersvbiascorrected.md)
+-   [theilsU](./theilsu.md)
+-   [maxIntersections](./maxintersections.md)
+-   [maxIntersectionsPosition](./maxintersectionsposition.md)

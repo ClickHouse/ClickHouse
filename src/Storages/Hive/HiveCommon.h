@@ -1,7 +1,7 @@
 #pragma once
 
 #include <memory>
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_HIVE
 
@@ -10,9 +10,10 @@
 #include <ThriftHiveMetastore.h>
 
 #include <base/types.h>
-#include <Common/LRUCache.h>
+#include <Common/CacheBase.h>
 #include <Common/PoolBase.h>
 #include <Storages/HDFS/HDFSCommon.h>
+#include <Storages/Hive/HiveFile.h>
 
 
 namespace DB
@@ -37,10 +38,9 @@ protected:
 private:
     ThriftHiveMetastoreClientBuilder builder;
 };
-class HiveMetastoreClient : public WithContext
+class HiveMetastoreClient
 {
 public:
-
     struct FileInfo
     {
         String path;
@@ -63,67 +63,67 @@ public:
         bool initialized = false; /// If true, files are initialized.
 
         explicit PartitionInfo(const Apache::Hadoop::Hive::Partition & partition_): partition(partition_) {}
+        PartitionInfo(PartitionInfo &&) = default;
+
         bool haveSameParameters(const Apache::Hadoop::Hive::Partition & other) const;
     };
 
+    class HiveTableMetadata;
+    using HiveTableMetadataPtr = std::shared_ptr<HiveTableMetadata>;
 
     /// Used for speeding up metadata query process.
-    struct HiveTableMetadata : public WithContext
+    class HiveTableMetadata : boost::noncopyable
     {
     public:
         HiveTableMetadata(
             const String & db_name_,
             const String & table_name_,
             std::shared_ptr<Apache::Hadoop::Hive::Table> table_,
-            const std::map<String, PartitionInfo> & partition_infos_,
-            ContextPtr context_)
-            : WithContext(context_)
-            , db_name(db_name_)
+            const std::vector<Apache::Hadoop::Hive::Partition> & partitions_)
+            : db_name(db_name_)
             , table_name(table_name_)
-            , table(table_)
-            , partition_infos(partition_infos_)
+            , table(std::move(table_))
             , empty_partition_keys(table->partitionKeys.empty())
+            , hive_files_cache(std::make_shared<HiveFilesCache>(10000))
         {
+            std::lock_guard lock(mutex);
+            for (const auto & partition : partitions_)
+                partition_infos.emplace(partition.sd.location, PartitionInfo(partition));
         }
 
-
-        std::map<String, PartitionInfo> & getPartitionInfos()
-        {
-            std::lock_guard lock{mutex};
-            return partition_infos;
-        }
-
-        std::shared_ptr<Apache::Hadoop::Hive::Table> getTable() const
-        {
-            std::lock_guard lock{mutex};
-            return table;
-        }
+        std::shared_ptr<Apache::Hadoop::Hive::Table> getTable() const { return table; }
 
         std::vector<Apache::Hadoop::Hive::Partition> getPartitions() const;
 
         std::vector<FileInfo> getFilesByLocation(const HDFSFSPtr & fs, const String & location);
 
-    private:
-        String db_name;
-        String table_name;
+        HiveFilesCachePtr getHiveFilesCache() const;
 
+        void updateIfNeeded(const std::vector<Apache::Hadoop::Hive::Partition> & partitions);
+
+    private:
+        bool shouldUpdate(const std::vector<Apache::Hadoop::Hive::Partition> & partitions);
+
+        const String db_name;
+        const String table_name;
+        const std::shared_ptr<Apache::Hadoop::Hive::Table> table;
+
+        /// Mutex to protect partition_infos.
         mutable std::mutex mutex;
-        std::shared_ptr<Apache::Hadoop::Hive::Table> table;
         std::map<String, PartitionInfo> partition_infos;
+
         const bool empty_partition_keys;
+        const HiveFilesCachePtr hive_files_cache;
 
         Poco::Logger * log = &Poco::Logger::get("HiveMetastoreClient");
     };
 
-    using HiveTableMetadataPtr = std::shared_ptr<HiveMetastoreClient::HiveTableMetadata>;
 
-    explicit HiveMetastoreClient(ThriftHiveMetastoreClientBuilder builder_, ContextPtr context_)
-        : WithContext(context_)
-        , table_metadata_cache(1000)
+    explicit HiveMetastoreClient(ThriftHiveMetastoreClientBuilder builder_)
+        : table_metadata_cache(1000)
         , client_pool(builder_)
     {
     }
-
 
     HiveTableMetadataPtr getTableMetadata(const String & db_name, const String & table_name);
     // Access hive table information by hive client
@@ -133,12 +133,9 @@ public:
 private:
     static String getCacheKey(const String & db_name, const String & table_name)  { return db_name + "." + table_name; }
 
-    bool shouldUpdateTableMetadata(
-        const String & db_name, const String & table_name, const std::vector<Apache::Hadoop::Hive::Partition> & partitions);
-
     void tryCallHiveClient(std::function<void(ThriftHiveMetastoreClientPool::Entry &)> func);
 
-    LRUCache<String, HiveTableMetadata> table_metadata_cache;
+    CacheBase<String, HiveTableMetadata> table_metadata_cache;
     ThriftHiveMetastoreClientPool client_pool;
 
     Poco::Logger * log = &Poco::Logger::get("HiveMetastoreClient");
@@ -150,16 +147,15 @@ class HiveMetastoreClientFactory final : private boost::noncopyable
 public:
     static HiveMetastoreClientFactory & instance();
 
-    HiveMetastoreClientPtr getOrCreate(const String & name, ContextPtr context);
-
-    static std::shared_ptr<Apache::Hadoop::Hive::ThriftHiveMetastoreClient> createThriftHiveMetastoreClient(const String & name);
+    HiveMetastoreClientPtr getOrCreate(const String & name);
 
 private:
+    static std::shared_ptr<Apache::Hadoop::Hive::ThriftHiveMetastoreClient> createThriftHiveMetastoreClient(const String & name);
+
     std::mutex mutex;
     std::map<String, HiveMetastoreClientPtr> clients;
 };
 
 }
-
 
 #endif

@@ -7,8 +7,9 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/TraceLog.h>
 #include <Poco/Logger.h>
+#include <Common/ProfileEvents.h>
 #include <Common/setThreadName.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -31,12 +32,19 @@ TraceCollector::TraceCollector(std::shared_ptr<TraceLog> trace_log_)
 
 TraceCollector::~TraceCollector()
 {
-    if (!thread.joinable())
-        LOG_ERROR(&Poco::Logger::get("TraceCollector"), "TraceCollector thread is malformed and cannot be joined");
-    else
-        stop();
+    try
+    {
+        if (!thread.joinable())
+            LOG_ERROR(&Poco::Logger::get("TraceCollector"), "TraceCollector thread is malformed and cannot be joined");
+        else
+            stop();
 
-    TraceSender::pipe.close();
+        TraceSender::pipe.close();
+    }
+    catch (...)
+    {
+        tryLogCurrentException("TraceCollector");
+    }
 }
 
 
@@ -72,7 +80,7 @@ void TraceCollector::run()
         UInt8 query_id_size = 0;
         readBinary(query_id_size, in);
         query_id.resize(query_id_size);
-        in.read(query_id.data(), query_id_size);
+        in.readStrict(query_id.data(), query_id_size);
 
         UInt8 trace_size = 0;
         readIntBinary(trace_size, in);
@@ -84,7 +92,7 @@ void TraceCollector::run()
         {
             uintptr_t addr = 0;
             readPODBinary(addr, in);
-            trace.emplace_back(UInt64(addr));
+            trace.emplace_back(static_cast<UInt64>(addr));
         }
 
         TraceType trace_type;
@@ -96,6 +104,12 @@ void TraceCollector::run()
         Int64 size;
         readPODBinary(size, in);
 
+        ProfileEvents::Event event;
+        readPODBinary(event, in);
+
+        ProfileEvents::Count increment;
+        readPODBinary(increment, in);
+
         if (trace_log)
         {
             // time and time_in_microseconds are both being constructed from the same timespec so that the
@@ -103,9 +117,9 @@ void TraceCollector::run()
             struct timespec ts;
             clock_gettime(CLOCK_REALTIME, &ts);
 
-            UInt64 time = UInt64(ts.tv_sec * 1000000000LL + ts.tv_nsec);
-            UInt64 time_in_microseconds = UInt64((ts.tv_sec * 1000000LL) + (ts.tv_nsec / 1000));
-            TraceLogElement element{time_t(time / 1000000000), time_in_microseconds, time, trace_type, thread_id, query_id, trace, size};
+            UInt64 time = static_cast<UInt64>(ts.tv_sec * 1000000000LL + ts.tv_nsec);
+            UInt64 time_in_microseconds = static_cast<UInt64>((ts.tv_sec * 1000000LL) + (ts.tv_nsec / 1000));
+            TraceLogElement element{time_t(time / 1000000000), time_in_microseconds, time, trace_type, thread_id, query_id, trace, size, event, increment};
             trace_log->add(element);
         }
     }

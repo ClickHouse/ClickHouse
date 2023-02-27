@@ -1,4 +1,5 @@
 ---
-toc_priority: 53
-toc_title: WATCH
+slug: /zh/sql-reference/statements/watch
+sidebar_position: 53
+sidebar_label: WATCH
 ---

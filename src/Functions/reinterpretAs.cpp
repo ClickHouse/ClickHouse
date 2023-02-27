@@ -288,9 +288,9 @@ private:
         ColumnFixedString::Offset offset = 0;
         for (size_t i = 0; i < rows; ++i)
         {
-            StringRef data = src.getDataAt(i);
+            std::string_view data = src.getDataAt(i).toView();
 
-            memcpy(&data_to[offset], data.data, std::min(n, data.size));
+            memcpy(&data_to[offset], data.data(), std::min(n, data.size()));
             offset += n;
         }
     }
@@ -301,7 +301,7 @@ private:
         ColumnFixedString::Chars & data_to = dst.getChars();
         data_to.resize(n * rows);
 
-        memcpy(data_to.data(), src.getRawData().data, data_to.size());
+        memcpy(data_to.data(), src.getRawData().data(), data_to.size());
     }
 
     static void NO_INLINE executeToString(const IColumn & src, ColumnString & dst)
@@ -471,7 +471,7 @@ using FunctionReinterpretAsFixedString = FunctionReinterpretAs<DataTypeFixedStri
 
 }
 
-void registerFunctionsReinterpretAs(FunctionFactory & factory)
+REGISTER_FUNCTION(ReinterpretAs)
 {
     factory.registerFunction<FunctionReinterpretAsUInt8>();
     factory.registerFunction<FunctionReinterpretAsUInt16>();

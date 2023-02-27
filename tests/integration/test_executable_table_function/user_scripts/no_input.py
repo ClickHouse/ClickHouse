@@ -2,7 +2,7 @@
 
 import sys
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     print("Key 0")
     print("Key 1")
     print("Key 2")

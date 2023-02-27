@@ -24,9 +24,8 @@ class IColumnDummy : public IColumn
 {
 public:
     IColumnDummy() : s(0) {}
-    IColumnDummy(size_t s_) : s(s_) {}
+    explicit IColumnDummy(size_t s_) : s(s_) {}
 
-public:
     virtual MutableColumnPtr cloneDummy(size_t s_) const = 0;
 
     MutableColumnPtr cloneResized(size_t s_) const override { return cloneDummy(s_); }
@@ -43,10 +42,10 @@ public:
 
     bool hasEqualValues() const override { return true; }
 
-    Field operator[](size_t) const override { throw Exception("Cannot get value from " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
-    void get(size_t, Field &) const override { throw Exception("Cannot get value from " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
-    void insert(const Field &) override { throw Exception("Cannot insert element into " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
-    bool isDefaultAt(size_t) const override { throw Exception("isDefaultAt is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
+    Field operator[](size_t) const override { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get value from {}", getName()); }
+    void get(size_t, Field &) const override { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get value from {}", getName()); }
+    void insert(const Field &) override { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot insert element into {}", getName()); }
+    bool isDefaultAt(size_t) const override { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "isDefaultAt is not implemented for {}", getName()); }
 
     StringRef getDataAt(size_t) const override
     {
@@ -116,7 +115,7 @@ public:
     ColumnPtr permute(const Permutation & perm, size_t limit) const override
     {
         if (s != perm.size())
-            throw Exception("Size of permutation doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of permutation doesn't match size of column.");
 
         return cloneDummy(limit ? std::min(s, limit) : s);
     }
@@ -124,24 +123,26 @@ public:
     ColumnPtr index(const IColumn & indexes, size_t limit) const override
     {
         if (indexes.size() < limit)
-            throw Exception("Size of indexes is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of indexes is less than required.");
 
         return cloneDummy(limit ? limit : s);
     }
 
-    void getPermutation(bool /*reverse*/, size_t /*limit*/, int /*nan_direction_hint*/, Permutation & res) const override
+    void getPermutation(IColumn::PermutationSortDirection /*direction*/, IColumn::PermutationSortStability /*stability*/,
+                    size_t /*limit*/, int /*nan_direction_hint*/, Permutation & res) const override
     {
         res.resize(s);
         for (size_t i = 0; i < s; ++i)
             res[i] = i;
     }
 
-    void updatePermutation(bool, size_t, int, Permutation &, EqualRanges&) const override {}
+    void updatePermutation(IColumn::PermutationSortDirection /*direction*/, IColumn::PermutationSortStability /*stability*/,
+                    size_t, int, Permutation &, EqualRanges&) const override {}
 
     ColumnPtr replicate(const Offsets & offsets) const override
     {
         if (s != offsets.size())
-            throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets doesn't match size of column.");
 
         return cloneDummy(offsets.back());
     }
@@ -149,7 +150,7 @@ public:
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override
     {
         if (s != selector.size())
-            throw Exception("Size of selector doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector doesn't match size of column.");
 
         std::vector<size_t> counts(num_columns);
         for (auto idx : selector)
@@ -164,17 +165,17 @@ public:
 
     double getRatioOfDefaultRows(double) const override
     {
-        throw Exception("Method getRatioOfDefaultRows is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getRatioOfDefaultRows is not supported for {}", getName());
     }
 
     void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override
     {
-        throw Exception("Method getIndicesOfNonDefaultRows is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getIndicesOfNonDefaultRows is not supported for {}", getName());
     }
 
     void gather(ColumnGathererStream &) override
     {
-        throw Exception("Method gather is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method gather is not supported for {}", getName());
     }
 
     void getExtremes(Field &, Field &) const override

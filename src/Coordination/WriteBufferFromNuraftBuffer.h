@@ -12,7 +12,6 @@ public:
     WriteBufferFromNuraftBuffer();
 
     nuraft::ptr<nuraft::buffer> getBuffer();
-    bool isFinished() const { return finalized; }
 
     ~WriteBufferFromNuraftBuffer() override;
 

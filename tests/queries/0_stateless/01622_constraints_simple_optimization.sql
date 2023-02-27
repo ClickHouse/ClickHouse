@@ -8,23 +8,23 @@ SET optimize_move_to_prewhere = 1;
 SET optimize_substitute_columns = 1;
 SET optimize_append_index = 1;
 
-CREATE TABLE constraint_test_assumption (URL String, a Int32, CONSTRAINT c1 ASSUME domainWithoutWWW(URL) = 'yandex.ru', CONSTRAINT c2 ASSUME URL > 'zzz' AND startsWith(URL, 'test') = True) ENGINE = TinyLog;
+CREATE TABLE constraint_test_assumption (URL String, a Int32, CONSTRAINT c1 ASSUME domainWithoutWWW(URL) = 'bigmir.net', CONSTRAINT c2 ASSUME URL > 'zzz' AND startsWith(URL, 'test') = True) ENGINE = TinyLog;
 
 --- Add wrong rows in order to check optimization
 INSERT INTO constraint_test_assumption (URL, a) VALUES ('1', 1);
 INSERT INTO constraint_test_assumption (URL, a) VALUES ('2', 2);
-INSERT INTO constraint_test_assumption (URL, a) VALUES ('yandex.ru', 3);
+INSERT INTO constraint_test_assumption (URL, a) VALUES ('bigmir.net', 3);
 INSERT INTO constraint_test_assumption (URL, a) VALUES ('3', 4);
 
-SELECT count() FROM constraint_test_assumption WHERE domainWithoutWWW(URL) = 'yandex.ru'; --- assumption -> 4
-SELECT count() FROM constraint_test_assumption WHERE NOT (domainWithoutWWW(URL) = 'yandex.ru'); --- assumption -> 0
-SELECT count() FROM constraint_test_assumption WHERE domainWithoutWWW(URL) != 'yandex.ru'; --- assumption -> 0
+SELECT count() FROM constraint_test_assumption WHERE domainWithoutWWW(URL) = 'bigmir.net'; --- assumption -> 4
+SELECT count() FROM constraint_test_assumption WHERE NOT (domainWithoutWWW(URL) = 'bigmir.net'); --- assumption -> 0
+SELECT count() FROM constraint_test_assumption WHERE domainWithoutWWW(URL) != 'bigmir.net'; --- assumption -> 0
 SELECT count() FROM constraint_test_assumption WHERE domainWithoutWWW(URL) = 'nothing'; --- not optimized -> 0
 
-SELECT count() FROM constraint_test_assumption WHERE (domainWithoutWWW(URL) = 'yandex.ru' AND URL > 'zzz'); ---> assumption -> 4
-SELECT count() FROM constraint_test_assumption WHERE (domainWithoutWWW(URL) = 'yandex.ru' AND NOT URL <= 'zzz'); ---> assumption -> 4
-SELECT count() FROM constraint_test_assumption WHERE (domainWithoutWWW(URL) = 'yandex.ru' AND URL > 'zzz') OR (a = 10 AND a + 5 < 100); ---> assumption -> 4
-SELECT count() FROM constraint_test_assumption WHERE (domainWithoutWWW(URL) = 'yandex.ru' AND URL = '111'); ---> assumption & no assumption -> 0
+SELECT count() FROM constraint_test_assumption WHERE (domainWithoutWWW(URL) = 'bigmir.net' AND URL > 'zzz'); ---> assumption -> 4
+SELECT count() FROM constraint_test_assumption WHERE (domainWithoutWWW(URL) = 'bigmir.net' AND NOT URL <= 'zzz'); ---> assumption -> 4
+SELECT count() FROM constraint_test_assumption WHERE (domainWithoutWWW(URL) = 'bigmir.net' AND URL > 'zzz') OR (a = 10 AND a + 5 < 100); ---> assumption -> 4
+SELECT count() FROM constraint_test_assumption WHERE (domainWithoutWWW(URL) = 'bigmir.net' AND URL = '111'); ---> assumption & no assumption -> 0
 SELECT count() FROM constraint_test_assumption WHERE (startsWith(URL, 'test') = True); ---> assumption -> 4
 
 DROP TABLE constraint_test_assumption;

@@ -1,8 +1,9 @@
 ---
-toc_priority: 207
+slug: /en/sql-reference/aggregate-functions/reference/quantiletdigest
+sidebar_position: 207
 ---
 
-# quantileTDigest {#quantiletdigest}
+# quantileTDigest
 
 Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using the [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) algorithm.
 

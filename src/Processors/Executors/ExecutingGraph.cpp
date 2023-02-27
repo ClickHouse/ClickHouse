@@ -10,15 +10,17 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ExecutingGraph::ExecutingGraph(Processors & processors_) : processors(processors_)
+ExecutingGraph::ExecutingGraph(std::shared_ptr<Processors> processors_, bool profile_processors_)
+    : processors(std::move(processors_))
+    , profile_processors(profile_processors_)
 {
-    uint64_t num_processors = processors.size();
+    uint64_t num_processors = processors->size();
     nodes.reserve(num_processors);
 
     /// Create nodes.
     for (uint64_t node = 0; node < num_processors; ++node)
     {
-        IProcessor * proc = processors[node].get();
+        IProcessor * proc = processors->at(node).get();
         processors_map[proc] = node;
         nodes.emplace_back(std::make_unique<Node>(proc, node));
     }
@@ -32,12 +34,12 @@ ExecutingGraph::Edge & ExecutingGraph::addEdge(Edges & edges, Edge edge, const I
 {
     auto it = processors_map.find(to);
     if (it == processors_map.end())
-    {
-        String msg = "Processor " + to->getName() + " was found as " + (edge.backward ? "input" : "output")
-                     + " for processor " + from->getName() + ", but not found in list of processors.";
-
-        throw Exception(msg, ErrorCodes::LOGICAL_ERROR);
-    }
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Processor {} was found as {} for processor {}, but not found in list of processors",
+            to->getName(),
+            edge.backward ? "input" : "output",
+            from->getName());
 
     edge.to = it->second;
     auto & added_edge = edges.emplace_back(std::move(edge));
@@ -69,7 +71,7 @@ bool ExecutingGraph::addEdges(uint64_t node)
         }
     }
 
-    /// Add direct edges form output ports.
+    /// Add direct edges from output ports.
     auto & outputs = from->getOutputs();
     auto from_output = nodes[node]->direct_edges.size();
 
@@ -107,10 +109,17 @@ bool ExecutingGraph::expandPipeline(std::stack<uint64_t> & stack, uint64_t pid)
 
     {
         std::lock_guard guard(processors_mutex);
-        processors.insert(processors.end(), new_processors.begin(), new_processors.end());
+        /// Do not add new processors to existing list, since the query was already cancelled.
+        if (cancelled)
+        {
+            for (auto & processor : new_processors)
+                processor->cancel();
+            return false;
+        }
+        processors->insert(processors->end(), new_processors.begin(), new_processors.end());
     }
 
-    uint64_t num_processors = processors.size();
+    uint64_t num_processors = processors->size();
     std::vector<uint64_t> back_edges_sizes(num_processors, 0);
     std::vector<uint64_t> direct_edge_sizes(num_processors, 0);
 
@@ -124,10 +133,9 @@ bool ExecutingGraph::expandPipeline(std::stack<uint64_t> & stack, uint64_t pid)
 
     while (nodes.size() < num_processors)
     {
-        auto * processor = processors[nodes.size()].get();
-        if (processors_map.count(processor))
-            throw Exception("Processor " + processor->getName() + " was already added to pipeline.",
-                            ErrorCodes::LOGICAL_ERROR);
+        auto * processor = processors->at(nodes.size()).get();
+        if (processors_map.contains(processor))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} was already added to pipeline", processor->getName());
 
         processors_map[processor] = nodes.size();
         nodes.emplace_back(std::make_unique<Node>(processor, nodes.size()));
@@ -263,7 +271,33 @@ bool ExecutingGraph::updateNode(uint64_t pid, Queue & queue, Queue & async_queue
 
                 try
                 {
-                    node.last_processor_status = node.processor->prepare(node.updated_input_ports, node.updated_output_ports);
+                    auto & processor = *node.processor;
+                    IProcessor::Status last_status = node.last_processor_status;
+                    IProcessor::Status status = processor.prepare(node.updated_input_ports, node.updated_output_ports);
+                    node.last_processor_status = status;
+
+                    if (profile_processors)
+                    {
+                        /// NeedData
+                        if (last_status != IProcessor::Status::NeedData && status == IProcessor::Status::NeedData)
+                        {
+                            processor.input_wait_watch.restart();
+                        }
+                        else if (last_status == IProcessor::Status::NeedData && status != IProcessor::Status::NeedData)
+                        {
+                            processor.input_wait_elapsed_us += processor.input_wait_watch.elapsedMicroseconds();
+                        }
+
+                        /// PortFull
+                        if (last_status != IProcessor::Status::PortFull && status == IProcessor::Status::PortFull)
+                        {
+                            processor.output_wait_watch.restart();
+                        }
+                        else if (last_status == IProcessor::Status::PortFull && status != IProcessor::Status::PortFull)
+                        {
+                            processor.output_wait_elapsed_us += processor.output_wait_watch.elapsedMicroseconds();
+                        }
+                    }
                 }
                 catch (...)
                 {
@@ -358,9 +392,34 @@ bool ExecutingGraph::updateNode(uint64_t pid, Queue & queue, Queue & async_queue
 
 void ExecutingGraph::cancel()
 {
-    std::lock_guard guard(processors_mutex);
-    for (auto & processor : processors)
-        processor->cancel();
+    std::exception_ptr exception_ptr;
+
+    {
+        std::lock_guard guard(processors_mutex);
+        for (auto & processor : *processors)
+        {
+            try
+            {
+                processor->cancel();
+            }
+            catch (...)
+            {
+                if (!exception_ptr)
+                    exception_ptr = std::current_exception();
+
+                /// Log any exception since:
+                /// a) they are pretty rare (the only that I know is from
+                ///    RemoteQueryExecutor)
+                /// b) there can be exception during query execution, and in this
+                ///    case, this exception can be ignored (not showed to the user).
+                tryLogCurrentException("ExecutingGraph");
+            }
+        }
+        cancelled = true;
+    }
+
+    if (exception_ptr)
+        std::rethrow_exception(exception_ptr);
 }
 
 }

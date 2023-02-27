@@ -1,11 +1,11 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_AWS_S3
 
 #include <TableFunctions/ITableFunction.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
+#include <Storages/StorageS3.h>
 
 
 namespace DB
@@ -19,17 +19,39 @@ class TableFunctionS3 : public ITableFunction
 {
 public:
     static constexpr auto name = "s3";
+    static constexpr auto signature = " - url\n"
+                                      " - url, format\n"
+                                      " - url, format, structure\n"
+                                      " - url, access_key_id, secret_access_key\n"
+                                      " - url, format, structure, compression_method\n"
+                                      " - url, access_key_id, secret_access_key, format\n"
+                                      " - url, access_key_id, secret_access_key, format, structure\n"
+                                      " - url, access_key_id, secret_access_key, format, structure, compression_method";
     std::string getName() const override
     {
         return name;
     }
-    bool hasStaticStructure() const override { return s3_configuration->structure != "auto"; }
+    bool hasStaticStructure() const override { return configuration.structure != "auto"; }
 
-    bool needStructureHint() const override { return s3_configuration->structure == "auto"; }
+    bool needStructureHint() const override { return configuration.structure == "auto"; }
 
     void setStructureHint(const ColumnsDescription & structure_hint_) override { structure_hint = structure_hint_; }
 
+    bool supportsReadingSubsetOfColumns() override;
+
+    std::unordered_set<String> getVirtualsToCheckBeforeUsingStructureHint() const override
+    {
+        return {"_path", "_file"};
+    }
+    static void parseArgumentsImpl(
+        const String & error_message,
+        ASTs & args,
+        ContextPtr context,
+        StorageS3::Configuration & configuration,
+        bool get_format_from_file = true);
+
 protected:
+
     StoragePtr executeImpl(
         const ASTPtr & ast_function,
         ContextPtr context,
@@ -41,7 +63,7 @@ protected:
     ColumnsDescription getActualTableStructure(ContextPtr context) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
-    std::optional<StorageS3Configuration> s3_configuration;
+    mutable StorageS3::Configuration configuration;
     ColumnsDescription structure_hint;
 };
 
@@ -55,6 +77,18 @@ public:
     }
 private:
     const char * getStorageTypeName() const override { return "COSN"; }
+};
+
+class TableFunctionOSS : public TableFunctionS3
+{
+public:
+    static constexpr auto name = "oss";
+    std::string getName() const override
+    {
+        return name;
+    }
+private:
+    const char * getStorageTypeName() const override { return "OSS"; }
 };
 
 }

@@ -1,6 +1,7 @@
 ---
-toc_priority: 49
-toc_title: EXCHANGE
+slug: /ru/sql-reference/statements/exchange
+sidebar_position: 49
+sidebar_label: EXCHANGE
 ---
 
 # EXCHANGE {#exchange}
@@ -8,13 +9,13 @@ toc_title: EXCHANGE
 Атомарно обменивает имена двух таблиц или словарей.
 Это действие также можно выполнить с помощью запроса [RENAME](./rename.md), используя третье временное имя, но в таком случае действие неатомарно.
 
-!!! note "Примечание"
+    :::note "Примечание"
     Запрос `EXCHANGE` поддерживается только движком баз данных [Atomic](../../engines/database-engines/atomic.md).
-
+    :::
 **Синтаксис**
 
 ```sql
-EXCHANGE TABLES|DICTIONARIES [db0.]name_A AND [db1.]name_B
+EXCHANGE TABLES|DICTIONARIES [db0.]name_A AND [db1.]name_B [ON CLUSTER cluster]
 ```
 
 ## EXCHANGE TABLES {#exchange_tables}
@@ -24,7 +25,7 @@ EXCHANGE TABLES|DICTIONARIES [db0.]name_A AND [db1.]name_B
 **Синтаксис**
 
 ```sql
-EXCHANGE TABLES [db0.]table_A AND [db1.]table_B
+EXCHANGE TABLES [db0.]table_A AND [db1.]table_B [ON CLUSTER cluster]
 ```
 
 ## EXCHANGE DICTIONARIES {#exchange_dictionaries}
@@ -34,7 +35,7 @@ EXCHANGE TABLES [db0.]table_A AND [db1.]table_B
 **Синтаксис**
 
 ```sql
-EXCHANGE DICTIONARIES [db0.]dict_A AND [db1.]dict_B
+EXCHANGE DICTIONARIES [db0.]dict_A AND [db1.]dict_B [ON CLUSTER cluster]
 ```
 
 **Смотрите также**

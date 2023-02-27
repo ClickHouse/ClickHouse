@@ -1,5 +1,6 @@
 ---
-toc_priority: 302
+slug: /ru/sql-reference/aggregate-functions/reference/entropy
+sidebar_position: 302
 ---
 
 # entropy {#entropy}

@@ -1,8 +1,9 @@
 ---
+slug: /zh/operations/settings/settings-users
 machine_translated: false
 machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
-toc_priority: 63
-toc_title: "\u7528\u6237\u8BBE\u7F6E"
+sidebar_position: 63
+sidebar_label: "\u7528\u6237\u8BBE\u7F6E"
 ---
 
 # 用户设置 {#user-settings}
@@ -159,5 +160,3 @@ DNS请求的所有结果都将被缓存，直到服务器重新启动。
 ```
 
 该 `filter` 可以是[UInt8](../../sql-reference/data-types/int-uint.md)编码的任何表达式。 它通常包含比较和逻辑运算符, 当filter返回0时, database_name.table1 的该行结果将不会返回给用户.过滤不兼容 `PREWHERE` 操作并禁用 `WHERE→PREWHERE` 优化。
-
-[原始文章](https://clickhouse.com/docs/en/operations/settings/settings_users/) <!--hide-->

@@ -1,7 +1,8 @@
 ---
+slug: /zh/faq/general/columnar-database
 title: 什么是列存储数据库?
 toc_hidden: true
-toc_priority: 101
+sidebar_position: 101
 ---
 
 # 什么是列存储数据库? {#what-is-a-columnar-database}

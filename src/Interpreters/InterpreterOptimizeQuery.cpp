@@ -6,6 +6,7 @@
 #include <Access/Common/AccessRightsElement.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 
 #include <Interpreters/processColumnTransformers.h>
 
@@ -25,13 +26,19 @@ BlockIO InterpreterOptimizeQuery::execute()
     const auto & ast = query_ptr->as<ASTOptimizeQuery &>();
 
     if (!ast.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, getContext(), getRequiredAccess());
+    {
+        DDLQueryOnClusterParams params;
+        params.access_to_check = getRequiredAccess();
+        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
+    }
 
     getContext()->checkAccess(getRequiredAccess());
 
     auto table_id = getContext()->resolveStorageID(ast, Context::ResolveOrdinary);
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    checkStorageSupportsTransactionsIfNeeded(table, getContext());
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
+    auto storage_snapshot = table->getStorageSnapshot(metadata_snapshot, getContext());
 
     // Empty list of names means we deduplicate by all columns, but user can explicitly state which columns to use.
     Names column_names;
@@ -46,7 +53,7 @@ BlockIO InterpreterOptimizeQuery::execute()
                 column_names.emplace_back(col->getColumnName());
         }
 
-        metadata_snapshot->check(column_names, NamesAndTypesList{}, table_id);
+        storage_snapshot->check(column_names);
         Names required_columns;
         {
             required_columns = metadata_snapshot->getColumnsRequiredForSortingKey();
@@ -69,7 +76,10 @@ BlockIO InterpreterOptimizeQuery::execute()
         }
     }
 
-    table->optimize(query_ptr, metadata_snapshot, ast.partition, ast.final, ast.deduplicate, column_names, getContext());
+    if (auto * snapshot_data = dynamic_cast<MergeTreeData::SnapshotData *>(storage_snapshot->data.get()))
+        snapshot_data->parts = {};
+
+    table->optimize(query_ptr, metadata_snapshot, ast.partition, ast.final, ast.deduplicate, column_names, ast.cleanup, getContext());
 
     return {};
 }

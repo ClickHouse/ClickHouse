@@ -7,6 +7,7 @@
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <Interpreters/IdentifierSemantic.h>
@@ -16,7 +17,6 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <DataTypes/NestedUtils.h>
-
 
 namespace DB
 {
@@ -60,42 +60,74 @@ Block InterpreterDescribeQuery::getSampleBlock(bool include_subcolumns)
     return block;
 }
 
-
 BlockIO InterpreterDescribeQuery::execute()
 {
-    ColumnsDescription columns;
+    std::vector<ColumnDescription> columns;
+    StorageSnapshotPtr storage_snapshot;
 
     const auto & ast = query_ptr->as<ASTDescribeQuery &>();
     const auto & table_expression = ast.table_expression->as<ASTTableExpression &>();
+    const auto & settings = getContext()->getSettingsRef();
+
     if (table_expression.subquery)
     {
-        auto names_and_types = InterpreterSelectWithUnionQuery::getSampleBlock(
-            table_expression.subquery->children.at(0), getContext()).getNamesAndTypesList();
-        columns = ColumnsDescription(std::move(names_and_types));
+        NamesAndTypesList names_and_types;
+        auto select_query = table_expression.subquery->children.at(0);
+        auto current_context = getContext();
+
+        if (settings.allow_experimental_analyzer)
+        {
+            SelectQueryOptions select_query_options;
+            names_and_types = InterpreterSelectQueryAnalyzer(select_query, current_context, select_query_options).getSampleBlock().getNamesAndTypesList();
+        }
+        else
+        {
+            names_and_types = InterpreterSelectWithUnionQuery::getSampleBlock(select_query, current_context).getNamesAndTypesList();
+        }
+
+        for (auto && [name, type] : names_and_types)
+        {
+            ColumnDescription description;
+            description.name = std::move(name);
+            description.type = std::move(type);
+            columns.emplace_back(std::move(description));
+        }
     }
     else if (table_expression.table_function)
     {
         TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_expression.table_function, getContext());
-        columns = table_function_ptr->getActualTableStructure(getContext());
+        auto table_function_column_descriptions = table_function_ptr->getActualTableStructure(getContext());
+        for (const auto & table_function_column_description : table_function_column_descriptions)
+            columns.emplace_back(table_function_column_description);
     }
     else
     {
         auto table_id = getContext()->resolveStorageID(table_expression.database_and_table_name);
         getContext()->checkAccess(AccessType::SHOW_COLUMNS, table_id);
         auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
-        auto table_lock = table->lockForShare(getContext()->getInitialQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
+        auto table_lock = table->lockForShare(getContext()->getInitialQueryId(), settings.lock_acquire_timeout);
+
         auto metadata_snapshot = table->getInMemoryMetadataPtr();
-        columns = metadata_snapshot->getColumns();
+        storage_snapshot = table->getStorageSnapshot(metadata_snapshot, getContext());
+        auto metadata_column_descriptions = metadata_snapshot->getColumns();
+        for (const auto & metadata_column_description : metadata_column_descriptions)
+            columns.emplace_back(metadata_column_description);
     }
 
-    bool include_subcolumns = getContext()->getSettingsRef().describe_include_subcolumns;
+    bool extend_object_types = settings.describe_extend_object_types && storage_snapshot;
+    bool include_subcolumns = settings.describe_include_subcolumns;
+
     Block sample_block = getSampleBlock(include_subcolumns);
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
 
     for (const auto & column : columns)
     {
         res_columns[0]->insert(column.name);
-        res_columns[1]->insert(column.type->getName());
+
+        if (extend_object_types)
+            res_columns[1]->insert(storage_snapshot->getConcreteType(column.name)->getName());
+        else
+            res_columns[1]->insert(column.type->getName());
 
         if (column.default_desc.expression)
         {
@@ -128,6 +160,8 @@ BlockIO InterpreterDescribeQuery::execute()
     {
         for (const auto & column : columns)
         {
+            auto type = extend_object_types ? storage_snapshot->getConcreteType(column.name) : column.type;
+
             IDataType::forEachSubcolumn([&](const auto & path, const auto & name, const auto & data)
             {
                 res_columns[0]->insert(Nested::concatenateName(column.name, name));
@@ -150,7 +184,7 @@ BlockIO InterpreterDescribeQuery::execute()
                     res_columns[6]->insertDefault();
 
                 res_columns[7]->insert(1u);
-            }, {column.type->getDefaultSerialization(), column.type, nullptr, nullptr});
+            }, ISerialization::SubstreamData(type->getDefaultSerialization()).withType(type));
         }
     }
 

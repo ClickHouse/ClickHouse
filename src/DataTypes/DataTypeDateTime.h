@@ -16,7 +16,7 @@ namespace DB
   *
   * To cast from/to text format, time zone may be specified explicitly or implicit time zone may be used.
   *
-  * Time zone may be specified explicitly as type parameter, example: DateTime('Europe/Moscow').
+  * Time zone may be specified explicitly as type parameter, example: DateTime('Pacific/Pitcairn').
   * As it does not affect the internal representation of values,
   *  all types with different time zones are equivalent and may be used interchangingly.
   * Time zone only affects parsing and displaying in text formats.
@@ -48,4 +48,3 @@ public:
 };
 
 }
-

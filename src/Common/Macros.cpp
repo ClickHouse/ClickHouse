@@ -2,7 +2,7 @@
 #include <Common/Macros.h>
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -43,10 +43,10 @@ String Macros::expand(const String & s,
         return s;
 
     if (info.level && s.size() > 65536)
-        throw Exception("Too long string while expanding macros", ErrorCodes::SYNTAX_ERROR);
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Too long string while expanding macros");
 
     if (info.level >= 10)
-        throw Exception("Too deep recursion while expanding macros: '" + s + "'", ErrorCodes::SYNTAX_ERROR);
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Too deep recursion while expanding macros: '{}'", s);
 
     /// If config file contains explicit special macro, then we do not expand it in this mode.
     if (!enable_special_macros && info.expand_special_macros_only)
@@ -71,7 +71,7 @@ String Macros::expand(const String & s,
         ++begin;
         size_t end = s.find('}', begin);
         if (end == String::npos)
-            throw Exception("Unbalanced { and } in string with macros: '" + s + "'", ErrorCodes::SYNTAX_ERROR);
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Unbalanced {{ and }} in string with macros: '{}'", s);
 
         String macro_name = s.substr(begin, end - begin);
         auto it = macros.find(macro_name);
@@ -92,29 +92,28 @@ String Macros::expand(const String & s,
             res += info.table_id.table_name;
             info.expanded_table = true;
         }
-        else if (macro_name == "uuid")
+        else if (macro_name == "uuid" && !info.expand_special_macros_only)
         {
             if (info.table_id.uuid == UUIDHelpers::Nil)
-                throw Exception("Macro 'uuid' and empty arguments of ReplicatedMergeTree "
-                                "are supported only for ON CLUSTER queries with Atomic database engine",
-                                ErrorCodes::SYNTAX_ERROR);
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Macro 'uuid' and empty arguments of ReplicatedMergeTree "
+                                "are supported only for ON CLUSTER queries with Atomic database engine");
             /// For ON CLUSTER queries we don't want to require all macros definitions in initiator's config.
             /// However, initiator must check that for cross-replication cluster zookeeper_path does not contain {uuid} macro.
             /// It becomes impossible to check if {uuid} is contained inside some unknown macro.
             if (info.level)
-                throw Exception("Macro 'uuid' should not be inside another macro", ErrorCodes::SYNTAX_ERROR);
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Macro 'uuid' should not be inside another macro");
             res += toString(info.table_id.uuid);
             info.expanded_uuid = true;
         }
         else if (info.shard && macro_name == "shard")
         {
             res += *info.shard;
-            info.expanded_uuid = true;
+            info.expanded_other = true;
         }
         else if (info.replica && macro_name == "replica")
         {
             res += *info.replica;
-            info.expanded_uuid = true;
+            info.expanded_other = true;
         }
         else if (info.ignore_unknown || info.expand_special_macros_only)
         {
@@ -126,9 +125,8 @@ String Macros::expand(const String & s,
             info.has_unknown = true;
         }
         else
-            throw Exception("No macro '" + macro_name +
-                "' in config while processing substitutions in '" + s + "' at '"
-                + toString(begin) + "' or macro is not supported here", ErrorCodes::SYNTAX_ERROR);
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "No macro '{}' in config while processing substitutions in "
+                            "'{}' at '{}' or macro is not supported here", macro_name, s, toString(begin));
 
         pos = end + 1;
     }
@@ -144,7 +142,7 @@ String Macros::getValue(const String & key) const
 {
     if (auto it = macros.find(key); it != macros.end())
         return it->second;
-    throw Exception("No macro " + key + " in config", ErrorCodes::SYNTAX_ERROR);
+    throw Exception(ErrorCodes::SYNTAX_ERROR, "No macro {} in config", key);
 }
 
 

@@ -7,8 +7,8 @@
 #include <Core/Defines.h>
 #include <base/range.h>
 #include <Poco/Unicode.h>
-#include <stdint.h>
-#include <string.h>
+#include <cstdint>
+#include <cstring>
 
 #ifdef __SSE2__
     #include <emmintrin.h>
@@ -40,7 +40,7 @@ public:
 #ifdef __SSE2__
 protected:
     static constexpr auto n = sizeof(__m128i);
-    const int page_size = ::getPageSize();
+    const Int64 page_size = ::getPageSize();
 
     bool pageSafe(const void * const ptr) const
     {
@@ -82,7 +82,8 @@ private:
 #endif
 
 public:
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
     StringSearcher(const CharT * needle_, const size_t needle_size_)
         : needle{reinterpret_cast<const uint8_t *>(needle_)}, needle_size{needle_size_}
     {
@@ -137,7 +138,7 @@ public:
         patu = _mm_set1_epi8(u);
         /// lower and uppercase vectors of first 16 octets of `needle`
 
-        auto needle_pos = needle;
+        const auto * needle_pos = needle;
 
         for (size_t i = 0; i < n;)
         {
@@ -191,7 +192,8 @@ public:
 #endif
     }
 
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
     ALWAYS_INLINE bool compareTrivial(const CharT * haystack_pos, const CharT * const haystack_end, const uint8_t * needle_pos) const
     {
         while (haystack_pos < haystack_end && needle_pos < needle_end)
@@ -217,7 +219,8 @@ public:
         return needle_pos == needle_end;
     }
 
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
     ALWAYS_INLINE bool compare(const CharT * /*haystack*/, const CharT * haystack_end, const CharT * pos) const
     {
 
@@ -251,7 +254,7 @@ public:
         if (*pos == l || *pos == u)
         {
             pos += first_needle_symbol_is_ascii;
-            auto needle_pos = needle + first_needle_symbol_is_ascii;
+            const auto * needle_pos = needle + first_needle_symbol_is_ascii;
 
             if (compareTrivial(pos, haystack_end, needle_pos))
                 return true;
@@ -262,7 +265,8 @@ public:
 
     /** Returns haystack_end if not found.
       */
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
     const CharT * search(const CharT * haystack, const CharT * const haystack_end) const
     {
         if (0 == needle_size)
@@ -325,7 +329,7 @@ public:
             if (*haystack == l || *haystack == u)
             {
                 auto haystack_pos = haystack + first_needle_symbol_is_ascii;
-                auto needle_pos = needle + first_needle_symbol_is_ascii;
+                const auto * needle_pos = needle + first_needle_symbol_is_ascii;
 
                 if (compareTrivial(haystack_pos, haystack_end, needle_pos))
                     return haystack;
@@ -338,7 +342,8 @@ public:
         return haystack_end;
     }
 
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
     const CharT * search(const CharT * haystack, const size_t haystack_size) const
     {
         return search(haystack, haystack + haystack_size);
@@ -367,7 +372,8 @@ private:
 #endif
 
 public:
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
     StringSearcher(const CharT * needle_, const size_t needle_size)
         : needle{reinterpret_cast<const uint8_t *>(needle_)}, needle_end{needle + needle_size}
     {
@@ -381,7 +387,7 @@ public:
         patl = _mm_set1_epi8(l);
         patu = _mm_set1_epi8(u);
 
-        auto needle_pos = needle;
+        const auto * needle_pos = needle;
 
         for (const auto i : collections::range(0, n))
         {
@@ -399,7 +405,8 @@ public:
 #endif
     }
 
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
     ALWAYS_INLINE bool compare(const CharT * /*haystack*/, const CharT * /*haystack_end*/, const CharT * pos) const
     {
 #ifdef __SSE4_1__
@@ -416,7 +423,7 @@ public:
                 if (mask == cachemask)
                 {
                     pos += n;
-                    auto needle_pos = needle + n;
+                    const auto * needle_pos = needle + n;
 
                     while (needle_pos < needle_end && std::tolower(*pos) == std::tolower(*needle_pos))
                     {
@@ -438,7 +445,7 @@ public:
         if (*pos == l || *pos == u)
         {
             ++pos;
-            auto needle_pos = needle + 1;
+            const auto * needle_pos = needle + 1;
 
             while (needle_pos < needle_end && std::tolower(*pos) == std::tolower(*needle_pos))
             {
@@ -453,7 +460,8 @@ public:
         return false;
     }
 
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
     const CharT * search(const CharT * haystack, const CharT * const haystack_end) const
     {
         if (needle == needle_end)
@@ -492,8 +500,8 @@ public:
                     {
                         if (mask_offset == cachemask)
                         {
-                            auto haystack_pos = haystack + n;
-                            auto needle_pos = needle + n;
+                            const auto * haystack_pos = haystack + n;
+                            const auto * needle_pos = needle + n;
 
                             while (haystack_pos < haystack_end && needle_pos < needle_end &&
                                    std::tolower(*haystack_pos) == std::tolower(*needle_pos))
@@ -520,8 +528,8 @@ public:
 
             if (*haystack == l || *haystack == u)
             {
-                auto haystack_pos = haystack + 1;
-                auto needle_pos = needle + 1;
+                const auto * haystack_pos = haystack + 1;
+                const auto * needle_pos = needle + 1;
 
                 while (haystack_pos < haystack_end && needle_pos < needle_end &&
                        std::tolower(*haystack_pos) == std::tolower(*needle_pos))
@@ -540,7 +548,8 @@ public:
         return haystack_end;
     }
 
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
     const CharT * search(const CharT * haystack, const size_t haystack_size) const
     {
         return search(haystack, haystack + haystack_size);
@@ -557,32 +566,40 @@ private:
     const uint8_t * const needle;
     const uint8_t * const needle_end;
     /// first character in `needle`
-    uint8_t first{};
+    uint8_t first_needle_character = 0;
 
 #ifdef __SSE4_1__
-    /// vector filled `first` for determining leftmost position of the first symbol
-    __m128i pattern;
+    /// second character of "needle" (if its length is > 1)
+    uint8_t second_needle_character = 0;
+    /// The first/second needle character broadcasted into a 16 bytes vector
+    __m128i first_needle_character_vec;
+    __m128i second_needle_character_vec;
     /// vector of first 16 characters of `needle`
     __m128i cache = _mm_setzero_si128();
-    int cachemask{};
+    uint16_t cachemask = 0;
 #endif
 
 public:
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
     StringSearcher(const CharT * needle_, const size_t needle_size)
         : needle{reinterpret_cast<const uint8_t *>(needle_)}, needle_end{needle + needle_size}
     {
         if (0 == needle_size)
             return;
 
-        first = *needle;
+        first_needle_character = *needle;
 
 #ifdef __SSE4_1__
-        pattern = _mm_set1_epi8(first);
+        first_needle_character_vec = _mm_set1_epi8(first_needle_character);
+        if (needle_size > 1)
+        {
+            second_needle_character = *(needle + 1);
+            second_needle_character_vec = _mm_set1_epi8(second_needle_character);
+        }
+        const auto * needle_pos = needle;
 
-        auto needle_pos = needle;
-
-        for (const auto i : collections::range(0, n))
+        for (uint8_t i = 0; i < n; ++i)
         {
             cache = _mm_srli_si128(cache, 1);
 
@@ -596,22 +613,23 @@ public:
 #endif
     }
 
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
     ALWAYS_INLINE bool compare(const CharT * /*haystack*/, const CharT * /*haystack_end*/, const CharT * pos) const
     {
 #ifdef __SSE4_1__
         if (pageSafe(pos))
         {
-            const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos));
-            const auto v_against_cache = _mm_cmpeq_epi8(v_haystack, cache);
-            const auto mask = _mm_movemask_epi8(v_against_cache);
+            const __m128i haystack_characters = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos));
+            const __m128i comparison_result = _mm_cmpeq_epi8(haystack_characters, cache);
+            const uint16_t comparison_result_mask = _mm_movemask_epi8(comparison_result);
 
             if (0xffff == cachemask)
             {
-                if (mask == cachemask)
+                if (comparison_result_mask == cachemask)
                 {
                     pos += n;
-                    auto needle_pos = needle + n;
+                    const auto * needle_pos = needle + n;
 
                     while (needle_pos < needle_end && *pos == *needle_pos)
                         ++pos, ++needle_pos;
@@ -620,17 +638,17 @@ public:
                         return true;
                 }
             }
-            else if ((mask & cachemask) == cachemask)
+            else if ((comparison_result_mask & cachemask) == cachemask)
                 return true;
 
             return false;
         }
 #endif
 
-        if (*pos == first)
+        if (*pos == first_needle_character)
         {
             ++pos;
-            auto needle_pos = needle + 1;
+            const auto * needle_pos = needle + 1;
 
             while (needle_pos < needle_end && *pos == *needle_pos)
                 ++pos, ++needle_pos;
@@ -642,46 +660,89 @@ public:
         return false;
     }
 
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
     const CharT * search(const CharT * haystack, const CharT * const haystack_end) const
     {
+        const auto needle_size = needle_end - needle;
+
         if (needle == needle_end)
             return haystack;
 
-        while (haystack < haystack_end)
+#ifdef __SSE4_1__
+        /// Fast path for single-character needles. Compare 16 characters of the haystack against the needle character at once.
+        if (needle_size == 1)
+        {
+            while (haystack < haystack_end)
+            {
+                if (haystack + n <= haystack_end && pageSafe(haystack))
+                {
+                    const __m128i haystack_characters = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
+                    const __m128i comparison_result = _mm_cmpeq_epi8(haystack_characters, first_needle_character_vec);
+                    const uint16_t comparison_result_mask = _mm_movemask_epi8(comparison_result);
+                    if (comparison_result_mask == 0)
+                    {
+                        haystack += n;
+                        continue;
+                    }
+
+                    const auto offset = std::countr_zero(comparison_result_mask);
+                    haystack += offset;
+
+                    return haystack;
+                }
+
+                if (haystack == haystack_end)
+                    return haystack_end;
+
+                if (*haystack == first_needle_character)
+                    return haystack;
+
+                ++haystack;
+            }
+
+            return haystack_end;
+        }
+#endif
+
+        while (haystack < haystack_end && haystack_end - haystack >= needle_size)
         {
 #ifdef __SSE4_1__
-            if (haystack + n <= haystack_end && pageSafe(haystack))
+            /// Compare the [0:15] bytes from haystack and broadcasted 16 bytes vector from first character of needle.
+            /// Compare the [1:16] bytes from haystack and broadcasted 16 bytes vector from second character of needle.
+            /// Bit AND the results of above two comparisons and get the mask.
+            if ((haystack + 1 + n) <= haystack_end && pageSafe(haystack + 1))
             {
-                /// find first character
-                const auto v_haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
-                const auto v_against_pattern = _mm_cmpeq_epi8(v_haystack, pattern);
-
-                const auto mask = _mm_movemask_epi8(v_against_pattern);
-
-                /// first character not present in 16 octets starting at `haystack`
-                if (mask == 0)
+                const __m128i haystack_characters_from_1st = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
+                const __m128i haystack_characters_from_2nd = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack + 1));
+                const __m128i comparison_result_1st = _mm_cmpeq_epi8(haystack_characters_from_1st, first_needle_character_vec);
+                const __m128i comparison_result_2nd = _mm_cmpeq_epi8(haystack_characters_from_2nd, second_needle_character_vec);
+                const __m128i comparison_result_combined = _mm_and_si128(comparison_result_1st, comparison_result_2nd);
+                const uint16_t comparison_result_mask = _mm_movemask_epi8(comparison_result_combined);
+                /// If the mask = 0, then first two characters [0:1] from needle are not in the [0:17] bytes of haystack.
+                if (comparison_result_mask == 0)
                 {
                     haystack += n;
                     continue;
                 }
 
-                const auto offset = __builtin_ctz(mask);
+                const auto offset = std::countr_zero(comparison_result_mask);
                 haystack += offset;
 
                 if (haystack + n <= haystack_end && pageSafe(haystack))
                 {
-                    /// check for first 16 octets
-                    const auto v_haystack_offset = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
-                    const auto v_against_cache = _mm_cmpeq_epi8(v_haystack_offset, cache);
-                    const auto mask_offset = _mm_movemask_epi8(v_against_cache);
+                    /// Already find the haystack position where the [pos:pos + 1] two characters exactly match the first two characters of needle.
+                    /// Compare the 16 bytes from needle (cache) and the first 16 bytes from haystack at once if the haystack size >= 16 bytes.
+                    const __m128i haystack_characters = _mm_loadu_si128(reinterpret_cast<const __m128i *>(haystack));
+                    const __m128i comparison_result_cache = _mm_cmpeq_epi8(haystack_characters, cache);
+                    const uint16_t mask_offset = _mm_movemask_epi8(comparison_result_cache);
 
                     if (0xffff == cachemask)
                     {
                         if (mask_offset == cachemask)
                         {
-                            auto haystack_pos = haystack + n;
-                            auto needle_pos = needle + n;
+                            const auto * haystack_pos = haystack + n;
+                            const auto * needle_pos = needle + n;
 
                             while (haystack_pos < haystack_end && needle_pos < needle_end &&
                                    *haystack_pos == *needle_pos)
@@ -703,10 +764,10 @@ public:
             if (haystack == haystack_end)
                 return haystack_end;
 
-            if (*haystack == first)
+            if (*haystack == first_needle_character)
             {
-                auto haystack_pos = haystack + 1;
-                auto needle_pos = needle + 1;
+                const auto * haystack_pos = haystack + 1;
+                const auto * needle_pos = needle + 1;
 
                 while (haystack_pos < haystack_end && needle_pos < needle_end &&
                        *haystack_pos == *needle_pos)
@@ -722,7 +783,8 @@ public:
         return haystack_end;
     }
 
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
     const CharT * search(const CharT * haystack, const size_t haystack_size) const
     {
         return search(haystack, haystack + haystack_size);
@@ -740,19 +802,21 @@ class TokenSearcher : public StringSearcherBase
     size_t needle_size;
 
 public:
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
     TokenSearcher(const CharT * needle_, const size_t needle_size_)
         : searcher{needle_, needle_size_},
           needle_size(needle_size_)
     {
         if (std::any_of(needle_, needle_ + needle_size_, isTokenSeparator))
         {
-            throw Exception{"Needle must not contain whitespace or separator characters", ErrorCodes::BAD_ARGUMENTS};
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Needle must not contain whitespace or separator characters");
         }
 
     }
 
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
     ALWAYS_INLINE bool compare(const CharT * haystack, const CharT * haystack_end, const CharT * pos) const
     {
         // use searcher only if pos is in the beginning of token and pos + searcher.needle_size is end of token.
@@ -762,7 +826,8 @@ public:
         return false;
     }
 
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
     const CharT * search(const CharT * haystack, const CharT * const haystack_end) const
     {
         // use searcher.search(), then verify that returned value is a token
@@ -781,13 +846,15 @@ public:
         return haystack_end;
     }
 
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
     const CharT * search(const CharT * haystack, const size_t haystack_size) const
     {
         return search(haystack, haystack + haystack_size);
     }
 
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
     ALWAYS_INLINE bool isToken(const CharT * haystack, const CharT * const haystack_end, const CharT* p) const
     {
         return (p == haystack || isTokenSeparator(*(p - 1)))
@@ -796,10 +863,7 @@ public:
 
     ALWAYS_INLINE static bool isTokenSeparator(const uint8_t c)
     {
-        if (isAlphaNumericASCII(c) || !isASCII(c))
-            return false;
-
-        return true;
+        return !(isAlphaNumericASCII(c) || !isASCII(c));
     }
 };
 
@@ -811,60 +875,44 @@ using UTF8CaseInsensitiveStringSearcher = StringSearcher<false, false>;
 using ASCIICaseSensitiveTokenSearcher = TokenSearcher<ASCIICaseSensitiveStringSearcher>;
 using ASCIICaseInsensitiveTokenSearcher = TokenSearcher<ASCIICaseInsensitiveStringSearcher>;
 
-
-/** Uses functions from libc.
-  * It makes sense to use only with short haystacks when cheap initialization is required.
-  * There is no option for case-insensitive search for UTF-8 strings.
-  * It is required that strings are zero-terminated.
-  */
-
-struct LibCASCIICaseSensitiveStringSearcher : public StringSearcherBase
+/// Use only with short haystacks where cheap initialization is required.
+template <bool CaseInsensitive>
+struct StdLibASCIIStringSearcher : public StringSearcherBase
 {
-    const char * const needle;
+    const char * const needle_start;
+    const char * const needle_end;
 
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
-    LibCASCIICaseSensitiveStringSearcher(const CharT * const needle_, const size_t /* needle_size */)
-        : needle(reinterpret_cast<const char *>(needle_)) {}
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
+    StdLibASCIIStringSearcher(const CharT * const needle_start_, const size_t needle_size_)
+        : needle_start{reinterpret_cast<const char *>(needle_start_)}
+        , needle_end{reinterpret_cast<const char *>(needle_start) + needle_size_}
+    {}
 
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
-    const CharT * search(const CharT * haystack, const CharT * const haystack_end) const
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
+    const CharT * search(const CharT * haystack_start, const CharT * const haystack_end) const
     {
-        auto res = strstr(reinterpret_cast<const char *>(haystack), reinterpret_cast<const char *>(needle));
-        if (!res)
-            return haystack_end;
-        return reinterpret_cast<const CharT *>(res);
+        if constexpr (CaseInsensitive)
+        {
+            return std::search(
+                haystack_start, haystack_end, needle_start, needle_end,
+                [](char c1, char c2) {return std::toupper(c1) == std::toupper(c2);});
+        }
+        else
+        {
+            return std::search(
+                haystack_start, haystack_end, needle_start, needle_end,
+                [](char c1, char c2) {return c1 == c2;});
+        }
     }
 
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
-    const CharT * search(const CharT * haystack, const size_t haystack_size) const
+    template <typename CharT>
+    requires (sizeof(CharT) == 1)
+    const CharT * search(const CharT * haystack_start, const size_t haystack_length) const
     {
-        return search(haystack, haystack + haystack_size);
+        return search(haystack_start, haystack_start + haystack_length);
     }
 };
-
-struct LibCASCIICaseInsensitiveStringSearcher : public StringSearcherBase
-{
-    const char * const needle;
-
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
-    LibCASCIICaseInsensitiveStringSearcher(const CharT * const needle_, const size_t /* needle_size */)
-        : needle(reinterpret_cast<const char *>(needle_)) {}
-
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
-    const CharT * search(const CharT * haystack, const CharT * const haystack_end) const
-    {
-        auto res = strcasestr(reinterpret_cast<const char *>(haystack), reinterpret_cast<const char *>(needle));
-        if (!res)
-            return haystack_end;
-        return reinterpret_cast<const CharT *>(res);
-    }
-
-    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
-    const CharT * search(const CharT * haystack, const size_t haystack_size) const
-    {
-        return search(haystack, haystack + haystack_size);
-    }
-};
-
 
 }

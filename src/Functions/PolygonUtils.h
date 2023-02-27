@@ -12,11 +12,6 @@
 
 /// Warning in boost::geometry during template strategy substitution.
 #pragma GCC diagnostic push
-
-#if !defined(__clang__)
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
-
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 
 #include <boost/geometry.hpp>
@@ -53,14 +48,14 @@ UInt64 getPolygonAllocatedBytes(const Polygon & polygon)
     using RingType = typename Polygon::ring_type;
     using ValueType = typename RingType::value_type;
 
-    auto sizeOfRing = [](const RingType & ring) { return sizeof(ring) + ring.capacity() * sizeof(ValueType); };
+    auto size_of_ring = [](const RingType & ring) { return sizeof(ring) + ring.capacity() * sizeof(ValueType); };
 
-    size += sizeOfRing(polygon.outer());
+    size += size_of_ring(polygon.outer());
 
     const auto & inners = polygon.inners();
     size += sizeof(inners) + inners.capacity() * sizeof(RingType);
     for (auto & inner : inners)
-        size += sizeOfRing(inner);
+        size += size_of_ring(inner);
 
     return size;
 }
@@ -286,15 +281,8 @@ void PointInPolygonWithGrid<CoordinateType>::calcGridAttributes(
     const Point & min_corner = box.min_corner();
     const Point & max_corner = box.max_corner();
 
-#pragma GCC diagnostic push
-#if !defined(__clang__)
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
-
     cell_width = (max_corner.x() - min_corner.x()) / grid_size;
     cell_height = (max_corner.y() - min_corner.y()) / grid_size;
-
-#pragma GCC diagnostic pop
 
     if (cell_width == 0 || cell_height == 0)
     {
@@ -312,7 +300,7 @@ void PointInPolygonWithGrid<CoordinateType>::calcGridAttributes(
         && isFinite(x_shift)
         && isFinite(y_shift)
         && isFinite(grid_size)))
-        throw Exception("Polygon is not valid: bounding box is unbounded", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Polygon is not valid: bounding box is unbounded");
 }
 
 template <typename CoordinateType>
@@ -330,10 +318,6 @@ void PointInPolygonWithGrid<CoordinateType>::buildGrid()
 
     for (size_t row = 0; row < grid_size; ++row)
     {
-#pragma GCC diagnostic push
-#if !defined(__clang__)
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
         CoordinateType y_min = min_corner.y() + row * cell_height;
         CoordinateType y_max = min_corner.y() + (row + 1) * cell_height;
 
@@ -341,7 +325,6 @@ void PointInPolygonWithGrid<CoordinateType>::buildGrid()
         {
             CoordinateType x_min = min_corner.x() + col * cell_width;
             CoordinateType x_max = min_corner.x() + (col + 1) * cell_width;
-#pragma GCC diagnostic pop
             Box cell_box(Point(x_min, y_min), Point(x_max, y_max));
 
             MultiPolygon intersection;
@@ -378,8 +361,8 @@ bool PointInPolygonWithGrid<CoordinateType>::contains(CoordinateType x, Coordina
     if (float_col < 0 || float_col > grid_size)
         return false;
 
-    int row = std::min<int>(float_row, grid_size - 1);
-    int col = std::min<int>(float_col, grid_size - 1);
+    int row = std::min<int>(static_cast<int>(float_row), grid_size - 1);
+    int col = std::min<int>(static_cast<int>(float_col), grid_size - 1);
 
     int index = getCellIndex(row, col);
     const auto & cell = cells[index];
@@ -401,7 +384,7 @@ bool PointInPolygonWithGrid<CoordinateType>::contains(CoordinateType x, Coordina
             return boost::geometry::within(Point(x, y), polygons[cell.index_of_inner_polygon]);
     }
 
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 
@@ -617,13 +600,13 @@ struct CallPointInPolygon<>
     template <typename T, typename PointInPolygonImpl>
     static ColumnPtr call(const ColumnVector<T> &, const IColumn & y, PointInPolygonImpl &&)
     {
-        throw Exception(std::string("Unknown numeric column type: ") + demangle(typeid(y).name()), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown numeric column type: {}", demangle(typeid(y).name()));
     }
 
     template <typename PointInPolygonImpl>
     static ColumnPtr call(const IColumn & x, const IColumn &, PointInPolygonImpl &&)
     {
-        throw Exception(std::string("Unknown numeric column type: ") + demangle(typeid(x).name()), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown numeric column type: {}", demangle(typeid(x).name()));
     }
 };
 
@@ -642,7 +625,7 @@ UInt128 sipHash128(Polygon && polygon)
 
     auto hash_ring = [&hash](const auto & ring)
     {
-        UInt32 size = ring.size();
+        UInt32 size = static_cast<UInt32>(ring.size());
         hash.update(size);
         hash.update(reinterpret_cast<const char *>(ring.data()), size * sizeof(ring[0]));
     };

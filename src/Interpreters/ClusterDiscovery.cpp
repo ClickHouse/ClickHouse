@@ -7,12 +7,13 @@
 #include <unordered_set>
 
 #include <base/getFQDNOrHostName.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/setThreadName.h>
+#include <Common/Config/ConfigHelper.h>
 
 #include <Core/ServerUUID.h>
 
@@ -126,11 +127,19 @@ ClusterDiscovery::ClusterDiscovery(
                 /* zk_root_= */ config.getString(prefix + ".path"),
                 /* port= */ context->getTCPPort(),
                 /* secure= */ config.getBool(prefix + ".secure", false),
-                /* shard_id= */ config.getUInt(prefix + ".shard", 0)
+                /* shard_id= */ config.getUInt(prefix + ".shard", 0),
+                /* observer_mode= */ ConfigHelper::getBool(config, prefix + ".observer")
             )
         );
     }
-    clusters_to_update = std::make_shared<UpdateFlags>(config_keys.begin(), config_keys.end());
+
+    std::vector<String> clusters_info_names;
+    clusters_info_names.reserve(clusters_info.size());
+    for (const auto & e : clusters_info)
+        clusters_info_names.emplace_back(e.first);
+
+    LOG_TRACE(log, "Clusters in discovery mode: {}", fmt::join(clusters_info_names, ", "));
+    clusters_to_update = std::make_shared<UpdateFlags>(clusters_info_names.begin(), clusters_info_names.end());
 }
 
 /// List node in zookeper for cluster
@@ -208,7 +217,7 @@ bool ClusterDiscovery::needUpdate(const Strings & node_uuids, const NodesInfo & 
 
 ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
 {
-    std::vector<std::vector<String>> shards;
+    std::vector<Strings> shards;
     {
         std::map<size_t, Strings> replica_adresses;
 
@@ -235,9 +244,14 @@ ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
         /* password= */ "",
         /* clickhouse_port= */ secure ? context->getTCPPortSecure().value_or(DBMS_DEFAULT_SECURE_PORT) : context->getTCPPort(),
         /* treat_local_as_remote= */ false,
-        /* treat_local_port_as_remote= */ context->getApplicationType() == Context::ApplicationType::LOCAL,
+        /* treat_local_port_as_remote= */ false, /// should be set only for clickhouse-local, but cluster discovery is not used there
         /* secure= */ secure);
     return cluster;
+}
+
+static bool contains(const Strings & list, const String & value)
+{
+    return std::find(list.begin(), list.end(), value) != list.end();
 }
 
 /// Reads data from zookeeper and tries to update cluster.
@@ -252,7 +266,22 @@ bool ClusterDiscovery::updateCluster(ClusterInfo & cluster_info)
     Strings node_uuids = getNodeNames(zk, cluster_info.zk_root, cluster_info.name, &start_version, false);
     auto & nodes_info = cluster_info.nodes_info;
 
-    if (std::find(node_uuids.begin(), node_uuids.end(), current_node_name) == node_uuids.end())
+    auto on_exit = [this, start_version, &zk, &cluster_info, &nodes_info]()
+    {
+        /// in case of successful update we still need to check if configuration of cluster still valid and also set watch callback
+        int current_version;
+        getNodeNames(zk, cluster_info.zk_root, cluster_info.name, &current_version, true);
+
+        if (current_version != start_version)
+        {
+            LOG_DEBUG(log, "Cluster '{}' configuration changed during update", cluster_info.name);
+            nodes_info.clear();
+            return false;
+        }
+        return true;
+    };
+
+    if (!cluster_info.current_node_is_observer && !contains(node_uuids, current_node_name))
     {
         LOG_ERROR(log, "Can't find current node in cluster '{}', will register again", cluster_info.name);
         registerInZk(zk, cluster_info);
@@ -263,7 +292,7 @@ bool ClusterDiscovery::updateCluster(ClusterInfo & cluster_info)
     if (!needUpdate(node_uuids, nodes_info))
     {
         LOG_DEBUG(log, "No update required for cluster '{}'", cluster_info.name);
-        return true;
+        return on_exit();
     }
 
     nodes_info = getNodes(zk, cluster_info.zk_root, node_uuids);
@@ -273,15 +302,8 @@ bool ClusterDiscovery::updateCluster(ClusterInfo & cluster_info)
         return false;
     }
 
-    int current_version;
-    getNodeNames(zk, cluster_info.zk_root, cluster_info.name, &current_version, true);
-
-    if (current_version != start_version)
-    {
-        LOG_DEBUG(log, "Cluster '{}' configuration changed during update", cluster_info.name);
-        nodes_info.clear();
+    if (bool ok = on_exit(); !ok)
         return false;
-    }
 
     LOG_DEBUG(log, "Updating system.clusters record for '{}' with {} nodes", cluster_info.name, cluster_info.nodes_info.size());
 
@@ -292,10 +314,17 @@ bool ClusterDiscovery::updateCluster(ClusterInfo & cluster_info)
 
 void ClusterDiscovery::registerInZk(zkutil::ZooKeeperPtr & zk, ClusterInfo & info)
 {
-    LOG_DEBUG(log, "Registering current node {} in cluster {}", current_node_name, info.name);
-
+    /// Create root node in observer mode not to get 'No node' error
     String node_path = getShardsListPath(info.zk_root) / current_node_name;
     zk->createAncestors(node_path);
+
+    if (info.current_node_is_observer)
+    {
+        LOG_DEBUG(log, "Current node {} is observer of cluster {}", current_node_name, info.name);
+        return;
+    }
+
+    LOG_DEBUG(log, "Registering current node {} in cluster {}", current_node_name, info.name);
 
     zk->createOrUpdate(node_path, info.current_node.serialize(), zkutil::CreateMode::Ephemeral);
     LOG_DEBUG(log, "Current node {} registered in cluster {}", current_node_name, info.name);

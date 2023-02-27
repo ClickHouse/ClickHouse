@@ -1,6 +1,7 @@
 ---
-toc_priority: 29
-toc_title: 第三方代理
+slug: /zh/interfaces/third-party/proxy
+sidebar_position: 29
+sidebar_label: 第三方代理
 ---
 
 # 第三方代理 {#proxy-servers-from-third-party-developers}
@@ -40,5 +41,3 @@ toc_title: 第三方代理
 -   基本身份验证。
 
 使用go语言实现。
-
-[Original article](https://clickhouse.com/docs/en/interfaces/third-party/proxy/) <!--hide-->

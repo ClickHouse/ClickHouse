@@ -67,7 +67,7 @@ private:
     }
 
 public:
-    ReservoirSamplerDeterministic(const size_t max_sample_size_ = detail::DEFAULT_MAX_SAMPLE_SIZE)
+    explicit ReservoirSamplerDeterministic(const size_t max_sample_size_ = detail::DEFAULT_MAX_SAMPLE_SIZE)
         : max_sample_size{max_sample_size_}
     {
     }
@@ -84,7 +84,7 @@ public:
         if (isNaN(v))
             return;
 
-        UInt32 hash = intHash64(determinator);
+        UInt32 hash = static_cast<UInt32>(intHash64(determinator));
         insertImpl(v, hash);
         sorted = false;
         ++total_values;
@@ -95,6 +95,11 @@ public:
         return total_values;
     }
 
+    bool empty() const
+    {
+        return samples.empty();
+    }
+
     T quantileNearest(double level)
     {
         if (samples.empty())
@@ -103,7 +108,7 @@ public:
         sortIfNeeded();
 
         double index = level * (samples.size() - 1);
-        size_t int_index = static_cast<size_t>(index + 0.5);
+        size_t int_index = static_cast<size_t>(index + 0.5); /// NOLINT
         int_index = std::max(0LU, std::min(samples.size() - 1, int_index));
         return samples[int_index].first;
     }
@@ -165,11 +170,6 @@ public:
         sorted = false;
     }
 
-#if !defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wclass-memaccess"
-#endif
-
     void write(DB::WriteBuffer & buf) const
     {
         size_t size = samples.size();
@@ -192,10 +192,6 @@ public:
             DB::writePODBinary(elem, buf);
         }
     }
-
-#if !defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
 
 private:
     /// We allocate some memory on the stack to avoid allocations when there are many objects with a small number of elements.
@@ -239,7 +235,7 @@ private:
         if (skip_degree_ == skip_degree)
             return;
         if (skip_degree_ > detail::MAX_SKIP_DEGREE)
-            throw DB::Exception{"skip_degree exceeds maximum value", DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED};
+            throw DB::Exception(DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED, "skip_degree exceeds maximum value");
         skip_degree = skip_degree_;
         if (skip_degree == detail::MAX_SKIP_DEGREE)
             skip_mask = static_cast<UInt32>(-1);

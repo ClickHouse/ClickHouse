@@ -45,25 +45,23 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (arguments.empty())
+        if (arguments.size() < 2)
             throw Exception(
-                "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
-                    + ", should be at least 1",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        if (arguments.size() > FormatImpl::argument_threshold)
-            throw Exception(
-                "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
-                    + ", should be at most " + std::to_string(FormatImpl::argument_threshold),
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be at least 2",
+                getName(),
+                arguments.size());
 
         for (const auto arg_idx : collections::range(0, arguments.size()))
         {
             const auto * arg = arguments[arg_idx].get();
             if (!isStringOrFixedString(arg))
                 throw Exception(
-                    "Illegal type " + arg->getName() + " of argument " + std::to_string(arg_idx + 1) + " of function " + getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of argument {} of function {}",
+                    arg->getName(),
+                    arg_idx + 1,
+                    getName());
         }
 
         return std::make_shared<DataTypeString>();
@@ -75,7 +73,7 @@ public:
         const ColumnConst * c0_const_string = typeid_cast<const ColumnConst *>(&*c0);
 
         if (!c0_const_string)
-            throw Exception("First argument of function " + getName() + " must be constant string", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "First argument of function {} must be constant string", getName());
 
         String pattern = c0_const_string->getValue<String>();
 
@@ -84,7 +82,7 @@ public:
         std::vector<const ColumnString::Chars *> data(arguments.size() - 1);
         std::vector<const ColumnString::Offsets *> offsets(arguments.size() - 1);
         std::vector<size_t> fixed_string_sizes(arguments.size() - 1);
-        std::vector<String> constant_strings(arguments.size() - 1);
+        std::vector<std::optional<String>> constant_strings(arguments.size() - 1);
 
         bool has_column_string = false;
         bool has_column_fixed_string = false;
@@ -108,8 +106,8 @@ public:
                 constant_strings[i - 1] = const_col->getValue<String>();
             }
             else
-                throw Exception(
-                    "Illegal column " + column->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                    column->getName(), getName());
         }
 
         FormatImpl::formatExecute(
@@ -137,7 +135,7 @@ using FunctionFormat = FormatFunction<NameFormat>;
 
 }
 
-void registerFunctionFormat(FunctionFactory & factory)
+REGISTER_FUNCTION(Format)
 {
     factory.registerFunction<FunctionFormat>();
 }

@@ -21,12 +21,10 @@ jobs:
           REPO_COPY=${{runner.temp}}/codebrowser/ClickHouse
           IMAGES_PATH=${{runner.temp}}/images_path
           EOF
-      - name: Clear repository
-        run: |
-          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: ClickHouse/checkout@v1
         with:
+          clear-repository: true
           submodules: 'true'
       - name: Codebrowser
         run: |
@@ -37,6 +35,6 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker kill "$(docker ps -q)" ||:
-          docker rm -f "$(docker ps -a -q)" ||:
+          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
+          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
           sudo rm -fr "$TEMP_PATH"

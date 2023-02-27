@@ -1,7 +1,7 @@
 #include "ConfigReloader.h"
 
 #include <Poco/Util/Application.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include "ConfigProcessor.h"
 #include <filesystem>
@@ -12,8 +12,6 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
-
-constexpr decltype(ConfigReloader::reload_interval) ConfigReloader::reload_interval;
 
 ConfigReloader::ConfigReloader(
         const std::string & path_,

@@ -7,6 +7,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/CancellationCode.h>
 #include <Interpreters/InterpreterAlterQuery.h>
+#include <Interpreters/TransactionLog.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/parseQuery.h>
@@ -17,8 +18,9 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/ISource.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <QueryPipeline/Pipe.h>
 #include <Storages/IStorage.h>
 #include <Common/quoteString.h>
 #include <thread>
@@ -118,18 +120,18 @@ static QueryDescriptors extractQueriesExceptMeAndCheckAccess(const Block & proce
     }
 
     if (res.empty() && access_denied)
-        throw Exception("User " + my_client.current_user + " attempts to kill query created by " + query_user, ErrorCodes::ACCESS_DENIED);
+        throw Exception(ErrorCodes::ACCESS_DENIED, "User {} attempts to kill query created by {}", my_client.current_user, query_user);
 
     return res;
 }
 
 
-class SyncKillQuerySource : public SourceWithProgress
+class SyncKillQuerySource : public ISource
 {
 public:
     SyncKillQuerySource(ProcessList & process_list_, QueryDescriptors && processes_to_stop_, Block && processes_block_,
                              const Block & res_sample_block_)
-        : SourceWithProgress(res_sample_block_)
+        : ISource(res_sample_block_)
         , process_list(process_list_)
         , processes_to_stop(std::move(processes_to_stop_))
         , processes_block(std::move(processes_block_))
@@ -198,7 +200,11 @@ BlockIO InterpreterKillQueryQuery::execute()
     const auto & query = query_ptr->as<ASTKillQueryQuery &>();
 
     if (!query.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, getContext(), getRequiredAccessForDDLOnCluster());
+    {
+        DDLQueryOnClusterParams params;
+        params.access_to_check = getRequiredAccessForDDLOnCluster();
+        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
+    }
 
     BlockIO res_io;
     switch (query.type)
@@ -285,9 +291,8 @@ BlockIO InterpreterKillQueryQuery::execute()
         }
 
         if (res_columns[0]->empty() && access_denied)
-            throw Exception(
-                "Not allowed to kill mutation. To execute this query it's necessary to have the grant " + required_access_rights.toString(),
-                ErrorCodes::ACCESS_DENIED);
+            throw Exception(ErrorCodes::ACCESS_DENIED, "Not allowed to kill mutation. "
+                "To execute this query it's necessary to have the grant {}", required_access_rights.toString());
 
         res_io.pipeline = QueryPipeline(Pipe(std::make_shared<SourceFromSingleChunk>(header.cloneWithColumns(std::move(res_columns)))));
 
@@ -321,7 +326,7 @@ BlockIO InterpreterKillQueryQuery::execute()
         for (size_t i = 0; i < moves_block.rows(); ++i)
         {
             table_id = StorageID{database_col.getDataAt(i).toString(), table_col.getDataAt(i).toString()};
-            auto task_uuid = get<UUID>(task_uuid_col[i]);
+            auto task_uuid = task_uuid_col[i].get<UUID>();
 
             CancellationCode code = CancellationCode::Unknown;
 
@@ -350,12 +355,54 @@ BlockIO InterpreterKillQueryQuery::execute()
         }
 
         if (res_columns[0]->empty() && access_denied)
-            throw Exception(
-                "Not allowed to kill move partition. To execute this query it's necessary to have the grant " + required_access_rights.toString(),
-                ErrorCodes::ACCESS_DENIED);
+            throw Exception(ErrorCodes::ACCESS_DENIED, "Not allowed to kill move partition. "
+                "To execute this query it's necessary to have the grant {}", required_access_rights.toString());
 
         res_io.pipeline = QueryPipeline(Pipe(std::make_shared<SourceFromSingleChunk>(header.cloneWithColumns(std::move(res_columns)))));
 
+        break;
+    }
+    case ASTKillQueryQuery::Type::Transaction:
+    {
+        getContext()->checkAccess(AccessType::KILL_TRANSACTION);
+
+        Block transactions_block = getSelectResult("tid, tid_hash, elapsed, is_readonly, state", "system.transactions");
+
+        if (!transactions_block)
+            return res_io;
+
+        const ColumnUInt64 & tid_hash_col = typeid_cast<const ColumnUInt64 &>(*transactions_block.getByName("tid_hash").column);
+
+        auto header = transactions_block.cloneEmpty();
+        header.insert(0, {ColumnString::create(), std::make_shared<DataTypeString>(), "kill_status"});
+        MutableColumns res_columns = header.cloneEmptyColumns();
+
+        for (size_t i = 0; i < transactions_block.rows(); ++i)
+        {
+            UInt64 tid_hash = tid_hash_col.getUInt(i);
+
+            CancellationCode code = CancellationCode::Unknown;
+            if (!query.test)
+            {
+                auto txn = TransactionLog::instance().tryGetRunningTransaction(tid_hash);
+                if (txn)
+                {
+                    txn->onException();
+                    if (txn->getState() == MergeTreeTransaction::ROLLED_BACK)
+                        code = CancellationCode::CancelSent;
+                    else
+                        code = CancellationCode::CancelCannotBeSent;
+                }
+                else
+                {
+                    code = CancellationCode::NotFound;
+                }
+            }
+
+            insertResultRow(i, code, transactions_block, header, res_columns);
+        }
+
+        res_io.pipeline = QueryPipeline(Pipe(std::make_shared<SourceFromSingleChunk>(header.cloneWithColumns(std::move(res_columns)))));
         break;
     }
     }
@@ -379,7 +426,7 @@ Block InterpreterKillQueryQuery::getSelectResult(const String & columns, const S
     while (executor.pull(tmp_block));
 
     if (tmp_block)
-        throw Exception("Expected one block from input stream", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected one block from input stream");
 
     return res;
 }

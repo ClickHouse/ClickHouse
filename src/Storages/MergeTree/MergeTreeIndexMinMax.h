@@ -51,7 +51,7 @@ class MergeTreeIndexConditionMinMax final : public IMergeTreeIndexCondition
 public:
     MergeTreeIndexConditionMinMax(
         const IndexDescription & index,
-        const SelectQueryInfo & query,
+        const SelectQueryInfo & query_info,
         ContextPtr context);
 
     bool alwaysUnknownOrTrue() const override;
@@ -68,7 +68,7 @@ private:
 class MergeTreeIndexMinMax : public IMergeTreeIndex
 {
 public:
-    MergeTreeIndexMinMax(const IndexDescription & index_)
+    explicit MergeTreeIndexMinMax(const IndexDescription & index_)
         : IMergeTreeIndex(index_)
     {}
 
@@ -83,7 +83,7 @@ public:
     bool mayBenefitFromIndexForIn(const ASTPtr & node) const override;
 
     const char* getSerializedFileExtension() const override { return ".idx2"; }
-    MergeTreeIndexFormat getDeserializedFormat(const DiskPtr disk, const std::string & path_prefix) const override;
+    MergeTreeIndexFormat getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & path_prefix) const override; /// NOLINT
 };
 
 }

@@ -1,6 +1,7 @@
 ---
-toc_priority: 39
-toc_title: 授权操作
+slug: /zh/sql-reference/statements/grant
+sidebar_position: 39
+sidebar_label: 授权操作
 ---
 
 # 授权 {#grant}
@@ -470,5 +471,3 @@ GRANT INSERT(x,y) ON db.table TO john
 ### ADMIN OPTION {#admin-option-privilege}
 
 `ADMIN OPTION` 权限允许用户将他们的角色分配给其它用户
-
-[原始文档](https://clickhouse.com/docs/en/query_language/grant/) <!--hide-->

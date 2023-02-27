@@ -1,5 +1,6 @@
 ---
-toc_priority: 126
+slug: /ru/sql-reference/aggregate-functions/reference/groupbitor
+sidebar_position: 126
 ---
 
 # groupBitOr {#groupbitor}
@@ -44,4 +45,3 @@ SELECT groupBitOr(num) FROM t
 binary     decimal
 01111101 = 125
 ```
-

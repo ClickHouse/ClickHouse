@@ -33,7 +33,7 @@ void MergingAggregatedTransform::consume(Chunk chunk)
 
     const auto & info = chunk.getChunkInfo();
     if (!info)
-        throw Exception("Chunk info was not set for chunk in MergingAggregatedTransform.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk info was not set for chunk in MergingAggregatedTransform.");
 
     if (const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get()))
     {
@@ -49,7 +49,7 @@ void MergingAggregatedTransform::consume(Chunk chunk)
 
         bucket_to_blocks[agg_info->bucket_num].emplace_back(std::move(block));
     }
-    else if (const auto * in_order_info = typeid_cast<const ChunkInfoWithAllocatedBytes *>(info.get()))
+    else if (typeid_cast<const ChunkInfoWithAllocatedBytes *>(info.get()))
     {
         auto block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
         block.info.is_overflows = false;
@@ -58,7 +58,7 @@ void MergingAggregatedTransform::consume(Chunk chunk)
         bucket_to_blocks[block.info.bucket_num].emplace_back(std::move(block));
     }
     else
-        throw Exception("Chunk should have AggregatedChunkInfo in MergingAggregatedTransform.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk should have AggregatedChunkInfo in MergingAggregatedTransform.");
 }
 
 Chunk MergingAggregatedTransform::generate()

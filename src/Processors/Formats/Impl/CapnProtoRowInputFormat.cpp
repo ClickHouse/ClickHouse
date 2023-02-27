@@ -30,6 +30,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
 }
 
 CapnProtoRowInputFormat::CapnProtoRowInputFormat(ReadBuffer & in_, Block header, Params params_, const FormatSchemaInfo & info, const FormatSettings & format_settings_)
@@ -48,6 +49,11 @@ kj::Array<capnp::word> CapnProtoRowInputFormat::readMessage()
 {
     uint32_t segment_count;
     in->readStrict(reinterpret_cast<char*>(&segment_count), sizeof(uint32_t));
+    /// Don't allow large amount of segments as it's done in capnproto library:
+    /// https://github.com/capnproto/capnproto/blob/931074914eda9ca574b5c24d1169c0f7a5156594/c%2B%2B/src/capnp/serialize.c%2B%2B#L181
+    /// Large amount of segments can indicate that corruption happened.
+    if (segment_count >= 512)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Message has too many segments. Most likely, data was corrupted");
 
     // one for segmentCount and one because segmentCount starts from 0
     const auto prefix_size = (2 + segment_count) * sizeof(uint32_t);
@@ -85,13 +91,19 @@ static void insertSignedInteger(IColumn & column, const DataTypePtr & column_typ
             assert_cast<ColumnInt16 &>(column).insertValue(value);
             break;
         case TypeIndex::Int32:
-            assert_cast<ColumnInt32 &>(column).insertValue(value);
+            assert_cast<ColumnInt32 &>(column).insertValue(static_cast<Int32>(value));
             break;
         case TypeIndex::Int64:
             assert_cast<ColumnInt64 &>(column).insertValue(value);
             break;
         case TypeIndex::DateTime64:
             assert_cast<ColumnDecimal<DateTime64> &>(column).insertValue(value);
+            break;
+        case TypeIndex::Decimal32:
+            assert_cast<ColumnDecimal<Decimal32> &>(column).insertValue(static_cast<Int32>(value));
+            break;
+        case TypeIndex::Decimal64:
+            assert_cast<ColumnDecimal<Decimal64> &>(column).insertValue(value);
             break;
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Column type is not a signed integer.");
@@ -111,7 +123,7 @@ static void insertUnsignedInteger(IColumn & column, const DataTypePtr & column_t
             break;
         case TypeIndex::DateTime: [[fallthrough]];
         case TypeIndex::UInt32:
-            assert_cast<ColumnUInt32 &>(column).insertValue(value);
+            assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(value));
             break;
         case TypeIndex::UInt64:
             assert_cast<ColumnUInt64 &>(column).insertValue(value);
@@ -126,7 +138,7 @@ static void insertFloat(IColumn & column, const DataTypePtr & column_type, Float
     switch (column_type->getTypeId())
     {
         case TypeIndex::Float32:
-            assert_cast<ColumnFloat32 &>(column).insertValue(value);
+            assert_cast<ColumnFloat32 &>(column).insertValue(static_cast<Float32>(value));
             break;
         case TypeIndex::Float64:
             assert_cast<ColumnFloat64 &>(column).insertValue(value);
@@ -172,14 +184,14 @@ static void insertEnum(IColumn & column, const DataTypePtr & column_type, const 
     }
 }
 
-static void insertValue(IColumn & column, const DataTypePtr & column_type, const capnp::DynamicValue::Reader & value, FormatSettings::EnumComparingMode enum_comparing_mode)
+static void insertValue(IColumn & column, const DataTypePtr & column_type, const String & column_name, const capnp::DynamicValue::Reader & value, FormatSettings::EnumComparingMode enum_comparing_mode)
 {
     if (column_type->lowCardinality())
     {
         auto & lc_column = assert_cast<ColumnLowCardinality &>(column);
         auto tmp_column = lc_column.getDictionary().getNestedColumn()->cloneEmpty();
         auto dict_type = assert_cast<const DataTypeLowCardinality *>(column_type.get())->getDictionaryType();
-        insertValue(*tmp_column, dict_type, value, enum_comparing_mode);
+        insertValue(*tmp_column, dict_type, column_name, value, enum_comparing_mode);
         lc_column.insertFromFullColumn(*tmp_column, 0);
         return;
     }
@@ -220,7 +232,7 @@ static void insertValue(IColumn & column, const DataTypePtr & column_type, const
             auto & nested_column = column_array.getData();
             auto nested_type = assert_cast<const DataTypeArray *>(column_type.get())->getNestedType();
             for (const auto & nested_value : list_value)
-                insertValue(nested_column, nested_type, nested_value, enum_comparing_mode);
+                insertValue(nested_column, nested_type, column_name, nested_value, enum_comparing_mode);
             break;
         }
         case capnp::DynamicValue::Type::STRUCT:
@@ -237,11 +249,11 @@ static void insertValue(IColumn & column, const DataTypePtr & column_type, const
                     auto & nested_column = nullable_column.getNestedColumn();
                     auto nested_type = assert_cast<const DataTypeNullable *>(column_type.get())->getNestedType();
                     auto nested_value = struct_value.get(field);
-                    insertValue(nested_column, nested_type, nested_value, enum_comparing_mode);
+                    insertValue(nested_column, nested_type, column_name, nested_value, enum_comparing_mode);
                     nullable_column.getNullMapData().push_back(0);
                 }
             }
-            else
+            else if (isTuple(column_type))
             {
                 auto & tuple_column = assert_cast<ColumnTuple &>(column);
                 const auto * tuple_type = assert_cast<const DataTypeTuple *>(column_type.get());
@@ -249,8 +261,15 @@ static void insertValue(IColumn & column, const DataTypePtr & column_type, const
                     insertValue(
                         tuple_column.getColumn(i),
                         tuple_type->getElements()[i],
+                        tuple_type->getElementNames()[i],
                         struct_value.get(tuple_type->getElementNames()[i]),
                         enum_comparing_mode);
+            }
+            else
+            {
+                /// It can be nested column from Nested type.
+                auto [field_name, nested_name] = splitCapnProtoFieldName(column_name);
+                insertValue(column, column_type, nested_name, struct_value.get(nested_name), enum_comparing_mode);
             }
             break;
         }
@@ -264,20 +283,20 @@ bool CapnProtoRowInputFormat::readRow(MutableColumns & columns, RowReadExtension
     if (in->eof())
         return false;
 
-    auto array = readMessage();
-
-#if CAPNP_VERSION >= 7000 && CAPNP_VERSION < 8000
-    capnp::UnalignedFlatArrayMessageReader msg(array);
-#else
-    capnp::FlatArrayMessageReader msg(array);
-#endif
-
-    auto root_reader = msg.getRoot<capnp::DynamicStruct>(root);
-
-    for (size_t i = 0; i != columns.size(); ++i)
+    try
     {
-        auto value = getReaderByColumnName(root_reader, column_names[i]);
-        insertValue(*columns[i], column_types[i], value, format_settings.capn_proto.enum_comparing_mode);
+        auto array = readMessage();
+        capnp::FlatArrayMessageReader msg(array);
+        auto root_reader = msg.getRoot<capnp::DynamicStruct>(root);
+        for (size_t i = 0; i != columns.size(); ++i)
+        {
+            auto value = getReaderByColumnName(root_reader, column_names[i]);
+            insertValue(*columns[i], column_types[i], column_names[i], value, format_settings.capn_proto.enum_comparing_mode);
+        }
+    }
+    catch (const kj::Exception & e)
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot read row: {}", e.getDescription().cStr());
     }
 
     return true;
@@ -298,7 +317,7 @@ NamesAndTypesList CapnProtoSchemaReader::readSchema()
 
     auto schema_parser = CapnProtoSchemaParser();
     auto schema = schema_parser.getMessageSchema(schema_info);
-    return capnProtoSchemaToCHSchema(schema);
+    return capnProtoSchemaToCHSchema(schema, format_settings.capn_proto.skip_fields_with_unsupported_types_in_schema_inference);
 }
 
 void registerInputFormatCapnProto(FormatFactory & factory)
@@ -310,7 +329,10 @@ void registerInputFormatCapnProto(FormatFactory & factory)
             return std::make_shared<CapnProtoRowInputFormat>(buf, sample, std::move(params),
                        FormatSchemaInfo(settings, "CapnProto", true), settings);
         });
+    factory.markFormatSupportsSubsetOfColumns("CapnProto");
     factory.registerFileExtension("capnp", "CapnProto");
+    factory.registerAdditionalInfoForSchemaCacheGetter(
+        "CapnProto", [](const FormatSettings & settings) { return fmt::format("format_schema={}", settings.schema.format_schema); });
 }
 
 void registerCapnProtoSchemaReader(FormatFactory & factory)

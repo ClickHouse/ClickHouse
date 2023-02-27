@@ -1,13 +1,14 @@
 ---
-toc_priority: 62
-toc_title: Поддержка OpenTelemetry
+slug: /ru/operations/opentelemetry
+sidebar_position: 62
+sidebar_label: Поддержка OpenTelemetry
 ---
 
 # [экспериментально] Поддержка OpenTelemetry
 
 ClickHouse поддерживает [OpenTelemetry](https://opentelemetry.io/) — открытый стандарт для сбора трассировок и метрик из распределенного приложения.
 
-!!! warning "Предупреждение"
+:::danger "Предупреждение"
 Поддержка стандарта экспериментальная и будет со временем меняться.
 
 ## Обеспечение поддержки контекста трассировки в ClickHouse
@@ -33,4 +34,3 @@ ClickHouse создает `trace spans` для каждого запроса и 
 Таблица должна быть включена в конфигурации сервера, смотрите элемент `opentelemetry_span_log` в файле конфигурации `config.xml`. По умолчанию таблица включена всегда.
 
 Теги или атрибуты сохраняются в виде двух параллельных массивов, содержащих ключи и значения. Для работы с ними используйте [ARRAY JOIN](../sql-reference/statements/select/array-join.md).
-

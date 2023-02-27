@@ -1,6 +1,5 @@
 ---
-toc_folder_title: "Внешние словари"
-toc_priority: 37
+slug: /ru/sql-reference/dictionaries/external-dictionaries/
+sidebar_label: "Внешние словари"
+sidebar_position: 37
 ---
-
-

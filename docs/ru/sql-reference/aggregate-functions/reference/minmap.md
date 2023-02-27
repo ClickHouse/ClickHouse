@@ -1,5 +1,6 @@
 ---
-toc_priority: 142
+slug: /ru/sql-reference/aggregate-functions/reference/minmap
+sidebar_position: 142
 ---
 
 # minMap {#agg_functions-minmap}

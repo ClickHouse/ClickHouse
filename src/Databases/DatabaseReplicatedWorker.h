@@ -1,5 +1,6 @@
 #pragma once
 #include <Interpreters/DDLWorker.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 
 namespace DB
 {
@@ -29,12 +30,16 @@ public:
 
     void shutdown() override;
 
-    static String enqueueQueryImpl(const ZooKeeperPtr & zookeeper, DDLLogEntry & entry,
-                                   DatabaseReplicated * const database, bool committed = false);
+    bool waitForReplicaToProcessAllEntries(UInt64 timeout_ms);
 
+    static String enqueueQueryImpl(const ZooKeeperPtr & zookeeper, DDLLogEntry & entry,
+                                   DatabaseReplicated * const database, bool committed = false); /// NOLINT
+
+    UInt32 getLogPointer() const;
 private:
     bool initializeMainThread() override;
     void initializeReplication();
+    void initializeLogPointer(const String & processed_entry_name);
 
     DDLTaskPtr initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper) override;
     bool canRemoveQueueEntry(const String & entry_name, const Coordination::Stat & stat) override;
@@ -42,8 +47,15 @@ private:
     DatabaseReplicated * const database;
     mutable std::mutex mutex;
     std::condition_variable wait_current_task_change;
+
     String current_task;
     std::atomic<UInt32> logs_to_keep = std::numeric_limits<UInt32>::max();
+
+
+    /// EphemeralNodeHolder has reference to ZooKeeper, it may become dangling
+    ZooKeeperPtr active_node_holder_zookeeper;
+    /// It will remove "active" node when database is detached
+    zkutil::EphemeralNodeHolderPtr active_node_holder;
 };
 
 }

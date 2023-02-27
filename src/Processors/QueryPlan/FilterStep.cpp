@@ -9,15 +9,24 @@
 namespace DB
 {
 
-static ITransformingStep::Traits getTraits(const ActionsDAGPtr & expression)
+static ITransformingStep::Traits getTraits(const ActionsDAGPtr & expression, const Block & header, const SortDescription & sort_description, bool remove_filter_column, const String & filter_column_name)
 {
+    bool preserves_sorting = expression->isSortingPreserved(header, sort_description, remove_filter_column ? filter_column_name : "");
+    if (remove_filter_column)
+    {
+        preserves_sorting &= find_if(
+                                 begin(sort_description),
+                                 end(sort_description),
+                                 [&](const auto & column_desc) { return column_desc.column_name == filter_column_name; })
+            == sort_description.end();
+    }
     return ITransformingStep::Traits
     {
         {
             .preserves_distinct_columns = !expression->hasArrayJoin(), /// I suppose it actually never happens
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
-            .preserves_sorting = true,
+            .preserves_sorting = preserves_sorting,
         },
         {
             .preserves_number_of_rows = false,
@@ -27,42 +36,23 @@ static ITransformingStep::Traits getTraits(const ActionsDAGPtr & expression)
 
 FilterStep::FilterStep(
     const DataStream & input_stream_,
-    ActionsDAGPtr actions_dag_,
+    const ActionsDAGPtr & actions_dag_,
     String filter_column_name_,
     bool remove_filter_column_)
     : ITransformingStep(
         input_stream_,
         FilterTransform::transformHeader(
             input_stream_.header,
-            *actions_dag_,
+            actions_dag_.get(),
             filter_column_name_,
             remove_filter_column_),
-        getTraits(actions_dag_))
-    , actions_dag(std::move(actions_dag_))
+        getTraits(actions_dag_, input_stream_.header, input_stream_.sort_description, remove_filter_column_, filter_column_name_))
+    , actions_dag(actions_dag_)
     , filter_column_name(std::move(filter_column_name_))
     , remove_filter_column(remove_filter_column_)
 {
     /// TODO: it would be easier to remove all expressions from filter step. It should only filter by column name.
     updateDistinctColumns(output_stream->header, output_stream->distinct_columns);
-}
-
-void FilterStep::updateInputStream(DataStream input_stream, bool keep_header)
-{
-    Block out_header = std::move(output_stream->header);
-    if (keep_header)
-        out_header = FilterTransform::transformHeader(
-            input_stream.header,
-            *actions_dag,
-            filter_column_name,
-            remove_filter_column);
-
-    output_stream = createOutputStream(
-            input_stream,
-            std::move(out_header),
-            getDataStreamTraits());
-
-    input_streams.clear();
-    input_streams.emplace_back(std::move(input_stream));
 }
 
 void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
@@ -122,6 +112,14 @@ void FilterStep::describeActions(JSONBuilder::JSONMap & map) const
 
     auto expression = std::make_shared<ExpressionActions>(actions_dag);
     map.add("Expression", expression->toTree());
+}
+
+void FilterStep::updateOutputStream()
+{
+    output_stream = createOutputStream(
+        input_streams.front(),
+        FilterTransform::transformHeader(input_streams.front().header, actions_dag.get(), filter_column_name, remove_filter_column),
+        getDataStreamTraits());
 }
 
 }

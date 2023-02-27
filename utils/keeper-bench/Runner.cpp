@@ -2,13 +2,16 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int CANNOT_BLOCK_SIGNAL;
 }
+
 }
 
-void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> & zookeepers)
+
+void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookeepers)
 {
     Coordination::ZooKeeperRequestPtr request;
     /// Randomly choosing connection index
@@ -76,6 +79,31 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> & zook
                 throw;
             }
             std::cerr << DB::getCurrentExceptionMessage(true, true /*check embedded stack trace*/) << std::endl;
+
+            bool got_expired = false;
+            for (const auto & connection : zookeepers)
+            {
+                if (connection->isExpired())
+                {
+                    got_expired = true;
+                    break;
+                }
+            }
+            if (got_expired)
+            {
+                while (true)
+                {
+                    try
+                    {
+                        zookeepers = getConnections();
+                        break;
+                    }
+                    catch (...)
+                    {
+                        std::cerr << DB::getCurrentExceptionMessage(true, true /*check embedded stack trace*/) << std::endl;
+                    }
+                }
+            }
         }
 
         ++requests_executed;
@@ -139,6 +167,7 @@ void Runner::runBenchmark()
     }
     catch (...)
     {
+        shutdown = true;
         pool.wait();
         throw;
     }
@@ -174,16 +203,13 @@ std::vector<std::shared_ptr<Coordination::ZooKeeper>> Runner::getConnections()
         Coordination::ZooKeeper::Node node{Poco::Net::SocketAddress{host_string}, false};
         std::vector<Coordination::ZooKeeper::Node> nodes;
         nodes.push_back(node);
-        zookeepers.emplace_back(std::make_shared<Coordination::ZooKeeper>(
-            nodes,
-            "", /*chroot*/
-            "", /*identity type*/
-            "", /*identity*/
-            Poco::Timespan(0, 30000 * 1000),
-            Poco::Timespan(0, 1000 * 1000),
-            Poco::Timespan(0, 10000 * 1000),
-            nullptr));
+        zkutil::ZooKeeperArgs args;
+        args.session_timeout_ms = 30000;
+        args.connection_timeout_ms = 1000;
+        args.operation_timeout_ms = 10000;
+        zookeepers.emplace_back(std::make_shared<Coordination::ZooKeeper>(nodes, args, nullptr));
     }
+
 
     return zookeepers;
 }

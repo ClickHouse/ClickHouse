@@ -1,6 +1,7 @@
 ---
-toc_priority: 52
-toc_title: "Системные таблицы"
+slug: /ru/operations/system-tables/
+sidebar_position: 52
+sidebar_label: "Системные таблицы"
 ---
 
 # Системные таблицы {#system-tables}
@@ -69,4 +70,3 @@ toc_title: "Системные таблицы"
 -   `OSWriteChars`
 -   `OSReadBytes`
 -   `OSWriteBytes`
-

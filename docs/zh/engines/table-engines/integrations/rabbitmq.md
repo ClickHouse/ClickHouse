@@ -1,6 +1,7 @@
 ---
-toc_priority: 10
-toc_title: RabbitMQ
+slug: /zh/engines/table-engines/integrations/rabbitmq
+sidebar_position: 10
+sidebar_label: RabbitMQ
 ---
 
 # RabbitMQ 引擎 {#rabbitmq-engine}
@@ -163,5 +164,3 @@ Exchange 类型的选项:
 -   `_redelivered` - 消息的`redelivered`标志.
 -   `_message_id` - 收到的消息的ID；如果在消息发布时被设置，则为非空.
 -   `_timestamp` - 收到的消息的时间戳；如果在消息发布时被设置，则为非空.
-
-[原始文章](https://clickhouse.com/docs/en/engines/table-engines/integrations/rabbitmq/) <!--hide-->

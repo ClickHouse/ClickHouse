@@ -56,7 +56,7 @@ template <typename T> WriteBuffer & operator<< (BinaryManipWriteBuffer buf,     
 
 inline  WriteBuffer & operator<< (EscapeManipWriteBuffer buf, const String & x)   { writeEscapedString(x, buf); return buf; }
 inline  WriteBuffer & operator<< (EscapeManipWriteBuffer buf, std::string_view x) { writeEscapedString(x, buf); return buf; }
-inline  WriteBuffer & operator<< (EscapeManipWriteBuffer buf, StringRef x)        { writeEscapedString(x, buf); return buf; }
+inline  WriteBuffer & operator<< (EscapeManipWriteBuffer buf, StringRef x)        { writeEscapedString(x.toView(), buf); return buf; }
 inline  WriteBuffer & operator<< (EscapeManipWriteBuffer buf, const char * x)     { writeEscapedString(x, strlen(x), buf); return buf; }
 
 inline WriteBuffer & operator<< (QuoteManipWriteBuffer buf,       const char * x) { writeAnyQuotedString<'\''>(x, x + strlen(x), buf.get()); return buf; }

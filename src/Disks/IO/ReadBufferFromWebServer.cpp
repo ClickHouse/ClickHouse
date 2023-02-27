@@ -1,10 +1,9 @@
 #include "ReadBufferFromWebServer.h"
 
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <base/sleep.h>
 #include <Core/Types.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
-#include <IO/ConnectionTimeoutsContext.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <thread>
@@ -27,7 +26,7 @@ ReadBufferFromWebServer::ReadBufferFromWebServer(
     const ReadSettings & settings_,
     bool use_external_buffer_,
     size_t read_until_position_)
-    : SeekableReadBuffer(nullptr, 0)
+    : ReadBufferFromFileBase(settings_.remote_fs_buffer_size, nullptr, 0)
     , log(&Poco::Logger::get("ReadBufferFromWebServer"))
     , context(context_)
     , url(url_)
@@ -74,11 +73,27 @@ std::unique_ptr<ReadBuffer> ReadBufferFromWebServer::initialize()
         0,
         buf_size,
         read_settings,
-        ReadWriteBufferFromHTTP::HTTPHeaderEntries{},
+        HTTPHeaderEntries{},
         range,
-        context->getRemoteHostFilter(),
+        &context->getRemoteHostFilter(),
         /* delay_initialization */true,
         use_external_buffer);
+}
+
+
+void ReadBufferFromWebServer::setReadUntilPosition(size_t position)
+{
+    read_until_position = position;
+    impl.reset();
+}
+
+
+SeekableReadBuffer::Range ReadBufferFromWebServer::getRemainingReadRange() const
+{
+    return Range{
+        .left = static_cast<size_t>(offset),
+        .right = read_until_position ? std::optional{read_until_position - 1} : std::nullopt
+    };
 }
 
 
@@ -145,7 +160,7 @@ off_t ReadBufferFromWebServer::seek(off_t offset_, int whence)
         throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET mode is allowed");
 
     if (offset_ < 0)
-        throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position is out of bounds. Offset: {}", std::to_string(offset_));
+        throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position is out of bounds. Offset: {}", offset_);
 
     offset = offset_;
 

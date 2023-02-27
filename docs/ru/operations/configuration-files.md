@@ -1,6 +1,7 @@
 ---
-toc_priority: 50
-toc_title: "Конфигурационные файлы"
+slug: /ru/operations/configuration-files
+sidebar_position: 50
+sidebar_label: "Конфигурационные файлы"
 ---
 
 

@@ -3,30 +3,28 @@
 #if USE_PROTOBUF
 #   include <Core/Block.h>
 #   include <Formats/FormatFactory.h>
-#   include <Formats/FormatSchemaInfo.h>
 #   include <Formats/ProtobufReader.h>
 #   include <Formats/ProtobufSchemas.h>
 #   include <Formats/ProtobufSerializer.h>
-#   include <Interpreters/Context.h>
-#   include <base/range.h>
-
 
 namespace DB
 {
-ProtobufRowInputFormat::ProtobufRowInputFormat(ReadBuffer & in_, const Block & header_, const Params & params_, const FormatSchemaInfo & schema_info_, bool with_length_delimiter_)
+
+ProtobufRowInputFormat::ProtobufRowInputFormat(ReadBuffer & in_, const Block & header_, const Params & params_,
+    const FormatSchemaInfo & schema_info_, bool with_length_delimiter_, bool flatten_google_wrappers_)
     : IRowInputFormat(header_, in_, params_)
     , reader(std::make_unique<ProtobufReader>(in_))
     , serializer(ProtobufSerializer::create(
           header_.getNames(),
           header_.getDataTypes(),
           missing_column_indices,
-          *ProtobufSchemas::instance().getMessageTypeForFormatSchema(schema_info_),
+          *ProtobufSchemas::instance().getMessageTypeForFormatSchema(schema_info_, ProtobufSchemas::WithEnvelope::No),
           with_length_delimiter_,
+          /* with_envelope = */ false,
+          flatten_google_wrappers_,
          *reader))
 {
 }
-
-ProtobufRowInputFormat::~ProtobufRowInputFormat() = default;
 
 bool ProtobufRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & row_read_extension)
 {
@@ -44,6 +42,12 @@ bool ProtobufRowInputFormat::readRow(MutableColumns & columns, RowReadExtension 
     for (size_t column_idx : missing_column_indices)
         row_read_extension.read_columns[column_idx] = false;
     return true;
+}
+
+void ProtobufRowInputFormat::setReadBuffer(ReadBuffer & in_)
+{
+    reader->setReadBuffer(in_);
+    IRowInputFormat::setReadBuffer(in_);
 }
 
 bool ProtobufRowInputFormat::allowSyncAfterError() const
@@ -68,8 +72,10 @@ void registerInputFormatProtobuf(FormatFactory & factory)
         {
             return std::make_shared<ProtobufRowInputFormat>(buf, sample, std::move(params),
                 FormatSchemaInfo(settings, "Protobuf", true),
-                with_length_delimiter);
+                with_length_delimiter,
+                settings.protobuf.input_flatten_google_wrappers);
         });
+        factory.markFormatSupportsSubsetOfColumns(with_length_delimiter ? "Protobuf" : "ProtobufSingle");
     }
 }
 
@@ -78,15 +84,15 @@ ProtobufSchemaReader::ProtobufSchemaReader(const FormatSettings & format_setting
           format_settings.schema.format_schema,
           "Protobuf",
           true,
-          format_settings.schema.is_server,
-          format_settings.schema.format_schema_path)
+          format_settings.schema.is_server, format_settings.schema.format_schema_path)
+    , skip_unsupported_fields(format_settings.protobuf.skip_fields_with_unsupported_types_in_schema_inference)
 {
 }
 
 NamesAndTypesList ProtobufSchemaReader::readSchema()
 {
-    const auto * message_descriptor = ProtobufSchemas::instance().getMessageTypeForFormatSchema(schema_info);
-    return protobufSchemaToCHSchema(message_descriptor);
+    const auto * message_descriptor = ProtobufSchemas::instance().getMessageTypeForFormatSchema(schema_info, ProtobufSchemas::WithEnvelope::No);
+    return protobufSchemaToCHSchema(message_descriptor, skip_unsupported_fields);
 }
 
 void registerProtobufSchemaReader(FormatFactory & factory)
@@ -101,6 +107,10 @@ void registerProtobufSchemaReader(FormatFactory & factory)
     {
         return std::make_shared<ProtobufSchemaReader>(settings);
     });
+
+    for (const auto & name : {"Protobuf", "ProtobufSingle"})
+        factory.registerAdditionalInfoForSchemaCacheGetter(
+            name, [](const FormatSettings & settings) { return fmt::format("format_schema={}", settings.schema.format_schema); });
 }
 
 }
@@ -111,7 +121,6 @@ namespace DB
 {
 class FormatFactory;
 void registerInputFormatProtobuf(FormatFactory &) {}
-
 void registerProtobufSchemaReader(FormatFactory &) {}
 }
 

@@ -1,5 +1,6 @@
 ---
-toc_priority: 222
+slug: /ru/sql-reference/aggregate-functions/reference/stochasticlogisticregression
+sidebar_position: 222
 ---
 
 # stochasticLogisticRegression {#agg_functions-stochasticlogisticregression}
@@ -53,4 +54,3 @@ stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 
 -   [stochasticLinearRegression](../../../sql-reference/aggregate-functions/reference/stochasticlinearregression.md#agg_functions-stochasticlinearregression)
 -   [Отличие линейной от логистической регрессии](https://moredez.ru/q/51225972/)
-

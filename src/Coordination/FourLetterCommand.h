@@ -7,7 +7,7 @@
 #include <Coordination/KeeperDispatcher.h>
 #include <IO/WriteBufferFromString.h>
 
-#include <Common/config_version.h>
+#include "config_version.h"
 
 namespace DB
 {
@@ -17,6 +17,7 @@ using FourLetterCommandPtr = std::shared_ptr<DB::IFourLetterCommand>;
 /// Just like zookeeper Four Letter Words commands, CH Keeper responds to a small set of commands.
 /// Each command is composed of four letters, these commands are useful to monitor and issue system problems.
 /// The feature is based on Zookeeper 3.5.9, details is in https://zookeeper.apache.org/doc/r3.5.9/zookeeperAdmin.html#sc_zkCommands.
+/// Also we add some additional commands such as csnp, lgif etc.
 struct IFourLetterCommand
 {
 public:
@@ -40,10 +41,10 @@ struct FourLetterCommandFactory : private boost::noncopyable
 {
 public:
     using Commands = std::unordered_map<int32_t, FourLetterCommandPtr>;
-    using WhiteList = std::vector<int32_t>;
+    using AllowList = std::vector<int32_t>;
 
-    ///represent '*' which is used in white list
-    static constexpr int32_t WHITE_LIST_ALL = 0;
+    ///represent '*' which is used in allow list
+    static constexpr int32_t ALLOW_LIST_ALL = 0;
 
     bool isKnown(int32_t code);
     bool isEnabled(int32_t code);
@@ -52,7 +53,7 @@ public:
 
     /// There is no need to make it thread safe, because registration is no initialization and get is after startup.
     void registerCommand(FourLetterCommandPtr & command);
-    void initializeWhiteList(KeeperDispatcher & keeper_dispatcher);
+    void initializeAllowList(KeeperDispatcher & keeper_dispatcher);
 
     void checkInitialization() const;
     bool isInitialized() const { return initialized; }
@@ -64,7 +65,7 @@ public:
 private:
     std::atomic<bool> initialized = false;
     Commands commands;
-    WhiteList white_list;
+    AllowList allow_list;
 };
 
 /**Tests if server is running in a non-error state. The server will respond with imok if it is running.
@@ -130,7 +131,7 @@ struct StatResetCommand : public IFourLetterCommand
 };
 
 /// A command that does not do anything except reply to client with predefined message.
-///It is used to inform clients who execute none white listed four letter word commands.
+///It is used to inform clients who execute none allow listed four letter word commands.
 struct NopCommand : public IFourLetterCommand
 {
     explicit NopCommand(KeeperDispatcher & keeper_dispatcher_)
@@ -302,6 +303,78 @@ struct IsReadOnlyCommand : public IFourLetterCommand
     String name() override { return "isro"; }
     String run() override;
     ~IsReadOnlyCommand() override = default;
+};
+
+struct RecoveryCommand : public IFourLetterCommand
+{
+    explicit RecoveryCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "rcvr"; }
+    String run() override;
+    ~RecoveryCommand() override = default;
+};
+
+struct ApiVersionCommand : public IFourLetterCommand
+{
+    explicit ApiVersionCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "apiv"; }
+    String run() override;
+    ~ApiVersionCommand() override = default;
+};
+
+/// Create snapshot manually
+struct CreateSnapshotCommand : public IFourLetterCommand
+{
+    explicit CreateSnapshotCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "csnp"; }
+    String run() override;
+    ~CreateSnapshotCommand() override = default;
+};
+
+/** Raft log information:
+ *     first_log_idx 1
+ *     first_log_term   1
+ *     last_log_idx 101
+ *     last_log_term    1
+ *     last_committed_idx   100
+ *     leader_committed_log_idx 101
+ *     target_committed_log_idx 101
+ *     last_snapshot_idx    50
+ */
+struct LogInfoCommand : public IFourLetterCommand
+{
+    explicit LogInfoCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "lgif"; }
+    String run() override;
+    ~LogInfoCommand() override = default;
+};
+
+/// Request to be leader.
+struct RequestLeaderCommand : public IFourLetterCommand
+{
+    explicit RequestLeaderCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
+
+    String name() override { return "rqld"; }
+    String run() override;
+    ~RequestLeaderCommand() override = default;
 };
 
 }

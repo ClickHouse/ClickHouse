@@ -1,6 +1,7 @@
 ---
-toc_priority: 37
-toc_title: "版本折叠MergeTree"
+slug: /zh/engines/table-engines/mergetree-family/versionedcollapsingmergetree
+sidebar_position: 37
+sidebar_label: "版本折叠MergeTree"
 ---
 
 # VersionedCollapsingMergeTree {#versionedcollapsingmergetree}
@@ -8,7 +9,7 @@ toc_title: "版本折叠MergeTree"
 这个引擎:
 
 -   允许快速写入不断变化的对象状态。
--   删除后台中的旧对象状态。 这显着降低了存储体积。
+-   删除后台中的旧对象状态。 这显著降低了存储体积。
 
 请参阅部分 [崩溃](#table_engines_versionedcollapsingmergetree) 有关详细信息。
 
@@ -53,7 +54,7 @@ VersionedCollapsingMergeTree(sign, version)
 
 <summary>不推荐使用的创建表的方法</summary>
 
-!!! attention "注意"
+    :::info "注意"
     不要在新项目中使用此方法。 如果可能，请将旧项目切换到上述方法。
 
 ``` sql
@@ -232,5 +233,3 @@ SELECT * FROM UAct FINAL
 ```
 
 这是一个非常低效的方式来选择数据。 不要把它用于数据量大的表。
-
-[原始文章](https://clickhouse.com/docs/en/operations/table_engines/versionedcollapsingmergetree/) <!--hide-->

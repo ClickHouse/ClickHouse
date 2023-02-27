@@ -1,19 +1,25 @@
 ---
-toc_priority: 70
-toc_title: Testing
+slug: /en/development/tests
+sidebar_position: 70
+sidebar_label: Testing
+title: ClickHouse Testing
+description: Most of ClickHouse features can be tested with functional tests and they are mandatory to use for every change in ClickHouse code that can be tested that way.
 ---
 
-# ClickHouse Testing {#clickhouse-testing}
-
-## Functional Tests {#functional-tests}
+## Functional Tests
 
 Functional tests are the most simple and convenient to use. Most of ClickHouse features can be tested with functional tests and they are mandatory to use for every change in ClickHouse code that can be tested that way.
 
 Each functional test sends one or multiple queries to the running ClickHouse server and compares the result with reference.
 
-Tests are located in `queries` directory. There are two subdirectories: `stateless` and `stateful`. Stateless tests run queries without any preloaded test data - they often create small synthetic datasets on the fly, within the test itself. Stateful tests require preloaded test data from Yandex.Metrica and it is available to general public.
+Tests are located in `queries` directory. There are two subdirectories: `stateless` and `stateful`. Stateless tests run queries without any preloaded test data - they often create small synthetic datasets on the fly, within the test itself. Stateful tests require preloaded test data from ClickHouse and it is available to general public.
 
-Each test can be one of two types: `.sql` and `.sh`. `.sql` test is the simple SQL script that is piped to `clickhouse-client --multiquery --testmode`. `.sh` test is a script that is run by itself. SQL tests are generally preferable to `.sh` tests. You should use `.sh` tests only when you have to test some feature that cannot be exercised from pure SQL, such as piping some input data into `clickhouse-client` or testing `clickhouse-local`.
+Each test can be one of two types: `.sql` and `.sh`. `.sql` test is the simple SQL script that is piped to `clickhouse-client --multiquery`. `.sh` test is a script that is run by itself. SQL tests are generally preferable to `.sh` tests. You should use `.sh` tests only when you have to test some feature that cannot be exercised from pure SQL, such as piping some input data into `clickhouse-client` or testing `clickhouse-local`.
+
+:::note
+A common mistake when testing data types `DateTime` and `DateTime64` is assuming that the server uses a specific time zone (e.g. "UTC"). This is not the case, time zones in CI test runs
+are deliberately randomized. The easiest workaround is to specify the time zone for test values explicitly, e.g. `toDateTime64(val, 3, 'Europe/Amsterdam')`.
+:::
 
 ### Running a Test Locally {#functional-test-locally}
 
@@ -29,7 +35,7 @@ For more options, see `tests/clickhouse-test --help`. You can simply run all tes
 
 ### Adding a New Test
 
-To add new test, create a `.sql` or `.sh` file in `queries/0_stateless` directory, check it manually and then generate `.reference` file in the following way: `clickhouse-client -n --testmode < 00000_test.sql > 00000_test.reference` or `./00000_test.sh > ./00000_test.reference`.
+To add new test, create a `.sql` or `.sh` file in `queries/0_stateless` directory, check it manually and then generate `.reference` file in the following way: `clickhouse-client --multiquery < 00000_test.sql > 00000_test.reference` or `./00000_test.sh > ./00000_test.reference`.
 
 Tests should use (create, drop, etc) only tables in `test` database that is assumed to be created beforehand; also tests can use temporary tables.
 
@@ -80,11 +86,11 @@ $ ./src/unit_tests_dbms --gtest_filter=LocalAddress*
 
 ## Performance Tests {#performance-tests}
 
-Performance tests allow to measure and compare performance of some isolated part of ClickHouse on synthetic queries. Tests are located at `tests/performance`. Each test is represented by `.xml` file with description of test case. Tests are run with `docker/tests/performance-comparison` tool . See the readme file for invocation.
+Performance tests allow to measure and compare performance of some isolated part of ClickHouse on synthetic queries. Performance tests are located at `tests/performance/`. Each test is represented by an `.xml` file with a description of the test case. Tests are run with `docker/test/performance-comparison` tool . See the readme file for invocation.
 
-Each test run one or multiple queries (possibly with combinations of parameters) in a loop. Some tests can contain preconditions on preloaded test dataset.
+Each test run one or multiple queries (possibly with combinations of parameters) in a loop.
 
-If you want to improve performance of ClickHouse in some scenario, and if improvements can be observed on simple queries, it is highly recommended to write a performance test. It always makes sense to use `perf top` or other perf tools during your tests.
+If you want to improve performance of ClickHouse in some scenario, and if improvements can be observed on simple queries, it is highly recommended to write a performance test. Also, it is recommended to write performance tests when you add or modify SQL functions which are relatively isolated and not too obscure. It always makes sense to use `perf top` or other `perf` tools during your tests.
 
 ## Test Tools and Scripts {#test-tools-and-scripts}
 
@@ -133,50 +139,12 @@ If the system clickhouse-server is already running and you do not want to stop i
 
 `clickhouse` binary has almost no dependencies and works across wide range of Linux distributions. To quick and dirty test your changes on a server, you can simply `scp` your fresh built `clickhouse` binary to your server and then run it as in examples above.
 
-## Testing Environment {#testing-environment}
-
-Before publishing release as stable we deploy it on testing environment. Testing environment is a cluster that process 1/39 part of [Yandex.Metrica](https://metrica.yandex.com/) data. We share our testing environment with Yandex.Metrica team. ClickHouse is upgraded without downtime on top of existing data. We look at first that data is processed successfully without lagging from realtime, the replication continue to work and there is no issues visible to Yandex.Metrica team. First check can be done in the following way:
-
-``` sql
-SELECT hostName() AS h, any(version()), any(uptime()), max(UTCEventTime), count() FROM remote('example01-01-{1..3}t', merge, hits) WHERE EventDate >= today() - 2 GROUP BY h ORDER BY h;
-```
-
-In some cases we also deploy to testing environment of our friend teams in Yandex: Market, Cloud, etc. Also we have some hardware servers that are used for development purposes.
-
-## Load Testing {#load-testing}
-
-After deploying to testing environment we run load testing with queries from production cluster. This is done manually.
-
-Make sure you have enabled `query_log` on your production cluster.
-
-Collect query log for a day or more:
-
-``` bash
-$ clickhouse-client --query="SELECT DISTINCT query FROM system.query_log WHERE event_date = today() AND query LIKE '%ym:%' AND query NOT LIKE '%system.query_log%' AND type = 2 AND is_initial_query" > queries.tsv
-```
-
-This is a way complicated example. `type = 2` will filter queries that are executed successfully. `query LIKE '%ym:%'` is to select relevant queries from Yandex.Metrica. `is_initial_query` is to select only queries that are initiated by client, not by ClickHouse itself (as parts of distributed query processing).
-
-`scp` this log to your testing cluster and run it as following:
-
-``` bash
-$ clickhouse benchmark --concurrency 16 < queries.tsv
-```
-
-(probably you also want to specify a `--user`)
-
-Then leave it for a night or weekend and go take a rest.
-
-You should check that `clickhouse-server` does not crash, memory footprint is bounded and performance not degrading over time.
-
-Precise query execution timings are not recorded and not compared due to high variability of queries and environment.
-
 ## Build Tests {#build-tests}
 
 Build tests allow to check that build is not broken on various alternative configurations and on some foreign systems. These tests are automated as well.
 
 Examples:
--   cross-compile for Darwin x86_64 (Mac OS X)
+-   cross-compile for Darwin x86_64 (macOS)
 -   cross-compile for FreeBSD x86_64
 -   cross-compile for Linux AArch64
 -   build on Ubuntu with libraries from system packages (discouraged)
@@ -229,7 +197,7 @@ ClickHouse fuzzing is implemented both using [libFuzzer](https://llvm.org/docs/L
 All the fuzz testing should be performed with sanitizers (Address and Undefined).
 
 LibFuzzer is used for isolated fuzz testing of library code. Fuzzers are implemented as part of test code and have “_fuzzer” name postfixes.
-Fuzzer example can be found at `src/Parsers/tests/lexer_fuzzer.cpp`. LibFuzzer-specific configs, dictionaries and corpus are stored at `tests/fuzz`.
+Fuzzer example can be found at `src/Parsers/fuzzers/lexer_fuzzer.cpp`. LibFuzzer-specific configs, dictionaries and corpus are stored at `tests/fuzz`.
 We encourage you to write fuzz tests for every functionality that handles user input.
 
 Fuzzers are not built by default. To build fuzzers both `-DENABLE_FUZZING=1` and `-DENABLE_TESTS=1` options should be set.
@@ -239,7 +207,7 @@ Google OSS-Fuzz can be found at `docker/fuzz`.
 We also use simple fuzz test to generate random SQL queries and to check that the server does not die executing them.
 You can find it in `00746_sql_fuzzy.pl`. This test should be run continuously (overnight and longer).
 
-We also use sophisticated AST-based query fuzzer that is able to find huge amount of corner cases. It does random permutations and substitutions in queries AST. It remembers AST nodes from previous tests to use them for fuzzing of subsequent tests while processing them in random order. You can learn more about this fuzzer in [this blog article](https://clickhouse.com/blog/en/2021/fuzzing-clickhouse/).
+We also use sophisticated AST-based query fuzzer that is able to find huge amount of corner cases. It does random permutations and substitutions in queries AST. It remembers AST nodes from previous tests to use them for fuzzing of subsequent tests while processing them in random order. You can learn more about this fuzzer in [this blog article](https://clickhouse.com/blog/fuzzing-click-house).
 
 ## Stress test
 
@@ -259,13 +227,13 @@ Thread Fuzzer (please don't mix up with Thread Sanitizer) is another kind of fuz
 
 ## Security Audit
 
-People from Yandex Security Team did some basic overview of ClickHouse capabilities from the security standpoint.
+Our Security Team did some basic overview of ClickHouse capabilities from the security standpoint.
 
 ## Static Analyzers {#static-analyzers}
 
 We run `clang-tidy` on per-commit basis. `clang-static-analyzer` checks are also enabled. `clang-tidy` is also used for some style checks.
 
-We have evaluated `clang-tidy`, `Coverity`, `cppcheck`, `PVS-Studio`, `tscancode`, `CodeQL`. You will find instructions for usage in `tests/instructions/` directory. Also you can read [the article in russian](https://habr.com/company/yandex/blog/342018/).
+We have evaluated `clang-tidy`, `Coverity`, `cppcheck`, `PVS-Studio`, `tscancode`, `CodeQL`. You will find instructions for usage in `tests/instructions/` directory.
 
 If you use `CLion` as an IDE, you can leverage some `clang-tidy` checks out of the box.
 
@@ -281,7 +249,7 @@ In debug build we also involve a customization of libc that ensures that no "har
 
 Debug assertions are used extensively.
 
-In debug build, if exception with "logical error" code (implies a bug) is being thrown, the program is terminated prematurally. It allows to use exceptions in release build but make it an assertion in debug build.
+In debug build, if exception with "logical error" code (implies a bug) is being thrown, the program is terminated prematurely. It allows to use exceptions in release build but make it an assertion in debug build.
 
 Debug version of jemalloc is used for debug builds.
 Debug version of libc++ is used for debug builds.
@@ -290,7 +258,7 @@ Debug version of libc++ is used for debug builds.
 
 Data stored on disk is checksummed. Data in MergeTree tables is checksummed in three ways simultaneously* (compressed data blocks, uncompressed data blocks, the total checksum across blocks). Data transferred over network between client and server or between servers is also checksummed. Replication ensures bit-identical data on replicas.
 
-It is required to protect from faulty hardware (bit rot on storage media, bit flips in RAM on server, bit flips in RAM of network controller, bit flips in RAM of network switch, bit flips in RAM of client, bit flips on the wire). Note that bit flips are common and likely to occur even for ECC RAM and in presense of TCP checksums (if you manage to run thousands of servers processing petabytes of data each day). [See the video (russian)](https://www.youtube.com/watch?v=ooBAQIe0KlQ).
+It is required to protect from faulty hardware (bit rot on storage media, bit flips in RAM on server, bit flips in RAM of network controller, bit flips in RAM of network switch, bit flips in RAM of client, bit flips on the wire). Note that bit flips are common and likely to occur even for ECC RAM and in presence of TCP checksums (if you manage to run thousands of servers processing petabytes of data each day). [See the video (russian)](https://www.youtube.com/watch?v=ooBAQIe0KlQ).
 
 ClickHouse provides diagnostics that will help ops engineers to find faulty hardware.
 
@@ -310,12 +278,6 @@ Alternatively you can try `uncrustify` tool to reformat your code. Configuration
 
 We also use `codespell` to find typos in code. It is automated as well.
 
-## Metrica B2B Tests {#metrica-b2b-tests}
-
-Each ClickHouse release is tested with Yandex Metrica and AppMetrica engines. Testing and stable versions of ClickHouse are deployed on VMs and run with a small copy of Metrica engine that is processing fixed sample of input data. Then results of two instances of Metrica engine are compared together.
-
-These tests are automated by separate team. Due to high number of moving parts, tests are fail most of the time by completely unrelated reasons, that are very difficult to figure out. Most likely these tests have negative value for us. Nevertheless these tests was proved to be useful in about one or two times out of hundreds.
-
 ## Test Coverage {#test-coverage}
 
 We also track test coverage but only for functional tests and only for clickhouse-server. It is performed on daily basis.
@@ -323,10 +285,6 @@ We also track test coverage but only for functional tests and only for clickhous
 ## Tests for Tests
 
 There is automated check for flaky tests. It runs all new tests 100 times (for functional tests) or 10 times (for integration tests). If at least single time the test failed, it is considered flaky.
-
-## Testflows
-
-[Testflows](https://testflows.com/) is an enterprise-grade open-source testing framework, which is used to test a subset of ClickHouse.
 
 ## Test Automation {#test-automation}
 
@@ -336,5 +294,3 @@ Build jobs and tests are run in Sandbox on per commit basis. Resulting packages 
 
 We do not use Travis CI due to the limit on time and computational power.
 We do not use Jenkins. It was used before and now we are happy we are not using Jenkins.
-
-[Original article](https://clickhouse.com/docs/en/development/tests/) <!--hide-->

@@ -13,7 +13,6 @@ void registerOutputFormatNull(FormatFactory & factory)
     factory.registerOutputFormat("Null", [](
         WriteBuffer &,
         const Block & sample,
-        const RowOutputFormatParams &,
         const FormatSettings &)
     {
         return std::make_shared<NullOutputFormat>(sample);

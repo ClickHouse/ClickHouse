@@ -2,8 +2,10 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <IO/HashingWriteBuffer.h>
+#include <Interpreters/Context.h>
 #include <Common/FieldVisitors.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/SipHash.h>
@@ -84,6 +86,16 @@ namespace
         {
             operator()(x.toUnderType());
         }
+        void operator() (const IPv4 & x) const
+        {
+            UInt8 type = Field::Types::IPv4;
+            hash.update(type);
+            hash.update(x);
+        }
+        void operator() (const IPv6 & x) const
+        {
+            return operator()(String(reinterpret_cast<const char *>(&x), 16));
+        }
         void operator() (const Float64 & x) const
         {
             UInt8 type = Field::Types::Float64;
@@ -124,6 +136,18 @@ namespace
             for (const auto & elem : x)
                 applyVisitor(*this, elem);
         }
+        void operator() (const Object & x) const
+        {
+            UInt8 type = Field::Types::Object;
+            hash.update(type);
+            hash.update(x.size());
+
+            for (const auto & [key, value]: x)
+            {
+                hash.update(key);
+                applyVisitor(*this, value);
+            }
+        }
         void operator() (const DecimalField<Decimal32> & x) const
         {
             UInt8 type = Field::Types::Decimal32;
@@ -157,6 +181,15 @@ namespace
             hash.update(x.data.size());
             hash.update(x.data.data(), x.data.size());
         }
+        void operator() (const CustomType & x) const
+        {
+            UInt8 type = Field::Types::CustomType;
+            hash.update(type);
+            hash.update(x.getTypeName());
+            auto result = x.toString();
+            hash.update(result.size());
+            hash.update(result.data(), result.size());
+        }
         void operator() (const bool & x) const
         {
             UInt8 type = Field::Types::Bool;
@@ -164,12 +197,6 @@ namespace
             hash.update(x);
         }
     };
-}
-
-static std::unique_ptr<ReadBufferFromFileBase> openForReading(const DiskPtr & disk, const String & path)
-{
-    size_t file_size = disk->getFileSize(path);
-    return disk->readFile(path, ReadSettings().adjustBufferSize(file_size), file_size);
 }
 
 String MergeTreePartition::getID(const MergeTreeData & storage) const
@@ -182,7 +209,7 @@ String MergeTreePartition::getID(const MergeTreeData & storage) const
 String MergeTreePartition::getID(const Block & partition_key_sample) const
 {
     if (value.size() != partition_key_sample.columns())
-        throw Exception("Invalid partition key size: " + toString(value.size()), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid partition key size: {}", value.size());
 
     if (value.empty())
         return "all"; /// It is tempting to use an empty string here. But that would break directory structure in ZK.
@@ -194,7 +221,7 @@ String MergeTreePartition::getID(const Block & partition_key_sample) const
     bool are_all_integral = true;
     for (const Field & field : value)
     {
-        if (field.getType() != Field::Types::UInt64 && field.getType() != Field::Types::Int64)
+        if (field.getType() != Field::Types::UInt64 && field.getType() != Field::Types::Int64 && field.getType() != Field::Types::IPv4)
         {
             are_all_integral = false;
             break;
@@ -213,6 +240,8 @@ String MergeTreePartition::getID(const Block & partition_key_sample) const
 
             if (typeid_cast<const DataTypeDate *>(partition_key_sample.getByPosition(i).type.get()))
                 result += toString(DateLUT::instance().toNumYYYYMMDD(DayNum(value[i].safeGet<UInt64>())));
+            else if (typeid_cast<const DataTypeIPv4 *>(partition_key_sample.getByPosition(i).type.get()))
+                result += toString(value[i].get<IPv4>().toUnderType());
             else
                 result += applyVisitor(to_string_visitor, value[i]);
 
@@ -361,36 +390,39 @@ void MergeTreePartition::serializeText(const MergeTreeData & storage, WriteBuffe
     }
 }
 
-void MergeTreePartition::load(const MergeTreeData & storage, const DiskPtr & disk, const String & part_path)
+void MergeTreePartition::load(const MergeTreeData & storage, const PartMetadataManagerPtr & manager)
 {
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
     if (!metadata_snapshot->hasPartitionKey())
         return;
 
     const auto & partition_key_sample = adjustPartitionKey(metadata_snapshot, storage.getContext()).sample_block;
-    auto partition_file_path = part_path + "partition.dat";
-    auto file = openForReading(disk, partition_file_path);
+
+    auto file = manager->read("partition.dat");
     value.resize(partition_key_sample.columns());
     for (size_t i = 0; i < partition_key_sample.columns(); ++i)
-        partition_key_sample.getByPosition(i).type->getDefaultSerialization()->deserializeBinary(value[i], *file);
+        partition_key_sample.getByPosition(i).type->getDefaultSerialization()->deserializeBinary(value[i], *file, {});
 }
 
-std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(const MergeTreeData & storage, const DiskPtr & disk, const String & part_path, MergeTreeDataPartChecksums & checksums) const
+std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(const MergeTreeData & storage, IDataPartStorage & data_part_storage, MergeTreeDataPartChecksums & checksums) const
 {
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
+    const auto & context = storage.getContext();
     const auto & partition_key_sample = adjustPartitionKey(metadata_snapshot, storage.getContext()).sample_block;
-    return store(partition_key_sample, disk, part_path, checksums);
+    return store(partition_key_sample, data_part_storage, checksums, context->getWriteSettings());
 }
 
-std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(const Block & partition_key_sample, const DiskPtr & disk, const String & part_path, MergeTreeDataPartChecksums & checksums) const
+std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(const Block & partition_key_sample, IDataPartStorage & data_part_storage, MergeTreeDataPartChecksums & checksums, const WriteSettings & settings) const
 {
     if (!partition_key_sample)
         return nullptr;
 
-    auto out = disk->writeFile(part_path + "partition.dat");
+    auto out = data_part_storage.writeFile("partition.dat", DBMS_DEFAULT_BUFFER_SIZE, settings);
     HashingWriteBuffer out_hashing(*out);
     for (size_t i = 0; i < value.size(); ++i)
-        partition_key_sample.getByPosition(i).type->getDefaultSerialization()->serializeBinary(value[i], out_hashing);
+    {
+        partition_key_sample.getByPosition(i).type->getDefaultSerialization()->serializeBinary(value[i], out_hashing, {});
+    }
 
     out_hashing.next();
     checksums.files["partition.dat"].file_size = out_hashing.count();
@@ -448,6 +480,16 @@ KeyDescription MergeTreePartition::adjustPartitionKey(const StorageMetadataPtr &
     }
 
     return partition_key;
+}
+
+
+void MergeTreePartition::appendFiles(const MergeTreeData & storage, Strings& files)
+{
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr();
+    if (!metadata_snapshot->hasPartitionKey())
+        return;
+
+    files.push_back("partition.dat");
 }
 
 }

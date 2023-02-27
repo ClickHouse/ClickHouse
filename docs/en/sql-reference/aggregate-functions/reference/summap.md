@@ -1,8 +1,9 @@
 ---
-toc_priority: 141
+slug: /en/sql-reference/aggregate-functions/reference/summap
+sidebar_position: 141
 ---
 
-# sumMap {#agg_functions-summap}
+# sumMap
 
 Syntax: `sumMap(key, value)` or `sumMap(Tuple(key, value))`
 

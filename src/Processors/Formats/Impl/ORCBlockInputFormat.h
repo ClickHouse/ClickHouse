@@ -1,5 +1,5 @@
 #pragma once
-#include "config_formats.h"
+#include "config.h"
 #if USE_ORC
 
 #include <Processors/Formats/IInputFormat.h>
@@ -38,6 +38,7 @@ protected:
     }
 
 private:
+    void prepareReader();
 
     // TODO: check that this class implements every part of its parent
 
@@ -45,17 +46,16 @@ private:
 
     std::unique_ptr<ArrowColumnToCHColumn> arrow_column_to_ch_column;
 
-    std::vector<String> column_names;
-
     // indices of columns to read from ORC file
     std::vector<int> include_indices;
 
-    std::vector<size_t> missing_columns;
     BlockMissingValues block_missing_values;
 
     const FormatSettings format_settings;
+    const std::unordered_set<int> & skip_stripes;
 
-    void prepareReader();
+    int stripe_total = 0;
+    int stripe_current = 0;
 
     std::atomic<int> is_stopped{0};
 };

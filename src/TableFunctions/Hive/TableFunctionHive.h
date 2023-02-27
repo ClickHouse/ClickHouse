@@ -1,5 +1,6 @@
 #pragma once
-#include <Common/config.h>
+#include "config.h"
+
 #if USE_HIVE
 #include <TableFunctions/ITableFunction.h>
 #include <Poco/Logger.h>
@@ -10,7 +11,7 @@ class TableFunctionHive : public ITableFunction
 {
 public:
     static constexpr auto name = "hive";
-    static constexpr auto storage_type_name = "hive";
+    static constexpr auto storage_type_name = "Hive";
     std::string getName() const override { return name; }
 
     bool hasStaticStructure() const override { return true; }

@@ -1,4 +1,4 @@
-#include <string.h>
+#include <cstring>
 #include <string_view>
 #include <Common/clearPasswordFromCommandLine.h>
 

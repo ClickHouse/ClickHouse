@@ -1,5 +1,6 @@
 ---
-toc_priority: 201
+slug: /ru/sql-reference/aggregate-functions/reference/quantiles
+sidebar_position: 201
 ---
 
 # Функции для нескольких квантилей {#quantiles-functions}

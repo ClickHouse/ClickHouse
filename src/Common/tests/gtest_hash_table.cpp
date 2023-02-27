@@ -15,6 +15,17 @@
 
 using namespace DB;
 
+namespace
+{
+std::vector<UInt64> getVectorWithNumbersUpToN(size_t n)
+{
+    std::vector<UInt64> res(n);
+    std::iota(res.begin(), res.end(), 0);
+    return res;
+}
+
+}
+
 
 /// To test dump functionality without using other hashes that can change
 template <typename T>
@@ -37,7 +48,7 @@ std::set<std::string> convertToSet(const HashTable & table)
 
 TEST(HashTable, Insert)
 {
-    using Cont = HashSet<int, DefaultHash<int>, HashTableGrower<1>>;
+    using Cont = HashSet<int, DefaultHash<int>, HashTableGrowerWithPrecalculation<1>>;
 
     Cont cont;
 
@@ -49,7 +60,7 @@ TEST(HashTable, Insert)
 
 TEST(HashTable, Emplace)
 {
-    using Cont = HashSet<int, DefaultHash<int>, HashTableGrower<1>>;
+    using Cont = HashSet<int, DefaultHash<int>, HashTableGrowerWithPrecalculation<1>>;
 
     Cont cont;
 
@@ -70,7 +81,7 @@ TEST(HashTable, Emplace)
 
 TEST(HashTable, Lookup)
 {
-    using Cont = HashSet<int, DefaultHash<int>, HashTableGrower<1>>;
+    using Cont = HashSet<int, DefaultHash<int>, HashTableGrowerWithPrecalculation<1>>;
 
     Cont cont;
 
@@ -89,7 +100,7 @@ TEST(HashTable, Lookup)
 
 TEST(HashTable, Iteration)
 {
-    using Cont = HashSet<int, DefaultHash<int>, HashTableGrower<1>>;
+    using Cont = HashSet<int, DefaultHash<int>, HashTableGrowerWithPrecalculation<1>>;
 
     Cont cont;
 
@@ -107,7 +118,7 @@ TEST(HashTable, Erase)
 {
     {
         /// Check zero element deletion
-        using Cont = HashSet<int, DummyHash<int>, HashTableGrower<4>>;
+        using Cont = HashSet<int, DummyHash<int>, HashTableGrowerWithPrecalculation<4>>;
         Cont cont;
 
         cont.insert(0);
@@ -119,7 +130,7 @@ TEST(HashTable, Erase)
         ASSERT_TRUE(cont.find(0) == nullptr);
     }
     {
-        using Cont = HashSet<int, DummyHash<int>, HashTableGrower<4>>;
+        using Cont = HashSet<int, DummyHash<int>, HashTableGrowerWithPrecalculation<4>>;
         Cont cont;
 
         /// [.(1)..............] erase of (1).
@@ -132,7 +143,7 @@ TEST(HashTable, Erase)
         ASSERT_TRUE(cont.find(1) == nullptr);
     }
     {
-        using Cont = HashSet<int, DummyHash<int>, HashTableGrower<4>>;
+        using Cont = HashSet<int, DummyHash<int>, HashTableGrowerWithPrecalculation<4>>;
         Cont cont;
 
         /// [.(1)(2)(3)............] erase of (1) does not break search for (2) (3).
@@ -152,7 +163,7 @@ TEST(HashTable, Erase)
         ASSERT_EQ(cont.size(), 0);
     }
     {
-        using Cont = HashSet<int, DummyHash<int>, HashTableGrower<4>>;
+        using Cont = HashSet<int, DummyHash<int>, HashTableGrowerWithPrecalculation<4>>;
         Cont cont;
 
         /// [.(1)(17).............] erase of (1) breaks search for (17) because their natural position is 1.
@@ -164,7 +175,7 @@ TEST(HashTable, Erase)
         ASSERT_TRUE(cont.find(17) != nullptr && cont.find(17)->getKey() == 17);
     }
     {
-        using Cont = HashSet<int, DummyHash<int>, HashTableGrower<4>>;
+        using Cont = HashSet<int, DummyHash<int>, HashTableGrowerWithPrecalculation<4>>;
         Cont cont;
 
         /// [.(1)(2)(3)(17)...........] erase of (2) breaks search for (17) because their natural position is 1.
@@ -181,7 +192,7 @@ TEST(HashTable, Erase)
         ASSERT_TRUE(cont.find(17) != nullptr && cont.find(17)->getKey() == 17);
     }
     {
-        using Cont = HashSet<int, DummyHash<int>, HashTableGrower<4>>;
+        using Cont = HashSet<int, DummyHash<int>, HashTableGrowerWithPrecalculation<4>>;
         Cont cont;
 
         /// [(16)(30)............(14)(15)] erase of (16) breaks search for (30) because their natural position is 14.
@@ -197,7 +208,7 @@ TEST(HashTable, Erase)
         ASSERT_TRUE(cont.find(30) != nullptr && cont.find(30)->getKey() == 30);
     }
     {
-        using Cont = HashSet<int, DummyHash<int>, HashTableGrower<4>>;
+        using Cont = HashSet<int, DummyHash<int>, HashTableGrowerWithPrecalculation<4>>;
         Cont cont;
 
         /// [(16)(30)............(14)(15)] erase of (15) breaks search for (30) because their natural position is 14.
@@ -213,30 +224,30 @@ TEST(HashTable, Erase)
         ASSERT_TRUE(cont.find(30) != nullptr && cont.find(30)->getKey() == 30);
     }
     {
-        using Cont = HashSet<int, DefaultHash<int>, HashTableGrower<1>>;
+        using Cont = HashSet<int, DefaultHash<int>, HashTableGrowerWithPrecalculation<1>>;
         Cont cont;
 
-        for (size_t i = 0; i < 5000; ++i)
+        for (int i = 0; i < 5000; ++i)
         {
             cont.insert(i);
         }
 
-        for (size_t i = 0; i < 2500; ++i)
+        for (int i = 0; i < 2500; ++i)
         {
             cont.erase(i);
         }
 
-        for (size_t i = 5000; i < 10000; ++i)
+        for (int i = 5000; i < 10000; ++i)
         {
             cont.insert(i);
         }
 
-        for (size_t i = 5000; i < 10000; ++i)
+        for (int i = 5000; i < 10000; ++i)
         {
             cont.erase(i);
         }
 
-        for (size_t i = 2500; i < 5000; ++i)
+        for (int i = 2500; i < 5000; ++i)
         {
             cont.erase(i);
         }
@@ -249,7 +260,7 @@ TEST(HashTable, SerializationDeserialization)
 {
     {
         /// Use dummy hash to make it reproducible if default hash implementation will be changed
-        using Cont = HashSet<int, DummyHash<int>, HashTableGrower<1>>;
+        using Cont = HashSet<int, DummyHash<int>, HashTableGrowerWithPrecalculation<1>>;
 
         Cont cont;
 
@@ -271,7 +282,7 @@ TEST(HashTable, SerializationDeserialization)
         ASSERT_EQ(convertToSet(cont), convertToSet(deserialized));
     }
     {
-        using Cont = HashSet<int, DefaultHash<int>, HashTableGrower<1>>;
+        using Cont = HashSet<int, DefaultHash<int>, HashTableGrowerWithPrecalculation<1>>;
 
         Cont cont;
 
@@ -289,7 +300,7 @@ TEST(HashTable, SerializationDeserialization)
         ASSERT_EQ(convertToSet(cont), convertToSet(deserialized));
     }
     {
-        using Cont = HashSet<int, DummyHash<int>, HashTableGrower<1>>;
+        using Cont = HashSet<int, DummyHash<int>, HashTableGrowerWithPrecalculation<1>>;
         Cont cont;
 
         WriteBufferFromOwnString wb;
@@ -371,3 +382,48 @@ TEST(HashTable, Resize)
         ASSERT_EQ(actual, expected);
     }
 }
+
+
+using HashSetContent = std::vector<UInt64>;
+
+class TwoLevelHashSetFixture : public ::testing::TestWithParam<HashSetContent>
+{
+};
+
+
+TEST_P(TwoLevelHashSetFixture, WriteAsSingleLevel)
+{
+    using Key = UInt64;
+
+    {
+        const auto & hash_set_content = GetParam();
+
+        TwoLevelHashSet<Key, HashCRC32<Key>> two_level;
+        for (const auto & elem : hash_set_content)
+            two_level.insert(elem);
+
+        WriteBufferFromOwnString wb;
+        two_level.writeAsSingleLevel(wb);
+
+        ReadBufferFromString rb(wb.str());
+        HashSet<Key, HashCRC32<Key>> single_level;
+        single_level.read(rb);
+
+        EXPECT_EQ(single_level.size(), hash_set_content.size());
+        for (const auto & elem : hash_set_content)
+            EXPECT_NE(single_level.find(elem), nullptr);
+    }
+}
+
+
+INSTANTIATE_TEST_SUITE_P(
+    TwoLevelHashSetTests,
+    TwoLevelHashSetFixture,
+    ::testing::Values(
+        HashSetContent{},
+        getVectorWithNumbersUpToN(1),
+        getVectorWithNumbersUpToN(100),
+        getVectorWithNumbersUpToN(1000),
+        getVectorWithNumbersUpToN(10000),
+        getVectorWithNumbersUpToN(100000),
+        getVectorWithNumbersUpToN(1000000)));

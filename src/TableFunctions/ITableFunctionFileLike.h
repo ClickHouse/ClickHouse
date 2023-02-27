@@ -1,6 +1,7 @@
 #pragma once
 
 #include <TableFunctions/ITableFunction.h>
+#include "Parsers/IAST_fwd.h"
 
 namespace DB
 {
@@ -17,8 +18,12 @@ public:
 
     void setStructureHint(const ColumnsDescription & structure_hint_) override { structure_hint = structure_hint_; }
 
+    bool supportsReadingSubsetOfColumns() override;
+
 protected:
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
+    virtual void parseFirstArguments(const ASTPtr & arg, const ContextPtr & context);
+    virtual String getFormatFromFirstArgument();
 
     String filename;
     String format = "auto";

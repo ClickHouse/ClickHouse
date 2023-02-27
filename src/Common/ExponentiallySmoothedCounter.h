@@ -43,9 +43,7 @@ struct ExponentiallySmoothedAverage
     double time = 0;
 
 
-    ExponentiallySmoothedAverage()
-    {
-    }
+    ExponentiallySmoothedAverage() = default;
 
     ExponentiallySmoothedAverage(double current_value, double current_time)
         : value(current_value), time(current_time)

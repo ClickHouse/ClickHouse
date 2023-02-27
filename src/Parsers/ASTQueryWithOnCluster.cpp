@@ -11,9 +11,9 @@
 namespace DB
 {
 
-std::string ASTQueryWithOnCluster::getRewrittenQueryWithoutOnCluster(const std::string & new_database) const
+std::string ASTQueryWithOnCluster::getRewrittenQueryWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const
 {
-    return queryToString(getRewrittenASTWithoutOnCluster(new_database));
+    return queryToString(getRewrittenASTWithoutOnCluster(params));
 }
 
 

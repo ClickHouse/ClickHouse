@@ -198,8 +198,19 @@ public:
         ++x.block;
     }
 
+    RowNumber nextRowNumber(const RowNumber & x) const
+    {
+        RowNumber result = x;
+        advanceRowNumber(result);
+        return result;
+    }
+
     void retreatRowNumber(RowNumber & x) const
     {
+#ifndef NDEBUG
+        auto original_x = x;
+#endif
+
         if (x.row > 0)
         {
             --x.row;
@@ -213,10 +224,17 @@ public:
         x.row = blockAt(x).rows - 1;
 
 #ifndef NDEBUG
-        auto xx = x;
-        advanceRowNumber(xx);
-        assert(xx == x);
+        auto advanced_retreated_x = x;
+        advanceRowNumber(advanced_retreated_x);
+        assert(advanced_retreated_x == original_x);
 #endif
+    }
+
+    RowNumber prevRowNumber(const RowNumber & x) const
+    {
+        RowNumber result = x;
+        retreatRowNumber(result);
+        return result;
     }
 
     auto moveRowNumber(const RowNumber & _x, int64_t offset) const;
@@ -245,7 +263,6 @@ public:
         return RowNumber{first_block_number, 0};
     }
 
-public:
     /*
      * Data (formerly) inherited from ISimpleTransform, needed for the
      * implementation of the IProcessor interface.
@@ -321,7 +338,7 @@ public:
     // We update the states of the window functions after we find the final frame
     // boundaries.
     // After we have found the final boundaries of the frame, we can immediately
-    // output the result for the current row, w/o waiting for more data.
+    // output the result for the current row, without waiting for more data.
     RowNumber frame_start;
     RowNumber frame_end;
     bool frame_ended = false;
@@ -349,10 +366,10 @@ public:
 template <>
 struct fmt::formatter<DB::RowNumber>
 {
-    constexpr auto parse(format_parse_context & ctx)
+    static constexpr auto parse(format_parse_context & ctx)
     {
-        auto it = ctx.begin();
-        auto end = ctx.end();
+        const auto * it = ctx.begin();
+        const auto * end = ctx.end();
 
         /// Only support {}.
         if (it != end && *it != '}')

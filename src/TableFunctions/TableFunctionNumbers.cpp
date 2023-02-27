@@ -37,22 +37,22 @@ StoragePtr TableFunctionNumbers<multithreaded>::executeImpl(const ASTPtr & ast_f
         auto arguments = function->arguments->children;
 
         if (arguments.size() != 1 && arguments.size() != 2)
-            throw Exception("Table function '" + getName() + "' requires 'length' or 'offset, length'.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' requires 'length' or 'offset, length'.", getName());
 
         UInt64 offset = arguments.size() == 2 ? evaluateArgument(context, arguments[0]) : 0;
         UInt64 length = arguments.size() == 2 ? evaluateArgument(context, arguments[1]) : evaluateArgument(context, arguments[0]);
 
-        auto res = StorageSystemNumbers::create(StorageID(getDatabaseName(), table_name), multithreaded, length, offset, false);
+        auto res = std::make_shared<StorageSystemNumbers>(StorageID(getDatabaseName(), table_name), multithreaded, length, offset, false);
         res->startup();
         return res;
     }
-    throw Exception("Table function '" + getName() + "' requires 'limit' or 'offset, limit'.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' requires 'limit' or 'offset, limit'.", getName());
 }
 
 void registerTableFunctionNumbers(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionNumbers<true>>();
-    factory.registerFunction<TableFunctionNumbers<false>>();
+    factory.registerFunction<TableFunctionNumbers<true>>({.documentation = {}, .allow_readonly = true});
+    factory.registerFunction<TableFunctionNumbers<false>>({.documentation = {}, .allow_readonly = true});
 }
 
 template <bool multithreaded>
@@ -65,7 +65,8 @@ UInt64 TableFunctionNumbers<multithreaded>::evaluateArgument(ContextPtr context,
 
     Field converted = convertFieldToType(field, DataTypeUInt64());
     if (converted.isNull())
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The value {} is not representable as UInt64", applyVisitor(FieldVisitorToString(), field));
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The value {} is not representable as UInt64",
+                        applyVisitor(FieldVisitorToString(), field));
 
     return converted.safeGet<UInt64>();
 }

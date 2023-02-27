@@ -8,20 +8,29 @@ import string
 import os
 import time
 from multiprocessing.dummy import Pool
-from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry
 from kazoo.client import KazooClient, KazooState
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance('node1', main_configs=['configs/enable_keeper1.xml'], stay_alive=True)
-node2 = cluster.add_instance('node2', main_configs=['configs/enable_keeper2.xml'], stay_alive=True)
+node1 = cluster.add_instance(
+    "node1", main_configs=["configs/enable_keeper1.xml"], stay_alive=True
+)
+node2 = cluster.add_instance(
+    "node2", main_configs=["configs/enable_keeper2.xml"], stay_alive=True
+)
+
 
 def get_fake_zk(nodename, timeout=30.0):
-    _fake_zk_instance = KazooClient(hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout)
+    _fake_zk_instance = KazooClient(
+        hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout
+    )
     _fake_zk_instance.start()
     return _fake_zk_instance
 
+
 def test_smoke():
+    node1_zk = None
+
     try:
         cluster.start()
 
@@ -30,3 +39,7 @@ def test_smoke():
 
     finally:
         cluster.shutdown()
+
+        if node1_zk:
+            node1_zk.stop()
+            node1_zk.close()

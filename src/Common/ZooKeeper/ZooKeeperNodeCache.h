@@ -31,7 +31,7 @@ namespace zkutil
 class ZooKeeperNodeCache
 {
 public:
-    ZooKeeperNodeCache(GetZooKeeper get_zookeeper);
+    explicit ZooKeeperNodeCache(GetZooKeeper get_zookeeper);
 
     ZooKeeperNodeCache(const ZooKeeperNodeCache &) = delete;
     ZooKeeperNodeCache(ZooKeeperNodeCache &&) = default;

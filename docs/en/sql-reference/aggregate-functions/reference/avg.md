@@ -1,8 +1,9 @@
 ---
-toc_priority: 5
+slug: /en/sql-reference/aggregate-functions/reference/avg
+sidebar_position: 5
 ---
 
-# avg {#agg_function-avg}
+# avg
 
 Calculates the arithmetic mean.
 
@@ -62,5 +63,3 @@ Result:
 │    nan │
 └────────┘
 ```
-
-[Original article](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/avg/) <!--hide-->

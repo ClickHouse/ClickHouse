@@ -1,7 +1,8 @@
 ---
+slug: /zh/faq/general/how-do-i-contribute-code-to-clickhouse
 title: 我如何为ClickHouse贡献代码?
 toc_hidden: true
-toc_priority: 120
+sidebar_position: 120
 ---
 
 # 我如何为ClickHouse贡献代码? {#how-do-i-contribute-code-to-clickhouse}

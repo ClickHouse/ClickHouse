@@ -484,6 +484,35 @@ TEST(Common, PODArrayInsertFromItself)
     }
 }
 
+TEST(Common, PODArrayAssign)
+{
+    {
+        PaddedPODArray<UInt64> array;
+        array.push_back(1);
+        array.push_back(2);
+
+        array.assign({1, 2, 3});
+
+        ASSERT_EQ(array.size(), 3);
+        ASSERT_EQ(array, PaddedPODArray<UInt64>({1, 2, 3}));
+    }
+    {
+        PaddedPODArray<UInt64> array;
+        array.push_back(1);
+        array.push_back(2);
+
+        array.assign({});
+
+        ASSERT_TRUE(array.empty());
+    }
+    {
+        PaddedPODArray<UInt64> array;
+        array.assign({});
+
+        ASSERT_TRUE(array.empty());
+    }
+}
+
 TEST(Common, PODNoOverallocation)
 {
     /// Check that PaddedPODArray allocates for smaller number of elements than the power of two due to padding.
@@ -503,7 +532,7 @@ TEST(Common, PODNoOverallocation)
         }
     }
 
-    EXPECT_EQ(capacities, (std::vector<size_t>{4065, 8161, 16353, 32737, 65505, 131041, 262113, 524257, 1048545}));
+    EXPECT_EQ(capacities, (std::vector<size_t>{3969, 8065, 16257, 32641, 65409, 130945, 262017, 524161, 1048449}));
 }
 
 template <size_t size>

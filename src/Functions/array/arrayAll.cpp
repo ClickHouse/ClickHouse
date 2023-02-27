@@ -37,7 +37,7 @@ struct ArrayAllImpl
             const auto * column_filter_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
 
             if (!column_filter_const)
-                throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type of filter column");
 
             if (column_filter_const->getValue<UInt8>())
                 return DataTypeUInt8().createColumnConst(array.size(), 1u);
@@ -86,7 +86,7 @@ struct ArrayAllImpl
 struct NameArrayAll { static constexpr auto name = "arrayAll"; };
 using FunctionArrayAll = FunctionArrayMapped<ArrayAllImpl, NameArrayAll>;
 
-void registerFunctionArrayAll(FunctionFactory & factory)
+REGISTER_FUNCTION(ArrayAll)
 {
     factory.registerFunction<FunctionArrayAll>();
 }

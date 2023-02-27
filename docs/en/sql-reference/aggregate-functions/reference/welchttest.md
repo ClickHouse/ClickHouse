@@ -1,9 +1,10 @@
 ---
-toc_priority: 301
-toc_title: welchTTest
+slug: /en/sql-reference/aggregate-functions/reference/welchttest
+sidebar_position: 301
+sidebar_label: welchTTest
 ---
 
-# welchTTest {#welchttest}
+# welchTTest
 
 Applies Welch's t-test to samples from two populations.
 
@@ -31,8 +32,8 @@ The null hypothesis is that means of populations are equal. Normal distribution 
 
 -   calculated t-statistic. [Float64](../../../sql-reference/data-types/float.md).
 -   calculated p-value. [Float64](../../../sql-reference/data-types/float.md).
--   [calculated confidence-interval-low.] [Float64](../../../sql-reference/data-types/float.md).
--   [calculated confidence-interval-high.] [Float64](../../../sql-reference/data-types/float.md).
+-   calculated confidence-interval-low. [Float64](../../../sql-reference/data-types/float.md).
+-   calculated confidence-interval-high. [Float64](../../../sql-reference/data-types/float.md).
 
 
 **Example**
@@ -68,5 +69,3 @@ Result:
 
 -   [Welch's t-test](https://en.wikipedia.org/wiki/Welch%27s_t-test)
 -   [studentTTest function](studentttest.md#studentttest)
-
-[Original article](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/welchTTest/) <!--hide-->

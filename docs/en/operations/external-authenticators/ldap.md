@@ -1,4 +1,10 @@
-# LDAP {#external-authenticators-ldap}
+---
+slug: /en/operations/external-authenticators/ldap
+title: "LDAP"
+---
+import SelfManaged from '@site/docs/en/_snippets/_self_managed_only_no_roadmap.md';
+
+<SelfManaged />
 
 LDAP server can be used to authenticate ClickHouse users. There are two different approaches for doing this:
 
@@ -178,5 +184,3 @@ Note that `my_ldap_server` referred in the `ldap` section inside the `user_direc
             - Note, that the special characters must be escaped properly in XML.
         - `attribute` — Attribute name whose values will be returned by the LDAP search. `cn`, by default.
         - `prefix` — Prefix, that will be expected to be in front of each string in the original list of strings returned by the LDAP search. The prefix will be removed from the original strings and the resulting strings will be treated as local role names. Empty by default.
-
-[Original article](https://clickhouse.com/docs/en/operations/external-authenticators/ldap/) <!--hide-->

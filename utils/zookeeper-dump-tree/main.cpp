@@ -14,7 +14,7 @@ int main(int argc, char ** argv)
         desc.add_options()
             ("help,h", "produce help message")
             ("address,a", boost::program_options::value<std::string>()->required(),
-                "addresses of ZooKeeper instances, comma separated. Example: example01e.yandex.ru:2181")
+                "addresses of ZooKeeper instances, comma separated. Example: example01e.clickhouse.com:2181")
             ("path,p", boost::program_options::value<std::string>()->default_value("/"),
                 "where to start")
             ("ctime,c", "print node ctime")

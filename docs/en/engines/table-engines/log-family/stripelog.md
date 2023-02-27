@@ -1,9 +1,10 @@
 ---
+slug: /en/engines/table-engines/log-family/stripelog
 toc_priority: 32
 toc_title: StripeLog
 ---
 
-# Stripelog {#stripelog}
+# Stripelog
 
 This engine belongs to the family of log engines. See the common properties of log engines and their differences in the [Log Engine Family](../../../engines/table-engines/log-family/index.md) article.
 
@@ -89,5 +90,3 @@ SELECT * FROM stripe_log_table ORDER BY timestamp
 │ 2019-01-18 14:34:53 │ WARNING      │ The first warning message  │
 └─────────────────────┴──────────────┴────────────────────────────┘
 ```
-
-[Original article](https://clickhouse.com/docs/en/operations/table_engines/stripelog/) <!--hide-->

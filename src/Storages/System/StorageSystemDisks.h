@@ -1,6 +1,5 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
 #include <Formats/FormatSettings.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -14,25 +13,23 @@ class Context;
 
 /** Implements the system table `disks`, which allows you to get information about all disks.
 */
-class StorageSystemDisks final : public shared_ptr_helper<StorageSystemDisks>, public IStorage
+class StorageSystemDisks final : public IStorage
 {
-    friend struct shared_ptr_helper<StorageSystemDisks>;
 public:
+    explicit StorageSystemDisks(const StorageID & table_id_);
+
     std::string getName() const override { return "SystemDisks"; }
 
     Pipe read(
         const Names & column_names,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
     bool isSystemStorage() const override { return true; }
-
-protected:
-    StorageSystemDisks(const StorageID & table_id_);
 };
 
 }

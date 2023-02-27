@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
-#include <Databases/TablesLoader.h>
 
 
 namespace DB
@@ -18,5 +17,11 @@ void loadMetadata(ContextMutablePtr context, const String & default_database_nam
 /// Background operations in system tables may slowdown loading of the rest tables,
 /// so we startup system tables after all databases are loaded.
 void startupSystemTables();
+
+/// Converts `system` database from Ordinary to Atomic (if needed)
+void maybeConvertSystemDatabase(ContextMutablePtr context);
+
+/// Converts all databases (except system) from Ordinary to Atomic if convert_ordinary_to_atomic flag exists
+void convertDatabasesEnginesIfNeed(ContextMutablePtr context);
 
 }

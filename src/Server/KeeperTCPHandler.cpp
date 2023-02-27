@@ -11,7 +11,8 @@
 #include <Common/Stopwatch.h>
 #include <Common/NetException.h>
 #include <Common/setThreadName.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
+#include <base/defines.h>
 #include <chrono>
 #include <Common/PipeFDs.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -87,14 +88,18 @@ struct SocketInterruptablePollWrapper
         socket_event.data.fd = sockfd;
         if (epoll_ctl(epollfd, EPOLL_CTL_ADD, sockfd, &socket_event) < 0)
         {
-            ::close(epollfd);
+            int err = ::close(epollfd);
+            chassert(!err || errno == EINTR);
+
             throwFromErrno("Cannot insert socket into epoll queue", ErrorCodes::SYSTEM_ERROR);
         }
         pipe_event.events = EPOLLIN | EPOLLERR | EPOLLPRI;
         pipe_event.data.fd = pipe.fds_rw[0];
         if (epoll_ctl(epollfd, EPOLL_CTL_ADD, pipe.fds_rw[0], &pipe_event) < 0)
         {
-            ::close(epollfd);
+            int err = ::close(epollfd);
+            chassert(!err || errno == EINTR);
+
             throwFromErrno("Cannot insert socket into epoll queue", ErrorCodes::SYSTEM_ERROR);
         }
 #endif
@@ -126,7 +131,8 @@ struct SocketInterruptablePollWrapper
             do
             {
                 Poco::Timestamp start;
-                rc = epoll_wait(epollfd, evout, 2, remaining_time.totalMilliseconds());
+                /// TODO: use epoll_pwait() for more precise timers
+                rc = epoll_wait(epollfd, evout, 2, static_cast<int>(remaining_time.totalMilliseconds()));
                 if (rc < 0 && errno == EINTR)
                 {
                     Poco::Timestamp end;
@@ -156,7 +162,7 @@ struct SocketInterruptablePollWrapper
             do
             {
                 Poco::Timestamp start;
-                rc = ::poll(poll_buf, 2, remaining_time.totalMilliseconds());
+                rc = ::poll(poll_buf, 2, static_cast<int>(remaining_time.totalMilliseconds()));
                 if (rc < 0 && errno == POCO_EINTR)
                 {
                     Poco::Timestamp end;
@@ -171,7 +177,7 @@ struct SocketInterruptablePollWrapper
 
             if (rc >= 1 && poll_buf[0].revents & POLLIN)
                 socket_ready = true;
-            if (rc >= 1 && poll_buf[1].revents & POLLIN)
+            if (rc >= 2 && poll_buf[1].revents & POLLIN)
                 fd_ready = true;
 #endif
         }
@@ -197,30 +203,36 @@ struct SocketInterruptablePollWrapper
 #if defined(POCO_HAVE_FD_EPOLL)
     ~SocketInterruptablePollWrapper()
     {
-        ::close(epollfd);
+        int err = ::close(epollfd);
+        chassert(!err || errno == EINTR);
     }
 #endif
 };
 
-KeeperTCPHandler::KeeperTCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_)
+KeeperTCPHandler::KeeperTCPHandler(
+    const Poco::Util::AbstractConfiguration & config_ref,
+    std::shared_ptr<KeeperDispatcher> keeper_dispatcher_,
+    Poco::Timespan receive_timeout_,
+    Poco::Timespan send_timeout_,
+    const Poco::Net::StreamSocket & socket_)
     : Poco::Net::TCPServerConnection(socket_)
-    , server(server_)
     , log(&Poco::Logger::get("KeeperTCPHandler"))
-    , global_context(Context::createCopy(server.context()))
-    , keeper_dispatcher(global_context->getKeeperDispatcher())
+    , keeper_dispatcher(keeper_dispatcher_)
     , operation_timeout(
           0,
-          global_context->getConfigRef().getUInt(
+          config_ref.getUInt(
               "keeper_server.coordination_settings.operation_timeout_ms", Coordination::DEFAULT_OPERATION_TIMEOUT_MS) * 1000)
     , min_session_timeout(
           0,
-          global_context->getConfigRef().getUInt(
+          config_ref.getUInt(
               "keeper_server.coordination_settings.min_session_timeout_ms", Coordination::DEFAULT_MIN_SESSION_TIMEOUT_MS) * 1000)
     , max_session_timeout(
           0,
-          global_context->getConfigRef().getUInt(
+          config_ref.getUInt(
               "keeper_server.coordination_settings.session_timeout_ms", Coordination::DEFAULT_MAX_SESSION_TIMEOUT_MS) * 1000)
     , poll_wrapper(std::make_unique<SocketInterruptablePollWrapper>(socket_))
+    , send_timeout(send_timeout_)
+    , receive_timeout(receive_timeout_)
     , responses(std::make_unique<ThreadSafeResponseQueue>(std::numeric_limits<size_t>::max()))
     , last_op(std::make_unique<LastOp>(EMPTY_LAST_OP))
 {
@@ -263,12 +275,12 @@ Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length)
     std::array<char, Coordination::PASSWORD_LENGTH> passwd {};
 
     if (!isHandShake(handshake_length))
-        throw Exception("Unexpected handshake length received: " + toString(handshake_length), ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected handshake length received: {}", toString(handshake_length));
 
     Coordination::read(protocol_version, *in);
 
     if (protocol_version != Coordination::ZOOKEEPER_PROTOCOL_VERSION)
-        throw Exception("Unexpected protocol version: " + toString(protocol_version), ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected protocol version: {}", toString(protocol_version));
 
     Coordination::read(last_zxid_seen, *in);
     Coordination::read(timeout_ms, *in);
@@ -289,11 +301,9 @@ void KeeperTCPHandler::runImpl()
 {
     setThreadName("KeeperHandler");
     ThreadStatus thread_status;
-    auto global_receive_timeout = global_context->getSettingsRef().receive_timeout;
-    auto global_send_timeout = global_context->getSettingsRef().send_timeout;
 
-    socket().setReceiveTimeout(global_receive_timeout);
-    socket().setSendTimeout(global_send_timeout);
+    socket().setReceiveTimeout(receive_timeout);
+    socket().setSendTimeout(send_timeout);
     socket().setNoDelay(true);
 
     in = std::make_shared<ReadBufferFromPocoSocket>(socket());
@@ -322,6 +332,7 @@ void KeeperTCPHandler::runImpl()
     int32_t four_letter_cmd = header;
     if (!isHandShake(four_letter_cmd))
     {
+        connected.store(true, std::memory_order_relaxed);
         tryExecuteFourLetterWordCmd(four_letter_cmd);
         return;
     }
@@ -342,7 +353,7 @@ void KeeperTCPHandler::runImpl()
         return;
     }
 
-    if (keeper_dispatcher->checkInit() && keeper_dispatcher->hasLeader())
+    if (keeper_dispatcher->isServerActive())
     {
         try
         {
@@ -362,15 +373,7 @@ void KeeperTCPHandler::runImpl()
     }
     else
     {
-        String reason;
-        if (!keeper_dispatcher->checkInit() && !keeper_dispatcher->hasLeader())
-            reason = "server is not initialized yet and no alive leader exists";
-        else if (!keeper_dispatcher->checkInit())
-            reason = "server is not initialized yet";
-        else
-            reason = "no alive leader exists";
-
-        LOG_WARNING(log, "Ignoring user request, because {}", reason);
+        LOG_WARNING(log, "Ignoring user request, because the server is not active yet");
         sendHandshake(false);
         return;
     }
@@ -385,7 +388,7 @@ void KeeperTCPHandler::runImpl()
                 response->zxid);
 
         UInt8 single_byte = 1;
-        [[maybe_unused]] int result = write(response_fd, &single_byte, sizeof(single_byte));
+        [[maybe_unused]] ssize_t result = write(response_fd, &single_byte, sizeof(single_byte));
     };
     keeper_dispatcher->registerSession(session_id, response_callback);
 
@@ -400,6 +403,7 @@ void KeeperTCPHandler::runImpl()
     };
 
     session_stopwatch.start();
+    connected.store(true, std::memory_order_release);
     bool close_received = false;
 
     try
@@ -412,6 +416,13 @@ void KeeperTCPHandler::runImpl()
             log_long_operation("Polling socket");
             if (result.has_requests && !close_received)
             {
+                if (in->eof())
+                {
+                    LOG_DEBUG(log, "Client closed connection, session id #{}", session_id);
+                    keeper_dispatcher->finishSession(session_id);
+                    break;
+                }
+
                 auto [received_op, received_xid] = receiveRequest();
                 packageReceived();
                 log_long_operation("Receiving request");
@@ -466,7 +477,7 @@ void KeeperTCPHandler::runImpl()
             }
 
             if (result.error)
-                throw Exception("Exception happened while reading from socket", ErrorCodes::SYSTEM_ERROR);
+                throw Exception(ErrorCodes::SYSTEM_ERROR, "Exception happened while reading from socket");
 
             if (session_stopwatch.elapsedMicroseconds() > static_cast<UInt64>(session_timeout.totalMicroseconds()))
             {
@@ -582,6 +593,9 @@ KeeperConnectionStats & KeeperTCPHandler::getConnectionStats()
 
 void KeeperTCPHandler::dumpStats(WriteBufferFromOwnString & buf, bool brief)
 {
+    if (!connected.load(std::memory_order_acquire))
+        return;
+
     auto & stats = getConnectionStats();
 
     writeText(' ', buf);

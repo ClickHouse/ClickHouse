@@ -1,0 +1,7 @@
+test_user:
+  password: 'REPLACE_ME'
+  networks:
+    ip: '::/0'
+  profile: default
+  quota: default
+  access_management: 1

@@ -1,5 +1,6 @@
 ---
-toc_priority: 37
+slug: /zh/sql-reference/aggregate-functions/reference/covarsamp
+sidebar_position: 37
 ---
 
 # covarSamp {#covarsamp}

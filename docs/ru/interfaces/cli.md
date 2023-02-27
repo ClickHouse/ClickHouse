@@ -1,6 +1,7 @@
 ---
-toc_priority: 17
-toc_title: "Клиент командной строки"
+slug: /ru/interfaces/cli
+sidebar_position: 17
+sidebar_label: "Клиент командной строки"
 ---
 
 # Клиент командной строки {#klient-komandnoi-stroki}
@@ -84,6 +85,13 @@ $ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FOR
 clickhouse-client --param_parName="[1, 2]"  -q "SELECT * FROM table WHERE a = {parName:Array(UInt16)}"
 ```
 
+Также возможно устанавливать значения параметров, находясь внутри интерактивной сессии:
+``` bash
+$ clickhouse-client -nq "
+  SET param_parName='[1, 2]';
+  SELECT {parName:Array(UInt16)}"
+```
+
 #### Синтаксис запроса {#cli-queries-with-parameters-syntax}
 
 Отформатируйте запрос обычным способом. Представьте значения, которые вы хотите передать из параметров приложения в запрос в следующем формате:
@@ -121,7 +129,7 @@ $ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="numbe
 -   `--user, -u` — имя пользователя, по умолчанию — ‘default’.
 -   `--password` — пароль, по умолчанию — пустая строка.
 -   `--query, -q` — запрос для выполнения, при использовании в неинтерактивном режиме.
--   `--queries-file, -qf` - путь к файлу с запросами для выполнения. Необходимо указать только одну из опций: `query` или `queries-file`.
+-   `--queries-file` - путь к файлу с запросами для выполнения. Необходимо указать только одну из опций: `query` или `queries-file`.
 -   `--database, -d` — выбрать текущую БД. Без указания значение берется из настроек сервера (по умолчанию — БД ‘default’).
 -   `--multiline, -m` — если указано — разрешить многострочные запросы, не отправлять запрос по нажатию Enter.
 -   `--multiquery, -n` — если указано — разрешить выполнять несколько запросов, разделённых точкой с запятой.

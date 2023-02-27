@@ -1,0 +1,153 @@
+{
+  "queries": {
+    "version": [
+      {
+        "statement": "SELECT version()"
+      }
+    ],
+    "databases": [
+      {
+        "statement": "SELECT name, engine, tables, partitions, parts, formatReadableSize(bytes_on_disk) \"disk_size\" FROM system.databases db LEFT JOIN ( SELECT database, uniq(table) \"tables\", uniq(table, partition) \"partitions\", count() AS parts, sum(bytes_on_disk) \"bytes_on_disk\" FROM system.parts WHERE active GROUP BY database ) AS db_stats ON db.name = db_stats.database ORDER BY bytes_on_disk DESC LIMIT {{.Limit}}"
+      }
+    ],
+    "access": [
+      {
+        "statement": "SHOW ACCESS"
+      }
+    ],
+    "quotas": [
+      {
+        "statement": "SHOW QUOTA"
+      }
+    ],
+    "db_engines": [
+      {
+        "statement": "SELECT engine, count() \"count\" FROM system.databases GROUP BY engine"
+      }
+    ],
+    "table_engines": [
+      {
+        "statement": "SELECT engine, count() \"count\" FROM system.tables WHERE database != 'system' GROUP BY engine"
+      }
+    ],
+    "dictionaries": [
+      {
+        "statement": "SELECT source, type, status, count() \"count\" FROM system.dictionaries GROUP BY source, type, status ORDER BY status DESC, source"
+      }
+    ],
+    "replicated_tables_by_delay": [
+      {
+        "statement": "SELECT database, table, is_leader, is_readonly, absolute_delay, queue_size, inserts_in_queue, merges_in_queue FROM system.replicas ORDER BY absolute_delay DESC LIMIT {{.Limit}}"
+      }
+    ],
+    "replication_queue_by_oldest": [
+      {
+        "statement": "SELECT database, table, replica_name, position, node_name, type, source_replica, parts_to_merge, new_part_name, create_time, required_quorum, is_detach, is_currently_executing, num_tries, last_attempt_time, last_exception, concat( 'time: ', toString(last_postpone_time), ', number: ', toString(num_postponed), ', reason: ', postpone_reason ) postpone FROM system.replication_queue ORDER BY create_time ASC LIMIT {{.Limit}}"
+      }
+    ],
+    "replicated_fetches": [
+      {
+        "statement": "SELECT database, table, round(elapsed, 1) \"elapsed\", round(100 * progress, 1) \"progress\", partition_id, result_part_name, result_part_path, total_size_bytes_compressed, bytes_read_compressed, source_replica_path, source_replica_hostname, source_replica_port, interserver_scheme, to_detached, thread_id FROM system.replicated_fetches"
+      }
+    ],
+    "tables_by_max_partition_count": [
+      {
+        "statement": "SELECT database, table, count() \"partitions\", sum(part_count) \"parts\", max(part_count) \"max_parts_per_partition\" FROM ( SELECT database, table, partition, count() \"part_count\" FROM system.parts WHERE active GROUP BY database, table, partition ) partitions GROUP BY database, table ORDER BY max_parts_per_partition DESC LIMIT {{.Limit}}"
+      }
+    ],
+    "stack_traces": [
+      {
+        "statement": "SELECT '\\n' || arrayStringConcat( arrayMap( x, y -> concat(x, ': ', y), arrayMap(x -> addressToLine(x), trace), arrayMap(x -> demangle(addressToSymbol(x)), trace) ), '\\n' ) AS trace FROM system.stack_trace"
+      }
+    ],
+    "crash_log": [
+      {
+        "statement": "SELECT event_time, signal, thread_id, query_id, '\\n' || arrayStringConcat(trace_full, '\\n') AS trace, version FROM system.crash_log ORDER BY event_time DESC"
+      }
+    ],
+    "merges": [
+      {
+        "statement": "SELECT database, table, round(elapsed, 1) \"elapsed\", round(100 * progress, 1) \"progress\", is_mutation, partition_id, result_part_path, source_part_paths, num_parts, formatReadableSize(total_size_bytes_compressed) \"total_size_compressed\", formatReadableSize(bytes_read_uncompressed) \"read_uncompressed\", formatReadableSize(bytes_written_uncompressed) \"written_uncompressed\", columns_written, formatReadableSize(memory_usage) \"memory_usage\", thread_id FROM system.merges",
+        "constraint": ">=20.3"
+      },
+      {
+        "statement": "SELECT database, table, round(elapsed, 1) \"elapsed\", round(100 * progress, 1) \"progress\", is_mutation, partition_id, num_parts, formatReadableSize(total_size_bytes_compressed) \"total_size_compressed\", formatReadableSize(bytes_read_uncompressed) \"read_uncompressed\", formatReadableSize(bytes_written_uncompressed) \"written_uncompressed\", columns_written, formatReadableSize(memory_usage) \"memory_usage\" FROM system.merges"
+      }
+    ],
+    "mutations": [
+      {
+        "statement": "SELECT database, table, mutation_id, command, create_time, parts_to_do_names, parts_to_do, is_done, latest_failed_part, latest_fail_time, latest_fail_reason FROM system.mutations WHERE NOT is_done ORDER BY create_time DESC",
+        "constraint": ">=20.3"
+      },
+      {
+        "statement": "SELECT database, table, mutation_id, command, create_time, parts_to_do, is_done, latest_failed_part, latest_fail_time, latest_fail_reason FROM system.mutations WHERE NOT is_done ORDER BY create_time DESC"
+      }
+    ],
+    "recent_data_parts": [
+      {
+        "statement": "SELECT database, table, engine, partition_id, name, part_type, active, level, disk_name, path, marks, rows, bytes_on_disk, data_compressed_bytes, data_uncompressed_bytes, marks_bytes, modification_time, remove_time, refcount, is_frozen, min_date, max_date, min_time, max_time, min_block_number, max_block_number FROM system.parts WHERE modification_time > now() - INTERVAL 3 MINUTE ORDER BY modification_time DESC",
+        "constraint": ">=20.3"
+      },
+      {
+        "statement": "SELECT database, table, engine, partition_id, name, active, level, path, marks, rows, bytes_on_disk, data_compressed_bytes, data_uncompressed_bytes, marks_bytes, modification_time, remove_time, refcount, is_frozen, min_date, max_date, min_time, max_time, min_block_number, max_block_number FROM system.parts WHERE modification_time > now() - INTERVAL 3 MINUTE ORDER BY modification_time DESC"
+      }
+    ],
+    "detached_parts": [
+      {
+        "statement": "SELECT database, table, partition_id, name, disk, reason, min_block_number, max_block_number, level FROM system.detached_parts"
+      }
+    ],
+    "processes": [
+      {
+        "statement": "SELECT elapsed, query_id, normalizeQuery(query) AS normalized_query, is_cancelled, concat( toString(read_rows), ' rows / ', formatReadableSize(read_bytes) ) AS read, concat( toString(written_rows), ' rows / ', formatReadableSize(written_bytes) ) AS written, formatReadableSize(memory_usage) AS \"memory usage\", user, multiIf( empty(client_name), http_user_agent, concat( client_name, ' ', toString(client_version_major), '.', toString(client_version_minor), '.', toString(client_version_patch) ) ) AS client, thread_ids, ProfileEvents, Settings FROM system.processes ORDER BY elapsed DESC",
+        "constraint": ">=21.8"
+      },
+      {
+        "statement": "SELECT elapsed, query_id, normalizeQuery(query) AS normalized_query, is_cancelled, concat( toString(read_rows), ' rows / ', formatReadableSize(read_bytes) ) AS read, concat( toString(written_rows), ' rows / ', formatReadableSize(written_bytes) ) AS written, formatReadableSize(memory_usage) AS \"memory usage\", user, multiIf( empty(client_name), http_user_agent, concat( client_name, ' ', toString(client_version_major), '.', toString(client_version_minor), '.', toString(client_version_patch) ) ) AS client, thread_ids, ProfileEvents.Names, ProfileEvents.Values, Settings.Names, Settings.Values FROM system.processes ORDER BY elapsed DESC",
+        "constraint": ">=21.3"
+      },
+      {
+        "statement": "SELECT elapsed, query_id, normalizeQuery(query) AS normalized_query, is_cancelled, concat( toString(read_rows), ' rows / ', formatReadableSize(read_bytes) ) AS read, concat( toString(written_rows), ' rows / ', formatReadableSize(written_bytes) ) AS written, formatReadableSize(memory_usage) AS \"memory usage\", user, multiIf( empty(client_name), http_user_agent, concat( client_name, ' ', toString(client_version_major), '.', toString(client_version_minor), '.', toString(client_version_patch) ) ) AS client, ProfileEvents.Names, ProfileEvents.Values, Settings.Names, Settings.Values FROM system.processes ORDER BY elapsed DESC"
+      }
+    ],
+    "top_queries_by_duration": [
+      {
+        "statement": "SELECT type, query_start_time, query_duration_ms, query_id, query_kind, is_initial_query, normalizeQuery(query) AS normalized_query, concat( toString(read_rows), ' rows / ', formatReadableSize(read_bytes) ) AS read, concat( toString(written_rows), ' rows / ', formatReadableSize(written_bytes) ) AS written, concat( toString(result_rows), ' rows / ', formatReadableSize(result_bytes) ) AS result, formatReadableSize(memory_usage) AS \"memory usage\", exception, '\\n' || stack_trace AS stack_trace, user, initial_user, multiIf( empty(client_name), http_user_agent, concat( client_name, ' ', toString(client_version_major), '.', toString(client_version_minor), '.', toString(client_version_patch) ) ) AS client, client_hostname, databases, tables, columns, used_aggregate_functions, used_aggregate_function_combinators, used_database_engines, used_data_type_families, used_dictionaries, used_formats, used_functions, used_storages, used_table_functions, thread_ids, ProfileEvents, Settings FROM system.query_log WHERE type != 'QueryStart' AND event_date >= today() - 1 AND event_time >= now() - INTERVAL 1 DAY ORDER BY query_duration_ms DESC LIMIT {{.Limit}}",
+        "constraint": ">=21.8"
+      },
+      {
+        "statement": "SELECT type, query_start_time, query_duration_ms, query_id, query_kind, is_initial_query, normalizeQuery(query) AS normalized_query, concat( toString(read_rows), ' rows / ', formatReadableSize(read_bytes) ) AS read, concat( toString(written_rows), ' rows / ', formatReadableSize(written_bytes) ) AS written, concat( toString(result_rows), ' rows / ', formatReadableSize(result_bytes) ) AS result, formatReadableSize(memory_usage) AS \"memory usage\", exception, '\\n' || stack_trace AS stack_trace, user, initial_user, multiIf( empty(client_name), http_user_agent, concat( client_name, ' ', toString(client_version_major), '.', toString(client_version_minor), '.', toString(client_version_patch) ) ) AS client, client_hostname, databases, tables, columns, used_aggregate_functions, used_aggregate_function_combinators, used_database_engines, used_data_type_families, used_dictionaries, used_formats, used_functions, used_storages, used_table_functions, thread_ids, ProfileEvents.Names, ProfileEvents.Values, Settings.Names, Settings.Values FROM system.query_log WHERE type != 'QueryStart' AND event_date >= today() - 1 AND event_time >= now() - INTERVAL 1 DAY ORDER BY query_duration_ms DESC LIMIT {{.Limit}}",
+        "constraint": ">=21.3"
+      },
+      {
+        "statement": "SELECT type, query_start_time, query_duration_ms, query_id, query_kind, is_initial_query, normalizeQuery(query) AS normalized_query, concat( toString(read_rows), ' rows / ', formatReadableSize(read_bytes) ) AS read, concat( toString(written_rows), ' rows / ', formatReadableSize(written_bytes) ) AS written, concat( toString(result_rows), ' rows / ', formatReadableSize(result_bytes) ) AS result, formatReadableSize(memory_usage) AS \"memory usage\", exception, '\\n' || stack_trace AS stack_trace, user, initial_user, multiIf( empty(client_name), http_user_agent, concat( client_name, ' ', toString(client_version_major), '.', toString(client_version_minor), '.', toString(client_version_patch) ) ) AS client, client_hostname, ProfileEvents.Names, ProfileEvents.Values, Settings.Names, Settings.Values FROM system.query_log WHERE type != 'QueryStart' AND event_date >= today() - 1 AND event_time >= now() - INTERVAL 1 DAY ORDER BY query_duration_ms DESC LIMIT {{.Limit}}"
+      }
+    ],
+    "top_queries_by_memory": [
+      {
+        "statement": "SELECT type, query_start_time, query_duration_ms, query_id, query_kind, is_initial_query, normalizeQuery(query) AS normalized_query, concat( toString(read_rows), ' rows / ', formatReadableSize(read_bytes) ) AS read, concat( toString(written_rows), ' rows / ', formatReadableSize(written_bytes) ) AS written, concat( toString(result_rows), ' rows / ', formatReadableSize(result_bytes) ) AS result, formatReadableSize(memory_usage) AS \"memory usage\", exception, '\\n' || stack_trace AS stack_trace, user, initial_user, multiIf( empty(client_name), http_user_agent, concat( client_name, ' ', toString(client_version_major), '.', toString(client_version_minor), '.', toString(client_version_patch) ) ) AS client, client_hostname, databases, tables, columns, used_aggregate_functions, used_aggregate_function_combinators, used_database_engines, used_data_type_families, used_dictionaries, used_formats, used_functions, used_storages, used_table_functions, thread_ids, ProfileEvents, Settings FROM system.query_log WHERE type != 'QueryStart' AND event_date >= today() - 1 AND event_time >= now() - INTERVAL 1 DAY ORDER BY memory_usage DESC LIMIT {{.Limit}}",
+        "constraint": ">=21.8"
+      },
+      {
+        "statement": "SELECT type, query_start_time, query_duration_ms, query_id, query_kind, is_initial_query, normalizeQuery(query) AS normalized_query, concat( toString(read_rows), ' rows / ', formatReadableSize(read_bytes) ) AS read, concat( toString(written_rows), ' rows / ', formatReadableSize(written_bytes) ) AS written, concat( toString(result_rows), ' rows / ', formatReadableSize(result_bytes) ) AS result, formatReadableSize(memory_usage) AS \"memory usage\", exception, '\\n' || stack_trace AS stack_trace, user, initial_user, multiIf( empty(client_name), http_user_agent, concat( client_name, ' ', toString(client_version_major), '.', toString(client_version_minor), '.', toString(client_version_patch) ) ) AS client, client_hostname, databases, tables, columns, used_aggregate_functions, used_aggregate_function_combinators, used_database_engines, used_data_type_families, used_dictionaries, used_formats, used_functions, used_storages, used_table_functions, thread_ids, ProfileEvents.Names, ProfileEvents.Values, Settings.Names, Settings.Values FROM system.query_log WHERE type != 'QueryStart' AND event_date >= today() - 1 AND event_time >= now() - INTERVAL 1 DAY ORDER BY memory_usage DESC LIMIT {{.Limit}}",
+        "constraint": ">=21.3"
+      },
+      {
+        "statement": "SELECT type, query_start_time, query_duration_ms, query_id, query_kind, is_initial_query, normalizeQuery(query) AS normalized_query, concat( toString(read_rows), ' rows / ', formatReadableSize(read_bytes) ) AS read, concat( toString(written_rows), ' rows / ', formatReadableSize(written_bytes) ) AS written, concat( toString(result_rows), ' rows / ', formatReadableSize(result_bytes) ) AS result, formatReadableSize(memory_usage) AS \"memory usage\", exception, '\\n' || stack_trace AS stack_trace, user, initial_user, multiIf( empty(client_name), http_user_agent, concat( client_name, ' ', toString(client_version_major), '.', toString(client_version_minor), '.', toString(client_version_patch) ) ) AS client, client_hostname, ProfileEvents.Names, ProfileEvents.Values, Settings.Names, Settings.Values FROM system.query_log WHERE type != 'QueryStart' AND event_date >= today() - 1 AND event_time >= now() - INTERVAL 1 DAY ORDER BY memory_usage DESC LIMIT {{.Limit}}"
+      }
+    ],
+    "failed_queries": [
+      {
+        "statement": "SELECT type, query_start_time, query_duration_ms, query_id, query_kind, is_initial_query, normalizeQuery(query) AS normalized_query, concat( toString(read_rows), ' rows / ', formatReadableSize(read_bytes) ) AS read, concat( toString(written_rows), ' rows / ', formatReadableSize(written_bytes) ) AS written, concat( toString(result_rows), ' rows / ', formatReadableSize(result_bytes) ) AS result, formatReadableSize(memory_usage) AS \"memory usage\", exception, '\\n' || stack_trace AS stack_trace, user, initial_user, multiIf( empty(client_name), http_user_agent, concat( client_name, ' ', toString(client_version_major), '.', toString(client_version_minor), '.', toString(client_version_patch) ) ) AS client, client_hostname, databases, tables, columns, used_aggregate_functions, used_aggregate_function_combinators, used_database_engines, used_data_type_families, used_dictionaries, used_formats, used_functions, used_storages, used_table_functions, thread_ids, ProfileEvents, Settings FROM system.query_log WHERE type != 'QueryStart' AND event_date >= today() - 1 AND event_time >= now() - INTERVAL 1 DAY AND exception != '' ORDER BY query_start_time DESC LIMIT {{.Limit}}",
+        "constraint": ">=21.8"
+      },
+      {
+        "statement": "SELECT type, query_start_time, query_duration_ms, query_id, query_kind, is_initial_query, normalizeQuery(query) AS normalized_query, concat( toString(read_rows), ' rows / ', formatReadableSize(read_bytes) ) AS read, concat( toString(written_rows), ' rows / ', formatReadableSize(written_bytes) ) AS written, concat( toString(result_rows), ' rows / ', formatReadableSize(result_bytes) ) AS result, formatReadableSize(memory_usage) AS \"memory usage\", exception, '\\n' || stack_trace AS stack_trace, user, initial_user, multiIf( empty(client_name), http_user_agent, concat( client_name, ' ', toString(client_version_major), '.', toString(client_version_minor), '.', toString(client_version_patch) ) ) AS client, client_hostname, databases, tables, columns, used_aggregate_functions, used_aggregate_function_combinators, used_database_engines, used_data_type_families, used_dictionaries, used_formats, used_functions, used_storages, used_table_functions, thread_ids, ProfileEvents.Names, ProfileEvents.Values, Settings.Names, Settings.Values FROM system.query_log WHERE type != 'QueryStart' AND event_date >= today() - 1 AND event_time >= now() - INTERVAL 1 DAY AND exception != '' ORDER BY query_start_time DESC LIMIT {{.Limit}}",
+        "constraint": ">=21.3"
+      },
+      {
+        "statement": "SELECT type, query_start_time, query_duration_ms, query_id, query_kind, is_initial_query, normalizeQuery(query) AS normalized_query, concat( toString(read_rows), ' rows / ', formatReadableSize(read_bytes) ) AS read, concat( toString(written_rows), ' rows / ', formatReadableSize(written_bytes) ) AS written, concat( toString(result_rows), ' rows / ', formatReadableSize(result_bytes) ) AS result, formatReadableSize(memory_usage) AS \"memory usage\", exception, '\\n' || stack_trace AS stack_trace, user, initial_user, multiIf( empty(client_name), http_user_agent, concat( client_name, ' ', toString(client_version_major), '.', toString(client_version_minor), '.', toString(client_version_patch) ) ) AS client, client_hostname, ProfileEvents.Names, ProfileEvents.Values, Settings.Names, Settings.Values FROM system.query_log WHERE type != 'QueryStart' AND event_date >= today() - 1 AND event_time >= now() - INTERVAL 1 DAY AND exception != '' ORDER BY query_start_time DESC LIMIT {{.Limit}}"
+      }
+    ]
+  }
+}

@@ -19,14 +19,6 @@
 
 -- column_column_comparison.xml
 -- <test>
---     <tags>
---         <tag>comparison</tag>
---     </tags>
-
---     <preconditions>
---         <table_exists>hits_100m_single</table_exists>
---     </preconditions>
-
 
 --     <query short="1"><![CDATA[SELECT count() FROM hits_100m_single WHERE URL < URL]]></query>
 --     <query><![CDATA[SELECT count() FROM hits_100m_single WHERE URL < PageCharset]]></query>

@@ -1,1 +1,0 @@
-../../../en/engines/database-engines/materialized-mysql.md

@@ -65,7 +65,7 @@ void MergeTreeIndexhypothesisMergedCondition::addIndex(const MergeTreeIndexPtr &
             assert(!atom.negative);
 
             const auto * func = atom.ast->as<ASTFunction>();
-            if (func && relations.count(func->name))
+            if (func && relations.contains(func->name))
                 compare_hypotheses_data.push_back(atom.ast);
         }
     }
@@ -88,7 +88,7 @@ void MergeTreeIndexhypothesisMergedCondition::addConstraints(const ConstraintsDe
 /// Replaces < -> <=, > -> >= and assumes that all hypotheses are true then checks if path exists
 bool MergeTreeIndexhypothesisMergedCondition::alwaysUnknownOrTrue() const
 {
-    std::vector<ASTPtr> active_atomic_formulas(atomic_constraints);
+    ASTs active_atomic_formulas(atomic_constraints);
     for (const auto & hypothesis : index_to_compare_atomic_hypotheses)
     {
         active_atomic_formulas.insert(
@@ -142,7 +142,7 @@ bool MergeTreeIndexhypothesisMergedCondition::mayBeTrueOnGranule(const MergeTree
     {
         const auto granule = std::dynamic_pointer_cast<const MergeTreeIndexGranuleHypothesis>(index_granule);
         if (!granule)
-            throw Exception("Only hypothesis index is supported here.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Only hypothesis index is supported here.");
         values.push_back(granule->met);
     }
 
@@ -190,7 +190,7 @@ bool MergeTreeIndexhypothesisMergedCondition::mayBeTrueOnGranule(const MergeTree
 
 std::unique_ptr<ComparisonGraph> MergeTreeIndexhypothesisMergedCondition::buildGraph(const std::vector<bool> & values) const
 {
-    std::vector<ASTPtr> active_atomic_formulas(atomic_constraints);
+    ASTs active_atomic_formulas(atomic_constraints);
     for (size_t i = 0; i < values.size(); ++i)
     {
         if (values[i])

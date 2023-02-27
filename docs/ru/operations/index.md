@@ -1,7 +1,7 @@
 ---
-toc_folder_title: "Эксплуатация"
-toc_priority: 41
-toc_title: "Эксплуатация"
+slug: /ru/operations/
+sidebar_position: 41
+sidebar_label: "Эксплуатация"
 ---
 
 # Эксплуатация {#operations}
@@ -11,7 +11,7 @@ toc_title: "Эксплуатация"
 - [Требования](requirements.md)
 - [Мониторинг](monitoring.md)
 - [Решение проблем](troubleshooting.md)
-- [Советы по эксплуатации](tips.md)
+- [Советы по эксплуатации](tips.mdx)
 - [Процедура обновления](update.md)
 - [Права доступа](access-rights.md)
 - [Резервное копирование](backup.md)
@@ -19,7 +19,6 @@ toc_title: "Эксплуатация"
 - [Квоты](quotas.md)
 - [Системные таблицы](system-tables/index.md)
 - [Конфигурационные параметры сервера](server-configuration-parameters/index.md)
-- [Тестирование серверов с помощью ClickHouse](performance-test.md)
+- [Тестирование серверов с помощью ClickHouse](performance-test.mdx)
 - [Настройки](settings/index.md#settings)
 - [Утилиты](utilities/index.md)
-

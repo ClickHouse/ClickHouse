@@ -1,11 +1,11 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_SSL
 #include <Disks/IDisk.h>
-#include <Disks/DiskDecorator.h>
 #include <Common/MultiVersion.h>
+#include <Disks/FakeDiskTransaction.h>
 
 
 namespace DB
@@ -26,13 +26,13 @@ struct DiskEncryptedSettings
 /// Encrypted disk ciphers all written files on the fly and writes the encrypted files to an underlying (normal) disk.
 /// And when we read files from an encrypted disk it deciphers them automatically,
 /// so we can work with a encrypted disk like it's a normal disk.
-class DiskEncrypted : public DiskDecorator
+class DiskEncrypted : public IDisk
 {
 public:
     DiskEncrypted(const String & name_, const Poco::Util::AbstractConfiguration & config_, const String & config_prefix_, const DisksMap & map_);
     DiskEncrypted(const String & name_, std::unique_ptr<const DiskEncryptedSettings> settings_);
 
-    const String & getName() const override { return name; }
+    const String & getName() const override { return encrypted_name; }
     const String & getPath() const override { return disk_absolute_path; }
 
     ReservationPtr reserve(UInt64 bytes) override;
@@ -83,7 +83,7 @@ public:
         delegate->moveDirectory(wrapped_from_path, wrapped_to_path);
     }
 
-    DiskDirectoryIteratorPtr iterateDirectory(const String & path) override
+    DirectoryIteratorPtr iterateDirectory(const String & path) const override
     {
         auto wrapped_path = wrappedPath(path);
         return delegate->iterateDirectory(wrapped_path);
@@ -109,13 +109,15 @@ public:
         delegate->replaceFile(wrapped_from_path, wrapped_to_path);
     }
 
-    void listFiles(const String & path, std::vector<String> & file_names) override
+    void listFiles(const String & path, std::vector<String> & file_names) const override
     {
         auto wrapped_path = wrappedPath(path);
         delegate->listFiles(wrapped_path, file_names);
     }
 
     void copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path) override;
+
+    void copyDirectoryContent(const String & from_dir, const std::shared_ptr<IDisk> & to_disk, const String & to_dir) override;
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
@@ -126,7 +128,8 @@ public:
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
         size_t buf_size,
-        WriteMode mode) override;
+        WriteMode mode,
+        const WriteSettings & settings) override;
 
     void removeFile(const String & path) override
     {
@@ -158,10 +161,23 @@ public:
         delegate->removeSharedFile(wrapped_path, flag);
     }
 
-    void removeSharedRecursive(const String & path, bool flag) override
+    void removeSharedRecursive(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override
     {
         auto wrapped_path = wrappedPath(path);
-        delegate->removeSharedRecursive(wrapped_path, flag);
+        delegate->removeSharedRecursive(wrapped_path, keep_all_batch_data, file_names_remove_metadata_only);
+    }
+
+    void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override
+    {
+        for (const auto & file : files)
+        {
+            auto wrapped_path = wrappedPath(file.path);
+            bool keep = keep_all_batch_data || file_names_remove_metadata_only.contains(fs::path(file.path).filename());
+            if (file.if_exists)
+                delegate->removeSharedFileIfExists(wrapped_path, keep);
+            else
+                delegate->removeSharedFile(wrapped_path, keep);
+        }
     }
 
     void removeSharedFileIfExists(const String & path, bool flag) override
@@ -176,10 +192,16 @@ public:
         delegate->setLastModified(wrapped_path, timestamp);
     }
 
-    Poco::Timestamp getLastModified(const String & path) override
+    Poco::Timestamp getLastModified(const String & path) const override
     {
         auto wrapped_path = wrappedPath(path);
         return delegate->getLastModified(wrapped_path);
+    }
+
+    time_t getLastChanged(const String & path) const override
+    {
+        auto wrapped_path = wrappedPath(path);
+        return delegate->getLastChanged(wrapped_path);
     }
 
     void setReadOnly(const String & path) override
@@ -211,10 +233,49 @@ public:
 
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map) override;
 
-    DiskType getType() const override { return DiskType::Encrypted; }
+    DataSourceDescription getDataSourceDescription() const override
+    {
+        auto delegate_description = delegate->getDataSourceDescription();
+        delegate_description.is_encrypted = true;
+        return delegate_description;
+    }
+
     bool isRemote() const override { return delegate->isRemote(); }
 
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
+
+    DiskTransactionPtr createTransaction() override
+    {
+        /// Need to overwrite explicetly because this disk change
+        /// a lot of "delegate" methods.
+        return std::make_shared<FakeDiskTransaction>(*this);
+    }
+
+    UInt64 getTotalSpace() const override
+    {
+        return delegate->getTotalSpace();
+    }
+
+    UInt64 getAvailableSpace() const override
+    {
+        return delegate->getAvailableSpace();
+    }
+
+    UInt64 getUnreservedSpace() const override
+    {
+        return delegate->getUnreservedSpace();
+    }
+
+    bool supportZeroCopyReplication() const override
+    {
+        return delegate->supportZeroCopyReplication();
+    }
+
+    MetadataStoragePtr getMetadataStorage() override
+    {
+        return delegate->getMetadataStorage();
+    }
+
 
 private:
     String wrappedPath(const String & path) const
@@ -225,7 +286,8 @@ private:
         return disk_path + path;
     }
 
-    const String name;
+    DiskPtr delegate;
+    const String encrypted_name;
     const String disk_path;
     const String disk_absolute_path;
     MultiVersion<DiskEncryptedSettings> current_settings;

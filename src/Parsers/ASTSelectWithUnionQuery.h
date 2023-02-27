@@ -17,7 +17,7 @@ public:
 
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
-    virtual QueryKind getQueryKind() const override { return QueryKind::Select; }
+    QueryKind getQueryKind() const override { return QueryKind::Select; }
 
     SelectUnionMode union_mode;
 
@@ -31,6 +31,15 @@ public:
 
     /// Consider any mode other than ALL as non-default.
     bool hasNonDefaultUnionMode() const;
+
+    bool hasQueryParameters() const;
+
+private:
+    /// This variable is optional as we want to set it on the first call to hasQueryParameters
+    /// and return the same variable on future calls to hasQueryParameters
+    /// its mutable as we set it in const function
+    mutable std::optional<bool> has_query_parameters;
+
 };
 
 }

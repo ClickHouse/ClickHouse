@@ -23,7 +23,6 @@ SELECT count() FROM numbers(31);
 SELECT * FROM numbers(30);
 
 -- the same for uneven block sizes
--- NOTE: currently it outputs less amount of data; it will be better to output the latest block also
 SET max_block_size = 11;
 SELECT * FROM numbers(30);
 SET max_block_size = 9;

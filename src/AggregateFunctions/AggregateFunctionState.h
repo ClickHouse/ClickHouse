@@ -23,7 +23,7 @@ private:
 
 public:
     AggregateFunctionState(AggregateFunctionPtr nested_, const DataTypes & arguments_, const Array & params_)
-        : IAggregateFunctionHelper<AggregateFunctionState>(arguments_, params_)
+        : IAggregateFunctionHelper<AggregateFunctionState>(arguments_, params_, nested_->getStateType())
         , nested_func(nested_)
     {}
 
@@ -32,9 +32,9 @@ public:
         return nested_func->getName() + "State";
     }
 
-    DataTypePtr getReturnType() const override
+    const IAggregateFunction & getBaseAggregateFunctionWithSameStateRepresentation() const override
     {
-        return getStateType();
+        return nested_func->getBaseAggregateFunctionWithSameStateRepresentation();
     }
 
     DataTypePtr getStateType() const override
@@ -52,6 +52,8 @@ public:
         return nested_func->getDefaultVersion();
     }
 
+    size_t getVersionFromRevision(size_t revision) const override { return nested_func->getVersionFromRevision(revision); }
+
     void create(AggregateDataPtr __restrict place) const override
     {
         nested_func->create(place);
@@ -61,6 +63,8 @@ public:
     {
         nested_func->destroy(place);
     }
+
+    void destroyUpToState(AggregateDataPtr __restrict) const noexcept override {}
 
     bool hasTrivialDestructor() const override
     {
@@ -100,6 +104,11 @@ public:
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         assert_cast<ColumnAggregateFunction &>(to).getData().push_back(place);
+    }
+
+    void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
+    {
+        assert_cast<ColumnAggregateFunction &>(to).insertFrom(place);
     }
 
     /// Aggregate function or aggregate function state.

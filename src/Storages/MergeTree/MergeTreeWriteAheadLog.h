@@ -62,11 +62,18 @@ public:
 
     void addPart(DataPartInMemoryPtr & part);
     void dropPart(const String & part_name);
-    std::vector<MergeTreeMutableDataPartPtr> restore(const StorageMetadataPtr & metadata_snapshot, ContextPtr context);
+    std::vector<MergeTreeMutableDataPartPtr> restore(
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        std::unique_lock<std::mutex> & parts_lock,
+        bool readonly);
 
     using MinMaxBlockNumber = std::pair<Int64, Int64>;
     static std::optional<MinMaxBlockNumber> tryParseMinMaxBlockNumber(const String & filename);
+    void shutdown();
 
+    /// Drop all write ahead logs from disk. Useful during table drop.
+    static void dropAllWriteAheadLogs(DiskPtr disk_to_drop, std::string relative_data_path);
 private:
     void init();
     void rotate(const std::unique_lock<std::mutex> & lock);
@@ -89,6 +96,7 @@ private:
 
     size_t bytes_at_last_sync = 0;
     bool sync_scheduled = false;
+    bool shutdown_called = false;
 
     mutable std::mutex write_mutex;
 

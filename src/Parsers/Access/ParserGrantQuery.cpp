@@ -168,13 +168,13 @@ namespace
                 return false;
 
             if (!element.any_column)
-                throw Exception(old_flags.toString() + " cannot be granted on the column level", ErrorCodes::INVALID_GRANT);
+                throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted on the column level", old_flags.toString());
             else if (!element.any_table)
-                throw Exception(old_flags.toString() + " cannot be granted on the table level", ErrorCodes::INVALID_GRANT);
+                throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted on the table level", old_flags.toString());
             else if (!element.any_database)
-                throw Exception(old_flags.toString() + " cannot be granted on the database level", ErrorCodes::INVALID_GRANT);
+                throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted on the database level", old_flags.toString());
             else
-                throw Exception(old_flags.toString() + " cannot be granted", ErrorCodes::INVALID_GRANT);
+                throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted", old_flags.toString());
         });
     }
 
@@ -281,9 +281,9 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         parseOnCluster(pos, expected, cluster);
 
     if (grant_option && roles)
-        throw Exception("GRANT OPTION should be specified for access types", ErrorCodes::SYNTAX_ERROR);
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "GRANT OPTION should be specified for access types");
     if (admin_option && !elements.empty())
-        throw Exception("ADMIN OPTION should be specified for roles", ErrorCodes::SYNTAX_ERROR);
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "ADMIN OPTION should be specified for roles");
 
     if (grant_option)
     {

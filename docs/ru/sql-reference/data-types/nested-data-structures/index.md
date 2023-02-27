@@ -1,9 +1,7 @@
 ---
-toc_folder_title: "Вложенные структуры данных"
-toc_hidden: true
-toc_priority: 54
-toc_title: hidden
+slug: /ru/sql-reference/data-types/nested-data-structures/
+sidebar_label: "Вложенные структуры данных"
+sidebar_position: 54
 ---
 
 # Вложенные структуры данных {#vlozhennye-struktury-dannykh}
-

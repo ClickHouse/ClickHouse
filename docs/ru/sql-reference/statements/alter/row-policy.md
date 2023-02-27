@@ -1,6 +1,7 @@
 ---
-toc_priority: 47
-toc_title: ROW POLICY
+slug: /ru/sql-reference/statements/alter/row-policy
+sidebar_position: 47
+sidebar_label: ROW POLICY
 ---
 
 # ALTER ROW POLICY {#alter-row-policy-statement}
@@ -17,4 +18,3 @@ ALTER [ROW] POLICY [IF EXISTS] name1 [ON CLUSTER cluster_name1] ON [database1.]t
     [USING {condition | NONE}][,...]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
 ```
-

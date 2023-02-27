@@ -59,11 +59,8 @@ public:
     void insertFrom(const IColumn & src, size_t n) override { data.push_back(static_cast<const Self &>(src).getData()[n]); }
     void insertData(const char * src, size_t /*length*/) override;
     void insertDefault() override { data.push_back(T()); }
-    virtual void insertManyDefaults(size_t length) override
-    {
-        data.resize_fill(data.size() + length);
-    }
-    void insert(const Field & x) override { data.push_back(DB::get<T>(x)); }
+    void insertManyDefaults(size_t length) override { data.resize_fill(data.size() + length); }
+    void insert(const Field & x) override { data.push_back(x.get<T>()); }
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
     void popBack(size_t n) override
@@ -71,9 +68,9 @@ public:
         data.resize_assume_reserved(data.size() - n);
     }
 
-    StringRef getRawData() const override
+    std::string_view getRawData() const override
     {
-        return StringRef(reinterpret_cast<const char*>(data.data()), byteSize());
+        return {reinterpret_cast<const char*>(data.data()), byteSize()};
     }
 
     StringRef getDataAt(size_t n) const override
@@ -94,15 +91,17 @@ public:
                        PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                        int direction, int nan_direction_hint) const override;
     bool hasEqualValues() const override;
-    void getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
-    void updatePermutation(bool reverse, size_t limit, int, IColumn::Permutation & res, EqualRanges& equal_range) const override;
+    void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                        size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
+    void updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
+                        size_t limit, int, IColumn::Permutation & res, EqualRanges& equal_ranges) const override;
 
     MutableColumnPtr cloneResized(size_t size) const override;
 
     Field operator[](size_t n) const override { return DecimalField(data[n], scale); }
     void get(size_t n, Field & res) const override { res = (*this)[n]; }
     bool getBool(size_t n) const override { return bool(data[n].value); }
-    Int64 getInt(size_t n) const override { return Int64(data[n].value) * scale; }
+    Int64 getInt(size_t n) const override { return Int64(data[n].value); }
     UInt64 get64(size_t n) const override;
     bool isDefaultAt(size_t n) const override { return data[n].value == 0; }
 
@@ -155,24 +154,6 @@ public:
 protected:
     Container data;
     UInt32 scale;
-
-    template <typename U>
-    void permutation(bool reverse, size_t limit, PaddedPODArray<U> & res) const
-    {
-        size_t s = data.size();
-        res.resize(s);
-        for (size_t i = 0; i < s; ++i)
-            res[i] = static_cast<U>(i);
-
-        auto sort_end = res.end();
-        if (limit && limit < s)
-            sort_end = res.begin() + limit;
-
-        if (reverse)
-            ::partial_sort(res.begin(), sort_end, res.end(), [this](size_t a, size_t b) { return data[a] > data[b]; });
-        else
-            ::partial_sort(res.begin(), sort_end, res.end(), [this](size_t a, size_t b) { return data[a] < data[b]; });
-    }
 };
 
 template <class> class ColumnVector;

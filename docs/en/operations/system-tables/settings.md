@@ -1,4 +1,7 @@
-# system.settings {#system-tables-system-settings}
+---
+slug: /en/operations/system-tables/settings
+---
+# settings
 
 Contains information about session settings for current user.
 
@@ -49,5 +52,3 @@ SELECT * FROM system.settings WHERE changed AND name='load_balancing'
 -   [Permissions for Queries](../../operations/settings/permissions-for-queries.md#settings_readonly)
 -   [Constraints on Settings](../../operations/settings/constraints-on-settings.md)
 -   [SHOW SETTINGS](../../sql-reference/statements/show.md#show-settings) statement
-
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/settings) <!--hide-->

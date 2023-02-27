@@ -12,8 +12,9 @@
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/Sinks/EmptySink.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Core/ExternalTable.h>
 #include <Poco/Net/MessageHeader.h>
@@ -36,7 +37,8 @@ ExternalTableDataPtr BaseExternalTable::getData(ContextPtr context)
     auto input = context->getInputFormat(format, *read_buffer, sample_block, DEFAULT_BLOCK_SIZE);
 
     auto data = std::make_unique<ExternalTableData>();
-    data->pipe = std::make_unique<Pipe>(std::move(input));
+    data->pipe = std::make_unique<QueryPipelineBuilder>();
+    data->pipe->init(Pipe(std::move(input)));
     data->table_name = name;
 
     return data;
@@ -58,7 +60,7 @@ void BaseExternalTable::parseStructureFromStructureField(const std::string & arg
     splitInto<' ', ','>(vals, argument, true);
 
     if (vals.size() % 2 != 0)
-        throw Exception("Odd number of attributes in section structure: " + std::to_string(vals.size()), ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Odd number of attributes in section structure: {}", vals.size());
 
     for (size_t i = 0; i < vals.size(); i += 2)
         structure.emplace_back(vals[i], vals[i + 1]);
@@ -101,29 +103,33 @@ ExternalTable::ExternalTable(const boost::program_options::variables_map & exter
     if (external_options.count("file"))
         file = external_options["file"].as<std::string>();
     else
-        throw Exception("--file field have not been provided for external table", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "--file field have not been provided for external table");
 
     if (external_options.count("name"))
         name = external_options["name"].as<std::string>();
     else
-        throw Exception("--name field have not been provided for external table", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "--name field have not been provided for external table");
 
     if (external_options.count("format"))
         format = external_options["format"].as<std::string>();
     else
-        throw Exception("--format field have not been provided for external table", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "--format field have not been provided for external table");
 
     if (external_options.count("structure"))
         parseStructureFromStructureField(external_options["structure"].as<std::string>());
     else if (external_options.count("types"))
         parseStructureFromTypesField(external_options["types"].as<std::string>());
     else
-        throw Exception("Neither --structure nor --types have not been provided for external table", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Neither --structure nor --types have not been provided for external table");
 }
 
 
 void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, ReadBuffer & stream)
 {
+    /// After finishing this function we will be ready to receive the next file, for this we clear all the information received.
+    /// We should use SCOPE_EXIT because read_buffer should be reset correctly if there will be an exception.
+    SCOPE_EXIT(clear());
+
     const Settings & settings = getContext()->getSettingsRef();
 
     if (settings.http_max_multipart_form_data_size)
@@ -147,7 +153,9 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
     else if (params.has(name + "_types"))
         parseStructureFromTypesField(params.get(name + "_types"));
     else
-        throw Exception("Neither structure nor types have not been provided for external table " + name + ". Use fields " + name + "_structure or " + name + "_types to do so.", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Neither structure nor types have not been provided for external table {}. "
+                        "Use fields {}_structure or {}_types to do so.", name, name, name);
 
     ExternalTableDataPtr data = getData(getContext());
 
@@ -157,23 +165,14 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
     auto storage = temporary_table.getTable();
     getContext()->addExternalTable(data->table_name, std::move(temporary_table));
     auto sink = storage->write(ASTPtr(), storage->getInMemoryMetadataPtr(), getContext());
-    auto exception_handling = std::make_shared<EmptySink>(sink->getOutputPort().getHeader());
 
     /// Write data
-    data->pipe->resize(1);
+    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*data->pipe));
+    pipeline.complete(std::move(sink));
+    pipeline.setNumThreads(1);
 
-    connect(*data->pipe->getOutputPort(0), sink->getInputPort());
-    connect(sink->getOutputPort(), exception_handling->getPort());
-
-    auto processors = Pipe::detachProcessors(std::move(*data->pipe));
-    processors.push_back(std::move(sink));
-    processors.push_back(std::move(exception_handling));
-
-    auto executor = std::make_shared<PipelineExecutor>(processors, getContext()->getProcessListElement());
-    executor->execute(/*num_threads = */ 1);
-
-    /// We are ready to receive the next file, for this we clear all the information received
-    clear();
+    CompletedPipelineExecutor executor(pipeline);
+    executor.execute();
 }
 
 }

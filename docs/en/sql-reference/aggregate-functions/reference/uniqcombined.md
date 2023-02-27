@@ -1,8 +1,9 @@
 ---
-toc_priority: 192
+slug: /en/sql-reference/aggregate-functions/reference/uniqcombined
+sidebar_position: 192
 ---
 
-# uniqCombined {#agg_function-uniqcombined}
+# uniqCombined
 
 Calculates the approximate number of different argument values.
 
@@ -34,8 +35,9 @@ Function:
 
 -   Provides the result deterministically (it does not depend on the query processing order).
 
-!!! note "Note"
-    Since it uses 32-bit hash for non-`String` type, the result will have very high error for cardinalities significantly larger than `UINT_MAX` (error will raise quickly after a few tens of billions of distinct values), hence in this case you should use [uniqCombined64](../../../sql-reference/aggregate-functions/reference/uniqcombined64.md#agg_function-uniqcombined64)
+:::note    
+Since it uses 32-bit hash for non-`String` type, the result will have very high error for cardinalities significantly larger than `UINT_MAX` (error will raise quickly after a few tens of billions of distinct values), hence in this case you should use [uniqCombined64](../../../sql-reference/aggregate-functions/reference/uniqcombined64.md#agg_function-uniqcombined64)
+:::
 
 Compared to the [uniq](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq) function, the `uniqCombined`:
 

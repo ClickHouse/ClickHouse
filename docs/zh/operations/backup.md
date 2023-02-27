@@ -1,6 +1,7 @@
 ---
-toc_priority: 49
-toc_title: "\u6570\u636E\u5907\u4EFD"
+slug: /zh/operations/backup
+sidebar_position: 49
+sidebar_label: "\u6570\u636E\u5907\u4EFD"
 ---
 
 # 数据备份 {#data-backup}
@@ -37,5 +38,3 @@ ClickHouse允许使用 `ALTER TABLE ... FREEZE PARTITION ...` 查询以创建表
 有关与分区操作相关的查询的详细信息，请参阅 [更改文档](../sql-reference/statements/alter.md#alter_manipulations-with-partitions).
 
 第三方工具可用于自动化此方法: [clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup).
-
-[原始文章](https://clickhouse.com/docs/en/operations/backup/) <!--hide-->

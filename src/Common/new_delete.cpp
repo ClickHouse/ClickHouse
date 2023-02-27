@@ -1,6 +1,8 @@
-#include <Common/memory.h>
-#include <Common/config.h>
+#include <cassert>
+#include <iostream>
 #include <new>
+#include "config.h"
+#include <Common/memory.h>
 
 #if defined(OS_DARWIN) && (USE_JEMALLOC)
 /// In case of OSX jemalloc register itself as a default zone allocator.
@@ -40,6 +42,26 @@ static struct InitializeJemallocZoneAllocatorForOSX
 } initializeJemallocZoneAllocatorForOSX;
 #endif
 
+#if USE_GWP_ASAN
+
+#include <gwp_asan/optional/options_parser.h>
+
+/// Both clickhouse_new_delete and clickhouse_common_io links gwp_asan, but It should only init once, otherwise it
+/// will cause unexpected deadlock.
+static struct InitGwpAsan
+{
+    InitGwpAsan()
+    {
+         gwp_asan::options::initOptions();
+         gwp_asan::options::Options &opts = gwp_asan::options::getOptions();
+         GuardedAlloc.init(opts);
+
+         ///std::cerr << "GwpAsan is initialized, the options are { Enabled: " << opts.Enabled
+         ///          << ", MaxSimultaneousAllocations: " << opts.MaxSimultaneousAllocations
+         ///          << ", SampleRate: " << opts.SampleRate << " }\n";
+    }
+} init_gwp_asan;
+#endif
 
 /// Replace default new/delete with memory tracking versions.
 /// @sa https://en.cppreference.com/w/cpp/memory/new/operator_new
@@ -53,10 +75,22 @@ void * operator new(std::size_t size)
     return Memory::newImpl(size);
 }
 
+void * operator new(std::size_t size, std::align_val_t align)
+{
+    Memory::trackMemory(size, align);
+    return Memory::newImpl(size, align);
+}
+
 void * operator new[](std::size_t size)
 {
     Memory::trackMemory(size);
     return Memory::newImpl(size);
+}
+
+void * operator new[](std::size_t size, std::align_val_t align)
+{
+    Memory::trackMemory(size, align);
+    return Memory::newImpl(size, align);
 }
 
 void * operator new(std::size_t size, const std::nothrow_t &) noexcept
@@ -71,6 +105,18 @@ void * operator new[](std::size_t size, const std::nothrow_t &) noexcept
     return Memory::newNoExept(size);
 }
 
+void * operator new(std::size_t size, std::align_val_t align, const std::nothrow_t &) noexcept
+{
+    Memory::trackMemory(size, align);
+    return Memory::newNoExept(size, align);
+}
+
+void * operator new[](std::size_t size, std::align_val_t align, const std::nothrow_t &) noexcept
+{
+    Memory::trackMemory(size, align);
+    return Memory::newNoExept(size, align);
+}
+
 /// delete
 
 /// C++17 std 21.6.2.1 (11)
@@ -81,9 +127,16 @@ void * operator new[](std::size_t size, const std::nothrow_t &) noexcept
 /// It's unspecified whether size-aware or size-unaware version is called when deleting objects of
 /// incomplete type and arrays of non-class and trivially-destructible class types.
 
+
 void operator delete(void * ptr) noexcept
 {
     Memory::untrackMemory(ptr);
+    Memory::deleteImpl(ptr);
+}
+
+void operator delete(void * ptr, std::align_val_t align) noexcept
+{
+    Memory::untrackMemory(ptr, 0, align);
     Memory::deleteImpl(ptr);
 }
 
@@ -93,14 +146,32 @@ void operator delete[](void * ptr) noexcept
     Memory::deleteImpl(ptr);
 }
 
+void operator delete[](void * ptr, std::align_val_t align) noexcept
+{
+    Memory::untrackMemory(ptr, 0, align);
+    Memory::deleteImpl(ptr);
+}
+
 void operator delete(void * ptr, std::size_t size) noexcept
 {
     Memory::untrackMemory(ptr, size);
     Memory::deleteSized(ptr, size);
 }
 
+void operator delete(void * ptr, std::size_t size, std::align_val_t align) noexcept
+{
+    Memory::untrackMemory(ptr, size, align);
+    Memory::deleteSized(ptr, size, align);
+}
+
 void operator delete[](void * ptr, std::size_t size) noexcept
 {
     Memory::untrackMemory(ptr, size);
     Memory::deleteSized(ptr, size);
+}
+
+void operator delete[](void * ptr, std::size_t size, std::align_val_t align) noexcept
+{
+    Memory::untrackMemory(ptr, size, align);
+    Memory::deleteSized(ptr, size, align);
 }

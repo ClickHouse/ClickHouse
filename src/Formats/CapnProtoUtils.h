@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config_formats.h"
+#include "config.h"
 #if USE_CAPNP
 
 #include <Formats/FormatSchemaInfo.h>
@@ -18,17 +18,19 @@ struct DestructorCatcher
 {
     T impl;
     template <typename ... Arg>
-    DestructorCatcher(Arg && ... args) : impl(kj::fwd<Arg>(args)...) {}
+    explicit DestructorCatcher(Arg && ... args) : impl(kj::fwd<Arg>(args)...) {}
     ~DestructorCatcher() noexcept try { } catch (...) { return; }
 };
 
 class CapnProtoSchemaParser : public DestructorCatcher<capnp::SchemaParser>
 {
 public:
-    CapnProtoSchemaParser() {}
+    CapnProtoSchemaParser() = default;
 
     capnp::StructSchema getMessageSchema(const FormatSchemaInfo & schema_info);
 };
+
+std::pair<String, String> splitCapnProtoFieldName(const String & name);
 
 bool compareEnumNames(const String & first, const String & second, FormatSettings::EnumComparingMode mode);
 
@@ -38,7 +40,7 @@ capnp::DynamicValue::Reader getReaderByColumnName(const capnp::DynamicStruct::Re
 
 void checkCapnProtoSchemaStructure(const capnp::StructSchema & schema, const Block & header, FormatSettings::EnumComparingMode mode);
 
-NamesAndTypesList capnProtoSchemaToCHSchema(const capnp::StructSchema & schema);
+NamesAndTypesList capnProtoSchemaToCHSchema(const capnp::StructSchema & schema, bool skip_unsupported_fields);
 }
 
 #endif

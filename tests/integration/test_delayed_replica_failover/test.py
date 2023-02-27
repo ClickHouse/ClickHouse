@@ -14,10 +14,11 @@ cluster = ClickHouseCluster(__file__)
 # Cluster with 2 shards of 2 replicas each. node_1_1 is the instance with Distributed table.
 # Thus we have a shard with a local replica and a shard with remote replicas.
 node_1_1 = instance_with_dist_table = cluster.add_instance(
-    'node_1_1', with_zookeeper=True, main_configs=['configs/remote_servers.xml'])
-node_1_2 = cluster.add_instance('node_1_2', with_zookeeper=True)
-node_2_1 = cluster.add_instance('node_2_1', with_zookeeper=True)
-node_2_2 = cluster.add_instance('node_2_2', with_zookeeper=True)
+    "node_1_1", with_zookeeper=True, main_configs=["configs/remote_servers.xml"]
+)
+node_1_2 = cluster.add_instance("node_1_2", with_zookeeper=True)
+node_2_1 = cluster.add_instance("node_2_1", with_zookeeper=True)
+node_2_2 = cluster.add_instance("node_2_2", with_zookeeper=True)
 
 
 @pytest.fixture(scope="module")
@@ -27,15 +28,19 @@ def started_cluster():
 
         for shard in (1, 2):
             for replica in (1, 2):
-                node = cluster.instances['node_{}_{}'.format(shard, replica)]
-                node.query('''
+                node = cluster.instances["node_{}_{}".format(shard, replica)]
+                node.query(
+                    """
 CREATE TABLE replicated (d Date, x UInt32) ENGINE =
-    ReplicatedMergeTree('/clickhouse/tables/{shard}/replicated', '{instance}', d, d, 8192)'''
-                           .format(shard=shard, instance=node.name))
+    ReplicatedMergeTree('/clickhouse/tables/{shard}/replicated', '{instance}') PARTITION BY toYYYYMM(d) ORDER BY d""".format(
+                        shard=shard, instance=node.name
+                    )
+                )
 
         node_1_1.query(
             "CREATE TABLE distributed (d Date, x UInt32) ENGINE = "
-            "Distributed('test_cluster', 'default', 'replicated')")
+            "Distributed('test_cluster', 'default', 'replicated')"
+        )
 
         yield cluster
 
@@ -54,27 +59,41 @@ def test(started_cluster):
 
         time.sleep(1)  # accrue replica delay
 
-        assert node_1_1.query("SELECT sum(x) FROM replicated").strip() == '0'
-        assert node_1_2.query("SELECT sum(x) FROM replicated").strip() == '1'
-        assert node_2_1.query("SELECT sum(x) FROM replicated").strip() == '0'
-        assert node_2_2.query("SELECT sum(x) FROM replicated").strip() == '2'
+        assert node_1_1.query("SELECT sum(x) FROM replicated").strip() == "0"
+        assert node_1_2.query("SELECT sum(x) FROM replicated").strip() == "1"
+        assert node_2_1.query("SELECT sum(x) FROM replicated").strip() == "0"
+        assert node_2_2.query("SELECT sum(x) FROM replicated").strip() == "2"
 
         # With in_order balancing first replicas are chosen.
-        assert instance_with_dist_table.query(
-            "SELECT count() FROM distributed SETTINGS load_balancing='in_order'").strip() == '0'
+        assert (
+            instance_with_dist_table.query(
+                "SELECT count() FROM distributed SETTINGS load_balancing='in_order'"
+            ).strip()
+            == "0"
+        )
 
         # When we set max_replica_delay, first replicas must be excluded.
-        assert instance_with_dist_table.query('''
+        assert (
+            instance_with_dist_table.query(
+                """
 SELECT sum(x) FROM distributed SETTINGS
     load_balancing='in_order',
     max_replica_delay_for_distributed_queries=1
-''').strip() == '3'
+"""
+            ).strip()
+            == "3"
+        )
 
-        assert instance_with_dist_table.query('''
+        assert (
+            instance_with_dist_table.query(
+                """
 SELECT sum(x) FROM distributed WITH TOTALS SETTINGS
     load_balancing='in_order',
     max_replica_delay_for_distributed_queries=1
-''').strip() == '3\n\n3'
+"""
+            ).strip()
+            == "3\n\n3"
+        )
 
         pm.drop_instance_zk_connections(node_1_2)
         pm.drop_instance_zk_connections(node_2_2)
@@ -90,29 +109,41 @@ SELECT sum(x) FROM distributed WITH TOTALS SETTINGS
             raise Exception("Connection with zookeeper was not lost")
 
         # At this point all replicas are stale, but the query must still go to second replicas which are the least stale ones.
-        assert instance_with_dist_table.query('''
+        assert (
+            instance_with_dist_table.query(
+                """
 SELECT sum(x) FROM distributed SETTINGS
     load_balancing='in_order',
     max_replica_delay_for_distributed_queries=1
-''').strip() == '3'
+"""
+            ).strip()
+            == "3"
+        )
 
         # Regression for skip_unavailable_shards in conjunction with skip_unavailable_shards
-        assert instance_with_dist_table.query('''
+        assert (
+            instance_with_dist_table.query(
+                """
 SELECT sum(x) FROM distributed SETTINGS
     load_balancing='in_order',
     skip_unavailable_shards=1,
     max_replica_delay_for_distributed_queries=1
-''').strip() == '3'
+"""
+            ).strip()
+            == "3"
+        )
 
         # If we forbid stale replicas, the query must fail. But sometimes we must have bigger timeouts.
         for _ in range(20):
             try:
-                instance_with_dist_table.query('''
+                instance_with_dist_table.query(
+                    """
 SELECT count() FROM distributed SETTINGS
     load_balancing='in_order',
     max_replica_delay_for_distributed_queries=1,
     fallback_to_stale_replicas_for_distributed_queries=0
-''')
+"""
+                )
                 time.sleep(0.5)
             except:
                 break
@@ -122,8 +153,13 @@ SELECT count() FROM distributed SETTINGS
         # Now partition off the remote replica of the local shard and test that failover still works.
         pm.partition_instances(node_1_1, node_1_2, port=9000)
 
-        assert instance_with_dist_table.query('''
+        assert (
+            instance_with_dist_table.query(
+                """
 SELECT sum(x) FROM distributed SETTINGS
     load_balancing='in_order',
     max_replica_delay_for_distributed_queries=1
-''').strip() == '2'
+"""
+            ).strip()
+            == "2"
+        )

@@ -1,7 +1,7 @@
 ---
+slug: /ru/faq/general/olap
 title: Что такое OLAP?
-toc_hidden: true
-toc_priority: 100
+sidebar_position: 100
 ---
 
 # Что такое OLAP? {#what-is-olap}

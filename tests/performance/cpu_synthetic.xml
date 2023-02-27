@@ -1,8 +1,4 @@
 <test>
-    <preconditions>
-        <table_exists>hits_100m_single</table_exists>
-        <table_exists>hits_10m_single</table_exists>
-    </preconditions>
 
 <!-- This performance test can test various details of CPU, cache and memory performance.
      Note: it is incomplete.

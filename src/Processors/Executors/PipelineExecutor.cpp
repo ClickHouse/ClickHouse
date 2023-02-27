@@ -1,4 +1,3 @@
-#include <queue>
 #include <IO/WriteBufferFromString.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
@@ -6,14 +5,16 @@
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Executors/ExecutingGraph.h>
 #include <QueryPipeline/printPipeline.h>
+#include <QueryPipeline/ReadProgressCallback.h>
 #include <Processors/ISource.h>
 #include <Interpreters/ProcessList.h>
-#include <Interpreters/OpenTelemetrySpanLog.h>
-#include <base/scope_guard_safe.h>
+#include <Interpreters/Context.h>
+#include <Common/scope_guard_safe.h>
 
 #ifndef NDEBUG
     #include <Common/Stopwatch.h>
 #endif
+
 
 namespace DB
 {
@@ -24,19 +25,24 @@ namespace ErrorCodes
 }
 
 
-PipelineExecutor::PipelineExecutor(Processors & processors, QueryStatus * elem)
-    : process_list_element(elem)
+PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem)
+    : process_list_element(std::move(elem))
 {
+    if (process_list_element)
+    {
+        profile_processors = process_list_element->getContext()->getSettingsRef().log_processors_profiles;
+        trace_processors = process_list_element->getContext()->getSettingsRef().opentelemetry_trace_processors;
+    }
     try
     {
-        graph = std::make_unique<ExecutingGraph>(processors);
+        graph = std::make_unique<ExecutingGraph>(processors, profile_processors);
     }
     catch (Exception & exception)
     {
         /// If exception was thrown while pipeline initialization, it means that query pipeline was not build correctly.
         /// It is logical error, and we need more information about pipeline.
         WriteBufferFromOwnString buf;
-        printPipeline(processors, buf);
+        printPipeline(*processors, buf);
         buf.finalize();
         exception.addMessage("Query pipeline:\n" + buf.str());
 
@@ -108,6 +114,11 @@ bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
     {
         initializeExecution(1);
 
+        // Acquire slot until we are done
+        single_thread_slot = slots->tryAcquire();
+        if (!single_thread_slot)
+            abort(); // Unable to allocate slot for the first thread, but we just allocated at least one slot
+
         if (yield_flag && *yield_flag)
             return true;
     }
@@ -122,6 +133,7 @@ bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
         if (node->exception)
             std::rethrow_exception(node->exception);
 
+    single_thread_slot.reset();
     finalizeExecution();
 
     return false;
@@ -151,6 +163,11 @@ bool PipelineExecutor::checkTimeLimit()
     return continuing;
 }
 
+void PipelineExecutor::setReadProgressCallback(ReadProgressCallbackPtr callback)
+{
+    read_progress_callback = std::move(callback);
+}
+
 void PipelineExecutor::finalizeExecution()
 {
     checkTimeLimit();
@@ -170,7 +187,7 @@ void PipelineExecutor::finalizeExecution()
     }
 
     if (!all_processors_finished)
-        throw Exception("Pipeline stuck. Current state:\n" + dumpPipeline(), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline stuck. Current state:\n{}", dumpPipeline());
 }
 
 void PipelineExecutor::executeSingleThread(size_t thread_num)
@@ -179,12 +196,12 @@ void PipelineExecutor::executeSingleThread(size_t thread_num)
 
 #ifndef NDEBUG
     auto & context = tasks.getThreadContext(thread_num);
-    LOG_TRACE(log,
+    LOG_TEST(log,
               "Thread finished. Total time: {} sec. Execution time: {} sec. Processing time: {} sec. Wait time: {} sec.",
-              (context.total_time_ns / 1e9),
-              (context.execution_time_ns / 1e9),
-              (context.processing_time_ns / 1e9),
-              (context.wait_time_ns / 1e9));
+              context.total_time_ns / 1e9,
+              context.execution_time_ns / 1e9,
+              context.processing_time_ns / 1e9,
+              context.wait_time_ns / 1e9);
 #endif
 }
 
@@ -194,7 +211,6 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
     Stopwatch total_time_watch;
 #endif
 
-    // auto & node = tasks.getNode(thread_num);
     auto & context = tasks.getThreadContext(thread_num);
     bool yield = false;
 
@@ -240,6 +256,9 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
             context.processing_time_ns += processing_time_watch.elapsed();
 #endif
 
+            /// Upscale if possible.
+            spawnThreads();
+
             /// We have executed single processor. Check if we need to yield execution.
             if (yield_flag && *yield_flag)
                 yield = true;
@@ -256,22 +275,80 @@ void PipelineExecutor::initializeExecution(size_t num_threads)
 {
     is_execution_initialized = true;
 
+    /// Allocate CPU slots from concurrency control
+    constexpr size_t min_threads = 1;
+    slots = ConcurrencyControl::instance().allocate(min_threads, num_threads);
+    size_t use_threads = slots->grantedCount();
+
     Queue queue;
     graph->initializeExecution(queue);
 
-    tasks.init(num_threads);
+    tasks.init(num_threads, use_threads, profile_processors, trace_processors, read_progress_callback.get());
     tasks.fill(queue);
+
+    std::unique_lock lock{threads_mutex};
+    threads.reserve(num_threads);
+}
+
+void PipelineExecutor::spawnThreads()
+{
+    while (auto slot = slots->tryAcquire())
+    {
+        std::unique_lock lock{threads_mutex};
+        size_t thread_num = threads.size();
+
+        /// Count of threads in use should be updated for proper finish() condition.
+        /// NOTE: this will not decrease `use_threads` below initially granted count
+        tasks.upscale(thread_num + 1);
+
+        /// Start new thread
+        threads.emplace_back([this, thread_num, thread_group = CurrentThread::getGroup(), slot = std::move(slot)]
+        {
+            /// ThreadStatus thread_status;
+
+            SCOPE_EXIT_SAFE(
+                if (thread_group)
+                    CurrentThread::detachQueryIfNotDetached();
+            );
+            setThreadName("QueryPipelineEx");
+
+            if (thread_group)
+                CurrentThread::attachTo(thread_group);
+
+            try
+            {
+                executeSingleThread(thread_num);
+            }
+            catch (...)
+            {
+                /// In case of exception from executor itself, stop other threads.
+                finish();
+                tasks.getThreadContext(thread_num).setException(std::current_exception());
+            }
+        });
+    }
+}
+
+void PipelineExecutor::joinThreads()
+{
+    for (size_t thread_num = 0; ; thread_num++)
+    {
+        std::unique_lock lock{threads_mutex};
+        if (thread_num >= threads.size())
+            break;
+        if (threads[thread_num].joinable())
+        {
+            auto & thread = threads[thread_num];
+            lock.unlock(); // to avoid deadlock if thread we are going to join starts spawning threads
+            thread.join();
+        }
+    }
+    // NOTE: No races: all concurrent spawnThreads() calls are done from `threads`, but they're already joined.
 }
 
 void PipelineExecutor::executeImpl(size_t num_threads)
 {
-    OpenTelemetrySpanHolder span("PipelineExecutor::executeImpl()");
-
     initializeExecution(num_threads);
-
-    using ThreadsData = std::vector<ThreadFromGlobalPool>;
-    ThreadsData threads;
-    threads.reserve(num_threads);
 
     bool finished_flag = false;
 
@@ -279,49 +356,21 @@ void PipelineExecutor::executeImpl(size_t num_threads)
         if (!finished_flag)
         {
             finish();
-
-            for (auto & thread : threads)
-                if (thread.joinable())
-                    thread.join();
+            joinThreads();
         }
     );
 
     if (num_threads > 1)
     {
-        auto thread_group = CurrentThread::getGroup();
-
-        for (size_t i = 0; i < num_threads; ++i)
-        {
-            threads.emplace_back([this, thread_group, thread_num = i]
-            {
-                /// ThreadStatus thread_status;
-
-                setThreadName("QueryPipelineEx");
-
-                if (thread_group)
-                    CurrentThread::attachTo(thread_group);
-
-                try
-                {
-                    executeSingleThread(thread_num);
-                }
-                catch (...)
-                {
-                    /// In case of exception from executor itself, stop other threads.
-                    finish();
-                    tasks.getThreadContext(thread_num).setException(std::current_exception());
-                }
-            });
-        }
-
+        spawnThreads(); // start at least one thread
         tasks.processAsyncTasks();
-
-        for (auto & thread : threads)
-            if (thread.joinable())
-                thread.join();
+        joinThreads();
     }
     else
+    {
+        auto slot = slots->tryAcquire();
         executeSingleThread(0);
+    }
 
     finished_flag = true;
 }

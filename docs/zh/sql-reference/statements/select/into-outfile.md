@@ -1,5 +1,6 @@
 ---
-toc_title: INTO OUTFILE
+slug: /zh/sql-reference/statements/select/into-outfile
+sidebar_label: INTO OUTFILE
 ---
 
 # INTO OUTFILE 子句 {#into-outfile-clause}

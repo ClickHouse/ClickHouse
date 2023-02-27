@@ -2,19 +2,11 @@
 #include <Disks/IDisk.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Poco/File.h>
+#include <Common/filesystemHelpers.h>
 
 
 namespace DB
 {
-
-BackupEntryFromImmutableFile::BackupEntryFromImmutableFile(
-    const String & file_path_,
-    const std::optional<UInt64> & file_size_,
-    const std::optional<UInt128> & checksum_,
-    const std::shared_ptr<Poco::TemporaryFile> & temporary_file_)
-    : file_path(file_path_), file_size(file_size_), checksum(checksum_), temporary_file(temporary_file_)
-{
-}
 
 BackupEntryFromImmutableFile::BackupEntryFromImmutableFile(
     const DiskPtr & disk_,
@@ -32,16 +24,24 @@ UInt64 BackupEntryFromImmutableFile::getSize() const
 {
     std::lock_guard lock{get_file_size_mutex};
     if (!file_size)
-        file_size = disk ? disk->getFileSize(file_path) : Poco::File(file_path).getSize();
+        file_size = disk->getFileSize(file_path);
     return *file_size;
 }
 
-std::unique_ptr<ReadBuffer> BackupEntryFromImmutableFile::getReadBuffer() const
+std::unique_ptr<SeekableReadBuffer> BackupEntryFromImmutableFile::getReadBuffer() const
 {
-    if (disk)
-        return disk->readFile(file_path);
-    else
-        return createReadBufferFromFileBase(file_path, /* settings= */ {});
+    return disk->readFile(file_path);
+}
+
+
+DataSourceDescription BackupEntryFromImmutableFile::getDataSourceDescription() const
+{
+    return disk->getDataSourceDescription();
+}
+
+String BackupEntryFromImmutableFile::getFilePath() const
+{
+    return file_path;
 }
 
 }

@@ -1,6 +1,7 @@
 ---
-toc_priority: 33
-toc_title: 分布式引擎
+slug: /zh/engines/table-engines/special/distributed
+sidebar_position: 33
+sidebar_label: 分布式引擎
 ---
 
 # 分布式引擎 {#distributed}
@@ -205,7 +206,7 @@ SELECT 查询会被发送到所有分片，并且无论数据在分片中如何�
 下面的情况，你需要关注分片方案：
 
 -   使用需要特定键连接数据（ IN 或 JOIN ）的查询。如果数据是用该键进行分片，则应使用本地 IN 或 JOIN 而不是 GLOBAL IN 或 GLOBAL JOIN，这样效率更高。
--   使用大量服务器（上百或更多），但有大量小查询（个别客户的查询 - 网站，广告商或合作伙伴）。为了使小查询不影响整个集群，让单个客户的数据处于单个分片上是有意义的。或者，正如我们在 Yandex.Metrica 中所做的那样，你可以配置两级分片：将整个集群划分为«层»，一个层可以包含多个分片。单个客户的数据位于单个层上，根据需要将分片添加到层中，层中的数据随机分布。然后给每层创建分布式表，再创建一个全局的分布式表用于全局的查询。
+-   使用大量服务器（上百或更多），但有大量小查询（个别客户的查询 - 网站，广告商或合作伙伴）。为了使小查询不影响整个集群，让单个客户的数据处于单个分片上是有意义的。或者 你可以配置两级分片：将整个集群划分为«层»，一个层可以包含多个分片。单个客户的数据位于单个层上，根据需要将分片添加到层中，层中的数据随机分布。然后给每层创建分布式表，再创建一个全局的分布式表用于全局的查询。
 
 数据是异步写入的。对于分布式表的 INSERT，数据块只写本地文件系统。之后会尽快地在后台发送到远程服务器。发送数据的周期性是由[distributed_directory_monitor_sleep_time_ms](../../../operations/settings/settings.md#distributed_directory_monitor_sleep_time_ms)和[distributed_directory_monitor_max_sleep_time_ms](../../../operations/settings/settings.md#distributed_directory_monitor_max_sleep_time_ms)设置。分布式引擎会分别发送每个插入数据的文件，但是你可以使用[distributed_directory_monitor_batch_inserts](../../../operations/settings/settings.md#distributed_directory_monitor_batch_inserts)设置启用批量发送文件。该设置通过更好地利用本地服务器和网络资源来提高集群性能。你应该检查表目录`/var/lib/clickhouse/data/database/table/`中的文件列表(等待发送的数据)来检查数据是否发送成功。执行后台任务的线程数可以通过[background_distributed_schedule_pool_size](../../../operations/settings/settings.md#background_distributed_schedule_pool_size)设置。
 
@@ -225,12 +226,9 @@ SELECT 查询会被发送到所有分片，并且无论数据在分片中如何�
 -   `_shard_num` — 表`system.clusters` 中的  `shard_num` 值 . 数据类型: [UInt32](../../../sql-reference/data-types/int-uint.md).
 
 !!! note "备注"
-    因为 [remote](../../../sql-reference/table-functions/remote.md) 和 [cluster](../../../sql-reference/table-functions/cluster.md) 表方法内部创建了分布式表， `_shard_num` 对他们都有效.
+    因为 [remote](../../../sql-reference/table-functions/remote.md) 和 [cluster](../../../sql-reference/table-functions/cluster.mdx) 表方法内部创建了分布式表， `_shard_num` 对他们都有效.
 
 **详见**
 -   [虚拟列](../../../engines/table-engines/index.md#table_engines-virtual_columns) 描述
 -   [background_distributed_schedule_pool_size](../../../operations/settings/settings.md#background_distributed_schedule_pool_size) 设置
 -   [shardNum()](../../../sql-reference/functions/other-functions.md#shard-num) 和 [shardCount()](../../../sql-reference/functions/other-functions.md#shard-count) 方法
-
-
-[原始文章](https://clickhouse.com/docs/en/operations/table_engines/distributed/) <!--hide-->

@@ -6,11 +6,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 /** Has one input and one output.
   * Simply pull a block from input, transform it, and push it to output.
   */
@@ -44,10 +39,7 @@ protected:
 public:
     ISimpleTransform(Block input_header_, Block output_header_, bool skip_empty_chunks_);
 
-    virtual void transform(Chunk &)
-    {
-        throw Exception("Method transform is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
+    virtual void transform(Chunk &) = 0;
 
     Status prepare() override;
     void work() override;

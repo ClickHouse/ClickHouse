@@ -52,7 +52,7 @@ static StorageSystemGraphite::Configs getConfigs(ContextPtr context)
                 const String & config_name = table_data->merging_params.graphite_params.config_name;
 
                 auto table_id = table_data->getStorageID();
-                if (!graphite_configs.count(config_name))
+                if (!graphite_configs.contains(config_name))
                 {
                     StorageSystemGraphite::Config new_config =
                     {

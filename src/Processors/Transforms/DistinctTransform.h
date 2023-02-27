@@ -25,9 +25,7 @@ private:
     ColumnNumbers key_columns_pos;
     SetVariants data;
     Sizes key_sizes;
-    UInt64 limit_hint;
-
-    bool no_more_rows = false;
+    const UInt64 limit_hint;
 
     /// Restrictions on the maximum size of the output data.
     SizeLimits set_size_limits;

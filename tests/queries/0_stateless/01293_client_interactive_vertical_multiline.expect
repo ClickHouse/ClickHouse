@@ -1,21 +1,25 @@
 #!/usr/bin/expect -f
 
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+exp_internal -f $env(CLICKHOUSE_TMP)/$basename.debuglog 0
+set history_file $env(CLICKHOUSE_TMP)/$basename.history
+
 log_user 0
 set timeout 10
 match_max 100000
 
 expect_after {
     # Do not ignore eof from expect
-    eof { exp_continue }
+    -i $any_spawn_id eof { exp_continue }
     # A default timeout action is to do nothing, change it to fail
-    timeout { exit 1 }
+    -i $any_spawn_id timeout { exit 1 }
 }
 
 # useful debugging configuration
 # exp_internal 1
 
-set basedir [file dirname $argv0]
-spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion"
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion --history_file=$history_file"
 expect ":) "
 
 send -- "SELECT 1\r"
@@ -23,6 +27,11 @@ expect "│ 1 │"
 expect ":) "
 
 send -- "SELECT 1\\G\r"
+expect "Row 1:"
+expect "1: 1"
+expect ":) "
+
+send -- "SELECT 1\\G;\r"
 expect "Row 1:"
 expect "1: 1"
 expect ":) "
@@ -41,10 +50,18 @@ expect "1: 1"
 expect "2: 2"
 expect ":) "
 
+send -- "SELECT 1\\\r"
+expect ":-] "
+send -- ", 2\\G;\r"
+expect "Row 1:"
+expect "1: 1"
+expect "2: 2"
+expect ":) "
+
 send -- ""
 expect eof
 
-spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion --highlight 0 --multiline"
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion --highlight 0 --multiline --history_file=$history_file"
 expect ":) "
 
 send -- "SELECT 1;\r"
@@ -56,11 +73,21 @@ expect "Row 1:"
 expect "1: 1"
 expect ":) "
 
+send -- "SELECT 1\\G;\r"
+expect "Row 1:"
+expect "1: 1"
+expect ":) "
+
 send -- "SELECT 1; \r"
 expect "│ 1 │"
 expect ":) "
 
 send -- "SELECT 1\\G  \r"
+expect "Row 1:"
+expect "1: 1"
+expect ":) "
+
+send -- "SELECT 1\\G; \r"
 expect "Row 1:"
 expect "1: 1"
 expect ":) "
@@ -80,6 +107,13 @@ expect ":) "
 
 send -- "SELECT 1\r"
 expect ":-] "
+send -- "\\G;\r"
+expect "Row 1:"
+expect "1: 1"
+expect ":) "
+
+send -- "SELECT 1\r"
+expect ":-] "
 send -- ", 2;\r"
 expect "│ 1 │ 2 │"
 expect ":) "
@@ -87,6 +121,15 @@ expect ":) "
 send -- "SELECT 1\r"
 expect ":-] "
 send -- ", 2\\G\r"
+expect "Row 1:"
+expect "1: 1"
+expect "2: 2"
+expect ":) "
+
+
+send -- "SELECT 1\r"
+expect ":-] "
+send -- ", 2\\G;\r"
 expect "Row 1:"
 expect "1: 1"
 expect "2: 2"

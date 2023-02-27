@@ -1,12 +1,12 @@
 #pragma once
 
-#include <Common/config.h>
+#include "config.h"
 
 #if USE_SNAPPY
 
 #include <memory>
 #include <IO/ReadBuffer.h>
-#include <IO/BufferWithOwnMemory.h>
+#include <IO/CompressedReadBufferWrapper.h>
 
 namespace DB
 {
@@ -67,7 +67,7 @@ private:
 };
 
 /// HadoopSnappyReadBuffer implements read buffer for data compressed with hadoop-snappy format.
-class HadoopSnappyReadBuffer : public BufferWithOwnMemory<ReadBuffer>
+class HadoopSnappyReadBuffer : public CompressedReadBufferWrapper
 {
 public:
     using Status = HadoopSnappyDecoder::Status;
@@ -85,7 +85,7 @@ public:
             case Status::NEEDS_MORE_INPUT:
                 return "NEEDS_MORE_INPUT";
         }
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
     explicit HadoopSnappyReadBuffer(
@@ -99,7 +99,6 @@ public:
 private:
     bool nextImpl() override;
 
-    std::unique_ptr<ReadBuffer> in;
     std::unique_ptr<HadoopSnappyDecoder> decoder;
 
     size_t in_available;

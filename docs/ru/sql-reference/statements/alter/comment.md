@@ -1,6 +1,7 @@
 ---
-toc_priority: 51
-toc_title: COMMENT
+slug: /ru/sql-reference/statements/alter/comment
+sidebar_position: 51
+sidebar_label: COMMENT
 ---
 
 # ALTER TABLE … MODIFY COMMENT {#alter-modify-comment}

@@ -1,8 +1,8 @@
 ---
-toc_priority: 195
+slug: /en/sql-reference/aggregate-functions/reference/uniqthetasketch
+sidebar_position: 195
+title: uniqTheta
 ---
-
-# uniqTheta {#agg_function-uniqthetasketch}
 
 Calculates the approximate number of different argument values, using the [Theta Sketch Framework](https://datasketches.apache.org/docs/Theta/ThetaSketchFramework.html).
 

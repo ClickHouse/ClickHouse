@@ -114,15 +114,11 @@ class AggregateFunctionVariance final
     : public IAggregateFunctionDataHelper<AggregateFunctionVarianceData<T, Op>, AggregateFunctionVariance<T, Op>>
 {
 public:
-    AggregateFunctionVariance(const DataTypePtr & arg)
-        : IAggregateFunctionDataHelper<AggregateFunctionVarianceData<T, Op>, AggregateFunctionVariance<T, Op>>({arg}, {}) {}
+    explicit AggregateFunctionVariance(const DataTypePtr & arg)
+        : IAggregateFunctionDataHelper<AggregateFunctionVarianceData<T, Op>, AggregateFunctionVariance<T, Op>>({arg}, {}, std::make_shared<DataTypeFloat64>())
+    {}
 
     String getName() const override { return Op::name; }
-
-    DataTypePtr getReturnType() const override
-    {
-        return std::make_shared<DataTypeFloat64>();
-    }
 
     bool allocatesMemoryInArena() const override { return false; }
 
@@ -249,7 +245,6 @@ protected:
         readBinary(right_m2, buf);
     }
 
-protected:
     Float64 left_m2 = 0.0;
     Float64 right_m2 = 0.0;
 };
@@ -367,16 +362,12 @@ class AggregateFunctionCovariance final
         AggregateFunctionCovariance<T, U, Op, compute_marginal_moments>>
 {
 public:
-    AggregateFunctionCovariance(const DataTypes & args) : IAggregateFunctionDataHelper<
+    explicit AggregateFunctionCovariance(const DataTypes & args) : IAggregateFunctionDataHelper<
         CovarianceData<T, U, Op, compute_marginal_moments>,
-        AggregateFunctionCovariance<T, U, Op, compute_marginal_moments>>(args, {}) {}
+        AggregateFunctionCovariance<T, U, Op, compute_marginal_moments>>(args, {}, std::make_shared<DataTypeFloat64>())
+    {}
 
     String getName() const override { return Op::name; }
-
-    DataTypePtr getReturnType() const override
-    {
-        return std::make_shared<DataTypeFloat64>();
-    }
 
     bool allocatesMemoryInArena() const override { return false; }
 

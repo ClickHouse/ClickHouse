@@ -31,7 +31,14 @@ void BackupFactory::registerBackupEngine(const String & engine_name, const Creat
     creators[engine_name] = creator_fn;
 }
 
-void registerBackupEngines(BackupFactory & factory);
+void registerBackupEnginesFileAndDisk(BackupFactory &);
+void registerBackupEngineS3(BackupFactory &);
+
+void registerBackupEngines(BackupFactory & factory)
+{
+    registerBackupEnginesFileAndDisk(factory);
+    registerBackupEngineS3(factory);
+}
 
 BackupFactory::BackupFactory()
 {

@@ -1,6 +1,6 @@
 #include <base/demangle.h>
 
-#include <stdlib.h>
+#include <cstdlib>
 #include <cxxabi.h>
 
 static DemangleResult tryDemangle(const char * name, int & status)

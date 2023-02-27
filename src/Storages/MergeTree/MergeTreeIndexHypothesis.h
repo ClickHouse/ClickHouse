@@ -9,14 +9,15 @@ namespace DB
 
 class MergeTreeIndexHyposesis;
 
-struct MergeTreeIndexGranuleHypothesis : public IMergeTreeIndexGranule
+class MergeTreeIndexGranuleHypothesis : public IMergeTreeIndexGranule
 {
+public:
     explicit MergeTreeIndexGranuleHypothesis(
         const String & index_name_);
 
     MergeTreeIndexGranuleHypothesis(
         const String & index_name_,
-        const bool met_);
+        bool met_);
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
@@ -31,8 +32,9 @@ struct MergeTreeIndexGranuleHypothesis : public IMergeTreeIndexGranule
 };
 
 
-struct MergeTreeIndexAggregatorHypothesis : IMergeTreeIndexAggregator
+class MergeTreeIndexAggregatorHypothesis : public IMergeTreeIndexAggregator
 {
+public:
     explicit MergeTreeIndexAggregatorHypothesis(
         const String & index_name_, const String & column_name_);
 
@@ -55,7 +57,7 @@ private:
 class MergeTreeIndexHypothesis : public IMergeTreeIndex
 {
 public:
-    MergeTreeIndexHypothesis(
+    explicit MergeTreeIndexHypothesis(
         const IndexDescription & index_)
         : IMergeTreeIndex(index_)
     {}

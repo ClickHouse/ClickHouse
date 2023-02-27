@@ -19,7 +19,7 @@ using FunctionLowerUTF8 = FunctionStringToString<LowerUpperUTF8Impl<'A', 'Z', Po
 
 }
 
-void registerFunctionLowerUTF8(FunctionFactory & factory)
+REGISTER_FUNCTION(LowerUTF8)
 {
     factory.registerFunction<FunctionLowerUTF8>();
 }

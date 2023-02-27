@@ -59,9 +59,8 @@ public:
     TSKVSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
 
 private:
-    std::unordered_map<String, DataTypePtr> readRowAndGetNamesAndDataTypes() override;
+    NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) override;
 
-    const FormatSettings format_settings;
     bool first_row = true;
 };
 

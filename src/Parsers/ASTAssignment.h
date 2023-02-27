@@ -28,6 +28,7 @@ public:
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
+
         settings.ostr << (settings.hilite ? hilite_identifier : "");
         settings.writeIdentifier(column_name);
         settings.ostr << (settings.hilite ? hilite_none : "");

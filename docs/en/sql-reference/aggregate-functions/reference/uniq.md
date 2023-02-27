@@ -1,8 +1,9 @@
 ---
-toc_priority: 190
+slug: /en/sql-reference/aggregate-functions/reference/uniq
+sidebar_position: 190
 ---
 
-# uniq {#agg_function-uniq}
+# uniq
 
 Calculates the approximate number of different values of the argument.
 

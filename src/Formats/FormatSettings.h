@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Names.h>
+#include <Core/Defines.h>
 #include <base/types.h>
 
 
@@ -36,6 +37,13 @@ struct FormatSettings
     bool seekable_read = true;
     UInt64 max_rows_to_read_for_schema_inference = 100;
 
+    String column_names_for_schema_inference;
+    String schema_inference_hints;
+
+    bool try_infer_integers = false;
+    bool try_infer_dates = false;
+    bool try_infer_datetimes = false;
+
     enum class DateTimeInputFormat
     {
         Basic,        /// Default format for fast parsing: YYYY-MM-DD hh:mm:ss (ISO-8601 without fractional part and timezone) or NNNNNNNNNN unix timestamp.
@@ -63,10 +71,20 @@ struct FormatSettings
         Raw
     };
 
+    bool schema_inference_make_columns_nullable = true;
+
     DateTimeOutputFormat date_time_output_format = DateTimeOutputFormat::Simple;
+
+    bool input_format_ipv4_default_on_conversion_error = false;
+    bool input_format_ipv6_default_on_conversion_error = false;
 
     UInt64 input_allow_errors_num = 0;
     Float32 input_allow_errors_ratio = 0;
+
+    UInt64 max_binary_string_size = 0;
+    UInt64 client_protocol_version = 0;
+
+    UInt64 max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH;
 
     struct
     {
@@ -74,6 +92,10 @@ struct FormatSettings
         bool low_cardinality_as_dictionary = false;
         bool import_nested = false;
         bool allow_missing_columns = false;
+        bool skip_columns_with_unsupported_types_in_schema_inference = false;
+        bool case_insensitive_column_matching = false;
+        bool output_string_as_string = false;
+        bool output_fixed_string_as_fixed_byte_array = true;
     } arrow;
 
     struct
@@ -96,10 +118,14 @@ struct FormatSettings
         bool allow_double_quotes = true;
         bool empty_as_default = false;
         bool crlf_end_of_line = false;
-        bool input_format_enum_as_number = false;
-        bool input_format_arrays_as_nested_csv = false;
+        bool enum_as_number = false;
+        bool arrays_as_nested_csv = false;
         String null_representation = "\\N";
         char tuple_delimiter = ',';
+        bool use_best_effort_in_schema_inference = true;
+        UInt64 skip_first_lines = 0;
+        String custom_delimiter;
+        bool try_detect_header = true;
     } csv;
 
     struct HiveText
@@ -119,23 +145,47 @@ struct FormatSettings
         std::string row_between_delimiter;
         std::string field_delimiter;
         EscapingRule escaping_rule = EscapingRule::Escaped;
+        bool try_detect_header = true;
     } custom;
 
     struct
     {
         bool array_of_rows = false;
         bool quote_64bit_integers = true;
+        bool quote_64bit_floats = false;
         bool quote_denormals = true;
+        bool quote_decimals = false;
         bool escape_forward_slashes = true;
-        bool named_tuples_as_objects = false;
+        bool read_named_tuples_as_objects = false;
+        bool write_named_tuples_as_objects = false;
+        bool defaults_for_missing_elements_in_named_tuple = false;
+        bool ignore_unknown_keys_in_named_tuple = false;
         bool serialize_as_strings = false;
+        bool read_bools_as_numbers = true;
+        bool read_numbers_as_strings = true;
+        bool read_objects_as_strings = true;
+        bool try_infer_numbers_from_strings = false;
+        bool validate_types_from_metadata = true;
+        bool validate_utf8 = false;
+        bool allow_object_type = false;
     } json;
+
+    struct
+    {
+        String column_for_object_name;
+    } json_object_each_row;
 
     struct
     {
         UInt64 row_group_size = 1000000;
         bool import_nested = false;
         bool allow_missing_columns = false;
+        bool skip_columns_with_unsupported_types_in_schema_inference = false;
+        bool case_insensitive_column_matching = false;
+        std::unordered_set<int> skip_row_groups = {};
+        bool output_string_as_string = false;
+        bool output_fixed_string_as_fixed_byte_array = true;
+        UInt64 max_block_size = 8192;
     } parquet;
 
     struct Pretty
@@ -158,6 +208,8 @@ struct FormatSettings
 
     struct
     {
+        bool input_flatten_google_wrappers = false;
+        bool output_nullables_with_google_wrappers = false;
         /**
          * Some buffers (kafka / rabbit) split the rows internally using callback,
          * and always send one row per message, so we can push there formats
@@ -166,6 +218,7 @@ struct FormatSettings
          * because Protobuf without delimiters is not generally useful.
          */
         bool allow_multiple_rows_without_delimiter = false;
+        bool skip_fields_with_unsupported_types_in_schema_inference = false;
     } protobuf;
 
     struct
@@ -201,7 +254,10 @@ struct FormatSettings
         bool empty_as_default = false;
         bool crlf_end_of_line = false;
         String null_representation = "\\N";
-        bool input_format_enum_as_number = false;
+        bool enum_as_number = false;
+        bool use_best_effort_in_schema_inference = true;
+        UInt64 skip_first_lines = 0;
+        bool try_detect_header = true;
     } tsv;
 
     struct
@@ -216,6 +272,10 @@ struct FormatSettings
         bool import_nested = false;
         bool allow_missing_columns = false;
         int64_t row_batch_size = 100'000;
+        bool skip_columns_with_unsupported_types_in_schema_inference = false;
+        bool case_insensitive_column_matching = false;
+        std::unordered_set<int> skip_stripes = {};
+        bool output_string_as_string = false;
     } orc;
 
     /// For capnProto format we should determine how to
@@ -230,6 +290,7 @@ struct FormatSettings
     struct
     {
         EnumComparingMode enum_comparing_mode = EnumComparingMode::BY_VALUES;
+        bool skip_fields_with_unsupported_types_in_schema_inference = false;
     } capn_proto;
 
     enum class MsgPackUUIDRepresentation
@@ -244,6 +305,27 @@ struct FormatSettings
         UInt64 number_of_columns = 0;
         MsgPackUUIDRepresentation output_uuid_representation = MsgPackUUIDRepresentation::EXT;
     } msgpack;
+
+    struct MySQLDump
+    {
+        String table_name;
+        bool map_column_names = true;
+    } mysql_dump;
+
+    struct
+    {
+        UInt64 max_batch_size = DEFAULT_BLOCK_SIZE;
+        String table_name = "table";
+        bool include_column_names = true;
+        bool use_replace = false;
+        bool quote_names = true;
+    } sql_insert;
+
+    struct
+    {
+        bool output_string_as_string;
+        bool skip_fields_with_unsupported_types_in_schema_inference;
+    } bson;
 };
 
 }

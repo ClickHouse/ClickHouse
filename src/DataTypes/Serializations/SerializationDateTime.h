@@ -11,7 +11,7 @@ namespace DB
 class SerializationDateTime final : public SerializationNumber<UInt32>, public TimezoneMixin
 {
 public:
-    SerializationDateTime(const TimezoneMixin & time_zone_);
+    explicit SerializationDateTime(const TimezoneMixin & time_zone_);
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;

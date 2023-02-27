@@ -62,11 +62,6 @@ struct AggregateIndependent
     }
 };
 
-#if !defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
-
 template <typename Map>
 struct AggregateIndependentWithSequentialKeysOptimization
 {
@@ -114,11 +109,6 @@ struct AggregateIndependentWithSequentialKeysOptimization
         pool.wait();
     }
 };
-
-#if !defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
-
 
 template <typename Map>
 struct MergeSequential
@@ -265,19 +255,10 @@ struct Creator
     void operator()(Value &) const {}
 };
 
-#if !defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
-
 struct Updater
 {
     void operator()(Value & x) const { ++x; }
 };
-
-#if !defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
 
 struct Merger
 {

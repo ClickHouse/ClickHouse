@@ -1,11 +1,14 @@
 #pragma once
 
+#include <base/defines.h>
 #include <base/types.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/ZooKeeper/ZooKeeperArgs.h>
+#include <Coordination/KeeperConstants.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -25,6 +28,7 @@
 #include <cstdint>
 #include <optional>
 #include <functional>
+#include <random>
 
 
 /** ZooKeeper C++ library, a replacement for libzookeeper.
@@ -109,12 +113,7 @@ public:
       */
     ZooKeeper(
         const Nodes & nodes,
-        const String & root_path,
-        const String & auth_scheme,
-        const String & auth_data,
-        Poco::Timespan session_timeout_,
-        Poco::Timespan connection_timeout,
-        Poco::Timespan operation_timeout_,
+        const zkutil::ZooKeeperArgs & args_,
         std::shared_ptr<ZooKeeperLog> zk_log_);
 
     ~ZooKeeper() override;
@@ -163,6 +162,7 @@ public:
 
     void list(
         const String & path,
+        ListRequestType list_request_type,
         ListCallback callback,
         WatchCallback watch) override;
 
@@ -171,9 +171,15 @@ public:
         int32_t version,
         CheckCallback callback) override;
 
+    void sync(
+         const String & path,
+         SyncCallback callback) override;
+
     void multi(
         const Requests & requests,
         MultiCallback callback) override;
+
+    DB::KeeperApiVersion getApiVersion() override;
 
     /// Without forcefully invalidating (finalizing) ZooKeeper session before
     /// establishing a new one, there was a possibility that server is using
@@ -192,11 +198,12 @@ public:
     void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
 private:
-    String root_path;
     ACLs default_acls;
 
-    Poco::Timespan session_timeout;
-    Poco::Timespan operation_timeout;
+    zkutil::ZooKeeperArgs args;
+
+    std::optional<std::bernoulli_distribution> send_inject_fault;
+    std::optional<std::bernoulli_distribution> recv_inject_fault;
 
     Poco::Net::StreamSocket socket;
     /// To avoid excessive getpeername(2) calls.
@@ -209,7 +216,7 @@ private:
     std::atomic<XID> next_xid {1};
     /// Mark session finalization start. Used to avoid simultaneous
     /// finalization from different threads. One-shot flag.
-    std::atomic<bool> finalization_started {false};
+    std::atomic_flag finalization_started;
 
     using clock = std::chrono::steady_clock;
 
@@ -228,13 +235,13 @@ private:
 
     using Operations = std::map<XID, RequestInfo>;
 
-    Operations operations;
+    Operations operations TSA_GUARDED_BY(operations_mutex);
     std::mutex operations_mutex;
 
     using WatchCallbacks = std::vector<WatchCallback>;
     using Watches = std::map<String /* path, relative of root_path */, WatchCallbacks>;
 
-    Watches watches;
+    Watches watches TSA_GUARDED_BY(watches_mutex);
     std::mutex watches_mutex;
 
     ThreadFromGlobalPool send_thread;
@@ -267,10 +274,14 @@ private:
     template <typename T>
     void read(T &);
 
-    void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false);
+    void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false, UInt64 elapsed_ms = 0);
+
+    void initApiVersion();
 
     CurrentMetrics::Increment active_session_metric_increment{CurrentMetrics::ZooKeeperSession};
     std::shared_ptr<ZooKeeperLog> zk_log;
+
+    DB::KeeperApiVersion keeper_api_version{DB::KeeperApiVersion::ZOOKEEPER_COMPATIBLE};
 };
 
 }

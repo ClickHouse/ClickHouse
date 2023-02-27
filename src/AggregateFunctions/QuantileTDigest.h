@@ -81,7 +81,7 @@ class QuantileTDigest
       */
     struct Params
     {
-        Value epsilon = 0.01;
+        Value epsilon = 0.01f;
         size_t max_centroids = 2048;
         size_t max_unmerged = 2048;
     };
@@ -99,12 +99,12 @@ class QuantileTDigest
     BetterFloat count = 0;
     size_t unmerged = 0;
 
-    /** Linear interpolation at the point x on the line (x1, y1)..(x2, y2)
-      */
+    /// Linear interpolation at the point x on the line (x1, y1)..(x2, y2)
     static Value interpolate(Value x, Value x1, Value y1, Value x2, Value y2)
     {
+        /// Symmetric interpolation for better results with infinities.
         double k = (x - x1) / (x2 - x1);
-        return y1 + k * (y2 - y1);
+        return static_cast<Value>((1 - k) * y1 + k * y2);
     }
 
     struct RadixSortTraits
@@ -137,6 +137,11 @@ class QuantileTDigest
             compress();
     }
 
+    inline bool canBeMerged(const BetterFloat & l_mean, const Value & r_mean)
+    {
+        return l_mean == r_mean || (!std::isinf(l_mean) && !std::isinf(r_mean));
+    }
+
     void compressBrute()
     {
         if (centroids.size() <= params.max_centroids)
@@ -149,22 +154,29 @@ class QuantileTDigest
         BetterFloat l_mean = l->mean; // We have high-precision temporaries for numeric stability
         BetterFloat l_count = l->count;
         size_t batch_pos = 0;
-        for (;r != centroids.end(); ++r)
+
+        for (; r != centroids.end(); ++r)
         {
             if (batch_pos < batch_size - 1)
             {
                 /// The left column "eats" the right. Middle of the batch
                 l_count += r->count;
-                l_mean += r->count * (r->mean - l_mean) / l_count; // Symmetric algo (M1*C1 + M2*C2)/(C1+C2) is numerically better, but slower
-                l->mean = l_mean;
-                l->count = l_count;
+                if (r->mean != l_mean) /// Handling infinities of the same sign well.
+                {
+                    l_mean += r->count * (r->mean - l_mean) / l_count; // Symmetric algo (M1*C1 + M2*C2)/(C1+C2) is numerically better, but slower
+                }
+                l->mean = static_cast<Value>(l_mean);
+                l->count = static_cast<Value>(l_count);
                 batch_pos += 1;
             }
             else
             {
                 // End of the batch, start the next one
-                sum += l->count; // Not l_count, otherwise actual sum of elements will be different
-                ++l;
+                if (!std::isnan(l->mean)) /// Skip writing batch result if we compressed something to nan.
+                {
+                    sum += l->count; // Not l_count, otherwise actual sum of elements will be different
+                    ++l;
+                }
 
                 /// We skip all the values "eaten" earlier.
                 *l = *r;
@@ -173,8 +185,17 @@ class QuantileTDigest
                 batch_pos = 0;
             }
         }
-        count = sum + l_count; // Update count, it might be different due to += inaccuracy
-        centroids.resize(l - centroids.begin() + 1);
+
+        if (!std::isnan(l->mean))
+        {
+            count = sum + l_count; // Update count, it might be different due to += inaccuracy
+            centroids.resize(l - centroids.begin() + 1);
+        }
+        else /// Skip writing last batch if (super unlikely) it's nan.
+        {
+            count = sum;
+            centroids.resize(l - centroids.begin());
+        }
         // Here centroids.size() <= params.max_centroids
     }
 
@@ -200,11 +221,8 @@ public:
             BetterFloat l_count = l->count;
             while (r != centroids.end())
             {
-                /// N.B. Piece of logic which compresses the same singleton centroids into one centroid is removed
-                /// because: 1) singleton centroids are being processed in unusual way in recent version of algorithm
-                /// and such compression would break this logic;
-                /// 2) we shall not compress centroids further than `max_centroids` parameter requires because
-                /// this will lead to uneven compression.
+                /// N.B. We cannot merge all the same values into single centroids because this will lead to
+                /// unbalanced compression and wrong results.
                 /// For more information see: https://arxiv.org/abs/1902.04023
 
                 /// The ratio of the part of the histogram to l, including the half l to the entire histogram. That is, what level quantile in position l.
@@ -225,14 +243,17 @@ public:
                   *  and at the edges decreases and is approximately equal to the distance to the edge * 4.
                   */
 
-                if (l_count + r->count <= k)
+                if (l_count + r->count <= k && canBeMerged(l_mean, r->mean))
                 {
                     // it is possible to merge left and right
                     /// The left column "eats" the right.
                     l_count += r->count;
-                    l_mean += r->count * (r->mean - l_mean) / l_count; // Symmetric algo (M1*C1 + M2*C2)/(C1+C2) is numerically better, but slower
-                    l->mean = l_mean;
-                    l->count = l_count;
+                    if (r->mean != l_mean) /// Handling infinities of the same sign well.
+                    {
+                        l_mean += r->count * (r->mean - l_mean) / l_count; // Symmetric algo (M1*C1 + M2*C2)/(C1+C2) is numerically better, but slower
+                    }
+                    l->mean = static_cast<Value>(l_mean);
+                    l->count = static_cast<Value>(l_count);
                 }
                 else
                 {
@@ -254,6 +275,7 @@ public:
             centroids.resize(l - centroids.begin() + 1);
             unmerged = 0;
         }
+
         // Ensures centroids.size() < max_centroids, independent of unprovable floating point blackbox above
         compressBrute();
     }
@@ -287,21 +309,28 @@ public:
         readVarUInt(size, buf);
 
         if (size > max_centroids_deserialize)
-            throw Exception("Too large t-digest centroids size", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large t-digest centroids size");
 
         count = 0;
         unmerged = 0;
 
         centroids.resize(size);
         // From now, TDigest will be in invalid state if exception is thrown.
-        buf.read(reinterpret_cast<char *>(centroids.data()), size * sizeof(centroids[0]));
+        buf.readStrict(reinterpret_cast<char *>(centroids.data()), size * sizeof(centroids[0]));
 
         for (const auto & c : centroids)
         {
-            if (c.count <= 0 || std::isnan(c.count) || std::isnan(c.mean)) // invalid count breaks compress(), invalid mean breaks sort()
-                throw Exception("Invalid centroid " + std::to_string(c.count) + ":" + std::to_string(c.mean), ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
-            count += c.count;
+            if (c.count <= 0 || std::isnan(c.count)) // invalid count breaks compress()
+                throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Invalid centroid {}:{}", c.count, std::to_string(c.mean));
+            if (!std::isnan(c.mean))
+            {
+                count += c.count;
+            }
         }
+
+        auto it = std::remove_if(centroids.begin(), centroids.end(), [](Centroid & c) { return std::isnan(c.mean); });
+        centroids.erase(it, centroids.end());
+
         compress(); // Allows reading/writing TDigests with different epsilon/max_centroids params
     }
 
@@ -312,7 +341,7 @@ public:
     ResultType getImpl(Float64 level)
     {
         if (centroids.empty())
-            return std::is_floating_point_v<ResultType> ? NAN : 0;
+            return std::is_floating_point_v<ResultType> ? std::numeric_limits<ResultType>::quiet_NaN() : 0;
 
         compress();
 
@@ -340,7 +369,12 @@ public:
                 else if (x >= right)
                     return checkOverflow<ResultType>(c.mean);
                 else
-                    return checkOverflow<ResultType>(interpolate(x, left, prev_mean, right, c.mean));
+                    return checkOverflow<ResultType>(interpolate(
+                        static_cast<Value>(x),
+                        static_cast<Value>(left),
+                        prev_mean,
+                        static_cast<Value>(right),
+                        c.mean));
             }
 
             sum += c.count;
@@ -372,7 +406,7 @@ public:
         if (centroids.size() == 1)
         {
             for (size_t result_num = 0; result_num < size; ++result_num)
-                result[result_num] = centroids.front().mean;
+                result[result_num] = static_cast<ResultType>(centroids.front().mean);
             return;
         }
 
@@ -395,13 +429,13 @@ public:
 
                 while (current_x >= x)
                 {
-
                     if (x <= left)
-                        result[levels_permutation[result_num]] = prev_mean;
+                        result[levels_permutation[result_num]] = static_cast<ResultType>(prev_mean);
                     else if (x >= right)
-                        result[levels_permutation[result_num]] = c.mean;
+                        result[levels_permutation[result_num]] = static_cast<ResultType>(c.mean);
                     else
-                        result[levels_permutation[result_num]] = interpolate(x, left, prev_mean, right, c.mean);
+                        result[levels_permutation[result_num]] = static_cast<ResultType>(interpolate(
+                            static_cast<Value>(x), static_cast<Value>(left), prev_mean, static_cast<Value>(right), c.mean));
 
                     ++result_num;
                     if (result_num >= size)
@@ -419,7 +453,7 @@ public:
 
         auto rest_of_results = centroids.back().mean;
         for (; result_num < size; ++result_num)
-            result[levels_permutation[result_num]] = rest_of_results;
+            result[levels_permutation[result_num]] = static_cast<ResultType>(rest_of_results);
     }
 
     T get(Float64 level)
@@ -449,7 +483,7 @@ private:
         ResultType result;
         if (accurate::convertNumeric(val, result))
             return result;
-        throw DB::Exception("Numeric overflow", ErrorCodes::DECIMAL_OVERFLOW);
+        throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
     }
 };
 

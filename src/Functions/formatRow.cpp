@@ -29,7 +29,6 @@ namespace
   * several columns to generate a string per row, such as CSV, TSV, JSONEachRow, etc.
   * formatRowNoNewline(...) trims the newline character of each row.
   */
-
 template <bool no_newline>
 class FunctionFormatRow : public IFunction
 {
@@ -38,8 +37,8 @@ public:
 
     FunctionFormatRow(const String & format_name_, ContextPtr context_) : format_name(format_name_), context(context_)
     {
-        if (!FormatFactory::instance().getAllFormats().count(format_name))
-            throw Exception("Unknown format " + format_name, ErrorCodes::UNKNOWN_FORMAT);
+        if (!FormatFactory::instance().getAllFormats().contains(format_name))
+            throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown format {}", format_name);
     }
 
     String getName() const override { return name; }
@@ -60,8 +59,22 @@ public:
         for (auto i = 1u; i < arguments.size(); ++i)
             arg_columns.insert(arguments[i]);
         materializeBlockInplace(arg_columns);
-        auto out = FormatFactory::instance().getOutputFormat(format_name, buffer, arg_columns, context, [&](const Columns &, size_t row)
+        auto format_settings = getFormatSettings(context);
+        auto out = FormatFactory::instance().getOutputFormat(format_name, buffer, arg_columns, context, format_settings);
+
+        /// This function make sense only for row output formats.
+        auto * row_output_format = dynamic_cast<IRowOutputFormat *>(out.get());
+        if (!row_output_format)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Cannot turn rows into a {} format strings. {} function supports only row output formats",
+                            format_name, getName());
+
+        auto columns = arg_columns.getColumns();
+        for (size_t i = 0; i != input_rows_count; ++i)
         {
+            row_output_format->writePrefixIfNeeded();
+            row_output_format->writeRow(columns, i);
+            row_output_format->finalize();
             if constexpr (no_newline)
             {
                 // replace '\n' with '\0'
@@ -70,16 +83,11 @@ public:
             }
             else
                 writeChar('\0', buffer);
-            offsets[row] = buffer.count();
-        });
 
-        /// This function make sense only for row output formats.
-        if (!dynamic_cast<IRowOutputFormat *>(out.get()))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot turn rows into a {} format strings. {} function supports only row output formats", format_name, getName());
+            offsets[i] = buffer.count();
+            row_output_format->resetFormatter();
+        }
 
-        /// Don't write prefix if any.
-        out->doNotWritePrefix();
-        out->write(arg_columns);
         return col_str;
     }
 
@@ -104,9 +112,8 @@ public:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         if (arguments.size() < 2)
-            throw Exception(
-                "Function " + getName() + " requires at least two arguments: the format name and its output expression(s)",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function {} requires at least two arguments: the format name and its output expression(s)", getName());
 
         if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments.at(0).column.get()))
             return std::make_unique<FunctionToFunctionBaseAdaptor>(
@@ -114,7 +121,7 @@ public:
                 collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
                 return_type);
         else
-            throw Exception("First argument to " + getName() + " must be a format name", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument to {} must be a format name", getName());
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeString>(); }
@@ -125,7 +132,7 @@ private:
 
 }
 
-void registerFunctionFormatRow(FunctionFactory & factory)
+REGISTER_FUNCTION(FormatRow)
 {
     factory.registerFunction<FormatRowOverloadResolver<true>>();
     factory.registerFunction<FormatRowOverloadResolver<false>>();

@@ -1,8 +1,9 @@
 ---
-toc_priority: 200
+slug: /en/sql-reference/aggregate-functions/reference/quantile
+sidebar_position: 200
 ---
 
-# quantile {#quantile}
+# quantile
 
 Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 

@@ -14,7 +14,7 @@ private:
     FileUpdatesTracker updates_tracker;
 
 public:
-    RegionsHierarchyDataSource(const std::string & path_) : path(path_), updates_tracker(path_) {}
+    explicit RegionsHierarchyDataSource(const std::string & path_) : path(path_), updates_tracker(path_) {}
 
     bool isModified() const override;
 
@@ -40,7 +40,7 @@ public:
       * For example, if /opt/geo/regions_hierarchy.txt is specified,
       *  then the /opt/geo/regions_hierarchy_ua.txt file will also be loaded, if any, it will be accessible by the `ua` key.
       */
-    RegionsHierarchiesDataProvider(const std::string & path_);
+    explicit RegionsHierarchiesDataProvider(const std::string & path_);
 
     std::vector<std::string> listCustomHierarchies() const override;
 

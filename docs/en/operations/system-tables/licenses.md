@@ -1,4 +1,7 @@
-# system.licenses {#system-tables_system.licenses}
+---
+slug: /en/operations/system-tables/licenses
+---
+# licenses 
 
 Сontains licenses of third-party libraries that are located in the [contrib](https://github.com/ClickHouse/ClickHouse/tree/master/contrib) directory of ClickHouse sources.
 
@@ -35,5 +38,3 @@ SELECT library_name, license_type, license_path FROM system.licenses LIMIT 15
 └────────────────────┴──────────────┴─────────────────────────────────────┘
 
 ```
-
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/licenses) <!--hide-->

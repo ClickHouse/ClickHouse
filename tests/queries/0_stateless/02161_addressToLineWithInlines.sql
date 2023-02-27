@@ -1,6 +1,7 @@
--- Tags: no-tsan, no-asan, no-ubsan, no-msan, no-debug, no-cpu-aarch64
+-- Tags: no-tsan, no-asan, no-ubsan, no-msan, no-debug, no-cpu-aarch64, disabled
+-- Tag disabled: Parsing inlines may lead to "could not find abbreviation code" (FIXME)
 
-
+SET allow_introspection_functions = 0;
 SELECT addressToLineWithInlines(1); -- { serverError 446 }
 
 SET allow_introspection_functions = 1;

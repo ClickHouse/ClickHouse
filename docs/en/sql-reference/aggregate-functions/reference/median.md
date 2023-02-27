@@ -1,8 +1,9 @@
 ---
-toc_priority: 212
+slug: /en/sql-reference/aggregate-functions/reference/median
+sidebar_position: 212
 ---
 
-# median {#median}
+# median
 
 The `median*` functions are the aliases for the corresponding `quantile*` functions. They calculate median of a numeric data sample.
 

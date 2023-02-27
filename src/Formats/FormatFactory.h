@@ -30,9 +30,9 @@ using ProcessorPtr = std::shared_ptr<IProcessor>;
 
 class IInputFormat;
 class IOutputFormat;
+class IRowOutputFormat;
 
 struct RowInputFormatParams;
-struct RowOutputFormatParams;
 
 class ISchemaReader;
 class IExternalSchemaReader;
@@ -41,6 +41,7 @@ using ExternalSchemaReaderPtr = std::shared_ptr<IExternalSchemaReader>;
 
 using InputFormatPtr = std::shared_ptr<IInputFormat>;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
+using RowOutputFormatPtr = std::shared_ptr<IRowOutputFormat>;
 
 template <typename Allocator>
 struct Memory;
@@ -56,24 +57,17 @@ FormatSettings getFormatSettings(ContextPtr context, const T & settings);
 class FormatFactory final : private boost::noncopyable
 {
 public:
-    /// This callback allows to perform some additional actions after reading a single row.
-    /// It's initial purpose was to extract payload for virtual columns from Kafka Consumer ReadBuffer.
-    using ReadCallback = std::function<void()>;
-
     /** Fast reading data from buffer and save result to memory.
-      * Reads at least min_chunk_bytes and some more until the end of the chunk, depends on the format.
-      * Used in ParallelParsingBlockInputStream.
+      * Reads at least `min_bytes` and some more until the end of the chunk, depends on the format.
+      * If `max_rows` is non-zero the function also stops after reading the `max_rows` number of rows
+      * (even if the `min_bytes` boundary isn't reached yet).
+      * Used in ParallelParsingInputFormat.
       */
     using FileSegmentationEngine = std::function<std::pair<bool, size_t>(
         ReadBuffer & buf,
         DB::Memory<Allocator<false>> & memory,
-        size_t min_chunk_bytes)>;
-
-    /// This callback allows to perform some additional actions after writing a single row.
-    /// It's initial purpose was to flush Kafka message for each row.
-    using WriteCallback = std::function<void(
-        const Columns & columns,
-        size_t row)>;
+        size_t min_bytes,
+        size_t max_rows)>;
 
 private:
     using InputCreator = std::function<InputFormatPtr(
@@ -85,7 +79,6 @@ private:
     using OutputCreator = std::function<OutputFormatPtr(
             WriteBuffer & buf,
             const Block & sample,
-            const RowOutputFormatParams & params,
             const FormatSettings & settings)>;
 
     /// Some input formats can have non trivial readPrefix() and readSuffix(),
@@ -97,8 +90,15 @@ private:
     /// The checker should return true if format support append.
     using AppendSupportChecker = std::function<bool(const FormatSettings & settings)>;
 
-    using SchemaReaderCreator = std::function<SchemaReaderPtr(ReadBuffer & in, const FormatSettings & settings, ContextPtr context)>;
+    using SchemaReaderCreator = std::function<SchemaReaderPtr(ReadBuffer & in, const FormatSettings & settings)>;
     using ExternalSchemaReaderCreator = std::function<ExternalSchemaReaderPtr(const FormatSettings & settings)>;
+
+    /// Some formats can extract different schemas from the same source depending on
+    /// some settings. To process this case in schema cache we should add some additional
+    /// information to a cache key. This getter should return some string with information
+    /// about such settings. For example, for Protobuf format it's the path to the schema
+    /// and the name of the message.
+    using AdditionalInfoForSchemaCacheGetter = std::function<String(const FormatSettings & settings)>;
 
     struct Creators
     {
@@ -108,9 +108,11 @@ private:
         SchemaReaderCreator schema_reader_creator;
         ExternalSchemaReaderCreator external_schema_reader_creator;
         bool supports_parallel_formatting{false};
-        bool is_column_oriented{false};
+        bool supports_subcolumns{false};
+        bool supports_subset_of_columns{false};
         NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker;
         AppendSupportChecker append_support_checker;
+        AdditionalInfoForSchemaCacheGetter additional_info_for_schema_cache_getter;
     };
 
     using FormatsDictionary = std::unordered_map<String, Creators>;
@@ -141,7 +143,6 @@ public:
         WriteBuffer & buf,
         const Block & sample,
         ContextPtr context,
-        WriteCallback callback = {},
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     OutputFormatPtr getOutputFormat(
@@ -149,7 +150,6 @@ public:
         WriteBuffer & buf,
         const Block & sample,
         ContextPtr context,
-        WriteCallback callback = {},
         const std::optional<FormatSettings> & _format_settings = std::nullopt) const;
 
     String getContentType(
@@ -160,12 +160,12 @@ public:
     SchemaReaderPtr getSchemaReader(
         const String & name,
         ReadBuffer & buf,
-        ContextPtr context,
+        ContextPtr & context,
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     ExternalSchemaReaderPtr getExternalSchemaReader(
         const String & name,
-        ContextPtr context,
+        ContextPtr & context,
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     void registerFileSegmentationEngine(const String & name, FileSegmentationEngine file_segmentation_engine);
@@ -194,13 +194,18 @@ public:
     void registerExternalSchemaReader(const String & name, ExternalSchemaReaderCreator external_schema_reader_creator);
 
     void markOutputFormatSupportsParallelFormatting(const String & name);
-    void markFormatAsColumnOriented(const String & name);
+    void markFormatSupportsSubcolumns(const String & name);
+    void markFormatSupportsSubsetOfColumns(const String & name);
 
-    bool checkIfFormatIsColumnOriented(const String & name);
+    bool checkIfFormatSupportsSubcolumns(const String & name) const;
+    bool checkIfFormatSupportsSubsetOfColumns(const String & name) const;
 
-    bool checkIfFormatHasSchemaReader(const String & name);
-    bool checkIfFormatHasExternalSchemaReader(const String & name);
-    bool checkIfFormatHasAnySchemaReader(const String & name);
+    bool checkIfFormatHasSchemaReader(const String & name) const;
+    bool checkIfFormatHasExternalSchemaReader(const String & name) const;
+    bool checkIfFormatHasAnySchemaReader(const String & name) const;
+
+    void registerAdditionalInfoForSchemaCacheGetter(const String & name, AdditionalInfoForSchemaCacheGetter additional_info_for_schema_cache_getter);
+    String getAdditionalInfoForSchemaCache(const String & name, ContextPtr context, const std::optional<FormatSettings> & format_settings_ = std::nullopt);
 
     const FormatsDictionary & getAllFormats() const
     {
@@ -209,6 +214,9 @@ public:
 
     bool isInputFormat(const String & name) const;
     bool isOutputFormat(const String & name) const;
+
+    /// Check that format with specified name exists and throw an exception otherwise.
+    void checkFormatName(const String & name) const;
 
 private:
     FormatsDictionary dict;

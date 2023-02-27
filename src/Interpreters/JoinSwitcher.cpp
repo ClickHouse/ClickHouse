@@ -2,20 +2,10 @@
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/HashJoin.h>
 #include <Interpreters/MergeJoin.h>
-#include <Interpreters/join_common.h>
+#include <Interpreters/JoinUtils.h>
 
 namespace DB
 {
-
-static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column, bool nullable)
-{
-    if (nullable)
-        JoinCommon::convertColumnToNullable(column);
-    else
-        JoinCommon::removeColumnNullability(column);
-
-    return std::move(column);
-}
 
 JoinSwitcher::JoinSwitcher(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_)
     : limits(table_join_->sizeLimits())
@@ -43,45 +33,25 @@ bool JoinSwitcher::addJoinedBlock(const Block & block, bool)
     size_t bytes = join->getTotalByteCount();
 
     if (!limits.softCheck(rows, bytes))
-        switchJoin();
+        return switchJoin();
 
     return true;
 }
 
-void JoinSwitcher::switchJoin()
+bool JoinSwitcher::switchJoin()
 {
-    std::shared_ptr<HashJoin::RightTableData> joined_data = static_cast<const HashJoin &>(*join).getJoinedData();
-    BlocksList right_blocks = std::move(joined_data->blocks);
+    HashJoin * hash_join = assert_cast<HashJoin *>(join.get());
+    BlocksList right_blocks = hash_join->releaseJoinedBlocks(true);
 
-    /// Destroy old join & create new one. Early destroy for memory saving.
+    /// Destroy old join & create new one.
     join = std::make_shared<MergeJoin>(table_join, right_sample_block);
 
-    /// names to positions optimization
-    std::vector<size_t> positions;
-    std::vector<bool> is_nullable;
-    if (!right_blocks.empty())
-    {
-        positions.reserve(right_sample_block.columns());
-        const Block & tmp_block = *right_blocks.begin();
-        for (const auto & sample_column : right_sample_block)
-        {
-            positions.emplace_back(tmp_block.getPositionByName(sample_column.name));
-            is_nullable.emplace_back(sample_column.type->isNullable());
-        }
-    }
-
-    for (Block & saved_block : right_blocks)
-    {
-        Block restored_block;
-        for (size_t i = 0; i < positions.size(); ++i)
-        {
-            auto & column = saved_block.getByPosition(positions[i]);
-            restored_block.insert(correctNullability(std::move(column), is_nullable[i]));
-        }
-        join->addJoinedBlock(restored_block);
-    }
+    bool success = true;
+    for (const Block & saved_block : right_blocks)
+        success = success && join->addJoinedBlock(saved_block);
 
     switched = true;
+    return success;
 }
 
 }

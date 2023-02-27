@@ -1,8 +1,9 @@
 ---
-toc_priority: 204
+slug: /en/sql-reference/aggregate-functions/reference/quantiletiming
+sidebar_position: 204
 ---
 
-# quantileTiming {#quantiletiming}
+# quantileTiming
 
 With the determined precision computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 
@@ -36,8 +37,9 @@ The calculation is accurate if:
 
 Otherwise, the result of the calculation is rounded to the nearest multiple of 16 ms.
 
-!!! note "Note"
-    For calculating page loading time quantiles, this function is more effective and accurate than [quantile](../../../sql-reference/aggregate-functions/reference/quantile.md#quantile).
+:::note    
+For calculating page loading time quantiles, this function is more effective and accurate than [quantile](../../../sql-reference/aggregate-functions/reference/quantile.md#quantile).
+:::
 
 **Returned value**
 
@@ -45,8 +47,9 @@ Otherwise, the result of the calculation is rounded to the nearest multiple of 1
 
 Type: `Float32`.
 
-!!! note "Note"
-    If no values are passed to the function (when using `quantileTimingIf`), [NaN](../../../sql-reference/data-types/float.md#data_type-float-nan-inf) is returned. The purpose of this is to differentiate these cases from cases that result in zero. See [ORDER BY clause](../../../sql-reference/statements/select/order-by.md#select-order-by) for notes on sorting `NaN` values.
+:::note    
+If no values are passed to the function (when using `quantileTimingIf`), [NaN](../../../sql-reference/data-types/float.md#data_type-float-nan-inf) is returned. The purpose of this is to differentiate these cases from cases that result in zero. See [ORDER BY clause](../../../sql-reference/statements/select/order-by.md#select-order-by) for notes on sorting `NaN` values.
+:::
 
 **Example**
 

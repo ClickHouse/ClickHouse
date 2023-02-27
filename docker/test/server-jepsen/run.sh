@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+
+CLICKHOUSE_PACKAGE=${CLICKHOUSE_PACKAGE:="https://clickhouse-builds.s3.amazonaws.com/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/clang-15_relwithdebuginfo_none_unsplitted_disable_False_binary/clickhouse"}
+CLICKHOUSE_REPO_PATH=${CLICKHOUSE_REPO_PATH:=""}
+
+
+if [ -z "$CLICKHOUSE_REPO_PATH" ]; then
+    CLICKHOUSE_REPO_PATH=ch
+    rm -rf ch ||:
+    mkdir ch ||:
+    wget -nv -nd -c "https://clickhouse-test-reports.s3.amazonaws.com/$PR_TO_TEST/$SHA_TO_TEST/repo/clickhouse_no_subs.tar.gz"
+    tar -C ch --strip-components=1 -xf clickhouse_no_subs.tar.gz
+    ls -lath ||:
+fi
+
+cd "$CLICKHOUSE_REPO_PATH/tests/jepsen.clickhouse"
+
+(lein run server test-all --keeper "$KEEPER_NODE" --nodes-file "$NODES_FILE_PATH" --username "$NODES_USERNAME" --logging-json --password "$NODES_PASSWORD" --time-limit "$TIME_LIMIT" --concurrency 50 -r 50 --clickhouse-source "$CLICKHOUSE_PACKAGE" --test-count "$TESTS_TO_RUN" || true) | tee "$TEST_OUTPUT/jepsen_run_all_tests.log"
+
+mv store "$TEST_OUTPUT/"

@@ -11,7 +11,7 @@
 #include <Columns/ColumnVector.h>
 #include <Poco/Net/IPAddress.h>
 #include <base/StringRef.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
 #include "IDictionarySource.h"
@@ -26,7 +26,7 @@ public:
         const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
-        const DictionaryLifetime dict_lifetime_,
+        const DictionaryLifetime dict_lifetime_, /// NOLINT
         bool require_nonempty_);
 
     std::string getKeyDescription() const { return key_description; }
@@ -118,6 +118,8 @@ private:
             Float32,
             Float64,
             UUID,
+            IPv4,
+            IPv6,
             String,
             Array>
             null_values;
@@ -142,6 +144,8 @@ private:
             ContainerType<Float32>,
             ContainerType<Float64>,
             ContainerType<UUID>,
+            ContainerType<IPv4>,
+            ContainerType<IPv6>,
             ContainerType<StringRef>,
             ContainerType<Array>>
             maps;
@@ -160,7 +164,7 @@ private:
     template <typename T>
     static void createAttributeImpl(Attribute & attribute, const Field & null_value);
 
-    static Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
+    static Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value); /// NOLINT
 
     template <typename AttributeType, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsByTwoKeyColumnsImpl(
@@ -177,7 +181,7 @@ private:
         DefaultValueExtractor & default_value_extractor) const;
 
     template <typename T>
-    void setAttributeValueImpl(Attribute & attribute, const T value);
+    void setAttributeValueImpl(Attribute & attribute, const T value); /// NOLINT
 
     void setAttributeValue(Attribute & attribute, const Field & value);
 

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Storages/System/IStorageSystemOneBlock.h>
-#include <base/shared_ptr_helper.h>
 
 
 namespace DB
@@ -11,12 +10,9 @@ class Context;
 
 /** System table "time_zones" with list of timezones pulled from /contrib/cctz/testdata/zoneinfo
   */
-class StorageSystemTimeZones final : public shared_ptr_helper<StorageSystemTimeZones>,
-                                     public IStorageSystemOneBlock<StorageSystemTimeZones>
+class StorageSystemTimeZones final : public IStorageSystemOneBlock<StorageSystemTimeZones>
 {
-    friend struct shared_ptr_helper<StorageSystemTimeZones>;
-
-protected:
+public:
     void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
 
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

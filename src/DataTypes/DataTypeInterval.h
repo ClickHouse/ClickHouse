@@ -25,7 +25,7 @@ public:
 
     IntervalKind getKind() const { return kind; }
 
-    DataTypeInterval(IntervalKind kind_) : kind(kind_) {}
+    explicit DataTypeInterval(IntervalKind kind_) : kind(kind_) {}
 
     std::string doGetName() const override { return fmt::format("Interval{}", kind.toString()); }
     const char * getFamilyName() const override { return "Interval"; }

@@ -1,5 +1,6 @@
 ---
-toc_priority: 110
+slug: /ru/sql-reference/aggregate-functions/reference/grouparray
+sidebar_position: 110
 ---
 
 # groupArray {#agg_function-grouparray}
@@ -13,4 +14,3 @@ toc_priority: 110
 Например, `groupArray(1)(x)` эквивалентно `[any(x)]`.
 
 В некоторых случаях, вы всё же можете рассчитывать на порядок выполнения запроса. Это — случаи, когда `SELECT` идёт из подзапроса, в котором используется `ORDER BY`.
-

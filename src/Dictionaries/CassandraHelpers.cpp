@@ -2,7 +2,7 @@
 
 #if USE_CASSANDRA
 #include <Common/Exception.h>
-#include <base/logger_useful.h>
+#include <Common/logger_useful.h>
 #include <mutex>
 
 namespace DB

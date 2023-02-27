@@ -4,6 +4,7 @@ SET allow_experimental_parallel_reading_from_replicas = 0;
 SET max_parallel_replicas = 2;
 DROP TABLE IF EXISTS report;
 
+set allow_deprecated_syntax_for_merge_tree=1;
 CREATE TABLE report(id UInt32, event_date Date, priority UInt32, description String) ENGINE = MergeTree(event_date, intHash32(id), (id, event_date, intHash32(id)), 8192);
 
 INSERT INTO report(id,event_date,priority,description) VALUES (1, '2015-01-01', 1, 'foo')(2, '2015-02-01', 2, 'bar')(3, '2015-03-01', 3, 'foo')(4, '2015-04-01', 4, 'bar')(5, '2015-05-01', 5, 'foo');

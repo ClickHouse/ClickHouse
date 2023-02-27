@@ -17,6 +17,13 @@ void ASTLiteral::updateTreeHashImpl(SipHash & hash_state) const
     applyVisitor(FieldVisitorHash(hash_state), value);
 }
 
+ASTPtr ASTLiteral::clone() const
+{
+    auto res = std::make_shared<ASTLiteral>(*this);
+    res->unique_column_name = {};
+    return res;
+}
+
 namespace
 {
 

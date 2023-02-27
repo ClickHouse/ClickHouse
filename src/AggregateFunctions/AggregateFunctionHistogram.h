@@ -54,13 +54,12 @@ private:
         Mean mean;
         Weight weight;
 
-        WeightedValue operator+ (const WeightedValue & other)
+        WeightedValue operator+(const WeightedValue & other) const
         {
             return {mean + other.weight * (other.mean - mean) / (other.weight + weight), other.weight + weight};
         }
     };
 
-private:
     // quantity of stored weighted-values
     UInt32 size;
 
@@ -71,7 +70,6 @@ private:
     // Weighted values representation of histogram.
     WeightedValue points[0];
 
-private:
     void sort()
     {
         ::sort(points, points + size,
@@ -87,18 +85,18 @@ private:
         size_t size = 0;
         T * data_ptr;
 
-        PriorityQueueStorage(T * value)
+        explicit PriorityQueueStorage(T * value)
             : data_ptr(value)
         {
         }
 
-        void push_back(T val)
+        void push_back(T val) /// NOLINT
         {
             data_ptr[size] = std::move(val);
             ++size;
         }
 
-        void pop_back() { --size; }
+        void pop_back() { --size; } /// NOLINT
         T * begin() { return data_ptr; }
         T * end() const { return data_ptr + size; }
         bool empty() const { return size == 0; }
@@ -138,8 +136,8 @@ private:
 
         for (size_t i = 0; i <= size; ++i)
         {
-            previous[i] = i - 1;
-            next[i] = i + 1;
+            previous[i] = static_cast<UInt32>(i - 1);
+            next[i] = static_cast<UInt32>(i + 1);
         }
 
         next[size] = 0;
@@ -159,7 +157,7 @@ private:
         auto quality = [&](UInt32 i) { return points[next[i]].mean - points[i].mean; };
 
         for (size_t i = 0; i + 1 < size; ++i)
-            queue.push({quality(i), i});
+            queue.push({quality(static_cast<UInt32>(i)), i});
 
         while (new_size > max_bins && !queue.empty())
         {
@@ -209,7 +207,7 @@ private:
         {
             // Fuse points if their text representations differ only in last digit
             auto min_diff = 10 * (points[left].mean + points[right].mean) * std::numeric_limits<Mean>::epsilon();
-            if (points[left].mean + min_diff >= points[right].mean)
+            if (points[left].mean + std::fabs(min_diff) >= points[right].mean)
             {
                 points[left] = points[left] + points[right];
             }
@@ -219,11 +217,11 @@ private:
                 points[left] = points[right];
             }
         }
-        size = left + 1;
+        size = static_cast<UInt32>(left + 1);
     }
 
 public:
-    AggregateFunctionHistogramData() //-V730
+    AggregateFunctionHistogramData()
         : size(0)
         , lower_bound(std::numeric_limits<Mean>::max())
         , upper_bound(std::numeric_limits<Mean>::lowest())
@@ -258,7 +256,7 @@ public:
         // nans break sort and compression
         // infs don't fit in bins partition method
         if (!isFinite(value))
-            throw Exception("Invalid value (inf or nan) for aggregation by 'histogram' function", ErrorCodes::INCORRECT_DATA);
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid value (inf or nan) for aggregation by 'histogram' function");
 
         points[size] = {value, weight};
         ++size;
@@ -293,9 +291,9 @@ public:
 
         readVarUInt(size, buf);
         if (size > max_bins * 2)
-            throw Exception("Too many bins", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too many bins");
 
-        buf.read(reinterpret_cast<char *>(points), size * sizeof(WeightedValue));
+        buf.readStrict(reinterpret_cast<char *>(points), size * sizeof(WeightedValue));
     }
 };
 
@@ -309,7 +307,7 @@ private:
 
 public:
     AggregateFunctionHistogram(UInt32 max_bins_, const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionDataHelper<AggregateFunctionHistogramData, AggregateFunctionHistogram<T>>(arguments, params)
+        : IAggregateFunctionDataHelper<AggregateFunctionHistogramData, AggregateFunctionHistogram<T>>(arguments, params, createResultType())
         , max_bins(max_bins_)
     {
     }
@@ -318,7 +316,7 @@ public:
     {
         return Data::structSize(max_bins);
     }
-    DataTypePtr getReturnType() const override
+    static DataTypePtr createResultType()
     {
         DataTypes types;
         auto mean = std::make_shared<DataTypeNumber<Data::Mean>>();

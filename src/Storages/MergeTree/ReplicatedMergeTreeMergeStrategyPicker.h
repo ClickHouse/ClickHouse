@@ -17,7 +17,7 @@ struct ReplicatedMergeTreeLogEntryData;
 /// (so instead of doing exactly the same merge cluster-wise you can do merge once and fetch ready part)
 /// Fetches may be desirable for other operational reasons (backup replica without lot of CPU resources).
 ///
-/// That class allow to take a decisions about preferred strategy for a concreate merge.
+/// That class allow to take a decisions about preferred strategy for a concrete merge.
 ///
 /// Since that code is used in shouldExecuteLogEntry we need to be able to:
 /// 1) make decision fast
@@ -42,7 +42,7 @@ struct ReplicatedMergeTreeLogEntryData;
 class ReplicatedMergeTreeMergeStrategyPicker: public boost::noncopyable
 {
 public:
-    ReplicatedMergeTreeMergeStrategyPicker(StorageReplicatedMergeTree & storage_);
+    explicit ReplicatedMergeTreeMergeStrategyPicker(StorageReplicatedMergeTree & storage_);
 
     /// triggers refreshing the cached state (list of replicas etc.)
     /// used when we get new merge event from the zookeeper queue ( see queueUpdatingTask() etc )

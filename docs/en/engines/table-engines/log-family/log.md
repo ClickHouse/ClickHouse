@@ -1,9 +1,10 @@
 ---
+slug: /en/engines/table-engines/log-family/log
 toc_priority: 33
 toc_title: Log
 ---
 
-# Log {#log}
+# Log
 
 The engine belongs to the family of `Log` engines. See the common properties of `Log` engines and their differences in the [Log Engine Family](../../../engines/table-engines/log-family/index.md) article.
 

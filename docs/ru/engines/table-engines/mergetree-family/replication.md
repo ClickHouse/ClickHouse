@@ -1,6 +1,7 @@
 ---
-toc_priority: 31
-toc_title: "Репликация данных"
+slug: /ru/engines/table-engines/mergetree-family/replication
+sidebar_position: 31
+sidebar_label: "Репликация данных"
 ---
 
 # Репликация данных {#table_engines-replication}
@@ -31,9 +32,9 @@ ClickHouse хранит метаинформацию о репликах в [Apa
 
 Для использовании репликации, установите параметры в секции [zookeeper](../../../operations/server-configuration-parameters/settings.md#server-settings_zookeeper) конфигурации сервера.
 
-!!! attention "Внимание"
+    :::note "Внимание"
     Не пренебрегайте настройками безопасности. ClickHouse поддерживает [ACL схему](https://zookeeper.apache.org/doc/current/zookeeperProgrammers.html#sc_ZooKeeperAccessControl) `digest` подсистемы безопасности ZooKeeper.
-
+    :::
 Пример указания адресов кластера ZooKeeper:
 
 ``` xml

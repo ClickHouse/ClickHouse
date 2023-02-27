@@ -2,6 +2,8 @@
 #include <Access/RolesOrUsersSet.h>
 #include <boost/range/algorithm/set_algorithm.hpp>
 #include <boost/range/algorithm_ext/erase.hpp>
+#include <boost/range/algorithm/copy.hpp>
+
 
 namespace DB
 {
@@ -135,7 +137,7 @@ GrantedRoles::Elements GrantedRoles::getElements() const
     boost::range::set_difference(roles, roles_with_admin_option, std::back_inserter(element.ids));
     if (!element.empty())
     {
-        element.admin_option = false; //-V1048
+        element.admin_option = false;
         elements.emplace_back(std::move(element));
     }
 
@@ -166,4 +168,57 @@ void GrantedRoles::makeIntersection(const GrantedRoles & other)
         return other.roles_with_admin_option.find(id) == other.roles_with_admin_option.end();
     });
 }
+
+std::vector<UUID> GrantedRoles::findDependencies() const
+{
+    std::vector<UUID> res;
+    boost::range::copy(roles, std::back_inserter(res));
+    return res;
+}
+
+void GrantedRoles::replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids)
+{
+    std::vector<UUID> new_ids;
+
+    for (auto it = roles.begin(); it != roles.end();)
+    {
+        auto id = *it;
+        auto it_new_id = old_to_new_ids.find(id);
+        if (it_new_id != old_to_new_ids.end())
+        {
+            auto new_id = it_new_id->second;
+            new_ids.push_back(new_id);
+            it = roles.erase(it);
+        }
+        else
+        {
+            ++it;
+        }
+    }
+
+    if (!new_ids.empty())
+    {
+        boost::range::copy(new_ids, std::inserter(roles, roles.end()));
+        new_ids.clear();
+
+        for (auto it = roles_with_admin_option.begin(); it != roles_with_admin_option.end();)
+        {
+            auto id = *it;
+            auto it_new_id = old_to_new_ids.find(id);
+            if (it_new_id != old_to_new_ids.end())
+            {
+                auto new_id = it_new_id->second;
+                new_ids.push_back(new_id);
+                it = roles_with_admin_option.erase(it);
+            }
+            else
+            {
+                ++it;
+            }
+        }
+
+        boost::range::copy(new_ids, std::inserter(roles_with_admin_option, roles_with_admin_option.end()));
+    }
+}
+
 }

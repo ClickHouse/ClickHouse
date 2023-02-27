@@ -1,9 +1,10 @@
 ---
-toc_priority: 5
-toc_title: MongoDB
+slug: /en/engines/table-engines/integrations/mongodb
+sidebar_position: 5
+sidebar_label: MongoDB
 ---
 
-# MongoDB {#mongodb}
+# MongoDB
 
 MongoDB engine is read-only table engine which allows to read data (`SELECT` queries) from remote MongoDB collection. Engine supports only non-nested data types. `INSERT` queries are not supported.
 
@@ -75,5 +76,3 @@ CREATE TABLE mongo_table
     data String
 ) ENGINE = MongoDB('mongo2:27017', 'test', 'simple_table', 'testuser', 'clickhouse', 'connectTimeoutMS=100000');
 ```
-
-[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/mongodb/) <!--hide-->

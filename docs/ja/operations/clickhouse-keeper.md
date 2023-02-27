@@ -1,1 +1,0 @@
-../../en/operations/clickhouse-keeper.md

@@ -53,11 +53,20 @@ void WriteBufferFromHTTPServerResponse::writeHeaderProgress()
         *response_header_ostr << "X-ClickHouse-Progress: " << progress_string_writer.str() << "\r\n" << std::flush;
 }
 
+void WriteBufferFromHTTPServerResponse::writeExceptionCode()
+{
+    if (headers_finished_sending || !exception_code)
+        return;
+    if (response_header_ostr)
+        *response_header_ostr << "X-ClickHouse-Exception-Code: " << exception_code << "\r\n" << std::flush;
+}
+
 void WriteBufferFromHTTPServerResponse::finishSendHeaders()
 {
     if (!headers_finished_sending)
     {
         writeHeaderSummary();
+        writeExceptionCode();
         headers_finished_sending = true;
 
         if (!is_http_method_head)
@@ -127,7 +136,7 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
 WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
     HTTPServerResponse & response_,
     bool is_http_method_head_,
-    unsigned keep_alive_timeout_,
+    size_t keep_alive_timeout_,
     bool compress_,
     CompressionMethod compression_method_)
     : BufferWithOwnMemory<WriteBuffer>(DBMS_DEFAULT_BUFFER_SIZE)
@@ -150,7 +159,7 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
 
     accumulated_progress.incrementPiecewiseAtomically(progress);
 
-    if (progress_watch.elapsed() >= send_progress_interval_ms * 1000000)
+    if (send_progress && progress_watch.elapsed() >= send_progress_interval_ms * 1000000)
     {
         progress_watch.restart();
 
