@@ -11,11 +11,6 @@
 
 #include <magic_enum.hpp>
 
-namespace CurrentMetrics
-{
-extern const Metric CacheDetachedFileSegments;
-}
-
 namespace DB
 {
 
