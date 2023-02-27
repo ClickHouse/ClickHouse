@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/statements/create/database
 sidebar_position: 35
 sidebar_label: DATABASE
 ---
@@ -30,7 +31,7 @@ By default, ClickHouse uses its own [Atomic](../../../engines/database-engines/a
 
 ### COMMENT
 
-You can add a comment to the database when you creating it.
+You can add a comment to the database when you are creating it.
 
 The comment is supported for all database engines.
 

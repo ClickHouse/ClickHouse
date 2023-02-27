@@ -264,7 +264,8 @@ void DatabaseMaterializedPostgreSQL::createTable(ContextPtr local_context, const
 
     const auto & create = query->as<ASTCreateQuery>();
     if (!create->attach)
-        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "CREATE TABLE is not allowed for database engine {}. Use ATTACH TABLE instead", getEngineName());
+        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED,
+                        "CREATE TABLE is not allowed for database engine {}. Use ATTACH TABLE instead", getEngineName());
 
     /// Create ReplacingMergeTree table.
     auto query_copy = query->clone();

@@ -19,13 +19,13 @@ class AggregateFunctionBitmap final : public IAggregateFunctionDataHelper<Data, 
 {
 public:
     explicit AggregateFunctionBitmap(const DataTypePtr & type)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionBitmap<T, Data>>({type}, {})
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionBitmap<T, Data>>({type}, {}, createResultType())
     {
     }
 
     String getName() const override { return Data::name(); }
 
-    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeNumber<T>>(); }
+    static DataTypePtr createResultType() { return std::make_shared<DataTypeNumber<T>>(); }
 
     bool allocatesMemoryInArena() const override { return false; }
 
@@ -45,7 +45,8 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        assert_cast<ColumnVector<T> &>(to).getData().push_back(this->data(place).rbs.size());
+        assert_cast<ColumnVector<T> &>(to).getData().push_back(
+            static_cast<T>(this->data(place).rbs.size()));
     }
 };
 
@@ -58,13 +59,13 @@ private:
     static constexpr size_t STATE_VERSION_1_MIN_REVISION = 54455;
 public:
     explicit AggregateFunctionBitmapL2(const DataTypePtr & type)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionBitmapL2<T, Data, Policy>>({type}, {})
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionBitmapL2<T, Data, Policy>>({type}, {}, createResultType())
     {
     }
 
     String getName() const override { return Policy::name; }
 
-    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeNumber<T>>(); }
+    static DataTypePtr createResultType() { return std::make_shared<DataTypeNumber<T>>(); }
 
     bool allocatesMemoryInArena() const override { return false; }
 
@@ -142,7 +143,8 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        assert_cast<ColumnVector<T> &>(to).getData().push_back(this->data(place).rbs.size());
+        assert_cast<ColumnVector<T> &>(to).getData().push_back(
+            static_cast<T>(this->data(place).rbs.size()));
     }
 };
 

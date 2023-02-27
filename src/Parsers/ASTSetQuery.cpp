@@ -24,13 +24,43 @@ void ASTSetQuery::formatImpl(const FormatSettings & format, FormatState &, Forma
     if (is_standalone)
         format.ostr << (format.hilite ? hilite_keyword : "") << "SET " << (format.hilite ? hilite_none : "");
 
-    for (auto it = changes.begin(); it != changes.end(); ++it)
-    {
-        if (it != changes.begin())
-            format.ostr << ", ";
+    bool first = true;
 
-        formatSettingName(it->name, format.ostr);
-        format.ostr << " = " << applyVisitor(FieldVisitorToString(), it->value);
+    for (const auto & change : changes)
+    {
+        if (!first)
+            format.ostr << ", ";
+        else
+            first = false;
+
+        formatSettingName(change.name, format.ostr);
+        CustomType custom;
+        if (!format.show_secrets && change.value.tryGet<CustomType>(custom) && custom.isSecret())
+            format.ostr << " = " << custom.toString(false);
+        else
+            format.ostr << " = " << applyVisitor(FieldVisitorToString(), change.value);
+    }
+
+    for (const auto & setting_name : default_settings)
+    {
+        if (!first)
+            format.ostr << ", ";
+        else
+            first = false;
+
+        formatSettingName(setting_name, format.ostr);
+        format.ostr << " = DEFAULT";
+    }
+
+    for (const auto & [name, value] : query_parameters)
+    {
+        if (!first)
+            format.ostr << ", ";
+        else
+            first = false;
+
+        formatSettingName(QUERY_PARAMETER_NAME_PREFIX + name, format.ostr);
+        format.ostr << " = " << value;
     }
 }
 

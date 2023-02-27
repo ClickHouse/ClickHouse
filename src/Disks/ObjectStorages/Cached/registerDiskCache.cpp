@@ -1,6 +1,6 @@
-#include <Common/FileCacheSettings.h>
-#include <Common/FileCacheFactory.h>
-#include <Common/FileCache.h>
+#include <Interpreters/Cache/FileCacheSettings.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/Cache/FileCache.h>
 #include <Common/logger_useful.h>
 #include <Common/assert_cast.h>
 #include <Disks/DiskFactory.h>
@@ -16,7 +16,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-void registerDiskCache(DiskFactory & factory)
+void registerDiskCache(DiskFactory & factory, bool /* global_skip_access_check */)
 {
     auto creator = [](const String & name,
                     const Poco::Util::AbstractConfiguration & config,

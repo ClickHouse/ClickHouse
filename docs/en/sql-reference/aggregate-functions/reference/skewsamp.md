@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/aggregate-functions/reference/skewsamp
 sidebar_position: 151
 ---
 

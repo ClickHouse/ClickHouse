@@ -1,4 +1,5 @@
 ---
+slug: /ru/engines/table-engines/integrations/materialized-postgresql
 sidebar_position: 12
 sidebar_label: MaterializedPostgreSQL
 ---

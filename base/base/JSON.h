@@ -38,6 +38,7 @@
   */
 
 
+// NOLINTBEGIN(google-explicit-constructor)
 #ifdef __clang__
 #  pragma clang diagnostic push
 #  pragma clang diagnostic ignored "-Wdeprecated-dynamic-exception-spec"
@@ -46,6 +47,7 @@ POCO_DECLARE_EXCEPTION(Foundation_API, JSONException, Poco::Exception)
 #ifdef __clang__
 #  pragma clang diagnostic pop
 #endif
+// NOLINTEND(google-explicit-constructor)
 
 class JSON
 {
@@ -61,7 +63,7 @@ public:
         checkInit();
     }
 
-    JSON(const std::string & s) : ptr_begin(s.data()), ptr_end(s.data() + s.size()), level(0)
+    explicit JSON(std::string_view s) : ptr_begin(s.data()), ptr_end(s.data() + s.size()), level(0)
     {
         checkInit();
     }
@@ -71,13 +73,7 @@ public:
         *this = rhs;
     }
 
-    JSON & operator=(const JSON & rhs)
-    {
-        ptr_begin = rhs.ptr_begin;
-        ptr_end = rhs.ptr_end;
-        level = rhs.level;
-        return *this;
-    }
+    JSON & operator=(const JSON & rhs) = default;
 
     const char * data() const { return ptr_begin; }
     const char * dataEnd() const { return ptr_end; }
@@ -169,7 +165,7 @@ public:
 
     /// Перейти к следующему элементу массива или следующей name-value паре объекта.
     iterator & operator++();
-    iterator operator++(int);
+    iterator operator++(int); // NOLINT(cert-dcl21-cpp)
 
     /// Есть ли в строке escape-последовательности
     bool hasEscapes() const;

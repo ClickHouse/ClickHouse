@@ -732,6 +732,93 @@ def test_mysql_null(started_cluster):
     conn.close()
 
 
+def test_settings(started_cluster):
+    table_name = "test_settings"
+    node1.query(f"DROP TABLE IF EXISTS {table_name}")
+    wait_timeout = 123
+    rw_timeout = 10123001
+    connect_timeout = 10123002
+    connection_pool_size = 1
+
+    conn = get_mysql_conn(started_cluster, cluster.mysql_ip)
+    drop_mysql_table(conn, table_name)
+    create_mysql_table(conn, table_name)
+
+    node1.query(
+        f"""
+        CREATE TABLE {table_name}
+        (
+            id UInt32,
+            name String,
+            age UInt32,
+            money UInt32
+        )
+        ENGINE = MySQL('mysql57:3306', 'clickhouse', '{table_name}', 'root', 'clickhouse')
+        SETTINGS connection_wait_timeout={wait_timeout}, connect_timeout={connect_timeout}, read_write_timeout={rw_timeout}, connection_pool_size={connection_pool_size}
+        """
+    )
+
+    node1.query(f"SELECT * FROM {table_name}")
+    assert node1.contains_in_log(
+        f"with settings: connect_timeout={connect_timeout}, read_write_timeout={rw_timeout}"
+    )
+
+    rw_timeout = 20123001
+    connect_timeout = 20123002
+    node1.query(f"SELECT * FROM mysql(mysql_with_settings)")
+    assert node1.contains_in_log(
+        f"with settings: connect_timeout={connect_timeout}, read_write_timeout={rw_timeout}"
+    )
+
+    rw_timeout = 30123001
+    connect_timeout = 30123002
+    node1.query(
+        f"""
+        SELECT *
+            FROM mysql('mysql57:3306', 'clickhouse', '{table_name}', 'root', 'clickhouse',
+                       SETTINGS
+                           connection_wait_timeout={wait_timeout},
+                           connect_timeout={connect_timeout},
+                           read_write_timeout={rw_timeout},
+                           connection_pool_size={connection_pool_size})
+    """
+    )
+    assert node1.contains_in_log(
+        f"with settings: connect_timeout={connect_timeout}, read_write_timeout={rw_timeout}"
+    )
+
+    rw_timeout = 40123001
+    connect_timeout = 40123002
+    node1.query(
+        f"""
+        CREATE DATABASE m
+        ENGINE = MySQL(mysql_with_settings, connection_wait_timeout={wait_timeout}, connect_timeout={connect_timeout}, read_write_timeout={rw_timeout}, connection_pool_size={connection_pool_size})
+    """
+    )
+    assert node1.contains_in_log(
+        f"with settings: connect_timeout={connect_timeout}, read_write_timeout={rw_timeout}"
+    )
+
+    rw_timeout = 50123001
+    connect_timeout = 50123002
+    node1.query(
+        f"""
+        CREATE DATABASE mm ENGINE = MySQL('mysql57:3306', 'clickhouse', 'root', 'clickhouse')
+            SETTINGS
+                connection_wait_timeout={wait_timeout},
+                connect_timeout={connect_timeout},
+                read_write_timeout={rw_timeout},
+                connection_pool_size={connection_pool_size}
+    """
+    )
+    assert node1.contains_in_log(
+        f"with settings: connect_timeout={connect_timeout}, read_write_timeout={rw_timeout}"
+    )
+
+    drop_mysql_table(conn, table_name)
+    conn.close()
+
+
 if __name__ == "__main__":
     with contextmanager(started_cluster)() as cluster:
         for name, instance in list(cluster.instances.items()):

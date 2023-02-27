@@ -8,22 +8,19 @@ Header: key String
     Header: key String
       ReadFromStorage
       Header: dummy UInt8
-    Expression
+    Union
     Header: s2.key String
             value String
-      Union
-      Header: key String
+      Expression
+      Header: s2.key String
               value String
-        Expression
-        Header: key String
-                value String
-          ReadFromStorage
-          Header: dummy UInt8
-        Expression
-        Header: key String
-                value String
-          ReadFromStorage
-          Header: dummy UInt8
+        ReadFromStorage
+        Header: dummy UInt8
+      Expression
+      Header: s2.key String
+              value String
+        ReadFromStorage
+        Header: dummy UInt8
 Expression
 Header: key String
         value String
@@ -40,19 +37,16 @@ Header: key String
     Sorting
     Header: s2.key String
             value String
-      Expression
+      Union
       Header: s2.key String
               value String
-        Union
-        Header: key String
+        Expression
+        Header: s2.key String
                 value String
-          Expression
-          Header: key String
-                  value String
-            ReadFromStorage
-            Header: dummy UInt8
-          Expression
-          Header: key String
-                  value String
-            ReadFromStorage
-            Header: dummy UInt8
+          ReadFromStorage
+          Header: dummy UInt8
+        Expression
+        Header: s2.key String
+                value String
+          ReadFromStorage
+          Header: dummy UInt8

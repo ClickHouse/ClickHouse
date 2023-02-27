@@ -20,7 +20,7 @@ struct IArraySink
 
     virtual void accept(ArraySinkVisitor &)
     {
-        throw Exception("Accept not implemented for " + demangle(typeid(*this).name()), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Accept not implemented for {}", demangle(typeid(*this).name()));
     }
 };
 

@@ -2,6 +2,7 @@ include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
 add_headers_and_sources(clickhouse_functions_url .)
 add_library(clickhouse_functions_url OBJECT ${clickhouse_functions_url_sources} ${clickhouse_functions_url_headers})
 target_link_libraries(clickhouse_functions_url PRIVATE dbms)
+set_source_files_properties(tldLookup.generated.cpp PROPERTIES COMPILE_FLAGS -Wno-shorten-64-to-32)
 
 if (OMIT_HEAVY_DEBUG_SYMBOLS)
     target_compile_options(clickhouse_functions_url PRIVATE "-g0")

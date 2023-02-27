@@ -217,7 +217,7 @@ bool ClusterDiscovery::needUpdate(const Strings & node_uuids, const NodesInfo & 
 
 ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
 {
-    std::vector<std::vector<String>> shards;
+    std::vector<Strings> shards;
     {
         std::map<size_t, Strings> replica_adresses;
 
@@ -244,7 +244,7 @@ ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
         /* password= */ "",
         /* clickhouse_port= */ secure ? context->getTCPPortSecure().value_or(DBMS_DEFAULT_SECURE_PORT) : context->getTCPPort(),
         /* treat_local_as_remote= */ false,
-        /* treat_local_port_as_remote= */ context->getApplicationType() == Context::ApplicationType::LOCAL,
+        /* treat_local_port_as_remote= */ false, /// should be set only for clickhouse-local, but cluster discovery is not used there
         /* secure= */ secure);
     return cluster;
 }

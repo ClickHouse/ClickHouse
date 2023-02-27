@@ -1,4 +1,5 @@
 ---
+slug: /en/sql-reference/aggregate-functions/reference/grouparraymovingsum
 sidebar_position: 113
 ---
 

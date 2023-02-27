@@ -55,7 +55,7 @@ void ICompressionCodec::setCodecDescription(const String & codec_name, const AST
 ASTPtr ICompressionCodec::getFullCodecDesc() const
 {
     if (full_codec_desc == nullptr)
-        throw Exception("Codec description is not prepared", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Codec description is not prepared");
 
     return full_codec_desc;
 }
@@ -97,7 +97,9 @@ UInt32 ICompressionCodec::decompress(const char * source, UInt32 source_size, ch
 
     UInt8 header_size = getHeaderSize();
     if (source_size < header_size)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Can't decompress data: the compressed data size ({}, this should include header size) is less than the header size ({})", source_size, static_cast<size_t>(header_size));
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+                        "Can't decompress data: the compressed data size ({}, this should include header size) "
+                        "is less than the header size ({})", source_size, static_cast<size_t>(header_size));
 
     uint8_t our_method = getMethodByte();
     uint8_t method = source[0];

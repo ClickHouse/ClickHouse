@@ -5,9 +5,8 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Storages/IStorage.h>
+#include <Common/ConcurrentBoundedQueue.h>
 #include <Core/Protocol.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeString.h>
 
 
 namespace DB
@@ -31,21 +30,11 @@ LocalConnection::LocalConnection(ContextPtr context_, bool send_progress_, bool 
     /// Authenticate and create a context to execute queries.
     session.authenticate("default", "", Poco::Net::SocketAddress{});
     session.makeSessionContext();
-
-    if (!CurrentThread::isInitialized())
-        thread_status.emplace();
 }
 
 LocalConnection::~LocalConnection()
 {
-    try
-    {
-        state.reset();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    state.reset();
 }
 
 bool LocalConnection::hasReadPendingData() const
@@ -191,7 +180,7 @@ void LocalConnection::sendQuery(
     catch (...)
     {
         state->io.onException();
-        state->exception = std::make_unique<Exception>("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+        state->exception = std::make_unique<Exception>(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception");
     }
 }
 
@@ -205,7 +194,7 @@ void LocalConnection::sendData(const Block & block, const String &, bool)
     else if (state->pushing_executor)
         state->pushing_executor->push(block);
     else
-        throw Exception("Unknown executor", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown executor");
 
     if (send_profile_events)
         sendProfileEvents();
@@ -295,7 +284,7 @@ bool LocalConnection::poll(size_t)
         catch (...)
         {
             state->io.onException();
-            state->exception = std::make_unique<Exception>("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+            state->exception = std::make_unique<Exception>(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception");
         }
     }
 
@@ -512,7 +501,7 @@ void LocalConnection::sendExternalTablesData(ExternalTablesData &)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }
 
-void LocalConnection::sendMergeTreeReadTaskResponse(const PartitionReadResponse &)
+void LocalConnection::sendMergeTreeReadTaskResponse(const ParallelReadResponse &)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }

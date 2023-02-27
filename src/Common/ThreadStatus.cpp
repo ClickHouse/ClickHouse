@@ -1,9 +1,9 @@
 #include <Common/Exception.h>
 #include <Common/ThreadProfileEvents.h>
+#include <Common/ConcurrentBoundedQueue.h>
 #include <Common/QueryProfiler.h>
 #include <Common/ThreadStatus.h>
 #include <base/errnoToString.h>
-#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/Context.h>
 
 #include <Poco/Logger.h>
@@ -120,7 +120,7 @@ ThreadStatus::ThreadStatus()
 
         if (0 != sigaltstack(&altstack_description, nullptr))
         {
-            LOG_WARNING(log, "Cannot set alternative signal stack for thread, {}", errnoToString(errno));
+            LOG_WARNING(log, "Cannot set alternative signal stack for thread, {}", errnoToString());
         }
         else
         {
@@ -128,7 +128,7 @@ ThreadStatus::ThreadStatus()
             struct sigaction action{};
             if (0 != sigaction(SIGSEGV, nullptr, &action))
             {
-                LOG_WARNING(log, "Cannot obtain previous signal action to set alternative signal stack for thread, {}", errnoToString(errno));
+                LOG_WARNING(log, "Cannot obtain previous signal action to set alternative signal stack for thread, {}", errnoToString());
             }
             else if (!(action.sa_flags & SA_ONSTACK))
             {
@@ -136,7 +136,7 @@ ThreadStatus::ThreadStatus()
 
                 if (0 != sigaction(SIGSEGV, &action, nullptr))
                 {
-                    LOG_WARNING(log, "Cannot set action with alternative signal stack for thread, {}", errnoToString(errno));
+                    LOG_WARNING(log, "Cannot set action with alternative signal stack for thread, {}", errnoToString());
                 }
             }
         }
@@ -189,13 +189,10 @@ void ThreadStatus::updatePerformanceCounters()
     }
 }
 
-void ThreadStatus::assertState(const std::initializer_list<int> & permitted_states, const char * description) const
+void ThreadStatus::assertState(ThreadState permitted_state, const char * description) const
 {
-    for (auto permitted_state : permitted_states)
-    {
-        if (getCurrentState() == permitted_state)
-            return;
-    }
+    if (getCurrentState() == permitted_state)
+        return;
 
     if (description)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected thread state {}: {}", getCurrentState(), description);
@@ -240,6 +237,7 @@ void ThreadStatus::setFatalErrorCallback(std::function<void()> callback)
 
 void ThreadStatus::onFatalError()
 {
+    std::lock_guard lock(thread_group->mutex);
     if (fatal_error_callback)
         fatal_error_callback();
 }

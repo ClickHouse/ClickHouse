@@ -78,7 +78,7 @@ struct DivideIntegralByConstantImpl
 #pragma GCC diagnostic pop
 
         if (unlikely(static_cast<A>(b) == 0))
-            throw Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
+            throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by zero");
 
         divideImpl(a_pos, b, c_pos, size);
     }

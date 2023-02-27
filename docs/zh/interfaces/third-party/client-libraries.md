@@ -1,4 +1,5 @@
 ---
+slug: /zh/interfaces/third-party/client-libraries
 sidebar_position: 26
 sidebar_label: 客户端开发库
 ---
@@ -34,6 +35,9 @@ Yandex**没有**维护下面列出的库，也没有做过任何广泛的测试�
 -   NodeJs
     -   [clickhouse (NodeJs)](https://github.com/TimonKK/clickhouse)
     -   [node-clickhouse](https://github.com/apla/node-clickhouse)
+    -   [nestjs-clickhouse](https://github.com/depyronick/nestjs-clickhouse)
+    -   [clickhouse-client](https://github.com/depyronick/clickhouse-client)
+    -   [node-clickhouse-orm](https://github.com/zimv/node-clickhouse-orm)
 -   Perl
     -   [perl-DBD-ClickHouse](https://github.com/elcamlost/perl-DBD-ClickHouse)
     -   [HTTP-ClickHouse](https://metacpan.org/release/HTTP-ClickHouse)
@@ -66,5 +70,3 @@ Yandex**没有**维护下面列出的库，也没有做过任何广泛的测试�
     -   [nim-clickhouse](https://github.com/leonardoce/nim-clickhouse)
 -   Haskell
     -   [hdbc-clickhouse](https://github.com/zaneli/hdbc-clickhouse)
-
-[来源文章](https://clickhouse.com/docs/en/interfaces/third-party/client_libraries/) <!--hide-->

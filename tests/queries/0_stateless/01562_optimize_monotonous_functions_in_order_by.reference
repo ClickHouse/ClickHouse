@@ -17,7 +17,7 @@ ORDER BY toDate(timestamp) ASC
 LIMIT 10
 Expression (Projection)
   Limit (preliminary LIMIT (without OFFSET))
-    Sorting
+    Sorting (Sorting for ORDER BY)
       Expression (Before ORDER BY)
         ReadFromMergeTree (default.test_order_by)
 SELECT
@@ -30,7 +30,7 @@ ORDER BY
 LIMIT 10
 Expression (Projection)
   Limit (preliminary LIMIT (without OFFSET))
-    Sorting
+    Sorting (Sorting for ORDER BY)
       Expression (Before ORDER BY)
         ReadFromMergeTree (default.test_order_by)
 SELECT

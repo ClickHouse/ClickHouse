@@ -25,7 +25,7 @@ MAX_RETRY = 5
 
 # Number of times a check can re-run as a whole.
 # It is needed, because we are using AWS "spot" instances, that are terminated often
-MAX_WORKFLOW_RERUN = 20
+MAX_WORKFLOW_RERUN = 30
 
 WorkflowDescription = namedtuple(
     "WorkflowDescription",
@@ -50,8 +50,6 @@ WorkflowDescription = namedtuple(
 
 # See https://api.github.com/orgs/{name}
 TRUSTED_ORG_IDS = {
-    7409213,  # yandex
-    28471076,  # altinity
     54801242,  # clickhouse
 }
 
@@ -63,11 +61,11 @@ TRUSTED_WORKFLOW_IDS = {
 
 NEED_RERUN_WORKFLOWS = {
     "BackportPR",
-    "Docs",
-    "DocsRelease",
+    "DocsCheck",
     "MasterCI",
+    "NightlyBuilds",
     "PullRequestCI",
-    "ReleaseCI",
+    "ReleaseBranchCI",
 }
 
 # Individual trusted contirbutors who are not in any trusted organization.
@@ -104,8 +102,6 @@ TRUSTED_CONTRIBUTORS = {
         "kreuzerkrieg",
         "lehasm",  # DOCSUP
         "michon470",  # DOCSUP
-        "MyroTk",  # Tester in Altinity
-        "myrrc",  # Michael Kot, Altinity
         "nikvas0",
         "nvartolomei",
         "olgarev",  # DOCSUP
@@ -126,6 +122,7 @@ TRUSTED_CONTRIBUTORS = {
         "BoloniniD",  # Seasoned contributor, HSE
         "tonickkozlov",  # Cloudflare
         "tylerhannan",  # ClickHouse Employee
+        "myrrc",  # Mike Kot, DoubleCloud
     ]
 }
 
@@ -317,7 +314,7 @@ def check_suspicious_changed_files(changed_files):
     return False
 
 
-def approve_run(workflow_description: WorkflowDescription, token):
+def approve_run(workflow_description: WorkflowDescription, token: str) -> None:
     url = f"{workflow_description.api_url}/approve"
     _exec_post_with_retry(url, token)
 
@@ -370,6 +367,7 @@ def check_need_to_rerun(workflow_description, token):
     jobs = get_workflow_jobs(workflow_description, token)
     print("Got jobs", len(jobs))
     for job in jobs:
+        print(f"Job {job['name']} has a conclusion '{job['conclusion']}'")
         if job["conclusion"] not in ("success", "skipped"):
             print("Job", job["name"], "failed, checking steps")
             for step in job["steps"]:
@@ -395,7 +393,7 @@ def rerun_workflow(workflow_description, token):
 
 
 def check_workflow_completed(
-    event_data, workflow_description: WorkflowDescription, token: str
+    event_data: dict, workflow_description: WorkflowDescription, token: str
 ) -> bool:
     if workflow_description.action == "completed":
         attempt = 0
@@ -495,6 +493,12 @@ def main(event):
 def handler(event, _):
     try:
         main(event)
+
+        return {
+            "statusCode": 200,
+            "headers": {"Content-Type": "application/json"},
+            "body": '{"status": "OK"}',
+        }
     except Exception:
         print("Received event: ", event)
         raise

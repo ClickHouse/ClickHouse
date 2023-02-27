@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/contributors
+---
 # system.contributors {#system-contributors}
 
 Содержит информацию о контрибьютерах. Контрибьютеры расположены в таблице в случайном порядке. Порядок определяется заново при каждом запросе.
@@ -38,4 +41,3 @@ SELECT * FROM system.contributors WHERE name='Olga Khvostikova'
 │ Olga Khvostikova │
 └──────────────────┘
 ```
-

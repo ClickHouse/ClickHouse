@@ -4,10 +4,8 @@
 #include <Interpreters/Context_fwd.h>
 #include <IO/Progress.h>
 #include <Common/MemoryTracker.h>
-#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ProfileEvents.h>
 #include <base/StringRef.h>
-#include <Common/ConcurrentBoundedQueue.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -15,7 +13,6 @@
 #include <map>
 #include <memory>
 #include <mutex>
-#include <shared_mutex>
 #include <unordered_set>
 
 
@@ -25,6 +22,9 @@ namespace Poco
 }
 
 
+template <class T>
+class ConcurrentBoundedQueue;
+
 namespace DB
 {
 
@@ -33,7 +33,6 @@ class ThreadStatus;
 class QueryProfilerReal;
 class QueryProfilerCPU;
 class QueryThreadLog;
-struct OpenTelemetrySpanHolder;
 class TasksStatsCounters;
 struct RUsageCounters;
 struct PerfEventsCounters;
@@ -80,7 +79,7 @@ public:
     InternalProfileEventsQueueWeakPtr profile_queue_ptr;
     std::function<void()> fatal_error_callback;
 
-    std::vector<UInt64> thread_ids;
+    std::unordered_set<UInt64> thread_ids;
     std::unordered_set<ThreadStatusPtr> threads;
 
     /// The first thread created this thread group
@@ -89,10 +88,6 @@ public:
     LogsLevel client_logs_level = LogsLevel::none;
 
     String query;
-    /// Query without new lines (see toOneLineQuery())
-    /// Used to print in case of fatal error
-    /// (to avoid calling extra code in the fatal error handler)
-    String one_line_query;
     UInt64 normalized_query_hash = 0;
 
     std::vector<ProfileEventsCountersAndMemory> finished_threads_counters_memory;
@@ -129,14 +124,16 @@ public:
 
     /// TODO: merge them into common entity
     ProfileEvents::Counters performance_counters{VariableContext::Thread};
+
+    /// Points to performance_counters by default.
+    /// Could be changed to point to another object to calculate performance counters for some narrow scope.
+    ProfileEvents::Counters * current_performance_counters{&performance_counters};
     MemoryTracker memory_tracker{VariableContext::Thread};
 
     /// Small amount of untracked memory (per thread atomic-less counter)
     Int64 untracked_memory = 0;
     /// Each thread could new/delete memory in range of (-untracked_memory_limit, untracked_memory_limit) without access to common counters.
     Int64 untracked_memory_limit = 4 * 1024 * 1024;
-    /// Increase limit in case of exception.
-    Int64 untracked_memory_limit_increase = 0;
 
     /// Statistics of read and write rows/bytes
     Progress progress_in;
@@ -145,13 +142,8 @@ public:
     using Deleter = std::function<void()>;
     Deleter deleter;
 
-    // This is the current most-derived OpenTelemetry span for this thread. It
-    // can be changed throughout the query execution, whenever we enter a new
-    // span or exit it. See OpenTelemetrySpanHolder that is normally responsible
-    // for these changes.
-    OpenTelemetryTraceContext thread_trace_context;
-
 protected:
+    /// Group of threads, to which this thread attached
     ThreadGroupStatusPtr thread_group;
 
     std::atomic<int> thread_state{ThreadState::DetachedFromQuery};
@@ -189,8 +181,8 @@ protected:
     /// Is used to send logs from logs_queue to client in case of fatal errors.
     std::function<void()> fatal_error_callback;
 
-    /// It is used to avoid enabling the query profiler when you have multiple ThreadStatus in the same thread
-    bool query_profiler_enabled = true;
+    /// See setInternalThread()
+    bool internal_thread = false;
 
     /// Requires access to query_id.
     friend class MemoryTrackerThreadSwitcher;
@@ -235,17 +227,31 @@ public:
         return global_context.lock();
     }
 
-    void disableProfiling()
-    {
-        assert(!query_profiler_real && !query_profiler_cpu);
-        query_profiler_enabled = false;
-    }
+    /// "Internal" ThreadStatus is used for materialized views for separate
+    /// tracking into system.query_views_log
+    ///
+    /// You can have multiple internal threads, but only one non-internal with
+    /// the same thread_id.
+    ///
+    /// "Internal" thread:
+    /// - cannot have query profiler
+    ///   since the running (main query) thread should already have one
+    /// - should not try to obtain latest counter on detach
+    ///   because detaching of such threads will be done from a different
+    ///   thread_id, and some counters are not available (i.e. getrusage()),
+    ///   but anyway they are accounted correctly in the main ThreadStatus of a
+    ///   query.
+    void setInternalThread();
 
     /// Starts new query and create new thread group for it, current thread becomes master thread of the query
     void initializeQuery();
 
     /// Attaches slave thread to existing thread group
     void attachQuery(const ThreadGroupStatusPtr & thread_group_, bool check_detached = true);
+
+    /// Returns pointer to the current profile counters to restore them back.
+    /// Note: consequent call with new scope will detach previous scope.
+    ProfileEvents::Counters * attachProfileCountersScope(ProfileEvents::Counters * performance_counters_scope);
 
     InternalTextLogsQueuePtr getInternalTextLogsQueue() const
     {
@@ -296,7 +302,7 @@ protected:
     void logToQueryThreadLog(QueryThreadLog & thread_log, const String & current_database, std::chrono::time_point<std::chrono::system_clock> now);
 
 
-    void assertState(const std::initializer_list<int> & permitted_states, const char * description = nullptr) const;
+    void assertState(ThreadState permitted_state, const char * description = nullptr) const;
 
 
 private:

@@ -796,6 +796,84 @@ def test_mutation():
     node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
 
 
+def test_tables_dependency():
+    node1.query("CREATE DATABASE mydb ON CLUSTER 'cluster3'")
+
+    node1.query(
+        "CREATE TABLE mydb.src ON CLUSTER 'cluster' (x Int64, y String) ENGINE=MergeTree ORDER BY tuple()"
+    )
+
+    node1.query(
+        "CREATE DICTIONARY mydb.dict ON CLUSTER 'cluster' (x Int64, y String) PRIMARY KEY x "
+        "SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() DB 'mydb' TABLE 'src')) LAYOUT(FLAT()) LIFETIME(0)"
+    )
+
+    node1.query(
+        "CREATE TABLE mydb.dist1 (x Int64) ENGINE=Distributed('cluster', 'mydb', 'src')"
+    )
+
+    node3.query(
+        "CREATE TABLE mydb.dist2 (x Int64) ENGINE=Distributed(cluster, 'mydb', 'src')"
+    )
+
+    node1.query("CREATE TABLE mydb.clusterfunc1 AS cluster('cluster', 'mydb.src')")
+    node1.query("CREATE TABLE mydb.clusterfunc2 AS cluster(cluster, mydb.src)")
+    node1.query("CREATE TABLE mydb.clusterfunc3 AS cluster(cluster, 'mydb', 'src')")
+    node1.query(
+        "CREATE TABLE mydb.clusterfunc4 AS cluster(cluster, dictionary(mydb.dict))"
+    )
+    node1.query(
+        "CREATE TABLE mydb.clusterfunc5 AS clusterAllReplicas(cluster, dictionary(mydb.dict))"
+    )
+
+    node3.query("CREATE TABLE mydb.clusterfunc6 AS cluster('cluster', 'mydb.src')")
+    node3.query("CREATE TABLE mydb.clusterfunc7 AS cluster(cluster, mydb.src)")
+    node3.query("CREATE TABLE mydb.clusterfunc8 AS cluster(cluster, 'mydb', 'src')")
+    node3.query(
+        "CREATE TABLE mydb.clusterfunc9 AS cluster(cluster, dictionary(mydb.dict))"
+    )
+    node3.query(
+        "CREATE TABLE mydb.clusterfunc10 AS clusterAllReplicas(cluster, dictionary(mydb.dict))"
+    )
+
+    backup_name = new_backup_name()
+    node3.query(f"BACKUP DATABASE mydb ON CLUSTER 'cluster3' TO {backup_name}")
+
+    node3.query("DROP DATABASE mydb")
+
+    node3.query(f"RESTORE DATABASE mydb ON CLUSTER 'cluster3' FROM {backup_name}")
+
+    node3.query("SYSTEM FLUSH LOGS ON CLUSTER 'cluster3'")
+    expect_in_logs_1 = [
+        "Table mydb.src has no dependencies (level 0)",
+        "Table mydb.dict has 1 dependencies: mydb.src (level 1)",
+        "Table mydb.dist1 has 1 dependencies: mydb.src (level 1)",
+        "Table mydb.clusterfunc1 has 1 dependencies: mydb.src (level 1)",
+        "Table mydb.clusterfunc2 has 1 dependencies: mydb.src (level 1)",
+        "Table mydb.clusterfunc3 has 1 dependencies: mydb.src (level 1)",
+        "Table mydb.clusterfunc4 has 1 dependencies: mydb.dict (level 2)",
+        "Table mydb.clusterfunc5 has 1 dependencies: mydb.dict (level 2)",
+    ]
+    expect_in_logs_2 = [
+        "Table mydb.src has no dependencies (level 0)",
+        "Table mydb.dict has 1 dependencies: mydb.src (level 1)",
+    ]
+    expect_in_logs_3 = [
+        "Table mydb.dist2 has no dependencies (level 0)",
+        "Table mydb.clusterfunc6 has no dependencies (level 0)",
+        "Table mydb.clusterfunc7 has no dependencies (level 0)",
+        "Table mydb.clusterfunc8 has no dependencies (level 0)",
+        "Table mydb.clusterfunc9 has no dependencies (level 0)",
+        "Table mydb.clusterfunc10 has no dependencies (level 0)",
+    ]
+    for expect in expect_in_logs_1:
+        assert node1.contains_in_log(f"RestorerFromBackup: {expect}")
+    for expect in expect_in_logs_2:
+        assert node2.contains_in_log(f"RestorerFromBackup: {expect}")
+    for expect in expect_in_logs_3:
+        assert node3.contains_in_log(f"RestorerFromBackup: {expect}")
+
+
 def test_get_error_from_other_host():
     node1.query("CREATE TABLE tbl (`x` UInt8) ENGINE = MergeTree ORDER BY x")
     node1.query("INSERT INTO tbl VALUES (3)")

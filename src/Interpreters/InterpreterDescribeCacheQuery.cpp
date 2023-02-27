@@ -5,8 +5,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <Storages/ColumnsDescription.h>
-#include <Common/FileCacheFactory.h>
-#include <Common/FileCache.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/Cache/FileCache.h>
 #include <Access/Common/AccessFlags.h>
 #include <Core/Block.h>
 
@@ -31,7 +31,7 @@ static Block getSampleBlock()
 
 BlockIO InterpreterDescribeCacheQuery::execute()
 {
-    getContext()->checkAccess(AccessType::SHOW_CACHES);
+    getContext()->checkAccess(AccessType::SHOW_FILESYSTEM_CACHES);
 
     const auto & ast = query_ptr->as<ASTDescribeCacheQuery &>();
     Block sample_block = getSampleBlock();
