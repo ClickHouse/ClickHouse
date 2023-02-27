@@ -3264,7 +3264,7 @@ class ClickHouseInstance:
         sleep_time=0.5,
         check_callback=lambda x: True,
     ):
-        logging.debug(f"Executing query {sql} on {self.name}")
+        # logging.debug(f"Executing query {sql} on {self.name}")
         result = None
         for i in range(retry_count):
             try:
@@ -3283,7 +3283,7 @@ class ClickHouseInstance:
                     return result
                 time.sleep(sleep_time)
             except Exception as ex:
-                logging.debug("Retry {} got exception {}".format(i + 1, ex))
+                # logging.debug("Retry {} got exception {}".format(i + 1, ex))
                 time.sleep(sleep_time)
 
         if result is not None:
