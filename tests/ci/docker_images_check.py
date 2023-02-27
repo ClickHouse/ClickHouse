@@ -13,7 +13,7 @@ from typing import Dict, List, Optional, Set, Tuple, Union
 from github import Github
 
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
-from commit_status_helper import post_commit_status
+from commit_status_helper import format_description, post_commit_status
 from env_helper import GITHUB_WORKSPACE, RUNNER_TEMP, GITHUB_RUN_URL
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from pr_info import PRInfo
@@ -458,8 +458,7 @@ def main():
     else:
         description = "Nothing to update"
 
-    if len(description) >= 140:
-        description = description[:136] + "..."
+    description = format_description(description)
 
     with open(changed_json, "w", encoding="utf-8") as images_file:
         json.dump(result_images, images_file)

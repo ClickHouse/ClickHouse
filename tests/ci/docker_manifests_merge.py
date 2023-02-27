@@ -10,7 +10,7 @@ from typing import List, Dict, Tuple
 from github import Github
 
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
-from commit_status_helper import post_commit_status
+from commit_status_helper import format_description, post_commit_status
 from env_helper import RUNNER_TEMP
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from pr_info import PRInfo
@@ -217,8 +217,7 @@ def main():
     else:
         description = "Nothing to update"
 
-    if len(description) >= 140:
-        description = description[:136] + "..."
+    format_description(description)
 
     gh = Github(get_best_robot_token(), per_page=100)
     post_commit_status(gh, pr_info.sha, NAME, description, status, url)

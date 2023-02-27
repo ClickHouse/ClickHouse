@@ -14,7 +14,7 @@ from github import Github
 
 from build_check import get_release_or_pr
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
-from commit_status_helper import post_commit_status
+from commit_status_helper import format_description, post_commit_status
 from docker_images_check import DockerImage
 from env_helper import CI, GITHUB_RUN_URL, RUNNER_TEMP, S3_BUILDS_BUCKET, S3_DOWNLOAD
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
@@ -346,8 +346,7 @@ def main():
 
     description = f"Processed tags: {', '.join(tags)}"
 
-    if len(description) >= 140:
-        description = description[:136] + "..."
+    format_description(description)
 
     gh = Github(get_best_robot_token(), per_page=100)
     post_commit_status(gh, pr_info.sha, NAME, description, status, url)
