@@ -12,7 +12,7 @@ from github.Commit import Commit
 
 from ci_config import CI_CONFIG, REQUIRED_CHECKS
 from env_helper import GITHUB_REPOSITORY, GITHUB_RUN_URL
-from pr_info import SKIP_MERGEABLE_CHECK_LABEL
+from pr_info import PRInfo, SKIP_MERGEABLE_CHECK_LABEL
 
 
 RETRY = 5
@@ -32,21 +32,19 @@ def override_status(status, check_name, invert=False):
     return status
 
 
-def get_commit(
-    gh: Github, commit_sha: str, retry_count: int = RETRY
-) -> Optional[Commit]:
+def get_commit(gh: Github, commit_sha: str, retry_count: int = RETRY) -> Commit:
     for i in range(retry_count):
         try:
             repo = gh.get_repo(GITHUB_REPOSITORY)
             commit = repo.get_commit(commit_sha)
-            return commit
+            break
         except Exception as ex:
             if i == retry_count - 1:
                 raise ex
             time.sleep(i)
 
     # just suppress warning
-    return None
+    return commit
 
 
 def post_commit_status(gh, sha, check_name, description, state, report_url):
