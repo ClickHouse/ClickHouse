@@ -28,10 +28,10 @@ struct UniqueTableName
 struct RenameDescription
 {
     RenameDescription(const ASTRenameQuery::Element & elem, const String & current_database) :
-            from_database_name(elem.from.database.empty() ? current_database : elem.from.database),
-            from_table_name(elem.from.table),
-            to_database_name(elem.to.database.empty() ? current_database : elem.to.database),
-            to_table_name(elem.to.table),
+            from_database_name(!elem.from.database ? current_database : elem.from.getDatabase()),
+            from_table_name(elem.from.getTable()),
+            to_database_name(!elem.to.database ? current_database : elem.to.getDatabase()),
+            to_table_name(elem.to.getTable()),
             if_exists(elem.if_exists)
     {}
 
@@ -55,6 +55,7 @@ class InterpreterRenameQuery : public IInterpreter, WithContext
 public:
     InterpreterRenameQuery(const ASTPtr & query_ptr_, ContextPtr context_);
     BlockIO execute() override;
+
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr) const override;
 
     bool renamedInsteadOfExchange() const { return renamed_instead_of_exchange; }
@@ -63,7 +64,13 @@ private:
     BlockIO executeToTables(const ASTRenameQuery & rename, const RenameDescriptions & descriptions, TableGuards & ddl_guards);
     BlockIO executeToDatabase(const ASTRenameQuery & rename, const RenameDescriptions & descriptions);
 
-    AccessRightsElements getRequiredAccess() const;
+    enum class RenameType
+    {
+        RenameTable,
+        RenameDatabase
+    };
+
+    AccessRightsElements getRequiredAccess(RenameType type) const;
 
     ASTPtr query_ptr;
     bool renamed_instead_of_exchange{false};

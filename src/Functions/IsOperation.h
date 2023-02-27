@@ -15,6 +15,7 @@ template <typename, typename> struct DivideIntegralOrZeroImpl;
 template <typename, typename> struct LeastBaseImpl;
 template <typename, typename> struct GreatestBaseImpl;
 template <typename, typename> struct ModuloImpl;
+template <typename, typename> struct PositiveModuloImpl;
 template <typename, typename> struct EqualsOp;
 template <typename, typename> struct NotEqualsOp;
 template <typename, typename> struct LessOrEqualsOp;
@@ -53,6 +54,7 @@ struct IsOperation
     static constexpr bool div_int = IsSameOperation<Op, DivideIntegralImpl>::value;
     static constexpr bool div_int_or_zero = IsSameOperation<Op, DivideIntegralOrZeroImpl>::value;
     static constexpr bool modulo = IsSameOperation<Op, ModuloImpl>::value;
+    static constexpr bool positive_modulo = IsSameOperation<Op, PositiveModuloImpl>::value;
     static constexpr bool least = IsSameOperation<Op, LeastBaseImpl>::value;
     static constexpr bool greatest = IsSameOperation<Op, GreatestBaseImpl>::value;
 

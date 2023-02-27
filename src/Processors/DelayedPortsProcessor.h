@@ -8,7 +8,7 @@ namespace DB
 /// Some ports are delayed. Delayed ports are processed after other outputs are all finished.
 /// Data between ports is not mixed. It is important because this processor can be used before MergingSortedTransform.
 /// Delayed ports are appeared after joins, when some non-matched data need to be processed at the end.
-class DelayedPortsProcessor : public IProcessor
+class DelayedPortsProcessor final : public IProcessor
 {
 public:
     DelayedPortsProcessor(const Block & header, size_t num_ports, const PortNumbers & delayed_ports, bool assert_main_ports_empty = false);

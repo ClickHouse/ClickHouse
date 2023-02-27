@@ -1,4 +1,5 @@
 ---
+slug: /zh/sql-reference/dictionaries/external-dictionaries/external-dicts
 machine_translated: true
 machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 sidebar_position: 39
@@ -58,5 +59,3 @@ ClickHouse:
 -   [外部字典的来源](external-dicts-dict-sources.md)
 -   [字典键和字段](external-dicts-dict-structure.md)
 -   [使用外部字典的函数](../../../sql-reference/functions/ext-dict-functions.md)
-
-[原始文章](https://clickhouse.com/docs/en/query_language/dicts/external_dicts/) <!--hide-->

@@ -34,15 +34,16 @@ jobs:
       run: |
         echo "GITHUB_TAG=${GITHUB_REF#refs/tags/}" >> "$GITHUB_ENV"
     - name: Check out repository code
-      uses: actions/checkout@v2
+      uses: ClickHouse/checkout@v1
       with:
         ref: master
         fetch-depth: 0
-    - name: Generate versions
+    - name: Update versions, docker version, changelog, security
       env:
         GITHUB_TOKEN: ${{ secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN }}
       run: |
         ./utils/list-versions/list-versions.sh > ./utils/list-versions/version_date.tsv
+        ./utils/list-versions/update-docker-version.sh
         GID=$(id -g "${UID}")
         docker run -u "${UID}:${GID}" -e PYTHONUNBUFFERED=1 \
             --volume="${GITHUB_WORKSPACE}:/ClickHouse" clickhouse/style-test \
@@ -50,6 +51,7 @@ jobs:
                 --gh-user-or-token="$GITHUB_TOKEN" --jobs=5 \
                 --output="/ClickHouse/docs/changelogs/${GITHUB_TAG}.md" "${GITHUB_TAG}"
         git add "./docs/changelogs/${GITHUB_TAG}.md"
+        python3 ./utils/security-generator/generate_security.py > SECURITY.md
         git diff HEAD
     - name: Create Pull Request
       uses: peter-evans/create-pull-request@v3
@@ -59,6 +61,7 @@ jobs:
         committer: "robot-clickhouse <robot-clickhouse@users.noreply.github.com>"
         commit-message: Update version_date.tsv and changelogs after ${{ env.GITHUB_TAG }}
         branch: auto/${{ env.GITHUB_TAG }}
+        assignees: ${{ github.event.sender.login }}  # assign the PR to the tag pusher
         delete-branch: true
         title: Update version_date.tsv and changelogs after ${{ env.GITHUB_TAG }}
         labels: do not test

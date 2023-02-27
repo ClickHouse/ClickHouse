@@ -102,7 +102,7 @@ void WriteBufferValidUTF8::nextImpl()
             break;
 #endif
 
-        size_t len = length_of_utf8_sequence[static_cast<unsigned char>(*p)];
+        UInt8 len = length_of_utf8_sequence[static_cast<unsigned char>(*p)];
 
         if (len > 4)
         { // NOLINT

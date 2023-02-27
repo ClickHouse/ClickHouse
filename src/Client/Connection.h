@@ -4,7 +4,7 @@
 
 #include <Poco/Net/StreamSocket.h>
 
-#include <Common/config.h>
+#include "config.h"
 #include <Client/IServerConnection.h>
 #include <Core/Defines.h>
 
@@ -93,6 +93,8 @@ public:
 
     Protocol::Compression getCompression() const { return compression; }
 
+    std::vector<std::pair<String, String>> getPasswordComplexityRules() const override { return password_complexity_rules; }
+
     void sendQuery(
         const ConnectionTimeouts & timeouts,
         const String & query,
@@ -108,7 +110,7 @@ public:
 
     void sendData(const Block & block, const String & name/* = "" */, bool scalar/* = false */) override;
 
-    void sendMergeTreeReadTaskResponse(const PartitionReadResponse & response) override;
+    void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
 
     void sendExternalTablesData(ExternalTablesData & data) override;
 
@@ -207,6 +209,8 @@ private:
       */
     ThrottlerPtr throttler;
 
+    std::vector<std::pair<String, String>> password_complexity_rules;
+
     /// From where to read query execution result.
     std::shared_ptr<ReadBuffer> maybe_compressed_in;
     std::unique_ptr<NativeReader> block_in;
@@ -261,7 +265,8 @@ private:
     std::vector<String> receiveMultistringMessage(UInt64 msg_type) const;
     std::unique_ptr<Exception> receiveException() const;
     Progress receiveProgress() const;
-    PartitionReadRequest receivePartitionReadRequest() const;
+    ParallelReadRequest receiveParallelReadRequest() const;
+    InitialAllRangesAnnouncement receiveInitialParallelReadAnnounecement() const;
     ProfileInfo receiveProfileInfo() const;
 
     void initInputBuffers();

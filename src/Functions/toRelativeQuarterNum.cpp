@@ -7,7 +7,7 @@
 namespace DB
 {
 
-using FunctionToRelativeQuarterNum = FunctionDateOrDateTimeToSomething<DataTypeUInt32, ToRelativeQuarterNumImpl>;
+using FunctionToRelativeQuarterNum = FunctionDateOrDateTimeToSomething<DataTypeUInt32, ToRelativeQuarterNumImpl<ResultPrecision::Standard>>;
 
 REGISTER_FUNCTION(ToRelativeQuarterNum)
 {

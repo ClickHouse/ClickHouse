@@ -307,7 +307,7 @@ class _NetworkManager:
         return output
 
 
-# Approximately mesure network I/O speed for interface
+# Approximately measure network I/O speed for interface
 class NetThroughput(object):
     def __init__(self, node):
         self.node = node

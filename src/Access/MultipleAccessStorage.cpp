@@ -223,13 +223,6 @@ bool MultipleAccessStorage::isReadOnly(const UUID & id) const
 }
 
 
-void MultipleAccessStorage::reload()
-{
-    auto storages = getStoragesInternal();
-    for (const auto & storage : *storages)
-        storage->reload();
-}
-
 void MultipleAccessStorage::startPeriodicReloading()
 {
     auto storages = getStoragesInternal();
@@ -242,6 +235,13 @@ void MultipleAccessStorage::stopPeriodicReloading()
     auto storages = getStoragesInternal();
     for (const auto & storage : *storages)
         storage->stopPeriodicReloading();
+}
+
+void MultipleAccessStorage::reload(ReloadMode reload_mode)
+{
+    auto storages = getStoragesInternal();
+    for (const auto & storage : *storages)
+        storage->reload(reload_mode);
 }
 
 
@@ -316,10 +316,8 @@ bool MultipleAccessStorage::updateImpl(const UUID & id, const UpdateFunc & updat
                         break;
                     if (storage->find(new_entity->getType(), new_entity->getName()))
                     {
-                        throw Exception(
-                            old_entity->formatTypeWithName() + ": cannot rename to " + backQuote(new_entity->getName()) + " because "
-                                + new_entity->formatTypeWithName() + " already exists in " + storage->getStorageName(),
-                            ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS);
+                        throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "{}: cannot rename to {} because {} already exists in {}",
+                            old_entity->formatTypeWithName(), backQuote(new_entity->getName()), new_entity->formatTypeWithName(), storage->getStorageName());
                     }
                 }
             }

@@ -44,11 +44,11 @@ from ssh import SSHKey
 
 
 class Labels:
-    LABEL_MUST_BACKPORT = "pr-must-backport"
-    LABEL_BACKPORT = "pr-backport"
-    LABEL_BACKPORTED = "pr-backported"
-    LABEL_CHERRYPICK = "pr-cherrypick"
-    LABEL_DO_NOT_TEST = "do not test"
+    MUST_BACKPORT = "pr-must-backport"
+    BACKPORT = "pr-backport"
+    BACKPORTS_CREATED = "pr-backports-created"
+    CHERRYPICK = "pr-cherrypick"
+    DO_NOT_TEST = "do not test"
 
 
 class ReleaseBranch:
@@ -79,7 +79,7 @@ Merge it only if you intend to backport changes to the target branch, otherwise 
         self.backport_pr = None  # type: Optional[PullRequest]
         self._backported = None  # type: Optional[bool]
         self.git_prefix = (  # All commits to cherrypick are done as robot-clickhouse
-            "git -c user.email=robot-clickhouse@clickhouse.com "
+            "git -c user.email=robot-clickhouse@users.noreply.github.com "
             "-c user.name=robot-clickhouse -c commit.gpgsign=false"
         )
         self.pre_check()
@@ -92,7 +92,8 @@ Merge it only if you intend to backport changes to the target branch, otherwise 
         if branch_updated:
             self._backported = True
 
-    def pop_prs(self, prs: PullRequests):
+    def pop_prs(self, prs: PullRequests) -> None:
+        """the method processes all prs and pops the ReleaseBranch related prs"""
         to_pop = []  # type: List[int]
         for i, pr in enumerate(prs):
             if self.name not in pr.head.ref:
@@ -105,14 +106,14 @@ Merge it only if you intend to backport changes to the target branch, otherwise 
                 to_pop.append(i)
             else:
                 logging.error(
-                    "PR #%s doesn't head ref starting with known suffix",
+                    "head ref of PR #%s isn't starting with known suffix",
                     pr.number,
                 )
         for i in reversed(to_pop):
             # Going from the tail to keep the order and pop greater index first
             prs.pop(i)
 
-    def process(self, dry_run: bool):
+    def process(self, dry_run: bool) -> None:
         if self.backported:
             return
         if not self.cherrypick_pr:
@@ -204,18 +205,14 @@ Merge it only if you intend to backport changes to the target branch, otherwise 
             base=self.backport_branch,
             head=self.cherrypick_branch,
         )
-        self.cherrypick_pr.add_to_labels(Labels.LABEL_CHERRYPICK)
-        self.cherrypick_pr.add_to_labels(Labels.LABEL_DO_NOT_TEST)
-        if self.pr.assignees:
-            logging.info(
-                "Assing to assignees of the original PR: %s",
-                ", ".join(user.login for user in self.pr.assignees),
-            )
-            self.cherrypick_pr.add_to_assignees(*self.pr.assignees)
-        logging.info("Assign to the author of the original PR: %s", self.pr.user.login)
-        self.cherrypick_pr.add_to_assignees(self.pr.user)
+        self.cherrypick_pr.add_to_labels(Labels.CHERRYPICK)
+        self.cherrypick_pr.add_to_labels(Labels.DO_NOT_TEST)
+        self._assign_new_pr(self.cherrypick_pr)
+        # update cherrypick PR to get the state for PR.mergable
+        self.cherrypick_pr.update()
 
     def create_backport(self):
+        assert self.cherrypick_pr is not None
         # Checkout the backport branch from the remote and make all changes to
         # apply like they are only one cherry-pick commit on top of release
         git_runner(f"{self.git_prefix} checkout -f {self.backport_branch}")
@@ -228,7 +225,7 @@ Merge it only if you intend to backport changes to the target branch, otherwise 
         )
         git_runner(f"{self.git_prefix} reset --soft {merge_base}")
         title = f"Backport #{self.pr.number} to {self.name}: {self.pr.title}"
-        git_runner(f"{self.git_prefix} commit -a --allow-empty -F -", input=title)
+        git_runner(f"{self.git_prefix} commit --allow-empty -F -", input=title)
 
         # Push with force, create the backport PR, lable and assign it
         git_runner(
@@ -243,15 +240,22 @@ Merge it only if you intend to backport changes to the target branch, otherwise 
             base=self.name,
             head=self.backport_branch,
         )
-        self.backport_pr.add_to_labels(Labels.LABEL_BACKPORT)
+        self.backport_pr.add_to_labels(Labels.BACKPORT)
+        self._assign_new_pr(self.backport_pr)
+
+    def _assign_new_pr(self, new_pr: PullRequest) -> None:
+        """Assign `new_pr` to author, merger and assignees of an original PR"""
+        # It looks there some race when multiple .add_to_assignees are executed,
+        # so we'll add all at once
+        assignees = [self.pr.user, self.pr.merged_by]
         if self.pr.assignees:
-            logging.info(
-                "Assing to assignees of the original PR: %s",
-                ", ".join(user.login for user in self.pr.assignees),
-            )
-            self.cherrypick_pr.add_to_assignees(*self.pr.assignees)
-        logging.info("Assign to the author of the original PR: %s", self.pr.user.login)
-        self.backport_pr.add_to_assignees(self.pr.user)
+            assignees.extend(self.pr.assignees)
+        logging.info(
+            "Assing #%s to author and assignees of the original PR: %s",
+            new_pr.number,
+            ", ".join(user.login for user in assignees),
+        )
+        new_pr.add_to_assignees(*assignees)
 
     @property
     def backported(self) -> bool:
@@ -308,12 +312,29 @@ class Backport:
         ]
         logging.info("Active releases: %s", ", ".join(self.release_branches))
 
+    def update_local_release_branches(self):
+        logging.info("Update local release branches")
+        branches = git_runner("git branch").split()
+        for branch in self.release_branches:
+            if branch not in branches:
+                # the local branch is not exist, so continue
+                continue
+            local_ref = git_runner(f"git rev-parse {branch}")
+            remote_ref = git_runner(f"git rev-parse {self.remote}/{branch}")
+            if local_ref == remote_ref:
+                # Do not need to update, continue
+                continue
+            logging.info("Resetting %s to %s/%s", branch, self.remote, branch)
+            git_runner(f"git branch -f {branch} {self.remote}/{branch}")
+
     def receive_prs_for_backport(self):
-        # The commit is the oldest open release branch's merge-base
-        since_commit = git_runner(
-            f"git merge-base {self.remote}/{self.release_branches[0]} "
-            f"{self.remote}/{self.default_branch}"
+        # The commits in the oldest open release branch
+        oldest_branch_commits = git_runner(
+            "git log --no-merges --format=%H --reverse "
+            f"{self.remote}/{self.default_branch}..{self.remote}/{self.release_branches[0]}"
         )
+        # The first commit is the one we are looking for
+        since_commit = oldest_branch_commits.split("\n", 1)[0]
         since_date = date.fromisoformat(
             git_runner.run(f"git log -1 --format=format:%cs {since_commit}")
         )
@@ -321,8 +342,8 @@ class Backport:
         tomorrow = date.today() + timedelta(days=1)
         logging.info("Receive PRs suppose to be backported")
         self.prs_for_backport = self.gh.get_pulls_from_search(
-            query=f"{self._query} -label:pr-backported",
-            label=",".join(self.labels_to_backport + [Labels.LABEL_MUST_BACKPORT]),
+            query=f"{self._query} -label:{Labels.BACKPORTS_CREATED}",
+            label=",".join(self.labels_to_backport + [Labels.MUST_BACKPORT]),
             merged=[since_date, tomorrow],
         )
         logging.info(
@@ -340,9 +361,9 @@ class Backport:
                 )
                 self.error = e
 
-    def process_pr(self, pr: PullRequest):
+    def process_pr(self, pr: PullRequest) -> None:
         pr_labels = [label.name for label in pr.labels]
-        if Labels.LABEL_MUST_BACKPORT in pr_labels:
+        if Labels.MUST_BACKPORT in pr_labels:
             branches = [
                 ReleaseBranch(br, pr) for br in self.release_branches
             ]  # type: List[ReleaseBranch]
@@ -403,15 +424,15 @@ class Backport:
             # And check it after the running
             self.mark_pr_backported(pr)
 
-    def mark_pr_backported(self, pr: PullRequest):
+    def mark_pr_backported(self, pr: PullRequest) -> None:
         if self.dry_run:
             logging.info("DRY RUN: would mark PR #%s as done", pr.number)
             return
-        pr.add_to_labels(Labels.LABEL_BACKPORTED)
+        pr.add_to_labels(Labels.BACKPORTS_CREATED)
         logging.info(
             "PR #%s is successfully labeled with `%s`",
             pr.number,
-            Labels.LABEL_BACKPORTED,
+            Labels.BACKPORTS_CREATED,
         )
 
     @property
@@ -461,7 +482,8 @@ def clear_repo():
 
 @contextmanager
 def stash():
-    need_stash = bool(git_runner("git diff HEAD"))
+    # diff.ignoreSubmodules=all don't show changed submodules
+    need_stash = bool(git_runner("git -c diff.ignoreSubmodules=all diff HEAD"))
     if need_stash:
         git_runner("git stash push --no-keep-index -m 'running cherry_pick.py'")
     try:
@@ -486,10 +508,12 @@ def main():
         logging.getLogger("git_helper").setLevel(logging.DEBUG)
     token = args.token or get_best_robot_token()
 
-    gh = GitHub(token, per_page=100)
+    gh = GitHub(token, create_cache_dir=False)
     bp = Backport(gh, args.repo, args.dry_run)
-    bp.gh.cache_path = str(f"{TEMP_PATH}/gh_cache")
+    # https://github.com/python/mypy/issues/3004
+    bp.gh.cache_path = f"{TEMP_PATH}/gh_cache"  # type: ignore
     bp.receive_release_prs()
+    bp.update_local_release_branches()
     bp.receive_prs_for_backport()
     bp.process_backports()
     if bp.error is not None:

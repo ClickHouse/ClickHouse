@@ -16,7 +16,7 @@ struct FirstSignificantSubdomainDefaultLookup
     }
 };
 
-template <bool without_www>
+template <bool without_www, bool conform_rfc>
 struct ExtractFirstSignificantSubdomain
 {
     static size_t getReserveLengthForElement() { return 10; }
@@ -35,7 +35,7 @@ struct ExtractFirstSignificantSubdomain
 
         Pos tmp;
         size_t domain_length;
-        ExtractDomain<without_www>::execute(data, size, tmp, domain_length);
+        ExtractDomain<without_www, conform_rfc>::execute(data, size, tmp, domain_length);
 
         if (domain_length == 0)
             return;
@@ -105,7 +105,7 @@ struct ExtractFirstSignificantSubdomain
 
         Pos tmp;
         size_t domain_length;
-        ExtractDomain<without_www>::execute(data, size, tmp, domain_length);
+        ExtractDomain<without_www, conform_rfc>::execute(data, size, tmp, domain_length);
 
         if (domain_length == 0)
             return;

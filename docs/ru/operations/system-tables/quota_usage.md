@@ -1,3 +1,6 @@
+---
+slug: /ru/operations/system-tables/quota_usage
+---
 # system.quota_usage {#system_tables-quota_usage}
 
 Использование квоты текущим пользователем: сколько используется и сколько осталось.

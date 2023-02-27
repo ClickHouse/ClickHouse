@@ -50,7 +50,7 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
     const auto * table = table_expression->as<ASTTableIdentifier>();
 
     if (!subquery && !table && !function)
-        throw Exception("Table expression is undefined, Method: ExpressionAnalyzer::interpretSubquery." , ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table expression is undefined, Method: ExpressionAnalyzer::interpretSubquery.");
 
     /** The subquery in the IN / JOIN section does not have any restrictions on the maximum size of the result.
       * Because the result of this query is not the result of the entire query.
@@ -112,6 +112,8 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
         subquery_options.removeDuplicates();
     }
 
+    /// We don't want to execute reading for subqueries in parallel
+    subquery_context->setSetting("allow_experimental_parallel_reading_from_replicas", false);
     return std::make_shared<InterpreterSelectWithUnionQuery>(query, subquery_context, subquery_options, required_source_columns);
 }
 

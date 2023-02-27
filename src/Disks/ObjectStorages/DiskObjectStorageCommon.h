@@ -5,9 +5,9 @@
 
 #include <Core/Types.h>
 #include <Common/thread_local_rng.h>
-#include <Common/getRandomASCIIString.h>
 
 #include <Disks/IDisk.h>
+
 
 namespace DB
 {

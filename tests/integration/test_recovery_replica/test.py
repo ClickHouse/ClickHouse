@@ -196,6 +196,7 @@ def test_update_metadata(start_cluster):
 
     node1.query("ALTER TABLE update_metadata MODIFY COLUMN col1 String")
     node1.query("ALTER TABLE update_metadata ADD COLUMN col2 INT")
+    node3.query("SYSTEM SYNC REPLICA update_metadata")
     for i in range(1, 11):
         node3.query(
             "INSERT INTO update_metadata VALUES ({}, '{}', {})".format(

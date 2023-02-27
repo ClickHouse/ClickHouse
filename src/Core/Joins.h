@@ -102,6 +102,7 @@ enum class JoinAlgorithm
     PARTIAL_MERGE,
     PREFER_PARTIAL_MERGE,
     PARALLEL_HASH,
+    GRACE_HASH,
     DIRECT,
     FULL_SORTING_MERGE,
 };

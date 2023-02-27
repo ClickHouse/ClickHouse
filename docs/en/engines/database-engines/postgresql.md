@@ -1,4 +1,5 @@
 ---
+slug: /en/engines/database-engines/postgresql
 sidebar_position: 40
 sidebar_label: PostgreSQL
 ---
@@ -136,3 +137,6 @@ DESCRIBE TABLE test_database.test_table;
 └────────┴───────────────────┘
 ```
 
+## Related content
+
+- Blog: [ClickHouse and PostgreSQL - a match made in data heaven - part 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)

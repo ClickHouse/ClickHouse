@@ -8,13 +8,25 @@ DEFAULT_QUERY_TIMEOUT = 600
 
 
 class Client:
-    def __init__(self, host, port=9000, command="/usr/bin/clickhouse-client"):
+    def __init__(
+        self,
+        host,
+        port=9000,
+        command="/usr/bin/clickhouse-client",
+        secure=False,
+        config=None,
+    ):
         self.host = host
         self.port = port
         self.command = [command]
 
         if os.path.basename(command) == "clickhouse":
             self.command.append("client")
+
+        if secure:
+            self.command.append("--secure")
+        if config is not None:
+            self.command += ["--config-file", config]
 
         self.command += ["--host", self.host, "--port", str(self.port), "--stacktrace"]
 

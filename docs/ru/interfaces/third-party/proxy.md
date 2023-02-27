@@ -1,4 +1,5 @@
 ---
+slug: /ru/interfaces/third-party/proxy
 sidebar_position: 29
 sidebar_label: "Прокси-серверы от сторонних разработчиков"
 ---
@@ -40,4 +41,3 @@ sidebar_label: "Прокси-серверы от сторонних разраб
 -   Базовая аутентификация.
 
 Реализован на Go.
-

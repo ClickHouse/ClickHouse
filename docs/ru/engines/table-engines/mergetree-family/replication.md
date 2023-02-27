@@ -1,4 +1,5 @@
 ---
+slug: /ru/engines/table-engines/mergetree-family/replication
 sidebar_position: 31
 sidebar_label: "Репликация данных"
 ---

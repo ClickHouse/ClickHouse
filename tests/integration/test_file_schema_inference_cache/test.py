@@ -27,7 +27,7 @@ def get_profile_event_for_query(node, query, profile_event):
     query = query.replace("'", "\\'")
     return int(
         node.query(
-            f"select ProfileEvents['{profile_event}'] from system.query_log where query='{query}' and type = 'QueryFinish' order by event_time desc limit 1"
+            f"select ProfileEvents['{profile_event}'] from system.query_log where query='{query}' and type = 'QueryFinish' order by query_start_time_microseconds desc limit 1"
         )
     )
 

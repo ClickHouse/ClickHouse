@@ -58,6 +58,7 @@ public:
     static void start();
     static bool isStarted();
 
+    static void maybeInjectSleep();
 private:
     uint64_t cpu_time_period_us = 0;
     double yield_probability = 0;

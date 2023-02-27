@@ -47,6 +47,7 @@ public:
     bool supportsIndexForIn() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
     bool supportsPrewhere() const override { return true; }
+    std::optional<NameSet> supportedPrewhereColumns() const override;
 
     bool canMoveConditionsToPrewhere() const override;
 
@@ -61,7 +62,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        unsigned num_streams) override;
+        size_t num_streams) override;
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
@@ -109,6 +110,8 @@ private:
 
     ColumnsDescription getColumnsDescriptionFromSourceTables() const;
 
+    bool tableSupportsPrewhere() const;
+
     friend class ReadFromMerge;
 };
 
@@ -144,6 +147,12 @@ public:
         added_filter_nodes.nodes.push_back(&expression->findInOutputs(column_name));
     }
 
+    const StorageListWithLocks & getSelectedTables() const { return selected_tables; }
+
+    /// Returns `false` if requested reading cannot be performed.
+    bool requestReadingInOrder(InputOrderInfoPtr order_info_);
+    static bool isFinal(const SelectQueryInfo & query_info);
+
 private:
     const size_t required_max_block_size;
     const size_t requested_num_streams;
@@ -165,6 +174,8 @@ private:
 
     std::string added_filter_column_name;
 
+    InputOrderInfoPtr order_info;
+
     struct AliasData
     {
         String name;
@@ -174,6 +185,11 @@ private:
 
     using Aliases = std::vector<AliasData>;
 
+    static SelectQueryInfo getModifiedQueryInfo(const SelectQueryInfo & query_info,
+        const ContextPtr & modified_context,
+        const StorageWithLockAndName & storage_with_lock_and_name,
+        const StorageSnapshotPtr & storage_snapshot);
+
     QueryPipelineBuilderPtr createSources(
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
@@ -182,15 +198,18 @@ private:
         const Block & header,
         const Aliases & aliases,
         const StorageWithLockAndName & storage_with_lock,
-        Names & real_column_names,
+        Names real_column_names,
         ContextMutablePtr modified_context,
         size_t streams_num,
         bool concat_streams = false);
 
-    void convertingSourceStream(
-        const Block & header, const StorageMetadataPtr & metadata_snapshot, const Aliases & aliases,
-        ContextPtr context, ASTPtr & query,
-        QueryPipelineBuilder & builder, QueryProcessingStage::Enum processed_stage);
+    static void convertingSourceStream(
+        const Block & header,
+        const StorageMetadataPtr & metadata_snapshot,
+        const Aliases & aliases,
+        ContextPtr context,
+        QueryPipelineBuilder & builder,
+        const QueryProcessingStage::Enum & processed_stage);
 };
 
 }

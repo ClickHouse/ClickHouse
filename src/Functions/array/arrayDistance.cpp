@@ -16,7 +16,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
-    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
+    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
@@ -112,7 +112,7 @@ struct LpDistance
     template <typename ResultType>
     static void accumulate(State<ResultType> & state, ResultType x, ResultType y, const ConstParams & params)
     {
-        state.sum += std::pow(fabs(x - y), params.power);
+        state.sum += static_cast<ResultType>(std::pow(fabs(x - y), params.power));
     }
 
     template <typename ResultType>
@@ -124,7 +124,7 @@ struct LpDistance
     template <typename ResultType>
     static ResultType finalize(const State<ResultType> & state, const ConstParams & params)
     {
-        return std::pow(state.sum, params.inverted_power);
+        return static_cast<ResultType>(std::pow(state.sum, params.inverted_power));
     }
 };
 
@@ -356,7 +356,7 @@ private:
             {
                 ColumnArray::Offset prev_offset = row > 0 ? offsets_x[row] : 0;
                 throw Exception(
-                    ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH,
+                    ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
                     "Arguments of function {} have different array sizes: {} and {}",
                     getName(),
                     offsets_x[row] - prev_offset,
@@ -380,7 +380,8 @@ private:
             for (; prev + VEC_SIZE < off; prev += VEC_SIZE)
             {
                 for (size_t s = 0; s < VEC_SIZE; ++s)
-                    Kernel::template accumulate<ResultType>(states[s], data_x[prev+s], data_y[prev+s], kernel_params);
+                    Kernel::template accumulate<ResultType>(
+                        states[s], static_cast<ResultType>(data_x[prev + s]), static_cast<ResultType>(data_y[prev + s]), kernel_params);
             }
 
             typename Kernel::template State<ResultType> state;
@@ -390,7 +391,8 @@ private:
             /// Process the tail
             for (; prev < off; ++prev)
             {
-                Kernel::template accumulate<ResultType>(state, data_x[prev], data_y[prev], kernel_params);
+                Kernel::template accumulate<ResultType>(
+                    state, static_cast<ResultType>(data_x[prev]), static_cast<ResultType>(data_y[prev]), kernel_params);
             }
             result_data[row] = Kernel::finalize(state, kernel_params);
             row++;
@@ -421,7 +423,7 @@ private:
             if (unlikely(offsets_x[0] != offsets_y[row] - prev_offset))
             {
                 throw Exception(
-                    ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH,
+                    ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
                     "Arguments of function {} have different array sizes: {} and {}",
                     getName(),
                     offsets_x[0],
@@ -447,7 +449,8 @@ private:
             for (; prev + VEC_SIZE < off; i += VEC_SIZE, prev += VEC_SIZE)
             {
                 for (size_t s = 0; s < VEC_SIZE; ++s)
-                    Kernel::template accumulate<ResultType>(states[s], data_x[i+s], data_y[prev+s], kernel_params);
+                    Kernel::template accumulate<ResultType>(
+                        states[s], static_cast<ResultType>(data_x[i + s]), static_cast<ResultType>(data_y[prev + s]), kernel_params);
             }
 
             typename Kernel::template State<ResultType> state;
@@ -457,7 +460,8 @@ private:
             /// Process the tail
             for (; prev < off; ++i, ++prev)
             {
-                Kernel::template accumulate<ResultType>(state, data_x[i], data_y[prev], kernel_params);
+                Kernel::template accumulate<ResultType>(
+                    state, static_cast<ResultType>(data_x[i]), static_cast<ResultType>(data_y[prev]), kernel_params);
             }
             result_data[row] = Kernel::finalize(state, kernel_params);
             row++;

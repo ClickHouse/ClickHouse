@@ -1,12 +1,15 @@
 include(${ClickHouse_SOURCE_DIR}/cmake/split_debug_symbols.cmake)
 
 set (CLICKHOUSE_LIBRARY_BRIDGE_SOURCES
+    CatBoostLibraryHandler.cpp
+    CatBoostLibraryHandlerFactory.cpp
     ExternalDictionaryLibraryAPI.cpp
     ExternalDictionaryLibraryHandler.cpp
     ExternalDictionaryLibraryHandlerFactory.cpp
     LibraryBridge.cpp
     LibraryBridgeHandlerFactory.cpp
     LibraryBridgeHandlers.cpp
+    SharedLibrary.cpp
     library-bridge.cpp
 )
 

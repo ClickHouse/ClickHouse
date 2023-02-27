@@ -22,7 +22,7 @@
 /*
  * This code provides a a C++ class that can provide 128-bit (or higher)
  * integers.  To produce 2K-bit integers, it uses two K-bit integers,
- * placed in a union that allowes the code to also see them as four K/2 bit
+ * placed in a union that allows the code to also see them as four K/2 bit
  * integers (and access them either directly name, or by index).
  *
  * It may seem like we're reinventing the wheel here, because several

@@ -232,7 +232,7 @@ std::pair<MergeTreePartInfo, bool> MergeTreeDeduplicationLog::addPart(const std:
     /// Create new record
     MergeTreeDeduplicationLogRecord record;
     record.operation = MergeTreeDeduplicationOp::ADD;
-    record.part_name = part_info.getPartName();
+    record.part_name = part_info.getPartNameAndCheckFormat(format_version);
     record.block_id = block_id;
     /// Write it to disk
     writeRecord(record, *current_writer);
@@ -269,7 +269,7 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
             /// Create drop record
             MergeTreeDeduplicationLogRecord record;
             record.operation = MergeTreeDeduplicationOp::DROP;
-            record.part_name = part_info.getPartName();
+            record.part_name = part_info.getPartNameAndCheckFormat(format_version);
             record.block_id = itr->key;
             /// Write it to disk
             writeRecord(record, *current_writer);

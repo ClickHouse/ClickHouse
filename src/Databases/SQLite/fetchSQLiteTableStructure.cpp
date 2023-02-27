@@ -35,9 +35,9 @@ static DataTypePtr convertSQLiteDataType(String type)
         res = std::make_shared<DataTypeInt8>();
     else if (type == "smallint")
         res = std::make_shared<DataTypeInt16>();
-    else if (type.starts_with("int") || type == "mediumint")
+    else if ((type.starts_with("int") && type != "int8") || type == "mediumint")
         res = std::make_shared<DataTypeInt32>();
-    else if (type == "bigint")
+    else if (type == "bigint" || type == "int8")
         res = std::make_shared<DataTypeInt64>();
     else if (type == "float")
         res = std::make_shared<DataTypeFloat32>();

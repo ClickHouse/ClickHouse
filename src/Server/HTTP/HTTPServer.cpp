@@ -6,7 +6,7 @@
 namespace DB
 {
 HTTPServer::HTTPServer(
-    ContextPtr context,
+    HTTPContextPtr context,
     HTTPRequestHandlerFactoryPtr factory_,
     Poco::ThreadPool & thread_pool,
     Poco::Net::ServerSocket & socket_,

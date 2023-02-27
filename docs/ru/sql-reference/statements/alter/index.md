@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/statements/alter/
 sidebar_position: 35
 sidebar_label: ALTER
 ---
@@ -71,12 +72,12 @@ ALTER TABLE [db.]table MATERIALIZE INDEX name IN PARTITION partition_name
 
 Для нереплицируемых таблиц, все запросы `ALTER` выполняются синхронно. Для реплицируемых таблиц, запрос всего лишь добавляет инструкцию по соответствующим действиям в `ZooKeeper`, а сами действия осуществляются при первой возможности. Но при этом, запрос может ждать завершения выполнения этих действий на всех репликах.
 
-Для всех запросов `ALTER` можно настроить ожидание с помощью настройки [replication_alter_partitions_sync](../../../operations/settings/settings.md#replication-alter-partitions-sync).
+Для всех запросов `ALTER` можно настроить ожидание с помощью настройки [alter_sync](../../../operations/settings/settings.md#alter-sync).
 
 Вы можете указать время ожидания (в секундах) выполнения всех запросов `ALTER` для неактивных реплик с помощью настройки [replication_wait_for_inactive_replica_timeout](../../../operations/settings/settings.md#replication-wait-for-inactive-replica-timeout).
 
 :::info "Примечание"
-    Для всех запросов `ALTER` при `replication_alter_partitions_sync = 2` и неактивности некоторых реплик больше времени, заданного настройкой `replication_wait_for_inactive_replica_timeout`, генерируется исключение `UNFINISHED`.
+    Для всех запросов `ALTER` при `alter_sync = 2` и неактивности некоторых реплик больше времени, заданного настройкой `replication_wait_for_inactive_replica_timeout`, генерируется исключение `UNFINISHED`.
 :::
 
 Для запросов `ALTER TABLE ... UPDATE|DELETE` синхронность выполнения определяется настройкой [mutations_sync](../../../operations/settings/settings.md#mutations_sync).

@@ -83,7 +83,7 @@ namespace DB
         if (dict_struct.attributes.size() != 1)
             throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
                 "Invalid number of non key columns for Redis source: {}, expected 1",
-                DB::toString(dict_struct.attributes.size()));
+                dict_struct.attributes.size());
 
         if (configuration.storage_type == RedisStorageType::HASH_MAP)
         {
@@ -124,7 +124,7 @@ namespace DB
                 return "none";
         }
 
-        __builtin_unreachable();
+        UNREACHABLE();
     }
 
     QueryPipeline RedisDictionarySource::loadAll()
@@ -220,7 +220,7 @@ namespace DB
                 if (isInteger(type))
                     key << DB::toString(key_columns[i]->get64(row));
                 else if (isString(type))
-                    key << get<const String &>((*key_columns[i])[row]);
+                    key << (*key_columns[i])[row].get<const String &>();
                 else
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of key in Redis dictionary");
             }

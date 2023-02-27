@@ -1,3 +1,6 @@
+---
+slug: /zh/development/contrib
+---
 # 使用的三方库 {#shi-yong-de-san-fang-ku}
 
 | 图书馆             | 许可                                                                                                                                |

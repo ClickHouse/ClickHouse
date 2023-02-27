@@ -1,3 +1,6 @@
+# See linux/toolchain-x86_64.cmake for details about multiple load of toolchain file.
+include_guard(GLOBAL)
+
 set (CMAKE_SYSTEM_NAME "FreeBSD")
 set (CMAKE_SYSTEM_PROCESSOR "x86_64")
 set (CMAKE_C_COMPILER_TARGET "x86_64-pc-freebsd11")

@@ -70,6 +70,7 @@ public:
         DiskObjectStorageRemoteMetadataRestoreHelper * metadata_helper_);
 
     void commit() override;
+    void undo() override;
 
     void createDirectory(const std::string & path) override;
 

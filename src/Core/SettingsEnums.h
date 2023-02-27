@@ -4,6 +4,7 @@
 #include <Core/Joins.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Formats/FormatSettings.h>
+#include <IO/ReadSettings.h>
 
 
 namespace DB
@@ -120,6 +121,14 @@ enum class DefaultTableEngine
 
 DECLARE_SETTING_ENUM(DefaultTableEngine)
 
+enum class CleanDeletedRows
+{
+    Never = 0, /// Disable.
+    Always,
+};
+
+DECLARE_SETTING_ENUM(CleanDeletedRows)
+
 enum class MySQLDataTypesSupport
 {
     DECIMAL, // convert MySQL's decimal and number to ClickHouse Decimal when applicable
@@ -130,14 +139,14 @@ enum class MySQLDataTypesSupport
 
 DECLARE_SETTING_MULTI_ENUM(MySQLDataTypesSupport)
 
-enum class UnionMode
+enum class SetOperationMode
 {
-    Unspecified = 0, // Query UNION without UnionMode will throw exception
-    ALL, // Query UNION without UnionMode -> SELECT ... UNION ALL SELECT ...
-    DISTINCT // Query UNION without UnionMode -> SELECT ... UNION DISTINCT SELECT ...
+    Unspecified = 0, // Query UNION / EXCEPT / INTERSECT without SetOperationMode will throw exception
+    ALL, // Query UNION / EXCEPT / INTERSECT without SetOperationMode -> SELECT ... UNION / EXCEPT / INTERSECT ALL SELECT ...
+    DISTINCT // Query UNION / EXCEPT / INTERSECT without SetOperationMode -> SELECT ... UNION / EXCEPT / INTERSECT DISTINCT SELECT ...
 };
 
-DECLARE_SETTING_ENUM(UnionMode)
+DECLARE_SETTING_ENUM(SetOperationMode)
 
 enum class DistributedDDLOutputMode
 {
@@ -153,7 +162,7 @@ enum class HandleKafkaErrorMode
 {
     DEFAULT = 0, // Ignore errors with threshold.
     STREAM, // Put errors to stream in the virtual column named ``_error.
-    /*FIXED_SYSTEM_TABLE, Put errors to in a fixed system table likey system.kafka_errors. This is not implemented now.  */
+    /*FIXED_SYSTEM_TABLE, Put errors to in a fixed system table likely system.kafka_errors. This is not implemented now.  */
     /*CUSTOM_SYSTEM_TABLE, Put errors to in a custom system table. This is not implemented now.  */
 };
 
@@ -183,4 +192,14 @@ DECLARE_SETTING_ENUM_WITH_RENAME(EscapingRule, FormatSettings::EscapingRule)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(MsgPackUUIDRepresentation, FormatSettings::MsgPackUUIDRepresentation)
 
+enum class Dialect
+{
+    clickhouse,
+    kusto,
+    kusto_auto,
+};
+
+DECLARE_SETTING_ENUM(Dialect)
+
+DECLARE_SETTING_ENUM(LocalFSReadMethod)
 }

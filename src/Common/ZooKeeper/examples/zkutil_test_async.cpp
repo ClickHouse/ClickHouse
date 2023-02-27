@@ -5,7 +5,7 @@
 int main(int argc, char ** argv)
 try
 {
-    zkutil::ZooKeeper zookeeper{"localhost:2181"};
+    zkutil::ZooKeeper zookeeper{zkutil::ZooKeeperArgs("localhost:2181")};
 
     auto nodes = zookeeper.getChildren("/tmp");
 

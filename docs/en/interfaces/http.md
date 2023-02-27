@@ -1,4 +1,5 @@
 ---
+slug: /en/interfaces/http
 sidebar_position: 19
 sidebar_label: HTTP Interface
 ---
@@ -174,6 +175,10 @@ You can also choose to use [HTTP compression](https://en.wikipedia.org/wiki/HTTP
 - `br`
 - `deflate`
 - `xz`
+- `zstd`
+- `lz4`
+- `bz2`
+- `snappy`
 
 To send a compressed `POST` request, append the request header `Content-Encoding: compression_method`.
 In order for ClickHouse to compress the response, enable compression with [enable_http_compression](../operations/settings/settings.md#settings-enable_http_compression) setting and append `Accept-Encoding: compression_method` header to the request. You can configure the data compression level in the [http_zlib_compression_level](../operations/settings/settings.md#settings-http_zlib_compression_level) setting for all compression methods.
@@ -239,7 +244,7 @@ The username and password can be indicated in one of three ways:
 $ echo 'SELECT 1' | curl 'http://user:password@localhost:8123/' -d @-
 ```
 
-1.  In the ‘user’ and ‘password’ URL parameters. Example:
+2.  In the ‘user’ and ‘password’ URL parameters (*We do not recommend using this method as the parameter might be logged by web proxy and cached in the browser*). Example:
 
 <!-- -->
 
@@ -247,7 +252,7 @@ $ echo 'SELECT 1' | curl 'http://user:password@localhost:8123/' -d @-
 $ echo 'SELECT 1' | curl 'http://localhost:8123/?user=user&password=password' -d @-
 ```
 
-1.  Using ‘X-ClickHouse-User’ and ‘X-ClickHouse-Key’ headers. Example:
+3.  Using ‘X-ClickHouse-User’ and ‘X-ClickHouse-Key’ headers. Example:
 
 <!-- -->
 
@@ -335,7 +340,7 @@ ClickHouse supports specific queries through the HTTP interface. For example, yo
 $ echo '(4),(5),(6)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20VALUES' --data-binary @-
 ```
 
-ClickHouse also supports Predefined HTTP Interface which can help you more easily integrate with third-party tools like [Prometheus exporter](https://github.com/percona-lab/clickhouse_exporter).
+ClickHouse also supports Predefined HTTP Interface which can help you more easily integrate with third-party tools like [Prometheus exporter](https://github.com/ClickHouse/clickhouse_exporter).
 
 Example:
 

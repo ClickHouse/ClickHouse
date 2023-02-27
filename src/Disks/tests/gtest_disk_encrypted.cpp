@@ -55,9 +55,9 @@ protected:
         return temp_dir->path() + "/";
     }
 
-    String getFileContents(const String & file_name)
+    String getFileContents(const String & file_name, std::optional<size_t> file_size = {})
     {
-        auto buf = encrypted_disk->readFile(file_name, /* settings= */ {}, /* read_hint= */ {}, /* file_size= */ {});
+        auto buf = encrypted_disk->readFile(file_name, /* settings= */ {}, /* read_hint= */ {}, file_size);
         String str;
         readStringUntilEOF(str, *buf);
         return str;
@@ -106,6 +106,10 @@ TEST_F(DiskEncryptedTest, WriteAndRead)
 
     /// Read the file.
     EXPECT_EQ(getFileContents("a.txt"), "Some text");
+    checkBinaryRepresentation(getDirectory() + "a.txt", kHeaderSize + 9);
+
+    /// Read the file with specified file size.
+    EXPECT_EQ(getFileContents("a.txt", 9), "Some text");
     checkBinaryRepresentation(getDirectory() + "a.txt", kHeaderSize + 9);
 
     /// Remove the file.

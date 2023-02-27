@@ -10,7 +10,7 @@ namespace DB
 /// Implementation for OFFSET N (without limit)
 /// This processor support multiple inputs and outputs (the same number).
 /// Each pair of input and output port works independently.
-class OffsetTransform : public IProcessor
+class OffsetTransform final : public IProcessor
 {
 private:
     UInt64 offset;

@@ -1,4 +1,5 @@
 ---
+slug: /ru/sql-reference/data-types/special-data-types/interval
 sidebar_position: 61
 sidebar_label: Interval
 ---
