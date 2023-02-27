@@ -47,9 +47,25 @@ static inline bool likePatternIsStrstr(const String & pattern, String & res)
             case '\\':
                 ++pos;
                 if (pos == end)
+                    /// pattern ends with \% --> trailing % is to be taken literally and pattern doesn't qualify for substring search
                     return false;
                 else
-                    res += *pos;
+                {
+                    switch (*pos)
+                    {
+                        /// Known LIKE escape sequences:
+                        case '%':
+                        case '_':
+                        case '\\':
+                            res += *pos;
+                            break;
+                        /// For all other escape sequences, the backslash loses its special meaning
+                        default:
+                            res += '\\';
+                            res += *pos;
+                            break;
+                    }
+                }
                 break;
             default:
                 res += *pos;
