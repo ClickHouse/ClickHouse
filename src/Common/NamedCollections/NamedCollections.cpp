@@ -353,6 +353,15 @@ bool NamedCollection::has(const Key & key) const
     return pimpl->has(key);
 }
 
+bool NamedCollection::hasAny(const std::initializer_list<Key> & keys) const
+{
+    std::lock_guard lock(mutex);
+    for (const auto & key : keys)
+        if (pimpl->has(key))
+            return true;
+    return false;
+}
+
 template <typename T> T NamedCollection::get(const Key & key) const
 {
     std::lock_guard lock(mutex);

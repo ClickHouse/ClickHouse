@@ -27,8 +27,8 @@ HTTPHeaderEntries getHeadersFromNamedCollection(const NamedCollection & collecti
 
 struct ExternalDatabaseEqualKeysSet
 {
-    static constexpr std::array<std::pair<std::string_view, std::string_view>, 3> equal_keys{
-        std::pair{"username", "user"}, std::pair{"database", "db"}, std::pair{"hostname", "host"}};
+    static constexpr std::array<std::pair<std::string_view, std::string_view>, 5> equal_keys{
+        std::pair{"username", "user"}, std::pair{"database", "db"}, std::pair{"hostname", "host"}, std::pair{"addresses_expr", "host"}, std::pair{"addresses_expr", "hostname"}};
 };
 struct MongoDBEqualKeysSet
 {

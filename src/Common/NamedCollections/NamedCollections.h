@@ -35,6 +35,8 @@ public:
 
     bool has(const Key & key) const;
 
+    bool hasAny(const std::initializer_list<Key> & keys) const;
+
     template <typename T> T get(const Key & key) const;
 
     template <typename T> T getOrDefault(const Key & key, const T & default_value) const;
