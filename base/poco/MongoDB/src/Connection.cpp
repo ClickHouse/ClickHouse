@@ -237,7 +237,7 @@ void Connection::connect(const std::string& uri, SocketFactory& socketFactory)
     for (std::vector<std::string>::const_iterator it = strAddresses.cbegin();it != strAddresses.cend(); ++it)
     {
         newURI = *it;
-        Poco::URI theURI(newURI);
+        theURI = Poco::URI(newURI);
 
         std::string host = theURI.getHost();
         Poco::UInt16 port = theURI.getPort();
