@@ -22,11 +22,7 @@
 #include "Poco/Util/Util.h"
 
 
-#if defined(POCO_WIN32_UTF8)
-#    define POCO_LPQUERY_SERVICE_CONFIG LPQUERY_SERVICE_CONFIGW
-#else
 #    define POCO_LPQUERY_SERVICE_CONFIG LPQUERY_SERVICE_CONFIGA
-#endif
 
 
 namespace Poco
