@@ -36,7 +36,6 @@ namespace DB
 static const uint32_t QUEUE_SIZE = 100000;
 static const auto MAX_FAILED_READ_ATTEMPTS = 10;
 static const auto RESCHEDULE_MS = 500;
-static const auto BACKOFF_TRESHOLD = 32000;
 static const auto MAX_THREAD_WORK_DURATION_MS = 60000;
 
 namespace ErrorCodes
@@ -90,7 +89,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         , semaphore(0, static_cast<int>(num_consumers))
         , unique_strbase(getRandomName())
         , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
-        , milliseconds_to_wait(RESCHEDULE_MS)
+        , milliseconds_to_wait(rabbitmq_settings->rabbitmq_empty_queue_backoff_start_ms)
         , is_attach(is_attach_)
 {
     const auto & config = getContext()->getConfigRef();
@@ -216,7 +215,7 @@ AMQP::ExchangeType StorageRabbitMQ::defineExchangeType(String exchange_type_)
         else if (exchange_type_ == ExchangeType::TOPIC)          type = AMQP::ExchangeType::topic;
         else if (exchange_type_ == ExchangeType::HASH)           type = AMQP::ExchangeType::consistent_hash;
         else if (exchange_type_ == ExchangeType::HEADERS)        type = AMQP::ExchangeType::headers;
-        else throw Exception("Invalid exchange type", ErrorCodes::BAD_ARGUMENTS);
+        else throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid exchange type");
     }
     else
     {
@@ -404,8 +403,9 @@ void StorageRabbitMQ::initExchange(AMQP::TcpChannel & rabbit_channel)
         /// This error can be a result of attempt to declare exchange if it was already declared but
         /// 1) with different exchange type.
         /// 2) with different exchange settings.
-        throw Exception("Unable to declare exchange. Make sure specified exchange is not already declared. Error: "
-                + std::string(message), ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE);
+        throw Exception(ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE,
+                "Unable to declare exchange. Make sure specified exchange is not already declared. Error: {}",
+                std::string(message));
     });
 
     rabbit_channel.declareExchange(bridge_exchange, AMQP::fanout, AMQP::durable | AMQP::autodelete)
@@ -413,7 +413,8 @@ void StorageRabbitMQ::initExchange(AMQP::TcpChannel & rabbit_channel)
     {
         /// This error is not supposed to happen as this exchange name is always unique to type and its settings.
         throw Exception(
-            ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE, "Unable to declare bridge exchange ({}). Reason: {}", bridge_exchange, std::string(message));
+                        ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE,
+                        "Unable to declare bridge exchange ({}). Reason: {}", bridge_exchange, std::string(message));
     });
 
     if (!hash_exchange)
@@ -548,10 +549,10 @@ void StorageRabbitMQ::bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_chann
          * max_block_size parameter. Solution: client should specify a different queue_base parameter or manually delete previously
          * declared queues via any of the various cli tools.
          */
-        throw Exception("Failed to declare queue. Probably queue settings are conflicting: max_block_size, deadletter_exchange. Attempt \
-                specifying differently those settings or use a different queue_base or manually delete previously declared queues, \
-                which  were declared with the same names. ERROR reason: "
-                + std::string(message), ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to declare queue. Probably queue settings are conflicting: "
+                        "max_block_size, deadletter_exchange. Attempt specifying differently those settings "
+                        "or use a different queue_base or manually delete previously declared queues, "
+                        "which  were declared with the same names. ERROR reason: {}", std::string(message));
     });
 
     AMQP::Table queue_settings;
@@ -650,7 +651,7 @@ void StorageRabbitMQ::unbindExchange()
             })
             .onError([&](const char * message)
             {
-                throw Exception("Unable to remove exchange. Reason: " + std::string(message), ErrorCodes::CANNOT_REMOVE_RABBITMQ_EXCHANGE);
+                throw Exception(ErrorCodes::CANNOT_REMOVE_RABBITMQ_EXCHANGE, "Unable to remove exchange. Reason: {}", std::string(message));
             });
 
             connection->getHandler().startBlockingLoop();
@@ -676,7 +677,7 @@ void StorageRabbitMQ::read(
         size_t /* num_streams */)
 {
     if (!rabbit_is_ready)
-        throw Exception("RabbitMQ setup not finished. Connection might be lost", ErrorCodes::CANNOT_CONNECT_RABBITMQ);
+        throw Exception(ErrorCodes::CANNOT_CONNECT_RABBITMQ, "RabbitMQ setup not finished. Connection might be lost");
 
     if (num_created_consumers == 0)
     {
@@ -686,7 +687,8 @@ void StorageRabbitMQ::read(
     }
 
     if (!local_context->getSettingsRef().stream_like_engine_allow_direct_select)
-        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`");
+        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED,
+                        "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`");
 
     if (mv_attached)
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageRabbitMQ with attached materialized views");
@@ -713,6 +715,12 @@ void StorageRabbitMQ::read(
     {
         auto rabbit_source = std::make_shared<RabbitMQSource>(
             *this, storage_snapshot, modified_context, column_names, 1, rabbitmq_settings->rabbitmq_commit_on_select);
+
+        uint64_t max_execution_time_ms = rabbitmq_settings->rabbitmq_flush_interval_ms.changed
+                                          ? rabbitmq_settings->rabbitmq_flush_interval_ms
+                                          : (static_cast<UInt64>(getContext()->getSettingsRef().stream_flush_interval_ms) * 1000);
+
+        rabbit_source->setTimeLimit(max_execution_time_ms);
 
         auto converting_dag = ActionsDAG::makeConvertingActions(
             rabbit_source->getPort().getHeader().getColumnsWithTypeAndName(),
@@ -1012,14 +1020,14 @@ void StorageRabbitMQ::streamingToViewsFunc()
                     if (streamToViews())
                     {
                         /// Reschedule with backoff.
-                        if (milliseconds_to_wait < BACKOFF_TRESHOLD)
-                            milliseconds_to_wait *= 2;
+                        if (milliseconds_to_wait < rabbitmq_settings->rabbitmq_empty_queue_backoff_end_ms)
+                            milliseconds_to_wait += rabbitmq_settings->rabbitmq_empty_queue_backoff_step_ms;
                         stopLoopIfNoReaders();
                         break;
                     }
                     else
                     {
-                        milliseconds_to_wait = RESCHEDULE_MS;
+                        milliseconds_to_wait = rabbitmq_settings->rabbitmq_empty_queue_backoff_start_ms;
                     }
 
                     auto end_time = std::chrono::steady_clock::now();
@@ -1056,7 +1064,7 @@ bool StorageRabbitMQ::streamToViews()
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (!table)
-        throw Exception("Engine table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Engine table {} doesn't exist.", table_id.getNameForLogs());
 
     // Create an INSERT query for streaming data
     auto insert = std::make_shared<ASTInsertQuery>();
@@ -1082,14 +1090,15 @@ bool StorageRabbitMQ::streamToViews()
     {
         auto source = std::make_shared<RabbitMQSource>(
             *this, storage_snapshot, rabbitmq_context, column_names, block_size, false);
+
+        uint64_t max_execution_time_ms = rabbitmq_settings->rabbitmq_flush_interval_ms.changed
+                                          ? rabbitmq_settings->rabbitmq_flush_interval_ms
+                                          : (static_cast<UInt64>(getContext()->getSettingsRef().stream_flush_interval_ms) * 1000);
+
+        source->setTimeLimit(max_execution_time_ms);
+
         sources.emplace_back(source);
         pipes.emplace_back(source);
-
-        Poco::Timespan max_execution_time = rabbitmq_settings->rabbitmq_flush_interval_ms.changed
-                                          ? rabbitmq_settings->rabbitmq_flush_interval_ms
-                                          : getContext()->getSettingsRef().stream_flush_interval_ms;
-
-        source->setTimeLimit(max_execution_time);
     }
 
     block_io.pipeline.complete(Pipe::unitePipes(std::move(pipes)));
@@ -1194,11 +1203,11 @@ void registerStorageRabbitMQ(StorageFactory & factory)
 
         if (!rabbitmq_settings->rabbitmq_host_port.changed
            && !rabbitmq_settings->rabbitmq_address.changed)
-                throw Exception("You must specify either `rabbitmq_host_port` or `rabbitmq_address` settings",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                                "You must specify either `rabbitmq_host_port` or `rabbitmq_address` settings");
 
         if (!rabbitmq_settings->rabbitmq_format.changed)
-            throw Exception("You must specify `rabbitmq_format` setting", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `rabbitmq_format` setting");
 
         return std::make_shared<StorageRabbitMQ>(args.table_id, args.getContext(), args.columns, std::move(rabbitmq_settings), args.attach);
     };

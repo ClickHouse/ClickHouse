@@ -933,8 +933,8 @@ public:
                     && contents_begin[9] >= '0' && contents_begin[9] <= '9')
                 {
                     std::string contents_str(contents_begin, contents_end - contents_begin);
-                    throw Exception("Argument of function toDate is unquoted: toDate(" + contents_str + "), must be: toDate('" + contents_str + "')"
-                        , ErrorCodes::SYNTAX_ERROR);
+                    throw Exception(ErrorCodes::SYNTAX_ERROR, "Argument of function toDate is unquoted: "
+                        "toDate({}), must be: toDate('{}')" , contents_str, contents_str);
                 }
 
                 if (allow_function_parameters && !parameters && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))

@@ -1,26 +1,36 @@
 #include <Analyzer/Passes/OptimizeGroupByFunctionKeysPass.h>
+
+#include <algorithm>
+#include <queue>
+
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryNode.h>
 
-#include <algorithm>
-#include <queue>
-
 namespace DB
 {
 
-class OptimizeGroupByFunctionKeysVisitor : public InDepthQueryTreeVisitor<OptimizeGroupByFunctionKeysVisitor>
+class OptimizeGroupByFunctionKeysVisitor : public InDepthQueryTreeVisitorWithContext<OptimizeGroupByFunctionKeysVisitor>
 {
 public:
-    static bool needChildVisit(QueryTreeNodePtr & /*parent*/, QueryTreeNodePtr & child)
+    using Base = InDepthQueryTreeVisitorWithContext<OptimizeGroupByFunctionKeysVisitor>;
+    using Base::Base;
+
+    static bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
     {
+        if (parent->getNodeType() == QueryTreeNodeType::TABLE_FUNCTION)
+            return false;
+
         return !child->as<FunctionNode>();
     }
 
-    static void visitImpl(QueryTreeNodePtr & node)
+    void visitImpl(QueryTreeNodePtr & node)
     {
+        if (!getSettings().optimize_group_by_function_keys)
+            return;
+
         auto * query = node->as<QueryNode>();
         if (!query)
             return;
@@ -41,6 +51,11 @@ public:
             optimizeGroupingSet(group_by);
     }
 private:
+    struct NodeWithInfo
+    {
+        QueryTreeNodePtr node;
+        bool parents_are_only_deterministic = false;
+    };
 
     static bool canBeEliminated(QueryTreeNodePtr & node, const QueryTreeNodePtrWithHashSet & group_by_keys)
     {
@@ -48,16 +63,17 @@ private:
         if (!function || function->getArguments().getNodes().empty())
             return false;
 
-        QueryTreeNodes candidates;
+        std::vector<NodeWithInfo> candidates;
         auto & function_arguments = function->getArguments().getNodes();
+        bool is_deterministic = function->getFunctionOrThrow()->isDeterministicInScopeOfQuery();
         for (auto it = function_arguments.rbegin(); it != function_arguments.rend(); ++it)
-            candidates.push_back(*it);
+            candidates.push_back({ *it, is_deterministic });
 
         // Using DFS we traverse function tree and try to find if it uses other keys as function arguments.
         // TODO: Also process CONSTANT here. We can simplify GROUP BY x, x + 1 to GROUP BY x.
         while (!candidates.empty())
         {
-            auto candidate = candidates.back();
+            auto [candidate, parents_are_only_deterministic] = candidates.back();
             candidates.pop_back();
 
             bool found = group_by_keys.contains(candidate);
@@ -73,13 +89,19 @@ private:
 
                     if (!found)
                     {
+                        bool is_deterministic_function = parents_are_only_deterministic &&
+                            function->getFunctionOrThrow()->isDeterministicInScopeOfQuery();
                         for (auto it = arguments.rbegin(); it != arguments.rend(); ++it)
-                            candidates.push_back(*it);
+                            candidates.push_back({ *it, is_deterministic_function });
                     }
                     break;
                 }
                 case QueryTreeNodeType::COLUMN:
                     if (!found)
+                        return false;
+                    break;
+                case QueryTreeNodeType::CONSTANT:
+                    if (!parents_are_only_deterministic)
                         return false;
                     break;
                 default:
@@ -105,9 +127,10 @@ private:
     }
 };
 
-void OptimizeGroupByFunctionKeysPass::run(QueryTreeNodePtr query_tree_node, ContextPtr /*context*/)
+void OptimizeGroupByFunctionKeysPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
-    OptimizeGroupByFunctionKeysVisitor().visit(query_tree_node);
+    OptimizeGroupByFunctionKeysVisitor visitor(std::move(context));
+    visitor.visit(query_tree_node);
 }
 
 }

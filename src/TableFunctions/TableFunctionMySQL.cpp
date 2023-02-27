@@ -35,7 +35,7 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr 
     const auto & args_func = ast_function->as<ASTFunction &>();
 
     if (!args_func.arguments)
-        throw Exception("Table function 'mysql' must have arguments.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function 'mysql' must have arguments.");
 
     auto & args = args_func.arguments->children;
 

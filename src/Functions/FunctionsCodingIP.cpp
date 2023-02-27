@@ -143,21 +143,18 @@ public:
         {
             const auto * ptr = checkAndGetDataType<DataTypeFixedString>(arguments[0].get());
             if (!ptr || ptr->getN() != IPV6_BINARY_LENGTH)
-                throw Exception("Illegal type " + arguments[0]->getName() +
-                                " of argument 1 of function " + getName() +
-                                ", expected FixedString(" + toString(IPV6_BINARY_LENGTH) + ")",
-                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "Illegal type {} of argument 1 of function {}, expected FixedString({})",
+                                arguments[0]->getName(), getName(), toString(IPV6_BINARY_LENGTH));
         }
 
         if (!WhichDataType(arguments[1]).isUInt8())
-            throw Exception("Illegal type " + arguments[1]->getName() +
-                            " of argument 2 of function " + getName(),
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument 2 of function {}",
+                            arguments[1]->getName(), getName());
 
         if (!WhichDataType(arguments[2]).isUInt8())
-            throw Exception("Illegal type " + arguments[2]->getName() +
-                            " of argument 3 of function " + getName(),
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument 3 of function {}",
+                            arguments[2]->getName(), getName());
 
         return std::make_shared<DataTypeString>();
     }
@@ -179,40 +176,34 @@ public:
         const auto * col_in_ip = checkAndGetColumn<ColumnIPv6>(column.get());
 
         if (!col_in_str && !col_in_ip)
-            throw Exception("Illegal column " + arguments[0].column->getName()
-                            + " of argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                            arguments[0].column->getName(), getName());
 
         if (col_in_str && col_in_str->getN() != IPV6_BINARY_LENGTH)
-            throw Exception("Illegal type " + col_type_name.type->getName() +
-                            " of column " + col_in_str->getName() +
-                            " argument of function " + getName() +
-                            ", expected FixedString(" + toString(IPV6_BINARY_LENGTH) + ")",
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Illegal type {} of column {} argument of function {}, expected FixedString({})",
+                            col_type_name.type->getName(), col_in_str->getName(),
+                            getName(), toString(IPV6_BINARY_LENGTH));
 
         const auto * ipv6_zeroed_tail_bytes = checkAndGetColumnConst<ColumnVector<UInt8>>(col_ipv6_zeroed_tail_bytes.get());
         if (!ipv6_zeroed_tail_bytes)
-            throw Exception("Illegal type " + col_ipv6_zeroed_tail_bytes_type.type->getName() +
-                            " of argument 2 of function " + getName(),
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument 2 of function {}",
+                            col_ipv6_zeroed_tail_bytes_type.type->getName(), getName());
 
         UInt8 ipv6_zeroed_tail_bytes_count = ipv6_zeroed_tail_bytes->getValue<UInt8>();
         if (ipv6_zeroed_tail_bytes_count > IPV6_BINARY_LENGTH)
-            throw Exception("Illegal value for argument 2 " + col_ipv6_zeroed_tail_bytes_type.type->getName() +
-                            " of function " + getName(),
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal value for argument 2 {} of function {}",
+                            col_ipv6_zeroed_tail_bytes_type.type->getName(), getName());
 
         const auto * ipv4_zeroed_tail_bytes = checkAndGetColumnConst<ColumnVector<UInt8>>(col_ipv4_zeroed_tail_bytes.get());
         if (!ipv4_zeroed_tail_bytes)
-            throw Exception("Illegal type " + col_ipv4_zeroed_tail_bytes_type.type->getName() +
-                            " of argument 3 of function " + getName(),
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument 3 of function {}",
+                            col_ipv4_zeroed_tail_bytes_type.type->getName(), getName());
 
         UInt8 ipv4_zeroed_tail_bytes_count = ipv4_zeroed_tail_bytes->getValue<UInt8>();
         if (ipv4_zeroed_tail_bytes_count > IPV6_BINARY_LENGTH)
-            throw Exception("Illegal value for argument 3 " + col_ipv4_zeroed_tail_bytes_type.type->getName() +
-                            " of function " + getName(),
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal value for argument 3 {} of function {}",
+                            col_ipv4_zeroed_tail_bytes_type.type->getName(), getName());
 
         auto col_res = ColumnString::create();
         ColumnString::Chars & vec_res = col_res->getChars();
@@ -382,9 +373,8 @@ private:
             return col_res;
         }
         else
-            throw Exception("Illegal column " + arguments[0].column->getName()
-                            + " of argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                            arguments[0].column->getName(), getName());
     }
 public:
     static constexpr auto name = Name::name;
@@ -614,8 +604,8 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!WhichDataType(arguments[0]).isUInt64())
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName() + ", expected UInt64",
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}, expected UInt64",
+                            arguments[0]->getName(), getName());
 
         return std::make_shared<DataTypeString>();
     }
@@ -668,9 +658,8 @@ public:
             return col_res;
         }
         else
-            throw Exception("Illegal column " + arguments[0].column->getName()
-                            + " of argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                            arguments[0].column->getName(), getName());
     }
 };
 
@@ -745,8 +734,8 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                            arguments[0]->getName(), getName());
 
         return std::make_shared<DataTypeUInt64>();
     }
@@ -784,9 +773,8 @@ public:
             return col_res;
         }
         else
-            throw Exception("Illegal column " + arguments[0].column->getName()
-                            + " of argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                            arguments[0].column->getName(), getName());
     }
 };
 
@@ -1061,8 +1049,8 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
-            throw Exception(
-                "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                arguments[0]->getName(), getName());
         return std::make_shared<DataTypeUInt8>();
     }
 

@@ -96,7 +96,7 @@ def test_merge_simple(started_cluster, replicated):
 
         # Wait for OPTIMIZE to actually start
         assert_eq_with_retry(
-            node1,
+            node_check,
             f"select count() from system.merges where table='{table_name}'",
             "1\n",
             retry_count=30,
@@ -196,7 +196,7 @@ def test_mutation_simple(started_cluster, replicated):
 
         # Wait for the mutation to actually start
         assert_eq_with_retry(
-            node1,
+            node_check,
             f"select count() from system.merges where table='{table_name}'",
             "1\n",
             retry_count=30,

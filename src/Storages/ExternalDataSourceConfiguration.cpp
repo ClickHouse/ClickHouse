@@ -138,7 +138,8 @@ std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
             || configuration.database.empty() || (configuration.table.empty() && !is_database_engine)))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Named collection of connection parameters is missing some of the parameters and no key-value arguments are added");
+                            "Named collection of connection parameters is missing some "
+                            "of the parameters and no key-value arguments are added");
         }
 
         /// Check key-value arguments.
@@ -250,7 +251,8 @@ std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
         if (configuration.host.empty() || configuration.port == 0 || configuration.username.empty() || configuration.table.empty())
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Named collection of connection parameters is missing some of the parameters and dictionary parameters are not added");
+                            "Named collection of connection parameters is missing some "
+                            "of the parameters and dictionary parameters are not added");
         }
         return ExternalDataSourceInfo{ .configuration = configuration, .specific_args = {}, .settings_changes = config_settings };
     }
@@ -373,7 +375,8 @@ ExternalDataSourcesByPriority getExternalDataSourceConfigurationByPriority(
                     || replica_configuration.username.empty() || replica_configuration.password.empty())
                 {
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                    "Named collection of connection parameters is missing some of the parameters and no other dictionary parameters are added");
+                                    "Named collection of connection parameters is missing some "
+                                    "of the parameters and no other dictionary parameters are added");
                 }
 
                 configuration.replicas_configurations[priority].emplace_back(replica_configuration);

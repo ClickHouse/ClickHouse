@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <IO/ReadBufferFromFile.h>
+#include <Interpreters/threadPoolCallbackRunner.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Common/setThreadName.h>
 #include <Common/scope_guard_safe.h>
@@ -106,7 +107,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
             ErrorCodes::CORRUPTED_DATA,
             "Bad size of marks file '{}': {}, must be: {}",
             std::string(fs::path(data_part_storage->getFullPath()) / mrk_path),
-            std::to_string(file_size), std::to_string(expected_uncompressed_size));
+            file_size, expected_uncompressed_size);
 
     auto buffer = data_part_storage->readFile(mrk_path, read_settings.adjustBufferSize(file_size), file_size, std::nullopt);
     std::unique_ptr<ReadBuffer> reader;
@@ -178,29 +179,11 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarks()
 
 std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
 {
-    ThreadGroupStatusPtr thread_group;
-    if (CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup())
-        thread_group = CurrentThread::get().getThreadGroup();
-
-    auto task = std::make_shared<std::packaged_task<MarkCache::MappedPtr()>>([thread_group, this]
-    {
-        setThreadName("loadMarksThread");
-
-        if (thread_group)
-             CurrentThread::attachTo(thread_group);
-
-        SCOPE_EXIT_SAFE({
-           if (thread_group)
-               CurrentThread::detachQuery();
-        });
-
-        ProfileEvents::increment(ProfileEvents::BackgroundLoadingMarksTasks);
-        return loadMarks();
-    });
-
-    auto task_future = task->get_future();
-    load_marks_threadpool->scheduleOrThrow([task]{ (*task)(); });
-    return task_future;
+    return scheduleFromThreadPool<MarkCache::MappedPtr>([this]() -> MarkCache::MappedPtr
+     {
+         ProfileEvents::increment(ProfileEvents::BackgroundLoadingMarksTasks);
+         return loadMarks();
+     }, *load_marks_threadpool, "LoadMarksThread");
 }
 
 }

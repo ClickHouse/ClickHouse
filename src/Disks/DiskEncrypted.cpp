@@ -189,7 +189,7 @@ public:
     DiskPtr getDisk(size_t i) const override
     {
         if (i != 0)
-            throw Exception("Can't use i != 0 with single disk reservation", ErrorCodes::INCORRECT_DISK_INDEX);
+            throw Exception(ErrorCodes::INCORRECT_DISK_INDEX, "Can't use i != 0 with single disk reservation");
         return disk;
     }
 

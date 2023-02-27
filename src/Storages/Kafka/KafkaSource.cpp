@@ -156,7 +156,7 @@ Chunk KafkaSource::generateImpl()
             // KafkaConsumer::messages, which is accessed from
             // KafkaConsumer::currentTopic() (and other helpers).
             if (consumer->isStalled())
-                throw Exception("Polled messages became unusable", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Polled messages became unusable");
 
             ProfileEvents::increment(ProfileEvents::KafkaRowsRead, new_rows);
 

@@ -94,10 +94,8 @@ void Native41::authenticate(
     }
 
     if (auth_response->size() != Poco::SHA1Engine::DIGEST_SIZE)
-        throw Exception(
-            "Wrong size of auth response. Expected: " + std::to_string(Poco::SHA1Engine::DIGEST_SIZE)
-                + " bytes, received: " + std::to_string(auth_response->size()) + " bytes.",
-            ErrorCodes::UNKNOWN_EXCEPTION);
+        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Wrong size of auth response. Expected: {} bytes, received: {} bytes.",
+            std::to_string(Poco::SHA1Engine::DIGEST_SIZE), std::to_string(auth_response->size()));
 
     session.authenticate(MySQLNative41Credentials{user_name, scramble, *auth_response}, address);
 }
@@ -123,8 +121,10 @@ void Sha256Password::authenticate(
         packet_endpoint->sendPacket(AuthSwitchRequest(getName(), scramble), true);
 
         if (packet_endpoint->in->eof())
-            throw Exception("Client doesn't support authentication method " + getName() + " used by ClickHouse. Specifying user password using 'password_double_sha1_hex' may fix the problem.",
-                            ErrorCodes::MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES);
+            throw Exception(ErrorCodes::MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES,
+                            "Client doesn't support authentication method {} used by ClickHouse. "
+                            "Specifying user password using 'password_double_sha1_hex' may fix the problem.",
+                            getName());
 
         AuthSwitchResponse response;
         packet_endpoint->receivePacket(response);
@@ -144,7 +144,7 @@ void Sha256Password::authenticate(
         SCOPE_EXIT(BIO_free(mem));
         if (PEM_write_bio_RSA_PUBKEY(mem, &public_key) != 1)
         {
-            throw Exception("Failed to write public key to memory. Error: " + getOpenSSLErrors(), ErrorCodes::OPENSSL_ERROR);
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "Failed to write public key to memory. Error: {}", getOpenSSLErrors());
         }
         char * pem_buf = nullptr;
 #    pragma GCC diagnostic push
@@ -191,7 +191,7 @@ void Sha256Password::authenticate(
         {
             if (!sent_public_key)
                 LOG_WARNING(log, "Client could have encrypted password with different public key since it didn't request it from server.");
-            throw Exception("Failed to decrypt auth data. Error: " + getOpenSSLErrors(), ErrorCodes::OPENSSL_ERROR);
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "Failed to decrypt auth data. Error: {}", getOpenSSLErrors());
         }
 
         password.resize(plaintext_size);

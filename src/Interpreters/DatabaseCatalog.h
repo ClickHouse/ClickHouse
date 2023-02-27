@@ -6,6 +6,7 @@
 #include <Databases/TablesDependencyGraph.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
+#include <Common/SharedMutex.h>
 
 #include <boost/noncopyable.hpp>
 #include <Poco/Logger.h>
@@ -17,7 +18,6 @@
 #include <memory>
 #include <mutex>
 #include <set>
-#include <shared_mutex>
 #include <unordered_map>
 #include <unordered_set>
 #include <filesystem>
@@ -58,7 +58,7 @@ public:
 
     DDLGuard(
         Map & map_,
-        std::shared_mutex & db_mutex_,
+        SharedMutex & db_mutex_,
         std::unique_lock<std::mutex> guards_lock_,
         const String & elem,
         const String & database_name);
@@ -69,7 +69,7 @@ public:
 
 private:
     Map & map;
-    std::shared_mutex & db_mutex;
+    SharedMutex & db_mutex;
     Map::iterator it;
     std::unique_lock<std::mutex> guards_lock;
     std::unique_lock<std::mutex> table_lock;
@@ -135,14 +135,15 @@ public:
     static DatabaseCatalog & instance();
     static void shutdown();
 
+    void createBackgroundTasks();
     void initializeAndLoadTemporaryDatabase();
-    void loadDatabases();
+    void startupBackgroundCleanup();
     void loadMarkedAsDroppedTables();
 
     /// Get an object that protects the table from concurrently executing multiple DDL operations.
     DDLGuardPtr getDDLGuard(const String & database, const String & table);
     /// Get an object that protects the database from concurrent DDL queries all tables in the database
-    std::unique_lock<std::shared_mutex> getExclusiveDDLGuardForDatabase(const String & database);
+    std::unique_lock<SharedMutex> getExclusiveDDLGuardForDatabase(const String & database);
 
 
     void assertDatabaseExists(const String & database_name) const;
@@ -220,17 +221,19 @@ public:
 
     /// Referential dependencies between tables: table "A" depends on table "B"
     /// if "B" is referenced in the definition of "A".
-    void addDependencies(const StorageID & table_id, const std::vector<StorageID> & dependencies);
-    void addDependencies(const QualifiedTableName & table_name, const TableNamesSet & dependencies);
-    void addDependencies(const TablesDependencyGraph & extra_graph);
-    std::vector<StorageID> removeDependencies(const StorageID & table_id, bool check_dependencies, bool is_drop_database = false);
+    /// Loading dependencies were used to check whether a table can be removed before we had those referential dependencies.
+    /// Now we support this mode (see `check_table_referential_dependencies` in Setting.h) for compatibility.
+    void addDependencies(const StorageID & table_id, const std::vector<StorageID> & new_referential_dependencies, const std::vector<StorageID> & new_loading_dependencies);
+    void addDependencies(const QualifiedTableName & table_name, const TableNamesSet & new_referential_dependencies, const TableNamesSet & new_loading_dependencies);
+    void addDependencies(const TablesDependencyGraph & new_referential_dependencies, const TablesDependencyGraph & new_loading_dependencies);
+    std::pair<std::vector<StorageID>, std::vector<StorageID>> removeDependencies(const StorageID & table_id, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database = false);
+    std::vector<StorageID> getReferentialDependencies(const StorageID & table_id) const;
+    std::vector<StorageID> getReferentialDependents(const StorageID & table_id) const;
+    std::vector<StorageID> getLoadingDependencies(const StorageID & table_id) const;
+    std::vector<StorageID> getLoadingDependents(const StorageID & table_id) const;
+    void updateDependencies(const StorageID & table_id, const TableNamesSet & new_referential_dependencies, const TableNamesSet & new_loading_dependencies);
 
-    std::vector<StorageID> getDependencies(const StorageID & table_id) const;
-    std::vector<StorageID> getDependents(const StorageID & table_id) const;
-
-    void updateDependencies(const StorageID & table_id, const TableNamesSet & new_dependencies);
-
-    void checkTableCanBeRemovedOrRenamed(const StorageID & table_id, bool is_drop_database = false) const;
+    void checkTableCanBeRemovedOrRenamed(const StorageID & table_id, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database = false) const;
 
 private:
     // The global instance of database catalog. unique_ptr is to allow
@@ -244,7 +247,7 @@ private:
 
     void shutdownImpl();
 
-    void checkTableCanBeRemovedOrRenamedUnlocked(const StorageID & removing_table, bool is_drop_database) const TSA_REQUIRES(databases_mutex);
+    void checkTableCanBeRemovedOrRenamedUnlocked(const StorageID & removing_table, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database) const TSA_REQUIRES(databases_mutex);
 
     struct UUIDToStorageMapPart
     {
@@ -276,7 +279,6 @@ private:
     bool maybeRemoveDirectory(const String & disk_name, const DiskPtr & disk, const String & unused_dir);
 
     static constexpr size_t reschedule_time_ms = 100;
-    static constexpr time_t drop_error_cooldown_sec = 5;
 
     mutable std::mutex databases_mutex;
 
@@ -286,6 +288,9 @@ private:
     /// Referential dependencies between tables: table "A" depends on table "B"
     /// if the table "B" is referenced in the definition of the table "A".
     TablesDependencyGraph referential_dependencies TSA_GUARDED_BY(databases_mutex);
+
+    /// Loading dependencies were used to check whether a table can be removed before we had referential dependencies.
+    TablesDependencyGraph loading_dependencies TSA_GUARDED_BY(databases_mutex);
 
     /// View dependencies between a source table and its view.
     TablesDependencyGraph view_dependencies TSA_GUARDED_BY(databases_mutex);
@@ -298,7 +303,7 @@ private:
     /// For the duration of the operation, an element is placed here, and an object is returned,
     /// which deletes the element in the destructor when counter becomes zero.
     /// In case the element already exists, waits when query will be executed in other thread. See class DDLGuard below.
-    using DatabaseGuard = std::pair<DDLGuard::Map, std::shared_mutex>;
+    using DatabaseGuard = std::pair<DDLGuard::Map, SharedMutex>;
     using DDLGuards = std::map<String, DatabaseGuard>;
     DDLGuards ddl_guards TSA_GUARDED_BY(ddl_guards_mutex);
     /// If you capture mutex and ddl_guards_mutex, then you need to grab them strictly in this order.
@@ -320,6 +325,9 @@ private:
     time_t unused_dir_rm_timeout_sec = default_unused_dir_rm_timeout_sec;
     static constexpr time_t default_unused_dir_cleanup_period_sec = 24 * 60 * 60;       /// 1 day
     time_t unused_dir_cleanup_period_sec = default_unused_dir_cleanup_period_sec;
+
+    static constexpr time_t default_drop_error_cooldown_sec = 5;
+    time_t drop_error_cooldown_sec = default_drop_error_cooldown_sec;
 };
 
 /// This class is useful when creating a table or database.

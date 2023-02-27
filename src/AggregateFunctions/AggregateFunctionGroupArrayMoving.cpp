@@ -50,8 +50,8 @@ inline AggregateFunctionPtr createAggregateFunctionMovingImpl(const std::string 
         res.reset(createWithNumericType<Function, HasLimit>(*argument_type, argument_type, std::forward<TArgs>(args)...));
 
     if (!res)
-        throw Exception("Illegal type " + argument_type->getName() + " of argument for aggregate function " + name,
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}",
+                        argument_type->getName(), name);
 
     return res;
 }
@@ -74,18 +74,18 @@ AggregateFunctionPtr createAggregateFunctionMoving(
     {
         auto type = parameters[0].getType();
         if (type != Field::Types::Int64 && type != Field::Types::UInt64)
-               throw Exception("Parameter for aggregate function " + name + " should be positive integer", ErrorCodes::BAD_ARGUMENTS);
+               throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive integer", name);
 
         if ((type == Field::Types::Int64 && parameters[0].get<Int64>() < 0) ||
             (type == Field::Types::UInt64 && parameters[0].get<UInt64>() == 0))
-            throw Exception("Parameter for aggregate function " + name + " should be positive integer", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive integer", name);
 
         limit_size = true;
         max_elems = parameters[0].get<UInt64>();
     }
     else
-        throw Exception("Incorrect number of parameters for aggregate function " + name + ", should be 0 or 1",
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Incorrect number of parameters for aggregate function {}, should be 0 or 1", name);
 
     const DataTypePtr & argument_type = argument_types[0];
     if (!limit_size)

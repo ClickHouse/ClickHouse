@@ -224,9 +224,9 @@ namespace detail
 
         enum class InitializeError
         {
-            RETRIABLE_ERROR,
+            RETRYABLE_ERROR,
             /// If error is not retriable, `exception` variable must be set.
-            NON_RETRIABLE_ERROR,
+            NON_RETRYABLE_ERROR,
             /// Allows to skip not found urls for globs
             SKIP_NOT_FOUND_URL,
             NONE,
@@ -398,7 +398,7 @@ namespace detail
                 }
                 else if (!isRetriableError(http_status))
                 {
-                    initialization_error = InitializeError::NON_RETRIABLE_ERROR;
+                    initialization_error = InitializeError::NON_RETRYABLE_ERROR;
                     exception = std::current_exception();
                 }
                 else
@@ -409,7 +409,7 @@ namespace detail
         }
 
         /**
-         * Throws if error is retriable, otherwise sets initialization_error = NON_RETRIABLE_ERROR and
+         * Throws if error is retryable, otherwise sets initialization_error = NON_RETRYABLE_ERROR and
          * saves exception into `exception` variable. In case url is not found and skip_not_found_url == true,
          * sets initialization_error = SKIP_NOT_FOUND_URL, otherwise throws.
          */
@@ -453,9 +453,9 @@ namespace detail
 
                     /// Retry 200OK
                     if (response.getStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_OK)
-                        initialization_error = InitializeError::RETRIABLE_ERROR;
+                        initialization_error = InitializeError::RETRYABLE_ERROR;
                     else
-                        initialization_error = InitializeError::NON_RETRIABLE_ERROR;
+                        initialization_error = InitializeError::NON_RETRYABLE_ERROR;
 
                     return;
                 }
@@ -544,7 +544,7 @@ namespace detail
                     {
                         initialize();
 
-                        if (initialization_error == InitializeError::NON_RETRIABLE_ERROR)
+                        if (initialization_error == InitializeError::NON_RETRYABLE_ERROR)
                         {
                             assert(exception);
                             break;
@@ -553,7 +553,7 @@ namespace detail
                         {
                             return false;
                         }
-                        else if (initialization_error == InitializeError::RETRIABLE_ERROR)
+                        else if (initialization_error == InitializeError::RETRYABLE_ERROR)
                         {
                             LOG_ERROR(
                                 log,
@@ -582,10 +582,13 @@ namespace detail
                 }
                 catch (const Poco::Exception & e)
                 {
-                    /**
-                     * Retry request unconditionally if nothing has been read yet.
-                     * Otherwise if it is GET method retry with range header.
-                     */
+                    /// Too many open files - non-retryable.
+                    if (e.code() == POCO_EMFILE)
+                        throw;
+
+                    /** Retry request unconditionally if nothing has been read yet.
+                      * Otherwise if it is GET method retry with range header.
+                      */
                     bool can_retry_request = !offset_from_begin_pos || method == Poco::Net::HTTPRequest::HTTP_GET;
                     if (!can_retry_request)
                         throw;
@@ -627,11 +630,11 @@ namespace detail
         off_t seek(off_t offset_, int whence) override
         {
             if (whence != SEEK_SET)
-                throw Exception("Only SEEK_SET mode is allowed.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+                throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET mode is allowed.");
 
             if (offset_ < 0)
-                throw Exception(
-                    "Seek position is out of bounds. Offset: " + std::to_string(offset_), ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
+                throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position is out of bounds. Offset: {}",
+                    offset_);
 
             off_t current_offset = getOffset();
             if (!working_buffer.empty() && size_t(offset_) >= current_offset - working_buffer.size() && offset_ < current_offset)

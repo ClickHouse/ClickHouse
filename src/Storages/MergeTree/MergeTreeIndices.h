@@ -9,6 +9,7 @@
 #include <mutex>
 #include <Core/Block.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/MergeTree/GinIndexStore.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MarkRange.h>
@@ -16,7 +17,6 @@
 #include <Interpreters/ExpressionActions.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
-#include <Storages/MergeTree/GinIndexStore.h>
 
 constexpr auto INDEX_FILE_PREFIX = "skp_idx_";
 
@@ -237,7 +237,8 @@ void hypothesisIndexValidator(const IndexDescription & index, bool attach);
 MergeTreeIndexPtr annoyIndexCreator(const IndexDescription & index);
 void annoyIndexValidator(const IndexDescription & index, bool attach);
 #endif
-MergeTreeIndexPtr ginIndexCreator(const IndexDescription& index);
-void ginIndexValidator(const IndexDescription& index, bool attach);
+
+MergeTreeIndexPtr invertedIndexCreator(const IndexDescription& index);
+void invertedIndexValidator(const IndexDescription& index, bool attach);
 
 }

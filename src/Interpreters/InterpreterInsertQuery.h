@@ -44,12 +44,15 @@ public:
         std::atomic_uint64_t * elapsed_counter_ms = nullptr);
 
     static void extendQueryLogElemImpl(QueryLogElement & elem, ContextPtr context_);
+
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context_) const override;
 
     StoragePtr getTable(ASTInsertQuery & query);
     Block getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot) const;
 
     bool supportsTransactions() const override { return true; }
+
+    void addBuffer(std::unique_ptr<ReadBuffer> buffer) { owned_buffers.push_back(std::move(buffer)); }
 
 private:
     Block getSampleBlock(const Names & names, const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot) const;
@@ -59,6 +62,8 @@ private:
     const bool no_squash;
     const bool no_destination;
     const bool async_insert;
+
+    std::vector<std::unique_ptr<ReadBuffer>> owned_buffers;
 
     Chain buildChainImpl(
         const StoragePtr & table,

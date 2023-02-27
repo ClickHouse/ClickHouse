@@ -92,7 +92,7 @@ struct ArrayFillImpl
             const auto * column_fill_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
 
             if (!column_fill_const)
-                throw Exception("Unexpected type of cut column", ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type of cut column");
 
             if (column_fill_const->getValue<UInt8>())
                 return ColumnArray::create(

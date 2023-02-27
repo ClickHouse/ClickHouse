@@ -71,9 +71,8 @@ IMergeTreeDataPart::Checksums checkDataPart(
     }
 
     if (columns_txt != columns_list)
-        throw Exception("Columns doesn't match in part " + data_part_storage.getFullPath()
-            + ". Expected: " + columns_list.toString()
-            + ". Found: " + columns_txt.toString(), ErrorCodes::CORRUPTED_DATA);
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Columns doesn't match in part {}. Expected: {}. Found: {}",
+            data_part_storage.getFullPath(), columns_list.toString(), columns_txt.toString());
 
     /// Real checksums based on contents of data. Must correspond to checksums.txt. If not - it means the data is broken.
     IMergeTreeDataPart::Checksums checksums_data;
@@ -144,7 +143,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
     }
     else
     {
-        throw Exception("Unknown type in part " + data_part_storage.getFullPath(), ErrorCodes::UNKNOWN_PART_TYPE);
+        throw Exception(ErrorCodes::UNKNOWN_PART_TYPE, "Unknown type in part {}", data_part_storage.getFullPath());
     }
 
     /// Checksums from the rest files listed in checksums.txt. May be absent. If present, they are subsequently compared with the actual data checksums.

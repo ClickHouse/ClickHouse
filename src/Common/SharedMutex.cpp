@@ -37,9 +37,7 @@ void SharedMutex::lock()
 bool SharedMutex::try_lock()
 {
     UInt64 value = 0;
-    if (state.compare_exchange_strong(value, writers))
-        return true;
-    return false;
+    return state.compare_exchange_strong(value, writers);
 }
 
 void SharedMutex::unlock()
@@ -68,9 +66,15 @@ void SharedMutex::lock_shared()
 bool SharedMutex::try_lock_shared()
 {
     UInt64 value = state.load();
-    if (!(value & writers) && state.compare_exchange_strong(value, value + 1))
-        return true;
-    return false;
+    while (true)
+    {
+        if (value & writers)
+            return false;
+        if (state.compare_exchange_strong(value, value + 1))
+            break;
+        // Concurrent try_lock_shared() should not fail, so we have to retry CAS, but avoid blocking wait
+    }
+    return true;
 }
 
 void SharedMutex::unlock_shared()

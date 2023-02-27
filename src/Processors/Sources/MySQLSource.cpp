@@ -188,7 +188,7 @@ namespace
                     if (hhmmss.size() == 3)
                         v = static_cast<Int64>((std::stoi(hhmmss[0]) * 3600 + std::stoi(hhmmss[1]) * 60 + std::stold(hhmmss[2])) * 1000000);
                     else
-                        throw Exception("Unsupported value format", ErrorCodes::NOT_IMPLEMENTED);
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported value format");
 
                     if (negative) v = -v;
                     assert_cast<ColumnInt64 &>(column).insertValue(v);
@@ -260,7 +260,7 @@ namespace
                 read_bytes_size += column.sizeOfValueIfFixed();
                 break;
             default:
-                throw Exception("Unsupported value type", ErrorCodes::NOT_IMPLEMENTED);
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported value type");
         }
     }
 

@@ -94,7 +94,7 @@ void SettingsProfilesCache::setDefaultProfileName(const String & default_profile
 
     auto it = profiles_by_name.find(default_profile_name);
     if (it == profiles_by_name.end())
-        throw Exception("Settings profile " + backQuote(default_profile_name) + " not found", ErrorCodes::THERE_IS_NO_PROFILE);
+        throw Exception(ErrorCodes::THERE_IS_NO_PROFILE, "Settings profile {} not found", backQuote(default_profile_name));
 
     default_profile_id = it->second;
 }

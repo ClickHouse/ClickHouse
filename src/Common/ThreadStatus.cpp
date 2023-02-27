@@ -1,5 +1,6 @@
 #include <Common/Exception.h>
 #include <Common/ThreadProfileEvents.h>
+#include <Common/ConcurrentBoundedQueue.h>
 #include <Common/QueryProfiler.h>
 #include <Common/ThreadStatus.h>
 #include <base/errnoToString.h>
@@ -236,6 +237,7 @@ void ThreadStatus::setFatalErrorCallback(std::function<void()> callback)
 
 void ThreadStatus::onFatalError()
 {
+    std::lock_guard lock(thread_group->mutex);
     if (fatal_error_callback)
         fatal_error_callback();
 }

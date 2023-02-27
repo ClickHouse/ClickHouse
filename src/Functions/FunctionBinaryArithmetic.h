@@ -24,6 +24,7 @@
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Native.h>
@@ -106,6 +107,9 @@ template <> inline constexpr bool IsFloatingPoint<DataTypeFloat64> = true;
 template <typename DataType> constexpr bool IsDateOrDateTime = false;
 template <> inline constexpr bool IsDateOrDateTime<DataTypeDate> = true;
 template <> inline constexpr bool IsDateOrDateTime<DataTypeDateTime> = true;
+
+template <typename DataType> constexpr bool IsIPv4 = false;
+template <> inline constexpr bool IsIPv4<DataTypeIPv4> = true;
 
 template <typename T0, typename T1> constexpr bool UseLeftDecimal = false;
 template <> inline constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal256>, DataTypeDecimal<Decimal128>> = true;
@@ -556,7 +560,7 @@ private:
         {
             NativeResultType res;
             if (Op::template apply<NativeResultType>(a, b, res))
-                throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
             return res;
         }
         else
@@ -584,7 +588,7 @@ private:
                 res = Op::template apply<NativeResultType>(a, b);
 
             if (overflow)
-                throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
         }
         else
         {
@@ -610,7 +614,7 @@ private:
                     overflow |= common::mulOverflow(scale, scale, scale);
                 overflow |= common::mulOverflow(a, scale, a);
                 if (overflow)
-                    throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
             }
             else
             {
@@ -701,8 +705,8 @@ class FunctionBinaryArithmetic : public IFunction
         }
 
         if (second_is_date_or_datetime && is_minus)
-            throw Exception("Wrong order of arguments for function " + String(name) + ": argument of type Interval cannot be first",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Wrong order of arguments for function {}: "
+                                                                  "argument of type Interval cannot be first", name);
 
         std::string function_name;
         if (interval_data_type)
@@ -741,8 +745,8 @@ class FunctionBinaryArithmetic : public IFunction
             return {};
 
         if (isTuple(type0) && second_is_date_or_datetime && is_minus)
-            throw Exception("Wrong order of arguments for function " + String(name) + ": argument of Tuple type cannot be first",
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Wrong order of arguments for function {}: "
+                                                                  "argument of Tuple type cannot be first", name);
 
         std::string function_name;
         if (is_plus)
@@ -840,8 +844,8 @@ class FunctionBinaryArithmetic : public IFunction
             return {};
 
         if (isNumber(type0) && is_division)
-            throw Exception("Wrong order of arguments for function " + String(name) + ": argument of numeric type cannot be first",
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Wrong order of arguments for function {}: "
+                                                                  "argument of numeric type cannot be first", name);
 
         std::string function_name;
         if (is_multiply)
@@ -887,8 +891,8 @@ class FunctionBinaryArithmetic : public IFunction
             std::swap(new_arguments[0], new_arguments[1]);
 
         if (!isColumnConst(*new_arguments[1].column))
-            throw Exception{"Illegal column " + new_arguments[1].column->getName()
-                + " of argument of aggregation state multiply. Should be integer constant", ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of aggregation state multiply. "
+                "Should be integer constant", new_arguments[1].column->getName());
 
         const IColumn & agg_state_column = *new_arguments[0].column;
         bool agg_state_is_const = isColumnConst(agg_state_column);
@@ -1203,10 +1207,22 @@ public:
         if (isAggregateAddition(arguments[0], arguments[1]))
         {
             if (!arguments[0]->equals(*arguments[1]))
-                throw Exception("Cannot add aggregate states of different functions: "
-                    + arguments[0]->getName() + " and " + arguments[1]->getName(), ErrorCodes::CANNOT_ADD_DIFFERENT_AGGREGATE_STATES);
+                throw Exception(ErrorCodes::CANNOT_ADD_DIFFERENT_AGGREGATE_STATES,
+                    "Cannot add aggregate states of different functions: {} and {}",
+                    arguments[0]->getName(), arguments[1]->getName());
 
             return arguments[0];
+        }
+
+        /// Special case - one or both arguments are IPv4
+        if (isIPv4(arguments[0]) || isIPv4(arguments[1]))
+        {
+            DataTypes new_arguments {
+                    isIPv4(arguments[0]) ? std::make_shared<DataTypeUInt32>() : arguments[0],
+                    isIPv4(arguments[1]) ? std::make_shared<DataTypeUInt32>() : arguments[1],
+            };
+
+            return getReturnTypeImplStatic(new_arguments, context);
         }
 
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
@@ -1354,7 +1370,7 @@ public:
                                 /// So, we can check upfront possible overflow just by checking max scale used for left operand
                                 /// Note: it doesn't detect all possible overflow during big decimal division
                                 if (left.getScale() + right.getScale() > ResultDataType::maxPrecision())
-                                    throw Exception("Overflow during decimal division", ErrorCodes::DECIMAL_OVERFLOW);
+                                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Overflow during decimal division");
                             }
                         }
                         ResultDataType result_type = decimalResultType<is_multiply, is_division>(left, right);
@@ -1391,11 +1407,8 @@ public:
         if (valid)
             return type_res;
 
-        throw Exception(
-            "Illegal types " + arguments[0]->getName() +
-            " and " + arguments[1]->getName() +
-            " of arguments of function " + String(name),
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types {} and {} of arguments of function {}",
+            arguments[0]->getName(), arguments[1]->getName(), String(name));
     }
 
     ColumnPtr executeFixedString(const ColumnsWithTypeAndName & arguments) const
@@ -1707,6 +1720,25 @@ public:
         if (isAggregateAddition(arguments[0].type, arguments[1].type))
         {
             return executeAggregateAddition(arguments, result_type, input_rows_count);
+        }
+
+        /// Special case - one or both arguments are IPv4
+        if (isIPv4(arguments[0].type) || isIPv4(arguments[1].type))
+        {
+            ColumnsWithTypeAndName new_arguments {
+                {
+                    isIPv4(arguments[0].type) ? castColumn(arguments[0], std::make_shared<DataTypeUInt32>()) : arguments[0].column,
+                    isIPv4(arguments[0].type) ? std::make_shared<DataTypeUInt32>() : arguments[0].type,
+                    arguments[0].name,
+                },
+                {
+                    isIPv4(arguments[1].type) ? castColumn(arguments[1], std::make_shared<DataTypeUInt32>()) : arguments[1].column,
+                    isIPv4(arguments[1].type) ? std::make_shared<DataTypeUInt32>() : arguments[1].type,
+                    arguments[1].name
+                }
+            };
+
+            return executeImpl(new_arguments, result_type, input_rows_count);
         }
 
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
@@ -2117,9 +2149,9 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() != 2)
-            throw Exception(
-                "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size()) + ", should be 2",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be 2",
+                getName(), arguments.size());
         return FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments>::getReturnTypeImplStatic(arguments, context);
     }
 

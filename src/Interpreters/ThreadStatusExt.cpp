@@ -151,14 +151,31 @@ void ThreadStatus::attachQuery(const ThreadGroupStatusPtr & thread_group_, bool 
     if (thread_state == ThreadState::AttachedToQuery)
     {
         if (check_detached)
-            throw Exception("Can't attach query to the thread, it is already attached", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't attach query to the thread, it is already attached");
         return;
     }
 
     if (!thread_group_)
-        throw Exception("Attempt to attach to nullptr thread group", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to attach to nullptr thread group");
 
     setupState(thread_group_);
+}
+
+ProfileEvents::Counters * ThreadStatus::attachProfileCountersScope(ProfileEvents::Counters * performance_counters_scope)
+{
+    ProfileEvents::Counters * prev_counters = current_performance_counters;
+
+    if (current_performance_counters == performance_counters_scope)
+        /// Allow to attach the same scope multiple times
+        return prev_counters;
+
+    /// Avoid cycles when exiting local scope and attaching back to current thread counters
+    if (performance_counters_scope != &performance_counters)
+        performance_counters_scope->setParent(&performance_counters);
+
+    current_performance_counters = performance_counters_scope;
+
+    return prev_counters;
 }
 
 void ThreadStatus::initPerformanceCounters()

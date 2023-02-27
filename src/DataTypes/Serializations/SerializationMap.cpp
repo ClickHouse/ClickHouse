@@ -1,4 +1,5 @@
 #include <DataTypes/Serializations/SerializationMap.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeMap.h>
 
 #include <Common/StringUtils/StringUtils.h>
@@ -131,7 +132,7 @@ void SerializationMap::deserializeTextImpl(IColumn & column, ReadBuffer & istr, 
                 if (*istr.position() == ',')
                     ++istr.position();
                 else
-                    throw Exception("Cannot read Map from text", ErrorCodes::CANNOT_READ_MAP_FROM_TEXT);
+                    throw Exception(ErrorCodes::CANNOT_READ_MAP_FROM_TEXT, "Cannot read Map from text");
             }
 
             first = false;
@@ -211,7 +212,10 @@ void SerializationMap::deserializeTextJSON(IColumn & column, ReadBuffer & istr, 
     deserializeTextImpl(column, istr,
         [&settings](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn)
         {
-            subcolumn_serialization->deserializeTextJSON(subcolumn, buf, settings);
+            if (settings.null_as_default)
+                SerializationNullable::deserializeTextJSONImpl(subcolumn, buf, settings, subcolumn_serialization);
+            else
+                subcolumn_serialization->deserializeTextJSON(subcolumn, buf, settings);
         });
 }
 

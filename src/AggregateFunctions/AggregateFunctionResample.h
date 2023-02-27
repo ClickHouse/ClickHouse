@@ -55,9 +55,7 @@ public:
     {
         // notice: argument types has been checked before
         if (step == 0)
-            throw Exception("The step given in function "
-                    + getName() + " should not be zero",
-                ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The step given in function {} should not be zero", getName());
 
         if (end < begin)
             total = 0;
@@ -68,17 +66,16 @@ public:
             if (common::subOverflow(end, begin, dif)
                 || common::addOverflow(static_cast<size_t>(dif), step, sum))
             {
-                throw Exception("Overflow in internal computations in function " + getName()
-                    + ". Too large arguments", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Overflow in internal computations in function {}. "
+                    "Too large arguments", getName());
             }
 
             total = (sum - 1) / step; // total = (end - begin + step - 1) / step
         }
 
         if (total > max_elements)
-            throw Exception("The range given in function "
-                    + getName() + " contains too many elements",
-                ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The range given in function {} contains too many elements",
+                    getName());
     }
 
     String getName() const override

@@ -45,11 +45,11 @@ namespace ErrorCodes
     extern const int UNEXPECTED_END_OF_FILE;
 }
 
-MsgPackRowInputFormat::MsgPackRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_)
-    : MsgPackRowInputFormat(header_, std::make_unique<PeekableReadBuffer>(in_), params_) {}
+MsgPackRowInputFormat::MsgPackRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & settings)
+    : MsgPackRowInputFormat(header_, std::make_unique<PeekableReadBuffer>(in_), params_, settings) {}
 
-MsgPackRowInputFormat::MsgPackRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_)
-    : IRowInputFormat(header_, *buf_, std::move(params_)), buf(std::move(buf_)), parser(visitor), data_types(header_.getDataTypes())  {}
+MsgPackRowInputFormat::MsgPackRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_, const FormatSettings & settings)
+    : IRowInputFormat(header_, *buf_, std::move(params_)), buf(std::move(buf_)), visitor(settings.null_as_default), parser(visitor), data_types(header_.getDataTypes())  {}
 
 void MsgPackRowInputFormat::resetParser()
 {
@@ -58,13 +58,13 @@ void MsgPackRowInputFormat::resetParser()
     visitor.reset();
 }
 
-void MsgPackVisitor::set_info(IColumn & column, DataTypePtr type) // NOLINT
+void MsgPackVisitor::set_info(IColumn & column, DataTypePtr type, UInt8 & read) // NOLINT
 {
     while (!info_stack.empty())
     {
         info_stack.pop();
     }
-    info_stack.push(Info{column, type});
+    info_stack.push(Info{column, type, &read});
 }
 
 void MsgPackVisitor::reset()
@@ -228,11 +228,11 @@ static void insertFloat64(IColumn & column, DataTypePtr type, Float64 value) // 
     assert_cast<ColumnFloat64 &>(column).insertValue(value);
 }
 
-static void insertNull(IColumn & column, DataTypePtr type)
+static void insertNull(IColumn & column, DataTypePtr type, UInt8 * read, bool null_as_default)
 {
     auto insert_func = [&](IColumn & column_, DataTypePtr type_)
     {
-        insertNull(column_, type_);
+        insertNull(column_, type_, read, null_as_default);
     };
 
     /// LowCardinality(Nullable(...))
@@ -240,7 +240,16 @@ static void insertNull(IColumn & column, DataTypePtr type)
         return;
 
     if (!type->isNullable())
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert MessagePack null into non-nullable column with type {}.", type->getName());
+    {
+        if (!null_as_default)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN, "Cannot insert MessagePack null into non-nullable column with type {}.", type->getName());
+        column.insertDefault();
+        /// In case of default on null column can have defined DEFAULT expression that should be used.
+        if (read)
+            *read = false;
+        return;
+    }
 
     assert_cast<ColumnNullable &>(column).insertDefault();
 }
@@ -316,7 +325,7 @@ bool MsgPackVisitor::start_array(size_t size) // NOLINT
     ColumnArray::Offsets & offsets = column_array.getOffsets();
     IColumn & nested_column = column_array.getData();
     offsets.push_back(offsets.back() + size);
-    info_stack.push(Info{nested_column, nested_type});
+    info_stack.push(Info{nested_column, nested_type, nullptr});
     return true;
 }
 
@@ -340,7 +349,7 @@ bool MsgPackVisitor::start_map_key() // NOLINT
 {
     auto key_column = assert_cast<ColumnMap &>(info_stack.top().column).getNestedData().getColumns()[0];
     auto key_type = assert_cast<const DataTypeMap &>(*info_stack.top().type).getKeyType();
-    info_stack.push(Info{*key_column, key_type});
+    info_stack.push(Info{*key_column, key_type, nullptr});
     return true;
 }
 
@@ -354,7 +363,7 @@ bool MsgPackVisitor::start_map_value() // NOLINT
 {
     auto value_column = assert_cast<ColumnMap &>(info_stack.top().column).getNestedData().getColumns()[1];
     auto value_type = assert_cast<const DataTypeMap &>(*info_stack.top().type).getValueType();
-    info_stack.push(Info{*value_column, value_type});
+    info_stack.push(Info{*value_column, value_type, nullptr});
     return true;
 }
 
@@ -366,7 +375,7 @@ bool MsgPackVisitor::end_map_value() // NOLINT
 
 bool MsgPackVisitor::visit_nil()
 {
-    insertNull(info_stack.top().column, info_stack.top().type);
+    insertNull(info_stack.top().column, info_stack.top().type, info_stack.top().read, null_as_default);
     return true;
 }
 
@@ -384,7 +393,7 @@ bool MsgPackVisitor::visit_ext(const char * value, uint32_t size)
 
 void MsgPackVisitor::parse_error(size_t, size_t) // NOLINT
 {
-    throw Exception("Error occurred while parsing msgpack data.", ErrorCodes::INCORRECT_DATA);
+    throw Exception(ErrorCodes::INCORRECT_DATA, "Error occurred while parsing msgpack data.");
 }
 
 bool MsgPackRowInputFormat::readObject()
@@ -398,7 +407,7 @@ bool MsgPackRowInputFormat::readObject()
     {
         buf->position() = buf->buffer().end();
         if (buf->eof())
-            throw Exception("Unexpected end of file while parsing msgpack object.", ErrorCodes::INCORRECT_DATA);
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected end of file while parsing msgpack object.");
         buf->position() = buf->buffer().end();
         buf->makeContinuousMemoryFromCheckpointToPos();
         buf->rollbackToCheckpoint();
@@ -407,13 +416,14 @@ bool MsgPackRowInputFormat::readObject()
     return true;
 }
 
-bool MsgPackRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
+bool MsgPackRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
 {
     size_t column_index = 0;
     bool has_more_data = true;
+    ext.read_columns.resize(columns.size(), true);
     for (; column_index != columns.size(); ++column_index)
     {
-        visitor.set_info(*columns[column_index], data_types[column_index]);
+        visitor.set_info(*columns[column_index], data_types[column_index], ext.read_columns[column_index]);
         has_more_data = readObject();
         if (!has_more_data)
             break;
@@ -421,7 +431,7 @@ bool MsgPackRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
     if (!has_more_data)
     {
         if (column_index != 0)
-            throw Exception("Not enough values to complete the row.", ErrorCodes::INCORRECT_DATA);
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Not enough values to complete the row.");
         return false;
     }
     return true;
@@ -436,7 +446,9 @@ MsgPackSchemaReader::MsgPackSchemaReader(ReadBuffer & in_, const FormatSettings 
     : IRowSchemaReader(buf, format_settings_), buf(in_), number_of_columns(format_settings_.msgpack.number_of_columns)
 {
     if (!number_of_columns)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "You must specify setting input_format_msgpack_number_of_columns to extract table schema from MsgPack data");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "You must specify setting input_format_msgpack_number_of_columns "
+                        "to extract table schema from MsgPack data");
 }
 
 
@@ -461,7 +473,7 @@ msgpack::object_handle MsgPackSchemaReader::readObject()
         {
             buf.position() = buf.buffer().end();
             if (buf.eof())
-                throw Exception("Unexpected end of file while parsing msgpack object", ErrorCodes::UNEXPECTED_END_OF_FILE);
+                throw Exception(ErrorCodes::UNEXPECTED_END_OF_FILE, "Unexpected end of file while parsing msgpack object");
             buf.position() = buf.buffer().end();
             buf.makeContinuousMemoryFromCheckpointToPos();
             buf.rollbackToCheckpoint();
@@ -545,9 +557,9 @@ void registerInputFormatMsgPack(FormatFactory & factory)
             ReadBuffer & buf,
             const Block & sample,
             const RowInputFormatParams & params,
-            const FormatSettings &)
+            const FormatSettings & settings)
     {
-        return std::make_shared<MsgPackRowInputFormat>(sample, buf, params);
+        return std::make_shared<MsgPackRowInputFormat>(sample, buf, params, settings);
     });
     factory.registerFileExtension("messagepack", "MsgPack");
 }

@@ -109,6 +109,8 @@ public:
     const ASTPtr & getTableFunction() const { return table_function; }
     const ASTPtr & getTableOverride() const { return table_override; }
 
+    QueryKind getQueryKind() const override { return QueryKind::Explain; }
+
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {

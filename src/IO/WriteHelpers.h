@@ -161,7 +161,7 @@ inline size_t writeFloatTextFastPath(T x, char * buffer)
     }
 
     if (result <= 0)
-        throw Exception("Cannot print floating point number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
+        throw Exception(ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER, "Cannot print floating point number");
     return result;
 }
 
@@ -840,7 +840,7 @@ inline void writeDateTimeUnixTimestamp(DateTime64 datetime64, UInt32 scale, Writ
     auto components = DecimalUtils::split(datetime64, scale);
     writeIntText(components.whole, buf);
 
-    if (scale > 0) //-V547
+    if (scale > 0)
     {
         buf.write('.');
         writeDateTime64FractionalText<DateTime64>(components.fractional, scale, buf);

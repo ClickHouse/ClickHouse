@@ -121,7 +121,7 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         const auto & explain_query = explain_node->as<const ASTExplainQuery &>();
 
         if (explain_query.getTableFunction() || explain_query.getTableOverride())
-            throw Exception("EXPLAIN in a subquery cannot have a table function or table override", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN in a subquery cannot have a table function or table override");
 
         /// Replace subquery `(EXPLAIN <kind> <explain_settings> SELECT ...)`
         /// with `(SELECT * FROM viewExplain("<kind>", "<explain_settings>", SELECT ...))`
@@ -132,7 +132,7 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (ASTPtr settings_ast = explain_query.getSettings())
         {
             if (!settings_ast->as<ASTSetQuery>())
-                throw Exception("EXPLAIN settings must be a SET query", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN settings must be a SET query");
             settings_str = queryToString(settings_ast);
         }
 
@@ -868,7 +868,9 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (str_end == buf.c_str() + buf.size() && errno != ERANGE)
         {
             if (float_value < 0)
-                throw Exception("Logical error: token number cannot begin with minus, but parsed float number is less than zero.", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Logical error: token number cannot begin with minus, "
+                                "but parsed float number is less than zero.");
 
             if (negative)
                 float_value = -float_value;
@@ -1617,7 +1619,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
             auto replacement = std::make_shared<ASTColumnsReplaceTransformer::Replacement>();
             replacement->name = getIdentifierName(ident);
-            replacement->expr = std::move(expr);
+            replacement->children.push_back(std::move(expr));
             replacements.emplace_back(std::move(replacement));
             return true;
         };

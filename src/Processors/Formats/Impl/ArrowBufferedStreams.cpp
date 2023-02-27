@@ -11,6 +11,7 @@
 #include <IO/copyData.h>
 #include <IO/PeekableReadBuffer.h>
 #include <arrow/buffer.h>
+#include <arrow/util/future.h>
 #include <arrow/io/memory.h>
 #include <arrow/result.h>
 #include <Core/Settings.h>
@@ -93,6 +94,12 @@ arrow::Result<std::shared_ptr<arrow::Buffer>> RandomAccessFileFromSeekableReadBu
         RETURN_NOT_OK(buffer->Resize(bytes_read));
 
     return buffer;
+}
+
+arrow::Future<std::shared_ptr<arrow::Buffer>> RandomAccessFileFromSeekableReadBuffer::ReadAsync(const arrow::io::IOContext &, int64_t position, int64_t nbytes)
+{
+    /// Just a stub to to avoid using internal arrow thread pool
+    return arrow::Future<std::shared_ptr<arrow::Buffer>>::MakeFinished(ReadAt(position, nbytes));
 }
 
 arrow::Status RandomAccessFileFromSeekableReadBuffer::Seek(int64_t position)

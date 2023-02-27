@@ -142,7 +142,7 @@ bool MergeTreeIndexhypothesisMergedCondition::mayBeTrueOnGranule(const MergeTree
     {
         const auto granule = std::dynamic_pointer_cast<const MergeTreeIndexGranuleHypothesis>(index_granule);
         if (!granule)
-            throw Exception("Only hypothesis index is supported here.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Only hypothesis index is supported here.");
         values.push_back(granule->met);
     }
 

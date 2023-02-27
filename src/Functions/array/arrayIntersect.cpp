@@ -133,14 +133,15 @@ DataTypePtr FunctionArrayIntersect::getReturnTypeImpl(const DataTypes & argument
     bool has_nothing = false;
 
     if (arguments.empty())
-        throw Exception{"Function " + getName() + " requires at least one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument.", getName());
 
     for (auto i : collections::range(0, arguments.size()))
     {
         const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[i].get());
         if (!array_type)
-            throw Exception("Argument " + std::to_string(i) + " for function " + getName() + " must be an array but it has type "
-                            + arguments[i]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Argument {} for function {} must be an array but it has type {}.",
+                            i, getName(), arguments[i]->getName());
 
         const auto & nested_type = array_type->getNestedType();
 
@@ -178,8 +179,8 @@ ColumnPtr FunctionArrayIntersect::castRemoveNullable(const ColumnPtr & column, c
     {
         const auto * array_type = checkAndGetDataType<DataTypeArray>(data_type.get());
         if (!array_type)
-            throw Exception{"Cannot cast array column to column with type "
-                            + data_type->getName() + " in function " + getName(), ErrorCodes::LOGICAL_ERROR};
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot cast array column to column with type {} in function {}",
+                            data_type->getName(), getName());
 
         auto casted_column = castRemoveNullable(column_array->getDataPtr(), array_type->getNestedType());
         return ColumnArray::create(casted_column, column_array->getOffsetsPtr());
@@ -189,8 +190,8 @@ ColumnPtr FunctionArrayIntersect::castRemoveNullable(const ColumnPtr & column, c
         const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(data_type.get());
 
         if (!tuple_type)
-            throw Exception{"Cannot cast tuple column to type "
-                            + data_type->getName() + " in function " + getName(), ErrorCodes::LOGICAL_ERROR};
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot cast tuple column to type {} in function {}",
+                            data_type->getName(), getName());
 
         auto columns_number = column_tuple->tupleSize();
         Columns columns(columns_number);
@@ -352,7 +353,7 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
             }
         }
         else
-            throw Exception{"Arguments for function " + getName() + " must be arrays.", ErrorCodes::LOGICAL_ERROR};
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Arguments for function {} must be arrays.", getName());
     }
 
     if (all_const)
@@ -370,7 +371,7 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
             if (arrays.base_rows == 0 && rows > 0)
                 arrays.base_rows = rows;
             else if (arrays.base_rows != rows)
-                throw Exception("Non-const array columns in function " + getName() + "should have same rows", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Non-const array columns in function {}should have same rows", getName());
         }
     }
 
@@ -382,7 +383,7 @@ ColumnPtr FunctionArrayIntersect::executeImpl(const ColumnsWithTypeAndName & arg
     const auto * return_type_array = checkAndGetDataType<DataTypeArray>(result_type.get());
 
     if (!return_type_array)
-        throw Exception{"Return type for function " + getName() + " must be array.", ErrorCodes::LOGICAL_ERROR};
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Return type for function {} must be array.", getName());
 
     const auto & nested_return_type = return_type_array->getNestedType();
 
@@ -483,7 +484,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
             columns.push_back(checkAndGetColumn<ColumnType>(arg.nested_column));
 
         if (!columns.back())
-            throw Exception("Unexpected array type for function arrayIntersect", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected array type for function arrayIntersect");
 
         if (!arg.null_map)
             all_nullable = false;

@@ -95,7 +95,15 @@ void BackgroundSchedulePoolTaskInfo::execute()
         executing = true;
     }
 
-    function();
+    try
+    {
+        function();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        chassert(false && "Tasks in BackgroundSchedulePool cannot throw");
+    }
     UInt64 milliseconds = watch.elapsedMilliseconds();
 
     /// If the task is executed longer than specified time, it will be logged.
@@ -244,35 +252,9 @@ void BackgroundSchedulePool::cancelDelayedTask(const TaskInfoPtr & task, std::lo
 }
 
 
-scope_guard BackgroundSchedulePool::attachToThreadGroup()
-{
-    scope_guard guard = [&]()
-        {
-            if (thread_group)
-                CurrentThread::detachQueryIfNotDetached();
-        };
-
-    std::lock_guard lock(delayed_tasks_mutex);
-
-    if (thread_group)
-    {
-        /// Put all threads to one thread pool
-        CurrentThread::attachTo(thread_group);
-    }
-    else
-    {
-        CurrentThread::initializeQuery();
-        thread_group = CurrentThread::getGroup();
-    }
-    return guard;
-}
-
-
 void BackgroundSchedulePool::threadFunction()
 {
     setThreadName(thread_name.c_str());
-
-    auto detach_thread_guard = attachToThreadGroup();
 
     while (!shutdown)
     {
@@ -302,8 +284,6 @@ void BackgroundSchedulePool::threadFunction()
 void BackgroundSchedulePool::delayExecutionThreadFunction()
 {
     setThreadName((thread_name + "/D").c_str());
-
-    auto detach_thread_guard = attachToThreadGroup();
 
     while (!shutdown)
     {

@@ -5,6 +5,7 @@
 #include <Common/logger_useful.h>
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/Context.h>
+#include <IO/SwapHelper.h>
 
 
 namespace ProfileEvents
@@ -20,21 +21,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
-
-namespace
-{
-    class SwapHelper
-    {
-    public:
-        SwapHelper(WriteBuffer & b1_, WriteBuffer & b2_) : b1(b1_), b2(b2_) { b1.swap(b2); }
-        ~SwapHelper() { b1.swap(b2); }
-
-    private:
-        WriteBuffer & b1;
-        WriteBuffer & b2;
-    };
-}
-
 
 FileSegmentRangeWriter::FileSegmentRangeWriter(
     FileCache * cache_,

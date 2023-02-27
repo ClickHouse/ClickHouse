@@ -29,7 +29,7 @@ namespace ErrorCodes
 namespace
 {
 
-void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & out, bool legacy = false)
+void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & out, bool allow_experimental_analyzer, bool legacy = false)
 {
     switch (node.type)
     {
@@ -40,19 +40,19 @@ void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & o
         {
             /// If it was created from ASTLiteral, then result_name can be an alias.
             /// We need to convert value back to string here.
-            if (const auto * column_const = typeid_cast<const ColumnConst *>(node.column.get()))
+            const auto * column_const = typeid_cast<const ColumnConst *>(node.column.get());
+            if (column_const && !allow_experimental_analyzer)
                 writeString(applyVisitor(FieldVisitorToString(), column_const->getField()), out);
-            /// It may be possible that column is ColumnSet
             else
                 writeString(node.result_name, out);
             break;
         }
         case ActionsDAG::ActionType::ALIAS:
-            appendColumnNameWithoutAlias(*node.children.front(), out, legacy);
+            appendColumnNameWithoutAlias(*node.children.front(), out, allow_experimental_analyzer, legacy);
             break;
         case ActionsDAG::ActionType::ARRAY_JOIN:
             writeCString("arrayJoin(", out);
-            appendColumnNameWithoutAlias(*node.children.front(), out, legacy);
+            appendColumnNameWithoutAlias(*node.children.front(), out, allow_experimental_analyzer, legacy);
             writeChar(')', out);
             break;
         case ActionsDAG::ActionType::FUNCTION:
@@ -71,17 +71,18 @@ void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & o
                     writeCString(", ", out);
                 first = false;
 
-                appendColumnNameWithoutAlias(*arg, out, legacy);
+                appendColumnNameWithoutAlias(*arg, out, allow_experimental_analyzer, legacy);
             }
             writeChar(')', out);
         }
     }
 }
 
-String getColumnNameWithoutAlias(const ActionsDAG::Node & node, bool legacy = false)
+String getColumnNameWithoutAlias(const ActionsDAG::Node & node, bool allow_experimental_analyzer, bool legacy = false)
 {
     WriteBufferFromOwnString out;
-    appendColumnNameWithoutAlias(node, out, legacy);
+    appendColumnNameWithoutAlias(node, out, allow_experimental_analyzer, legacy);
+
     return std::move(out.str());
 }
 
@@ -116,7 +117,7 @@ std::string RPNBuilderTreeNode::getColumnName() const
     if (ast_node)
         return ast_node->getColumnNameWithoutAlias();
     else
-        return getColumnNameWithoutAlias(*dag_node);
+        return getColumnNameWithoutAlias(*dag_node, getTreeContext().getSettings().allow_experimental_analyzer);
 }
 
 std::string RPNBuilderTreeNode::getColumnNameWithModuloLegacy() const
@@ -129,7 +130,7 @@ std::string RPNBuilderTreeNode::getColumnNameWithModuloLegacy() const
     }
     else
     {
-        return getColumnNameWithoutAlias(*dag_node, true /*legacy*/);
+        return getColumnNameWithoutAlias(*dag_node, getTreeContext().getSettings().allow_experimental_analyzer, true /*legacy*/);
     }
 }
 

@@ -63,5 +63,7 @@ public:
     void formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const override;
     bool hasSecretParts() const override;
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTCreateUserQuery>(clone()); }
+
+    QueryKind getQueryKind() const override { return QueryKind::Create; }
 };
 }

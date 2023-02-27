@@ -55,7 +55,7 @@ ColumnWithTypeAndName condtitionColumnToJoinable(const Block & block, const Stri
     if (!src_column_name.empty())
     {
         auto join_mask = JoinCommon::getColumnAsMask(block, src_column_name);
-        if (!join_mask.isConstant())
+        if (join_mask.hasData())
         {
             for (size_t i = 0; i < res_size; ++i)
                 null_map->getData()[i] = join_mask.isRowFiltered(i);
@@ -123,7 +123,7 @@ int nullableCompareAt(const IColumn & left_column, const IColumn & right_column,
 Block extractMinMax(const Block & block, const Block & keys)
 {
     if (block.rows() == 0)
-        throw Exception("Unexpected empty block", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected empty block");
 
     Block min_max = keys.cloneEmpty();
     MutableColumns columns = min_max.mutateColumns();
@@ -227,7 +227,7 @@ public:
     {
         /// SortCursorImpl can work with permutation, but MergeJoinCursor can't.
         if (impl.permutation)
-            throw Exception("Logical error: MergeJoinCursor doesn't support permutation", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: MergeJoinCursor doesn't support permutation");
     }
 
     size_t position() const { return impl.getRow(); }
@@ -261,7 +261,7 @@ public:
     int intersect(const Block & min_max, const Names & key_names)
     {
         if (end() == 0 || min_max.rows() != 2)
-            throw Exception("Unexpected block size", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected block size");
 
         size_t last_position = end() - 1;
         int first_vs_max = 0;
@@ -488,25 +488,25 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
         case JoinStrictness::Any:
         case JoinStrictness::Semi:
             if (!is_left && !is_inner)
-                throw Exception("Not supported. MergeJoin supports SEMI and ANY variants only for LEFT and INNER JOINs.",
-                                ErrorCodes::NOT_IMPLEMENTED);
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not supported. MergeJoin supports SEMI and ANY variants only for LEFT and INNER JOINs.");
             break;
         default:
-            throw Exception("Not supported. MergeJoin supports ALL, ANY and SEMI JOINs variants.", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not supported. MergeJoin supports ALL, ANY and SEMI JOINs variants.");
     }
 
     if (!max_rows_in_right_block)
-        throw Exception("partial_merge_join_rows_in_right_blocks cannot be zero", ErrorCodes::PARAMETER_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "partial_merge_join_rows_in_right_blocks cannot be zero");
 
     if (max_files_to_merge < 2)
-        throw Exception("max_files_to_merge cannot be less than 2", ErrorCodes::PARAMETER_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "max_files_to_merge cannot be less than 2");
 
     if (!size_limits.hasLimits())
     {
         size_limits.max_bytes = table_join->defaultMaxBytes();
         if (!size_limits.max_bytes)
-            throw Exception("No limit for MergeJoin (max_rows_in_join, max_bytes_in_join or default_max_bytes_in_join have to be set)",
-                            ErrorCodes::PARAMETER_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
+                            "No limit for MergeJoin (max_rows_in_join, max_bytes_in_join "
+                            "or default_max_bytes_in_join have to be set)");
     }
 
     if (!table_join->oneDisjunct())

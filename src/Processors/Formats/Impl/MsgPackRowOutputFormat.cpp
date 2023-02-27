@@ -208,7 +208,7 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
         default:
             break;
     }
-    throw Exception("Type " + data_type->getName() + " is not supported for MsgPack output format", ErrorCodes::ILLEGAL_COLUMN);
+    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} is not supported for MsgPack output format", data_type->getName());
 }
 
 void MsgPackRowOutputFormat::write(const Columns & columns, size_t row_num)

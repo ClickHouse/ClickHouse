@@ -115,3 +115,7 @@ Returns the exclusive upper bound of the corresponding hopping window.
 hopEnd(bounds_tuple);
 hopEnd(time_attr, hop_interval, window_interval [, timezone]);
 ```
+
+## Related content
+
+- Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)

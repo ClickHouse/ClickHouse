@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Common/Volnitsky.h>
 #include <Functions/IFunction.h>
@@ -91,8 +92,12 @@ struct ExtractParamImpl
         const ColumnString::Offsets & haystack_offsets,
         std::string needle,
         const ColumnPtr & start_pos,
-        PaddedPODArray<ResultType> & res)
+        PaddedPODArray<ResultType> & res,
+        [[maybe_unused]] ColumnUInt8 * res_null)
     {
+        /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
+        assert(!res_null);
+
         if (start_pos != nullptr)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function '{}' doesn't support start_pos argument", name);
 

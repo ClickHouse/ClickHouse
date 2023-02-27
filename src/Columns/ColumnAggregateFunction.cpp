@@ -196,8 +196,7 @@ MutableColumnPtr ColumnAggregateFunction::predictValues(const ColumnsWithTypeAnd
     }
     else
     {
-        throw Exception("Illegal aggregate function is passed",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal aggregate function is passed");
     }
     return res;
 }
@@ -264,12 +263,9 @@ void ColumnAggregateFunction::insertRangeFrom(const IColumn & from, size_t start
     const ColumnAggregateFunction & from_concrete = assert_cast<const ColumnAggregateFunction &>(from);
 
     if (start + length > from_concrete.data.size())
-        throw Exception("Parameters start = " + toString(start) + ", length = " + toString(length)
-                + " are out of bound in ColumnAggregateFunction::insertRangeFrom method"
-                  " (data.size() = "
-                + toString(from_concrete.data.size())
-                + ").",
-            ErrorCodes::PARAMETER_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameters start = {}, length = {} are out of bound "
+                        "in ColumnAggregateFunction::insertRangeFrom method (data.size() = {}).",
+                        toString(start), toString(length), toString(from_concrete.data.size()));
 
     if (force_data_ownership || (!empty() && src.get() != &from_concrete))
     {
@@ -361,8 +357,8 @@ void ColumnAggregateFunction::updateWeakHash32(WeakHash32 & hash) const
 {
     auto s = data.size();
     if (hash.getData().size() != data.size())
-        throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
-                        ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
+                        "column size is {}, hash size is {}", std::to_string(s), hash.getData().size());
 
     auto & hash_data = hash.getData();
 
@@ -512,8 +508,8 @@ void ColumnAggregateFunction::insert(const Field & x)
 
     const auto & field_name = x.get<const AggregateFunctionStateData &>().name;
     if (type_string != field_name)
-        throw Exception("Cannot insert filed with type " + field_name + " into column with type " + type_string,
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot insert filed with type {} into column with type {}",
+                field_name, type_string);
 
     ensureOwnership();
     Arena & arena = createOrGetArena();
@@ -561,7 +557,7 @@ const char * ColumnAggregateFunction::deserializeAndInsertFromArena(const char *
 
 const char * ColumnAggregateFunction::skipSerializedInArena(const char *) const
 {
-    throw Exception("Method skipSerializedInArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method skipSerializedInArena is not supported for {}", getName());
 }
 
 void ColumnAggregateFunction::popBack(size_t n)
@@ -580,7 +576,7 @@ ColumnPtr ColumnAggregateFunction::replicate(const IColumn::Offsets & offsets) c
 {
     size_t size = data.size();
     if (size != offsets.size())
-        throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets doesn't match size of column.");
 
     if (size == 0)
         return cloneEmpty();

@@ -58,7 +58,7 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, Contex
 {
     const auto & func_args = ast_function->as<ASTFunction &>();
     if (!func_args.arguments)
-        throw Exception("Table function 'PostgreSQL' must have arguments.", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function 'PostgreSQL' must have arguments.");
 
     configuration.emplace(StoragePostgreSQL::getConfiguration(func_args.arguments->children, context));
     const auto & settings = context->getSettingsRef();

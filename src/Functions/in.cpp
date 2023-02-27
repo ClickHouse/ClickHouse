@@ -104,8 +104,8 @@ public:
         if (!column_set)
             column_set = checkAndGetColumn<const ColumnSet>(column_set_ptr.get());
         if (!column_set)
-            throw Exception("Second argument for function '" + getName() + "' must be Set; found " + column_set_ptr->getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function '{}' must be Set; found {}",
+                getName(), column_set_ptr->getName());
 
         ColumnsWithTypeAndName columns_of_key_columns;
 
