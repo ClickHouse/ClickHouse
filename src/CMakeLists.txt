@@ -577,7 +577,6 @@ if (TARGET ch_contrib::annoy)
 endif()
 
 if (TARGET ch_rust::skim)
-    # Add only -I, library is needed only for clickhouse-client/clickhouse-local
     dbms_target_include_directories(PRIVATE $<TARGET_PROPERTY:ch_rust::skim,INTERFACE_INCLUDE_DIRECTORIES>)
     dbms_target_link_libraries(PUBLIC ch_rust::skim)
 endif()
