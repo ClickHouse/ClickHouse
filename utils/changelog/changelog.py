@@ -33,7 +33,7 @@ categories_preferred_order = (
 FROM_REF = ""
 TO_REF = ""
 SHA_IN_CHANGELOG = []  # type: List[str]
-gh = GitHub(create_cache_dir=False)
+gh = GitHub()
 CACHE_PATH = p.join(p.dirname(p.realpath(__file__)), "gh_cache")
 
 
@@ -384,11 +384,7 @@ def main():
     # Get all PRs for the given time frame
     global gh
     gh = GitHub(
-        args.gh_user_or_token,
-        args.gh_password,
-        create_cache_dir=False,
-        per_page=100,
-        pool_size=args.jobs,
+        args.gh_user_or_token, args.gh_password, per_page=100, pool_size=args.jobs
     )
     gh.cache_path = CACHE_PATH
     query = f"type:pr repo:{args.repo} is:merged"

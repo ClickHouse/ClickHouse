@@ -1,6 +1,3 @@
----
-slug: /en/sql-reference/functions/distance-functions
----
 # Distance functions
 
 ## L1Norm
@@ -474,13 +471,13 @@ Calculates the cosine distance between two vectors (the values of the tuples are
 **Syntax**
 
 ```sql
-cosineDistance(vector1, vector2)
+cosineDistance(tuple1, tuple2)
 ```
 
 **Arguments**
 
--   `vector1` — First tuple. [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
--   `vector2` — Second tuple. [Tuple](../../sql-reference/data-types/tuple.md) or [Array](../../sql-reference/data-types/array.md).
+-   `tuple1` — First tuple. [Tuple](../../sql-reference/data-types/tuple.md).
+-   `tuple2` — Second tuple. [Tuple](../../sql-reference/data-types/tuple.md).
 
 **Returned value**
 
@@ -488,7 +485,7 @@ cosineDistance(vector1, vector2)
 
 Type: [Float](../../sql-reference/data-types/float.md).
 
-**Examples**
+**Example**
 
 Query:
 

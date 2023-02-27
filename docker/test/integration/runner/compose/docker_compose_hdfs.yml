@@ -5,8 +5,8 @@ services:
         hostname: hdfs1
         restart: always
         expose:
-            - ${HDFS_NAME_PORT:-50070}
-            - ${HDFS_DATA_PORT:-50075}
+            - ${HDFS_NAME_PORT}
+            - ${HDFS_DATA_PORT}
         entrypoint: /etc/bootstrap.sh -d
         volumes:
             - type: ${HDFS_FS:-tmpfs}

@@ -107,8 +107,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
 #########################################################################################
 #################################### ORDINARY BUILDS ####################################
@@ -152,8 +154,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderDebAarch64:
     needs: [DockerHubPush]
@@ -194,8 +198,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderDebAsan:
     needs: [DockerHubPush]
@@ -235,8 +241,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderDebTsan:
     needs: [DockerHubPush]
@@ -276,8 +284,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderDebDebug:
     needs: [DockerHubPush]
@@ -317,8 +327,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderBinDarwin:
     needs: [DockerHubPush]
@@ -359,8 +371,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
   BuilderBinDarwinAarch64:
     needs: [DockerHubPush]
@@ -401,8 +415,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH" "$CACHES_PATH"
 ############################################################################################
 ##################################### Docker images  #######################################
@@ -427,8 +443,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
 ############################################################################################
 ##################################### BUILD REPORTER #######################################
@@ -471,8 +489,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   BuilderSpecialReport:
     needs:
@@ -509,77 +529,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
-          sudo rm -fr "$TEMP_PATH"
-############################################################################################
-#################################### INSTALL PACKAGES ######################################
-############################################################################################
-  InstallPackagesTestRelease:
-    needs: [BuilderDebRelease]
-    runs-on: [self-hosted, style-checker]
-    steps:
-      - name: Set envs
-        run: |
-          cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/test_install
-          REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Install packages (amd64)
-          REPO_COPY=${{runner.temp}}/test_install/ClickHouse
-          EOF
-      - name: Download json reports
-        uses: actions/download-artifact@v3
-        with:
-          path: ${{ env.REPORTS_PATH }}
-      - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
-      - name: Test packages installation
-        run: |
-          sudo rm -fr "$TEMP_PATH"
-          mkdir -p "$TEMP_PATH"
-          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci"
-          python3 install_check.py "$CHECK_NAME"
-      - name: Cleanup
-        if: always()
-        run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
-          sudo rm -fr "$TEMP_PATH"
-  InstallPackagesTestAarch64:
-    needs: [BuilderDebAarch64]
-    runs-on: [self-hosted, style-checker-aarch64]
-    steps:
-      - name: Set envs
-        run: |
-          cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/test_install
-          REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Install packages (arm64)
-          REPO_COPY=${{runner.temp}}/test_install/ClickHouse
-          EOF
-      - name: Download json reports
-        uses: actions/download-artifact@v3
-        with:
-          path: ${{ env.REPORTS_PATH }}
-      - name: Check out repository code
-        uses: ClickHouse/checkout@v1
-        with:
-          clear-repository: true
-      - name: Test packages installation
-        run: |
-          sudo rm -fr "$TEMP_PATH"
-          mkdir -p "$TEMP_PATH"
-          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci"
-          python3 install_check.py "$CHECK_NAME"
-      - name: Cleanup
-        if: always()
-        run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
 ##############################################################################################
 ########################### FUNCTIONAl STATELESS TESTS #######################################
@@ -593,7 +546,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stateless_debug
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stateless tests (asan)
+          CHECK_NAME=Stateless tests (address)
           REPO_COPY=${{runner.temp}}/stateless_debug/ClickHouse
           KILL_TIMEOUT=10800
           EOF
@@ -615,8 +568,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
 ##############################################################################################
 ############################ FUNCTIONAl STATEFUL TESTS #######################################
@@ -652,8 +607,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
 ##############################################################################################
 ######################################### STRESS TESTS #######################################
@@ -671,7 +628,7 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/stress_thread
           REPORTS_PATH=${{runner.temp}}/reports_dir
-          CHECK_NAME=Stress test (tsan)
+          CHECK_NAME=Stress test (thread)
           REPO_COPY=${{runner.temp}}/stress_thread/ClickHouse
           EOF
       - name: Download json reports
@@ -692,8 +649,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
 #############################################################################################
 ############################# INTEGRATION TESTS #############################################
@@ -728,8 +687,10 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
+          # shellcheck disable=SC2046
+          docker kill $(docker ps -q) ||:
+          # shellcheck disable=SC2046
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr "$TEMP_PATH"
   FinishCheck:
     needs:

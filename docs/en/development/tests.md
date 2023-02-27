@@ -1,10 +1,10 @@
 ---
-slug: /en/development/tests
 sidebar_position: 70
 sidebar_label: Testing
-title: ClickHouse Testing
 description: Most of ClickHouse features can be tested with functional tests and they are mandatory to use for every change in ClickHouse code that can be tested that way.
 ---
+
+# ClickHouse Testing
 
 ## Functional Tests
 
@@ -15,11 +15,6 @@ Each functional test sends one or multiple queries to the running ClickHouse ser
 Tests are located in `queries` directory. There are two subdirectories: `stateless` and `stateful`. Stateless tests run queries without any preloaded test data - they often create small synthetic datasets on the fly, within the test itself. Stateful tests require preloaded test data from ClickHouse and it is available to general public.
 
 Each test can be one of two types: `.sql` and `.sh`. `.sql` test is the simple SQL script that is piped to `clickhouse-client --multiquery`. `.sh` test is a script that is run by itself. SQL tests are generally preferable to `.sh` tests. You should use `.sh` tests only when you have to test some feature that cannot be exercised from pure SQL, such as piping some input data into `clickhouse-client` or testing `clickhouse-local`.
-
-:::note
-A common mistake when testing data types `DateTime` and `DateTime64` is assuming that the server uses a specific time zone (e.g. "UTC"). This is not the case, time zones in CI test runs
-are deliberately randomized. The easiest workaround is to specify the time zone for test values explicitly, e.g. `toDateTime64(val, 3, 'Europe/Amsterdam')`.
-:::
 
 ### Running a Test Locally {#functional-test-locally}
 
@@ -144,7 +139,7 @@ If the system clickhouse-server is already running and you do not want to stop i
 Build tests allow to check that build is not broken on various alternative configurations and on some foreign systems. These tests are automated as well.
 
 Examples:
--   cross-compile for Darwin x86_64 (macOS)
+-   cross-compile for Darwin x86_64 (Mac OS X)
 -   cross-compile for FreeBSD x86_64
 -   cross-compile for Linux AArch64
 -   build on Ubuntu with libraries from system packages (discouraged)
@@ -207,7 +202,7 @@ Google OSS-Fuzz can be found at `docker/fuzz`.
 We also use simple fuzz test to generate random SQL queries and to check that the server does not die executing them.
 You can find it in `00746_sql_fuzzy.pl`. This test should be run continuously (overnight and longer).
 
-We also use sophisticated AST-based query fuzzer that is able to find huge amount of corner cases. It does random permutations and substitutions in queries AST. It remembers AST nodes from previous tests to use them for fuzzing of subsequent tests while processing them in random order. You can learn more about this fuzzer in [this blog article](https://clickhouse.com/blog/fuzzing-click-house).
+We also use sophisticated AST-based query fuzzer that is able to find huge amount of corner cases. It does random permutations and substitutions in queries AST. It remembers AST nodes from previous tests to use them for fuzzing of subsequent tests while processing them in random order. You can learn more about this fuzzer in [this blog article](https://clickhouse.com/blog/en/2021/fuzzing-clickhouse/).
 
 ## Stress test
 
@@ -286,6 +281,10 @@ We also track test coverage but only for functional tests and only for clickhous
 
 There is automated check for flaky tests. It runs all new tests 100 times (for functional tests) or 10 times (for integration tests). If at least single time the test failed, it is considered flaky.
 
+## Testflows
+
+[Testflows](https://testflows.com/) is an enterprise-grade open-source testing framework, which is used to test a subset of ClickHouse.
+
 ## Test Automation {#test-automation}
 
 We run tests with [GitHub Actions](https://github.com/features/actions).
@@ -294,3 +293,5 @@ Build jobs and tests are run in Sandbox on per commit basis. Resulting packages 
 
 We do not use Travis CI due to the limit on time and computational power.
 We do not use Jenkins. It was used before and now we are happy we are not using Jenkins.
+
+[Original article](https://clickhouse.com/docs/en/development/tests/) <!--hide-->
