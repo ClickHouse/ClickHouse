@@ -15,7 +15,7 @@ public:
 
     explicit TimezoneMixin(const String & time_zone_name = "")
         : has_explicit_time_zone(!time_zone_name.empty())
-        , time_zone(DateLUT::instance(time_zone_name))
+        , time_zone(time_zone_name.empty() ? DateLUT::instance() : DateLUT::instance(time_zone_name))
         , utc_time_zone(DateLUT::instance("UTC"))
     {
     }
