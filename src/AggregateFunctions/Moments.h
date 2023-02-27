@@ -595,6 +595,9 @@ struct AnalysisOfVarianceMoments
 
     Float64 getPValue(Float64 f_statistic) const
     {
+        if (unlikely(!std::isfinite(f_statistic)))
+            return std::numeric_limits<Float64>::quiet_NaN();
+
         const auto k = xs1.size();
         const auto n = std::accumulate(ns.begin(), ns.end(), 0UL);
 

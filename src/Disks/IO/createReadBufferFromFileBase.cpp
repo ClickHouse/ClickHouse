@@ -7,7 +7,7 @@
 #include <Disks/IO/ThreadPoolReader.h>
 #include <IO/SynchronousReader.h>
 #include <Common/ProfileEvents.h>
-
+#include "config.h"
 
 namespace ProfileEvents
 {
@@ -84,7 +84,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         }
         else if (settings.local_fs_method == LocalFSReadMethod::io_uring)
         {
-#if defined(OS_LINUX)
+#if USE_LIBURING
             static std::shared_ptr<IOUringReader> reader = std::make_shared<IOUringReader>(512);
             if (!reader->isSupported())
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "io_uring is not supported by this system");
@@ -149,13 +149,13 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
 
         if (buffer_size % min_alignment)
         {
-            existing_memory = nullptr;  /// Cannot reuse existing memory is it has unaligned size.
+            existing_memory = nullptr;  /// Cannot reuse existing memory as it has unaligned size.
             buffer_size = align_up(buffer_size);
         }
 
         if (reinterpret_cast<uintptr_t>(existing_memory) % min_alignment)
         {
-            existing_memory = nullptr;  /// Cannot reuse existing memory is it has unaligned offset.
+            existing_memory = nullptr;  /// Cannot reuse existing memory as it has unaligned offset.
         }
 
         /// Attempt to open a file with O_DIRECT

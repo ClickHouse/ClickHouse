@@ -4,9 +4,13 @@ sidebar_position: 56
 sidebar_label: JSON
 ---
 
-# Functions for Working with JSON
+There are two sets of functions to parse JSON. 
+   - `visitParam*` (`simpleJSON*`) is made to parse a special very limited subset of a JSON, but these functions are extremely fast.
+   - `JSONExtract*` is made to parse normal JSON.
 
-ClickHouse has special functions for working with this JSON. All the JSON functions are based on strong assumptions about what the JSON can be, but they try to do as little as possible to get the job done.
+# visitParam functions
+
+ClickHouse has special functions for working with simplified JSON. All these JSON functions are based on strong assumptions about what the JSON can be, but they try to do as little as possible to get the job done.
 
 The following assumptions are made:
 
@@ -75,7 +79,9 @@ visitParamExtractString('{"abc":"hello}', 'abc') = '';
 
 There is currently no support for code points in the format `\uXXXX\uYYYY` that are not from the basic multilingual plane (they are converted to CESU-8 instead of UTF-8).
 
-The following functions are based on [simdjson](https://github.com/lemire/simdjson) designed for more complex JSON parsing requirements. The assumption 2 mentioned above still applies.
+# JSONExtract functions
+
+The following functions are based on [simdjson](https://github.com/lemire/simdjson) designed for more complex JSON parsing requirements.
 
 ## isValidJSON(json)
 
@@ -465,3 +471,38 @@ Result:
 
 -   [output_format_json_quote_64bit_integers](../../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers)
 -   [output_format_json_quote_denormals](../../operations/settings/settings.md#settings-output_format_json_quote_denormals)
+
+
+## JSONArrayLength
+
+Returns the number of elements in the outermost JSON array. The function returns NULL if input JSON string is invalid.
+
+**Syntax**
+
+``` sql
+JSONArrayLength(json)
+```
+
+Alias: `JSON_ARRAY_LENGTH(json)`.
+
+**Arguments**
+
+-   `json` — [String](../../sql-reference/data-types/string.md) with valid JSON.
+
+**Returned value**
+
+-   If `json` is a valid JSON array string, returns the number of array elements, otherwise returns NULL.
+
+Type: [Nullable(UInt64)](../../sql-reference/data-types/int-uint.md).
+
+**Example**
+
+``` sql
+SELECT
+    JSONArrayLength(''),
+    JSONArrayLength('[1,2,3]')
+
+┌─JSONArrayLength('')─┬─JSONArrayLength('[1,2,3]')─┐
+│                ᴺᵁᴸᴸ │                          3 │
+└─────────────────────┴────────────────────────────┘
+```

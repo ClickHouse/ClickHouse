@@ -3,39 +3,11 @@
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserRenameQuery.h>
+#include <Parsers/parseDatabaseAndTableName.h>
 
 
 namespace DB
 {
-
-
-/// Parse database.table or table.
-static bool parseDatabaseAndTable(
-    ASTRenameQuery::Table & db_and_table, IParser::Pos & pos, Expected & expected)
-{
-    ParserIdentifier name_p;
-    ParserToken s_dot(TokenType::Dot);
-
-    ASTPtr database;
-    ASTPtr table;
-
-    if (!name_p.parse(pos, table, expected))
-        return false;
-
-    if (s_dot.ignore(pos, expected))
-    {
-        database = table;
-        if (!name_p.parse(pos, table, expected))
-            return false;
-    }
-
-    db_and_table.database.clear();
-    tryGetIdentifierNameInto(database, db_and_table.database);
-    tryGetIdentifierNameInto(table, db_and_table.table);
-
-    return true;
-}
-
 
 bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -67,7 +39,7 @@ bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         ASTPtr from_db;
         ASTPtr to_db;
-        ParserIdentifier db_name_p;
+        ParserIdentifier db_name_p(true);
         bool if_exists = s_if_exists.ignore(pos, expected);
         if (!db_name_p.parse(pos, from_db, expected))
             return false;
@@ -87,8 +59,10 @@ bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         query->database = true;
         query->elements.emplace({});
         query->elements.front().if_exists = if_exists;
-        tryGetIdentifierNameInto(from_db, query->elements.front().from.database);
-        tryGetIdentifierNameInto(to_db, query->elements.front().to.database);
+        query->elements.front().from.database = from_db;
+        query->elements.front().to.database = to_db;
+        query->children.push_back(std::move(from_db));
+        query->children.push_back(std::move(to_db));
         query->cluster = cluster_str;
         node = query;
         return true;
@@ -96,24 +70,35 @@ bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     else
         return false;
 
-    ASTRenameQuery::Elements elements;
-
     const auto ignore_delim = [&] { return exchange ? s_and.ignore(pos) : s_to.ignore(pos); };
+
+    auto query = std::make_shared<ASTRenameQuery>();
+
+    ASTRenameQuery::Elements & elements = query->elements;
 
     while (true)
     {
         if (!elements.empty() && !s_comma.ignore(pos))
             break;
 
-        ASTRenameQuery::Element& ref = elements.emplace_back();
+        ASTRenameQuery::Element & ref = elements.emplace_back();
 
         if (!exchange)
             ref.if_exists = s_if_exists.ignore(pos, expected);
 
-        if (!parseDatabaseAndTable(ref.from, pos, expected)
+        if (!parseDatabaseAndTableAsAST(pos, expected, ref.from.database, ref.from.table)
             || !ignore_delim()
-            || !parseDatabaseAndTable(ref.to, pos, expected))
+            || !parseDatabaseAndTableAsAST(pos, expected, ref.to.database, ref.to.table))
             return false;
+
+        if (ref.from.database)
+            query->children.push_back(ref.from.database);
+        if (ref.from.table)
+            query->children.push_back(ref.from.table);
+        if (ref.to.database)
+            query->children.push_back(ref.to.database);
+        if (ref.to.table)
+            query->children.push_back(ref.to.table);
     }
 
     String cluster_str;
@@ -123,13 +108,10 @@ bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
-    auto query = std::make_shared<ASTRenameQuery>();
     query->cluster = cluster_str;
-    node = query;
-
-    query->elements = elements;
     query->exchange = exchange;
     query->dictionary = dictionary;
+    node = query;
     return true;
 }
 
