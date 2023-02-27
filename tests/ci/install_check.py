@@ -345,7 +345,7 @@ def main():
     ch_helper = ClickHouseHelper()
     mark_flaky_tests(ch_helper, args.check_name, test_results)
 
-    format_description(description)
+    description = format_description(description)
 
     post_commit_status(gh, pr_info.sha, args.check_name, description, state, report_url)
 
