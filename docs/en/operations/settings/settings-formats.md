@@ -507,7 +507,7 @@ Enabled by default.
 
 Ignore unknown keys in json object for named tuples.
 
-Disabled by default.
+Enabled by default.
 
 ## input_format_json_defaults_for_missing_elements_in_named_tuple {#input_format_json_defaults_for_missing_elements_in_named_tuple}
 
