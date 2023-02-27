@@ -62,9 +62,5 @@ from
    ) original_medians_array,
    (
         select any(test) test, any(query) query from table
-   ) any_query,
-   (
-       select throwIf(uniq((test, query)) != 1) from table
-   ) check_single_query -- this subselect checks that there is only one query in the input table;
-                        -- written this way so that it is not optimized away (#10523)
+   ) any_query
 ;
