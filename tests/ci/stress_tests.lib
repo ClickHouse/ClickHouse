@@ -16,14 +16,17 @@ function escaped()
     clickhouse local -S 's String' --input-format=LineAsString -q "select substr(s, 1, $FAILURE_CONTEXT_MAX_LINE_WIDTH)
       from table format CustomSeparated settings format_custom_row_after_delimiter='\\\\\\\\n'"
 }
+
 function head_escaped()
 {
     head -n $FAILURE_CONTEXT_LINES $1 | escaped
 }
+
 function unts()
 {
     grep -Po "[0-9][0-9]:[0-9][0-9] \K.*"
 }
+
 function trim_server_logs()
 {
     head -n $FAILURE_CONTEXT_LINES "/test_output/$1" | grep -Eo " \[ [0-9]+ \] \{.*" | escaped
@@ -143,7 +146,8 @@ function stop()
 
     clickhouse stop --max-tries "$max_tries" --do-not-kill && return
 
-    if [ $check_hang == true ] then
+    if [ $check_hang == true ]
+    then
       # We failed to stop the server with SIGTERM. Maybe it hang, let's collect stacktraces.
       echo -e "Possible deadlock on shutdown (see gdb.log)$FAIL" >> /test_output/test_results.tsv
       kill -TERM "$(pidof gdb)" ||:
