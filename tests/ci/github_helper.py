@@ -35,6 +35,8 @@ class GitHub(github.Github):
         self._cache_path = Path(CACHE_PATH)
         if create_cache_dir:
             self.cache_path = self.cache_path
+        if not kwargs.get("per_page"):
+            kwargs["per_page"] = 100
         # And set Path
         super().__init__(*args, **kwargs)
         self._retries = 0

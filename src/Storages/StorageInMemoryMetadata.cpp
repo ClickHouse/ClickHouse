@@ -41,6 +41,7 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     , settings_changes(other.settings_changes ? other.settings_changes->clone() : nullptr)
     , select(other.select)
     , comment(other.comment)
+    , metadata_version(other.metadata_version)
 {
 }
 
@@ -69,6 +70,7 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
         settings_changes.reset();
     select = other.select;
     comment = other.comment;
+    metadata_version = other.metadata_version;
     return *this;
 }
 
@@ -120,6 +122,18 @@ void StorageInMemoryMetadata::setSettingsChanges(const ASTPtr & settings_changes
 void StorageInMemoryMetadata::setSelectQuery(const SelectQueryDescription & select_)
 {
     select = select_;
+}
+
+void StorageInMemoryMetadata::setMetadataVersion(int32_t metadata_version_)
+{
+    metadata_version = metadata_version_;
+}
+
+StorageInMemoryMetadata StorageInMemoryMetadata::withMetadataVersion(int32_t metadata_version_) const
+{
+    StorageInMemoryMetadata copy(*this);
+    copy.setMetadataVersion(metadata_version_);
+    return copy;
 }
 
 const ColumnsDescription & StorageInMemoryMetadata::getColumns() const

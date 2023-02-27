@@ -40,5 +40,5 @@ expect "2020-01-01 00:00:00.000\t2"
 send -- "DROP TABLE test_01179\r"
 expect "Ok."
 
-send -- "\4"
+send -- "exit\r"
 expect eof
