@@ -56,10 +56,9 @@ public:
         return true;
     }
 
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
-    {
-        return {1};
-    }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 

@@ -1,15 +1,16 @@
 #pragma once
 
-#include <Interpreters/PreparedSets.h>
-#include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Core/SortDescription.h>
-#include <Core/Names.h>
-#include <Storages/ProjectionsDescription.h>
-#include <Interpreters/AggregateDescription.h>
-#include <QueryPipeline/StreamLocalLimits.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/TableExpressionModifiers.h>
+#include <Core/Names.h>
+#include <Core/SortDescription.h>
+#include <Interpreters/AggregateDescription.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/PreparedSets.h>
 #include <Planner/PlannerContext.h>
+#include <QueryPipeline/StreamLocalLimits.h>
+#include <Storages/ProjectionsDescription.h>
+#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
 #include <memory>
 
@@ -206,6 +207,8 @@ struct SelectQueryInfo
     ///
     /// Configured in StorageDistributed::getQueryProcessingStage()
     ClusterPtr optimized_cluster;
+
+    mutable ParallelReplicasReadingCoordinatorPtr coordinator;
 
     TreeRewriterResultPtr syntax_analyzer_result;
 

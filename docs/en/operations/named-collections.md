@@ -239,7 +239,7 @@ Example of configuration:
 <clickhouse>
     <named_collections>
         <remote1>
-            <host>localhost</host>
+            <host>remote_host</host>
             <port>9000</port>
             <database>system</database>
             <user>foo</user>

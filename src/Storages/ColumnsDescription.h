@@ -35,8 +35,9 @@ struct GetColumnsOptions
         Materialized = 2,
         Aliases = 4,
         Ephemeral = 8,
-
+        OrdinaryAndAliases = Ordinary | Aliases,
         AllPhysical = Ordinary | Materialized,
+        AllPhysicalAndAliases = AllPhysical | Aliases,
         All = AllPhysical | Aliases | Ephemeral,
     };
 
@@ -161,7 +162,7 @@ public:
         {
             String exception_message = fmt::format("Cannot find column {} in ColumnsDescription", column_name);
             appendHintsMessage(exception_message, column_name);
-            throw Exception(exception_message, ErrorCodes::LOGICAL_ERROR);
+            throw Exception::createDeprecated(exception_message, ErrorCodes::LOGICAL_ERROR);
         }
 
         removeSubcolumns(it->name);

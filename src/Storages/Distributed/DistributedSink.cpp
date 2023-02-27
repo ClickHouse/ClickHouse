@@ -13,7 +13,7 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/ConnectionTimeoutsContext.h>
+#include <IO/ConnectionTimeouts.h>
 #include <Formats/NativeWriter.h>
 #include <Processors/Sinks/RemoteSink.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>

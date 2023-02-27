@@ -118,10 +118,9 @@ static void skipEndOfLine(ReadBuffer & in)
         if (!in.eof() && *in.position() == '\n')
             ++in.position();
         else
-            throw Exception(
+            throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Cannot parse CSV format: found \\r (CR) not followed by \\n (LF)."
-                " Line must end by \\n (LF) or \\r\\n (CR LF) or \\n\\r.",
-                ErrorCodes::INCORRECT_DATA);
+                " Line must end by \\n (LF) or \\r\\n (CR LF) or \\n\\r.");
     }
     else if (!in.eof())
         throw Exception(ErrorCodes::INCORRECT_DATA, "Expected end of line");
@@ -294,7 +293,7 @@ bool CSVFormatReader::readField(
         return false;
     }
 
-    if (format_settings.null_as_default && !type->isNullable() && !type->isLowCardinalityNullable())
+    if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
     {
         /// If value is null but type is not nullable then use default value instead.
         return SerializationNullable::deserializeTextCSVImpl(column, *buf, format_settings, serialization);

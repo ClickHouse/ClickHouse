@@ -34,14 +34,7 @@ LocalConnection::LocalConnection(ContextPtr context_, bool send_progress_, bool 
 
 LocalConnection::~LocalConnection()
 {
-    try
-    {
-        state.reset();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    state.reset();
 }
 
 bool LocalConnection::hasReadPendingData() const
@@ -187,7 +180,7 @@ void LocalConnection::sendQuery(
     catch (...)
     {
         state->io.onException();
-        state->exception = std::make_unique<Exception>("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+        state->exception = std::make_unique<Exception>(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception");
     }
 }
 
@@ -291,7 +284,7 @@ bool LocalConnection::poll(size_t)
         catch (...)
         {
             state->io.onException();
-            state->exception = std::make_unique<Exception>("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+            state->exception = std::make_unique<Exception>(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception");
         }
     }
 
@@ -508,7 +501,7 @@ void LocalConnection::sendExternalTablesData(ExternalTablesData &)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }
 
-void LocalConnection::sendMergeTreeReadTaskResponse(const PartitionReadResponse &)
+void LocalConnection::sendMergeTreeReadTaskResponse(const ParallelReadResponse &)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }

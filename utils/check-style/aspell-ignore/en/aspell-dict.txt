@@ -24,6 +24,7 @@ CapnProto
 CentOS
 ClickHouse
 ClickHouse's
+CodeBlock
 Config
 ConnectionDetails
 Contrib
@@ -127,8 +128,8 @@ PrettySpaceNoEscapesMonoBlock
 Protobuf
 ProtobufSingle
 QTCreator
-QueryResultCacheHits
-QueryResultCacheMisses
+QueryCacheHits
+QueryCacheMisses
 RBAC
 RawBLOB
 RedHat
@@ -151,6 +152,7 @@ Submodules
 Subqueries
 TSVRaw
 TSan
+TabItem
 TabSeparated
 TabSeparatedRaw
 TabSeparatedRawWithNames
@@ -180,6 +182,7 @@ WriteBuffers
 WithNamesAndTypes
 XCode
 YAML
+Yasm
 YYYY
 Zipkin
 ZooKeeper
@@ -329,6 +332,7 @@ kafka
 kafkacat
 konsole
 latencies
+laion
 lexicographically
 libFuzzer
 libc

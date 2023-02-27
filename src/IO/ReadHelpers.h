@@ -174,7 +174,7 @@ void assertNotEOF(ReadBuffer & buf);
 
 [[noreturn]] void throwAtAssertionFailed(const char * s, ReadBuffer & buf);
 
-inline bool checkChar(char c, ReadBuffer & buf)  // -V1071
+inline bool checkChar(char c, ReadBuffer & buf)
 {
     char a;
     if (!buf.peek(a) || a != c)
@@ -287,7 +287,7 @@ inline void readBoolTextWord(bool & x, ReadBuffer & buf, bool support_upper_case
                 [[fallthrough]];
         }
         default:
-            throw ParsingException("Unexpected Bool value", ErrorCodes::CANNOT_PARSE_BOOL);
+            throw ParsingException(ErrorCodes::CANNOT_PARSE_BOOL, "Unexpected Bool value");
     }
 }
 
@@ -331,9 +331,8 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
                 if (has_sign)
                 {
                     if constexpr (throw_exception)
-                        throw ParsingException(
-                            "Cannot parse number with multiple sign (+/-) characters",
-                            ErrorCodes::CANNOT_PARSE_NUMBER);
+                        throw ParsingException(ErrorCodes::CANNOT_PARSE_NUMBER,
+                            "Cannot parse number with multiple sign (+/-) characters");
                     else
                         return ReturnType(false);
                 }
@@ -349,9 +348,8 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
                 if (has_sign)
                 {
                     if constexpr (throw_exception)
-                        throw ParsingException(
-                            "Cannot parse number with multiple sign (+/-) characters",
-                            ErrorCodes::CANNOT_PARSE_NUMBER);
+                        throw ParsingException(ErrorCodes::CANNOT_PARSE_NUMBER,
+                            "Cannot parse number with multiple sign (+/-) characters");
                     else
                         return ReturnType(false);
                 }
@@ -361,7 +359,7 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
                 else
                 {
                     if constexpr (throw_exception)
-                        throw ParsingException("Unsigned type must not contain '-' symbol", ErrorCodes::CANNOT_PARSE_NUMBER);
+                        throw ParsingException(ErrorCodes::CANNOT_PARSE_NUMBER, "Unsigned type must not contain '-' symbol");
                     else
                         return ReturnType(false);
                 }
@@ -423,8 +421,8 @@ end:
     if (has_sign && !has_number)
     {
         if constexpr (throw_exception)
-            throw ParsingException(
-                "Cannot parse number with a sign character but without any numeric character", ErrorCodes::CANNOT_PARSE_NUMBER);
+            throw ParsingException(ErrorCodes::CANNOT_PARSE_NUMBER,
+                "Cannot parse number with a sign character but without any numeric character");
         else
             return ReturnType(false);
     }
@@ -460,7 +458,7 @@ void readIntText(T & x, ReadBuffer & buf)
 }
 
 template <ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::CHECK_OVERFLOW, typename T>
-bool tryReadIntText(T & x, ReadBuffer & buf)  // -V1071
+bool tryReadIntText(T & x, ReadBuffer & buf)
 {
     return readIntTextImpl<T, bool, check_overflow>(x, buf);
 }
@@ -808,7 +806,7 @@ inline ReturnType readUUIDTextImpl(UUID & uuid, ReadBuffer & buf)
 
                 if constexpr (throw_exception)
                 {
-                    throw ParsingException(std::string("Cannot parse uuid ") + s, ErrorCodes::CANNOT_PARSE_UUID);
+                    throw ParsingException(ErrorCodes::CANNOT_PARSE_UUID, "Cannot parse uuid {}", s);
                 }
                 else
                 {
@@ -829,7 +827,7 @@ inline ReturnType readUUIDTextImpl(UUID & uuid, ReadBuffer & buf)
 
         if constexpr (throw_exception)
         {
-            throw ParsingException(std::string("Cannot parse uuid ") + s, ErrorCodes::CANNOT_PARSE_UUID);
+            throw ParsingException(ErrorCodes::CANNOT_PARSE_UUID, "Cannot parse uuid {}", s);
         }
         else
         {
@@ -855,7 +853,7 @@ inline ReturnType readIPv4TextImpl(IPv4 & ip, ReadBuffer & buf)
         return ReturnType(true);
 
     if constexpr (std::is_same_v<ReturnType, void>)
-        throw ParsingException(std::string("Cannot parse IPv4 ").append(buf.position(), buf.available()), ErrorCodes::CANNOT_PARSE_IPV4);
+        throw ParsingException(ErrorCodes::CANNOT_PARSE_IPV4, "Cannot parse IPv4 {}", std::string_view(buf.position(), buf.available()));
     else
         return ReturnType(false);
 }
@@ -877,7 +875,7 @@ inline ReturnType readIPv6TextImpl(IPv6 & ip, ReadBuffer & buf)
         return ReturnType(true);
 
     if constexpr (std::is_same_v<ReturnType, void>)
-        throw ParsingException(std::string("Cannot parse IPv6 ").append(buf.position(), buf.available()), ErrorCodes::CANNOT_PARSE_IPV6);
+        throw ParsingException(ErrorCodes::CANNOT_PARSE_IPV6, "Cannot parse IPv6 {}", std::string_view(buf.position(), buf.available()));
     else
         return ReturnType(false);
 }
@@ -1061,7 +1059,7 @@ inline void readDateTimeText(LocalDateTime & datetime, ReadBuffer & buf)
     if (10 != size)
     {
         s[size] = 0;
-        throw ParsingException(std::string("Cannot parse DateTime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
+        throw ParsingException(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime {}", s);
     }
 
     datetime.year((s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0'));
@@ -1077,7 +1075,7 @@ inline void readDateTimeText(LocalDateTime & datetime, ReadBuffer & buf)
     if (8 != size)
     {
         s[size] = 0;
-        throw ParsingException(std::string("Cannot parse time component of DateTime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
+        throw ParsingException(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse time component of DateTime {}", s);
     }
 
     datetime.hour((s[0] - '0') * 10 + (s[1] - '0'));
@@ -1300,7 +1298,7 @@ void readQuoted(std::vector<T> & x, ReadBuffer & buf)
             if (*buf.position() == ',')
                 ++buf.position();
             else
-                throw ParsingException("Cannot read array from text", ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT);
+                throw ParsingException(ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT, "Cannot read array from text");
         }
 
         first = false;
@@ -1323,7 +1321,7 @@ void readDoubleQuoted(std::vector<T> & x, ReadBuffer & buf)
             if (*buf.position() == ',')
                 ++buf.position();
             else
-                throw ParsingException("Cannot read array from text", ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT);
+                throw ParsingException(ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT, "Cannot read array from text");
         }
 
         first = false;

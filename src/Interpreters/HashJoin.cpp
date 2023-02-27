@@ -707,7 +707,7 @@ Block HashJoin::prepareRightBlock(const Block & block) const
 bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
 {
     if (!data)
-        throw Exception("Join data was released", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Join data was released");
 
     /// RowRef::SizeT is uint32_t (not size_t) for hash table Cell memory efficiency.
     /// It's possible to split bigger blocks and insert them by parts here. But it would be a dead code.
