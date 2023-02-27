@@ -508,7 +508,7 @@ def main():
         logging.getLogger("git_helper").setLevel(logging.DEBUG)
     token = args.token or get_best_robot_token()
 
-    gh = GitHub(token, create_cache_dir=False, per_page=100)
+    gh = GitHub(token, create_cache_dir=False)
     bp = Backport(gh, args.repo, args.dry_run)
     # https://github.com/python/mypy/issues/3004
     bp.gh.cache_path = f"{TEMP_PATH}/gh_cache"  # type: ignore
