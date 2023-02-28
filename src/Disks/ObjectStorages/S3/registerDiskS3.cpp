@@ -163,7 +163,9 @@ void registerDiskS3(DiskFactory & factory, bool global_skip_access_check)
             std::move(metadata_storage),
             std::move(s3_storage),
             send_metadata,
-            copy_thread_pool_size);
+            copy_thread_pool_size,
+            config.getString(config_prefix + ".read_resource", ""),
+            config.getString(config_prefix + ".write_resource", ""));
 
         s3disk->startup(context, skip_access_check);
 

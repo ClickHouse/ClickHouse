@@ -6,6 +6,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
+#include <Common/CurrentThread.h>
 #include <Common/createHardLink.h>
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
@@ -109,7 +110,9 @@ DiskObjectStorage::DiskObjectStorage(
     MetadataStoragePtr metadata_storage_,
     ObjectStoragePtr object_storage_,
     bool send_metadata_,
-    uint64_t thread_pool_size_)
+    uint64_t thread_pool_size_,
+    const String & read_resource_name_,
+    const String & write_resource_name_)
     : IDisk(name_, getAsyncExecutor(log_name, thread_pool_size_))
     , object_storage_root_path(object_storage_root_path_)
     , log (&Poco::Logger::get("DiskObjectStorage(" + log_name + ")"))
@@ -117,6 +120,8 @@ DiskObjectStorage::DiskObjectStorage(
     , object_storage(std::move(object_storage_))
     , send_metadata(send_metadata_)
     , threadpool_size(thread_pool_size_)
+    , read_resource_name(read_resource_name_)
+    , write_resource_name(write_resource_name_)
     , metadata_helper(std::make_unique<DiskObjectStorageRemoteMetadataRestoreHelper>(this, ReadSettings{}))
 {}
 
@@ -517,7 +522,9 @@ DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()
         metadata_storage,
         object_storage,
         send_metadata,
-        threadpool_size);
+        threadpool_size,
+        getReadResourceName(),
+        getWriteResourceName());
 }
 
 void DiskObjectStorage::wrapWithCache(FileCachePtr cache, const FileCacheSettings & cache_settings, const String & layer_name)
@@ -546,6 +553,32 @@ NameSet DiskObjectStorage::getCacheLayersNames() const
     return cache_layers;
 }
 
+template <class Settings>
+static inline Settings updateResourceLink(const Settings & settings, const String & resource_name)
+{
+    if (resource_name.empty())
+        return settings;
+    if (auto query_context = CurrentThread::getQueryContext())
+    {
+        Settings result(settings);
+        result.resource_link = query_context->getClassifier()->get(resource_name);
+        return result;
+    }
+    return settings;
+}
+
+String DiskObjectStorage::getReadResourceName() const
+{
+    std::unique_lock lock(resource_mutex);
+    return read_resource_name;
+}
+
+String DiskObjectStorage::getWriteResourceName() const
+{
+    std::unique_lock lock(resource_mutex);
+    return write_resource_name;
+}
+
 std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
     const String & path,
     const ReadSettings & settings,
@@ -554,7 +587,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
 {
     return object_storage->readObjects(
         metadata_storage->getStorageObjects(path),
-        object_storage->getAdjustedSettingsFromMetadataFile(settings, path),
+        object_storage->getAdjustedSettingsFromMetadataFile(updateResourceLink(settings, getReadResourceName()), path),
         read_hint,
         file_size);
 }
@@ -572,7 +605,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
         path,
         buf_size,
         mode,
-        object_storage->getAdjustedSettingsFromMetadataFile(settings, path));
+        object_storage->getAdjustedSettingsFromMetadataFile(updateResourceLink(settings, getWriteResourceName()), path));
 
     return result;
 }
@@ -585,6 +618,12 @@ void DiskObjectStorage::applyNewSettings(
 
     if (AsyncThreadPoolExecutor * exec = dynamic_cast<AsyncThreadPoolExecutor *>(&getExecutor()))
         exec->setMaxThreads(config.getInt(config_prefix + ".thread_pool_size", 16));
+
+    std::unique_lock lock(resource_mutex);
+    if (String new_read_resource_name = config.getString(config_prefix + ".read_resource", ""); new_read_resource_name != read_resource_name)
+        read_resource_name = new_read_resource_name;
+    if (String new_write_resource_name = config.getString(config_prefix + ".write_resource", ""); new_write_resource_name != write_resource_name)
+        write_resource_name = new_write_resource_name;
 }
 
 void DiskObjectStorage::restoreMetadataIfNeeded(

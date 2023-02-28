@@ -1165,7 +1165,9 @@ ResourceManagerPtr Context::getResourceManager() const
 ClassifierPtr Context::getClassifier() const
 {
     auto lock = getLock();
-    return getResourceManager()->acquire(getSettingsRef().workload);
+    if (!classifier)
+        classifier = getResourceManager()->acquire(getSettingsRef().workload);
+    return classifier;
 }
 
 

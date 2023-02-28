@@ -54,7 +54,10 @@ void registerDiskHDFS(DiskFactory & factory, bool global_skip_access_check)
             std::move(metadata_storage),
             std::move(hdfs_storage),
             /* send_metadata = */ false,
-            copy_thread_pool_size);
+            copy_thread_pool_size,
+            config.getString(config_prefix + ".read_resource", ""),
+            config.getString(config_prefix + ".write_resource", "")
+            );
         disk->startup(context, skip_access_check);
 
         return disk;

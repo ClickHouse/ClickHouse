@@ -34,7 +34,9 @@ public:
         MetadataStoragePtr metadata_storage_,
         ObjectStoragePtr object_storage_,
         bool send_metadata_,
-        uint64_t thread_pool_size_);
+        uint64_t thread_pool_size_,
+        const String & read_resource_name_,
+        const String & write_resource_name_);
 
     /// Create fake transaction
     DiskTransactionPtr createTransaction() override;
@@ -211,6 +213,9 @@ private:
     /// execution.
     DiskTransactionPtr createObjectStorageTransaction();
 
+    String getReadResourceName() const;
+    String getWriteResourceName() const;
+
     const String object_storage_root_path;
     Poco::Logger * log;
 
@@ -225,6 +230,10 @@ private:
 
     const bool send_metadata;
     size_t threadpool_size;
+
+    mutable std::mutex resource_mutex;
+    String read_resource_name;
+    String write_resource_name;
 
     std::unique_ptr<DiskObjectStorageRemoteMetadataRestoreHelper> metadata_helper;
 };
