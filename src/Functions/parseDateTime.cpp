@@ -148,6 +148,8 @@ namespace
             res += "minute:" + std::to_string(minute);
             res += ",";
             res += "second:" + std::to_string(second);
+            res += ",";
+            res += "AM:" + std::to_string(is_am);
             return res;
         }
 
@@ -548,6 +550,11 @@ namespace
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unable to parse because unknown short month text");
 
                 date.month = i + 1;
+                if (!date.has_year)
+                {
+                    date.has_year = true;
+                    date.year = 2000;
+                }
                 cur += 3;
                 return cur;
             }
@@ -557,6 +564,12 @@ namespace
                 cur = readNumber2(cur, end, date.month);
                 if (date.month < 1 || date.month > 12)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for month must be in the range [1, 12]", date.month);
+
+                if (!date.has_year)
+                {
+                    date.has_year = true;
+                    date.year = 2000;
+                }
                 return cur;
             }
 
@@ -780,9 +793,9 @@ namespace
                 std::string text(cur, 2);
                 Poco::toUpperInPlace(text);
                 if (text == "PM")
-                    date.is_am = true;
-                else if (text == "AM")
                     date.is_am = false;
+                else if (text == "AM")
+                    date.is_am = true;
                 else
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Text should be AM or PM, but {} provided", text);
 
@@ -839,6 +852,7 @@ namespace
             {
                 cur = readNumber2(cur, end, date.hour);
                 if (date.hour < 1 || date.hour > 12)
+
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for mysql hour12 must be in the range [1,12]", date.hour);
                 date.is_hour_of_half_day = true;
                 date.is_clock_hour = false;
@@ -1112,6 +1126,11 @@ namespace
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown month of year text: {}", text1);
 
                 date.month = it->second.second;
+                if (!date.has_year)
+                {
+                    date.has_year = true;
+                    date.year = 2000;
+                }
                 cur += 3;
                 if (cur + it->second.first.size() <= end)
                 {
