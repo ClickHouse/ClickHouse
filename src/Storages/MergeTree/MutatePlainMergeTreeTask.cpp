@@ -2,6 +2,7 @@
 
 #include <Storages/StorageMergeTree.h>
 #include <Interpreters/TransactionLog.h>
+#include <Common/ProfileEventsScope.h>
 
 namespace DB
 {
@@ -38,6 +39,7 @@ void MutatePlainMergeTreeTask::prepare()
 
     write_part_log = [this] (const ExecutionStatus & execution_status)
     {
+        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
         mutate_task.reset();
         storage.writePartLog(
             PartLogElement::MUTATE_PART,
@@ -46,7 +48,8 @@ void MutatePlainMergeTreeTask::prepare()
             future_part->name,
             new_part,
             future_part->parts,
-            merge_list_entry.get());
+            merge_list_entry.get(),
+            std::move(profile_counters_snapshot));
     };
 
     fake_query_context = Context::createCopy(storage.getContext());
@@ -58,8 +61,12 @@ void MutatePlainMergeTreeTask::prepare()
             time(nullptr), fake_query_context, merge_mutate_entry->txn, merge_mutate_entry->tagger->reserved_space, table_lock_holder);
 }
 
+
 bool MutatePlainMergeTreeTask::executeStep()
 {
+    /// Metrics will be saved in the local profile_counters.
+    ProfileEventsScope profile_events_scope(&profile_counters);
+
     /// Make out memory tracker a parent of current thread memory tracker
     MemoryTrackerThreadSwitcherPtr switcher;
     if (merge_list_entry)
@@ -122,6 +129,5 @@ bool MutatePlainMergeTreeTask::executeStep()
 
     return false;
 }
-
 
 }

@@ -493,12 +493,12 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
 
             if (!disk)
             {
-                LOG_TRACE(log, "Disk for fetch is not provided, reserving space using storage balanced reservation");
+                LOG_TEST(log, "Disk for fetch is not provided, reserving space using storage balanced reservation");
                 reservation
                     = data.balancedReservation(metadata_snapshot, sum_files_size, 0, part_name, part_info, {}, tagger_ptr, &ttl_infos, true);
                 if (!reservation)
                 {
-                    LOG_TRACE(log, "Disk for fetch is not provided, reserving space using TTL rules");
+                    LOG_TEST(log, "Disk for fetch is not provided, reserving space using TTL rules");
                     reservation
                         = data.reserveSpacePreferringTTLRules(metadata_snapshot, sum_files_size, ttl_infos, std::time(nullptr), 0, true);
                 }
@@ -506,18 +506,18 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
         }
         else if (!disk)
         {
-            LOG_TRACE(log, "Making balanced reservation");
+            LOG_TEST(log, "Making balanced reservation");
             reservation = data.balancedReservation(metadata_snapshot, sum_files_size, 0, part_name, part_info, {}, tagger_ptr, nullptr);
             if (!reservation)
             {
-                LOG_TRACE(log, "Making simple reservation");
+                LOG_TEST(log, "Making simple reservation");
                 reservation = data.reserveSpace(sum_files_size);
             }
         }
     }
     else if (!disk)
     {
-        LOG_TRACE(log, "Making reservation on the largest disk");
+        LOG_TEST(log, "Making reservation on the largest disk");
         /// We don't know real size of part because sender server version is too old
         reservation = data.makeEmptyReservationOnLargestDisk();
     }
@@ -525,11 +525,11 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
     if (!disk)
     {
         disk = reservation->getDisk();
-        LOG_INFO(log, "Disk for fetch is not provided, getting disk from reservation {} with type {}", disk->getName(), toString(disk->getDataSourceDescription().type));
+        LOG_TRACE(log, "Disk for fetch is not provided, getting disk from reservation {} with type {}", disk->getName(), toString(disk->getDataSourceDescription().type));
     }
     else
     {
-        LOG_INFO(log, "Disk for fetch is disk {} with type {}", disk->getName(), toString(disk->getDataSourceDescription().type));
+        LOG_TEST(log, "Disk for fetch is disk {} with type {}", disk->getName(), toString(disk->getDataSourceDescription().type));
     }
 
     UInt64 revision = parse<UInt64>(in->getResponseCookie("disk_revision", "0"));
@@ -814,7 +814,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     }
 
     /// We will remove directory if it's already exists. Make precautions.
-    if (tmp_prefix.empty() //-V560
+    if (tmp_prefix.empty()
         || part_name.empty()
         || std::string::npos != tmp_prefix.find_first_of("/.")
         || std::string::npos != part_name.find_first_of("/."))
