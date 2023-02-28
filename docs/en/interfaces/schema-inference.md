@@ -229,7 +229,7 @@ To prevent inferring the same schema every time ClickHouse read the data from th
 
 There are special settings that control this cache:
 - `schema_inference_cache_max_elements_for_{file/s3/hdfs/url}` - the maximum number of cached schemas for the corresponding table function. The default value is `4096`. These settings should be set in the server config.
-- `use_cache_for_{file,s3,hdfs,url}_schema_inference` - allows turning on/off using cache for schema inference. These settings can be used in queries.
+- `schema_inference_use_cache_for_{file,s3,hdfs,url}` - allows turning on/off using cache for schema inference. These settings can be used in queries.
 
 The schema of the file can be changed by modifying the data or by changing format settings.
 For this reason, the schema inference cache identifies the schema by file source, format name, used format settings, and the last modification time of the file.
@@ -1177,8 +1177,7 @@ This setting can be used to specify the types of columns that could not be deter
 **Example**
 
 ```sql
-DESC format(JSONEachRow, '{"id" :  1, "age" :  25, "name" : "Josh", "status" : null, "hobbies" : ["football", "cooking"]}'
-SETTINGS schema_inference_hints = 'age LowCardinality(UInt8), status Nullable(String)'
+DESC format(JSONEachRow, '{"id" : 1, "age" : 25, "name" : "Josh", "status" : null, "hobbies" : ["football", "cooking"]}') SETTINGS schema_inference_hints = 'age LowCardinality(UInt8), status Nullable(String)', allow_suspicious_low_cardinality_types=1
 ```
 ```response
 ┌─name────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
