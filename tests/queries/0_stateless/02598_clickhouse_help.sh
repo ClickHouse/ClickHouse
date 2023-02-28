@@ -10,7 +10,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # In CI there is no tty and we just ignore failed stty calls.
 # Set 80 to have same as default size as in notty.
 backup_stty_size=$(stty size 2>/dev/null | awk '{print $2}' ||:)
-stty columns 60 2>/dev/null ||:
+stty columns 78 2>/dev/null ||:
 
 echo "================BINARY=========================="
 
