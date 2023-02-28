@@ -176,7 +176,7 @@ def main():
         # status = "failure"
         description = "Task failed: $?=" + str(retcode)
 
-    format_description(description)
+    description = format_description(description)
 
     report_url = upload_results(
         s3_helper,
