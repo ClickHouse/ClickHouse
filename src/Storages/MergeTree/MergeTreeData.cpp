@@ -4612,7 +4612,7 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
             throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No parts to move found in partition {}", partition_id);
         case MovePartsOutcome::MoveWasPostponedBecauseOfZeroCopy:
             throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, "Move was not finished, because zero copy mode enabled and someone other moving the same parts right now");
-        default:
+        case MovePartsOutcome::PartsMoved:
             break;
     }
 }
@@ -4675,7 +4675,7 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
             throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No parts to move found in partition {}", partition_id);
         case MovePartsOutcome::MoveWasPostponedBecauseOfZeroCopy:
             throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, "Move was not finished, because zero copy mode enabled and someone other moving the same parts right now");
-        default:
+        case MovePartsOutcome::PartsMoved:
             break;
     }
 }
