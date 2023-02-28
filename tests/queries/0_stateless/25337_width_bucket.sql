@@ -29,7 +29,7 @@ SELECT '----------';
 SELECT toInt64(operand) AS operand, toInt32(low) AS low, toInt16(high) AS high, count, WIDTH_BUCKET(operand, low, high, count) FROM mytable WHERE count != 0;
 SELECT '----------';
 -- UIntXX types
-SELECT toUInt8(operand) AS operand, toUInt16(low) AS low, toUInt32(high) AS high, count, WIDTH_BUCKET(operand, low, high, count) FROM mytable WHERE count != 0;
+SELECT toUInt8(toInt8(operand)) AS operand, toUInt16(toInt16(low)) AS low, toUInt32(toInt32(high)) AS high, count, WIDTH_BUCKET(operand, low, high, count) FROM mytable WHERE count != 0;
 SELECT '----------';
 SELECT WIDTH_BUCKET(1, 2, 3, -1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT WIDTH_BUCKET(1, 2, 3, 1.3); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
