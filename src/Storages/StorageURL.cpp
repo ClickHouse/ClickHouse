@@ -48,6 +48,7 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_FILE_SIZE;
 }
 
 static constexpr auto bad_arguments_error_message = "Storage URL requires 1-4 arguments: "
@@ -219,7 +220,15 @@ namespace
                     uri_options.size() == 1,
                     download_threads);
 
-                total_size += getFileSizeFromReadBuffer(*read_buf);
+                try
+                {
+                    total_size += getFileSizeFromReadBuffer(*read_buf);
+                }
+                catch (const Exception & e)
+                {
+                    if (e.code() != ErrorCodes::UNKNOWN_FILE_SIZE)
+                        throw;
+                }
 
                 auto input_format
                     = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size, format_settings);
