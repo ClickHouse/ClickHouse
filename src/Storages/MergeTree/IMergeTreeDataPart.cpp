@@ -1304,6 +1304,8 @@ void IMergeTreeDataPart::loadColumns(bool require)
         metadata_snapshot = metadata_snapshot->projections.get(name).metadata;
     NamesAndTypesList loaded_columns;
 
+    bool is_readonly_storage = getDataPartStorage().isReadonly();
+
     if (!metadata_manager->exists("columns.txt"))
     {
         /// We can get list of columns only from columns.txt in compact parts.
@@ -1319,7 +1321,8 @@ void IMergeTreeDataPart::loadColumns(bool require)
         if (columns.empty())
             throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns in part {}", name);
 
-        writeColumns(loaded_columns, {});
+        if (!is_readonly_storage)
+            writeColumns(loaded_columns, {});
     }
     else
     {
@@ -1353,10 +1356,13 @@ void IMergeTreeDataPart::loadColumns(bool require)
     {
         loaded_metadata_version = metadata_snapshot->getMetadataVersion();
 
-        writeMetadata(METADATA_VERSION_FILE_NAME, {}, [loaded_metadata_version](auto & buffer)
+        if (!is_readonly_storage)
         {
-            writeIntText(loaded_metadata_version, buffer);
-        });
+            writeMetadata(METADATA_VERSION_FILE_NAME, {}, [loaded_metadata_version](auto & buffer)
+            {
+                writeIntText(loaded_metadata_version, buffer);
+            });
+        }
     }
 
     setColumns(loaded_columns, infos, loaded_metadata_version);
