@@ -14,9 +14,14 @@ private:
 
     /// 'nested' is an Array(Tuple(key_type, value_type))
     SerializationPtr nested;
+    const size_t num_shards;
 
 public:
-    SerializationMap(const SerializationPtr & key_type_, const SerializationPtr & value_type_, const SerializationPtr & nested_);
+    SerializationMap(
+        const SerializationPtr & key_,
+        const SerializationPtr & value_,
+        const SerializationPtr & nested_,
+        size_t num_shards_);
 
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;
@@ -64,6 +69,16 @@ public:
         SubstreamsCache * cache) const override;
 
 private:
+    struct SubcolumnCreator : public ISubcolumnCreator
+    {
+        const String shard_name;
+        explicit SubcolumnCreator(const String & shard_name_) : shard_name(shard_name_) {}
+
+        DataTypePtr create(const DataTypePtr & prev) const override { return prev; }
+        ColumnPtr create(const ColumnPtr & prev) const override { return prev; }
+        SerializationPtr create(const SerializationPtr & prev) const override;
+    };
+
     template <typename KeyWriter, typename ValueWriter>
     void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, KeyWriter && key_writer, ValueWriter && value_writer) const;
 

@@ -152,6 +152,8 @@ public:
             ObjectStructure,
             ObjectData,
 
+            MapShard,
+
             Regular,
         };
 
@@ -162,6 +164,8 @@ public:
 
         /// Do we need to escape a dot in filenames for tuple elements.
         bool escape_tuple_delimiter = true;
+
+        UInt64 map_shard_num = 0;
 
         /// Data for current substream.
         SubstreamData data;

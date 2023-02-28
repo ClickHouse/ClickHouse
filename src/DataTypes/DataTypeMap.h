@@ -19,13 +19,14 @@ private:
 
     /// 'nested' is an Array(Tuple(key_type, value_type))
     DataTypePtr nested;
+    const size_t num_shards;
 
 public:
     static constexpr bool is_parametric = true;
 
-    explicit DataTypeMap(const DataTypePtr & nested_);
-    explicit DataTypeMap(const DataTypes & elems);
-    DataTypeMap(const DataTypePtr & key_type_, const DataTypePtr & value_type_);
+    explicit DataTypeMap(const DataTypePtr & nested_, size_t num_shards_ = 1);
+    explicit DataTypeMap(const DataTypes & elems, size_t num_shards_ = 1);
+    DataTypeMap(const DataTypePtr & key_type_, const DataTypePtr & value_type_, size_t num_shards_ = 1);
 
     TypeIndex getTypeId() const override { return TypeIndex::Map; }
     std::string doGetName() const override;
@@ -43,6 +44,7 @@ public:
     bool haveSubtypes() const override { return true; }
     bool hasDynamicSubcolumns() const override { return nested->hasDynamicSubcolumns(); }
 
+    size_t getNumShards() const { return num_shards; }
     const DataTypePtr & getKeyType() const { return key_type; }
     const DataTypePtr & getValueType() const { return value_type; }
     DataTypes getKeyValueTypes() const { return {key_type, value_type}; }

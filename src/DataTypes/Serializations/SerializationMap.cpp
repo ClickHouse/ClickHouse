@@ -1,8 +1,10 @@
+#include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/Serializations/SerializationMap.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeMap.h>
 
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/WeakHash.h>
 #include <Columns/ColumnMap.h>
 #include <Core/Field.h>
 #include <Formats/FormatSettings.h>
@@ -13,6 +15,8 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
 
+#include <Functions/GatherUtils/GatherUtils.h>
+
 
 namespace DB
 {
@@ -22,8 +26,12 @@ namespace ErrorCodes
     extern const int CANNOT_READ_MAP_FROM_TEXT;
 }
 
-SerializationMap::SerializationMap(const SerializationPtr & key_, const SerializationPtr & value_, const SerializationPtr & nested_)
-    : key(key_), value(value_), nested(nested_)
+SerializationMap::SerializationMap(
+    const SerializationPtr & key_,
+    const SerializationPtr & value_,
+    const SerializationPtr & nested_,
+    size_t num_shards_)
+    : key(key_), value(value_), nested(nested_), num_shards(num_shards_)
 {
 }
 
@@ -260,17 +268,123 @@ void SerializationMap::deserializeTextCSV(IColumn & column, ReadBuffer & istr, c
     deserializeText(column, rb, settings, true);
 }
 
+static std::vector<ColumnPtr> scatterToShards(const IColumn & column, size_t num_shards)
+{
+    const auto & column_map = assert_cast<const ColumnMap &>(column);
+    const auto & column_keys = column_map.getNestedData().getColumn(0);
+    const auto & column_values = column_map.getNestedData().getColumn(1);
+    const auto & map_offsets = column_map.getNestedColumn().getOffsets();
+
+    WeakHash32 hash(column_keys.size());
+    column_keys.updateWeakHash32(hash);
+
+    std::vector<MutableColumnPtr> shards_offsets_columns;
+    std::vector<IColumn::Offsets *> shards_offsets;
+
+    shards_offsets_columns.reserve(num_shards);
+    shards_offsets.reserve(num_shards);
+
+    for (size_t i = 0; i < num_shards; ++i)
+    {
+        auto offsets_column = ColumnUInt64::create();
+
+        shards_offsets.push_back(&offsets_column->getData());
+        shards_offsets_columns.push_back(std::move(offsets_column));
+
+        shards_offsets.back()->reserve(column_map.size() / num_shards);
+    }
+
+    UInt64 prev_offset = 0;
+    IColumn::Selector selector(column_values.size());
+    std::vector<UInt64> current_shard_array_offset(num_shards);
+
+    for (size_t i = 0; i < map_offsets.size(); ++i)
+    {
+        UInt64 map_size = map_offsets[i] - prev_offset;
+
+        for (size_t row = prev_offset; row < prev_offset + map_size; ++row)
+        {
+            selector[row] = hash.getData()[row] % num_shards;
+            ++current_shard_array_offset[selector[row]];
+        }
+
+        for (size_t shard = 0; shard < num_shards; ++shard)
+            shards_offsets[shard]->push_back(current_shard_array_offset[shard]);
+
+        prev_offset += map_size;
+    }
+
+    auto shard_keys = column_keys.scatter(num_shards, selector);
+    auto shard_values = column_values.scatter(num_shards, selector);
+
+    std::vector<ColumnPtr> shards(num_shards);
+    for (size_t i = 0; i < num_shards; ++i)
+    {
+        auto tuple = ColumnTuple::create(Columns{std::move(shard_keys[i]), std::move(shard_values[i])});
+        shards[i] = ColumnArray::create(std::move(tuple), std::move(shards_offsets_columns[i]));
+    }
+
+    return shards;
+}
+
+SerializationPtr SerializationMap::SubcolumnCreator::create(const SerializationPtr & prev) const
+{
+    return std::make_shared<SerializationNamed>(prev, shard_name, false);
+}
+
 void SerializationMap::enumerateStreams(
     EnumerateStreamsSettings & settings,
     const StreamCallback & callback,
     const SubstreamData & data) const
 {
-    auto next_data = SubstreamData(nested)
-        .withType(data.type ? assert_cast<const DataTypeMap &>(*data.type).getNestedType() : nullptr)
-        .withColumn(data.column ? assert_cast<const ColumnMap &>(*data.column).getNestedColumnPtr() : nullptr)
-        .withSerializationInfo(data.serialization_info);
+    if (num_shards == 1 || !settings.position_independent_encoding)
+    {
+        auto next_data = SubstreamData(nested)
+            .withType(data.type ? assert_cast<const DataTypeMap &>(*data.type).getNestedType() : nullptr)
+            .withColumn(data.column ? assert_cast<const ColumnMap &>(*data.column).getNestedColumnPtr() : nullptr)
+            .withSerializationInfo(data.serialization_info);
 
-    nested->enumerateStreams(settings, callback, next_data);
+        nested->enumerateStreams(settings, callback, next_data);
+    }
+
+    if (num_shards > 1)
+    {
+        auto shard_serialization = std::make_shared<SerializationMap>(key, value, nested, 1);
+
+        DataTypePtr shard_type;
+        if (data.type)
+            shard_type = std::make_shared<DataTypeMap>(assert_cast<const DataTypeMap &>(*data.type).getNestedType(), 1);
+
+        std::vector<ColumnPtr> shard_columns;
+        if (data.column)
+            shard_columns = scatterToShards(*data.column, num_shards);
+
+        auto next_data = SubstreamData(nested)
+            .withType(data.type ? assert_cast<const DataTypeMap &>(*data.type).getNestedType() : nullptr)
+            .withSerializationInfo(data.serialization_info);
+
+        settings.path.push_back(ISerialization::Substream::MapShard);
+        for (size_t i = 0; i < num_shards; ++i)
+        {
+            auto shard_name = "shard" + toString(i);
+            auto shard_named = std::make_shared<SerializationNamed>(shard_serialization, shard_name, false);
+            auto shard_data = SubstreamData(shard_named)
+                .withType(shard_type)
+                .withColumn(data.column ? ColumnMap::create(shard_columns[i]) : nullptr)
+                .withSerializationInfo(data.serialization_info);
+
+            settings.path.back().visited = false;
+            settings.path.back().map_shard_num = i;
+            settings.path.back().data = std::move(shard_data);
+
+            if (data.column)
+                next_data.withColumn(shard_columns[i]);
+
+            settings.path.back().creator = std::make_shared<SubcolumnCreator>(shard_name);
+            nested->enumerateStreams(settings, callback, next_data);
+        }
+        settings.path.pop_back();
+    }
 }
 
 void SerializationMap::serializeBinaryBulkStatePrefix(
@@ -295,7 +409,6 @@ void SerializationMap::deserializeBinaryBulkStatePrefix(
     nested->deserializeBinaryBulkStatePrefix(settings, state);
 }
 
-
 void SerializationMap::serializeBinaryBulkWithMultipleStreams(
     const IColumn & column,
     size_t offset,
@@ -303,7 +416,22 @@ void SerializationMap::serializeBinaryBulkWithMultipleStreams(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    nested->serializeBinaryBulkWithMultipleStreams(extractNestedColumn(column), offset, limit, settings, state);
+    if (num_shards == 1 || !settings.position_independent_encoding)
+    {
+        nested->serializeBinaryBulkWithMultipleStreams(extractNestedColumn(column), offset, limit, settings, state);
+        return;
+    }
+
+    auto shards = scatterToShards(column, num_shards);
+    settings.path.push_back(ISerialization::Substream::MapShard);
+
+    for (size_t i = 0; i < num_shards; ++i)
+    {
+        settings.path.back().map_shard_num = i;
+        nested->serializeBinaryBulkWithMultipleStreams(*shards[i], offset, limit, settings, state);
+    }
+
+    settings.path.pop_back();
 }
 
 void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
@@ -313,8 +441,39 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
-    auto & column_map = assert_cast<ColumnMap &>(*column->assumeMutable());
-    nested->deserializeBinaryBulkWithMultipleStreams(column_map.getNestedColumnPtr(), limit, settings, state, cache);
+    if (num_shards == 1 || !settings.position_independent_encoding)
+    {
+        auto & column_map = assert_cast<ColumnMap &>(*column->assumeMutable());
+        nested->deserializeBinaryBulkWithMultipleStreams(column_map.getNestedColumnPtr(), limit, settings, state, cache);
+        return;
+    }
+
+    auto mutable_column = column->assumeMutable();
+    auto & column_map = assert_cast<ColumnMap &>(*mutable_column);
+    auto & column_nested = column_map.getNestedColumn();
+
+    std::vector<ColumnPtr> shard_arrays(num_shards);
+    settings.path.push_back(ISerialization::Substream::MapShard);
+
+    for (size_t i = 0; i < num_shards; ++i)
+    {
+        settings.path.back().map_shard_num = i;
+        shard_arrays[i] = column_nested.cloneEmpty();
+        nested->deserializeBinaryBulkWithMultipleStreams(shard_arrays[i], limit, settings, state, cache);
+    }
+
+    std::vector<std::unique_ptr<GatherUtils::IArraySource>> sources(num_shards);
+    for (size_t i = 0; i < num_shards; ++i)
+    {
+        const auto & shard_array = assert_cast<const ColumnArray &>(*shard_arrays[i]);
+        sources[i] = GatherUtils::createArraySource(shard_array, false, shard_array.size());
+    }
+
+    auto sink = GatherUtils::concat(sources);
+    column_nested.insertRangeFrom(*sink, 0, sink->size());
+
+    settings.path.pop_back();
+    column = std::move(mutable_column);
 }
 
 }

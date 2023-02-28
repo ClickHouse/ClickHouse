@@ -161,6 +161,8 @@ String getNameForSubstreamPath(
             stream_name += ".dict";
         else if (it->type == Substream::SparseOffsets)
             stream_name += ".sparse.idx";
+        else if (it->type == Substream::MapShard)
+            stream_name += ".shard" + toString(it->map_shard_num);
         else if (it->type == Substream::TupleElement)
         {
             /// For compatibility reasons, we use %2E (escaped dot) instead of dot.
@@ -282,7 +284,8 @@ bool ISerialization::hasSubcolumnForPath(const SubstreamPath & path, size_t pref
     size_t last_elem = prefix_len - 1;
     return path[last_elem].type == Substream::NullMap
             || path[last_elem].type == Substream::TupleElement
-            || path[last_elem].type == Substream::ArraySizes;
+            || path[last_elem].type == Substream::ArraySizes
+            || path[last_elem].type == Substream::MapShard;
 }
 
 ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath & path, size_t prefix_len)
