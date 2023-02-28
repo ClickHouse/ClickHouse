@@ -445,6 +445,12 @@ public:
             alias_name_to_expressions[node_alias].push_back(node);
         }
 
+        if (const auto * function = node->as<FunctionNode>())
+        {
+            if (AggregateFunctionFactory::instance().isAggregateFunctionName(function->getFunctionName()))
+                ++aggregate_functions_counter;
+        }
+
         expressions.emplace_back(node);
     }
 
@@ -461,6 +467,12 @@ public:
 
             if (alias_expressions.empty())
                 alias_name_to_expressions.erase(it);
+        }
+
+        if (const auto * function = top_expression->as<FunctionNode>())
+        {
+            if (AggregateFunctionFactory::instance().isAggregateFunctionName(function->getFunctionName()))
+                --aggregate_functions_counter;
         }
 
         expressions.pop_back();
@@ -483,17 +495,7 @@ public:
 
     bool hasAggregateFunction() const
     {
-        const auto & factory = AggregateFunctionFactory::instance();
-        for (const auto & node : expressions)
-        {
-            const auto * function = node->as<FunctionNode>();
-            if (!function)
-                continue;
-
-            if (factory.isAggregateFunctionName(function->getFunctionName()))
-                return true;
-        }
-        return false;
+        return aggregate_functions_counter > 0;
     }
 
     QueryTreeNodePtr getExpressionWithAlias(const std::string & alias) const
@@ -542,6 +544,7 @@ public:
 
 private:
     QueryTreeNodes expressions;
+    size_t aggregate_functions_counter = 0;
     std::unordered_map<std::string, QueryTreeNodes> alias_name_to_expressions;
 };
 
@@ -3114,11 +3117,6 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
             resolve_result.resolve_place = IdentifierResolvePlace::DATABASE_CATALOG;
     }
 
-    if (resolve_result.resolved_identifier
-        && scope.nullable_group_by_keys.contains(resolve_result.resolved_identifier)
-        && !scope.expressions_in_resolve_process_stack.hasAggregateFunction())
-        resolve_result.resolved_identifier->convertToNullable();
-
     it->second = resolve_result;
 
     /** If identifier was not resolved, or during expression resolution identifier was explicitly added into non cached set,
@@ -3126,8 +3124,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
       */
     if (!resolve_result.resolved_identifier ||
         scope.non_cached_identifier_lookups_during_expression_resolve.contains(identifier_lookup) ||
-        !scope.use_identifier_lookup_to_result_cache ||
-        scope.group_by_use_nulls)
+        !scope.use_identifier_lookup_to_result_cache)
         scope.identifier_lookup_to_result.erase(it);
 
     return resolve_result;
@@ -4655,8 +4652,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
 
         function_node.resolveAsFunction(std::move(function_base));
-        if (scope.group_by_use_nulls && scope.nullable_group_by_keys.contains(node))
-            function_node.convertToNullable();
     }
     catch (Exception & e)
     {
@@ -4905,12 +4900,6 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
             if (result_projection_names.empty())
                 result_projection_names.push_back(column_node.getColumnName());
 
-            if (scope.group_by_use_nulls && scope.nullable_group_by_keys.contains(node))
-            {
-                node = node->clone();
-                node->convertToNullable();
-            }
-
             break;
         }
         case QueryTreeNodeType::FUNCTION:
@@ -4992,6 +4981,14 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
                 node->formatASTForErrorMessage(),
                 scope.scope_node->formatASTForErrorMessage());
         }
+    }
+
+    if (node
+        && scope.nullable_group_by_keys.contains(node)
+        && !scope.expressions_in_resolve_process_stack.hasAggregateFunction())
+    {
+        node = node->clone();
+        node->convertToNullable();
     }
 
     /** Update aliases after expression node was resolved.
@@ -6074,10 +6071,13 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                 resolveExpressionNodeList(grouping_sets_keys_list_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
             }
 
-            for (const auto & grouping_set : query_node_typed.getGroupBy().getNodes())
+            if (scope.group_by_use_nulls)
             {
-                for (const auto & group_by_elem : grouping_set->as<ListNode>()->getNodes())
-                    scope.nullable_group_by_keys.insert(group_by_elem->clone());
+                for (const auto & grouping_set : query_node_typed.getGroupBy().getNodes())
+                {
+                    for (const auto & group_by_elem : grouping_set->as<ListNode>()->getNodes())
+                        scope.nullable_group_by_keys.insert(group_by_elem);
+                }
             }
         }
         else
@@ -6090,7 +6090,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             if (scope.group_by_use_nulls)
             {
                 for (const auto & group_by_elem : query_node_typed.getGroupBy().getNodes())
-                    scope.nullable_group_by_keys.insert(group_by_elem->clone());
+                    scope.nullable_group_by_keys.insert(group_by_elem);
             }
         }
     }
