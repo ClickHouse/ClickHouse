@@ -253,7 +253,6 @@ namespace
             if (is_hour_of_half_day && !is_am)
                 hour += 12;
 
-
             /// Ensure all day of year values are valid for ending year value
             for (const auto d : day_of_month_values)
             {
@@ -275,9 +274,14 @@ namespace
             else if (day_of_year_format)
                 days_since_epoch = daysSinceEpochFromDayOfYear(year, day_of_year);
             else
+            {
                 days_since_epoch = daysSinceEpochFromDate(year, month, day);
+                std::cout << "year:" << year << "month:" << month << "day:" << day << std::endl;
+            }
+            std::cout << "days_since_epoch:" << days_since_epoch << std::endl;
 
             Int64 seconds_since_epoch = days_since_epoch * 86400 + hour * 3600 + minute * 60 + second;
+            std::cout << "seconds_since_epoch:" << seconds_since_epoch << std::endl;
 
             /// Time zone is not specified, use local time zone
             if (!time_zone_offset)
@@ -287,8 +291,12 @@ namespace
             // std::cout << "time_zone_offset:" << *time_zone_offset << time_zone.getOffsetAtStartOfEpoch() << std::endl;
             // std::cout << "before timestamp:" << seconds_since_epoch << std::endl;
             /// Time zone is specified in format string.
-            seconds_since_epoch -= *time_zone_offset;
-            // std::cout << "after timestamp:" << seconds_since_epoch << std::endl;
+            if (seconds_since_epoch >= *time_zone_offset)
+                seconds_since_epoch -= *time_zone_offset;
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Seconds since epoch is negative");
+
+            std::cout << "after adjustment:" << seconds_since_epoch << std::endl;
             return seconds_since_epoch;
         }
     };
@@ -368,7 +376,7 @@ namespace
 
             String format = getFormat(arguments);
             const auto * time_zone = getTimeZone(arguments).first;
-            // std::cout << "timezonename:" << getTimeZone(arguments).second << std::endl;
+            std::cout << "timezonename:" << getTimeZone(arguments).second << std::endl;
 
             std::vector<Action> instructions;
             parseFormat(format, instructions);
@@ -385,8 +393,8 @@ namespace
                 for (const auto & instruction : instructions)
                 {
                     cur = instruction.perform(cur, end, date);
-                    // std::cout << "instruction:" << instruction.toString() << std::endl;
-                    // std::cout << "date:" << date.toString() << std::endl;
+                    std::cout << "instruction:" << instruction.toString() << std::endl;
+                    std::cout << "date:" << date.toString() << std::endl;
                 }
 
                 // Ensure all input was consumed.
@@ -544,7 +552,13 @@ namespace
                 return cur;
             }
 
-            static Pos mysqlMonth(Pos cur, Pos end, Date & date) { return readNumber2(cur, end, date.month); }
+            static Pos mysqlMonth(Pos cur, Pos end, Date & date)
+            {
+                cur = readNumber2(cur, end, date.month);
+                if (date.month < 1 || date.month > 12)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for month must be in the range [1, 12]", date.month);
+                return cur;
+            }
 
             static Pos mysqlCentury(Pos cur, Pos end, Date & date)
             {
@@ -750,14 +764,21 @@ namespace
                 return cur;
             }
 
-            static Pos mysqlMinute(Pos cur, Pos end, Date & date) { return readNumber2(cur, end, date.minute); }
+            static Pos mysqlMinute(Pos cur, Pos end, Date & date)
+            {
+                cur = readNumber2(cur, end, date.minute);
+                if (date.minute < 0 || date.minute > 59)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for minute must be in the range [0, 59]", date.minute);
+
+                return cur;
+            }
 
             static Pos mysqlAMPM(Pos cur, Pos end, Date & date)
             {
                 ensureSpace(cur, end, 2, "mysqlAMPM requires size >= 2");
 
                 std::string text(cur, 2);
-                Poco::toUpper(text);
+                Poco::toUpperInPlace(text);
                 if (text == "PM")
                     date.is_am = true;
                 else if (text == "AM")
@@ -793,7 +814,13 @@ namespace
                 return cur;
             }
 
-            static Pos mysqlSecond(Pos cur, Pos end, Date & date) { return readNumber2(cur, end, date.second); }
+            static Pos mysqlSecond(Pos cur, Pos end, Date & date)
+            {
+                cur = readNumber2(cur, end, date.second);
+                if (date.second < 0 || date.second > 59)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for second must be in the range [0,59]", date.second);
+                return cur;
+            }
 
             static Pos mysqlISO8601Time(Pos cur, Pos end, Date & date)
             {
@@ -811,6 +838,8 @@ namespace
             static Pos mysqlHour12(Pos cur, Pos end, Date & date)
             {
                 cur = readNumber2(cur, end, date.hour);
+                if (date.hour < 1 || date.hour > 12)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for mysql hour12 must be in the range [1,12]", date.hour);
                 date.is_hour_of_half_day = true;
                 date.is_clock_hour = false;
                 return cur;
@@ -819,6 +848,9 @@ namespace
             static Pos mysqlHour24(Pos cur, Pos end, Date & date)
             {
                 cur = readNumber2(cur, end, date.hour);
+                if (date.hour < 0 || date.hour > 23)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for mysql hour24 must be in the range [0,23]", date.hour);
+
                 date.is_hour_of_half_day = false;
                 date.is_clock_hour = false;
                 return cur;
@@ -1022,12 +1054,11 @@ namespace
             {
                 Int32 number;
                 cur = readNumberWithVariableLength(cur, end, true, true, true, repetitions, repetitions, number);
-
-                date.century_format = false;
-                date.is_year_of_era = false;
                 if (number > 292278994 || number < -292275055)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for year must be in the range [-292275055,292278994]", number);
 
+                date.century_format = false;
+                date.is_year_of_era = false;
                 date.has_year = true;
                 date.year = number;
                 return cur;
@@ -1037,6 +1068,8 @@ namespace
             {
                 Int32 number;
                 cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 3), number);
+                if (number < 1 || number > 366)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for day of year must be in the range [1, 366]", number);
 
                 date.day_of_year_values.push_back(number);
                 date.day_of_year = true;
@@ -1068,7 +1101,7 @@ namespace
                 return cur;
             }
 
-            static Pos jodaMonthOfYearText(Pos cur, Pos end, Date & date)
+            static Pos jodaMonthOfYearText(int, Pos cur, Pos end, Date & date)
             {
                 ensureSpace(cur, end, 3, "jodaMonthOfYearText requires size >= 3");
 
@@ -1097,8 +1130,8 @@ namespace
             {
                 Int32 number;
                 cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), number);
-                if (number < 1 || number > 12)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for day of month must be in the range [1, 12]", number);
+                if (number < 1 || number > 31)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for day of month must be in the range [1, 31]", number);
 
                 date.day_of_month_values.push_back(number);
                 date.day = number;
@@ -1112,12 +1145,12 @@ namespace
                 return cur;
             }
 
-            static Pos jodaHalfDayOfDay(Pos cur, Pos end, Date & date)
+            static Pos jodaHalfDayOfDay(int, Pos cur, Pos end, Date & date)
             {
                 ensureSpace(cur, end, 2, "jodaHalfDayOfDay requires size >= 2");
 
                 String text(cur, 2);
-                Poco::toLowerInPlace(cur);
+                Poco::toLowerInPlace(text);
                 if (text == "am")
                     date.is_am = true;
                 else if (text == "pm")
@@ -1510,7 +1543,6 @@ namespace
                             instructions.emplace_back(ACTION_ARGS_WITH_BIND(Action::jodaEra, repetitions));
                             // reserve_size += repetitions <= 3 ? 2 : 13;
                             break;
-                        /*
                         case 'C':
                             instructions.emplace_back(ACTION_ARGS_WITH_BIND(Action::jodaCenturyOfEra, repetitions));
                             /// Year range [1900, 2299]
@@ -1621,7 +1653,6 @@ namespace
                             break;
                         case 'Z':
                             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for timezone offset id");
-                        */
                         default:
                             if (isalpha(*cur_token))
                                 throw Exception(
@@ -1633,6 +1664,7 @@ namespace
                     }
                 }
             }
+#undef ACTION_ARGS_WITH_BIND
         }
 
 
