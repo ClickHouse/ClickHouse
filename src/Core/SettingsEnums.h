@@ -72,6 +72,8 @@ DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeInputFormat, FormatSettings::DateTimeIn
 
 DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOutputFormat, FormatSettings::DateTimeOutputFormat)
 
+DECLARE_SETTING_ENUM_WITH_RENAME(ParquetVersion, FormatSettings::ParquetVersion)
+
 enum class LogsLevel
 {
     none = 0,    /// Disable
@@ -120,6 +122,14 @@ enum class DefaultTableEngine
 };
 
 DECLARE_SETTING_ENUM(DefaultTableEngine)
+
+enum class CleanDeletedRows
+{
+    Never = 0, /// Disable.
+    Always,
+};
+
+DECLARE_SETTING_ENUM(CleanDeletedRows)
 
 enum class MySQLDataTypesSupport
 {

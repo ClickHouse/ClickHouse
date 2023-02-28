@@ -17,7 +17,7 @@ cached_query="SELECT count() FROM small_table where n > 0;"
 
 $CLICKHOUSE_CLIENT --use_uncompressed_cache=1 --query="$cached_query" &> /dev/null
 
-$CLICKHOUSE_CLIENT --use_uncompressed_cache=1 --query_id="test-query-uncompressed-cache" --query="$cached_query" &> /dev/null
+$CLICKHOUSE_CLIENT --use_uncompressed_cache=1 --allow_prefetched_read_pool_for_remote_filesystem=0 --allow_prefetched_read_pool_for_local_filesystem=0 --query_id="test-query-uncompressed-cache" --query="$cached_query" &> /dev/null
 
 $CLICKHOUSE_CLIENT --query="SYSTEM FLUSH LOGS"
 
@@ -25,4 +25,3 @@ $CLICKHOUSE_CLIENT --query="SYSTEM FLUSH LOGS"
 $CLICKHOUSE_CLIENT --query="SELECT ProfileEvents['Seek'], ProfileEvents['ReadCompressedBytes'], ProfileEvents['UncompressedCacheHits'] AS hit FROM system.query_log WHERE (query_id = 'test-query-uncompressed-cache') and current_database = currentDatabase() AND (type = 2) AND event_date >= yesterday() ORDER BY event_time DESC LIMIT 1"
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS small_table"
-

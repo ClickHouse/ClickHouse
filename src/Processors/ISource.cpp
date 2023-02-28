@@ -110,6 +110,7 @@ void ISource::work()
     catch (...)
     {
         finished = true;
+        got_exception = true;
         throw;
     }
 }

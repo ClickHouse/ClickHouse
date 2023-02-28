@@ -71,6 +71,17 @@ def stringhash(s):
     return zlib.crc32(s.encode("utf-8"))
 
 
+# First and last lines of the log
+def trim_for_log(s):
+    if not s:
+        return s
+    lines = s.splitlines()
+    if len(lines) > 100:
+        return "\n".join(lines[:50] + ["#" * 100] + lines[-50:])
+    else:
+        return "\n".join(lines)
+
+
 class HTTPError(Exception):
     def __init__(self, message=None, code=None):
         self.message = message
@@ -83,7 +94,7 @@ class HTTPError(Exception):
 
 # Helpers to execute queries via HTTP interface.
 def clickhouse_execute_http(
-    base_args, query, timeout=30, settings=None, default_format=None
+    base_args, query, timeout=30, settings=None, default_format=None, max_http_retries=5
 ):
     if args.secure:
         client = http.client.HTTPSConnection(
@@ -112,7 +123,7 @@ def clickhouse_execute_http(
     if default_format is not None:
         params["default_format"] = default_format
 
-    for i in range(MAX_RETRIES):
+    for i in range(max_http_retries):
         try:
             client.request(
                 "POST",
@@ -122,7 +133,7 @@ def clickhouse_execute_http(
             data = res.read()
             break
         except Exception as ex:
-            if i == MAX_RETRIES - 1:
+            if i == max_http_retries - 1:
                 raise ex
 
             sleep(i + 1)
@@ -132,13 +143,12 @@ def clickhouse_execute_http(
 
     return data
 
+def clickhouse_execute(base_args, query, timeout=30, settings=None, max_http_retries=5):
+    return clickhouse_execute_http(base_args, query, timeout, settings, max_http_retries=max_http_retries).strip()
 
-def clickhouse_execute(base_args, query, timeout=30, settings=None):
-    return clickhouse_execute_http(base_args, query, timeout, settings).strip()
 
-
-def clickhouse_execute_json(base_args, query, timeout=60, settings=None):
-    data = clickhouse_execute_http(base_args, query, timeout, settings, "JSONEachRow")
+def clickhouse_execute_json(base_args, query, timeout=60, settings=None, max_http_retries=5):
+    data = clickhouse_execute_http(base_args, query, timeout, settings, "JSONEachRow", max_http_retries=max_http_retries)
     if not data:
         return None
     rows = []
@@ -439,9 +449,8 @@ class FailureReason(enum.Enum):
     NO_LONG = "not running long tests"
     REPLICATED_DB = "replicated-database"
     S3_STORAGE = "s3-storage"
-    STRESS = "stress"
     BUILD = "not running for current build"
-    BACKWARD_INCOMPATIBLE = "test is backward incompatible"
+    NO_UPGRADE_CHECK = "not running for upgrade check"
     NO_PARALLEL_REPLICAS = "smth in not supported with parallel replicas"
 
     # UNKNOWN reasons
@@ -633,7 +642,7 @@ class TestCase:
 
             clickhouse_execute(
                 args,
-                "CREATE DATABASE " + database + get_db_engine(testcase_args, database),
+                "CREATE DATABASE IF NOT EXISTS " + database + get_db_engine(testcase_args, database),
                 settings=get_create_database_settings(args, testcase_args),
             )
 
@@ -764,35 +773,6 @@ class TestCase:
             else ""
         )
 
-    # Check if test contains tag "no-backward-compatibility-check" and we should skip it
-    def check_backward_incompatible_tag(self) -> bool:
-        for tag in self.tags:
-            if tag.startswith("no-backward-compatibility-check"):
-                split = tag.split(":")
-
-                # If version is not specified in tag, always skip this test.
-                if len(split) == 1:
-                    return True
-                version_from_tag = split[1]
-
-                # Check if extracted string from tag is a real ClickHouse version, if not - always skip test.
-                if re.match(VERSION_PATTERN, version_from_tag) is None:
-                    return True
-
-                server_version = str(
-                    clickhouse_execute(args, "SELECT version()").decode()
-                )
-                # If server version is less or equal from the version specified in tag, we should skip this test.
-                version_from_tag_split = list(map(int, version_from_tag.split(".")))
-                server_version_split = list(map(int, server_version.split(".")))
-                if (
-                    server_version_split[: len(version_from_tag_split)]
-                    <= version_from_tag_split
-                ):
-                    return True
-
-        return False
-
     # should skip test, should increment skipped_total, skip reason
     def should_skip_test(self, suite) -> Optional[FailureReason]:
         tags = self.tags
@@ -843,16 +823,13 @@ class TestCase:
         elif tags and ("no-replicated-database" in tags) and args.replicated_database:
             return FailureReason.REPLICATED_DB
 
-        elif (
-            args.backward_compatibility_check and self.check_backward_incompatible_tag()
-        ):
-            return FailureReason.BACKWARD_INCOMPATIBLE
+        # TODO: remove checking "no-upgrade-check" after 23.1
+        elif args.upgrade_check and (
+                "no-upgrade-check" in tags or "no-upgrade-check" in tags):
+            return FailureReason.NO_UPGRADE_CHECK
 
         elif tags and ("no-s3-storage" in tags) and args.s3_storage:
             return FailureReason.S3_STORAGE
-
-        elif tags and ("no-stress" in tags) and args.stress:
-            return FailureReason.STRESS
 
         elif tags:
             for build_flag in args.build_flags:
@@ -870,8 +847,7 @@ class TestCase:
     ):
         description = ""
 
-        if debug_log:
-            debug_log = "\n".join(debug_log.splitlines()[:100])
+        debug_log = trim_for_log(debug_log)
 
         if proc:
             if proc.returncode is None:
@@ -921,9 +897,7 @@ class TestCase:
 
                 if os.path.isfile(self.stdout_file):
                     description += ", result:\n\n"
-                    description += "\n".join(
-                        open(self.stdout_file).read().splitlines()[:100]
-                    )
+                    description += trim_for_log(open(self.stdout_file).read())
                     description += "\n"
 
                 description += f"\nstdout:\n{stdout}\n"
@@ -932,8 +906,12 @@ class TestCase:
                 )
 
         if stderr:
-            description += "\n{}\n".format("\n".join(stderr.splitlines()[:100]))
-            description += f"\nstdout:\n{stdout}\n"
+            description += "\n"
+            description += trim_for_log(stderr)
+            description += "\n"
+            description += "\nstdout:\n"
+            description += trim_for_log(stdout)
+            description += "\n"
             if debug_log:
                 description += "\n"
                 description += debug_log
@@ -946,7 +924,9 @@ class TestCase:
             )
 
         if "Exception" in stdout:
-            description += "\n{}\n".format("\n".join(stdout.splitlines()[:100]))
+            description += "\n"
+            description += trim_for_log(stdout)
+            description += "\n"
             if debug_log:
                 description += "\n"
                 description += debug_log
@@ -1130,7 +1110,7 @@ class TestCase:
             seconds_left = max(
                 args.timeout - (datetime.now() - start_time).total_seconds(), 20
             )
-            drop_database_query = "DROP DATABASE " + database
+            drop_database_query = "DROP DATABASE IF EXISTS " + database
             if args.replicated_database:
                 drop_database_query += " ON CLUSTER test_cluster_database_replicated"
 
@@ -1661,7 +1641,7 @@ def check_server_started(args):
     retry_count = args.server_check_retries
     while retry_count > 0:
         try:
-            clickhouse_execute(args, "SELECT 1")
+            clickhouse_execute(args, "SELECT 1", max_http_retries=1)
             print(" OK")
             sys.stdout.flush()
             return True
@@ -2166,6 +2146,7 @@ def main(args):
             print(json.dumps(processlist, indent=4))
             print(get_transactions_list(args))
 
+            print_stacktraces()
             exit_code.value = 1
         else:
             print(colored("\nNo queries hung.", args, "green", attrs=["bold"]))
@@ -2216,8 +2197,16 @@ def find_binary(name):
     bin_path = os.path.join("/usr/bin", name)
     if os.access(bin_path, os.X_OK):
         return bin_path
-    return None
 
+    raise Exception(f"{name} was not found in PATH")
+
+def find_clickhouse_command(binary, command):
+    symlink = binary + "-" + command
+    if os.access(symlink, os.X_OK):
+        return symlink
+
+    # To avoid requiring symlinks (in case you download binary from CI)
+    return binary + " " + command
 
 def get_additional_client_options(args):
     if args.client_option:
@@ -2231,24 +2220,7 @@ def get_additional_client_options_url(args):
     return ""
 
 
-if __name__ == "__main__":
-    stop_time = None
-    exit_code = multiprocessing.Value("i", 0)
-    server_died = multiprocessing.Event()
-    stop_tests_triggered_lock = multiprocessing.Lock()
-    stop_tests_triggered = multiprocessing.Event()
-    queue = multiprocessing.Queue(maxsize=1)
-    multiprocessing_manager = multiprocessing.Manager()
-    restarted_tests = multiprocessing_manager.list()
-
-    # Move to a new process group and kill it at exit so that we don't have any
-    # infinite tests processes left
-    # (new process group is required to avoid killing some parent processes)
-    os.setpgid(0, 0)
-    signal.signal(signal.SIGTERM, signal_handler)
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGHUP, signal_handler)
-
+def parse_args():
     parser = ArgumentParser(description="ClickHouse functional tests")
     parser.add_argument("-q", "--queries", help="Path to queries dir")
     parser.add_argument("--tmp", help="Path to tmp dir")
@@ -2259,7 +2231,6 @@ if __name__ == "__main__":
         default=find_binary("clickhouse"),
         help="Path to clickhouse binary or name of binary in PATH",
     )
-
     parser.add_argument(
         "-c",
         "--client",
@@ -2405,12 +2376,6 @@ if __name__ == "__main__":
         help="Run tests over s3 storage",
     )
     parser.add_argument(
-        "--stress",
-        action="store_true",
-        default=False,
-        help="Run stress tests",
-    )
-    parser.add_argument(
         "--no-random-settings",
         action="store_true",
         default=False,
@@ -2467,9 +2432,9 @@ if __name__ == "__main__":
     )
 
     group.add_argument(
-        "--backward-compatibility-check",
+        "--upgrade-check",
         action="store_true",
-        help="Run tests for further backward compatibility testing by ignoring all"
+        help="Run tests for further server upgrade testing by ignoring all"
         "drop queries in tests for collecting data from new version of server",
     )
     parser.add_argument(
@@ -2503,7 +2468,32 @@ if __name__ == "__main__":
         help="Do not include tests that are not supported with parallel replicas feature",
     )
 
-    args = parser.parse_args()
+    return parser.parse_args()
+
+
+if __name__ == "__main__":
+    stop_time = None
+    exit_code = multiprocessing.Value("i", 0)
+    server_died = multiprocessing.Event()
+    stop_tests_triggered_lock = multiprocessing.Lock()
+    stop_tests_triggered = multiprocessing.Event()
+    queue = multiprocessing.Queue(maxsize=1)
+    multiprocessing_manager = multiprocessing.Manager()
+    restarted_tests = multiprocessing_manager.list()
+
+    # Move to a new process group and kill it at exit so that we don't have any
+    # infinite tests processes left
+    # (new process group is required to avoid killing some parent processes)
+    os.setpgid(0, 0)
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGHUP, signal_handler)
+
+    try:
+        args = parse_args()
+    except Exception as e:
+        print(e, file=sys.stderr)
+        sys.exit(1)
 
     if args.queries and not os.path.isdir(args.queries):
         print(
@@ -2544,21 +2534,21 @@ if __name__ == "__main__":
 
     if args.tmp is None:
         args.tmp = args.queries
-    if args.client is None:
-        client_bin = find_binary(args.binary + "-client")
-        if client_bin is not None:
-            args.client = client_bin
-            print("Using {args.client} as client program")
-        elif args.binary:
-            args.client = args.binary + " client"
-            print(f"Using {args.client} as client program (expecting monolithic build)")
-        else:
-            print(
-                "No 'clickhouse' or 'clickhouse-client' client binary found",
-                file=sys.stderr,
-            )
-            parser.print_help()
-            sys.exit(1)
+
+    if args.client:
+        print(
+            "WARNING: --client option is deprecated and will be removed the the future, use --binary instead",
+            file=sys.stderr,
+        )
+
+    args.client = find_clickhouse_command(args.binary, "client")
+
+    if args.extract_from_config:
+        print(
+            "WARNING: --extract_from_config option is deprecated and will be removed the the future",
+            file=sys.stderr,
+        )
+    args.extract_from_config = find_clickhouse_command(args.binary, "extract-from-config")
 
     if args.configclient:
         args.client += " --config-file=" + args.configclient
@@ -2595,7 +2585,7 @@ if __name__ == "__main__":
     else:
         args.client_database = "default"
 
-    if args.backward_compatibility_check:
+    if args.upgrade_check:
         args.client += " --fake-drop"
 
     if args.client_option or args.secure:
@@ -2620,12 +2610,6 @@ if __name__ == "__main__":
         os.environ["CLICKHOUSE_URL_PARAMS"] += client_options_query_str
     else:
         args.client_options_query_str = ""
-
-    if args.extract_from_config is None:
-        if os.access(args.binary + "-extract-from-config", os.X_OK):
-            args.extract_from_config = args.binary + "-extract-from-config"
-        else:
-            args.extract_from_config = args.binary + " extract-from-config"
 
     if args.jobs is None:
         args.jobs = multiprocessing.cpu_count()

@@ -35,6 +35,7 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Disks/IO/ThreadPoolReader.h>
+#include <Disks/StoragePolicy.h>
 #include <IO/SynchronousReader.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
@@ -234,6 +235,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable UncompressedCachePtr uncompressed_cache;        /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
     mutable std::unique_ptr<ThreadPool> load_marks_threadpool; /// Threadpool for loading marks cache.
+    mutable std::unique_ptr<ThreadPool> prefetch_threadpool; /// Threadpool for loading marks cache.
     mutable UncompressedCachePtr index_uncompressed_cache;  /// The cache of decompressed blocks for MergeTree indices.
     mutable MarkCachePtr index_mark_cache;                  /// Cache of marks in compressed files of MergeTree indices.
     mutable QueryCachePtr query_cache;         /// Cache of query results.
@@ -405,6 +407,20 @@ struct ContextSharedPart : boost::noncopyable
                 LOG_DEBUG(log, "Desctructing marks loader");
                 load_marks_threadpool->wait();
                 load_marks_threadpool.reset();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+
+        if (prefetch_threadpool)
+        {
+            try
+            {
+                LOG_DEBUG(log, "Desctructing prefetch threadpool");
+                prefetch_threadpool->wait();
+                prefetch_threadpool.reset();
             }
             catch (...)
             {
@@ -1516,8 +1532,9 @@ void Context::applySettingChange(const SettingChange & change)
     }
     catch (Exception & e)
     {
-        e.addMessage(fmt::format("in attempt to set the value of setting '{}' to {}",
-                                 change.name, applyVisitor(FieldVisitorToString(), change.value)));
+        e.addMessage(fmt::format(
+                         "in attempt to set the value of setting '{}' to {}",
+                         change.name, applyVisitor(FieldVisitorToString(), change.value)));
         throw;
     }
 }
@@ -1633,8 +1650,8 @@ void Context::setCurrentQueryId(const String & query_id)
         UUID uuid{};
     } random;
 
-    random.words.a = thread_local_rng(); //-V656
-    random.words.b = thread_local_rng(); //-V656
+    random.words.a = thread_local_rng();
+    random.words.b = thread_local_rng();
 
 
     String query_id_to_set = query_id;
@@ -1990,6 +2007,31 @@ ThreadPool & Context::getLoadMarksThreadpool() const
         shared->load_marks_threadpool = std::make_unique<ThreadPool>(pool_size, pool_size, queue_size);
     }
     return *shared->load_marks_threadpool;
+}
+
+static size_t getPrefetchThreadpoolSizeFromConfig(const Poco::Util::AbstractConfiguration & config)
+{
+    return config.getUInt(".prefetch_threadpool_pool_size", 100);
+}
+
+size_t Context::getPrefetchThreadpoolSize() const
+{
+    const auto & config = getConfigRef();
+    return getPrefetchThreadpoolSizeFromConfig(config);
+}
+
+ThreadPool & Context::getPrefetchThreadpool() const
+{
+    const auto & config = getConfigRef();
+
+    auto lock = getLock();
+    if (!shared->prefetch_threadpool)
+    {
+        auto pool_size = getPrefetchThreadpoolSize();
+        auto queue_size = config.getUInt(".prefetch_threadpool_queue_size", 1000000);
+        shared->prefetch_threadpool = std::make_unique<ThreadPool>(pool_size, pool_size, queue_size);
+    }
+    return *shared->prefetch_threadpool;
 }
 
 void Context::setIndexUncompressedCache(size_t max_size_in_bytes)
@@ -2931,7 +2973,16 @@ std::shared_ptr<FilesystemCacheLog> Context::getFilesystemCacheLog() const
     if (!shared->system_logs)
         return {};
 
-    return shared->system_logs->cache_log;
+    return shared->system_logs->filesystem_cache_log;
+}
+
+std::shared_ptr<FilesystemReadPrefetchesLog> Context::getFilesystemReadPrefetchesLog() const
+{
+    auto lock = getLock();
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->filesystem_read_prefetches_log;
 }
 
 std::shared_ptr<AsynchronousInsertLog> Context::getAsynchronousInsertLog() const
@@ -2972,6 +3023,22 @@ DiskPtr Context::getDisk(const String & name) const
     return disk_selector->get(name);
 }
 
+DiskPtr Context::getOrCreateDisk(const String & name, DiskCreator creator) const
+{
+    std::lock_guard lock(shared->storage_policies_mutex);
+
+    auto disk_selector = getDiskSelector(lock);
+
+    auto disk = disk_selector->tryGet(name);
+    if (!disk)
+    {
+        disk = creator(getDisksMap(lock));
+        const_cast<DiskSelector *>(disk_selector.get())->addToDiskMap(name, disk);
+    }
+
+    return disk;
+}
+
 StoragePolicyPtr Context::getStoragePolicy(const String & name) const
 {
     std::lock_guard lock(shared->storage_policies_mutex);
@@ -2981,10 +3048,39 @@ StoragePolicyPtr Context::getStoragePolicy(const String & name) const
     return policy_selector->get(name);
 }
 
+StoragePolicyPtr Context::getStoragePolicyFromDisk(const String & disk_name) const
+{
+    std::lock_guard lock(shared->storage_policies_mutex);
+
+    const std::string storage_policy_name = StoragePolicySelector::TMP_STORAGE_POLICY_PREFIX + disk_name;
+    auto storage_policy_selector = getStoragePolicySelector(lock);
+    StoragePolicyPtr storage_policy = storage_policy_selector->tryGet(storage_policy_name);
+
+    if (!storage_policy)
+    {
+        auto disk_selector = getDiskSelector(lock);
+        auto disk = disk_selector->get(disk_name);
+        auto volume = std::make_shared<SingleDiskVolume>("_volume_" + disk_name, disk);
+
+        static const auto move_factor_for_single_disk_volume = 0.0;
+        storage_policy = std::make_shared<StoragePolicy>(storage_policy_name, Volumes{volume}, move_factor_for_single_disk_volume);
+        const_cast<StoragePolicySelector *>(storage_policy_selector.get())->add(storage_policy);
+    }
+    /// Note: it is important to put storage policy into disk selector (and not recreate it on each call)
+    /// because in some places there are checks that storage policy pointers are the same from different tables.
+    /// (We can assume that tables with the same `disk` setting are on the same storage policy).
+
+    return storage_policy;
+}
 
 DisksMap Context::getDisksMap() const
 {
     std::lock_guard lock(shared->storage_policies_mutex);
+    return getDisksMap(lock);
+}
+
+DisksMap Context::getDisksMap(std::lock_guard<std::mutex> & lock) const
+{
     return getDiskSelector(lock)->getDisksMap();
 }
 
@@ -3699,6 +3795,12 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     else if (config.has("profiles.default.background_merges_mutations_concurrency_ratio"))
         background_merges_mutations_concurrency_ratio = config.getUInt64("profiles.default.background_merges_mutations_concurrency_ratio");
 
+    String background_merges_mutations_scheduling_policy = "round_robin";
+    if (config.has("background_merges_mutations_scheduling_policy"))
+        background_merges_mutations_scheduling_policy = config.getString("background_merges_mutations_scheduling_policy");
+    else if (config.has("profiles.default.background_merges_mutations_scheduling_policy"))
+        background_merges_mutations_scheduling_policy = config.getString("profiles.default.background_merges_mutations_scheduling_policy");
+
     size_t background_move_pool_size = 8;
     if (config.has("background_move_pool_size"))
         background_move_pool_size = config.getUInt64("background_move_pool_size");
@@ -3723,10 +3825,11 @@ void Context::initializeBackgroundExecutorsIfNeeded()
         "MergeMutate",
         /*max_threads_count*/background_pool_size,
         /*max_tasks_count*/background_pool_size * background_merges_mutations_concurrency_ratio,
-        CurrentMetrics::BackgroundMergesAndMutationsPoolTask
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
+        background_merges_mutations_scheduling_policy
     );
-    LOG_INFO(shared->log, "Initialized background executor for merges and mutations with num_threads={}, num_tasks={}",
-        background_pool_size, background_pool_size * background_merges_mutations_concurrency_ratio);
+    LOG_INFO(shared->log, "Initialized background executor for merges and mutations with num_threads={}, num_tasks={}, scheduling_policy={}",
+        background_pool_size, background_pool_size * background_merges_mutations_concurrency_ratio, background_merges_mutations_scheduling_policy);
 
     shared->moves_executor = std::make_shared<OrdinaryBackgroundExecutor>
     (
@@ -3784,6 +3887,31 @@ OrdinaryBackgroundExecutorPtr Context::getCommonExecutor() const
     return shared->common_executor;
 }
 
+static size_t getThreadPoolReaderSizeFromConfig(Context::FilesystemReaderType type, const Poco::Util::AbstractConfiguration & config)
+{
+    switch (type)
+    {
+        case Context::FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER:
+        {
+            return config.getUInt(".threadpool_remote_fs_reader_pool_size", 250);
+        }
+        case Context::FilesystemReaderType::ASYNCHRONOUS_LOCAL_FS_READER:
+        {
+            return config.getUInt(".threadpool_local_fs_reader_pool_size", 100);
+        }
+        case Context::FilesystemReaderType::SYNCHRONOUS_LOCAL_FS_READER:
+        {
+            return std::numeric_limits<std::size_t>::max();
+        }
+    }
+}
+
+size_t Context::getThreadPoolReaderSize(FilesystemReaderType type) const
+{
+    const auto & config = getConfigRef();
+    return getThreadPoolReaderSizeFromConfig(type, config);
+}
+
 IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) const
 {
     const auto & config = getConfigRef();
@@ -3796,9 +3924,8 @@ IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) co
         {
             if (!shared->asynchronous_remote_fs_reader)
             {
-                auto pool_size = config.getUInt(".threadpool_remote_fs_reader_pool_size", 100);
+                auto pool_size = getThreadPoolReaderSizeFromConfig(type, config);
                 auto queue_size = config.getUInt(".threadpool_remote_fs_reader_queue_size", 1000000);
-
                 shared->asynchronous_remote_fs_reader = std::make_unique<ThreadPoolRemoteFSReader>(pool_size, queue_size);
             }
 
@@ -3808,9 +3935,8 @@ IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) co
         {
             if (!shared->asynchronous_local_fs_reader)
             {
-                auto pool_size = config.getUInt(".threadpool_local_fs_reader_pool_size", 100);
+                auto pool_size = getThreadPoolReaderSizeFromConfig(type, config);
                 auto queue_size = config.getUInt(".threadpool_local_fs_reader_queue_size", 1000000);
-
                 shared->asynchronous_local_fs_reader = std::make_unique<ThreadPoolReader>(pool_size, queue_size);
             }
 
@@ -3868,6 +3994,8 @@ ReadSettings Context::getReadSettings() const
 
     res.load_marks_asynchronously = settings.load_marks_asynchronously;
 
+    res.enable_filesystem_read_prefetches_log = settings.enable_filesystem_read_prefetches_log;
+
     res.remote_fs_read_max_backoff_ms = settings.remote_fs_read_max_backoff_ms;
     res.remote_fs_read_backoff_max_tries = settings.remote_fs_read_backoff_max_tries;
     res.enable_filesystem_cache = settings.enable_filesystem_cache;
@@ -3920,6 +4048,14 @@ WriteSettings Context::getWriteSettings() const
     return res;
 }
 
+std::shared_ptr<AsyncReadCounters> Context::getAsyncReadCounters() const
+{
+    auto lock = getLock();
+    if (!async_read_counters)
+        async_read_counters = std::make_shared<AsyncReadCounters>();
+    return async_read_counters;
+}
+
 bool Context::canUseParallelReplicasOnInitiator() const
 {
     const auto & settings = getSettingsRef();
@@ -3936,6 +4072,16 @@ bool Context::canUseParallelReplicasOnFollower() const
         && settings.max_parallel_replicas > 1
         && !settings.use_hedged_requests
         && getClientInfo().collaborate_with_initiator;
+}
+
+UInt64 Context::getClientProtocolVersion() const
+{
+    return client_protocol_version;
+}
+
+void Context::setClientProtocolVersion(UInt64 version)
+{
+    client_protocol_version = version;
 }
 
 }
