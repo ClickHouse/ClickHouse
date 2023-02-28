@@ -129,63 +129,57 @@ clickhouse compressor
 Usage: clickhouse compressor [options] < INPUT > OUTPUT
 Alternative usage: clickhouse compressor [options] INPUT OUTPUT
 Allowed options:
-  -h [ --help ]     produce help message
-  --input INPUT     input file
-  --output OUTPUT   output file
-  -d [ --decompress ] 
-                    decompress
+  -h [ --help ]                       produce help message
+  --input INPUT                       input file
+  --output OUTPUT                     output file
+  -d [ --decompress ]                 decompress
   --offset-in-compressed-file arg (=0)
-                    offset to the compressed block (i.e. 
-                    physical file offset)
+                                      offset to the compressed block (i.e. 
+                                      physical file offset)
   --offset-in-decompressed-block arg (=0)
-                    offset to the decompressed block (i.e. 
-                    virtual offset)
-  -b [ --block-size ] arg (=1048576)
-                    compress in blocks of specified size
-  --hc              use LZ4HC instead of LZ4
-  --zstd            use ZSTD instead of LZ4
-  --deflate_qpl     use deflate_qpl instead of LZ4
-  --codec arg       use codecs combination instead of LZ4
-  --level arg       compression level for codecs specified 
-                    via flags
-  --none            use no compression instead of LZ4
-  --stat            print block statistics of compressed 
-                    data
+                                      offset to the decompressed block (i.e. 
+                                      virtual offset)
+  -b [ --block-size ] arg (=1048576)  compress in blocks of specified size
+  --hc                                use LZ4HC instead of LZ4
+  --zstd                              use ZSTD instead of LZ4
+  --deflate_qpl                       use deflate_qpl instead of LZ4
+  --codec arg                         use codecs combination instead of LZ4
+  --level arg                         compression level for codecs specified 
+                                      via flags
+  --none                              use no compression instead of LZ4
+  --stat                              print block statistics of compressed 
+                                      data
 
 
 clickhouse format
 
 Usage: clickhouse format [options] < query
 Allowed options:
-  --query arg       query to format
-  -h [ --help ]     produce help message
-  --hilite          add syntax highlight with ANSI terminal
-                    escape sequences
-  --oneline         format in single line
-  -q [ --quiet ]    just check syntax, no output on success
-  -n [ --multiquery ] 
-                    allow multiple queries in the same file
-  --obfuscate       obfuscate instead of formatting
-  --backslash       add a backslash at the end of each line
-                    of the formatted query
+  --query arg                         query to format
+  -h [ --help ]                       produce help message
+  --hilite                            add syntax highlight with ANSI terminal
+                                      escape sequences
+  --oneline                           format in single line
+  -q [ --quiet ]                      just check syntax, no output on success
+  -n [ --multiquery ]                 allow multiple queries in the same file
+  --obfuscate                         obfuscate instead of formatting
+  --backslash                         add a backslash at the end of each line
+                                      of the formatted query
   --allow_settings_after_format_in_insert 
-                    Allow SETTINGS after FORMAT, but note, 
-                    that this is not always safe
-  --seed arg        seed (arbitrary string) that determines
-                    the result of obfuscation
-  --max_query_size arg
-                    Which part of the query can be read 
-                    into RAM for parsing (the remaining 
-                    data for INSERT, if any, is read later)
-  --max_parser_depth arg
-                    Maximum parser depth (recursion depth 
-                    of recursive descend parser).
+                                      Allow SETTINGS after FORMAT, but note, 
+                                      that this is not always safe
+  --seed arg                          seed (arbitrary string) that determines
+                                      the result of obfuscation
+  --max_query_size arg                Which part of the query can be read 
+                                      into RAM for parsing (the remaining 
+                                      data for INSERT, if any, is read later)
+  --max_parser_depth arg              Maximum parser depth (recursion depth 
+                                      of recursive descend parser).
 
 
 clickhouse copier
 
-usage: clickhouse copier --config-file <config-file> --task-path 
-                  <task-path>
+usage: clickhouse copier --config-file <config-file> --task-path <task-path>
 Copies tables from one cluster to another
 
 -C<file>, --config-file=<file>                                                         
@@ -423,71 +417,64 @@ Usage: clickhouse obfuscator [options] < in > out
 Input must be seekable file (it will be read twice).
 
 Options:
-  --help            produce help message
-  -S [ --structure ] arg
-                    structure of the initial table (list of
-                    column and type names)
-  --input-format arg
-                    input format of the initial table data
-  --output-format arg
-                    default output format
-  --seed arg        seed (arbitrary string), must be random
-                    string with at least 10 bytes length; 
-                    note that a seed for each column is 
-                    derived from this seed and a column 
-                    name: you can obfuscate data for 
-                    different tables and as long as you use
-                    identical seed and identical column 
-                    names, the data for corresponding 
-                    non-text columns for different tables 
-                    will be transformed in the same way, so
-                    the data for different tables can be 
-                    JOINed after obfuscation
-  --limit arg       if specified - stop after generating 
-                    that number of rows; the limit can be 
-                    also greater than the number of source 
-                    dataset - in this case it will process 
-                    the dataset in a loop more than one 
-                    time, using different seeds on every 
-                    iteration, generating result as large 
-                    as needed
-  --silent arg (=0) don't print information messages to 
-                    stderr
-  --save arg        save the models after training to the 
-                    specified file. You can use --limit 0 
-                    to skip the generation step. The file 
-                    is using binary, platform-dependent, 
-                    opaque serialization format. The model 
-                    parameters are saved, while the seed is
-                    not.
-  --load arg        load the models instead of training 
-                    from the specified file. The table 
-                    structure must match the saved file. 
-                    The seed should be specified 
-                    separately, while other model 
-                    parameters are loaded.
-  --order arg (=5)  order of markov model to generate 
-                    strings
-  --frequency-cutoff arg (=5)
-                    frequency cutoff for markov model: 
-                    remove all buckets with count less than
-                    specified
-  --num-buckets-cutoff arg (=0)
-                    cutoff for number of different possible
-                    continuations for a context: remove all
-                    histograms with less than specified 
-                    number of buckets
-  --frequency-add arg (=0)
-                    add a constant to every count to lower 
-                    probability distribution skew
-  --frequency-desaturate arg (=0)
-                    0..1 - move every frequency towards 
-                    average to lower probability 
-                    distribution skew
+  --help                              produce help message
+  -S [ --structure ] arg              structure of the initial table (list of
+                                      column and type names)
+  --input-format arg                  input format of the initial table data
+  --output-format arg                 default output format
+  --seed arg                          seed (arbitrary string), must be random
+                                      string with at least 10 bytes length; 
+                                      note that a seed for each column is 
+                                      derived from this seed and a column 
+                                      name: you can obfuscate data for 
+                                      different tables and as long as you use
+                                      identical seed and identical column 
+                                      names, the data for corresponding 
+                                      non-text columns for different tables 
+                                      will be transformed in the same way, so
+                                      the data for different tables can be 
+                                      JOINed after obfuscation
+  --limit arg                         if specified - stop after generating 
+                                      that number of rows; the limit can be 
+                                      also greater than the number of source 
+                                      dataset - in this case it will process 
+                                      the dataset in a loop more than one 
+                                      time, using different seeds on every 
+                                      iteration, generating result as large 
+                                      as needed
+  --silent arg (=0)                   don't print information messages to 
+                                      stderr
+  --save arg                          save the models after training to the 
+                                      specified file. You can use --limit 0 
+                                      to skip the generation step. The file 
+                                      is using binary, platform-dependent, 
+                                      opaque serialization format. The model 
+                                      parameters are saved, while the seed is
+                                      not.
+  --load arg                          load the models instead of training 
+                                      from the specified file. The table 
+                                      structure must match the saved file. 
+                                      The seed should be specified 
+                                      separately, while other model 
+                                      parameters are loaded.
+  --order arg (=5)                    order of markov model to generate 
+                                      strings
+  --frequency-cutoff arg (=5)         frequency cutoff for markov model: 
+                                      remove all buckets with count less than
+                                      specified
+  --num-buckets-cutoff arg (=0)       cutoff for number of different possible
+                                      continuations for a context: remove all
+                                      histograms with less than specified 
+                                      number of buckets
+  --frequency-add arg (=0)            add a constant to every count to lower 
+                                      probability distribution skew
+  --frequency-desaturate arg (=0)     0..1 - move every frequency towards 
+                                      average to lower probability 
+                                      distribution skew
   --determinator-sliding-window-size arg (=8)
-                    size of a sliding window in a source 
-                    string - its hash is used as a seed for
-                    RNG in markov model
+                                      size of a sliding window in a source 
+                                      string - its hash is used as a seed for
+                                      RNG in markov model
 
 
 Example:
@@ -645,34 +632,30 @@ clickhouse-client --query "INSERT INTO git.line_changes FORMAT TSV" < line_chang
 
 Usage: clickhouse git-import
 Allowed options:
-  -h [ --help ]     produce help message
+  -h [ --help ]                       produce help message
   --skip-commits-without-parents arg (=1)
-                    Skip commits without parents (except 
-                    the initial commit). These commits are 
-                    usually erroneous but they can make 
-                    sense in very rare cases.
+                                      Skip commits without parents (except 
+                                      the initial commit). These commits are 
+                                      usually erroneous but they can make 
+                                      sense in very rare cases.
   --skip-commits-with-duplicate-diffs arg (=1)
-                    Skip commits with duplicate diffs. 
-                    These commits are usually results of 
-                    cherry-pick or merge after rebase.
-  --skip-commit arg Skip commit with specified hash. The 
-                    option can be specified multiple times.
-  --skip-paths arg  Skip paths that matches regular 
-                    expression (re2 syntax).
-  --skip-commits-with-messages arg
-                    Skip commits whose messages matches 
-                    regular expression (re2 syntax).
-  --diff-size-limit arg (=100000)
-                    Skip commits whose diff size (number of
-                    added + removed lines) is larger than 
-                    specified threshold. Does not apply for
-                    initial commit.
-  --stop-after-commit arg
-                    Stop processing after specified commit 
-                    hash.
-  --threads arg (=8)
-                    Number of concurrent git subprocesses 
-                    to spawn
+                                      Skip commits with duplicate diffs. 
+                                      These commits are usually results of 
+                                      cherry-pick or merge after rebase.
+  --skip-commit arg                   Skip commit with specified hash. The 
+                                      option can be specified multiple times.
+  --skip-paths arg                    Skip paths that matches regular 
+                                      expression (re2 syntax).
+  --skip-commits-with-messages arg    Skip commits whose messages matches 
+                                      regular expression (re2 syntax).
+  --diff-size-limit arg (=100000)     Skip commits whose diff size (number of
+                                      added + removed lines) is larger than 
+                                      specified threshold. Does not apply for
+                                      initial commit.
+  --stop-after-commit arg             Stop processing after specified commit 
+                                      hash.
+  --threads arg (=8)                  Number of concurrent git subprocesses 
+                                      to spawn
 
 
 Example:
@@ -704,14 +687,11 @@ clickhouse keeper-converter
 
 Usage: clickhouse keeper-converter --zookeeper-logs-dir /var/lib/zookeeper/data/version-2 --zookeeper-snapshots-dir /var/lib/zookeeper/data/version-2 --output-dir /var/lib/clickhouse/coordination/snapshots
 Allowed options:
-  -h [ --help ]     produce help message
-  --zookeeper-logs-dir arg
-                    Path to directory with ZooKeeper logs
-  --zookeeper-snapshots-dir arg
-                    Path to directory with ZooKeeper 
-                    snapshots
-  --output-dir arg  Directory to place output 
-                    clickhouse-keeper snapshot
+  -h [ --help ]                 produce help message
+  --zookeeper-logs-dir arg      Path to directory with ZooKeeper logs
+  --zookeeper-snapshots-dir arg Path to directory with ZooKeeper snapshots
+  --output-dir arg              Directory to place output clickhouse-keeper 
+                                snapshot
 
 
 clickhouse install
@@ -797,16 +777,15 @@ Usage: sudo clickhouse restart
 clickhouse static
 
 Allowed options:
-  -h [ --help ]     produce help message
-  --metadata-path arg
-                    Metadata path (SELECT data_paths FROM 
-                    system.tables WHERE name = 'table_name'
-                    AND database = 'database_name')
-  --test-mode       Use test mode, which will put data on 
-                    given url via PUT
-  --link            Create symlinks instead of copying
-  --url arg         Web server url for test mode
-  --output-dir arg  Directory to put files in non-test mode
+  -h [ --help ]         produce help message
+  --metadata-path arg   Metadata path (SELECT data_paths FROM system.tables 
+                        WHERE name = 'table_name' AND database = 
+                        'database_name')
+  --test-mode           Use test mode, which will put data on given url via 
+                        PUT
+  --link                Create symlinks instead of copying
+  --url arg             Web server url for test mode
+  --output-dir arg      Directory to put files in non-test mode
 
 
 clickhouse su
@@ -853,14 +832,12 @@ Path should be in format './' or './path' or 'path'
 list-disks	List disks names
 
 clickhouse-disks:
-  -h [ --help ]     Print common help message
-  -C [ --config-file ] arg
-                    Set config file
-  --disk arg        Set disk name
-  --command_name arg
-                    Name for command to do
-  --save-logs       Save logs to a file
-  --log-level arg   Logging level
+  -h [ --help ]            Print common help message
+  -C [ --config-file ] arg Set config file
+  --disk arg               Set disk name
+  --command_name arg       Name for command to do
+  --save-logs              Save logs to a file
+  --log-level arg          Logging level
 
 ================SYMLINK==============================
 
@@ -941,63 +918,57 @@ clickhouse-compressor
 Usage: clickhouse compressor [options] < INPUT > OUTPUT
 Alternative usage: clickhouse compressor [options] INPUT OUTPUT
 Allowed options:
-  -h [ --help ]     produce help message
-  --input INPUT     input file
-  --output OUTPUT   output file
-  -d [ --decompress ] 
-                    decompress
+  -h [ --help ]                       produce help message
+  --input INPUT                       input file
+  --output OUTPUT                     output file
+  -d [ --decompress ]                 decompress
   --offset-in-compressed-file arg (=0)
-                    offset to the compressed block (i.e. 
-                    physical file offset)
+                                      offset to the compressed block (i.e. 
+                                      physical file offset)
   --offset-in-decompressed-block arg (=0)
-                    offset to the decompressed block (i.e. 
-                    virtual offset)
-  -b [ --block-size ] arg (=1048576)
-                    compress in blocks of specified size
-  --hc              use LZ4HC instead of LZ4
-  --zstd            use ZSTD instead of LZ4
-  --deflate_qpl     use deflate_qpl instead of LZ4
-  --codec arg       use codecs combination instead of LZ4
-  --level arg       compression level for codecs specified 
-                    via flags
-  --none            use no compression instead of LZ4
-  --stat            print block statistics of compressed 
-                    data
+                                      offset to the decompressed block (i.e. 
+                                      virtual offset)
+  -b [ --block-size ] arg (=1048576)  compress in blocks of specified size
+  --hc                                use LZ4HC instead of LZ4
+  --zstd                              use ZSTD instead of LZ4
+  --deflate_qpl                       use deflate_qpl instead of LZ4
+  --codec arg                         use codecs combination instead of LZ4
+  --level arg                         compression level for codecs specified 
+                                      via flags
+  --none                              use no compression instead of LZ4
+  --stat                              print block statistics of compressed 
+                                      data
 
 
 clickhouse-format
 
 Usage: clickhouse format [options] < query
 Allowed options:
-  --query arg       query to format
-  -h [ --help ]     produce help message
-  --hilite          add syntax highlight with ANSI terminal
-                    escape sequences
-  --oneline         format in single line
-  -q [ --quiet ]    just check syntax, no output on success
-  -n [ --multiquery ] 
-                    allow multiple queries in the same file
-  --obfuscate       obfuscate instead of formatting
-  --backslash       add a backslash at the end of each line
-                    of the formatted query
+  --query arg                         query to format
+  -h [ --help ]                       produce help message
+  --hilite                            add syntax highlight with ANSI terminal
+                                      escape sequences
+  --oneline                           format in single line
+  -q [ --quiet ]                      just check syntax, no output on success
+  -n [ --multiquery ]                 allow multiple queries in the same file
+  --obfuscate                         obfuscate instead of formatting
+  --backslash                         add a backslash at the end of each line
+                                      of the formatted query
   --allow_settings_after_format_in_insert 
-                    Allow SETTINGS after FORMAT, but note, 
-                    that this is not always safe
-  --seed arg        seed (arbitrary string) that determines
-                    the result of obfuscation
-  --max_query_size arg
-                    Which part of the query can be read 
-                    into RAM for parsing (the remaining 
-                    data for INSERT, if any, is read later)
-  --max_parser_depth arg
-                    Maximum parser depth (recursion depth 
-                    of recursive descend parser).
+                                      Allow SETTINGS after FORMAT, but note, 
+                                      that this is not always safe
+  --seed arg                          seed (arbitrary string) that determines
+                                      the result of obfuscation
+  --max_query_size arg                Which part of the query can be read 
+                                      into RAM for parsing (the remaining 
+                                      data for INSERT, if any, is read later)
+  --max_parser_depth arg              Maximum parser depth (recursion depth 
+                                      of recursive descend parser).
 
 
 clickhouse-copier
 
-usage: clickhouse-copier --config-file <config-file> --task-path 
-                  <task-path>
+usage: clickhouse-copier --config-file <config-file> --task-path <task-path>
 Copies tables from one cluster to another
 
 -C<file>, --config-file=<file>                                                         
@@ -1235,71 +1206,64 @@ Usage: clickhouse obfuscator [options] < in > out
 Input must be seekable file (it will be read twice).
 
 Options:
-  --help            produce help message
-  -S [ --structure ] arg
-                    structure of the initial table (list of
-                    column and type names)
-  --input-format arg
-                    input format of the initial table data
-  --output-format arg
-                    default output format
-  --seed arg        seed (arbitrary string), must be random
-                    string with at least 10 bytes length; 
-                    note that a seed for each column is 
-                    derived from this seed and a column 
-                    name: you can obfuscate data for 
-                    different tables and as long as you use
-                    identical seed and identical column 
-                    names, the data for corresponding 
-                    non-text columns for different tables 
-                    will be transformed in the same way, so
-                    the data for different tables can be 
-                    JOINed after obfuscation
-  --limit arg       if specified - stop after generating 
-                    that number of rows; the limit can be 
-                    also greater than the number of source 
-                    dataset - in this case it will process 
-                    the dataset in a loop more than one 
-                    time, using different seeds on every 
-                    iteration, generating result as large 
-                    as needed
-  --silent arg (=0) don't print information messages to 
-                    stderr
-  --save arg        save the models after training to the 
-                    specified file. You can use --limit 0 
-                    to skip the generation step. The file 
-                    is using binary, platform-dependent, 
-                    opaque serialization format. The model 
-                    parameters are saved, while the seed is
-                    not.
-  --load arg        load the models instead of training 
-                    from the specified file. The table 
-                    structure must match the saved file. 
-                    The seed should be specified 
-                    separately, while other model 
-                    parameters are loaded.
-  --order arg (=5)  order of markov model to generate 
-                    strings
-  --frequency-cutoff arg (=5)
-                    frequency cutoff for markov model: 
-                    remove all buckets with count less than
-                    specified
-  --num-buckets-cutoff arg (=0)
-                    cutoff for number of different possible
-                    continuations for a context: remove all
-                    histograms with less than specified 
-                    number of buckets
-  --frequency-add arg (=0)
-                    add a constant to every count to lower 
-                    probability distribution skew
-  --frequency-desaturate arg (=0)
-                    0..1 - move every frequency towards 
-                    average to lower probability 
-                    distribution skew
+  --help                              produce help message
+  -S [ --structure ] arg              structure of the initial table (list of
+                                      column and type names)
+  --input-format arg                  input format of the initial table data
+  --output-format arg                 default output format
+  --seed arg                          seed (arbitrary string), must be random
+                                      string with at least 10 bytes length; 
+                                      note that a seed for each column is 
+                                      derived from this seed and a column 
+                                      name: you can obfuscate data for 
+                                      different tables and as long as you use
+                                      identical seed and identical column 
+                                      names, the data for corresponding 
+                                      non-text columns for different tables 
+                                      will be transformed in the same way, so
+                                      the data for different tables can be 
+                                      JOINed after obfuscation
+  --limit arg                         if specified - stop after generating 
+                                      that number of rows; the limit can be 
+                                      also greater than the number of source 
+                                      dataset - in this case it will process 
+                                      the dataset in a loop more than one 
+                                      time, using different seeds on every 
+                                      iteration, generating result as large 
+                                      as needed
+  --silent arg (=0)                   don't print information messages to 
+                                      stderr
+  --save arg                          save the models after training to the 
+                                      specified file. You can use --limit 0 
+                                      to skip the generation step. The file 
+                                      is using binary, platform-dependent, 
+                                      opaque serialization format. The model 
+                                      parameters are saved, while the seed is
+                                      not.
+  --load arg                          load the models instead of training 
+                                      from the specified file. The table 
+                                      structure must match the saved file. 
+                                      The seed should be specified 
+                                      separately, while other model 
+                                      parameters are loaded.
+  --order arg (=5)                    order of markov model to generate 
+                                      strings
+  --frequency-cutoff arg (=5)         frequency cutoff for markov model: 
+                                      remove all buckets with count less than
+                                      specified
+  --num-buckets-cutoff arg (=0)       cutoff for number of different possible
+                                      continuations for a context: remove all
+                                      histograms with less than specified 
+                                      number of buckets
+  --frequency-add arg (=0)            add a constant to every count to lower 
+                                      probability distribution skew
+  --frequency-desaturate arg (=0)     0..1 - move every frequency towards 
+                                      average to lower probability 
+                                      distribution skew
   --determinator-sliding-window-size arg (=8)
-                    size of a sliding window in a source 
-                    string - its hash is used as a seed for
-                    RNG in markov model
+                                      size of a sliding window in a source 
+                                      string - its hash is used as a seed for
+                                      RNG in markov model
 
 
 Example:
@@ -1457,34 +1421,30 @@ clickhouse-client --query "INSERT INTO git.line_changes FORMAT TSV" < line_chang
 
 Usage: clickhouse git-import
 Allowed options:
-  -h [ --help ]     produce help message
+  -h [ --help ]                       produce help message
   --skip-commits-without-parents arg (=1)
-                    Skip commits without parents (except 
-                    the initial commit). These commits are 
-                    usually erroneous but they can make 
-                    sense in very rare cases.
+                                      Skip commits without parents (except 
+                                      the initial commit). These commits are 
+                                      usually erroneous but they can make 
+                                      sense in very rare cases.
   --skip-commits-with-duplicate-diffs arg (=1)
-                    Skip commits with duplicate diffs. 
-                    These commits are usually results of 
-                    cherry-pick or merge after rebase.
-  --skip-commit arg Skip commit with specified hash. The 
-                    option can be specified multiple times.
-  --skip-paths arg  Skip paths that matches regular 
-                    expression (re2 syntax).
-  --skip-commits-with-messages arg
-                    Skip commits whose messages matches 
-                    regular expression (re2 syntax).
-  --diff-size-limit arg (=100000)
-                    Skip commits whose diff size (number of
-                    added + removed lines) is larger than 
-                    specified threshold. Does not apply for
-                    initial commit.
-  --stop-after-commit arg
-                    Stop processing after specified commit 
-                    hash.
-  --threads arg (=8)
-                    Number of concurrent git subprocesses 
-                    to spawn
+                                      Skip commits with duplicate diffs. 
+                                      These commits are usually results of 
+                                      cherry-pick or merge after rebase.
+  --skip-commit arg                   Skip commit with specified hash. The 
+                                      option can be specified multiple times.
+  --skip-paths arg                    Skip paths that matches regular 
+                                      expression (re2 syntax).
+  --skip-commits-with-messages arg    Skip commits whose messages matches 
+                                      regular expression (re2 syntax).
+  --diff-size-limit arg (=100000)     Skip commits whose diff size (number of
+                                      added + removed lines) is larger than 
+                                      specified threshold. Does not apply for
+                                      initial commit.
+  --stop-after-commit arg             Stop processing after specified commit 
+                                      hash.
+  --threads arg (=8)                  Number of concurrent git subprocesses 
+                                      to spawn
 
 
 Example:
@@ -1516,29 +1476,25 @@ clickhouse-keeper-converter
 
 Usage: clickhouse keeper-converter --zookeeper-logs-dir /var/lib/zookeeper/data/version-2 --zookeeper-snapshots-dir /var/lib/zookeeper/data/version-2 --output-dir /var/lib/clickhouse/coordination/snapshots
 Allowed options:
-  -h [ --help ]     produce help message
-  --zookeeper-logs-dir arg
-                    Path to directory with ZooKeeper logs
-  --zookeeper-snapshots-dir arg
-                    Path to directory with ZooKeeper 
-                    snapshots
-  --output-dir arg  Directory to place output 
-                    clickhouse-keeper snapshot
+  -h [ --help ]                 produce help message
+  --zookeeper-logs-dir arg      Path to directory with ZooKeeper logs
+  --zookeeper-snapshots-dir arg Path to directory with ZooKeeper snapshots
+  --output-dir arg              Directory to place output clickhouse-keeper 
+                                snapshot
 
 
 clickhouse-static-files-disk-uploader
 
 Allowed options:
-  -h [ --help ]     produce help message
-  --metadata-path arg
-                    Metadata path (SELECT data_paths FROM 
-                    system.tables WHERE name = 'table_name'
-                    AND database = 'database_name')
-  --test-mode       Use test mode, which will put data on 
-                    given url via PUT
-  --link            Create symlinks instead of copying
-  --url arg         Web server url for test mode
-  --output-dir arg  Directory to put files in non-test mode
+  -h [ --help ]         produce help message
+  --metadata-path arg   Metadata path (SELECT data_paths FROM system.tables 
+                        WHERE name = 'table_name' AND database = 
+                        'database_name')
+  --test-mode           Use test mode, which will put data on given url via 
+                        PUT
+  --link                Create symlinks instead of copying
+  --url arg             Web server url for test mode
+  --output-dir arg      Directory to put files in non-test mode
 
 
 clickhouse-su
@@ -1576,12 +1532,10 @@ Path should be in format './' or './path' or 'path'
 list-disks	List disks names
 
 clickhouse-disks:
-  -h [ --help ]     Print common help message
-  -C [ --config-file ] arg
-                    Set config file
-  --disk arg        Set disk name
-  --command_name arg
-                    Name for command to do
-  --save-logs       Save logs to a file
-  --log-level arg   Logging level
+  -h [ --help ]            Print common help message
+  -C [ --config-file ] arg Set config file
+  --disk arg               Set disk name
+  --command_name arg       Name for command to do
+  --save-logs              Save logs to a file
+  --log-level arg          Logging level
 
