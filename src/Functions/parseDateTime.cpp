@@ -19,7 +19,7 @@ namespace
     using Pos = const char *;
 
     constexpr std::string_view weekdaysShort[] = {"sun", "mon", "tue", "wed", "thu", "fri", "sat"};
-    constexpr std::string_view weekdaysFull[] = {"sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"};
+    // constexpr std::string_view weekdaysFull[] = {"sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"};
     constexpr std::string_view monthsShort[] = {"jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"};
     const std::unordered_map<String, std::pair<String, Int32>> dayOfWeekMap{
         {"mon", {"day", 1}},
@@ -65,15 +65,7 @@ namespace
     constexpr Int32 minYear = 1970;
     constexpr Int32 maxYear = 2106;
 
-    /// Counts the number of literal characters in Joda format string until the next closing literal
-    /// sequence single quote. Returns -1 if no literal single quote was found.
-    /// In Joda format string(https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html)
-    /// literal content must be quoted with single quote. and two single quote means literal with one single quote.
-    /// For example:
-    /// Format string: "'aaaa'", unescaped literal: "aaaa";
-    /// Format string: "'aa''aa'", unescaped literal: "aa'aa";
-    /// Format string: "'aaa''aa" is not valid because of missing of end single quote.
-    [[maybe_unused]] Int64 numLiteralChars(const char * cur, const char * end)
+    Int64 numLiteralChars(const char * cur, const char * end)
     {
         bool found = false;
         Int64 count = 0;
@@ -132,6 +124,202 @@ namespace
 
         std::vector<Int32> day_of_month_values;
         std::vector<Int32> day_of_year_values;
+
+        void setCentrury(Int32 century)
+        {
+            if (century < 19 || century > 21)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for century must be in the range [19, 21]", century);
+
+            century_format = true;
+            year = 100 * century;
+            has_year = true;
+        }
+
+        void setDayOfWeek(Int32 day_of_week_)
+        {
+            if (day_of_week_ < 1 || day_of_week_ > 7)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for day of week must be in the range [1, 7]", day_of_week_);
+
+            day_of_week = day_of_week_;
+            week_date_format = true;
+            day_of_year_format = false;
+            if (!has_year)
+            {
+                has_year = true;
+                year = 2000;
+            }
+        }
+
+        void setMonth(Int32 month_)
+        {
+            if (month_ < 1 || month_ > 12)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for month of year must be in the range [1, 12]", month_);
+
+            month = month_;
+            week_date_format = false;
+            day_of_year_format = false;
+            if (!has_year)
+            {
+                has_year = true;
+                year = 2000;
+            }
+        }
+
+        void appendDayOfMonth(Int32 day_of_month)
+        {
+            if (day_of_month < 1 || day_of_month > 31)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for day of month must be in the range [1, 31]", day_of_month);
+
+            day_of_month_values.push_back(day_of_month);
+            day = day_of_month;
+            week_date_format = false;
+            day_of_year_format = false;
+            if (!has_year)
+            {
+                has_year = true;
+                year = 2000;
+            }
+        }
+
+        void appendDayOfYear(Int32 day_of_year_)
+        {
+            if (day_of_year_ < 1 || day_of_year_ > 366)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for day of year must be in the range [1, 366]", day_of_year_);
+
+            day_of_year_values.push_back(day_of_year_);
+            day_of_year = day_of_year_;
+            day_of_year_format = true;
+            week_date_format = false;
+            if (!has_year)
+            {
+                has_year = true;
+                year = 2000;
+            }
+        }
+
+        void setYear2(Int32 year_, bool is_year_of_era_ = false, bool is_week_year = false)
+        {
+            if (year_ >= 70 && year_ < 100)
+                year_ += 1900;
+            else if (year_ >= 0 && year_ < 70)
+                year_ += 2000;
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for year2 must be in the range [0, 99]", year_);
+
+            setYear(year_, is_year_of_era_, is_week_year);
+        }
+
+        void setYear(Int32 year_, bool is_year_of_era_ = false, bool is_week_year = false)
+        {
+            if (year_ < minYear || year_ > maxYear)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for year must be in the range [{}, {}]", year_, minYear, maxYear);
+
+            year = year_;
+            century_format = false;
+            has_year = true;
+            is_year_of_era = is_year_of_era_;
+            if (is_week_year)
+            {
+                week_date_format = true;
+                day_of_year_format = false;
+            }
+        }
+
+        void setWeek(Int32 week_)
+        {
+            if (week_ < 1 || week_ > 53)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for week of week year must be in the range [1, 53]", week_);
+
+            week = week_;
+            week_date_format = true;
+            day_of_year_format = false;
+            if (!has_year)
+            {
+                has_year = true;
+                year = 2000;
+            }
+        }
+
+        void setMinute(Int32 minute_)
+        {
+            if (minute_ < 0 || minute_ > 59)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for minute must be in the range [0, 59]", minute_);
+
+            minute = minute_;
+        }
+
+        void setSecond(Int32 second_)
+        {
+            if (second_ < 0 || second_ > 59)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for second must be in the range [0, 59]", second_);
+
+            second = second_;
+        }
+
+        void setEra(String & text)
+        {
+            Poco::toLowerInPlace(text);
+            if (text == "ad")
+                is_ad = true;
+            else if (text == "bc")
+                is_ad = false;
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown era {}", text);
+        }
+
+        void setAMPM(String & text)
+        {
+            Poco::toLowerInPlace(text);
+            if (text == "am")
+                is_am = true;
+            else if (text == "pm")
+                is_am = false;
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown half day of day: {}", text);
+        }
+
+        void setHour(Int32 hour_, bool is_hour_of_half_day_ = false, bool is_clock_hour_ = false)
+        {
+            Int32 max_hour;
+            Int32 min_hour;
+            Int32 new_hour = hour;
+            if (!is_hour_of_half_day_ && !is_clock_hour_)
+            {
+                max_hour = 23;
+                min_hour = 0;
+            }
+            else if (!is_hour_of_half_day_ && is_clock_hour_)
+            {
+                max_hour = 24;
+                min_hour = 1;
+                new_hour = hour_ % 24;
+            }
+            else if (is_hour_of_half_day_ && !is_clock_hour_)
+            {
+                max_hour = 11;
+                min_hour = 0;
+            }
+            else
+            {
+                max_hour = 12;
+                min_hour = 1;
+                new_hour = hour_ % 12;
+            }
+
+            if (hour_ < min_hour || hour_ > max_hour)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Value {} for hour must be in the range [{}, {}] if_hour_of_half_day={} and is_clock_hour={}",
+                    hour,
+                    max_hour,
+                    min_hour,
+                    is_hour_of_half_day_,
+                    is_clock_hour_);
+
+            hour = new_hour;
+            is_hour_of_half_day = is_hour_of_half_day_;
+            is_clock_hour = is_clock_hour_;
+        }
 
         /// For debug
         [[maybe_unused]] String toString() const
@@ -307,7 +495,6 @@ namespace
             return seconds_since_epoch;
         }
     };
-
 
     struct ParseDateTimeTraits
     {
@@ -517,24 +704,17 @@ namespace
             {
                 ensureSpace(cur, end, 3, "Parsing DayOfWeekTextShort requires size >= 3");
 
-                String str(cur, 3);
-                Poco::toLowerInPlace(str);
+                String text(cur, 3);
+                Poco::toLowerInPlace(text);
                 Int32 i = 0;
                 for (; i < 7; ++i)
-                    if (str == weekdaysShort[i])
+                    if (text == weekdaysShort[i])
                         break;
 
                 if (i == 7)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unable to parse because unknown short week text");
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown short week text {}", text);
 
-                date.day_of_week = i + 1;
-                date.week_date_format = true;
-                date.day_of_year_format = false;
-                if (!date.has_year)
-                {
-                    date.has_year = true;
-                    date.year = 2000;
-                }
+                date.setDayOfWeek(i+1);
                 cur += 3;
                 return cur;
             }
@@ -550,146 +730,109 @@ namespace
                 for (; i < 12; ++i)
                     if (str == monthsShort[i])
                         break;
-
                 if (i == 12)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unable to parse because unknown short month text");
 
-                date.month = i + 1;
-                if (!date.has_year)
-                {
-                    date.has_year = true;
-                    date.year = 2000;
-                }
+                date.setMonth(i+1);
                 cur += 3;
                 return cur;
             }
 
             static Pos mysqlMonth(Pos cur, Pos end, Date & date)
             {
-                cur = readNumber2(cur, end, date.month);
-                if (date.month < 1 || date.month > 12)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for month must be in the range [1, 12]", date.month);
-
-                if (!date.has_year)
-                {
-                    date.has_year = true;
-                    date.year = 2000;
-                }
+                Int32 month;
+                cur = readNumber2(cur, end, month);
+                date.setMonth(month);
                 return cur;
             }
 
             static Pos mysqlCentury(Pos cur, Pos end, Date & date)
             {
-                Int32 centuray;
-                cur = readNumber2(cur, end, centuray);
-                date.century_format = true;
-                date.year = centuray * 100;
-                date.has_year = true;
+                Int32 century;
+                cur = readNumber2(cur, end, century);
+                date.setCentrury(century);
                 return cur;
             }
 
             static Pos mysqlDayOfMonth(Pos cur, Pos end, Date & date)
             {
-                cur = readNumber2(cur, end, date.day);
-                date.day_of_month_values.push_back(date.day);
-                date.week_date_format = false;
-                date.day_of_year_format = false;
-                if (!date.has_year)
-                {
-                    date.has_year = true;
-                    date.year = 2000;
-                }
+                Int32 day_of_month;
+                cur = readNumber2(cur, end, day_of_month);
+                date.appendDayOfMonth(day_of_month);
                 return cur;
             }
 
             static Pos mysqlAmericanDate(Pos cur, Pos end, Date & date)
             {
-                cur = readNumber2(cur, end, date.month);
+                Int32 month;
+                cur = readNumber2(cur, end, month);
                 cur = assertChar(cur, end, '/');
+                date.setMonth(month);
 
-                cur = readNumber2(cur, end, date.day);
+                Int32 day;
+                cur = readNumber2(cur, end, day);
                 cur = assertChar(cur, end, '/');
+                date.appendDayOfMonth(day);
 
-                cur = readNumber2(cur, end, date.year);
-                cur = assertChar(cur, end, '/');
-
-                date.week_date_format = false;
-                date.day_of_year_format = false;
-                date.century_format = false;
-                date.is_year_of_era = false;
-                date.has_year = true;
+                Int32 year;
+                cur = readNumber2(cur, end, year);
+                date.setYear(year);
                 return cur;
             }
-
 
             static Pos mysqlDayOfMonthSpacePadded(Pos cur, Pos end, Date & date)
             {
                 ensureSpace(cur, end, 2, "mysqlDayOfMonthSpacePadded requires size >= 2");
 
-                date.day = *cur == ' ' ? 0 : (*cur - '0');
+                Int32 day_of_month = *cur == ' ' ? 0 : (*cur - '0');
                 ++cur;
 
-                date.day = 10 * date.day + (*cur - '0');
+                day_of_month = 10 * day_of_month + (*cur - '0');
                 ++cur;
 
-                date.week_date_format = false;
-                date.day_of_year_format = false;
-                if (!date.has_year)
-                {
-                    date.has_year = true;
-                    date.year = 2000;
-                }
+                date.appendDayOfMonth(day_of_month);
                 return cur;
             }
 
             static Pos mysqlISO8601Date(Pos cur, Pos end, Date & date)
             {
-                cur = readNumber4(cur, end, date.year);
+                Int32 year;
+                cur = readNumber4(cur, end, year);
                 cur = assertChar(cur, end, '-');
-                cur = readNumber2(cur, end, date.month);
+                date.setYear(year);
+
+                Int32 month;
+                cur = readNumber2(cur, end, month);
                 cur = assertChar(cur, end, '-');
-                cur = readNumber2(cur, end, date.day);
+                date.setMonth(month);
 
-                date.week_date_format = false;
-                date.day_of_year_format = false;
-
-                date.century_format = false;
-                date.is_year_of_era = false;
-                date.has_year = true;
+                Int32 day;
+                cur = readNumber2(cur, end, day);
+                date.appendDayOfMonth(day);
                 return cur;
             }
 
             static Pos mysqlISO8601Year2(Pos cur, Pos end, Date & date)
             {
-                cur = readNumber2(cur, end, date.year);
-                date.year += 2000;
-                date.century_format = false;
-                date.is_year_of_era = false;
-                date.has_year = true;
+                Int32 year2;
+                cur = readNumber2(cur, end, year2);
+                date.setYear2(year2);
                 return cur;
             }
 
             static Pos mysqlISO8601Year4(Pos cur, Pos end, Date & date)
             {
-                cur = readNumber4(cur, end, date.year);
-                date.century_format = false;
-                date.is_year_of_era = false;
-                date.has_year = true;
+                Int32 year;
+                cur = readNumber4(cur, end, year);
+                date.setYear(year);
                 return cur;
             }
 
             static Pos mysqlDayOfYear(Pos cur, Pos end, Date & date)
             {
-                cur = readNumber3(cur, end, date.day_of_year);
-
-                date.day_of_year_values.push_back(date.day_of_year);
-                date.day_of_year_format = true;
-                date.week_date_format = false;
-                if (!date.has_year)
-                {
-                    date.has_year = true;
-                    date.year = 2000;
-                }
+                Int32 day_of_year;
+                cur = readNumber3(cur, end, day_of_year);
+                date.appendDayOfYear(day_of_year);
                 return cur;
             }
 
@@ -697,75 +840,72 @@ namespace
             {
                 ensureSpace(cur, end, 1, "mysqlDayOfWeek requires size >= 1");
 
-                date.day_of_week = *cur - '0';
-                date.week_date_format = true;
-                date.day_of_year_format = false;
-                if (!date.has_year)
-                {
-                    date.has_year = true;
-                    date.year = 2000;
-                }
+                date.setDayOfWeek(*cur - '0');
+                ++cur;
                 return cur;
             }
 
             static Pos mysqlISO8601Week(Pos cur, Pos end, Date & date)
             {
-                cur = readNumber2(cur, end, date.week);
-                date.week_date_format = true;
-                date.day_of_year_format = false;
-                if (date.has_year)
-                {
-                    date.has_year = true;
-                    date.year = 2000;
-                }
+                Int32 week;
+                cur = readNumber2(cur, end, week);
+                date.setWeek(week);
                 return cur;
             }
 
             static Pos mysqlDayOfWeek0To6(Pos cur, Pos end, Date & date)
             {
-                cur = mysqlDayOfWeek(cur, end, date);
-                if (date.day_of_week == 0)
-                    date.day_of_week = 7;
+                ensureSpace(cur, end, 1, "mysqlDayOfWeek requires size >= 1");
 
+                Int32 day_of_week = *cur - '0';
+                if (day_of_week == 0)
+                    day_of_week = 7;
+
+                date.setDayOfWeek(day_of_week);
+                ++cur;
                 return cur;
             }
 
             static Pos mysqlDayOfWeekTextLong(Pos cur, Pos end, Date & date)
             {
-                mysqlDayOfWeekTextShort(cur, end, date);
-                auto expect_text = weekdaysFull[date.day_of_week - 1];
+                ensureSpace(cur, end, 3, "jodaDayOfWeekText requires the first part size >= 3");
+                String text1(cur, 3);
+                Poco::toLowerInPlace(text1);
+                auto it = dayOfWeekMap.find(text1);
+                if (it == dayOfWeekMap.end())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown day of week text: {}", text1);
+                cur += 3;
 
-                ensureSpace(cur, end, expect_text.size(), "mysqlDayOfWeekTextLong requires size >= " + std::to_string(expect_text.size()));
-                std::string_view text(cur, expect_text.size());
-                if (text != expect_text)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unable to parse because unknown full day of week text {}", expect_text);
+                size_t left_size = it->second.first.size();
+                ensureSpace(cur, end, left_size, "jodaDayOfWeekText requires the second parg size >= " + std::to_string(left_size));
+                String text2(cur, left_size);
+                Poco::toLowerInPlace(text2);
+                if (text2 != it->second.first)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown day of week text: {}", text1 + text2);
+                cur += left_size;
 
-                cur += expect_text.size();
+                date.setDayOfWeek(it->second.second);
                 return cur;
             }
 
             static Pos mysqlYear2(Pos cur, Pos end, Date & date)
             {
-                cur = readNumber2(cur, end, date.year);
-                date.year += 2000;
-                date.century_format = false;
-                date.is_year_of_era = false;
-                date.has_year = true;
+                Int32 year2;
+                cur = readNumber2(cur, end, year2);
+                date.setYear2(year2);
                 return cur;
             }
 
             static Pos mysqlYear4(Pos cur, Pos end, Date & date)
             {
-                cur = readNumber4(cur, end, date.year);
-                date.century_format = false;
-                date.is_year_of_era = false;
-                date.has_year = true;
+                Int32 year;
+                cur = readNumber4(cur, end, year);
+                date.setYear(year);
                 return cur;
             }
 
             static Pos mysqlTimezoneOffset(Pos cur, Pos end, Date & date)
             {
-                /// TODO figure out what timezone_id mean
                 ensureSpace(cur, end, 1, "Parse mysqlTimezoneOffset failed");
                 Int32 sign = 1;
                 if (*cur == '-')
@@ -784,10 +924,9 @@ namespace
 
             static Pos mysqlMinute(Pos cur, Pos end, Date & date)
             {
-                cur = readNumber2(cur, end, date.minute);
-                if (date.minute < 0 || date.minute > 59)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for minute must be in the range [0, 59]", date.minute);
-
+                Int32 minute;
+                cur = readNumber2(cur, end, minute);
+                date.setMinute(minute);
                 return cur;
             }
 
@@ -795,83 +934,80 @@ namespace
             {
                 ensureSpace(cur, end, 2, "mysqlAMPM requires size >= 2");
 
-                std::string text(cur, 2);
-                Poco::toUpperInPlace(text);
-                if (text == "PM")
-                    date.is_am = false;
-                else if (text == "AM")
-                    date.is_am = true;
-                else
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Text should be AM or PM, but {} provided", text);
-
+                String text(cur, 2);
+                date.setAMPM(text);
                 cur += 2;
                 return cur;
             }
 
             static Pos mysqlHHMM12(Pos cur, Pos end, Date & date)
             {
-                cur = readNumber2(cur, end, date.hour);
-                date.is_clock_hour = false;
-                date.is_hour_of_half_day = true;
-
+                Int32 hour;
+                cur = readNumber2(cur, end, hour);
                 cur = assertChar(cur, end, ':');
-                cur = readNumber2(cur, end, date.minute);
+                date.setHour(hour, true, true);
+
+                Int32 minute;
+                cur = readNumber2(cur, end, minute);
                 cur = assertChar(cur, end, ' ');
+                date.setMinute(minute);
+
                 cur = mysqlAMPM(cur, end, date);
                 return cur;
             }
 
             static Pos mysqlHHMM24(Pos cur, Pos end, Date & date)
             {
-                cur = readNumber2(cur, end, date.hour);
-                date.is_clock_hour = false;
-                date.is_hour_of_half_day = false;
-
+                Int32 hour;
+                cur = readNumber2(cur, end, hour);
                 cur = assertChar(cur, end, ':');
-                cur = readNumber2(cur, end, date.minute);
+                date.setHour(hour, false, false);
+
+                Int32 minute;
+                cur = readNumber2(cur, end, minute);
+                date.setMinute(minute);
                 return cur;
             }
 
             static Pos mysqlSecond(Pos cur, Pos end, Date & date)
             {
-                cur = readNumber2(cur, end, date.second);
-                if (date.second < 0 || date.second > 59)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for second must be in the range [0,59]", date.second);
+                Int32 second;
+                cur = readNumber2(cur, end, second);
+                date.setSecond(second);
                 return cur;
             }
 
             static Pos mysqlISO8601Time(Pos cur, Pos end, Date & date)
             {
-                cur = readNumber2(cur, end, date.hour);
+                Int32 hour;
+                cur = readNumber2(cur, end, hour);
                 cur = assertChar(cur, end, ':');
-                cur = readNumber2(cur, end, date.minute);
-                cur = assertChar(cur, end, ':');
-                cur = readNumber2(cur, end, date.second);
+                date.setHour(hour, false, false);
 
-                date.is_clock_hour = false;
-                date.is_hour_of_half_day = false;
+                Int32 minute;
+                cur = readNumber2(cur, end, minute);
+                cur = assertChar(cur, end, ':');
+                date.setMinute(minute);
+
+                Int32 second;
+                cur = readNumber2(cur, end, second);
+                date.setSecond(second);
                 return cur;
             }
 
             static Pos mysqlHour12(Pos cur, Pos end, Date & date)
             {
-                cur = readNumber2(cur, end, date.hour);
-                if (date.hour < 1 || date.hour > 12)
-
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for mysql hour12 must be in the range [1,12]", date.hour);
-                date.is_hour_of_half_day = true;
-                date.is_clock_hour = false;
+                Int32 hour;
+                cur = readNumber2(cur, end, hour);
+                date.setHour(hour, true, true);
                 return cur;
             }
 
             static Pos mysqlHour24(Pos cur, Pos end, Date & date)
             {
-                cur = readNumber2(cur, end, date.hour);
-                if (date.hour < 0 || date.hour > 23)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for mysql hour24 must be in the range [0,23]", date.hour);
-
-                date.is_hour_of_half_day = false;
-                date.is_clock_hour = false;
+                Int32 hour;
+                cur = readNumber2(cur, end, hour);
+                date.setHour(hour, false, false);
                 return cur;
             }
 
@@ -953,97 +1089,52 @@ namespace
             {
                 ensureSpace(cur, end, 2, "jodaEra requires size >= 2");
 
-                String text(cur, 2);
-                Poco::toLowerInPlace(text);
-                if (text == "ad")
-                    date.is_ad = true;
-                else if (text == "bc")
-                    date.is_ad = false;
-                else
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown era {}", std::string(cur, 2));
-
+                String era(cur, 2);
+                date.setEra(era);
                 cur += 2;
                 return cur;
             }
 
             static Pos jodaCenturyOfEra(int repetitions, Pos cur, Pos end, Date & date)
             {
-                Int32 number;
-                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, repetitions, number);
-
-                if (number < 0 || number > 2922789)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for century of era must be in the range [0, 2922789]", number);
-
-                date.century_format = true;
-                date.year = 100 * number;
-                date.has_year = true;
+                Int32 century;
+                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, repetitions, century);
+                date.setCentrury(century);
                 return cur;
             }
 
             static Pos jodaYearOfEra(int repetitions, Pos cur, Pos end, Date & date)
             {
-                Int32 number;
-                cur = readNumberWithVariableLength(cur, end, false, false, true, repetitions, repetitions, number);
-
-                date.century_format = false;
-                date.is_year_of_era = true;
-                if (number > 292278993 || number < 1)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for year of era must be in the range [1, 292278993]", number);
-
-                date.has_year = true;
-                date.year = number;
+                Int32 year_of_era;
+                cur = readNumberWithVariableLength(cur, end, false, false, true, repetitions, repetitions, year_of_era);
+                date.setYear(year_of_era, true);
                 return cur;
             }
 
             static Pos jodaWeekYear(int repetitions, Pos cur, Pos end, Date & date)
             {
-                Int32 number;
-                cur = readNumberWithVariableLength(cur, end, true, true, true, repetitions, repetitions, number);
-                if (number < -292275054 || number > 292278993)
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR, "Value {} for week year must be in the range [-292275054,292278993]", number);
-
-                date.year = number;
-                date.week_date_format = true;
-                date.day_of_year_format = false;
-                date.century_format = false;
-                date.has_year = true;
+                Int32 week_year;
+                cur = readNumberWithVariableLength(cur, end, true, true, true, repetitions, repetitions, week_year);
+                date.setYear(week_year, false, true);
                 return cur;
             }
 
             static Pos jodaWeekOfWeekYear(int repetitions, Pos cur, Pos end, Date & date)
             {
-                Int32 number;
-                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), number);
-                if (number < 1 || number > 52)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for week of week year must be in the range [1, 52]", number);
-
-                date.week = number;
-                date.week_date_format = true;
-                date.day_of_year_format = false;
-                if (!date.has_year)
-                {
-                    date.has_year = true;
-                    date.year = 2000;
-                }
+                Int32 week;
+                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), week);
+                date.setWeek(week);
                 return cur;
             }
 
             static Pos jodaDayOfWeek1Based(int repetitions, Pos cur, Pos end, Date & date)
             {
-                Int32 number;
-                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, repetitions, number);
-                if (number < 1 || number > 7)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for day of week 1-based must be in the range [1, 7]", number);
+                Int32 day_of_week;
+                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, repetitions, day_of_week);
+                if (day_of_week < 1 || day_of_week > 7)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for day of week 1-based must be in the range [1, 7]", day_of_week);
 
-                date.day_of_week = number;
-                date.week_date_format = true;
-                date.day_of_year_format = false;
-                if (!date.has_year)
-                {
-                    date.has_year = true;
-                    date.year = 2000;
-                }
+                date.setDayOfWeek(day_of_week);
                 return cur;
             }
 
@@ -1056,16 +1147,17 @@ namespace
                 auto it = dayOfWeekMap.find(text1);
                 if (it == dayOfWeekMap.end())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown day of week text: {}", text1);
-
-                date.day_of_week = it->second.second;
                 cur += 3;
-                if (cur + it->second.first.size() <= end)
+                date.setDayOfWeek(it->second.second);
+
+                size_t left_size = it->second.first.size();
+                if (cur + left_size <= end)
                 {
-                    String text2(cur, it->second.first.size());
+                    String text2(cur, left_size);
                     Poco::toLowerInPlace(text2);
                     if (text2 == it->second.first)
                     {
-                        cur += it->second.first.size();
+                        cur += left_size;
                         return cur;
                     }
                 }
@@ -1074,79 +1166,47 @@ namespace
 
             static Pos jodaYear(int repetitions, Pos cur, Pos end, Date & date)
             {
-                Int32 number;
-                cur = readNumberWithVariableLength(cur, end, true, true, true, repetitions, repetitions, number);
-                if (number > 292278994 || number < -292275055)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for year must be in the range [-292275055,292278994]", number);
-
-                date.century_format = false;
-                date.is_year_of_era = false;
-                date.has_year = true;
-                date.year = number;
+                Int32 year;
+                cur = readNumberWithVariableLength(cur, end, true, true, true, repetitions, repetitions, year);
+                date.setYear(year);
                 return cur;
             }
 
             static Pos jodaDayOfYear(int repetitions, Pos cur, Pos end, Date & date)
             {
-                Int32 number;
-                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 3), number);
-                if (number < 1 || number > 366)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for day of year must be in the range [1, 366]", number);
-
-                date.day_of_year_values.push_back(number);
-                date.day_of_year = number;
-                date.day_of_year_format = true;
-                date.week_date_format = false;
-                if (!date.has_year)
-                {
-                    date.has_year = true;
-                    date.year = 2000;
-                }
+                Int32 day_of_year;
+                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 3), day_of_year);
+                date.appendDayOfYear(day_of_year);
                 return cur;
             }
 
             static Pos jodaMonthOfYear(int repetitions, Pos cur, Pos end, Date & date)
             {
-                Int32 number;
-                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, 2, number);
-                if (number < 1 || number > 12)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for month of year must be in the range [1, 12]", number);
-
-                date.month = number;
-                date.week_date_format = false;
-                date.day_of_year_format = false;
-                if (!date.has_year)
-                {
-                    date.has_year = true;
-                    date.year = 2000;
-                }
+                Int32 month;
+                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, 2, month);
+                date.setMonth(month);
                 return cur;
             }
 
             static Pos jodaMonthOfYearText(int, Pos cur, Pos end, Date & date)
             {
                 ensureSpace(cur, end, 3, "jodaMonthOfYearText requires size >= 3");
-
                 String text1(cur, 3);
                 Poco::toLowerInPlace(text1);
                 auto it = monthMap.find(text1);
                 if (it == monthMap.end())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown month of year text: {}", text1);
-
-                date.month = it->second.second;
-                if (!date.has_year)
-                {
-                    date.has_year = true;
-                    date.year = 2000;
-                }
                 cur += 3;
-                if (cur + it->second.first.size() <= end)
+                date.setMonth(it->second.second);
+
+                size_t left_size = it->second.first.size();
+                if (cur + left_size <= end)
                 {
-                    String text2(cur, it->second.first.size());
+                    String text2(cur, left_size);
                     Poco::toLowerInPlace(text2);
                     if (text2 == it->second.first)
                     {
-                        cur += it->second.first.size();
+                        cur += left_size;
                         return cur;
                     }
                 }
@@ -1155,20 +1215,9 @@ namespace
 
             static Pos jodaDayOfMonth(int repetitions, Pos cur, Pos end, Date & date)
             {
-                Int32 number;
-                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), number);
-                if (number < 1 || number > 31)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for day of month must be in the range [1, 31]", number);
-
-                date.day_of_month_values.push_back(number);
-                date.day = number;
-                date.week_date_format = false;
-                date.day_of_year_format = false;
-                if (!date.has_year)
-                {
-                    date.has_year = true;
-                    date.year = 2000;
-                }
+                Int32 day_of_month;
+                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), day_of_month);
+                date.appendDayOfMonth(day_of_month);
                 return cur;
             }
 
@@ -1177,89 +1226,56 @@ namespace
                 ensureSpace(cur, end, 2, "jodaHalfDayOfDay requires size >= 2");
 
                 String text(cur, 2);
-                Poco::toLowerInPlace(text);
-                if (text == "am")
-                    date.is_am = true;
-                else if (text == "pm")
-                    date.is_am = false;
-                else
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown half day of day: {}", text);
-
+                date.setAMPM(text);
                 cur += 2;
                 return cur;
             }
 
             static Pos jodaHourOfHalfDay(int repetitions, Pos cur, Pos end, Date & date)
             {
-                Int32 number;
-                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), number);
-                if (number > 11 || number < 0)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for hour of half day must be in the range [0, 11]", number);
-
-                date.is_clock_hour = false;
-                date.is_hour_of_half_day = true;
-                date.hour = number;
+                Int32 hour;
+                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), hour);
+                date.setHour(hour, true, false);
                 return cur;
             }
 
             static Pos jodaClockHourOfHalfDay(int repetitions, Pos cur, Pos end, Date & date)
             {
-                Int32 number;
-                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), number);
-                if (number > 12 || number < 1)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for clock hour of half day must be in the range [1, 12]", number);
-
-                date.is_clock_hour = true;
-                date.is_hour_of_half_day = true;
-                date.hour = number % 12;
+                Int32 hour;
+                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), hour);
+                date.setHour(hour, true, true);
                 return cur;
             }
 
             static Pos jodaHourOfDay(int repetitions, Pos cur, Pos end, Date & date)
             {
-                Int32 number;
-                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), number);
-                if (number > 23 || number < 0)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for hour of day must be in the range [0, 23]", number);
-
-                date.is_clock_hour = false;
-                date.is_hour_of_half_day = false;
-                date.hour = number;
+                Int32 hour;
+                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), hour);
+                date.setHour(hour, false, false);
                 return cur;
             }
 
             static Pos jodaClockHourOfDay(int repetitions, Pos cur, Pos end, Date & date)
             {
-                Int32 number;
-                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), number);
-                if (number > 24 || number < 1)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for clock hour of day must be in the range [1, 24]", number);
-
-                date.is_clock_hour = true;
-                date.is_hour_of_half_day = false;
-                date.hour = number % 24;
+                Int32 hour;
+                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), hour);
+                date.setHour(hour, false, true);
                 return cur;
             }
 
             static Pos jodaMinuteOfHour(int repetitions, Pos cur, Pos end, Date & date)
             {
-                Int32 number;
-                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), number);
-                if (number > 59 || number < 0)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for minute of hour must be in the range [0, 59]", number);
-
-                date.minute = number;
+                Int32 minute;
+                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), minute);
+                date.setMinute(minute);
                 return cur;
             }
 
             static Pos jodaSecondOfMinute(int repetitions, Pos cur, Pos end, Date & date)
             {
-                Int32 number;
-                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), number);
-                if (number > 59 || number < 0)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for second of minute must be in the range [0, 59]", number);
-
-                date.second = number;
+                Int32 second;
+                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), second);
+                date.setSecond(second);
                 return cur;
             }
         };
