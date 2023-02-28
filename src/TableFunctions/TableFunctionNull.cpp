@@ -44,6 +44,9 @@ StoragePtr TableFunctionNull::executeImpl(const ASTPtr & /*ast_function*/, Conte
         columns = getActualTableStructure(context);
     else if (!structure_hint.empty())
         columns = structure_hint;
+    else
+        columns = default_structure;
+
     auto res = std::make_shared<StorageNull>(StorageID(getDatabaseName(), table_name), columns, ConstraintsDescription(), String{});
     res->startup();
     return res;

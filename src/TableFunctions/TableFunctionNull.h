@@ -1,7 +1,8 @@
 #pragma once
 
-#include <TableFunctions/ITableFunction.h>
 #include <Core/Types.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <TableFunctions/ITableFunction.h>
 
 
 namespace DB
@@ -29,6 +30,7 @@ private:
 
     String structure = "auto";
     ColumnsDescription structure_hint;
-};
 
+    ColumnsDescription default_structure = ColumnsDescription{NamesAndTypesList{{"dummy", std::make_shared<DataTypeUInt8>()}}};
+};
 }
