@@ -9,7 +9,8 @@ toc_max_heading_level: 2
 
 ## display_secrets_in_show_and_select_query {#display_secrets_in_show_and_select_query}
 
-Enables or disables showing secrets in `SHOW` and `SELECT` queries.
+Enables or disables showing secrets in `SHOW` and `SELECT` queries for tables, databases,
+table functions, and dictionaries.
 User wishing to see secrets must also have
 [`displaySecretsInShowSelect`](../../sql-reference/statements/grant#grant-display-secrets) privilege.
 

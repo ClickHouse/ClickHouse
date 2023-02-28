@@ -65,11 +65,13 @@ def system_query_log_contains_search_pattern(search_pattern):
     )
 
 
-# Generates a random string.
 def new_password(len=16):
     return "".join(
         random.choice(string.ascii_uppercase + string.digits) for _ in range(len)
     )
+
+
+show_secrets = "SETTINGS display_secrets_in_show_and_select_query"
 
 
 def test_create_alter_user():
@@ -83,44 +85,46 @@ def test_create_alter_user():
         f"CREATE USER u2 IDENTIFIED WITH plaintext_password BY '{password}' SETTINGS custom_c = 'c'"
     )
 
-    def check_no_secrets():
-        assert (
-            node.query("SHOW CREATE USER u1")
-            == "CREATE USER u1 IDENTIFIED WITH sha256_password SETTINGS custom_b = \\'b\\'\n"
-        )
-        assert (
-            node.query("SHOW CREATE USER u2")
-            == "CREATE USER u2 IDENTIFIED WITH plaintext_password SETTINGS custom_c = \\'c\\'\n"
-        )
+    assert (
+        node.query("SHOW CREATE USER u1")
+        == "CREATE USER u1 IDENTIFIED WITH sha256_password SETTINGS custom_b = \\'b\\'\n"
+    )
+    assert (
+        node.query("SHOW CREATE USER u2")
+        == "CREATE USER u2 IDENTIFIED WITH plaintext_password SETTINGS custom_c = \\'c\\'\n"
+    )
 
-    non_secrets = [
-        "CREATE USER u1 IDENTIFIED WITH sha256_password",
-        "ALTER USER u1 IDENTIFIED WITH sha256_password",
-        "CREATE USER u2 IDENTIFIED WITH plaintext_password",
-    ]
+    check_logs(
+        must_contain=[
+            "CREATE USER u1 IDENTIFIED WITH sha256_password",
+            "ALTER USER u1 IDENTIFIED WITH sha256_password",
+            "CREATE USER u2 IDENTIFIED WITH plaintext_password",
+        ],
+        must_not_contain=[
+            password,
+            "IDENTIFIED WITH sha256_password BY",
+            "IDENTIFIED WITH sha256_hash BY",
+            "IDENTIFIED WITH plaintext_password BY",
+        ],
+    )
 
-    secrets = [
-        password,
-        "IDENTIFIED WITH sha256_password BY",
-        "IDENTIFIED WITH sha256_hash BY",
-        "IDENTIFIED WITH plaintext_password BY",
-    ]
-
-    check_no_secrets()
-    check_logs(must_contain=non_secrets, must_not_contain=secrets)
-
-    node.query("SET show_secrets_in_show_query=1")
-
-    assert node.query("SHOW CREATE USER u1").contains("BY")
-    assert node.query("SHOW CREATE USER u2").contains("BY")
-    check_logs(must_contain=secrets + non_secrets)
-
-    node.query("SET show_secrets_in_show_query=0")
-
-    check_no_secrets()
-    check_logs(must_contain=non_secrets, must_not_contain=secrets)
+    assert "BY" in node.query(f"SHOW CREATE USER u1 {show_secrets}=1")
+    assert "BY" in node.query(f"SHOW CREATE USER u2 {show_secrets}=1")
 
     node.query("DROP USER u1, u2")
+
+
+def check_secrets_for_tables(tables, table_name_prefix, password):
+    for i, table in enumerate(tables):
+        table_name = table_name_prefix + str(i)
+        if password in table:
+            assert password in node.query(
+                f"SHOW CREATE TABLE {table_name} {show_secrets}=1"
+            )
+            assert password in node.query(
+                f"SELECT create_table_query, engine_full FROM system.tables WHERE name = '{table_name}' "
+                f"{show_secrets}=1"
+            )
 
 
 def test_create_table():
@@ -146,52 +150,49 @@ def test_create_table():
     for i, table_engine in enumerate(table_engines):
         node.query(f"CREATE TABLE table{i} (x int) ENGINE = {table_engine}")
 
-    def check_no_secrets():
+    for toggle, secret in enumerate(["[HIDDEN]", password]):
         assert (
-            node.query("SHOW CREATE TABLE table0")
-            == "CREATE TABLE default.table0\\n(\\n    `x` Int32\\n)\\nENGINE = MySQL(\\'mysql57:3306\\', \\'mysql_db\\', \\'mysql_table\\', \\'mysql_user\\', \\'[HIDDEN]\\')\n"
+            node.query(f"SHOW CREATE TABLE table0 {show_secrets}={toggle}")
+            == "CREATE TABLE default.table0\\n(\\n    `x` Int32\\n)\\n"
+            "ENGINE = MySQL(\\'mysql57:3306\\', \\'mysql_db\\', "
+            f"\\'mysql_table\\', \\'mysql_user\\', \\'{secret}\\')\n"
         )
 
         assert node.query(
-            "SELECT create_table_query, engine_full FROM system.tables WHERE name = 'table0'"
+            f"SELECT create_table_query, engine_full FROM system.tables WHERE name = 'table0' {show_secrets}={toggle}"
         ) == TSV(
             [
                 [
-                    "CREATE TABLE default.table0 (`x` Int32) ENGINE = MySQL(\\'mysql57:3306\\', \\'mysql_db\\', \\'mysql_table\\', \\'mysql_user\\', \\'[HIDDEN]\\')",
-                    "MySQL(\\'mysql57:3306\\', \\'mysql_db\\', \\'mysql_table\\', \\'mysql_user\\', \\'[HIDDEN]\\')",
+                    "CREATE TABLE default.table0 (`x` Int32) ENGINE = MySQL(\\'mysql57:3306\\', \\'mysql_db\\', "
+                    f"\\'mysql_table\\', \\'mysql_user\\', \\'{secret}\\')",
+                    f"MySQL(\\'mysql57:3306\\', \\'mysql_db\\', \\'mysql_table\\', \\'mysql_user\\', \\'{secret}\\')",
                 ],
             ]
         )
 
-        check_logs(
-            must_contain=[
-                "CREATE TABLE table0 (`x` int) ENGINE = MySQL('mysql57:3306', 'mysql_db', 'mysql_table', 'mysql_user', '[HIDDEN]')",
-                "CREATE TABLE table1 (`x` int) ENGINE = PostgreSQL('postgres1:5432', 'postgres_db', 'postgres_table', 'postgres_user', '[HIDDEN]')",
-                "CREATE TABLE table2 (`x` int) ENGINE = MongoDB('mongo1:27017', 'mongo_db', 'mongo_col', 'mongo_user', '[HIDDEN]')",
-                "CREATE TABLE table3 (x int) ENGINE = S3('http://minio1:9001/root/data/test1.csv')",
-                "CREATE TABLE table4 (x int) ENGINE = S3('http://minio1:9001/root/data/test2.csv', 'CSV')",
-                "CREATE TABLE table5 (x int) ENGINE = S3('http://minio1:9001/root/data/test3.csv.gz', 'CSV', 'gzip')",
-                "CREATE TABLE table6 (`x` int) ENGINE = S3('http://minio1:9001/root/data/test4.csv', 'minio', '[HIDDEN]', 'CSV')",
-                "CREATE TABLE table7 (`x` int) ENGINE = S3('http://minio1:9001/root/data/test5.csv.gz', 'minio', '[HIDDEN]', 'CSV', 'gzip')",
-                "CREATE TABLE table8 (`x` int) ENGINE = MySQL(named_collection_1, host = 'mysql57', port = 3306, database = 'mysql_db', table = 'mysql_table', user = 'mysql_user', password = '[HIDDEN]')",
-                "CREATE TABLE table9 (`x` int) ENGINE = MySQL(named_collection_2, database = 'mysql_db', host = 'mysql57', port = 3306, password = '[HIDDEN]', table = 'mysql_table', user = 'mysql_user')",
-                "CREATE TABLE table10 (x int) ENGINE = MySQL(named_collection_3, database = 'mysql_db', host = 'mysql57', port = 3306, table = 'mysql_table')",
-                "CREATE TABLE table11 (`x` int) ENGINE = PostgreSQL(named_collection_4, host = 'postgres1', port = 5432, database = 'postgres_db', table = 'postgres_table', user = 'postgres_user', password = '[HIDDEN]')",
-                "CREATE TABLE table12 (`x` int) ENGINE = MongoDB(named_collection_5, host = 'mongo1', port = 5432, database = 'mongo_db', collection = 'mongo_col', user = 'mongo_user', password = '[HIDDEN]'",
-                "CREATE TABLE table13 (`x` int) ENGINE = S3(named_collection_6, url = 'http://minio1:9001/root/data/test8.csv', access_key_id = 'minio', secret_access_key = '[HIDDEN]', format = 'CSV')",
-            ],
-            must_not_contain=[password],
-        )
+    check_logs(
+        must_contain=[
+            "CREATE TABLE table0 (`x` int) ENGINE = MySQL('mysql57:3306', 'mysql_db', 'mysql_table', 'mysql_user', '[HIDDEN]')",
+            "CREATE TABLE table1 (`x` int) ENGINE = PostgreSQL('postgres1:5432', 'postgres_db', 'postgres_table', 'postgres_user', '[HIDDEN]')",
+            "CREATE TABLE table2 (`x` int) ENGINE = MongoDB('mongo1:27017', 'mongo_db', 'mongo_col', 'mongo_user', '[HIDDEN]')",
+            "CREATE TABLE table3 (x int) ENGINE = S3('http://minio1:9001/root/data/test1.csv')",
+            "CREATE TABLE table4 (x int) ENGINE = S3('http://minio1:9001/root/data/test2.csv', 'CSV')",
+            "CREATE TABLE table5 (x int) ENGINE = S3('http://minio1:9001/root/data/test3.csv.gz', 'CSV', 'gzip')",
+            "CREATE TABLE table6 (`x` int) ENGINE = S3('http://minio1:9001/root/data/test4.csv', 'minio', '[HIDDEN]', 'CSV')",
+            "CREATE TABLE table7 (`x` int) ENGINE = S3('http://minio1:9001/root/data/test5.csv.gz', 'minio', '[HIDDEN]', 'CSV', 'gzip')",
+            "CREATE TABLE table8 (`x` int) ENGINE = MySQL(named_collection_1, host = 'mysql57', port = 3306, database = 'mysql_db', table = 'mysql_table', user = 'mysql_user', password = '[HIDDEN]')",
+            "CREATE TABLE table9 (`x` int) ENGINE = MySQL(named_collection_2, database = 'mysql_db', host = 'mysql57', port = 3306, password = '[HIDDEN]', table = 'mysql_table', user = 'mysql_user')",
+            "CREATE TABLE table10 (x int) ENGINE = MySQL(named_collection_3, database = 'mysql_db', host = 'mysql57', port = 3306, table = 'mysql_table')",
+            "CREATE TABLE table11 (`x` int) ENGINE = PostgreSQL(named_collection_4, host = 'postgres1', port = 5432, database = 'postgres_db', table = 'postgres_table', user = 'postgres_user', password = '[HIDDEN]')",
+            "CREATE TABLE table12 (`x` int) ENGINE = MongoDB(named_collection_5, host = 'mongo1', port = 5432, database = 'mongo_db', collection = 'mongo_col', user = 'mongo_user', password = '[HIDDEN]'",
+            "CREATE TABLE table13 (`x` int) ENGINE = S3(named_collection_6, url = 'http://minio1:9001/root/data/test8.csv', access_key_id = 'minio', secret_access_key = '[HIDDEN]', format = 'CSV')",
+        ],
+        must_not_contain=[password],
+    )
 
-    check_no_secrets()
+    check_secrets_for_tables(table_engines, "table", password)
 
-    node.query("SET show_secrets_in_show_query=1")
-    check_logs(must_contain=[password])
-
-    node.query("SET show_secrets_in_show_query=0")
-    check_no_secrets()
-
-    for i in range(0, len(table_engines)):
+    for i in range(len(table_engines)):
         node.query(f"DROP TABLE table{i}")
 
 
@@ -211,25 +212,16 @@ def test_create_database():
             f"CREATE DATABASE database{i} ENGINE = {database_engine}"
         )
 
-    def check_no_secrets():
-        check_logs(
-            must_contain=[
-                "CREATE DATABASE database0 ENGINE = MySQL('localhost:3306', 'mysql_db', 'mysql_user', '[HIDDEN]')",
-                "CREATE DATABASE database1 ENGINE = MySQL(named_collection_1, host = 'localhost', port = 3306, database = 'mysql_db', user = 'mysql_user', password = '[HIDDEN]')",
-                # "CREATE DATABASE database2 ENGINE = PostgreSQL('localhost:5432', 'postgres_db', 'postgres_user', '[HIDDEN]')",
-            ],
-            must_not_contain=[password],
-        )
+    check_logs(
+        must_contain=[
+            "CREATE DATABASE database0 ENGINE = MySQL('localhost:3306', 'mysql_db', 'mysql_user', '[HIDDEN]')",
+            "CREATE DATABASE database1 ENGINE = MySQL(named_collection_1, host = 'localhost', port = 3306, database = 'mysql_db', user = 'mysql_user', password = '[HIDDEN]')",
+            # "CREATE DATABASE database2 ENGINE = PostgreSQL('localhost:5432', 'postgres_db', 'postgres_user', '[HIDDEN]')",
+        ],
+        must_not_contain=[password],
+    )
 
-    check_no_secrets()
-
-    node.query("SET show_secrets_in_show_query=1")
-    check_logs(must_contain=[password])
-
-    node.query("SET show_secrets_in_show_query=0")
-    check_no_secrets()
-
-    for i in range(0, len(database_engines)):
+    for i in range(len(database_engines)):
         node.query(f"DROP DATABASE IF EXISTS database{i}")
 
 
@@ -272,21 +264,26 @@ def test_table_functions():
     for i, table_function in enumerate(table_functions):
         node.query(f"CREATE TABLE tablefunc{i} (x int) AS {table_function}")
 
-    assert (
-        node.query("SHOW CREATE TABLE tablefunc0")
-        == "CREATE TABLE default.tablefunc0\\n(\\n    `x` Int32\\n) AS mysql(\\'mysql57:3306\\', \\'mysql_db\\', \\'mysql_table\\', \\'mysql_user\\', \\'[HIDDEN]\\')\n"
-    )
+    for toggle, secret in enumerate(["[HIDDEN]", password]):
+        assert (
+            node.query(f"SHOW CREATE TABLE tablefunc0 {show_secrets}={toggle}")
+            == "CREATE TABLE default.tablefunc0\\n(\\n    `x` Int32\\n) AS "
+            "mysql(\\'mysql57:3306\\', \\'mysql_db\\', \\'mysql_table\\', "
+            f"\\'mysql_user\\', \\'{secret}\\')\n"
+        )
 
-    assert node.query(
-        "SELECT create_table_query, engine_full FROM system.tables WHERE name = 'tablefunc0'"
-    ) == TSV(
-        [
+        assert node.query(
+            "SELECT create_table_query, engine_full FROM system.tables WHERE name = 'tablefunc0' "
+            f"{show_secrets}={toggle}"
+        ) == TSV(
             [
-                "CREATE TABLE default.tablefunc0 (`x` Int32) AS mysql(\\'mysql57:3306\\', \\'mysql_db\\', \\'mysql_table\\', \\'mysql_user\\', \\'[HIDDEN]\\')",
-                "",
-            ],
-        ]
-    )
+                [
+                    "CREATE TABLE default.tablefunc0 (`x` Int32) AS mysql(\\'mysql57:3306\\', "
+                    f"\\'mysql_db\\', \\'mysql_table\\', \\'mysql_user\\', \\'{secret}\\')",
+                    "",
+                ],
+            ]
+        )
 
     check_logs(
         must_contain=[
@@ -324,7 +321,9 @@ def test_table_functions():
         must_not_contain=[password],
     )
 
-    for i in range(0, len(table_functions)):
+    check_secrets_for_tables(table_functions, "tablefunc", password)
+
+    for i in range(len(table_functions)):
         node.query(f"DROP TABLE tablefunc{i}")
 
 
@@ -400,15 +399,18 @@ def test_create_dictionary():
         f"LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())"
     )
 
-    assert (
-        node.query("SHOW CREATE TABLE dict1")
-        == "CREATE DICTIONARY default.dict1\\n(\\n    `n` int DEFAULT 0,\\n    `m` int DEFAULT 1\\n)\\nPRIMARY KEY n\\nSOURCE(CLICKHOUSE(HOST \\'localhost\\' PORT 9000 USER \\'user1\\' TABLE \\'test\\' PASSWORD \\'[HIDDEN]\\' DB \\'default\\'))\\nLIFETIME(MIN 0 MAX 10)\\nLAYOUT(FLAT())\n"
-    )
+    for toggle, secret in enumerate(["[HIDDEN]", password]):
+        assert (
+            node.query(f"SHOW CREATE TABLE dict1 {show_secrets}={toggle}")
+            == f"CREATE DICTIONARY default.dict1\\n(\\n    `n` int DEFAULT 0,\\n    `m` int DEFAULT 1\\n)\\nPRIMARY KEY n\\nSOURCE(CLICKHOUSE(HOST \\'localhost\\' PORT 9000 USER \\'user1\\' TABLE \\'test\\' PASSWORD \\'{secret}\\' DB \\'default\\'))\\nLIFETIME(MIN 0 MAX 10)\\nLAYOUT(FLAT())\n"
+        )
 
-    assert (
-        node.query("SELECT create_table_query FROM system.tables WHERE name = 'dict1'")
-        == "CREATE DICTIONARY default.dict1 (`n` int DEFAULT 0, `m` int DEFAULT 1) PRIMARY KEY n SOURCE(CLICKHOUSE(HOST \\'localhost\\' PORT 9000 USER \\'user1\\' TABLE \\'test\\' PASSWORD \\'[HIDDEN]\\' DB \\'default\\')) LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())\n"
-    )
+        assert (
+            node.query(
+                f"SELECT create_table_query FROM system.tables WHERE name = 'dict1' {show_secrets}={toggle}"
+            )
+            == f"CREATE DICTIONARY default.dict1 (`n` int DEFAULT 0, `m` int DEFAULT 1) PRIMARY KEY n SOURCE(CLICKHOUSE(HOST \\'localhost\\' PORT 9000 USER \\'user1\\' TABLE \\'test\\' PASSWORD \\'{secret}\\' DB \\'default\\')) LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())\n"
+        )
 
     check_logs(
         must_contain=[
@@ -479,4 +481,4 @@ def test_on_cluster():
         "%CREATE TABLE default.table_oncl UUID \\'%\\' (`x` Int32) ENGINE = MySQL(\\'mysql57:3307\\', \\'mysql_db\\', \\'mysql_table\\', \\'mysql_user\\', \\'[HIDDEN]\\')"
     )
 
-    node.query(f"DROP TABLE table_oncl")
+    node.query("DROP TABLE table_oncl")
