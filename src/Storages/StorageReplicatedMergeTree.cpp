@@ -6503,6 +6503,14 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
     /// Now these parts are in Deleting state. If we fail to remove some of them we must roll them back to Outdated state.
     /// Otherwise they will not be deleted.
     DataPartsVector parts = grabOldParts();
+    Strings broken_parts = queue.getBrokenPartsEnqueuedForForFetches();
+    size_t erased = std::erase_if(parts, [&broken_parts](const auto & part)
+    {
+        return std::find(broken_parts.begin(), broken_parts.end(), part->name) != broken_parts.end();
+    });
+    if (erased > 0)
+        LOG_DEBUG(log, "Removed {} broken outdated parts from parts to cleanup", erased);
+
     if (parts.empty())
         return;
 

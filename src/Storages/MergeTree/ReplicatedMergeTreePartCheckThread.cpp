@@ -380,11 +380,32 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
                 String message = fmt::format(fmt_string, part_name);
                 LOG_ERROR(log, fmt_string, part_name);
 
+                /// After the part marked as Outdated (in
+                /// outdateBrokenPartAndCloneToDetached()) it can be removed
+                /// during a background parts cleanup, and this could be done
+                /// before the GET_PART will be scheduled for such part
+                /// (searchForMissingPartAndFetchIfPossible()), and this can
+                /// lead to a intersecting parts, since this replica will not
+                /// know anything about this part.
+                ///
+                /// So this part should be added to a list of broken parts,
+                /// which cannot be cleaned up by the background cleanup.
+                ///
+                /// And this should be done before
+                /// outdateBrokenPartAndCloneToDetached(), to avoid possible
+                /// race with background cleanup.
+                if (exists_in_zookeeper)
+                    storage.queue.addBrokenPartToEnqueueFetchesOnLoading(part_name);
+
                 /// Delete part locally.
                 storage.outdateBrokenPartAndCloneToDetached(part, "broken");
 
                 /// Part is broken, let's try to find it and fetch.
                 searchForMissingPartAndFetchIfPossible(part_name, exists_in_zookeeper);
+                /// GET_PART was scheduled successfully, remove part from the
+                /// list of broken parts.
+                if (exists_in_zookeeper)
+                    storage.queue.removeBrokenPartFromEnqueueFetchesOnLoading(part_name);
 
                 return {part_name, false, message};
             }

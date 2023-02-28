@@ -59,6 +59,26 @@ void ReplicatedMergeTreeQueue::setBrokenPartsToEnqueueFetchesOnLoading(Strings &
     assert(virtual_parts.size() == 0);
     broken_parts_to_enqueue_fetches_on_loading = std::move(parts_to_fetch);
 }
+void ReplicatedMergeTreeQueue::addBrokenPartToEnqueueFetchesOnLoading(const String & part)
+{
+    std::lock_guard lock(state_mutex);
+    chassert(std::find(
+        broken_parts_to_enqueue_fetches_on_loading.begin(),
+        broken_parts_to_enqueue_fetches_on_loading.end(),
+        part) == broken_parts_to_enqueue_fetches_on_loading.end());
+    broken_parts_to_enqueue_fetches_on_loading.push_back(part);
+}
+void ReplicatedMergeTreeQueue::removeBrokenPartFromEnqueueFetchesOnLoading(const String & part)
+{
+    std::lock_guard lock(state_mutex);
+    size_t erased = std::erase(broken_parts_to_enqueue_fetches_on_loading, part);
+    chassert(erased > 0);
+}
+Strings ReplicatedMergeTreeQueue::getBrokenPartsEnqueuedForForFetches()
+{
+    std::lock_guard lock(state_mutex);
+    return broken_parts_to_enqueue_fetches_on_loading;
+}
 
 void ReplicatedMergeTreeQueue::initialize(zkutil::ZooKeeperPtr zookeeper)
 {

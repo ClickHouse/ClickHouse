@@ -481,8 +481,13 @@ public:
     /// We need loaded queue to create GET_PART entry for broken (or missing) part,
     /// but queue is not loaded yet on data parts loading.
     void setBrokenPartsToEnqueueFetchesOnLoading(Strings && parts_to_fetch);
+    /// This is to temporary add a part to a list of broken parts while
+    /// manipulating parts on disk and in coordinator.
+    void addBrokenPartToEnqueueFetchesOnLoading(const String & part);
+    void removeBrokenPartFromEnqueueFetchesOnLoading(const String & part);
     /// Must be called right after queue loading.
     void createLogEntriesToFetchBrokenParts();
+    Strings getBrokenPartsEnqueuedForForFetches();
 };
 
 class ReplicatedMergeTreeMergePredicate
