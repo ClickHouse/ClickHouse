@@ -10,6 +10,7 @@ from typing import List
 
 SCRIPT_PATH = Path(__file__).absolute()
 IMAGE_TYPE = "binary"
+IMAGE_NAME = f"clickhouse/{IMAGE_TYPE}-builder"
 
 
 class BuildException(Exception):
@@ -80,7 +81,6 @@ def run_docker_image_with_env(
     env_variables: List[str],
     ch_root: Path,
     ccache_dir: Path,
-    docker_image_version: str,
 ):
     output_dir.mkdir(parents=True, exist_ok=True)
     env_part = " -e ".join(env_variables)
@@ -100,7 +100,7 @@ def run_docker_image_with_env(
     cmd = (
         f"docker run --network=host --user={user} --rm --volume={output_dir}:/output "
         f"--volume={ch_root}:/build --volume={ccache_dir}:/ccache {env_part} "
-        f"{interactive} {image_name}:{docker_image_version}"
+        f"{interactive} {image_name}"
     )
 
     logging.info("Will build ClickHouse pkg with cmd: '%s'", cmd)
@@ -311,8 +311,7 @@ def dir_name(name: str) -> Path:
     return path
 
 
-def main():
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description="ClickHouse building script using prebuilt Docker image",
@@ -382,23 +381,34 @@ def main():
 
     args = parser.parse_args()
 
-    image_name = f"clickhouse/{IMAGE_TYPE}-builder"
-
-    ch_root = args.clickhouse_repo_path
-
     if args.additional_pkgs and args.package_type != "deb":
-        raise BuildException("Can build additional packages only in deb build")
+        raise argparse.ArgumentTypeError(
+            "Can build additional packages only in deb build"
+        )
 
     if args.with_binaries != "":
         if args.package_type != "deb":
-            raise BuildException("Can add additional binaries only in deb build")
+            raise argparse.ArgumentTypeError(
+                "Can add additional binaries only in deb build"
+            )
         logging.info("Should place %s to output", args.with_binaries)
 
+    return args
+
+
+def main():
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
+    args = parse_args()
+
+    ch_root = args.clickhouse_repo_path
+
     dockerfile = ch_root / "docker/packager" / IMAGE_TYPE / "Dockerfile"
-    image_with_version = image_name + ":" + args.docker_image_version
+    image_with_version = IMAGE_NAME + ":" + args.docker_image_version
     if args.force_build_image:
         build_image(image_with_version, dockerfile)
-    elif not (check_image_exists_locally(image_name) or pull_image(image_with_version)):
+    elif not (
+        check_image_exists_locally(image_with_version) or pull_image(image_with_version)
+    ):
         build_image(image_with_version, dockerfile)
 
     env_prepared = parse_env_variables(
@@ -417,13 +427,12 @@ def main():
 
     pre_build(args.clickhouse_repo_path, env_prepared)
     run_docker_image_with_env(
-        image_name,
+        image_with_version,
         args.as_root,
         args.output_dir,
         env_prepared,
         ch_root,
         args.ccache_dir,
-        args.docker_image_version,
     )
     logging.info("Output placed into %s", args.output_dir)
 
