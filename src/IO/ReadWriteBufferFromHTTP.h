@@ -49,22 +49,18 @@ namespace ErrorCodes
     extern const int UNKNOWN_FILE_SIZE;
 }
 
-template <typename SessionPtr>
-class UpdatableSessionBase
+template <typename TSessionFactory>
+class UpdatableSession
 {
-protected:
-    SessionPtr session;
-    UInt64 redirects{0};
-    Poco::URI initial_uri;
-    ConnectionTimeouts timeouts;
-    UInt64 max_redirects;
-
 public:
-    virtual void buildNewSession(const Poco::URI & uri) = 0;
+    using SessionPtr = typename TSessionFactory::SessionType;
 
-    explicit UpdatableSessionBase(const Poco::URI uri, const ConnectionTimeouts & timeouts_, UInt64 max_redirects_)
-        : initial_uri{uri}, timeouts{timeouts_}, max_redirects{max_redirects_}
+    explicit UpdatableSession(const Poco::URI & uri, UInt64 max_redirects_, std::shared_ptr<TSessionFactory> session_factory_)
+        : max_redirects{max_redirects_}
+        , initial_uri(uri)
+        , session_factory(std::move(session_factory_))
     {
+        session = session_factory->buildNewSession(uri);
     }
 
     SessionPtr getSession() { return session; }
@@ -73,16 +69,21 @@ public:
     {
         ++redirects;
         if (redirects <= max_redirects)
-        {
-            buildNewSession(uri);
-        }
+            session = session_factory->buildNewSession(uri);
         else
-        {
             throw Exception(ErrorCodes::TOO_MANY_REDIRECTS, "Too many redirects while trying to access {}", initial_uri.toString());
-        }
     }
 
-    virtual ~UpdatableSessionBase() = default;
+    std::shared_ptr<UpdatableSession<TSessionFactory>> clone(const Poco::URI & uri)
+    {
+        return std::make_shared<UpdatableSession<TSessionFactory>>(uri, max_redirects, session_factory);
+    }
+private:
+    SessionPtr session;
+    UInt64 redirects{0};
+    UInt64 max_redirects;
+    Poco::URI initial_uri;
+    std::shared_ptr<TSessionFactory> session_factory;
 };
 
 
@@ -147,7 +148,7 @@ namespace detail
         size_t getOffset() const { return getRangeBegin() + offset_from_begin_pos; }
 
         template <bool use_initial_range = false>
-        std::istream * callImpl(Poco::URI uri_, Poco::Net::HTTPResponse & response, const std::string & method_)
+        std::istream * callImpl(UpdatableSessionPtr & current_session, Poco::URI uri_, Poco::Net::HTTPResponse & response, const std::string & method_)
         {
             // With empty path poco will send "POST  HTTP/1.1" its bug.
             if (uri_.getPath().empty())
@@ -155,7 +156,6 @@ namespace detail
 
             Poco::Net::HTTPRequest request(method_, uri_.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
             request.setHost(uri_.getHost()); // use original, not resolved host name in header
-
 
             if (out_stream_callback)
                 request.setChunkedTransferEncoding(true);
@@ -191,8 +191,7 @@ namespace detail
 
             LOG_TRACE(log, "Sending request to {}", uri_.toString());
 
-            auto sess = session->getSession();
-
+            auto sess = current_session->getSession();
             try
             {
                 auto & stream_out = sess->sendRequest(request);
@@ -200,11 +199,13 @@ namespace detail
                 if (out_stream_callback)
                     out_stream_callback(stream_out);
 
-                istr = receiveResponse(*sess, request, response, true);
+                auto result_istr = receiveResponse(*sess, request, response, true);
                 response.getCookies(cookies);
 
-                content_encoding = response.get("Content-Encoding", "");
-                return istr;
+                if constexpr (!use_initial_range)
+                    content_encoding = response.get("Content-Encoding", "");
+
+                return result_istr;
             }
             catch (const Poco::Exception & e)
             {
@@ -362,7 +363,7 @@ namespace detail
                 non_retriable_errors.begin(), non_retriable_errors.end(), [&](const auto status) { return http_status != status; });
         }
 
-        Poco::URI getUriAfterRedirect(const Poco::URI & prev_uri, Poco::Net::HTTPResponse & response)
+        static Poco::URI getUriAfterRedirect(const Poco::URI & prev_uri, Poco::Net::HTTPResponse & response)
         {
             auto location = response.get("Location");
             auto location_uri = Poco::URI(location);
@@ -379,7 +380,14 @@ namespace detail
         template <bool use_initial_range = false>
         void callWithRedirects(Poco::Net::HTTPResponse & response, const String & method_, bool throw_on_all_errors = false)
         {
-            call<use_initial_range>(response, method_, throw_on_all_errors);
+            UpdatableSessionPtr current_session = nullptr;
+
+            if (use_initial_range)
+                current_session = session->clone(uri);
+            else
+                current_session = session;
+
+            call<use_initial_range>(current_session, response, method_, throw_on_all_errors);
             Poco::URI prev_uri = uri;
 
             while (isRedirect(response.getStatus()))
@@ -389,18 +397,22 @@ namespace detail
                 if (remote_host_filter)
                     remote_host_filter->checkURL(uri_redirect);
 
-                session->updateSession(uri_redirect);
+                current_session->updateSession(uri_redirect);
 
-                istr = callImpl<use_initial_range>(uri_redirect, response, method);
+                auto result_istr = callImpl<use_initial_range>(current_session, uri_redirect, response, method);
+                if (!use_initial_range)
+                    istr = result_istr;
             }
         }
 
         template <bool use_initial_range = false>
-        void call(Poco::Net::HTTPResponse & response, const String & method_, bool throw_on_all_errors = false)
+        void call(UpdatableSessionPtr & current_session, Poco::Net::HTTPResponse & response, const String & method_, bool throw_on_all_errors = false)
         {
             try
             {
-                istr = callImpl<use_initial_range>(saved_uri_redirect ? *saved_uri_redirect : uri, response, method_);
+                auto result_istr = callImpl<use_initial_range>(current_session, saved_uri_redirect ? *saved_uri_redirect : uri, response, method_);
+                if (!use_initial_range)
+                    istr = result_istr;
             }
             catch (...)
             {
@@ -436,7 +448,7 @@ namespace detail
         {
             Poco::Net::HTTPResponse response;
 
-            call(response, method);
+            call(session, response, method);
             if (initialization_error != InitializeError::NONE)
                 return;
 
@@ -448,7 +460,7 @@ namespace detail
 
                 session->updateSession(uri_redirect);
 
-                istr = callImpl(uri_redirect, response, method);
+                istr = callImpl(session, uri_redirect, response, method);
                 saved_uri_redirect = uri_redirect;
             }
 
@@ -731,23 +743,24 @@ namespace detail
     };
 }
 
-class UpdatableSession : public UpdatableSessionBase<HTTPSessionPtr>
+class SessionFactory
 {
-    using Parent = UpdatableSessionBase<HTTPSessionPtr>;
-
 public:
-    UpdatableSession(const Poco::URI uri, const ConnectionTimeouts & timeouts_, const UInt64 max_redirects_)
-        : Parent(uri, timeouts_, max_redirects_)
-    {
-        session = makeHTTPSession(initial_uri, timeouts);
-    }
+    explicit SessionFactory(const ConnectionTimeouts & timeouts_)
+        : timeouts(timeouts_)
+    {}
 
-    void buildNewSession(const Poco::URI & uri) override { session = makeHTTPSession(uri, timeouts); }
+    using SessionType = HTTPSessionPtr;
+
+    SessionType buildNewSession(const Poco::URI & uri) { return makeHTTPSession(uri, timeouts); }
+private:
+    ConnectionTimeouts timeouts;
 };
 
-class ReadWriteBufferFromHTTP : public detail::ReadWriteBufferFromHTTPBase<std::shared_ptr<UpdatableSession>>
+class ReadWriteBufferFromHTTP : public detail::ReadWriteBufferFromHTTPBase<std::shared_ptr<UpdatableSession<SessionFactory>>>
 {
-    using Parent = detail::ReadWriteBufferFromHTTPBase<std::shared_ptr<UpdatableSession>>;
+    using SessionType = UpdatableSession<SessionFactory>;
+    using Parent = detail::ReadWriteBufferFromHTTPBase<std::shared_ptr<SessionType>>;
 
 public:
     ReadWriteBufferFromHTTP(
@@ -766,7 +779,7 @@ public:
         bool use_external_buffer_ = false,
         bool skip_not_found_url_ = false)
         : Parent(
-            std::make_shared<UpdatableSession>(uri_, timeouts, max_redirects),
+            std::make_shared<SessionType>(uri_, max_redirects, std::make_shared<SessionFactory>(timeouts)),
             uri_,
             credentials_,
             method_,
@@ -878,27 +891,27 @@ private:
     bool skip_not_found_url;
 };
 
-class UpdatablePooledSession : public UpdatableSessionBase<PooledHTTPSessionPtr>
+class PooledSessionFactory
 {
-    using Parent = UpdatableSessionBase<PooledHTTPSessionPtr>;
-
-private:
-    size_t per_endpoint_pool_size;
-
 public:
-    explicit UpdatablePooledSession(
-        const Poco::URI uri, const ConnectionTimeouts & timeouts_, const UInt64 max_redirects_, size_t per_endpoint_pool_size_)
-        : Parent(uri, timeouts_, max_redirects_), per_endpoint_pool_size{per_endpoint_pool_size_}
-    {
-        session = makePooledHTTPSession(initial_uri, timeouts, per_endpoint_pool_size);
-    }
+    explicit PooledSessionFactory(
+        const ConnectionTimeouts & timeouts_, size_t per_endpoint_pool_size_)
+        : timeouts(timeouts_)
+        , per_endpoint_pool_size(per_endpoint_pool_size_)
+    {}
 
-    void buildNewSession(const Poco::URI & uri) override { session = makePooledHTTPSession(uri, timeouts, per_endpoint_pool_size); }
+    using SessionType = PooledHTTPSessionPtr;
+
+    SessionType buildNewSession(const Poco::URI & uri) { return makePooledHTTPSession(uri, timeouts, per_endpoint_pool_size); }
+private:
+    ConnectionTimeouts timeouts;
+    size_t per_endpoint_pool_size;
 };
 
-class PooledReadWriteBufferFromHTTP : public detail::ReadWriteBufferFromHTTPBase<std::shared_ptr<UpdatablePooledSession>>
+class PooledReadWriteBufferFromHTTP : public detail::ReadWriteBufferFromHTTPBase<std::shared_ptr<UpdatableSession<PooledSessionFactory>>>
 {
-    using Parent = detail::ReadWriteBufferFromHTTPBase<std::shared_ptr<UpdatablePooledSession>>;
+    using SessionType = UpdatableSession<PooledSessionFactory>;
+    using Parent = detail::ReadWriteBufferFromHTTPBase<std::shared_ptr<SessionType>>;
 
 public:
     explicit PooledReadWriteBufferFromHTTP(
@@ -911,7 +924,7 @@ public:
         const UInt64 max_redirects = 0,
         size_t max_connections_per_endpoint = DEFAULT_COUNT_OF_HTTP_CONNECTIONS_PER_ENDPOINT)
         : Parent(
-            std::make_shared<UpdatablePooledSession>(uri_, timeouts_, max_redirects, max_connections_per_endpoint),
+            std::make_shared<SessionType>(uri_, max_redirects, std::make_shared<PooledSessionFactory>(timeouts_, max_connections_per_endpoint)),
             uri_,
             credentials_,
             method_,
