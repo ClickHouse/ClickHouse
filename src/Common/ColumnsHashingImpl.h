@@ -178,7 +178,7 @@ public:
             if (isNullAt(row))
             {
                 if constexpr (has_mapped)
-                    return FindResult(data.hasNullKeyData() ? &data.getNullKeyData() : nullptr, data.hasNullKeyData(), 0);
+                    return FindResult(&data.getNullKeyData(), data.hasNullKeyData(), 0);
                 else
                     return FindResult(data.hasNullKeyData(), 0);
             }
