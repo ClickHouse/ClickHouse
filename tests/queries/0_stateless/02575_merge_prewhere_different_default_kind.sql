@@ -1,3 +1,5 @@
+-- Prohibit PREWHERE when Merge and MergeTree has different default type of the column
+
 DROP TABLE IF EXISTS m;
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;

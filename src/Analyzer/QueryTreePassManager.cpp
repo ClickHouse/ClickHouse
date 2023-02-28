@@ -39,6 +39,7 @@
 #include <Analyzer/Passes/AutoFinalOnQueryPass.h>
 #include <Analyzer/Passes/ArrayExistsToHasPass.h>
 #include <Analyzer/Passes/ComparisonTupleEliminationPass.h>
+#include <Analyzer/Passes/CrossToInnerJoinPass.h>
 
 
 namespace DB
@@ -268,6 +269,7 @@ void addQueryTreePasses(QueryTreePassManager & manager)
 
     manager.addPass(std::make_unique<AutoFinalOnQueryPass>());
 
+    manager.addPass(std::make_unique<CrossToInnerJoinPass>());
 }
 
 }
