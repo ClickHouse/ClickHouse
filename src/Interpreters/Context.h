@@ -402,6 +402,10 @@ private:
     /// Temporary data for query execution accounting.
     TemporaryDataOnDiskScopePtr temp_data_on_disk;
 
+    /// Resource classifier for a query, holds smart pointers required for ResourceLink
+    /// NOTE: all resource links became invalid after `classifier` destruction
+    mutable ClassifierPtr classifier;
+
 public:
     /// Some counters for current query execution.
     /// Most of them are workarounds and should be removed in the future.

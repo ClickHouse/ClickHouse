@@ -43,7 +43,9 @@ void registerDiskAzureBlobStorage(DiskFactory & factory, bool global_skip_access
             std::move(metadata_storage),
             std::move(azure_object_storage),
             send_metadata,
-            copy_thread_pool_size
+            copy_thread_pool_size,
+            config.getString(config_prefix + ".read_resource", ""),
+            config.getString(config_prefix + ".write_resource", "")
         );
 
         bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);

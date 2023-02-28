@@ -93,6 +93,14 @@ public:
         return current_thread->getQueryId();
     }
 
+    /// Returns attached query context
+    static ContextPtr getQueryContext()
+    {
+        if (isInitialized())
+            return get().getQueryContext();
+        return {};
+    }
+
     /// Non-master threads call this method in destructor automatically
     static void detachQuery();
     static void detachQueryIfNotDetached();

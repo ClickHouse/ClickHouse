@@ -613,7 +613,9 @@ DiskObjectStoragePtr DiskLocal::createDiskObjectStorage()
         metadata_storage,
         object_storage,
         false,
-        /* threadpool_size */16
+        /* threadpool_size */ 16,
+        /* read_resource_name */ "",
+        /* write_resource_name */ ""
     );
 }
 

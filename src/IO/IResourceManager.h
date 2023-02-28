@@ -23,7 +23,7 @@ class IClassifier : private boost::noncopyable
 public:
     virtual ~IClassifier() {}
 
-    /// Returns ResouceLink that should be used to access resource.
+    /// Returns ResourceLink that should be used to access resource.
     /// Returned link is valid until classifier destruction.
     virtual ResourceLink get(const String & resource_name) = 0;
 };

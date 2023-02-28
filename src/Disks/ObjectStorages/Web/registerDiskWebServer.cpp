@@ -53,7 +53,9 @@ void registerDiskWebServer(DiskFactory & factory, bool global_skip_access_check)
             metadata_storage,
             object_storage,
             /* send_metadata */false,
-            /* threadpool_size */16);
+            /* threadpool_size */16,
+            config.getString(config_prefix + ".read_resource", ""),
+            config.getString(config_prefix + ".write_resource", ""));
         disk->startup(context, skip_access_check);
         return disk;
     };
