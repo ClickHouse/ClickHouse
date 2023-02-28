@@ -645,7 +645,7 @@ def test_materialized_view(started_cluster):
     assert "1\t2" == instance.query("SELECT * FROM mv").strip()
     cursor.execute(f"INSERT INTO test_table SELECT 3, 4")
     check_tables_are_synchronized(instance, "test_table")
-    assert "1\t2\n3\t4" == instance.query("SELECT * FROM mv").strip()
+    assert "1\t2\n3\t4" == instance.query("SELECT * FROM mv ORDER BY 1, 2").strip()
     pg_manager.drop_materialized_db()
 
 
