@@ -8,10 +8,12 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
 #include <Core/Defines.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <Storages/LightweightDeleteDescription.h>
 
 
 namespace DB
@@ -27,11 +29,30 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
 {
     if (command->type == ASTAlterCommand::DELETE)
     {
+        /// Translate "ALTER DELETE" into "ALTER UPDATE _row_exists=0" just like lightweight delete.
+        auto update_command = std::make_shared<ASTAlterCommand>();
+        update_command->type = ASTAlterCommand::UPDATE;
+        update_command->predicate = command->predicate;
+        update_command->partition = command->partition;
+        update_command->update_assignments = std::make_shared<ASTExpressionList>();
+        auto set_row_does_not_exist = std::make_shared<ASTAssignment>();
+        set_row_does_not_exist->column_name = LightweightDeleteDescription::FILTER_COLUMN.name;
+        auto zero_value = std::make_shared<ASTLiteral>(DB::Field(UInt8(0)));
+        set_row_does_not_exist->children.push_back(zero_value);
+        update_command->update_assignments->children.push_back(set_row_does_not_exist);
+        if (update_command->predicate)
+            update_command->children.push_back(update_command->predicate);
+        if (update_command->partition)
+            update_command->children.push_back(update_command->partition);
+        update_command->children.push_back(update_command->update_assignments);
+
         MutationCommand res;
-        res.ast = command->ptr();
-        res.type = DELETE;
-        res.predicate = command->predicate;
-        res.partition = command->partition;
+        res.ast = update_command;
+        res.type = UPDATE;
+        res.predicate = update_command->predicate;
+        res.partition = update_command->partition;
+        res.column_to_update_expression.emplace(set_row_does_not_exist->column_name, set_row_does_not_exist->expression());
+
         return res;
     }
     else if (command->type == ASTAlterCommand::UPDATE)
