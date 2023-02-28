@@ -6,16 +6,34 @@ select parseDateTime('2020', '%Y') = toDateTime('2020-01-01');
 select parseDateTime('02', '%m') = toDateTime('2000-02-01');
 select parseDateTime('07', '%m') = toDateTime('2000-07-01');
 select parseDateTime('11-', '%m-') = toDateTime('2000-11-01');
+select parseDateTime('00', '%m'); -- { serverError LOGICAL_ERROR }
+select parseDateTime('13', '%m'); -- { serverError LOGICAL_ERROR }
+select parseDateTime('12345', '%m'); -- { serverError LOGICAL_ERROR }
+
 select parseDateTime('02', '%c') = toDateTime('2000-02-01');
+select parseDateTime('07', '%c') = toDateTime('2000-07-01');
+select parseDateTime('11-', '%c-') = toDateTime('2000-11-01');
+select parseDateTime('00', '%c'); -- { serverError LOGICAL_ERROR }
+select parseDateTime('13', '%c'); -- { serverError LOGICAL_ERROR }
+select parseDateTime('12345', '%c'); -- { serverError LOGICAL_ERROR }
+
 select parseDateTime('jun', '%b') = toDateTime('2000-06-01');
+select parseDateTime('JUN', '%b') = toDateTime('2000-06-01');
+select parseDateTime('abc', '%b'); -- { serverError LOGICAL_ERROR }
 
 -- day of month
 select parseDateTime('07', '%d') = toDateTime('2000-01-07');
 select parseDateTime('01', '%d') = toDateTime('2000-01-01');
 select parseDateTime('/11', '/%d') = toDateTime('2000-01-11');
+select parseDateTime('00', '%d'); -- { serverError LOGICAL_ERROR }
 select parseDateTime('32', '%d'); -- { serverError LOGICAL_ERROR }
+select parseDateTime('12345', '%d'); -- { serverError LOGICAL_ERROR }
 select parseDateTime('02-31', '%m-%d'); -- { serverError LOGICAL_ERROR }
 select parseDateTime('04-31', '%m-%d'); -- { serverError LOGICAL_ERROR }
+-- Ensure all days of month are checked against final selected month
+select parseDateTime('01 31 20 02', '%m %d %d %m'); -- { serverError LOGICAL_ERROR }
+select parseDateTime('02 31 20 04', '%m %d %d %m'); -- { serverError LOGICAL_ERROR }
+select parseDateTime('02 31 01', '%m %d %m') = toDateTime('2000-01-31');
 select parseDateTime('2000-02-29', '%Y-%m-%d') = toDateTime('2000-02-29');
 select parseDateTime('2001-02-29', '%Y-%m-%d'); -- { serverError LOGICAL_ERROR }
 
@@ -34,8 +52,12 @@ select parseDateTime('1980 /031/', '%Y /%j/') = toDateTime('1980-01-31');
 select parseDateTime('1980 032', '%Y %j') = toDateTime('1980-02-01');
 select parseDateTime('1980 060', '%Y %j') = toDateTime('1980-02-29');
 select parseDateTime('1980 366', '%Y %j') = toDateTime('1980-12-31');
+select parseDateTime('1981 366', '%Y %j'); -- { serverError LOGICAL_ERROR }
 select parseDateTime('367', '%j'); -- { serverError LOGICAL_ERROR }
 select parseDateTime('000', '%j'); -- { serverError LOGICAL_ERROR }
+-- Ensure all days of year are checked against final selected year
+select parseDateTime('2000 366 2001', '%Y %j %Y'); -- { serverError LOGICAL_ERROR }
+select parseDateTime('2001 366 2000', '%Y %j %Y') = toDateTime('2000-12-31');
 
 -- hour of day
 select parseDateTime('07', '%H', 'UTC') = toDateTime('1970-01-01 07:00:00', 'UTC');
@@ -53,7 +75,7 @@ select parseDateTime('24', '%k', 'UTC'); -- { serverError LOGICAL_ERROR }
 select parseDateTime('-1', '%k', 'UTC'); -- { serverError LOGICAL_ERROR }
 select parseDateTime('1234567', '%k', 'UTC'); -- { serverError LOGICAL_ERROR }
 
--- clock hour of half day
+-- hour of half day
 select parseDateTime('07', '%h', 'UTC') = toDateTime('1970-01-01 07:00:00', 'UTC');
 select parseDateTime('12', '%h', 'UTC') = toDateTime('1970-01-01 12:00:00', 'UTC');
 select parseDateTime('01', '%h', 'UTC') = toDateTime('1970-01-01 01:00:00', 'UTC');

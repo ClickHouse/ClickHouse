@@ -217,7 +217,12 @@ namespace
         static Int32 daysSinceEpochFromWeekDate(int32_t week_year_, int32_t week_of_year_, int32_t day_of_week_)
         {
             if (!isWeekDateValid(week_year_, week_of_year_, day_of_week_))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid week date");
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Invalid week date, week year:{} week of year:{} day of week:{}",
+                    week_year_,
+                    week_of_year_,
+                    day_of_week_);
 
             Int32 days_since_epoch_of_jan_fourth = daysSinceEpochFromDate(week_year_, 1, 4);
             Int32 first_day_of_week_year = extractISODayOfTheWeek(days_since_epoch_of_jan_fourth);
@@ -227,7 +232,7 @@ namespace
         static Int32 daysSinceEpochFromDayOfYear(Int32 year_, Int32 day_of_year_)
         {
             if (!isDayOfYearValid(year_, day_of_year_))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid day of year");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid day of year, year:{} day of year:{}", year_, day_of_year_);
 
             Int32 res = daysSinceEpochFromDate(year_, 1, 1);
             res += day_of_year_ - 1;
@@ -237,7 +242,7 @@ namespace
         static Int32 daysSinceEpochFromDate(Int32 year_, Int32 month_, Int32 day_)
         {
             if (!isDateValid(year_, month_, day_))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid date");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid date, year:{} month:{} day:{}", year_, month_, day_);
 
             Int32 res = cumulativeYearDays[year_ - 1970];
             res += isLeapYear(year_) ? cumulativeLeapDays[month_ - 1] : cumulativeDays[month_ - 1];
@@ -259,14 +264,14 @@ namespace
             for (const auto d : day_of_month_values)
             {
                 if (!isDateValid(year, month, d))
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid day of month.");
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid day of month, year:{} month:{} day:{}", year, month, d);
             }
 
             // Ensure all day of year values are valid for ending year value
             for (const auto d : day_of_year_values)
             {
                 if (!isDayOfYearValid(year, d))
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid day of year.");
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid day of year, year:{} day of year:{}", year, d);
             }
 
             // Convert the parsed date/time into a timestamp.
@@ -1086,10 +1091,10 @@ namespace
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for day of year must be in the range [1, 366]", number);
 
                 date.day_of_year_values.push_back(number);
-                date.day_of_year = true;
+                date.day_of_year = number;
                 date.day_of_year_format = true;
                 date.week_date_format = false;
-                if (date.has_year)
+                if (!date.has_year)
                 {
                     date.has_year = true;
                     date.year = 2000;
@@ -1568,7 +1573,6 @@ namespace
                             // reserve_size += std::max(repetitions, 2);
                             break;
                         case 'Y':
-
                             instructions.emplace_back(ACTION_ARGS_WITH_BIND(Action::jodaYearOfEra, repetitions));
                             /// Year range [1900, 2299]
                             // reserve_size += repetitions == 2 ? 2 : std::max(repetitions, 4);
