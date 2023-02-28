@@ -705,7 +705,7 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
     CompressionCodecPtr compression_codec = CompressionCodecFactory::instance().get(compression_method, compression_level);
 
     /// tmp directory is used to ensure atomicity of transactions
-    /// and keep monitor thread out from reading incomplete data
+    /// and keep directory queue thread out from reading incomplete data
     std::string first_file_tmp_path;
 
     auto reservation = storage.getStoragePolicy()->reserveAndCheck(block.bytes());
@@ -824,12 +824,12 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
         fs::create_directory(path);
 
         auto bin_file = (fs::path(path) / (toString(storage.file_names_increment.get()) + ".bin")).string();
-        auto & directory_monitor = storage.getDirectoryQueue(disk, *it);
+        auto & directory_queue = storage.getDirectoryQueue(disk, *it);
         {
             createHardLink(first_file_tmp_path, bin_file);
             auto dir_sync_guard = make_directory_sync_guard(*it);
         }
-        directory_monitor.addFileAndSchedule(bin_file, file_size, sleep_ms);
+        directory_queue.addFileAndSchedule(bin_file, file_size, sleep_ms);
     }
 
     /// remove the temporary file, enabling the OS to reclaim inode after all threads
