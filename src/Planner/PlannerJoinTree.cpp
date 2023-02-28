@@ -39,14 +39,14 @@
 #include <Planner/PlannerJoins.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/Utils.h>
+
 #include <AggregateFunctions/AggregateFunctionCount.h>
-#include <Interpreters/TreeRewriter.h>
-#include "Analyzer/AggregationUtils.h"
-#include "Analyzer/FunctionNode.h"
-#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Analyzer/AggregationUtils.h>
+#include <Analyzer/FunctionNode.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Common/scope_guard_safe.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 
 namespace DB
 {
@@ -183,22 +183,6 @@ bool applyTrivialCountIfPossible(
     if (aggregates.size() != 1)
         return false;
 
-    /// dump main query tree
-    {
-        WriteBufferFromOwnString buffer;
-        IQueryTreeNode::FormatState format_state;
-        main_query_node.dumpTreeImpl(buffer, format_state, 0);
-
-        LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "main_query_node:\n{}", buffer.str());
-        LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "Projection column:\n{}", main_query_node.getProjectionColumns().front().dump());
-    }
-
-    {
-        WriteBufferFromOwnString buffer;
-        buffer << columns_names;
-        LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "{}", buffer.str());
-    }
-
     const auto * function_node = typeid_cast<const FunctionNode *>(aggregates.front().get());
     if (!function_node)
         return false;
@@ -206,19 +190,22 @@ bool applyTrivialCountIfPossible(
     if (!function_node->getAggregateFunction())
         return false;
 
-    LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "Aggregation: {}", function_node->getFunctionName());
-
     const auto * count_func = typeid_cast<const AggregateFunctionCount *>(function_node->getAggregateFunction().get());
     if (!count_func)
         return false;
 
     /// get number of rows
     std::optional<UInt64> num_rows{};
-    // if (!query_tree.  prewhere() && !query.where() && !context->getCurrentTransaction())
-    if (!main_query_node.hasPrewhere() && !main_query_node.hasWhere())
+    /// Transaction check here is necessary because
+    /// MergeTree maintains total count for all parts in Active state and it simply returns that number for trivial select count() from table query.
+    /// But if we have current transaction, then we should return number of rows in current snapshot (that may include parts in Outdated state),
+    /// so we have to use totalRowsByPartitionPredicate() instead of totalRows even for trivial query
+    /// See https://github.com/ClickHouse/ClickHouse/pull/24258/files#r828182031
+    if (!main_query_node.hasPrewhere() && !main_query_node.hasWhere() && !query_context->getCurrentTransaction())
     {
         num_rows = storage->totalRows(settings);
     }
+    // TODO:
     // else // It's possible to optimize count() given only partition predicates
     // {
     //     SelectQueryInfo temp_query_info;
@@ -231,14 +218,12 @@ bool applyTrivialCountIfPossible(
     if (!num_rows)
         return false;
 
-    LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "Number of rows: {}", num_rows.value());
-
     /// set aggregation state
     const AggregateFunctionCount & agg_count = *count_func;
     std::vector<char> state(agg_count.sizeOfData());
     AggregateDataPtr place = state.data();
     agg_count.create(place);
-    // SCOPE_EXIT_MEMORY_SAFE(agg_count.destroy(place));
+    SCOPE_EXIT_MEMORY_SAFE(agg_count.destroy(place));
     agg_count.set(place, num_rows.value());
 
     auto column = ColumnAggregateFunction::create(function_node->getAggregateFunction());
