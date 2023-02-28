@@ -23,9 +23,13 @@ def cluster():
         )
 
         cluster.add_instance(
-            "node4", main_configs=["configs/storage_conf.xml"],
-            with_nginx=True, stay_alive=True, with_installed_binary=True,
-            image="clickhouse/clickhouse-server", tag="22.8.14.53",
+            "node4",
+            main_configs=["configs/storage_conf.xml"],
+            with_nginx=True,
+            stay_alive=True,
+            with_installed_binary=True,
+            image="clickhouse/clickhouse-server",
+            tag="22.8.14.53",
         )
 
         cluster.start()
@@ -62,7 +66,6 @@ def cluster():
             parts = metadata_path.split("/")
             print(f"UUID: {parts[3]}")
             return parts[3]
-
 
         node1 = cluster.instances["node1"]
 
