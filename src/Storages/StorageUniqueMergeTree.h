@@ -125,10 +125,6 @@ public:
 
     auto currentVersion() const { return table_version.get(); }
 
-    DataPartPtr findPartByInfo(const MergeTreePartInfo & part_info) const;
-
-    MergeTreePartInfo findPartInfoByMinBlock(Int64 min_block) const;
-
     Block getSampleBlockWithDeleteOp() const;
 
     ASTPtr getFetchIndexQuery(

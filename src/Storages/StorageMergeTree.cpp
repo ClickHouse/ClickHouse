@@ -106,7 +106,7 @@ StorageMergeTree::StorageMergeTree(
 {
     initializeDirectoriesAndFormatVersion(relative_data_path_, attach, date_column_name);
 
-    loadDataParts(has_force_restore_data_flag);
+    loadDataParts(has_force_restore_data_flag, table_version->get());
 
     if (!attach && !getDataPartsForInternalUsage().empty())
         throw Exception(ErrorCodes::INCORRECT_DATA,
@@ -358,7 +358,6 @@ void StorageMergeTree::alter(
     }
 }
 
-#if 0
 /// While exists, marks parts as 'currently_merging_mutating_parts' and reserves free space on filesystem.
 CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
     FutureMergedMutatedPartPtr future_part_,
@@ -433,7 +432,6 @@ CurrentlyMergingPartsTagger::~CurrentlyMergingPartsTagger()
 
     storage.currently_processing_in_background_condition.notify_all();
 }
-#endif
 
 Int64 StorageMergeTree::startMutation(const MutationCommands & commands, ContextPtr query_context)
 {

@@ -15,6 +15,6 @@ public:
     PrimaryIndexPtr getOrCreate(const String & partition_id, const MergeTreePartition & partition);
 
 private:
-    StorageUniqueMergeTree & storage;
+    MergeTreeData & storage;
 };
 }

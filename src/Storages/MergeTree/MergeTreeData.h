@@ -14,6 +14,7 @@
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
@@ -32,8 +33,9 @@
 #include <Common/SharedMutex.h>
 #include <Common/SimpleIncrement.h>
 
+#include <Storages/MergeTree/Unique/DeleteBitmapCache.h>
 #include <Storages/MergeTree/Unique/DeleteBuffer.h>
-#include <Storages/MergeTree/Unique/PrimaryIndex.h>
+#include <Storages/MergeTree/Unique/PrimaryIndexCache.h>
 #include <Storages/MergeTree/Unique/TableVersion.h>
 
 #include <boost/multi_index_container.hpp>
@@ -159,6 +161,8 @@ public:
     constexpr static auto DETACHED_DIR_NAME = "detached";
     constexpr static auto MOVING_DIR_NAME = "moving";
 
+    constexpr static auto DELETE_DIR_NAME = "/deletes/";
+    constexpr static auto TABLE_VERSION_NAME = "/table_version.dat";
     /// Auxiliary structure for index comparison. Keep in mind lifetime of MergeTreePartInfo.
     struct DataPartStateAndInfo
     {
@@ -1059,19 +1063,19 @@ public:
     /// Returns an object that protects temporary directory from cleanup
     scope_guard getTemporaryPartDirectoryHolder(const String & part_dir_name) const;
 
-    /// Mutex for parts currently processing in background
-    /// merging (also with TTL), mutating or moving.
-    mutable std::mutex currently_processing_in_background_mutex;
-    mutable std::condition_variable currently_processing_in_background_condition;
-
-    /// Parts that currently participate in merge or mutation.
-    /// This set have to be used with `currently_processing_in_background_mutex`.
-    DataParts currently_merging_mutating_parts;
-
-    DeleteBuffer delete_buffer;
-
     void waitForOutdatedPartsToBeLoaded() const;
     bool canUsePolymorphicParts() const;
+
+    DataPartPtr findPartByInfo(const MergeTreePartInfo & part_info) const;
+
+    MergeTreePartInfo findPartInfoByMinBlock(Int64 min_block) const;
+
+    /// For UniqueMergeTree and ReplicateUniqueMergeTree
+    std::unique_ptr<MultiVersion<TableVersion>> table_version = nullptr;
+    std::shared_ptr<DeleteBitmapCache> delete_bitmap_cache = nullptr;
+    std::shared_ptr<PrimaryIndexCache> primary_index_cache = nullptr;
+    std::shared_ptr<DeleteBuffer> delete_buffer = nullptr;
+    std::mutex write_merge_lock;
 
 protected:
     friend class IMergeTreeDataPart;
@@ -1159,6 +1163,7 @@ protected:
     /// It is like truncate, drop/detach partition
     mutable std::mutex operation_with_data_parts_mutex;
 
+    /// Used for UniqueMergeTree/ReplicateUniqueMergeTree
     std::unordered_map<Int64, MergeTreePartInfo> part_info_by_min_block;
 
     /// Current descriprion of columns of data type Object.
@@ -1523,13 +1528,11 @@ private:
         std::mutex & part_loading_mutex);
 
     std::vector<LoadPartResult> loadDataPartsFromDisk(
-        ThreadPool & pool,
-        size_t num_parts,
-        std::queue<PartLoadingTreeNodes> & parts_queue,
-        const MergeTreeSettingsPtr & settings,
-        const std::shared_ptr<const TableVersion> & table_version);
+        ThreadPool & pool, size_t num_parts, std::queue<PartLoadingTreeNodes> & parts_queue, const MergeTreeSettingsPtr & settings);
 
-    void loadDataPartsFromWAL(MutableDataPartsVector & parts_from_wal, const std::shared_ptr<const TableVersion> & table_version);
+    void loadDataPartsFromWAL(MutableDataPartsVector & parts_from_wal, const std::shared_ptr<const TableVersion> & table_version_);
+
+    void loadTableVersion(bool attach) const;
 
     /// Create zero-copy exclusive lock for part and disk. Useful for coordination of
     /// distributed operations which can lead to data duplication. Implemented only in ReplicatedMergeTree.

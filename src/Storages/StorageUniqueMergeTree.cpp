@@ -1674,24 +1674,6 @@ void StorageUniqueMergeTree::fillNewPartName(MutableDataPartPtr & part, DataPart
     part->name = part->getNewName(part->info);
 }
 
-MergeTreeData::DataPartPtr StorageUniqueMergeTree::findPartByInfo(const MergeTreePartInfo & part_info) const
-{
-    if (auto it = data_parts_by_info.find(part_info); it != data_parts_by_info.end())
-    {
-        return *it;
-    }
-    return nullptr;
-}
-
-MergeTreePartInfo StorageUniqueMergeTree::findPartInfoByMinBlock(Int64 min_block) const
-{
-    if (auto it = part_info_by_min_block.find(min_block); it != part_info_by_min_block.end())
-        return it->second;
-    else
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "Can not find part info in part_info_by_block_number, this is a bug, min_block: {}", min_block);
-}
-
 bool StorageUniqueMergeTree::updatePrimaryIndexAndDeletes(
     const MergeTreePartition & partition,
     const ColumnPtr & delete_key_column,

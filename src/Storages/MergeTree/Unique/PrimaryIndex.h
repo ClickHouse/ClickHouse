@@ -11,7 +11,7 @@
 namespace DB
 {
 
-class StorageUniqueMergeTree;
+class MergeTreeData;
 
 struct RecordPosition
 {
@@ -40,7 +40,7 @@ public:
 
     State state = State::VALID;
 
-    PrimaryIndex(const MergeTreePartition & partition_, size_t max_size, StorageUniqueMergeTree & storage_);
+    PrimaryIndex(const MergeTreePartition & partition_, size_t max_size, MergeTreeData & storage_);
 
     void setState(State state_);
 
@@ -104,7 +104,7 @@ public:
 
 private:
     MergeTreePartition partition;
-    StorageUniqueMergeTree & storage;
+    MergeTreeData & storage;
     Poco::Logger * log;
 };
 

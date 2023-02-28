@@ -376,6 +376,32 @@ MergeTreeData::MergeTreeData(
         else
             background_moves_assignee.trigger();
     };
+
+    if (merging_params.mode == MergingParams::Mode::Unique)
+    {
+        delete_buffer = std::make_shared<DeleteBuffer>();
+        primary_index_cache = std::make_shared<PrimaryIndexCache>(*this, getSettings()->unique_merge_tree_max_keeped_primary_index);
+        delete_bitmap_cache = std::make_shared<DeleteBitmapCache>();
+        table_version = std::make_unique<MultiVersion<TableVersion>>();
+
+        loadTableVersion(attach);
+    }
+}
+
+void MergeTreeData::loadTableVersion(bool attach) const
+{
+    auto disk = getStoragePolicy()->getDisks()[0];
+    auto version_path = getRelativeDataPath() + TABLE_VERSION_NAME;
+    auto version = std::make_unique<TableVersion>();
+    if (attach)
+    {
+        version->deserialize(version_path, disk);
+    }
+    else
+    {
+        version->serialize(version_path, disk);
+    }
+    table_version->set(std::move(version));
 }
 
 StoragePolicyPtr MergeTreeData::getStoragePolicy() const
@@ -483,7 +509,7 @@ void MergeTreeData::checkProperties(
                     unique_column,
                     i);
             if (!unique_key_columns_set.emplace(unique_column).second)
-                throw Exception("Unique key contains duplicate columns", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unique key contains duplicate columns");
         }
     }
 
@@ -1309,11 +1335,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
 }
 
 std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
-    ThreadPool & pool,
-    size_t num_parts,
-    std::queue<PartLoadingTreeNodes> & parts_queue,
-    const MergeTreeSettingsPtr & settings,
-    const std::shared_ptr<const TableVersion> & table_version)
+    ThreadPool & pool, size_t num_parts, std::queue<PartLoadingTreeNodes> & parts_queue, const MergeTreeSettingsPtr & settings)
 {
     /// Parallel loading of data parts.
     pool.setMaxThreads(std::min(static_cast<size_t>(settings->max_part_loading_threads), num_parts));
@@ -1457,7 +1479,8 @@ std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
 }
 
 
-void MergeTreeData::loadDataPartsFromWAL(MutableDataPartsVector & parts_from_wal, const std::shared_ptr<const TableVersion> & table_version)
+void MergeTreeData::loadDataPartsFromWAL(
+    MutableDataPartsVector & parts_from_wal, const std::shared_ptr<const TableVersion> & table_version_)
 {
     std::sort(parts_from_wal.begin(), parts_from_wal.end(), [](const auto & lhs, const auto & rhs)
     {
@@ -1466,7 +1489,7 @@ void MergeTreeData::loadDataPartsFromWAL(MutableDataPartsVector & parts_from_wal
 
     for (auto & part : parts_from_wal)
     {
-        if (table_version && !table_version->part_versions.contains(part->info))
+        if (table_version_ && !table_version_->part_versions.contains(part->info))
             continue;
 
         part->modification_time = time(nullptr);
@@ -1496,7 +1519,7 @@ void MergeTreeData::loadDataPartsFromWAL(MutableDataPartsVector & parts_from_wal
 }
 
 
-void MergeTreeData::loadDataParts(bool skip_sanity_checks, const std::shared_ptr<const TableVersion> & table_version)
+void MergeTreeData::loadDataParts(bool skip_sanity_checks, const std::shared_ptr<const TableVersion> & table_version_)
 {
     LOG_DEBUG(log, "Loading data parts");
 
@@ -1594,10 +1617,10 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, const std::shared_ptr
     std::map<String, PartLoadingTreeNodes> disk_part_map;
 
     /// Collect only "the most covering" parts from the top level of the tree.
-    loading_tree.traverse(/*recursive=*/ false, [&](const auto & node)
-    {
-        disk_part_map[node->disk->getName()].emplace_back(node);
-    });
+    /// For Unique mode, the valid parts is record by table version
+    loading_tree.traverse(
+        /*recursive=*/merging_params.mode == MergingParams::Mode::Unique ? true : false,
+        [&](const auto & node) { disk_part_map[node->disk->getName()].emplace_back(node); });
 
     size_t num_parts = 0;
     std::queue<PartLoadingTreeNodes> parts_queue;
@@ -1642,6 +1665,11 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, const std::shared_ptr
                     suspicious_broken_parts_bytes += *res.size_of_part;
             }
             else if (res.part->is_duplicate)
+            {
+                if (!is_static_storage)
+                    res.part->remove();
+            }
+            else if (table_version_ && !table_version_->part_versions.contains(res.part->info))
             {
                 if (!is_static_storage)
                     res.part->remove();
@@ -1706,7 +1734,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, const std::shared_ptr
         for (auto & disk_wal_parts : disks_wal_parts)
             std::move(disk_wal_parts.begin(), disk_wal_parts.end(), std::back_inserter(parts_from_wal));
 
-        loadDataPartsFromWAL(parts_from_wal);
+        loadDataPartsFromWAL(parts_from_wal, table_version_);
         num_parts += parts_from_wal.size();
     }
 
@@ -3189,8 +3217,8 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
         for (const auto & command : commands)
         {
             if (command.type == MutationCommand::Type::DELETE || command.type == MutationCommand::Type::UPDATE)
-                throw DB::Exception(
-                    "UPDATE/DELETE mutation command is not supported for StorageUniqueMergeTree", ErrorCodes::SUPPORT_IS_DISABLED);
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED, "UPDATE/DELETE mutation command is not supported for StorageUniqueMergeTree");
         }
     }
 }
@@ -4530,7 +4558,7 @@ void MergeTreeData::checkAlterPartitionIsPossible(
             if (command.type != PartitionCommand::Type::MOVE_PARTITION
                 || (command.move_destination_type != PartitionCommand::MoveDestinationType::DISK
                     && command.move_destination_type == PartitionCommand::MoveDestinationType::VOLUME))
-                throw DB::Exception("Unsupported ALTER PARTITION command for StorageUniqueMergeTree", ErrorCodes::SUPPORT_IS_DISABLED);
+                throw DB::Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Unsupported ALTER PARTITION command for StorageUniqueMergeTree");
         }
 
         if (command.type == PartitionCommand::DROP_DETACHED_PARTITION
@@ -6022,7 +6050,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
                             throw Exception(
                                 ErrorCodes::LOGICAL_ERROR,
                                 "Can not insert part info into part_info_by_min_block when insert new part, this is a bug, part name: {}",
-                                part->info.getPartName());
+                                part->info.getPartNameV1());
                         }
                     }
                 }
@@ -7732,7 +7760,6 @@ NamesAndTypesList MergeTreeData::getVirtuals() const
         NameAndTypePair("_partition_id", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())),
         NameAndTypePair("_partition_value", getPartitionValueType()),
         NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>()),
-        NameAndTypePair("_part_min_block", std::make_shared<DataTypeInt64>()),
         NameAndTypePair("_part_offset", std::make_shared<DataTypeUInt64>()),
         LightweightDeleteDescription::FILTER_COLUMN,
     };
@@ -8012,7 +8039,7 @@ StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & 
     snapshot_data->parts = getVisibleDataPartsVectorUnlocked(query_context, lock);
     auto res = std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns, std::move(snapshot_data));
     if (merging_params.mode == MergingParams::Unique)
-        res->table_version = dynamic_cast<const StorageUniqueMergeTree *>(this)->currentVersion();
+        res->table_version = table_version->get();
     return res;
 }
 
@@ -8151,5 +8178,24 @@ CurrentlySubmergingEmergingTagger::~CurrentlySubmergingEmergingTagger()
     }
     storage.currently_emerging_big_parts.erase(emerging_part_name);
 }
+
+MergeTreeData::DataPartPtr MergeTreeData::findPartByInfo(const MergeTreePartInfo & part_info) const
+{
+    if (auto it = data_parts_by_info.find(part_info); it != data_parts_by_info.end())
+    {
+        return *it;
+    }
+    return nullptr;
+}
+
+MergeTreePartInfo MergeTreeData::findPartInfoByMinBlock(Int64 min_block) const
+{
+    if (auto it = part_info_by_min_block.find(min_block); it != part_info_by_min_block.end())
+        return it->second;
+    else
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Can not find part info in part_info_by_block_number, this is a bug, min_block: {}", min_block);
+}
+
 
 }

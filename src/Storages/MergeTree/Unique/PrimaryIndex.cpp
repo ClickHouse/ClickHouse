@@ -7,7 +7,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/Unique/PrimaryIndex.h>
 #include <Storages/MergeTree/Unique/PrimaryKeysEncoder.h>
-#include <Storages/StorageUniqueMergeTree.h>
+#include <Storages/MergeTreeData.h>
 #include <Common/PODArray.h>
 #include <Common/filesystemHelpers.h>
 
@@ -18,7 +18,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-PrimaryIndex::PrimaryIndex(const MergeTreePartition & partition_, size_t max_size, StorageUniqueMergeTree & storage_)
+PrimaryIndex::PrimaryIndex(const MergeTreePartition & partition_, size_t max_size, MergeTreeData & storage_)
     : LRULockFree(max_size)
     , partition(partition_)
     , storage(storage_)
