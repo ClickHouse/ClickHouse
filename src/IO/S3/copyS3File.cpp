@@ -2,10 +2,12 @@
 
 #if USE_AWS_S3
 
+#include <Common/CoTask.h>
 #include <Common/ProfileEvents.h>
 #include <Common/typeid_cast.h>
 #include <IO/LimitSeekableReadBuffer.h>
 #include <IO/S3/getObjectInfo.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/StdStreamFromReadBuffer.h>
 
@@ -42,63 +44,119 @@ namespace ErrorCodes
 
 namespace
 {
-    class UploadHelper
+    class S3UploadHelper
     {
     public:
-        UploadHelper(
+        S3UploadHelper(
             const std::shared_ptr<const S3::Client> & client_ptr_,
             const String & dest_bucket_,
             const String & dest_key_,
-            const S3Settings::RequestSettings & request_settings_,
-            const std::optional<std::map<String, String>> & object_metadata_,
-            ThreadPoolCallbackRunner<void> schedule_,
-            bool for_disk_s3_,
+            size_t offset_,
+            size_t size_,
+            const CopyS3FileSettings & copy_settings_,
             const Poco::Logger * log_)
             : client_ptr(client_ptr_)
             , dest_bucket(dest_bucket_)
             , dest_key(dest_key_)
-            , request_settings(request_settings_)
+            , offset(offset_)
+            , size(size_)
+            , request_settings(copy_settings_.request_settings)
             , upload_settings(request_settings.getUploadSettings())
-            , object_metadata(object_metadata_)
-            , schedule(schedule_)
-            , for_disk_s3(for_disk_s3_)
+            , object_metadata(copy_settings_.object_metadata)
+            , for_disk_s3(copy_settings_.for_disk_s3)
             , log(log_)
         {
         }
 
-        virtual ~UploadHelper() = default;
+        virtual ~S3UploadHelper() = default;
+
+        /// Main function.
+        Co::Task<> upload() const
+        {
+            if (size == static_cast<size_t>(-1))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Copy size is not set");
+
+            if (shouldUseMultipartUpload())
+            {
+                co_await performMultipartUpload();
+            }
+            else
+            {
+                if (performSingleOperationUpload() == SingleOperationResult::TRY_SWITCH_TO_MULTIPART)
+                    co_await performMultipartUpload();
+            }
+
+            if (request_settings.check_objects_after_upload)
+                checkObjectAfterUpload();
+        }
 
     protected:
-        std::shared_ptr<const S3::Client> client_ptr;
+        const std::shared_ptr<const S3::Client> client_ptr;
         const String & dest_bucket;
         const String & dest_key;
+        size_t offset;
+        size_t size;
         const S3Settings::RequestSettings & request_settings;
         const S3Settings::RequestSettings::PartUploadSettings & upload_settings;
         const std::optional<std::map<String, String>> & object_metadata;
-        ThreadPoolCallbackRunner<void> schedule;
-        bool for_disk_s3;
+        const bool for_disk_s3;
         const Poco::Logger * log;
 
-        struct UploadPartTask
+        /// Decides if a multipart upload should be used.
+        virtual bool shouldUseMultipartUpload() const = 0;
+
+        enum class SingleOperationResult
         {
-            std::unique_ptr<Aws::AmazonWebServiceRequest> req;
-            bool is_finished = false;
-            String tag;
-            std::exception_ptr exception;
+            OK,                      /// Singlepart upload has succeeded.
+            TRY_SWITCH_TO_MULTIPART, /// Singlepart upload has failed but it seems we can try using multipart upload instead.
+            /// In other cases performSingleOperationUpload() throws exceptions.
         };
 
-        size_t normal_part_size;
-        String multipart_upload_id;
-        std::atomic<bool> multipart_upload_aborted = false;
-        Strings part_tags;
+        /// Copies the source in a single copy operation.
+        SingleOperationResult performSingleOperationUpload() const
+        {
+            auto req = makeSingleOperationUploadRequest();
 
-        std::list<UploadPartTask> TSA_GUARDED_BY(bg_tasks_mutex) bg_tasks;
-        int num_added_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
-        int num_finished_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
-        std::mutex bg_tasks_mutex;
-        std::condition_variable bg_tasks_condvar;
+            size_t max_retries = std::max(request_settings.max_unexpected_write_error_retries, 1UL);
+            for (size_t retries = 1;; ++retries)
+            {
+                LOG_TRACE(log, "Uploading \"{}\" using singlepart operation. Bucket: {}, Size: {}", dest_key, dest_bucket, size);
 
-        void createMultipartUpload()
+                auto [ok, error] = processSingleOperationUploadRequest(*req);
+
+                if (ok)
+                {
+                    LOG_TRACE(log, "Completed singlepart upload to \"{}\". Bucket: {}, Size: {}", dest_key, dest_bucket, size);
+                    return SingleOperationResult::OK;
+                }
+
+                if ((error.GetExceptionName() == "EntityTooLarge" || error.GetExceptionName() == "InvalidRequest") && size)
+                {
+                    // Can't come here with MinIO, MinIO allows single part upload for large objects.
+                    LOG_INFO(log, "Failed singlepart upload to \"{}\": {}. Bucket: {}, Size: {}. Will retry with multipart upload",
+                             dest_key, error.GetExceptionName(), dest_bucket, size);
+                    return SingleOperationResult::TRY_SWITCH_TO_MULTIPART;
+                }
+
+                bool can_retry = (retries < max_retries);
+                if ((error.GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY) && can_retry)
+                {
+                    /// For unknown reason, at least MinIO can respond with NO_SUCH_KEY for put requests
+                    LOG_INFO(log, "Failed singlepart upload to \"{}\": {}. Bucket: {}, Size: {}. Will retry",
+                             dest_key, error.GetMessage(), dest_bucket, size);
+                    continue; /// will retry
+                }
+
+                throw S3Exception(error.GetErrorType(),
+                                  "Failed singlepart upload to \"{}\": {}. Bucket: {}, Size: {}",
+                                  dest_key, error.GetMessage(), dest_bucket, size);
+            }
+        }
+
+        virtual std::unique_ptr<Aws::AmazonWebServiceRequest> makeSingleOperationUploadRequest() const = 0;
+        virtual std::pair<bool, Aws::S3::S3Error> processSingleOperationUploadRequest(const Aws::AmazonWebServiceRequest & request) const = 0;
+
+        String createMultipartUpload(size_t part_size, size_t num_parts) const
         {
             S3::CreateMultipartUploadRequest request;
             request.SetBucket(dest_bucket);
@@ -122,21 +180,26 @@ namespace
 
             if (outcome.IsSuccess())
             {
-                multipart_upload_id = outcome.GetResult().GetUploadId();
-                LOG_TRACE(log, "Multipart upload has created. Bucket: {}, Key: {}, Upload id: {}", dest_bucket, dest_key, multipart_upload_id);
+                String multipart_upload_id = outcome.GetResult().GetUploadId();
+                LOG_TRACE(log, "Started multipart upload of {} parts to \"{}\". Part size: {}, Total size: {}, Bucket: {}, Upload id: {}",
+                        num_parts, dest_key, part_size, size, dest_bucket, multipart_upload_id);
+                return multipart_upload_id;
             }
-            else
-                throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
+
+            throw S3Exception(
+                outcome.GetError().GetErrorType(),
+                "Couldn't start multipart upload of {} parts to \"{}\": {}. Part size: {}, Total size: {}, Bucket: {}",
+                num_parts, dest_key, outcome.GetError().GetMessage(), part_size, size, dest_bucket);
+
         }
 
-        void completeMultipartUpload()
+        void completeMultipartUpload(const String & multipart_upload_id, const Strings & part_tags) const
         {
-            if (multipart_upload_aborted)
-                return;
+            size_t num_parts = part_tags.size();
+            LOG_TRACE(log, "Completing multipart upload to \"{}\". Bucket: {}, Parts: {}, Upload id: {}",
+                      dest_key, dest_bucket, num_parts, multipart_upload_id);
 
-            LOG_TRACE(log, "Completing multipart upload. Bucket: {}, Key: {}, Upload_id: {}, Parts: {}", dest_bucket, dest_key, multipart_upload_id, part_tags.size());
-
-            if (part_tags.empty())
+            if (!num_parts)
                 throw Exception(ErrorCodes::S3_ERROR, "Failed to complete multipart upload. No parts have uploaded");
 
             S3::CompleteMultipartUploadRequest request;
@@ -145,7 +208,7 @@ namespace
             request.SetUploadId(multipart_upload_id);
 
             Aws::S3::Model::CompletedMultipartUpload multipart_upload;
-            for (size_t i = 0; i < part_tags.size(); ++i)
+            for (size_t i = 0; i < num_parts; ++i)
             {
                 Aws::S3::Model::CompletedPart part;
                 multipart_upload.AddParts(part.WithETag(part_tags[i]).WithPartNumber(static_cast<int>(i + 1)));
@@ -164,7 +227,7 @@ namespace
 
                 if (outcome.IsSuccess())
                 {
-                    LOG_TRACE(log, "Multipart upload has completed. Bucket: {}, Key: {}, Upload_id: {}, Parts: {}", dest_bucket, dest_key, multipart_upload_id, part_tags.size());
+                    LOG_TRACE(log, "Completed multipart upload to \"{}\". Upload id: {}", dest_key, multipart_upload_id);
                     break;
                 }
 
@@ -172,75 +235,76 @@ namespace
                 {
                     /// For unknown reason, at least MinIO can respond with NO_SUCH_KEY for put requests
                     /// BTW, NO_SUCH_UPLOAD is expected error and we shouldn't retry it
-                    LOG_INFO(log, "Multipart upload failed with NO_SUCH_KEY error for Bucket: {}, Key: {}, Upload_id: {}, Parts: {}, will retry", dest_bucket, dest_key, multipart_upload_id, part_tags.size());
+                    LOG_INFO(log, "Couldn't complete multipart upload to \"{}\": {}. Bucket: {}, Parts: {}, Upload id: {}. Will retry",
+                             dest_key, outcome.GetError().GetMessage(), dest_bucket, num_parts, multipart_upload_id);
                     continue; /// will retry
                 }
 
-                throw S3Exception(
-                    outcome.GetError().GetErrorType(),
-                    "Message: {}, Key: {}, Bucket: {}, Tags: {}",
-                    outcome.GetError().GetMessage(), dest_key, dest_bucket, fmt::join(part_tags.begin(), part_tags.end(), " "));
+                throw S3Exception(outcome.GetError().GetErrorType(),
+                                  "Couldn't complete multipart upload to \"{}\": {}. Bucket: {}, Parts: {}, Upload id: {}",
+                                  dest_key, outcome.GetError().GetMessage(), dest_bucket, num_parts, multipart_upload_id);
             }
         }
 
-        void abortMultipartUpload()
+        void abortMultipartUpload(const String & multipart_upload_id, size_t num_parts, size_t num_parts_uploaded) const
         {
-            LOG_TRACE(log, "Aborting multipart upload. Bucket: {}, Key: {}, Upload_id: {}", dest_bucket, dest_key, multipart_upload_id);
+            LOG_TRACE(log, "Aborting multipart upload to \"{}\". Bucket: {}, Parts uploaded: {} / {}, Upload id: {}",
+                      dest_key, dest_bucket, num_parts_uploaded, num_parts, multipart_upload_id);
             S3::AbortMultipartUploadRequest abort_request;
             abort_request.SetBucket(dest_bucket);
             abort_request.SetKey(dest_key);
             abort_request.SetUploadId(multipart_upload_id);
             client_ptr->AbortMultipartUpload(abort_request);
-            multipart_upload_aborted = true;
         }
 
-        void checkObjectAfterUpload()
+        void checkObjectAfterUpload() const
         {
             LOG_TRACE(log, "Checking object {} exists after upload", dest_key);
-            S3::checkObjectExists(*client_ptr, dest_bucket, dest_key, {}, request_settings, {}, "Immediately after upload");
+            S3::checkObjectExistsAndHasSize(*client_ptr, dest_bucket, dest_key, {}, size, request_settings, {}, "Immediately after upload");
             LOG_TRACE(log, "Object {} exists after upload", dest_key);
         }
 
-        void performMultipartUpload(size_t start_offset, size_t size)
+        Co::Task<> performMultipartUpload() const
         {
-            calculatePartSize(size);
-            createMultipartUpload();
+            size_t part_size = calculatePartSize();
+            size_t num_parts = calculateNumParts(part_size);
 
-            size_t position = start_offset;
-            size_t end_position = start_offset + size;
+            String multipart_upload_id = createMultipartUpload(part_size, num_parts);
 
-            try
+            std::atomic<size_t> num_parts_uploaded = 0; /// Used only to show progress in the logging messages.
+            std::atomic<bool> multipart_upload_aborted = false; /// Used to avoid repeating AbortMultipartUpload requests if multiple parts fail.
+
+            bool multipart_upload_completed = false;
+            SCOPE_EXIT_SAFE({
+                if (!multipart_upload_completed) /// If this coroutine exits without exceptions then `multipart_upload_completed` must be true.
+                    abortMultipartUpload(multipart_upload_id, num_parts, num_parts_uploaded.load());
+            });
+
+            std::vector<Co::Task<String>> part_uploads;
+
+            for (size_t part_number = 1; part_number <= num_parts; ++part_number)
             {
-                for (size_t part_number = 1; position < end_position; ++part_number)
-                {
-                    if (multipart_upload_aborted)
-                        break; /// No more part uploads.
+                size_t position = offset + (part_number - 1) * part_size;
+                /// `current_part_size` is either `part_size` or smaller if it's the final part.
+                size_t current_part_size = std::min(part_size, offset + size - position);
 
-                    size_t next_position = std::min(position + normal_part_size, end_position);
-                    size_t part_size = next_position - position; /// `part_size` is either `normal_part_size` or smaller if it's the final part.
-
-                    uploadPart(part_number, position, part_size);
-
-                    position = next_position;
-                }
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-                // Multipart upload failed because it wasn't possible to schedule all the tasks.
-                // To avoid execution of already scheduled tasks we abort MultipartUpload.
-                abortMultipartUpload();
-                waitForAllBackGroundTasks();
-                throw;
+                /// It's safe to pass `num_parts_uploaded` and `multipart_upload_aborted` to the `part_uploads` tasks by reference because
+                /// those tasks will be finished or cancelled before those variables go out of scope, `co_await Co::parallel()` guarantees that.
+                part_uploads.emplace_back(uploadPart(multipart_upload_id, part_number, position, current_part_size, num_parts, num_parts_uploaded, multipart_upload_aborted));
             }
 
-            waitForAllBackGroundTasks();
-            completeMultipartUpload();
+            auto part_tags = co_await Co::parallel(std::move(part_uploads));
+
+            if (multipart_upload_aborted.load()) /// `co_await Co::Parallel()` must have thrown an exception in this case
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Aborted multipart upload came to completion. This must not happen");
+
+            completeMultipartUpload(multipart_upload_id, part_tags);
+            multipart_upload_completed = true;
         }
 
-        void calculatePartSize(size_t total_size)
+        size_t calculatePartSize() const
         {
-            if (!total_size)
+            if (!size)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Chosen multipart upload for an empty file. This must not happen");
 
             auto max_part_number = upload_settings.max_part_number;
@@ -255,18 +319,18 @@ namespace
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "max_upload_part_size must not be less than min_upload_part_size");
 
             size_t part_size = min_upload_part_size;
-            size_t num_parts = (total_size + part_size - 1) / part_size;
+            size_t num_parts = (size + part_size - 1) / part_size;
 
             if (num_parts > max_part_number)
             {
-                part_size = (total_size + max_part_number - 1) / max_part_number;
-                num_parts = (total_size + part_size - 1) / part_size;
+                part_size = (size + max_part_number - 1) / max_part_number;
+                num_parts = (size + part_size - 1) / part_size;
             }
 
             if (part_size > max_upload_part_size)
             {
                 part_size = max_upload_part_size;
-                num_parts = (total_size + part_size - 1) / part_size;
+                num_parts = (size + part_size - 1) / part_size;
             }
 
             if (num_parts < 1 || num_parts > max_part_number || part_size < min_upload_part_size || part_size > max_upload_part_size)
@@ -283,249 +347,138 @@ namespace
 
                 throw Exception(
                     ErrorCodes::INVALID_CONFIG_PARAMETER,
-                    "{} while writing {} bytes to S3. Check max_part_number = {}, "
-                    "min_upload_part_size = {}, max_upload_part_size = {}",
-                    msg, total_size, max_part_number, min_upload_part_size, max_upload_part_size);
+                    "{} while writing {} bytes to S3. Check max_part_number = {}, min_upload_part_size = {}, max_upload_part_size = {}",
+                    msg, size, max_part_number, min_upload_part_size, max_upload_part_size);
             }
 
             /// We've calculated the size of a normal part (the final part can be smaller).
-            normal_part_size = part_size;
+            return part_size;
         }
 
-        void uploadPart(size_t part_number, size_t part_offset, size_t part_size)
+        size_t calculateNumParts(size_t part_size) const
         {
-            LOG_TRACE(log, "Writing part. Bucket: {}, Key: {}, Upload_id: {}, Size: {}", dest_bucket, dest_key, multipart_upload_id, part_size);
+            return (size + part_size - 1) / part_size;
+        }
+
+        Co::Task<String> uploadPart(
+            const String & multipart_upload_id,
+            size_t part_number,
+            size_t part_offset,
+            size_t part_size,
+            size_t num_parts,
+            std::atomic<size_t> & num_parts_uploaded,
+            std::atomic<bool> & multipart_upload_aborted) const
+        {
+            LOG_TRACE(log, "Writing part #{} to \"{}\". Part offset: {}, Part size: {}, Upload id: {}",
+                      part_number, dest_key, part_offset, part_size, multipart_upload_id);
 
             if (!part_size)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Part size if empty. This must not happen");
+
+            bool upload_part_completed = false;
+            SCOPE_EXIT_SAFE({
+                if (!upload_part_completed && !multipart_upload_aborted.exchange(true)) /// If this coroutine exits without exceptions then `upload_part_completed` must be true.
+                    abortMultipartUpload(multipart_upload_id, num_parts, num_parts_uploaded.load());
+            });
+
+            auto req = makeUploadPartRequest(multipart_upload_id, part_number, part_offset, part_size);
+            auto [part_tag, error] = processUploadPartRequest(*req);
+
+            if (!part_tag)
             {
-                LOG_TRACE(log, "Skipping writing an empty part.");
-                return;
+                throw S3Exception(error.GetErrorType(),
+                                  "Couldn't upload part #{} to \"{}\". Part offset: {}, Part size: {}, Upload id: {}",
+                                  part_number, dest_key, part_offset, part_size, multipart_upload_id);
             }
 
-            if (schedule)
-            {
-                UploadPartTask * task = nullptr;
-
-                {
-                    std::lock_guard lock(bg_tasks_mutex);
-                    task = &bg_tasks.emplace_back();
-                    ++num_added_bg_tasks;
-                }
-
-                /// Notify waiting thread when task finished
-                auto task_finish_notify = [this, task]()
-                {
-                    std::lock_guard lock(bg_tasks_mutex);
-                    task->is_finished = true;
-                    ++num_finished_bg_tasks;
-
-                    /// Notification under mutex is important here.
-                    /// Otherwise, WriteBuffer could be destroyed in between
-                    /// Releasing lock and condvar notification.
-                    bg_tasks_condvar.notify_one();
-                };
-
-                try
-                {
-                    task->req = fillUploadPartRequest(part_number, part_offset, part_size);
-
-                    schedule([this, task, task_finish_notify]()
-                    {
-                        try
-                        {
-                            processUploadTask(*task);
-                        }
-                        catch (...)
-                        {
-                            task->exception = std::current_exception();
-                        }
-                        task_finish_notify();
-                    }, 0);
-                }
-                catch (...)
-                {
-                    task_finish_notify();
-                    throw;
-                }
-            }
-            else
-            {
-                UploadPartTask task;
-                task.req = fillUploadPartRequest(part_number, part_offset, part_size);
-                processUploadTask(task);
-                part_tags.push_back(task.tag);
-            }
+            upload_part_completed = true;
+            ++num_parts_uploaded;
+            LOG_TRACE(log, "Finished writing part #{} to \"{}\". Parts ready: {} / {}, Upload id: {}",
+                        part_number, dest_key, num_parts_uploaded.load(), num_parts, multipart_upload_id);
+            co_return *part_tag;
         }
 
-        void processUploadTask(UploadPartTask & task)
-        {
-            if (multipart_upload_aborted)
-                return; /// Already aborted.
+        virtual std::unique_ptr<Aws::AmazonWebServiceRequest>
+        makeUploadPartRequest(const String & multipart_upload_id, size_t part_number, size_t part_offset, size_t part_size) const = 0;
 
-            auto tag = processUploadPartRequest(*task.req);
-
-            std::lock_guard lock(bg_tasks_mutex); /// Protect bg_tasks from race
-            task.tag = tag;
-            LOG_TRACE(log, "Writing part finished. Bucket: {}, Key: {}, Upload_id: {}, Etag: {}, Parts: {}", dest_bucket, dest_key, multipart_upload_id, task.tag, bg_tasks.size());
-        }
-
-        virtual std::unique_ptr<Aws::AmazonWebServiceRequest> fillUploadPartRequest(size_t part_number, size_t part_offset, size_t part_size) = 0;
-        virtual String processUploadPartRequest(Aws::AmazonWebServiceRequest & request) = 0;
-
-        void waitForAllBackGroundTasks()
-        {
-            if (!schedule)
-                return;
-
-            std::unique_lock lock(bg_tasks_mutex);
-            /// Suppress warnings because bg_tasks_mutex is actually hold, but tsa annotations do not understand std::unique_lock
-            bg_tasks_condvar.wait(lock, [this]() {return TSA_SUPPRESS_WARNING_FOR_READ(num_added_bg_tasks) == TSA_SUPPRESS_WARNING_FOR_READ(num_finished_bg_tasks); });
-
-            auto & tasks = TSA_SUPPRESS_WARNING_FOR_WRITE(bg_tasks);
-            for (auto & task : tasks)
-            {
-                if (task.exception)
-                {
-                    /// abortMultipartUpload() might be called already, see processUploadPartRequest().
-                    /// However if there were concurrent uploads at that time, those part uploads might or might not succeed.
-                    /// As a result, it might be necessary to abort a given multipart upload multiple times in order to completely free
-                    /// all storage consumed by all parts.
-                    abortMultipartUpload();
-
-                    std::rethrow_exception(task.exception);
-                }
-
-                part_tags.push_back(task.tag);
-            }
-        }
+        virtual std::pair<std::optional<String> /* part_tag */, Aws::S3::S3Error>
+        processUploadPartRequest(const Aws::AmazonWebServiceRequest & request) const = 0;
     };
 
     /// Helper class to help implementing copyDataToS3File().
-    class CopyDataToFileHelper : public UploadHelper
+    class CopyDataToS3FileHelper : public S3UploadHelper
     {
     public:
-        CopyDataToFileHelper(
+        CopyDataToS3FileHelper(
             const std::function<std::unique_ptr<SeekableReadBuffer>()> & create_read_buffer_,
-            size_t offset_,
-            size_t size_,
             const std::shared_ptr<const S3::Client> & client_ptr_,
             const String & dest_bucket_,
             const String & dest_key_,
-            const S3Settings::RequestSettings & request_settings_,
-            const std::optional<std::map<String, String>> & object_metadata_,
-            ThreadPoolCallbackRunner<void> schedule_,
-            bool for_disk_s3_)
-            : UploadHelper(client_ptr_, dest_bucket_, dest_key_, request_settings_, object_metadata_, schedule_, for_disk_s3_, &Poco::Logger::get("copyDataToS3File"))
-            , create_read_buffer(create_read_buffer_)
-            , offset(offset_)
-            , size(size_)
+            const CopyS3FileSettings & copy_settings_)
+            : CopyDataToS3FileHelper(
+                create_read_buffer_, client_ptr_, dest_bucket_, dest_key_, copy_settings_.offset, copy_settings_.size, copy_settings_)
         {
         }
 
-        void performCopy()
+        CopyDataToS3FileHelper(
+            const std::function<std::unique_ptr<SeekableReadBuffer>()> & create_read_buffer_,
+            const std::shared_ptr<const S3::Client> & client_ptr_,
+            const String & dest_bucket_,
+            const String & dest_key_,
+            size_t offset_,
+            size_t size_,
+            const CopyS3FileSettings & copy_settings_)
+            : S3UploadHelper(client_ptr_, dest_bucket_, dest_key_, offset_, size_, copy_settings_, &Poco::Logger::get("copyDataToS3File"))
+            , create_read_buffer(create_read_buffer_)
         {
-            if (size <= upload_settings.max_single_part_upload_size)
-                performSinglepartUpload();
-            else
-                performMultipartUpload();
-
-            if (request_settings.check_objects_after_upload)
-                checkObjectAfterUpload();
         }
 
     private:
         std::function<std::unique_ptr<SeekableReadBuffer>()> create_read_buffer;
-        size_t offset;
-        size_t size;
 
-        void performSinglepartUpload()
+        bool shouldUseMultipartUpload() const override
         {
-            S3::PutObjectRequest request;
-            fillPutRequest(request);
-            processPutRequest(request);
+            return size > request_settings.getUploadSettings().max_single_part_upload_size;
         }
 
-        void fillPutRequest(S3::PutObjectRequest & request)
+        std::unique_ptr<Aws::AmazonWebServiceRequest> makeSingleOperationUploadRequest() const override
         {
             auto read_buffer = std::make_unique<LimitSeekableReadBuffer>(create_read_buffer(), offset, size);
 
-            request.SetBucket(dest_bucket);
-            request.SetKey(dest_key);
-            request.SetContentLength(size);
-            request.SetBody(std::make_unique<StdStreamFromReadBuffer>(std::move(read_buffer), size));
+            auto request = std::make_unique<S3::PutObjectRequest>();
+
+            request->SetBucket(dest_bucket);
+            request->SetKey(dest_key);
+            request->SetContentLength(size);
+            request->SetBody(std::make_unique<StdStreamFromReadBuffer>(std::move(read_buffer), size));
 
             if (object_metadata.has_value())
-                request.SetMetadata(object_metadata.value());
+                request->SetMetadata(object_metadata.value());
 
             const auto & storage_class_name = upload_settings.storage_class_name;
             if (!storage_class_name.empty())
-                request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(storage_class_name));
+                request->SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(storage_class_name));
 
             /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
-            request.SetContentType("binary/octet-stream");
+            request->SetContentType("binary/octet-stream");
+            return request;
         }
 
-        void processPutRequest(const S3::PutObjectRequest & request)
+        std::pair<bool, Aws::S3::S3Error> processSingleOperationUploadRequest(const Aws::AmazonWebServiceRequest & request) const override
         {
-            size_t max_retries = std::max(request_settings.max_unexpected_write_error_retries, 1UL);
-            for (size_t retries = 1;; ++retries)
-            {
-                ProfileEvents::increment(ProfileEvents::S3PutObject);
-                if (for_disk_s3)
-                    ProfileEvents::increment(ProfileEvents::DiskS3PutObject);
+            ProfileEvents::increment(ProfileEvents::S3PutObject);
+            if (for_disk_s3)
+                ProfileEvents::increment(ProfileEvents::DiskS3PutObject);
 
-                auto outcome = client_ptr->PutObject(request);
-
-                if (outcome.IsSuccess())
-                {
-                    LOG_TRACE(
-                        log,
-                        "Single part upload has completed. Bucket: {}, Key: {}, Object size: {}",
-                        dest_bucket,
-                        dest_key,
-                        request.GetContentLength());
-                    break;
-                }
-
-                if (outcome.GetError().GetExceptionName() == "EntityTooLarge" || outcome.GetError().GetExceptionName() == "InvalidRequest")
-                {
-                    // Can't come here with MinIO, MinIO allows single part upload for large objects.
-                    LOG_INFO(
-                        log,
-                        "Single part upload failed with error {} for Bucket: {}, Key: {}, Object size: {}, will retry with multipart upload",
-                        outcome.GetError().GetExceptionName(),
-                        dest_bucket,
-                        dest_key,
-                        size);
-                    performMultipartUpload();
-                    break;
-                }
-
-                if ((outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY) && (retries < max_retries))
-                {
-                    /// For unknown reason, at least MinIO can respond with NO_SUCH_KEY for put requests
-                    LOG_INFO(
-                        log,
-                        "Single part upload failed with NO_SUCH_KEY error for Bucket: {}, Key: {}, Object size: {}, will retry",
-                        dest_bucket,
-                        dest_key,
-                        request.GetContentLength());
-                    continue; /// will retry
-                }
-
-                throw S3Exception(
-                    outcome.GetError().GetErrorType(),
-                    "Message: {}, Key: {}, Bucket: {}, Object size: {}",
-                    outcome.GetError().GetMessage(),
-                    dest_key,
-                    dest_bucket,
-                    request.GetContentLength());
-            }
+            const auto & req = typeid_cast<const S3::PutObjectRequest &>(request);
+            auto outcome = client_ptr->PutObject(req);
+            if (outcome.IsSuccess())
+                return {true, {}};
+            return {false, outcome.GetError()};
         }
 
-        void performMultipartUpload() { UploadHelper::performMultipartUpload(offset, size); }
-
-        std::unique_ptr<Aws::AmazonWebServiceRequest> fillUploadPartRequest(size_t part_number, size_t part_offset, size_t part_size) override
+        std::unique_ptr<Aws::AmazonWebServiceRequest>
+        makeUploadPartRequest(const String & multipart_upload_id, size_t part_number, size_t part_offset, size_t part_size) const override
         {
             auto read_buffer = std::make_unique<LimitSeekableReadBuffer>(create_read_buffer(), part_offset, part_size);
 
@@ -544,154 +497,108 @@ namespace
             return request;
         }
 
-        String processUploadPartRequest(Aws::AmazonWebServiceRequest & request) override
+        std::pair<std::optional<String>, Aws::S3::S3Error> processUploadPartRequest(const Aws::AmazonWebServiceRequest & request) const override
         {
-            auto & req = typeid_cast<S3::UploadPartRequest &>(request);
+            const auto & req = typeid_cast<const S3::UploadPartRequest &>(request);
 
             ProfileEvents::increment(ProfileEvents::S3UploadPart);
             if (for_disk_s3)
                 ProfileEvents::increment(ProfileEvents::DiskS3UploadPart);
 
             auto outcome = client_ptr->UploadPart(req);
-            if (!outcome.IsSuccess())
-            {
-                abortMultipartUpload();
-                throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
-            }
+            if (outcome.IsSuccess())
+                return {outcome.GetResult().GetETag(), {}};
 
-            return outcome.GetResult().GetETag();
+            return {{}, outcome.GetError()};
         }
     };
 
     /// Helper class to help implementing copyS3File().
-    class CopyFileHelper : public UploadHelper
+    class CopyS3FileHelper : public S3UploadHelper
     {
     public:
-        CopyFileHelper(
+        CopyS3FileHelper(
             const std::shared_ptr<const S3::Client> & client_ptr_,
             const String & src_bucket_,
             const String & src_key_,
-            size_t src_offset_,
-            size_t src_size_,
             const String & dest_bucket_,
             const String & dest_key_,
-            const S3Settings::RequestSettings & request_settings_,
-            const std::optional<std::map<String, String>> & object_metadata_,
-            ThreadPoolCallbackRunner<void> schedule_,
-            bool for_disk_s3_)
-            : UploadHelper(client_ptr_, dest_bucket_, dest_key_, request_settings_, object_metadata_, schedule_, for_disk_s3_, &Poco::Logger::get("copyS3File"))
+            const CopyS3FileSettings & copy_settings_)
+            : S3UploadHelper(client_ptr_, dest_bucket_, dest_key_, copy_settings_.offset, copy_settings_.size, copy_settings_, &Poco::Logger::get("copyS3File"))
             , src_bucket(src_bucket_)
             , src_key(src_key_)
-            , offset(src_offset_)
-            , size(src_size_)
+            , whole_file(copy_settings_.whole_file)
         {
         }
 
-        void performCopy()
+        /// Main function.
+        Co::Task<> upload()
         {
-            if (size <= upload_settings.max_single_operation_copy_size)
-                performSingleOperationCopy();
-            else
-                performMultipartUploadCopy();
+            if (whole_file)
+            {
+                if (offset != 0)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "A non-zero starting offset is specified while the whole file must be copied");
 
-            if (request_settings.check_objects_after_upload)
-                checkObjectAfterUpload();
+                if (size == static_cast<size_t>(-1))
+                {
+                    /// The size is not specified, but we can get it from the size of the source object.
+                    size = S3::getObjectSize(*client_ptr, src_bucket, src_key, {}, request_settings, for_disk_s3);
+                }
+            }
+
+            co_await S3UploadHelper::upload();
         }
+
 
     private:
         const String & src_bucket;
         const String & src_key;
-        size_t offset;
-        size_t size;
+        const bool whole_file;
 
-        void performSingleOperationCopy()
+        bool shouldUseMultipartUpload() const override
         {
-            S3::CopyObjectRequest request;
-            fillCopyRequest(request);
-            processCopyRequest(request);
+            return (size > request_settings.getUploadSettings().max_single_operation_copy_size) || !whole_file;
         }
 
-        void fillCopyRequest(S3::CopyObjectRequest & request)
+        std::unique_ptr<Aws::AmazonWebServiceRequest> makeSingleOperationUploadRequest() const override
         {
-            request.SetCopySource(src_bucket + "/" + src_key);
-            request.SetBucket(dest_bucket);
-            request.SetKey(dest_key);
+            auto request = std::make_unique<S3::CopyObjectRequest>();
+
+            request->SetCopySource(src_bucket + "/" + src_key);
+            request->SetBucket(dest_bucket);
+            request->SetKey(dest_key);
 
             if (object_metadata.has_value())
             {
-                request.SetMetadata(object_metadata.value());
-                request.SetMetadataDirective(Aws::S3::Model::MetadataDirective::REPLACE);
+                request->SetMetadata(object_metadata.value());
+                request->SetMetadataDirective(Aws::S3::Model::MetadataDirective::REPLACE);
             }
 
             const auto & storage_class_name = upload_settings.storage_class_name;
             if (!storage_class_name.empty())
-                request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(storage_class_name));
+                request->SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(storage_class_name));
 
             /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
-            request.SetContentType("binary/octet-stream");
+            request->SetContentType("binary/octet-stream");
+            return request;
         }
 
-        void processCopyRequest(const S3::CopyObjectRequest & request)
+        std::pair<bool, Aws::S3::S3Error> processSingleOperationUploadRequest(const Aws::AmazonWebServiceRequest & request) const override
         {
-            size_t max_retries = std::max(request_settings.max_unexpected_write_error_retries, 1UL);
-            for (size_t retries = 1;; ++retries)
-            {
-                ProfileEvents::increment(ProfileEvents::S3CopyObject);
-                if (for_disk_s3)
-                    ProfileEvents::increment(ProfileEvents::DiskS3CopyObject);
+            const auto & req = typeid_cast<const S3::CopyObjectRequest &>(request);
 
-                auto outcome = client_ptr->CopyObject(request);
-                if (outcome.IsSuccess())
-                {
-                    LOG_TRACE(
-                        log,
-                        "Single operation copy has completed. Bucket: {}, Key: {}, Object size: {}",
-                        dest_bucket,
-                        dest_key,
-                        size);
-                    break;
-                }
+            ProfileEvents::increment(ProfileEvents::S3CopyObject);
+            if (for_disk_s3)
+                ProfileEvents::increment(ProfileEvents::DiskS3CopyObject);
 
-                if (outcome.GetError().GetExceptionName() == "EntityTooLarge" || outcome.GetError().GetExceptionName() == "InvalidRequest")
-                {
-                    // Can't come here with MinIO, MinIO allows single part upload for large objects.
-                    LOG_INFO(
-                        log,
-                        "Single operation copy failed with error {} for Bucket: {}, Key: {}, Object size: {}, will retry with multipart upload copy",
-                        outcome.GetError().GetExceptionName(),
-                        dest_bucket,
-                        dest_key,
-                        size);
-                    performMultipartUploadCopy();
-                    break;
-                }
-
-                if ((outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY) && (retries < max_retries))
-                {
-                    /// TODO: Is it true for copy requests?
-                    /// For unknown reason, at least MinIO can respond with NO_SUCH_KEY for put requests
-                    LOG_INFO(
-                        log,
-                        "Single operation copy failed with NO_SUCH_KEY error for Bucket: {}, Key: {}, Object size: {}, will retry",
-                        dest_bucket,
-                        dest_key,
-                        size);
-                    continue; /// will retry
-                }
-
-                throw S3Exception(
-                    outcome.GetError().GetErrorType(),
-                    "Message: {}, Key: {}, Bucket: {}, Object size: {}",
-                    outcome.GetError().GetMessage(),
-                    dest_key,
-                    dest_bucket,
-                    size);
-            }
+            auto outcome = client_ptr->CopyObject(req);
+            if (outcome.IsSuccess())
+                return {true, {}};
+            return {false, outcome.GetError()};
         }
 
-        void performMultipartUploadCopy() { UploadHelper::performMultipartUpload(offset, size); }
-
-        std::unique_ptr<Aws::AmazonWebServiceRequest> fillUploadPartRequest(size_t part_number, size_t part_offset, size_t part_size) override
+        std::unique_ptr<Aws::AmazonWebServiceRequest>
+        makeUploadPartRequest(const String & multipart_upload_id, size_t part_number, size_t part_offset, size_t part_size) const override
         {
             auto request = std::make_unique<S3::UploadPartCopyRequest>();
 
@@ -706,59 +613,79 @@ namespace
             return request;
         }
 
-        String processUploadPartRequest(Aws::AmazonWebServiceRequest & request) override
+        std::pair<std::optional<String>, Aws::S3::S3Error> processUploadPartRequest(const Aws::AmazonWebServiceRequest & request) const override
         {
-            auto & req = typeid_cast<S3::UploadPartCopyRequest &>(request);
+            const auto & req = typeid_cast<const S3::UploadPartCopyRequest &>(request);
 
             ProfileEvents::increment(ProfileEvents::S3UploadPartCopy);
             if (for_disk_s3)
                 ProfileEvents::increment(ProfileEvents::DiskS3UploadPartCopy);
 
             auto outcome = client_ptr->UploadPartCopy(req);
-            if (!outcome.IsSuccess())
-            {
-                abortMultipartUpload();
-                throw Exception::createDeprecated(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
-            }
-
-            return outcome.GetResult().GetCopyPartResult().GetETag();
+            if (outcome.IsSuccess())
+                return {outcome.GetResult().GetCopyPartResult().GetETag(), {}};
+            return {{}, outcome.GetError()};
         }
     };
 }
 
 
-void copyDataToS3File(
-    const std::function<std::unique_ptr<SeekableReadBuffer>()> & create_read_buffer,
-    size_t offset,
-    size_t size,
-    const std::shared_ptr<const S3::Client> & dest_s3_client,
-    const String & dest_bucket,
-    const String & dest_key,
-    const S3Settings::RequestSettings & settings,
-    const std::optional<std::map<String, String>> & object_metadata,
-    ThreadPoolCallbackRunner<void> schedule,
-    bool for_disk_s3)
+Co::Task<> copyDataToS3FileAsync(
+    const std::function<std::unique_ptr<SeekableReadBuffer>()> create_read_buffer,
+    const std::shared_ptr<const S3::Client> dest_s3_client,
+    const String dest_bucket,
+    const String dest_key,
+    const CopyS3FileSettings copy_settings)
 {
-    CopyDataToFileHelper helper{create_read_buffer, offset, size, dest_s3_client, dest_bucket, dest_key, settings, object_metadata, schedule, for_disk_s3};
-    helper.performCopy();
+    CopyDataToS3FileHelper helper{create_read_buffer, dest_s3_client, dest_bucket, dest_key, copy_settings};
+    co_await helper.upload();
 }
 
+Co::Task<> copyS3FileAsync(
+    const std::shared_ptr<const S3::Client> s3_client,
+    const String src_bucket,
+    const String src_key,
+    const String dest_bucket,
+    const String dest_key,
+    const CopyS3FileSettings copy_settings)
+{
+    if (copy_settings.size == 0)
+    {
+        /// A special case. We have to copy zero bytes, however it's not allowed to use multipart upload for zero size.
+        /// So we'll just send one PutObject request here in CopyDataToS3FileHelper.
+        auto create_empty_read_buffer = []() -> std::unique_ptr<SeekableReadBuffer> { return std::make_unique<ReadBufferFromMemory>(static_cast<char *>(nullptr), 0); };
+        CopyDataToS3FileHelper helper(create_empty_read_buffer, s3_client, dest_bucket, dest_key, 0, 0, copy_settings);
+        co_await helper.upload();
+    }
+    else
+    {
+        /// Generic case.
+        CopyS3FileHelper helper{s3_client, src_bucket, src_key, dest_bucket, dest_key, copy_settings};
+        co_await helper.upload();
+    }
+}
 
 void copyS3File(
     const std::shared_ptr<const S3::Client> & s3_client,
     const String & src_bucket,
     const String & src_key,
-    size_t src_offset,
-    size_t src_size,
     const String & dest_bucket,
     const String & dest_key,
-    const S3Settings::RequestSettings & settings,
-    const std::optional<std::map<String, String>> & object_metadata,
-    ThreadPoolCallbackRunner<void> schedule,
-    bool for_disk_s3)
+    const CopyS3FileSettings & copy_settings,
+    const ThreadPoolCallbackRunner<void> & scheduler)
 {
-    CopyFileHelper helper{s3_client, src_bucket, src_key, src_offset, src_size, dest_bucket, dest_key, settings, object_metadata, schedule, for_disk_s3};
-    helper.performCopy();
+    copyS3FileAsync(s3_client, src_bucket, src_key, dest_bucket, dest_key, copy_settings).syncRun(Co::Scheduler{scheduler});
+}
+
+void copyDataToS3File(
+    const std::function<std::unique_ptr<SeekableReadBuffer>()> & create_read_buffer,
+    const std::shared_ptr<const S3::Client> & dest_s3_client,
+    const String & dest_bucket,
+    const String & dest_key,
+    const CopyS3FileSettings & copy_settings,
+    const ThreadPoolCallbackRunner<void> & scheduler)
+{
+    copyDataToS3FileAsync(create_read_buffer, dest_s3_client, dest_bucket, dest_key, copy_settings).syncRun(Co::Scheduler(scheduler));
 }
 
 }

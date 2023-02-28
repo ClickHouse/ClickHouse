@@ -139,6 +139,31 @@ void checkObjectExists(
     throw S3Exception(error.GetErrorType(), "{}Object {} in bucket {} suddenly disappeared: {}",
                         (description.empty() ? "" : (String(description) + ": ")), key, bucket, error.GetMessage());
 }
+
+void checkObjectExistsAndHasSize(
+    const S3::Client & client,
+    const String & bucket,
+    const String & key,
+    const String & version_id,
+    size_t expected_size,
+    const S3Settings::RequestSettings & request_settings,
+    bool for_disk_s3,
+    std::string_view description)
+{
+    auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, request_settings, {}, for_disk_s3);
+    if (!object_info)
+    {
+        throw S3Exception(error.GetErrorType(), "{}Object {} in bucket {} suddenly disappeared: {}",
+                            (description.empty() ? "" : (String(description) + ": ")), key, bucket, error.GetMessage());
+    }
+
+    if (object_info->size != expected_size)
+    {
+        throw S3Exception(error.GetErrorType(), "{}Object {} in bucket {} has unexpected size {} != {}",
+                            (description.empty() ? "" : (String(description) + ": ")), key, bucket, object_info->size, expected_size);
+    }
+}
+
 }
 
 #endif

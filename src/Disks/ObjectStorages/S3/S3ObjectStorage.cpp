@@ -404,10 +404,13 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
     {
         auto client_ptr = client.get();
         auto settings_ptr = s3_settings.get();
-        auto size = S3::getObjectSize(*client_ptr, bucket, object_from.absolute_path, {}, settings_ptr->request_settings, /* for_disk_s3= */ true);
+        CopyS3FileSettings copy_settings;
+        copy_settings.whole_file = true;
+        copy_settings.request_settings = settings_ptr->request_settings;
+        copy_settings.object_metadata = std::move(object_to_attributes);
+        copy_settings.for_disk_s3 = true;
         auto scheduler = threadPoolCallbackRunner<void>(getThreadPoolWriter(), "S3ObjStor_copy");
-        copyS3File(client_ptr, bucket, object_from.absolute_path, 0, size, dest_s3->bucket, object_to.absolute_path,
-                   settings_ptr->request_settings, object_to_attributes, scheduler, /* for_disk_s3= */ true);
+        copyS3File(client_ptr, bucket, object_from.absolute_path, dest_s3->bucket, object_to.absolute_path, copy_settings, scheduler);
     }
     else
     {
@@ -420,10 +423,13 @@ void S3ObjectStorage::copyObject( // NOLINT
 {
     auto client_ptr = client.get();
     auto settings_ptr = s3_settings.get();
-    auto size = S3::getObjectSize(*client_ptr, bucket, object_from.absolute_path, {}, settings_ptr->request_settings, /* for_disk_s3= */ true);
+    CopyS3FileSettings copy_settings;
+    copy_settings.whole_file = true;
+    copy_settings.request_settings = settings_ptr->request_settings;
+    copy_settings.object_metadata = std::move(object_to_attributes);
+    copy_settings.for_disk_s3 = true;
     auto scheduler = threadPoolCallbackRunner<void>(getThreadPoolWriter(), "S3ObjStor_copy");
-    copyS3File(client_ptr, bucket, object_from.absolute_path, 0, size, bucket, object_to.absolute_path,
-               settings_ptr->request_settings, object_to_attributes, scheduler, /* for_disk_s3= */ true);
+    copyS3File(client_ptr, bucket, object_from.absolute_path, bucket, object_to.absolute_path, copy_settings, scheduler);
 }
 
 void S3ObjectStorage::setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_)

@@ -156,7 +156,7 @@ void BackupWriterS3::copyFileNative(DiskPtr src_disk, const String & src_file_na
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot natively copy data to disk without source disk");
 
     auto objects = src_disk->getStorageObjects(src_file_name);
-    if (objects.size() > 1)
+    if ((objects.size() != 1))
     {
         auto create_read_buffer = [src_disk, src_file_name] { return src_disk->readFile(src_file_name); };
         copyDataToFile(create_read_buffer, src_offset, src_size, dest_file_name);
@@ -166,7 +166,12 @@ void BackupWriterS3::copyFileNative(DiskPtr src_disk, const String & src_file_na
         auto object_storage = src_disk->getObjectStorage();
         std::string src_bucket = object_storage->getObjectsNamespace();
         auto file_path = fs::path(s3_uri.key) / dest_file_name;
-        copyS3File(client, src_bucket, objects[0].absolute_path, src_offset, src_size, s3_uri.bucket, file_path, request_settings, {},
+        CopyS3FileSettings copy_settings;
+        copy_settings.offset = src_offset;
+        copy_settings.size = src_size;
+        copy_settings.whole_file = (src_offset == 0) && (src_size == objects[0].bytes_size);
+        copy_settings.request_settings = request_settings;
+        copyS3File(client, src_bucket, objects[0].absolute_path, s3_uri.bucket, file_path, copy_settings,
                    threadPoolCallbackRunner<void>(IOThreadPool::get(), "BackupWriterS3"));
     }
 }
@@ -174,7 +179,11 @@ void BackupWriterS3::copyFileNative(DiskPtr src_disk, const String & src_file_na
 void BackupWriterS3::copyDataToFile(
     const CreateReadBufferFunction & create_read_buffer, UInt64 offset, UInt64 size, const String & dest_file_name)
 {
-    copyDataToS3File(create_read_buffer, offset, size, client, s3_uri.bucket, fs::path(s3_uri.key) / dest_file_name, request_settings, {},
+    CopyS3FileSettings copy_settings;
+    copy_settings.offset = offset;
+    copy_settings.size = size;
+    copy_settings.request_settings = request_settings;
+    copyDataToS3File(create_read_buffer, client, s3_uri.bucket, fs::path(s3_uri.key) / dest_file_name, copy_settings,
                      threadPoolCallbackRunner<void>(IOThreadPool::get(), "BackupWriterS3"));
 }
 
