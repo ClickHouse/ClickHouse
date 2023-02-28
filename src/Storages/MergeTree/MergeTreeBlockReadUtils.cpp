@@ -169,7 +169,7 @@ MergeTreeReadTask::~MergeTreeReadTask()
             pre_reader.wait();
     }
 
-    LOG_TEST(&Poco::Logger::get("MergeTreeReadTask"), "Destructed task: {} ({})", data_part->name, toString(mark_ranges));
+    LOG_TRACE(&Poco::Logger::get("MergeTreeReadTask"), "Destructed task: {} ({})", data_part->name, toString(mark_ranges));
 }
 
 MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
