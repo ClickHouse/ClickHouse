@@ -32,6 +32,6 @@ private:
     String structure = "auto";
     ColumnsDescription structure_hint;
 
-    ColumnsDescription default_structure = ColumnsDescription{NamesAndTypesList{{"dummy", std::make_shared<DataTypeUInt8>()}}};
+    const ColumnsDescription default_structure{NamesAndTypesList{{"dummy", std::make_shared<DataTypeUInt8>()}}};
 };
 }
