@@ -952,9 +952,12 @@ namespace
             static Pos jodaEra(int, Pos cur, Pos end, Date & date)
             {
                 ensureSpace(cur, end, 2, "jodaEra requires size >= 2");
-                if (std::strncmp(cur, "AD", 2) == 0 || std::strncmp(cur, "ad", 2) == 0)
+
+                String text(cur, 2);
+                Poco::toLowerInPlace(text);
+                if (text == "ad")
                     date.is_ad = true;
-                else if (std::strncmp(cur, "BC", 2) == 0 || std::strncmp(cur, "bc", 2) == 0)
+                else if (text == "bc")
                     date.is_ad = false;
                 else
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown era {}", std::string(cur, 2));
@@ -1208,7 +1211,7 @@ namespace
 
                 date.is_clock_hour = true;
                 date.is_hour_of_half_day = true;
-                date.hour = number;
+                date.hour = number % 12;
                 return cur;
             }
 
