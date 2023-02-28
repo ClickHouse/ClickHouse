@@ -104,7 +104,7 @@ class FunctionWidthBucket : public IFunction
     }
 
     template <typename TResultType, typename TCountType>
-    TResultType calculate(const Float64 operand, const Float64 low, const Float64 high, const TCountType count) const
+    TResultType NO_SANITIZE_UNDEFINED calculate(const Float64 operand, const Float64 low, const Float64 high, const TCountType count) const
     {
         if (const auto maybe_early_return = checkArguments<TResultType>(operand, low, high, count); maybe_early_return.has_value())
         {
