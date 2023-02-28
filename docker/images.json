@@ -43,7 +43,8 @@
     "docker/test/stateful": {
         "name": "clickhouse/stateful-test",
         "dependent": [
-            "docker/test/stress"
+            "docker/test/stress",
+            "docker/test/upgrade"
         ]
     },
     "docker/test/unit": {
