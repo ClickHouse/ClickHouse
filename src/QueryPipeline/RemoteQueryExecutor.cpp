@@ -23,6 +23,7 @@
 #include <Client/MultiplexedConnections.h>
 #include <Client/HedgedConnections.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
+#include <Storages/StorageMemory.h>
 
 
 namespace CurrentMetrics
@@ -602,6 +603,9 @@ void RemoteQueryExecutor::sendExternalTables()
             for (const auto & table : external_tables)
             {
                 StoragePtr cur = table.second;
+                /// Send only temporary tables with StorageMemory
+                if (!std::dynamic_pointer_cast<StorageMemory>(cur))
+                    continue;
 
                 auto data = std::make_unique<ExternalTableData>();
                 data->table_name = table.first;
