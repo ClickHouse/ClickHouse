@@ -39,11 +39,43 @@ To add new test, create a `.sql` or `.sh` file in `queries/0_stateless` director
 
 Tests should use (create, drop, etc) only tables in `test` database that is assumed to be created beforehand; also tests can use temporary tables.
 
+### Restricting test runs
+
+A test can have one or more _test tags_ specifying restrictions for test runs.
+
+For `.sh` tests tags are placed in `.sh` files as comments, example:
+
+```bash
+#!/usr/bin/env bash
+# Tags: no-fasttest
+```
+
+For `.sql` tests tags are placed as SQL comments, example: 
+
+```sql
+-- Tags: no-fasttest
+SELECT 1
+```
+
+|Tag name | What it does | Usage example |
+|---|---|---|
+| `no-fasttest`|  Test is not run under [Fast test](continuous-integration#fast-test) | Test uses MySQL table engine which is disabled in Fast test|
+| `zookeeper` | Test requires Zookeeper or ClickHouse Keeper to run ||
+| `long` | Test's execution time is extended to 10 minutes ||
+| `no-replicated-database` |||
+| `no-parallel` |||
+| `distributed` |||
+| `no-random-settings` |||
+| `no-backward-compatibility-check` |||
+| `no-cpu-x86_64` |||
+| `no-cpu-aarch64` |||
+
+In addition to the above settings, you can use `USE_*` flags from `system.build_options` to define usage of particular ClickHouse features.
+For example, if your test uses a MySQL table, you should add a tag `use-mysql`.
+
 ### Choosing the Test Name
 
 The name of the test starts with a five-digit prefix followed by a descriptive name, such as `00422_hash_function_constexpr.sql`. To choose the prefix, find the largest prefix already present in the directory, and increment it by one. In the meantime, some other tests might be added with the same numeric prefix, but this is OK and does not lead to any problems, you don't have to change it later.
-
-Some tests are marked with `zookeeper`, `shard` or `long` in their names. `zookeeper` is for tests that are using ZooKeeper. `shard` is for tests that requires server to listen `127.0.0.*`; `distributed` or `global` have the same meaning. `long` is for tests that run slightly longer that one second. You can disable these groups of tests using `--no-zookeeper`, `--no-shard` and `--no-long` options, respectively. Make sure to add a proper prefix to your test name if it needs ZooKeeper or distributed queries.
 
 ### Checking for an Error that Must Occur
 
