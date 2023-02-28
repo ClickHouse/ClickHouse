@@ -370,7 +370,7 @@ ENGINE = MergeTree ORDER BY x;
 ClickHouse supports temporary tables which have the following characteristics:
 
 -   Temporary tables disappear when the session ends, including if the connection is lost.
--   A temporary table uses the Memory table engine when engine is not specified and it may use any table engine except for Replicated and `KeeperMap` engines.
+-   A temporary table uses the Memory table engine when engine is not specified and it may use any table engine except Replicated and `KeeperMap` engines.
 -   The DB can’t be specified for a temporary table. It is created outside of databases.
 -   Impossible to create a temporary table with distributed DDL query on all cluster servers (by using `ON CLUSTER`): this table exists only in the current session.
 -   If a temporary table has the same name as another one and a query specifies the table name without specifying the DB, the temporary table will be used.
