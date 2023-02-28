@@ -1,9 +1,10 @@
 ---
 slug: /en/getting-started/example-datasets/cell-towers
-sidebar_label: Cell Towers
+sidebar_label: Geo Data
 sidebar_position: 3
-title: "Cell Towers"
+title: "Geo Data using the Cell Tower Dataset"
 ---
+
 import ConnectionDetails from '@site/docs/en/_snippets/_gather_your_details_http.mdx';
 
 import Tabs from '@theme/Tabs';
