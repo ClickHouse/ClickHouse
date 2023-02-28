@@ -24,6 +24,7 @@ CapnProto
 CentOS
 ClickHouse
 ClickHouse's
+CodeBlock
 Config
 ConnectionDetails
 Contrib
@@ -151,6 +152,7 @@ Submodules
 Subqueries
 TSVRaw
 TSan
+TabItem
 TabSeparated
 TabSeparatedRaw
 TabSeparatedRawWithNames

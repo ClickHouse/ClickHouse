@@ -32,6 +32,9 @@ namespace ErrorCodes
 template <typename T>
 struct MovingData
 {
+    /// For easy serialization.
+    static_assert(std::has_unique_object_representations_v<T> || std::is_floating_point_v<T>);
+
     using Accumulator = T;
 
     /// Switch to ordinary Allocator after 4096 bytes to avoid fragmentation and trash in Arena
