@@ -246,7 +246,7 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
     for (const auto & setting : mysql_settings)
         optional_arguments.insert(setting.getName());
 
-    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> required_arguments = {"user", "username", "password", "database", "db", "table"};
+    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> required_arguments = {"user", "username", "password", "database", "db"};
     if (require_table)
         required_arguments.insert("table");
     validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(named_collection, required_arguments, optional_arguments);
