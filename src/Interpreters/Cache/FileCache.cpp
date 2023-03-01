@@ -1016,6 +1016,7 @@ FileSegmentsHolderPtr FileCache::getSnapshot()
 {
     assertInitialized();
 
+    auto cache_lock = cache_guard.lock();
     auto lock = metadata.lock();
     performDelayedRemovalOfDeletedKeysFromMetadata(lock);
 
