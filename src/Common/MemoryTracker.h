@@ -215,6 +215,8 @@ public:
 
     /// Prints info about peak memory consumption into log.
     void logPeakMemoryUsage();
+
+    String getDebugLog() const;
 };
 
 extern MemoryTracker total_memory_tracker;

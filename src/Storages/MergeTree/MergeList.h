@@ -5,6 +5,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/MemoryTracker.h>
+#include <Common/ThreadStatus.h>
 #include <Storages/MergeTree/MergeType.h>
 #include <Storages/MergeTree/MergeAlgorithm.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
@@ -63,23 +64,19 @@ struct Settings;
 
 /**
  * Since merge is executed with multiple threads, this class
- * switches the parent MemoryTracker to account all the memory used.
+ * switches the parent MemoryTracker as part of the thread group to account all the memory used.
  */
-class MemoryTrackerThreadSwitcher : boost::noncopyable
+class ThreadGroupSwitcher : boost::noncopyable
 {
 public:
-    explicit MemoryTrackerThreadSwitcher(MergeListEntry & merge_list_entry_);
-    ~MemoryTrackerThreadSwitcher();
+    explicit ThreadGroupSwitcher(MergeListEntry & merge_list_entry_);
+    ~ThreadGroupSwitcher();
 private:
     MergeListEntry & merge_list_entry;
-    MemoryTracker * background_thread_memory_tracker;
-    MemoryTracker * background_thread_memory_tracker_prev_parent = nullptr;
-    Int64 prev_untracked_memory_limit;
-    Int64 prev_untracked_memory;
-    String prev_query_id;
+    ThreadGroupStatusPtr prev_thread_group;
 };
 
-using MemoryTrackerThreadSwitcherPtr = std::unique_ptr<MemoryTrackerThreadSwitcher>;
+using ThreadGroupSwitcherPtr = std::unique_ptr<ThreadGroupSwitcher>;
 
 struct MergeListElement : boost::noncopyable
 {
@@ -113,10 +110,6 @@ struct MergeListElement : boost::noncopyable
     /// Updated only for Vertical algorithm
     std::atomic<UInt64> columns_written{};
 
-    /// Used to adjust ThreadStatus::untracked_memory_limit
-    UInt64 max_untracked_memory;
-    /// Used to avoid losing any allocation context
-    UInt64 untracked_memory = 0;
     /// Used for identifying mutations/merges in trace_log
     std::string query_id;
 
@@ -128,7 +121,7 @@ struct MergeListElement : boost::noncopyable
     /// Description used for logging
     /// Needs to outlive memory_tracker since it's used in its destructor
     const String description{"Mutate/Merge"};
-    MemoryTracker memory_tracker{VariableContext::Process};
+    ThreadGroupStatusPtr thread_group;
 
     MergeListElement(
         const StorageID & table_id_,
@@ -137,9 +130,9 @@ struct MergeListElement : boost::noncopyable
 
     MergeInfo getInfo() const;
 
-    MergeListElement * ptr() { return this; }
+    const MemoryTracker & getMemoryTracker() const { return thread_group->memory_tracker; }
 
-    ~MergeListElement();
+    MergeListElement * ptr() { return this; }
 
     MergeListElement & ref() { return *this; }
 };

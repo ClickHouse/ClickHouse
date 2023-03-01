@@ -11,38 +11,24 @@ namespace DB
 {
 
 
-MemoryTrackerThreadSwitcher::MemoryTrackerThreadSwitcher(MergeListEntry & merge_list_entry_)
+ThreadGroupSwitcher::ThreadGroupSwitcher(MergeListEntry & merge_list_entry_)
     : merge_list_entry(merge_list_entry_)
 {
-    // Each merge is executed into separate background processing pool thread
-    background_thread_memory_tracker = CurrentThread::getMemoryTracker();
-    background_thread_memory_tracker_prev_parent = background_thread_memory_tracker->getParent();
-    background_thread_memory_tracker->setParent(&merge_list_entry->memory_tracker);
+    prev_thread_group = CurrentThread::getGroup();
+    if (!prev_thread_group)
+        return;
 
-    prev_untracked_memory_limit = current_thread->untracked_memory_limit;
-    current_thread->untracked_memory_limit = merge_list_entry->max_untracked_memory;
-
-    /// Avoid accounting memory from another mutation/merge
-    /// (NOTE: consider moving such code to ThreadFromGlobalPool and related places)
-    prev_untracked_memory = current_thread->untracked_memory;
-    current_thread->untracked_memory = merge_list_entry->untracked_memory;
-
-    prev_query_id = std::string(current_thread->getQueryId());
-    current_thread->setQueryId(merge_list_entry->query_id);
+    CurrentThread::detachGroupIfNotDetached();
+    CurrentThread::attachToGroup(merge_list_entry_->thread_group);
 }
 
-
-MemoryTrackerThreadSwitcher::~MemoryTrackerThreadSwitcher()
+ThreadGroupSwitcher::~ThreadGroupSwitcher()
 {
-    // Unplug memory_tracker from current background processing pool thread
-    background_thread_memory_tracker->setParent(background_thread_memory_tracker_prev_parent);
+    if (!prev_thread_group)
+        return;
 
-    current_thread->untracked_memory_limit = prev_untracked_memory_limit;
-
-    merge_list_entry->untracked_memory = current_thread->untracked_memory;
-    current_thread->untracked_memory = prev_untracked_memory;
-
-    current_thread->setQueryId(prev_query_id);
+    CurrentThread::detachGroup();
+    CurrentThread::attachTo(prev_thread_group);
 }
 
 MergeListElement::MergeListElement(
@@ -55,7 +41,6 @@ MergeListElement::MergeListElement(
     , result_part_path{future_part->path}
     , result_part_info{future_part->part_info}
     , num_parts{future_part->parts.size()}
-    , max_untracked_memory(settings.max_untracked_memory)
     , query_id(table_id.getShortName() + "::" + result_part_name)
     , thread_id{getThreadId()}
     , merge_type{future_part->merge_type}
@@ -78,6 +63,12 @@ MergeListElement::MergeListElement(
         is_mutation = (result_part_info.getDataVersion() != source_data_version);
     }
 
+    thread_group = std::make_shared<ThreadGroupStatus>();
+
+    thread_group->master_thread_id = CurrentThread::get().thread_id;
+
+    auto & memory_tracker = thread_group->memory_tracker;
+
     memory_tracker.setDescription(description.c_str());
     /// MemoryTracker settings should be set here, because
     /// later (see MemoryTrackerThreadSwitcher)
@@ -97,15 +88,16 @@ MergeListElement::MergeListElement(
     ///
     /// NOTE: Remember, that Thread level MemoryTracker does not have any settings,
     /// so it's parent is required.
-    MemoryTracker * query_memory_tracker = CurrentThread::getMemoryTracker();
-    MemoryTracker * parent_query_memory_tracker;
-    if (query_memory_tracker->level == VariableContext::Thread &&
-        (parent_query_memory_tracker = query_memory_tracker->getParent()) &&
-        parent_query_memory_tracker != &total_memory_tracker)
-    {
-        memory_tracker.setOrRaiseHardLimit(parent_query_memory_tracker->getHardLimit());
-    }
+    MemoryTracker * cur_memory_tracker = CurrentThread::getMemoryTracker();
 
+    if (cur_memory_tracker->level == VariableContext::Thread)
+    {
+        MemoryTracker * query_memory_tracker = cur_memory_tracker->getParent();
+        if (query_memory_tracker != &total_memory_tracker)
+        {
+            memory_tracker.setOrRaiseHardLimit(query_memory_tracker->getHardLimit());
+        }
+    }
 }
 
 MergeInfo MergeListElement::getInfo() const
@@ -128,7 +120,7 @@ MergeInfo MergeListElement::getInfo() const
     res.rows_read = rows_read.load(std::memory_order_relaxed);
     res.rows_written = rows_written.load(std::memory_order_relaxed);
     res.columns_written = columns_written.load(std::memory_order_relaxed);
-    res.memory_usage = memory_tracker.get();
+    res.memory_usage = getMemoryTracker().get();
     res.thread_id = thread_id;
     res.merge_type = toString(merge_type);
     res.merge_algorithm = toString(merge_algorithm.load(std::memory_order_relaxed));
@@ -141,15 +133,5 @@ MergeInfo MergeListElement::getInfo() const
 
     return res;
 }
-
-MergeListElement::~MergeListElement()
-{
-    if (untracked_memory != 0)
-    {
-        CurrentThread::getMemoryTracker()->adjustWithUntrackedMemory(untracked_memory);
-        untracked_memory = 0;
-    }
-}
-
 
 }

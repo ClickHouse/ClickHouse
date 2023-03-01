@@ -28,6 +28,7 @@
 #include <random>
 #include <cstdlib>
 #include <string>
+#include <magic_enum.hpp>
 
 
 namespace
@@ -118,6 +119,14 @@ MemoryTracker::~MemoryTracker()
     }
 }
 
+String MemoryTracker::getDebugLog() const
+{
+    return fmt::format("MemoryTracker(addr {} level {} peak {} ammount {})",
+                       size_t(this),
+                       magic_enum::enum_name(level),
+                       ReadableSize(getPeak()),
+                       ReadableSize(get()));
+}
 
 void MemoryTracker::logPeakMemoryUsage()
 {
