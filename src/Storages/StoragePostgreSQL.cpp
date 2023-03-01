@@ -390,7 +390,7 @@ SinkToStoragePtr StoragePostgreSQL::write(
 StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult(const NamedCollection & named_collection, bool require_table)
 {
     StoragePostgreSQL::Configuration configuration;
-    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> required_arguments = {"user", "username", "password", "database", "db", "table"};
+    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> required_arguments = {"user", "username", "password", "database", "db"};
     if (require_table)
         required_arguments.insert("table");
 
