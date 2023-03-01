@@ -596,7 +596,7 @@ Blocks DistributedSink::splitBlock(const Block & block)
     size_t columns_in_block = block.columns();
     for (size_t col_idx_in_block = 0; col_idx_in_block < columns_in_block; ++col_idx_in_block)
     {
-        MutableColumns splitted_columns = block.getByPosition(col_idx_in_block).column->scatter(num_shards, selector);
+        MutableColumns splitted_columns = block.getByPosition(col_idx_in_block).column->scatter(static_cast<UInt32>(num_shards), selector);
         for (size_t shard_idx = 0; shard_idx < num_shards; ++shard_idx)
             splitted_blocks[shard_idx].getByPosition(col_idx_in_block).column = std::move(splitted_columns[shard_idx]);
     }

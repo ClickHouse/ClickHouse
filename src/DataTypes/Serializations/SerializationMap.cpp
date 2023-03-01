@@ -6,10 +6,12 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/WeakHash.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnVector.h>
 #include <Core/Field.h>
 #include <Formats/FormatSettings.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
+#include <Common/BitHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -24,6 +26,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_READ_MAP_FROM_TEXT;
+    extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
 SerializationMap::SerializationMap(
@@ -268,6 +271,53 @@ void SerializationMap::deserializeTextCSV(IColumn & column, ReadBuffer & istr, c
     deserializeText(column, rb, settings, true);
 }
 
+template <typename T>
+static MutableColumns scatterNumeric(
+    const ColumnVector<T> & column,
+    const IColumn::Selector & selector,
+    const std::vector<UInt64> & column_sizes)
+{
+    size_t num_rows = column.size();
+    size_t num_columns = column_sizes.size();
+
+    if (num_rows != selector.size())
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
+            "Size of selector: {} doesn't match size of column: {}",
+            selector.size(), num_rows);
+
+    std::vector<MutableColumnPtr> scattered_columns(num_columns);
+    std::vector<size_t> positions(num_columns);
+
+    for (size_t i = 0; i < num_columns; ++i)
+    {
+        scattered_columns[i] = column.cloneEmpty();
+        assert_cast<ColumnVector<T> &>(*scattered_columns[i]).getData().resize(column_sizes[i]);
+    }
+
+    const auto & column_data = column.getData();
+    for (size_t i = 0; i < num_rows; ++i)
+    {
+        auto & data = assert_cast<ColumnVector<T> &>(*scattered_columns[selector[i]]).getData();
+        data[positions[selector[i]]++] = column_data[i];
+    }
+
+    return scattered_columns;
+}
+
+MutableColumns scatterColumn(
+    const IColumn & column,
+    const IColumn::Selector & selector,
+    const std::vector<UInt64> & column_sizes)
+{
+#define DISPATCH(TYPE) \
+    if (const auto * column_vector = typeid_cast<const ColumnVector<TYPE> *>(&column)) \
+        return scatterNumeric(*column_vector, selector, column_sizes);
+    FOR_BASIC_NUMERIC_TYPES(DISPATCH)
+#undef DISPATCH
+
+    return column.scatter(static_cast<UInt32>(column_sizes.size()), selector);
+}
+
 static std::vector<ColumnPtr> scatterToShards(const IColumn & column, size_t num_shards)
 {
     const auto & column_map = assert_cast<const ColumnMap &>(column);
@@ -291,31 +341,39 @@ static std::vector<ColumnPtr> scatterToShards(const IColumn & column, size_t num
         shards_offsets.push_back(&offsets_column->getData());
         shards_offsets_columns.push_back(std::move(offsets_column));
 
-        shards_offsets.back()->reserve(column_map.size() / num_shards);
+        shards_offsets.back()->resize(column_map.size());
     }
 
     UInt64 prev_offset = 0;
-    IColumn::Selector selector(column_values.size());
+    auto & selector = hash.getData();
     std::vector<UInt64> current_shard_array_offset(num_shards);
 
-    for (size_t i = 0; i < map_offsets.size(); ++i)
+    auto fill_selector = [&](auto && sharder)
     {
-        UInt64 map_size = map_offsets[i] - prev_offset;
-
-        for (size_t row = prev_offset; row < prev_offset + map_size; ++row)
+        for (size_t i = 0; i < map_offsets.size(); ++i)
         {
-            selector[row] = hash.getData()[row] % num_shards;
-            ++current_shard_array_offset[selector[row]];
+            UInt64 map_size = map_offsets[i] - prev_offset;
+
+            for (size_t row = prev_offset; row < prev_offset + map_size; ++row)
+            {
+                selector[row] = sharder(selector[row]);
+                ++current_shard_array_offset[selector[row]];
+            }
+
+            for (size_t shard = 0; shard < num_shards; ++shard)
+                (*shards_offsets[shard])[i] = current_shard_array_offset[shard];
+
+            prev_offset += map_size;
         }
+    };
 
-        for (size_t shard = 0; shard < num_shards; ++shard)
-            shards_offsets[shard]->push_back(current_shard_array_offset[shard]);
+    if (isPowerOf2(num_shards))
+        fill_selector([num_shards](UInt32 x) -> UInt32 { return x & (num_shards - 1); });
+    else
+        fill_selector([num_shards](UInt32 x) -> UInt32 { return x % num_shards; });
 
-        prev_offset += map_size;
-    }
-
-    auto shard_keys = column_keys.scatter(num_shards, selector);
-    auto shard_values = column_values.scatter(num_shards, selector);
+    auto shard_keys = scatterColumn(column_keys, selector, current_shard_array_offset);
+    auto shard_values = scatterColumn(column_values, selector, current_shard_array_offset);
 
     std::vector<ColumnPtr> shards(num_shards);
     for (size_t i = 0; i < num_shards; ++i)

@@ -3207,7 +3207,7 @@ void NO_INLINE Aggregator::convertBlockToTwoLevelImpl(
         auto hash = state.getHash(method.data, i, *pool);
         auto bucket = method.data.getBucketFromHash(hash);
 
-        selector[i] = bucket;
+        selector[i] = static_cast<UInt32>(bucket);
     }
 
     UInt32 num_buckets = static_cast<UInt32>(destinations.size());

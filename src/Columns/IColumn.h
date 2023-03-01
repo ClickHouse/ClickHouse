@@ -375,7 +375,7 @@ public:
       * Selector must contain values from 0 to num_columns - 1.
       * For default implementation, see scatterImpl.
       */
-    using ColumnIndex = UInt64;
+    using ColumnIndex = UInt32;
     using Selector = PaddedPODArray<ColumnIndex>;
     [[nodiscard]] virtual std::vector<MutablePtr> scatter(ColumnIndex num_columns, const Selector & selector) const = 0;
 

@@ -99,7 +99,7 @@ void buildScatterSelector(
         }
 
         if (partitions_count > 1)
-            selector[i] = it->getMapped();
+            selector[i] = static_cast<UInt32>(it->getMapped());
     }
 }
 
@@ -251,7 +251,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
 
     for (size_t col = 0; col < block.columns(); ++col)
     {
-        MutableColumns scattered = block.getByPosition(col).column->scatter(partitions_count, selector);
+        MutableColumns scattered = block.getByPosition(col).column->scatter(static_cast<UInt32>(partitions_count), selector);
         for (size_t i = 0; i < partitions_count; ++i)
             result[i].block.getByPosition(col).column = std::move(scattered[i]);
     }

@@ -67,7 +67,10 @@ public:
         UInt32 shard_num = key_hash % type_map->getNumShards();
 
         String subcolumn_name = ".shard" + toString(shard_num);
+        auto new_type = std::make_shared<DataTypeMap>(type_map->getNestedType(), 1);
+
         column_node->setColumnName(column_node->getColumnName() + subcolumn_name);
+        column_node->setColumnType(std::move(new_type));
     }
 };
 

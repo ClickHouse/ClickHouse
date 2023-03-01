@@ -150,7 +150,7 @@ private:
         size_t columns = block.columns();
         for (size_t col = 0; col < columns; ++col)
         {
-            MutableColumns splitted_columns = block.getByPosition(col).column->scatter(shards, selector);
+            MutableColumns splitted_columns = block.getByPosition(col).column->scatter(static_cast<UInt32>(shards), selector);
             for (size_t shard = 0; shard < shards; ++shard)
                 out_blocks[shard].getByPosition(col).column = std::move(splitted_columns[shard]);
         }
@@ -174,7 +174,7 @@ private:
         {
             auto key = keys_extractor.extractCurrentKey();
             size_t shard = dictionary.getShard(key);
-            selector[i] = slots[shard];
+            selector[i] = static_cast<UInt32>(slots[shard]);
             keys_extractor.rollbackCurrentKey();
         }
 
