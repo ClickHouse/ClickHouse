@@ -275,7 +275,7 @@ Path:
 -   Specify the absolute path or the path relative to the server config file.
 -   The path can contain wildcards \* and ?.
 
-See also “[Dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md)”.
+See also “[Dictionaries](../../sql-reference/dictionaries/index.md)”.
 
 **Example**
 
