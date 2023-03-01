@@ -102,6 +102,7 @@ namespace
         Int32 year = 1970;
         Int32 month = 1;
         Int32 day = 1;
+        std::vector<Int32> day_of_month_values;
         bool is_ad = true; // AD -> true, BC -> false.
 
         Int32 week = 1; // Week of year based on ISO week date, e.g: 27
@@ -109,6 +110,7 @@ namespace
         bool week_date_format = false;
 
         Int32 day_of_year = 1;
+        std::vector<Int32> day_of_year_values;
         bool day_of_year_format = false;
 
         bool century_format = false;
@@ -119,14 +121,43 @@ namespace
         Int32 hour = 0;
         Int32 minute = 0;
         Int32 second = 0;
-        bool is_am = true; // AM -> true, PM -> false
-        std::optional<Int64> time_zone_offset;
 
+        bool is_am = true; // AM -> true, PM -> false
         bool is_clock_hour = false; // Whether most recent hour specifier is clockhour
         bool is_hour_of_half_day = false; // Whether most recent hour specifier is of half day.
 
-        std::vector<Int32> day_of_month_values;
-        std::vector<Int32> day_of_year_values;
+        std::optional<Int64> time_zone_offset;
+
+        void reset()
+        {
+            year = 1970;
+            month = 1;
+            day = 1;
+            day_of_month_values.clear();
+            is_ad = true;
+
+            week = 1;
+            day_of_week = 1;
+            week_date_format = false;
+
+            day_of_year = 1;
+            day_of_year_values.clear();
+            day_of_year_format = false;
+
+            century_format = false;
+
+            is_year_of_era = false; // Year of era cannot be zero or negative.
+            has_year = false; // Whether year was explicitly specified.
+
+            hour = 0;
+            minute = 0;
+            second = 0;
+            is_am = true; // AM -> true, PM -> false
+            is_clock_hour = false; // Whether most recent hour specifier is clockhour
+            is_hour_of_half_day = false; // Whether most recent hour specifier is of half day.
+
+            time_zone_offset.reset();
+        }
 
         void setCentrury(Int32 century)
         {
@@ -168,7 +199,7 @@ namespace
             }
         }
 
-        void appendDayOfMonth(Int32 day_of_month)
+        ALWAYS_INLINE void appendDayOfMonth(Int32 day_of_month)
         {
             if (day_of_month < 1 || day_of_month > 31)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for day of month must be in the range [1, 31]", day_of_month);
@@ -184,7 +215,7 @@ namespace
             }
         }
 
-        void appendDayOfYear(Int32 day_of_year_)
+        ALWAYS_INLINE void appendDayOfYear(Int32 day_of_year_)
         {
             if (day_of_year_ < 1 || day_of_year_ > 366)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for day of year must be in the range [1, 366]", day_of_year_);
@@ -270,7 +301,7 @@ namespace
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown era {}", text);
         }
 
-        void setAMPM(String & text)
+        ALWAYS_INLINE void setAMPM(String & text)
         {
             Poco::toLowerInPlace(text);
             if (text == "am")
@@ -281,7 +312,7 @@ namespace
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown half day of day: {}", text);
         }
 
-        void setHour(Int32 hour_, bool is_hour_of_half_day_ = false, bool is_clock_hour_ = false)
+        ALWAYS_INLINE void setHour(Int32 hour_, bool is_hour_of_half_day_ = false, bool is_clock_hour_ = false)
         {
             Int32 max_hour;
             Int32 min_hour;
@@ -348,47 +379,16 @@ namespace
 
         static bool isDateValid(Int32 year_, Int32 month_, Int32 day_)
         {
-            if (month_ < 1 || month_ > 12)
-                return false;
-
-            if (year_ < minYear || year_ > maxYear)
-                return false;
-
+            /// The range of month[1, 12] and day[1, 31] already checked before
             bool leap = isLeapYear(year_);
-            if (day_ < 1)
-                return false;
-
-            if (leap && day_ > leapDays[month_])
-                return false;
-
-            if (!leap && day_ > normalDays[month_])
-                return false;
-            return true;
+            return (year_ >= minYear && year_ <= maxYear) && ((leap && day_ <= leapDays[month_]) || (!leap && day_ <= normalDays[month_]));
         }
 
         static bool isDayOfYearValid(Int32 year_, Int32 day_of_year_)
         {
-            if (year_ < minYear || year_ > maxYear)
-                return false;
-
-            if (day_of_year_ < 1 || day_of_year_ > 365 + (isLeapYear(year_) ? 1 : 0))
-                return false;
-
-            return true;
-        }
-
-        static bool isWeekDateValid(Int32 week_year_, Int32 week_of_year_, Int32 day_of_week_)
-        {
-            if (day_of_week_ < 1 || day_of_week_ > 7)
-                return false;
-
-            if (week_of_year_ < 1 || week_of_year_ > 52)
-                return false;
-
-            if (week_year_ < minYear || week_year_ > maxYear)
-                return false;
-
-            return true;
+            /// The range of day_of_year[1, 366] already checked before
+            bool leap = isLeapYear(year_);
+            return (year_ >= minYear && year_ <= maxYear) && (day_of_year_ <= 365 + (leap ? 1 : 0));
         }
 
         static Int32 extractISODayOfTheWeek(Int32 days_since_epoch)
@@ -396,31 +396,27 @@ namespace
             if (days_since_epoch < 0)
             {
                 // negative date: start off at 4 and cycle downwards
-                return (7 - ((-int64_t(days_since_epoch) + 3) % 7));
+                return (7 - ((-days_since_epoch + 3) % 7));
             }
             else
             {
                 // positive date: start off at 4 and cycle upwards
-                return ((int64_t(days_since_epoch) + 3) % 7) + 1;
+                return ((days_since_epoch + 3) % 7) + 1;
             }
         }
 
-        static Int32 daysSinceEpochFromWeekDate(int32_t week_year_, int32_t week_of_year_, int32_t day_of_week_)
+        static ALWAYS_INLINE Int32 daysSinceEpochFromWeekDate(int32_t week_year_, int32_t week_of_year_, int32_t day_of_week_)
         {
-            if (!isWeekDateValid(week_year_, week_of_year_, day_of_week_))
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Invalid week date, week year:{} week of year:{} day of week:{}",
-                    week_year_,
-                    week_of_year_,
-                    day_of_week_);
+            /// The range of week_of_year[1, 53], day_of_week[1, 7] already checked before
+            if (week_year_ < minYear || week_year_ > maxYear)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid week year {}", week_year_);
 
             Int32 days_since_epoch_of_jan_fourth = daysSinceEpochFromDate(week_year_, 1, 4);
             Int32 first_day_of_week_year = extractISODayOfTheWeek(days_since_epoch_of_jan_fourth);
             return days_since_epoch_of_jan_fourth - (first_day_of_week_year - 1) + 7 * (week_of_year_ - 1) + day_of_week_ - 1;
         }
 
-        static Int32 daysSinceEpochFromDayOfYear(Int32 year_, Int32 day_of_year_)
+        static ALWAYS_INLINE Int32 daysSinceEpochFromDayOfYear(Int32 year_, Int32 day_of_year_)
         {
             if (!isDayOfYearValid(year_, day_of_year_))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid day of year, year:{} day of year:{}", year_, day_of_year_);
@@ -430,7 +426,7 @@ namespace
             return res;
         }
 
-        static Int32 daysSinceEpochFromDate(Int32 year_, Int32 month_, Int32 day_)
+        static ALWAYS_INLINE Int32 daysSinceEpochFromDate(Int32 year_, Int32 month_, Int32 day_)
         {
             if (!isDateValid(year_, month_, day_))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid date, year:{} month:{} day:{}", year_, month_, day_);
@@ -471,9 +467,7 @@ namespace
             else if (day_of_year_format)
                 days_since_epoch = daysSinceEpochFromDayOfYear(year, day_of_year);
             else
-            {
                 days_since_epoch = daysSinceEpochFromDate(year, month, day);
-            }
 
             Int64 seconds_since_epoch = days_since_epoch * 86400 + hour * 3600 + minute * 60 + second;
 
@@ -572,12 +566,15 @@ namespace
             auto col_res = ColumnDateTime::create();
             col_res->reserve(input_rows_count);
             auto & data_res = col_res->getData();
+            Date date;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
+                date.reset();
+
                 StringRef str_ref = col_str->getDataAt(i);
                 Pos cur = str_ref.data;
                 Pos end = str_ref.data + str_ref.size;
-                Date date;
+                // Date date;
                 for (const auto & instruction : instructions)
                     cur = instruction.perform(cur, end, date);
 
@@ -631,7 +628,7 @@ namespace
                     return func(cur, end, date);
                 else
                 {
-                    ensureSpace(cur, end, literal.size(), "requires size >= " + std::to_string(literal.size()));
+                    ensureSpace(cur, end, literal.size(), "required literal size not matched");
                     if (std::string_view(cur, literal.size()) != literal)
                         throw Exception(
                             ErrorCodes::LOGICAL_ERROR, "Expect literal {} but {} provided", literal, std::string_view(cur, literal.size()));
@@ -640,48 +637,62 @@ namespace
                 }
             }
 
-            template <typename T>
+            template <typename T, bool check_space = true>
             static Pos readNumber2(Pos cur, Pos end, T & res)
             {
-                ensureSpace(cur, end, 2, "readNumber2 requires size >= 2");
-                res = (*cur - '0') * 10;
-                ++cur;
-                res += *cur - '0';
-                ++cur;
-                return cur;
-            }
+                if constexpr (check_space)
+                    ensureSpace(cur, end, 2, "readNumber2 requires size >= 2");
 
-            template <typename T>
-            static Pos readNumber3(Pos cur, Pos end, T & res)
-            {
-                cur = readNumber2(cur, end, res);
-
-                ensureSpace(cur, end, 1, "readNumber3 requires size >= 3");
+                res = (*cur - '0');
+                ++cur;
                 res = res * 10 + (*cur - '0');
                 ++cur;
                 return cur;
             }
 
-            template <typename T>
-            static Pos readNumber4(Pos cur, Pos end, T & res)
+            template <typename T, bool check_space = true>
+            static Pos readNumber3(Pos cur, Pos end, T & res)
             {
-                cur = readNumber2(cur, end, res);
+                if constexpr (check_space)
+                    ensureSpace(cur, end, 3, "readNumber4 requires size >= 3");
 
-                T tmp;
-                cur = readNumber2(cur, end, tmp);
-                res = res * 100 + tmp;
+                res = (*cur - '0');
+                ++cur;
+                res = res * 10 + (*cur - '0');
+                ++cur;
+                res = res * 10 + (*cur - '0');
+                ++cur;
                 return cur;
             }
 
-            static ALWAYS_INLINE void ensureSpace(Pos cur, Pos end, size_t len, const String & msg)
+            template <typename T, bool check_space = true>
+            static Pos readNumber4(Pos cur, Pos end, T & res)
+            {
+                if constexpr (check_space)
+                    ensureSpace(cur, end, 4, "readNumber4 requires size >= 4");
+
+                res = (*cur - '0');
+                ++cur;
+                res = res * 10 + (*cur - '0');
+                ++cur;
+                res = res * 10 + (*cur - '0');
+                ++cur;
+                res = res * 10 + (*cur - '0');
+                ++cur;
+                return cur;
+            }
+
+            static void ensureSpace(Pos cur, Pos end, size_t len, const String & msg)
             {
                 if (cur > end || cur + len > end)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unable to parse because {}", msg);
             }
 
-            static ALWAYS_INLINE Pos assertChar(Pos cur, Pos end, char ch)
+            template <bool check_space = true>
+            static Pos assertChar(Pos cur, Pos end, char ch)
             {
-                ensureSpace(cur, end, 1, "assertChar requires size >= 1");
+                if constexpr (check_space)
+                    ensureSpace(cur, end, 1, "assertChar requires size >= 1");
 
                 if (*cur != ch)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Expect char {}, but {} provided", String(ch, 1), String(*cur, 1));
@@ -745,18 +756,20 @@ namespace
 
             static Pos mysqlAmericanDate(Pos cur, Pos end, Date & date)
             {
+                ensureSpace(cur, end, 8, "mysqlAmericanDate requires size >= 8");
+
                 Int32 month;
-                cur = readNumber2(cur, end, month);
-                cur = assertChar(cur, end, '/');
+                cur = readNumber2<Int32, false>(cur, end, month);
+                cur = assertChar<false>(cur, end, '/');
                 date.setMonth(month);
 
                 Int32 day;
-                cur = readNumber2(cur, end, day);
-                cur = assertChar(cur, end, '/');
+                cur = readNumber2<Int32, false>(cur, end, day);
+                cur = assertChar<false>(cur, end, '/');
                 date.appendDayOfMonth(day);
 
                 Int32 year;
-                cur = readNumber2(cur, end, year);
+                cur = readNumber2<Int32, false>(cur, end, year);
                 date.setYear(year);
                 return cur;
             }
@@ -777,18 +790,19 @@ namespace
 
             static Pos mysqlISO8601Date(Pos cur, Pos end, Date & date)
             {
+                ensureSpace(cur, end, 10, "mysqlISO8601Date requires size >= 10");
+
                 Int32 year;
-                cur = readNumber4(cur, end, year);
-                cur = assertChar(cur, end, '-');
-                date.setYear(year);
-
                 Int32 month;
-                cur = readNumber2(cur, end, month);
-                cur = assertChar(cur, end, '-');
-                date.setMonth(month);
-
                 Int32 day;
-                cur = readNumber2(cur, end, day);
+                cur = readNumber4<Int32, false>(cur, end, year);
+                cur = assertChar<false>(cur, end, '-');
+                cur = readNumber2<Int32, false>(cur, end, month);
+                cur = assertChar<false>(cur, end, '-');
+                cur = readNumber2<Int32, false>(cur, end, day);
+
+                date.setYear(year);
+                date.setMonth(month);
                 date.appendDayOfMonth(day);
                 return cur;
             }
@@ -820,7 +834,6 @@ namespace
             static Pos mysqlDayOfWeek(Pos cur, Pos end, Date & date)
             {
                 ensureSpace(cur, end, 1, "mysqlDayOfWeek requires size >= 1");
-
                 date.setDayOfWeek(*cur - '0');
                 ++cur;
                 return cur;
@@ -849,7 +862,7 @@ namespace
 
             static Pos mysqlDayOfWeekTextLong(Pos cur, Pos end, Date & date)
             {
-                ensureSpace(cur, end, 3, "jodaDayOfWeekText requires the first part size >= 3");
+                ensureSpace(cur, end, 6, "jodaDayOfWeekText requires the size >= 6");
                 String text1(cur, 3);
                 Poco::toLowerInPlace(text1);
                 auto it = dayOfWeekMap.find(text1);
@@ -887,17 +900,22 @@ namespace
 
             static Pos mysqlTimezoneOffset(Pos cur, Pos end, Date & date)
             {
-                ensureSpace(cur, end, 1, "Parse mysqlTimezoneOffset failed");
-                Int32 sign = 1;
+                ensureSpace(cur, end, 5, "mysqlTimezoneOffset requires size >= 5");
+
+                Int32 sign;
                 if (*cur == '-')
                     sign = -1;
+                else if (*cur == '+')
+                    sign = 1;
+                else
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown sign time zone offset: {}", std::string_view(cur, 1));
                 ++cur;
 
                 Int32 hour;
-                cur = readNumber2(cur, end, hour);
+                cur = readNumber2<Int32, false>(cur, end, hour);
 
                 Int32 minute;
-                cur = readNumber2(cur, end, minute);
+                cur = readNumber2<Int32, false>(cur, end, minute);
 
                 *date.time_zone_offset = sign * (hour * 3600 + minute * 60);
                 return cur;
@@ -923,14 +941,16 @@ namespace
 
             static Pos mysqlHHMM12(Pos cur, Pos end, Date & date)
             {
+                ensureSpace(cur, end, 8, "mysqlHHMM12 requires size >= 8");
+
                 Int32 hour;
-                cur = readNumber2(cur, end, hour);
-                cur = assertChar(cur, end, ':');
+                cur = readNumber2<Int32, false>(cur, end, hour);
+                cur = assertChar<false>(cur, end, ':');
                 date.setHour(hour, true, true);
 
                 Int32 minute;
-                cur = readNumber2(cur, end, minute);
-                cur = assertChar(cur, end, ' ');
+                cur = readNumber2<Int32, false>(cur, end, minute);
+                cur = assertChar<false>(cur, end, ' ');
                 date.setMinute(minute);
 
                 cur = mysqlAMPM(cur, end, date);
@@ -939,13 +959,15 @@ namespace
 
             static Pos mysqlHHMM24(Pos cur, Pos end, Date & date)
             {
+                ensureSpace(cur, end, 5, "mysqlHHMM24 requires size >= 5");
+
                 Int32 hour;
-                cur = readNumber2(cur, end, hour);
-                cur = assertChar(cur, end, ':');
+                cur = readNumber2<Int32, false>(cur, end, hour);
+                cur = assertChar<false>(cur, end, ':');
                 date.setHour(hour, false, false);
 
                 Int32 minute;
-                cur = readNumber2(cur, end, minute);
+                cur = readNumber2<Int32, false>(cur, end, minute);
                 date.setMinute(minute);
                 return cur;
             }
@@ -960,18 +982,19 @@ namespace
 
             static Pos mysqlISO8601Time(Pos cur, Pos end, Date & date)
             {
+                ensureSpace(cur, end, 8, "mysqlISO8601Time requires size >= 8");
+
                 Int32 hour;
-                cur = readNumber2(cur, end, hour);
-                cur = assertChar(cur, end, ':');
-                date.setHour(hour, false, false);
-
                 Int32 minute;
-                cur = readNumber2(cur, end, minute);
-                cur = assertChar(cur, end, ':');
-                date.setMinute(minute);
-
                 Int32 second;
-                cur = readNumber2(cur, end, second);
+                cur = readNumber2<Int32, false>(cur, end, hour);
+                cur = assertChar<false>(cur, end, ':');
+                cur = readNumber2<Int32, false>(cur, end, minute);
+                cur = assertChar<false>(cur, end, ':');
+                cur = readNumber2<Int32, false>(cur, end, second);
+
+                date.setHour(hour, false, false);
+                date.setMinute(minute);
                 date.setSecond(second);
                 return cur;
             }
