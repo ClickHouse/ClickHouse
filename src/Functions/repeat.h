@@ -245,7 +245,6 @@ public:
                 return res;
             }
         }
-        
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
             arguments[0].column->getName(), getName());
     }
