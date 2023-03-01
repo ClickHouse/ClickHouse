@@ -36,7 +36,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/logger_useful.h>
 #include <Poco/Net/HTTPRequest.h>
-#include <Poco/Net/NameValueCollection.h>
 #include <regex>
 
 

@@ -2,6 +2,7 @@ import http.server
 
 RESULT_PATH = "/headers.txt"
 
+
 class RequestHandler(http.server.BaseHTTPRequestHandler):
     def log_message(self, *args):
         with open(RESULT_PATH, "w") as f:

@@ -28,13 +28,17 @@ def test_storage_url_http_headers(started_cluster):
         "/http_headers_echo_server.py",
     )
     server.exec_in_container(
-        ["bash", "-c", "python3 /http_headers_echo_server.py > /http_headers_echo.server.log 2>&1"],
+        [
+            "bash",
+            "-c",
+            "python3 /http_headers_echo_server.py > /http_headers_echo.server.log 2>&1",
+        ],
         detach=True,
         user="root",
     )
 
     query = "INSERT INTO TABLE FUNCTION url('http://localhost:8000/', JSON, 'a UInt64', headers('X-My-Custom-Header'='test-header')) VALUES (1)"
-    
+
     server.query(query)
 
     result = server.exec_in_container(
@@ -43,5 +47,4 @@ def test_storage_url_http_headers(started_cluster):
 
     print(result)
 
-    assert 'X-My-Custom-Header: test-header' in result
-
+    assert "X-My-Custom-Header: test-header" in result
