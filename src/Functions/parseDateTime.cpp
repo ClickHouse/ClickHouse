@@ -18,9 +18,9 @@ namespace
 {
     using Pos = const char *;
 
-    constexpr std::string_view weekdaysShort[] = {"sun", "mon", "tue", "wed", "thu", "fri", "sat"};
-    // constexpr std::string_view weekdaysFull[] = {"sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"};
-    constexpr std::string_view monthsShort[] = {"jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"};
+    constexpr Int32 minYear = 1970;
+    constexpr Int32 maxYear = 2106;
+
     const std::unordered_map<String, std::pair<String, Int32>> dayOfWeekMap{
         {"mon", {"day", 1}},
         {"tue", {"sday", 2}},
@@ -46,11 +46,19 @@ namespace
         {"dec", {"ember", 12}},
     };
 
+    /// key: month, value: total days of current month if current year is leap year.
     constexpr Int32 leapDays[] = {0, 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+
+    /// key: month, value: total days of current month if current year is not leap year.
     constexpr Int32 normalDays[] = {0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
 
+    /// key: month, value: cumulative days from Januray to current month(inclusive) if current year is leap year.
     constexpr Int32 cumulativeLeapDays[] = {0, 31, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335, 366};
+
+    /// key: month, value: cumulative days from Januray to current month(inclusive) if current year is not leap year.
     constexpr Int32 cumulativeDays[] = {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365};
+
+    /// key: year, value: cumulative days from epoch(1970-01-01) to the first day of current year(exclusive).
     constexpr Int32 cumulativeYearDays[]
         = {0,     365,   730,   1096,  1461,  1826,  2191,  2557,  2922,  3287,  3652,  4018,  4383,  4748,  5113,  5479,  5844,  6209,
            6574,  6940,  7305,  7670,  8035,  8401,  8766,  9131,  9496,  9862,  10227, 10592, 10957, 11323, 11688, 12053, 12418, 12784,
@@ -61,9 +69,6 @@ namespace
            39447, 39812, 40177, 40543, 40908, 41273, 41638, 42004, 42369, 42734, 43099, 43465, 43830, 44195, 44560, 44926, 45291, 45656,
            46021, 46387, 46752, 47117, 47482, 47847, 48212, 48577, 48942, 49308, 49673};
 
-
-    constexpr Int32 minYear = 1970;
-    constexpr Int32 maxYear = 2106;
 
     Int64 numLiteralChars(const char * cur, const char * end)
     {
@@ -115,7 +120,6 @@ namespace
         Int32 hour = 0;
         Int32 minute = 0;
         Int32 second = 0;
-        // Int32 microsecond = 0;
         bool is_am = true; // AM -> true, PM -> false
         std::optional<Int64> time_zone_offset;
 
@@ -280,9 +284,11 @@ namespace
 
         void setHour(Int32 hour_, bool is_hour_of_half_day_ = false, bool is_clock_hour_ = false)
         {
+            std::cout << "set hour:" << hour_ << ",is_hour_of_half_day_:" << is_hour_of_half_day_ << ",is_clock_hour_:" << is_clock_hour_
+                      << std::endl;
             Int32 max_hour;
             Int32 min_hour;
-            Int32 new_hour = hour;
+            Int32 new_hour = hour_;
             if (!is_hour_of_half_day_ && !is_clock_hour_)
             {
                 max_hour = 23;
@@ -706,15 +712,10 @@ namespace
 
                 String text(cur, 3);
                 Poco::toLowerInPlace(text);
-                Int32 i = 0;
-                for (; i < 7; ++i)
-                    if (text == weekdaysShort[i])
-                        break;
-
-                if (i == 7)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown short week text {}", text);
-
-                date.setDayOfWeek(i+1);
+                auto it = dayOfWeekMap.find(text);
+                if (it == dayOfWeekMap.end())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown day of week short text {}", text);
+                date.setDayOfWeek(it->second.second);
                 cur += 3;
                 return cur;
             }
@@ -723,17 +724,13 @@ namespace
             {
                 ensureSpace(cur, end, 3, "Parsing MonthOfYearTextShort requires size >= 3");
 
-                String str(cur, 3);
-                Poco::toLowerInPlace(str);
+                String text(cur, 3);
+                Poco::toLowerInPlace(text);
+                auto it = monthMap.find(text);
+                if (it == monthMap.end())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown month of year short text {}", text);
 
-                Int32 i = 0;
-                for (; i < 12; ++i)
-                    if (str == monthsShort[i])
-                        break;
-                if (i == 12)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unable to parse because unknown short month text");
-
-                date.setMonth(i+1);
+                date.setMonth(it->second.second);
                 cur += 3;
                 return cur;
             }

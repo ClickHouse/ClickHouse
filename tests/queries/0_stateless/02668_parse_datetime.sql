@@ -77,21 +77,21 @@ select parseDateTime('1234567', '%k', 'UTC'); -- { serverError LOGICAL_ERROR }
 
 -- hour of half day
 select parseDateTime('07', '%h', 'UTC') = toDateTime('1970-01-01 07:00:00', 'UTC');
-select parseDateTime('12', '%h', 'UTC') = toDateTime('1970-01-01 12:00:00', 'UTC');
+select parseDateTime('12', '%h', 'UTC') = toDateTime('1970-01-01 00:00:00', 'UTC');
 select parseDateTime('01', '%h', 'UTC') = toDateTime('1970-01-01 01:00:00', 'UTC');
 select parseDateTime('10', '%h', 'UTC') = toDateTime('1970-01-01 10:00:00', 'UTC');
 select parseDateTime('00', '%h', 'UTC'); -- { serverError LOGICAL_ERROR }
 select parseDateTime('13', '%h', 'UTC'); -- { serverError LOGICAL_ERROR }
 select parseDateTime('123456789', '%h', 'UTC'); -- { serverError LOGICAL_ERROR }
 select parseDateTime('07', '%I', 'UTC') = toDateTime('1970-01-01 07:00:00', 'UTC');
-select parseDateTime('12', '%I', 'UTC') = toDateTime('1970-01-01 12:00:00', 'UTC');
+select parseDateTime('12', '%I', 'UTC') = toDateTime('1970-01-01 00:00:00', 'UTC');
 select parseDateTime('01', '%I', 'UTC') = toDateTime('1970-01-01 01:00:00', 'UTC');
 select parseDateTime('10', '%I', 'UTC') = toDateTime('1970-01-01 10:00:00', 'UTC');
 select parseDateTime('00', '%I', 'UTC'); -- { serverError LOGICAL_ERROR }
 select parseDateTime('13', '%I', 'UTC'); -- { serverError LOGICAL_ERROR }
 select parseDateTime('123456789', '%I', 'UTC'); -- { serverError LOGICAL_ERROR }
 select parseDateTime('07', '%l', 'UTC') = toDateTime('1970-01-01 07:00:00', 'UTC');
-select parseDateTime('12', '%l', 'UTC') = toDateTime('1970-01-01 12:00:00', 'UTC');
+select parseDateTime('12', '%l', 'UTC') = toDateTime('1970-01-01 00:00:00', 'UTC');
 select parseDateTime('01', '%l', 'UTC') = toDateTime('1970-01-01 01:00:00', 'UTC');
 select parseDateTime('10', '%l', 'UTC') = toDateTime('1970-01-01 10:00:00', 'UTC');
 select parseDateTime('00', '%l', 'UTC'); -- { serverError LOGICAL_ERROR }
@@ -111,8 +111,8 @@ select parseDateTime('01 PM', '%h %p', 'UTC') = toDateTime('1970-01-01 13:00:00'
 select parseDateTime('01 AM', '%h %p', 'UTC') = toDateTime('1970-01-01 01:00:00', 'UTC');
 select parseDateTime('06 PM', '%h %p', 'UTC') = toDateTime('1970-01-01 18:00:00', 'UTC');
 select parseDateTime('06 AM', '%h %p', 'UTC') = toDateTime('1970-01-01 06:00:00', 'UTC');
-select parseDateTime('12 PM', '%h %p', 'UTC') = toDateTime('1970-01-02 00:00:00', 'UTC');
-select parseDateTime('12 AM', '%h %p', 'UTC') = toDateTime('1970-01-01 12:00:00', 'UTC');
+select parseDateTime('12 PM', '%h %p', 'UTC') = toDateTime('1970-01-01 12:00:00', 'UTC');
+select parseDateTime('12 AM', '%h %p', 'UTC') = toDateTime('1970-01-01 00:00:00', 'UTC');
 
 -- minute
 select parseDateTime('08', '%i', 'UTC') = toDateTime('1970-01-01 00:08:00', 'UTC');
