@@ -7,10 +7,11 @@ from typing import Tuple
 from github import Github
 
 from commit_status_helper import (
+    format_description,
     get_commit,
     post_labels,
     remove_labels,
-    reset_mergeable_check,
+    set_mergeable_check,
 )
 from env_helper import GITHUB_RUN_URL, GITHUB_REPOSITORY, GITHUB_SERVER_URL
 from get_robot_token import get_best_robot_token
@@ -154,7 +155,7 @@ def check_pr_description(pr_info) -> Tuple[str, str]:
                     + second_category
                     + "'"
                 )
-                return result_status[:140], category
+                return result_status, category
 
         elif re.match(
             r"(?i)^[#>*_ ]*(short\s*description|change\s*log\s*entry)", lines[i]
@@ -196,6 +197,7 @@ if __name__ == "__main__":
 
     pr_info = PRInfo(need_orgs=True, pr_event_from_api=True, need_changed_files=True)
     can_run, description, labels_state = should_run_checks_for_pr(pr_info)
+    description = format_description(description)
     gh = Github(get_best_robot_token(), per_page=100)
     commit = get_commit(gh, pr_info.sha)
 
@@ -228,7 +230,7 @@ if __name__ == "__main__":
     if pr_labels_to_remove:
         remove_labels(gh, pr_info, pr_labels_to_remove)
 
-    reset_mergeable_check(commit, "skipped")
+    set_mergeable_check(commit, "skipped")
 
     if description_error:
         print(
@@ -246,7 +248,7 @@ if __name__ == "__main__":
         )
         commit.create_status(
             context=NAME,
-            description=description_error[:139],
+            description=format_description(description_error),
             state="failure",
             target_url=url,
         )
