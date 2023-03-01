@@ -66,6 +66,40 @@ Result:
 
 -   [Map(key, value)](../../sql-reference/data-types/map.md) data type
 
+## mapFromArrays
+
+mapFromArrays merges an array of keys and an array of values into a Map.
+  
+**Syntax**
+
+```sql
+mapFromArrays(keys, values)
+```  
+
+Alias: `MAP_FROM_ARRAYS(keys, values)`
+  
+**Parameters**
+-   `keys` — Given key array to create a map from. The nested type of array must be: [String](../../sql-reference/data-types/string.md), [Integer](../../sql-reference/data-types/int-uint.md), [LowCardinality](../../sql-reference/data-types/lowcardinality.md), [FixedString](../../sql-reference/data-types/fixedstring.md), [UUID](../../sql-reference/data-types/uuid.md), [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), [Date32](../../sql-reference/data-types/date32.md), [Enum](../../sql-reference/data-types/enum.md)
+-   `values`  - Given value array to create a map from.
+  
+**Returned value**
+
+- A map whose keys and values are constructed from the key and value arrays
+  
+**Example**
+
+Query:
+
+```sql
+select mapFromArrays(['a', 'b', 'c'], [1, 2, 3])
+```
+  
+```text
+┌─mapFromArrays(['a', 'b', 'c'], [1, 2, 3])─┐
+│ {'a':1,'b':2,'c':3}                       │
+└───────────────────────────────────────────┘
+```  
+
 ## mapAdd
 
 Collect all the keys and sum corresponding values.
@@ -431,36 +465,6 @@ Result:
 ```  
 
 
-## mapFromArrays {#mapFromArrays}  
-  
-**Syntax**
-
-```sql
-mapFromArrays(keys, values)
-```  
-  
-**Parameters**
-  
--   `keys` — Given key array to create a map from.
--   `values`  - Given value array to create a map from.
-  
-**Returned value**
-
-- A map whose keys and values are from input arrays respectively.
-  
-**Example**
-
-Query:
-
-```sql
-select mapFromArrays(['a', 'b', 'c'], [1, 2, 3])
-```
-  
-```text
-┌─mapFromArrays(['a', 'b', 'c'], [1, 2, 3])─┐
-│ {'a':1,'b':2,'c':3}                       │
-└───────────────────────────────────────────┘
-```  
   
 ## mapApply  
   

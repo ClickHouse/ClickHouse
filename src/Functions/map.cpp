@@ -26,7 +26,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
+    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
     extern const int ILLEGAL_COLUMN;
 }
 
@@ -149,26 +149,16 @@ public:
     }
 };
 
-// mapFromArrays(keys, values) is a function that allows you to make key-value pair from a pair of arrays
+/// mapFromArrays(keys, values) is a function that allows you to make key-value pair from a pair of arrays
 class FunctionMapFromArrays : public IFunction
 {
 public:
     static constexpr auto name = "mapFromArrays";
 
-    static FunctionPtr create(ContextPtr)
-    {
-        return std::make_shared<FunctionMapFromArrays>();
-    }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMapFromArrays>(); }
+    String getName() const override { return name; }
 
-    String getName() const override
-    {
-        return name;
-    }
-
-    size_t getNumberOfArguments() const override
-    {
-        return 2;
-    }
+    size_t getNumberOfArguments() const override { return 2; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool useDefaultImplementationForNulls() const override { return false; }
@@ -177,25 +167,22 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() != 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} requires 2 arguments, but {} given", getName(), arguments.size());
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function {} requires 2 arguments, but {} given",
+                getName(),
+                arguments.size());
 
         const auto * keys_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
         if (!keys_type)
-            throw Exception{"First argument for function " + getName() + " must be a Array",
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be an Array", getName());
 
         const auto * values_type = checkAndGetDataType<DataTypeArray>(arguments[1].get());
         if (!values_type)
-            throw Exception{"Second argument for function " + getName() + " must be a Array",
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument for function {} must be an Array", getName());
 
-        DataTypes tmp;
-        const auto & key_type = keys_type->getNestedType();
-        const auto & value_type = values_type->getNestedType();
-        tmp.emplace_back(key_type);
-        tmp.emplace_back(value_type);
-        return std::make_shared<DataTypeMap>(tmp);
+        DataTypes key_value_types{keys_type->getNestedType(), values_type->getNestedType()};
+        return std::make_shared<DataTypeMap>(key_value_types);
     }
 
     ColumnPtr executeImpl(
@@ -228,17 +215,15 @@ public:
         }
 
         if (!col_keys || !col_values)
-            throw Exception("Arguments of function " + getName() + " must be array.", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Arguments of function {} must be array", getName());
 
         if (!col_keys->hasEqualOffsets(*col_values))
-            throw Exception("Array arguments for function " + getName() + " must have equal sizes", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Array arguments for function {} must have equal sizes", getName());
 
         const auto & data_keys = col_keys->getDataPtr();
         const auto & data_values = col_values->getDataPtr();
         const auto & offsets = col_keys->getOffsetsPtr();
-        auto nested_column = ColumnArray::create(
-            ColumnTuple::create(Columns{std::move(data_keys), std::move(data_values)}),
-            std::move(offsets));
+        auto nested_column = ColumnArray::create(ColumnTuple::create(Columns{data_keys, data_values}), offsets);
         return ColumnMap::create(nested_column);
     }
 };
@@ -745,6 +730,8 @@ REGISTER_FUNCTION(Map)
     factory.registerFunction<FunctionExtractKeyLike>();
     factory.registerFunction<FunctionMapUpdate>();
     factory.registerFunction<FunctionMapFromArrays>();
+    factory.registerAlias("MAP_FROM_ARRAYS", "mapFromArrays");
+
 }
 
 }
