@@ -521,6 +521,8 @@ class SettingsRandomizer:
         "optimize_distinct_in_order": lambda: random.randint(0, 1),
         "optimize_sorting_by_input_stream_properties": lambda: random.randint(0, 1),
         "enable_memory_bound_merging_of_aggregation_results": lambda: random.randint(0, 1),
+        "http_response_buffer_size": lambda: random.randint(0, 10 * 1048576),
+        "http_wait_end_of_query": lambda: random.random() > 0.5,
     }
 
     @staticmethod
