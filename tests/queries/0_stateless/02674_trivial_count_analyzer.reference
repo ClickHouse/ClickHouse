@@ -18,8 +18,7 @@ select count(b) from m3;
 2
 select count() + 1 from m3;
 3
--- drop table m3;
-
+drop table m3;
 -- checking queries with FINAL
 create table replacing_m3(a Int64, b UInt64) Engine=ReplacingMergeTree() order by (a, b);
 SYSTEM STOP MERGES replacing_m3;
@@ -39,10 +38,10 @@ select count(a) from replacing_m3;
 4
 select count(b) from replacing_m3;
 4
-set optimize_trivial_count_query=0; -- FIXME: wrong result for queries with FINAL
 select count() from replacing_m3 FINAL;
 3
 select count(a) from replacing_m3 FINAL;
 3
 select count(b) from replacing_m3 FINAL;
 3
+drop table replacing_m3;
