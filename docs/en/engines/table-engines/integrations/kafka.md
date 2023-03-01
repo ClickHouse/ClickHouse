@@ -162,21 +162,58 @@ If you want to change the target table by using `ALTER`, we recommend disabling 
 
 ## Configuration {#configuration}
 
-Similar to GraphiteMergeTree, the Kafka engine supports extended configuration using the ClickHouse config file. There are two configuration keys that you can use: global (`kafka`) and topic-level (`kafka_*`). The global configuration is applied first, and then the topic-level configuration is applied (if it exists).
+Similar to GraphiteMergeTree, the Kafka engine supports extended configuration using the ClickHouse config file. There are two configuration keys that you can use: global (below `<kafka>`) and topic-level (below `<kafka><kafka_topic>`). The global configuration is applied first, and then the topic-level configuration is applied (if it exists).
 
 ``` xml
-  <!-- Global configuration options for all tables of Kafka engine type -->
   <kafka>
+    <!-- Global configuration options for all tables of Kafka engine type -->
+    <debug>cgrp</debug>
+    <auto_offset_reset>smallest</auto_offset_reset>
+
+    <!-- Configuration specific to topics "logs" and "stats" -->
+
+    <kafka_topic>
+      <name>logs</name>
+      <retry_backoff_ms>250</retry_backoff_ms>
+      <fetch_min_bytes>100000</fetch_min_bytes>
+    </kafka_topic>
+
+    <kafka_topic>
+      <name>stats</name>
+      <retry_backoff_ms>400</retry_backoff_ms>
+      <fetch_min_bytes>50000</fetch_min_bytes>
+    </kafka_topic>
+  </kafka>
+
+```
+
+<details markdown="1">
+
+<summary>Example in deprecated syntax</summary>
+
+``` xml
+  <kafka>
+    <!-- Global configuration options for all tables of Kafka engine type -->
     <debug>cgrp</debug>
     <auto_offset_reset>smallest</auto_offset_reset>
   </kafka>
 
-  <!-- Configuration specific for topic "logs" -->
+  <!-- Configuration specific to topics "logs" and "stats" -->
+  <!-- Does NOT support periods in topic names, e.g. "logs.security"> -->
+
   <kafka_logs>
     <retry_backoff_ms>250</retry_backoff_ms>
     <fetch_min_bytes>100000</fetch_min_bytes>
   </kafka_logs>
+
+  <kafka_stats>
+    <retry_backoff_ms>400</retry_backoff_ms>
+    <fetch_min_bytes>50000</fetch_min_bytes>
+  </kafka_stats>
 ```
+
+</details>
+
 
 For a list of possible configuration options, see the [librdkafka configuration reference](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md). Use the underscore (`_`) instead of a dot in the ClickHouse configuration. For example, `check.crcs=true` will be `<check_crcs>true</check_crcs>`.
 

@@ -43,11 +43,7 @@ namespace Net
     public:
         typedef HTTPBasicStreamBuf::openmode openmode;
 
-#if defined(POCO_HAVE_INT64)
         typedef Poco::Int64 ContentLength;
-#else
-        typedef std::streamsize ContentLength;
-#endif
 
         HTTPFixedLengthStreamBuf(HTTPSession & session, ContentLength length, openmode mode);
         ~HTTPFixedLengthStreamBuf();
