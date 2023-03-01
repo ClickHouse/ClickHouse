@@ -69,7 +69,6 @@ namespace
            39447, 39812, 40177, 40543, 40908, 41273, 41638, 42004, 42369, 42734, 43099, 43465, 43830, 44195, 44560, 44926, 45291, 45656,
            46021, 46387, 46752, 47117, 47482, 47847, 48212, 48577, 48942, 49308, 49673};
 
-
     Int64 numLiteralChars(const char * cur, const char * end)
     {
         bool found = false;
@@ -284,8 +283,6 @@ namespace
 
         void setHour(Int32 hour_, bool is_hour_of_half_day_ = false, bool is_clock_hour_ = false)
         {
-            std::cout << "set hour:" << hour_ << ",is_hour_of_half_day_:" << is_hour_of_half_day_ << ",is_clock_hour_:" << is_clock_hour_
-                      << std::endl;
             Int32 max_hour;
             Int32 min_hour;
             Int32 new_hour = hour_;
@@ -444,7 +441,6 @@ namespace
             return res;
         }
 
-
         Int64 checkAndGetDateTime(const DateLUTImpl & time_zone)
         {
             /// Era is BC and year of era is provided
@@ -477,27 +473,20 @@ namespace
             else
             {
                 days_since_epoch = daysSinceEpochFromDate(year, month, day);
-                std::cout << "year:" << year << "month:" << month << "day:" << day << std::endl;
             }
-            std::cout << "days_since_epoch:" << days_since_epoch << std::endl;
 
             Int64 seconds_since_epoch = days_since_epoch * 86400 + hour * 3600 + minute * 60 + second;
-            std::cout << "seconds_since_epoch:" << seconds_since_epoch << std::endl;
 
             /// Time zone is not specified, use local time zone
             if (!time_zone_offset)
                 *time_zone_offset = time_zone.getOffsetAtStartOfEpoch();
 
-            // std::cout << "timezonename:" << time_zone.getTimeZone() << std::endl;
-            // std::cout << "time_zone_offset:" << *time_zone_offset << time_zone.getOffsetAtStartOfEpoch() << std::endl;
-            // std::cout << "before timestamp:" << seconds_since_epoch << std::endl;
             /// Time zone is specified in format string.
             if (seconds_since_epoch >= *time_zone_offset)
                 seconds_since_epoch -= *time_zone_offset;
             else
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Seconds since epoch is negative");
 
-            std::cout << "after adjustment:" << seconds_since_epoch << std::endl;
             return seconds_since_epoch;
         }
     };
@@ -576,7 +565,6 @@ namespace
 
             String format = getFormat(arguments);
             const auto * time_zone = getTimeZone(arguments).first;
-            std::cout << "timezonename:" << getTimeZone(arguments).second << std::endl;
 
             std::vector<Action> instructions;
             parseFormat(format, instructions);
@@ -591,11 +579,7 @@ namespace
                 Pos end = str_ref.data + str_ref.size;
                 Date date;
                 for (const auto & instruction : instructions)
-                {
                     cur = instruction.perform(cur, end, date);
-                    std::cout << "instruction:" << instruction.toString() << std::endl;
-                    std::cout << "date:" << date.toString() << std::endl;
-                }
 
                 // Ensure all input was consumed.
                 if (cur < end)
@@ -1581,108 +1565,60 @@ namespace
                     {
                         case 'G':
                             instructions.emplace_back(ACTION_ARGS_WITH_BIND(Action::jodaEra, repetitions));
-                            // reserve_size += repetitions <= 3 ? 2 : 13;
                             break;
                         case 'C':
                             instructions.emplace_back(ACTION_ARGS_WITH_BIND(Action::jodaCenturyOfEra, repetitions));
-                            /// Year range [1900, 2299]
-                            // reserve_size += std::max(repetitions, 2);
                             break;
                         case 'Y':
                             instructions.emplace_back(ACTION_ARGS_WITH_BIND(Action::jodaYearOfEra, repetitions));
-                            /// Year range [1900, 2299]
-                            // reserve_size += repetitions == 2 ? 2 : std::max(repetitions, 4);
                             break;
                         case 'x':
-
                             instructions.emplace_back(ACTION_ARGS_WITH_BIND(Action::jodaWeekYear, repetitions));
-                            /// weekyear range [1900, 2299]
-                            // reserve_size += std::max(repetitions, 4);
                             break;
                         case 'w':
                             instructions.emplace_back(ACTION_ARGS_WITH_BIND(Action::jodaWeekOfWeekYear, repetitions));
-                            /// Week of weekyear range [1, 52]
-                            // reserve_size += std::max(repetitions, 2);
                             break;
                         case 'e':
                             instructions.emplace_back(ACTION_ARGS_WITH_BIND(Action::jodaDayOfWeek1Based, repetitions));
-                            /// Day of week range [1, 7]
-                            // reserve_size += std::max(repetitions, 1);
                             break;
                         case 'E':
                             instructions.emplace_back(ACTION_ARGS_WITH_BIND(Action::jodaDayOfWeekText, repetitions));
-                            /// Maximum length of short name is 3, maximum length of full name is 9.
-                            // reserve_size += repetitions <= 3 ? 3 : 9;
                             break;
                         case 'y':
                             instructions.emplace_back(ACTION_ARGS_WITH_BIND(Action::jodaYear, repetitions));
-                            /// Year range [1900, 2299]
-                            // reserve_size += repetitions == 2 ? 2 : std::max(repetitions, 4);
                             break;
                         case 'D':
                             instructions.emplace_back(ACTION_ARGS_WITH_BIND(Action::jodaDayOfYear, repetitions));
-                            /// Day of year range [1, 366]
-                            // reserve_size += std::max(repetitions, 3);
                             break;
                         case 'M':
                             if (repetitions <= 2)
-                            {
                                 instructions.emplace_back(ACTION_ARGS_WITH_BIND(Action::jodaMonthOfYear, repetitions));
-                                /// Month of year range [1, 12]
-                                // reserve_size += 2;
-                            }
                             else
-                            {
                                 instructions.emplace_back(ACTION_ARGS_WITH_BIND(Action::jodaMonthOfYearText, repetitions));
-                                /// Maximum length of short name is 3, maximum length of full name is 9.
-                                // reserve_size += repetitions <= 3 ? 3 : 9;
-                            }
                             break;
                         case 'd':
                             instructions.emplace_back(ACTION_ARGS_WITH_BIND(Action::jodaDayOfMonth, repetitions));
-                            /// Day of month range [1, 3]
-                            // reserve_size += std::max(repetitions, 3);
                             break;
                         case 'a':
-                            /// Default half day of day is "AM"
                             instructions.emplace_back(ACTION_ARGS_WITH_BIND(Action::jodaHalfDayOfDay, repetitions));
-                            // reserve_size += 2;
                             break;
                         case 'K':
-                            /// Default hour of half day is 0
                             instructions.emplace_back(ACTION_ARGS_WITH_BIND(Action::jodaHourOfHalfDay, repetitions));
-                            /// Hour of half day range [0, 11]
-                            // reserve_size += std::max(repetitions, 2);
                             break;
                         case 'h':
-                            /// Default clock hour of half day is 12
                             instructions.emplace_back(ACTION_ARGS_WITH_BIND(Action::jodaClockHourOfHalfDay, repetitions));
-                            /// Clock hour of half day range [1, 12]
-                            // reserve_size += std::max(repetitions, 2);
                             break;
                         case 'H':
-                            /// Default hour of day is 0
                             instructions.emplace_back(ACTION_ARGS_WITH_BIND(Action::jodaHourOfDay, repetitions));
-                            /// Hour of day range [0, 23]
-                            // reserve_size += std::max(repetitions, 2);
                             break;
                         case 'k':
-                            /// Default clock hour of day is 24
                             instructions.emplace_back(ACTION_ARGS_WITH_BIND(Action::jodaClockHourOfDay, repetitions));
-                            /// Clock hour of day range [1, 24]
-                            // reserve_size += std::max(repetitions, 2);
                             break;
                         case 'm':
-                            /// Default minute of hour is 0
                             instructions.emplace_back(ACTION_ARGS_WITH_BIND(Action::jodaMinuteOfHour, repetitions));
-                            /// Minute of hour range [0, 59]
-                            // reserve_size += std::max(repetitions, 2);
                             break;
                         case 's':
-                            /// Default second of minute is 0
                             instructions.emplace_back(ACTION_ARGS_WITH_BIND(Action::jodaSecondOfMinute, repetitions));
-                            /// Second of minute range [0, 59]
-                            // reserve_size += std::max(repetitions, 2);
                             break;
                         case 'S':
                             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for fractional seconds");
@@ -1698,7 +1634,6 @@ namespace
                                     ErrorCodes::NOT_IMPLEMENTED, "format is not supported for {}", String(cur_token, repetitions));
 
                             instructions.emplace_back(String(cur_token, pos - cur_token));
-                            // reserve_size += pos - cur_token;
                             break;
                     }
                 }
