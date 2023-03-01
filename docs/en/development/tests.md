@@ -61,7 +61,7 @@ SELECT 1
 |---|---|---|
 | `disabled`|  Test is not run ||
 | `long` | Test's execution time is extended from 1 to 10 minutes ||
-| `deadlock` | Test tests a possible deadlock or race, so it's run in a loop for a long time ||
+| `deadlock` | Test is run in a loop for a long time ||
 | `race` | Same as `deadlock`. Prefer `deadlock` ||
 | `shard` | Server is required to listen to `127.0.0.*` ||
 | `distributed` | Same as `shard`. Prefer `shard` ||
