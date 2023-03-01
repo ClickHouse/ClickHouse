@@ -3,11 +3,6 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
-#include <Functions/castTypeToEither.h>
 
 namespace DB
 {
