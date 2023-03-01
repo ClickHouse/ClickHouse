@@ -137,7 +137,7 @@ bool DataTypeMap::checkKeyType(DataTypePtr key_type)
 
 static DataTypePtr create(const ASTPtr & arguments)
 {
-    if (!arguments || arguments->children.size() < 2 || arguments->children.size() > 3 )
+    if (!arguments || arguments->children.size() < 2 || arguments->children.size() > 3)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Map data type family must have 2-3 arguments: key type, value type and optional number of shards");
 
@@ -153,7 +153,7 @@ static DataTypePtr create(const ASTPtr & arguments)
     {
         const auto * literal = arguments->children[2]->as<ASTLiteral>();
         if (!literal || literal->value.getType() != Field::Types::UInt64 || literal->value.get<UInt64>() == 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Third argument for data type Map must be positive interger constant");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Third argument for data type Map must be positive integer literal");
 
         num_shards = literal->value.get<UInt64>();
     }

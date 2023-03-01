@@ -196,6 +196,7 @@ public:
     {
         SubstreamPath path;
         bool position_independent_encoding = true;
+        bool type_map_enumerate_shards = true;
     };
 
     virtual void enumerateStreams(

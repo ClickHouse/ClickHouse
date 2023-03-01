@@ -476,7 +476,7 @@ void SerializationMap::enumerateStreams(
         nested->enumerateStreams(settings, callback, next_data);
     }
 
-    if (num_shards > 1)
+    if (num_shards > 1 && settings.type_map_enumerate_shards)
     {
         auto shard_serialization = std::make_shared<SerializationMap>(key, value, nested, 1);
 
@@ -590,6 +590,7 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
         shard_arrays[i] = column_nested.cloneEmpty();
         nested->deserializeBinaryBulkWithMultipleStreams(shard_arrays[i], limit, settings, state, cache);
     }
+    settings.path.pop_back();
 
     std::vector<std::unique_ptr<GatherUtils::IArraySource>> sources(num_shards);
     for (size_t i = 0; i < num_shards; ++i)
@@ -598,10 +599,7 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
         sources[i] = GatherUtils::createArraySource(shard_array, false, shard_array.size());
     }
 
-    auto sink = GatherUtils::concat(sources);
-    column_nested.insertRangeFrom(*sink, 0, sink->size());
-
-    settings.path.pop_back();
+    GatherUtils::concatInplace(sources, column_nested);
     column = std::move(mutable_column);
 }
 
