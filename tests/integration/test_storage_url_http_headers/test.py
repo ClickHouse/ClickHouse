@@ -36,6 +36,7 @@ def test_storage_url_http_headers(started_cluster):
         detach=True,
         user="root",
     )
+    time.sleep(1)
 
     query = "INSERT INTO TABLE FUNCTION url('http://localhost:8000/', JSON, 'a UInt64', headers('X-My-Custom-Header'='test-header')) VALUES (1)"
 
