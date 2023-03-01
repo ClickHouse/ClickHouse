@@ -4609,7 +4609,7 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
         case MovePartsOutcome::MovesAreCancelled:
             throw Exception(ErrorCodes::ABORTED, "Cannot move parts because moves are manually disabled");
         case MovePartsOutcome::NothingToMove:
-            throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No parts to move found in partition {}", partition_id);
+            throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No parts to move are found in partition {}", partition_id);
         case MovePartsOutcome::MoveWasPostponedBecauseOfZeroCopy:
             throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, "Move was not finished, because zero copy mode enabled and someone other moving the same parts right now");
         case MovePartsOutcome::PartsMoved:
