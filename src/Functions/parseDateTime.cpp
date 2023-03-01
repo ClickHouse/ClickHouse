@@ -14,6 +14,16 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NOT_IMPLEMENTED;
+    extern const int BAD_ARGUMENTS;
+}
+
 namespace
 {
     using Pos = const char *;
@@ -52,10 +62,10 @@ namespace
     /// key: month, value: total days of current month if current year is not leap year.
     constexpr Int32 normalDays[] = {0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
 
-    /// key: month, value: cumulative days from Januray to current month(inclusive) if current year is leap year.
+    /// key: month, value: cumulative days from January to current month(inclusive) if current year is leap year.
     constexpr Int32 cumulativeLeapDays[] = {0, 31, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335, 366};
 
-    /// key: month, value: cumulative days from Januray to current month(inclusive) if current year is not leap year.
+    /// key: month, value: cumulative days from January to current month(inclusive) if current year is not leap year.
     constexpr Int32 cumulativeDays[] = {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365};
 
     /// key: year, value: cumulative days from epoch(1970-01-01) to the first day of current year(exclusive).
