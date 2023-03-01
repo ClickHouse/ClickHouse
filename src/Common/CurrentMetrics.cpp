@@ -110,6 +110,9 @@
     M(ThreadsInOvercommitTracker, "Number of waiting threads inside of OvercommitTracker") \
     M(IOUringPendingEvents, "Number of io_uring SQEs waiting to be submitted") \
     M(IOUringInFlightEvents, "Number of io_uring SQEs in flight") \
+    M(ReadTaskRequestsSent, "The current number of callback requests in flight from the remote server back to the initiator server to choose the read task (for s3Cluster table function and similar). Measured on the remote server side.") \
+    M(MergeTreeReadTaskRequestsSent, "The current number of callback requests in flight from the remote server back to the initiator server to choose the read task (for MergeTree tables). Measured on the remote server side.") \
+    M(MergeTreeAllRangesAnnouncementsSent, "The current number of announcement being sent in flight from the remote server to the initiator server about the set of data parts (for MergeTree tables). Measured on the remote server side.")
 
 namespace CurrentMetrics
 {

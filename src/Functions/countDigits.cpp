@@ -2,9 +2,10 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
+#include <base/extended_types.h>
+#include <base/itoa.h>
 
 
 namespace DB
@@ -83,7 +84,7 @@ private:
     template <typename T, typename ColVecType>
     static void execute(const ColVecType & col, ColumnUInt8 & result_column, size_t rows_count)
     {
-        using NativeT = NativeType<T>;
+        using NativeT = make_unsigned_t<NativeType<T>>;
 
         const auto & src_data = col.getData();
         auto & dst_data = result_column.getData();
@@ -92,50 +93,22 @@ private:
         for (size_t i = 0; i < rows_count; ++i)
         {
             if constexpr (is_decimal<T>)
-                dst_data[i] = digits<NativeT>(src_data[i].value);
-            else
-                dst_data[i] = digits<NativeT>(src_data[i]);
-        }
-    }
-
-    template <typename T>
-    static UInt32 digits(T value)
-    {
-        static_assert(!is_decimal<T>);
-        using DivT = std::conditional_t<is_signed_v<T>, Int32, UInt32>;
-
-        UInt32 res = 0;
-        T tmp;
-
-        if constexpr (sizeof(T) > sizeof(Int32))
-        {
-            static constexpr const DivT e9 = 1000000000;
-
-            tmp = value / e9;
-            while (tmp != 0)
             {
-                value = tmp;
-                tmp /= e9;
-                res += 9;
+                auto value = src_data[i].value;
+                if (unlikely(value < 0))
+                    dst_data[i] = digits10<NativeT>(-static_cast<NativeT>(value));
+                else
+                    dst_data[i] = digits10<NativeT>(value);
+            }
+            else
+            {
+                auto value = src_data[i];
+                if (unlikely(value < 0))
+                    dst_data[i] = digits10<NativeT>(-static_cast<NativeT>(value));
+                else
+                    dst_data[i] = digits10<NativeT>(value);
             }
         }
-
-        static constexpr const DivT e3 = 1000;
-
-        tmp = value / e3;
-        while (tmp != 0)
-        {
-            value = tmp;
-            tmp /= e3;
-            res += 3;
-        }
-
-        while (value != 0)
-        {
-            value /= 10;
-            ++res;
-        }
-        return res;
     }
 };
 

@@ -458,7 +458,10 @@ void ReplicatedMergeTreePartCheckThread::run()
                     }
 
                     if (it->second < min_check_time)
+                    {
                         min_check_time = it->second;
+                        selected = it;
+                    }
                 }
             }
         }

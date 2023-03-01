@@ -16,6 +16,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <Common/DateLUTImpl.h>
 #include <base/types.h>
 #include <Processors/Chunk.h>
@@ -140,6 +141,24 @@ static ColumnWithTypeAndName readColumnWithStringData(std::shared_ptr<arrow::Chu
 
             column_offsets.emplace_back(column_chars_t.size());
         }
+    }
+    return {std::move(internal_column), std::move(internal_type), column_name};
+}
+
+static ColumnWithTypeAndName readColumnWithFixedStringData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
+{
+    const auto * fixed_type = assert_cast<arrow::FixedSizeBinaryType *>(arrow_column->type().get());
+    size_t fixed_len = fixed_type->byte_width();
+    auto internal_type = std::make_shared<DataTypeFixedString>(fixed_len);
+    auto internal_column = internal_type->createColumn();
+    PaddedPODArray<UInt8> & column_chars_t = assert_cast<ColumnFixedString &>(*internal_column).getChars();
+    column_chars_t.reserve(arrow_column->length() * fixed_len);
+
+    for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
+    {
+        arrow::FixedSizeBinaryArray & chunk = dynamic_cast<arrow::FixedSizeBinaryArray &>(*(arrow_column->chunk(chunk_i)));
+        std::shared_ptr<arrow::Buffer> buffer = chunk.values();
+        column_chars_t.insert_assume_reserved(buffer->data(), buffer->data() + buffer->size());
     }
     return {std::move(internal_column), std::move(internal_type), column_name};
 }
@@ -384,9 +403,10 @@ static ColumnWithTypeAndName readColumnWithIndexesDataImpl(std::shared_ptr<arrow
         const auto * data = reinterpret_cast<const NumericType *>(buffer->data());
 
         /// Check that indexes are correct (protection against corrupted files)
+        /// Note that on null values index can be arbitrary value.
         for (int64_t i = 0; i != chunk->length(); ++i)
         {
-            if (data[i] < 0 || data[i] >= dict_size)
+            if (!chunk->IsNull(i) && (data[i] < 0 || data[i] >= dict_size))
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                                 "Index {} in Dictionary column is out of bounds, dictionary size is {}",
                                 Int64(data[i]), UInt64(dict_size));
@@ -538,8 +558,9 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
     {
         case arrow::Type::STRING:
         case arrow::Type::BINARY:
-            //case arrow::Type::FIXED_SIZE_BINARY:
             return readColumnWithStringData<arrow::BinaryArray>(arrow_column, column_name);
+        case arrow::Type::FIXED_SIZE_BINARY:
+            return readColumnWithFixedStringData(arrow_column, column_name);
         case arrow::Type::LARGE_BINARY:
         case arrow::Type::LARGE_STRING:
             return readColumnWithStringData<arrow::LargeBinaryArray>(arrow_column, column_name);

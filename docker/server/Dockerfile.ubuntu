@@ -16,7 +16,6 @@ RUN sed -i "s|http://archive.ubuntu.com|${apt_archive}|g" /etc/apt/sources.list 
         gnupg \
         locales \
         wget \
-        yasm \
         tzdata \
     && apt-get clean
 

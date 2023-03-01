@@ -100,7 +100,7 @@ inline UInt32 getDecimalScale(const DataTypeDecimal<T> & data_type)
 
 template <typename FromDataType, typename ToDataType, typename ReturnType = void>
 requires (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
-inline ReturnType convertDecimalsImpl(const typename FromDataType::FieldType & value, UInt32 scale_from, UInt32 scale_to, typename ToDataType::FieldType& result)
+inline ReturnType convertDecimalsImpl(const typename FromDataType::FieldType & value, UInt32 scale_from, UInt32 scale_to, typename ToDataType::FieldType & result)
 {
     using FromFieldType = typename FromDataType::FieldType;
     using ToFieldType = typename ToDataType::FieldType;
@@ -121,8 +121,14 @@ inline ReturnType convertDecimalsImpl(const typename FromDataType::FieldType & v
                 return ReturnType(false);
         }
     }
+    else if (scale_to == scale_from)
+    {
+        converted_value = value.value;
+    }
     else
+    {
         converted_value = value.value / DecimalUtils::scaleMultiplier<MaxNativeType>(scale_from - scale_to);
+    }
 
     if constexpr (sizeof(FromFieldType) > sizeof(ToFieldType))
     {
@@ -155,7 +161,7 @@ inline typename ToDataType::FieldType convertDecimals(const typename FromDataTyp
 
 template <typename FromDataType, typename ToDataType>
 requires (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
-inline bool tryConvertDecimals(const typename FromDataType::FieldType & value, UInt32 scale_from, UInt32 scale_to, typename ToDataType::FieldType& result)
+inline bool tryConvertDecimals(const typename FromDataType::FieldType & value, UInt32 scale_from, UInt32 scale_to, typename ToDataType::FieldType & result)
 {
     return convertDecimalsImpl<FromDataType, ToDataType, bool>(value, scale_from, scale_to, result);
 }

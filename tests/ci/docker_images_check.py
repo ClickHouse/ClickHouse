@@ -21,6 +21,7 @@ from pr_info import PRInfo
 from report import TestResults, TestResult
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
+from tee_popen import TeePopen
 from upload_result_helper import upload_results
 
 NAME = "Push to Dockerhub"
@@ -191,20 +192,19 @@ def build_and_push_dummy_image(
         Path(TEMP_PATH)
         / f"build_and_push_log_{image.repo.replace('/', '_')}_{version_string}.log"
     )
-    with open(build_log, "wb") as bl:
-        cmd = (
-            f"docker pull {dummy_source}; "
-            f"docker tag {dummy_source} {image.repo}:{version_string}; "
-        )
-        if push:
-            cmd += f"docker push {image.repo}:{version_string}"
+    cmd = (
+        f"docker pull {dummy_source}; "
+        f"docker tag {dummy_source} {image.repo}:{version_string}; "
+    )
+    if push:
+        cmd += f"docker push {image.repo}:{version_string}"
 
-        logging.info("Docker command to run: %s", cmd)
-        with subprocess.Popen(cmd, shell=True, stderr=bl, stdout=bl) as proc:
-            retcode = proc.wait()
+    logging.info("Docker command to run: %s", cmd)
+    with TeePopen(cmd, build_log) as proc:
+        retcode = proc.wait()
 
-        if retcode != 0:
-            return False, build_log
+    if retcode != 0:
+        return False, build_log
 
     logging.info("Processing of %s successfully finished", image.repo)
     return True, build_log
@@ -213,7 +213,7 @@ def build_and_push_dummy_image(
 def build_and_push_one_image(
     image: DockerImage,
     version_string: str,
-    additional_cache: str,
+    additional_cache: List[str],
     push: bool,
     child: bool,
 ) -> Tuple[bool, Path]:
@@ -241,31 +241,28 @@ def build_and_push_one_image(
         f"--cache-from type=registry,ref={image.repo}:{version_string} "
         f"--cache-from type=registry,ref={image.repo}:latest"
     )
-    if additional_cache:
-        cache_from = (
-            f"{cache_from} "
-            f"--cache-from type=registry,ref={image.repo}:{additional_cache}"
-        )
+    for tag in additional_cache:
+        assert tag
+        cache_from = f"{cache_from} --cache-from type=registry,ref={image.repo}:{tag}"
 
-    with open(build_log, "wb") as bl:
-        cmd = (
-            "docker buildx build --builder default "
-            f"--label build-url={GITHUB_RUN_URL} "
-            f"{from_tag_arg}"
-            # A hack to invalidate cache, grep for it in docker/ dir
-            f"--build-arg CACHE_INVALIDATOR={GITHUB_RUN_URL} "
-            f"--tag {image.repo}:{version_string} "
-            f"{cache_from} "
-            f"--cache-to type=inline,mode=max "
-            f"{push_arg}"
-            f"--progress plain {image.full_path}"
-        )
-        logging.info("Docker command to run: %s", cmd)
-        with subprocess.Popen(cmd, shell=True, stderr=bl, stdout=bl) as proc:
-            retcode = proc.wait()
+    cmd = (
+        "docker buildx build --builder default "
+        f"--label build-url={GITHUB_RUN_URL} "
+        f"{from_tag_arg}"
+        # A hack to invalidate cache, grep for it in docker/ dir
+        f"--build-arg CACHE_INVALIDATOR={GITHUB_RUN_URL} "
+        f"--tag {image.repo}:{version_string} "
+        f"{cache_from} "
+        f"--cache-to type=inline,mode=max "
+        f"{push_arg}"
+        f"--progress plain {image.full_path}"
+    )
+    logging.info("Docker command to run: %s", cmd)
+    with TeePopen(cmd, build_log) as proc:
+        retcode = proc.wait()
 
-        if retcode != 0:
-            return False, build_log
+    if retcode != 0:
+        return False, build_log
 
     logging.info("Processing of %s successfully finished", image.repo)
     return True, build_log
@@ -274,7 +271,7 @@ def build_and_push_one_image(
 def process_single_image(
     image: DockerImage,
     versions: List[str],
-    additional_cache: str,
+    additional_cache: List[str],
     push: bool,
     child: bool,
 ) -> TestResults:
@@ -318,7 +315,7 @@ def process_single_image(
 def process_image_with_parents(
     image: DockerImage,
     versions: List[str],
-    additional_cache: str,
+    additional_cache: List[str],
     push: bool,
     child: bool = False,
 ) -> TestResults:
@@ -438,9 +435,13 @@ def main():
 
     result_images = {}
     test_results = []  # type: TestResults
-    additional_cache = ""
-    if pr_info.release_pr or pr_info.merged_pr:
-        additional_cache = str(pr_info.release_pr or pr_info.merged_pr)
+    additional_cache = []  # type: List[str]
+    if pr_info.release_pr:
+        logging.info("Use %s as additional cache tag", pr_info.release_pr)
+        additional_cache.append(str(pr_info.release_pr))
+    if pr_info.merged_pr:
+        logging.info("Use %s as additional cache tag", pr_info.merged_pr)
+        additional_cache.append(str(pr_info.merged_pr))
 
     for image in changed_images:
         # If we are in backport PR, then pr_info.release_pr is defined

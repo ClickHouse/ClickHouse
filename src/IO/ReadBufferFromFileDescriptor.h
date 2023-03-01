@@ -22,7 +22,7 @@ protected:
     int fd;
 
     bool nextImpl() override;
-    void prefetch() override;
+    void prefetch(int64_t priority) override;
 
     /// Name or some description of file.
     std::string getFileName() const override;

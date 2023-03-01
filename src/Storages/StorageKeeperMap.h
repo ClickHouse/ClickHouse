@@ -57,6 +57,9 @@ public:
     void checkTableCanBeRenamed(const StorageID & new_name) const override;
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
+    void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
+    void mutate(const MutationCommands & commands, ContextPtr context) override;
+
     bool supportsParallelInsert() const override { return true; }
     bool supportsIndexForIn() const override { return true; }
     bool mayBenefitFromIndexForIn(
@@ -64,6 +67,7 @@ public:
     {
         return node->getColumnName() == primary_key;
     }
+    bool supportsDelete() const override { return true; }
 
     zkutil::ZooKeeperPtr getClient() const;
     const std::string & dataPath() const;

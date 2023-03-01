@@ -86,7 +86,7 @@ void UnicodeConverter::convert(const std::string& utf8String, UTF16String& utf16
 }
 
 
-void UnicodeConverter::convert(const char* utf8String,  std::size_t length, UTF16String& utf16String)
+void UnicodeConverter::convert(const char* utf8String, std::size_t length, UTF16String& utf16String)
 {
 	if (!utf8String || !length)
 	{
@@ -130,7 +130,7 @@ void UnicodeConverter::convert(const UTF32String& utf32String, std::string& utf8
 }
 
 
-void UnicodeConverter::convert(const UTF16Char* utf16String,  std::size_t length, std::string& utf8String)
+void UnicodeConverter::convert(const UTF16Char* utf16String, std::size_t length, std::string& utf8String)
 {
 	utf8String.clear();
 	UTF8Encoding utf8Encoding;
@@ -140,7 +140,7 @@ void UnicodeConverter::convert(const UTF16Char* utf16String,  std::size_t length
 }
 
 
-void UnicodeConverter::convert(const UTF32Char* utf32String,  std::size_t length, std::string& utf8String)
+void UnicodeConverter::convert(const UTF32Char* utf32String, std::size_t length, std::string& utf8String)
 {
 	toUTF8(UTF32String(utf32String, length), utf8String);
 }
