@@ -83,7 +83,7 @@ function thread_cancel
         if (( RANDOM % 2 )); then
             SIGNAL="KILL"
         fi
-        PID=$(ps -ef | grep "$TEST_MARK" | grep -v grep | awk '{print $2}')
+        PID=$(grep -Fa "$TEST_MARK" /proc/*/cmdline | grep -Fav grep | grep -Eoa "/proc/[0-9]*/cmdline:" | grep -Eo "[0-9]*" | head -1)
         if [ ! -z "$PID" ]; then kill -s "$SIGNAL" "$PID"; fi
         sleep 0.$RANDOM;
     done
@@ -93,14 +93,13 @@ export -f thread_insert;
 export -f thread_select;
 export -f thread_cancel;
 
-TIMEOUT=20    # 5 seconds for each TYPE
+TIMEOUT=20
 
 timeout $TIMEOUT bash -c thread_insert &
 timeout $TIMEOUT bash -c thread_select &
 timeout $TIMEOUT bash -c thread_cancel 2> /dev/null &
 
 wait
-wait_for_queries_to_finish
 
 $CLICKHOUSE_CLIENT -q 'system flush logs'
 
@@ -110,10 +109,10 @@ insert_data
 $CLICKHOUSE_CLIENT --implicit_transaction=1 -q 'select throwIf(count() % 1000000 != 0 or count() = 0) from dedup_test' \
   || $CLICKHOUSE_CLIENT -q "select name, rows, active, visible, creation_tid, creation_csn from system.parts where database=currentDatabase();"
 
-# We have to ignore stderr from thread_cancel, because our CI finds a bug in ps...
-# So use this query to check that thread_cancel do something
+# Ensure that thread_cancel actually did something
 $CLICKHOUSE_CLIENT -q "select count() > 0 from system.text_log where event_date >= yesterday() and query_id like '$TEST_MARK%' and (
   message_format_string in ('Unexpected end of file while reading chunk header of HTTP chunked data', 'Unexpected EOF, got {} of {} bytes') or
   message like '%Connection reset by peer%' or message like '%Broken pipe, while writing to socket%')"
 
+wait_for_queries_to_finish 30
 $CLICKHOUSE_CLIENT --database_atomic_wait_for_drop_and_detach_synchronously=0 -q "drop table dedup_test"
