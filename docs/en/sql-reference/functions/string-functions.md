@@ -1196,3 +1196,41 @@ Result:
 Same as concatWithSeparator, the difference is that you need to ensure that concatWithSeparator(sep, expr1, expr2, expr3...) → result is injective, it will be used for optimization of GROUP BY.
 
 The function is named “injective” if it always returns different result for different values of arguments. In other words: different arguments never yield identical result.
+
+## space
+
+Repeats a string as many times as specified and concatenates the replicated values as a single string.
+
+Alias: `SPACE`.
+
+**Syntax**
+
+``` sql
+space(n)
+```
+
+**Arguments**
+
+-   `n` — The number of times to repeat the space string. [UInt](../../sql-reference/data-types/int-uint.md).
+
+**Returned value**
+
+The single string, which contains the string ` ` repeated `n` times. If `n` == 0, the function returns empty string.
+
+Type: `String`.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT space(3);
+```
+
+Result:
+
+``` text
+┌─space(3) ────┐
+│              │
+└──────────────┘
+```
