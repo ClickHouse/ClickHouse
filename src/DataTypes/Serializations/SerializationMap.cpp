@@ -1,3 +1,4 @@
+#include "Columns/ColumnString.h"
 #include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/Serializations/SerializationMap.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
@@ -18,6 +19,7 @@
 #include <IO/ReadBufferFromString.h>
 
 #include <Functions/GatherUtils/GatherUtils.h>
+#include <vector>
 
 
 namespace DB
@@ -304,6 +306,72 @@ static MutableColumns scatterNumeric(
     return scattered_columns;
 }
 
+static MutableColumns scatterString(
+    const ColumnString & column,
+    const IColumn::Selector & selector,
+    const std::vector<UInt64> & column_sizes)
+{
+    size_t num_rows = column.size();
+    size_t num_columns = column_sizes.size();
+
+    if (num_rows != selector.size())
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
+            "Size of selector: {} doesn't match size of column: {}",
+            selector.size(), num_rows);
+
+    const auto & src_offsets = column.getOffsets();
+    const auto & src_chars = column.getChars();
+
+    std::vector<MutableColumnPtr> scattered_columns(num_columns);
+    std::vector<UInt64> chars_sizes(num_columns);
+
+    for (size_t i = 0; i < num_rows; ++i)
+    {
+        const size_t size = src_offsets[i] - src_offsets[i - 1];
+        chars_sizes[selector[i]] += size;
+    }
+
+    for (size_t i = 0; i < num_columns; ++i)
+    {
+        scattered_columns[i] = column.cloneEmpty();
+
+        auto & scattered_string = assert_cast<ColumnString &>(*scattered_columns[i]);
+        scattered_string.getOffsets().resize(column_sizes[i]);
+        scattered_string.getChars().resize(chars_sizes[i]);
+    }
+
+    std::vector<UInt64> offsets_positions(num_columns);
+    std::vector<UInt64> chars_positions(num_columns);
+
+    for (size_t i = 0; i < num_rows; ++i)
+    {
+        size_t pos = selector[i];
+        const size_t size = src_offsets[i] - src_offsets[i - 1];
+
+        auto & shard_string = assert_cast<ColumnString &>(*scattered_columns[pos]);
+        auto & shard_offsets = shard_string.getOffsets();
+        auto & shard_chars = shard_string.getChars();
+
+        if (size == 1)
+        {
+            /// shortcut for empty string
+            shard_chars[chars_positions[pos]++] = 0;
+            shard_offsets[offsets_positions[pos]++] = shard_chars.size();
+        }
+        else
+        {
+            const size_t src_offset = src_offsets[i - 1];
+
+            memcpySmallAllowReadWriteOverflow15(shard_chars.data() + chars_positions[pos], &src_chars[src_offset], size);
+
+            chars_positions[pos] += size;
+            shard_offsets[offsets_positions[pos]++] = chars_positions[pos];
+        }
+    }
+
+    return scattered_columns;
+}
+
 MutableColumns scatterColumn(
     const IColumn & column,
     const IColumn::Selector & selector,
@@ -314,6 +382,9 @@ MutableColumns scatterColumn(
         return scatterNumeric(*column_vector, selector, column_sizes);
     FOR_BASIC_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
+
+    if (const auto * column_string = typeid_cast<const ColumnString *>(&column))
+        return scatterString(*column_string, selector, column_sizes);
 
     return column.scatter(static_cast<UInt32>(column_sizes.size()), selector);
 }
