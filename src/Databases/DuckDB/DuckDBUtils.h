@@ -15,6 +15,9 @@ using DuckDBPtr = std::shared_ptr<duckdb::DuckDB>;
 
 DuckDBPtr openDuckDB(const String & database_path, ContextPtr context, bool throw_on_error = true);
 
+String quoteIdentifierDuckDB(const String & identifier);
+String quoteStringDuckDB(const String & identifier);
+
 }
 
 #endif

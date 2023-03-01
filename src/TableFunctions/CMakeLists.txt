@@ -19,3 +19,7 @@ target_link_libraries(clickhouse_table_functions PRIVATE clickhouse_parsers clic
 if (TARGET ch_contrib::hivemetastore)
     target_link_libraries(clickhouse_table_functions PRIVATE ch_contrib::hivemetastore ch_contrib::hdfs ch_contrib::parquet)
 endif ()
+
+if (TARGET ch_contrib::duckdb)
+    target_link_libraries(clickhouse_table_functions PRIVATE ch_contrib::duckdb)
+endif()

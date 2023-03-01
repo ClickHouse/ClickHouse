@@ -1,6 +1,7 @@
 option(ENABLE_DUCKDB "Enable duckdb" ${ENABLE_LIBRARIES})
 
-if (NOT ENABLE_DUCKDB)
+# Link stage fails with DuckDB under memory sanitizer due too large binary size 
+if (NOT ENABLE_DUCKDB OR SANITIZE STREQUAL "memory")
     message(STATUS "Not using duckdb")
     return()
 endif()

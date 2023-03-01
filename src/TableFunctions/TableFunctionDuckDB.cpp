@@ -48,7 +48,7 @@ StoragePtr TableFunctionDuckDB::executeImpl(const ASTPtr & /*ast_function*/,
 
 ColumnsDescription TableFunctionDuckDB::getActualTableStructure(ContextPtr /* context */) const
 {
-    auto columns = fetchDuckDBTableStructure(duckdb_instance.get(), remote_table_name);
+    auto columns = fetchDuckDBTableStructure(*duckdb_instance, remote_table_name);
 
     if (!columns)
         throw Exception(ErrorCodes::DUCKDB_ENGINE_ERROR, "Failed to fetch table structure for {}", remote_table_name);

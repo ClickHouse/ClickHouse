@@ -93,6 +93,13 @@ void registerDataTypeNumbers(DataTypeFactory & factory)
     factory.registerAlias("SET", "UInt64", DataTypeFactory::CaseInsensitive);  /// MySQL
     factory.registerAlias("YEAR", "UInt16", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("TIME", "Int64", DataTypeFactory::CaseInsensitive);
+
+    /// DuckDB
+    factory.registerAlias("UTINYINT", "UInt8", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("USMALLINT", "UInt16", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("UINTEGER", "UInt32", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("UBIGINT", "UInt64", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("HUGEINT", "Int128", DataTypeFactory::CaseInsensitive);
 }
 
 }

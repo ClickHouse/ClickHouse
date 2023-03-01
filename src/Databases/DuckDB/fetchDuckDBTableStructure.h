@@ -10,7 +10,7 @@
 
 namespace DB
 {
-std::shared_ptr<NamesAndTypesList> fetchDuckDBTableStructure(duckdb::DuckDB * duckdb_instance,
+std::shared_ptr<NamesAndTypesList> fetchDuckDBTableStructure(duckdb::DuckDB & duckdb_instance,
                                                              const String & duckdb_table_name);
 }
 

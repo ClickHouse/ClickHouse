@@ -110,14 +110,14 @@ public:
         WriteBufferFromOwnString buf;
 
         buf << "INSERT INTO ";
-        buf << doubleQuoteString(remote_table_name);
+        buf << quoteIdentifierDuckDB(remote_table_name);
         buf << " (";
 
         for (auto it = block.begin(); it != block.end(); ++it)
         {
             if (it != block.begin())
                 buf << ", ";
-            buf << doubleQuoteString(it->name);
+            buf << quoteIdentifierDuckDB(it->name);
         }
 
         buf << ") VALUES ";

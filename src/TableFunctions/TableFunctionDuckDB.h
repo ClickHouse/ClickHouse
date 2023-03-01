@@ -3,7 +3,7 @@
 
 #if USE_DUCKDB
 #include <TableFunctions/ITableFunction.h>
-#include <Storages/StorageDuckDB.h>
+#include <Storages/DuckDB/StorageDuckDB.h>
 
 
 namespace DB

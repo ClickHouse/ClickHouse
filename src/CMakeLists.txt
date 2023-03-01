@@ -96,6 +96,7 @@ endif()
 
 if (TARGET ch_contrib::duckdb)
     add_headers_and_sources(dbms Databases/DuckDB)
+    add_headers_and_sources(dbms Storages/DuckDB)
 endif()
 
 if (TARGET ch_contrib::rdkafka)
@@ -512,7 +513,7 @@ if (TARGET ch_contrib::sqlite)
 endif()
 
 if (TARGET ch_contrib::duckdb)
-    dbms_target_link_libraries(PUBLIC ch_contrib::duckdb)
+    dbms_target_link_libraries(PRIVATE ch_contrib::duckdb)
 endif()
 
 if (TARGET ch_contrib::msgpack)

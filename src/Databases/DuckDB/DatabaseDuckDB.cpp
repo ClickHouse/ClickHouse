@@ -3,14 +3,12 @@
 #if USE_DUCKDB
 
 #include <Common/logger_useful.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Databases/DuckDB/fetchDuckDBTableStructure.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTFunction.h>
 #include <Interpreters/Context.h>
-#include <Storages/StorageDuckDB.h>
+#include <Storages/DuckDB/StorageDuckDB.h>
 #include <Databases/DuckDB/DuckDBUtils.h>
 
 
@@ -96,8 +94,7 @@ bool DatabaseDuckDB::checkDuckDBTable(const String & table_name) const
     if (!duckdb_instance)
         duckdb_instance = openDuckDB(database_path, getContext(), /* throw_on_error */true);
 
-    /// TODO: Add table name validation
-    const String query = fmt::format("SELECT table_name FROM duckdb_tables WHERE table_name='{}';", table_name);
+    const String query = fmt::format("SELECT table_name FROM duckdb_tables WHERE table_name={};", quoteStringDuckDB(table_name));
 
     duckdb::Connection con(*duckdb_instance);
     auto result = con.Query(query);
@@ -137,7 +134,7 @@ StoragePtr DatabaseDuckDB::fetchTable(const String & table_name, ContextPtr loca
     if (!table_checked && !checkDuckDBTable(table_name))
         return StoragePtr{};
 
-    auto columns = fetchDuckDBTableStructure(duckdb_instance.get(), table_name);
+    auto columns = fetchDuckDBTableStructure(*duckdb_instance, table_name);
 
     if (!columns)
         return StoragePtr{};
