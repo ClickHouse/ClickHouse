@@ -21,7 +21,12 @@ inline String likePatternToRegexp(std::string_view pattern)
     const char * const end = pattern.begin() + pattern.size();
 
     if (pos < end && *pos == '%')
-        ++pos;
+        /// Eat leading %
+        while (++pos < end)
+        {
+            if (*pos != '%')
+                break;
+        }
     else
         res = "^";
 
@@ -29,7 +34,18 @@ inline String likePatternToRegexp(std::string_view pattern)
     {
         switch (*pos)
         {
-            case '^': case '$': case '.': case '[': case '|': case '(': case ')': case '?': case '*': case '+': case '{':
+            /// Quote characters which have a special meaning in re2
+            case '^':
+            case '$':
+            case '.':
+            case '[':
+            case '|':
+            case '(':
+            case ')':
+            case '?':
+            case '*':
+            case '+':
+            case '{':
                 res += '\\';
                 res += *pos;
                 break;
@@ -44,22 +60,23 @@ inline String likePatternToRegexp(std::string_view pattern)
                 break;
             case '\\':
                 if (pos + 1 == end)
-                    throw Exception(ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE, "Invalid escape sequence at the end of LIKE pattern");
-                /// Known escape sequences.
-                if (pos[1] == '%' || pos[1] == '_')
+                    throw Exception(ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE, "Invalid escape sequence at the end of LIKE pattern '{}'", pattern);
+                switch (pos[1])
                 {
-                    res += pos[1];
-                    ++pos;
-                }
-                else if (pos[1] == '\\')
-                {
-                    res += "\\\\";
-                    ++pos;
-                }
-                else
-                {
-                    /// Unknown escape sequence treated literally: as backslash and the following character.
-                    res += "\\\\";
+                    /// Interpret quoted LIKE metacharacters %, _ and \ as literals:
+                    case '%':
+                    case '_':
+                        res += pos[1];
+                        ++pos;
+                        break;
+                    case '\\':
+                        res += "\\\\"; /// backslash has a special meaning in re2 --> quote it
+                        ++pos;
+                        break;
+                    /// Unknown escape sequence treated literally: as backslash (which must be quoted in re2) + the following character
+                    default:
+                        res += "\\\\";
+                        break;
                 }
                 break;
             default:

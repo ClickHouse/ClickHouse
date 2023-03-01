@@ -1,5 +1,11 @@
 SET optimize_read_in_order = 1, query_plan_read_in_order=1;
 
+drop table if exists tab;
+drop table if exists tab2;
+drop table if exists tab3;
+drop table if exists tab4;
+drop table if exists tab5;
+
 create table tab (a UInt32, b UInt32, c UInt32, d UInt32) engine = MergeTree order by ((a + b) * c, sin(a / b));
 insert into tab select number, number, number, number from numbers(5);
 insert into tab select number, number, number, number from numbers(5);
@@ -142,3 +148,9 @@ select * from (explain plan actions = 1 select * from (select * from tab union a
 -- In case of tab4, we do full sorting by ((a + b) * c, sin(a / b), d) with LIMIT. We can replace it to sorting by ((a + b) * c, sin(a / b)) and LIMIT WITH TIES, when sorting alog support it.
 select * from (select * from tab union all select * from tab5 union all select * from tab4) order by (a + b) * c, sin(a / b), d limit 3;
 select * from (explain plan actions = 1 select * from (select * from tab union all select * from tab5 union all select * from tab4) order by (a + b) * c, sin(a / b), d limit 3) where explain ilike '%sort description%' or explain like '%ReadType%' or explain like '%Limit%';
+
+drop table if exists tab;
+drop table if exists tab2;
+drop table if exists tab3;
+drop table if exists tab4;
+drop table if exists tab5;
