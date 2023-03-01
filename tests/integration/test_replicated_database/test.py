@@ -233,7 +233,7 @@ def test_delete_from_table(started_cluster, engine):
     dummy_node.query("INSERT INTO TABLE {} VALUES(2, 'bbbb');".format(name))
 
     main_node.query(
-        "SET allow_experimental_lightweight_delete=1; DELETE FROM {} WHERE id=2;".format(
+        "DELETE FROM {} WHERE id=2;".format(
             name
         )
     )
