@@ -67,7 +67,7 @@ function thread_cancel
         if (( RANDOM % 2 )); then
             SIGNAL="KILL"
         fi
-        PID=$(ps -ef | grep "$TEST_MARK" | grep -v grep | awk '{print $2}')
+        PID=$(grep -Fa "$TEST_MARK" /proc/*/cmdline | grep -Fav grep | grep -Eoa "/proc/[0-9]*/cmdline:" | grep -Eo "[0-9]*" | head -1)
         if [ ! -z "$PID" ]; then kill -s "$SIGNAL" "$PID"; fi
         sleep 0.$RANDOM;
         sleep 0.$RANDOM;
@@ -91,8 +91,7 @@ $CLICKHOUSE_CLIENT -q 'select count() from dedup_test'
 
 $CLICKHOUSE_CLIENT -q 'system flush logs'
 
-# We have to ignore stderr from thread_cancel, because our CI finds a bug in ps...
-# So use this query to check that thread_cancel do something
+# Ensure that thread_cancel actually did something
 $CLICKHOUSE_CLIENT -q "select count() > 0 from system.text_log where event_date >= yesterday() and query_id like '$TEST_MARK%' and (
   message_format_string in ('Unexpected end of file while reading chunk header of HTTP chunked data', 'Unexpected EOF, got {} of {} bytes') or
-  message like '%Connection reset by peer%')"
+  message like '%Connection reset by peer%' or message like '%Broken pipe, while writing to socket%')"
