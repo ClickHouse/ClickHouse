@@ -352,8 +352,10 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
         thread_group->threads.erase(this);
     }
     performance_counters.setParent(&ProfileEvents::global_counters);
-    memory_tracker.reset();
 
+    flushUntrackedMemory();
+
+    memory_tracker.reset();
     memory_tracker.setParent(thread_group->memory_tracker.getParent());
 
     query_id.clear();

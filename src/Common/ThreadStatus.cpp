@@ -144,6 +144,12 @@ ThreadStatus::ThreadStatus()
 #endif
 }
 
+void ThreadStatus::flushUntrackedMemory()
+{
+    memory_tracker.adjustWithUntrackedMemory(untracked_memory);
+    untracked_memory = 0;
+}
+
 ThreadStatus::~ThreadStatus()
 {
     memory_tracker.adjustWithUntrackedMemory(untracked_memory);
