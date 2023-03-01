@@ -64,19 +64,25 @@ def list_runners(access_token: str) -> RunnerDescriptions:
         "Authorization": f"token {access_token}",
         "Accept": "application/vnd.github.v3+json",
     }
+    per_page = 100
     response = requests.get(
-        "https://api.github.com/orgs/ClickHouse/actions/runners?per_page=100",
+        f"https://api.github.com/orgs/ClickHouse/actions/runners?per_page={per_page}",
         headers=headers,
     )
     response.raise_for_status()
     data = response.json()
     total_runners = data["total_count"]
+    print("Expected total runners", total_runners)
     runners = data["runners"]
 
-    total_pages = int(total_runners / 100 + 1)
+    # round to 0 for 0, 1 for 1..100, but to 2 for 101..200
+    total_pages = (total_runners - 1) // per_page + 1
+
+    print("Total pages", total_pages)
     for i in range(2, total_pages + 1):
         response = requests.get(
-            f"https://api.github.com/orgs/ClickHouse/actions/runners?page={i}&per_page=100",
+            "https://api.github.com/orgs/ClickHouse/actions/runners"
+            f"?page={i}&per_page={per_page}",
             headers=headers,
         )
         response.raise_for_status()
@@ -95,6 +101,7 @@ def list_runners(access_token: str) -> RunnerDescriptions:
             busy=runner["busy"],
         )
         result.append(desc)
+
     return result
 
 
