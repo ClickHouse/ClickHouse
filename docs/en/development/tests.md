@@ -60,21 +60,23 @@ SELECT 1
 |Tag name | What it does | Usage example |
 |---|---|---|
 | `disabled`|  Test is not run ||
-| `long` | Test's execution time is extended to 10 minutes ||
-| `race` |||
-| `replica` |||
-| `shard` |||
-| `distributed` |||
-| `deadlock` |||
-| `global` |||
+| `long` | Test's execution time is extended from 1 to 10 minutes ||
+| `deadlock` | Test tests a possible deadlock or race, so it's run in a loop for a long time ||
+| `race` | Same as `deadlock`. Prefer `deadlock` ||
+| `shard` | Server is required to listen to `127.0.0.*` ||
+| `distributed` | Same as `shard`. Prefer `shard` ||
+| `global` | Same as `shard`. Prefer `shard` ||
 | `zookeeper` | Test requires Zookeeper or ClickHouse Keeper to run | Test uses `ReplicatedMergeTree` |
+| `replica` | Same as `zookeeper`. Prefer `zookeeper` ||
 | `no-fasttest`|  Test is not run under [Fast test](continuous-integration#fast-test) | Test uses `MySQL` table engine which is disabled in Fast test|
+| `no-[asan, tsan, msan, ubsan]` | Disables tests in build with [sanitizers](#sanitizers) | Test is run under QEMU which doesn't work with sanitizers |
 | `no-replicated-database` |||
 | `no-ordinary-database` |||
 | `no-parallel` | Disables running other tests in parallel with this one | Test reads from `system` tables and invariants may be broken|
+| `no-parallel-replicas` |||
 | `no-debug` |||
-| `no-polymorphic-parts` |||
 | `no-stress` |||
+| `no-polymorphic-parts` |||
 | `no-random-settings` |||
 | `no-random-merge-tree-settings` |||
 | `no-backward-compatibility-check` |||
@@ -82,7 +84,6 @@ SELECT 1
 | `no-cpu-aarch64` |||
 | `no-cpu-ppc64le` |||
 | `no-s3-storage` |||
-| `no-[asan, tsan, msan, ubsan]` | Disables tests in build with [sanitizers](#sanitizers) | Test is run under QEMU which doesn't work with sanitizers |
 
 In addition to the above settings, you can use `USE_*` flags from `system.build_options` to define usage of particular ClickHouse features.
 For example, if your test uses a MySQL table, you should add a tag `use-mysql`.
