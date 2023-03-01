@@ -8,7 +8,6 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/isDiskFunction.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/isDiskFunction.h>
 #include <Interpreters/Context.h>

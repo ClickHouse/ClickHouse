@@ -5,8 +5,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/isDiskFunction.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Common/assert_cast.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 
