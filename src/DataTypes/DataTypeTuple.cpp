@@ -312,20 +312,6 @@ MutableSerializationInfoPtr DataTypeTuple::createSerializationInfo(const Seriali
     return std::make_shared<SerializationInfoTuple>(std::move(infos), names, settings);
 }
 
-MutableSerializationInfoPtr DataTypeTuple::cloneSerializationInfo(const SerializationInfo & old_info, const SerializationInfo::Settings & settings) const
-{
-    const auto & old_info_tuple = assert_cast<const SerializationInfoTuple &>(old_info);
-    assert(old_info_tuple.getNumElements() == elems.size());
-
-    MutableSerializationInfos infos;
-    infos.reserve(elems.size());
-    for (size_t i = 0; i < elems.size(); ++i)
-        infos.push_back(elems[i]->cloneSerializationInfo(*old_info_tuple.getElementInfo(i), settings));
-
-    return std::make_shared<SerializationInfoTuple>(std::move(infos), names, settings);
-}
-
-
 SerializationInfoPtr DataTypeTuple::getSerializationInfo(const IColumn & column) const
 {
     if (const auto * column_const = checkAndGetColumn<ColumnConst>(&column))

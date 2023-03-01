@@ -97,6 +97,15 @@ MutableSerializationInfoPtr SerializationInfo::clone() const
     return std::make_shared<SerializationInfo>(kind, settings, data);
 }
 
+std::shared_ptr<SerializationInfo> SerializationInfo::createWithType(const IDataType & type, const Settings & new_settings) const
+{
+    auto new_kind = kind;
+    if (new_kind == ISerialization::Kind::SPARSE && !type.supportsSparseSerialization())
+        new_kind = ISerialization::Kind::DEFAULT;
+
+    return std::make_shared<SerializationInfo>(new_kind, new_settings);
+}
+
 void SerializationInfo::serialializeKindBinary(WriteBuffer & out) const
 {
     writeBinary(static_cast<UInt8>(kind), out);

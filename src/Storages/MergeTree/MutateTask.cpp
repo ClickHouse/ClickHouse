@@ -244,7 +244,7 @@ getColumnsForNewDataPart(
             continue;
         }
 
-        new_info = new_type->cloneSerializationInfo(*old_info, settings);
+        new_info = old_info->createWithType(*new_type, settings);
         new_serialization_infos.emplace(new_name, std::move(new_info));
     }
 

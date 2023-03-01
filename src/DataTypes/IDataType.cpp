@@ -191,15 +191,6 @@ MutableSerializationInfoPtr IDataType::createSerializationInfo(const Serializati
     return std::make_shared<SerializationInfo>(ISerialization::Kind::DEFAULT, settings);
 }
 
-MutableSerializationInfoPtr IDataType::cloneSerializationInfo(const SerializationInfo & old_info, const SerializationInfo::Settings & settings) const
-{
-    auto new_kind = old_info.getKind();
-    if (new_kind == ISerialization::Kind::SPARSE && !supportsSparseSerialization())
-        new_kind = ISerialization::Kind::DEFAULT;
-
-    return std::make_shared<SerializationInfo>(new_kind, settings);
-}
-
 SerializationInfoPtr IDataType::getSerializationInfo(const IColumn & column) const
 {
     if (const auto * column_const = checkAndGetColumn<ColumnConst>(&column))

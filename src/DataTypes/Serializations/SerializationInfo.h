@@ -9,6 +9,7 @@ namespace DB
 {
 
 class ReadBuffer;
+class ReadBuffer;
 class WriteBuffer;
 class NamesAndTypesList;
 class Block;
@@ -59,6 +60,7 @@ public:
     virtual void replaceData(const SerializationInfo & other);
 
     virtual std::shared_ptr<SerializationInfo> clone() const;
+    virtual std::shared_ptr<SerializationInfo> createWithType(const IDataType & type, const Settings & new_settings) const;
 
     virtual void serialializeKindBinary(WriteBuffer & out) const;
     virtual void deserializeFromKindsBinary(ReadBuffer & in);

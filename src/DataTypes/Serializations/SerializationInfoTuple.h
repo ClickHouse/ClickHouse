@@ -19,6 +19,7 @@ public:
     void replaceData(const SerializationInfo & other) override;
 
     MutableSerializationInfoPtr clone() const override;
+    MutableSerializationInfoPtr createWithType(const IDataType & type, const Settings & new_settings) const override;
 
     void serialializeKindBinary(WriteBuffer & out) const override;
     void deserializeFromKindsBinary(ReadBuffer & in) override;
@@ -26,7 +27,6 @@ public:
     Poco::JSON::Object toJSON() const override;
     void fromJSON(const Poco::JSON::Object & object) override;
 
-    size_t getNumElements() const { return elems.size(); }
     const MutableSerializationInfoPtr & getElementInfo(size_t i) const { return elems[i]; }
     ISerialization::Kind getElementKind(size_t i) const { return elems[i]->getKind(); }
 
