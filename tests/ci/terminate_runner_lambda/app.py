@@ -156,8 +156,10 @@ def main(
     # so they will be cleaned out by ci_runners_metrics_lambda eventually
 
     instances_to_kill = []
+    total_to_kill = 0
     for zone, num_to_kill in to_kill_by_zone.items():
         candidates = instances_by_zone[zone]
+        total_to_kill += num_to_kill
         if num_to_kill > len(candidates):
             raise Exception(
                 f"Required to kill {num_to_kill}, but have only {len(candidates)} candidates in AV {zone}"
@@ -195,8 +197,25 @@ def main(
 
         instances_to_kill += [runner.name for runner in delete_for_av]
 
-    print("Got instances to kill: ", ", ".join(instances_to_kill))
+    if len(instances_to_kill) < total_to_kill:
+        print(f"Check other hosts from the same ASG {event['AutoScalingGroupName']}")
+        client = boto3.client("autoscaling")
+        as_groups = client.describe_auto_scaling_groups(
+            AutoScalingGroupNames=[event["AutoScalingGroupName"]]
+        )
+        assert len(as_groups["AutoScalingGroups"]) == 1
+        asg = as_groups["AutoScalingGroups"][0]
+        for instance in asg["Instances"]:
+            for runner in runners:
+                if runner.name == instance["InstanceId"] and not runner.busy:
+                    print(f"Runner {runner.name} is not busy and can be deleted")
+                    instances_to_kill.append(runner.name)
 
+            if total_to_kill <= len(instances_to_kill):
+                print("Got enough instances to kill")
+                break
+
+    print("Got instances to kill: ", ", ".join(instances_to_kill))
     response = {"InstanceIDs": instances_to_kill}
     print(response)
     return response
