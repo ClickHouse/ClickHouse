@@ -149,13 +149,13 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
 
         if (buffer_size % min_alignment)
         {
-            existing_memory = nullptr;  /// Cannot reuse existing memory is it has unaligned size.
+            existing_memory = nullptr;  /// Cannot reuse existing memory as it has unaligned size.
             buffer_size = align_up(buffer_size);
         }
 
         if (reinterpret_cast<uintptr_t>(existing_memory) % min_alignment)
         {
-            existing_memory = nullptr;  /// Cannot reuse existing memory is it has unaligned offset.
+            existing_memory = nullptr;  /// Cannot reuse existing memory as it has unaligned offset.
         }
 
         /// Attempt to open a file with O_DIRECT

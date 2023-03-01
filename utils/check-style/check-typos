@@ -9,6 +9,6 @@ codespell \
     --ignore-words "${ROOT_PATH}/utils/check-style/codespell-ignore-words.list" \
     --exclude-file "${ROOT_PATH}/utils/check-style/codespell-ignore-lines.list" \
     --quiet-level 2 \
-    "$ROOT_PATH"/{src,base/base,base/glibc-compatibility,base/harmful,base/pcg-random,base/readpassphrase,base/widechar_width,programs,utils} \ # all subdirs of base/ except poco
+    "$ROOT_PATH"/{src,base,programs,utils} \
     $@ | grep -P '.' \
     && echo -e "\nFound some typos in code.\nSee the files utils/check-style/codespell* if you want to add an exception."

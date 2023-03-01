@@ -23,7 +23,6 @@
 #include "Poco/SharedPtr.h"
 #include "Poco/DateTime.h"
 #include "Poco/Exception.h"
-#include "Poco/Data/DataException.h"
 
 
 using Poco::icompare;

@@ -2,6 +2,7 @@
 
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ProfileEventsScope.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
 namespace ProfileEvents
@@ -279,6 +280,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             reserved_space,
             entry.deduplicate,
             entry.deduplicate_by_columns,
+            entry.cleanup,
             storage.merging_params,
             NO_TRANSACTION_PTR);
 
@@ -289,9 +291,10 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 
     return {true, true, [this, stopwatch = *stopwatch_ptr] (const ExecutionStatus & execution_status)
     {
+        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
         storage.writePartLog(
             PartLogElement::MERGE_PARTS, execution_status, stopwatch.elapsed(),
-            entry.new_part_name, part, parts, merge_mutate_entry.get());
+            entry.new_part_name, part, parts, merge_mutate_entry.get(), std::move(profile_counters_snapshot));
     }};
 }
 

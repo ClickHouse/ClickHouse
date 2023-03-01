@@ -4,6 +4,7 @@
 
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
 #include <Storages/HDFS/HDFSCommon.h>
+#include <IO/ResourceGuard.h>
 #include <Common/Throttler.h>
 #include <Common/safe_cast.h>
 #include <hdfs/hdfs.h>
@@ -62,11 +63,27 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
     }
 
 
-    int write(const char * start, size_t size) const
+    int write(const char * start, size_t size)
     {
-        int bytes_written = hdfsWrite(fs.get(), fout, start, safe_cast<int>(size));
+        ResourceGuard rlock(write_settings.resource_link, size);
+        int bytes_written;
+        try
+        {
+            bytes_written = hdfsWrite(fs.get(), fout, start, safe_cast<int>(size));
+        }
+        catch (...)
+        {
+            write_settings.resource_link.accumulate(size); // We assume no resource was used in case of failure
+            throw;
+        }
+        rlock.unlock();
+
         if (bytes_written < 0)
+        {
+            write_settings.resource_link.accumulate(size); // We assume no resource was used in case of failure
             throw Exception(ErrorCodes::NETWORK_ERROR, "Fail to write HDFS file: {} {}", hdfs_uri, std::string(hdfsGetLastError()));
+        }
+        write_settings.resource_link.adjust(size, bytes_written);
 
         if (write_settings.remote_throttler)
             write_settings.remote_throttler->add(bytes_written, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);

@@ -49,7 +49,7 @@ bool FillingRow::next(const FillingRow & to_row)
     size_t pos = 0;
 
     /// Find position we need to increment for generating next row.
-    for (; pos < size(); ++pos)
+    for (size_t s = size(); pos < s; ++pos)
         if (!row[pos].isNull() && !to_row.row[pos].isNull() && !equals(row[pos], to_row.row[pos]))
             break;
 
@@ -110,12 +110,16 @@ void FillingRow::initFromDefaults(size_t from_pos)
 void insertFromFillingRow(MutableColumns & filling_columns, MutableColumns & interpolate_columns, MutableColumns & other_columns,
     const FillingRow & filling_row, const Block & interpolate_block)
 {
-    for (size_t i = 0; i < filling_columns.size(); ++i)
+    for (size_t i = 0, size = filling_columns.size(); i < size; ++i)
     {
         if (filling_row[i].isNull())
+        {
             filling_columns[i]->insertDefault();
+        }
         else
+        {
             filling_columns[i]->insert(filling_row[i]);
+        }
     }
 
     if (size_t size = interpolate_block.columns())
@@ -134,7 +138,7 @@ void insertFromFillingRow(MutableColumns & filling_columns, MutableColumns & int
 
 void copyRowFromColumns(MutableColumns & dest, const Columns & source, size_t row_num)
 {
-    for (size_t i = 0; i < source.size(); ++i)
+    for (size_t i = 0, size = source.size(); i < size; ++i)
         dest[i]->insertFrom(*source[i], row_num);
 }
 
