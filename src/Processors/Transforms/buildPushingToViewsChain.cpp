@@ -387,7 +387,8 @@ Chain buildPushingToViewsChain(
         chains.emplace_back(std::move(out));
 
         /// Add the view to the query access info so it can appear in system.query_log
-        if (!no_destination)
+        /// hasQueryContext - for materialized tables with background replication process query context is not added
+        if (!no_destination && context->hasQueryContext())
         {
             context->getQueryContext()->addQueryAccessInfo(
                 backQuoteIfNeed(view_id.getDatabaseName()), views_data->views.back().runtime_stats->target_name, {}, "", view_id.getFullTableName());
@@ -757,7 +758,6 @@ IProcessor::Status FinalizingViewsTransform::prepare()
         output.finish();
         return Status::Finished;
     }
-
     return Status::NeedData;
 }
 
