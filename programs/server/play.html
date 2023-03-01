@@ -687,6 +687,10 @@
             const prev_lines = text_before_cursor.split('\n');
             const prev_line = prev_lines.pop();
             const lead_spaces = prev_line.match(/^\s*/)[0];
+            if (!lead_spaces) {
+                return;
+            }
+
             // Add leading spaces to the current line.
             elem.value = text_before_cursor + '\n' + lead_spaces + text_after_cursor;
             elem.selectionStart = cursor_pos + lead_spaces.length + 1;
