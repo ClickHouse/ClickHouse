@@ -781,7 +781,6 @@ void HTTPHandler::processQuery(
     /// they will be applied in ProcessList::insert() from executeQuery() itself.
     const auto & query = getQuery(request, params, context);
     std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query);
-    in = has_external_data ? std::move(in_param) : std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
 
     /// HTTP response compression is turned on only if the client signalled that they support it
     /// (using Accept-Encoding header) and 'enable_http_compression' setting is turned on.
@@ -831,7 +830,8 @@ void HTTPHandler::processQuery(
         });
     }
 
-    customizeContext(request, context);
+    customizeContext(request, context, *in_post_maybe_compressed);
+    in = has_external_data ? std::move(in_param) : std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
 
     executeQuery(*in, *used_output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, context,
         [&response, this] (const QueryResultDetails & details)
@@ -1139,7 +1139,7 @@ bool PredefinedQueryHandler::customizeQueryParam(ContextMutablePtr context, cons
     return false;
 }
 
-void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, ContextMutablePtr context)
+void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, ContextMutablePtr context, ReadBuffer & body)
 {
     /// If in the configuration file, the handler's header is regex and contains named capture group
     /// We will extract regex named capture groups as query parameters
@@ -1172,6 +1172,15 @@ void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, Conte
     {
         const auto & header_value = request.get(header_name);
         set_query_params(header_value.data(), header_value.data() + header_value.size(), regex);
+    }
+
+    if (unlikely(receive_params.contains("_request_body") && !context->getQueryParameters().contains("_request_body")))
+    {
+        WriteBufferFromOwnString value;
+        const auto & settings = context->getSettingsRef();
+
+        copyDataMaxBytes(body, value, settings.http_max_request_param_data_size);
+        context->setQueryParameter("_request_body", value.str());
     }
 }
 
