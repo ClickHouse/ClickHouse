@@ -58,6 +58,7 @@ class ClickHouseVersion:
         elif self._git is not None:
             self._tweak = self._git.tweak
         self._describe = ""
+        self._description = ""
 
     def update(self, part: Literal["major", "minor", "patch"]) -> "ClickHouseVersion":
         """If part is valid, returns a new version"""
@@ -126,6 +127,10 @@ class ClickHouseVersion:
         return self._describe
 
     @property
+    def description(self) -> str:
+        return self._description
+
+    @property
     def string(self):
         return ".".join(
             (str(self.major), str(self.minor), str(self.patch), str(self.tweak))
@@ -149,6 +154,7 @@ class ClickHouseVersion:
     def with_description(self, version_type):
         if version_type not in VersionType.VALID:
             raise ValueError(f"version type {version_type} not in {VersionType.VALID}")
+        self._description = version_type
         self._describe = f"v{self.string}-{version_type}"
 
     def __eq__(self, other: Any) -> bool:
