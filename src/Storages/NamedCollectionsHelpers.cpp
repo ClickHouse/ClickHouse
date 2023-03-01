@@ -30,7 +30,7 @@ namespace
         return NamedCollectionFactory::instance().tryGet(collection_name);
     }
 
-    std::optional<std::pair<std::string, Field>> getKeyValueFromAST(ASTPtr ast)
+    std::optional<std::pair<std::string, std::variant<Field, ASTPtr>>> getKeyValueFromAST(ASTPtr ast, bool)
     {
         const auto * function = ast->as<ASTFunction>();
         if (!function || function->name != "equals")
@@ -42,20 +42,27 @@ namespace
         if (function_args.size() != 2)
             return std::nullopt;
 
-        auto literal_key = evaluateConstantExpressionOrIdentifierAsLiteral(
-            function_args[0], Context::getGlobalContextInstance());
+        auto context = Context::getGlobalContextInstance();
+        auto literal_key = evaluateConstantExpressionOrIdentifierAsLiteral(function_args[0], context);
         auto key = checkAndGetLiteralArgument<String>(literal_key, "key");
 
-        auto literal_value = evaluateConstantExpressionOrIdentifierAsLiteral(
-            function_args[1], Context::getGlobalContextInstance());
-        auto value = literal_value->as<ASTLiteral>()->value;
+        ASTPtr literal_value;
+        try
+        {
+            literal_value = evaluateConstantExpressionOrIdentifierAsLiteral(function_args[1], context);
+        }
+        catch (...)
+        {
+            return std::pair{key, function_args[1]};
+        }
 
+        auto value = literal_value->as<ASTLiteral>()->value;
         return std::pair{key, value};
     }
 }
 
 
-MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(ASTs asts, bool throw_unknown_collection)
+MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(ASTs asts, bool throw_unknown_collection, std::vector<std::pair<std::string, ASTPtr>> * non_convertible)
 {
     if (asts.empty())
         return nullptr;
@@ -73,14 +80,21 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(ASTs asts, bool thr
 
     for (auto * it = std::next(asts.begin()); it != asts.end(); ++it)
     {
-        auto value_override = getKeyValueFromAST(*it);
+        auto value_override = getKeyValueFromAST(*it, non_convertible != nullptr);
+
         if (!value_override && !(*it)->as<ASTFunction>())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value argument or function");
         if (!value_override)
             continue;
 
+        if (const ASTPtr * value = std::get_if<ASTPtr>(&value_override->second))
+        {
+            non_convertible->emplace_back(value_override->first, *value);
+            continue;
+        }
+
         const auto & [key, value] = *value_override;
-        collection_copy->setOrUpdate<String>(key, toString(value));
+        collection_copy->setOrUpdate<String>(key, toString(std::get<Field>(value_override->second)));
     }
 
     return collection_copy;
