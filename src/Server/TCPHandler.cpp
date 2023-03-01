@@ -620,6 +620,8 @@ void TCPHandler::runImpl()
         /// It is important to destroy query context here. We do not want it to live arbitrarily longer than the query.
         query_context.reset();
 
+        CurrentThread::setFatalErrorCallback({});
+
         if (is_interserver_mode)
         {
             /// We don't really have session in interserver mode, new one is created for each query. It's better to reset it now.

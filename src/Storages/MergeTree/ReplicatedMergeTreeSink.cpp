@@ -985,7 +985,7 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
         }
         else if (Coordination::isUserError(multi_code))
         {
-            String failed_op_path = zkutil::KeeperMultiException(multi_code, ops, responses).getPathForFirstFailedOp();
+            String failed_op_path = ops[zkutil::getFailedOpIndex(multi_code, responses)]->getPath();
 
             auto contains = [](const auto & block_ids, const String & path)
             {
@@ -1002,7 +1002,7 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
 
             if (multi_code == Coordination::Error::ZNODEEXISTS && deduplicate_block && contains(block_id_path, failed_op_path))
             {
-                /// Block with the same id have just appeared in table (or other replica), rollback thee insertion.
+                /// Block with the same id have just appeared in table (or other replica), rollback the insertion.
                 LOG_INFO(log, "Block with ID {} already exists (it was just appeared). Renaming part {} back to {}. Will retry write.",
                     toString(block_id), part->name, temporary_part_relative_path);
 

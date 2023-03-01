@@ -1,8 +1,8 @@
 ---
 slug: /en/sql-reference/functions/tuple-map-functions
 sidebar_position: 46
-sidebar_label: Working with maps
-title: "Functions for maps"
+sidebar_label: Maps
+title: "Functions for Maps"
 ---
 
 ## map
@@ -440,7 +440,7 @@ mapApply(func, map)
   
 **Parameters**
   
--   `func`  - [Lamda function](../../sql-reference/functions/index.md#higher-order-functions---operator-and-lambdaparams-expr-function).
+-   `func`  - [Lambda function](../../sql-reference/functions/index.md#higher-order-functions---operator-and-lambdaparams-expr-function).
 -   `map` — [Map](../../sql-reference/data-types/map.md).
 
 **Returned value**
@@ -480,7 +480,7 @@ mapFilter(func, map)
   
 **Parameters**
 
--   `func`  - [Lamda function](../../sql-reference/functions/index.md#higher-order-functions---operator-and-lambdaparams-expr-function).
+-   `func`  - [Lambda function](../../sql-reference/functions/index.md#higher-order-functions---operator-and-lambdaparams-expr-function).
 -   `map` — [Map](../../sql-reference/data-types/map.md).  
 
 **Returned value**
