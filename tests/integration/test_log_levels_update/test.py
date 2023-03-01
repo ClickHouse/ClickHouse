@@ -10,7 +10,7 @@ node = cluster.add_instance(
 
 config = """<clickhouse>
     <logger>
-        <level>information</level>
+        <level>debug</level>
         <log>/var/log/clickhouse-server/clickhouse-server.log</log>
     </logger>
 </clickhouse>"""
