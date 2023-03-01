@@ -1199,7 +1199,7 @@ The function is named “injective” if it always returns different result for 
 
 ## space
 
-Repeats a string as many times as specified and concatenates the replicated values as a single string.
+Repeats a space as many times as specified and concatenates the replicated values as a single string.
 
 Alias: `SPACE`.
 
