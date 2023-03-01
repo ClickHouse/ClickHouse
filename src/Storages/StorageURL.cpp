@@ -48,7 +48,6 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int UNKNOWN_FILE_SIZE;
 }
 
 static constexpr auto bad_arguments_error_message = "Storage URL requires 1-4 arguments: "
@@ -224,10 +223,9 @@ namespace
                 {
                     total_size += getFileSizeFromReadBuffer(*read_buf);
                 }
-                catch (const Exception & e)
+                catch (...)
                 {
-                    if (e.code() != ErrorCodes::UNKNOWN_FILE_SIZE)
-                        throw;
+                    // we simply continue without total_size
                 }
 
                 auto input_format
