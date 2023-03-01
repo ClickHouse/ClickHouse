@@ -295,6 +295,58 @@ def test_merge_tree_custom_disk_setting(start_cluster):
     )
 
 
+def test_merge_tree_nested_custom_disk_setting(start_cluster):
+    node = cluster.instances["node1"]
+
+    minio = cluster.minio_client
+    for obj in list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)):
+        minio.remove_object(cluster.minio_bucket, obj.object_name)
+    assert (
+        len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)))
+        == 0
+    )
+
+    node.query(
+        """
+        DROP TABLE IF EXISTS test;
+        CREATE TABLE test (a Int32)
+        ENGINE = MergeTree() order by tuple()
+        SETTINGS disk = disk(
+                type=cache,
+                max_size='1Gi',
+                path='/var/lib/clickhouse/custom_disk_cache/',
+                disk=disk(
+                    type=s3,
+                    endpoint='http://minio1:9001/root/data/',
+                    access_key_id='minio',
+                    secret_access_key='minio123'));
+    """
+    )
+
+    node.query("INSERT INTO test SELECT number FROM numbers(100)")
+    node.query("SYSTEM DROP FILESYSTEM CACHE")
+
+    # Check cache is filled
+    assert 0 == int(node.query("SELECT count() FROM system.filesystem_cache"))
+    assert 100 == int(node.query("SELECT count() FROM test"))
+    node.query("SELECT * FROM test")
+    assert 0 < int(node.query("SELECT count() FROM system.filesystem_cache"))
+
+    # Check s3 is filled
+    assert (
+        len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True))) > 0
+    )
+
+    node.restart_clickhouse()
+
+    assert 100 == int(node.query("SELECT count() FROM test"))
+
+    expected = """
+        SETTINGS disk = disk(type = cache, max_size = \\'[HIDDEN]\\', path = \\'[HIDDEN]\\', disk = disk(type = s3, endpoint = \\'[HIDDEN]\\'
+    """
+    assert expected.strip() in node.query(f"SHOW CREATE TABLE test").strip()
+
+
 def test_merge_tree_setting_override(start_cluster):
     node = cluster.instances["node3"]
     assert (
