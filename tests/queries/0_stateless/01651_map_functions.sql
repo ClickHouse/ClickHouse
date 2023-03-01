@@ -34,6 +34,8 @@ select mapFromArrays(['aa', 'bb'], [4, 5]);
 select mapFromArrays(['aa', 'bb'], materialize([4, 5])) from numbers(2);
 select mapFromArrays(materialize(['aa', 'bb']), [4, 5]) from numbers(2);
 select mapFromArrays(materialize(['aa', 'bb']), materialize([4, 5])) from numbers(2);
+select mapFromArrays('aa', [4, 5]); -- { serverError 43 }
+select mapFromArrays(['aa', 'bb'], 5); -- { serverError 43 }
 select mapFromArrays(['aa', 'bb'], [4, 5], [6, 7]); -- { serverError 42 }
 select mapFromArrays(['aa', 'bb'], [4, 5, 6]); -- { serverError 190 }
 select mapFromArrays([[1,2], [3,4]], [4, 5, 6]); -- { serverError 36 }
