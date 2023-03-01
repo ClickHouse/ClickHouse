@@ -41,16 +41,16 @@ Tests should use (create, drop, etc) only tables in `test` database that is assu
 
 ### Restricting test runs
 
-A test can have one or more _test tags_ specifying restrictions for test runs.
+A test can have zero or more _test tags_ specifying restrictions for test runs.
 
-For `.sh` tests tags are placed in `.sh` files as comments, example:
+For `.sh` tests tags are written as a comment on the second line:
 
 ```bash
 #!/usr/bin/env bash
 # Tags: no-fasttest
 ```
 
-For `.sql` tests tags are placed as SQL comments, example: 
+For `.sql` tests tags are placed in the first line as a SQL comment:
 
 ```sql
 -- Tags: no-fasttest
@@ -59,16 +59,30 @@ SELECT 1
 
 |Tag name | What it does | Usage example |
 |---|---|---|
-| `no-fasttest`|  Test is not run under [Fast test](continuous-integration#fast-test) | Test uses MySQL table engine which is disabled in Fast test|
-| `zookeeper` | Test requires Zookeeper or ClickHouse Keeper to run ||
+| `disabled`|  Test is not run ||
 | `long` | Test's execution time is extended to 10 minutes ||
-| `no-replicated-database` |||
-| `no-parallel` |||
+| `race` |||
+| `replica` |||
+| `shard` |||
 | `distributed` |||
+| `deadlock` |||
+| `global` |||
+| `zookeeper` | Test requires Zookeeper or ClickHouse Keeper to run | Test uses `ReplicatedMergeTree` |
+| `no-fasttest`|  Test is not run under [Fast test](continuous-integration#fast-test) | Test uses `MySQL` table engine which is disabled in Fast test|
+| `no-replicated-database` |||
+| `no-ordinary-database` |||
+| `no-parallel` | Disables running other tests in parallel with this one | Test reads from `system` tables and invariants may be broken|
+| `no-debug` |||
+| `no-polymorphic-parts` |||
+| `no-stress` |||
 | `no-random-settings` |||
+| `no-random-merge-tree-settings` |||
 | `no-backward-compatibility-check` |||
 | `no-cpu-x86_64` |||
 | `no-cpu-aarch64` |||
+| `no-cpu-ppc64le` |||
+| `no-s3-storage` |||
+| `no-[asan, tsan, msan, ubsan]` | Disables tests in build with [sanitizers](#sanitizers) | Test is run under QEMU which doesn't work with sanitizers |
 
 In addition to the above settings, you can use `USE_*` flags from `system.build_options` to define usage of particular ClickHouse features.
 For example, if your test uses a MySQL table, you should add a tag `use-mysql`.
