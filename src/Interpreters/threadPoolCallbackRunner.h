@@ -30,7 +30,6 @@ ThreadPoolCallbackRunner<Result, Callback> threadPoolCallbackRunner(ThreadPool &
                     /// Releasing has to use proper memory tracker which has been set here before callback
 
                     [[maybe_unused]] auto tmp = std::move(callback);
-                    thread_name.clear();
                 }
 
                 if (thread_group)
