@@ -1252,6 +1252,15 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToReadImpl(
                 "Primary key ({}) is not used and setting 'force_primary_key' is set",
                 fmt::join(primary_key_column_names, ", ")))});
     }
+    LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "Key condition: {}", key_condition->toString());
+    try
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "STACK");
+    }
+    catch(...)
+    {
+        tryLogCurrentException(&Poco::Logger::get(__PRETTY_FUNCTION__));
+    }
     LOG_DEBUG(log, "Key condition: {}", key_condition->toString());
 
     if (key_condition->alwaysFalse())

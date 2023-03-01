@@ -151,12 +151,12 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
     return result;
 }
 
-bool applyTrivialCountIfPossible(
-    QueryPlan & query_plan,
-    const TableNode & table_node,
-    const QueryTreeNodePtr & query_tree,
-    const ContextPtr & query_context,
-    const Names & columns_names)
+bool applyTrivialCountIfPossible(QueryPlan & query_plan,
+                                 const TableNode & table_node,
+                                 const QueryTreeNodePtr & query_tree,
+                                 const ContextPtr & query_context,
+                                 const Names & columns_names,
+                                 const ActionsDAGPtr & filter_actions_dag)
 {
     const auto & settings = query_context->getSettingsRef();
     if (!settings.optimize_trivial_count_query)
@@ -206,14 +206,28 @@ bool applyTrivialCountIfPossible(
         num_rows = storage->totalRows(settings);
     }
     // TODO:
-    // else // It's possible to optimize count() given only partition predicates
-    // {
-    //     SelectQueryInfo temp_query_info;
-    //     temp_query_info.query = query_ptr;
-    //     temp_query_info.syntax_analyzer_result = syntax_analyzer_result;
-    //     temp_query_info.prepared_sets = query_analyzer->getPreparedSets();
-    //     num_rows = storage->totalRowsByPartitionPredicate(temp_query_info, context);
-    // }
+    else // It's possible to optimize count() given only partition predicates
+    {
+        LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "query tree\n{}", query_tree->dumpTree());
+
+        auto union_query_ast = query_tree->toAST();
+        LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "query tree AST\n{}", union_query_ast->dumpTree());
+
+        auto select_query_ast = union_query_ast->children.front()->children.front();
+        LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "select query AST\n{}", select_query_ast->dumpTree());
+
+        SelectQueryInfo temp_query_info;
+        temp_query_info.query = select_query_ast;
+
+        if (!filter_actions_dag)
+        {
+            LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "Filter actions DAG empty");
+            return false;
+        }
+        LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "Filter actions DAG\n{}", filter_actions_dag->dumpDAG());
+        temp_query_info.filter_actions_dag = filter_actions_dag;
+        num_rows = storage->totalRowsByPartitionPredicate(temp_query_info, query_context);
+    }
 
     if (!num_rows)
         return false;
@@ -418,8 +432,12 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(const QueryTreeNodePtr & tabl
 
         /// apply trivial_count optimization if possible
         bool is_trivial_count_applied = is_single_table_expression && table_node && select_query_info.has_aggregates
-            && applyTrivialCountIfPossible(query_plan, *table_node, select_query_info.query_tree, planner_context->getQueryContext(), columns_names);
-
+            && applyTrivialCountIfPossible(query_plan,
+                                           *table_node,
+                                           select_query_info.query_tree,
+                                           planner_context->getQueryContext(),
+                                           columns_names,
+                                           select_query_info.filter_actions_dag);
         if (is_trivial_count_applied)
         {
             from_stage = QueryProcessingStage::WithMergeableState;

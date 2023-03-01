@@ -951,6 +951,8 @@ Block MergeTreeData::getBlockWithVirtualPartColumns(const MergeTreeData::DataPar
 std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     const SelectQueryInfo & query_info, ContextPtr local_context, const DataPartsVector & parts) const
 {
+    LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "Number of parts: {}", parts.size());
+
     if (parts.empty())
         return 0u;
     auto metadata_snapshot = getInMemoryMetadataPtr();
@@ -962,7 +964,10 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
 
     PartitionPruner partition_pruner(metadata_snapshot, query_info, local_context, true /* strict */);
     if (partition_pruner.isUseless() && !valid)
+    {
+        LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "\nPruning useless: {} Valid: {}", partition_pruner.isUseless(), valid);
         return {};
+    }
 
     std::unordered_set<String> part_values;
     if (valid && expression_ast)
