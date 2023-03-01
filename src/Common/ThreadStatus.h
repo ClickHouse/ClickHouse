@@ -40,7 +40,7 @@ class TaskStatsInfoGetter;
 class InternalTextLogsQueue;
 struct ViewRuntimeData;
 class QueryViewsLog;
-class MemoryTrackerThreadSwitcher;
+class ThreadGroupSwitcher;
 using InternalTextLogsQueuePtr = std::shared_ptr<InternalTextLogsQueue>;
 using InternalTextLogsQueueWeakPtr = std::weak_ptr<InternalTextLogsQueue>;
 
@@ -176,12 +176,6 @@ private:
     bool performance_counters_finalized = false;
 
     String query_id_from_query_context;
-    /// Requires access to query_id.
-    friend class MemoryTrackerThreadSwitcher;
-    void setQueryId(const String & query_id_)
-    {
-        query_id_from_query_context = query_id_;
-    }
 
     struct TimePoint
     {
