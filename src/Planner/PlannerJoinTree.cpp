@@ -334,6 +334,16 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(const QueryTreeNodePtr & tabl
     }
     else if (query_node || union_node)
     {
+        if (table_expression_data.getColumnNames().empty())
+        {
+            const auto & projection_columns = query_node ? query_node->getProjectionColumns() : union_node->computeProjectionColumns();
+            NamesAndTypesList projection_columns_list(projection_columns.begin(), projection_columns.end());
+            auto additional_column_to_read = ExpressionActions::getSmallestColumn(projection_columns_list);
+
+            const auto & column_identifier = planner_context->getGlobalPlannerContext()->createColumnIdentifier(additional_column_to_read, table_expression);
+            table_expression_data.addColumn(additional_column_to_read, column_identifier);
+        }
+
         auto subquery_options = select_query_options.subquery();
         Planner subquery_planner(table_expression, subquery_options, planner_context->getGlobalPlannerContext());
         /// Propagate storage limits to subquery

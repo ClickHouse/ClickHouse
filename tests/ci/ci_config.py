@@ -289,6 +289,18 @@ CI_CONFIG = {
         "Stress test (debug)": {
             "required_build": "package_debug",
         },
+        "Upgrade check (asan)": {
+            "required_build": "package_asan",
+        },
+        "Upgrade check (tsan)": {
+            "required_build": "package_tsan",
+        },
+        "Upgrade check (msan)": {
+            "required_build": "package_msan",
+        },
+        "Upgrade check (debug)": {
+            "required_build": "package_debug",
+        },
         "Integration tests (asan)": {
             "required_build": "package_asan",
         },
