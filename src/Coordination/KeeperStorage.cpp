@@ -238,10 +238,7 @@ void KeeperStorage::Node::shallowCopy(const KeeperStorage::Node & other)
 void KeeperStorage::Node::recalculateSize()
 {
     size_bytes = sizeof(Node);
-
-    for (const auto child_path : children)
-        size_bytes += sizeof child_path;
-
+    size_bytes += children.size() * sizeof(decltype(children)::value_type);
     size_bytes += data.size();
 }
 
