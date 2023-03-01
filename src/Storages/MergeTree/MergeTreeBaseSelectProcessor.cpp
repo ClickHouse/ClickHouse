@@ -689,6 +689,9 @@ std::unique_ptr<MergeTreeBlockSizePredictor> IMergeTreeSelectAlgorithm::getSizeP
 }
 
 
-IMergeTreeSelectAlgorithm::~IMergeTreeSelectAlgorithm() = default;
+IMergeTreeSelectAlgorithm::~IMergeTreeSelectAlgorithm()
+{
+    LOG_TRACE(log, "Destructing BaseSelectProcessor for {}", std::string(CurrentThread::getQueryId()));
+}
 
 }
