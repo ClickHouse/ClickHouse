@@ -14,6 +14,6 @@ SELECT space(u8), length(space(u8)) FROM defaults;
 SELECT space(u16), length(space(u16)) FROM defaults;
 SELECT space(u32), length(space(u32)) from defaults;
 SELECT space(u64), length(space(u64)) FROM defaults;
-SELECT space(NULL) FROM default;
+SELECT space(NULL) FROM defaults;
 
 DROP TABLE defaults;
