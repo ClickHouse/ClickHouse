@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2120
 
 # Don't check for ODR violation, since we may test shared build with ASAN
 export ASAN_OPTIONS=detect_odr_violation=0
