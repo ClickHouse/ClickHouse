@@ -957,58 +957,59 @@ LockedKeyPtr FileCache::createLockedKey(const Key & key, KeyNotFoundPolicy key_n
     auto lock = metadata.lock();
     performDelayedRemovalOfDeletedKeysFromMetadata(lock);
 
-    auto find_metadata = [&]() -> CacheMetadata::iterator
-    {
-        auto it = metadata.find(key);
-        if (it == metadata.end())
-        {
-            switch (key_not_found_policy)
-            {
-                case KeyNotFoundPolicy::THROW:
-                {
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR, "No such key `{}` in cache", key.toString());
-                }
-                case KeyNotFoundPolicy::RETURN_NULL:
-                {
-                    return metadata.end();
-                }
-                case KeyNotFoundPolicy::CREATE_EMPTY:
-                {
-                    it = metadata.emplace(key, std::make_shared<KeyMetadata>()).first;
-                    break;
-                }
-            }
-        }
-        if (!it->second || !it->second->guard)
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Trash in metadata");
-        }
-        return it;
-    };
-
-
-    auto it = find_metadata();
+    auto it = metadata.find(key);
     if (it == metadata.end())
-        return nullptr;
+    {
+        if (key_not_found_policy == KeyNotFoundPolicy::THROW)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No such key `{}` in cache", key.toString());
+        else if (key_not_found_policy == KeyNotFoundPolicy::RETURN_NULL)
+            return nullptr;
+
+        it = metadata.emplace(key, std::make_shared<KeyMetadata>()).first;
+    }
+    else if (!it->second || !it->second->guard)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trash in metadata");
+    }
 
     auto key_metadata = it->second;
     auto key_guard = key_metadata->guard;
     auto key_lock = key_guard->lock();
 
-    if (!key_metadata->removed)
-        return std::make_unique<LockedKey>(key, key_metadata, std::move(key_lock), cleanup_keys_metadata_queue, this);
+    /// Removal of empty key from cache metadata is delayed.
+    /// Therefore here we need to check if the key which we currently took from cache metadata is a valid non-removed key.
+    /// Additional explanation:
+    ///   KeyMetadata::removed can be changed only under according KeyGuard::Lock. keyMetadata::removed is needed
+    ///   for delayed metadata cleanup, because usually we manage key metadata under key lock, e.g. delete the
+    ///   key metadata objects as well. So we could delete all key objects and the see that we deleted everything
+    ///   that we had for this key, so we consider that we need to remove this key from cache metadata. But in order
+    ///   to do that we need CacheMetadataGuard::Lock, which cannot be taken while holding KeyGuard::Lock.
+    ///   Therefore we need to retake locks in needed order to removed empty key from cache metadata. But it makes
+    ///   sense to do that with delay here.
+    if (key_metadata->removed)
+    {
+        /// If it is removed, then do perform delayed removal.
+        metadata.erase(it);
+        /// Get metadata one more time.
+        /// Throw exception if KeyNotFoundPolicy::THROW, return nullptr if KeyNotFoundPolicy::RETURN_NULL.
+        if (key_not_found_policy == KeyNotFoundPolicy::THROW)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No such key `{}` in cache", key.toString());
+        else if (key_not_found_policy == KeyNotFoundPolicy::RETURN_NULL)
+            return nullptr;
 
-    metadata.erase(it);
-    it = find_metadata();
-    if (it == metadata.end())
-        return nullptr;
-    return std::make_unique<LockedKey>(key, it->second, it->second->guard->lock(), cleanup_keys_metadata_queue, this);
+        it = metadata.emplace(key, std::make_shared<KeyMetadata>()).first;
+        return std::make_unique<LockedKey>(key, it->second, it->second->guard->lock(), cleanup_keys_metadata_queue, this);
+    }
+
+    return std::make_unique<LockedKey>(key, key_metadata, std::move(key_lock), cleanup_keys_metadata_queue, this);
 }
 
 LockedKeyPtr FileCache::createLockedKey(const Key & key, KeyMetadataPtr key_metadata) const
 {
-    return std::make_unique<LockedKey>(key, key_metadata, key_metadata->guard->lock(), cleanup_keys_metadata_queue, this);
+    auto key_lock = key_metadata->guard->lock();
+    if (key_metadata->removed)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot lock key: it was removed from cache");
+    return std::make_unique<LockedKey>(key, key_metadata, std::move(key_lock), cleanup_keys_metadata_queue, this);
 }
 
 FileSegmentsHolderPtr FileCache::getSnapshot()
@@ -1016,12 +1017,26 @@ FileSegmentsHolderPtr FileCache::getSnapshot()
     assertInitialized();
 
     auto lock = metadata.lock();
+    performDelayedRemovalOfDeletedKeysFromMetadata(lock);
 
     FileSegments file_segments;
-    for (const auto & [key, key_metadata] : metadata)
+    for (auto it = metadata.begin(); it != metadata.end();)
     {
+        auto key_metadata = it->second;
+        auto key_guard = key_metadata->guard;
+        auto key_lock = key_guard->lock();
+
+        /// Perform delayed removal of deleted key from cache metadata.
+        if (key_metadata->removed)
+        {
+            it = metadata.erase(it);
+            continue;
+        }
+
         for (const auto & [_, file_segment_metadata] : *key_metadata)
             file_segments.push_back(FileSegment::getSnapshot(file_segment_metadata.file_segment));
+
+        ++it;
     }
     return std::make_unique<FileSegmentsHolder>(std::move(file_segments));
 }
@@ -1030,7 +1045,8 @@ FileSegmentsHolderPtr FileCache::getSnapshot(const Key & key)
 {
     FileSegments file_segments;
     auto locked_key = createLockedKey(key, KeyNotFoundPolicy::THROW);
-    for (const auto & [_, file_segment_metadata] : *locked_key->getKeyMetadata())
+    auto key_metadata = locked_key->getKeyMetadata();
+    for (const auto & [_, file_segment_metadata] : *key_metadata)
         file_segments.push_back(FileSegment::getSnapshot(file_segment_metadata.file_segment));
     return std::make_unique<FileSegmentsHolder>(std::move(file_segments));
 }
