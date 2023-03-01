@@ -97,6 +97,20 @@ MutableSerializationInfoPtr SerializationInfoTuple::clone() const
     return std::make_shared<SerializationInfoTuple>(std::move(elems_cloned), names, settings);
 }
 
+MutableSerializationInfoPtr SerializationInfoTuple::createWithType(const IDataType & type, const Settings & new_settings) const
+{
+    const auto & type_tuple = assert_cast<const DataTypeTuple &>(type);
+    const auto & tuple_elements = type_tuple.getElements();
+    assert(elems.size() == tuple_elements.size());
+
+    MutableSerializationInfos infos;
+    infos.reserve(elems.size());
+    for (size_t i = 0; i < elems.size(); ++i)
+        infos.push_back(elems[i]->createWithType(*tuple_elements[i], new_settings));
+
+    return std::make_shared<SerializationInfoTuple>(std::move(infos), names, new_settings);
+}
+
 void SerializationInfoTuple::serialializeKindBinary(WriteBuffer & out) const
 {
     SerializationInfo::serialializeKindBinary(out);
