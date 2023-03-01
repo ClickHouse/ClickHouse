@@ -232,11 +232,7 @@ def test_delete_from_table(started_cluster, engine):
     dummy_node.query("INSERT INTO TABLE {} VALUES(1, 'bbbb');".format(name))
     dummy_node.query("INSERT INTO TABLE {} VALUES(2, 'bbbb');".format(name))
 
-    main_node.query(
-        "DELETE FROM {} WHERE id=2;".format(
-            name
-        )
-    )
+    main_node.query("DELETE FROM {} WHERE id=2;".format(name))
 
     expected = "1\taaaa\n1\tbbbb"
 
