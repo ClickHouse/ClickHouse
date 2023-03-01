@@ -54,6 +54,10 @@
         "name": "clickhouse/stress-test",
         "dependent": []
     },
+    "docker/test/upgrade": {
+        "name": "clickhouse/upgrade-check",
+        "dependent": []
+    },
     "docker/test/codebrowser": {
         "name": "clickhouse/codebrowser",
         "dependent": []
@@ -146,9 +150,5 @@
         "name": "clickhouse/docs-builder",
         "dependent": [
         ]
-    },
-    "docker/docs/release": {
-        "name": "clickhouse/docs-release",
-        "dependent": []
     }
 }

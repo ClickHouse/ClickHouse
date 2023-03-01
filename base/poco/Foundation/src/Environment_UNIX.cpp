@@ -185,11 +185,7 @@ void EnvironmentImpl::nodeIdImpl(NodeId& id)
 /// #include <sys/socket.h>
 #include <netinet/in.h>
 #include <net/if.h>
-#ifndef __CYGWIN__
 #include <net/if_arp.h>
-#else // workaround for Cygwin, which does not have if_arp.h
-#define ARPHRD_ETHER 1 /* Ethernet 10Mbps */
-#endif
 #include <arpa/inet.h>
 /// #include <sys/types.h>
 #include <sys/stat.h>

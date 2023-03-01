@@ -47,7 +47,7 @@ IMergeTreeSelectAlgorithm::IMergeTreeSelectAlgorithm(
     const MergeTreeData & storage_,
     const StorageSnapshotPtr & storage_snapshot_,
     const PrewhereInfoPtr & prewhere_info_,
-    ExpressionActionsSettings actions_settings,
+    const ExpressionActionsSettings & actions_settings_,
     UInt64 max_block_size_rows_,
     UInt64 preferred_block_size_bytes_,
     UInt64 preferred_max_column_in_block_size_bytes_,
@@ -57,7 +57,8 @@ IMergeTreeSelectAlgorithm::IMergeTreeSelectAlgorithm(
     : storage(storage_)
     , storage_snapshot(storage_snapshot_)
     , prewhere_info(prewhere_info_)
-    , prewhere_actions(getPrewhereActions(prewhere_info, actions_settings))
+    , actions_settings(actions_settings_)
+    , prewhere_actions(getPrewhereActions(prewhere_info, actions_settings, reader_settings_.enable_multiple_prewhere_read_steps))
     , max_block_size_rows(max_block_size_rows_)
     , preferred_block_size_bytes(preferred_block_size_bytes_)
     , preferred_max_column_in_block_size_bytes(preferred_max_column_in_block_size_bytes_)
@@ -78,11 +79,18 @@ IMergeTreeSelectAlgorithm::IMergeTreeSelectAlgorithm(
     result_header = header_without_const_virtual_columns;
     injectPartConstVirtualColumns(0, result_header, nullptr, partition_value_type, virt_column_names);
 
-    LOG_TEST(log, "PREWHERE actions: {}", (prewhere_actions ? prewhere_actions->dump() : std::string("<nullptr>")));
+    if (prewhere_actions)
+        LOG_TRACE(log, "PREWHERE condition was split into {} steps: {}", prewhere_actions->steps.size(), prewhere_actions->dumpConditions());
+
+    if (prewhere_info)
+        LOG_TEST(log, "Original PREWHERE DAG:\n{}\nPREWHERE actions:\n{}",
+            (prewhere_info->prewhere_actions ? prewhere_info->prewhere_actions->dumpDAG(): std::string("<nullptr>")),
+            (prewhere_actions ? prewhere_actions->dump() : std::string("<nullptr>")));
 }
 
+bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionActionsSettings & actions_settings, PrewhereExprInfo & prewhere);
 
-std::unique_ptr<PrewhereExprInfo> IMergeTreeSelectAlgorithm::getPrewhereActions(PrewhereInfoPtr prewhere_info, const ExpressionActionsSettings & actions_settings)
+std::unique_ptr<PrewhereExprInfo> IMergeTreeSelectAlgorithm::getPrewhereActions(PrewhereInfoPtr prewhere_info, const ExpressionActionsSettings & actions_settings, bool enable_multiple_prewhere_read_steps)
 {
     std::unique_ptr<PrewhereExprInfo> prewhere_actions;
     if (prewhere_info)
@@ -102,15 +110,19 @@ std::unique_ptr<PrewhereExprInfo> IMergeTreeSelectAlgorithm::getPrewhereActions(
             prewhere_actions->steps.emplace_back(std::move(row_level_filter_step));
         }
 
-        PrewhereExprStep prewhere_step
+        if (!enable_multiple_prewhere_read_steps ||
+            !tryBuildPrewhereSteps(prewhere_info, actions_settings, *prewhere_actions))
         {
-            .actions = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions, actions_settings),
-            .column_name = prewhere_info->prewhere_column_name,
-            .remove_column = prewhere_info->remove_prewhere_column,
-            .need_filter = prewhere_info->need_filter
-        };
+            PrewhereExprStep prewhere_step
+            {
+                .actions = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions, actions_settings),
+                .column_name = prewhere_info->prewhere_column_name,
+                .remove_column = prewhere_info->remove_prewhere_column,
+                .need_filter = prewhere_info->need_filter
+            };
 
-        prewhere_actions->steps.emplace_back(std::move(prewhere_step));
+            prewhere_actions->steps.emplace_back(std::move(prewhere_step));
+        }
     }
 
     return prewhere_actions;
@@ -170,16 +182,16 @@ ChunkAndProgress IMergeTreeSelectAlgorithm::read()
             return ChunkAndProgress{
                 .chunk = Chunk(ordered_columns, res.row_count),
                 .num_read_rows = res.num_read_rows,
-                .num_read_bytes = res.num_read_bytes};
+                .num_read_bytes = res.num_read_bytes,
+                .is_finished = false};
         }
         else
         {
-            num_read_rows += res.num_read_rows;
-            num_read_bytes += res.num_read_bytes;
+            return {Chunk(), res.num_read_rows, res.num_read_bytes, false};
         }
     }
 
-    return {Chunk(), num_read_rows, num_read_bytes};
+    return {Chunk(), num_read_rows, num_read_bytes, true};
 }
 
 void IMergeTreeSelectAlgorithm::initializeMergeTreeReadersForCurrentTask(
