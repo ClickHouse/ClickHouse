@@ -2,7 +2,6 @@
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
-#include <DataTypes/DataTypeString.h>
 
 namespace DB
 {
