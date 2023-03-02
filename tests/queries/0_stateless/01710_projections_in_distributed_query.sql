@@ -1,4 +1,4 @@
--- Tags: distributed
+-- Tags: distributed, no-s3-storage
 
 drop table if exists projection_test;
 

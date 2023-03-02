@@ -58,13 +58,9 @@ inline void writeHexUIntImpl(TUInt uint_, char * out, const char * const table)
 
     value = uint_;
 
+    /// Use little endian
     for (size_t i = 0; i < sizeof(TUInt); ++i)
-    {
-        if constexpr (std::endian::native == std::endian::little)
-            memcpy(out + i * 2, &table[static_cast<size_t>(uint8[sizeof(TUInt) - 1 - i]) * 2], 2);
-        else
-            memcpy(out + i * 2, &table[static_cast<size_t>(uint8[i]) * 2], 2);
-    }
+        memcpy(out + i * 2, &table[static_cast<size_t>(uint8[sizeof(TUInt) - 1 - i]) * 2], 2);
 }
 
 template <typename TUInt>

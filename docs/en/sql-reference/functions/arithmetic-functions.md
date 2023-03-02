@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/functions/arithmetic-functions
 sidebar_position: 34
 sidebar_label: Arithmetic
 ---
@@ -48,35 +47,7 @@ When dividing by zero you get ‘inf’, ‘-inf’, or ‘nan’.
 ## intDiv(a, b)
 
 Calculates the quotient of the numbers. Divides into integers, rounding down (by the absolute value).
-
-Returns an integer of the type of the dividend (the first parameter).
-
-An exception is thrown when dividing by zero, when the quotient does not fit in the range of the dividend, or when dividing a minimal negative number by minus one.
-
-**Example**
-
-Query:
-
-```sql
-SELECT
-    intDiv(toFloat64(1), 0.001) AS res,
-    toTypeName(res)
-```
-```response
-┌──res─┬─toTypeName(intDiv(toFloat64(1), 0.001))─┐
-│ 1000 │ Int64                                   │
-└──────┴─────────────────────────────────────────┘
-```
-
-```sql
-SELECT
-    intDiv(1, 0.001) AS res,
-    toTypeName(res)
-```
-```response
-Received exception from server (version 23.2.1):
-Code: 153. DB::Exception: Received from localhost:9000. DB::Exception: Cannot perform integer division, because it will produce infinite or too large number: While processing intDiv(1, 0.001) AS res, toTypeName(res). (ILLEGAL_DIVISION)
-```
+An exception is thrown when dividing by zero or when dividing a minimal negative number by minus one.
 
 ## intDivOrZero(a, b)
 
@@ -92,28 +63,6 @@ An exception is thrown when dividing by zero or when dividing a minimal negative
 ## moduloOrZero(a, b)
 
 Differs from [modulo](#modulo) in that it returns zero when the divisor is zero.
-
-## positiveModulo(a, b), positive_modulo(a, b), pmod(a, b)
-Calculates the remainder when dividing `a` by `b`. Similar to the function `modulo` except that `positive_modulo` always returns a non-negative number.
-
-Notice that `positive_modulo` is 4-5 times slower than `modulo`. You should not use `positive_modulo` unless you want to get a positive result and don't care about performance too much.
-
-**Example**
-
-Query:
-
-```sql
-SELECT positiveModulo(-1, 10)
-```
-
-Result:
-
-```text
-
-┌─positiveModulo(-1, 10)─┐
-│                      9 │
-└────────────────────────┘
-```
 
 ## negate(a), -a operator
 
@@ -177,7 +126,7 @@ Compares two values and returns the minimum. The returned value is converted to 
 **Syntax**
 
 ```sql
-min2(value1, value2)
+max2(value1, value2)
 ```
 
 **Arguments**
@@ -205,141 +154,4 @@ Result:
 ┌─min2(-1, 2)─┐
 │          -1 │
 └─────────────┘
-```
-
-## multiplyDecimal(a, b[, result_scale])
-
-Performs multiplication on two decimals. Result value will be of type [Decimal256](../../sql-reference/data-types/decimal.md).
-Result scale can be explicitly specified by `result_scale` argument (const Integer in range `[0, 76]`). If not specified, the result scale is the max scale of given arguments.
-
-:::note    
-These functions work significantly slower than usual `multiply`.
-In case you don't really need controlled precision and/or need fast computation, consider using [multiply](#multiply)
-:::
-
-**Syntax**
-
-```sql
-multiplyDecimal(a, b[, result_scale])
-```
-
-**Arguments**
-
--   `a` — First value: [Decimal](../../sql-reference/data-types/decimal.md).
--   `b` — Second value: [Decimal](../../sql-reference/data-types/decimal.md).
--   `result_scale` — Scale of result: [Int/UInt](../../sql-reference/data-types/int-uint.md).
-
-**Returned value**
-
--   The result of multiplication with given scale.
-
-Type: [Decimal256](../../sql-reference/data-types/decimal.md).
-
-**Example**
-
-```text
-┌─multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1)─┐
-│                                                           25.2 │
-└────────────────────────────────────────────────────────────────┘
-```
-
-**Difference from regular multiplication:**
-```sql
-SELECT toDecimal64(-12.647, 3) * toDecimal32(2.1239, 4);
-SELECT toDecimal64(-12.647, 3) as a, toDecimal32(2.1239, 4) as b, multiplyDecimal(a, b);
-```
-
-```text
-┌─multiply(toDecimal64(-12.647, 3), toDecimal32(2.1239, 4))─┐
-│                                               -26.8609633 │
-└───────────────────────────────────────────────────────────┘
-┌─multiplyDecimal(toDecimal64(-12.647, 3), toDecimal32(2.1239, 4))─┐
-│                                                         -26.8609 │
-└──────────────────────────────────────────────────────────────────┘
-```
-
-```sql
-SELECT
-    toDecimal64(-12.647987876, 9) AS a,
-    toDecimal64(123.967645643, 9) AS b,
-    multiplyDecimal(a, b);
-
-SELECT
-    toDecimal64(-12.647987876, 9) AS a,
-    toDecimal64(123.967645643, 9) AS b,
-    a * b;
-```
-
-```text
-┌─────────────a─┬─────────────b─┬─multiplyDecimal(toDecimal64(-12.647987876, 9), toDecimal64(123.967645643, 9))─┐
-│ -12.647987876 │ 123.967645643 │                                                               -1567.941279108 │
-└───────────────┴───────────────┴───────────────────────────────────────────────────────────────────────────────┘
-
-Received exception from server (version 22.11.1):
-Code: 407. DB::Exception: Received from localhost:9000. DB::Exception: Decimal math overflow: While processing toDecimal64(-12.647987876, 9) AS a, toDecimal64(123.967645643, 9) AS b, a * b. (DECIMAL_OVERFLOW)
-```
-
-## divideDecimal(a, b[, result_scale])
-
-Performs division on two decimals. Result value will be of type [Decimal256](../../sql-reference/data-types/decimal.md).
-Result scale can be explicitly specified by `result_scale` argument (const Integer in range `[0, 76]`). If not specified, the result scale is the max scale of given arguments.
-
-:::note    
-These function work significantly slower than usual `divide`.
-In case you don't really need controlled precision and/or need fast computation, consider using [divide](#divide).
-:::
-
-**Syntax**
-
-```sql
-divideDecimal(a, b[, result_scale])
-```
-
-**Arguments**
-
--   `a` — First value: [Decimal](../../sql-reference/data-types/decimal.md).
--   `b` — Second value: [Decimal](../../sql-reference/data-types/decimal.md).
--   `result_scale` — Scale of result: [Int/UInt](../../sql-reference/data-types/int-uint.md).
-
-**Returned value**
-
--   The result of division with given scale.
-
-Type: [Decimal256](../../sql-reference/data-types/decimal.md).
-
-**Example**
-
-```text
-┌─divideDecimal(toDecimal256(-12, 0), toDecimal32(2.1, 1), 10)─┐
-│                                                -5.7142857142 │
-└──────────────────────────────────────────────────────────────┘
-```
-
-**Difference from regular division:**
-```sql
-SELECT toDecimal64(-12, 1) / toDecimal32(2.1, 1);
-SELECT toDecimal64(-12, 1) as a, toDecimal32(2.1, 1) as b, divideDecimal(a, b, 1), divideDecimal(a, b, 5);
-```
-
-```text
-┌─divide(toDecimal64(-12, 1), toDecimal32(2.1, 1))─┐
-│                                             -5.7 │
-└──────────────────────────────────────────────────┘
-
-┌───a─┬───b─┬─divideDecimal(toDecimal64(-12, 1), toDecimal32(2.1, 1), 1)─┬─divideDecimal(toDecimal64(-12, 1), toDecimal32(2.1, 1), 5)─┐
-│ -12 │ 2.1 │                                                       -5.7 │                                                   -5.71428 │
-└─────┴─────┴────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────┘
-```
-
-```sql
-SELECT toDecimal64(-12, 0) / toDecimal32(2.1, 1);
-SELECT toDecimal64(-12, 0) as a, toDecimal32(2.1, 1) as b, divideDecimal(a, b, 1), divideDecimal(a, b, 5);
-```
-
-```text
-DB::Exception: Decimal result's scale is less than argument's one: While processing toDecimal64(-12, 0) / toDecimal32(2.1, 1). (ARGUMENT_OUT_OF_BOUND)
-
-┌───a─┬───b─┬─divideDecimal(toDecimal64(-12, 0), toDecimal32(2.1, 1), 1)─┬─divideDecimal(toDecimal64(-12, 0), toDecimal32(2.1, 1), 5)─┐
-│ -12 │ 2.1 │                                                       -5.7 │                                                   -5.71428 │
-└─────┴─────┴────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────┘
 ```

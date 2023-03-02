@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Access/SettingsProfileElement.h>
 #include <Common/SettingsChanges.h>
 #include <unordered_map>
+
 
 namespace Poco::Util
 {
@@ -12,7 +12,6 @@ namespace Poco::Util
 namespace DB
 {
 struct Settings;
-struct MergeTreeSettings;
 struct SettingChange;
 class SettingsChanges;
 class AccessControl;
@@ -36,22 +35,18 @@ class AccessControl;
   *               <max>20000000000</max>
   *           </max_memory_usage>
   *           <force_index_by_date>
-  *               <const/>
+  *               <readonly/>
   *           </force_index_by_date>
-  *           <max_threads>
-  *               <changable_in_readonly/>
-  *           </max_threads>
   *       </constraints>
   *   </user_profile>
   * </profiles>
   *
   * This class also checks that we are not in the read-only mode.
   * If a setting cannot be change due to the read-only mode this class throws an exception.
-  * The value of `readonly` is understood as follows:
-  * 0 - not read-only mode, no additional checks.
-  * 1 - only read queries, as well as changing settings with <changable_in_readonly/> flag.
-  * 2 - only read queries and you can change the settings, except for the `readonly` setting.
-  *
+  * The value of `readonly` value is understood as follows:
+  * 0 - everything allowed.
+  * 1 - only read queries can be made; you can not change the settings.
+  * 2 - you can only do read queries and you can change the settings, except for the `readonly` setting.
   */
 class SettingsConstraints
 {
@@ -66,21 +61,24 @@ public:
     void clear();
     bool empty() const { return constraints.empty(); }
 
-    void set(const String & full_name, const Field & min_value, const Field & max_value, SettingConstraintWritability writability);
-    void get(const Settings & current_settings, std::string_view short_name, Field & min_value, Field & max_value, SettingConstraintWritability & writability) const;
-    void get(const MergeTreeSettings & current_settings, std::string_view short_name, Field & min_value, Field & max_value, SettingConstraintWritability & writability) const;
+    void setMinValue(std::string_view setting_name, const Field & min_value);
+    Field getMinValue(std::string_view setting_name) const;
+
+    void setMaxValue(std::string_view setting_name, const Field & max_value);
+    Field getMaxValue(std::string_view setting_name) const;
+
+    void setReadOnly(std::string_view setting_name, bool read_only);
+    bool isReadOnly(std::string_view setting_name) const;
+
+    void set(std::string_view setting_name, const Field & min_value, const Field & max_value, bool read_only);
+    void get(std::string_view setting_name, Field & min_value, Field & max_value, bool & read_only) const;
 
     void merge(const SettingsConstraints & other);
 
     /// Checks whether `change` violates these constraints and throws an exception if so.
-    void check(const Settings & current_settings, const SettingsProfileElements & profile_elements) const;
     void check(const Settings & current_settings, const SettingChange & change) const;
     void check(const Settings & current_settings, const SettingsChanges & changes) const;
     void check(const Settings & current_settings, SettingsChanges & changes) const;
-
-    /// Checks whether `change` violates these constraints and throws an exception if so. (setting short name is expected inside `changes`)
-    void check(const MergeTreeSettings & current_settings, const SettingChange & change) const;
-    void check(const MergeTreeSettings & current_settings, const SettingsChanges & changes) const;
 
     /// Checks whether `change` violates these and clamps the `change` if so.
     void clamp(const Settings & current_settings, SettingsChanges & changes) const;
@@ -89,15 +87,10 @@ public:
     friend bool operator !=(const SettingsConstraints & left, const SettingsConstraints & right) { return !(left == right); }
 
 private:
-    enum ReactionOnViolation
-    {
-        THROW_ON_VIOLATION,
-        CLAMP_ON_VIOLATION,
-    };
-
     struct Constraint
     {
-        SettingConstraintWritability writability = SettingConstraintWritability::WRITABLE;
+        std::shared_ptr<const String> setting_name;
+        bool read_only = false;
         Field min_value;
         Field max_value;
 
@@ -105,63 +98,18 @@ private:
         bool operator !=(const Constraint & other) const { return !(*this == other); }
     };
 
-    struct Checker
+    enum ReactionOnViolation
     {
-        Constraint constraint;
-        using NameResolver = std::function<std::string_view(std::string_view)>;
-        NameResolver setting_name_resolver;
-
-        String explain;
-        int code = 0;
-
-        // Allows everything
-        explicit Checker(NameResolver setting_name_resolver_)
-            : setting_name_resolver(std::move(setting_name_resolver_))
-        {}
-
-        // Forbidden with explanation
-        Checker(const String & explain_, int code_)
-            : constraint{.writability = SettingConstraintWritability::CONST}
-            , explain(explain_)
-            , code(code_)
-        {}
-
-        // Allow or forbid depending on range defined by constraint, also used to return stored constraint
-        explicit Checker(const Constraint & constraint_, NameResolver setting_name_resolver_)
-            : constraint(constraint_)
-            , setting_name_resolver(std::move(setting_name_resolver_))
-        {}
-
-        // Perform checking
-        bool check(SettingChange & change, const Field & new_value, ReactionOnViolation reaction) const;
+        THROW_ON_VIOLATION,
+        CLAMP_ON_VIOLATION,
     };
-
-    struct StringHash
-    {
-        using is_transparent = void;
-        size_t operator()(std::string_view txt) const
-        {
-            return std::hash<std::string_view>{}(txt);
-        }
-    };
-
     bool checkImpl(const Settings & current_settings, SettingChange & change, ReactionOnViolation reaction) const;
-    bool checkImpl(const MergeTreeSettings & current_settings, SettingChange & change, ReactionOnViolation reaction) const;
 
-    Checker getChecker(const Settings & current_settings, std::string_view setting_name) const;
-    Checker getMergeTreeChecker(std::string_view short_name) const;
+    Constraint & getConstraintRef(std::string_view setting_name);
+    const Constraint * tryGetConstraint(std::string_view setting_name) const;
 
-    std::string_view resolveSettingNameWithCache(std::string_view name) const;
-
-    // Special container for heterogeneous lookups: to avoid `String` construction during `find(std::string_view)`
-    using Constraints = std::unordered_map<String, Constraint, StringHash, std::equal_to<>>;
-    Constraints constraints;
-    /// to avoid creating new string every time we cache the alias resolution
-    /// we cannot use resolveName from BaseSettings::Traits because MergeTreeSettings have added prefix
-    /// we store only resolved aliases inside the Constraints so to correctly search the container we always need to use resolved name
-    std::unordered_map<std::string, std::string, StringHash, std::equal_to<>> settings_alias_cache;
-
-    const AccessControl * access_control;
+    std::unordered_map<std::string_view, Constraint> constraints;
+    const AccessControl * access_control = nullptr;
 };
 
 }

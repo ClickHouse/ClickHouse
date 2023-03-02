@@ -102,15 +102,15 @@ void SerializationNumber<T>::deserializeTextCSV(IColumn & column, ReadBuffer & i
 }
 
 template <typename T>
-void SerializationNumber<T>::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
+void SerializationNumber<T>::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
     /// ColumnVector<T>::ValueType is a narrower type. For example, UInt8, when the Field type is UInt64
-    typename ColumnVector<T>::ValueType x = static_cast<typename ColumnVector<T>::ValueType>(field.get<FieldType>());
+    typename ColumnVector<T>::ValueType x = get<FieldType>(field);
     writeBinary(x, ostr);
 }
 
 template <typename T>
-void SerializationNumber<T>::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const
+void SerializationNumber<T>::deserializeBinary(Field & field, ReadBuffer & istr) const
 {
     typename ColumnVector<T>::ValueType x;
     readBinary(x, istr);
@@ -118,13 +118,13 @@ void SerializationNumber<T>::deserializeBinary(Field & field, ReadBuffer & istr,
 }
 
 template <typename T>
-void SerializationNumber<T>::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void SerializationNumber<T>::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
     writeBinary(assert_cast<const ColumnVector<T> &>(column).getData()[row_num], ostr);
 }
 
 template <typename T>
-void SerializationNumber<T>::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationNumber<T>::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 {
     typename ColumnVector<T>::ValueType x;
     readBinary(x, istr);

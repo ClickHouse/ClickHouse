@@ -15,13 +15,12 @@
 				<sasl_kerberos_principal>kafkauser/instance@TEST.CLICKHOUSE.TECH</sasl_kerberos_principal>
 				<debug>security</debug>
 				<api_version_request>false</api_version_request>
-        <kafka_topic>
-            <name>consumer_hang</name>
-            <!-- default: 3000 -->
-            <heartbeat_interval_ms>300</heartbeat_interval_ms>
-            <!-- default: 10000 -->
-            <session_timeout_ms>6000</session_timeout_ms>
-        </kafka_topic>
     </kafka>
 
+    <kafka_consumer_hang>
+        <!-- default: 3000 -->
+        <heartbeat_interval_ms>300</heartbeat_interval_ms>
+        <!-- default: 10000 -->
+        <session_timeout_ms>6000</session_timeout_ms>
+    </kafka_consumer_hang>
 </clickhouse>

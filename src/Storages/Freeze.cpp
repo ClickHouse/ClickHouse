@@ -132,9 +132,7 @@ BlockIO Unfreezer::systemUnfreeze(const String & backup_name)
     static constexpr auto config_key = "enable_system_unfreeze";
     if (!config.getBool(config_key, false))
     {
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Support for SYSTEM UNFREEZE query is disabled. You can enable it via '{}' server setting",
-                        config_key);
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for SYSTEM UNFREEZE query is disabled. You can enable it via '{}' server setting", config_key);
     }
 
     auto disks_map = local_context->getDisksMap();
@@ -196,7 +194,7 @@ bool Unfreezer::removeFreezedPart(DiskPtr disk, const String & path, const Strin
         if (meta.load(disk, path))
         {
             FreezeMetaData::clean(disk, path);
-            return StorageReplicatedMergeTree::removeSharedDetachedPart(disk, path, part_name, meta.table_shared_id, meta.replica_name, "", local_context, zookeeper);
+            return StorageReplicatedMergeTree::removeSharedDetachedPart(disk, path, part_name, meta.table_shared_id, meta.zookeeper_name, meta.replica_name, "", local_context, zookeeper);
         }
     }
 
