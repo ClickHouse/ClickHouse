@@ -336,7 +336,19 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(const QueryTreeNodePtr & tabl
     }
     else if (query_node || union_node)
     {
-        if (!select_query_options.only_analyze)
+        if (select_query_options.only_analyze)
+        {
+            auto projection_columns = query_node ? query_node->getProjectionColumns() : union_node->computeProjectionColumns();
+            Block source_header;
+            for (auto & projection_column : projection_columns)
+                source_header.insert(ColumnWithTypeAndName(projection_column.type, projection_column.name));
+
+            Pipe pipe(std::make_shared<NullSource>(source_header));
+            auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+            read_from_pipe->setStepDescription("Read from NullSource");
+            query_plan.addStep(std::move(read_from_pipe));
+        }
+        else
         {
             if (table_expression_data.getColumnNames().empty())
             {
@@ -354,18 +366,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(const QueryTreeNodePtr & tabl
             subquery_planner.addStorageLimits(*select_query_info.storage_limits);
             subquery_planner.buildQueryPlanIfNeeded();
             query_plan = std::move(subquery_planner).extractQueryPlan();
-        }
-        else
-        {
-            auto projection_columns = query_node ? query_node->getProjectionColumns() : union_node->computeProjectionColumns();
-            Block source_header;
-            for (auto & projection_column : projection_columns)
-                source_header.insert(ColumnWithTypeAndName(projection_column.type, projection_column.name));
-
-            Pipe pipe(std::make_shared<NullSource>(source_header));
-            auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
-            read_from_pipe->setStepDescription("Read from NullSource");
-            query_plan.addStep(std::move(read_from_pipe));
         }
     }
     else
