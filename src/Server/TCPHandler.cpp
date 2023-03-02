@@ -1335,6 +1335,7 @@ bool TCPHandler::receivePacket()
                 std::this_thread::sleep_for(ms);
             }
 
+            LOG_INFO(log, "Received 'Cancel' packet from the client, canceling the query");
             state.is_cancelled = true;
 
             return false;
@@ -1378,6 +1379,7 @@ String TCPHandler::receiveReadTaskResponseAssumeLocked()
     {
         if (packet_type == Protocol::Client::Cancel)
         {
+            LOG_INFO(log, "Received 'Cancel' packet from the client, canceling the read task");
             state.is_cancelled = true;
             /// For testing connection collector.
             if (unlikely(sleep_in_receive_cancel.totalMilliseconds()))
@@ -1411,6 +1413,7 @@ std::optional<ParallelReadResponse> TCPHandler::receivePartitionMergeTreeReadTas
     {
         if (packet_type == Protocol::Client::Cancel)
         {
+            LOG_INFO(log, "Received 'Cancel' packet from the client, canceling the MergeTree read task");
             state.is_cancelled = true;
             /// For testing connection collector.
             if (unlikely(sleep_in_receive_cancel.totalMilliseconds()))
