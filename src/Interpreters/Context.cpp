@@ -42,6 +42,7 @@
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/Cache/QueryCache.h>
+#include <Interpreters/PreparedSets.h>
 #include <Core/Settings.h>
 #include <Core/SettingsQuirks.h>
 #include <Access/AccessControl.h>
@@ -4106,6 +4107,16 @@ bool Context::canUseParallelReplicasOnFollower() const
     return getParallelReplicasMode() == ParallelReplicasMode::READ_TASKS
         && settings.max_parallel_replicas > 1
         && getClientInfo().collaborate_with_initiator;
+}
+
+void Context::setPreparedSetsCache(const PreparedSetsCachePtr & cache)
+{
+    prepared_sets_cache = cache;
+}
+
+PreparedSetsCachePtr Context::getPreparedSetsCache() const
+{
+    return prepared_sets_cache;
 }
 
 UInt64 Context::getClientProtocolVersion() const

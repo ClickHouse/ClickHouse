@@ -543,6 +543,7 @@ ActionsMatcher::Data::Data(
     , subquery_depth(subquery_depth_)
     , source_columns(source_columns_)
     , prepared_sets(prepared_sets_)
+    , prepared_sets_cache(context_->getPreparedSetsCache())
     , no_subqueries(no_subqueries_)
     , no_makeset(no_makeset_)
     , only_consts(only_consts_)
@@ -1385,6 +1386,15 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
         auto set_key = PreparedSetKey::forSubquery(*right_in_operand);
         if (SetPtr set = data.prepared_sets->get(set_key))
             return set;
+
+        if (data.prepared_sets_cache)
+        {
+            if (auto set = data.prepared_sets_cache->findOrBuild(set_key, nullptr))
+            {
+                data.prepared_sets->set(set_key, set);
+                return set;
+            }
+        }
 
         /// A special case is if the name of the table is specified on the right side of the IN statement,
         ///  and the table has the type Set (a previously prepared set).
