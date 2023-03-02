@@ -33,32 +33,10 @@ done
 
 $CLICKHOUSE_CLIENT --query="ALTER TABLE table_to_rename RENAME COLUMN v1 to v2" &
 
-counter=0 retries=60
 
-I=0
-while [[ $counter -lt $retries ]]; do
-    I=$((I + 1))
-    result=$($CLICKHOUSE_CLIENT --query "show create table table_to_rename")
-    if [[ $result == *"v2"* ]]; then
-        break;
-    fi
-    sleep 0.1
-    ((++counter))
-done
-
-counter=0 retries=60
-
-I=0
-while [[ $counter -lt $retries ]]; do
-    I=$((I + 1))
-    result=$($CLICKHOUSE_CLIENT --query "SELECT count() from system.mutations where database='${CLICKHOUSE_DATABASE}' and table='table_to_rename'")
-    if [[ $result == "2" ]]; then
-        break;
-    fi
-    sleep 0.1
-    ((++counter))
-done
-
+# it will not introduce any flakyness
+# just wait that mutation doesn't start
+sleep 3
 
 $CLICKHOUSE_CLIENT --query="SYSTEM START MERGES table_to_rename"
 
