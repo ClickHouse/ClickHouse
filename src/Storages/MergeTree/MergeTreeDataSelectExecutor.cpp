@@ -794,14 +794,18 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
     std::optional<KeyCondition> minmax_idx_condition;
     DataTypes minmax_columns_types;
 
-    if (metadata_snapshot->hasPartitionKey() && !settings.allow_experimental_analyzer)
+    if (metadata_snapshot->hasPartitionKey())
     {
         const auto & partition_key = metadata_snapshot->getPartitionKey();
         auto minmax_columns_names = data.getMinMaxColumnsNames(partition_key);
+        auto minmax_expression_actions = data.getMinMaxExpr(partition_key, ExpressionActionsSettings::fromContext(context));
         minmax_columns_types = data.getMinMaxColumnsTypes(partition_key);
 
-        minmax_idx_condition.emplace(
-            query_info, context, minmax_columns_names, data.getMinMaxExpr(partition_key, ExpressionActionsSettings::fromContext(context)));
+        if (context->getSettingsRef().allow_experimental_analyzer)
+            minmax_idx_condition.emplace(query_info.filter_actions_dag, context, minmax_columns_names, minmax_expression_actions, NameSet());
+        else
+            minmax_idx_condition.emplace(query_info, context, minmax_columns_names, minmax_expression_actions);
+
         partition_pruner.emplace(metadata_snapshot, query_info, context, false /* strict */);
 
         if (settings.force_index_by_date && (minmax_idx_condition->alwaysUnknownOrTrue() && partition_pruner->isUseless()))
@@ -1165,7 +1169,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         index_stats.emplace_back(ReadFromMergeTree::IndexStat{
             .type = ReadFromMergeTree::IndexType::Skip,
             .name = index_name,
-            .description = std::move(description), //-V1030
+            .description = std::move(description),
             .num_parts_after = index_and_condition.stat.total_parts - index_and_condition.stat.parts_dropped,
             .num_granules_after = index_and_condition.stat.total_granules - index_and_condition.stat.granules_dropped});
     }
@@ -1182,7 +1186,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         index_stats.emplace_back(ReadFromMergeTree::IndexStat{
             .type = ReadFromMergeTree::IndexType::Skip,
             .name = index_name,
-            .description = std::move(description), //-V1030
+            .description = std::move(description),
             .num_parts_after = index_and_condition.stat.total_parts - index_and_condition.stat.parts_dropped,
             .num_granules_after = index_and_condition.stat.total_granules - index_and_condition.stat.granules_dropped});
     }
@@ -1194,7 +1198,6 @@ std::shared_ptr<QueryIdHolder> MergeTreeDataSelectExecutor::checkLimits(
     const MergeTreeData & data,
     const ReadFromMergeTree::AnalysisResult & result,
     const ContextPtr & context)
-        TSA_NO_THREAD_SAFETY_ANALYSIS // disabled because TSA is confused by guaranteed copy elision in data.getQueryIdSetLock()
 {
     const auto & settings = context->getSettingsRef();
     const auto data_settings = data.getSettings();
@@ -1218,22 +1221,7 @@ std::shared_ptr<QueryIdHolder> MergeTreeDataSelectExecutor::checkLimits(
     {
         auto query_id = context->getCurrentQueryId();
         if (!query_id.empty())
-        {
-            auto lock = data.getQueryIdSetLock();
-            if (data.insertQueryIdOrThrowNoLock(query_id, data_settings->max_concurrent_queries))
-            {
-                try
-                {
-                    return std::make_shared<QueryIdHolder>(query_id, data);
-                }
-                catch (...)
-                {
-                    /// If we fail to construct the holder, remove query_id explicitly to avoid leak.
-                    data.removeQueryIdNoLock(query_id);
-                    throw;
-                }
-            }
-        }
+            return data.getQueryIdHolder(query_id, data_settings->max_concurrent_queries);
     }
     return nullptr;
 }

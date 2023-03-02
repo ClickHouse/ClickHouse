@@ -18,83 +18,84 @@
 #define Foundation_Base32Decoder_INCLUDED
 
 
+#include <istream>
 #include "Poco/Foundation.h"
 #include "Poco/UnbufferedStreamBuf.h"
-#include <istream>
 
 
-namespace Poco {
+namespace Poco
+{
 
 
-class Foundation_API Base32DecoderBuf: public UnbufferedStreamBuf
-	/// This streambuf base32-decodes all data read
-	/// from the istream connected to it.
-	///
-	/// Note: For performance reasons, the characters 
-	/// are read directly from the given istream's 
-	/// underlying streambuf, so the state
-	/// of the istream will not reflect that of
-	/// its streambuf.
+class Foundation_API Base32DecoderBuf : public UnbufferedStreamBuf
+/// This streambuf base32-decodes all data read
+/// from the istream connected to it.
+///
+/// Note: For performance reasons, the characters
+/// are read directly from the given istream's
+/// underlying streambuf, so the state
+/// of the istream will not reflect that of
+/// its streambuf.
 {
 public:
-	Base32DecoderBuf(std::istream& istr);
-	~Base32DecoderBuf();
-	
-private:
-	int readFromDevice();
-	int readOne();
+    Base32DecoderBuf(std::istream & istr);
+    ~Base32DecoderBuf();
 
-	unsigned char   _group[8];
-	int             _groupLength;
-	int             _groupIndex;
-	std::streambuf& _buf;
-	
-	static unsigned char IN_ENCODING[256];
-	static bool          IN_ENCODING_INIT;
-	
 private:
-	Base32DecoderBuf(const Base32DecoderBuf&);
-	Base32DecoderBuf& operator = (const Base32DecoderBuf&);
+    int readFromDevice();
+    int readOne();
+
+    unsigned char _group[8];
+    int _groupLength;
+    int _groupIndex;
+    std::streambuf & _buf;
+
+    static unsigned char IN_ENCODING[256];
+    static bool IN_ENCODING_INIT;
+
+private:
+    Base32DecoderBuf(const Base32DecoderBuf &);
+    Base32DecoderBuf & operator=(const Base32DecoderBuf &);
 };
 
 
-class Foundation_API Base32DecoderIOS: public virtual std::ios
-	/// The base class for Base32Decoder.
-	///
-	/// This class is needed to ensure the correct initialization
-	/// order of the stream buffer and base classes.
+class Foundation_API Base32DecoderIOS : public virtual std::ios
+/// The base class for Base32Decoder.
+///
+/// This class is needed to ensure the correct initialization
+/// order of the stream buffer and base classes.
 {
 public:
-	Base32DecoderIOS(std::istream& istr);
-	~Base32DecoderIOS();
-	Base32DecoderBuf* rdbuf();
+    Base32DecoderIOS(std::istream & istr);
+    ~Base32DecoderIOS();
+    Base32DecoderBuf * rdbuf();
 
 protected:
-	Base32DecoderBuf _buf;
-	
+    Base32DecoderBuf _buf;
+
 private:
-	Base32DecoderIOS(const Base32DecoderIOS&);
-	Base32DecoderIOS& operator = (const Base32DecoderIOS&);
+    Base32DecoderIOS(const Base32DecoderIOS &);
+    Base32DecoderIOS & operator=(const Base32DecoderIOS &);
 };
 
 
-class Foundation_API Base32Decoder: public Base32DecoderIOS, public std::istream
-	/// This istream base32-decodes all data
-	/// read from the istream connected to it.
-	///
-	/// Note: For performance reasons, the characters 
-	/// are read directly from the given istream's 
-	/// underlying streambuf, so the state
-	/// of the istream will not reflect that of
-	/// its streambuf.
+class Foundation_API Base32Decoder : public Base32DecoderIOS, public std::istream
+/// This istream base32-decodes all data
+/// read from the istream connected to it.
+///
+/// Note: For performance reasons, the characters
+/// are read directly from the given istream's
+/// underlying streambuf, so the state
+/// of the istream will not reflect that of
+/// its streambuf.
 {
 public:
-	Base32Decoder(std::istream& istr);
-	~Base32Decoder();
+    Base32Decoder(std::istream & istr);
+    ~Base32Decoder();
 
 private:
-	Base32Decoder(const Base32Decoder&);
-	Base32Decoder& operator = (const Base32Decoder&);
+    Base32Decoder(const Base32Decoder &);
+    Base32Decoder & operator=(const Base32Decoder &);
 };
 
 

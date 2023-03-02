@@ -18,40 +18,43 @@
 #define Util_Validator_INCLUDED
 
 
-#include "Poco/Util/Util.h"
 #include "Poco/RefCountedObject.h"
+#include "Poco/Util/Util.h"
 
 
-namespace Poco {
-namespace Util {
-
-
-class Option;
-
-
-class Util_API Validator: public Poco::RefCountedObject
-	/// Validator specifies the interface for option validators.
-	///
-	/// Option validators provide a simple way for the automatic
-	/// validation of command line argument values.
+namespace Poco
 {
-public:
-	virtual void validate(const Option& option, const std::string& value) = 0;
-		/// Validates the value for the given option.
-		/// Does nothing if the value is valid.
-		///
-		/// Throws an OptionException otherwise.
-
-protected:
-	Validator();
-		/// Creates the Validator.
-
-	virtual ~Validator();
-		/// Destroys the Validator.
-};
+namespace Util
+{
 
 
-} } // namespace Poco::Util
+    class Option;
+
+
+    class Util_API Validator : public Poco::RefCountedObject
+    /// Validator specifies the interface for option validators.
+    ///
+    /// Option validators provide a simple way for the automatic
+    /// validation of command line argument values.
+    {
+    public:
+        virtual void validate(const Option & option, const std::string & value) = 0;
+        /// Validates the value for the given option.
+        /// Does nothing if the value is valid.
+        ///
+        /// Throws an OptionException otherwise.
+
+    protected:
+        Validator();
+        /// Creates the Validator.
+
+        virtual ~Validator();
+        /// Destroys the Validator.
+    };
+
+
+}
+} // namespace Poco::Util
 
 
 #endif // Util_Validator_INCLUDED
