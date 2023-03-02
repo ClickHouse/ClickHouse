@@ -17,6 +17,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/getStructureOfRemoteTable.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/StorageDummy.h>
 
 #include <Columns/ColumnConst.h>
 
@@ -133,7 +134,6 @@ namespace ErrorCodes
     extern const int DISTRIBUTED_TOO_MANY_PENDING_BYTES;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
-    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace ActionLocks
@@ -622,44 +622,6 @@ StorageSnapshotPtr StorageDistributed::getStorageSnapshotForQuery(
 namespace
 {
 
-class StorageDistributedLocal : public IStorage
-{
-public:
-    StorageDistributedLocal(const StorageID & table_id_, const ColumnsDescription & columns_)
-        : IStorage(table_id_)
-    {
-        StorageInMemoryMetadata storage_metadata;
-        storage_metadata.setColumns(columns_);
-        setInMemoryMetadata(storage_metadata);
-    }
-
-    std::string getName() const override { return "StorageDistributedLocal"; }
-
-    bool supportsSampling() const override { return true; }
-    bool supportsFinal() const override { return true; }
-    bool supportsPrewhere() const override { return true; }
-    bool supportsSubcolumns() const override { return true; }
-    bool supportsDynamicSubcolumns() const override { return true; }
-    bool canMoveConditionsToPrewhere() const override { return false; }
-
-    QueryProcessingStage::Enum
-    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override
-    {
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "StorageDistributedLocal does not support getQueryProcessingStage method");
-    }
-
-    Pipe read(const Names & /*column_names*/,
-        const StorageSnapshotPtr & /*storage_snapshot*/,
-        SelectQueryInfo & /*query_info*/,
-        ContextPtr /*context*/,
-        QueryProcessingStage::Enum /*processed_stage*/,
-        size_t /*max_block_size*/,
-        size_t /*num_streams*/) override
-    {
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "StorageDistributedLocal does not support read method");
-    }
-};
-
 QueryTreeNodePtr buildQueryTreeDistributedTableReplacedWithLocalTable(const SelectQueryInfo & query_info,
     const StorageSnapshotPtr & distributed_storage_snapshot,
     const StorageID & remote_storage_id,
@@ -685,9 +647,7 @@ QueryTreeNodePtr buildQueryTreeDistributedTableReplacedWithLocalTable(const Sele
     else
     {
         auto resolved_remote_storage_id = query_context->resolveStorageID(remote_storage_id);
-        auto storage = DatabaseCatalog::instance().tryGetTable(resolved_remote_storage_id, query_context);
-        if (!storage)
-            storage = std::make_shared<StorageDistributedLocal>(resolved_remote_storage_id, distributed_storage_snapshot->metadata->getColumns());
+        auto storage = std::make_shared<StorageDummy>(resolved_remote_storage_id, distributed_storage_snapshot->metadata->getColumns());
 
         replacement_table_expression = std::make_shared<TableNode>(std::move(storage), query_context);
     }
