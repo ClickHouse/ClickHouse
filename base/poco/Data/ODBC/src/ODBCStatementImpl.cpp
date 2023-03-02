@@ -20,9 +20,6 @@
 #include "Poco/Exception.h"
 
 
-#ifdef POCO_OS_FAMILY_WINDOWS
-	#pragma warning(disable:4312)// 'type cast' : conversion from 'std::size_t' to 'SQLPOINTER' of greater size
-#endif
 
 
 using Poco::DataFormatException;
