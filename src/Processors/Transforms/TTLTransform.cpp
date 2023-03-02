@@ -144,8 +144,6 @@ void TTLTransform::finalize()
         else
             LOG_DEBUG(log, "Removed {} rows with expired TTL from part {}", delete_algorithm->getNumberOfRemovedRows(), data_part->name);
     }
-    else
-        LOG_DEBUG(log, "No delete algorithm was applied for part {}", data_part->name);
 }
 
 IProcessor::Status TTLTransform::prepare()

@@ -1,10 +1,9 @@
 ---
-slug: /en/sql-reference/statements/create/table
 sidebar_position: 36
 sidebar_label: TABLE
-title: "CREATE TABLE"
-keywords: [compression, codec, schema, DDL]
 ---
+
+# CREATE TABLE
 
 Creates a new table. This query can have various syntax forms depending on a use case.
 
@@ -17,11 +16,10 @@ By default, tables are created only on the current server. Distributed DDL queri
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr1] [compression_codec] [TTL expr1] [COMMENT 'comment for column'],
-    name2 [type2] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr2] [compression_codec] [TTL expr2] [COMMENT 'comment for column'],
+    name1 [type1] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr1] [compression_codec] [TTL expr1],
+    name2 [type2] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr2] [compression_codec] [TTL expr2],
     ...
 ) ENGINE = engine
-  COMMENT 'comment for table'
 ```
 
 Creates a table named `table_name` in the `db` database or the current database if `db` is not set, with the structure specified in brackets and the `engine` engine.
@@ -32,8 +30,6 @@ A column description is `name type` in the simplest case. Example: `RegionID UIn
 Expressions can also be defined for default values (see below).
 
 If necessary, primary key can be specified, with one or more key expressions.
-
-Comments can be added for columns and for the table.
 
 ### With a Schema Similar to Other Table
 
@@ -62,28 +58,6 @@ Creates a table with a structure like the result of the `SELECT` query, with the
 If the table already exists and `IF NOT EXISTS` is specified, the query won’t do anything.
 
 There can be other clauses after the `ENGINE` clause in the query. See detailed documentation on how to create tables in the descriptions of [table engines](../../../engines/table-engines/index.md#table_engines).
-
-:::tip
-In ClickHouse Cloud please split this into two steps:
-1. Create the table structure
-
-  ```sql
-  CREATE TABLE t1
-  ENGINE = MergeTree
-  ORDER BY ...
-  # highlight-next-line
-  EMPTY AS
-  SELECT ...
-  ```
-
-2. Populate the table
-
-  ```sql
-  INSERT INTO t1
-  SELECT ...
-  ```
-
-:::
 
 **Example**
 
@@ -130,26 +104,6 @@ Default expressions may be defined as an arbitrary expression from table constan
 
 Normal default value. If the INSERT query does not specify the corresponding column, it will be filled in by computing the corresponding expression.
 
-Example:
-
-```sql
-CREATE OR REPLACE TABLE test
-(
-    id UInt64,
-    updated_at DateTime DEFAULT now(),
-    updated_at_date Date DEFAULT toDate(updated_at)
-)
-ENGINE = MergeTree
-ORDER BY id;
-
-INSERT INTO test (id) Values (1);
-
-SELECT * FROM test;
-┌─id─┬──────────updated_at─┬─updated_at_date─┐
-│  1 │ 2023-02-24 17:06:46 │      2023-02-24 │
-└────┴─────────────────────┴─────────────────┘
-```
-
 ### MATERIALIZED
 
 `MATERIALIZED expr`
@@ -158,70 +112,12 @@ Materialized expression. Such a column can’t be specified for INSERT, because 
 For an INSERT without a list of columns, these columns are not considered.
 In addition, this column is not substituted when using an asterisk in a SELECT query. This is to preserve the invariant that the dump obtained using `SELECT *` can be inserted back into the table using INSERT without specifying the list of columns.
 
-Example:
-
-```sql
-CREATE OR REPLACE TABLE test
-(
-    id UInt64,
-    updated_at DateTime MATERIALIZED now(),
-    updated_at_date Date MATERIALIZED toDate(updated_at)
-)
-ENGINE = MergeTree
-ORDER BY id;
-
-INSERT INTO test Values (1);
-
-SELECT * FROM test;
-┌─id─┐
-│  1 │
-└────┘
-
-SELECT id, updated_at, updated_at_date FROM test;
-┌─id─┬──────────updated_at─┬─updated_at_date─┐
-│  1 │ 2023-02-24 17:08:08 │      2023-02-24 │
-└────┴─────────────────────┴─────────────────┘
-
-SELECT * FROM test SETTINGS asterisk_include_materialized_columns=1;
-┌─id─┬──────────updated_at─┬─updated_at_date─┐
-│  1 │ 2023-02-24 17:08:08 │      2023-02-24 │
-└────┴─────────────────────┴─────────────────┘
-```
-
 ### EPHEMERAL
 
 `EPHEMERAL [expr]`
 
 Ephemeral column. Such a column isn't stored in the table and cannot be SELECTed, but can be referenced in the defaults of CREATE statement. If `expr` is omitted type for column is required.
 INSERT without list of columns will skip such column, so SELECT/INSERT invariant is preserved -  the dump obtained using `SELECT *` can be inserted back into the table using INSERT without specifying the list of columns.
-
-Example:
-
-```sql
-CREATE OR REPLACE TABLE test
-(
-    id UInt64,
-    unhexed String EPHEMERAL,
-    hexed FixedString(4) DEFAULT unhex(unhexed)
-)
-ENGINE = MergeTree
-ORDER BY id
-
-INSERT INTO test (id, unhexed) Values (1, '5a90b714');
-
-SELECT
-    id,
-    hexed,
-    hex(hexed)
-FROM test
-FORMAT Vertical;
-
-Row 1:
-──────
-id:         1
-hexed:      Z��
-hex(hexed): 5A90B714
-```
 
 ### ALIAS
 
@@ -237,29 +133,6 @@ If you add a new column to a table but later change its default expression, the 
 
 It is not possible to set default values for elements in nested data structures.
 
-```sql
-CREATE OR REPLACE TABLE test
-(
-    id UInt64,
-    size_bytes Int64,
-    size String Alias formatReadableSize(size_bytes)
-)
-ENGINE = MergeTree
-ORDER BY id;
-
-INSERT INTO test Values (1, 4678899);
-
-SELECT id, size_bytes, size FROM test;
-┌─id─┬─size_bytes─┬─size─────┐
-│  1 │    4678899 │ 4.46 MiB │
-└────┴────────────┴──────────┘
-
-SELECT * FROM test SETTINGS asterisk_include_alias_columns=1;
-┌─id─┬─size_bytes─┬─size─────┐
-│  1 │    4678899 │ 4.46 MiB │
-└────┴────────────┴──────────┘
-```
-
 ## Primary Key
 
 You can define a [primary key](../../../engines/table-engines/mergetree-family/mergetree.md#primary-keys-and-indexes-in-queries) when creating a table. Primary key can be specified in two ways:
@@ -270,7 +143,7 @@ You can define a [primary key](../../../engines/table-engines/mergetree-family/m
 CREATE TABLE db.table_name
 (
     name1 type1, name2 type2, ...,
-    PRIMARY KEY(expr1[, expr2,...])
+    PRIMARY KEY(expr1[, expr2,...])]
 )
 ENGINE = engine;
 ```
@@ -286,7 +159,7 @@ ENGINE = engine
 PRIMARY KEY(expr1[, expr2,...]);
 ```
 
-:::warning
+:::warning    
 You can't combine both ways in one query.
 :::
 
@@ -342,7 +215,7 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 
 Codecs can be combined in a pipeline, for example, `CODEC(Delta, Default)`.
 
-:::warning
+:::warning    
 You can’t decompress ClickHouse database files with external utilities like `lz4`. Instead, use the special [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor) utility.
 :::
 
@@ -398,7 +271,7 @@ These codecs are designed to make compression more effective by using specific f
 
 #### Gorilla
 
-`Gorilla` — Calculates XOR between current and previous floating point value and writes it in compact binary form. The smaller the difference between consecutive values is, i.e. the slower the values of the series changes, the better the compression rate. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. For additional information, see section 4.1 in [Gorilla: A Fast, Scalable, In-Memory Time Series Database](https://doi.org/10.14778/2824032.2824078).
+`Gorilla` — Calculates XOR between current and previous value and writes it in compact binary form. Efficient when storing a series of floating point values that change slowly, because the best compression rate is achieved when neighboring values are binary equal. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. For additional information, see Compressing Values in [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf).
 
 #### FPC
 
@@ -428,44 +301,44 @@ Encryption codecs:
 
 #### AES_128_GCM_SIV
 
-`CODEC('AES-128-GCM-SIV')` — Encrypts data with AES-128 in [RFC 8452](https://tools.ietf.org/html/rfc8452) GCM-SIV mode.
+`CODEC('AES-128-GCM-SIV')` — Encrypts data with AES-128 in [RFC 8452](https://tools.ietf.org/html/rfc8452) GCM-SIV mode. 
 
 
 #### AES-256-GCM-SIV
 
-`CODEC('AES-256-GCM-SIV')` — Encrypts data with AES-256 in GCM-SIV mode.
+`CODEC('AES-256-GCM-SIV')` — Encrypts data with AES-256 in GCM-SIV mode. 
 
 These codecs use a fixed nonce and encryption is therefore deterministic. This makes it compatible with deduplicating engines such as [ReplicatedMergeTree](../../../engines/table-engines/mergetree-family/replication.md) but has a weakness: when the same data block is encrypted twice, the resulting ciphertext will be exactly the same so an adversary who can read the disk can see this equivalence (although only the equivalence, without getting its content).
 
-:::warning
+:::warning    
 Most engines including the "\*MergeTree" family create index files on disk without applying codecs. This means plaintext will appear on disk if an encrypted column is indexed.
 :::
 
-:::warning
+:::warning    
 If you perform a SELECT query mentioning a specific value in an encrypted column (such as in its WHERE clause), the value may appear in [system.query_log](../../../operations/system-tables/query_log.md). You may want to disable the logging.
 :::
 
 **Example**
 
 ```sql
-CREATE TABLE mytable
+CREATE TABLE mytable 
 (
     x String Codec(AES_128_GCM_SIV)
-)
+) 
 ENGINE = MergeTree ORDER BY x;
 ```
 
-:::note
+:::note    
 If compression needs to be applied, it must be explicitly specified. Otherwise, only encryption will be applied to data.
 :::
 
 **Example**
 
 ```sql
-CREATE TABLE mytable
+CREATE TABLE mytable 
 (
     x String Codec(Delta, LZ4, AES_128_GCM_SIV)
-)
+) 
 ENGINE = MergeTree ORDER BY x;
 ```
 
@@ -499,7 +372,7 @@ It’s possible to use tables with [ENGINE = Memory](../../../engines/table-engi
 
 'REPLACE' query allows you to update the table atomically.
 
-:::note
+:::note    
 This query is supported only for [Atomic](../../../engines/database-engines/atomic.md) database engine.
 :::
 
@@ -515,7 +388,7 @@ RENAME TABLE myNewTable TO myOldTable;
 Instead of above, you can use the following:
 
 ```sql
-REPLACE TABLE myOldTable ENGINE = MergeTree() ORDER BY CounterID AS SELECT * FROM myOldTable WHERE CounterID <12345;
+REPLACE TABLE myOldTable SELECT * FROM myOldTable WHERE CounterID <12345;
 ```
 
 ### Syntax
@@ -575,7 +448,7 @@ SELECT * FROM base.t1;
 
 You can add a comment to the table when you creating it.
 
-:::note
+:::note    
 The comment is supported for all table engines except [Kafka](../../../engines/table-engines/integrations/kafka.md), [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md) and [EmbeddedRocksDB](../../../engines/table-engines/integrations/embedded-rocksdb.md).
 :::
 
@@ -607,9 +480,3 @@ Result:
 │ t1   │ The temporary table │
 └──────┴─────────────────────┘
 ```
-
-
-## Related content
-
-- Blog: [Optimizing ClickHouse with Schemas and Codecs](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)
-- Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)

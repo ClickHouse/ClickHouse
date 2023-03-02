@@ -1,151 +1,90 @@
 #!/bin/bash
 
-set -euxf -o pipefail
+USAGE='Usage for local run:
 
-export MINIO_ROOT_USER=${MINIO_ROOT_USER:-clickhouse}
-export MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-clickhouse}
+./docker/test/stateless/setup_minio.sh { stateful | stateless } ./tests/
 
-usage() {
-  echo $"Usage: $0 <stateful|stateless> <test_path> (default path: /usr/share/clickhouse-test)"
-  exit 1
-}
+'
 
-check_arg() {
-  local query_dir
-  if [ ! $# -eq 1 ]; then
-    if [ ! $# -eq 2 ]; then
-      echo "ERROR: need either one or two arguments, <stateful|stateless> <test_path> (default path: /usr/share/clickhouse-test)"
-      usage
-    fi
-  fi
-  case "$1" in
-    stateless)
-      query_dir="0_stateless"
-      ;;
-    stateful)
-      query_dir="1_stateful"
-      ;;
-    *)
-      echo "unknown test type ${test_type}"
-      usage
-      ;;
-  esac
-  echo ${query_dir}
-}
+set -e -x -a -u
 
-find_arch() {
-  local arch
+TEST_TYPE="$1"
+shift
+
+case $TEST_TYPE in
+  stateless) QUERY_DIR=0_stateless ;;
+  stateful) QUERY_DIR=1_stateful ;;
+  *) echo "unknown test type $TEST_TYPE"; echo "${USAGE}"; exit 1 ;;
+esac
+
+ls -lha
+
+mkdir -p ./minio_data
+
+if [ ! -f ./minio ]; then
+  MINIO_SERVER_VERSION=${MINIO_SERVER_VERSION:-2022-01-03T18-22-58Z}
+  MINIO_CLIENT_VERSION=${MINIO_CLIENT_VERSION:-2022-01-05T23-52-51Z}
   case $(uname -m) in
-    x86_64)
-      arch="amd64"
-      ;;
-    aarch64)
-      arch="arm64"
-      ;;
-    *)
-      echo "unknown architecture $(uname -m)";
-      exit 1
-      ;;
+    x86_64) BIN_ARCH=amd64 ;;
+    aarch64) BIN_ARCH=arm64 ;;
+    *) echo "unknown architecture $(uname -m)"; exit 1 ;;
   esac
-  echo ${arch}
-}
+  echo 'MinIO binary not found, downloading...'
 
-find_os() {
-  local os
-  os=$(uname -s | tr '[:upper:]' '[:lower:]')
-  echo "${os}"
-}
+  BINARY_TYPE=$(uname -s | tr '[:upper:]' '[:lower:]')
 
-download_minio() {
-  local os
-  local arch
-  local minio_server_version=${MINIO_SERVER_VERSION:-2022-09-07T22-25-02Z}
-  local minio_client_version=${MINIO_CLIENT_VERSION:-2022-08-28T20-08-11Z}
+  wget "https://dl.min.io/server/minio/release/${BINARY_TYPE}-${BIN_ARCH}/archive/minio.RELEASE.${MINIO_SERVER_VERSION}" -O ./minio \
+    && wget "https://dl.min.io/client/mc/release/${BINARY_TYPE}-${BIN_ARCH}/archive/mc.RELEASE.${MINIO_CLIENT_VERSION}" -O ./mc \
+    && chmod +x ./mc ./minio
+fi
 
-  os=$(find_os)
-  arch=$(find_arch)
-  wget "https://dl.min.io/server/minio/release/${os}-${arch}/archive/minio.RELEASE.${minio_server_version}" -O ./minio
-  wget "https://dl.min.io/client/mc/release/${os}-${arch}/archive/mc.RELEASE.${minio_client_version}" -O ./mc
-  chmod +x ./mc ./minio
-}
+MINIO_ROOT_USER=${MINIO_ROOT_USER:-clickhouse}
+MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-clickhouse}
 
-start_minio() {
-  mkdir -p ./minio_data
-  ./minio --version
-  ./minio server --address ":11111" ./minio_data &
-  wait_for_it
-  lsof -i :11111
-  sleep 5
-}
+./minio --version
+./minio server --address ":11111" ./minio_data &
 
-setup_minio() {
-  local test_type=$1
-  ./mc alias set clickminio http://localhost:11111 clickhouse clickhouse
-  ./mc admin user add clickminio test testtest
-  ./mc admin policy set clickminio readwrite user=test
-  ./mc mb clickminio/test
-  if [ "$test_type" = "stateless" ]; then
-    ./mc policy set public clickminio/test
+i=0
+while ! curl -v --silent http://localhost:11111 2>&1 | grep AccessDenied
+do
+  if [[ $i == 60 ]]; then
+    echo "Failed to setup minio"
+    exit 0
   fi
-}
+  echo "Trying to connect to minio"
+  sleep 1
+  i=$((i + 1))
+done
 
-# uploads data to minio, by default after unpacking all tests
-# will be in /usr/share/clickhouse-test/queries
-upload_data() {
-  local query_dir=$1
-  local test_path=$2
-  local data_path=${test_path}/queries/${query_dir}/data_minio
+lsof -i :11111
 
-  # iterating over globs will cause redundant file variable to be
-  # a path to a file, not a filename
-  # shellcheck disable=SC2045
-  for file in $(ls "${data_path}"); do
-    echo "${file}";
-    ./mc cp "${data_path}"/"${file}" clickminio/test/"${file}";
-  done
-}
+sleep 5
 
-setup_aws_credentials() {
-  local minio_root_user=${MINIO_ROOT_USER:-clickhouse}
-  local minio_root_password=${MINIO_ROOT_PASSWORD:-clickhouse}
-  mkdir -p ~/.aws
-  cat <<EOT >> ~/.aws/credentials
+./mc alias set clickminio http://localhost:11111 clickhouse clickhouse
+./mc admin user add clickminio test testtest
+./mc admin policy set clickminio readwrite user=test
+./mc mb clickminio/test
+if [ "$TEST_TYPE" = "stateless" ]; then
+  ./mc policy set public clickminio/test
+fi
+
+
+# Upload data to Minio. By default after unpacking all tests will in
+# /usr/share/clickhouse-test/queries
+
+TEST_PATH=${1:-/usr/share/clickhouse-test}
+MINIO_DATA_PATH=${TEST_PATH}/queries/${QUERY_DIR}/data_minio
+
+# Iterating over globs will cause redudant FILE variale to be a path to a file, not a filename
+# shellcheck disable=SC2045
+for FILE in $(ls "${MINIO_DATA_PATH}"); do
+    echo "$FILE";
+    ./mc cp "${MINIO_DATA_PATH}"/"$FILE" clickminio/test/"$FILE";
+done
+
+mkdir -p ~/.aws
+cat <<EOT >> ~/.aws/credentials
 [default]
-aws_access_key_id=${minio_root_user}
-aws_secret_access_key=${minio_root_password}
+aws_access_key_id=${MINIO_ROOT_USER}
+aws_secret_access_key=${MINIO_ROOT_PASSWORD}
 EOT
-}
-
-wait_for_it() {
-  local counter=0
-  local max_counter=60
-  local url="http://localhost:11111"
-  local params=(
-    --silent
-    --verbose
-  )
-  while ! curl "${params[@]}" "${url}" 2>&1 | grep AccessDenied
-  do
-    if [[ ${counter} == "${max_counter}" ]]; then
-      echo "failed to setup minio"
-      exit 0
-    fi
-    echo "trying to connect to minio"
-    sleep 1
-    counter=$((counter + 1))
-  done
-}
-
-main() {
-  local query_dir
-  query_dir=$(check_arg "$@")
-  if [ ! -f ./minio ]; then
-    download_minio
-  fi
-  start_minio
-  setup_minio "$1"
-  upload_data "${query_dir}" "${2:-/usr/share/clickhouse-test}"
-  setup_aws_credentials
-}
-
-main "$@"

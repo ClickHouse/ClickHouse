@@ -1,4 +1,4 @@
--- Tags: no-upgrade-check, no-fasttest
+-- Tags: no-backward-compatibility-check
 
 DROP TABLE IF EXISTS partslost_0;
 DROP TABLE IF EXISTS partslost_1;
@@ -14,8 +14,6 @@ CREATE TABLE partslost_2 (x String) ENGINE=ReplicatedMergeTree('/clickhouse/tabl
 INSERT INTO partslost_0 SELECT toString(number) AS x from system.numbers LIMIT 10000;
 
 ALTER TABLE partslost_0 ADD INDEX idx x TYPE tokenbf_v1(285000, 3, 12345) GRANULARITY 3;
-
-SET mutations_sync = 2;
 
 ALTER TABLE partslost_0 MATERIALIZE INDEX idx;
 

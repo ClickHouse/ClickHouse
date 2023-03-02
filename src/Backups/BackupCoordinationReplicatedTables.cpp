@@ -78,9 +78,9 @@ public:
                 throw Exception(
                     ErrorCodes::CANNOT_BACKUP_TABLE,
                     "Intersected parts detected: {} on replica {} and {} on replica {}",
-                    part.info.getPartNameForLogs(),
+                    part.info.getPartName(),
                     *part.replica_name,
-                    new_part_info.getPartNameForLogs(),
+                    new_part_info.getPartName(),
                     *replica_name);
             }
             ++last_it;
@@ -248,7 +248,6 @@ BackupCoordinationReplicatedTables::getMutations(const String & table_shared_id,
         return {};
 
     std::vector<MutationInfo> res;
-    res.reserve(table_info.mutations.size());
     for (const auto & [mutation_id, mutation_entry] : table_info.mutations)
         res.emplace_back(MutationInfo{mutation_id, mutation_entry});
     return res;

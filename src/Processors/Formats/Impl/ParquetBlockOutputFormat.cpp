@@ -16,21 +16,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_EXCEPTION;
 }
 
-static parquet::ParquetVersion::type getParquetVersion(const FormatSettings & settings)
-{
-    switch (settings.parquet.output_version)
-    {
-        case FormatSettings::ParquetVersion::V1_0:
-            return parquet::ParquetVersion::PARQUET_1_0;
-        case FormatSettings::ParquetVersion::V2_4:
-            return parquet::ParquetVersion::PARQUET_2_4;
-        case FormatSettings::ParquetVersion::V2_6:
-            return parquet::ParquetVersion::PARQUET_2_6;
-        case FormatSettings::ParquetVersion::V2_LATEST:
-            return parquet::ParquetVersion::PARQUET_2_LATEST;
-    }
-}
-
 ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
     : IOutputFormat(header_, out_), format_settings{format_settings_}
 {
@@ -44,12 +29,7 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
     if (!ch_column_to_arrow_column)
     {
         const Block & header = getPort(PortKind::Main).getHeader();
-        ch_column_to_arrow_column = std::make_unique<CHColumnToArrowColumn>(
-            header,
-            "Parquet",
-            false,
-            format_settings.parquet.output_string_as_string,
-            format_settings.parquet.output_fixed_string_as_fixed_byte_array);
+        ch_column_to_arrow_column = std::make_unique<CHColumnToArrowColumn>(header, "Parquet", false, format_settings.parquet.output_string_as_string);
     }
 
     ch_column_to_arrow_column->chChunkToArrowTable(arrow_table, chunk, columns_num);
@@ -59,7 +39,6 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
         auto sink = std::make_shared<ArrowBufferedOutputStream>(out);
 
         parquet::WriterProperties::Builder builder;
-        builder.version(getParquetVersion(format_settings));
 #if USE_SNAPPY
         builder.compression(parquet::Compression::SNAPPY);
 #endif
@@ -71,14 +50,14 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
             props, /*parquet::default_writer_properties(),*/
             &file_writer);
         if (!status.ok())
-            throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Error while opening a table: {}", status.ToString());
+            throw Exception{"Error while opening a table: " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
     }
 
     // TODO: calculate row_group_size depending on a number of rows and table size
     auto status = file_writer->WriteTable(*arrow_table, format_settings.parquet.row_group_size);
 
     if (!status.ok())
-        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Error while writing a table: {}", status.ToString());
+        throw Exception{"Error while writing a table: " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
 }
 
 void ParquetBlockOutputFormat::finalizeImpl()
@@ -92,12 +71,7 @@ void ParquetBlockOutputFormat::finalizeImpl()
 
     auto status = file_writer->Close();
     if (!status.ok())
-        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Error while closing a table: {}", status.ToString());
-}
-
-void ParquetBlockOutputFormat::resetFormatterImpl()
-{
-    file_writer.reset();
+        throw Exception{"Error while closing a table: " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
 }
 
 void registerOutputFormatParquet(FormatFactory & factory)
@@ -106,6 +80,7 @@ void registerOutputFormatParquet(FormatFactory & factory)
         "Parquet",
         [](WriteBuffer & buf,
            const Block & sample,
+           const RowOutputFormatParams &,
            const FormatSettings & format_settings)
         {
             return std::make_shared<ParquetBlockOutputFormat>(buf, sample, format_settings);

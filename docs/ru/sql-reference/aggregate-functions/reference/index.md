@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/aggregate-functions/reference/
 sidebar_label: "Справочник"
 sidebar_position: 36
 ---
@@ -9,8 +8,8 @@ sidebar_position: 36
 Стандартные агрегатные функции:
 
 -   [count](../../../sql-reference/aggregate-functions/reference/count.md)
--   [min](../../../sql-reference/aggregate-functions/reference/min.mdx)
--   [max](../../../sql-reference/aggregate-functions/reference/max.mdx)
+-   [min](../../../sql-reference/aggregate-functions/reference/min.md)
+-   [max](../../../sql-reference/aggregate-functions/reference/max.md)
 -   [sum](../../../sql-reference/aggregate-functions/reference/sum.md)
 -   [avg](../../../sql-reference/aggregate-functions/reference/avg.md)
 -   [any](../../../sql-reference/aggregate-functions/reference/any.md)
@@ -66,3 +65,4 @@ sidebar_position: 36
 -   [simpleLinearRegression](../../../sql-reference/aggregate-functions/reference/simplelinearregression.md)
 -   [stochasticLinearRegression](../../../sql-reference/aggregate-functions/reference/stochasticlinearregression.md)
 -   [stochasticLogisticRegression](../../../sql-reference/aggregate-functions/reference/stochasticlogisticregression.md)
+

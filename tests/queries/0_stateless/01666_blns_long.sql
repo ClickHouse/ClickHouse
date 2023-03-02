@@ -1,4 +1,5 @@
--- Tags: long
+-- Tags: long, no-fasttest
+-- Tag no-fasttest: JSON functions
 
 -- https://github.com/minimaxir/big-list-of-naughty-strings
 

@@ -1,5 +1,4 @@
 ---
-slug: /en/getting-started/example-datasets/ontime
 sidebar_label: OnTime Airline Flight Data
 description: Dataset containing the on-time performance of airline flights
 ---
@@ -396,3 +395,5 @@ This performance test was created by Vadim Tkachenko. See:
 -   https://www.percona.com/blog/2014/04/21/using-apache-hadoop-and-impala-together-with-mysql-for-data-analysis/
 -   https://www.percona.com/blog/2016/01/07/apache-spark-with-air-ontime-performance-data/
 -   http://nickmakos.blogspot.ru/2012/08/analyzing-air-traffic-performance-with.html
+
+[Original article](https://clickhouse.com/docs/en/getting_started/example_datasets/ontime/) <!--hide-->

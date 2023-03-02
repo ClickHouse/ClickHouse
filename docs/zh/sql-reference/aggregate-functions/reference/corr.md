@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/aggregate-functions/reference/corr
 sidebar_position: 107
 ---
 
