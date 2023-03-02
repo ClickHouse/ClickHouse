@@ -16,22 +16,20 @@ $CLICKHOUSE_CLIENT -q 'create table dedup_test(A Int64) Engine = MergeTree order
 function insert_data
 {
     IMPLICIT=$(( RANDOM % 2 ))
-    SESSION_ID="${SESSION}_$RANDOM$RANDOM$RANDOM"
-    TXN_SETTINGS="session_id=$SESSION_ID&throw_on_unsupported_query_inside_transaction=0"
+    SESSION_ID="${SESSION}_$RANDOM.$RANDOM.$RANDOM"
+    TXN_SETTINGS="session_id=$SESSION_ID&throw_on_unsupported_query_inside_transaction=0&implicit_transaction=$IMPLICIT"
     BEGIN=""
     COMMIT=""
     SETTINGS="query_id=$ID&$TXN_SETTINGS&max_insert_block_size=110000&min_insert_block_size_rows=110000"
     if [[ "$IMPLICIT" -eq 0 ]]; then
         $CLICKHOUSE_CURL -sS -d 'begin transaction' "$CLICKHOUSE_URL&$TXN_SETTINGS"
+        SETTINGS="$SETTINGS&session_check=1"
         BEGIN="begin transaction;"
         COMMIT=$(echo -ne "\n\ncommit")
-    else
-        TXN_SETTINGS="$TXN_SETTINGS&implicit_transaction=1"
     fi
 
-    SETTINGS="query_id=$ID&$TXN_SETTINGS&max_insert_block_size=110000&min_insert_block_size_rows=110000"
     # max_block_size=10000, so external table will contain smaller blocks that will be squashed on insert-select (more chances to catch a bug on query cancellation)
-    TRASH_SETTINGS="query_id=$ID&$TXN_SETTINGS&input_format_parallel_parsing=0&max_threads=1&max_insert_threads=1&max_insert_block_size=110000&max_block_size=10000&min_insert_block_size_bytes=0&min_insert_block_size_rows=110000&max_insert_block_size=110000"
+    TRASH_SETTINGS="$SETTINGS&input_format_parallel_parsing=0&max_threads=1&max_insert_threads=1&max_block_size=10000&min_insert_block_size_bytes=0"
     TYPE=$(( RANDOM % 6 ))
 
     if [[ "$TYPE" -eq 0 ]]; then
@@ -49,7 +47,7 @@ function insert_data
     fi
 
     if [[ "$IMPLICIT" -eq 0 ]]; then
-        $CLICKHOUSE_CURL -sS -d 'commit' "$CLICKHOUSE_URL&$TXN_SETTINGS" | grep -Faq "Transaction is not in RUNNING state" && $CLICKHOUSE_CURL -sS -d 'rollback' "$CLICKHOUSE_URL&$TXN_SETTINGS"
+        $CLICKHOUSE_CURL -sS -d 'commit' "$CLICKHOUSE_URL&$TXN_SETTINGS&close_session=1" | grep -Faq "Transaction is not in RUNNING state" && $CLICKHOUSE_CURL -sS -d 'rollback' "$CLICKHOUSE_URL&$TXN_SETTINGS"
     fi
 }
 
