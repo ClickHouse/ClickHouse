@@ -168,6 +168,24 @@ int decompress(char * input, char * output, off_t start, off_t end, size_t max_n
     return 0;
 }
 
+bool getSudoIDs(uid_t &sudo_uid, uid_t &sudo_gid)
+{
+    sudo_uid = 0;
+    sudo_gid = 0;
+
+    if (getuid() || geteuid() || getenv("SUDO_USER") == nullptr || getenv("SUDO_UID") == nullptr || getenv("SUDO_GID") == nullptr)
+        return false;
+
+    char * str_end;
+    long id = strtol(getenv("SUDO_UID"), &str_end, 10);
+    if (*str_end == 0)
+        sudo_uid = static_cast<uid_t>(id);
+    id = strtol(getenv("SUDO_GID"), &str_end, 10);
+    if (*str_end == 0)
+        sudo_gid = static_cast<uid_t>(id);
+
+    return true;
+}
 
 /// Read data about files and decomrpess them.
 int decompressFiles(int input_fd, char * path, char * name, bool & have_compressed_analoge, bool & has_exec, char * decompressed_suffix, uint64_t * decompressed_umask)
@@ -219,6 +237,10 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
         std::cerr << "Not enough space for decompression. Have " << fs_info.f_blocks * info_in.st_blksize << ", need " << decompressed_full_size << std::endl;
         return 1;
     }
+
+    uid_t sudo_uid = 0;
+    uid_t sudo_gid = 0;
+    getSudoIDs(sudo_uid, sudo_gid);
 
     FileData file_info;
     /// Decompress files with appropriate file names
@@ -319,6 +341,9 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
             perror("fsync");
         if (0 != close(output_fd))
             perror("close");
+
+        if (sudo_uid && sudo_gid)
+            chown(file_name, sudo_uid, sudo_gid);
     }
 
     if (0 != munmap(input, info_in.st_size))
@@ -531,6 +556,9 @@ int main(int/* argc*/, char* argv[])
             perror("unlink");
             return 1;
         }
+
+        if (uid_t sudo_uid = 0, sudo_gid = 0; getSudoIDs(sudo_uid, sudo_gid))
+            chown(static_cast<char *>(self), sudo_uid, sudo_gid);
 
         if (has_exec)
         {
