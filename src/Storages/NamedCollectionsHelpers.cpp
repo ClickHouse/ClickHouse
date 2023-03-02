@@ -30,7 +30,7 @@ namespace
         return NamedCollectionFactory::instance().tryGet(collection_name);
     }
 
-    std::optional<std::pair<std::string, std::variant<Field, ASTPtr>>> getKeyValueFromAST(ASTPtr ast, bool)
+    std::optional<std::pair<std::string, std::variant<Field, ASTPtr>>> getKeyValueFromAST(ASTPtr ast, bool fallback_to_ast_value)
     {
         const auto * function = ast->as<ASTFunction>();
         if (!function || function->name != "equals")
@@ -53,7 +53,9 @@ namespace
         }
         catch (...)
         {
-            return std::pair{key, function_args[1]};
+            if (fallback_to_ast_value)
+                return std::pair{key, function_args[1]};
+            throw;
         }
 
         auto value = literal_value->as<ASTLiteral>()->value;
@@ -62,7 +64,8 @@ namespace
 }
 
 
-MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(ASTs asts, bool throw_unknown_collection, std::vector<std::pair<std::string, ASTPtr>> * non_convertible)
+MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
+    ASTs asts, bool throw_unknown_collection, std::vector<std::pair<std::string, ASTPtr>> * complex_args)
 {
     if (asts.empty())
         return nullptr;
@@ -80,7 +83,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(ASTs asts, bool thr
 
     for (auto * it = std::next(asts.begin()); it != asts.end(); ++it)
     {
-        auto value_override = getKeyValueFromAST(*it, non_convertible != nullptr);
+        auto value_override = getKeyValueFromAST(*it, complex_args != nullptr);
 
         if (!value_override && !(*it)->as<ASTFunction>())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value argument or function");
@@ -89,7 +92,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(ASTs asts, bool thr
 
         if (const ASTPtr * value = std::get_if<ASTPtr>(&value_override->second))
         {
-            non_convertible->emplace_back(value_override->first, *value);
+            complex_args->emplace_back(value_override->first, *value);
             continue;
         }
 
@@ -100,7 +103,8 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(ASTs asts, bool thr
     return collection_copy;
 }
 
-MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
+MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
+    const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
 {
     auto collection_name = config.getString(config_prefix + ".name", "");
     if (collection_name.empty())
