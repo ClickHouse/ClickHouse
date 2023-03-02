@@ -26,6 +26,7 @@
 #    pragma GCC diagnostic pop
 #endif
 
+
 namespace DB
 {
 
@@ -66,12 +67,12 @@ ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
 
             if (!low_cardinality_type)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Incompatible type for low cardinality column: {}",
+                    "Incompatible type for LowCardinality column: {}",
                     column.type->getName());
 
             if (can_be_executed_on_default_arguments)
             {
-                /// Normal case, when function can be executed on values's default.
+                /// Normal case, when function can be executed on values' default.
                 column.column = low_cardinality_column->getDictionary().getNestedColumn();
                 indexes = low_cardinality_column->getIndexesPtr();
             }
@@ -280,6 +281,7 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(const ColumnsWithType
 
             auto res = executeWithoutLowCardinalityColumns(columns_without_low_cardinality, dictionary_type, new_input_rows_count, dry_run);
             bool res_is_constant = isColumnConst(*res);
+
             auto keys = res_is_constant
                 ? res->cloneResized(1)->convertToFullColumnIfConst()
                 : res;
