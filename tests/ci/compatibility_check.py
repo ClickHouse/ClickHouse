@@ -210,7 +210,7 @@ def main():
     max_glibc_version = ""
     if "x86" in args.check_name:
         max_glibc_version = "2.4"
-    elif "aarch64" in args.check_nam:
+    elif "aarch64" in args.check_name:
         max_glibc_version = "2.18"  # because of build with newer sysroot?
     else:
         raise Exception("Can't determine max glibc version")
