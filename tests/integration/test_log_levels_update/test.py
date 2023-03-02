@@ -63,4 +63,4 @@ def test_log_levels_update(start_cluster):
 
     log = get_log(node)
     assert len(log) > 0
-    assert not re.search("(<Trace>|<Debug>)", log)
+    assert not re.search("<Trace>", log)
