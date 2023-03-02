@@ -1772,7 +1772,7 @@ std::map<int64_t, MutationCommands> ReplicatedMergeTreeQueue::getAlterMutationCo
         int32_t alter_version = mutation_status->entry->alter_version;
         if (alter_version != -1)
         {
-            if (!alter_sequence.canExecuteDataAlter(alter_version, lock))
+            if (alter_version > storage.getInMemoryMetadataPtr()->getMetadataVersion())
                 continue;
 
             /// we take commands with bigger metadata version
