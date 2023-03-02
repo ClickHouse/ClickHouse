@@ -43,8 +43,6 @@ apt-get install --yes --no-install-recommends \
     jq \
     lsb-release \
     pigz \
-    ripgrep \
-    zstd \
     python3-dev \
     python3-pip \
     qemu-user-static \

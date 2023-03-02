@@ -48,35 +48,7 @@ When dividing by zero you get ‘inf’, ‘-inf’, or ‘nan’.
 ## intDiv(a, b)
 
 Calculates the quotient of the numbers. Divides into integers, rounding down (by the absolute value).
-
-Returns an integer of the type of the dividend (the first parameter).
-
-An exception is thrown when dividing by zero, when the quotient does not fit in the range of the dividend, or when dividing a minimal negative number by minus one.
-
-**Example**
-
-Query:
-
-```sql
-SELECT
-    intDiv(toFloat64(1), 0.001) AS res,
-    toTypeName(res)
-```
-```response
-┌──res─┬─toTypeName(intDiv(toFloat64(1), 0.001))─┐
-│ 1000 │ Int64                                   │
-└──────┴─────────────────────────────────────────┘
-```
-
-```sql
-SELECT
-    intDiv(1, 0.001) AS res,
-    toTypeName(res)
-```
-```response
-Received exception from server (version 23.2.1):
-Code: 153. DB::Exception: Received from localhost:9000. DB::Exception: Cannot perform integer division, because it will produce infinite or too large number: While processing intDiv(1, 0.001) AS res, toTypeName(res). (ILLEGAL_DIVISION)
-```
+An exception is thrown when dividing by zero or when dividing a minimal negative number by minus one.
 
 ## intDivOrZero(a, b)
 
@@ -93,27 +65,10 @@ An exception is thrown when dividing by zero or when dividing a minimal negative
 
 Differs from [modulo](#modulo) in that it returns zero when the divisor is zero.
 
-## positiveModulo(a, b), positive_modulo(a, b), pmod(a, b)
-Calculates the remainder when dividing `a` by `b`. Similar to the function `modulo` except that `positive_modulo` always returns a non-negative number.
+## positive_modulo(a, b)
+Calculates the remainder when dividing `a` by `b`. Similar to function `modulo` except that `positive_modulo` always return non-negative number.
 
-Notice that `positive_modulo` is 4-5 times slower than `modulo`. You should not use `positive_modulo` unless you want to get a positive result and don't care about performance too much.
-
-**Example**
-
-Query:
-
-```sql
-SELECT positiveModulo(-1, 10)
-```
-
-Result:
-
-```text
-
-┌─positiveModulo(-1, 10)─┐
-│                      9 │
-└────────────────────────┘
-```
+Notice that `positive_modulo` is 4-5 times slower than `modulo`. You should not use `positive_modulo` unless you want to get positive result and don't care about performance too much.
 
 ## negate(a), -a operator
 
@@ -177,7 +132,7 @@ Compares two values and returns the minimum. The returned value is converted to 
 **Syntax**
 
 ```sql
-min2(value1, value2)
+max2(value1, value2)
 ```
 
 **Arguments**

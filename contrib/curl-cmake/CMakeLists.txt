@@ -8,10 +8,6 @@ endif()
 set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/curl")
 
 set (SRCS
-    "${LIBRARY_DIR}/lib/fopen.c"
-    "${LIBRARY_DIR}/lib/noproxy.c"
-    "${LIBRARY_DIR}/lib/idn.c"
-    "${LIBRARY_DIR}/lib/cfilters.c"
     "${LIBRARY_DIR}/lib/file.c"
     "${LIBRARY_DIR}/lib/timeval.c"
     "${LIBRARY_DIR}/lib/base64.c"
@@ -86,6 +82,7 @@ set (SRCS
     "${LIBRARY_DIR}/lib/openldap.c"
     "${LIBRARY_DIR}/lib/curl_gethostname.c"
     "${LIBRARY_DIR}/lib/gopher.c"
+    "${LIBRARY_DIR}/lib/idn_win32.c"
     "${LIBRARY_DIR}/lib/http_proxy.c"
     "${LIBRARY_DIR}/lib/asyn-thread.c"
     "${LIBRARY_DIR}/lib/curl_gssapi.c"
@@ -96,6 +93,7 @@ set (SRCS
     "${LIBRARY_DIR}/lib/rand.c"
     "${LIBRARY_DIR}/lib/curl_multibyte.c"
     "${LIBRARY_DIR}/lib/conncache.c"
+    "${LIBRARY_DIR}/lib/dotdot.c"
     "${LIBRARY_DIR}/lib/http2.c"
     "${LIBRARY_DIR}/lib/smb.c"
     "${LIBRARY_DIR}/lib/curl_endian.c"
@@ -105,6 +103,7 @@ set (SRCS
     "${LIBRARY_DIR}/lib/sha256.c"
     "${LIBRARY_DIR}/lib/setopt.c"
     "${LIBRARY_DIR}/lib/curl_path.c"
+    "${LIBRARY_DIR}/lib/curl_ctype.c"
     "${LIBRARY_DIR}/lib/curl_range.c"
     "${LIBRARY_DIR}/lib/psl.c"
     "${LIBRARY_DIR}/lib/doh.c"

@@ -183,8 +183,7 @@ def attach_check_all_parts_table(started_cluster):
     q("SYSTEM STOP MERGES")
     q("DROP TABLE IF EXISTS test.attach_partition")
     q(
-        "CREATE TABLE test.attach_partition (n UInt64) ENGINE = MergeTree() PARTITION BY intDiv(n, 8) ORDER BY n "
-        "SETTINGS compress_marks=false, compress_primary_key=false, old_parts_lifetime=0"
+        "CREATE TABLE test.attach_partition (n UInt64) ENGINE = MergeTree() PARTITION BY intDiv(n, 8) ORDER BY n SETTINGS compress_marks=false, compress_primary_key=false"
     )
     q(
         "INSERT INTO test.attach_partition SELECT number FROM system.numbers WHERE number % 2 = 0 LIMIT 8"
@@ -463,8 +462,7 @@ def test_system_detached_parts(drop_detached_parts_table):
 
 def test_detached_part_dir_exists(started_cluster):
     q(
-        "create table detached_part_dir_exists (n int) engine=MergeTree order by n "
-        "SETTINGS compress_marks=false, compress_primary_key=false, old_parts_lifetime=0"
+        "create table detached_part_dir_exists (n int) engine=MergeTree order by n SETTINGS compress_marks=false, compress_primary_key=false"
     )
     q("insert into detached_part_dir_exists select 1")  # will create all_1_1_0
     q(

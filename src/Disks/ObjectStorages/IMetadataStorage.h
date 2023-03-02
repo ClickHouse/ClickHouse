@@ -44,12 +44,6 @@ public:
         throwNotImplemented();
     }
 
-    /// Writes the data inline with the metadata
-    virtual void writeInlineDataToFile(const std::string & /* path */, const std::string & /* data */)
-    {
-        throwNotImplemented();
-    }
-
     virtual void setLastModified(const std::string & /* path */, const Poco::Timestamp & /* timestamp */)
     {
         throwNotImplemented();
@@ -149,7 +143,7 @@ using MetadataTransactionPtr = std::shared_ptr<IMetadataTransaction>;
 class IMetadataStorage : private boost::noncopyable
 {
 public:
-    virtual MetadataTransactionPtr createTransaction() = 0;
+    virtual MetadataTransactionPtr createTransaction() const = 0;
 
     /// Get metadata root path.
     virtual const std::string & getPath() const = 0;
@@ -187,12 +181,6 @@ public:
 
     /// Read metadata file to string from path
     virtual std::string readFileToString(const std::string & /* path */) const
-    {
-        throwNotImplemented();
-    }
-
-    /// Read inline data for file to string from path
-    virtual std::string readInlineDataToString(const std::string & /* path */) const
     {
         throwNotImplemented();
     }

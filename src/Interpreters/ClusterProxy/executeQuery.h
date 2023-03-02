@@ -61,7 +61,10 @@ void executeQueryWithParallelReplicas(
     const ASTPtr & query_ast,
     ContextPtr context,
     const SelectQueryInfo & query_info,
-    const ClusterPtr & not_optimized_cluster);
+    const ExpressionActionsPtr & sharding_key_expr,
+    const std::string & sharding_key_column_name,
+    const ClusterPtr & not_optimized_cluster,
+    QueryProcessingStage::Enum processed_stage);
 }
 
 }

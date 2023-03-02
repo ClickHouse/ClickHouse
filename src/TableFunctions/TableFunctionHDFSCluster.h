@@ -28,6 +28,7 @@ public:
     {
         return name;
     }
+    bool hasStaticStructure() const override { return true; }
 
 protected:
     StoragePtr getStorage(

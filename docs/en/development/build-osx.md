@@ -1,9 +1,9 @@
 ---
 slug: /en/development/build-osx
 sidebar_position: 65
-sidebar_label: Build on macOS
-title: How to Build ClickHouse on macOS
-description: How to build ClickHouse on macOS
+sidebar_label: Build on Mac OS X
+title: How to Build ClickHouse on Mac OS X
+description: How to build ClickHouse on Mac OS X
 ---
 
 :::info You don't have to build ClickHouse yourself!
@@ -149,3 +149,5 @@ To check if it’s working, use the `ulimit -n` or `launchctl limit maxfiles` co
 cd ClickHouse
 ./build/programs/clickhouse-server --config-file ./programs/server/config.xml
 ```
+
+[Original article](https://clickhouse.com/docs/en/development/build_osx/) <!--hide-->

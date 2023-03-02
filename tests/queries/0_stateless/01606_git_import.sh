@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-debug, no-tsan, no-msan, no-ubsan, no-asan
-# ^ because inserting a 50 MB file can be slow.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -127,3 +125,4 @@ DROP TABLE commits;
 DROP TABLE file_changes;
 DROP TABLE line_changes;
 "
+

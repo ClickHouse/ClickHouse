@@ -83,7 +83,7 @@ const AccessEntityTypeInfo & AccessEntityTypeInfo::get(AccessEntityType type_)
         }
         case AccessEntityType::MAX: break;
     }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown type: {}", static_cast<size_t>(type_));
+    throw Exception("Unknown type: " + std::to_string(static_cast<size_t>(type_)), ErrorCodes::LOGICAL_ERROR);
 }
 
 AccessEntityType AccessEntityTypeInfo::parseType(const String & name_)

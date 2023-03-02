@@ -56,3 +56,4 @@ SELECT quantileTDigest(number) FROM numbers(10)
 
 -   [median](../../../sql-reference/aggregate-functions/reference/median.md#median)
 -   [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)
+

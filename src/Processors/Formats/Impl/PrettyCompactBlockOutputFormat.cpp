@@ -144,7 +144,7 @@ void PrettyCompactBlockOutputFormat::writeRow(
     if (format_settings.pretty.output_format_pretty_row_numbers)
     {
         // Write row number;
-        auto row_num_string = std::to_string(row_num + 1 + total_rows) + ". ";
+        auto row_num_string = std::to_string(row_num + 1) + ". ";
         for (size_t i = 0; i < row_number_width - row_num_string.size(); ++i)
         {
             writeCString(" ", out);

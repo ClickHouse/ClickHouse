@@ -362,3 +362,5 @@ ORDER BY
     S_CITY ASC,
     P_BRAND ASC;
 ```
+
+[原始文章](https://clickhouse.com/docs/en/getting_started/example_datasets/star_schema/) <!--hide-->

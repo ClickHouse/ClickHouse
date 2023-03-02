@@ -1,8 +1,8 @@
 ---
 slug: /en/sql-reference/functions/tuple-map-functions
 sidebar_position: 46
-sidebar_label: Maps
-title: "Functions for Maps"
+sidebar_label: Working with maps
+title: "Functions for maps"
 ---
 
 ## map
@@ -440,7 +440,7 @@ mapApply(func, map)
   
 **Parameters**
   
--   `func`  - [Lambda function](../../sql-reference/functions/index.md#higher-order-functions---operator-and-lambdaparams-expr-function).
+-   `func`  - [Lamda function](../../sql-reference/functions/index.md#higher-order-functions---operator-and-lambdaparams-expr-function).
 -   `map` — [Map](../../sql-reference/data-types/map.md).
 
 **Returned value**
@@ -480,7 +480,7 @@ mapFilter(func, map)
   
 **Parameters**
 
--   `func`  - [Lambda function](../../sql-reference/functions/index.md#higher-order-functions---operator-and-lambdaparams-expr-function).
+-   `func`  - [Lamda function](../../sql-reference/functions/index.md#higher-order-functions---operator-and-lambdaparams-expr-function).
 -   `map` — [Map](../../sql-reference/data-types/map.md).  
 
 **Returned value**
@@ -544,3 +544,5 @@ Result:
 │ {'key3':0,'key1':10,'key2':10} │
 └────────────────────────────────┘
 ```  
+
+[Original article](https://clickhouse.com/docs/en/sql-reference/functions/tuple-map-functions/) <!--hide-->

@@ -27,3 +27,4 @@ You can use domains anywhere corresponding base type can be used, for example:
 -   Can’t convert index column of base type to domain type via `ALTER TABLE`.
 -   Can’t implicitly convert string values into domain values when inserting data from another column or table.
 -   Domain adds no constrains on stored values.
+
