@@ -39,6 +39,7 @@
 #include <Storages/System/StorageSystemReplicas.h>
 #include <Storages/System/StorageSystemReplicationQueue.h>
 #include <Storages/System/StorageSystemDistributionQueue.h>
+#include <Storages/System/StorageSystemServerSettings.h>
 #include <Storages/System/StorageSystemSettings.h>
 #include <Storages/System/StorageSystemSettingsChanges.h>
 #include <Storages/System/StorageSystemMergeTreeSettings.h>
@@ -105,6 +106,7 @@ void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
     attach<StorageSystemFunctions>(context, system_database, "functions");
     attach<StorageSystemEvents>(context, system_database, "events");
     attach<StorageSystemSettings>(context, system_database, "settings");
+    attach<StorageSystemServerSettings>(context, system_database, "server_settings");
     attach<StorageSystemSettingsChanges>(context, system_database, "settings_changes");
     attach<SystemMergeTreeSettings<false>>(context, system_database, "merge_tree_settings");
     attach<SystemMergeTreeSettings<true>>(context, system_database, "replicated_merge_tree_settings");
