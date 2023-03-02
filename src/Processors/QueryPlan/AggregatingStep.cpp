@@ -234,7 +234,15 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     auto many_data = std::make_shared<ManyAggregatedData>(streams);
                     for (size_t j = 0; j < streams; ++j)
                     {
-                        auto aggregation_for_set = std::make_shared<AggregatingTransform>(input_header, transform_params_for_set, many_data, j, merge_threads, temporary_data_merge_threads);
+                        auto aggregation_for_set = std::make_shared<AggregatingTransform>(
+                            input_header,
+                            transform_params_for_set,
+                            many_data,
+                            j,
+                            merge_threads,
+                            temporary_data_merge_threads,
+                            should_produce_results_in_order_of_bucket_number,
+                            skip_merging);
                         // For each input stream we have `grouping_sets_size` copies, so port index
                         // for transform #j should skip ports of first (j-1) streams.
                         connect(*ports[i + grouping_sets_size * j], aggregation_for_set->getInputs().front());
@@ -371,6 +379,15 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     many_data, counter++);
             });
 
+            if (skip_merging)
+            {
+                pipeline.addSimpleTransform([&](const Block & header)
+                                            { return std::make_shared<FinalizeAggregatedTransform>(header, transform_params); });
+                pipeline.resize(params.max_threads);
+                aggregating_in_order = collector.detachProcessors(0);
+                return;
+            }
+
             aggregating_in_order = collector.detachProcessors(0);
 
             auto transform = std::make_shared<FinishAggregatingInOrderTransform>(
@@ -425,16 +442,26 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     if (pipeline.getNumStreams() > 1)
     {
         /// Add resize transform to uniformly distribute data between aggregating streams.
-        if (!storage_has_evenly_distributed_read)
+        /// But not if we execute aggregation over partitioned data in which case data streams shouldn't be mixed.
+        if (!storage_has_evenly_distributed_read && !skip_merging)
             pipeline.resize(pipeline.getNumStreams(), true, true);
 
         auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams());
 
         size_t counter = 0;
-        pipeline.addSimpleTransform([&](const Block & header)
-        {
-            return std::make_shared<AggregatingTransform>(header, transform_params, many_data, counter++, merge_threads, temporary_data_merge_threads);
-        });
+        pipeline.addSimpleTransform(
+            [&](const Block & header)
+            {
+                return std::make_shared<AggregatingTransform>(
+                    header,
+                    transform_params,
+                    many_data,
+                    counter++,
+                    merge_threads,
+                    temporary_data_merge_threads,
+                    should_produce_results_in_order_of_bucket_number,
+                    skip_merging);
+            });
 
         pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : params.max_threads, true /* force */);
 
@@ -453,11 +480,12 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 void AggregatingStep::describeActions(FormatSettings & settings) const
 {
     params.explain(settings.out, settings.offset);
+    String prefix(settings.offset, settings.indent_char);
     if (!sort_description_for_merging.empty())
     {
-        String prefix(settings.offset, settings.indent_char);
         settings.out << prefix << "Order: " << dumpSortDescription(sort_description_for_merging) << '\n';
     }
+    settings.out << prefix << "Skip merging: " << skip_merging << '\n';
 }
 
 void AggregatingStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -465,6 +493,7 @@ void AggregatingStep::describeActions(JSONBuilder::JSONMap & map) const
     params.explain(map);
     if (!sort_description_for_merging.empty())
         map.add("Order", dumpSortDescription(sort_description_for_merging));
+    map.add("Skip merging", skip_merging);
 }
 
 void AggregatingStep::describePipeline(FormatSettings & settings) const

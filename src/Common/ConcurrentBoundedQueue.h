@@ -163,14 +163,14 @@ public:
     /// Returns size of queue
     size_t size() const
     {
-        std::lock_guard<std::mutex> lock(queue_mutex);
+        std::lock_guard lock(queue_mutex);
         return queue.size();
     }
 
     /// Returns if queue is empty
     bool empty() const
     {
-        std::lock_guard<std::mutex> lock(queue_mutex);
+        std::lock_guard lock(queue_mutex);
         return queue.empty();
     }
 
@@ -184,7 +184,7 @@ public:
         bool was_finished_before = false;
 
         {
-            std::lock_guard<std::mutex> lock(queue_mutex);
+            std::lock_guard lock(queue_mutex);
 
             if (is_finished)
                 return true;
@@ -202,14 +202,14 @@ public:
     /// Returns if queue is finished
     bool isFinished() const
     {
-        std::lock_guard<std::mutex> lock(queue_mutex);
+        std::lock_guard lock(queue_mutex);
         return is_finished;
     }
 
     /// Returns if queue is finished and empty
     bool isFinishedAndEmpty() const
     {
-        std::lock_guard<std::mutex> lock(queue_mutex);
+        std::lock_guard lock(queue_mutex);
         return is_finished && queue.empty();
     }
 
@@ -217,7 +217,7 @@ public:
     void clear()
     {
         {
-            std::lock_guard<std::mutex> lock(queue_mutex);
+            std::lock_guard lock(queue_mutex);
 
             if (is_finished)
                 return;
@@ -233,7 +233,7 @@ public:
     void clearAndFinish()
     {
         {
-            std::lock_guard<std::mutex> lock(queue_mutex);
+            std::lock_guard lock(queue_mutex);
 
             std::queue<T> empty_queue;
             queue.swap(empty_queue);

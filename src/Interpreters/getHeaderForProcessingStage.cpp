@@ -1,8 +1,10 @@
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageDummy.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -83,11 +85,11 @@ bool removeJoin(ASTSelectQuery & select, TreeRewriterResult & rewriter_result, C
 }
 
 Block getHeaderForProcessingStage(
-        const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
-        const SelectQueryInfo & query_info,
-        ContextPtr context,
-        QueryProcessingStage::Enum processed_stage)
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    const SelectQueryInfo & query_info,
+    ContextPtr context,
+    QueryProcessingStage::Enum processed_stage)
 {
     switch (processed_stage)
     {
@@ -119,17 +121,34 @@ Block getHeaderForProcessingStage(
         case QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit:
         case QueryProcessingStage::MAX:
         {
-            /// TODO: Analyzer syntax analyzer result
-            if (!query_info.syntax_analyzer_result)
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "getHeaderForProcessingStage is unsupported");
+            ASTPtr query = query_info.query;
+            if (const auto * select = query_info.query->as<ASTSelectQuery>(); select && hasJoin(*select))
+            {
+                /// TODO: Analyzer syntax analyzer result
+                if (!query_info.syntax_analyzer_result)
+                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "getHeaderForProcessingStage is unsupported");
 
-            auto query = query_info.query->clone();
-            TreeRewriterResult new_rewriter_result = *query_info.syntax_analyzer_result;
-            removeJoin(*query->as<ASTSelectQuery>(), new_rewriter_result, context);
+                query = query_info.query->clone();
+                TreeRewriterResult new_rewriter_result = *query_info.syntax_analyzer_result;
+                removeJoin(*query->as<ASTSelectQuery>(), new_rewriter_result, context);
+            }
 
-            auto pipe = Pipe(std::make_shared<SourceFromSingleChunk>(
-                    storage_snapshot->getSampleBlockForColumns(column_names)));
-            return InterpreterSelectQuery(query, context, std::move(pipe), SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+            Block result;
+
+            if (context->getSettingsRef().allow_experimental_analyzer)
+            {
+                auto storage = std::make_shared<StorageDummy>(storage_snapshot->storage.getStorageID(), storage_snapshot->metadata->getColumns());
+                InterpreterSelectQueryAnalyzer interpreter(query, context, storage, SelectQueryOptions(processed_stage).analyze());
+                result = interpreter.getSampleBlock();
+            }
+            else
+            {
+                auto pipe = Pipe(std::make_shared<SourceFromSingleChunk>(
+                        storage_snapshot->getSampleBlockForColumns(column_names)));
+                result = InterpreterSelectQuery(query, context, std::move(pipe), SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+            }
+
+            return result;
         }
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical Error: unknown processed stage.");
