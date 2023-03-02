@@ -459,25 +459,37 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
         return;
     }
 
-    auto interpreter_subquery = interpretSubquery(subquery_or_table_name, getContext(), {}, query_options);
-    auto io = interpreter_subquery->execute();
-    PullingAsyncPipelineExecutor executor(io.pipeline);
-
-    SetPtr set = std::make_shared<Set>(settings.size_limits_for_set, true, getContext()->getSettingsRef().transform_null_in);
-    set->setHeader(executor.getHeader().getColumnsWithTypeAndName());
-
-    Block block;
-    while (executor.pull(block))
+    auto build_set = [&] () -> SetPtr
     {
-        if (block.rows() == 0)
-            continue;
+        auto interpreter_subquery = interpretSubquery(subquery_or_table_name, getContext(), {}, query_options);
+        auto io = interpreter_subquery->execute();
+        PullingAsyncPipelineExecutor executor(io.pipeline);
 
-        /// If the limits have been exceeded, give up and let the default subquery processing actions take place.
-        if (!set->insertFromBlock(block.getColumnsWithTypeAndName()))
-            return;
-    }
+        SetPtr set = std::make_shared<Set>(settings.size_limits_for_set, true, getContext()->getSettingsRef().transform_null_in);
+        set->setHeader(executor.getHeader().getColumnsWithTypeAndName());
 
-    set->finishInsert();
+        Block block;
+        while (executor.pull(block))
+        {
+            if (block.rows() == 0)
+                continue;
+
+            /// If the limits have been exceeded, give up and let the default subquery processing actions take place.
+            if (!set->insertFromBlock(block.getColumnsWithTypeAndName()))
+                return nullptr;
+        }
+
+        set->finishInsert();
+
+        return set;
+    };
+
+    auto set_cache = getContext()->getPreparedSetsCache();
+
+    auto set = set_cache ? set_cache->findOrBuild(set_key, build_set) : build_set();
+
+    if (!set)
+        return;
 
     prepared_sets->set(set_key, std::move(set));
 }

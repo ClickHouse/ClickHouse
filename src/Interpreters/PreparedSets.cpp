@@ -106,4 +106,62 @@ QueryPlanPtr SubqueryForSet::detachSource()
     return res;
 }
 
+SetPtr PreparedSetsCache::findOrBuild(const PreparedSetKey & key, const std::function<SetPtr()> & build_set)
+{
+    auto* log = &Poco::Logger::get("PreparedSetsCache");
+
+    EntryPtr entry;
+    bool need_to_build_set = false;
+
+    /// Look for existing entry in the cache.
+    {
+        std::lock_guard lock(cache_mutex);
+
+        auto it = cache.find(key);
+        if (it != cache.end())
+        {
+            entry = it->second;
+        }
+        else
+        {
+            if (build_set == nullptr)
+                return nullptr;
+
+            /// Insert the entry into the cache so that other threads can find it and start waiting for the set.
+            entry = std::make_shared<Entry>();
+            entry->filled_set = entry->promise.get_future();
+            cache[key] = entry;
+            need_to_build_set = true;
+        }
+    }
+
+    if (need_to_build_set)
+    {
+        LOG_DEBUG(log, "Building set for key {}:{}", key.ast_hash.first, key.ast_hash.second);
+        try
+        {
+            auto set = build_set();
+            entry->promise.set_value(set);
+        }
+        catch (...)
+        {
+            entry->promise.set_exception(std::current_exception());
+            throw;
+        }
+
+        return entry->filled_set.get();
+    }
+
+    if (entry->filled_set.valid() && entry->filled_set.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
+    {
+        LOG_DEBUG(log, "Found set for key {}:{} without wait", key.ast_hash.first, key.ast_hash.second);
+    }
+    else
+    {
+        LOG_DEBUG(log, "Found set for key {}:{} with wait", key.ast_hash.first, key.ast_hash.second);
+    }
+    return entry->filled_set.get();
+}
+
+
 };

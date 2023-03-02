@@ -2,6 +2,7 @@
 
 #include <Parsers/IAST.h>
 #include <DataTypes/IDataType.h>
+#include <future>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -96,5 +97,32 @@ private:
 };
 
 using PreparedSetsPtr = std::shared_ptr<PreparedSets>;
+
+
+/// This set cache is used to avoid building the same set multiple times. It is different from PreparedSets in way that
+/// it can be used across multiple queries. One use case is when we execute the same mutation on multiple parts. In this
+/// case each part is processed by a separate mutation task but they can share the same set.
+class PreparedSetsCache
+{
+public:
+    /// Returns the set from the cache or builds it using the provided function.
+    /// If the set is already being built by another task, then this call will wait for the set to be built.
+    SetPtr findOrBuild(const PreparedSetKey & key, const std::function<SetPtr()> & build_set);
+
+private:
+    struct Entry
+    {
+        std::promise<SetPtr> promise;          /// The promise is set when the set is built by the first task.
+        std::shared_future<SetPtr> filled_set; /// Other tasks can wait for the set to be built.
+    };
+
+    using EntryPtr = std::shared_ptr<Entry>;
+
+    /// Protects just updates to the cache. When we got EntyPtr from the cache we can access it without locking.
+    std::mutex cache_mutex;
+    std::unordered_map<PreparedSetKey, EntryPtr, PreparedSetKey::Hash> cache;
+};
+
+using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
 }
