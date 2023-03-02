@@ -60,7 +60,11 @@ def process_glibc_check(log_path: str, max_glibc_version: str) -> TestResults:
 
 
 def process_result(
-    result_folder: str, server_log_folder: str, check_glibc: bool, check_distributions: bool, max_glibc_version: str
+    result_folder: str,
+    server_log_folder: str,
+    check_glibc: bool,
+    check_distributions: bool,
+    max_glibc_version: str,
 ) -> Tuple[str, str, TestResults, List[str]]:
     glibc_log_path = os.path.join(result_folder, "glibc.log")
     test_results = process_glibc_check(glibc_log_path, max_glibc_version)
@@ -219,7 +223,11 @@ def main():
 
     s3_helper = S3Helper()
     state, description, test_results, additional_logs = process_result(
-        result_path, server_log_path, args.check_glibc, args.check_distributions, max_glibc_version
+        result_path,
+        server_log_path,
+        args.check_glibc,
+        args.check_distributions,
+        max_glibc_version,
     )
 
     ch_helper = ClickHouseHelper()
