@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 
 import argparse
-import sys
 import json
+import sys
 import time
 from collections import namedtuple
+from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple
 
 import boto3  # type: ignore
@@ -51,6 +52,32 @@ def get_access_token(jwt_token: str, installation_id: int) -> str:
     response.raise_for_status()
     data = response.json()
     return data["token"]  # type: ignore
+
+
+@dataclass
+class CachedToken:
+    time: int
+    value: str
+
+
+cached_token = CachedToken(0, "")
+
+
+def get_cached_access_token() -> str:
+    if time.time() - 500 < cached_token.time:
+        return cached_token.value
+    private_key, app_id = get_key_and_app_from_aws()
+    payload = {
+        "iat": int(time.time()) - 60,
+        "exp": int(time.time()) + (10 * 60),
+        "iss": app_id,
+    }
+
+    encoded_jwt = jwt.encode(payload, private_key, algorithm="RS256")
+    installation_id = get_installation_id(encoded_jwt)
+    cached_token.time = int(time.time())
+    cached_token.value = get_access_token(encoded_jwt, installation_id)
+    return cached_token.value
 
 
 RunnerDescription = namedtuple(
@@ -132,22 +159,10 @@ def get_candidates_to_be_killed(event_data: dict) -> Dict[str, List[str]]:
     return instances_by_zone
 
 
-def main(
-    github_secret_key: str, github_app_id: int, event: dict
-) -> Dict[str, List[str]]:
+def main(access_token: str, event: dict) -> Dict[str, List[str]]:
     print("Got event", json.dumps(event, sort_keys=True, indent=4))
     to_kill_by_zone = how_many_instances_to_kill(event)
     instances_by_zone = get_candidates_to_be_killed(event)
-
-    payload = {
-        "iat": int(time.time()) - 60,
-        "exp": int(time.time()) + (10 * 60),
-        "iss": github_app_id,
-    }
-
-    encoded_jwt = jwt.encode(payload, github_secret_key, algorithm="RS256")
-    installation_id = get_installation_id(encoded_jwt)
-    access_token = get_access_token(encoded_jwt, installation_id)
 
     runners = list_runners(access_token)
     # We used to delete potential hosts to terminate from GitHub runners pool,
@@ -222,8 +237,7 @@ def main(
 
 
 def handler(event: dict, context: Any) -> Dict[str, List[str]]:
-    private_key, app_id = get_key_and_app_from_aws()
-    return main(private_key, app_id, event)
+    return main(get_cached_access_token(), event)
 
 
 if __name__ == "__main__":
@@ -300,4 +314,14 @@ if __name__ == "__main__":
         "Cause": "SCALE_IN",
     }
 
-    main(private_key, args.app_id, sample_event)
+    payload = {
+        "iat": int(time.time()) - 60,
+        "exp": int(time.time()) + (10 * 60),
+        "iss": args.app_id,
+    }
+
+    encoded_jwt = jwt.encode(payload, private_key, algorithm="RS256")
+    installation_id = get_installation_id(encoded_jwt)
+    access_token = get_access_token(encoded_jwt, args.app_id)
+
+    main(access_token, sample_event)
