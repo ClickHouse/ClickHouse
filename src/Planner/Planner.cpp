@@ -594,6 +594,7 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
         auto query_plan_columns = query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
         for (auto & query_plan_column : query_plan_columns)
         {
+            /// INTERPOLATE actions dag input columns must be non constant
             query_plan_column.column = nullptr;
             interpolate_actions_dag->addInput(query_plan_column);
         }

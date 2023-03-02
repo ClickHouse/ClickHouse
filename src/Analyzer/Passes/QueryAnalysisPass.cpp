@@ -4045,6 +4045,12 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 
                 node = replace_expression->clone();
                 node_projection_names = resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+                /** If replace expression resolved as single node, we want to use replace column name as result projection name, instead
+                  * of using replace expression projection name.
+                  *
+                  * Example: SELECT * REPLACE id + 5 AS id FROM test_table;
+                  */
                 if (node_projection_names.size() == 1)
                     node_projection_names[0] = column_name;
 
@@ -5026,14 +5032,14 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         auto function_base = function->build(argument_columns);
 
         /// Do not constant fold get scalar functions
-        bool is_get_scalar_function = function_name == "__getScalar" || function_name == "shardNum" ||
+        bool disable_constant_folding = function_name == "__getScalar" || function_name == "shardNum" ||
             function_name == "shardCount";
 
         /** If function is suitable for constant folding try to convert it to constant.
           * Example: SELECT plus(1, 1);
           * Result: SELECT 2;
           */
-        if (function_base->isSuitableForConstantFolding() && !is_get_scalar_function)
+        if (function_base->isSuitableForConstantFolding() && !disable_constant_folding)
         {
             auto result_type = function_base->getResultType();
             auto executable_function = function_base->prepare(argument_columns);
