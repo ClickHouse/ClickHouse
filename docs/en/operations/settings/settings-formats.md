@@ -1106,6 +1106,12 @@ Use Parquet FIXED_LENGTH_BYTE_ARRAY type instead of Binary/String for FixedStrin
 
 Enabled by default.
 
+### output_format_parquet_version {#output_format_parquet_version}
+
+The version of Parquet format used in output format. Supported versions: `1.0`, `2.4`, `2.6` and `2.latest`.
+
+Default value: `2.latest`.
+
 ## Hive format settings {#hive-format-settings}
 
 ### input_format_hive_text_fields_delimiter {#input_format_hive_text_fields_delimiter}
