@@ -36,7 +36,7 @@ def run_echo_server():
 
         if "html" in ping_response:
             return
-        
+
         print(ping_response)
 
     raise Exception("Echo server is not responding")
