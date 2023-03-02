@@ -32,7 +32,7 @@ bool FieldFromASTImpl::isSecret() const
     return isDiskFunction(ast);
 }
 
-class DiskConfigurationHider
+class DiskConfigurationMasker
 {
 public:
     struct Data {};
@@ -50,7 +50,7 @@ public:
             auto is_secret_arg = [](const std::string & arg_name)
             {
                 /// We allow to not hide type of the disk, e.g. disk(type = s3, ...)
-                /// and also nested disk, e.g. disk(type = cache, disk = disk(type = s3, ...))
+                /// and also nested disk, e.g. disk = 'disk_name'
                 return arg_name != "type" && arg_name != "disk";
             };
 
@@ -81,7 +81,7 @@ public:
 };
 
 /// Visits children first.
-using HideDiskConfigurationVisitor = InDepthNodeVisitor<DiskConfigurationHider, false>;
+using HideDiskConfigurationVisitor = InDepthNodeVisitor<DiskConfigurationMasker, false>;
 
 String FieldFromASTImpl::toString(bool show_secrets) const
 {
