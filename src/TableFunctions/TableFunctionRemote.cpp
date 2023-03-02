@@ -51,18 +51,25 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
      */
     size_t max_args = is_cluster_function ? 4 : 6;
     NamedCollectionPtr named_collection;
-    std::vector<std::pair<std::string, ASTPtr>> non_convertible;
-    if (!is_cluster_function && (named_collection = tryGetNamedCollectionWithOverrides(args, false, &non_convertible)))
+    std::vector<std::pair<std::string, ASTPtr>> complex_args;
+    if (!is_cluster_function && (named_collection = tryGetNamedCollectionWithOverrides(args, false, &complex_args)))
     {
         validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(
             *named_collection,
             {"addresses_expr", "host", "hostname", "table"},
             {"username", "user", "password", "sharding_key", "port", "database", "db"});
-        if (!non_convertible.empty())
+
+        if (!complex_args.empty())
         {
-            if (non_convertible.size() != 1 || (non_convertible[0].first != "database" && non_convertible[0].first != "db"))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected argument representation for {}", non_convertible[0].first);
-            remote_table_function_ptr = non_convertible[0].second;
+            for (const auto & [arg_name, arg_ast] : complex_args)
+            {
+                if (arg_name == "database" || arg_name == "db")
+                    remote_table_function_ptr = arg_ast;
+                else if (arg_name == "sharding_key")
+                    sharding_key = arg_ast;
+                else
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected argument representation for {}", arg_name);
+            }
         }
         else
             database = named_collection->getAnyOrDefault<String>({"db", "database"}, "default");

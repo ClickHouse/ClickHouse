@@ -297,6 +297,7 @@ StorageMySQL::Configuration StorageMySQL::getConfiguration(ASTs engine_args, Con
         const auto & host_port = checkAndGetLiteralArgument<String>(engine_args[0], "host:port");
         size_t max_addresses = context_->getSettingsRef().glob_expansion_max_elements;
 
+        configuration.addresses_expr = host_port;
         configuration.addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 3306);
         configuration.database = checkAndGetLiteralArgument<String>(engine_args[1], "database");
         configuration.table = checkAndGetLiteralArgument<String>(engine_args[2], "table");

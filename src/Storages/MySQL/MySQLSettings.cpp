@@ -4,6 +4,8 @@
 #include <Parsers/ASTFunction.h>
 #include <Common/Exception.h>
 #include <Interpreters/Context.h>
+#include <Parsers/formatAST.h>
+#include <Core/Field.h>
 
 
 namespace DB
@@ -44,15 +46,27 @@ void MySQLSettings::loadFromQuery(ASTStorage & storage_def)
     }
 }
 
-void MySQLSettings::loadFromQueryContext(ContextPtr context)
+void MySQLSettings::loadFromQueryContext(ContextPtr context, ASTStorage & storage_def)
 {
     if (!context->hasQueryContext())
         return;
 
     const Settings & settings = context->getQueryContext()->getSettingsRef();
 
-    if (settings.mysql_datatypes_support_level.value != mysql_datatypes_support_level.value)
-        set("mysql_datatypes_support_level", settings.mysql_datatypes_support_level.toString());
+    /// Setting from SETTING clause have bigger priority.
+    if (!mysql_datatypes_support_level.changed
+        && settings.mysql_datatypes_support_level.value != mysql_datatypes_support_level.value)
+    {
+        static constexpr auto setting_name = "mysql_datatypes_support_level";
+        set(setting_name, settings.mysql_datatypes_support_level.toString());
+        auto & changes = storage_def.settings->changes;
+        if (changes.end() == std::find_if(
+                changes.begin(), changes.end(),
+                [](const SettingChange & c) { return c.name == setting_name; }))
+        {
+            changes.push_back(SettingChange{setting_name, settings.mysql_datatypes_support_level.toString()});
+        }
+    }
 }
 
 }

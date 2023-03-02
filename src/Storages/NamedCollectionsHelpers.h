@@ -62,15 +62,29 @@ template <typename EqualKeys> struct NamedCollectionValidateKey
 
     bool operator<(const auto & other) const
     {
-        if (*this == other)
-            return false;
-        return value < other.value;
+        std::string_view canonical_self = value;
+        std::string_view canonical_other = other.value;
+        for (const auto & equal : EqualKeys::equal_keys)
+        {
+            if ((equal.first == value) || (equal.second == value))
+                canonical_self = std::max(equal.first, equal.second);
+            if ((equal.first == other.value) || (equal.second == other.value))
+                canonical_other = std::max(equal.first, equal.second);
+        }
+
+        return canonical_self < canonical_other;
     }
 };
 
-template <class keys_cmp> using ValidateKeysMultiset = std::multiset<NamedCollectionValidateKey<keys_cmp>>;
-using ValidateKeysSet = std::multiset<std::string_view>;
+template <typename T>
+std::ostream & operator << (std::ostream & ostr, const NamedCollectionValidateKey<T> & key)
+{
+    ostr << key.value;
+    return ostr;
+}
 
+template <class keys_cmp> using ValidateKeysMultiset = std::multiset<NamedCollectionValidateKey<keys_cmp>, std::less<NamedCollectionValidateKey<keys_cmp>>>;
+using ValidateKeysSet = std::multiset<std::string_view>;
 
 template <typename Keys = ValidateKeysSet>
 void validateNamedCollection(
@@ -91,7 +105,9 @@ void validateNamedCollection(
         }
 
         if (optional_keys.contains(key))
+        {
             continue;
+        }
 
         auto match = std::find_if(
             optional_regex_keys.begin(), optional_regex_keys.end(),

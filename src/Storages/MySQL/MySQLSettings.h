@@ -37,7 +37,7 @@ struct MySQLSettings : public MySQLBaseSettings
 {
     void loadFromQuery(ASTStorage & storage_def);
     void loadFromQuery(const ASTSetQuery & settings_def);
-    void loadFromQueryContext(ContextPtr context);
+    void loadFromQueryContext(ContextPtr context, ASTStorage & storage_def);
 };
 
 
