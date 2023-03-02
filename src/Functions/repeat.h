@@ -3,9 +3,9 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 
+
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int TOO_LARGE_STRING_SIZE;
