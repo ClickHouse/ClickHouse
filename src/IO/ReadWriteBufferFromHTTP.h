@@ -147,7 +147,7 @@ namespace detail
 
         size_t getOffset() const { return getRangeBegin() + offset_from_begin_pos; }
 
-        template <bool use_initial_range = false>
+        template <bool for_object_info = false>
         std::istream * callImpl(UpdatableSessionPtr & current_session, Poco::URI uri_, Poco::Net::HTTPResponse & response, const std::string & method_)
         {
             // With empty path poco will send "POST  HTTP/1.1" its bug.
@@ -164,7 +164,7 @@ namespace detail
                 request.set(header, value);
 
             std::optional<Range> range;
-            if constexpr (use_initial_range)
+            if constexpr (for_object_info)
             {
                 if (withPartialContent(initial_read_range))
                     range = initial_read_range;
@@ -202,7 +202,9 @@ namespace detail
                 auto result_istr = receiveResponse(*sess, request, response, true);
                 response.getCookies(cookies);
 
-                if constexpr (!use_initial_range)
+                /// we can fetch object info while the request is being processed
+                /// and we don't want to override any context used by it
+                if constexpr (!for_object_info)
                     content_encoding = response.get("Content-Encoding", "");
 
                 return result_istr;
@@ -222,7 +224,7 @@ namespace detail
                 return *file_size;
 
             Poco::Net::HTTPResponse response;
-            getHeadResponse<true>(response);
+            getHeadResponse(response);
 
             if (response.hasContentLength())
             {
@@ -251,14 +253,13 @@ namespace detail
         InitializeError initialization_error = InitializeError::NONE;
 
     private:
-        template <bool use_initial_range = false>
         void getHeadResponse(Poco::Net::HTTPResponse & response)
         {
             for (size_t i = 0; i < settings.http_max_tries; ++i)
             {
                 try
                 {
-                    callWithRedirects<use_initial_range>(response, Poco::Net::HTTPRequest::HTTP_HEAD);
+                    callWithRedirects<true>(response, Poco::Net::HTTPRequest::HTTP_HEAD);
                     break;
                 }
                 catch (const Poco::Exception & e)
@@ -377,17 +378,19 @@ namespace detail
             return location_uri;
         }
 
-        template <bool use_initial_range = false>
+        template <bool for_object_info = false>
         void callWithRedirects(Poco::Net::HTTPResponse & response, const String & method_, bool throw_on_all_errors = false)
         {
             UpdatableSessionPtr current_session = nullptr;
 
-            if (use_initial_range)
+            /// we can fetch object info while the request is being processed
+            /// and we don't want to override any context used by it
+            if constexpr (for_object_info)
                 current_session = session->clone(uri);
             else
                 current_session = session;
 
-            call<use_initial_range>(current_session, response, method_, throw_on_all_errors);
+            call<for_object_info>(current_session, response, method_, throw_on_all_errors);
             Poco::URI prev_uri = uri;
 
             while (isRedirect(response.getStatus()))
@@ -399,42 +402,53 @@ namespace detail
 
                 current_session->updateSession(uri_redirect);
 
-                auto result_istr = callImpl<use_initial_range>(current_session, uri_redirect, response, method);
-                if (!use_initial_range)
+                /// we can fetch object info while the request is being processed
+                /// and we don't want to override any context used by it
+                auto result_istr = callImpl<for_object_info>(current_session, uri_redirect, response, method);
+                if constexpr (!for_object_info)
                     istr = result_istr;
             }
         }
 
-        template <bool use_initial_range = false>
+        template <bool for_object_info = false>
         void call(UpdatableSessionPtr & current_session, Poco::Net::HTTPResponse & response, const String & method_, bool throw_on_all_errors = false)
         {
             try
             {
-                auto result_istr = callImpl<use_initial_range>(current_session, saved_uri_redirect ? *saved_uri_redirect : uri, response, method_);
-                if (!use_initial_range)
+                /// we can fetch object info while the request is being processed
+                /// and we don't want to override any context used by it
+                auto result_istr = callImpl<for_object_info>(current_session, saved_uri_redirect ? *saved_uri_redirect : uri, response, method_);
+                if constexpr (!for_object_info)
                     istr = result_istr;
             }
             catch (...)
             {
-                if (throw_on_all_errors)
+                /// we can fetch object info while the request is being processed
+                /// and we don't want to override any context used by it
+                if constexpr (for_object_info)
                 {
                     throw;
-                }
-
-                auto http_status = response.getStatus();
-
-                if (http_status == Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND && http_skip_not_found_url)
-                {
-                    initialization_error = InitializeError::SKIP_NOT_FOUND_URL;
-                }
-                else if (!isRetriableError(http_status))
-                {
-                    initialization_error = InitializeError::NON_RETRYABLE_ERROR;
-                    exception = std::current_exception();
                 }
                 else
                 {
-                    throw;
+                    if (throw_on_all_errors)
+                        throw;
+
+                    auto http_status = response.getStatus();
+
+                    if (http_status == Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND && http_skip_not_found_url)
+                    {
+                        initialization_error = InitializeError::SKIP_NOT_FOUND_URL;
+                    }
+                    else if (!isRetriableError(http_status))
+                    {
+                        initialization_error = InitializeError::NON_RETRYABLE_ERROR;
+                        exception = std::current_exception();
+                    }
+                    else
+                    {
+                        throw;
+                    }
                 }
             }
         }
