@@ -10,23 +10,14 @@ cluster = ClickHouseCluster(__file__)
 server = cluster.add_instance("node")
 
 
-@pytest.fixture(scope="module")
-def started_cluster():
-
-    try:
-        cluster.start()
-        yield cluster
-    finally:
-        cluster.shutdown()
-
-
-def test_storage_url_http_headers(started_cluster):
+def run_echo_server():
     script_dir = os.path.dirname(os.path.realpath(__file__))
 
     server.copy_file_to_container(
         os.path.join(script_dir, "http_headers_echo_server.py"),
         "/http_headers_echo_server.py",
     )
+
     server.exec_in_container(
         [
             "bash",
@@ -36,8 +27,18 @@ def test_storage_url_http_headers(started_cluster):
         detach=True,
         user="root",
     )
-    time.sleep(1)
 
+@pytest.fixture(scope="module")
+def started_cluster():
+    try:
+        cluster.start()
+        run_echo_server()
+        yield cluster
+    finally:
+        cluster.shutdown()
+
+
+def test_storage_url_http_headers(started_cluster):
     query = "INSERT INTO TABLE FUNCTION url('http://localhost:8000/', JSON, 'a UInt64', headers('X-My-Custom-Header'='test-header')) VALUES (1)"
 
     server.query(query)
