@@ -45,6 +45,9 @@
 
 #include <chrono>
 #include <sstream>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 #if USE_SSL
 #include <Poco/Net/X509Certificate.h>
@@ -619,7 +622,7 @@ void HTTPHandler::processQuery(
         if (buffer_until_eof)
         {
             const std::string tmp_path(server.context()->getTemporaryVolume()->getDisk()->getPath());
-            const std::string tmp_path_template(tmp_path + "http_buffers/");
+            const std::string tmp_path_template(fs::path(tmp_path) / "http_buffers/");
 
             auto create_tmp_disk_buffer = [tmp_path_template] (const WriteBufferPtr &)
             {
