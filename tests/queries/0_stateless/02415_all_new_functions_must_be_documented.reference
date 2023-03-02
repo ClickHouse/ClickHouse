@@ -512,6 +512,7 @@ nullIf
 nullIn
 nullInIgnoreSet
 or
+parseDateTime
 parseDateTime32BestEffort
 parseDateTime32BestEffortOrNull
 parseDateTime32BestEffortOrZero
@@ -527,6 +528,7 @@ parseDateTimeBestEffortOrZero
 parseDateTimeBestEffortUS
 parseDateTimeBestEffortUSOrNull
 parseDateTimeBestEffortUSOrZero
+parseDateTimeInJodaSyntax
 parseTimeDelta
 partitionId
 path
