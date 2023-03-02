@@ -28,6 +28,20 @@ def run_echo_server():
         user="root",
     )
 
+    for _ in range(0, 10):
+        ping_response = server.exec_in_container(
+            ["curl", "-s", f"http://localhost:8000/"],
+            nothrow=True,
+        )
+
+        if "html" in ping_response:
+            return
+        
+        print(ping_response)
+
+    raise Exception("Echo server is not responding")
+
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
