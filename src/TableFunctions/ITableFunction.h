@@ -5,6 +5,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Access/Common/AccessType.h>
 #include <Common/Documentation.h>
+#include <Analyzer/IQueryTreeNode.h>
 
 #include <memory>
 #include <string>
@@ -48,6 +49,11 @@ public:
     virtual bool hasStaticStructure() const { return false; }
     /// Returns false if storage returned by table function supports type conversion (e.g. StorageDistributed)
     virtual bool needStructureConversion() const { return true; }
+
+    /** Return array of table function arguments indexes for which query tree analysis must be skipped.
+      * It is important for table functions that take subqueries, because otherwise analyzer will resolve them.
+      */
+    virtual std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & /*query_node_table_function*/, ContextPtr /*context*/) const { return {}; }
 
     virtual void parseArguments(const ASTPtr & /*ast_function*/, ContextPtr /*context*/) {}
 

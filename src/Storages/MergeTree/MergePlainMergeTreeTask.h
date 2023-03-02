@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/MergeMutateSelectedEntry.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
 
+
 namespace DB
 {
 
@@ -48,7 +49,6 @@ public:
     }
 
 private:
-
     void prepare();
     void finish();
 
@@ -85,6 +85,8 @@ private:
 
     MergeTreeTransactionHolder txn_holder;
     MergeTreeTransactionPtr txn;
+
+    ProfileEvents::Counters profile_counters;
 };
 
 

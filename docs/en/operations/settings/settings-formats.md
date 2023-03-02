@@ -15,11 +15,12 @@ When writing data, ClickHouse throws an exception if input data contain columns 
 
 Supported formats:
 
-- [JSONEachRow](../../interfaces/formats.md/#jsoneachrow)
+- [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) (and other JSON formats)
+- [BSONEachRow](../../interfaces/formats.md/#bsoneachrow) (and other JSON formats)
 - [TSKV](../../interfaces/formats.md/#tskv)
 - All formats with suffixes WithNames/WithNamesAndTypes
-- [JSONColumns](../../interfaces/formats.md/#jsoncolumns)
 - [MySQLDump](../../interfaces/formats.md/#mysqldump)
+- [Native](../../interfaces/formats.md/#native)
 
 Possible values:
 
@@ -78,7 +79,7 @@ Default value: 1.
 
 ## input_format_defaults_for_omitted_fields {#input_format_defaults_for_omitted_fields}
 
-When performing `INSERT` queries, replace omitted input column values with default values of the respective columns. This option only applies to [JSONEachRow](../../interfaces/formats.md/#jsoneachrow), [CSV](../../interfaces/formats.md/#csv), [TabSeparated](../../interfaces/formats.md/#tabseparated) formats and formats with `WithNames`/`WithNamesAndTypes` suffixes.
+When performing `INSERT` queries, replace omitted input column values with default values of the respective columns. This option applies to [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) (and other JSON formats), [CSV](../../interfaces/formats.md/#csv), [TabSeparated](../../interfaces/formats.md/#tabseparated), [TSKV](../../interfaces/formats.md/#tskv), [Parquet](../../interfaces/formats.md/#parquet), [Arrow](../../interfaces/formats.md/#arrow), [Avro](../../interfaces/formats.md/#avro), [ORC](../../interfaces/formats.md/#orc), [Native](../../interfaces/formats.md/#native) formats and formats with `WithNames`/`WithNamesAndTypes` suffixes.
 
 :::note
 When this option is enabled, extended table metadata are sent from server to client. It consumes additional computing resources on the server and can reduce performance.
@@ -96,7 +97,9 @@ Default value: 1.
 Enables or disables the initialization of [NULL](../../sql-reference/syntax.md/#null-literal) fields with [default values](../../sql-reference/statements/create/table.md/#create-default-values), if data type of these fields is not [nullable](../../sql-reference/data-types/nullable.md/#data_type-nullable).
 If column type is not nullable and this setting is disabled, then inserting `NULL` causes an exception. If column type is nullable, then `NULL` values are inserted as is, regardless of this setting.
 
-This setting is applicable to [INSERT ... VALUES](../../sql-reference/statements/insert-into.md) queries for text input formats.
+This setting is applicable for most input formats.
+
+For complex default expressions `input_format_defaults_for_omitted_fields` must be enabled too.
 
 Possible values:
 
@@ -138,6 +141,10 @@ x	UInt8
 y	Nullable(String)
 z	IPv4
 ```
+
+:::warning
+If the `schema_inference_hints` is not formated properly, or if there is a typo or a wrong datatype, etc... the whole schema_inference_hints will be ignored.
+:::
 
 ## schema_inference_make_columns_nullable {#schema_inference_make_columns_nullable}
 
@@ -504,7 +511,7 @@ Enabled by default.
 
 Ignore unknown keys in json object for named tuples.
 
-Disabled by default.
+Enabled by default.
 
 ## input_format_json_defaults_for_missing_elements_in_named_tuple {#input_format_json_defaults_for_missing_elements_in_named_tuple}
 
@@ -1098,6 +1105,12 @@ Disabled by default.
 Use Parquet FIXED_LENGTH_BYTE_ARRAY type instead of Binary/String for FixedString columns.
 
 Enabled by default.
+
+### output_format_parquet_version {#output_format_parquet_version}
+
+The version of Parquet format used in output format. Supported versions: `1.0`, `2.4`, `2.6` and `2.latest`.
+
+Default value: `2.latest`.
 
 ## Hive format settings {#hive-format-settings}
 

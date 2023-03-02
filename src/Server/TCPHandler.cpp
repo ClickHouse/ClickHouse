@@ -601,26 +601,17 @@ void TCPHandler::runImpl()
             LOG_DEBUG(log, "Processed in {} sec.", state.watch.elapsedSeconds());
         }
 
-        try
-        {
-            /// QueryState should be cleared before QueryScope, since otherwise
-            /// the MemoryTracker will be wrong for possible deallocations.
-            /// (i.e. deallocations from the Aggregator with two-level aggregation)
-            state.reset();
-            query_scope.reset();
-            thread_trace_context.reset();
-        }
-        catch (...)
-        {
-            /** During the processing of request, there was an exception that we caught and possibly sent to client.
-             *  When destroying the request pipeline execution there was a second exception.
-             *  For example, a pipeline could run in multiple threads, and an exception could occur in each of them.
-             *  Ignore it.
-             */
-        }
+        /// QueryState should be cleared before QueryScope, since otherwise
+        /// the MemoryTracker will be wrong for possible deallocations.
+        /// (i.e. deallocations from the Aggregator with two-level aggregation)
+        state.reset();
+        query_scope.reset();
+        thread_trace_context.reset();
 
         /// It is important to destroy query context here. We do not want it to live arbitrarily longer than the query.
         query_context.reset();
+
+        CurrentThread::setFatalErrorCallback({});
 
         if (is_interserver_mode)
         {
@@ -906,7 +897,7 @@ void TCPHandler::processTablesStatusRequest()
             status.absolute_delay = static_cast<UInt32>(replicated_table->getAbsoluteDelay());
         }
         else
-            status.is_replicated = false; //-V1048
+            status.is_replicated = false;
 
         response.table_states_by_id.emplace(table_name, std::move(status));
     }

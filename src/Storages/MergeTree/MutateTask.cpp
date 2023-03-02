@@ -20,6 +20,7 @@
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <boost/algorithm/string/replace.hpp>
+#include <Common/ProfileEventsScope.h>
 
 
 namespace CurrentMetrics
@@ -907,6 +908,7 @@ public:
         /// Need execute again
         return true;
     }
+
 private:
     String name;
     MergeTreeData::MutableDataPartsVector parts;
@@ -1261,6 +1263,7 @@ private:
 
     std::unique_ptr<PartMergerWriter> part_merger_writer_task;
 };
+
 
 class MutateSomePartColumnsTask : public IExecutableTask
 {

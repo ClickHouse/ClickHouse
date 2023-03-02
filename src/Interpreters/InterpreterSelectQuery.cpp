@@ -443,7 +443,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (context->getCurrentTransaction() && context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
     {
         if (storage)
-            checkStorageSupportsTransactionsIfNeeded(storage, context);
+            checkStorageSupportsTransactionsIfNeeded(storage, context, /* is_readonly_query */ true);
         for (const auto & table : joined_tables.tablesWithColumns())
         {
             if (table.table.table.empty())
@@ -451,7 +451,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             auto maybe_storage = DatabaseCatalog::instance().tryGetTable({table.table.database, table.table.table}, context);
             if (!maybe_storage)
                 continue;
-            checkStorageSupportsTransactionsIfNeeded(storage, context);
+            checkStorageSupportsTransactionsIfNeeded(storage, context, /* is_readonly_query */ true);
         }
     }
 
@@ -543,7 +543,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
     }
 
-    auto analyze = [&](bool try_move_to_prewhere)
+    if (autoFinalOnQuery(query))
+    {
+        query.setFinal();
+    }
+
+    auto analyze = [&] (bool try_move_to_prewhere)
     {
         /// Allow push down and other optimizations for VIEW: replace with subquery and rewrite it.
         ASTPtr view_table;
@@ -3070,6 +3075,15 @@ void InterpreterSelectQuery::ignoreWithTotals()
     getSelectQuery().group_by_with_totals = false;
 }
 
+bool InterpreterSelectQuery::autoFinalOnQuery(ASTSelectQuery & query)
+{
+    // query.tables() is required because not all queries have tables in it, it could be a function.
+    bool is_auto_final_setting_on = context->getSettingsRef().final;
+    bool is_final_supported = storage && storage->supportsFinal() && !storage->isRemote() && query.tables();
+    bool is_query_already_final = query.final();
+
+    return is_auto_final_setting_on && !is_query_already_final && is_final_supported;
+}
 
 void InterpreterSelectQuery::initSettings()
 {
