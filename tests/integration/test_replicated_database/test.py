@@ -118,11 +118,13 @@ def test_create_replicated_table(started_cluster):
         "ENGINE = ReplicatedMergeTree(\\'/clickhouse/tables/{uuid}/{shard}\\', \\'{replica}\\')\\n"
         "PARTITION BY toYYYYMM(d)\\nORDER BY k\\nSETTINGS index_granularity = 8192"
     )
-    assert_create_query([main_node, dummy_node], "create_replicated_table.replicated_table", expected)
-    # assert without replacing uuid
-    assert main_node.query("show create create_replicated_table.replicated_table") == dummy_node.query(
-        "show create create_replicated_table.replicated_table"
+    assert_create_query(
+        [main_node, dummy_node], "create_replicated_table.replicated_table", expected
     )
+    # assert without replacing uuid
+    assert main_node.query(
+        "show create create_replicated_table.replicated_table"
+    ) == dummy_node.query("show create create_replicated_table.replicated_table")
     main_node.query("DROP DATABASE create_replicated_table SYNC")
     dummy_node.query("DROP DATABASE create_replicated_table SYNC")
 
@@ -330,7 +332,10 @@ def test_alter_drop_part(started_cluster, engine):
         # The DROP operation is still replicated at the table engine level
         assert dummy_node.query(f"SELECT CounterID FROM alter_drop_part.{table}") == ""
     else:
-        assert dummy_node.query(f"SELECT CounterID FROM alter_drop_part.{table}") == "456\n"
+        assert (
+            dummy_node.query(f"SELECT CounterID FROM alter_drop_part.{table}")
+            == "456\n"
+        )
     main_node.query("DROP DATABASE alter_drop_part SYNC")
     dummy_node.query("DROP DATABASE alter_drop_part SYNC")
 
@@ -379,11 +384,17 @@ def test_alter_drop_detached_part(started_cluster, engine):
         f"CREATE TABLE alter_drop_detached_part.{table} (CounterID UInt32) ENGINE = {engine} ORDER BY (CounterID)"
     )
     main_node.query(f"INSERT INTO alter_drop_detached_part.{table} VALUES (123)")
-    main_node.query(f"ALTER TABLE alter_drop_detached_part.{table} DETACH PART '{part_name}'")
+    main_node.query(
+        f"ALTER TABLE alter_drop_detached_part.{table} DETACH PART '{part_name}'"
+    )
     if engine == "MergeTree":
         dummy_node.query(f"INSERT INTO alter_drop_detached_part.{table} VALUES (456)")
-        dummy_node.query(f"ALTER TABLE alter_drop_detached_part.{table} DETACH PART '{part_name}'")
-    main_node.query(f"ALTER TABLE alter_drop_detached_part.{table} DROP DETACHED PART '{part_name}'")
+        dummy_node.query(
+            f"ALTER TABLE alter_drop_detached_part.{table} DETACH PART '{part_name}'"
+        )
+    main_node.query(
+        f"ALTER TABLE alter_drop_detached_part.{table} DROP DETACHED PART '{part_name}'"
+    )
     detached_parts_query = f"SELECT name FROM system.detached_parts WHERE database='alter_drop_detached_part' AND table='{table}'"
     assert main_node.query(detached_parts_query) == ""
     assert dummy_node.query(detached_parts_query) == f"{part_name}\n"
@@ -524,7 +535,11 @@ def test_alters_from_different_replicas(started_cluster):
         "ENGINE = MergeTree\\nPARTITION BY toYYYYMM(StartDate)\\nORDER BY (CounterID, StartDate, intHash32(UserID), VisitID)\\nSETTINGS index_granularity = 8192"
     )
 
-    assert_create_query([main_node, competing_node], "alters_from_different_replicas.concurrent_test", expected)
+    assert_create_query(
+        [main_node, competing_node],
+        "alters_from_different_replicas.concurrent_test",
+        expected,
+    )
 
     # test_create_replica_after_delay
     main_node.query("DROP TABLE alters_from_different_replicas.concurrent_test SYNC")
@@ -540,7 +555,11 @@ def test_alters_from_different_replicas(started_cluster):
         "ENGINE = ReplicatedMergeTree(\\'/clickhouse/tables/{uuid}/{shard}\\', \\'{replica}\\')\\nORDER BY CounterID\\nSETTINGS index_granularity = 8192"
     )
 
-    assert_create_query([main_node, competing_node], "alters_from_different_replicas.concurrent_test", expected)
+    assert_create_query(
+        [main_node, competing_node],
+        "alters_from_different_replicas.concurrent_test",
+        expected,
+    )
 
     main_node.query(
         "INSERT INTO alters_from_different_replicas.dist (CounterID, StartDate, UserID) SELECT number, addDays(toDate('2020-02-02'), number), intHash32(number) FROM numbers(10)"
@@ -562,13 +581,17 @@ def test_alters_from_different_replicas(started_cluster):
     snapshot_recovering_node.query(
         "CREATE DATABASE alters_from_different_replicas ENGINE = Replicated('/test/alters_from_different_replicas', 'shard2', 'replica2');"
     )
-    assert_create_query(all_nodes, "alters_from_different_replicas.concurrent_test", expected)
+    assert_create_query(
+        all_nodes, "alters_from_different_replicas.concurrent_test", expected
+    )
 
     main_node.query("SYSTEM FLUSH DISTRIBUTED alters_from_different_replicas.dist")
     main_node.query(
         "ALTER TABLE alters_from_different_replicas.concurrent_test UPDATE StartDate = addYears(StartDate, 1) WHERE 1"
     )
-    res = main_node.query("ALTER TABLE alters_from_different_replicas.concurrent_test DELETE WHERE UserID % 2")
+    res = main_node.query(
+        "ALTER TABLE alters_from_different_replicas.concurrent_test DELETE WHERE UserID % 2"
+    )
     assert (
         "shard1\treplica1\tOK" in res
         and "shard1\treplica2\tOK" in res
@@ -602,8 +625,14 @@ def test_alters_from_different_replicas(started_cluster):
         "ENGINE = ReplicatedMergeTree(\\'/clickhouse/tables/{uuid}/{shard}\\', \\'{replica}\\')\\nORDER BY CounterID\\nSETTINGS index_granularity = 8192"
     )
 
-    assert_create_query([main_node, competing_node], "alters_from_different_replicas.concurrent_test", expected)
-    assert_create_query(all_nodes, "alters_from_different_replicas.concurrent_test", expected)
+    assert_create_query(
+        [main_node, competing_node],
+        "alters_from_different_replicas.concurrent_test",
+        expected,
+    )
+    assert_create_query(
+        all_nodes, "alters_from_different_replicas.concurrent_test", expected
+    )
 
     for node in all_nodes:
         node.query("SYSTEM SYNC REPLICA alters_from_different_replicas.concurrent_test")
