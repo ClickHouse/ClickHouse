@@ -13,3 +13,4 @@ SELECT * FROM (
     LIMIT 1000
 ) FORMAT Null;
 
+DROP TABLE test_grace_hash;
