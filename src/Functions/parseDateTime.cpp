@@ -483,7 +483,9 @@ namespace
 
             /// Time zone is not specified, use local time zone
             if (!time_zone_offset)
-                *time_zone_offset = time_zone.getOffsetAtStartOfEpoch();
+                *time_zone_offset = time_zone.timezoneOffset(seconds_since_epoch);
+
+            std::cout << "time_zone:" << time_zone.getTimeZone() << ",offset:" << *time_zone_offset << std::endl;
 
             /// Time zone is specified in format string.
             if (seconds_since_epoch >= *time_zone_offset)
@@ -584,9 +586,12 @@ namespace
                 StringRef str_ref = col_str->getDataAt(i);
                 Pos cur = str_ref.data;
                 Pos end = str_ref.data + str_ref.size;
-                // Date date;
                 for (const auto & instruction : instructions)
+                {
+                    std::cout << "instruction:" << instruction.toString() << std::endl;
                     cur = instruction.perform(cur, end, date);
+                    std::cout << "date:" << date.toString() << std::endl;
+                }
 
                 // Ensure all input was consumed.
                 if (cur < end)
