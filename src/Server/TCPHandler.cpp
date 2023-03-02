@@ -476,7 +476,7 @@ void TCPHandler::runImpl()
 
             LOG_DEBUG(log, "Processed in {} sec.", state.watch.elapsedSeconds());
             query_duration_already_logged = true;
-
+            LOG_TRACE(log, "Reseting 1");
             if (state.is_connection_closed)
                 break;
 
@@ -485,13 +485,16 @@ void TCPHandler::runImpl()
                 sendLogs();
                 sendEndOfStream();
             }
-
+            LOG_TRACE(log, "Reseting query state 1");
             /// QueryState should be cleared before QueryScope, since otherwise
             /// the MemoryTracker will be wrong for possible deallocations.
             /// (i.e. deallocations from the Aggregator with two-level aggregation)
             state.reset();
+            LOG_TRACE(log, "Reseting query scope 1");
             query_scope.reset();
+            LOG_TRACE(log, "Reseting query context 1");
             thread_trace_context.reset();
+            LOG_TRACE(log, "Reseting finished 1");
         }
         catch (const Exception & e)
         {
@@ -600,16 +603,18 @@ void TCPHandler::runImpl()
         {
             LOG_DEBUG(log, "Processed in {} sec.", state.watch.elapsedSeconds());
         }
-
+        LOG_TRACE(log, "Reseting query state 2");
         /// QueryState should be cleared before QueryScope, since otherwise
         /// the MemoryTracker will be wrong for possible deallocations.
         /// (i.e. deallocations from the Aggregator with two-level aggregation)
         state.reset();
+        LOG_TRACE(log, "Reseting query scope 2");
         query_scope.reset();
         thread_trace_context.reset();
-
+        LOG_TRACE(log, "Reseting query context 2");
         /// It is important to destroy query context here. We do not want it to live arbitrarily longer than the query.
         query_context.reset();
+        LOG_TRACE(log, "Reseting finished");
 
         CurrentThread::setFatalErrorCallback({});
 
