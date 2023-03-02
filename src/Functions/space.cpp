@@ -52,13 +52,13 @@ class FunctionSpace : public IFunction
 
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
         {
-            const ColumnPtr & numColumn = arguments[0].column;
+            const ColumnPtr & num_column = arguments[0].column;
             ColumnPtr res;
             if (castType(arguments[0].type.get(), [&](const auto & type)
             {
                     using DataType = std::decay_t<decltype(type)>;
                     using T = typename DataType::FieldType;
-                    const ColumnVector<T> * column = checkAndGetColumn<ColumnVector<T>>(numColumn.get());
+                    const ColumnVector<T> * column = checkAndGetColumn<ColumnVector<T>>(num_column.get());
                     auto col_res = ColumnString::create();
                     RepeatImpl::constStrVectorRepeat(space_str, col_res->getChars(), col_res->getOffsets(), column->getData());
                     res = std::move(col_res);
