@@ -398,15 +398,30 @@
             fill: var(--logo-color);
         }
 
+        #cloud-logo
+        {
+            color: var(--background-color);
+            text-shadow: 0rem 0rem 2rem var(--logo-color);
+            font-size: 10vw;
+            display: block;
+        }
+
         #logo:hover
         {
             fill: var(--logo-color-active);
+            color: var(--logo-color-active);
+        }
+
+        #cloud-logo:hover
+        {
+            filter: brightness(150%);
         }
 
         #logo-container
         {
             text-align: center;
             margin-top: 5em;
+            line-height: 0.75;
         }
 
         #chart
@@ -487,6 +502,7 @@
             </g>
         </svg>
         </a>
+        <a id="cloud-logo" href="https://clickhouse.cloud/">☁</a>
     </p>
 </body>
 
