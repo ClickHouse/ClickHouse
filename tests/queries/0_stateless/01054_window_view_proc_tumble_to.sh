@@ -12,13 +12,14 @@ DROP TABLE IF EXISTS wv;
 
 CREATE TABLE dst(count UInt64) Engine=MergeTree ORDER BY tuple();
 CREATE TABLE mt(a Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple();
-CREATE WINDOW VIEW wv TO dst AS SELECT count(a) AS count FROM mt GROUP BY tumble(timestamp, INTERVAL '1' SECOND, 'US/Samoa') AS wid;
+CREATE WINDOW VIEW wv TO dst AS SELECT count(a) AS count FROM mt GROUP BY tumble(timestamp, INTERVAL '5' SECOND, 'US/Samoa') AS wid;
 
 INSERT INTO mt VALUES (1, now('US/Samoa') + 1);
 EOF
 
-while true; do
-	$CLICKHOUSE_CLIENT --query="SELECT count(*) FROM dst" | grep -q "1" && break || sleep .5 ||:
+for _ in {1..100}; do
+	$CLICKHOUSE_CLIENT --query="SELECT count(*) FROM dst" | grep -q "1" && echo 'OK' && break
+	sleep .5
 done
 
 $CLICKHOUSE_CLIENT --query="SELECT count FROM dst"

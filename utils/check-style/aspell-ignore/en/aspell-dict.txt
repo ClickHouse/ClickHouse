@@ -24,6 +24,7 @@ CapnProto
 CentOS
 ClickHouse
 ClickHouse's
+CodeBlock
 Config
 ConnectionDetails
 Contrib
@@ -55,6 +56,7 @@ Hostname
 IPv
 IntN
 Integrations
+invariants
 JSONAsString
 JSONAsObject
 JSONColumns
@@ -129,6 +131,7 @@ ProtobufSingle
 QTCreator
 QueryCacheHits
 QueryCacheMisses
+QEMU
 RBAC
 RawBLOB
 RedHat
@@ -151,6 +154,7 @@ Submodules
 Subqueries
 TSVRaw
 TSan
+TabItem
 TabSeparated
 TabSeparatedRaw
 TabSeparatedRawWithNames

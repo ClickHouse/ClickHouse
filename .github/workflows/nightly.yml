@@ -107,7 +107,7 @@ jobs:
         run: |
           curl --form token="${COVERITY_TOKEN}" \
             --form email='security+coverity@clickhouse.com' \
-            --form file="@$TEMP_PATH/$BUILD_NAME/coverity-scan.tar.zst" \
+            --form file="@$TEMP_PATH/$BUILD_NAME/coverity-scan.tar.gz" \
             --form version="${GITHUB_REF#refs/heads/}-${GITHUB_SHA::6}" \
             --form description="Nighly Scan: $(date +'%Y-%m-%dT%H:%M:%S')" \
             https://scan.coverity.com/builds?project=ClickHouse%2FClickHouse
@@ -154,7 +154,7 @@ jobs:
       - name: Set Up Build Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -yq git cmake ccache python3 ninja-build
+          sudo apt-get install -yq git cmake ccache ninja-build python3 yasm
           sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
       - name: Run build-wrapper
         run: |

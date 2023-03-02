@@ -143,7 +143,7 @@ public:
         const FunctionBasePtr & function_base,
         NodeRawConstPtrs children,
         std::string result_name);
-    const Node & addCast(const Node & node_to_cast, const DataTypePtr & cast_type);
+    const Node & addCast(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name);
 
     /// Find first column by name in output nodes. This search is linear.
     const Node & findInOutputs(const std::string & name) const;
@@ -225,6 +225,7 @@ public:
     bool hasStatefulFunctions() const;
     bool trivial() const; /// If actions has no functions or array join.
     void assertDeterministic() const; /// Throw if not isDeterministic.
+    bool hasNonDeterministic() const;
 
 #if USE_EMBEDDED_COMPILER
     void compileExpressions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});

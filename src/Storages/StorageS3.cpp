@@ -954,14 +954,13 @@ StorageS3::StorageS3(
     context_->getGlobalContext()->getRemoteHostFilter().checkURL(s3_configuration.url.uri);
     StorageInMemoryMetadata storage_metadata;
 
-    updateS3Configuration(context_, s3_configuration);
+    updateConfiguration(context_, s3_configuration);
     if (columns_.empty())
     {
         auto columns = getTableStructureFromDataImpl(
             format_name,
             s3_configuration,
             compression_method,
-            distributed_processing_,
             is_key_with_globs,
             format_settings,
             context_,
@@ -1041,7 +1040,7 @@ Pipe StorageS3::read(
     if (partition_by && has_wildcards)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Reading from a partitioned S3 storage is not implemented yet");
 
-    updateS3Configuration(local_context, s3_configuration);
+    updateConfiguration(local_context, s3_configuration);
 
     Pipes pipes;
 
@@ -1116,7 +1115,7 @@ Pipe StorageS3::read(
 
 SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
-    updateS3Configuration(local_context, s3_configuration);
+    updateConfiguration(local_context, s3_configuration);
 
     auto sample_block = metadata_snapshot->getSampleBlock();
     auto chosen_compression_method = chooseCompressionMethod(keys.back(), compression_method);
@@ -1186,7 +1185,7 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
 
 void StorageS3::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
 {
-    updateS3Configuration(local_context, s3_configuration);
+    updateConfiguration(local_context, s3_configuration);
 
     if (is_key_with_globs)
         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
@@ -1218,7 +1217,14 @@ void StorageS3::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &,
 }
 
 
-void StorageS3::updateS3Configuration(ContextPtr ctx, StorageS3::Configuration & upd)
+StorageS3::Configuration StorageS3::updateConfiguration(ContextPtr local_context, const StorageS3::Configuration & configuration)
+{
+    StorageS3::Configuration new_configuration(configuration);
+    updateConfiguration(local_context, new_configuration);
+    return new_configuration;
+}
+
+void StorageS3::updateConfiguration(ContextPtr ctx, StorageS3::Configuration & upd)
 {
     auto settings = ctx->getStorageS3Settings().getSettings(upd.url.uri.toString());
     upd.request_settings = settings.request_settings;
@@ -1284,7 +1290,7 @@ void StorageS3::processNamedCollectionResult(StorageS3::Configuration & configur
     configuration.request_settings = S3Settings::RequestSettings(collection);
 }
 
-StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, ContextPtr local_context)
+StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, ContextPtr local_context, bool get_format_from_file)
 {
     StorageS3::Configuration configuration;
 
@@ -1361,7 +1367,7 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, Context
 
     configuration.static_configuration = !configuration.auth_settings.access_key_id.empty();
 
-    if (configuration.format == "auto")
+    if (configuration.format == "auto" && get_format_from_file)
         configuration.format = FormatFactory::instance().getFormatFromFileName(configuration.url.key, true);
 
     return configuration;
@@ -1369,14 +1375,13 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, Context
 
 ColumnsDescription StorageS3::getTableStructureFromData(
     StorageS3::Configuration & configuration,
-    bool distributed_processing,
     const std::optional<FormatSettings> & format_settings,
     ContextPtr ctx,
     ObjectInfos * object_infos)
 {
-    updateS3Configuration(ctx, configuration);
+    updateConfiguration(ctx, configuration);
     return getTableStructureFromDataImpl(
-        configuration.format, configuration, configuration.compression_method, distributed_processing,
+        configuration.format, configuration, configuration.compression_method,
         configuration.url.key.find_first_of("*?{") != std::string::npos, format_settings, ctx, object_infos);
 }
 
@@ -1384,7 +1389,6 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
     const String & format,
     const Configuration & s3_configuration,
     const String & compression_method,
-    bool distributed_processing,
     bool is_key_with_globs,
     const std::optional<FormatSettings> & format_settings,
     ContextPtr ctx,
@@ -1396,7 +1400,7 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
         s3_configuration,
         {s3_configuration.url.key},
         is_key_with_globs,
-        distributed_processing,
+        false,
         ctx, nullptr,
         {}, object_infos, &read_keys);
 
