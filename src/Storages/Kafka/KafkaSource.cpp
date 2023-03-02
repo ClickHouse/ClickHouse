@@ -133,7 +133,7 @@ Chunk KafkaSource::generateImpl()
         {
             e.addMessage("while parsing Kafka message (topic: {}, partition: {}, offset: {})'",
                 consumer->currentTopic(), consumer->currentPartition(), consumer->currentOffset());
-            throw;
+            throw std::move(e);
         }
     };
 

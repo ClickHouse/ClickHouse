@@ -1,5 +1,8 @@
 #include "LocalServer.h"
 
+#include <sys/resource.h>
+#include <Common/logger_useful.h>
+#include <base/errnoToString.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/String.h>
 #include <Poco/Logger.h>
@@ -179,9 +182,9 @@ void LocalServer::tryInitPath()
             parent_folder = std::filesystem::temp_directory_path();
 
         }
-        catch (const fs::filesystem_error& e)
+        catch (const fs::filesystem_error & e)
         {
-            // tmp folder don't exists? misconfiguration? chroot?
+            // The tmp folder doesn't exist? Is it a misconfiguration? Or chroot?
             LOG_DEBUG(log, "Can not get temporary folder: {}", e.what());
             parent_folder = std::filesystem::current_path();
 
@@ -389,6 +392,21 @@ try
 
     std::cout << std::fixed << std::setprecision(3);
     std::cerr << std::fixed << std::setprecision(3);
+
+    /// Try to increase limit on number of open files.
+    {
+        rlimit rlim;
+        if (getrlimit(RLIMIT_NOFILE, &rlim))
+            throw Poco::Exception("Cannot getrlimit");
+
+        if (rlim.rlim_cur < rlim.rlim_max)
+        {
+            rlim.rlim_cur = config().getUInt("max_open_files", static_cast<unsigned>(rlim.rlim_max));
+            int rc = setrlimit(RLIMIT_NOFILE, &rlim);
+            if (rc != 0)
+                std::cerr << fmt::format("Cannot set max number of file descriptors to {}. Try to specify max_open_files according to your system limits. error: {}", rlim.rlim_cur, errnoToString()) << '\n';
+        }
+    }
 
 #if defined(FUZZING_MODE)
     static bool first_time = true;
