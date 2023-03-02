@@ -75,6 +75,9 @@ cat <<EOT > /etc/docker/daemon.json
 }
 EOT
 
+# Increase the limit on number of virtual memory mappings to aviod 'Cannot mmap' error
+sysctl -w vm.max_map_count=2097152
+
 systemctl restart docker
 
 # buildx builder is user-specific
