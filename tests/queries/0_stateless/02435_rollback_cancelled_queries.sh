@@ -47,7 +47,7 @@ function insert_data
     fi
 
     if [[ "$IMPLICIT" -eq 0 ]]; then
-        $CLICKHOUSE_CURL -sS -d 'commit' "$CLICKHOUSE_URL&$TXN_SETTINGS&close_session=1" | grep -Faq "Transaction is not in RUNNING state" && $CLICKHOUSE_CURL -sS -d 'rollback' "$CLICKHOUSE_URL&$TXN_SETTINGS"
+        $CLICKHOUSE_CURL -sS -d 'commit' "$CLICKHOUSE_URL&$TXN_SETTINGS&close_session=1"
     fi
 }
 
@@ -109,7 +109,8 @@ $CLICKHOUSE_CLIENT --implicit_transaction=1 -q 'select throwIf(count() % 1000000
 
 # Ensure that thread_cancel actually did something
 $CLICKHOUSE_CLIENT -q "select count() > 0 from system.text_log where event_date >= yesterday() and query_id like '$TEST_MARK%' and (
-  message_format_string in ('Unexpected end of file while reading chunk header of HTTP chunked data', 'Unexpected EOF, got {} of {} bytes') or
+  message_format_string in ('Unexpected end of file while reading chunk header of HTTP chunked data', 'Unexpected EOF, got {} of {} bytes',
+  'Query was cancelled or a client has unexpectedly dropped the connection') or
   message like '%Connection reset by peer%' or message like '%Broken pipe, while writing to socket%')"
 
 wait_for_queries_to_finish 30
