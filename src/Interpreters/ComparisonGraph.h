@@ -17,7 +17,7 @@ class ComparisonGraph
 {
 public:
     /// atomic_formulas are extracted from constraints.
-    explicit ComparisonGraph(const ASTs & atomic_formulas);
+    explicit ComparisonGraph(const std::vector<ASTPtr> & atomic_formulas);
 
     enum class CompareResult
     {
@@ -43,7 +43,7 @@ public:
     bool isAlwaysCompare(CompareResult expected, const ASTPtr & left, const ASTPtr & right) const;
 
     /// Returns all expressions from component to which @ast belongs if any.
-    ASTs getEqual(const ASTPtr & ast) const;
+    std::vector<ASTPtr> getEqual(const ASTPtr & ast) const;
 
     /// Returns constant expression from component to which @ast belongs if any.
     std::optional<ASTPtr> getEqualConst(const ASTPtr & ast) const;
@@ -52,7 +52,7 @@ public:
     std::optional<std::size_t> getComponentId(const ASTPtr & ast) const;
 
     /// Returns all expressions from component.
-    ASTs getComponent(size_t id) const;
+    std::vector<ASTPtr> getComponent(size_t id) const;
 
     size_t getNumOfComponents() const { return graph.vertices.size(); }
 
@@ -72,7 +72,7 @@ private:
     struct EqualComponent
     {
         /// All these expressions are considered as equal.
-        ASTs  asts;
+        std::vector<ASTPtr> asts;
         std::optional<size_t> constant_index;
 
         bool hasConstant() const;

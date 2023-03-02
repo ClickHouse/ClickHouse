@@ -60,8 +60,7 @@ public:
         return ColumnArray::create(nested_column->assumeMutable());
     }
 
-    template <typename ... Args>
-    requires (IsMutableColumns<Args ...>::value)
+    template <typename ... Args, typename = typename std::enable_if<IsMutableColumns<Args ...>::value>::type>
     static MutablePtr create(Args &&... args) { return Base::create(std::forward<Args>(args)...); }
 
     /** On the index i there is an offset to the beginning of the i + 1 -th element. */
@@ -151,17 +150,17 @@ public:
 
     ColumnPtr compress() const override;
 
-    void forEachSubcolumn(ColumnCallback callback) const override
+    void forEachSubcolumn(ColumnCallback callback) override
     {
         callback(offsets);
         callback(data);
     }
 
-    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override
+    void forEachSubcolumnRecursively(ColumnCallback callback) override
     {
-        callback(*offsets);
+        callback(offsets);
         offsets->forEachSubcolumnRecursively(callback);
-        callback(*data);
+        callback(data);
         data->forEachSubcolumnRecursively(callback);
     }
 
@@ -175,9 +174,6 @@ public:
     double getRatioOfDefaultRows(double sample_ratio) const override;
 
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override;
-
-    void finalize() override { data->finalize(); }
-    bool isFinalized() const override { return data->isFinalized(); }
 
     bool isCollationSupported() const override { return getData().isCollationSupported(); }
 

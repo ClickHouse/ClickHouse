@@ -36,7 +36,7 @@ ColumnDefaultKind columnDefaultKindFromString(const std::string & str)
     if (it != std::end(map))
         return it->second;
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown column default specifier: {}", str);
+    throw Exception{"Unknown column default specifier: " + str, ErrorCodes::LOGICAL_ERROR};
 }
 
 
@@ -53,7 +53,7 @@ std::string toString(const ColumnDefaultKind kind)
     if (it != std::end(map))
         return it->second;
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid ColumnDefaultKind");
+    throw Exception{"Invalid ColumnDefaultKind", ErrorCodes::LOGICAL_ERROR};
 }
 
 

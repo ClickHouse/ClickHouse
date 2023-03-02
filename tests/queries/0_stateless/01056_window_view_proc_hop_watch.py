@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-# Tags: no-parallel
-
 import os
 import sys
 import signal
@@ -27,11 +25,13 @@ with client(name="client1>", log=log) as client1, client(
     client2.send("SET allow_experimental_window_view = 1")
     client2.expect(prompt)
 
-    client1.send("CREATE DATABASE IF NOT EXISTS 01056_window_view_proc_hop_watch")
+    client1.send("CREATE DATABASE 01056_window_view_proc_hop_watch")
     client1.expect(prompt)
     client1.send("DROP TABLE IF EXISTS 01056_window_view_proc_hop_watch.mt")
     client1.expect(prompt)
     client1.send("DROP TABLE IF EXISTS 01056_window_view_proc_hop_watch.wv")
+    client1.expect(prompt)
+    client1.send("DROP TABLE IF EXISTS `.inner.wv`")
     client1.expect(prompt)
 
     client1.send(
@@ -39,15 +39,14 @@ with client(name="client1>", log=log) as client1, client(
     )
     client1.expect(prompt)
     client1.send(
-        "CREATE WINDOW VIEW 01056_window_view_proc_hop_watch.wv ENGINE Memory AS SELECT count(a) AS count FROM 01056_window_view_proc_hop_watch.mt GROUP BY hop(timestamp, INTERVAL '1' SECOND, INTERVAL '1' SECOND, 'US/Samoa') AS wid;"
+        "CREATE WINDOW VIEW 01056_window_view_proc_hop_watch.wv AS SELECT count(a) AS count FROM 01056_window_view_proc_hop_watch.mt GROUP BY hop(timestamp, INTERVAL '1' SECOND, INTERVAL '1' SECOND, 'US/Samoa') AS wid;"
     )
     client1.expect(prompt)
 
     client1.send("WATCH 01056_window_view_proc_hop_watch.wv")
     client1.expect("Query id" + end_of_block)
-    client1.expect("Progress: 0.00 rows.*\)")
     client2.send(
-        "INSERT INTO 01056_window_view_proc_hop_watch.mt VALUES (1, now('US/Samoa') + 3)"
+        "INSERT INTO 01056_window_view_proc_hop_watch.mt VALUES (1, now('US/Samoa') + 1)"
     )
     client1.expect("1" + end_of_block)
     client1.expect("Progress: 1.00 rows.*\)")

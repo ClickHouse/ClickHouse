@@ -5,26 +5,21 @@ import argparse
 import json
 import logging
 import subprocess
-import sys
 import time
-from pathlib import Path
 from os import path as p, makedirs
-from typing import List
+from typing import List, Tuple
 
 from github import Github
 
 from build_check import get_release_or_pr
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
-from commit_status_helper import format_description, post_commit_status
+from commit_status_helper import post_commit_status
 from docker_images_check import DockerImage
-from env_helper import CI, GITHUB_RUN_URL, RUNNER_TEMP, S3_BUILDS_BUCKET, S3_DOWNLOAD
+from env_helper import CI, GITHUB_RUN_URL, RUNNER_TEMP, S3_BUILDS_BUCKET
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
-from git_helper import Git
 from pr_info import PRInfo
-from report import TestResults, TestResult
 from s3_helper import S3Helper
 from stopwatch import Stopwatch
-from tee_popen import TeePopen
 from upload_result_helper import upload_results
 from version_helper import (
     ClickHouseVersion,
@@ -35,7 +30,6 @@ from version_helper import (
 
 TEMP_PATH = p.join(RUNNER_TEMP, "docker_images_check")
 BUCKETS = {"amd64": "package_release", "arm64": "package_aarch64"}
-git = Git(ignore_no_tags=True)
 
 
 class DelOS(argparse.Action):
@@ -55,7 +49,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--version",
         type=version_arg,
-        default=get_version_from_repo(git=git).string,
+        default=get_version_from_repo().string,
         help="a version to build, automaticaly got from version_helper, accepts either "
         "tag ('refs/tags/' is removed automatically) or a normal 22.2.2.2 format",
     )
@@ -119,7 +113,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def retry_popen(cmd: str, log_file: Path) -> int:
+def retry_popen(cmd: str) -> int:
     max_retries = 5
     for retry in range(max_retries):
         # From time to time docker build may failed. Curl issues, or even push
@@ -132,14 +126,18 @@ def retry_popen(cmd: str, log_file: Path) -> int:
                 cmd,
             )
             time.sleep(progressive_sleep)
-        with TeePopen(
+        with subprocess.Popen(
             cmd,
-            log_file=log_file,
+            shell=True,
+            stderr=subprocess.STDOUT,
+            stdout=subprocess.PIPE,
+            universal_newlines=True,
         ) as process:
+            for line in process.stdout:  # type: ignore
+                print(line, end="")
             retcode = process.wait()
             if retcode == 0:
                 return 0
-
     return retcode
 
 
@@ -215,11 +213,7 @@ def gen_tags(version: ClickHouseVersion, release_type: str) -> List[str]:
 
 
 def buildx_args(bucket_prefix: str, arch: str) -> List[str]:
-    args = [
-        f"--platform=linux/{arch}",
-        f"--label=build-url={GITHUB_RUN_URL}",
-        f"--label=com.clickhouse.build.githash={git.sha}",
-    ]
+    args = [f"--platform=linux/{arch}", f"--label=build-url={GITHUB_RUN_URL}"]
     if bucket_prefix:
         url = p.join(bucket_prefix, BUCKETS[arch])  # to prevent a double //
         args.append(f"--build-arg=REPOSITORY='{url}'")
@@ -234,8 +228,8 @@ def build_and_push_image(
     os: str,
     tag: str,
     version: ClickHouseVersion,
-) -> TestResults:
-    result = []  # type: TestResults
+) -> List[Tuple[str, str]]:
+    result = []
     if os != "ubuntu":
         tag += f"-{os}"
     init_args = ["docker", "buildx", "build", "--build-arg BUILDKIT_INLINE_CACHE=1"]
@@ -249,9 +243,7 @@ def build_and_push_image(
     # `docker buildx build --load` does not support multiple images currently
     # images must be built separately and merged together with `docker manifest`
     digests = []
-    multiplatform_sw = Stopwatch()
     for arch in BUCKETS:
-        single_sw = Stopwatch()
         arch_tag = f"{tag}-{arch}"
         metadata_path = p.join(TEMP_PATH, arch_tag)
         dockerfile = p.join(image.full_path, f"Dockerfile.{os}")
@@ -270,25 +262,10 @@ def build_and_push_image(
         )
         cmd = " ".join(cmd_args)
         logging.info("Building image %s:%s for arch %s: %s", image.repo, tag, arch, cmd)
-        log_file = Path(TEMP_PATH) / f"{image.repo.replace('/', '__')}:{tag}-{arch}.log"
-        if retry_popen(cmd, log_file) != 0:
-            result.append(
-                TestResult(
-                    f"{image.repo}:{tag}-{arch}",
-                    "FAIL",
-                    single_sw.duration_seconds,
-                    [log_file],
-                )
-            )
+        if retry_popen(cmd) != 0:
+            result.append((f"{image.repo}:{tag}-{arch}", "FAIL"))
             return result
-        result.append(
-            TestResult(
-                f"{image.repo}:{tag}-{arch}",
-                "OK",
-                single_sw.duration_seconds,
-                [log_file],
-            )
-        )
+        result.append((f"{image.repo}:{tag}-{arch}", "OK"))
         with open(metadata_path, "rb") as m:
             metadata = json.load(m)
             digests.append(metadata["containerimage.digest"])
@@ -298,16 +275,9 @@ def build_and_push_image(
             f"--tag {image.repo}:{tag} {' '.join(digests)}"
         )
         logging.info("Pushing merged %s:%s image: %s", image.repo, tag, cmd)
-        if retry_popen(cmd, Path("/dev/null")) != 0:
-            result.append(
-                TestResult(
-                    f"{image.repo}:{tag}", "FAIL", multiplatform_sw.duration_seconds
-                )
-            )
+        if retry_popen(cmd) != 0:
+            result.append((f"{image.repo}:{tag}", "FAIL"))
             return result
-        result.append(
-            TestResult(f"{image.repo}:{tag}", "OK", multiplatform_sw.duration_seconds)
-        )
     else:
         logging.info(
             "Merging is available only on push, separate %s images are created",
@@ -326,13 +296,14 @@ def main():
     image = DockerImage(args.image_path, args.image_repo, False)
     args.release_type = auto_release_type(args.version, args.release_type)
     tags = gen_tags(args.version, args.release_type)
-    NAME = f"Docker image {image.repo} building check"
+    NAME = f"Docker image {image.repo} building check (actions)"
     pr_info = None
     if CI:
         pr_info = PRInfo()
-        release_or_pr, _ = get_release_or_pr(pr_info, args.version)
+        release_or_pr = get_release_or_pr(pr_info, {"package_type": ""}, args.version)
         args.bucket_prefix = (
-            f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/{release_or_pr}/{pr_info.sha}"
+            f"https://s3.amazonaws.com/{S3_BUILDS_BUCKET}/"
+            f"{release_or_pr}/{pr_info.sha}"
         )
 
     if args.push:
@@ -342,11 +313,11 @@ def main():
             encoding="utf-8",
             shell=True,
         )
-        NAME = f"Docker image {image.repo} build and push"
+        NAME = f"Docker image {image.repo} build and push (actions)"
 
     logging.info("Following tags will be created: %s", ", ".join(tags))
     status = "success"
-    test_results = []  # type: TestResults
+    test_results = []  # type: List[Tuple[str, str]]
     for os in args.os:
         for tag in tags:
             test_results.extend(
@@ -354,11 +325,11 @@ def main():
                     image, args.push, args.bucket_prefix, os, tag, args.version
                 )
             )
-            if test_results[-1].status != "OK":
+            if test_results[-1][1] != "OK":
                 status = "failure"
 
     pr_info = pr_info or PRInfo()
-    s3_helper = S3Helper()
+    s3_helper = S3Helper("https://s3.amazonaws.com")
 
     url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, [], NAME)
 
@@ -369,9 +340,10 @@ def main():
 
     description = f"Processed tags: {', '.join(tags)}"
 
-    description = format_description(description)
+    if len(description) >= 140:
+        description = description[:136] + "..."
 
-    gh = Github(get_best_robot_token(), per_page=100)
+    gh = Github(get_best_robot_token())
     post_commit_status(gh, pr_info.sha, NAME, description, status, url)
 
     prepared_events = prepare_tests_results_for_clickhouse(
@@ -385,8 +357,6 @@ def main():
     )
     ch_helper = ClickHouseHelper()
     ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
-    if status != "success":
-        sys.exit(1)
 
 
 if __name__ == "__main__":

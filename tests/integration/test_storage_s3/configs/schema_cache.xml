@@ -1,4 +1,0 @@
-<clickhouse>
-    <schema_inference_cache_max_elements_for_s3>2</schema_inference_cache_max_elements_for_s3>
-    <schema_inference_cache_max_elements_for_url>2</schema_inference_cache_max_elements_for_url>
-</clickhouse>

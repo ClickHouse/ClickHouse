@@ -1,39 +1,10 @@
 ---
-slug: /en/sql-reference/data-types/boolean
-sidebar_position: 43
-sidebar_label: Boolean
+toc_priority: 43
+toc_title: Boolean
 ---
 
-# Bool
+# Boolean Values {#boolean-values}
 
-Type `bool` is internally stored as UInt8. Possible values are `true` (1), `false` (0).
+There is no separate type for boolean values. Use UInt8 type, restricted to the values 0 or 1.
 
-
-```sql
-select true as col, toTypeName(col);
-┌─col──┬─toTypeName(true)─┐
-│ true │ Bool             │
-└──────┴──────────────────┘
-
-select true == 1 as col, toTypeName(col);
-┌─col─┬─toTypeName(equals(true, 1))─┐
-│   1 │ UInt8                       │
-└─────┴─────────────────────────────┘
-```
-
-```sql
-CREATE TABLE test_bool
-(
-    `A` Int64,
-    `B` Bool
-)
-ENGINE = Memory;
-
-INSERT INTO test_bool VALUES (1, true),(2,0);
-
-SELECT * FROM test_bool;
-┌─A─┬─B─────┐
-│ 1 │ true  │
-│ 2 │ false │
-└───┴───────┘
-```
+[Original article](https://clickhouse.com/docs/en/data_types/boolean/) <!--hide-->

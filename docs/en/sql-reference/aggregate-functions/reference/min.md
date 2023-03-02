@@ -1,8 +1,8 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/min
-sidebar_position: 2
-title: min
+toc_priority: 2
 ---
+
+## min {#agg_function-min}
 
 Aggregate function that calculates the minimum across a group of values.
 

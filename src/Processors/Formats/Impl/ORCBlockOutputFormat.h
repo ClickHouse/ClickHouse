@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include "config_formats.h"
 
 #if USE_ORC
 #include <IO/WriteBuffer.h>
@@ -44,9 +44,8 @@ public:
 private:
     void consume(Chunk chunk) override;
     void finalizeImpl() override;
-    void resetFormatterImpl() override;
 
-    std::unique_ptr<orc::Type> getORCType(const DataTypePtr & type);
+    ORC_UNIQUE_PTR<orc::Type> getORCType(const DataTypePtr & type, const std::string & column_name);
 
     /// ConvertFunc is needed for type UInt8, because firstly UInt8 (char8_t) must be
     /// converted to unsigned char (bugprone-signed-char-misuse in clang).

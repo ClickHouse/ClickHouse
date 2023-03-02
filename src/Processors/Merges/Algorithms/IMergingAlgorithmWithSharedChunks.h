@@ -10,13 +10,15 @@ class IMergingAlgorithmWithSharedChunks : public IMergingAlgorithm
 {
 public:
     IMergingAlgorithmWithSharedChunks(
-        Block header_, size_t num_inputs, SortDescription description_, WriteBuffer * out_row_sources_buf_, size_t max_row_refs);
+        size_t num_inputs,
+        SortDescription description_,
+        WriteBuffer * out_row_sources_buf_,
+        size_t max_row_refs);
 
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
 
 private:
-    Block header;
     SortDescription description;
 
     /// Allocator must be destroyed after source_chunks.
@@ -36,7 +38,7 @@ protected:
     using Sources = std::vector<Source>;
     Sources sources;
 
-    SortingQueue<SortCursor> queue;
+    SortingHeap<SortCursor> queue;
 
     /// Used in Vertical merge algorithm to gather non-PK/non-index columns (on next step)
     /// If it is not nullptr then it should be populated during execution

@@ -1,25 +1,22 @@
 # docker build -t clickhouse/style-test .
 FROM ubuntu:20.04
-ARG ACT_VERSION=0.2.33
-ARG ACTIONLINT_VERSION=1.6.22
+ARG ACT_VERSION=0.2.25
+ARG ACTIONLINT_VERSION=1.6.8
 
 # ARG for quick switch to a given ubuntu mirror
 ARG apt_archive="http://archive.ubuntu.com"
 RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
 RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
-    aspell \
     curl \
     git \
     libxml2-utils \
     moreutils \
-    python3-fuzzywuzzy \
+    pylint \
     python3-pip \
     shellcheck \
     yamllint \
-    && pip3 install black==22.8.0 boto3 codespell==2.2.1 dohq-artifactory mypy PyGithub unidiff pylint==2.6.2 \
-    && apt-get clean \
-    && rm -rf /root/.cache/pip
+    && pip3 install black boto3 codespell dohq-artifactory PyGithub unidiff
 
 # Architecture of the image when BuildKit/buildx is used
 ARG TARGETARCH

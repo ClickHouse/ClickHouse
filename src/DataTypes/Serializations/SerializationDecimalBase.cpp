@@ -12,14 +12,14 @@ namespace DB
 {
 
 template <typename T>
-void SerializationDecimalBase<T>::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
+void SerializationDecimalBase<T>::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
-    FieldType x = field.get<DecimalField<T>>();
+    FieldType x = get<DecimalField<T>>(field);
     writeBinary(x, ostr);
 }
 
 template <typename T>
-void SerializationDecimalBase<T>::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void SerializationDecimalBase<T>::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
     const FieldType & x = assert_cast<const ColumnType &>(column).getElement(row_num);
     writeBinary(x, ostr);
@@ -39,7 +39,7 @@ void SerializationDecimalBase<T>::serializeBinaryBulk(const IColumn & column, Wr
 }
 
 template <typename T>
-void SerializationDecimalBase<T>::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const
+void SerializationDecimalBase<T>::deserializeBinary(Field & field, ReadBuffer & istr) const
 {
     typename FieldType::NativeType x;
     readBinary(x, istr);
@@ -47,7 +47,7 @@ void SerializationDecimalBase<T>::deserializeBinary(Field & field, ReadBuffer & 
 }
 
 template <typename T>
-void SerializationDecimalBase<T>::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationDecimalBase<T>::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 {
     typename FieldType::NativeType x;
     readBinary(x, istr);

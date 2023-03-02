@@ -65,7 +65,8 @@ public:
 DataTypePtr FunctionHasColumnInTable::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
 {
     if (arguments.size() < 3 || arguments.size() > 6)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Invalid number of arguments for function {}", getName());
+        throw Exception{"Invalid number of arguments for function " + getName(),
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
     static const std::string arg_pos_description[] = {"First", "Second", "Third", "Fourth", "Fifth", "Sixth"};
     for (size_t i = 0; i < arguments.size(); ++i)
@@ -74,8 +75,8 @@ DataTypePtr FunctionHasColumnInTable::getReturnTypeImpl(const ColumnsWithTypeAnd
 
         if (!checkColumnConst<ColumnString>(argument.column.get()))
         {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} argument for function {} must be const String.",
-                            arg_pos_description[i], getName());
+            throw Exception(arg_pos_description[i] + " argument for function " + getName() + " must be const String.",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
     }
 
@@ -110,7 +111,7 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
     String column_name = get_string_from_columns(arguments[arg++]);
 
     if (table_name.empty())
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table name is empty");
+        throw Exception("Table name is empty", ErrorCodes::UNKNOWN_TABLE);
 
     bool has_column;
     if (host_name.empty())
@@ -149,12 +150,12 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
         has_column = remote_columns.hasPhysical(column_name);
     }
 
-    return DataTypeUInt8().createColumnConst(input_rows_count, Field{static_cast<UInt64>(has_column)});
+    return DataTypeUInt8().createColumnConst(input_rows_count, Field{UInt64(has_column)});
 }
 
 }
 
-REGISTER_FUNCTION(HasColumnInTable)
+void registerFunctionHasColumnInTable(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionHasColumnInTable>();
 }

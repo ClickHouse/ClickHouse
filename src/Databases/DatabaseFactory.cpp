@@ -14,13 +14,9 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/queryToString.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
-#include <Storages/NamedCollectionsHelpers.h>
-#include <Common/NamedCollections/NamedCollections.h>
-#include <Common/logger_useful.h>
 #include <Common/Macros.h>
-#include <Common/filesystemHelpers.h>
 
-#include "config.h"
+#include "config_core.h"
 
 #if USE_MYSQL
 #    include <Core/MySQL/MySQLClient.h>
@@ -63,63 +59,45 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-void cckMetadataPathForOrdinary(const ASTCreateQuery & create, const String & metadata_path)
-{
-    const String & engine_name = create.storage->engine->name;
-    const String & database_name = create.getDatabase();
-
-    if (engine_name != "Ordinary")
-        return;
-
-    if (!FS::isSymlink(metadata_path))
-        return;
-
-    String target_path = FS::readSymlink(metadata_path).string();
-    fs::path path_to_remove = metadata_path;
-    if (path_to_remove.filename().empty())
-        path_to_remove = path_to_remove.parent_path();
-
-    /// Before 20.7 metadata/db_name.sql file might absent and Ordinary database was attached if there's metadata/db_name/ dir.
-    /// Between 20.7 and 22.7 metadata/db_name.sql was created in this case as well.
-    /// Since 20.7 `default` database is created with Atomic engine on the very first server run.
-    /// The problem is that if server crashed during the very first run and metadata/db_name/ -> store/whatever symlink was created
-    /// then it's considered as Ordinary database. And it even works somehow
-    /// until background task tries to remove unused dir from store/...
-    throw Exception(ErrorCodes::CANNOT_CREATE_DATABASE,
-                    "Metadata directory {} for Ordinary database {} is a symbolic link to {}. "
-                    "It may be a result of manual intervention, crash on very first server start or a bug. "
-                    "Database cannot be attached (it's kind of protection from potential data loss). "
-                    "Metadata directory must not be a symlink and must contain tables metadata files itself. "
-                    "You have to resolve this manually. It can be done like this: rm {}; sudo -u clickhouse mv {} {};",
-                    metadata_path, database_name, target_path,
-                    quoteString(path_to_remove.string()), quoteString(target_path), quoteString(path_to_remove.string()));
-
-}
-
 DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context)
 {
-    cckMetadataPathForOrdinary(create, metadata_path);
+    bool created = false;
 
-    /// Creates store/xxx/ for Atomic
-    fs::create_directories(fs::path(metadata_path).parent_path());
+    try
+    {
+        /// Creates store/xxx/ for Atomic
+        fs::create_directories(fs::path(metadata_path).parent_path());
 
-    DatabasePtr impl = getImpl(create, metadata_path, context);
+        /// Before 20.7 it's possible that .sql metadata file does not exist for some old database.
+        /// In this case Ordinary database is created on server startup if the corresponding metadata directory exists.
+        /// So we should remove metadata directory if database creation failed.
+        /// TODO remove this code
+        created = fs::create_directory(metadata_path);
 
-    if (impl && context->hasQueryContext() && context->getSettingsRef().log_queries)
-        context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Database, impl->getEngineName());
+        DatabasePtr impl = getImpl(create, metadata_path, context);
 
-    /// Attach database metadata
-    if (impl && create.comment)
-        impl->setDatabaseComment(create.comment->as<ASTLiteral>()->value.safeGet<String>());
+        if (impl && context->hasQueryContext() && context->getSettingsRef().log_queries)
+            context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Database, impl->getEngineName());
 
-    return impl;
+        // Attach database metadata
+        if (impl && create.comment)
+            impl->setDatabaseComment(create.comment->as<ASTLiteral>()->value.safeGet<String>());
+
+        return impl;
+    }
+    catch (...)
+    {
+        if (created && fs::exists(metadata_path))
+            fs::remove_all(metadata_path);
+        throw;
+    }
 }
 
 template <typename ValueType>
 static inline ValueType safeGetLiteralValue(const ASTPtr &ast, const String &engine_name)
 {
     if (!ast || !ast->as<ASTLiteral>())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine {} requested literal argument.", engine_name);
+        throw Exception("Database engine " + engine_name + " requested literal argument.", ErrorCodes::BAD_ARGUMENTS);
 
     return ast->as<ASTLiteral>()->value.safeGet<ValueType>();
 }
@@ -160,15 +138,8 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine `{}` cannot have table overrides", engine_name);
 
     if (engine_name == "Ordinary")
-    {
-        if (!create.attach && !context->getSettingsRef().allow_deprecated_database_ordinary)
-            throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE,
-                            "Ordinary database engine is deprecated (see also allow_deprecated_database_ordinary setting)");
-
         return std::make_shared<DatabaseOrdinary>(database_name, metadata_path, context);
-    }
-
-    if (engine_name == "Atomic")
+    else if (engine_name == "Atomic")
         return std::make_shared<DatabaseAtomic>(database_name, metadata_path, uuid, context);
     else if (engine_name == "Memory")
         return std::make_shared<DatabaseMemory>(database_name, context);
@@ -252,11 +223,13 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             {
                 auto print_create_ast = create.clone();
                 print_create_ast->as<ASTCreateQuery>()->attach = false;
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                throw Exception(
+                    fmt::format(
                         "The MaterializedMySQL database engine no longer supports Ordinary databases. To re-create the database, delete "
                         "the old one by executing \"rm -rf {}{{,.sql}}\", then re-create the database with the following query: {}",
                         metadata_path,
-                        queryToString(print_create_ast));
+                        queryToString(print_create_ast)),
+                    ErrorCodes::NOT_IMPLEMENTED);
             }
 
             return std::make_shared<DatabaseMaterializedMySQL>(
@@ -266,7 +239,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         catch (...)
         {
             const auto & exception_message = getCurrentExceptionMessage(true);
-            throw Exception(ErrorCodes::CANNOT_CREATE_DATABASE, "Cannot create MySQL database, because {}", exception_message);
+            throw Exception("Cannot create MySQL database, because " + exception_message, ErrorCodes::CANNOT_CREATE_DATABASE);
         }
     }
 #endif
@@ -276,7 +249,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         const ASTFunction * engine = engine_define->engine;
 
         if (!engine->arguments || engine->arguments->children.size() != 1)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Lazy database require cache_expiration_time_seconds argument");
+            throw Exception("Lazy database require cache_expiration_time_seconds argument", ErrorCodes::BAD_ARGUMENTS);
 
         const auto & arguments = engine->arguments->children;
 
@@ -289,7 +262,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         const ASTFunction * engine = engine_define->engine;
 
         if (!engine->arguments || engine->arguments->children.size() != 3)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replicated database requires 3 arguments: zookeeper path, shard name and replica name");
+            throw Exception("Replicated database requires 3 arguments: zookeeper path, shard name and replica name", ErrorCodes::BAD_ARGUMENTS);
 
         auto & arguments = engine->arguments->children;
         for (auto & engine_arg : arguments)
@@ -322,24 +295,25 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
         ASTs & engine_args = engine->arguments->children;
         auto use_table_cache = false;
-        StoragePostgreSQL::Configuration configuration;
+        StoragePostgreSQLConfiguration configuration;
 
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args))
+        if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context, true))
         {
-            validateNamedCollection(
-                *named_collection,
-                {"host", "port", "user", "password", "database"},
-                {"schema", "on_conflict", "use_table_cache"});
+            auto [common_configuration, storage_specific_args, _] = named_collection.value();
 
-            configuration.host = named_collection->get<String>("host");
-            configuration.port = static_cast<UInt16>(named_collection->get<UInt64>("port"));
+            configuration.set(common_configuration);
             configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
-            configuration.username = named_collection->get<String>("user");
-            configuration.password = named_collection->get<String>("password");
-            configuration.database = named_collection->get<String>("database");
-            configuration.schema = named_collection->getOrDefault<String>("schema", "");
-            configuration.on_conflict = named_collection->getOrDefault<String>("on_conflict", "");
-            use_table_cache = named_collection->getOrDefault<UInt64>("use_tables_cache", 0);
+
+            for (const auto & [arg_name, arg_value] : storage_specific_args)
+            {
+                if (arg_name == "use_table_cache")
+                    use_table_cache = true;
+                else
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Unexpected key-value argument."
+                            "Got: {}, but expected one of:"
+                            "host, port, username, password, database, schema, use_table_cache.", arg_name);
+            }
         }
         else
         {
@@ -359,33 +333,16 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             configuration.username = safeGetLiteralValue<String>(engine_args[2], engine_name);
             configuration.password = safeGetLiteralValue<String>(engine_args[3], engine_name);
 
-            bool is_deprecated_syntax = false;
             if (engine_args.size() >= 5)
-            {
-                auto arg_value = engine_args[4]->as<ASTLiteral>()->value;
-                if (arg_value.getType() == Field::Types::Which::String)
-                {
-                    configuration.schema = safeGetLiteralValue<String>(engine_args[4], engine_name);
-                }
-                else
-                {
-                    use_table_cache = safeGetLiteralValue<UInt8>(engine_args[4], engine_name);
-                    LOG_WARNING(&Poco::Logger::get("DatabaseFactory"), "A deprecated syntax of PostgreSQL database engine is used");
-                    is_deprecated_syntax = true;
-                }
-            }
-
-            if (!is_deprecated_syntax && engine_args.size() >= 6)
-                use_table_cache = safeGetLiteralValue<UInt8>(engine_args[5], engine_name);
+                configuration.schema = safeGetLiteralValue<String>(engine_args[4], engine_name);
         }
 
-        const auto & settings = context->getSettingsRef();
-        auto pool = std::make_shared<postgres::PoolWithFailover>(
-            configuration,
-            settings.postgresql_connection_pool_size,
-            settings.postgresql_connection_pool_wait_timeout,
-            POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
-            settings.postgresql_connection_pool_auto_close_connection);
+        if (engine_args.size() >= 6)
+            use_table_cache = safeGetLiteralValue<UInt8>(engine_args[5], engine_name);
+
+        auto pool = std::make_shared<postgres::PoolWithFailover>(configuration,
+            context->getSettingsRef().postgresql_connection_pool_size,
+            context->getSettingsRef().postgresql_connection_pool_wait_timeout);
 
         return std::make_shared<DatabasePostgreSQL>(
             context, metadata_path, engine_define, database_name, configuration, pool, use_table_cache);
@@ -397,22 +354,16 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", engine_name);
 
         ASTs & engine_args = engine->arguments->children;
-        StoragePostgreSQL::Configuration configuration;
+        StoragePostgreSQLConfiguration configuration;
 
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args))
+        if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context, true))
         {
-            validateNamedCollection(
-                *named_collection,
-                {"host", "port", "user", "password", "database"},
-                {"schema"});
+            auto [common_configuration, storage_specific_args, _] = named_collection.value();
+            configuration.set(common_configuration);
 
-            configuration.host = named_collection->get<String>("host");
-            configuration.port = static_cast<UInt16>(named_collection->get<UInt64>("port"));
-            configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
-            configuration.username = named_collection->get<String>("user");
-            configuration.password = named_collection->get<String>("password");
-            configuration.database = named_collection->get<String>("database");
-            configuration.schema = named_collection->getOrDefault<String>("schema", "");
+            if (!storage_specific_args.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "MaterializedPostgreSQL Database requires only `host`, `port`, `database_name`, `username`, `password`.");
         }
         else
         {
@@ -454,7 +405,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         const ASTFunction * engine = engine_define->engine;
 
         if (!engine->arguments || engine->arguments->children.size() != 1)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "SQLite database requires 1 argument: database path");
+            throw Exception("SQLite database requires 1 argument: database path", ErrorCodes::BAD_ARGUMENTS);
 
         const auto & arguments = engine->arguments->children;
 
@@ -464,7 +415,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     }
 #endif
 
-    throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", engine_name);
+    throw Exception("Unknown database engine: " + engine_name, ErrorCodes::UNKNOWN_DATABASE_ENGINE);
 }
 
 }

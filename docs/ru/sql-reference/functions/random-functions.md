@@ -1,7 +1,6 @@
 ---
-slug: /ru/sql-reference/functions/random-functions
-sidebar_position: 51
-sidebar_label: "Функции генерации псевдослучайных чисел"
+toc_priority: 51
+toc_title: "Функции генерации псевдослучайных чисел"
 ---
 
 # Функции генерации псевдослучайных чисел {#functions-for-generating-pseudo-random-numbers}
@@ -107,3 +106,4 @@ FROM numbers(3)
 │ aeca2A                                │
 └───────────────────────────────────────┘
 ```
+

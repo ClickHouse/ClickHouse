@@ -1,22 +1,16 @@
-#include <stack>
-
-#include <Common/JSONBuilder.h>
-
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <IO/WriteBuffer.h>
+#include <IO/Operators.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ArrayJoinAction.h>
-
-#include <IO/Operators.h>
-#include <IO/WriteBuffer.h>
-
-#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <stack>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-
-#include <QueryPipeline/QueryPipelineBuilder.h>
-
+#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -34,13 +28,13 @@ QueryPlan & QueryPlan::operator=(QueryPlan &&) noexcept = default;
 void QueryPlan::checkInitialized() const
 {
     if (!isInitialized())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "QueryPlan was not initialized");
+        throw Exception("QueryPlan was not initialized", ErrorCodes::LOGICAL_ERROR);
 }
 
 void QueryPlan::checkNotCompleted() const
 {
     if (isCompleted())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "QueryPlan was already completed");
+        throw Exception("QueryPlan was already completed", ErrorCodes::LOGICAL_ERROR);
 }
 
 bool QueryPlan::isCompleted() const
@@ -58,30 +52,28 @@ const DataStream & QueryPlan::getCurrentDataStream() const
 void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<QueryPlan>> plans)
 {
     if (isInitialized())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unite plans because current QueryPlan is already initialized");
+        throw Exception("Cannot unite plans because current QueryPlan is already initialized",
+                        ErrorCodes::LOGICAL_ERROR);
 
     const auto & inputs = step->getInputStreams();
     size_t num_inputs = step->getInputStreams().size();
     if (num_inputs != plans.size())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Cannot unite QueryPlans using {} because step has different number of inputs. Has {} plans and {} inputs",
-            step->getName(),
-            plans.size(),
-            num_inputs);
+    {
+        throw Exception("Cannot unite QueryPlans using " + step->getName() +
+                        " because step has different number of inputs. "
+                        "Has " + std::to_string(plans.size()) + " plans "
+                        "and " + std::to_string(num_inputs) + " inputs", ErrorCodes::LOGICAL_ERROR);
+    }
 
     for (size_t i = 0; i < num_inputs; ++i)
     {
         const auto & step_header = inputs[i].header;
         const auto & plan_header = plans[i]->getCurrentDataStream().header;
         if (!blocksHaveEqualStructure(step_header, plan_header))
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Cannot unite QueryPlans using {} because it has incompatible header with plan {} plan header: {} step header: {}",
-                step->getName(),
-                root->step->getName(),
-                plan_header.dumpStructure(),
-                step_header.dumpStructure());
+            throw Exception("Cannot unite QueryPlans using " + step->getName() + " because "
+                            "it has incompatible header with plan " + root->step->getName() + " "
+                            "plan header: " + plan_header.dumpStructure() +
+                            "step header: " + step_header.dumpStructure(), ErrorCodes::LOGICAL_ERROR);
     }
 
     for (auto & plan : plans)
@@ -96,7 +88,8 @@ void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<Qu
     for (auto & plan : plans)
     {
         max_threads = std::max(max_threads, plan->max_threads);
-        resources = std::move(plan->resources);
+        interpreter_context.insert(interpreter_context.end(),
+                                   plan->interpreter_context.begin(), plan->interpreter_context.end());
     }
 }
 
@@ -109,10 +102,8 @@ void QueryPlan::addStep(QueryPlanStepPtr step)
     if (num_input_streams == 0)
     {
         if (isInitialized())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Cannot add step {} to QueryPlan because step has no inputs, but QueryPlan is already initialized",
-                step->getName());
+            throw Exception("Cannot add step " + step->getName() + " to QueryPlan because "
+                            "step has no inputs, but QueryPlan is already initialized", ErrorCodes::LOGICAL_ERROR);
 
         nodes.emplace_back(Node{.step = std::move(step)});
         root = &nodes.back();
@@ -122,33 +113,25 @@ void QueryPlan::addStep(QueryPlanStepPtr step)
     if (num_input_streams == 1)
     {
         if (!isInitialized())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Cannot add step {} to QueryPlan because step has input, but QueryPlan is not initialized",
-                step->getName());
+            throw Exception("Cannot add step " + step->getName() + " to QueryPlan because "
+                            "step has input, but QueryPlan is not initialized", ErrorCodes::LOGICAL_ERROR);
 
         const auto & root_header = root->step->getOutputStream().header;
         const auto & step_header = step->getInputStreams().front().header;
         if (!blocksHaveEqualStructure(root_header, step_header))
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Cannot add step {} to QueryPlan because it has incompatible header with root step {} root header: {} step header: {}",
-                step->getName(),
-                root->step->getName(),
-                root_header.dumpStructure(),
-                step_header.dumpStructure());
+            throw Exception("Cannot add step " + step->getName() + " to QueryPlan because "
+                            "it has incompatible header with root step " + root->step->getName() + " "
+                            "root header: " + root_header.dumpStructure() +
+                            "step header: " + step_header.dumpStructure(), ErrorCodes::LOGICAL_ERROR);
 
         nodes.emplace_back(Node{.step = std::move(step), .children = {root}});
         root = &nodes.back();
         return;
     }
 
-    throw Exception(
-        ErrorCodes::LOGICAL_ERROR,
-        "Cannot add step {} to QueryPlan because it has {} inputs but {} input expected",
-        step->getName(),
-        num_input_streams,
-        isInitialized() ? 1 : 0);
+    throw Exception("Cannot add step " + step->getName() + " to QueryPlan because it has " +
+                    std::to_string(num_input_streams) + " inputs but " + std::to_string(isInitialized() ? 1 : 0) +
+                    " input expected", ErrorCodes::LOGICAL_ERROR);
 }
 
 QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
@@ -166,7 +149,6 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
 
     QueryPipelineBuilderPtr last_pipeline;
 
-
     std::stack<Frame> stack;
     stack.push(Frame{.node = root});
 
@@ -177,7 +159,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
         if (last_pipeline)
         {
             frame.pipelines.emplace_back(std::move(last_pipeline));
-            last_pipeline = nullptr;
+            last_pipeline = nullptr; //-V1048
         }
 
         size_t next_child = frame.pipelines.size();
@@ -195,19 +177,33 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
             stack.push(Frame{.node = frame.node->children[next_child]});
     }
 
+    for (auto & context : interpreter_context)
+        last_pipeline->addInterpreterContext(std::move(context));
+
     last_pipeline->setProgressCallback(build_pipeline_settings.progress_callback);
     last_pipeline->setProcessListElement(build_pipeline_settings.process_list_element);
-    last_pipeline->addResources(std::move(resources));
-
-    /// This is related to parallel replicas.
-    /// Not to let the remote sources starve for CPU we create an
-    /// explicit dependency between processors which read from local replica
-    /// and ones that receive data from remote replicas and constantly answer
-    /// to coordination packets.
-    last_pipeline->connectDependencies();
 
     return last_pipeline;
 }
+
+Pipe QueryPlan::convertToPipe(
+    const QueryPlanOptimizationSettings & optimization_settings,
+    const BuildQueryPipelineSettings & build_pipeline_settings)
+{
+    if (!isInitialized())
+        return {};
+
+    if (isCompleted())
+        throw Exception("Cannot convert completed QueryPlan to Pipe", ErrorCodes::LOGICAL_ERROR);
+
+    return QueryPipelineBuilder::getPipe(std::move(*buildQueryPipeline(optimization_settings, build_pipeline_settings)));
+}
+
+void QueryPlan::addInterpreterContext(ContextPtr context)
+{
+    interpreter_context.emplace_back(std::move(context));
+}
+
 
 static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map, const QueryPlan::ExplainPlanOptions & options)
 {
@@ -332,22 +328,8 @@ static void explainStep(
                 elem.dumpNameAndType(settings.out);
             }
         }
+
         settings.out.write('\n');
-
-    }
-
-    if (options.sorting)
-    {
-        if (step.hasOutputStream())
-        {
-            settings.out << prefix << "Sorting (" << step.getOutputStream().sort_scope << ")";
-            if (step.getOutputStream().sort_scope != DataStream::SortScope::None)
-            {
-                settings.out << ": ";
-                dumpSortDescription(step.getOutputStream().sort_description, settings.out);
-            }
-            settings.out.write('\n');
-        }
     }
 
     if (options.actions)
@@ -406,7 +388,6 @@ void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & opt
 static void explainPipelineStep(IQueryPlanStep & step, IQueryPlanStep::FormatSettings & settings)
 {
     settings.out << String(settings.offset, settings.indent_char) << "(" << step.getName() << ")\n";
-
     size_t current_offset = settings.offset;
     step.describePipeline(settings);
     if (current_offset == settings.offset)
@@ -454,14 +435,7 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
 
 void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_settings)
 {
-    /// optimization need to be applied before "mergeExpressions" optimization
-    /// it removes redundant sorting steps, but keep underlying expressions,
-    /// so "mergeExpressions" optimization handles them afterwards
-    if (optimization_settings.remove_redundant_sorting)
-        QueryPlanOptimizations::tryRemoveRedundantSorting(root);
-
-    QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes);
-    QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes);
+    QueryPlanOptimizations::optimizeTree(optimization_settings, *root, nodes);
 }
 
 void QueryPlan::explainEstimate(MutableColumns & columns)

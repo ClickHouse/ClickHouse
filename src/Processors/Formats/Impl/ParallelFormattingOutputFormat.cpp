@@ -1,7 +1,6 @@
 #include <Processors/Formats/Impl/ParallelFormattingOutputFormat.h>
 
 #include <Common/setThreadName.h>
-#include <Common/scope_guard_safe.h>
 
 namespace DB
 {
@@ -21,7 +20,7 @@ namespace DB
         }
 
         {
-            std::lock_guard lock(mutex);
+            std::unique_lock<std::mutex> lock(mutex);
 
             if (background_exception)
                 std::rethrow_exception(background_exception);
@@ -31,7 +30,7 @@ namespace DB
     void ParallelFormattingOutputFormat::addChunk(Chunk chunk, ProcessingUnitType type, bool can_throw_exception)
     {
         {
-            std::lock_guard lock(mutex);
+            std::unique_lock<std::mutex> lock(mutex);
             if (background_exception && can_throw_exception)
                 std::rethrow_exception(background_exception);
         }
@@ -98,10 +97,6 @@ namespace DB
 
     void ParallelFormattingOutputFormat::collectorThreadFunction(const ThreadGroupStatusPtr & thread_group)
     {
-        SCOPE_EXIT_SAFE(
-            if (thread_group)
-                CurrentThread::detachQueryIfNotDetached();
-        );
         setThreadName("Collector");
         if (thread_group)
             CurrentThread::attachToIfDetached(thread_group);
@@ -159,10 +154,6 @@ namespace DB
 
     void ParallelFormattingOutputFormat::formatterThreadFunction(size_t current_unit_number, size_t first_row_num, const ThreadGroupStatusPtr & thread_group)
     {
-        SCOPE_EXIT_SAFE(
-            if (thread_group)
-                CurrentThread::detachQueryIfNotDetached();
-        );
         setThreadName("Formatter");
         if (thread_group)
             CurrentThread::attachToIfDetached(thread_group);
@@ -170,7 +161,7 @@ namespace DB
         try
         {
             auto & unit = processing_units[current_unit_number];
-            assert(unit.status == READY_TO_FORMAT);
+            assert(unit.status = READY_TO_FORMAT);
 
             /// We want to preallocate memory buffer (increase capacity)
             /// and put the pointer at the beginning of the buffer
@@ -187,41 +178,40 @@ namespace DB
 
             switch (unit.type)
             {
-                case ProcessingUnitType::START:
+                case ProcessingUnitType::START :
                 {
                     formatter->writePrefix();
                     break;
                 }
-                case ProcessingUnitType::PLAIN:
+                case ProcessingUnitType::PLAIN :
                 {
                     formatter->consume(std::move(unit.chunk));
                     break;
                 }
-                case ProcessingUnitType::PLAIN_FINISH:
+                case ProcessingUnitType::PLAIN_FINISH :
                 {
                     formatter->writeSuffix();
                     break;
                 }
-                case ProcessingUnitType::TOTALS:
+                case ProcessingUnitType::TOTALS :
                 {
                     formatter->consumeTotals(std::move(unit.chunk));
                     break;
                 }
-                case ProcessingUnitType::EXTREMES:
+                case ProcessingUnitType::EXTREMES :
                 {
                     if (are_totals_written)
                         formatter->setTotalsAreWritten();
                     formatter->consumeExtremes(std::move(unit.chunk));
                     break;
                 }
-                case ProcessingUnitType::FINALIZE:
+                case ProcessingUnitType::FINALIZE :
                 {
-                    formatter->statistics = std::move(unit.statistics);
+                    formatter->setOutsideStatistics(std::move(unit.statistics));
                     formatter->finalizeImpl();
                     break;
                 }
             }
-
             /// Flush all the data to handmade buffer.
             formatter->flush();
             unit.actual_memory_size = out_buffer.getActualSize();

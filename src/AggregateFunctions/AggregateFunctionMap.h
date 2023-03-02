@@ -18,7 +18,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include "DataTypes/Serializations/ISerialization.h"
 #include "base/types.h"
 #include <Common/Arena.h>
 #include "AggregateFunctions/AggregateFunctionFactory.h"
@@ -105,30 +104,28 @@ public:
         return nested_func->getDefaultVersion();
     }
 
-    AggregateFunctionMap(AggregateFunctionPtr nested, const DataTypes & types)
-        : Base(types, nested->getParameters(), std::make_shared<DataTypeMap>(DataTypes{getKeyType(types, nested), nested->getResultType()}))
-        , nested_func(nested)
+    AggregateFunctionMap(AggregateFunctionPtr nested, const DataTypes & types) : Base(types, nested->getParameters()), nested_func(nested)
     {
-        key_type = getKeyType(types, nested_func);
+        if (types.empty())
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function " + getName() + " requires at least one argument");
+
+        if (types.size() > 1)
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function " + getName() + " requires only one map argument");
+
+        const auto * map_type = checkAndGetDataType<DataTypeMap>(types[0].get());
+        if (!map_type)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function " + getName() + " requires map as argument");
+
+        key_type = map_type->getKeyType();
     }
 
     String getName() const override { return nested_func->getName() + "Map"; }
 
-    static DataTypePtr getKeyType(const DataTypes & types, const AggregateFunctionPtr & nested)
-    {
-        if (types.size() != 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Aggregate function {}Map requires one map argument, but {} found", nested->getName(), types.size());
+    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeMap>(DataTypes{key_type, nested_func->getReturnType()}); }
 
-        const auto * map_type = checkAndGetDataType<DataTypeMap>(types[0].get());
-        if (!map_type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Aggregate function {}Map requires map as argument", nested->getName());
-
-        return map_type->getKeyType();
-    }
-
-    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         const auto & map_column = assert_cast<const ColumnMap &>(*columns[0]);
         const auto & map_nested_tuple = map_column.getNestedData();
@@ -155,7 +152,7 @@ public:
                     key_ref = assert_cast<const ColumnString &>(key_column).getDataAt(offset + i);
 
 #ifdef __cpp_lib_generic_unordered_lookup
-                key = key_ref.toView();
+                key = static_cast<std::string_view>(key_ref);
 #else
                 key = key_ref.toString();
 #endif
@@ -183,7 +180,7 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & merged_maps = this->data(place).merged_maps;
         const auto & rhs_maps = this->data(rhs).merged_maps;
@@ -231,11 +228,6 @@ public:
         destroyImpl<false>(place);
     }
 
-    bool hasTrivialDestructor() const override
-    {
-        return std::is_trivially_destructible_v<Data> && nested_func->hasTrivialDestructor();
-    }
-
     void destroyUpToState(AggregateDataPtr __restrict place) const noexcept override
     {
         destroyImpl<true>(place);
@@ -253,7 +245,7 @@ public:
         }
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
+    void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
         auto & merged_maps = this->data(place).merged_maps;
         UInt64 size;
@@ -272,8 +264,7 @@ public:
         }
     }
 
-    template <bool merge>
-    void insertResultIntoImpl(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena * arena) const override
     {
         auto & map_column = assert_cast<ColumnMap &>(to);
         auto & nested_column = map_column.getNestedColumn();
@@ -297,24 +288,11 @@ public:
         for (auto & key : keys)
         {
             key_column.insert(key);
-            if constexpr (merge)
-                nested_func->insertMergeResultInto(merged_maps[key], val_column, arena);
-            else
-                nested_func->insertResultInto(merged_maps[key], val_column, arena);
+            nested_func->insertResultInto(merged_maps[key], val_column, arena);
         }
 
         IColumn::Offsets & res_offsets = nested_column.getOffsets();
         res_offsets.push_back(val_column.size());
-    }
-
-    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
-    {
-        insertResultIntoImpl<false>(place, to, arena);
-    }
-
-    void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
-    {
-        insertResultIntoImpl<true>(place, to, arena);
     }
 
     bool allocatesMemoryInArena() const override { return true; }

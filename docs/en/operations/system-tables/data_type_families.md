@@ -1,7 +1,4 @@
----
-slug: /en/operations/system-tables/data_type_families
----
-# data_type_families
+# system.data_type_families {#system_tables-data_type_families}
 
 Contains information about supported [data types](../../sql-reference/data-types/index.md).
 
@@ -35,3 +32,5 @@ SELECT * FROM system.data_type_families WHERE alias_to = 'String'
 **See Also**
 
 -   [Syntax](../../sql-reference/syntax.md) — Information about supported syntax.
+
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/data_type_families) <!--hide-->

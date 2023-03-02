@@ -1,6 +1,15 @@
 <test>
-    <query>SELECT normalizeUTF8NFC(SearchPhrase) FROM hits_100m_single FORMAT Null</query>
-    <query>SELECT normalizeUTF8NFD(SearchPhrase) FROM hits_100m_single FORMAT Null</query>
-    <query>SELECT normalizeUTF8NFKC(SearchPhrase) FROM hits_100m_single FORMAT Null</query>
-    <query>SELECT normalizeUTF8NFKD(SearchPhrase) FROM hits_100m_single FORMAT Null</query>
+    <preconditions>
+        <table_exists>hits_10m_single</table_exists>
+    </preconditions>
+
+    <create_query>CREATE TABLE strings (words String) ENGINE Memory</create_query>
+    <fill_query>INSERT INTO strings SELECT SearchPhrase FROM hits_10m_single WHERE length(SearchPhrase) > 0</fill_query>
+
+    <query>SELECT normalizeUTF8NFC(words) FROM strings FORMAT Null</query>
+    <query>SELECT normalizeUTF8NFD(words) FROM strings FORMAT Null</query>
+    <query>SELECT normalizeUTF8NFKC(words) FROM strings FORMAT Null</query>
+    <query>SELECT normalizeUTF8NFKD(words) FROM strings FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS strings</drop_query>
 </test>

@@ -1,7 +1,6 @@
 ---
-slug: /ru/sql-reference/statements/detach
-sidebar_position: 43
-sidebar_label: DETACH
+toc_priority: 43
+toc_title: DETACH
 ---
 
 # DETACH {#detach-statement}

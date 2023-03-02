@@ -33,8 +33,6 @@ public:
     }
 
     void updateTreeHashImpl(SipHash & hash_state) const override;
-    String getAliasOrColumnName() const override;
-    String tryGetAlias() const override;
 
 protected:
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

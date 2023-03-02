@@ -14,14 +14,13 @@
 #include <QueryPipeline/BlockIO.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/ClientInfo.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
 
+#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
+
 #include "IServer.h"
-#include "Server/TCPProtocolStackData.h"
-#include "Storages/MergeTree/RequestResponse.h"
 #include "base/types.h"
 
 
@@ -102,8 +101,6 @@ struct QueryState
 
     /// To output progress, the difference after the previous sending of progress.
     Progress progress;
-    Stopwatch watch;
-    UInt64 prev_elapsed_ns = 0;
 
     /// Timeouts setter for current query
     std::unique_ptr<TimeoutSetter> timeout_setter;
@@ -137,7 +134,6 @@ public:
       * Proxy-forwarded (original client) IP address is used for quota accounting if quota is keyed by forwarded IP.
       */
     TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_);
-    TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, TCPProtocolStackData & stack_data, std::string server_display_name_);
     ~TCPHandler() override;
 
     void run() override;
@@ -151,15 +147,11 @@ private:
     bool parse_proxy_protocol = false;
     Poco::Logger * log;
 
-    String forwarded_for;
-    String certificate;
-
     String client_name;
     UInt64 client_version_major = 0;
     UInt64 client_version_minor = 0;
     UInt64 client_version_patch = 0;
-    UInt32 client_tcp_protocol_version = 0;
-    String quota_key;
+    UInt64 client_tcp_protocol_version = 0;
 
     /// Connection settings, which are extracted from a context.
     bool send_exception_with_stack_trace = true;
@@ -171,11 +163,9 @@ private:
     Poco::Timespan sleep_in_send_tables_status;
     UInt64 unknown_packet_in_send_data = 0;
     Poco::Timespan sleep_in_receive_cancel;
-    Poco::Timespan sleep_after_receiving_query;
 
     std::unique_ptr<Session> session;
     ContextMutablePtr query_context;
-    ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::NO_QUERY;
 
     /// Streams for reading/writing from/to client connection socket.
     std::shared_ptr<ReadBuffer> in;
@@ -191,6 +181,7 @@ private:
     bool is_interserver_mode = false;
     String salt;
     String cluster;
+    String cluster_secret;
 
     std::mutex task_callback_mutex;
     std::mutex fatal_error_mutex;
@@ -212,16 +203,13 @@ private:
 
     void extractConnectionSettingsFromContext(const ContextPtr & context);
 
-    std::unique_ptr<Session> makeSession();
-
     bool receiveProxyHeader();
     void receiveHello();
-    void receiveAddendum();
     bool receivePacket();
     void receiveQuery();
     void receiveIgnoredPartUUIDs();
     String receiveReadTaskResponseAssumeLocked();
-    std::optional<ParallelReadResponse> receivePartitionMergeTreeReadTaskResponseAssumeLocked();
+    std::optional<PartitionReadResponse> receivePartitionMergeTreeReadTaskResponseAssumeLocked();
     bool receiveData(bool scalar);
     bool readDataNext();
     void readData();
@@ -254,14 +242,11 @@ private:
     void sendEndOfStream();
     void sendPartUUIDs();
     void sendReadTaskRequestAssumeLocked();
-    void sendMergeTreeAllRangesAnnounecementAssumeLocked(InitialAllRangesAnnouncement announcement);
-    void sendMergeTreeReadTaskRequestAssumeLocked(ParallelReadRequest request);
+    void sendMergeTreeReadTaskRequestAssumeLocked(PartitionReadRequest request);
     void sendProfileInfo(const ProfileInfo & info);
     void sendTotals(const Block & totals);
     void sendExtremes(const Block & extremes);
     void sendProfileEvents();
-    void sendSelectProfileEvents();
-    void sendInsertProfileEvents();
 
     /// Creates state.block_in/block_out for blocks read/write, depending on whether compression is enabled.
     void initBlockInput();

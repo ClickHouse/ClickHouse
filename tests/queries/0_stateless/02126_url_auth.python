@@ -121,14 +121,18 @@ class CSVHTTPServer(BaseHTTPRequestHandler):
 class HTTPServerV6(HTTPServer):
     address_family = socket.AF_INET6
 
-def start_server():
+def start_server(requests_amount):
     if IS_IPV6:
         httpd = HTTPServerV6(HTTP_SERVER_ADDRESS, CSVHTTPServer)
     else:
         httpd = HTTPServer(HTTP_SERVER_ADDRESS, CSVHTTPServer)
 
-    t = threading.Thread(target=httpd.serve_forever)
-    return t, httpd
+    def real_func():
+        for i in range(requests_amount):
+            httpd.handle_request()
+
+    t = threading.Thread(target=real_func)
+    return t
 
 # test section
 
@@ -213,10 +217,9 @@ def main():
        query : 'hello, world',
     }
 
-    t, httpd = start_server()
+    t = start_server(len(list(select_requests_url_auth.keys())))
     t.start()
     test_select(requests=list(select_requests_url_auth.keys()), answers=list(select_requests_url_auth.values()), test_data=test_data)
-    httpd.shutdown()
     t.join()
     print("PASSED")
 

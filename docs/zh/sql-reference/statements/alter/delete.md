@@ -1,7 +1,6 @@
 ---
-slug: /zh/sql-reference/statements/alter/delete
-sidebar_position: 39
-sidebar_label: DELETE
+toc_priority: 39
+toc_title: DELETE
 ---
 
 # ALTER TABLE … DELETE 语句 {#alter-mutations}

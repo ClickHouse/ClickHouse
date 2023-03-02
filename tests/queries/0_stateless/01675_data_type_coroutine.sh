@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: long
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -7,7 +6,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 
 counter=0 retries=60
-
 I=0
 while [[ $counter -lt $retries ]]; do
     I=$((I + 1))
@@ -16,4 +14,5 @@ while [[ $counter -lt $retries ]]; do
     ((++counter))
 done
 
+#echo "I = ${I}"
 echo 'Ok'

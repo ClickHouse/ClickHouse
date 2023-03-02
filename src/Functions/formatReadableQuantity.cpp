@@ -18,7 +18,7 @@ namespace
     };
 }
 
-REGISTER_FUNCTION(FormatReadableQuantity)
+void registerFunctionFormatReadableQuantity(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionFormatReadable<Impl>>();
 }

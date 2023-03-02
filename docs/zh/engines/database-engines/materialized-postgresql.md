@@ -1,7 +1,6 @@
 ---
-slug: /zh/engines/database-engines/materialized-postgresql
-sidebar_position: 30
-sidebar_label: MaterializedPostgreSQL
+toc_priority: 30
+toc_title: MaterializedPostgreSQL
 ---
 
 # [experimental] MaterializedPostgreSQL {#materialize-postgresql}

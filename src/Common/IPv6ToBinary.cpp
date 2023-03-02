@@ -5,7 +5,6 @@
 #include <Common/formatIPv6.h>
 
 #include <cstring>
-#include <bit>
 
 
 namespace DB
@@ -90,7 +89,7 @@ bool matchIPv6Subnet(const uint8_t * addr, const uint8_t * cidr_addr, UInt8 pref
 
     if (mask)
     {
-        auto offset = std::countr_zero(mask);
+        auto offset = __builtin_ctz(mask);
 
         if (prefix / 8 != offset)
             return prefix / 8 < offset;

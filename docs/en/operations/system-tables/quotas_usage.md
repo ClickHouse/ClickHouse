@@ -1,7 +1,4 @@
----
-slug: /en/operations/system-tables/quotas_usage
----
-# quotas_usage
+# system.quotas_usage {#system_tables-quotas_usage}
 
 Quota usage by all users.
 
@@ -34,3 +31,5 @@ Columns:
 ## See Also {#see-also}
 
 -   [SHOW QUOTA](../../sql-reference/statements/show.md#show-quota-statement)
+
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/quotas_usage) <!--hide-->

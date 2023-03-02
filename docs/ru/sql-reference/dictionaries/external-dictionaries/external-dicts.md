@@ -1,7 +1,6 @@
 ---
-slug: /ru/sql-reference/dictionaries/external-dictionaries/external-dicts
-sidebar_position: 39
-sidebar_label: "Внешние словари"
+toc_priority: 39
+toc_title: "Внешние словари"
 ---
 
 
@@ -50,9 +49,9 @@ ClickHouse:
 
 Если вы создаёте внешние словари [DDL-запросами](../../statements/create/index.md#create-dictionary-query), то не задавайте конфигурацию словаря в конфигурации сервера.
 
-    :::note "Внимание"
+!!! attention "Внимание"
     Можно преобразовывать значения по небольшому словарю, описав его в запросе `SELECT` (см. функцию [transform](../../../sql-reference/functions/other-functions.md)). Эта функциональность не связана с внешними словарями.
-    :::
+
 ## Смотрите также {#ext-dicts-see-also}
 
 -   [Настройка внешнего словаря](external-dicts-dict.md)
@@ -61,3 +60,4 @@ ClickHouse:
 -   [Источники внешних словарей](external-dicts-dict-sources.md)
 -   [Ключ и поля словаря](external-dicts-dict-structure.md)
 -   [Функции для работы с внешними словарями](../../../sql-reference/functions/ext-dict-functions.md)
+
