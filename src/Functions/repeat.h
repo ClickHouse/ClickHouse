@@ -93,10 +93,10 @@ struct RepeatImpl
         ColumnString::Offsets & res_offsets,
         const PaddedPODArray<T> & col_num)
     {
-        UInt64 data_size = 0;
+        size_t data_size = 0;
         res_offsets.resize(col_num.size());
-        UInt64 str_size = copy_str.size();
-        UInt64 col_size = col_num.size();
+        size_t str_size = copy_str.size();
+        size_t col_size = col_num.size();
         for (UInt64 i = 0; i < col_size; ++i)
         {
             size_t repeated_size = str_size * col_num[i] + 1;
