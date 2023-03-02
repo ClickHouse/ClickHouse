@@ -134,6 +134,13 @@ EOL
 </clickhouse>
 EOL
 
+    cat > /etc/clickhouse-server/config.d/shutdown_wait.xml <<EOL
+<clickhouse>
+    <shutdown_wait_unfinished_queries>1</shutdown_wait_unfinished_queries>
+    <shutdown_wait_unfinished>60</shutdown_wait_unfinished>
+</clickhouse>
+EOL
+
 }
 
 function stop()
