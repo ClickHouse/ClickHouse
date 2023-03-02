@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference
+slug: /en/sql-reference/
 keywords: [clickhouse, docs, sql reference, sql statements, sql, syntax]
 title: SQL Reference
 ---
