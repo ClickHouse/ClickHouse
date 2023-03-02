@@ -233,11 +233,43 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
     auto select_settings = select_query_typed.settings();
     SettingsChanges settings_changes;
 
+    /// We are going to remove settings LIMIT and OFFSET and
+    /// further replace them with corresponding expression nodes
+    UInt64 limit = 0;
+    UInt64 offset = 0;
+
+    /// Remove global settings limit and offset
+    if (const auto & settings_ref = updated_context->getSettingsRef(); settings_ref.limit || settings_ref.offset)
+    {
+        Settings settings = updated_context->getSettings();
+        limit = settings.limit;
+        offset = settings.offset;
+        settings.limit = 0;
+        settings.offset = 0;
+        updated_context->setSettings(settings);
+    }
+
     if (select_settings)
     {
         auto & set_query = select_settings->as<ASTSetQuery &>();
-        updated_context->applySettingsChanges(set_query.changes);
-        settings_changes = set_query.changes;
+
+        /// Remove expression settings limit and offset
+        if (auto * limit_field = set_query.changes.tryGet("limit"))
+        {
+            limit = limit_field->safeGet<UInt64>();
+            set_query.changes.removeSetting("limit");
+        }
+        if (auto * offset_field = set_query.changes.tryGet("offset"))
+        {
+            offset = offset_field->safeGet<UInt64>();
+            set_query.changes.removeSetting("offset");
+        }
+
+        if (!set_query.changes.empty())
+        {
+            updated_context->applySettingsChanges(set_query.changes);
+            settings_changes = set_query.changes;
+        }
     }
 
     auto current_query_tree = std::make_shared<QueryNode>(std::move(updated_context), std::move(settings_changes));
@@ -323,12 +355,32 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
     if (select_limit_by)
         current_query_tree->getLimitByNode() = buildExpressionList(select_limit_by, current_context);
 
+    /// Combine limit expression with limit setting
     auto select_limit = select_query_typed.limitLength();
-    if (select_limit)
+    if (select_limit && limit)
+    {
+        auto function_node = std::make_shared<FunctionNode>("least");
+        function_node->getArguments().getNodes().push_back(buildExpression(select_limit, current_context));
+        function_node->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(limit));
+        current_query_tree->getLimit() = std::move(function_node);
+    }
+    else if (limit)
+        current_query_tree->getLimit() = std::make_shared<ConstantNode>(limit);
+    else if (select_limit)
         current_query_tree->getLimit() = buildExpression(select_limit, current_context);
 
+    /// Combine offset expression with offset setting
     auto select_offset = select_query_typed.limitOffset();
-    if (select_offset)
+    if (select_offset && offset)
+    {
+        auto function_node = std::make_shared<FunctionNode>("plus");
+        function_node->getArguments().getNodes().push_back(buildExpression(select_offset, current_context));
+        function_node->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(offset));
+        current_query_tree->getOffset() = std::move(function_node);
+    }
+    else if (offset)
+        current_query_tree->getOffset() = std::make_shared<ConstantNode>(offset);
+    else if (select_offset)
         current_query_tree->getOffset() = buildExpression(select_offset, current_context);
 
     return current_query_tree;
