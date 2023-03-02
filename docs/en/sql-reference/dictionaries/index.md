@@ -15,14 +15,14 @@ ClickHouse supports special functions for working with dictionaries that can be 
 ClickHouse supports:
 
 -   Dictionaries with a [set of functions](../../sql-reference/functions/ext-dict-functions.md).
--   [Embedded dictionaries](#embedded-dictionaries) with a specific [set of functions](../../sql-reference/functions/ym-dict-functions.md).
+-   [Embedded dictionaries](#embedded_dictionaries) with a specific [set of functions](../../sql-reference/functions/ym-dict-functions.md).
 
 
 :::tip Tutorial
 If you are getting started with Dictionaries in ClickHouse we have a tutorial that covers that topic.  Take a look [here](/docs/en/tutorial.md).
 :::
 
-You can add your own dictionaries from various data sources. The source for a dictionary can be a ClickHouse table, a local text or executable file, an HTTP(s) resource, or another DBMS. For more information, see “[Dictionary Sources](../../sql-reference/dictionaries/index.md#dictionary-sources)”.
+You can add your own dictionaries from various data sources. The source for a dictionary can be a ClickHouse table, a local text or executable file, an HTTP(s) resource, or another DBMS. For more information, see “[Dictionary Sources](#dictionary-sources)”.
 
 ClickHouse:
 
@@ -68,20 +68,20 @@ The dictionary configuration file has the following format:
 
     <dictionary>
         <!-- Dictionary configuration. -->
-        <!-- There can be any number of <dictionary> sections in the configuration file. -->
+        <!-- There can be any number of dictionary sections in a configuration file. -->
     </dictionary>
 
 </clickhouse>
 ```
 
-You can [configure](../../sql-reference/dictionaries/index.md) any number of dictionaries in the same file.
+You can [configure](#configuring-a-dictionary) any number of dictionaries in the same file.
 
 
 :::note
 You can convert values for a small dictionary by describing it in a `SELECT` query (see the [transform](../../sql-reference/functions/other-functions.md) function). This functionality is not related to dictionaries.
 :::
 
-# Configuring a Dictionary {#configuring-a-dictionary}
+## Configuring a Dictionary {#configuring-a-dictionary}
 
 <CloudDetails />
 
@@ -122,11 +122,11 @@ LAYOUT(...) -- Memory layout configuration
 LIFETIME(...) -- Lifetime of dictionary in memory
 ```
 
-# Storing Dictionaries in Memory {#storig-dictionaries-in-memory}
+## Storing Dictionaries in Memory {#storig-dictionaries-in-memory}
 
 There are a variety of ways to store dictionaries in memory.
 
-We recommend [flat](#flat), [hashed](#dicts-external_dicts_dict_layout-hashed) and [complex_key_hashed](#complex-key-hashed), which provide optimal processing speed.
+We recommend [flat](#flat), [hashed](#hashed) and [complex_key_hashed](#complex-key-hashed), which provide optimal processing speed.
 
 Caching is not recommended because of potentially poor performance and difficulties in selecting optimal parameters. Read more in the section [cache](#cache).
 
@@ -201,21 +201,21 @@ Configuration example of a composite key (key has one element with [String](../.
 ## Ways to Store Dictionaries in Memory
 
 -   [flat](#flat)
--   [hashed](#dicts-external_dicts_dict_layout-hashed)
--   [sparse_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
--   [complex_key_hashed](#complex-key-hashed)
--   [complex_key_sparse_hashed](#complex-key-sparse-hashed)
--   [hashed_array](#dicts-external_dicts_dict_layout-hashed-array)
--   [complex_key_hashed_array](#complex-key-hashed-array)
--   [range_hashed](#range-hashed)
--   [complex_key_range_hashed](#complex-key-range-hashed)
+-   [hashed](#hashed)
+-   [sparse_hashed](#sparse_hashed)
+-   [complex_key_hashed](#complex_key_hashed)
+-   [complex_key_sparse_hashed](#complex_key_sparse_hashed)
+-   [hashed_array](#hashed_array)
+-   [complex_key_hashed_array](#complex_key_hashed_array)
+-   [range_hashed](#range_hashed)
+-   [complex_key_range_hashed](#complex_key_range_hashed)
 -   [cache](#cache)
--   [complex_key_cache](#complex-key-cache)
--   [ssd_cache](#ssd-cache)
--   [complex_key_ssd_cache](#complex-key-ssd-cache)
+-   [complex_key_cache](#complex_key_cache)
+-   [ssd_cache](#ssd_cache)
+-   [complex_key_ssd_cache](#complex_key_ssd_cache)
 -   [direct](#direct)
--   [complex_key_direct](#complex-key-direct)
--   [ip_trie](#ip-trie)
+-   [complex_key_direct](#complex_key_direct)
+-   [ip_trie](#ip_trie)
 
 ### flat
 
@@ -317,7 +317,7 @@ It is also possible to use `shards` for this type of dictionary, and again it is
 
 ### complex_key_hashed
 
-This type of storage is for use with composite [keys](../../sql-reference/dictionaries/index.md#dictionary-key-and-fields). Similar to `hashed`.
+This type of storage is for use with composite [keys](#dictionary-key-and-fields). Similar to `hashed`.
 
 Configuration example:
 
@@ -338,7 +338,7 @@ LAYOUT(COMPLEX_KEY_HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000]))
 
 ### complex_key_sparse_hashed
 
-This type of storage is for use with composite [keys](../../sql-reference/dictionaries/index.md#dictionary-key-and-fields). Similar to [sparse_hashed](#dicts-external_dicts_dict_layout-sparse_hashed).
+This type of storage is for use with composite [keys](#dictionary-key-and-fields). Similar to [sparse_hashed](#sparse_hashed).
 
 Configuration example:
 
@@ -381,7 +381,7 @@ LAYOUT(HASHED_ARRAY())
 
 ### complex_key_hashed_array
 
-This type of storage is for use with composite [keys](../../sql-reference/dictionaries/index.md#dictionary-key-and-fields). Similar to [hashed_array](#dicts-external_dicts_dict_layout-hashed-array).
+This type of storage is for use with composite [keys](#dictionary-key-and-fields). Similar to [hashed_array](#hashed-array).
 
 Configuration example:
 
@@ -397,7 +397,7 @@ or
 LAYOUT(COMPLEX_KEY_HASHED_ARRAY())
 ```
 
-### range_hashed
+### range_hashed {#range_hashed}
 
 The dictionary is stored in memory in the form of a hash table with an ordered array of ranges and their corresponding values.
 
@@ -414,7 +414,7 @@ Example: The table contains discounts for each advertiser in the format:
 └───────────────┴─────────────────────┴───────────────────┴────────┘
 ```
 
-To use a sample for date ranges, define the `range_min` and `range_max` elements in the [structure](../../sql-reference/dictionaries/index.md#dictionary-key-and-fields). These elements must contain elements `name` and `type` (if `type` is not specified, the default type will be used - Date). `type` can be any numeric type (Date / DateTime / UInt64 / Int32 / others).
+To use a sample for date ranges, define the `range_min` and `range_max` elements in the [structure](#dictionary-key-and-fields). These elements must contain elements `name` and `type` (if `type` is not specified, the default type will be used - Date). `type` can be any numeric type (Date / DateTime / UInt64 / Int32 / others).
 
 :::warning
 Values of `range_min` and `range_max` should fit in `Int64` type.
@@ -631,7 +631,7 @@ select dictGet('discounts_dict', 'amount', 3, toDate('2015-01-01')) res;
 
 ### complex_key_range_hashed
 
-The dictionary is stored in memory in the form of a hash table with an ordered array of ranges and their corresponding values (see [range_hashed](#range-hashed)). This type of storage is for use with composite [keys](../../sql-reference/dictionaries/index.md#dictionary-key-and-fields).
+The dictionary is stored in memory in the form of a hash table with an ordered array of ranges and their corresponding values (see [range_hashed](#range_hashed)). This type of storage is for use with composite [keys](#dictionary-key-and-fields).
 
 Configuration example:
 
@@ -661,7 +661,7 @@ When searching for a dictionary, the cache is searched first. For each block of 
 
 If keys are not found in dictionary, then update cache task is created and added into update queue. Update queue properties can be controlled with settings `max_update_queue_size`, `update_queue_push_timeout_milliseconds`, `query_wait_timeout_milliseconds`, `max_threads_for_updates`.
 
-For cache dictionaries, the expiration [lifetime](../../sql-reference/dictionaries/index.md#dictionary-updates) of data in the cache can be set. If more time than `lifetime` has passed since loading the data in a cell, the cell’s value is not used and key becomes expired. The key is re-requested the next time it needs to be used. This behaviour can be configured with setting `allow_read_expired_keys`.
+For cache dictionaries, the expiration [lifetime](#dictionary-updates) of data in the cache can be set. If more time than `lifetime` has passed since loading the data in a cell, the cell’s value is not used and key becomes expired. The key is re-requested the next time it needs to be used. This behaviour can be configured with setting `allow_read_expired_keys`.
 
 This is the least effective of all the ways to store dictionaries. The speed of the cache depends strongly on correct settings and the usage scenario. A cache type dictionary performs well only when the hit rates are high enough (recommended 99% and higher). You can view the average hit rate in the [system.dictionaries](../../operations/system-tables/dictionaries.md) table.
 
@@ -711,7 +711,7 @@ Do not use ClickHouse as a source, because it is slow to process queries with ra
 
 ### complex_key_cache
 
-This type of storage is for use with composite [keys](../../sql-reference/dictionaries/index.md#dictionary-key-and-fields). Similar to `cache`.
+This type of storage is for use with composite [keys](#dictionary-key-and-fields). Similar to `cache`.
 
 ### ssd_cache
 
@@ -745,7 +745,7 @@ LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 16777216 READ_BUFFER_SIZE 1048576
 
 ### complex_key_ssd_cache
 
-This type of storage is for use with composite [keys](../../sql-reference/dictionaries/index.md#dictionary-key-and-fields). Similar to `ssd_cache`.
+This type of storage is for use with composite [keys](#dictionary-key-and-fields). Similar to `ssd_cache`.
 
 ### direct
 
@@ -753,7 +753,7 @@ The dictionary is not stored in memory and directly goes to the source during th
 
 The dictionary key has the [UInt64](../../sql-reference/data-types/int-uint.md) type.
 
-All types of [sources](../../sql-reference/dictionaries/index.md#dictionary-sources), except local files, are supported.
+All types of [sources](#dictionary-sources), except local files, are supported.
 
 Configuration example:
 
@@ -771,7 +771,7 @@ LAYOUT(DIRECT())
 
 ### complex_key_direct
 
-This type of storage is for use with composite [keys](../../sql-reference/dictionaries/index.md#dictionary-key-and-fields). Similar to `direct`.
+This type of storage is for use with composite [keys](#dictionary-key-and-fields). Similar to `direct`.
 
 ### ip_trie
 
@@ -863,7 +863,7 @@ Other types are not supported yet. The function returns the attribute for the pr
 
 Data must completely fit into RAM.
 
-# Dictionary Updates {#dictionary-updates}
+## Dictionary Updates {#dictionary-updates}
 
 ClickHouse periodically updates the dictionaries. The update interval for fully downloaded dictionaries and the invalidation interval for cached dictionaries are defined in the `lifetime` tag in seconds.
 
@@ -916,7 +916,7 @@ LIFETIME(MIN 300 MAX 360)
 If `<min>0</min>` and `<max>0</max>`, ClickHouse does not reload the dictionary by timeout.
 In this case, ClickHouse can reload the dictionary earlier if the dictionary configuration file was changed or the `SYSTEM RELOAD DICTIONARY` command was executed.
 
-When updating the dictionaries, the ClickHouse server applies different logic depending on the type of [source](../../sql-reference/dictionaries/index.md#dictionary-sources):
+When updating the dictionaries, the ClickHouse server applies different logic depending on the type of [source](#dictionary-sources):
 
 -   For a text file, it checks the time of modification. If the time differs from the previously recorded time, the dictionary is updated.
 -   For MySQL source, the time of modification is checked using a `SHOW TABLE STATUS` query (in case of MySQL 8 you need to disable meta-information caching in MySQL by `set global information_schema_stats_expiry=0`).
@@ -925,7 +925,7 @@ When updating the dictionaries, the ClickHouse server applies different logic de
 For other sources (ODBC, PostgreSQL, ClickHouse, etc), you can set up a query that will update the dictionaries only if they really changed, rather than each time. To do this, follow these steps:
 
 -   The dictionary table must have a field that always changes when the source data is updated.
--   The settings of the source must specify a query that retrieves the changing field. The ClickHouse server interprets the query result as a row, and if this row has changed relative to its previous state, the dictionary is updated. Specify the query in the `<invalidate_query>` field in the settings for the [source](../../sql-reference/dictionaries/index.md#dictionary-sources).
+-   The settings of the source must specify a query that retrieves the changing field. The ClickHouse server interprets the query result as a row, and if this row has changed relative to its previous state, the dictionary is updated. Specify the query in the `<invalidate_query>` field in the settings for the [source](#dictionary-sources).
 
 Example of settings:
 
@@ -995,7 +995,7 @@ SOURCE(CLICKHOUSE(... update_field 'added_time' update_lag 15))
 ...
 ```
 
-# Dictionary Sources {#dictionary-sources}
+## Dictionary Sources {#dictionary-sources}
 
 <CloudDetails />
 
@@ -1029,7 +1029,7 @@ SOURCE(SOURCE_TYPE(param1 val1 ... paramN valN)) -- Source configuration
 
 The source is configured in the `source` section.
 
-For source types [Local file](#dicts-external_dicts_dict_sources-local_file), [Executable file](#dicts-external_dicts_dict_sources-executable), [HTTP(s)](#dicts-external_dicts_dict_sources-http), [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
+For source types [Local file](#local_file), [Executable file](#executable), [HTTP(s)](#http), [ClickHouse](#clickhouse)
 optional settings are available:
 
 ``` xml
@@ -1053,10 +1053,10 @@ SETTINGS(format_csv_allow_single_quotes = 0)
 
 Types of sources (`source_type`):
 
--   [Local file](#dicts-external_dicts_dict_sources-local_file)
--   [Executable File](#dicts-external_dicts_dict_sources-executable)
--   [Executable Pool](#dicts-external_dicts_dict_sources-executable_pool)
--   [HTTP(s)](#dicts-external_dicts_dict_sources-http)
+-   [Local file](#local_file)
+-   [Executable File](#executable)
+-   [Executable Pool](#executable_pool)
+-   [HTTP(s)](#http)
 -   DBMS
     -   [ODBC](#odbc)
     -   [MySQL](#mysql)
@@ -1098,7 +1098,7 @@ When a dictionary with source `FILE` is created via DDL command (`CREATE DICTION
 
 ## Executable File
 
-Working with executable files depends on [how the dictionary is stored in memory](../../sql-reference/dictionaries/index.md#storig-dictionaries-in-memory). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request to the executable file’s STDIN. Otherwise, ClickHouse starts the executable file and treats its output as dictionary data.
+Working with executable files depends on [how the dictionary is stored in memory](#storig-dictionaries-in-memory). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request to the executable file’s STDIN. Otherwise, ClickHouse starts the executable file and treats its output as dictionary data.
 
 Example of settings:
 
@@ -1162,7 +1162,7 @@ That dictionary source can be configured only via XML configuration. Creating di
 
 ## Http(s)
 
-Working with an HTTP(s) server depends on [how the dictionary is stored in memory](../../sql-reference/dictionaries/index.md#storig-dictionaries-in-memory). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request via the `POST` method.
+Working with an HTTP(s) server depends on [how the dictionary is stored in memory](#storig-dictionaries-in-memory). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request via the `POST` method.
 
 Example of settings:
 
@@ -1463,7 +1463,7 @@ Setting fields:
 -   `db` – Name of the database. Omit it if the database name is set in the `<connection_string>` parameters.
 -   `table` – Name of the table and schema if exists.
 -   `connection_string` – Connection string.
--   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../sql-reference/dictionaries/index.md#dictionary-updates).
+-   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](#dictionary-updates).
 -   `query` – The custom query. Optional parameter.
 
 :::note
@@ -1539,7 +1539,7 @@ Setting fields:
 
 -   `where` – The selection criteria. The syntax for conditions is the same as for `WHERE` clause in MySQL, for example, `id > 10 AND id < 20`. Optional parameter.
 
--   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../sql-reference/dictionaries/index.md#dictionary-updates).
+-   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](#dictionary-updates).
 
 -   `fail_on_connection_loss` – The configuration parameter that controls behavior of the server on connection loss. If `true`, an exception is thrown immediately if the connection between client and server was lost. If `false`, the ClickHouse server retries to execute the query three times before throwing an exception. Note that retrying leads to increased response times. Default value: `false`.
 
@@ -1636,7 +1636,7 @@ Setting fields:
 -   `db` – Name of the database.
 -   `table` – Name of the table.
 -   `where` – The selection criteria. May be omitted.
--   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../sql-reference/dictionaries/index.md#dictionary-updates).
+-   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](#dictionary-updates).
 -   `secure` - Use ssl for connection.
 -   `query` – The custom query. Optional parameter.
 
@@ -1808,7 +1808,7 @@ Setting fields:
 -   `db` – Name of the database.
 -   `table` – Name of the table.
 -   `where` – The selection criteria. The syntax for conditions is the same as for `WHERE` clause in PostgreSQL. For example, `id > 10 AND id < 20`. Optional parameter.
--   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../sql-reference/dictionaries/index.md#dictionary-updates).
+-   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](#dictionary-updates).
 -   `query` – The custom query. Optional parameter.
 
 :::note
@@ -1832,7 +1832,7 @@ LAYOUT(FLAT())
 LIFETIME(0);
 ```
 
-# Dictionary Key and Fields {#dictionary-key-and-fields}
+## Dictionary Key and Fields {#dictionary-key-and-fields}
 
 <CloudDetails />
 
@@ -1859,8 +1859,8 @@ XML description:
 
 Attributes are described in the elements:
 
--   `<id>` — [Key column](../../sql-reference/dictionaries/index.md#dictionary-key-and-fields#ext_dict_structure-key).
--   `<attribute>` — [Data column](../../sql-reference/dictionaries/index.md#dictionary-key-and-fields#ext_dict_structure-attributes). There can be a multiple number of attributes.
+-   `<id>` — Key column
+-   `<attribute>` — Data column: there can be a multiple number of attributes.
 
 DDL query:
 
@@ -1875,8 +1875,8 @@ PRIMARY KEY Id
 
 Attributes are described in the query body:
 
--   `PRIMARY KEY` — [Key column](../../sql-reference/dictionaries/index.md#dictionary-key-and-fields#ext_dict_structure-key)
--   `AttrName AttrType` — [Data column](../../sql-reference/dictionaries/index.md#dictionary-key-and-fields#ext_dict_structure-attributes). There can be a multiple number of attributes.
+-   `PRIMARY KEY` — Key column
+-   `AttrName AttrType` — Data column. There can be a multiple number of attributes.
 
 ## Key
 
@@ -1922,13 +1922,13 @@ PRIMARY KEY Id
 
 ### Composite Key
 
-The key can be a `tuple` from any types of fields. The [layout](../../sql-reference/dictionaries/index.md#storig-dictionaries-in-memory) in this case must be `complex_key_hashed` or `complex_key_cache`.
+The key can be a `tuple` from any types of fields. The [layout](#storig-dictionaries-in-memory) in this case must be `complex_key_hashed` or `complex_key_cache`.
 
 :::tip
 A composite key can consist of a single element. This makes it possible to use a string as the key, for instance.
 :::
 
-The key structure is set in the element `<key>`. Key fields are specified in the same format as the dictionary [attributes](../../sql-reference/dictionaries/index.md#dictionary-key-and-fields). Example:
+The key structure is set in the element `<key>`. Key fields are specified in the same format as the dictionary [attributes](#dictionary-key-and-fields). Example:
 
 ``` xml
 <structure>
@@ -1992,14 +1992,14 @@ Configuration fields:
 | Tag                                                  | Description                                                                                                                                                                                                                                                                                                                                     | Required |
 |------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------|
 | `name`                                               | Column name.                                                                                                                                                                                                                                                                                                                                    | Yes      |
-| `type`                                               | ClickHouse data type: [UInt8](../../sql-reference/data-types/int-uint.md), [UInt16](../../sql-reference/data-types/int-uint.md), [UInt32](../../sql-reference/data-types/int-uint.md), [UInt64](../../sql-reference/data-types/int-uint.md), [Int8](../../sql-reference/data-types/int-uint.md), [Int16](../../sql-reference/data-types/int-uint.md), [Int32](../../sql-reference/data-types/int-uint.md), [Int64](../../sql-reference/data-types/int-uint.md), [Float32](../../sql-reference/data-types/float.md), [Float64](../../sql-reference/data-types/float.md), [UUID](../../sql-reference/data-types/uuid.md), [Decimal32](../../sql-reference/data-types/decimal.md), [Decimal64](../../sql-reference/data-types/decimal.md), [Decimal128](../../sql-reference/data-types/decimal.md), [Decimal256](../../sql-reference/data-types/decimal.md),[Date](../../sql-reference/data-types/date), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md), [String](../../sql-reference/data-types/string.md), [Array](../../sql-reference/data-types/array.md).<br/>ClickHouse tries to cast value from dictionary to the specified data type. For example, for MySQL, the field might be `TEXT`, `VARCHAR`, or `BLOB` in the MySQL source table, but it can be uploaded as `String` in ClickHouse.<br/>[Nullable](../../sql-reference/data-types/nullable.md) is currently supported for [Flat](#flat), [Hashed](#dicts-external_dicts_dict_layout-hashed), [ComplexKeyHashed](#complex-key-hashed), [Direct](#direct), [ComplexKeyDirect](#complex-key-direct), [RangeHashed](#range-hashed), Polygon, [Cache](#cache), [ComplexKeyCache](#complex-key-cache), [SSDCache](#ssd-cache), [SSDComplexKeyCache](#complex-key-ssd-cache) dictionaries. In [IPTrie](#ip-trie) dictionaries `Nullable` types are not supported.       | Yes      |
+| `type`                                               | ClickHouse data type: [UInt8](../../sql-reference/data-types/int-uint.md), [UInt16](../../sql-reference/data-types/int-uint.md), [UInt32](../../sql-reference/data-types/int-uint.md), [UInt64](../../sql-reference/data-types/int-uint.md), [Int8](../../sql-reference/data-types/int-uint.md), [Int16](../../sql-reference/data-types/int-uint.md), [Int32](../../sql-reference/data-types/int-uint.md), [Int64](../../sql-reference/data-types/int-uint.md), [Float32](../../sql-reference/data-types/float.md), [Float64](../../sql-reference/data-types/float.md), [UUID](../../sql-reference/data-types/uuid.md), [Decimal32](../../sql-reference/data-types/decimal.md), [Decimal64](../../sql-reference/data-types/decimal.md), [Decimal128](../../sql-reference/data-types/decimal.md), [Decimal256](../../sql-reference/data-types/decimal.md),[Date](../../sql-reference/data-types/date), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md), [String](../../sql-reference/data-types/string.md), [Array](../../sql-reference/data-types/array.md).<br/>ClickHouse tries to cast value from dictionary to the specified data type. For example, for MySQL, the field might be `TEXT`, `VARCHAR`, or `BLOB` in the MySQL source table, but it can be uploaded as `String` in ClickHouse.<br/>[Nullable](../../sql-reference/data-types/nullable.md) is currently supported for [Flat](#flat), [Hashed](#hashed), [ComplexKeyHashed](#complex_key_hashed), [Direct](#direct), [ComplexKeyDirect](#complex-key-direct), [RangeHashed](#range_hashed), Polygon, [Cache](#cache), [ComplexKeyCache](#complex_key_cache), [SSDCache](#ssd-cache), [SSDComplexKeyCache](#complex-key-ssd_cache) dictionaries. In [IPTrie](#ip_trie) dictionaries `Nullable` types are not supported.       | Yes      |
 | `null_value`                                         | Default value for a non-existing element.<br/>In the example, it is an empty string. [NULL](../syntax.md#null-literal) value can be used only for the `Nullable` types (see the previous line with types description).                                                                                                                                                                                                                       | Yes      |
 | `expression`                                         | [Expression](../../sql-reference/syntax.md#syntax-expressions) that ClickHouse executes on the value.<br/>The expression can be a column name in the remote SQL database. Thus, you can use it to create an alias for the remote column.<br/><br/>Default value: no expression.                                                              | No       |
-| <a name="hierarchical-dict-attr"></a> `hierarchical` | If `true`, the attribute contains the value of a parent key for the current key. See [Hierarchical Dictionaries](../../sql-reference/dictionaries/index.md#hierarchical-dictionaries).<br/><br/>Default value: `false`.                                                                                               | No       |
+| <a name="hierarchical-dict-attr"></a> `hierarchical` | If `true`, the attribute contains the value of a parent key for the current key. See [Hierarchical Dictionaries](#hierarchical-dictionaries).<br/><br/>Default value: `false`.                                                                                               | No       |
 | `injective`                                          | Flag that shows whether the `id -> attribute` image is [injective](https://en.wikipedia.org/wiki/Injective_function).<br/>If `true`, ClickHouse can automatically place after the `GROUP BY` clause the requests to dictionaries with injection. Usually it significantly reduces the amount of such requests.<br/><br/>Default value: `false`. | No       |
 | `is_object_id`                                       | Flag that shows whether the query is executed for a MongoDB document by `ObjectID`.<br/><br/>Default value: `false`.
 
-# Hierarchical Dictionaries {#hierarchical-dictionaries}
+## Hierarchical Dictionaries {#hierarchical-dictionaries}
 
 ClickHouse supports hierarchical dictionaries with a [numeric key](#numeric-key).
 
@@ -2031,7 +2031,7 @@ This hierarchy can be expressed as the following dictionary table.
 
 This table contains a column `parent_region` that contains the key of the nearest parent for the element.
 
-ClickHouse supports the [hierarchical](../../sql-reference/dictionaries/index.md#dictionary-key-and-fields#hierarchical-dict-attr) property for [external dictionary](../../sql-reference/dictionaries/external-dictionaries/) attributes. This property allows you to configure the hierarchical dictionary similar to described above.
+ClickHouse supports the [hierarchical](#dictionary-key-and-fields#hierarchical-dict-attr) property for [external dictionary](../../sql-reference/dictionaries/external-dictionaries/) attributes. This property allows you to configure the hierarchical dictionary similar to described above.
 
 The [dictGetHierarchy](../../sql-reference/functions/ext-dict-functions.md#dictgethierarchy) function allows you to get the parent chain of an element.
 
@@ -2061,7 +2061,7 @@ For our example, the structure of dictionary can be the following:
 </dictionary>
 ```
 
-# Polygon dictionaries {#polygon-dictionaries}
+## Polygon dictionaries {#polygon-dictionaries}
 
 Polygon dictionaries allow you to efficiently search for the polygon containing specified points.
 For example: defining a city area by geographical coordinates.
@@ -2122,9 +2122,9 @@ When configuring the polygon dictionary, the key must have one of two types:
 
 Points can be specified as an array or a tuple of their coordinates. In the current implementation, only two-dimensional points are supported.
 
-The user can [upload their own data](../../sql-reference/dictionaries/index.md#dictionary-sources) in all formats supported by ClickHouse.
+The user can [upload their own data](#dictionary-sources) in all formats supported by ClickHouse.
 
-There are 3 types of [in-memory storage](../../sql-reference/dictionaries/index.md#storig-dictionaries-in-memory) available:
+There are 3 types of [in-memory storage](#storig-dictionaries-in-memory) available:
 
 -   `POLYGON_SIMPLE`. This is a naive implementation, where a linear pass through all polygons is made for each query, and membership is checked for each one without using additional indexes.
 
@@ -2192,7 +2192,7 @@ Result:
 └─────────────────────────────────┴───────┘
 ```
 
-# RegExp Tree Dictionary {#regexp-tree-dictionary}
+## RegExp Tree Dictionary {#regexp-tree-dictionary}
 
 Regexp Tree dictionary stores multiple trees of regular expressions with attributions. Users can retrieve strings in the dictionary. If a string matches the root of the regexp tree, we will collect the corresponding attributes of the matched root and continue to walk the children. If any of the children matches the string, we will collect attributes and rewrite the old ones if conflicts occur, then continue the traverse until we reach leaf nodes.
 
@@ -2263,7 +2263,7 @@ Result:
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-# Embedded Dictionaries {#embedded-dictionaries}
+## Embedded Dictionaries {#embedded-dictionaries}
 
 <SelfManaged />
 
