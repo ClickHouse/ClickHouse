@@ -253,7 +253,7 @@ def get_processlist_with_stacktraces(args):
             -- NOTE: view() here to do JOIN on shards, instead of initiator
             FROM clusterAllReplicas('test_cluster_database_replicated', view(
                 SELECT
-                    groupArray((s.thread_id, arrayStringConcat(arrayMap(
+                    arrayStringConcat(groupArray('Thread ID ' || toString(s.thread_id) || '\n' || arrayStringConcat(arrayMap(
                         x -> concat(addressToLine(x), '::', demangle(addressToSymbol(x))),
                         s.trace), '\n') AS stacktrace
                     )) AS stacktraces,
@@ -274,7 +274,7 @@ def get_processlist_with_stacktraces(args):
                 args,
                 """
             SELECT
-                groupArray((s.thread_id, arrayStringConcat(arrayMap(
+                arrayStringConcat(groupArray('Thread ID ' || toString(s.thread_id) || '\n' || arrayStringConcat(arrayMap(
                     x -> concat(addressToLine(x), '::', demangle(addressToSymbol(x))),
                     s.trace), '\n') AS stacktrace
                 )) AS stacktraces,
