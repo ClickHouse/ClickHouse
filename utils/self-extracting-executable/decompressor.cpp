@@ -168,23 +168,9 @@ int decompress(char * input, char * output, off_t start, off_t end, size_t max_n
     return 0;
 }
 
-bool getSudoIDs(uid_t &sudo_uid, uid_t &sudo_gid)
+bool isSudo()
 {
-    sudo_uid = 0;
-    sudo_gid = 0;
-
-    if (getuid() || geteuid() || getenv("SUDO_USER") == nullptr || getenv("SUDO_UID") == nullptr || getenv("SUDO_GID") == nullptr)
-        return false;
-
-    char * str_end;
-    long id = strtol(getenv("SUDO_UID"), &str_end, 10);
-    if (*str_end == 0)
-        sudo_uid = static_cast<uid_t>(id);
-    id = strtol(getenv("SUDO_GID"), &str_end, 10);
-    if (*str_end == 0)
-        sudo_gid = static_cast<uid_t>(id);
-
-    return true;
+    return getuid() == 0 && geteuid() == 0 && getenv("SUDO_USER") && getenv("SUDO_UID") && getenv("SUDO_GID");
 }
 
 /// Read data about files and decomrpess them.
@@ -238,9 +224,7 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
         return 1;
     }
 
-    uid_t sudo_uid = 0;
-    uid_t sudo_gid = 0;
-    getSudoIDs(sudo_uid, sudo_gid);
+    bool is_sudo = isSudo();
 
     FileData file_info;
     /// Decompress files with appropriate file names
@@ -342,8 +326,8 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
         if (0 != close(output_fd))
             perror("close");
 
-        if (sudo_uid && sudo_gid)
-            chown(file_name, sudo_uid, sudo_gid);
+        if (is_sudo)
+            chown(file_name, info_in.st_uid, info_in.st_gid);
     }
 
     if (0 != munmap(input, info_in.st_size))
@@ -557,8 +541,8 @@ int main(int/* argc*/, char* argv[])
             return 1;
         }
 
-        if (uid_t sudo_uid = 0, sudo_gid = 0; getSudoIDs(sudo_uid, sudo_gid))
-            chown(static_cast<char *>(self), sudo_uid, sudo_gid);
+        if (isSudo())
+            chown(static_cast<char *>(self), input_info.st_uid, input_info.st_gid);
 
         if (has_exec)
         {
