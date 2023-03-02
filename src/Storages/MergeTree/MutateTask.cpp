@@ -165,6 +165,8 @@ static void splitAndModifyMutationCommands(
             {
                 if (command.type == MutationCommand::Type::READ_COLUMN)
                     for_interpreter.push_back(command);
+                else if (command.type == MutationCommand::Type::RENAME_COLUMN)
+                    part_columns.rename(command.column_name, command.rename_to);
 
                 for_file_renames.push_back(command);
             }

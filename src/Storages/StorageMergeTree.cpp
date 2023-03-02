@@ -319,6 +319,24 @@ void StorageMergeTree::alter(
     }
     else
     {
+        if (!maybe_mutation_commands.empty() && maybe_mutation_commands.containBarrierCommand())
+        {
+            int64_t prev_mutation = 0;
+            {
+                std::lock_guard lock(currently_processing_in_background_mutex);
+                auto it = current_mutations_by_version.rbegin();
+                if (it != current_mutations_by_version.rend())
+                    prev_mutation = it->first;
+            }
+
+            if (prev_mutation != 0)
+            {
+                LOG_DEBUG(log, "Cannot change metadata with barrier alter query, will wait for mutation {}", prev_mutation);
+                waitForMutation(prev_mutation);
+                LOG_DEBUG(log, "Mutation {} finished", prev_mutation);
+            }
+        }
+
         {
             changeSettings(new_metadata.settings_changes, table_lock_holder);
             checkTTLExpressions(new_metadata, old_metadata);
