@@ -76,7 +76,7 @@ cat <<EOT > /etc/docker/daemon.json
 EOT
 
 # Increase the limit on number of virtual memory mappings to aviod 'Cannot mmap' error
-sysctl -w vm.max_map_count=2097152
+echo "vm.max_map_count = 2097152" > /etc/sysctl.d/01-increase-map-counts.conf
 
 systemctl restart docker
 
