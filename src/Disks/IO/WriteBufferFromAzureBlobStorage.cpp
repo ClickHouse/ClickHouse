@@ -6,7 +6,6 @@
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Common/Throttler.h>
-#include <IO/ResourceGuard.h>
 
 
 namespace ProfileEvents
@@ -41,13 +40,10 @@ WriteBufferFromAzureBlobStorage::~WriteBufferFromAzureBlobStorage()
     finalize();
 }
 
-void WriteBufferFromAzureBlobStorage::execWithRetry(std::function<void()> func, size_t num_tries, size_t cost)
+void WriteBufferFromAzureBlobStorage::execWithRetry(std::function<void()> func, size_t num_tries)
 {
-    auto handle_exception = [&, this](const auto & e, size_t i)
+    auto handle_exception = [&](const auto & e, size_t i)
     {
-        if (cost)
-            write_settings.resource_link.accumulate(cost); // Accumulate resource for later use, because we have failed to consume it
-
         if (i == num_tries - 1)
             throw;
 
@@ -58,7 +54,6 @@ void WriteBufferFromAzureBlobStorage::execWithRetry(std::function<void()> func, 
     {
         try
         {
-            ResourceGuard rlock(write_settings.resource_link, cost); // Note that zero-cost requests are ignored
             func();
             break;
         }
@@ -69,12 +64,6 @@ void WriteBufferFromAzureBlobStorage::execWithRetry(std::function<void()> func, 
         catch (const Azure::Core::RequestFailedException & e)
         {
             handle_exception(e, i);
-        }
-        catch (...)
-        {
-            if (cost)
-                write_settings.resource_link.accumulate(cost); // We assume no resource was used in case of failure
-            throw;
         }
     }
 }
@@ -98,7 +87,7 @@ void WriteBufferFromAzureBlobStorage::uploadBlock(const char * data, size_t size
     const std::string & block_id = block_ids.emplace_back(getRandomASCIIString(64));
 
     Azure::Core::IO::MemoryBodyStream memory_stream(reinterpret_cast<const uint8_t *>(data), size);
-    execWithRetry([&](){ block_blob_client.StageBlock(block_id, memory_stream); }, DEFAULT_RETRY_NUM, size);
+    execWithRetry([&](){ block_blob_client.StageBlock(block_id, memory_stream); }, DEFAULT_RETRY_NUM);
     tmp_buffer_write_offset = 0;
 
     LOG_TRACE(log, "Staged block (id: {}) of size {} (blob path: {}).", block_id, size, blob_path);

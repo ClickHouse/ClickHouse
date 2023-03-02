@@ -66,8 +66,7 @@ terminate-and-exit() {
   INSTANCE_ID=$(ec2metadata --instance-id)
   # We execute it with at to not have it as an orphan process
   # GH Runners kill all remain processes
-  echo "sleep 10; aws ec2 terminate-instances --instance-ids $INSTANCE_ID" | at now || \
-    aws ec2 terminate-instances --instance-ids "$INSTANCE_ID"  # workaround for complete out of space
+  echo "sleep 10; aws ec2 terminate-instances --instance-ids $INSTANCE_ID" | at now
   exit 0
 }
 

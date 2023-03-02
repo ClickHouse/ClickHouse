@@ -6,6 +6,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Processors/Transforms/buildPushingToViewsChain.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <IO/ConnectionTimeoutsContext.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
 #include <Interpreters/QueryLog.h>
@@ -449,8 +450,8 @@ BlockIO InterpreterInsertQuery::execute()
                     {
                         /// Change query sample block columns to Nullable to allow inserting nullable columns, where NULL values will be substituted with
                         /// default column values (in AddingDefaultsTransform), so all values will be cast correctly.
-                        if (isNullableOrLowCardinalityNullable(input_columns[col_idx].type) && !isNullableOrLowCardinalityNullable(query_columns[col_idx].type) && output_columns.has(query_columns[col_idx].name))
-                            query_sample_block.setColumn(col_idx, ColumnWithTypeAndName(makeNullableOrLowCardinalityNullable(query_columns[col_idx].column), makeNullableOrLowCardinalityNullable(query_columns[col_idx].type), query_columns[col_idx].name));
+                        if (input_columns[col_idx].type->isNullable() && !query_columns[col_idx].type->isNullable() && output_columns.hasDefault(query_columns[col_idx].name))
+                            query_sample_block.setColumn(col_idx, ColumnWithTypeAndName(makeNullable(query_columns[col_idx].column), makeNullable(query_columns[col_idx].type), query_columns[col_idx].name));
                     }
                 }
             }
@@ -540,11 +541,7 @@ BlockIO InterpreterInsertQuery::execute()
         if (query.hasInlinedData() && !async_insert)
         {
             /// can execute without additional data
-            auto format = getInputFormatFromASTInsertQuery(query_ptr, true, query_sample_block, getContext(), nullptr);
-            for (auto && buffer : owned_buffers)
-                format->addBuffer(std::move(buffer));
-
-            auto pipe = getSourceFromInputFormat(query_ptr, std::move(format), getContext(), nullptr);
+            auto pipe = getSourceFromASTInsertQuery(query_ptr, true, query_sample_block, getContext(), nullptr);
             res.pipeline.complete(std::move(pipe));
         }
     }
@@ -564,8 +561,10 @@ StorageID InterpreterInsertQuery::getDatabaseTable() const
     return query_ptr->as<ASTInsertQuery &>().table_id;
 }
 
+
 void InterpreterInsertQuery::extendQueryLogElemImpl(QueryLogElement & elem, ContextPtr context_)
 {
+    elem.query_kind = "Insert";
     const auto & insert_table = context_->getInsertionTable();
     if (!insert_table.empty())
     {

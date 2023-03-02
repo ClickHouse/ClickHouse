@@ -468,10 +468,6 @@ bool MergeTreeConditionFullText::traverseTreeEquals(
                 {
                     key_column_num = map_keys_key_column_num;
                     key_exists = true;
-
-                    auto const_data_type = WhichDataType(const_type);
-                    if (!const_data_type.isStringOrFixedString() && !const_data_type.isArray())
-                        return false;
                 }
                 else
                 {
@@ -638,15 +634,12 @@ bool MergeTreeConditionFullText::tryPrepareSetBloomFilter(
         return false;
 
     auto prepared_set = right_argument.tryGetPreparedSet(data_types);
-    if (!prepared_set || !prepared_set->hasExplicitSetElements())
+    if (!prepared_set)
         return false;
 
-    for (const auto & prepared_set_data_type : prepared_set->getDataTypes())
-    {
-        auto prepared_set_data_type_id = prepared_set_data_type->getTypeId();
-        if (prepared_set_data_type_id != TypeIndex::String && prepared_set_data_type_id != TypeIndex::FixedString)
+    for (const auto & data_type : prepared_set->getDataTypes())
+        if (data_type->getTypeId() != TypeIndex::String && data_type->getTypeId() != TypeIndex::FixedString)
             return false;
-    }
 
     std::vector<std::vector<BloomFilter>> bloom_filters;
     std::vector<size_t> key_position;
@@ -740,7 +733,7 @@ void bloomFilterIndexValidator(const IndexDescription & index, bool /*attach*/)
             const auto & array_type = assert_cast<const DataTypeArray &>(*index_data_type);
             data_type = WhichDataType(array_type.getNestedType());
         }
-        else if (data_type.isLowCardinality())
+        else if (data_type.isLowCarnality())
         {
             const auto & low_cardinality = assert_cast<const DataTypeLowCardinality &>(*index_data_type);
             data_type = WhichDataType(low_cardinality.getDictionaryType());

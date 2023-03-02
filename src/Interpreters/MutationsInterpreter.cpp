@@ -17,7 +17,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Transforms/CheckSortedTransform.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
@@ -33,11 +33,6 @@
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Processors/Sources/ThrowingExceptionSource.h>
-#include <Analyzer/QueryTreeBuilder.h>
-#include <Analyzer/QueryTreePassManager.h>
-#include <Analyzer/QueryNode.h>
-#include <Analyzer/TableNode.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 
 
 namespace DB
@@ -202,7 +197,7 @@ bool isStorageTouchedByMutations(
     MergeTreeData::DataPartPtr source_part,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
-    ContextPtr context)
+    ContextMutablePtr context_copy)
 {
     if (commands.empty())
         return false;
@@ -215,7 +210,7 @@ bool isStorageTouchedByMutations(
 
         if (command.partition)
         {
-            const String partition_id = storage.getPartitionIDFromQuery(command.partition, context);
+            const String partition_id = storage.getPartitionIDFromQuery(command.partition, context_copy);
             if (partition_id == source_part->info.partition_id)
                 all_commands_can_be_skipped = false;
         }
@@ -226,36 +221,28 @@ bool isStorageTouchedByMutations(
     if (all_commands_can_be_skipped)
         return false;
 
+    /// We must read with one thread because it guarantees that
+    /// output stream will be sorted after reading from MergeTree parts.
+    /// Disable all settings that can enable reading with several streams.
+    context_copy->setSetting("max_streams_to_max_threads_ratio", 1);
+    context_copy->setSetting("max_threads", 1);
+    context_copy->setSetting("allow_asynchronous_read_from_io_pool_for_merge_tree", false);
+    context_copy->setSetting("max_streams_for_merge_tree_reading", Field(0));
+
+    ASTPtr select_query = prepareQueryAffectedAST(commands, storage.shared_from_this(), context_copy);
+
     auto storage_from_part = std::make_shared<StorageFromMergeTreeDataPart>(source_part);
 
-    std::optional<InterpreterSelectQuery> interpreter_select_query;
-    BlockIO io;
-
-    ASTPtr select_query = prepareQueryAffectedAST(commands, storage.shared_from_this(), context);
-
-    if (context->getSettingsRef().allow_experimental_analyzer)
-    {
-        InterpreterSelectQueryAnalyzer interpreter(select_query,
-            context,
-            storage_from_part,
-            SelectQueryOptions().ignoreLimits().ignoreProjections());
-        io = interpreter.execute();
-    }
-    else
-    {
-        /// Interpreter must be alive, when we use result of execute() method.
-        /// For some reason it may copy context and give it into ExpressionTransform
-        /// after that we will use context from destroyed stack frame in our stream.
-        interpreter_select_query.emplace(
-            select_query, context, storage_from_part, metadata_snapshot, SelectQueryOptions().ignoreLimits().ignoreProjections());
-
-        io = interpreter_select_query->execute();
-    }
-
-    PullingAsyncPipelineExecutor executor(io.pipeline);
+    /// Interpreter must be alive, when we use result of execute() method.
+    /// For some reason it may copy context and give it into ExpressionTransform
+    /// after that we will use context from destroyed stack frame in our stream.
+    InterpreterSelectQuery interpreter(
+        select_query, context_copy, storage_from_part, metadata_snapshot, SelectQueryOptions().ignoreLimits().ignoreProjections());
+    auto io = interpreter.execute();
+    PullingPipelineExecutor executor(io.pipeline);
 
     Block block;
-    while (block.rows() == 0 && executor.pull(block));
+    while (executor.pull(block)) {}
 
     if (!block.rows())
         return false;

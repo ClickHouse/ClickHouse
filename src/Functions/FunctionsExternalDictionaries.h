@@ -182,7 +182,7 @@ public:
 
         if (!isString(arguments[0]))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of first argument of function {}, expected a string",
+                "Illegal type {} of first argument of function, expected a string",
                 arguments[0]->getName(),
                 getName());
 
@@ -416,7 +416,7 @@ public:
 
             if (!(range_col_type->isValueRepresentedByInteger() && range_col_type->getSizeOfValueInMemory() <= sizeof(Int64)))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                    "Illegal type {} of fourth argument of function {} must be convertible to Int64.",
+                    "Illegal type {} of fourth argument of function must be convertible to Int64.",
                     range_col_type->getName(),
                     getName());
 

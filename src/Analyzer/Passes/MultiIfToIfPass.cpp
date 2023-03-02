@@ -10,22 +10,15 @@ namespace DB
 namespace
 {
 
-class MultiIfToIfVisitor : public InDepthQueryTreeVisitorWithContext<MultiIfToIfVisitor>
+class MultiIfToIfVisitor : public InDepthQueryTreeVisitor<MultiIfToIfVisitor>
 {
 public:
-    using Base = InDepthQueryTreeVisitorWithContext<MultiIfToIfVisitor>;
-    using Base::Base;
-
-    explicit MultiIfToIfVisitor(FunctionOverloadResolverPtr if_function_ptr_, ContextPtr context)
-        : Base(std::move(context))
-        , if_function_ptr(std::move(if_function_ptr_))
+    explicit MultiIfToIfVisitor(FunctionOverloadResolverPtr if_function_ptr_)
+        : if_function_ptr(if_function_ptr_)
     {}
 
     void visitImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_multiif_to_if)
-            return;
-
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || function_node->getFunctionName() != "multiIf")
             return;
@@ -45,8 +38,7 @@ private:
 
 void MultiIfToIfPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
-    auto if_function_ptr = FunctionFactory::instance().get("if", context);
-    MultiIfToIfVisitor visitor(std::move(if_function_ptr), std::move(context));
+    MultiIfToIfVisitor visitor(FunctionFactory::instance().get("if", context));
     visitor.visit(query_tree_node);
 }
 

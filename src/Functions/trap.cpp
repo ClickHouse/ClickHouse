@@ -27,7 +27,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int CANNOT_DLOPEN;
-    extern const int LOGICAL_ERROR;
 }
 
 
@@ -174,10 +173,6 @@ public:
                 void * handle = dlopen("libc.so.6", RTLD_NOW);
                 if (!handle)
                     throw Exception(ErrorCodes::CANNOT_DLOPEN, "Cannot dlopen: ({})", dlerror()); // NOLINT(concurrency-mt-unsafe) // MT-Safe on Linux, see man dlerror
-            }
-            else if (mode == "logical error")
-            {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: trap");
             }
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown trap mode");
