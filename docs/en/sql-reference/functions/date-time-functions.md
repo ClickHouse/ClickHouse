@@ -1126,7 +1126,7 @@ Rounds the time to the half hour.
 
 ## toYYYYMM
 
-Converts a date or date with time to a UInt32 number containing the year and month number (YYYY \* 100 + MM). Accepts a second optional timezone argument.  If provided, the timezone must be a string constant.
+Converts a date or date with time to a UInt32 number containing the year and month number (YYYY \* 100 + MM). Accepts a second optional timezone argument. If provided, the timezone must be a string constant.
 
 ### example
 ```sql
