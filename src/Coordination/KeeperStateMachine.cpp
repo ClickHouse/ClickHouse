@@ -341,7 +341,7 @@ void KeeperStateMachine::rollbackRequest(const KeeperStorage::RequestForSession 
 nuraft::ptr<nuraft::snapshot> KeeperStateMachine::last_snapshot()
 {
     /// Just return the latest snapshot.
-    std::lock_guard<std::mutex> lock(snapshots_lock);
+    std::lock_guard lock(snapshots_lock);
     return latest_snapshot_meta;
 }
 
