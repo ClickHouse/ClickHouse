@@ -126,6 +126,7 @@ public:
         size_t subquery_depth;
         const NamesAndTypesList & source_columns;
         PreparedSetsPtr prepared_sets;
+        PreparedSetsCachePtr prepared_sets_cache;
         bool no_subqueries;
         bool no_makeset;
         bool only_consts;

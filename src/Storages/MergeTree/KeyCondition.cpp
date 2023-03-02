@@ -1202,6 +1202,13 @@ bool KeyCondition::tryPrepareSetIndex(
     for (size_t i = 0; i < indexes_mapping.size(); ++i)
         prepared_set->checkTypesEqual(indexes_mapping[i].tuple_index, data_types[i]);
 
+    /// Do not use index for large sets. Because building MergeTreeSetIndex consumes several times more memory than the set itself.
+    /// TODO: make this limit configurable?
+    /// TODO: consider adding range from min to max values from the prepared set.
+    if (//prepared_set->getTotalRowCount() > 100000000 ||
+        prepared_set->getTotalByteCount() > 400000000)
+        return false;
+
     out.set_index = std::make_shared<MergeTreeSetIndex>(prepared_set->getSetElements(), std::move(indexes_mapping));
 
     return true;

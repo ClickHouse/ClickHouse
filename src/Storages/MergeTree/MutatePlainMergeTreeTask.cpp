@@ -52,6 +52,11 @@ void MutatePlainMergeTreeTask::prepare()
             std::move(profile_counters_snapshot));
     };
 
+    /// Use PreparedSetsCache shared different tasks of this mutation.
+    auto mutation_id = future_part->part_info.mutation;
+    auto prepared_sets_cache_for_mutation = storage.getPreparedSetsCache(mutation_id);
+    task_context->setPreparedSetsCache(prepared_sets_cache_for_mutation);
+
     mutate_task = storage.merger_mutator.mutatePartToTemporaryPart(
             future_part, metadata_snapshot, merge_mutate_entry->commands, merge_list_entry.get(),
             time(nullptr), task_context, merge_mutate_entry->txn, merge_mutate_entry->tagger->reserved_space, table_lock_holder);
