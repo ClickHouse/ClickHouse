@@ -54,6 +54,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <Processors/QueryPlan/QueryIdHolder.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/Freeze.h>
@@ -7781,6 +7782,25 @@ void MergeTreeData::removeQueryIdNoLock(const String & query_id) const
         LOG_WARNING(log, "We have query_id removed but it's not recorded. This is a bug");
     else
         query_id_set.erase(query_id);
+}
+
+std::shared_ptr<QueryIdHolder> MergeTreeData::getQueryIdHolder(const String & query_id, UInt64 max_concurrent_queries) const
+{
+    auto lock = std::lock_guard<std::mutex>(query_id_set_mutex);
+    if (insertQueryIdOrThrowNoLock(query_id, max_concurrent_queries))
+    {
+        try
+        {
+            return std::make_shared<QueryIdHolder>(query_id, *this);
+        }
+        catch (...)
+        {
+            /// If we fail to construct the holder, remove query_id explicitly to avoid leak.
+            removeQueryIdNoLock(query_id);
+            throw;
+        }
+    }
+    return nullptr;
 }
 
 ReservationPtr MergeTreeData::balancedReservation(
