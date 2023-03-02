@@ -8,7 +8,6 @@
 #include <arrow/result.h>
 #include "ArrowBufferedStreams.h"
 #include "CHColumnToArrowColumn.h"
-#include "config.h"
 
 
 namespace DB
@@ -35,7 +34,6 @@ arrow::Compression::type getArrowCompression(FormatSettings::ArrowCompression me
 }
 
 }
-
 
 ArrowBlockOutputFormat::ArrowBlockOutputFormat(WriteBuffer & out_, const Block & header_, bool stream_, const FormatSettings & format_settings_)
     : IOutputFormat(header_, out_)

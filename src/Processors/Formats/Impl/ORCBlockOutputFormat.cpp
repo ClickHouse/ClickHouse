@@ -22,8 +22,6 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
-#include "config.h"
-
 namespace DB
 {
 

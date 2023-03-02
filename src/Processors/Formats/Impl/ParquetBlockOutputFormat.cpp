@@ -14,6 +14,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_EXCEPTION;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -60,7 +61,6 @@ parquet::Compression::type getParquetCompression(FormatSettings::ParquetCompress
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported compression method");
 }
-
 
 }
 
