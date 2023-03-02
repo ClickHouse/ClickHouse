@@ -410,6 +410,8 @@ void GraceHashJoin::initialize(const Block & sample_block)
 
 void GraceHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed)
 {
+    std::shared_lock current_bucket_lock(current_bucket_mutex);
+
     if (block.rows() == 0)
     {
         hash_join->joinBlock(block, not_processed);
@@ -549,7 +551,7 @@ public:
 
 IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
 {
-    std::lock_guard current_bucket_lock(current_bucket_mutex);
+    std::unique_lock current_bucket_lock(current_bucket_mutex);
 
     if (current_bucket == nullptr)
         return nullptr;
