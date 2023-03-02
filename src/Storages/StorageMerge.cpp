@@ -44,6 +44,27 @@
 #include <algorithm>
 
 
+namespace
+{
+
+using namespace DB;
+bool columnIsPhysical(ColumnDefaultKind kind)
+{
+    return kind == ColumnDefaultKind::Default || kind == ColumnDefaultKind::Materialized;
+}
+bool columnDefaultKindHasSameType(ColumnDefaultKind lhs, ColumnDefaultKind rhs)
+{
+    if (lhs == rhs)
+        return true;
+
+    if (columnIsPhysical(lhs) == columnIsPhysical(rhs))
+        return true;
+
+    return false;
+}
+
+}
+
 namespace DB
 {
 
@@ -172,11 +193,13 @@ std::optional<NameSet> StorageMerge::supportedPrewhereColumns() const
 
     NameSet supported_columns;
 
-    std::unordered_map<std::string, std::pair<const IDataType *, std::optional<ColumnDefault>>> column_type_default;
+    std::unordered_map<std::string, std::pair<const IDataType *, ColumnDefaultKind>> column_info;
     for (const auto & name_type : columns.getAll())
     {
-        column_type_default.emplace(name_type.name, std::make_pair(
-            name_type.type.get(), columns.getDefault(name_type.name)));
+        const auto & column_default = columns.getDefault(name_type.name).value_or(ColumnDefault{});
+        column_info.emplace(name_type.name, std::make_pair(
+            name_type.type.get(),
+            column_default.kind));
         supported_columns.emplace(name_type.name);
     }
 
@@ -191,11 +214,10 @@ std::optional<NameSet> StorageMerge::supportedPrewhereColumns() const
         const auto & table_columns = table_metadata_ptr->getColumns();
         for (const auto & column : table_columns.getAll())
         {
-            const auto & root_type_default = column_type_default[column.name];
-            const IDataType * root_type = root_type_default.first;
-            const std::optional<ColumnDefault> & src_default = root_type_default.second;
+            const auto & column_default = table_columns.getDefault(column.name).value_or(ColumnDefault{});
+            const auto & [root_type, src_default_kind] = column_info[column.name];
             if ((root_type && !root_type->equals(*column.type)) ||
-                src_default != table_columns.getDefault(column.name))
+                !columnDefaultKindHasSameType(src_default_kind, column_default.kind))
             {
                 supported_columns.erase(column.name);
             }
@@ -362,7 +384,7 @@ ReadFromMerge::ReadFromMerge(
     const SelectQueryInfo & query_info_,
     ContextMutablePtr context_,
     QueryProcessingStage::Enum processed_stage)
-    : ISourceStep(DataStream{.header = common_header_})
+    : SourceStepWithFilter(DataStream{.header = common_header_})
     , required_max_block_size(max_block_size)
     , requested_num_streams(num_streams)
     , common_header(std::move(common_header_))
@@ -669,7 +691,11 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
             return {};
 
         if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(plan.getRootNode()->step.get()))
-            read_from_merge_tree->addFilterNodes(added_filter_nodes);
+        {
+            size_t filters_dags_size = filter_dags.size();
+            for (size_t i = 0; i < filters_dags_size; ++i)
+                read_from_merge_tree->addFilter(filter_dags[i], filter_nodes.nodes[i]);
+        }
 
         builder = plan.buildQueryPipeline(
             QueryPlanOptimizationSettings::fromContext(modified_context),

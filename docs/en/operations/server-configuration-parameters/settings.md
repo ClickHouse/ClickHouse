@@ -467,7 +467,7 @@ Port for exchanging data between ClickHouse servers.
 
 The hostname that can be used by other servers to access this server.
 
-If omitted, it is defined in the same way as the `hostname-f` command.
+If omitted, it is defined in the same way as the `hostname -f` command.
 
 Useful for breaking away from a specific network interface.
 
@@ -1539,32 +1539,102 @@ Example
 <postgresql_port>9005</postgresql_port>
 ```
 
+
 ## tmp_path {#tmp-path}
 
-Path to temporary data for processing large queries.
+Path on the local filesystem to store temporary data for processing large queries.
 
 :::note
-The trailing slash is mandatory.
+- Only one option can be used to configure temporary data storage: `tmp_path` ,`tmp_policy`, `temporary_data_in_cache`.
+- The trailing slash is mandatory.
 :::
 
 **Example**
 
-``` xml
+```xml
 <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
 ```
 
 ## tmp_policy {#tmp-policy}
 
-Policy from [storage_configuration](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) to store temporary files.
-
-If not set, [tmp_path](#tmp-path) is used, otherwise it is ignored.
+Alternatively, a policy from [storage_configuration](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) can be used to store temporary files.
 
 :::note
-- `move_factor` is ignored.
-- `keep_free_space_bytes` is ignored.
-- `max_data_part_size_bytes` is ignored.
-- Policy should have exactly one volume with local disks.
+- Only one option can be used to configure temporary data storage: `tmp_path` ,`tmp_policy`, `temporary_data_in_cache`.
+- `move_factor`, `keep_free_space_bytes`,`max_data_part_size_bytes` and are ignored.
+- Policy should have exactly *one volume* with *local* disks.
 :::
+
+**Example**
+
+```xml<clickhouse>
+    <storage_configuration>
+        <disks>
+            <disk1>
+                <path>/disk1/</path>
+            </disk1>
+            <disk2>
+                <path>/disk2/</path>
+            </disk2>
+        </disks>
+
+        <policies>
+            <tmp_two_disks>
+                <volumes>
+                    <main>
+                        <disk>disk1</disk>
+                        <disk>disk2</disk>
+                    </main>
+                </volumes>
+            </tmp_two_disks>
+        </policies>
+    </storage_configuration>
+
+    <tmp_policy>tmp_two_disks</tmp_policy>
+</clickhouse>
+
+```
+
+When `/disk1` is full, temporary data will be stored on `/disk2`.
+
+## temporary_data_in_cache {#temporary-data-in-cache}
+
+With this option, temporary data will be stored in the cache for the particular disk.
+In this section, you should specify the disk name with the type `cache`.
+In that case, the cache and temporary data will share the same space, and the disk cache can be evicted to create temporary data.
+
+:::note
+- Only one option can be used to configure temporary data storage: `tmp_path` ,`tmp_policy`, `temporary_data_in_cache`.
+:::
+
+**Example**
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <local_disk>
+                <type>local</type>
+                <path>/local_disk/</path>
+            </local_disk>
+
+            <tiny_local_cache>
+                <type>cache</type>
+                <disk>local_disk</disk>
+                <path>/tiny_local_cache/</path>
+                <max_size>10M</max_size>
+                <max_file_segment_size>1M</max_file_segment_size>
+                <cache_on_write_operations>1</cache_on_write_operations>
+                <do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>
+            </tiny_local_cache>
+        </disks>
+    </storage_configuration>
+
+    <temporary_data_in_cache>tiny_local_cache</temporary_data_in_cache>
+</clickhouse>
+```
+
+Cache for `local_disk` and temporary data will be stored in `/tiny_local_cache` on the filesystem, managed by `tiny_local_cache`.
 
 ## max_temporary_data_on_disk_size {#max_temporary_data_on_disk_size}
 
