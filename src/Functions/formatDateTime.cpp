@@ -126,6 +126,8 @@ constexpr std::string_view monthsFull[]
 constexpr std::string_view monthsShort[]
     = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
 
+constexpr std::string_view dynamicDateFormatters[2] = {"M", "W"};
+
 /** formatDateTime(time, 'format')
   * Performs formatting of time, according to provided format.
   *
@@ -806,6 +808,18 @@ public:
         return res;
     }
 
+    bool containsDynamicDateFormatter(const String & format) const
+    {
+        for (auto dynamic_formatter: dynamicDateFormatters)
+        {
+            if (format.find(dynamic_formatter) != String::npos)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
     template <typename DataType>
     ColumnPtr executeType(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const
     {
@@ -847,7 +861,8 @@ public:
         dst_data.resize(vec.size() * (result_size + 1));
         dst_offsets.resize(vec.size());
 
-        if constexpr (format_syntax == FormatDateTimeTraits::FormatSyntax::MySQL)
+        if (format_syntax == FormatDateTimeTraits::FormatSyntax::MySQL
+            && !containsDynamicDateFormatter(format))
         {
             /// Fill result with literals.
             {
