@@ -210,7 +210,7 @@ AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
         /// to avoid buffering of huge amount of data in memory.
 
         auto read_buf = getReadBufferFromASTInsertQuery(query);
-        LimitReadBuffer limit_buf(*read_buf, settings.async_insert_max_data_size, false);
+        LimitReadBuffer limit_buf(*read_buf, settings.async_insert_max_data_size, /* trow_exception */ false, /* exact_limit */ {});
 
         WriteBufferFromString write_buf(bytes);
         copyData(limit_buf, write_buf);
