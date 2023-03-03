@@ -209,3 +209,5 @@ CheckOptions:
     # Workaround clang-tidy bug: https://github.com/llvm/llvm-project/issues/46097
   - key: readability-identifier-naming.TypeTemplateParameterIgnoredRegexp
     value: expr-type
+  - key: cppcoreguidelines-avoid-do-while.IgnoreMacros
+    value: true

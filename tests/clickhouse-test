@@ -76,8 +76,9 @@ def trim_for_log(s):
     if not s:
         return s
     lines = s.splitlines()
-    if len(lines) > 100:
-        return "\n".join(lines[:50] + ["#" * 100] + lines[-50:])
+    if len(lines) > 10000:
+        separator = "-" * 40 + str(len(lines) - 10000) + " lines are hidden" +  "-" * 40
+        return "\n".join(lines[:5000] + [] + [separator] + [] + lines[-5000:])
     else:
         return "\n".join(lines)
 
@@ -94,7 +95,7 @@ class HTTPError(Exception):
 
 # Helpers to execute queries via HTTP interface.
 def clickhouse_execute_http(
-    base_args, query, timeout=30, settings=None, default_format=None, max_http_retries=5
+    base_args, query, timeout=30, settings=None, default_format=None, max_http_retries=5, retry_error_codes=False
 ):
     if args.secure:
         client = http.client.HTTPSConnection(
@@ -131,7 +132,8 @@ def clickhouse_execute_http(
             )
             res = client.getresponse()
             data = res.read()
-            break
+            if res.status == 200 or (not retry_error_codes):
+                break
         except Exception as ex:
             if i == max_http_retries - 1:
                 raise ex
@@ -143,8 +145,8 @@ def clickhouse_execute_http(
 
     return data
 
-def clickhouse_execute(base_args, query, timeout=30, settings=None, max_http_retries=5):
-    return clickhouse_execute_http(base_args, query, timeout, settings, max_http_retries=max_http_retries).strip()
+def clickhouse_execute(base_args, query, timeout=30, settings=None, max_http_retries=5, retry_error_codes=False):
+    return clickhouse_execute_http(base_args, query, timeout, settings, max_http_retries=max_http_retries, retry_error_codes=retry_error_codes).strip()
 
 
 def clickhouse_execute_json(base_args, query, timeout=60, settings=None, max_http_retries=5):
@@ -252,7 +254,7 @@ def get_processlist_with_stacktraces(args):
             -- NOTE: view() here to do JOIN on shards, instead of initiator
             FROM clusterAllReplicas('test_cluster_database_replicated', view(
                 SELECT
-                    groupArray((s.thread_id, arrayStringConcat(arrayMap(
+                    arrayStringConcat(groupArray('Thread ID ' || toString(s.thread_id) || '\n' || arrayStringConcat(arrayMap(
                         x -> concat(addressToLine(x), '::', demangle(addressToSymbol(x))),
                         s.trace), '\n') AS stacktrace
                     )) AS stacktraces,
@@ -273,7 +275,7 @@ def get_processlist_with_stacktraces(args):
                 args,
                 """
             SELECT
-                groupArray((s.thread_id, arrayStringConcat(arrayMap(
+                arrayStringConcat(groupArray('Thread ID ' || toString(s.thread_id) || '\n' || arrayStringConcat(arrayMap(
                     x -> concat(addressToLine(x), '::', demangle(addressToSymbol(x))),
                     s.trace), '\n') AS stacktrace
                 )) AS stacktraces,
@@ -450,7 +452,7 @@ class FailureReason(enum.Enum):
     REPLICATED_DB = "replicated-database"
     S3_STORAGE = "s3-storage"
     BUILD = "not running for current build"
-    BACKWARD_INCOMPATIBLE = "test is backward incompatible"
+    NO_UPGRADE_CHECK = "not running for upgrade check"
     NO_PARALLEL_REPLICAS = "smth in not supported with parallel replicas"
 
     # UNKNOWN reasons
@@ -773,35 +775,6 @@ class TestCase:
             else ""
         )
 
-    # Check if test contains tag "no-backward-compatibility-check" and we should skip it
-    def check_backward_incompatible_tag(self) -> bool:
-        for tag in self.tags:
-            if tag.startswith("no-backward-compatibility-check"):
-                split = tag.split(":")
-
-                # If version is not specified in tag, always skip this test.
-                if len(split) == 1:
-                    return True
-                version_from_tag = split[1]
-
-                # Check if extracted string from tag is a real ClickHouse version, if not - always skip test.
-                if re.match(VERSION_PATTERN, version_from_tag) is None:
-                    return True
-
-                server_version = str(
-                    clickhouse_execute(args, "SELECT version()").decode()
-                )
-                # If server version is less or equal from the version specified in tag, we should skip this test.
-                version_from_tag_split = list(map(int, version_from_tag.split(".")))
-                server_version_split = list(map(int, server_version.split(".")))
-                if (
-                    server_version_split[: len(version_from_tag_split)]
-                    <= version_from_tag_split
-                ):
-                    return True
-
-        return False
-
     # should skip test, should increment skipped_total, skip reason
     def should_skip_test(self, suite) -> Optional[FailureReason]:
         tags = self.tags
@@ -852,10 +825,10 @@ class TestCase:
         elif tags and ("no-replicated-database" in tags) and args.replicated_database:
             return FailureReason.REPLICATED_DB
 
-        elif (
-            args.backward_compatibility_check and self.check_backward_incompatible_tag()
-        ):
-            return FailureReason.BACKWARD_INCOMPATIBLE
+        # TODO: remove checking "no-upgrade-check" after 23.1
+        elif args.upgrade_check and (
+                "no-upgrade-check" in tags or "no-upgrade-check" in tags):
+            return FailureReason.NO_UPGRADE_CHECK
 
         elif tags and ("no-s3-storage" in tags) and args.s3_storage:
             return FailureReason.S3_STORAGE
@@ -1074,7 +1047,7 @@ class TestCase:
     @staticmethod
     def send_test_name_failed(suite: str, case: str):
         pid = os.getpid()
-        clickhouse_execute(args, f"SELECT 'Running test {suite}/{case} from pid={pid}'")
+        clickhouse_execute(args, f"SELECT 'Running test {suite}/{case} from pid={pid}'", retry_error_codes=True)
 
     def run_single_test(
         self, server_logs_level, client_options
@@ -2175,6 +2148,7 @@ def main(args):
             print(json.dumps(processlist, indent=4))
             print(get_transactions_list(args))
 
+            print_stacktraces()
             exit_code.value = 1
         else:
             print(colored("\nNo queries hung.", args, "green", attrs=["bold"]))
@@ -2460,9 +2434,9 @@ def parse_args():
     )
 
     group.add_argument(
-        "--backward-compatibility-check",
+        "--upgrade-check",
         action="store_true",
-        help="Run tests for further backward compatibility testing by ignoring all"
+        help="Run tests for further server upgrade testing by ignoring all"
         "drop queries in tests for collecting data from new version of server",
     )
     parser.add_argument(
@@ -2613,7 +2587,7 @@ if __name__ == "__main__":
     else:
         args.client_database = "default"
 
-    if args.backward_compatibility_check:
+    if args.upgrade_check:
         args.client += " --fake-drop"
 
     if args.client_option or args.secure:

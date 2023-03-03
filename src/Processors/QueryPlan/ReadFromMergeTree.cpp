@@ -113,6 +113,7 @@ static MergeTreeReaderSettings getMergeTreeReaderSettings(
         .read_in_order = query_info.input_order_info != nullptr,
         .use_asynchronous_read_from_pool = settings.allow_asynchronous_read_from_io_pool_for_merge_tree
             && (settings.max_streams_to_max_threads_ratio > 1 || settings.max_streams_for_merge_tree_reading > 1),
+        .enable_multiple_prewhere_read_steps = settings.enable_multiple_prewhere_read_steps,
     };
 }
 
@@ -147,7 +148,7 @@ ReadFromMergeTree::ReadFromMergeTree(
     Poco::Logger * log_,
     MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr_,
     bool enable_parallel_reading)
-    : ISourceStep(DataStream{.header = IMergeTreeSelectAlgorithm::transformHeader(
+    : SourceStepWithFilter(DataStream{.header = IMergeTreeSelectAlgorithm::transformHeader(
         storage_snapshot_->getSampleBlockForColumns(real_column_names_),
         getPrewhereInfoFromQueryInfo(query_info_),
         data_.getPartitionValueType(),
@@ -195,7 +196,10 @@ ReadFromMergeTree::ReadFromMergeTree(
             /// When async reading is enabled, allow to read using more streams.
             /// Will add resize to output_streams_limit to reduce memory usage.
             output_streams_limit = std::min<size_t>(requested_num_streams, settings.max_streams_for_merge_tree_reading);
-            requested_num_streams = std::max<size_t>(requested_num_streams, settings.max_streams_for_merge_tree_reading);
+            /// We intentionally set `max_streams` to 1 in InterpreterSelectQuery in case of small limit.
+            /// Changing it here to `max_streams_for_merge_tree_reading` proven itself as a threat for performance.
+            if (requested_num_streams != 1)
+                requested_num_streams = std::max<size_t>(requested_num_streams, settings.max_streams_for_merge_tree_reading);
         }
         else
             /// Just limit requested_num_streams otherwise.
@@ -265,6 +269,8 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
         extension,
         parts_with_range,
         prewhere_info,
+        actions_settings,
+        reader_settings,
         required_columns,
         virt_column_names,
         min_marks_for_concurrent_read
@@ -348,9 +354,9 @@ Pipe ReadFromMergeTree::readFromPool(
      if ((all_parts_are_remote
           && settings.allow_prefetched_read_pool_for_remote_filesystem
           && MergeTreePrefetchedReadPool::checkReadMethodAllowed(reader_settings.read_settings.remote_fs_method))
-         || (!all_parts_are_local
+         || (all_parts_are_local
              && settings.allow_prefetched_read_pool_for_local_filesystem
-             && MergeTreePrefetchedReadPool::checkReadMethodAllowed(reader_settings.read_settings.remote_fs_method)))
+             && MergeTreePrefetchedReadPool::checkReadMethodAllowed(reader_settings.read_settings.local_fs_method)))
      {
          pool = std::make_shared<MergeTreePrefetchedReadPool>(
              max_streams,
@@ -359,6 +365,7 @@ Pipe ReadFromMergeTree::readFromPool(
              std::move(parts_with_range),
              storage_snapshot,
              prewhere_info,
+             actions_settings,
              required_columns,
              virt_column_names,
              settings.preferred_block_size_bytes,
@@ -377,6 +384,8 @@ Pipe ReadFromMergeTree::readFromPool(
              std::move(parts_with_range),
              storage_snapshot,
              prewhere_info,
+             actions_settings,
+             reader_settings,
              required_columns,
              virt_column_names,
              context,
@@ -1089,7 +1098,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(Merge
     return selectRangesToRead(
         std::move(parts),
         prewhere_info,
-        added_filter_nodes,
+        filter_nodes,
         storage_snapshot->metadata,
         storage_snapshot->getMetadataForQuery(),
         query_info,

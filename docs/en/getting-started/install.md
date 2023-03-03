@@ -5,6 +5,10 @@ description: Install ClickHouse
 slug: /en/install
 ---
 
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import CodeBlock from '@theme/CodeBlock';
+
 # Install ClickHouse
 
 You have three options for getting up and running with ClickHouse:
@@ -19,17 +23,27 @@ The quickest and easiest way to get up and running with ClickHouse is to create 
 
 ## Self-Managed Install
 
+:::tip
+For production installs of a specific release version see the [installation options](#available-installation-options) down below.
+:::
+
+<Tabs>
+<TabItem value="linux" label="Linux" default>
+
 1. The simplest way to download ClickHouse locally is to run the following command. If your operating system is supported, an appropriate ClickHouse binary will be downloaded and made runnable:
+
   ```bash
   curl https://clickhouse.com/ | sh
   ```
 
 1. Run the `install` command, which defines a collection of useful symlinks along with the files and folders used by ClickHouse - all of which you can see in the output of the install script:
+
   ```bash
   sudo ./clickhouse install
   ```
 
 1. At the end of the install script, you are prompted for a password for the `default` user. Feel free to enter a password, or you can optionally leave it blank:
+
   ```response
   Creating log directory /var/log/clickhouse-server.
   Creating data directory /var/lib/clickhouse.
@@ -40,6 +54,7 @@ The quickest and easiest way to get up and running with ClickHouse is to create 
   Enter password for default user:
   ```
   You should see the following output:
+
   ```response
    ClickHouse has been successfully installed.
 
@@ -51,9 +66,44 @@ The quickest and easiest way to get up and running with ClickHouse is to create 
   ```
 
 1. Run the following command to start the ClickHouse server:
+    ```bash
+    sudo clickhouse start
+    ```
+
+</TabItem>
+<TabItem value="macos" label="macOS">
+
+1. The simplest way to download ClickHouse locally is to run the following command. If your operating system is supported, an appropriate ClickHouse binary will be downloaded and made runnable:
   ```bash
-  sudo clickhouse start
+  curl https://clickhouse.com/ | sh
   ```
+
+1. Run the ClickHouse server:
+
+  ```bash
+  ./clickhouse server
+  ```
+
+1. Open a new terminal and use the **clickhouse-client** to connect to your service:
+
+  ```bash
+  ./clickhouse client
+  ```
+
+  ```response
+  ./clickhouse client
+  ClickHouse client version 23.2.1.1501 (official build).
+  Connecting to localhost:9000 as user default.
+  Connected to ClickHouse server version 23.2.1 revision 54461.
+
+  local-host :)
+  ```
+
+  You are ready to start sending DDL and SQL commands to ClickHouse!
+
+</TabItem>
+</Tabs>
+
 
 :::tip
 The [Quick Start](/docs/en/quick-start.mdx/#step-1-get-clickhouse) walks through the steps to download and run ClickHouse, connect to it, and insert data.
