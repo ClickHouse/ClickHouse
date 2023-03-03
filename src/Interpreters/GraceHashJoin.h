@@ -140,12 +140,8 @@ private:
 
     FileBucket * current_bucket = nullptr;
 
-    /* Function `getDelayedBlocks` should be a critical section.
-     * Also some `joinBlock` calls may be in progress and we need to wait for them to finish,
-     * because they may may use `hash_join`, but `getDelayedBlocks` switches it to another bucket.
-     * So, `joinBlock` acquires shared lock and getDelayedBlocks acquires exclusive lock.
-     */
-    mutable SharedMutex current_bucket_mutex;
+    /// Function `getDelayedBlocks` is a critical section, we process only one bucket at a time.
+    mutable std::mutex current_bucket_mutex;
 
     InMemoryJoinPtr hash_join;
     Block hash_join_sample_block;
