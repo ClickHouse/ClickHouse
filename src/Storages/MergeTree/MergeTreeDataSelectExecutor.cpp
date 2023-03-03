@@ -588,9 +588,10 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
         * It is also important that the entire universe can be covered using SAMPLE 0.1 OFFSET 0, ... OFFSET 0.9 and similar decimals.
         */
 
+    auto parallel_replicas_mode = context->getParallelReplicasMode();
     /// Parallel replicas has been requested but there is no way to sample data.
     /// Select all data from first replica and no data from other replicas.
-    if (settings.parallel_replicas_count > 1 && settings.parallel_replicas_mode == ParallelReplicasMode::SAMPLE_KEY
+    if (settings.parallel_replicas_count > 1 && parallel_replicas_mode == Context::ParallelReplicasMode::SAMPLE_KEY
         && !data.supportsSampling() && settings.parallel_replica_offset > 0)
     {
         LOG_DEBUG(
@@ -602,7 +603,7 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
     }
 
     sampling.use_sampling = relative_sample_size > 0
-        || (settings.parallel_replicas_count > 1 && settings.parallel_replicas_mode == ParallelReplicasMode::SAMPLE_KEY
+        || (settings.parallel_replicas_count > 1 && parallel_replicas_mode == Context::ParallelReplicasMode::SAMPLE_KEY
             && data.supportsSampling());
     bool no_data = false; /// There is nothing left after sampling.
 

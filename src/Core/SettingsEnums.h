@@ -203,15 +203,6 @@ enum class Dialect
 
 DECLARE_SETTING_ENUM(Dialect)
 
-enum class ParallelReplicasMode : uint8_t
-{
-    SAMPLE_KEY,
-    CUSTOM_KEY,
-    READ_TASKS,
-};
-
-DECLARE_SETTING_ENUM(ParallelReplicasMode)
-
 enum class ParallelReplicasCustomKeyFilterType : uint8_t
 {
     DEFAULT,

@@ -20,6 +20,12 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
 }
 
+bool canUseCustomKey(const Settings & settings, const Cluster & cluster, const Context & context)
+{
+    return settings.max_parallel_replicas > 1 && context.getParallelReplicasMode() == Context::ParallelReplicasMode::CUSTOM_KEY
+        && cluster.getShardCount() == 1 && cluster.getShardsInfo()[0].getAllNodeCount() > 1;
+}
+
 ASTPtr getCustomKeyFilterForParallelReplica(
     size_t replicas_count,
     size_t replica_num,
@@ -115,43 +121,14 @@ ASTPtr getCustomKeyFilterForParallelReplica(
     return makeASTFunction("and", std::move(lower_function), std::move(upper_function));
 }
 
-ASTPtr parseCustomKeyForTable(const Map & custom_keys, const DatabaseAndTableWithAlias & target, const Context & context)
+ASTPtr parseCustomKeyForTable(const String & custom_key, const Context & context)
 {
-    for (size_t i = 0; i < custom_keys.size(); ++i)
-    {
-        const auto & tuple = custom_keys[i].safeGet<const Tuple &>();
-        auto & table = tuple.at(0).safeGet<String>();
-        auto & filter = tuple.at(1).safeGet<String>();
-
-        if (table == target.alias ||
-            (table == target.table && context.getCurrentDatabase() == target.database) ||
-            (table == target.database + '.' + target.table))
-        {
-            /// Try to parse expression
-            ParserExpression parser;
-            const auto & settings = context.getSettingsRef();
-            return parseQuery(
-                parser, filter.data(), filter.data() + filter.size(),
-                "parallel replicas custom key", settings.max_query_size, settings.max_parser_depth);
-        }
-    }
-
-    return nullptr;
-}
-
-bool containsCustomKeyForTable(const Map & custom_keys, const DatabaseAndTableWithAlias & target, const Context & context)
-{
-    for (size_t i = 0; i < custom_keys.size(); ++i)
-    {
-        const auto & tuple = custom_keys[i].safeGet<const Tuple &>();
-        auto & table = tuple.at(0).safeGet<String>();
-
-        if (table == target.alias ||
-            (table == target.table && context.getCurrentDatabase() == target.database) ||
-            (table == target.database + '.' + target.table))
-            return true;
-    }
-    return false;
+    /// Try to parse expression
+    ParserExpression parser;
+    const auto & settings = context.getSettingsRef();
+    return parseQuery(
+        parser, custom_key.data(), custom_key.data() + custom_key.size(),
+        "parallel replicas custom key", settings.max_query_size, settings.max_parser_depth);
 }
 
 }

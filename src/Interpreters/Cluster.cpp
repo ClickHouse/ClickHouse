@@ -752,7 +752,7 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
             auto shuffled_replicas = replicas;
             // shuffle replicas so we don't always pick the same subset
             shuffleReplicas(shuffled_replicas, settings);
-            create_shards_from_replicas(std::span{shuffled_replicas.begin(), shuffled_replicas.begin() + max_replicas_from_shard});
+            create_shards_from_replicas(std::span{shuffled_replicas.begin(), max_replicas_from_shard});
         }
     }
 

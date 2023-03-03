@@ -1,4 +1,4 @@
--- Tags: no-parallel, long, no-random-merge-tree-settings
+-- Tags: no-parallel, no-random-merge-tree-settings
 
 drop table if exists pr_t;
 drop table if exists dist_t_different_dbs;
@@ -61,7 +61,6 @@ create table pr_t(a UInt64, b UInt64) engine=MergeTree order by a;
 insert into pr_t select number % 1000, number % 1000 from numbers_mt(1e6);
 
 set allow_experimental_parallel_reading_from_replicas = 1;
-set parallel_replicas_mode = 'read_tasks';
 set max_parallel_replicas = 3;
 set use_hedged_requests = 0;
 set cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';

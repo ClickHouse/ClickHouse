@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/Cluster.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage.h>
 #include <Core/SettingsEnums.h>
@@ -8,6 +9,8 @@
 
 namespace DB
 {
+
+bool canUseCustomKey(const Settings & settings, const Cluster & cluster, const Context & context);
 
 /// Get AST for filter created from custom_key
 /// replica_num is the number of the replica for which we are generating filter starting from 0
@@ -19,8 +22,6 @@ ASTPtr getCustomKeyFilterForParallelReplica(
     const IStorage & storage,
     const ContextPtr & context);
 
-ASTPtr parseCustomKeyForTable(const Map & custom_keys, const DatabaseAndTableWithAlias & target, const Context & context);
-
-bool containsCustomKeyForTable(const Map & custom_keys, const DatabaseAndTableWithAlias & target, const Context & context);
+ASTPtr parseCustomKeyForTable(const String & custom_keys, const Context & context);
 
 }
