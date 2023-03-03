@@ -155,7 +155,7 @@ void MySQLHandler::run()
             payload.readStrict(command);
 
             // For commands which are executed without MemoryTracker.
-            LimitReadBuffer limited_payload(payload, 10000, true, "too long MySQL packet.");
+            LimitReadBuffer limited_payload(payload, 10000, /* trow_exception */ true, /* exact_limit */ {}, "too long MySQL packet.");
 
             LOG_DEBUG(log, "Received command: {}. Connection id: {}.",
                 static_cast<int>(static_cast<unsigned char>(command)), connection_id);

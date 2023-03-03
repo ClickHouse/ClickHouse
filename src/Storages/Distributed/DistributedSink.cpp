@@ -569,6 +569,26 @@ void DistributedSink::onFinish()
     }
 }
 
+void DistributedSink::onCancel()
+{
+    if (pool && !pool->finished())
+    {
+        try
+        {
+            pool->wait();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(storage.log);
+        }
+    }
+
+    for (auto & shard_jobs : per_shard_jobs)
+        for (JobReplica & job : shard_jobs.replicas_jobs)
+            if (job.executor)
+                job.executor->cancel();
+}
+
 
 IColumn::Selector DistributedSink::createSelector(const Block & source_block) const
 {
