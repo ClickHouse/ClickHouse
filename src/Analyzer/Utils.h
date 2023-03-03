@@ -13,6 +13,15 @@ bool isNodePartOfTree(const IQueryTreeNode * node, const IQueryTreeNode * root);
 /// Returns true if function name is name of IN function or its variations, false otherwise
 bool isNameOfInFunction(const std::string & function_name);
 
+/// Returns true if function name is name of local IN function or its variations, false otherwise
+bool isNameOfLocalInFunction(const std::string & function_name);
+
+/// Returns true if function name is name of global IN function or its variations, false otherwise
+bool isNameOfGlobalInFunction(const std::string & function_name);
+
+/// Returns global in function name for local in function name
+std::string getGlobalInFunctionNameForLocalInFunctionName(const std::string & function_name);
+
 /** Build cast function that cast expression into type.
   * If resolve = true, then result cast function is resolved during build, otherwise
   * result cast function is not resolved during build.
