@@ -65,6 +65,11 @@ MergeListElement::MergeListElement(
 
     thread_group = std::make_shared<ThreadGroupStatus>();
 
+    auto p_counters = CurrentThread::get().current_performance_counters;
+    while (p_counters && p_counters->level != VariableContext::Process)
+        p_counters = p_counters->getParent();
+    thread_group->performance_counters.setParent(p_counters);
+
     thread_group->master_thread_id = CurrentThread::get().thread_id;
 
     auto & memory_tracker = thread_group->memory_tracker;
