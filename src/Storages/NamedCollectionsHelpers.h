@@ -67,9 +67,9 @@ template <typename EqualKeys> struct NamedCollectionValidateKey
         for (const auto & equal : EqualKeys::equal_keys)
         {
             if ((equal.first == value) || (equal.second == value))
-                canonical_self = std::max(equal.first, equal.second);
+                canonical_self = std::max(canonical_self, std::max(equal.first, equal.second));
             if ((equal.first == other.value) || (equal.second == other.value))
-                canonical_other = std::max(equal.first, equal.second);
+                canonical_other = std::max(canonical_other, std::max(equal.first, equal.second));
         }
 
         return canonical_self < canonical_other;
