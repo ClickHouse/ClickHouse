@@ -41,6 +41,7 @@
 #include <Poco/MemoryStream.h>
 #include <Poco/StreamCopier.h>
 #include <Poco/String.h>
+#include <Poco/Net/SocketAddress.h>
 
 #include <chrono>
 #include <sstream>
@@ -469,9 +470,15 @@ bool HTTPHandler::authenticateUser(
     client_info.forwarded_for = request.get("X-Forwarded-For", "");
     client_info.quota_key = quota_key;
 
+    /// Extract the last entry from comma separated list of forwarded_for addresses.
+    /// Only the last proxy can be trusted (if any).
+    String forwarded_address = client_info.getLastForwardedFor();
     try
     {
-        session->authenticate(*request_credentials, request.clientAddress());
+        if (!forwarded_address.empty() && server.config().getBool("auth_use_forwarded_address", false))
+            session->authenticate(*request_credentials, Poco::Net::SocketAddress(forwarded_address, request.clientAddress().port()));
+        else
+            session->authenticate(*request_credentials, request.clientAddress());
     }
     catch (const Authentication::Require<BasicCredentials> & required_credentials)
     {
