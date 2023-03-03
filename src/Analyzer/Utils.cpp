@@ -79,6 +79,56 @@ bool isNameOfInFunction(const std::string & function_name)
     return is_special_function_in;
 }
 
+bool isNameOfLocalInFunction(const std::string & function_name)
+{
+    bool is_special_function_in = function_name == "in" ||
+        function_name == "notIn" ||
+        function_name == "nullIn" ||
+        function_name == "notNullIn" ||
+        function_name == "inIgnoreSet" ||
+        function_name == "notInIgnoreSet" ||
+        function_name == "nullInIgnoreSet" ||
+        function_name == "notNullInIgnoreSet";
+
+    return is_special_function_in;
+}
+
+bool isNameOfGlobalInFunction(const std::string & function_name)
+{
+    bool is_special_function_in = function_name == "globalIn" ||
+        function_name == "globalNotIn" ||
+        function_name == "globalNullIn" ||
+        function_name == "globalNotNullIn" ||
+        function_name == "globalInIgnoreSet" ||
+        function_name == "globalNotInIgnoreSet" ||
+        function_name == "globalNullInIgnoreSet" ||
+        function_name == "globalNotNullInIgnoreSet";
+
+    return is_special_function_in;
+}
+
+std::string getGlobalInFunctionNameForLocalInFunctionName(const std::string & function_name)
+{
+    if (function_name == "in")
+        return "globalIn";
+    else if (function_name == "notIn")
+        return "globalNotIn";
+    else if (function_name == "nullIn")
+        return "globalNullIn";
+    else if (function_name == "notNullIn")
+        return "globalNotNullIn";
+    else if (function_name == "inIgnoreSet")
+        return "globalInIgnoreSet";
+    else if (function_name == "notInIgnoreSet")
+        return "globalNotInIgnoreSet";
+    else if (function_name == "nullInIgnoreSet")
+        return "globalNullInIgnoreSet";
+    else if (function_name == "notNullInIgnoreSet")
+        return "globalNotNullInIgnoreSet";
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid local IN function name {}", function_name);
+}
+
 QueryTreeNodePtr buildCastFunction(const QueryTreeNodePtr & expression,
     const DataTypePtr & type,
     const ContextPtr & context,

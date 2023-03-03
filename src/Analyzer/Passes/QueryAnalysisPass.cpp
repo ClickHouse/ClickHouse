@@ -2914,7 +2914,10 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTableExpression(const Id
                 break;
 
             IdentifierLookup column_identifier_lookup = {qualified_identifier_with_removed_part, IdentifierLookupContext::EXPRESSION};
-            if (tryBindIdentifierToAliases(column_identifier_lookup, scope) ||
+            if (tryBindIdentifierToAliases(column_identifier_lookup, scope))
+                break;
+
+            if (table_expression_data.should_qualify_columns &&
                 tryBindIdentifierToTableExpressions(column_identifier_lookup, table_expression_node, scope))
                 break;
 

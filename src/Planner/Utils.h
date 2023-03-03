@@ -72,4 +72,9 @@ QueryTreeNodePtr replaceTablesAndTableFunctionsWithDummyTables(const QueryTreeNo
     const ContextPtr & context,
     ResultReplacementMap * result_replacement_map = nullptr);
 
+/// Build subquery to read specified columns from table expression
+QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
+    const QueryTreeNodePtr & table_expression,
+    const ContextPtr & context);
+
 }
