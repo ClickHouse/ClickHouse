@@ -277,7 +277,11 @@ void TCPHandler::runImpl()
                 query_context->getSettingsRef(),
                 query_context->getOpenTelemetrySpanLog());
 
-            query_scope.emplace(query_context);
+            query_scope.emplace(query_context, /* fatal_error_callback */ [this]
+            {
+                std::lock_guard lock(fatal_error_mutex);
+                sendLogs();
+            });
 
             /// If query received, then settings in query_context has been updated.
             /// So it's better to update the connection settings for flexibility.
@@ -298,11 +302,6 @@ void TCPHandler::runImpl()
                 state.logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());
                 state.logs_queue->setSourceRegexp(query_context->getSettingsRef().send_logs_source_regexp);
                 CurrentThread::attachInternalTextLogsQueue(state.logs_queue, client_logs_level);
-                CurrentThread::setFatalErrorCallback([this]
-                {
-                    std::lock_guard lock(fatal_error_mutex);
-                    sendLogs();
-                });
             }
             if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS)
             {
@@ -610,8 +609,6 @@ void TCPHandler::runImpl()
 
         /// It is important to destroy query context here. We do not want it to live arbitrarily longer than the query.
         query_context.reset();
-
-        CurrentThread::setFatalErrorCallback({});
 
         if (is_interserver_mode)
         {
