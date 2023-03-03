@@ -458,7 +458,7 @@ bool BSONEachRowRowInputFormat::readField(IColumn & column, const DataTypePtr & 
         if (!format_settings.null_as_default)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                             "Cannot insert BSON Null value into non-nullable column with type {}",
-                            data_type->getName());
+                            getBSONTypeName(bson_type), data_type->getName());
 
         column.insertDefault();
         return false;
@@ -771,14 +771,6 @@ bool BSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
         ext.read_columns.assign(read_columns.size(), true);
 
     return true;
-}
-
-void BSONEachRowRowInputFormat::resetParser()
-{
-    IRowInputFormat::resetParser();
-    read_columns.clear();
-    seen_columns.clear();
-    prev_positions.clear();
 }
 
 BSONEachRowSchemaReader::BSONEachRowSchemaReader(ReadBuffer & in_, const FormatSettings & settings_)

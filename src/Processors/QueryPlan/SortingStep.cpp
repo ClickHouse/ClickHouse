@@ -182,8 +182,7 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
     }
 }
 
-void SortingStep::mergeSorting(
-    QueryPipelineBuilder & pipeline, const Settings & sort_settings, const SortDescription & result_sort_desc, UInt64 limit_)
+void SortingStep::mergeSorting(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, UInt64 limit_)
 {
     bool increase_sort_description_compile_attempts = true;
 
@@ -201,10 +200,6 @@ void SortingStep::mergeSorting(
             if (increase_sort_description_compile_attempts)
                 increase_sort_description_compile_attempts = false;
 
-            auto tmp_data_on_disk = sort_settings.tmp_data
-                ? std::make_unique<TemporaryDataOnDisk>(sort_settings.tmp_data, CurrentMetrics::TemporaryFilesForSort)
-                : std::unique_ptr<TemporaryDataOnDisk>();
-
             return std::make_shared<MergeSortingTransform>(
                 header,
                 result_sort_desc,
@@ -214,17 +209,12 @@ void SortingStep::mergeSorting(
                 sort_settings.max_bytes_before_remerge / pipeline.getNumStreams(),
                 sort_settings.remerge_lowered_memory_bytes_ratio,
                 sort_settings.max_bytes_before_external_sort,
-                std::move(tmp_data_on_disk),
+                std::make_unique<TemporaryDataOnDisk>(sort_settings.tmp_data, CurrentMetrics::TemporaryFilesForSort),
                 sort_settings.min_free_disk_space);
         });
 }
 
-void SortingStep::fullSortStreams(
-    QueryPipelineBuilder & pipeline,
-    const Settings & sort_settings,
-    const SortDescription & result_sort_desc,
-    const UInt64 limit_,
-    const bool skip_partial_sort)
+void SortingStep::fullSort(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, const UInt64 limit_, const bool skip_partial_sort)
 {
     if (!skip_partial_sort || limit_)
     {
@@ -238,7 +228,7 @@ void SortingStep::fullSortStreams(
             });
 
         StreamLocalLimits limits;
-        limits.mode = LimitsMode::LIMITS_CURRENT;
+        limits.mode = LimitsMode::LIMITS_CURRENT; //-V1048
         limits.size_limits = sort_settings.size_limits;
 
         pipeline.addSimpleTransform(
@@ -251,13 +241,7 @@ void SortingStep::fullSortStreams(
             });
     }
 
-    mergeSorting(pipeline, sort_settings, result_sort_desc, limit_);
-}
-
-void SortingStep::fullSort(
-    QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, const UInt64 limit_, const bool skip_partial_sort)
-{
-    fullSortStreams(pipeline, sort_settings, result_sort_desc, limit_, skip_partial_sort);
+    mergeSorting(pipeline, result_sort_desc, limit_);
 
     /// If there are several streams, then we merge them into one
     if (pipeline.getNumStreams() > 1)

@@ -67,8 +67,6 @@ struct S3Settings
         ThrottlerPtr get_request_throttler;
         ThrottlerPtr put_request_throttler;
 
-        bool throw_on_zero_files_match = false;
-
         const PartUploadSettings & getUploadSettings() const { return upload_settings; }
 
         RequestSettings() = default;

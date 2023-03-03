@@ -10,7 +10,6 @@
 #include <base/range.h>
 
 #include <Formats/NativeReader.h>
-#include <Formats/insertNullAsDefaultIfNeeded.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -33,19 +32,8 @@ NativeReader::NativeReader(ReadBuffer & istr_, UInt64 server_revision_)
 {
 }
 
-NativeReader::NativeReader(
-    ReadBuffer & istr_,
-    const Block & header_,
-    UInt64 server_revision_,
-    bool skip_unknown_columns_,
-    bool null_as_default_,
-    BlockMissingValues * block_missing_values_)
-    : istr(istr_)
-    , header(header_)
-    , server_revision(server_revision_)
-    , skip_unknown_columns(skip_unknown_columns_)
-    , null_as_default(null_as_default_)
-    , block_missing_values(block_missing_values_)
+NativeReader::NativeReader(ReadBuffer & istr_, const Block & header_, UInt64 server_revision_, bool skip_unknown_columns_)
+    : istr(istr_), header(header_), server_revision(server_revision_), skip_unknown_columns(skip_unknown_columns_)
 {
 }
 
@@ -115,7 +103,7 @@ Block NativeReader::read()
     if (istr.eof())
     {
         if (use_index)
-            throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Input doesn't contain all data for index.");
+            throw ParsingException("Input doesn't contain all data for index.", ErrorCodes::CANNOT_READ_ALL_DATA);
 
         return res;
     }
@@ -199,12 +187,8 @@ Block NativeReader::read()
         {
             if (header.has(column.name))
             {
-                auto & header_column = header.getByName(column.name);
-
-                if (null_as_default)
-                    insertNullAsDefaultIfNeeded(column, header_column, header.getPositionByName(column.name), block_missing_values);
-
                 /// Support insert from old clients without low cardinality type.
+                auto & header_column = header.getByName(column.name);
                 if (!header_column.type->equals(*column.type))
                 {
                     column.column = recursiveTypeConversion(column.column, column.type, header.safeGetByPosition(i).type);
@@ -241,19 +225,12 @@ Block NativeReader::read()
         /// Allow to skip columns. Fill them with default values.
         Block tmp_res;
 
-        for (size_t column_i = 0; column_i != header.columns(); ++column_i)
+        for (auto & col : header)
         {
-            auto & col = header.getByPosition(column_i);
             if (res.has(col.name))
-            {
                 tmp_res.insert(res.getByName(col.name));
-            }
             else
-            {
                 tmp_res.insert({col.type->createColumn()->cloneResized(rows), col.type, col.name});
-                if (block_missing_values)
-                    block_missing_values->setBits(column_i, rows);
-            }
         }
         tmp_res.info = res.info;
 

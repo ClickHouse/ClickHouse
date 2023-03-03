@@ -19,7 +19,6 @@ a
 --JSONType--
 Object
 Array
-Bool
 --JSONExtract<numeric>--
 -100
 200
@@ -173,7 +172,6 @@ a
 --JSONType--
 Object
 Array
-Bool
 --JSONExtract<numeric>--
 -100
 200

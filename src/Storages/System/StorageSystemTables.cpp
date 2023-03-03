@@ -3,7 +3,6 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Storages/System/StorageSystemTables.h>
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
@@ -50,9 +49,6 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"storage_policy", std::make_shared<DataTypeString>()},
         {"total_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
         {"total_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
-        {"parts", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
-        {"active_parts", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
-        {"total_marks", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
         {"lifetime_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
         {"lifetime_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
         {"comment", std::make_shared<DataTypeString>()},
@@ -459,33 +455,6 @@ protected:
                         res_columns[res_index++]->insertDefault();
                 }
 
-                auto table_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(table);
-                if (columns_mask[src_index++])
-                {
-                    if (table_merge_tree)
-                        res_columns[res_index++]->insert(table_merge_tree->getAllPartsCount());
-                    else
-                        res_columns[res_index++]->insertDefault();
-                }
-
-                if (columns_mask[src_index++])
-                {
-                    if (table_merge_tree)
-                        res_columns[res_index++]->insert(table_merge_tree->getActivePartsCount());
-                    else
-                        res_columns[res_index++]->insertDefault();
-                }
-
-                if (columns_mask[src_index++])
-                {
-                    if (table_merge_tree)
-                    {
-                        res_columns[res_index++]->insert(table_merge_tree->getTotalMarksCount());
-                    }
-                    else
-                        res_columns[res_index++]->insertDefault();
-                }
-
                 if (columns_mask[src_index++])
                 {
                     auto lifetime_rows = table->lifetimeRows();
@@ -522,8 +491,8 @@ protected:
 
                 if (columns_mask[src_index] || columns_mask[src_index + 1] || columns_mask[src_index + 2] || columns_mask[src_index + 3])
                 {
-                    auto dependencies = DatabaseCatalog::instance().getLoadingDependencies(StorageID{database_name, table_name});
-                    auto dependents = DatabaseCatalog::instance().getLoadingDependents(StorageID{database_name, table_name});
+                    auto dependencies = DatabaseCatalog::instance().getDependencies(StorageID{database_name, table_name});
+                    auto dependents = DatabaseCatalog::instance().getDependents(StorageID{database_name, table_name});
 
                     Array dependencies_databases;
                     Array dependencies_tables;

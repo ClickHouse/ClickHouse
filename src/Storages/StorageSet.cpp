@@ -162,11 +162,7 @@ std::optional<UInt64> StorageSet::totalBytes(const Settings &) const { return se
 
 void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &)
 {
-    if (disk->exists(path))
-        disk->removeRecursive(path);
-    else
-        LOG_INFO(&Poco::Logger::get("StorageSet"), "Path {} is already removed from disk {}", path, disk->getName());
-
+    disk->removeRecursive(path);
     disk->createDirectories(path);
     disk->createDirectories(fs::path(path) / "tmp/");
 

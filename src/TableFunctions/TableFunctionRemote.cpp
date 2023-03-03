@@ -334,7 +334,7 @@ TableFunctionRemote::TableFunctionRemote(const std::string & name_, bool secure_
     : name{name_}, secure{secure_}
 {
     is_cluster_function = (name == "cluster" || name == "clusterAllReplicas");
-    help_message = PreformattedMessage::create(
+    help_message = fmt::format(
         "Table function '{}' requires from 2 to {} parameters: "
         "<addresses pattern or cluster name>, <name of remote database>, <name of remote table>{}",
         name,

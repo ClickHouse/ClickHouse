@@ -34,11 +34,7 @@ void ASTSetQuery::formatImpl(const FormatSettings & format, FormatState &, Forma
             first = false;
 
         formatSettingName(change.name, format.ostr);
-        CustomType custom;
-        if (!format.show_secrets && change.value.tryGet<CustomType>(custom) && custom.isSecret())
-            format.ostr << " = " << custom.toString(false);
-        else
-            format.ostr << " = " << applyVisitor(FieldVisitorToString(), change.value);
+        format.ostr << " = " << applyVisitor(FieldVisitorToString(), change.value);
     }
 
     for (const auto & setting_name : default_settings)

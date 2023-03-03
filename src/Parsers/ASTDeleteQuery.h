@@ -12,8 +12,6 @@ class ASTDeleteQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnC
 public:
     String getID(char delim) const final;
     ASTPtr clone() const final;
-    QueryKind getQueryKind() const override { return QueryKind::Delete; }
-
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const override
     {
         return removeOnCluster<ASTDeleteQuery>(clone(), params.default_database);

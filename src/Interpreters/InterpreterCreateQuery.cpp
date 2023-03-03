@@ -38,7 +38,6 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
@@ -313,7 +312,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         {
 
             /// We use global context here, because storages lifetime is bigger than query context lifetime
-            TablesLoader loader{getContext()->getGlobalContext(), {{database_name, database}}, mode};
+            TablesLoader loader{getContext()->getGlobalContext(), {{database_name, database}}, mode}; //-V560
             loader.loadTables();
             loader.startupTables();
         }
@@ -731,21 +730,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     }
     else if (create.select)
     {
-
-        Block as_select_sample;
-
-        if (getContext()->getSettingsRef().allow_experimental_analyzer)
-        {
-            as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), getContext());
-        }
-        else
-        {
-            as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(),
-                getContext(),
-                false /* is_subquery */,
-                create.isParameterizedView());
-        }
-
+        Block as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(), getContext(), false /* is_subquery */, create.isParameterizedView());
         properties.columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
     }
     else if (create.as_table_function)
@@ -1199,18 +1184,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             getContext()
         ))
         {
-            Block input_block;
-
-            if (getContext()->getSettingsRef().allow_experimental_analyzer)
-            {
-                input_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), getContext());
-            }
-            else
-            {
-                input_block = InterpreterSelectWithUnionQuery(create.select->clone(),
-                    getContext(),
-                    SelectQueryOptions().analyze()).getSampleBlock();
-            }
+            Block input_block = InterpreterSelectWithUnionQuery(
+                create.select->clone(), getContext(), SelectQueryOptions().analyze()).getSampleBlock();
 
             Block output_block = to_table->getInMemoryMetadataPtr()->getSampleBlock();
 
@@ -1268,9 +1243,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     /// If table has dependencies - add them to the graph
     QualifiedTableName qualified_name{database_name, create.getTable()};
-    auto ref_dependencies = getDependenciesFromCreateQuery(getContext()->getGlobalContext(), qualified_name, query_ptr);
-    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(getContext()->getGlobalContext(), qualified_name, query_ptr);
-    DatabaseCatalog::instance().addDependencies(qualified_name, ref_dependencies, loading_dependencies);
+    TableNamesSet dependencies = getLoadingDependenciesFromCreateQuery(getContext()->getGlobalContext(), qualified_name, query_ptr);
+    if (!dependencies.empty())
+        DatabaseCatalog::instance().addDependencies(qualified_name, dependencies);
 
     return fillTableIfNeeded(create);
 }
@@ -1519,16 +1494,8 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         auto ast_rename = std::make_shared<ASTRenameQuery>();
         ASTRenameQuery::Element elem
         {
-            ASTRenameQuery::Table
-            {
-                create.getDatabase().empty() ? nullptr : std::make_shared<ASTIdentifier>(create.getDatabase()),
-                std::make_shared<ASTIdentifier>(create.getTable())
-            },
-            ASTRenameQuery::Table
-            {
-                create.getDatabase().empty() ? nullptr : std::make_shared<ASTIdentifier>(create.getDatabase()),
-                std::make_shared<ASTIdentifier>(table_to_replace_name)
-            }
+            ASTRenameQuery::Table{create.getDatabase(), create.getTable()},
+            ASTRenameQuery::Table{create.getDatabase(), table_to_replace_name}
         };
 
         ast_rename->elements.push_back(std::move(elem));
@@ -1736,6 +1703,7 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
 
 void InterpreterCreateQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr) const
 {
+    elem.query_kind = "Create";
     if (!as_table_saved.empty())
     {
         String database = backQuoteIfNeed(as_database_saved.empty() ? getContext()->getCurrentDatabase() : as_database_saved);
