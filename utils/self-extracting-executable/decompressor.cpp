@@ -170,7 +170,7 @@ int decompress(char * input, char * output, off_t start, off_t end, size_t max_n
 
 bool isSudo()
 {
-    return getuid() == 0 && geteuid() == 0 && getenv("SUDO_USER") && getenv("SUDO_UID") && getenv("SUDO_GID");
+    return getuid() == 0 && geteuid() == 0 && getenv("SUDO_USER") && getenv("SUDO_UID") && getenv("SUDO_GID"); // NOLINT(concurrency-mt-unsafe)
 }
 
 /// Read data about files and decomrpess them.
