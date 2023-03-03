@@ -378,6 +378,7 @@ StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
     , default_sleep_time(storage.getDistributedSettingsRef().monitor_sleep_time_ms.totalMilliseconds())
     , sleep_time(default_sleep_time)
     , max_sleep_time(storage.getDistributedSettingsRef().monitor_max_sleep_time_ms.totalMilliseconds())
+    , max_retries(storage.getDistributedSettingsRef().monitor_max_retries)
     , log(&Poco::Logger::get(getLoggerName()))
     , monitor_blocker(monitor_blocker_)
     , metric_pending_files(CurrentMetrics::DistributedFilesToInsert, 0)
@@ -584,6 +585,18 @@ std::map<UInt64, std::string> StorageDistributedDirectoryMonitor::getFiles()
 
     return files;
 }
+
+void StorageDistributedDirectoryMonitor::getFilesRetry(const std::string & file_path)
+{
+    if (max_retries != 0)
+    {
+        if (files_retry.contains(file_path))
+            files_retry[file_path] += 1;
+        else
+            files_retry[file_path] = 0;
+    }
+}
+
 bool StorageDistributedDirectoryMonitor::processFiles(const std::map<UInt64, std::string> & files)
 {
     if (should_batch_inserts)
@@ -1206,10 +1219,15 @@ void StorageDistributedDirectoryMonitor::markAsSend(const std::string & file_pat
 
 bool StorageDistributedDirectoryMonitor::maybeMarkAsBroken(const std::string & file_path, const Exception & e)
 {
+    getFilesRetry(file_path);
+    if ((max_retries != 0 && files_retry[file_path] != max_retries))
+        LOG_INFO(log, "distributed file {} send failed, may be broken, retry {}, max_retries {},", file_path, files_retry[file_path], max_retries);
     /// Mark file as broken if necessary.
-    if (isFileBrokenErrorCode(e.code(), e.isRemoteException()))
+    if (isFileBrokenErrorCode(e.code(), e.isRemoteException()) || (max_retries != 0 && files_retry[file_path] == max_retries))
     {
         markAsBroken(file_path);
+        if (max_retries != 0)
+            files_retry.erase(file_path);
         return true;
     }
     else
