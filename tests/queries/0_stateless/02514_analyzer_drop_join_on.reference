@@ -24,15 +24,15 @@ Header: count() UInt64
             Header: default.a.a2_4 String
                     default.b.b1_0 UInt64
               Join (JOIN FillRightFirst)
-              Header: default.a.a2_4 String
-                      default.a.a1_1 UInt64
+              Header: default.a.a1_1 UInt64
+                      default.a.a2_4 String
                       default.b.b1_0 UInt64
                 Expression ((JOIN actions + Change column names to column identifiers))
-                Header: default.a.a2_4 String
-                        default.a.a1_1 UInt64
+                Header: default.a.a1_1 UInt64
+                        default.a.a2_4 String
                   ReadFromStorage (Memory)
-                  Header: a2 String
-                          a1 UInt64
+                  Header: a1 UInt64
+                          a2 String
                 Expression ((JOIN actions + Change column names to column identifiers))
                 Header: default.b.b1_0 UInt64
                   ReadFromStorage (Memory)
@@ -52,27 +52,27 @@ Expression ((Project names + (Projection + DROP unused columns after JOIN)))
 Header: a2 String
         d2 String
   Join (JOIN FillRightFirst)
-  Header: default.a.k_2 UInt64
-          default.a.a2_0 String
+  Header: default.a.a2_0 String
+          default.a.k_2 UInt64
           default.d.d2_1 String
     Expression (DROP unused columns after JOIN)
-    Header: default.a.k_2 UInt64
-            default.a.a2_0 String
+    Header: default.a.a2_0 String
+            default.a.k_2 UInt64
       Join (JOIN FillRightFirst)
-      Header: default.a.k_2 UInt64
-              default.a.a2_0 String
+      Header: default.a.a2_0 String
+              default.a.k_2 UInt64
         Expression (DROP unused columns after JOIN)
-        Header: default.a.k_2 UInt64
-                default.a.a2_0 String
+        Header: default.a.a2_0 String
+                default.a.k_2 UInt64
           Join (JOIN FillRightFirst)
-          Header: default.a.k_2 UInt64
-                  default.a.a2_0 String
+          Header: default.a.a2_0 String
+                  default.a.k_2 UInt64
             Expression (Change column names to column identifiers)
-            Header: default.a.k_2 UInt64
-                    default.a.a2_0 String
+            Header: default.a.a2_0 String
+                    default.a.k_2 UInt64
               ReadFromStorage (Memory)
-              Header: k UInt64
-                      a2 String
+              Header: a2 String
+                      k UInt64
             Expression (Change column names to column identifiers)
             Header: default.b.k_3 UInt64
               ReadFromStorage (Memory)
@@ -82,11 +82,11 @@ Header: a2 String
           ReadFromStorage (Memory)
           Header: k UInt64
     Expression (Change column names to column identifiers)
-    Header: default.d.k_5 UInt64
-            default.d.d2_1 String
+    Header: default.d.d2_1 String
+            default.d.k_5 UInt64
       ReadFromStorage (Memory)
-      Header: k UInt64
-              d2 String
+      Header: d2 String
+              k UInt64
 EXPLAIN PLAN header = 1
 SELECT b.bx FROM a
 JOIN (SELECT b1, b2 || 'x'  AS bx FROM b ) AS b ON b.b1 = a.a1
@@ -123,28 +123,28 @@ Header: bx String
                     b.bx_0 String
                     b.b1_1 UInt64
               Join (JOIN FillRightFirst)
-              Header: default.a.a2_6 String
-                      default.a.a1_2 UInt64
+              Header: default.a.a1_2 UInt64
+                      default.a.a2_6 String
                       b.bx_0 String
                       b.b1_1 UInt64
                 Expression ((JOIN actions + Change column names to column identifiers))
-                Header: default.a.a2_6 String
-                        default.a.a1_2 UInt64
+                Header: default.a.a1_2 UInt64
+                        default.a.a2_6 String
                   ReadFromStorage (Memory)
-                  Header: a2 String
-                          a1 UInt64
+                  Header: a1 UInt64
+                          a2 String
                 Expression ((JOIN actions + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
                 Header: b.b1_1 UInt64
                         b.bx_0 String
                   ReadFromStorage (Memory)
-                  Header: b2 String
-                          b1 UInt64
+                  Header: b1 UInt64
+                          b2 String
             Expression ((JOIN actions + Change column names to column identifiers))
-            Header: default.c.c2_5 String
-                    default.c.c1_3 UInt64
+            Header: default.c.c1_3 UInt64
+                    default.c.c2_5 String
               ReadFromStorage (Memory)
-              Header: c2 String
-                      c1 UInt64
+              Header: c1 UInt64
+                      c2 String
         Expression ((JOIN actions + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
         Header: d.d1_4 UInt64
           ReadFromStorage (SystemNumbers)

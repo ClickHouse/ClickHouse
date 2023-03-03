@@ -1,6 +1,6 @@
 #include <Planner/PlannerJoinTree.h>
 
-#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Functions/FunctionFactory.h>
 
@@ -257,9 +257,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(const QueryTreeNodePtr & tabl
         else
             table_expression_query_info.table_expression_modifiers = table_function_node->getTableExpressionModifiers();
 
-        from_stage = storage->getQueryProcessingStage(query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);
-
-        Names columns_names = table_expression_data.getColumnNames();
+        auto columns_names = table_expression_data.getColumnNames();
 
         /** The current user must have the SELECT privilege.
           * We do not check access rights for table functions because they have been already checked in ITableFunction::execute().
@@ -308,7 +306,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(const QueryTreeNodePtr & tabl
             }
         }
 
-        storage->read(query_plan, columns_names, storage_snapshot, table_expression_query_info, query_context, from_stage, max_block_size, max_streams);
+        if (!select_query_options.only_analyze)
+        {
+            from_stage = storage->getQueryProcessingStage(query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);
+            storage->read(query_plan, columns_names, storage_snapshot, table_expression_query_info, query_context, from_stage, max_block_size, max_streams);
+        }
 
         if (query_plan.isInitialized())
         {
@@ -324,7 +326,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(const QueryTreeNodePtr & tabl
         }
         else
         {
-            /// Create step which reads from empty source if storage has no data.
+            /// Create step which reads from empty source if storage has no data
             auto source_header = storage_snapshot->getSampleBlockForColumns(columns_names);
             Pipe pipe(std::make_shared<NullSource>(source_header));
             auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
@@ -334,12 +336,37 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(const QueryTreeNodePtr & tabl
     }
     else if (query_node || union_node)
     {
-        auto subquery_options = select_query_options.subquery();
-        Planner subquery_planner(table_expression, subquery_options, planner_context->getGlobalPlannerContext());
-        /// Propagate storage limits to subquery
-        subquery_planner.addStorageLimits(*select_query_info.storage_limits);
-        subquery_planner.buildQueryPlanIfNeeded();
-        query_plan = std::move(subquery_planner).extractQueryPlan();
+        if (select_query_options.only_analyze)
+        {
+            auto projection_columns = query_node ? query_node->getProjectionColumns() : union_node->computeProjectionColumns();
+            Block source_header;
+            for (auto & projection_column : projection_columns)
+                source_header.insert(ColumnWithTypeAndName(projection_column.type, projection_column.name));
+
+            Pipe pipe(std::make_shared<NullSource>(source_header));
+            auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+            read_from_pipe->setStepDescription("Read from NullSource");
+            query_plan.addStep(std::move(read_from_pipe));
+        }
+        else
+        {
+            if (table_expression_data.getColumnNames().empty())
+            {
+                const auto & projection_columns = query_node ? query_node->getProjectionColumns() : union_node->computeProjectionColumns();
+                NamesAndTypesList projection_columns_list(projection_columns.begin(), projection_columns.end());
+                auto additional_column_to_read = ExpressionActions::getSmallestColumn(projection_columns_list);
+
+                const auto & column_identifier = planner_context->getGlobalPlannerContext()->createColumnIdentifier(additional_column_to_read, table_expression);
+                table_expression_data.addColumn(additional_column_to_read, column_identifier);
+            }
+
+            auto subquery_options = select_query_options.subquery();
+            Planner subquery_planner(table_expression, subquery_options, planner_context->getGlobalPlannerContext());
+            /// Propagate storage limits to subquery
+            subquery_planner.addStorageLimits(*select_query_info.storage_limits);
+            subquery_planner.buildQueryPlanIfNeeded();
+            query_plan = std::move(subquery_planner).extractQueryPlan();
+        }
     }
     else
     {
@@ -377,15 +404,18 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(const QueryTreeNodePtr & tabl
         auto expected_header = planner.getQueryPlan().getCurrentDataStream().header;
         materializeBlockInplace(expected_header);
 
-        auto rename_actions_dag = ActionsDAG::makeConvertingActions(
-            query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
-            expected_header.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Position,
-            true /*ignore_constant_values*/);
-        auto rename_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(rename_actions_dag));
-        std::string step_description = table_expression_data.isRemote() ? "Change remote column names to local column names" : "Change column names";
-        rename_step->setStepDescription(std::move(step_description));
-        query_plan.addStep(std::move(rename_step));
+        if (!blocksHaveEqualStructure(query_plan.getCurrentDataStream().header, expected_header))
+        {
+            auto rename_actions_dag = ActionsDAG::makeConvertingActions(
+                query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
+                expected_header.getColumnsWithTypeAndName(),
+                ActionsDAG::MatchColumnsMode::Position,
+                true /*ignore_constant_values*/);
+            auto rename_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(rename_actions_dag));
+            std::string step_description = table_expression_data.isRemote() ? "Change remote column names to local column names" : "Change column names";
+            rename_step->setStepDescription(std::move(step_description));
+            query_plan.addStep(std::move(rename_step));
+        }
     }
 
     return {std::move(query_plan), from_stage};
@@ -524,7 +554,14 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(const QueryTreeNodePtr & join_table_
         for (auto & output_node : cast_actions_dag->getOutputs())
         {
             if (planner_context->getGlobalPlannerContext()->hasColumnIdentifier(output_node->result_name))
-                output_node = &cast_actions_dag->addFunction(to_nullable_function, {output_node}, output_node->result_name);
+            {
+                DataTypePtr type_to_check = output_node->result_type;
+                if (const auto * type_to_check_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(type_to_check.get()))
+                    type_to_check = type_to_check_low_cardinality->getDictionaryType();
+
+                if (type_to_check->canBeInsideNullable())
+                    output_node = &cast_actions_dag->addFunction(to_nullable_function, {output_node}, output_node->result_name);
+            }
         }
 
         cast_actions_dag->projectInput();
