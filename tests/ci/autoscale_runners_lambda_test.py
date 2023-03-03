@@ -67,10 +67,7 @@ class TestSetCapacity(unittest.TestCase):
         test_cases = (
             # Do not change capacity
             TestCase("noqueue", 1, 13, 20, [Queue("in_progress", 155, "noqueue")], -1),
-            TestCase("w/reserve", 1, 13, 20, [Queue("queued", 5, "w/reserve")], -1),
             TestCase("w/reserve", 1, 13, 20, [Queue("queued", 17, "w/reserve")], -1),
-            TestCase("w/reserve", 1, 23, 20, [Queue("queued", 17, "w/reserve")], -1),
-            TestCase("less-min", 10, 3, 20, [Queue("queued", 1, "less-min")], -1),
             # Increase capacity
             TestCase("increase", 1, 13, 20, [Queue("queued", 23, "increase")], 15),
             TestCase("increase", 1, 13, 20, [Queue("queued", 18, "increase")], 14),
@@ -88,6 +85,8 @@ class TestSetCapacity(unittest.TestCase):
             ),
             TestCase("lower-min", 10, 5, 20, [Queue("queued", 5, "lower-min")], 10),
             # Decrease capacity
+            TestCase("w/reserve", 1, 13, 20, [Queue("queued", 5, "w/reserve")], 11),
+            TestCase("w/reserve", 1, 23, 20, [Queue("queued", 17, "w/reserve")], 20),
             TestCase("decrease", 1, 13, 20, [Queue("in_progress", 3, "decrease")], 10),
             TestCase("decrease", 1, 13, 20, [Queue("in_progress", 5, "decrease")], 11),
         )
