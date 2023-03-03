@@ -193,7 +193,8 @@ private:
 };
 
 
-class ReadFromMemoryStorage final : public ISourceStep {
+class ReadFromMemoryStorage final : public ISourceStep
+{
 public:
     ReadFromMemoryStorage(const Names & columns_to_read_,
                           const StorageSnapshotPtr & storage_snapshot_,
@@ -209,7 +210,8 @@ public:
 
     String getName() const override { return name; }
 
-    Pipe preparePipe() {
+    Pipe preparePipe()
+    {
         storage_snapshot->check(columns_to_read);
 
         const auto & snapshot_data = assert_cast<const StorageMemory::SnapshotData &>(*storage_snapshot->data);
