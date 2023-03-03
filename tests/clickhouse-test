@@ -76,8 +76,9 @@ def trim_for_log(s):
     if not s:
         return s
     lines = s.splitlines()
-    if len(lines) > 100:
-        return "\n".join(lines[:50] + ["#" * 100] + lines[-50:])
+    if len(lines) > 10000:
+        separator = "-" * 40 + str(len(lines) - 10000) + " lines are hidden" +  "-" * 40
+        return "\n".join(lines[:5000] + [] + [separator] + [] + lines[-5000:])
     else:
         return "\n".join(lines)
 
