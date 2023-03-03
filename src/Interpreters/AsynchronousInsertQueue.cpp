@@ -13,12 +13,10 @@
 #include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/LimitReadBuffer.h>
 #include <IO/copyData.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/queryToString.h>
 #include <Storages/IStorage.h>
-#include <Common/CurrentThread.h>
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorHash.h>
 #include <Common/DateLUT.h>
@@ -104,10 +102,9 @@ bool AsynchronousInsertQueue::InsertQuery::operator==(const InsertQuery & other)
     return query_str == other.query_str && settings == other.settings;
 }
 
-AsynchronousInsertQueue::InsertData::Entry::Entry(String && bytes_, String && query_id_, MemoryTracker * user_memory_tracker_)
+AsynchronousInsertQueue::InsertData::Entry::Entry(String && bytes_, String && query_id_)
     : bytes(std::move(bytes_))
     , query_id(std::move(query_id_))
-    , user_memory_tracker(user_memory_tracker_)
     , create_time(std::chrono::system_clock::now())
 {
 }
@@ -184,8 +181,7 @@ void AsynchronousInsertQueue::scheduleDataProcessingJob(const InsertQuery & key,
     });
 }
 
-AsynchronousInsertQueue::PushResult
-AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
+std::future<void> AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
 {
     query = query->clone();
     const auto & settings = query_context->getSettingsRef();
@@ -205,38 +201,15 @@ AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
 
     String bytes;
     {
-        /// Read at most 'async_insert_max_data_size' bytes of data.
-        /// If limit is exceeded we will fallback to synchronous insert
-        /// to avoid buffering of huge amount of data in memory.
-
         auto read_buf = getReadBufferFromASTInsertQuery(query);
-        LimitReadBuffer limit_buf(*read_buf, settings.async_insert_max_data_size, /* trow_exception */ false, /* exact_limit */ {});
-
         WriteBufferFromString write_buf(bytes);
-        copyData(limit_buf, write_buf);
-
-        if (!read_buf->eof())
-        {
-            write_buf.finalize();
-
-            /// Concat read buffer with already extracted from insert
-            /// query data and with the rest data from insert query.
-            std::vector<std::unique_ptr<ReadBuffer>> buffers;
-            buffers.emplace_back(std::make_unique<ReadBufferFromOwnString>(bytes));
-            buffers.emplace_back(std::move(read_buf));
-
-            return PushResult
-            {
-                .status = PushResult::TOO_MUCH_DATA,
-                .insert_data_buffer = std::make_unique<ConcatReadBuffer>(std::move(buffers)),
-            };
-        }
+        copyData(*read_buf, write_buf);
     }
 
     if (auto quota = query_context->getQuota())
         quota->used(QuotaType::WRITTEN_BYTES, bytes.size());
 
-    auto entry = std::make_shared<InsertData::Entry>(std::move(bytes), query_context->getCurrentQueryId(), CurrentThread::getUserMemoryTracker());
+    auto entry = std::make_shared<InsertData::Entry>(std::move(bytes), query_context->getCurrentQueryId());
 
     InsertQuery key{query, settings};
     InsertDataPtr data_to_process;
@@ -272,8 +245,7 @@ AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
         /// Here we check whether we hit the limit on maximum data size in the buffer.
         /// And use setting from query context.
         /// It works, because queries with the same set of settings are already grouped together.
-        if (data->size_in_bytes >= key.settings.async_insert_max_data_size
-            || (data->query_number >= key.settings.async_insert_max_query_number && key.settings.async_insert_deduplicate))
+        if (data->size_in_bytes > key.settings.async_insert_max_data_size || data->query_number > key.settings.async_insert_max_query_number)
         {
             data_to_process = std::move(data);
             shard.iterators.erase(it);
@@ -290,11 +262,7 @@ AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
     else
         shard.are_tasks_available.notify_one();
 
-    return PushResult
-    {
-        .status = PushResult::OK,
-        .future = std::move(insert_future),
-    };
+    return insert_future;
 }
 
 void AsynchronousInsertQueue::processBatchDeadlines(size_t shard_num)

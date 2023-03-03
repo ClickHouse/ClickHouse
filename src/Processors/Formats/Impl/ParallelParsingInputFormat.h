@@ -111,7 +111,7 @@ public:
 
     void resetParser() override final
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "resetParser() is not allowed for {}", getName());
+        throw Exception("resetParser() is not allowed for " + getName(), ErrorCodes::LOGICAL_ERROR);
     }
 
     const BlockMissingValues & getMissingValues() const override final
@@ -172,8 +172,8 @@ private:
                     case IProcessor::Status::NeedData: break;
                     case IProcessor::Status::Async: break;
                     case IProcessor::Status::ExpandPipeline:
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "One of the parsers returned status {} during parallel parsing",
-                                             IProcessor::statusToName(status));
+                        throw Exception("One of the parsers returned status " + IProcessor::statusToName(status) +
+                                             " during parallel parsing", ErrorCodes::LOGICAL_ERROR);
                 }
             }
         }
@@ -292,7 +292,7 @@ private:
 
         {
             /// Additionally notify condvars
-            std::lock_guard lock(mutex);
+            std::lock_guard<std::mutex> lock(mutex);
             segmentator_condvar.notify_all();
             reader_condvar.notify_all();
         }

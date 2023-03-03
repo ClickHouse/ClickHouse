@@ -188,7 +188,7 @@ String Elf::getStoredBinaryHash() const
 const char * Elf::Section::name() const
 {
     if (!elf.section_names)
-        throw Exception(ErrorCodes::CANNOT_PARSE_ELF, "Section names are not initialized");
+        throw Exception("Section names are not initialized", ErrorCodes::CANNOT_PARSE_ELF);
 
     /// TODO buffer overflow is possible, we may need to check strlen.
     return elf.section_names + header.sh_name;

@@ -61,3 +61,4 @@ SELECT avg(t) FROM test;
 │    nan │
 └────────┘
 ```
+

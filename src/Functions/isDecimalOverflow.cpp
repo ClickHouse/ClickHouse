@@ -41,22 +41,21 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.empty() || arguments.size() > 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 1 or 2.",
-                getName(), arguments.size());
+            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed " +
+                toString(arguments.size()) + ", should be 1 or 2.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         WhichDataType which_first(arguments[0]->getTypeId());
 
         if (!which_first.isDecimal())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                            arguments[0]->getName(), getName());
+            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (arguments.size() == 2)
         {
             WhichDataType which_second(arguments[1]->getTypeId());
             if (!which_second.isUInt8())
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                            arguments[1]->getName(), getName());
+                throw Exception("Illegal type " + arguments[1]->getName() + " of argument of function " + getName(),
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
         return std::make_shared<DataTypeUInt8>();
@@ -66,19 +65,19 @@ public:
     {
         const auto & src_column = arguments[0];
         if (!src_column.column)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column while execute function {}", getName());
+            throw Exception("Illegal column while execute function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         UInt32 precision = 0;
         if (arguments.size() == 2)
         {
             const auto & precision_column = arguments[1];
             if (!precision_column.column)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column while execute function {}", getName());
+                throw Exception("Illegal column while execute function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             const ColumnConst * const_column = checkAndGetColumnConst<ColumnUInt8>(precision_column.column.get());
             if (!const_column)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument for function {} must be constant UInt8: "
-                                "precision.", getName());
+                throw Exception("Second argument for function " + getName() + " must be constant UInt8: precision.",
+                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             precision = const_column->getValue<UInt8>();
         }
@@ -87,7 +86,7 @@ public:
 
         auto result_column = ColumnUInt8::create();
 
-        auto call = [&](const auto & types) -> bool
+        auto call = [&](const auto & types) -> bool //-V657
         {
             using Types = std::decay_t<decltype(types)>;
             using Type = typename Types::RightType;
@@ -106,12 +105,13 @@ public:
                 return true;
             }
 
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column while execute function {}", getName());
+            throw Exception("Illegal column while execute function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         };
 
         TypeIndex dec_type_idx = src_column.type->getTypeId();
         if (!callOnBasicType<void, false, false, true, false>(dec_type_idx, call))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Wrong call for {} with {}", getName(), src_column.type->getName());
+            throw Exception("Wrong call for " + getName() + " with " + src_column.type->getName(),
+                            ErrorCodes::ILLEGAL_COLUMN);
 
         return result_column;
     }

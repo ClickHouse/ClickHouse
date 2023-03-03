@@ -19,3 +19,4 @@ SELECT toTypeName(Array())
 │ Array(Nothing)      │
 └─────────────────────┘
 ```
+

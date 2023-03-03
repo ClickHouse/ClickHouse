@@ -75,7 +75,6 @@
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Parsers/formatAST.h>
-#include <Parsers/QueryParameterVisitor.h>
 
 namespace DB
 {
@@ -129,7 +128,7 @@ bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column)
             if (isNotCreatable(col.type->getTypeId()))
             {
                 if (throw_if_cannot_create_column)
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot create column of type {}", col.type->getName());
+                    throw Exception("Cannot create column of type " + col.type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
                 return false;
             }
@@ -159,13 +158,11 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     size_t subquery_depth_,
     bool do_global,
     bool is_explain,
-    PreparedSetsPtr prepared_sets_,
-    bool is_create_parameterized_view_)
+    PreparedSetsPtr prepared_sets_)
     : WithContext(context_)
     , query(query_), settings(getContext()->getSettings())
     , subquery_depth(subquery_depth_)
     , syntax(syntax_analyzer_result_)
-    , is_create_parameterized_view(is_create_parameterized_view_)
 {
     /// Cache prepared sets because we might run analysis multiple times
     if (prepared_sets_)
@@ -314,7 +311,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                         const auto & column_name = group_elements_ast[j]->getColumnName();
                         const auto * node = temp_actions->tryFindInOutputs(column_name);
                         if (!node)
-                            throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown identifier (in GROUP BY): {}", column_name);
+                            throw Exception("Unknown identifier (in GROUP BY): " + column_name, ErrorCodes::UNKNOWN_IDENTIFIER);
 
                         /// Only removes constant keys if it's an initiator or distributed_group_by_no_merge is enabled.
                         if (getContext()->getClientInfo().distributed_depth == 0 || settings.distributed_group_by_no_merge > 0)
@@ -368,7 +365,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                     const auto & column_name = group_asts[i]->getColumnName();
                     const auto * node = temp_actions->tryFindInOutputs(column_name);
                     if (!node)
-                        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown identifier (in GROUP BY): {}", column_name);
+                        throw Exception("Unknown identifier (in GROUP BY): " + column_name, ErrorCodes::UNKNOWN_IDENTIFIER);
 
                     /// Only removes constant keys if it's an initiator or distributed_group_by_no_merge is enabled.
                     if (getContext()->getClientInfo().distributed_depth == 0 || settings.distributed_group_by_no_merge > 0)
@@ -428,7 +425,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
         aggregated_columns = temp_actions->getNamesAndTypesList();
 
     for (const auto & desc : aggregate_descriptions)
-        aggregated_columns.emplace_back(desc.column_name, desc.function->getResultType());
+        aggregated_columns.emplace_back(desc.column_name, desc.function->getReturnType());
 }
 
 
@@ -557,9 +554,7 @@ void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_makeset_for_
         false /* no_makeset */,
         only_consts,
         !isRemoteStorage() /* create_source_for_in */,
-        getAggregationKeysInfo(),
-        false /* build_expression_with_window_functions */,
-        is_create_parameterized_view);
+        getAggregationKeysInfo());
     ActionsVisitor(visitor_data, log.stream()).visit(ast);
     actions = visitor_data.getActions();
 }
@@ -578,9 +573,7 @@ void ExpressionAnalyzer::getRootActionsNoMakeSet(const ASTPtr & ast, ActionsDAGP
         true /* no_makeset */,
         only_consts,
         !isRemoteStorage() /* create_source_for_in */,
-        getAggregationKeysInfo(),
-        false /* build_expression_with_window_functions */,
-        is_create_parameterized_view);
+        getAggregationKeysInfo());
     ActionsVisitor(visitor_data, log.stream()).visit(ast);
     actions = visitor_data.getActions();
 }
@@ -601,9 +594,7 @@ void ExpressionAnalyzer::getRootActionsForHaving(
         false /* no_makeset */,
         only_consts,
         true /* create_source_for_in */,
-        getAggregationKeysInfo(),
-        false /* build_expression_with_window_functions */,
-        is_create_parameterized_view);
+        getAggregationKeysInfo());
     ActionsVisitor(visitor_data, log.stream()).visit(ast);
     actions = visitor_data.getActions();
 }
@@ -930,14 +921,14 @@ const ASTSelectQuery * ExpressionAnalyzer::getSelectQuery() const
 {
     const auto * select_query = query->as<ASTSelectQuery>();
     if (!select_query)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not a select query");
+        throw Exception("Not a select query", ErrorCodes::LOGICAL_ERROR);
     return select_query;
 }
 
 const ASTSelectQuery * SelectQueryExpressionAnalyzer::getAggregatingQuery() const
 {
     if (!has_aggregation)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No aggregation");
+        throw Exception("No aggregation", ErrorCodes::LOGICAL_ERROR);
     return getSelectQuery();
 }
 
@@ -1251,8 +1242,8 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
     const auto & node = step.actions()->findInOutputs(prewhere_column_name);
     auto filter_type = node.result_type;
     if (!filter_type->canBeUsedInBooleanContext())
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER, "Invalid type for filter in PREWHERE: {}",
-                        filter_type->getName());
+        throw Exception("Invalid type for filter in PREWHERE: " + filter_type->getName(),
+                        ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
 
     ActionsDAGPtr prewhere_actions;
     {
@@ -1334,8 +1325,8 @@ bool SelectQueryExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, 
     const auto & node = step.actions()->findInOutputs(where_column_name);
     auto filter_type = node.result_type;
     if (!filter_type->canBeUsedInBooleanContext())
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER, "Invalid type for filter in WHERE: {}",
-                        filter_type->getName());
+        throw Exception("Invalid type for filter in WHERE: " + filter_type->getName(),
+                        ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
 
     return true;
 }
@@ -1520,7 +1511,6 @@ bool SelectQueryExpressionAnalyzer::appendHaving(ExpressionActionsChain & chain,
     ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns);
 
     getRootActionsForHaving(select_query->having(), only_types, step.actions());
-
     step.addRequiredOutput(select_query->having()->getColumnName());
 
     return true;
@@ -1556,7 +1546,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
     {
         auto * ast = child->as<ASTOrderByElement>();
         if (!ast || ast->children.empty())
-            throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE, "Bad ORDER BY expression AST");
+            throw Exception("Bad ORDER BY expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
 
         if (getContext()->getSettingsRef().enable_positional_arguments)
             replaceForPositionalArguments(ast->children.at(0), select_query, ASTSelectQuery::Expression::ORDER_BY);
@@ -1678,14 +1668,12 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActio
     ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns);
 
     NamesWithAliases result_columns;
-    NameSet required_result_columns_set(required_result_columns.begin(), required_result_columns.end());
 
     ASTs asts = select_query->select()->children;
     for (const auto & ast : asts)
     {
         String result_name = ast->getAliasOrColumnName();
-
-        if (required_result_columns_set.empty() || required_result_columns_set.contains(result_name))
+        if (required_result_columns.empty() || required_result_columns.contains(result_name))
         {
             std::string source_name = ast->getColumnName();
 
@@ -1721,15 +1709,6 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActio
 
     auto actions = chain.getLastActions();
     actions->project(result_columns);
-
-    if (!required_result_columns.empty())
-    {
-        result_columns.clear();
-        for (const auto & column : required_result_columns)
-            result_columns.emplace_back(column, std::string{});
-        actions->project(result_columns);
-    }
-
     return actions;
 }
 
@@ -1801,16 +1780,11 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool add_aliases, bool proje
         getActionsDAG(add_aliases, project_result), ExpressionActionsSettings::fromContext(getContext(), compile_expressions));
 }
 
-ActionsDAGPtr ExpressionAnalyzer::getConstActionsDAG(const ColumnsWithTypeAndName & constant_inputs)
-{
-    auto actions = std::make_shared<ActionsDAG>(constant_inputs);
-    getRootActions(query, true /* no_makeset_for_subqueries */, actions, true /* only_consts */);
-    return actions;
-}
-
 ExpressionActionsPtr ExpressionAnalyzer::getConstActions(const ColumnsWithTypeAndName & constant_inputs)
 {
-    auto actions = getConstActionsDAG(constant_inputs);
+    auto actions = std::make_shared<ActionsDAG>(constant_inputs);
+
+    getRootActions(query, true /* no_makeset_for_subqueries */, actions, true /* only_consts */);
     return std::make_shared<ExpressionActions>(actions, ExpressionActionsSettings::fromContext(getContext()));
 }
 
@@ -1976,9 +1950,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                     ExpressionActions(
                         before_where,
                         ExpressionActionsSettings::fromSettings(context->getSettingsRef())).execute(before_where_sample);
-
-                    auto & column_elem
-                        = before_where_sample.getByName(query.where()->getColumnName());
+                    auto & column_elem = before_where_sample.getByName(query.where()->getColumnName());
                     /// If the filter column is a constant, record it.
                     if (column_elem.column)
                         where_constant_filter_description = ConstantFilterDescription(*column_elem.column);
@@ -2102,7 +2074,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                 for (const auto & f : w.window_functions)
                 {
                     query_analyzer.columns_after_window.push_back(
-                        {f.column_name, f.aggregate_function->getResultType()});
+                        {f.column_name, f.aggregate_function->getReturnType()});
                 }
             }
 
@@ -2235,7 +2207,7 @@ void ExpressionAnalysisResult::checkActions() const
             if (actions)
                 for (const auto & node : actions->getNodes())
                     if (node.type == ActionsDAG::ActionType::ARRAY_JOIN)
-                        throw Exception(ErrorCodes::ILLEGAL_PREWHERE, "PREWHERE cannot contain ARRAY JOIN action");
+                        throw Exception("PREWHERE cannot contain ARRAY JOIN action", ErrorCodes::ILLEGAL_PREWHERE);
         };
 
         check_actions(prewhere_info->prewhere_actions);

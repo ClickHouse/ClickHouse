@@ -3,8 +3,6 @@
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Names.h>
-#include <Core/IResolvedFunction.h>
-#include <Common/Exception.h>
 #include <DataTypes/IDataType.h>
 
 #include "config.h"
@@ -124,11 +122,11 @@ using Values = std::vector<llvm::Value *>;
 /** Function with known arguments and return type (when the specific overload was chosen).
   * It is also the point where all function-specific properties are known.
   */
-class IFunctionBase : public IResolvedFunction
+class IFunctionBase
 {
 public:
 
-    ~IFunctionBase() override = default;
+    virtual ~IFunctionBase() = default;
 
     virtual ColumnPtr execute( /// NOLINT
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run = false) const
@@ -139,10 +137,8 @@ public:
     /// Get the main function name.
     virtual String getName() const = 0;
 
-    const Array & getParameters() const final
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "IFunctionBase doesn't support getParameters method");
-    }
+    virtual const DataTypes & getArgumentTypes() const = 0;
+    virtual const DataTypePtr & getResultType() const = 0;
 
     /// Do preparations and return executable.
     /// sample_columns should contain data types of arguments and values of constants, if relevant.
@@ -162,7 +158,7 @@ public:
       */
     virtual llvm::Value * compile(llvm::IRBuilderBase & /*builder*/, Values /*values*/) const
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
+        throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
     }
 
 #endif
@@ -280,12 +276,12 @@ public:
       */
     virtual Monotonicity getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its monotonicity", getName());
+        throw Exception("Function " + getName() + " has no information about its monotonicity", ErrorCodes::NOT_IMPLEMENTED);
     }
 
 };
 
-using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
+using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 
 
 /** Creates IFunctionBase from argument types list (chooses one function overload).
@@ -325,7 +321,7 @@ public:
     /// This function will replace it with DataTypeFunction containing actual types.
     virtual void getLambdaArgumentTypesImpl(DataTypes & arguments [[maybe_unused]]) const
     {
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} can't have lambda-expressions as arguments", getName());
+        throw Exception("Function " + getName() + " can't have lambda-expressions as arguments", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
     /// Returns indexes of arguments, that must be ColumnConst
@@ -339,12 +335,12 @@ protected:
 
     virtual FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & /* arguments */, const DataTypePtr & /* result_type */) const
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "buildImpl is not implemented for {}", getName());
+        throw Exception("buildImpl is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     virtual DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getReturnType is not implemented for {}", getName());
+        throw Exception("getReturnType is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// This function will be called in default implementation. You can overload it or the previous one.
@@ -476,7 +472,7 @@ public:
     using Monotonicity = IFunctionBase::Monotonicity;
     virtual Monotonicity getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its monotonicity", getName());
+        throw Exception("Function " + getName() + " has no information about its monotonicity", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// For non-variadic functions, return number of arguments; otherwise return zero (that should be ignored).
@@ -484,7 +480,7 @@ public:
 
     virtual DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getReturnType is not implemented for {}", getName());
+        throw Exception("getReturnType is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
@@ -501,7 +497,7 @@ public:
 
     virtual void getLambdaArgumentTypes(DataTypes & /*arguments*/) const
     {
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} can't have lambda-expressions as arguments", getName());
+        throw Exception("Function " + getName() + " can't have lambda-expressions as arguments", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
     virtual ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const { return {}; }
@@ -523,7 +519,7 @@ protected:
 
     virtual llvm::Value * compileImpl(llvm::IRBuilderBase &, const DataTypes &, Values) const
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
+        throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
     }
 
 #endif

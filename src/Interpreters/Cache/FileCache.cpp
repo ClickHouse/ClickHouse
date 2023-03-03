@@ -2,7 +2,6 @@
 
 #include <Common/randomSeed.h>
 #include <Common/SipHash.h>
-#include <Common/logger_useful.h>
 #include <Interpreters/Cache/FileCacheSettings.h>
 #include <Interpreters/Cache/LRUFileCachePriority.h>
 #include <IO/ReadHelpers.h>
@@ -13,13 +12,13 @@
 #include <pcg-random/pcg_random.hpp>
 #include <filesystem>
 
-
 namespace fs = std::filesystem;
 
 namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int REMOTE_FS_OBJECT_CACHE_ERROR;
     extern const int LOGICAL_ERROR;
 }
 
@@ -47,27 +46,13 @@ FileCache::Key FileCache::hash(const String & path)
     return Key(sipHash128(path.data(), path.size()));
 }
 
-String FileCache::getPathInLocalCache(const Key & key, size_t offset, FileSegmentKind segment_kind) const
+String FileCache::getPathInLocalCache(const Key & key, size_t offset, bool is_persistent) const
 {
-    String file_suffix;
-    switch (segment_kind)
-    {
-        case FileSegmentKind::Persistent:
-            file_suffix = "_persistent";
-            break;
-        case FileSegmentKind::Temporary:
-            file_suffix = "_temporary";
-            break;
-        case FileSegmentKind::Regular:
-            file_suffix = "";
-            break;
-    }
-
     auto key_str = key.toString();
     return fs::path(cache_base_path)
         / key_str.substr(0, 3)
         / key_str
-        / (std::to_string(offset) + file_suffix);
+        / (std::to_string(offset) + (is_persistent ? "_persistent" : ""));
 }
 
 String FileCache::getPathInLocalCache(const Key & key) const
@@ -113,7 +98,7 @@ void FileCache::assertInitialized(std::lock_guard<std::mutex> & /* cache_lock */
         if (initialization_exception)
             std::rethrow_exception(initialization_exception);
         else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache not initialized");
+            throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Cache not initialized");
     }
 }
 
@@ -437,27 +422,6 @@ FileSegmentsHolder FileCache::getOrSet(const Key & key, size_t offset, size_t si
     return FileSegmentsHolder(std::move(file_segments));
 }
 
-FileSegmentsHolder FileCache::set(const Key & key, size_t offset, size_t size, const CreateFileSegmentSettings & settings)
-{
-    std::lock_guard cache_lock(mutex);
-
-    auto it = files.find(key);
-    if (it != files.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "File {} already exists", key.toString());
-
-    if (settings.unbounded)
-    {
-        /// If the file is unbounded, we can create a single cell for it.
-        FileSegments file_segments;
-        if (auto * cell = addCell(key, offset, size, FileSegment::State::EMPTY, settings, cache_lock))
-            file_segments.push_back(cell->file_segment);
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add cell for file {}", key.toString());
-        return FileSegmentsHolder(std::move(file_segments));
-    }
-    return FileSegmentsHolder(splitRangeIntoCells(key, offset, size, FileSegment::State::EMPTY, settings, cache_lock));
-}
-
 FileSegmentsHolder FileCache::get(const Key & key, size_t offset, size_t size)
 {
     std::lock_guard cache_lock(mutex);
@@ -576,13 +540,13 @@ FileSegmentPtr FileCache::createFileSegmentForDownload(
     assertCacheCorrectness(key, cache_lock);
 #endif
 
-    if (!settings.unbounded && size > max_file_segment_size)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Requested size exceeds max file segment size");
+    if (size > max_file_segment_size)
+        throw Exception(ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR, "Requested size exceeds max file segment size");
 
     auto * cell = getCell(key, offset, cache_lock);
     if (cell)
         throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
+            ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
             "Cache cell already exists for key `{}` and offset {}",
             key.toString(), offset);
 
@@ -774,7 +738,7 @@ bool FileCache::tryReserveForMainList(
         auto * cell = getCell(entry_key, entry_offset, cache_lock);
         if (!cell)
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
+                ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
                 "Cache became inconsistent. Key: {}, offset: {}",
                 key.toString(), offset);
 
@@ -1000,7 +964,7 @@ void FileCache::remove(
         catch (...)
         {
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
+                ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
                 "Removal of cached file failed. Key: {}, offset: {}, path: {}, error: {}",
                 key.toString(), offset, cache_file_path, getCurrentExceptionMessage(false));
         }
@@ -1017,7 +981,7 @@ void FileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock
     /// cache_base_path / key_prefix / key / offset
     if (!files.empty())
         throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
+            ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
             "Cache initialization is partially made. "
             "This can be a result of a failed first attempt to initialize cache. "
             "Please, check log for error messages");
@@ -1048,20 +1012,14 @@ void FileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock
                 auto offset_with_suffix = offset_it->path().filename().string();
                 auto delim_pos = offset_with_suffix.find('_');
                 bool parsed;
-                FileSegmentKind segment_kind = FileSegmentKind::Regular;
+                bool is_persistent = false;
 
                 if (delim_pos == std::string::npos)
                     parsed = tryParse<UInt64>(offset, offset_with_suffix);
                 else
                 {
                     parsed = tryParse<UInt64>(offset, offset_with_suffix.substr(0, delim_pos));
-                    if (offset_with_suffix.substr(delim_pos+1) == "persistent")
-                        segment_kind = FileSegmentKind::Persistent;
-                    if (offset_with_suffix.substr(delim_pos+1) == "temporary")
-                    {
-                        fs::remove(offset_it->path());
-                        continue;
-                    }
+                    is_persistent = offset_with_suffix.substr(delim_pos+1) == "persistent";
                 }
 
                 if (!parsed)
@@ -1081,7 +1039,7 @@ void FileCache::loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock
                 {
                     auto * cell = addCell(
                         key, offset, size, FileSegment::State::DOWNLOADED,
-                        CreateFileSegmentSettings(segment_kind), cache_lock);
+                        CreateFileSegmentSettings{ .is_persistent = is_persistent }, cache_lock);
 
                     if (cell)
                         queue_entries.emplace_back(cell->queue_iterator, cell->file_segment);
@@ -1149,10 +1107,8 @@ void FileCache::reduceSizeToDownloaded(
             file_segment->getInfoForLogUnlocked(segment_lock));
     }
 
-    CreateFileSegmentSettings create_settings(file_segment->getKind());
-
     cell->file_segment = std::make_shared<FileSegment>(
-        offset, downloaded_size, key, this, FileSegment::State::DOWNLOADED, create_settings);
+        offset, downloaded_size, key, this, FileSegment::State::DOWNLOADED, CreateFileSegmentSettings{});
 
     assert(file_segment->reserved_size == downloaded_size);
 }
@@ -1195,7 +1151,7 @@ std::vector<String> FileCache::tryGetCachePaths(const Key & key)
     for (const auto & [offset, cell] : cells_by_offset)
     {
         if (cell.file_segment->state() == FileSegment::State::DOWNLOADED)
-            cache_paths.push_back(getPathInLocalCache(key, offset, cell.file_segment->getKind()));
+            cache_paths.push_back(getPathInLocalCache(key, offset, cell.file_segment->isPersistent()));
     }
 
     return cache_paths;
@@ -1256,7 +1212,7 @@ FileCache::FileSegmentCell::FileSegmentCell(
         }
         default:
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
+                ErrorCodes::REMOTE_FS_OBJECT_CACHE_ERROR,
                 "Can create cell with either EMPTY, DOWNLOADED, DOWNLOADING state, got: {}",
                 FileSegment::stateToString(file_segment->download_state));
     }
@@ -1399,7 +1355,7 @@ FileCache::QueryContextPtr FileCache::getOrSetQueryContext(
     if (context)
         return context;
 
-    auto query_context = std::make_shared<QueryContext>(settings.filesystem_cache_max_download_size, settings.skip_download_if_exceeds_query_cache);
+    auto query_context = std::make_shared<QueryContext>(settings.max_query_cache_size, settings.skip_download_if_exceeds_query_cache);
     auto query_iter = query_map.emplace(query_id, query_context).first;
     return query_iter->second;
 }
@@ -1408,10 +1364,10 @@ FileCache::QueryContextHolder FileCache::getQueryContextHolder(const String & qu
 {
     std::lock_guard cache_lock(mutex);
 
-    if (!enable_filesystem_query_cache_limit || settings.filesystem_cache_max_download_size == 0)
+    if (!enable_filesystem_query_cache_limit || settings.max_query_cache_size == 0)
         return {};
 
-    /// if enable_filesystem_query_cache_limit is true, and filesystem_cache_max_download_size large than zero,
+    /// if enable_filesystem_query_cache_limit is true, and max_query_cache_size large than zero,
     /// we create context query for current query.
     auto context = getOrSetQueryContext(query_id, settings, cache_lock);
     return QueryContextHolder(query_id, this, context);

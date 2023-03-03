@@ -13,7 +13,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTColumnsMatcher.h>
@@ -62,7 +61,6 @@ namespace ErrorCodes
     extern const int EXPECTED_ALL_OR_ANY;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
-    extern const int UNKNOWN_QUERY_PARAMETER;
 }
 
 namespace
@@ -113,7 +111,7 @@ private:
 
     QueryTreeNodePtr buildJoinTree(const ASTPtr & tables_in_select_query, const ContextPtr & context) const;
 
-    ColumnTransformersNodes buildColumnTransformers(const ASTPtr & matcher_expression, const ContextPtr & context) const;
+    ColumnTransformersNodes buildColumnTransformers(const ASTPtr & matcher_expression, size_t start_child_index, const ContextPtr & context) const;
 
     ASTPtr query;
     QueryTreeNodePtr query_tree_node;
@@ -146,8 +144,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectOrUnionExpression(const ASTPtr & s
     else if (select_or_union_query->as<ASTSelectQuery>())
         query_node = buildSelectExpression(select_or_union_query, is_subquery /*is_subquery*/, cte_name /*cte_name*/, context);
     else
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "SELECT or UNION query {} is not supported",
-                        select_or_union_query->formatForErrorMessage());
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "SELECT or UNION query {} is not supported", select_or_union_query->formatForErrorMessage());
 
     return query_node;
 }
@@ -233,43 +230,11 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
     auto select_settings = select_query_typed.settings();
     SettingsChanges settings_changes;
 
-    /// We are going to remove settings LIMIT and OFFSET and
-    /// further replace them with corresponding expression nodes
-    UInt64 limit = 0;
-    UInt64 offset = 0;
-
-    /// Remove global settings limit and offset
-    if (const auto & settings_ref = updated_context->getSettingsRef(); settings_ref.limit || settings_ref.offset)
-    {
-        Settings settings = updated_context->getSettings();
-        limit = settings.limit;
-        offset = settings.offset;
-        settings.limit = 0;
-        settings.offset = 0;
-        updated_context->setSettings(settings);
-    }
-
     if (select_settings)
     {
         auto & set_query = select_settings->as<ASTSetQuery &>();
-
-        /// Remove expression settings limit and offset
-        if (auto * limit_field = set_query.changes.tryGet("limit"))
-        {
-            limit = limit_field->safeGet<UInt64>();
-            set_query.changes.removeSetting("limit");
-        }
-        if (auto * offset_field = set_query.changes.tryGet("offset"))
-        {
-            offset = offset_field->safeGet<UInt64>();
-            set_query.changes.removeSetting("offset");
-        }
-
-        if (!set_query.changes.empty())
-        {
-            updated_context->applySettingsChanges(set_query.changes);
-            settings_changes = set_query.changes;
-        }
+        updated_context->applySettingsChanges(set_query.changes);
+        settings_changes = set_query.changes;
     }
 
     auto current_query_tree = std::make_shared<QueryNode>(std::move(updated_context), std::move(settings_changes));
@@ -347,7 +312,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
     if (select_limit_by_limit)
         current_query_tree->getLimitByLimit() = buildExpression(select_limit_by_limit, current_context);
 
-    auto select_limit_by_offset = select_query_typed.limitByOffset();
+    auto select_limit_by_offset = select_query_typed.limitOffset();
     if (select_limit_by_offset)
         current_query_tree->getLimitByOffset() = buildExpression(select_limit_by_offset, current_context);
 
@@ -355,32 +320,12 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
     if (select_limit_by)
         current_query_tree->getLimitByNode() = buildExpressionList(select_limit_by, current_context);
 
-    /// Combine limit expression with limit setting
     auto select_limit = select_query_typed.limitLength();
-    if (select_limit && limit)
-    {
-        auto function_node = std::make_shared<FunctionNode>("least");
-        function_node->getArguments().getNodes().push_back(buildExpression(select_limit, current_context));
-        function_node->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(limit));
-        current_query_tree->getLimit() = std::move(function_node);
-    }
-    else if (limit)
-        current_query_tree->getLimit() = std::make_shared<ConstantNode>(limit);
-    else if (select_limit)
+    if (select_limit)
         current_query_tree->getLimit() = buildExpression(select_limit, current_context);
 
-    /// Combine offset expression with offset setting
     auto select_offset = select_query_typed.limitOffset();
-    if (select_offset && offset)
-    {
-        auto function_node = std::make_shared<FunctionNode>("plus");
-        function_node->getArguments().getNodes().push_back(buildExpression(select_offset, current_context));
-        function_node->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(offset));
-        current_query_tree->getOffset() = std::move(function_node);
-    }
-    else if (offset)
-        current_query_tree->getOffset() = std::make_shared<ConstantNode>(offset);
-    else if (select_offset)
+    if (select_offset)
         current_query_tree->getOffset() = buildExpression(select_offset, current_context);
 
     return current_query_tree;
@@ -492,20 +437,15 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
         auto identifier = Identifier(ast_identifier->name_parts);
         result = std::make_shared<IdentifierNode>(std::move(identifier));
     }
-    else if (const auto * table_identifier = expression->as<ASTTableIdentifier>())
-    {
-        auto identifier = Identifier(table_identifier->name_parts);
-        result = std::make_shared<IdentifierNode>(std::move(identifier));
-    }
     else if (const auto * asterisk = expression->as<ASTAsterisk>())
     {
-        auto column_transformers = buildColumnTransformers(asterisk->transformers, context);
+        auto column_transformers = buildColumnTransformers(expression, 0 /*start_child_index*/, context);
         result = std::make_shared<MatcherNode>(std::move(column_transformers));
     }
     else if (const auto * qualified_asterisk = expression->as<ASTQualifiedAsterisk>())
     {
-        auto & qualified_identifier = qualified_asterisk->qualifier->as<ASTIdentifier &>();
-        auto column_transformers = buildColumnTransformers(qualified_asterisk->transformers, context);
+        auto & qualified_identifier = qualified_asterisk->children.at(0)->as<ASTTableIdentifier &>();
+        auto column_transformers = buildColumnTransformers(expression, 1 /*start_child_index*/, context);
         result = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts), std::move(column_transformers));
     }
     else if (const auto * ast_literal = expression->as<ASTLiteral>())
@@ -594,11 +534,6 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
 
         result = std::move(query_node);
     }
-    else if (const auto * select_with_union_query = expression->as<ASTSelectWithUnionQuery>())
-    {
-        auto query_node = buildSelectWithUnionExpression(expression, false /*is_subquery*/, {} /*cte_name*/, context);
-        result = std::move(query_node);
-    }
     else if (const auto * with_element = expression->as<ASTWithElement>())
     {
         auto with_element_subquery = with_element->subquery->as<ASTSubquery &>().children.at(0);
@@ -608,7 +543,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     }
     else if (const auto * columns_regexp_matcher = expression->as<ASTColumnsRegexpMatcher>())
     {
-        auto column_transformers = buildColumnTransformers(columns_regexp_matcher->transformers, context);
+        auto column_transformers = buildColumnTransformers(expression, 0 /*start_child_index*/, context);
         result = std::make_shared<MatcherNode>(columns_regexp_matcher->getMatcher(), std::move(column_transformers));
     }
     else if (const auto * columns_list_matcher = expression->as<ASTColumnsListMatcher>())
@@ -622,18 +557,18 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
             column_list_identifiers.emplace_back(Identifier{column_list_identifier.name_parts});
         }
 
-        auto column_transformers = buildColumnTransformers(columns_list_matcher->transformers, context);
+        auto column_transformers = buildColumnTransformers(expression, 0 /*start_child_index*/, context);
         result = std::make_shared<MatcherNode>(std::move(column_list_identifiers), std::move(column_transformers));
     }
     else if (const auto * qualified_columns_regexp_matcher = expression->as<ASTQualifiedColumnsRegexpMatcher>())
     {
-        auto & qualified_identifier = qualified_columns_regexp_matcher->qualifier->as<ASTIdentifier &>();
-        auto column_transformers = buildColumnTransformers(qualified_columns_regexp_matcher->transformers, context);
+        auto & qualified_identifier = qualified_columns_regexp_matcher->children.at(0)->as<ASTTableIdentifier &>();
+        auto column_transformers = buildColumnTransformers(expression, 1 /*start_child_index*/, context);
         result = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts), qualified_columns_regexp_matcher->getMatcher(), std::move(column_transformers));
     }
     else if (const auto * qualified_columns_list_matcher = expression->as<ASTQualifiedColumnsListMatcher>())
     {
-        auto & qualified_identifier = qualified_columns_list_matcher->qualifier->as<ASTIdentifier &>();
+        auto & qualified_identifier = qualified_columns_list_matcher->children.at(0)->as<ASTTableIdentifier &>();
 
         Identifiers column_list_identifiers;
         column_list_identifiers.reserve(qualified_columns_list_matcher->column_list->children.size());
@@ -644,14 +579,8 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
             column_list_identifiers.emplace_back(Identifier{column_list_identifier.name_parts});
         }
 
-        auto column_transformers = buildColumnTransformers(qualified_columns_list_matcher->transformers, context);
+        auto column_transformers = buildColumnTransformers(expression, 1 /*start_child_index*/, context);
         result = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts), std::move(column_list_identifiers), std::move(column_transformers));
-    }
-    else if (const auto * query_parameter = expression->as<ASTQueryParameter>())
-    {
-        throw Exception(ErrorCodes::UNKNOWN_QUERY_PARAMETER,
-            "Query parameter {} was not set",
-            backQuote(query_parameter->name));
     }
     else
     {
@@ -808,8 +737,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTPtr & tables_in_select
             }
             else
             {
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Unsupported table expression node {}",
-                                table_element.table_expression->formatForErrorMessage());
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Unsupported table expression node {}", table_element.table_expression->formatForErrorMessage());
             }
         }
 
@@ -905,15 +833,15 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(const ASTPtr & tables_in_select
 }
 
 
-ColumnTransformersNodes QueryTreeBuilder::buildColumnTransformers(const ASTPtr & matcher_expression, const ContextPtr & context) const
+ColumnTransformersNodes QueryTreeBuilder::buildColumnTransformers(const ASTPtr & matcher_expression, size_t start_child_index, const ContextPtr & context) const
 {
     ColumnTransformersNodes column_transformers;
+    size_t children_size = matcher_expression->children.size();
 
-    if (!matcher_expression)
-        return column_transformers;
-
-    for (const auto & child : matcher_expression->children)
+    for (; start_child_index < children_size; ++start_child_index)
     {
+        const auto & child = matcher_expression->children[start_child_index];
+
         if (auto * apply_transformer = child->as<ASTColumnsApplyTransformer>())
         {
             if (apply_transformer->lambda)
@@ -956,7 +884,7 @@ ColumnTransformersNodes QueryTreeBuilder::buildColumnTransformers(const ASTPtr &
             for (const auto & replace_transformer_child : replace_transformer->children)
             {
                 auto & replacement = replace_transformer_child->as<ASTColumnsReplaceTransformer::Replacement &>();
-                replacements.emplace_back(ReplaceColumnTransformerNode::Replacement{replacement.name, buildExpression(replacement.children[0], context)});
+                replacements.emplace_back(ReplaceColumnTransformerNode::Replacement{replacement.name, buildExpression(replacement.expr, context)});
             }
 
             column_transformers.emplace_back(std::make_shared<ReplaceColumnTransformerNode>(replacements, replace_transformer->is_strict));

@@ -212,44 +212,6 @@ def test_simple_alter_table(started_cluster, engine):
     competing_node.query("DROP DATABASE testdb SYNC")
 
 
-@pytest.mark.parametrize("engine", ["MergeTree", "ReplicatedMergeTree"])
-def test_delete_from_table(started_cluster, engine):
-    main_node.query(
-        "CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica1');"
-    )
-    dummy_node.query(
-        "CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard2', 'replica1');"
-    )
-
-    name = "testdb.delete_test_{}".format(engine)
-    main_node.query(
-        "CREATE TABLE {} "
-        "(id UInt64, value String) "
-        "ENGINE = {} PARTITION BY id%2 ORDER BY (id);".format(name, engine)
-    )
-    main_node.query("INSERT INTO TABLE {} VALUES(1, 'aaaa');".format(name))
-    main_node.query("INSERT INTO TABLE {} VALUES(2, 'aaaa');".format(name))
-    dummy_node.query("INSERT INTO TABLE {} VALUES(1, 'bbbb');".format(name))
-    dummy_node.query("INSERT INTO TABLE {} VALUES(2, 'bbbb');".format(name))
-
-    main_node.query("DELETE FROM {} WHERE id=2;".format(name))
-
-    expected = "1\taaaa\n1\tbbbb"
-
-    table_for_select = name
-    if not "Replicated" in engine:
-        table_for_select = "cluster('testdb', {})".format(name)
-    for node in [main_node, dummy_node]:
-        assert_eq_with_retry(
-            node,
-            "SELECT * FROM {} ORDER BY id, value;".format(table_for_select),
-            expected,
-        )
-
-    main_node.query("DROP DATABASE testdb SYNC")
-    dummy_node.query("DROP DATABASE testdb SYNC")
-
-
 def get_table_uuid(database, name):
     return main_node.query(
         f"SELECT uuid FROM system.tables WHERE database = '{database}' and name = '{name}'"
@@ -874,153 +836,6 @@ def test_recover_staled_replica(started_cluster):
     dummy_node.query("DROP DATABASE recover SYNC")
 
 
-def test_recover_staled_replica_many_mvs(started_cluster):
-    main_node.query("DROP DATABASE IF EXISTS recover_mvs")
-    dummy_node.query("DROP DATABASE IF EXISTS recover_mvs")
-
-    main_node.query_with_retry(
-        "CREATE DATABASE IF NOT EXISTS recover_mvs ENGINE = Replicated('/clickhouse/databases/recover_mvs', 'shard1', 'replica1');"
-    )
-    started_cluster.get_kazoo_client("zoo1").set(
-        "/clickhouse/databases/recover_mvs/logs_to_keep", b"10"
-    )
-    dummy_node.query_with_retry(
-        "CREATE DATABASE IF NOT EXISTS recover_mvs ENGINE = Replicated('/clickhouse/databases/recover_mvs', 'shard1', 'replica2');"
-    )
-
-    settings = {"distributed_ddl_task_timeout": 0}
-
-    with PartitionManager() as pm:
-        pm.drop_instance_zk_connections(dummy_node)
-        dummy_node.query_and_get_error("RENAME TABLE recover_mvs.t1 TO recover_mvs.m1")
-
-        for identifier in ["1", "2", "3", "4"]:
-            main_node.query(
-                f"CREATE TABLE recover_mvs.rmt{identifier} (n int) ENGINE=ReplicatedMergeTree ORDER BY n",
-                settings=settings,
-            )
-
-        print("Created tables")
-
-        for identifier in ["1", "2", "3", "4"]:
-            main_node.query(
-                f"CREATE TABLE recover_mvs.mv_inner{identifier} (n int) ENGINE=ReplicatedMergeTree ORDER BY n",
-                settings=settings,
-            )
-
-        for identifier in ["1", "2", "3", "4"]:
-            main_node.query_with_retry(
-                f"""CREATE MATERIALIZED VIEW recover_mvs.mv{identifier}
-                    TO recover_mvs.mv_inner{identifier}
-                    AS SELECT * FROM recover_mvs.rmt{identifier}""",
-                settings=settings,
-            )
-
-        print("Created MVs")
-
-        for identifier in ["1", "2", "3", "4"]:
-            main_node.query_with_retry(
-                f"""CREATE VIEW recover_mvs.view_from_mv{identifier}
-                    AS SELECT * FROM recover_mvs.mv{identifier}""",
-                settings=settings,
-            )
-
-        print("Created Views on top of MVs")
-
-        for identifier in ["1", "2", "3", "4"]:
-            main_node.query_with_retry(
-                f"""CREATE MATERIALIZED VIEW recover_mvs.cascade_mv{identifier}
-                    ENGINE=MergeTree() ORDER BY tuple()
-                    POPULATE AS SELECT * FROM recover_mvs.mv_inner{identifier};""",
-                settings=settings,
-            )
-
-        print("Created cascade MVs")
-
-        for identifier in ["1", "2", "3", "4"]:
-            main_node.query_with_retry(
-                f"""CREATE VIEW recover_mvs.view_from_cascade_mv{identifier}
-                    AS SELECT * FROM recover_mvs.cascade_mv{identifier}""",
-                settings=settings,
-            )
-
-        print("Created Views on top of cascade MVs")
-
-        for identifier in ["1", "2", "3", "4"]:
-            main_node.query_with_retry(
-                f"""CREATE MATERIALIZED VIEW recover_mvs.double_cascade_mv{identifier}
-                    ENGINE=MergeTree() ORDER BY tuple()
-                    POPULATE AS SELECT * FROM recover_mvs.`.inner_id.{get_table_uuid("recover_mvs", f"cascade_mv{identifier}")}`""",
-                settings=settings,
-            )
-
-        print("Created double cascade MVs")
-
-        for identifier in ["1", "2", "3", "4"]:
-            main_node.query_with_retry(
-                f"""CREATE VIEW recover_mvs.view_from_double_cascade_mv{identifier}
-                    AS SELECT * FROM recover_mvs.double_cascade_mv{identifier}""",
-                settings=settings,
-            )
-
-        print("Created Views on top of double cascade MVs")
-
-        # This weird table name is actually makes sence because it starts with letter `a` and may break some internal sorting
-        main_node.query_with_retry(
-            """
-            CREATE VIEW recover_mvs.anime
-            AS
-            SELECT n
-            FROM
-            (
-                SELECT *
-                FROM
-                (
-                    SELECT *
-                    FROM
-                    (
-                        SELECT *
-                        FROM recover_mvs.mv_inner1 AS q1
-                        INNER JOIN recover_mvs.mv_inner2 AS q2 ON q1.n = q2.n
-                    ) AS new_table_1
-                    INNER JOIN recover_mvs.mv_inner3 AS q3 ON new_table_1.n = q3.n
-                ) AS new_table_2
-                INNER JOIN recover_mvs.mv_inner4 AS q4 ON new_table_2.n = q4.n
-            )
-            """,
-            settings=settings,
-        )
-
-        print("Created final boss")
-
-        for identifier in ["1", "2", "3", "4"]:
-            main_node.query_with_retry(
-                f"""CREATE DICTIONARY recover_mvs.`11111d{identifier}` (n UInt64)
-                PRIMARY KEY n
-                SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() TABLE 'double_cascade_mv{identifier}' DB 'recover_mvs'))
-                LAYOUT(FLAT()) LIFETIME(1)""",
-                settings=settings,
-            )
-
-        print("Created dictionaries")
-
-        for identifier in ["1", "2", "3", "4"]:
-            main_node.query_with_retry(
-                f"""CREATE VIEW recover_mvs.`00000vd{identifier}`
-                AS SELECT * FROM recover_mvs.`11111d{identifier}`""",
-                settings=settings,
-            )
-
-        print("Created Views on top of dictionaries")
-
-    dummy_node.query("SYSTEM SYNC DATABASE REPLICA recover_mvs")
-    query = "SELECT name FROM system.tables WHERE database='recover_mvs' ORDER BY name"
-    assert main_node.query(query) == dummy_node.query(query)
-
-    main_node.query("DROP DATABASE IF EXISTS recover_mvs")
-    dummy_node.query("DROP DATABASE IF EXISTS recover_mvs")
-
-
 def test_startup_without_zk(started_cluster):
     with PartitionManager() as pm:
         pm.drop_instance_zk_connections(main_node)
@@ -1190,9 +1005,6 @@ def test_force_synchronous_settings(started_cluster):
 
 
 def test_recover_digest_mismatch(started_cluster):
-    main_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch")
-    dummy_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch")
-
     main_node.query(
         "CREATE DATABASE recover_digest_mismatch ENGINE = Replicated('/clickhouse/databases/recover_digest_mismatch', 'shard1', 'replica1');"
     )
@@ -1202,22 +1014,19 @@ def test_recover_digest_mismatch(started_cluster):
 
     create_some_tables("recover_digest_mismatch")
 
-    main_node.query("SYSTEM SYNC DATABASE REPLICA recover_digest_mismatch")
-    dummy_node.query("SYSTEM SYNC DATABASE REPLICA recover_digest_mismatch")
-
     ways_to_corrupt_metadata = [
-        "mv /var/lib/clickhouse/metadata/recover_digest_mismatch/t1.sql /var/lib/clickhouse/metadata/recover_digest_mismatch/m1.sql",
-        "sed --follow-symlinks -i 's/Int32/String/' /var/lib/clickhouse/metadata/recover_digest_mismatch/mv1.sql",
-        "rm -f /var/lib/clickhouse/metadata/recover_digest_mismatch/d1.sql",
+        f"mv /var/lib/clickhouse/metadata/recover_digest_mismatch/t1.sql /var/lib/clickhouse/metadata/recover_digest_mismatch/m1.sql",
+        f"sed --follow-symlinks -i 's/Int32/String/' /var/lib/clickhouse/metadata/recover_digest_mismatch/mv1.sql",
+        f"rm -f /var/lib/clickhouse/metadata/recover_digest_mismatch/d1.sql",
         # f"rm -rf /var/lib/clickhouse/metadata/recover_digest_mismatch/", # Directory already exists
-        "rm -rf /var/lib/clickhouse/store",
+        f"rm -rf /var/lib/clickhouse/store",
     ]
 
     for command in ways_to_corrupt_metadata:
-        print(f"Corrupting data using `{command}`")
         need_remove_is_active_node = "rm -rf" in command
         dummy_node.stop_clickhouse(kill=not need_remove_is_active_node)
         dummy_node.exec_in_container(["bash", "-c", command])
+        dummy_node.start_clickhouse()
 
         query = (
             "SELECT name, uuid, create_table_query FROM system.tables WHERE database='recover_digest_mismatch' AND name NOT LIKE '.inner_id.%' "
@@ -1225,18 +1034,10 @@ def test_recover_digest_mismatch(started_cluster):
         )
         expected = main_node.query(query)
 
-        if need_remove_is_active_node:
+        if "rm -rf" in command:
             # NOTE Otherwise it fails to recreate ReplicatedMergeTree table due to "Replica already exists"
             main_node.query(
                 "SYSTEM DROP REPLICA '2' FROM DATABASE recover_digest_mismatch"
             )
 
-        # There is a race condition between deleting active node and creating it on server startup
-        # So we start a server only after we deleted all table replicas from the Keeper
-        dummy_node.start_clickhouse()
         assert_eq_with_retry(dummy_node, query, expected)
-
-    main_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch")
-    dummy_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch")
-
-    print("Everything Okay")

@@ -164,7 +164,7 @@ $CLICKHOUSE_CLIENT -q "insert into function file(02475_data.bsonEachRow) select 
 $CLICKHOUSE_CLIENT -q "desc file(02475_data.bsonEachRow)"
 $CLICKHOUSE_CLIENT -q "insert into function file(02475_data.bsonEachRow) select number::Int64 as x from numbers(2)"
 $CLICKHOUSE_CLIENT -q "desc file(02475_data.bsonEachRow)"
-$CLICKHOUSE_CLIENT -q "insert into function file(02475_data.bsonEachRow) select toString(number) as x from numbers(2)"
+$CLICKHOUSE_CLIENT -q "insert into function file(02475_data.bsonEachRow) select number::UInt64 as x from numbers(2)"
 $CLICKHOUSE_CLIENT -q "desc file(02475_data.bsonEachRow)" 2>&1 | grep -q -F "TYPE_MISMATCH" && echo "OK" || echo "FAIL"
 
 $CLICKHOUSE_CLIENT -q "insert into function file(02475_data.bsonEachRow) select [number::Bool] as x from numbers(2) settings engine_file_truncate_on_insert=1"
@@ -174,7 +174,7 @@ $CLICKHOUSE_CLIENT -q "insert into function file(02475_data.bsonEachRow) select 
 $CLICKHOUSE_CLIENT -q "desc file(02475_data.bsonEachRow)"
 $CLICKHOUSE_CLIENT -q "insert into function file(02475_data.bsonEachRow) select [number::Int64] as x from numbers(2)"
 $CLICKHOUSE_CLIENT -q "desc file(02475_data.bsonEachRow)"
-$CLICKHOUSE_CLIENT -q "insert into function file(02475_data.bsonEachRow) select [toString(number)] as x from numbers(2)"
+$CLICKHOUSE_CLIENT -q "insert into function file(02475_data.bsonEachRow) select [number::UInt64] as x from numbers(2)"
 $CLICKHOUSE_CLIENT -q "desc file(02475_data.bsonEachRow)" 2>&1 | grep -q -F "TYPE_MISMATCH" && echo "OK" || echo "FAIL"
 
 $CLICKHOUSE_CLIENT -q "insert into function file(02475_data.bsonEachRow) select [] as x from numbers(2) settings engine_file_truncate_on_insert=1"

@@ -3,7 +3,7 @@
 #include <Processors/ISource.h>
 
 #include <Storages/Kafka/StorageKafka.h>
-#include <Storages/Kafka/KafkaConsumer.h>
+#include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
 #include <Common/Stopwatch.h>
 
 
@@ -32,7 +32,7 @@ public:
     Chunk generate() override;
 
     void commit();
-    bool isStalled() const { return !consumer || consumer->isStalled(); }
+    bool isStalled() const { return !buffer || buffer->isStalled(); }
 
     void setTimeLimit(Poco::Timespan max_execution_time_) { max_execution_time = max_execution_time_; }
 
@@ -44,7 +44,7 @@ private:
     Poco::Logger * log;
     UInt64 max_block_size;
 
-    KafkaConsumerPtr consumer;
+    ConsumerBufferPtr buffer;
     bool broken = true;
     bool is_finished = false;
     bool commit_in_suffix;

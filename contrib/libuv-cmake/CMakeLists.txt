@@ -136,6 +136,11 @@ add_library(ch_contrib::uv ALIAS _uv)
 target_compile_definitions(_uv PRIVATE ${uv_defines})
 target_include_directories(_uv SYSTEM PUBLIC ${SOURCE_DIR}/include PRIVATE ${SOURCE_DIR}/src)
 target_link_libraries(_uv ${uv_libraries})
+if (NOT USE_STATIC_LIBRARIES)
+  target_compile_definitions(_uv
+                             INTERFACE USING_UV_SHARED=1
+                             PRIVATE BUILDING_UV_SHARED=1)
+endif()
 
 if(UNIX)
   # Now for some gibbering horrors from beyond the stars...

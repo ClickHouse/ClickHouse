@@ -65,12 +65,12 @@ public:
     {
         if (arguments.size() > 1)
         {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Arguments size of function {} should be 0 or 1", getName());
+            throw Exception("Arguments size of function " + getName() + " should be 0 or 1", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         }
         if (arguments.size() == 1 && !isStringOrFixedString(arguments[0]))
         {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments of function {} should be String or FixedString",
-                getName());
+            throw Exception(
+                "Arguments of function " + getName() + " should be String or FixedString", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
         return std::make_shared<DataTypeUInt64>();
     }
@@ -97,12 +97,13 @@ public:
                     if (auto it = disk_map.find(disk_name); it != disk_map.end())
                         data[i] = Impl::get(it->second);
                     else
-                        throw Exception(ErrorCodes::UNKNOWN_DISK, "Unknown disk name {} while execute function {}", disk_name, getName());
+                        throw Exception(
+                            "Unknown disk name " + disk_name + " while execute function " + getName(), ErrorCodes::UNKNOWN_DISK);
                 }
                 return col_res;
             }
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-                arguments[0].column->getName(), getName());
+            throw Exception(
+                "Illegal column " + arguments[0].column->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
         }
     }
 
