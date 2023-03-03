@@ -10,6 +10,7 @@
 
 
 #include <IO/ReadBufferFromPocoSocket.h>
+#include <IO/WriteBufferFromPocoSocket.h>
 
 #include <Interpreters/TablesStatus.h>
 #include <Interpreters/Context_fwd.h>
@@ -154,8 +155,11 @@ public:
     {
         async_callback = std::move(async_callback_);
         if (in)
-            in->setAsyncCallback(std::move(async_callback));
+            in->setAsyncCallback(async_callback);
+        if (out)
+            out->setAsyncCallback(async_callback);
     }
+
 private:
     String host;
     UInt16 port;
@@ -194,7 +198,7 @@ private:
 
     std::unique_ptr<Poco::Net::StreamSocket> socket;
     std::shared_ptr<ReadBufferFromPocoSocket> in;
-    std::shared_ptr<WriteBuffer> out;
+    std::shared_ptr<WriteBufferFromPocoSocket> out;
     std::optional<UInt64> last_input_packet_type;
 
     String query_id;
@@ -277,10 +281,11 @@ private:
     [[noreturn]] void throwUnexpectedPacket(UInt64 packet_type, const char * expected) const;
 };
 
+template <typename Conn>
 class AsyncCallbackSetter
 {
 public:
-    AsyncCallbackSetter(Connection * connection_, AsyncCallback async_callback) : connection(connection_)
+    AsyncCallbackSetter(Conn * connection_, AsyncCallback async_callback) : connection(connection_)
     {
         connection->setAsyncCallback(std::move(async_callback));
     }
@@ -290,7 +295,7 @@ public:
         connection->setAsyncCallback({});
     }
 private:
-    Connection * connection;
+    Conn * connection;
 };
 
 }

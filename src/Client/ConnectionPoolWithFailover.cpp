@@ -52,7 +52,7 @@ IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts 
 
     TryGetEntryFunc try_get_entry = [&](NestedPool & pool, std::string & fail_message)
     {
-        return tryGetEntry(pool, timeouts, fail_message, settings);
+        return tryGetEntry(pool, timeouts, fail_message, settings, {});
     };
 
     size_t offset = 0;
@@ -112,11 +112,12 @@ ConnectionPoolWithFailover::Status ConnectionPoolWithFailover::getStatus() const
 
 std::vector<IConnectionPool::Entry> ConnectionPoolWithFailover::getMany(const ConnectionTimeouts & timeouts,
                                                                         const Settings * settings,
-                                                                        PoolMode pool_mode)
+                                                                        PoolMode pool_mode,
+                                                                        AsyncCallback async_callback)
 {
     TryGetEntryFunc try_get_entry = [&](NestedPool & pool, std::string & fail_message)
     {
-        return tryGetEntry(pool, timeouts, fail_message, settings);
+        return tryGetEntry(pool, timeouts, fail_message, settings, nullptr, async_callback);
     };
 
     std::vector<TryResult> results = getManyImpl(settings, pool_mode, try_get_entry);
@@ -144,11 +145,12 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
 std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::getManyChecked(
     const ConnectionTimeouts & timeouts,
     const Settings * settings, PoolMode pool_mode,
-    const QualifiedTableName & table_to_check)
+    const QualifiedTableName & table_to_check,
+    AsyncCallback async_callback)
 {
     TryGetEntryFunc try_get_entry = [&](NestedPool & pool, std::string & fail_message)
     {
-        return tryGetEntry(pool, timeouts, fail_message, settings, &table_to_check);
+        return tryGetEntry(pool, timeouts, fail_message, settings, &table_to_check, async_callback);
     };
 
     return getManyImpl(settings, pool_mode, try_get_entry);
@@ -209,9 +211,11 @@ ConnectionPoolWithFailover::tryGetEntry(
         const ConnectionTimeouts & timeouts,
         std::string & fail_message,
         const Settings * settings,
-        const QualifiedTableName * table_to_check)
+        const QualifiedTableName * table_to_check,
+        AsyncCallback async_callback)
 {
     ConnectionEstablisher connection_establisher(&pool, &timeouts, settings, log, table_to_check);
+    connection_establisher.setAsyncCallback(std::move(async_callback));
     TryResult result;
     connection_establisher.run(result, fail_message);
     return result;
