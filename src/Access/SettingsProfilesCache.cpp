@@ -94,7 +94,7 @@ void SettingsProfilesCache::setDefaultProfileName(const String & default_profile
 
     auto it = profiles_by_name.find(default_profile_name);
     if (it == profiles_by_name.end())
-        throw Exception(ErrorCodes::THERE_IS_NO_PROFILE, "Settings profile {} not found", backQuote(default_profile_name));
+        throw Exception("Settings profile " + backQuote(default_profile_name) + " not found", ErrorCodes::THERE_IS_NO_PROFILE);
 
     default_profile_id = it->second;
 }
@@ -139,10 +139,8 @@ void SettingsProfilesCache::mergeSettingsAndConstraintsFor(EnabledSettings & ena
     merged_settings.merge(enabled.params.settings_from_user);
 
     auto info = std::make_shared<SettingsProfilesInfo>(access_control);
-
-    info->profiles = merged_settings.toProfileIDs();
+    info->profiles = enabled.params.settings_from_user.toProfileIDs();
     substituteProfiles(merged_settings, info->profiles_with_implicit, info->names_of_profiles);
-
     info->settings = merged_settings.toSettingsChanges();
     info->constraints = merged_settings.toSettingsConstraints(access_control);
 

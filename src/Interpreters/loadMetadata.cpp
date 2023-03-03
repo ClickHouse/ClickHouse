@@ -348,7 +348,6 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
             InterpreterSystemQuery::startStopActionInDatabase(action, /* start */ false, database_name, database, context, log);
 
         local_context->setSetting("check_table_dependencies", false);
-        local_context->setSetting("check_referential_table_dependencies", false);
         convertOrdinaryDatabaseToAtomic(log, local_context, database, database_name, tmp_name);
 
         LOG_INFO(log, "Will start background operations after renaming tables in database {}", database_name);
@@ -391,8 +390,8 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
     catch (Exception & e)
     {
         e.addMessage("Exception while trying to convert database {} from Ordinary to Atomic. It may be in some intermediate state."
-            " You can finish conversion manually by moving the rest tables from {} to {} (using RENAME TABLE)"
-            " and executing DROP DATABASE {} and RENAME DATABASE {} TO {}.",
+            "You can finish conversion manually by moving the rest tables from {} to {} (using RENAME TABLE)"
+            "and executing DROP DATABASE {} and RENAME DATABASE {} TO {}.",
             database_name, database_name, tmp_name, database_name, tmp_name, database_name);
         throw;
     }

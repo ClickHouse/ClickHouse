@@ -1,4 +1,3 @@
--- Tags: no-s3-storage
 -- Test 01266_default_prewhere_reqq, but with in-memory parts
 DROP TABLE IF EXISTS t1;
 

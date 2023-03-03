@@ -77,8 +77,6 @@ public:
 class JSONAsObjectExternalSchemaReader : public IExternalSchemaReader
 {
 public:
-    JSONAsObjectExternalSchemaReader(const FormatSettings & settings);
-
     NamesAndTypesList readSchema() override
     {
         return {{"json", std::make_shared<DataTypeObject>("json", false)}};

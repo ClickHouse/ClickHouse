@@ -2,7 +2,6 @@
 #include <Interpreters/ProcessList.h>
 #include <Access/EnabledQuota.h>
 
-
 namespace ProfileEvents
 {
     extern const Event SelectedRows;
@@ -18,7 +17,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_BYTES;
 }
 
-void ReadProgressCallback::setProcessListElement(QueryStatusPtr elem)
+void ReadProgressCallback::setProcessListElement(QueryStatus * elem)
 {
     process_list_elem = elem;
     if (!elem)

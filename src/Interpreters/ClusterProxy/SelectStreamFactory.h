@@ -1,13 +1,12 @@
 #pragma once
 
-#include <Client/ConnectionPool.h>
 #include <Core/QueryProcessingStage.h>
-#include <Interpreters/Cluster.h>
 #include <Interpreters/StorageID.h>
-#include <Parsers/IAST.h>
 #include <Storages/IStorage_fwd.h>
-#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Storages/StorageSnapshot.h>
+#include <Client/ConnectionPool.h>
+#include <Interpreters/Cluster.h>
+#include <Parsers/IAST.h>
 
 namespace DB
 {
@@ -29,14 +28,6 @@ struct StorageID;
 namespace ClusterProxy
 {
 
-/// select query has database, table and table function names as AST pointers
-/// Creates a copy of query, changes database, table and table function names.
-ASTPtr rewriteSelectQuery(
-    ContextPtr context,
-    const ASTPtr & query,
-    const std::string & remote_database,
-    const std::string & remote_table,
-    ASTPtr table_function_ptr = nullptr);
 
 using ColumnsDescriptionByShardNum = std::unordered_map<UInt32, ColumnsDescription>;
 
@@ -55,10 +46,7 @@ public:
         /// If we connect to replicas lazily.
         /// (When there is a local replica with big delay).
         bool lazy = false;
-        time_t local_delay = 0;
-
-        /// Set only if parallel reading from replicas is used.
-        std::shared_ptr<ParallelReplicasReadingCoordinator> coordinator;
+        UInt32 local_delay = 0;
     };
 
     using Shards = std::vector<Shard>;
@@ -88,6 +76,18 @@ public:
         std::unique_ptr<QueryPlan> remote_plan;
     };
 
+    ShardPlans createForShardWithParallelReplicas(
+        const Cluster::ShardInfo & shard_info,
+        const ASTPtr & query_ast,
+        const StorageID & main_table,
+        const ASTPtr & table_function_ptr,
+        const ThrottlerPtr & throttler,
+        ContextPtr context,
+        UInt32 shard_count,
+        const std::shared_ptr<const StorageLimitsList> & storage_limits
+    );
+
+private:
     const Block header;
     const ColumnsDescriptionByShardNum objects_by_shard;
     const StorageSnapshotPtr storage_snapshot;

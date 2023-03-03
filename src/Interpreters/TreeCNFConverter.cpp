@@ -49,7 +49,7 @@ void splitMultiLogic(ASTPtr & node)
     if (func && (func->name == "and" || func->name == "or"))
     {
         if (func->arguments->children.size() < 2)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Bad AND or OR function. Expected at least 2 arguments");
+            throw Exception("Bad AND or OR function. Expected at least 2 arguments", ErrorCodes::INCORRECT_QUERY);
 
         if (func->arguments->children.size() > 2)
         {
@@ -82,7 +82,7 @@ void traversePushNot(ASTPtr & node, bool add_negation)
         if (add_negation)
         {
             if (func->arguments->children.size() != 2)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Bad AND or OR function. Expected at least 2 arguments");
+                throw Exception("Bad AND or OR function. Expected at least 2 arguments", ErrorCodes::LOGICAL_ERROR);
 
             /// apply De Morgan's Law
             node = makeASTFunction(
@@ -98,7 +98,7 @@ void traversePushNot(ASTPtr & node, bool add_negation)
     else if (func && func->name == "not")
     {
         if (func->arguments->children.size() != 1)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Bad NOT function. Expected 1 argument");
+            throw Exception("Bad NOT function. Expected 1 argument", ErrorCodes::INCORRECT_QUERY);
         /// delete NOT
         node = func->arguments->children[0]->clone();
 
@@ -189,7 +189,7 @@ void traverseCNF(const ASTPtr & node, CNFQuery::AndGroup & and_group, CNFQuery::
     else if (func && func->name == "not")
     {
         if (func->arguments->children.size() != 1)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Bad NOT function. Expected 1 argument");
+            throw Exception("Bad NOT function. Expected 1 argument", ErrorCodes::INCORRECT_QUERY);
         or_group.insert(CNFQuery::AtomicFormula{true, func->arguments->children.front()});
     }
     else
@@ -349,7 +349,7 @@ CNFQuery & CNFQuery::pullNotOutFunctions()
     return *this;
 }
 
-CNFQuery & CNFQuery::pushNotInFunctions()
+CNFQuery & CNFQuery::pushNotInFuntions()
 {
     transformAtoms([](const AtomicFormula & atom) -> AtomicFormula
                    {

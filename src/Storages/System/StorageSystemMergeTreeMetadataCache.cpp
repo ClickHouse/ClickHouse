@@ -100,9 +100,8 @@ void StorageSystemMergeTreeMetadataCache::fillData(MutableColumns & res_columns,
     bool precise = false;
     String key = extractKey(query_info.query, precise);
     if (key.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "SELECT from system.merge_tree_metadata_cache table must contain condition like key = 'key' "
-                        "or key LIKE 'prefix%' in WHERE clause.");
+        throw Exception(
+            "SELECT from system.merge_tree_metadata_cache table must contain condition like key = 'key' or key LIKE 'prefix%' in WHERE clause.", ErrorCodes::BAD_ARGUMENTS);
 
     auto cache = context->getMergeTreeMetadataCache();
     if (precise)
@@ -117,11 +116,10 @@ void StorageSystemMergeTreeMetadataCache::fillData(MutableColumns & res_columns,
     }
     else
     {
-        String target = extractFixedPrefixFromLikePattern(key, /*requires_perfect_prefix*/ false);
+        String target = extractFixedPrefixFromLikePattern(key);
         if (target.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "SELECT from system.merge_tree_metadata_cache table must contain condition like key = 'key' "
-                        "or key LIKE 'prefix%' in WHERE clause.");
+            throw Exception(
+                "SELECT from system.merge_tree_metadata_cache table must contain condition like key = 'key' or key LIKE 'prefix%' in WHERE clause.", ErrorCodes::BAD_ARGUMENTS);
 
         Strings keys;
         Strings values;

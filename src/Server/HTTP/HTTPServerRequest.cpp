@@ -1,5 +1,6 @@
 #include <Server/HTTP/HTTPServerRequest.h>
 
+#include <Interpreters/Context.h>
 #include <IO/EmptyReadBuffer.h>
 #include <IO/HTTPChunkedReadBuffer.h>
 #include <IO/LimitReadBuffer.h>
@@ -22,11 +23,11 @@
 
 namespace DB
 {
-HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse & response, Poco::Net::HTTPServerSession & session)
-    : max_uri_size(context->getMaxUriSize())
-    , max_fields_number(context->getMaxFields())
-    , max_field_name_size(context->getMaxFieldNameSize())
-    , max_field_value_size(context->getMaxFieldValueSize())
+HTTPServerRequest::HTTPServerRequest(ContextPtr context, HTTPServerResponse & response, Poco::Net::HTTPServerSession & session)
+    : max_uri_size(context->getSettingsRef().http_max_uri_size)
+    , max_fields_number(context->getSettingsRef().http_max_fields)
+    , max_field_name_size(context->getSettingsRef().http_max_field_name_size)
+    , max_field_value_size(context->getSettingsRef().http_max_field_value_size)
 {
     response.attachRequest(this);
 
@@ -35,8 +36,8 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
     server_address = session.serverAddress();
     secure = session.socket().secure();
 
-    auto receive_timeout = context->getReceiveTimeout();
-    auto send_timeout = context->getSendTimeout();
+    auto receive_timeout = context->getSettingsRef().http_receive_timeout;
+    auto send_timeout = context->getSettingsRef().http_send_timeout;
 
     session.socket().setReceiveTimeout(receive_timeout);
     session.socket().setSendTimeout(send_timeout);
@@ -54,7 +55,7 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
     /// and retry with exactly the same (incomplete) set of rows.
     /// That's why we have to check body size if it's provided.
     if (getChunkedTransferEncoding())
-        stream = std::make_unique<HTTPChunkedReadBuffer>(std::move(in), context->getMaxChunkSize());
+        stream = std::make_unique<HTTPChunkedReadBuffer>(std::move(in), context->getSettingsRef().http_max_chunk_size);
     else if (hasContentLength())
     {
         size_t content_length = getContentLength();

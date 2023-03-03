@@ -109,7 +109,8 @@ public:
     template <typename... Args>
     [[nodiscard]] bool emplace(Args &&... args)
     {
-        return emplaceImpl(std::nullopt /* timeout in milliseconds */, std::forward<Args...>(args...));
+        emplaceImpl(std::nullopt /* timeout in milliseconds */, std::forward<Args...>(args...));
+        return true;
     }
 
     /// Returns false if queue is finished and empty
@@ -137,40 +138,22 @@ public:
     }
 
     /// Returns false if queue is (finished and empty) or (object was not popped during timeout)
-    [[nodiscard]] bool tryPop(T & x, UInt64 milliseconds)
+    [[nodiscard]] bool tryPop(T & x, UInt64 milliseconds = 0)
     {
         return popImpl(x, milliseconds);
-    }
-
-    /// Returns false if queue is empty.
-    [[nodiscard]] bool tryPop(T & x)
-    {
-        // we don't use popImpl to avoid CV wait
-        {
-            std::lock_guard queue_lock(queue_mutex);
-
-            if (queue.empty())
-                return false;
-
-            detail::moveOrCopyIfThrow(std::move(queue.front()), x);
-            queue.pop();
-        }
-
-        push_condition.notify_one();
-        return true;
     }
 
     /// Returns size of queue
     size_t size() const
     {
-        std::lock_guard lock(queue_mutex);
+        std::lock_guard<std::mutex> lock(queue_mutex);
         return queue.size();
     }
 
     /// Returns if queue is empty
     bool empty() const
     {
-        std::lock_guard lock(queue_mutex);
+        std::lock_guard<std::mutex> lock(queue_mutex);
         return queue.empty();
     }
 
@@ -184,7 +167,7 @@ public:
         bool was_finished_before = false;
 
         {
-            std::lock_guard lock(queue_mutex);
+            std::lock_guard<std::mutex> lock(queue_mutex);
 
             if (is_finished)
                 return true;
@@ -202,14 +185,14 @@ public:
     /// Returns if queue is finished
     bool isFinished() const
     {
-        std::lock_guard lock(queue_mutex);
+        std::lock_guard<std::mutex> lock(queue_mutex);
         return is_finished;
     }
 
     /// Returns if queue is finished and empty
     bool isFinishedAndEmpty() const
     {
-        std::lock_guard lock(queue_mutex);
+        std::lock_guard<std::mutex> lock(queue_mutex);
         return is_finished && queue.empty();
     }
 
@@ -217,7 +200,7 @@ public:
     void clear()
     {
         {
-            std::lock_guard lock(queue_mutex);
+            std::lock_guard<std::mutex> lock(queue_mutex);
 
             if (is_finished)
                 return;
@@ -233,7 +216,7 @@ public:
     void clearAndFinish()
     {
         {
-            std::lock_guard lock(queue_mutex);
+            std::lock_guard<std::mutex> lock(queue_mutex);
 
             std::queue<T> empty_queue;
             queue.swap(empty_queue);

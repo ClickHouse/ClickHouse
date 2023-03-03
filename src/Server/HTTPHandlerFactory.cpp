@@ -3,8 +3,9 @@
 #include <Server/HTTP/HTTPRequestHandler.h>
 #include <Server/IServer.h>
 #include <Access/Credentials.h>
+#include <Interpreters/Context.h>
 
-#include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/Util/LayeredConfiguration.h>
 
 #include "HTTPHandler.h"
 #include "NotFoundHandler.h"
@@ -26,71 +27,92 @@ namespace ErrorCodes
 }
 
 static void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IServer & server);
-static void addDefaultHandlersFactory(
-    HTTPRequestHandlerFactoryMain & factory,
-    IServer & server,
-    const Poco::Util::AbstractConfiguration & config,
-    AsynchronousMetrics & async_metrics);
+static void addDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IServer & server, AsynchronousMetrics & async_metrics);
+
+HTTPRequestHandlerFactoryMain::HTTPRequestHandlerFactoryMain(const std::string & name_)
+    : log(&Poco::Logger::get(name_)), name(name_)
+{
+}
+
+std::unique_ptr<HTTPRequestHandler> HTTPRequestHandlerFactoryMain::createRequestHandler(const HTTPServerRequest & request)
+{
+    LOG_TRACE(log, "HTTP Request for {}. Method: {}, Address: {}, User-Agent: {}{}, Content Type: {}, Transfer Encoding: {}, X-Forwarded-For: {}",
+        name, request.getMethod(), request.clientAddress().toString(), request.get("User-Agent", "(none)"),
+        (request.hasContentLength() ? (", Length: " + std::to_string(request.getContentLength())) : ("")),
+        request.getContentType(), request.getTransferEncoding(), request.get("X-Forwarded-For", "(none)"));
+
+    for (auto & handler_factory : child_factories)
+    {
+        auto handler = handler_factory->createRequestHandler(request);
+        if (handler)
+            return handler;
+    }
+
+    if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
+        || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD
+        || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
+    {
+        return std::unique_ptr<HTTPRequestHandler>(new NotFoundHandler);
+    }
+
+    return nullptr;
+}
 
 static inline auto createHandlersFactoryFromConfig(
-    IServer & server,
-    const Poco::Util::AbstractConfiguration & config,
-    const std::string & name,
-    const String & prefix,
-    AsynchronousMetrics & async_metrics)
+    IServer & server, const std::string & name, const String & prefix, AsynchronousMetrics & async_metrics)
 {
     auto main_handler_factory = std::make_shared<HTTPRequestHandlerFactoryMain>(name);
 
     Poco::Util::AbstractConfiguration::Keys keys;
-    config.keys(prefix, keys);
+    server.config().keys(prefix, keys);
 
     for (const auto & key : keys)
     {
         if (key == "defaults")
         {
-            addDefaultHandlersFactory(*main_handler_factory, server, config, async_metrics);
+            addDefaultHandlersFactory(*main_handler_factory, server, async_metrics);
         }
         else if (startsWith(key, "rule"))
         {
-            const auto & handler_type = config.getString(prefix + "." + key + ".handler.type", "");
+            const auto & handler_type = server.config().getString(prefix + "." + key + ".handler.type", "");
 
             if (handler_type.empty())
-                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Handler type in config is not specified here: "
-                    "{}.{}.handler.type", prefix, key);
+                throw Exception("Handler type in config is not specified here: " + prefix + "." + key + ".handler.type",
+                    ErrorCodes::INVALID_CONFIG_PARAMETER);
 
             if (handler_type == "static")
-                main_handler_factory->addHandler(createStaticHandlerFactory(server, config, prefix + "." + key));
+                main_handler_factory->addHandler(createStaticHandlerFactory(server, prefix + "." + key));
             else if (handler_type == "dynamic_query_handler")
-                main_handler_factory->addHandler(createDynamicHandlerFactory(server, config, prefix + "." + key));
+                main_handler_factory->addHandler(createDynamicHandlerFactory(server, prefix + "." + key));
             else if (handler_type == "predefined_query_handler")
-                main_handler_factory->addHandler(createPredefinedHandlerFactory(server, config, prefix + "." + key));
+                main_handler_factory->addHandler(createPredefinedHandlerFactory(server, prefix + "." + key));
             else if (handler_type == "prometheus")
-                main_handler_factory->addHandler(createPrometheusHandlerFactory(server, config, async_metrics, prefix + "." + key));
+                main_handler_factory->addHandler(createPrometheusHandlerFactory(server, async_metrics, prefix + "." + key));
             else if (handler_type == "replicas_status")
-                main_handler_factory->addHandler(createReplicasStatusHandlerFactory(server, config, prefix + "." + key));
+                main_handler_factory->addHandler(createReplicasStatusHandlerFactory(server, prefix + "." + key));
             else
-                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Unknown handler type '{}' in config here: {}.{}.handler.type",
-                    handler_type, prefix, key);
+                throw Exception("Unknown handler type '" + handler_type + "' in config here: " + prefix + "." + key + ".handler.type",
+                    ErrorCodes::INVALID_CONFIG_PARAMETER);
         }
         else
-            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: "
-                "{}.{}, must be 'rule' or 'defaults'", prefix, key);
+            throw Exception("Unknown element in config: " + prefix + "." + key + ", must be 'rule' or 'defaults'",
+                ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
     }
 
     return main_handler_factory;
 }
 
 static inline HTTPRequestHandlerFactoryPtr
-createHTTPHandlerFactory(IServer & server, const Poco::Util::AbstractConfiguration & config, const std::string & name, AsynchronousMetrics & async_metrics)
+createHTTPHandlerFactory(IServer & server, const std::string & name, AsynchronousMetrics & async_metrics)
 {
-    if (config.has("http_handlers"))
+    if (server.config().has("http_handlers"))
     {
-        return createHandlersFactoryFromConfig(server, config, name, "http_handlers", async_metrics);
+        return createHandlersFactoryFromConfig(server, name, "http_handlers", async_metrics);
     }
     else
     {
         auto factory = std::make_shared<HTTPRequestHandlerFactoryMain>(name);
-        addDefaultHandlersFactory(*factory, server, config, async_metrics);
+        addDefaultHandlersFactory(*factory, server, async_metrics);
         return factory;
     }
 }
@@ -107,16 +129,24 @@ static inline HTTPRequestHandlerFactoryPtr createInterserverHTTPHandlerFactory(I
     return factory;
 }
 
-HTTPRequestHandlerFactoryPtr createHandlerFactory(IServer & server, const Poco::Util::AbstractConfiguration & config, AsynchronousMetrics & async_metrics, const std::string & name)
+HTTPRequestHandlerFactoryPtr createHandlerFactory(IServer & server, AsynchronousMetrics & async_metrics, const std::string & name)
 {
     if (name == "HTTPHandler-factory" || name == "HTTPSHandler-factory")
-        return createHTTPHandlerFactory(server, config, name, async_metrics);
+        return createHTTPHandlerFactory(server, name, async_metrics);
     else if (name == "InterserverIOHTTPHandler-factory" || name == "InterserverIOHTTPSHandler-factory")
         return createInterserverHTTPHandlerFactory(server, name);
     else if (name == "PrometheusHandler-factory")
-        return createPrometheusMainHandlerFactory(server, config, async_metrics, name);
+    {
+        auto factory = std::make_shared<HTTPRequestHandlerFactoryMain>(name);
+        auto handler = std::make_shared<HandlingRuleHTTPHandlerFactory<PrometheusRequestHandler>>(
+            server, PrometheusMetricsWriter(server.config(), "prometheus", async_metrics));
+        handler->attachStrictPath(server.config().getString("prometheus.endpoint", "/metrics"));
+        handler->allowGetAndHeadRequest();
+        factory->addHandler(handler);
+        return factory;
+    }
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "LOGICAL ERROR: Unknown HTTP handler factory name.");
+    throw Exception("LOGICAL ERROR: Unknown HTTP handler factory name.", ErrorCodes::LOGICAL_ERROR);
 }
 
 static const auto ping_response_expression = "Ok.\n";
@@ -139,27 +169,13 @@ void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IS
     replicas_status_handler->allowGetAndHeadRequest();
     factory.addHandler(replicas_status_handler);
 
-    auto play_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebUIRequestHandler>>(server);
-    play_handler->attachNonStrictPath("/play");
-    play_handler->allowGetAndHeadRequest();
-    factory.addHandler(play_handler);
-
-    auto dashboard_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebUIRequestHandler>>(server);
-    dashboard_handler->attachNonStrictPath("/dashboard");
-    dashboard_handler->allowGetAndHeadRequest();
-    factory.addHandler(dashboard_handler);
-
-    auto js_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebUIRequestHandler>>(server);
-    js_handler->attachNonStrictPath("/js/");
-    js_handler->allowGetAndHeadRequest();
-    factory.addHandler(js_handler);
+    auto web_ui_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebUIRequestHandler>>(server, "play.html");
+    web_ui_handler->attachNonStrictPath("/play");
+    web_ui_handler->allowGetAndHeadRequest();
+    factory.addHandler(web_ui_handler);
 }
 
-void addDefaultHandlersFactory(
-    HTTPRequestHandlerFactoryMain & factory,
-    IServer & server,
-    const Poco::Util::AbstractConfiguration & config,
-    AsynchronousMetrics & async_metrics)
+void addDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IServer & server, AsynchronousMetrics & async_metrics)
 {
     addCommonDefaultHandlersFactory(factory, server);
 
@@ -169,11 +185,11 @@ void addDefaultHandlersFactory(
 
     /// We check that prometheus handler will be served on current (default) port.
     /// Otherwise it will be created separately, see createHandlerFactory(...).
-    if (config.has("prometheus") && config.getInt("prometheus.port", 0) == 0)
+    if (server.config().has("prometheus") && server.config().getInt("prometheus.port", 0) == 0)
     {
         auto prometheus_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<PrometheusRequestHandler>>(
-            server, PrometheusMetricsWriter(config, "prometheus", async_metrics));
-        prometheus_handler->attachStrictPath(config.getString("prometheus.endpoint", "/metrics"));
+            server, PrometheusMetricsWriter(server.config(), "prometheus", async_metrics));
+        prometheus_handler->attachStrictPath(server.config().getString("prometheus.endpoint", "/metrics"));
         prometheus_handler->allowGetAndHeadRequest();
         factory.addHandler(prometheus_handler);
     }

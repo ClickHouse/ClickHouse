@@ -136,8 +136,6 @@ private:
             ContainerType<Float32>,
             ContainerType<Float64>,
             ContainerType<UUID>,
-            ContainerType<IPv4>,
-            ContainerType<IPv6>,
             ContainerType<StringRef>,
             ContainerType<Array>>
             container;
