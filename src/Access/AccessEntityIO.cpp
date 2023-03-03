@@ -28,6 +28,9 @@
 #include <boost/range/algorithm/copy.hpp>
 #include <boost/range/algorithm_ext/push_back.hpp>
 
+#include <Common/logger_useful.h>
+
+
 namespace DB
 {
 namespace ErrorCodes
@@ -62,6 +65,7 @@ AccessEntityPtr deserializeAccessEntityImpl(const String & definition)
     const char * end = begin + definition.size();
     while (pos < end)
     {
+        LOG_TRACE((&Poco::Logger::get("deserializeAccessEntityImpl")), "{}", std::string(pos, end));
         queries.emplace_back(parseQueryAndMovePosition(parser, pos, end, "", true, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH));
         while (isWhitespaceASCII(*pos) || *pos == ';')
             ++pos;

@@ -11,6 +11,8 @@
 #include <boost/smart_ptr/make_shared.hpp>
 #include <Core/Defines.h>
 
+#include <Common/logger_useful.h>
+
 
 namespace DB
 {
@@ -148,9 +150,19 @@ void RowPolicyCache::ensureAllRowPoliciesRead()
 
     for (const UUID & id : access_control.findAll<RowPolicy>())
     {
-        auto quota = access_control.tryRead<RowPolicy>(id);
-        if (quota)
-            all_policies.emplace(id, PolicyInfo(quota));
+        auto policy = access_control.tryRead<RowPolicy>(id);
+        if (policy)
+        {
+            PolicyInfo policy_info(policy);
+            if (policy_info.database_and_table_name->second == "*")
+            {
+                database_policies.emplace(id, std::move(policy_info));
+            }
+            else
+            {
+                table_policies.emplace(id, std::move(policy_info));
+            }
+        }
     }
 }
 
@@ -158,15 +170,23 @@ void RowPolicyCache::ensureAllRowPoliciesRead()
 void RowPolicyCache::rowPolicyAddedOrChanged(const UUID & policy_id, const RowPolicyPtr & new_policy)
 {
     std::lock_guard lock{mutex};
-    auto it = all_policies.find(policy_id);
-    if (it == all_policies.end())
+    bool found = true;
+
+    auto it = table_policies.find(policy_id);
+    if (it == table_policies.end())
     {
-        it = all_policies.emplace(policy_id, PolicyInfo(new_policy)).first;
+        it = database_policies.find(policy_id);
+        if (it == database_policies.end())
+        {
+            PolicyMap & policy_map = new_policy->isDatabase() ? database_policies : table_policies;
+            it = policy_map.emplace(policy_id, PolicyInfo(new_policy)).first;
+            found = false;
+        }
     }
-    else
+
+    if (found && it->second.policy == new_policy)
     {
-        if (it->second.policy == new_policy)
-            return;
+        return;
     }
 
     auto & info = it->second;
@@ -178,7 +198,15 @@ void RowPolicyCache::rowPolicyAddedOrChanged(const UUID & policy_id, const RowPo
 void RowPolicyCache::rowPolicyRemoved(const UUID & policy_id)
 {
     std::lock_guard lock{mutex};
-    all_policies.erase(policy_id);
+    auto it = database_policies.find(policy_id);
+    if (it != database_policies.end())
+    {
+        database_policies.erase(it);
+    }
+    else
+    {
+        table_policies.erase(policy_id);
+    }
     mixFilters();
 }
 
@@ -215,22 +243,71 @@ void RowPolicyCache::mixFiltersFor(EnabledRowPolicies & enabled)
         std::vector<RowPolicyPtr> policies;
     };
 
-    std::unordered_map<MixedFiltersKey, MixerWithNames, Hash> mixers;
+    std::unordered_map<MixedFiltersKey, MixerWithNames, Hash> table_mixers;
+    std::unordered_map<MixedFiltersKey, MixerWithNames, Hash> database_mixers;
 
-    for (const auto & [policy_id, info] : all_policies)
+
+    for (const auto & [policy_id, info] : database_policies)
     {
         const auto & policy = *info.policy;
         bool match = info.roles->match(enabled.params.user_id, enabled.params.enabled_roles);
-        MixedFiltersKey key;
-        key.database = info.database_and_table_name->first;
-        key.table_name = info.database_and_table_name->second;
         for (auto filter_type : collections::range(0, RowPolicyFilterType::MAX))
         {
             auto filter_type_i = static_cast<size_t>(filter_type);
             if (info.parsed_filters[filter_type_i])
             {
-                key.filter_type = filter_type;
-                auto & mixer = mixers[key];
+                MixedFiltersKey key{info.database_and_table_name->first,
+                    info.database_and_table_name->second,
+                    filter_type};
+                LOG_TRACE((&Poco::Logger::get("mixFiltersFor")), "db: {} : {}", key.database, key.table_name);
+
+                auto & mixer = database_mixers[key];  //  getting database level mixer
+                mixer.database_and_table_name = info.database_and_table_name;
+                if (match)
+                {
+                    mixer.mixer.add(info.parsed_filters[filter_type_i], policy.isRestrictive());
+                    mixer.policies.push_back(info.policy);
+                }
+            }
+        }
+    }
+
+
+    for (const auto & [policy_id, info] : table_policies)
+    {
+        const auto & policy = *info.policy;
+        bool match = info.roles->match(enabled.params.user_id, enabled.params.enabled_roles);
+        for (auto filter_type : collections::range(0, RowPolicyFilterType::MAX))
+        {
+            auto filter_type_i = static_cast<size_t>(filter_type);
+            if (info.parsed_filters[filter_type_i])
+            {
+                MixedFiltersKey key{info.database_and_table_name->first,
+                    info.database_and_table_name->second,
+                    filter_type};
+                LOG_TRACE((&Poco::Logger::get("mixFiltersFor")), "table: {} : {}", key.database, key.table_name);
+                auto table_it = table_mixers.find(key);
+                if (table_it == table_mixers.end())
+                {
+                    LOG_TRACE((&Poco::Logger::get("mixFiltersFor")), "table: not found, looking for db");
+                    MixedFiltersKey database_key = key;
+                    database_key.table_name = "*";
+
+                    auto database_it = database_mixers.find(database_key);
+
+                    if (database_it == database_mixers.end())
+                    {
+                        LOG_TRACE((&Poco::Logger::get("mixFiltersFor")), "table: not found, database not found");
+                        table_it = table_mixers.try_emplace(key).first;
+                    }
+                    else
+                    {
+                        LOG_TRACE((&Poco::Logger::get("mixFiltersFor")), "table: not found, database found");
+                        table_it = table_mixers.insert({key, database_it->second}).first;
+                    }
+                }
+
+                auto & mixer = table_it->second; // table_mixers[key];    getting table level mixer
                 mixer.database_and_table_name = info.database_and_table_name;
                 if (match)
                 {
@@ -242,14 +319,19 @@ void RowPolicyCache::mixFiltersFor(EnabledRowPolicies & enabled)
     }
 
     auto mixed_filters = boost::make_shared<MixedFiltersMap>();
-    for (auto & [key, mixer] : mixers)
+
+    for (auto mixer_map_ptr :  { &table_mixers, &database_mixers})
     {
-        auto mixed_filter = std::make_shared<RowPolicyFilter>();
-        mixed_filter->database_and_table_name = std::move(mixer.database_and_table_name);
-        mixed_filter->expression = std::move(mixer.mixer).getResult(access_control.isEnabledUsersWithoutRowPoliciesCanReadRows());
-        mixed_filter->policies = std::move(mixer.policies);
-        mixed_filters->emplace(key, std::move(mixed_filter));
+        for (auto & [key, mixer] : *mixer_map_ptr)
+        {
+            auto mixed_filter = std::make_shared<RowPolicyFilter>();
+            mixed_filter->database_and_table_name = std::move(mixer.database_and_table_name);
+            mixed_filter->expression = std::move(mixer.mixer).getResult(access_control.isEnabledUsersWithoutRowPoliciesCanReadRows());
+            mixed_filter->policies = std::move(mixer.policies);
+            mixed_filters->emplace(key, std::move(mixed_filter));
+        }
     }
+
 
     enabled.mixed_filters.store(mixed_filters);
 }
