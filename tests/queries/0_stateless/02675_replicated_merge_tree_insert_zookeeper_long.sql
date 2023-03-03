@@ -1,3 +1,5 @@
+-- Tags: no-s3-storage
+
 DROP TABLE IF EXISTS inmemory_test;
 
 CREATE TABLE inmemory_test (d Date, id String)
