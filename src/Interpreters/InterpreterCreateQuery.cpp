@@ -8,18 +8,21 @@
 #include <Common/typeid_cast.h>
 #include <Common/Macros.h>
 #include <Common/randomSeed.h>
-#include <Common/atomicRename.h>
+#include <Common/renameat2.h>
 #include <Common/hex.h>
 
 #include <Core/Defines.h>
+#include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -28,12 +31,12 @@
 
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
-#include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/Cluster.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -51,14 +54,13 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/ObjectUtils.h>
-#include <DataTypes/hasNullable.h>
 
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
+#include <Databases/IDatabase.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/TablesLoader.h>
 #include <Databases/DDLDependencyVisitor.h>
-#include <Databases/NormalizeAndEvaluateConstantsVisitor.h>
 
 #include <Compression/CompressionFactory.h>
 
@@ -69,11 +71,7 @@
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
-#include <Common/logger_useful.h>
-#include <DataTypes/DataTypeFixedString.h>
-
-#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
-#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
+#include <base/logger_useful.h>
 
 
 namespace DB
@@ -99,7 +97,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int ENGINE_REQUIRED;
     extern const int UNKNOWN_STORAGE;
-    extern const int SYNTAX_ERROR;
 }
 
 namespace fs = std::filesystem;
@@ -150,9 +147,10 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         /// When attaching old-style database during server startup, we must always use Ordinary engine
         if (create.attach)
             throw Exception("Database engine must be specified for ATTACH DATABASE query", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
+        bool old_style_database = getContext()->getSettingsRef().default_database_engine.value == DefaultDatabaseEngine::Ordinary;
         auto engine = std::make_shared<ASTFunction>();
         auto storage = std::make_shared<ASTStorage>();
-        engine->name = "Atomic";
+        engine->name = old_style_database ? "Ordinary" : "Atomic";
         engine->no_empty_args = true;
         storage->set(storage->engine, engine);
         create.set(create.storage, storage);
@@ -195,7 +193,8 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
         if (create_from_user)
         {
-            if (create.uuid == UUIDHelpers::Nil)
+            const auto & default_engine = getContext()->getSettingsRef().default_database_engine.value;
+            if (create.uuid == UUIDHelpers::Nil && default_engine == DefaultDatabaseEngine::Atomic)
                 create.uuid = UUIDHelpers::generateV4();    /// Will enable Atomic engine for nested database
         }
         else if (attach_from_user && create.uuid == UUIDHelpers::Nil)
@@ -225,7 +224,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
     if ((create.storage->engine->name == "MaterializeMySQL" || create.storage->engine->name == "MaterializedMySQL")
         && !getContext()->getSettingsRef().allow_experimental_database_materialized_mysql
-        && !internal && !create.attach)
+        && !internal)
     {
         throw Exception("MaterializedMySQL is an experimental database engine. "
                         "Enable allow_experimental_database_materialized_mysql to use it.", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
@@ -233,7 +232,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
     if (create.storage->engine->name == "Replicated"
         && !getContext()->getSettingsRef().allow_experimental_database_replicated
-        && !internal && !create.attach)
+        && !internal)
     {
         throw Exception("Replicated is an experimental database engine. "
                         "Enable allow_experimental_database_replicated to use it.", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
@@ -241,28 +240,18 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
     if (create.storage->engine->name == "MaterializedPostgreSQL"
         && !getContext()->getSettingsRef().allow_experimental_database_materialized_postgresql
-        && !internal && !create.attach)
+        && !internal)
     {
         throw Exception("MaterializedPostgreSQL is an experimental database engine. "
                         "Enable allow_experimental_database_materialized_postgresql to use it.", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
     }
 
-    bool need_write_metadata = !create.attach || !fs::exists(metadata_file_path);
-    bool need_lock_uuid = internal || need_write_metadata;
-    auto mode = getLoadingStrictnessLevel(create.attach, force_attach, has_force_restore_data_flag);
-
-    /// Lock uuid, so we will known it's already in use.
-    /// We do it when attaching databases on server startup (internal) and on CREATE query (!create.attach);
-    TemporaryLockForUUIDDirectory uuid_lock;
-    if (need_lock_uuid)
-        uuid_lock = TemporaryLockForUUIDDirectory{create.uuid};
-    else if (create.uuid != UUIDHelpers::Nil && !DatabaseCatalog::instance().hasUUIDMapping(create.uuid))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create.uuid);
-
     DatabasePtr database = DatabaseFactory::get(create, metadata_path / "", getContext());
 
     if (create.uuid != UUIDHelpers::Nil)
         create.setDatabase(TABLE_WITH_UUID_NAME_PLACEHOLDER);
+
+    bool need_write_metadata = !create.attach || !fs::exists(metadata_file_path);
 
     if (need_write_metadata)
     {
@@ -304,9 +293,8 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
         if (!load_database_without_tables)
         {
-
             /// We use global context here, because storages lifetime is bigger than query context lifetime
-            TablesLoader loader{getContext()->getGlobalContext(), {{database_name, database}}, mode}; //-V560
+            TablesLoader loader{getContext()->getGlobalContext(), {{database_name, database}}, has_force_restore_data_flag, create.attach && force_attach}; //-V560
             loader.loadTables();
             loader.startupTables();
         }
@@ -370,7 +358,6 @@ ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns, 
         const char * alias_end = alias_pos + alias.size();
         ParserExpression expression_parser;
         column_declaration->default_expression = parseQuery(expression_parser, alias_pos, alias_end, "expression", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-        column_declaration->children.push_back(column_declaration->default_expression);
 
         columns_list->children.emplace_back(column_declaration);
     }
@@ -401,8 +388,6 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
             column_declaration->default_expression = column.default_desc.expression->clone();
             column_declaration->children.push_back(column_declaration->default_expression);
         }
-
-        column_declaration->ephemeral_default = column.default_desc.ephemeral_default;
 
         if (!column.comment.empty())
         {
@@ -474,18 +459,15 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     {
         const auto & col_decl = ast->as<ASTColumnDeclaration &>();
 
-        if (col_decl.collation && !context_->getSettingsRef().compatibility_ignore_collation_in_create_table)
-        {
-            throw Exception("Cannot support collation, please set compatibility_ignore_collation_in_create_table=true", ErrorCodes::NOT_IMPLEMENTED);
-        }
-
         DataTypePtr column_type = nullptr;
+
         if (col_decl.type)
         {
             column_type = DataTypeFactory::instance().get(col_decl.type);
 
-            if (attach)
-                setVersionToAggregateFunctions(column_type, true);
+            const auto * aggregate_function_type = typeid_cast<const DataTypeAggregateFunction *>(column_type.get());
+            if (attach && aggregate_function_type && aggregate_function_type->isVersioned())
+                aggregate_function_type->setVersion(0, /* if_empty */true);
 
             if (col_decl.null_modifier)
             {
@@ -497,21 +479,6 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             else if (make_columns_nullable)
             {
                 column_type = makeNullable(column_type);
-            }
-            else if (!hasNullable(column_type) &&
-                     col_decl.default_specifier == "DEFAULT" &&
-                     col_decl.default_expression &&
-                     col_decl.default_expression->as<ASTLiteral>() &&
-                     col_decl.default_expression->as<ASTLiteral>()->value.isNull())
-            {
-                if (column_type->lowCardinality())
-                {
-                    const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(column_type.get());
-                    assert(low_cardinality_type);
-                    column_type = std::make_shared<DataTypeLowCardinality>(makeNullable(low_cardinality_type->getDictionaryType()));
-                }
-                else
-                    column_type = makeNullable(column_type);
             }
 
             column_names_and_types.emplace_back(col_decl.name, column_type);
@@ -540,7 +507,9 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
                         final_column_name));
 
                 default_expr_list->children.emplace_back(
-                    setAlias(col_decl.default_expression->clone(), tmp_column_name));
+                    setAlias(
+                        col_decl.default_expression->clone(),
+                        tmp_column_name));
             }
             else
                 default_expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), col_decl.name));
@@ -557,7 +526,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
     ColumnsDescription res;
     auto name_type_it = column_names_and_types.begin();
-    for (const auto * ast_it = columns_ast.children.begin(); ast_it != columns_ast.children.end(); ++ast_it, ++name_type_it)
+    for (auto ast_it = columns_ast.children.begin(); ast_it != columns_ast.children.end(); ++ast_it, ++name_type_it)
     {
         ColumnDescription column;
 
@@ -565,47 +534,21 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
         column.name = col_decl.name;
 
-        /// ignore or not other database extensions depending on compatibility settings
-        if (col_decl.default_specifier == "AUTO_INCREMENT"
-            && !context_->getSettingsRef().compatibility_ignore_auto_increment_in_create_table)
-        {
-            throw Exception(
-                "AUTO_INCREMENT is not supported. To ignore the keyword in column declaration, set "
-                "`compatibility_ignore_auto_increment_in_create_table` to true",
-                ErrorCodes::SYNTAX_ERROR);
-        }
-
         if (col_decl.default_expression)
         {
-            if (context_->hasQueryContext() && context_->getQueryContext().get() == context_.get())
-            {
-                /// Normalize query only for original CREATE query, not on metadata loading.
-                /// And for CREATE query we can pass local context, because result will not change after restart.
-                NormalizeAndEvaluateConstantsVisitor::Data visitor_data{context_};
-                NormalizeAndEvaluateConstantsVisitor visitor(visitor_data);
-                visitor.visit(col_decl.default_expression);
-            }
-
             ASTPtr default_expr = col_decl.default_expression->clone();
-
             if (col_decl.type)
                 column.type = name_type_it->type;
             else
-            {
                 column.type = defaults_sample_block.getByName(column.name).type;
-                /// set nullability for case of column declaration w/o type but with default expression
-                if ((col_decl.null_modifier && *col_decl.null_modifier) || make_columns_nullable)
-                    column.type = makeNullable(column.type);
-            }
 
             column.default_desc.kind = columnDefaultKindFromString(col_decl.default_specifier);
             column.default_desc.expression = default_expr;
-            column.default_desc.ephemeral_default = col_decl.ephemeral_default;
         }
         else if (col_decl.type)
             column.type = name_type_it->type;
         else
-            throw Exception{"Neither default value expression nor type is provided for a column", ErrorCodes::LOGICAL_ERROR};
+            throw Exception();
 
         if (col_decl.comment)
             column.comment = col_decl.comment->as<ASTLiteral &>().value.get<String>();
@@ -624,7 +567,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         res.add(std::move(column));
     }
 
-    if (!attach && context_->getSettingsRef().flatten_nested)
+    if (context_->getSettingsRef().flatten_nested)
         res.flattenNested();
 
     if (res.getAllPhysical().empty())
@@ -666,9 +609,6 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         if (create.as_table_function && (create.columns_list->indices || create.columns_list->constraints))
             throw Exception("Indexes and constraints are not supported for table functions", ErrorCodes::INCORRECT_QUERY);
 
-        /// Dictionaries have dictionary_attributes_list instead of columns_list
-        assert(!create.is_dictionary);
-
         if (create.columns_list->columns)
         {
             properties.columns = getColumnsDescription(*create.columns_list->columns, getContext(), create.attach);
@@ -676,12 +616,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         if (create.columns_list->indices)
             for (const auto & index : create.columns_list->indices->children)
-            {
                 properties.indices.push_back(
                     IndexDescription::getIndexFromAST(index->clone(), properties.columns, getContext()));
-                    if (properties.indices.back().type == "annoy" && !getContext()->getSettingsRef().allow_experimental_annoy_index)
-                        throw Exception("Annoy index is disabled. Turn on allow_experimental_annoy_index", ErrorCodes::INCORRECT_QUERY);
-            }
 
         if (create.columns_list->projections)
             for (const auto & projection_ast : create.columns_list->projections->children)
@@ -725,27 +661,16 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     else if (create.as_table_function)
     {
         /// Table function without columns list.
-        auto table_function_ast = create.as_table_function->ptr();
-        auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
+        auto table_function = TableFunctionFactory::instance().get(create.as_table_function, getContext());
         properties.columns = table_function->getActualTableStructure(getContext());
     }
     else if (create.is_dictionary)
     {
-        if (!create.dictionary || !create.dictionary->source)
-            return {};
-
-        /// Evaluate expressions (like currentDatabase() or tcpPort()) in dictionary source definition.
-        NormalizeAndEvaluateConstantsVisitor::Data visitor_data{getContext()};
-        NormalizeAndEvaluateConstantsVisitor visitor(visitor_data);
-        visitor.visit(create.dictionary->source->ptr());
-
         return {};
     }
-    else if (!create.storage || !create.storage->engine)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected application state. CREATE query is missing either its storage or engine.");
     /// We can have queries like "CREATE TABLE <table> ENGINE=<engine>" if <engine>
     /// supports schema inference (will determine table structure in it's constructor).
-    else if (!StorageFactory::instance().checkIfStorageSupportsSchemaInterface(create.storage->engine->name))
+    else if (!StorageFactory::instance().checkIfStorageSupportsSchemaInterface(create.storage->engine->name)) // NOLINT
         throw Exception("Incorrect CREATE query: required list of column descriptions or AS section or SELECT.", ErrorCodes::INCORRECT_QUERY);
 
     /// Even if query has list of columns, canonicalize it (unfold Nested columns).
@@ -780,16 +705,6 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
     {
         if (!all_columns.emplace(column.name).second)
             throw Exception("Column " + backQuoteIfNeed(column.name) + " already exists", ErrorCodes::DUPLICATE_COLUMN);
-    }
-
-    /// Check if _row_exists for lightweight delete column in column_lists for merge tree family.
-    if (create.storage && create.storage->engine && endsWith(create.storage->engine->name, "MergeTree"))
-    {
-        auto search = all_columns.find(LightweightDeleteDescription::FILTER_COLUMN.name);
-        if (search != all_columns.end())
-            throw Exception("Cannot create table with column '" + LightweightDeleteDescription::FILTER_COLUMN.name + "' "
-                            "for *MergeTree engines because it is reserved for lightweight delete feature",
-                            ErrorCodes::ILLEGAL_COLUMN);
     }
 
     const auto & settings = getContext()->getSettingsRef();
@@ -829,29 +744,13 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
     {
         for (const auto & [name, type] : properties.columns.getAllPhysical())
         {
-            if (type->hasDynamicSubcolumns())
+            if (isObject(type))
             {
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                     "Cannot create table with column '{}' which type is '{}' "
                     "because experimental Object type is not allowed. "
                     "Set setting allow_experimental_object_type = 1 in order to allow it",
                     name, type->getName());
-            }
-        }
-    }
-    if (!create.attach && !settings.allow_suspicious_fixed_string_types)
-    {
-        for (const auto & [name, type] : properties.columns.getAllPhysical())
-        {
-            auto basic_type = removeLowCardinality(removeNullable(type));
-            if (const auto * fixed_string = typeid_cast<const DataTypeFixedString *>(basic_type.get()))
-            {
-                if (fixed_string->getN() > MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS)
-                    throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                        "Cannot create table with column '{}' which type is '{}' "
-                        "because fixed string with size > {} is suspicious. "
-                        "Set setting allow_suspicious_fixed_string_types = 1 in order to allow it",
-                        name, type->getName(), MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS);
             }
         }
     }
@@ -967,7 +866,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         if (as_create.storage)
             create.set(create.storage, as_create.storage->ptr());
         else if (as_create.as_table_function)
-            create.set(create.as_table_function, as_create.as_table_function->ptr());
+            create.as_table_function = as_create.as_table_function->clone();
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set engine, it's a bug.");
 
@@ -1050,26 +949,23 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     String current_database = getContext()->getCurrentDatabase();
     auto database_name = create.database ? create.getDatabase() : current_database;
 
-    DDLGuardPtr ddl_guard;
-
     // If this is a stub ATTACH query, read the query definition from the database
     if (create.attach && !create.storage && !create.columns_list)
     {
         auto database = DatabaseCatalog::instance().getDatabase(database_name);
-        if (database->shouldReplicateQuery(getContext(), query_ptr))
+
+        if (database->getEngineName() == "Replicated")
         {
             auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.getTable());
-            create.setDatabase(database_name);
-            guard->releaseTableLock();
-            return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), internal);
+
+            if (auto* ptr = typeid_cast<DatabaseReplicated *>(database.get());
+                ptr && !getContext()->getClientInfo().is_replicated_database_internal)
+            {
+                create.setDatabase(database_name);
+                guard->releaseTableLock();
+                return ptr->tryEnqueueReplicatedDDL(query_ptr, getContext());
+            }
         }
-
-        if (!create.cluster.empty())
-            return executeQueryOnCluster(create);
-
-        /// For short syntax of ATTACH query we have to lock table name here, before reading metadata
-        /// and hold it until table is attached
-        ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.getTable());
 
         bool if_not_exists = create.if_not_exists;
 
@@ -1102,7 +998,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     if (create.attach_from_path)
     {
-        chassert(!ddl_guard);
         fs::path user_files = fs::path(getContext()->getUserFilesPath()).lexically_normal();
         fs::path root_path = fs::path(getContext()->getPath()).lexically_normal();
 
@@ -1155,92 +1050,112 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         visitor.visit(*create.columns_list);
     }
 
-    // substitute possible UDFs with their definitions
-    if (!UserDefinedSQLFunctionFactory::instance().empty())
-        UserDefinedSQLFunctionVisitor::visit(query_ptr);
-
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create);
-
-    /// Check type compatible for materialized dest table and select columns
-    if (create.select && create.is_materialized_view && create.to_table_id)
-    {
-        if (StoragePtr to_table = DatabaseCatalog::instance().tryGetTable(
-            {create.to_table_id.database_name, create.to_table_id.table_name, create.to_table_id.uuid},
-            getContext()
-        ))
-        {
-            Block input_block = InterpreterSelectWithUnionQuery(
-                create.select->clone(), getContext(), SelectQueryOptions().analyze()).getSampleBlock();
-
-            Block output_block = to_table->getInMemoryMetadataPtr()->getSampleBlock();
-
-            ColumnsWithTypeAndName input_columns;
-            ColumnsWithTypeAndName output_columns;
-            for (const auto & input_column : input_block)
-            {
-                if (const auto * output_column = output_block.findByName(input_column.name))
-                {
-                    input_columns.push_back(input_column.cloneEmpty());
-                    output_columns.push_back(output_column->cloneEmpty());
-                }
-            }
-
-            ActionsDAG::makeConvertingActions(
-                input_columns,
-                output_columns,
-                ActionsDAG::MatchColumnsMode::Position
-            );
-        }
-    }
 
     DatabasePtr database;
     bool need_add_to_database = !create.temporary;
     if (need_add_to_database)
         database = DatabaseCatalog::instance().getDatabase(database_name);
 
-    if (need_add_to_database && database->shouldReplicateQuery(getContext(), query_ptr))
+    if (need_add_to_database && database->getEngineName() == "Replicated")
     {
-        chassert(!ddl_guard);
         auto guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable());
-        assertOrSetUUID(create, database);
-        guard->releaseTableLock();
-        return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), internal);
-    }
 
-    if (!create.cluster.empty())
-    {
-        chassert(!ddl_guard);
-        return executeQueryOnCluster(create);
+        if (auto * ptr = typeid_cast<DatabaseReplicated *>(database.get());
+            ptr && !getContext()->getClientInfo().is_replicated_database_internal)
+        {
+            assertOrSetUUID(create, database);
+            guard->releaseTableLock();
+            return ptr->tryEnqueueReplicatedDDL(query_ptr, getContext());
+        }
     }
 
     if (create.replace_table)
-    {
-        chassert(!ddl_guard);
         return doCreateOrReplaceTable(create, properties);
-    }
 
     /// Actually creates table
-    bool created = doCreateTable(create, properties, ddl_guard);
-    ddl_guard.reset();
+    bool created = doCreateTable(create, properties);
 
     if (!created)   /// Table already exists
         return {};
 
     /// If table has dependencies - add them to the graph
     QualifiedTableName qualified_name{database_name, create.getTable()};
-    TableNamesSet dependencies = getLoadingDependenciesFromCreateQuery(getContext()->getGlobalContext(), qualified_name, query_ptr);
-    if (!dependencies.empty())
-        DatabaseCatalog::instance().addDependencies(qualified_name, dependencies);
+    TableNamesSet loading_dependencies = getDependenciesSetFromCreateQuery(getContext()->getGlobalContext(), qualified_name, query_ptr);
+    if (!loading_dependencies.empty())
+        DatabaseCatalog::instance().addLoadingDependencies(qualified_name, std::move(loading_dependencies));
 
     return fillTableIfNeeded(create);
 }
 
 bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
-                                           const InterpreterCreateQuery::TableProperties & properties,
-                                           DDLGuardPtr & ddl_guard)
+                                           const InterpreterCreateQuery::TableProperties & properties)
 {
-    if (create.temporary)
+    std::unique_ptr<DDLGuard> guard;
+
+    String data_path;
+    DatabasePtr database;
+
+    bool need_add_to_database = !create.temporary;
+    if (need_add_to_database)
+    {
+        /** If the request specifies IF NOT EXISTS, we allow concurrent CREATE queries (which do nothing).
+          * If table doesn't exist, one thread is creating table, while others wait in DDLGuard.
+          */
+        guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable());
+
+        database = DatabaseCatalog::instance().getDatabase(create.getDatabase());
+        assertOrSetUUID(create, database);
+
+        String storage_name = create.is_dictionary ? "Dictionary" : "Table";
+        auto storage_already_exists_error_code = create.is_dictionary ? ErrorCodes::DICTIONARY_ALREADY_EXISTS : ErrorCodes::TABLE_ALREADY_EXISTS;
+
+        /// Table can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard.
+        if (database->isTableExist(create.getTable(), getContext()))
+        {
+            /// TODO Check structure of table
+            if (create.if_not_exists)
+                return false;
+            else if (create.replace_view)
+            {
+                /// when executing CREATE OR REPLACE VIEW, drop current existing view
+                auto drop_ast = std::make_shared<ASTDropQuery>();
+                drop_ast->setDatabase(create.getDatabase());
+                drop_ast->setTable(create.getTable());
+                drop_ast->no_ddl_lock = true;
+
+                auto drop_context = Context::createCopy(context);
+                InterpreterDropQuery interpreter(drop_ast, drop_context);
+                interpreter.execute();
+            }
+            else
+                throw Exception(storage_already_exists_error_code,
+                    "{} {}.{} already exists", storage_name, backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(create.getTable()));
+        }
+        else if (!create.attach)
+        {
+            /// Checking that table may exists in detached/detached permanently state
+            try
+            {
+                database->checkMetadataFilenameAvailability(create.getTable());
+            }
+            catch (const Exception &)
+            {
+                if (create.if_not_exists)
+                    return false;
+                throw;
+            }
+        }
+
+
+        data_path = database->getTableDataPath(create);
+
+        if (!create.attach && !data_path.empty() && fs::exists(fs::path{getContext()->getPath()} / data_path))
+            throw Exception(storage_already_exists_error_code,
+                "Directory for {} data {} already exists", Poco::toLower(storage_name), String(data_path));
+    }
+    else
     {
         if (create.if_not_exists && getContext()->tryResolveStorageID({"", create.getTable()}, Context::ResolveExternal))
             return false;
@@ -1250,61 +1165,6 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         getContext()->getSessionContext()->addExternalTable(temporary_table_name, std::move(temporary_table));
         return true;
     }
-
-    if (!ddl_guard)
-        ddl_guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable());
-
-    String data_path;
-    DatabasePtr database;
-
-    database = DatabaseCatalog::instance().getDatabase(create.getDatabase());
-    assertOrSetUUID(create, database);
-
-    String storage_name = create.is_dictionary ? "Dictionary" : "Table";
-    auto storage_already_exists_error_code = create.is_dictionary ? ErrorCodes::DICTIONARY_ALREADY_EXISTS : ErrorCodes::TABLE_ALREADY_EXISTS;
-
-    /// Table can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard.
-    if (database->isTableExist(create.getTable(), getContext()))
-    {
-        /// TODO Check structure of table
-        if (create.if_not_exists)
-            return false;
-        else if (create.replace_view)
-        {
-            /// when executing CREATE OR REPLACE VIEW, drop current existing view
-            auto drop_ast = std::make_shared<ASTDropQuery>();
-            drop_ast->setDatabase(create.getDatabase());
-            drop_ast->setTable(create.getTable());
-            drop_ast->no_ddl_lock = true;
-
-            auto drop_context = Context::createCopy(context);
-            InterpreterDropQuery interpreter(drop_ast, drop_context);
-            interpreter.execute();
-        }
-        else
-            throw Exception(storage_already_exists_error_code,
-                "{} {}.{} already exists", storage_name, backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(create.getTable()));
-    }
-    else if (!create.attach)
-    {
-        /// Checking that table may exists in detached/detached permanently state
-        try
-        {
-            database->checkMetadataFilenameAvailability(create.getTable());
-        }
-        catch (const Exception &)
-        {
-            if (create.if_not_exists)
-                return false;
-            throw;
-        }
-    }
-
-    data_path = database->getTableDataPath(create);
-
-    if (!create.attach && !data_path.empty() && fs::exists(fs::path{getContext()->getPath()} / data_path))
-        throw Exception(storage_already_exists_error_code,
-            "Directory for {} data {} already exists", Poco::toLower(storage_name), String(data_path));
 
     bool from_path = create.attach_from_path.has_value();
     String actual_data_path = data_path;
@@ -1324,35 +1184,23 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// old instance of the storage. For example, AsynchronousMetrics may cause ATTACH to fail,
         /// so we allow waiting here. If database_atomic_wait_for_drop_and_detach_synchronously is disabled
         /// and old storage instance still exists it will throw exception.
-        if (getContext()->getSettingsRef().database_atomic_wait_for_drop_and_detach_synchronously)
-            database->waitDetachedTableNotInUse(create.uuid);
-        else
+        bool throw_if_table_in_use = getContext()->getSettingsRef().database_atomic_wait_for_drop_and_detach_synchronously;
+        if (throw_if_table_in_use)
             database->checkDetachedTableNotInUse(create.uuid);
-    }
-
-    /// We should lock UUID on CREATE query (because for ATTACH it must be already locked previously).
-    /// But ATTACH without create.attach_short_syntax flag works like CREATE actually, that's why we check it.
-    bool need_lock_uuid = !create.attach_short_syntax;
-    TemporaryLockForUUIDDirectory uuid_lock;
-    if (need_lock_uuid)
-        uuid_lock = TemporaryLockForUUIDDirectory{create.uuid};
-    else if (create.uuid != UUIDHelpers::Nil && !DatabaseCatalog::instance().hasUUIDMapping(create.uuid))
-    {
-        /// FIXME MaterializedPostgreSQL works with UUIDs incorrectly and breaks invariants
-        if (database->getEngineName() != "MaterializedPostgreSQL")
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create.uuid);
+        else
+            database->waitDetachedTableNotInUse(create.uuid);
     }
 
     StoragePtr res;
     /// NOTE: CREATE query may be rewritten by Storage creator or table function
     if (create.as_table_function)
     {
-        auto table_function_ast = create.as_table_function->ptr();
-        auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
+        const auto & factory = TableFunctionFactory::instance();
+        auto table_func = factory.get(create.as_table_function, getContext());
         /// In case of CREATE AS table_function() query we should use global context
         /// in storage creation because there will be no query context on server startup
         /// and because storage lifetime is bigger than query context lifetime.
-        res = table_function->execute(table_function_ast, getContext(), create.getTable(), properties.columns, /*use_global_context=*/true);
+        res = table_func->execute(create.as_table_function, getContext(), create.getTable(), properties.columns, /*use_global_context=*/true);
         res->renameInMemory({create.getDatabase(), create.getTable(), create.uuid});
     }
     else
@@ -1374,7 +1222,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         bool is_replicated_storage = typeid_cast<const StorageReplicatedMergeTree *>(res.get()) != nullptr;
         if (!is_replicated_storage && res->storesDataOnDisk() && database && database->getEngineName() == "Replicated")
             throw Exception(ErrorCodes::UNKNOWN_STORAGE,
-                            "Only tables with a Replicated engine or tables which do not store data on disk are allowed in a Replicated database");
+                            "Only table with Replicated engine or tables which does not store data on disk are allowed in Replicated database");
     }
 
     if (from_path && !res->storesDataOnDisk())
@@ -1402,7 +1250,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     /// we can safely destroy the object without a call to "shutdown", because there is guarantee
     /// that no background threads/similar resources remain after exception from "startup".
 
-    if (!res->supportsDynamicSubcolumns() && hasDynamicSubcolumns(res->getInMemoryMetadataPtr()->getColumns()))
+    if (!res->supportsDynamicSubcolumns() && hasObjectColumns(res->getInMemoryMetadataPtr()->getColumns()))
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
             "Cannot create table with column of type Object, "
@@ -1420,15 +1268,25 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 {
     /// Replicated database requires separate contexts for each DDL query
     ContextPtr current_context = getContext();
-    if (auto txn = current_context->getZooKeeperMetadataTransaction())
-        txn->setIsCreateOrReplaceQuery();
     ContextMutablePtr create_context = Context::createCopy(current_context);
     create_context->setQueryContext(std::const_pointer_cast<Context>(current_context));
 
-    auto make_drop_context = [&]() -> ContextMutablePtr
+    auto make_drop_context = [&](bool on_error) -> ContextMutablePtr
     {
         ContextMutablePtr drop_context = Context::createCopy(current_context);
-        drop_context->setQueryContext(std::const_pointer_cast<Context>(current_context));
+        drop_context->makeQueryContext();
+        if (on_error)
+            return drop_context;
+
+        if (auto txn = current_context->getZooKeeperMetadataTransaction())
+        {
+            /// Execute drop as separate query, because [CREATE OR] REPLACE query can be considered as
+            /// successfully executed after RENAME/EXCHANGE query.
+            drop_context->resetZooKeeperMetadataTransaction();
+            auto drop_txn = std::make_shared<ZooKeeperMetadataTransaction>(txn->getZooKeeper(), txn->getDatabaseZooKeeperPath(),
+                                                                           txn->isInitialQuery(), txn->getTaskZooKeeperPath());
+            drop_context->initZooKeeperMetadataTransaction(drop_txn);
+        }
         return drop_context;
     };
 
@@ -1465,9 +1323,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
     try
     {
         /// Create temporary table (random name will be generated)
-        DDLGuardPtr ddl_guard;
-        [[maybe_unused]] bool done = InterpreterCreateQuery(query_ptr, create_context).doCreateTable(create, properties, ddl_guard);
-        ddl_guard.reset();
+        [[maybe_unused]] bool done = InterpreterCreateQuery(query_ptr, create_context).doCreateTable(create, properties);
         assert(done);
         created = true;
 
@@ -1506,7 +1362,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         if (!interpreter_rename.renamedInsteadOfExchange())
         {
             /// Target table was replaced with new one, drop old table
-            auto drop_context = make_drop_context();
+            auto drop_context = make_drop_context(false);
             InterpreterDropQuery(ast_drop, drop_context).execute();
         }
 
@@ -1519,7 +1375,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         /// Drop temporary table if it was successfully created, but was not renamed to target name
         if (created && !renamed)
         {
-            auto drop_context = make_drop_context();
+            auto drop_context = make_drop_context(true);
             InterpreterDropQuery(ast_drop, drop_context).execute();
         }
         throw;
@@ -1529,19 +1385,13 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
 {
     /// If the query is a CREATE SELECT, insert the data into the table.
-    if (create.select && !create.attach && !create.is_create_empty
-        && !create.is_ordinary_view && !create.is_live_view
-        && (!(create.is_materialized_view || create.is_window_view) || create.is_populate))
+    if (create.select && !create.attach
+        && !create.is_ordinary_view && !create.is_live_view && !create.is_window_view
+        && (!create.is_materialized_view || create.is_populate))
     {
         auto insert = std::make_shared<ASTInsertQuery>();
         insert->table_id = {create.getDatabase(), create.getTable(), create.uuid};
-        if (create.is_window_view)
-        {
-            auto table = DatabaseCatalog::instance().getTable(insert->table_id, getContext());
-            insert->select = typeid_cast<StorageWindowView *>(table.get())->getSourceTableSelectQuery();
-        }
-        else
-            insert->select = create.select->clone();
+        insert->select = create.select->clone();
 
         return InterpreterInsertQuery(insert, getContext(),
             getContext()->getSettingsRef().insert_allow_materialized_columns).execute();
@@ -1565,11 +1415,6 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
 
     if (cluster->maybeCrossReplication())
     {
-        auto on_cluster_version = local_context->getSettingsRef().distributed_ddl_entry_format_version;
-        if (DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION <= on_cluster_version)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Value {} of setting distributed_ddl_entry_format_version "
-                                                         "is incompatible with cross-replication", on_cluster_version);
-
         /// Check that {uuid} macro is not used in zookeeper_path for ReplicatedMergeTree.
         /// Otherwise replicas will generate different paths.
         if (!create.storage)
@@ -1602,25 +1447,14 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
     }
 }
 
-BlockIO InterpreterCreateQuery::executeQueryOnCluster(ASTCreateQuery & create)
-{
-    prepareOnClusterQuery(create, getContext(), create.cluster);
-    DDLQueryOnClusterParams params;
-    params.access_to_check = getRequiredAccess();
-    return executeDDLQueryOnCluster(query_ptr, getContext(), params);
-}
-
 BlockIO InterpreterCreateQuery::execute()
 {
     FunctionNameNormalizer().visit(query_ptr.get());
     auto & create = query_ptr->as<ASTCreateQuery &>();
-
-    bool is_create_database = create.database && !create.table;
-    if (!create.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
+    if (!create.cluster.empty())
     {
-        auto on_cluster_version = getContext()->getSettingsRef().distributed_ddl_entry_format_version;
-        if (is_create_database || on_cluster_version < DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION)
-            return executeQueryOnCluster(create);
+        prepareOnClusterQuery(create, getContext(), create.cluster);
+        return executeDDLQueryOnCluster(query_ptr, getContext(), getRequiredAccess());
     }
 
     getContext()->checkAccess(getRequiredAccess());
@@ -1628,7 +1462,7 @@ BlockIO InterpreterCreateQuery::execute()
     ASTQueryWithOutput::resetOutputASTIfExist(create);
 
     /// CREATE|ATTACH DATABASE
-    if (is_create_database)
+    if (create.database && !create.table)
         return createDatabase(create);
     else
         return createTable(create);
@@ -1702,12 +1536,8 @@ void InterpreterCreateQuery::addColumnsDescriptionToCreateQueryIfNecessary(ASTCr
         return;
 
     auto ast_storage = std::make_shared<ASTStorage>();
-    unsigned max_parser_depth = static_cast<unsigned>(getContext()->getSettingsRef().max_parser_depth);
-    auto query_from_storage = DB::getCreateQueryFromStorage(storage,
-                                                            ast_storage,
-                                                            false,
-                                                            max_parser_depth,
-                                                            true);
+    auto query_from_storage = DB::getCreateQueryFromStorage(storage, ast_storage, false,
+                                                            getContext()->getSettingsRef().max_parser_depth, true);
     auto & create_query_from_storage = query_from_storage->as<ASTCreateQuery &>();
 
     if (!create.columns_list)

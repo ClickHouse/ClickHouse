@@ -29,7 +29,7 @@ void registerStorageNull(StorageFactory & factory)
                 "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        return std::make_shared<StorageNull>(args.table_id, args.columns, args.constraints, args.comment);
+        return StorageNull::create(args.table_id, args.columns, args.constraints, args.comment);
     },
     {
         .supports_parallel_insert = true,

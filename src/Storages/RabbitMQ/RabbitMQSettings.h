@@ -31,7 +31,6 @@ namespace DB
     M(String, rabbitmq_username, "", "RabbitMQ username", 0) \
     M(String, rabbitmq_password, "", "RabbitMQ password", 0) \
     M(Bool, rabbitmq_commit_on_select, false, "Commit messages when select query is made", 0) \
-    M(UInt64, rabbitmq_max_rows_per_message, 1, "The maximum number of rows produced in one message for row-based formats.", 0) \
 
 #define LIST_OF_RABBITMQ_SETTINGS(M) \
     RABBITMQ_RELATED_SETTINGS(M) \

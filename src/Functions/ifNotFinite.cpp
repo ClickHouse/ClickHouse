@@ -65,7 +65,7 @@ private:
 
 }
 
-REGISTER_FUNCTION(IfNotFinite)
+void registerFunctionIfNotFinite(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionIfNotFinite>();
 }

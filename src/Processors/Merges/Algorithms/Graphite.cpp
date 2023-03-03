@@ -71,11 +71,11 @@ static const Graphite::Pattern undef_pattern =
         .type = undef_pattern.TypeUndef,
 };
 
-inline static const Patterns & selectPatternsForMetricType(const Graphite::Params & params, std::string_view path)
+inline static const Patterns & selectPatternsForMetricType(const Graphite::Params & params, const StringRef path)
 {
     if (params.patterns_typed)
     {
-        std::string_view path_view = path;
+        std::string_view path_view = path.toView();
         if (path_view.find("?"sv) == path_view.npos)
             return params.patterns_plain;
         else
@@ -89,7 +89,7 @@ inline static const Patterns & selectPatternsForMetricType(const Graphite::Param
 
 Graphite::RollupRule selectPatternForPath(
         const Graphite::Params & params,
-        std::string_view path)
+        StringRef path)
 {
     const Graphite::Pattern * first_match = &undef_pattern;
 
@@ -103,29 +103,29 @@ Graphite::RollupRule selectPatternForPath(
             if (first_match->type == first_match->TypeUndef && pattern.type == pattern.TypeAll)
             {
                 /// There is only default pattern for both retention and aggregation
-                return {&pattern, &pattern};
+                return std::pair(&pattern, &pattern);
             }
             if (pattern.type != first_match->type)
             {
                 if (first_match->type == first_match->TypeRetention)
                 {
-                    return {first_match, &pattern};
+                    return std::pair(first_match, &pattern);
                 }
                 if (first_match->type == first_match->TypeAggregation)
                 {
-                    return {&pattern, first_match};
+                    return std::pair(&pattern, first_match);
                 }
             }
         }
         else
         {
-            if (pattern.regexp->match(path.data(), path.size()))
+            if (pattern.regexp->match(path.data, path.size))
             {
                 /// General pattern with matched path
                 if (pattern.type == pattern.TypeAll)
                 {
                     /// Only for not default patterns with both function and retention parameters
-                    return {&pattern, &pattern};
+                    return std::pair(&pattern, &pattern);
                 }
                 if (first_match->type == first_match->TypeUndef)
                 {
@@ -136,11 +136,11 @@ Graphite::RollupRule selectPatternForPath(
                 {
                     if (first_match->type == first_match->TypeRetention)
                     {
-                        return {first_match, &pattern};
+                        return std::pair(first_match, &pattern);
                     }
                     if (first_match->type == first_match->TypeAggregation)
                     {
-                        return {&pattern, first_match};
+                        return std::pair(&pattern, first_match);
                     }
                 }
             }
@@ -274,9 +274,9 @@ std::string buildTaggedRegex(std::string regexp_str)
     std::vector<std::string> tags;
 
     splitInto<';'>(tags, regexp_str);
-    /* remove empty elements */
+    /* remove empthy elements */
     using namespace std::string_literals;
-    std::erase(tags, ""s);
+    tags.erase(std::remove(tags.begin(), tags.end(), ""s), tags.end());
     if (tags[0].find('=') == tags[0].npos)
     {
         if (tags.size() == 1) /* only name */
@@ -332,7 +332,8 @@ std::string buildTaggedRegex(std::string regexp_str)
   *     </default>
   * </graphite_rollup>
   */
-static const Pattern & appendGraphitePattern(
+static const Pattern &
+appendGraphitePattern(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_element, Patterns & patterns,
     bool default_rule,

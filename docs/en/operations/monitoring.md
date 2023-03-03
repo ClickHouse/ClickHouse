@@ -1,13 +1,9 @@
 ---
-slug: /en/operations/monitoring
-sidebar_position: 45
-sidebar_label: Monitoring
+toc_priority: 45
+toc_title: Monitoring
 ---
 
-# Monitoring
-import SelfManaged from '@site/docs/en/_snippets/_self_managed_only_automated.md';
-
-<SelfManaged />
+# Monitoring {#monitoring}
 
 You can monitor:
 

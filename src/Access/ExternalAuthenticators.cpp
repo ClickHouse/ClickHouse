@@ -2,8 +2,6 @@
 #include <Access/LDAPClient.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
-#include <Common/SipHash.h>
-
 #include <Poco/Util/AbstractConfiguration.h>
 #include <boost/algorithm/string/case_conv.hpp>
 
@@ -75,7 +73,6 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
     const bool has_tls_ca_cert_file = config.has(ldap_server_config + ".tls_ca_cert_file");
     const bool has_tls_ca_cert_dir = config.has(ldap_server_config + ".tls_ca_cert_dir");
     const bool has_tls_cipher_suite = config.has(ldap_server_config + ".tls_cipher_suite");
-    const bool has_search_limit = config.has(ldap_server_config + ".search_limit");
 
     if (!has_host)
         throw Exception("Missing 'host' entry", ErrorCodes::BAD_ARGUMENTS);
@@ -94,8 +91,8 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
     }
     else if (has_auth_dn_prefix || has_auth_dn_suffix)
     {
-        std::string auth_dn_prefix = config.getString(ldap_server_config + ".auth_dn_prefix");
-        std::string auth_dn_suffix = config.getString(ldap_server_config + ".auth_dn_suffix");
+        const auto auth_dn_prefix = config.getString(ldap_server_config + ".auth_dn_prefix");
+        const auto auth_dn_suffix = config.getString(ldap_server_config + ".auth_dn_suffix");
         params.bind_dn = auth_dn_prefix + "{user_name}" + auth_dn_suffix;
     }
 
@@ -179,17 +176,14 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
 
     if (has_port)
     {
-        UInt32 port = config.getUInt(ldap_server_config + ".port");
-        if (port > 65535)
+        const auto port = config.getInt64(ldap_server_config + ".port");
+        if (port < 0 || port > 65535)
             throw Exception("Bad value for 'port' entry", ErrorCodes::BAD_ARGUMENTS);
 
         params.port = port;
     }
     else
         params.port = (params.enable_tls == LDAPClient::Params::TLSEnable::YES ? 636 : 389);
-
-    if (has_search_limit)
-        params.search_limit = static_cast<UInt32>(config.getUInt64(ldap_server_config + ".search_limit"));
 }
 
 void parseKerberosParams(GSSAcceptorContext::Params & params, const Poco::Util::AbstractConfiguration & config)
@@ -237,23 +231,18 @@ void parseLDAPRoleSearchParams(LDAPClient::RoleSearchParams & params, const Poco
         params.prefix = config.getString(prefix + ".prefix");
 }
 
-void ExternalAuthenticators::resetImpl()
+void ExternalAuthenticators::reset()
 {
+    std::scoped_lock lock(mutex);
     ldap_client_params_blueprint.clear();
     ldap_caches.clear();
     kerberos_params.reset();
 }
 
-void ExternalAuthenticators::reset()
-{
-    std::scoped_lock lock(mutex);
-    resetImpl();
-}
-
 void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log)
 {
     std::scoped_lock lock(mutex);
-    resetImpl();
+    reset();
 
     Poco::Util::AbstractConfiguration::Keys all_keys;
     config.keys("", all_keys);
@@ -290,7 +279,7 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
             if (bracket_pos != std::string::npos)
                 ldap_server_name.resize(bracket_pos);
 
-            if (ldap_client_params_blueprint.contains(ldap_server_name))
+            if (ldap_client_params_blueprint.count(ldap_server_name) > 0)
                 throw Exception("Multiple LDAP servers with the same name are not allowed", ErrorCodes::BAD_ARGUMENTS);
 
             LDAPClient::Params ldap_client_params_tmp;
@@ -319,26 +308,11 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
     }
 }
 
-UInt128 computeParamsHash(const LDAPClient::Params & params, const LDAPClient::RoleSearchParamsList * role_search_params)
-{
-    SipHash hash;
-    params.updateHash(hash);
-    if (role_search_params)
-    {
-        for (const auto & params_instance : *role_search_params)
-        {
-            params_instance.updateHash(hash);
-        }
-    }
-
-    return hash.get128();
-}
-
 bool ExternalAuthenticators::checkLDAPCredentials(const String & server, const BasicCredentials & credentials,
     const LDAPClient::RoleSearchParamsList * role_search_params, LDAPClient::SearchResultsList * role_search_results) const
 {
     std::optional<LDAPClient::Params> params;
-    UInt128 params_hash = 0;
+    std::size_t params_hash = 0;
 
     {
         std::scoped_lock lock(mutex);
@@ -352,7 +326,14 @@ bool ExternalAuthenticators::checkLDAPCredentials(const String & server, const B
         params->user = credentials.getUserName();
         params->password = credentials.getPassword();
 
-        params_hash = computeParamsHash(*params, role_search_params);
+        params->combineCoreHash(params_hash);
+        if (role_search_params)
+        {
+            for (const auto & params_instance : *role_search_params)
+            {
+                params_instance.combineHash(params_hash);
+            }
+        }
 
         // Check the cache, but only if the caching is enabled at all.
         if (params->verification_cooldown > std::chrono::seconds{0})
@@ -422,7 +403,15 @@ bool ExternalAuthenticators::checkLDAPCredentials(const String & server, const B
         new_params.user = credentials.getUserName();
         new_params.password = credentials.getPassword();
 
-        const UInt128 new_params_hash = computeParamsHash(new_params, role_search_params);
+        std::size_t new_params_hash = 0;
+        new_params.combineCoreHash(new_params_hash);
+        if (role_search_params)
+        {
+            for (const auto & params_instance : *role_search_params)
+            {
+                params_instance.combineHash(new_params_hash);
+            }
+        }
 
         // If the critical server params have changed while we were checking the password, we discard the current result.
         if (params_hash != new_params_hash)

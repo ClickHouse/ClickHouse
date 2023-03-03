@@ -1,7 +1,0 @@
-id	lc_nullable	lc_int_nullable	bool_nullable
-Nullable(Int64)	LowCardinality(Nullable(String))	LowCardinality(Nullable(Int64))	Nullable(UInt8)
-1	onee	1	1
-2	twoo	2	0
-3	three	3	1
-4	four	4	1
-5	five	5	1

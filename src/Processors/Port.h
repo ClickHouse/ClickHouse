@@ -25,7 +25,7 @@ namespace ErrorCodes
 
 class Port
 {
-    friend void connect(OutputPort &, InputPort &, bool);
+    friend void connect(OutputPort &, InputPort &);
     friend class IProcessor;
 
 public:
@@ -89,7 +89,7 @@ protected:
             DataPtr() : data(new Data())
             {
                 if (unlikely((getUInt(data) & FLAGS_MASK) != 0))
-                    throw Exception("Not alignment memory for Port", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception("Not alignment memory for Port.", ErrorCodes::LOGICAL_ERROR);
             }
             /// Pointer can store flags in case of exception in swap.
             ~DataPtr() { delete getPtr(getUInt(data) & PTR_MASK); }
@@ -133,7 +133,7 @@ protected:
         State() : data(new Data())
         {
             if (unlikely((getUInt(data) & FLAGS_MASK) != 0))
-                throw Exception("Not alignment memory for Port", ErrorCodes::LOGICAL_ERROR);
+                throw Exception("Not alignment memory for Port.", ErrorCodes::LOGICAL_ERROR);
         }
 
         ~State()
@@ -160,7 +160,7 @@ protected:
             ///    throw Exception("Cannot push block to port which is not needed.", ErrorCodes::LOGICAL_ERROR);
 
             if (unlikely(flags & HAS_DATA))
-                throw Exception("Cannot push block to port which already has data", ErrorCodes::LOGICAL_ERROR);
+                throw Exception("Cannot push block to port which already has data.", ErrorCodes::LOGICAL_ERROR);
         }
 
         void ALWAYS_INLINE pull(DataPtr & data_, std::uintptr_t & flags, bool set_not_needed = false)
@@ -174,10 +174,10 @@ protected:
 
             /// It's ok to check because this flag can be changed only by pulling thread.
             if (unlikely((flags & IS_NEEDED) == 0) && !set_not_needed)
-                throw Exception("Cannot pull block from port which is not needed", ErrorCodes::LOGICAL_ERROR);
+                throw Exception("Cannot pull block from port which is not needed.", ErrorCodes::LOGICAL_ERROR);
 
             if (unlikely((flags & HAS_DATA) == 0))
-                throw Exception("Cannot pull block from port which has no data", ErrorCodes::LOGICAL_ERROR);
+                throw Exception("Cannot pull block from port which has no data.", ErrorCodes::LOGICAL_ERROR);
         }
 
         std::uintptr_t ALWAYS_INLINE setFlags(std::uintptr_t flags, std::uintptr_t mask)
@@ -254,10 +254,6 @@ protected:
         if (likely(update_info))
             update_info->update();
     }
-
-    /// For processors_profile_log
-    size_t rows = 0;
-    size_t bytes = 0;
 };
 
 /// Invariants:
@@ -267,7 +263,7 @@ protected:
 ///   * You can pull only if port hasData().
 class InputPort : public Port
 {
-    friend void connect(OutputPort &, InputPort &, bool);
+    friend void connect(OutputPort &, InputPort &);
 
 private:
     OutputPort * output_port = nullptr;
@@ -293,19 +289,14 @@ public:
         {
             auto & chunk = data->chunk;
 
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Invalid number of columns in chunk pulled from OutputPort. Expected {}, found {}\n"
-                "Header: {}\n"
-                "Chunk: {}\n",
-                header.columns(),
-                chunk.getNumColumns(),
-                header.dumpStructure(),
-                chunk.dumpStructure());
-        }
+            String msg = "Invalid number of columns in chunk pulled from OutputPort. Expected "
+                         + std::to_string(header.columns()) + ", found " + std::to_string(chunk.getNumColumns()) + '\n';
 
-        rows += data->chunk.getNumRows();
-        bytes += data->chunk.bytes();
+            msg += "Header: " + header.dumpStructure() + '\n';
+            msg += "Chunk: " + chunk.dumpStructure() + '\n';
+
+            throw Exception(msg, ErrorCodes::LOGICAL_ERROR);
+        }
 
         return std::move(*data);
     }
@@ -390,7 +381,7 @@ public:
 ///   * You can push only if port doesn't hasData().
 class OutputPort : public Port
 {
-    friend void connect(OutputPort &, InputPort &, bool);
+    friend void connect(OutputPort &, InputPort &);
 
 private:
     InputPort * input_port = nullptr;
@@ -412,15 +403,14 @@ public:
     {
         if (unlikely(!data_.exception && data_.chunk.getNumColumns() != header.columns()))
         {
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Invalid number of columns in chunk pushed to OutputPort. Expected {}, found {}\n"
-                "Header: {}\n"
-                "Chunk: {}\n",
-                header.columns(),
-                data_.chunk.getNumColumns(),
-                header.dumpStructure(),
-                data_.chunk.dumpStructure());
+            String msg = "Invalid number of columns in chunk pushed to OutputPort. Expected "
+                         + std::to_string(header.columns())
+                         + ", found " + std::to_string(data_.chunk.getNumColumns()) + '\n';
+
+            msg += "Header: " + header.dumpStructure() + '\n';
+            msg += "Chunk: " + data_.chunk.dumpStructure() + '\n';
+
+            throw Exception(msg, ErrorCodes::LOGICAL_ERROR);
         }
 
         updateVersion();
@@ -429,10 +419,6 @@ public:
 
         std::uintptr_t flags = 0;
         *data = std::move(data_);
-
-        rows += data->chunk.getNumRows();
-        bytes += data->chunk.bytes();
-
         state->push(data, flags);
     }
 
@@ -483,6 +469,6 @@ using InputPorts = std::list<InputPort>;
 using OutputPorts = std::list<OutputPort>;
 
 
-void connect(OutputPort & output, InputPort & input, bool reconnect = false);
+void connect(OutputPort & output, InputPort & input);
 
 }

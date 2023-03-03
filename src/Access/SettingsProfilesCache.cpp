@@ -139,10 +139,8 @@ void SettingsProfilesCache::mergeSettingsAndConstraintsFor(EnabledSettings & ena
     merged_settings.merge(enabled.params.settings_from_user);
 
     auto info = std::make_shared<SettingsProfilesInfo>(access_control);
-
-    info->profiles = merged_settings.toProfileIDs();
+    info->profiles = enabled.params.settings_from_user.toProfileIDs();
     substituteProfiles(merged_settings, info->profiles_with_implicit, info->names_of_profiles);
-
     info->settings = merged_settings.toSettingsChanges();
     info->constraints = merged_settings.toSettingsConstraints(access_control);
 

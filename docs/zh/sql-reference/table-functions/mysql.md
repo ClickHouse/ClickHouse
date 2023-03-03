@@ -1,6 +1,3 @@
----
-slug: /zh/sql-reference/table-functions/mysql
----
 # mysql {#mysql}
 
 允许对存储在远程MySQL服务器上的数据执行`SELECT`和`INSERT`查询。

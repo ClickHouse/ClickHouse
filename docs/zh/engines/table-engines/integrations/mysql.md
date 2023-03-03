@@ -1,6 +1,3 @@
----
-slug: /zh/engines/table-engines/integrations/mysql
----
 # MySQL {#mysql}
 
 MySQL 引擎可以对存储在远程 MySQL 服务器上的数据执行 `SELECT` 查询。

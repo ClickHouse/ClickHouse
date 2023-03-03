@@ -1,8 +1,8 @@
 #pragma once
 
+#include <Functions/TargetSpecific.h>
 #include <Functions/IFunction.h>
 
-#include <Common/TargetSpecific.h>
 #include <Common/Stopwatch.h>
 #include <Interpreters/Context.h>
 
@@ -210,7 +210,7 @@ public:
             throw Exception("There are no available implementations for function " "TODO(dakovalkov): add name",
                             ErrorCodes::NO_SUITABLE_FUNCTION_IMPLEMENTATION);
 
-        /// Statistics shouldn't rely on small columns.
+        /// Statistics shouldn't rely on small columnss.
         bool considerable = (input_rows_count > 1000);
         ColumnPtr res;
 

@@ -1,7 +1,6 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Common/typeid_cast.h>
-#include <Parsers/SelectUnionMode.h>
 #include <IO/Operators.h>
 
 #include <iostream>
@@ -33,24 +32,14 @@ void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, F
 
     auto mode_to_str = [&](auto mode)
     {
-        if (mode == SelectUnionMode::UNION_DEFAULT)
-            return "UNION";
-        else if (mode == SelectUnionMode::UNION_ALL)
+        if (mode == SelectUnionMode::ALL)
             return "UNION ALL";
-        else if (mode == SelectUnionMode::UNION_DISTINCT)
+        else if (mode == SelectUnionMode::DISTINCT)
             return "UNION DISTINCT";
-        else if (mode == SelectUnionMode::EXCEPT_DEFAULT)
-            return "EXCEPT";
-        else if (mode == SelectUnionMode::EXCEPT_ALL)
-            return "EXCEPT ALL";
-        else if (mode == SelectUnionMode::EXCEPT_DISTINCT)
-            return "EXCEPT DISTINCT";
-        else if (mode == SelectUnionMode::INTERSECT_DEFAULT)
+        else if (mode == SelectUnionMode::INTERSECT)
             return "INTERSECT";
-        else if (mode == SelectUnionMode::INTERSECT_ALL)
-            return "INTERSECT ALL";
-        else if (mode == SelectUnionMode::INTERSECT_DISTINCT)
-            return "INTERSECT DISTINCT";
+        else if (mode == SelectUnionMode::EXCEPT)
+            return "EXCEPT";
         return "";
     };
 
@@ -88,8 +77,8 @@ void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, F
 
 bool ASTSelectWithUnionQuery::hasNonDefaultUnionMode() const
 {
-    return set_of_modes.contains(SelectUnionMode::UNION_DISTINCT) || set_of_modes.contains(SelectUnionMode::INTERSECT_DISTINCT)
-        || set_of_modes.contains(SelectUnionMode::EXCEPT_DISTINCT);
+    return set_of_modes.contains(SelectUnionMode::DISTINCT) || set_of_modes.contains(SelectUnionMode::INTERSECT)
+        || set_of_modes.contains(SelectUnionMode::EXCEPT);
 }
 
 }

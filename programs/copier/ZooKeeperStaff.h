@@ -20,7 +20,7 @@ public:
 
     bool operator<=(const WrappingUInt32 & other) const
     {
-        const UInt32 HALF = static_cast<UInt32>(1) << 31;
+        const UInt32 HALF = 1 << 31;
         return (value <= other.value && other.value - value < HALF)
                || (value > other.value && value - other.value > HALF);
     }
@@ -47,8 +47,8 @@ public:
     WrappingUInt32 epoch;
     WrappingUInt32 counter;
     explicit Zxid(UInt64 _zxid)
-            : epoch(static_cast<UInt32>(_zxid >> 32))
-            , counter(static_cast<UInt32>(_zxid))
+            : epoch(_zxid >> 32)
+            , counter(_zxid)
     {}
 
     bool operator<=(const Zxid & other) const

@@ -1,2 +1,0 @@
-CREATE TABLE default.test\n(\n    `a` UInt8,\n    `b` String EPHEMERAL\n)\nENGINE = Memory
-CREATE TABLE default.test\n(\n    `a` UInt8,\n    `b` String EPHEMERAL 1 + 2\n)\nENGINE = Memory

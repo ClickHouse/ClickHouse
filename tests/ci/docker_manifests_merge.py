@@ -18,7 +18,7 @@ from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from upload_result_helper import upload_results
 
-NAME = "Push multi-arch images to Dockerhub"
+NAME = "Push multi-arch images to Dockerhub (actions)"
 CHANGED_IMAGES = "changed_images_{}.json"
 Images = Dict[str, List[str]]
 
@@ -70,7 +70,7 @@ def parse_args() -> argparse.Namespace:
 
 def load_images(path: str, suffix: str) -> Images:
     with open(os.path.join(path, CHANGED_IMAGES.format(suffix)), "rb") as images:
-        return json.load(images)  # type: ignore
+        return json.load(images)
 
 
 def strip_suffix(suffix: str, images: Images) -> Images:
@@ -203,7 +203,7 @@ def main():
         json.dump(changed_images, ci)
 
     pr_info = PRInfo()
-    s3_helper = S3Helper()
+    s3_helper = S3Helper("https://s3.amazonaws.com")
 
     url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, [], NAME)
 
@@ -220,7 +220,7 @@ def main():
     if len(description) >= 140:
         description = description[:136] + "..."
 
-    gh = Github(get_best_robot_token(), per_page=100)
+    gh = Github(get_best_robot_token())
     post_commit_status(gh, pr_info.sha, NAME, description, status, url)
 
     prepared_events = prepare_tests_results_for_clickhouse(

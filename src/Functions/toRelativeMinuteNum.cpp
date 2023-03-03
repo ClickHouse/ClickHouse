@@ -7,9 +7,9 @@
 namespace DB
 {
 
-using FunctionToRelativeMinuteNum = FunctionDateOrDateTimeToSomething<DataTypeUInt32, ToRelativeMinuteNumImpl<ResultPrecision::Standard>>;
+using FunctionToRelativeMinuteNum = FunctionDateOrDateTimeToSomething<DataTypeUInt32, ToRelativeMinuteNumImpl>;
 
-REGISTER_FUNCTION(ToRelativeMinuteNum)
+void registerFunctionToRelativeMinuteNum(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToRelativeMinuteNum>();
 }

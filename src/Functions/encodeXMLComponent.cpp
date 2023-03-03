@@ -137,7 +137,7 @@ namespace
 
 }
 
-REGISTER_FUNCTION(EncodeXMLComponent)
+void registerFunctionEncodeXMLComponent(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionEncodeXMLComponent>();
 }

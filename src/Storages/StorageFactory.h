@@ -59,7 +59,6 @@ public:
         bool supports_skipping_indices = false;
         bool supports_projections = false;
         bool supports_sort_order = false;
-        /// See also IStorage::supportsTTL()
         bool supports_ttl = false;
         /// See also IStorage::supportsReplication()
         bool supports_replication = false;

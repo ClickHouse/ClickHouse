@@ -19,14 +19,5 @@ bool Quota::equal(const IAccessEntity & other) const
     return (all_limits == other_quota.all_limits) && (key_type == other_quota.key_type) && (to_roles == other_quota.to_roles);
 }
 
-std::vector<UUID> Quota::findDependencies() const
-{
-    return to_roles.findDependencies();
 }
 
-void Quota::replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids)
-{
-    to_roles.replaceDependencies(old_to_new_ids);
-}
-
-}

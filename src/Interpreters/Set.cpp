@@ -22,8 +22,6 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
 
-#include <Processors/Chunk.h>
-
 #include <Storages/MergeTree/KeyCondition.h>
 
 #include <base/range.h>
@@ -105,7 +103,7 @@ void NO_INLINE Set::insertFromBlockImplCase(
 
 void Set::setHeader(const ColumnsWithTypeAndName & header)
 {
-    std::lock_guard lock(rwlock);
+    std::unique_lock lock(rwlock);
 
     if (!data.empty())
         return;
@@ -131,7 +129,6 @@ void Set::setHeader(const ColumnsWithTypeAndName & header)
         if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(data_types.back().get()))
         {
             data_types.back() = low_cardinality_type->getDictionaryType();
-            set_elements_types.back() = low_cardinality_type->getDictionaryType();
             materialized_columns.emplace_back(key_columns.back()->convertToFullColumnIfLowCardinality());
             key_columns.back() = materialized_columns.back().get();
         }
@@ -165,16 +162,8 @@ void Set::setHeader(const ColumnsWithTypeAndName & header)
     data.init(data.chooseMethod(key_columns, key_sizes));
 }
 
-bool Set::insertFromBlock(const ColumnsWithTypeAndName & columns)
-{
-    Columns cols;
-    cols.reserve(columns.size());
-    for (const auto & column : columns)
-        cols.emplace_back(column.column);
-    return insertFromBlock(cols);
-}
 
-bool Set::insertFromBlock(const Columns & columns)
+bool Set::insertFromBlock(const ColumnsWithTypeAndName & columns)
 {
     std::lock_guard<std::shared_mutex> lock(rwlock);
 
@@ -190,11 +179,11 @@ bool Set::insertFromBlock(const Columns & columns)
     /// Remember the columns we will work with
     for (size_t i = 0; i < keys_size; ++i)
     {
-        materialized_columns.emplace_back(columns.at(i)->convertToFullIfNeeded());
+        materialized_columns.emplace_back(columns.at(i).column->convertToFullIfNeeded());
         key_columns.emplace_back(materialized_columns.back().get());
     }
 
-    size_t rows = columns.at(0)->size();
+    size_t rows = columns.at(0).column->size();
 
     /// We will insert to the Set only keys, where all components are not NULL.
     ConstNullMapPtr null_map{};
@@ -404,13 +393,7 @@ void Set::checkColumnsNumber(size_t num_key_columns) const
 
 bool Set::areTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const
 {
-    /// Out-of-bound access can happen when same set expression built with different columns.
-    /// Caller may call this method to make sure that the set is indeed the one they want
-    /// without awaring data_types.size().
-    if (set_type_idx >= data_types.size())
-        return false;
-    return removeNullable(recursiveRemoveLowCardinality(data_types[set_type_idx]))
-        ->equals(*removeNullable(recursiveRemoveLowCardinality(other_type)));
+    return removeNullable(recursiveRemoveLowCardinality(data_types[set_type_idx]))->equals(*removeNullable(recursiveRemoveLowCardinality(other_type)));
 }
 
 void Set::checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const
@@ -447,9 +430,8 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
     SortDescription sort_description;
     for (size_t i = 0; i < tuple_size; ++i)
     {
-        String column_name = "_" + toString(i);
-        block_to_sort.insert({ordered_set[i], nullptr, column_name});
-        sort_description.emplace_back(column_name, 1, 1);
+        block_to_sort.insert({ ordered_set[i], nullptr, "_" + toString(i) });
+        sort_description.emplace_back(i, 1, 1);
     }
 
     sortBlock(block_to_sort, sort_description);

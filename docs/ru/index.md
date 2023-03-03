@@ -1,7 +1,6 @@
 ---
-slug: /ru/
-sidebar_position: 0
-sidebar_label: "Что такое ClickHouse"
+toc_priority: 0
+toc_title: "Обзор"
 ---
 
 # Что такое ClickHouse {#what-is-clickhouse}

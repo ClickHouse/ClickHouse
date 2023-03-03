@@ -9,7 +9,7 @@
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 #include <Common/Arena.h>
 
-#include <Common/scope_guard_safe.h>
+#include <base/scope_guard_safe.h>
 
 
 namespace DB
@@ -17,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
 }
@@ -87,7 +88,7 @@ DataTypePtr FunctionInitializeAggregation::getReturnTypeImpl(const ColumnsWithTy
         aggregate_function = AggregateFunctionFactory::instance().get(aggregate_function_name, argument_types, params_row, properties);
     }
 
-    return aggregate_function->getResultType();
+    return aggregate_function->getReturnType();
 }
 
 
@@ -112,6 +113,13 @@ ColumnPtr FunctionInitializeAggregation::executeImpl(const ColumnsWithTypeAndNam
 
     MutableColumnPtr result_holder = result_type->createColumn();
     IColumn & res_col = *result_holder;
+
+    /// AggregateFunction's states should be inserted into column using specific way
+    auto * res_col_aggregate_function = typeid_cast<ColumnAggregateFunction *>(&res_col);
+
+    if (!res_col_aggregate_function && agg_func.isState())
+        throw Exception("State function " + agg_func.getName() + " inserts results into non-state column "
+                        + result_type->getName(), ErrorCodes::ILLEGAL_COLUMN);
 
     PODArray<AggregateDataPtr> places(input_rows_count);
     for (size_t i = 0; i < input_rows_count; ++i)
@@ -139,19 +147,20 @@ ColumnPtr FunctionInitializeAggregation::executeImpl(const ColumnsWithTypeAndNam
         /// Unnest consecutive trailing -State combinators
         while (const auto * func = typeid_cast<const AggregateFunctionState *>(that))
             that = func->getNestedFunction().get();
-        that->addBatch(0, input_rows_count, places.data(), 0, aggregate_arguments, arena.get());
+        that->addBatch(input_rows_count, places.data(), 0, aggregate_arguments, arena.get());
     }
 
     for (size_t i = 0; i < input_rows_count; ++i)
-        /// We should use insertMergeResultInto to insert result into ColumnAggregateFunction
-        /// correctly if result contains AggregateFunction's states
-        agg_func.insertMergeResultInto(places[i], res_col, arena.get());
+        if (!res_col_aggregate_function)
+            agg_func.insertResultInto(places[i], res_col, arena.get());
+        else
+            res_col_aggregate_function->insertFrom(places[i]);
     return result_holder;
 }
 
 }
 
-REGISTER_FUNCTION(InitializeAggregation)
+void registerFunctionInitializeAggregation(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionInitializeAggregation>();
 }

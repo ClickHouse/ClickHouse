@@ -22,7 +22,7 @@ using FunctionIsNaN = FunctionNumericPredicate<IsNaNImpl>;
 
 }
 
-REGISTER_FUNCTION(IsNaN)
+void registerFunctionIsNaN(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionIsNaN>();
 }

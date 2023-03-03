@@ -1,7 +1,6 @@
 ---
-slug: /ru/sql-reference/table-functions/input
-sidebar_position: 46
-sidebar_label: input
+toc_priority: 46
+toc_title: input
 ---
 
 # input {#input}

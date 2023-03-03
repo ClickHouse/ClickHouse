@@ -1,7 +1,6 @@
 ---
-slug: /ru/interfaces/tcp
-sidebar_position: 18
-sidebar_label: "Родной интерфейс (TCP)"
+toc_priority: 18
+toc_title: "Родной интерфейс (TCP)"
 ---
 
 # Родной интерфейс (TCP) {#rodnoi-interfeis-tcp}

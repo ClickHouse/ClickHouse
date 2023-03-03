@@ -29,7 +29,6 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int SOCKET_TIMEOUT;
     extern const int CANNOT_READ_FROM_SOCKET;
-    extern const int LOGICAL_ERROR;
 }
 
 
@@ -55,10 +54,7 @@ bool ReadBufferFromPocoSocket::nextImpl()
         while (async_callback && !socket.poll(0, Poco::Net::Socket::SELECT_READ))
             async_callback(socket.impl()->sockfd(), socket.getReceiveTimeout(), socket_description);
 
-        if (internal_buffer.size() > INT_MAX)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Buffer overflow");
-
-        bytes_read = socket.impl()->receiveBytes(internal_buffer.begin(), static_cast<int>(internal_buffer.size()));
+        bytes_read = socket.impl()->receiveBytes(internal_buffer.begin(), internal_buffer.size());
     }
     catch (const Poco::Net::NetException & e)
     {

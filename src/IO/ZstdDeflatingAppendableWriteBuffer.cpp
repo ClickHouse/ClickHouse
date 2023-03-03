@@ -149,7 +149,7 @@ void ZstdDeflatingAppendableWriteBuffer::finalizeZstd()
 {
     try
     {
-        size_t err = ZSTD_freeCCtx(cctx);
+        int err = ZSTD_freeCCtx(cctx);
         /// This is just in case, since it is impossible to get an error by using this wrapper.
         if (unlikely(err))
             throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED, "ZSTD_freeCCtx failed: error: '{}'; zstd version: {}", ZSTD_getErrorName(err), ZSTD_VERSION_STRING);
@@ -179,7 +179,7 @@ void ZstdDeflatingAppendableWriteBuffer::addEmptyBlock()
 bool ZstdDeflatingAppendableWriteBuffer::isNeedToAddEmptyBlock()
 {
     ReadBufferFromFile reader(out->getFileName());
-    auto fsize = reader.getFileSize();
+    auto fsize = reader.size();
     if (fsize > 3)
     {
         std::array<char, 3> result;

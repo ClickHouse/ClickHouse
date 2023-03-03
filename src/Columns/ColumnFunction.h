@@ -5,6 +5,7 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Columns/IColumn.h>
 
+
 namespace DB
 {
 namespace ErrorCodes
@@ -13,7 +14,7 @@ namespace ErrorCodes
 }
 
 class IFunctionBase;
-using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
+using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 
 /** A column containing a lambda expression.
   * Behaves like a constant-column. Contains an expression, but not input or output data.
@@ -28,8 +29,7 @@ private:
         FunctionBasePtr function_,
         const ColumnsWithTypeAndName & columns_to_capture,
         bool is_short_circuit_argument_ = false,
-        bool is_function_compiled_ = false,
-        bool recursively_convert_result_to_full_column_if_low_cardinality_ = false);
+        bool is_function_compiled_ = false);
 
 public:
     const char * getFamilyName() const override { return "Function"; }
@@ -177,9 +177,6 @@ public:
 
     DataTypePtr getResultType() const;
 
-    /// Create copy of this column, but with recursively_convert_result_to_full_column_if_low_cardinality = true
-    ColumnPtr recursivelyConvertResultToFullColumnIfLowCardinality() const;
-
 private:
     size_t elements_size;
     FunctionBasePtr function;
@@ -190,13 +187,6 @@ private:
     /// argument with ColumnFunction column (some functions can return it)
     /// See ExpressionActions.cpp for details.
     bool is_short_circuit_argument;
-
-    /// Special flag for lazy executed argument for short-circuit function.
-    /// If true, call recursiveRemoveLowCardinality on the result column
-    /// when function will be executed.
-    /// It's used when short-circuit function uses default implementation
-    /// for low cardinality arguments.
-    bool recursively_convert_result_to_full_column_if_low_cardinality = false;
 
     /// Determine if passed function is compiled. Used for profiling.
     bool is_function_compiled;

@@ -14,7 +14,6 @@
 
 #include <Poco/Event.h>
 #include <Common/ThreadStatus.h>
-#include <Common/OpenTelemetryTraceContext.h>
 #include <base/scope_guard.h>
 
 /** Very simple thread pool similar to boost::threadpool.
@@ -50,13 +49,13 @@ public:
     /// NOTE: Probably you should call wait() if exception was thrown. If some previously scheduled jobs are using some objects,
     /// located on stack of current thread, the stack must not be unwinded until all jobs finished. However,
     /// if ThreadPool is a local object, it will wait for all scheduled jobs in own destructor.
-    void scheduleOrThrowOnError(Job job, ssize_t priority = 0);
+    void scheduleOrThrowOnError(Job job, int priority = 0);
 
     /// Similar to scheduleOrThrowOnError(...). Wait for specified amount of time and schedule a job or return false.
-    bool trySchedule(Job job, ssize_t priority = 0, uint64_t wait_microseconds = 0) noexcept;
+    bool trySchedule(Job job, int priority = 0, uint64_t wait_microseconds = 0) noexcept;
 
     /// Similar to scheduleOrThrowOnError(...). Wait for specified amount of time and schedule a job or throw an exception.
-    void scheduleOrThrow(Job job, ssize_t priority = 0, uint64_t wait_microseconds = 0, bool propagate_opentelemetry_tracing_context = true);
+    void scheduleOrThrow(Job job, int priority = 0, uint64_t wait_microseconds = 0);
 
     /// Wait for all currently active jobs to be done.
     /// You may call schedule and wait many times in arbitrary order.
@@ -96,11 +95,10 @@ private:
     struct JobWithPriority
     {
         Job job;
-        ssize_t priority;
-        DB::OpenTelemetry::TracingContextOnThread thread_trace_context;
+        int priority;
 
-        JobWithPriority(Job job_, ssize_t priority_, const DB::OpenTelemetry::TracingContextOnThread& thread_trace_context_)
-            : job(job_), priority(priority_), thread_trace_context(thread_trace_context_) {}
+        JobWithPriority(Job job_, int priority_)
+            : job(job_), priority(priority_) {}
 
         bool operator< (const JobWithPriority & rhs) const
         {
@@ -113,7 +111,7 @@ private:
     std::exception_ptr first_exception;
 
     template <typename ReturnType>
-    ReturnType scheduleImpl(Job job, ssize_t priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context = true);
+    ReturnType scheduleImpl(Job job, int priority, std::optional<uint64_t> wait_microseconds);
 
     void worker(typename std::list<Thread>::iterator thread_it);
 
@@ -156,34 +154,28 @@ public:
 
 /** Looks like std::thread but allocates threads in GlobalThreadPool.
   * Also holds ThreadStatus for ClickHouse.
-  *
-  * NOTE: User code should use 'ThreadFromGlobalPool' declared below instead of directly using this class.
-  *
   */
-template <bool propagate_opentelemetry_context = true>
-class ThreadFromGlobalPoolImpl : boost::noncopyable
+class ThreadFromGlobalPool
 {
 public:
-    ThreadFromGlobalPoolImpl() = default;
+    ThreadFromGlobalPool() = default;
 
     template <typename Function, typename... Args>
-    explicit ThreadFromGlobalPoolImpl(Function && func, Args &&... args)
-        : state(std::make_shared<State>())
+    explicit ThreadFromGlobalPool(Function && func, Args &&... args)
+        : state(std::make_shared<Poco::Event>())
+        , thread_id(std::make_shared<std::thread::id>())
     {
-        /// NOTE:
-        /// - If this will throw an exception, the destructor won't be called
-        /// - this pointer cannot be passed in the lambda, since after detach() it will not be valid
+        /// NOTE: If this will throw an exception, the destructor won't be called.
         GlobalThreadPool::instance().scheduleOrThrow([
+            thread_id = thread_id,
             state = state,
             func = std::forward<Function>(func),
             args = std::make_tuple(std::forward<Args>(args)...)]() mutable /// mutable is needed to destroy capture
         {
-            SCOPE_EXIT(
-                state->thread_id = std::thread::id();
-                state->event.set();
-            );
+            auto event = std::move(state);
+            SCOPE_EXIT(event->set());
 
-            state->thread_id = std::this_thread::get_id();
+            thread_id = std::make_shared<std::thread::id>(std::this_thread::get_id());
 
             /// This moves are needed to destroy function and arguments before exit.
             /// It will guarantee that after ThreadFromGlobalPool::join all captured params are destroyed.
@@ -194,44 +186,41 @@ public:
             /// before sending signal that permits to join this thread.
             DB::ThreadStatus thread_status;
             std::apply(function, arguments);
-        },
-        0, // default priority
-        0, // default wait_microseconds
-        propagate_opentelemetry_context
-        );
+        });
     }
 
-    ThreadFromGlobalPoolImpl(ThreadFromGlobalPoolImpl && rhs) noexcept
+    ThreadFromGlobalPool(ThreadFromGlobalPool && rhs) noexcept
     {
         *this = std::move(rhs);
     }
 
-    ThreadFromGlobalPoolImpl & operator=(ThreadFromGlobalPoolImpl && rhs) noexcept
+    ThreadFromGlobalPool & operator=(ThreadFromGlobalPool && rhs) noexcept
     {
-        if (initialized())
+        if (joinable())
             abort();
         state = std::move(rhs.state);
+        thread_id = std::move(rhs.thread_id);
         return *this;
     }
 
-    ~ThreadFromGlobalPoolImpl()
+    ~ThreadFromGlobalPool()
     {
-        if (initialized())
+        if (joinable())
             abort();
     }
 
     void join()
     {
-        if (!initialized())
+        if (!joinable())
             abort();
 
-        state->event.wait();
+        state->wait();
         state.reset();
     }
 
     void detach()
     {
-        if (!initialized())
+        if (!joinable())
             abort();
         state.reset();
     }
@@ -241,54 +230,17 @@ public:
         if (!state)
             return false;
         /// Thread cannot join itself.
-        if (state->thread_id == std::this_thread::get_id())
+        if (*thread_id == std::this_thread::get_id())
             return false;
         return true;
     }
 
-protected:
-    struct State
-    {
-        /// Should be atomic() because of possible concurrent access between
-        /// assignment and joinable() check.
-        std::atomic<std::thread::id> thread_id;
-
-        /// The state used in this object and inside the thread job.
-        Poco::Event event;
-    };
-    std::shared_ptr<State> state;
-
-    /// Internally initialized() should be used over joinable(),
-    /// since it is enough to know that the thread is initialized,
-    /// and ignore that fact that thread cannot join itself.
-    bool initialized() const
-    {
-        return static_cast<bool>(state);
-    }
+private:
+    /// The state used in this object and inside the thread job.
+    std::shared_ptr<Poco::Event> state;
+    std::shared_ptr<std::thread::id> thread_id;
 };
 
-/// Schedule jobs/tasks on global thread pool without implicit passing tracing context on current thread to underlying worker as parent tracing context.
-///
-/// If you implement your own job/task scheduling upon global thread pool or schedules a long time running job in a infinite loop way,
-/// you need to use class, or you need to use ThreadFromGlobalPool below.
-///
-/// See the comments of ThreadPool below to know how it works.
-using ThreadFromGlobalPoolNoTracingContextPropagation = ThreadFromGlobalPoolImpl<false>;
-
-/// An alias of thread that execute jobs/tasks on global thread pool by implicit passing tracing context on current thread to underlying worker as parent tracing context.
-/// If jobs/tasks are directly scheduled by using APIs of this class, you need to use this class or you need to use class above.
-using ThreadFromGlobalPool = ThreadFromGlobalPoolImpl<true>;
 
 /// Recommended thread pool for the case when multiple thread pools are created and destroyed.
-///
-/// The template parameter of ThreadFromGlobalPool is set to false to disable tracing context propagation to underlying worker.
-/// Because ThreadFromGlobalPool schedules a job upon GlobalThreadPool, this means there will be two workers to schedule a job in 'ThreadPool',
-/// one is at GlobalThreadPool level, the other is at ThreadPool level, so tracing context will be initialized on the same thread twice.
-///
-/// Once the worker on ThreadPool gains the control of execution, it won't return until it's shutdown,
-/// which means the tracing context initialized at underlying worker level won't be delete for a very long time.
-/// This would cause wrong context for further jobs scheduled in ThreadPool.
-///
-/// To make sure the tracing context is correctly propagated, we explicitly disable context propagation(including initialization and de-initialization) at underlying worker level.
-///
-using ThreadPool = ThreadPoolImpl<ThreadFromGlobalPoolNoTracingContextPropagation>;
+using ThreadPool = ThreadPoolImpl<ThreadFromGlobalPool>;

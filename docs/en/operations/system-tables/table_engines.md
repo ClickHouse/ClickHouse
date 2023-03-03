@@ -1,7 +1,4 @@
----
-slug: /en/operations/system-tables/table_engines
----
-# table_engines
+# system.table_engines {#system-table-engines}
 
 Contains description of table engines supported by server and their feature support information.
 

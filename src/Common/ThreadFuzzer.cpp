@@ -1,6 +1,4 @@
-// NOLINTBEGIN(readability-inconsistent-declaration-parameter-name)
-
-#include <csignal>
+#include <signal.h>
 #include <sys/time.h>
 #if defined(OS_LINUX)
 #   include <sys/sysinfo.h>
@@ -12,7 +10,7 @@
 #include <base/sleep.h>
 
 #include <IO/ReadHelpers.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <Common/Exception.h>
 #include <Common/thread_local_rng.h>
@@ -29,7 +27,7 @@
 
 /// Starting from glibc 2.34 there are no internal symbols without version,
 /// so not __pthread_mutex_lock but __pthread_mutex_lock@2.2.5
-#if defined(OS_LINUX) and !defined(USE_MUSL)
+#if defined(OS_LINUX)
     /// You can get version from glibc/sysdeps/unix/sysv/linux/$ARCH/$BITS_OR_BYTE_ORDER/libc.abilist
     #if defined(__amd64__)
     #    define GLIBC_SYMVER "GLIBC_2.2.5"
@@ -82,7 +80,7 @@ ThreadFuzzer::ThreadFuzzer()
 template <typename T>
 static void initFromEnv(T & what, const char * name)
 {
-    const char * env = getenv(name); // NOLINT(concurrency-mt-unsafe)
+    const char * env = getenv(name);
     if (!env)
         return;
     what = parse<T>(env);
@@ -91,7 +89,7 @@ static void initFromEnv(T & what, const char * name)
 template <typename T>
 static void initFromEnv(std::atomic<T> & what, const char * name)
 {
-    const char * env = getenv(name); // NOLINT(concurrency-mt-unsafe)
+    const char * env = getenv(name);
     if (!env)
         return;
     what.store(parse<T>(env), std::memory_order_relaxed);
@@ -157,22 +155,22 @@ bool ThreadFuzzer::isEffective() const
 
 #if THREAD_FUZZER_WRAP_PTHREAD
 #    define CHECK_WRAPPER_PARAMS(RET, NAME, ...) \
-        if (NAME##_before_yield_probability.load(std::memory_order_relaxed) > 0.0) \
+        if (NAME##_before_yield_probability.load(std::memory_order_relaxed)) \
             return true; \
-        if (NAME##_before_migrate_probability.load(std::memory_order_relaxed) > 0.0) \
+        if (NAME##_before_migrate_probability.load(std::memory_order_relaxed)) \
             return true; \
-        if (NAME##_before_sleep_probability.load(std::memory_order_relaxed) > 0.0) \
+        if (NAME##_before_sleep_probability.load(std::memory_order_relaxed)) \
             return true; \
-        if (NAME##_before_sleep_time_us.load(std::memory_order_relaxed) > 0.0) \
+        if (NAME##_before_sleep_time_us.load(std::memory_order_relaxed)) \
             return true; \
 \
-        if (NAME##_after_yield_probability.load(std::memory_order_relaxed) > 0.0) \
+        if (NAME##_after_yield_probability.load(std::memory_order_relaxed)) \
             return true; \
-        if (NAME##_after_migrate_probability.load(std::memory_order_relaxed) > 0.0) \
+        if (NAME##_after_migrate_probability.load(std::memory_order_relaxed)) \
             return true; \
-        if (NAME##_after_sleep_probability.load(std::memory_order_relaxed) > 0.0) \
+        if (NAME##_after_sleep_probability.load(std::memory_order_relaxed)) \
             return true; \
-        if (NAME##_after_sleep_time_us.load(std::memory_order_relaxed) > 0.0) \
+        if (NAME##_after_sleep_time_us.load(std::memory_order_relaxed)) \
             return true;
 
     FOR_EACH_WRAPPED_FUNCTION(CHECK_WRAPPER_PARAMS)
@@ -239,21 +237,19 @@ static void injection(
         && sleep_time_us > 0
         && std::bernoulli_distribution(sleep_probability)(thread_local_rng))
     {
-        sleepForNanoseconds(static_cast<uint64_t>(sleep_time_us * 1000));
+        sleepForNanoseconds(sleep_time_us * 1000);
     }
 }
 
-void ThreadFuzzer::maybeInjectSleep()
-{
-    auto & fuzzer = ThreadFuzzer::instance();
-    injection(fuzzer.yield_probability, fuzzer.migrate_probability, fuzzer.sleep_probability, fuzzer.sleep_time_us);
-}
 
 void ThreadFuzzer::signalHandler(int)
 {
     DENY_ALLOCATIONS_IN_SCOPE;
     auto saved_errno = errno;
-    maybeInjectSleep();
+
+    auto & fuzzer = ThreadFuzzer::instance();
+    injection(fuzzer.yield_probability, fuzzer.migrate_probability, fuzzer.sleep_probability, fuzzer.sleep_time_us);
+
     errno = saved_errno;
 }
 
@@ -296,8 +292,8 @@ void ThreadFuzzer::setup() const
 
 #if THREAD_FUZZER_WRAP_PTHREAD
 #    define MAKE_WRAPPER(RET, NAME, ...) \
-        extern "C" RET __##NAME(__VA_ARGS__); \
-        extern "C" RET NAME(__VA_ARGS__) \
+        extern "C" RET __##NAME(__VA_ARGS__); /* NOLINT */ \
+        extern "C" RET NAME(__VA_ARGS__) /* NOLINT */ \
         { \
             injection( \
                 NAME##_before_yield_probability.load(std::memory_order_relaxed), \
@@ -321,5 +317,3 @@ FOR_EACH_WRAPPED_FUNCTION(MAKE_WRAPPER)
 #    undef MAKE_WRAPPER
 #endif
 }
-
-// NOLINTEND(readability-inconsistent-declaration-parameter-name)

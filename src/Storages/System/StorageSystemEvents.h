@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/shared_ptr_helper.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 namespace DB
@@ -10,8 +11,9 @@ class Context;
 
 /** Implements `events` system table, which allows you to obtain information for profiling.
   */
-class StorageSystemEvents final : public IStorageSystemOneBlock<StorageSystemEvents>
+class StorageSystemEvents final : public shared_ptr_helper<StorageSystemEvents>, public IStorageSystemOneBlock<StorageSystemEvents>
 {
+    friend struct shared_ptr_helper<StorageSystemEvents>;
 public:
     std::string getName() const override { return "SystemEvents"; }
 

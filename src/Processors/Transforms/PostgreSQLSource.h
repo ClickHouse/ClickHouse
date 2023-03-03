@@ -1,10 +1,10 @@
 #pragma once
 
-#include "config.h"
+#include "config_core.h"
 
 #if USE_LIBPQXX
 #include <Core/Block.h>
-#include <Processors/ISource.h>
+#include <Processors/Sources/SourceWithProgress.h>
 #include <Core/ExternalResultDescription.h>
 #include <Core/Field.h>
 #include <Core/PostgreSQL/insertPostgreSQLValue.h>
@@ -16,7 +16,7 @@ namespace DB
 {
 
 template <typename T = pqxx::ReadTransaction>
-class PostgreSQLSource : public ISource
+class PostgreSQLSource : public SourceWithProgress
 {
 
 public:

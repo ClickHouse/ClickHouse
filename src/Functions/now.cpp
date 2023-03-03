@@ -3,10 +3,11 @@
 #include <Functions/IFunction.h>
 #include <Core/DecimalFunctions.h>
 #include <Functions/FunctionFactory.h>
+#include <Core/Field.h>
 
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 
-#include <ctime>
+#include <time.h>
 
 
 namespace DB
@@ -62,15 +63,9 @@ public:
         return std::make_unique<ExecutableFunctionNow>(time_value);
     }
 
-    bool isDeterministic() const override
-    {
-        return false;
-    }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override
-    {
-        return false;
-    }
+    bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
 private:
     time_t time_value;
@@ -132,9 +127,9 @@ public:
 
 }
 
-REGISTER_FUNCTION(Now)
+void registerFunctionNow(FunctionFactory & factory)
 {
-    factory.registerFunction<NowOverloadResolver>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<NowOverloadResolver>(FunctionFactory::CaseInsensitive);
 }
 
 }

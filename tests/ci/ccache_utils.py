@@ -10,7 +10,6 @@ from pathlib import Path
 import requests  # type: ignore
 
 from compress_files import decompress_fast, compress_fast
-from env_helper import S3_DOWNLOAD, S3_BUILDS_BUCKET
 from s3_helper import S3Helper
 
 DOWNLOAD_RETRIES_COUNT = 5
@@ -82,7 +81,7 @@ def get_ccache_if_not_exists(
         for obj in objects:
             if ccache_name in obj:
                 logging.info("Found ccache on path %s", obj)
-                url = f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/{obj}"
+                url = "https://s3.amazonaws.com/clickhouse-builds/" + obj
                 compressed_cache = os.path.join(temp_path, os.path.basename(obj))
                 dowload_file_with_progress(url, compressed_cache)
 

@@ -496,7 +496,7 @@ private:
     }
 };
 
-REGISTER_FUNCTION(MapPopulateSeries)
+void registerFunctionMapPopulateSeries(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionMapPopulateSeries>();
 }

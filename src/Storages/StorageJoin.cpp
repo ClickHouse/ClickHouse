@@ -14,12 +14,11 @@
 #include <Interpreters/castColumn.h>
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
-#include <Interpreters/JoinUtils.h>
+#include <Interpreters/join_common.h>
 
 #include <Compression/CompressedWriteBuffer.h>
-#include <Processors/ISource.h>
+#include <Processors/Sources/SourceWithProgress.h>
 #include <QueryPipeline/Pipe.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Poco/String.h> /// toLower
 
@@ -45,8 +44,8 @@ StorageJoin::StorageJoin(
     const Names & key_names_,
     bool use_nulls_,
     SizeLimits limits_,
-    JoinKind kind_,
-    JoinStrictness strictness_,
+    ASTTableJoin::Kind kind_,
+    ASTTableJoin::Strictness strictness_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & comment,
@@ -120,11 +119,11 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
 
     auto new_data = std::make_shared<HashJoin>(table_join, getRightSampleBlock(), overwrite);
 
-    // New scope controls lifetime of pipeline.
+    // New scope controls lifetime of InputStream.
     {
         auto storage_ptr = DatabaseCatalog::instance().getTable(getStorageID(), context);
         auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, context, true);
-        auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
+        auto pipeline = interpreter->execute();
         PullingPipelineExecutor executor(pipeline);
 
         Block block;
@@ -165,7 +164,7 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
     if (!analyzed_join->sameStrictnessAndKind(strictness, kind))
-        throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN, "Table '{}' has incompatible type of JOIN", getStorageID().getNameForLogs());
+        throw Exception("Table " + getStorageID().getNameForLogs() + " has incompatible type of JOIN.", ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN);
 
     if ((analyzed_join->forceNullableRight() && !use_nulls) ||
         (!analyzed_join->forceNullableRight() && isLeftOrFull(analyzed_join->kind()) && use_nulls))
@@ -174,51 +173,12 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
             "Table {} needs the same join_use_nulls setting as present in LEFT or FULL JOIN",
             getStorageID().getNameForLogs());
 
-    if (analyzed_join->getClauses().size() != 1)
-        throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN, "JOIN keys should match to the Join engine keys [{}]", fmt::join(getKeyNames(), ", "));
+    /// TODO: check key columns
 
-    const auto & join_on = analyzed_join->getOnlyClause();
-    if (join_on.on_filter_condition_left || join_on.on_filter_condition_right)
-        throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN, "ON section of JOIN with filter conditions is not implemented");
-
-    const auto & key_names_right = join_on.key_names_right;
-    const auto & key_names_left = join_on.key_names_left;
-    if (key_names.size() != key_names_right.size() || key_names.size() != key_names_left.size())
-        throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN,
-            "Number of keys in JOIN ON section ({}) doesn't match number of keys in Join engine ({})",
-            key_names_right.size(), key_names.size());
-
-    /* Resort left keys according to right keys order in StorageJoin
-     * We can't change the order of keys in StorageJoin
-     * because the hash table was already built with tuples serialized in the order of key_names.
-     * If we try to use the same hash table with different order of keys,
-     * then calculated hashes and the result of the comparison will be wrong.
-     *
-     * Example:
-     * ```
-     * CREATE TABLE t_right (a UInt32, b UInt32) ENGINE = Join(ALL, INNER, a, b);
-     * SELECT * FROM t_left JOIN t_right ON t_left.y = t_right.b AND t_left.x = t_right.a;
-     * ```
-     * In that case right keys should still be (a, b), need to change the order of the left keys to (x, y).
-     */
-    Names left_key_names_resorted;
-    for (const auto & key_name : key_names)
-    {
-        const auto & renamed_key = analyzed_join->renamedRightColumnName(key_name);
-        /// find position of renamed_key in key_names_right
-        auto it = std::find(key_names_right.begin(), key_names_right.end(), renamed_key);
-        if (it == key_names_right.end())
-            throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN,
-                "Key '{}' not found in JOIN ON section. All Join engine keys '{}' have to be used", key_name, fmt::join(key_names, ", "));
-        const size_t key_position = std::distance(key_names_right.begin(), it);
-        left_key_names_resorted.push_back(key_names_left[key_position]);
-    }
-
-    /// Set qualified identifiers to original names (table.column -> column).
-    /// It's required because storage join stores non-qualified names.
-    /// Qualifies will be added by join implementation (TableJoin contains a rename mapping).
+    /// Set names qualifiers: table.column -> column
+    /// It's required because storage join stores non-qualified names
+    /// Qualifies will be added by join implementation (HashJoin)
     analyzed_join->setRightKeys(key_names);
-    analyzed_join->setLeftKeys(left_key_names_resorted);
 
     HashJoinPtr join_clone = std::make_shared<HashJoin>(analyzed_join, getRightSampleBlock());
 
@@ -318,8 +278,8 @@ void registerStorageJoin(StorageFactory & factory)
                 "Storage Join requires at least 3 parameters: Join(ANY|ALL|SEMI|ANTI, LEFT|INNER|RIGHT, keys...).",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        JoinStrictness strictness = JoinStrictness::Unspecified;
-        JoinKind kind = JoinKind::Comma;
+        ASTTableJoin::Strictness strictness = ASTTableJoin::Strictness::Unspecified;
+        ASTTableJoin::Kind kind = ASTTableJoin::Kind::Comma;
 
         if (auto opt_strictness_id = tryGetIdentifierName(engine_args[0]))
         {
@@ -328,19 +288,19 @@ void registerStorageJoin(StorageFactory & factory)
             if (strictness_str == "any")
             {
                 if (old_any_join)
-                    strictness = JoinStrictness::RightAny;
+                    strictness = ASTTableJoin::Strictness::RightAny;
                 else
-                    strictness = JoinStrictness::Any;
+                    strictness = ASTTableJoin::Strictness::Any;
             }
             else if (strictness_str == "all")
-                strictness = JoinStrictness::All;
+                strictness = ASTTableJoin::Strictness::All;
             else if (strictness_str == "semi")
-                strictness = JoinStrictness::Semi;
+                strictness = ASTTableJoin::Strictness::Semi;
             else if (strictness_str == "anti")
-                strictness = JoinStrictness::Anti;
+                strictness = ASTTableJoin::Strictness::Anti;
         }
 
-        if (strictness == JoinStrictness::Unspecified)
+        if (strictness == ASTTableJoin::Strictness::Unspecified)
             throw Exception("First parameter of storage Join must be ANY or ALL or SEMI or ANTI (without quotes).",
                             ErrorCodes::BAD_ARGUMENTS);
 
@@ -349,20 +309,20 @@ void registerStorageJoin(StorageFactory & factory)
             const String kind_str = Poco::toLower(*opt_kind_id);
 
             if (kind_str == "left")
-                kind = JoinKind::Left;
+                kind = ASTTableJoin::Kind::Left;
             else if (kind_str == "inner")
-                kind = JoinKind::Inner;
+                kind = ASTTableJoin::Kind::Inner;
             else if (kind_str == "right")
-                kind = JoinKind::Right;
+                kind = ASTTableJoin::Kind::Right;
             else if (kind_str == "full")
             {
-                if (strictness == JoinStrictness::Any)
-                    strictness = JoinStrictness::RightAny;
-                kind = JoinKind::Full;
+                if (strictness == ASTTableJoin::Strictness::Any)
+                    strictness = ASTTableJoin::Strictness::RightAny;
+                kind = ASTTableJoin::Kind::Full;
             }
         }
 
-        if (kind == JoinKind::Comma)
+        if (kind == ASTTableJoin::Kind::Comma)
             throw Exception("Second parameter of storage Join must be LEFT or INNER or RIGHT or FULL (without quotes).",
                             ErrorCodes::BAD_ARGUMENTS);
 
@@ -377,7 +337,7 @@ void registerStorageJoin(StorageFactory & factory)
             key_names.push_back(*opt_key);
         }
 
-        return std::make_shared<StorageJoin>(
+        return StorageJoin::create(
             disk,
             args.relative_data_path,
             args.table_id,
@@ -417,11 +377,11 @@ size_t rawSize(const StringRef & t)
     return t.size;
 }
 
-class JoinSource : public ISource
+class JoinSource : public SourceWithProgress
 {
 public:
     JoinSource(HashJoinPtr join_, TableLockHolder lock_holder_, UInt64 max_block_size_, Block sample_block_)
-        : ISource(sample_block_)
+        : SourceWithProgress(sample_block_)
         , join(join_)
         , lock_holder(lock_holder_)
         , max_block_size(max_block_size_)
@@ -483,7 +443,7 @@ private:
     std::unique_ptr<void, std::function<void(void *)>> position; /// type erasure
 
 
-    template <JoinKind KIND, JoinStrictness STRICTNESS, typename Maps>
+    template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename Maps>
     Chunk createChunk(const Maps & maps)
     {
         MutableColumns mut_columns = restored_block.cloneEmpty().mutateColumns();
@@ -530,7 +490,7 @@ private:
         return Chunk(std::move(columns), num_rows);
     }
 
-    template <JoinKind KIND, JoinStrictness STRICTNESS, typename Map>
+    template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename Map>
     size_t fillColumns(const Map & map, MutableColumns & columns)
     {
         size_t rows_added = 0;
@@ -545,33 +505,33 @@ private:
 
         for (; it != end; ++it)
         {
-            if constexpr (STRICTNESS == JoinStrictness::RightAny)
+            if constexpr (STRICTNESS == ASTTableJoin::Strictness::RightAny)
             {
                 fillOne<Map>(columns, column_indices, it, key_pos, rows_added);
             }
-            else if constexpr (STRICTNESS == JoinStrictness::All)
+            else if constexpr (STRICTNESS == ASTTableJoin::Strictness::All)
             {
                 fillAll<Map>(columns, column_indices, it, key_pos, rows_added);
             }
-            else if constexpr (STRICTNESS == JoinStrictness::Any)
+            else if constexpr (STRICTNESS == ASTTableJoin::Strictness::Any)
             {
-                if constexpr (KIND == JoinKind::Left || KIND == JoinKind::Inner)
+                if constexpr (KIND == ASTTableJoin::Kind::Left || KIND == ASTTableJoin::Kind::Inner)
                     fillOne<Map>(columns, column_indices, it, key_pos, rows_added);
-                else if constexpr (KIND == JoinKind::Right)
+                else if constexpr (KIND == ASTTableJoin::Kind::Right)
                     fillAll<Map>(columns, column_indices, it, key_pos, rows_added);
             }
-            else if constexpr (STRICTNESS == JoinStrictness::Semi)
+            else if constexpr (STRICTNESS == ASTTableJoin::Strictness::Semi)
             {
-                if constexpr (KIND == JoinKind::Left)
+                if constexpr (KIND == ASTTableJoin::Kind::Left)
                     fillOne<Map>(columns, column_indices, it, key_pos, rows_added);
-                else if constexpr (KIND == JoinKind::Right)
+                else if constexpr (KIND == ASTTableJoin::Kind::Right)
                     fillAll<Map>(columns, column_indices, it, key_pos, rows_added);
             }
-            else if constexpr (STRICTNESS == JoinStrictness::Anti)
+            else if constexpr (STRICTNESS == ASTTableJoin::Strictness::Anti)
             {
-                if constexpr (KIND == JoinKind::Left)
+                if constexpr (KIND == ASTTableJoin::Kind::Left)
                     fillOne<Map>(columns, column_indices, it, key_pos, rows_added);
-                else if constexpr (KIND == JoinKind::Right)
+                else if constexpr (KIND == ASTTableJoin::Kind::Right)
                     fillAll<Map>(columns, column_indices, it, key_pos, rows_added);
             }
             else
@@ -624,7 +584,7 @@ Pipe StorageJoin::read(
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    size_t /*num_streams*/)
+    unsigned /*num_streams*/)
 {
     storage_snapshot->check(column_names);
 

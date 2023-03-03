@@ -1,21 +1,27 @@
 #pragma once
-#include <Compression/CompressedReadBuffer.h>
-#include <IO/ReadBufferFromFile.h>
-#include <Interpreters/Aggregator.h>
 #include <Processors/IAccumulatingTransform.h>
+#include <Interpreters/Aggregator.h>
+#include <IO/ReadBufferFromFile.h>
+#include <Compression/CompressedReadBuffer.h>
 #include <Common/Stopwatch.h>
-#include <Common/setThreadName.h>
-#include <Common/scope_guard_safe.h>
 
 namespace DB
 {
+
+class AggregatedArenasChunkInfo : public ChunkInfo
+{
+public:
+    Arenas arenas;
+    explicit AggregatedArenasChunkInfo(Arenas arenas_)
+        : arenas(std::move(arenas_))
+    {}
+};
 
 class AggregatedChunkInfo : public ChunkInfo
 {
 public:
     bool is_overflows = false;
     Int32 bucket_num = -1;
-    UInt64 chunk_num = 0; // chunk number in order of generation, used during memory bound merging to restore chunks order
 };
 
 using AggregatorList = std::list<Aggregator>;
@@ -36,20 +42,20 @@ struct AggregatingTransformParams
     AggregatorListPtr aggregator_list_ptr;
     Aggregator & aggregator;
     bool final;
+    bool only_merge = false;
 
-    AggregatingTransformParams(const Block & header, const Aggregator::Params & params_, bool final_)
+    AggregatingTransformParams(const Aggregator::Params & params_, bool final_)
         : params(params_)
         , aggregator_list_ptr(std::make_shared<AggregatorList>())
-        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), header, params))
+        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), params))
         , final(final_)
     {
     }
 
-    AggregatingTransformParams(
-        const Block & header, const Aggregator::Params & params_, const AggregatorListPtr & aggregator_list_ptr_, bool final_)
+    AggregatingTransformParams(const Aggregator::Params & params_, const AggregatorListPtr & aggregator_list_ptr_, bool final_)
         : params(params_)
         , aggregator_list_ptr(aggregator_list_ptr_)
-        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), header, params))
+        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), params))
         , final(final_)
     {
     }
@@ -72,50 +78,6 @@ struct ManyAggregatedData
 
         for (auto & mut : mutexes)
             mut = std::make_unique<std::mutex>();
-    }
-
-    ~ManyAggregatedData()
-    {
-        try
-        {
-            if (variants.size() <= 1)
-                return;
-
-            // Aggregation states destruction may be very time-consuming.
-            // In the case of a query with LIMIT, most states won't be destroyed during conversion to blocks.
-            // Without the following code, they would be destroyed in the destructor of AggregatedDataVariants in the current thread (i.e. sequentially).
-            const auto pool = std::make_unique<ThreadPool>(variants.size());
-
-            for (auto && variant : variants)
-            {
-                if (variant->size() < 100'000) // some seemingly reasonable constant
-                    continue;
-
-                // It doesn't make sense to spawn a thread if the variant is not going to actually destroy anything.
-                if (variant->aggregator)
-                {
-                    // variant is moved here and will be destroyed in the destructor of the lambda function.
-                    pool->trySchedule(
-                        [variant = std::move(variant), thread_group = CurrentThread::getGroup()]()
-                        {
-                            SCOPE_EXIT_SAFE(
-                                if (thread_group)
-                                    CurrentThread::detachQueryIfNotDetached();
-                            );
-                            if (thread_group)
-                                CurrentThread::attachToIfDetached(thread_group);
-
-                            setThreadName("AggregDestruct");
-                        });
-                }
-            }
-
-            pool->wait();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
     }
 };
 

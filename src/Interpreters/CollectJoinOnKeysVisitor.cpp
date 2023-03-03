@@ -19,11 +19,6 @@ namespace ErrorCodes
 namespace
 {
 
-bool isDeterminedIdentifier(JoinIdentifierPos pos)
-{
-    return pos == JoinIdentifierPos::Left || pos == JoinIdentifierPos::Right;
-}
-
 bool isLeftIdentifier(JoinIdentifierPos pos)
 {
     /// Unknown identifiers  considered as left, we will try to process it on later stages
@@ -53,7 +48,7 @@ void CollectJoinOnKeysMatcher::Data::addJoinKeys(const ASTPtr & left_ast, const 
 }
 
 void CollectJoinOnKeysMatcher::Data::addAsofJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast,
-                                                     JoinIdentifierPosPair table_pos, const ASOFJoinInequality & inequality)
+                                                     JoinIdentifierPosPair table_pos, const ASOF::Inequality & inequality)
 {
     if (isLeftIdentifier(table_pos.first) && isRightIdentifier(table_pos.second))
     {
@@ -65,7 +60,7 @@ void CollectJoinOnKeysMatcher::Data::addAsofJoinKeys(const ASTPtr & left_ast, co
     {
         asof_left_key = right_ast->clone();
         asof_right_key = left_ast->clone();
-        analyzed_join.setAsofInequality(reverseASOFJoinInequality(inequality));
+        analyzed_join.setAsofInequality(ASOF::reverseInequality(inequality));
     }
     else
     {
@@ -84,7 +79,7 @@ void CollectJoinOnKeysMatcher::Data::asofToJoinKeys()
 
 void CollectJoinOnKeysMatcher::visit(const ASTIdentifier & ident, const ASTPtr & ast, CollectJoinOnKeysMatcher::Data & data)
 {
-    if (auto expr_from_table = getTableForIdentifiers(ast, false, data); isDeterminedIdentifier(expr_from_table))
+    if (auto expr_from_table = getTableForIdentifiers(ast, false, data); expr_from_table != JoinIdentifierPos::Unknown)
         data.analyzed_join.addJoinCondition(ast, isLeftIdentifier(expr_from_table));
     else
         throw Exception("Unexpected identifier '" + ident.name() + "' in JOIN ON section",
@@ -96,9 +91,8 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
     if (func.name == "and")
         return; /// go into children
 
-    ASOFJoinInequality inequality = getASOFJoinInequality(func.name);
-
-    if (func.name == "equals" || inequality != ASOFJoinInequality::None)
+    ASOF::Inequality inequality = ASOF::getInequality(func.name);
+    if (func.name == "equals" || inequality != ASOF::Inequality::None)
     {
         if (func.arguments->children.size() != 2)
             throw Exception("Function " + func.name + " takes two arguments, got '" + func.formatForErrorMessage() + "' instead",
@@ -110,32 +104,29 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
         ASTPtr left = func.arguments->children.at(0);
         ASTPtr right = func.arguments->children.at(1);
         auto table_numbers = getTableNumbers(left, right, data);
-
         if (table_numbers.first == table_numbers.second)
         {
-            if (!isDeterminedIdentifier(table_numbers.first))
-                throw Exception(ErrorCodes::AMBIGUOUS_COLUMN_NAME,
-                    "Ambiguous columns in expression '{}' in JOIN ON section", queryToString(ast));
+            if (table_numbers.first == JoinIdentifierPos::Unknown)
+                throw Exception("Ambiguous column in expression '" + queryToString(ast) + "' in JOIN ON section",
+                                ErrorCodes::AMBIGUOUS_COLUMN_NAME);
             data.analyzed_join.addJoinCondition(ast, isLeftIdentifier(table_numbers.first));
             return;
         }
 
-        if ((isLeftIdentifier(table_numbers.first) && isRightIdentifier(table_numbers.second)) ||
-            (isRightIdentifier(table_numbers.first) && isLeftIdentifier(table_numbers.second)))
+        if (table_numbers.first != JoinIdentifierPos::NotApplicable && table_numbers.second != JoinIdentifierPos::NotApplicable)
         {
             data.addJoinKeys(left, right, table_numbers);
             return;
         }
     }
 
-
-    if (auto expr_from_table = getTableForIdentifiers(ast, false, data); isDeterminedIdentifier(expr_from_table))
+    if (auto expr_from_table = getTableForIdentifiers(ast, false, data); expr_from_table != JoinIdentifierPos::Unknown)
     {
         data.analyzed_join.addJoinCondition(ast, isLeftIdentifier(expr_from_table));
         return;
     }
 
-    if (data.is_asof && inequality != ASOFJoinInequality::None)
+    if (data.is_asof && inequality != ASOF::Inequality::None)
     {
         if (data.asof_left_key || data.asof_right_key)
             throw Exception("ASOF JOIN expects exactly one inequality in ON section. Unexpected '" + queryToString(ast) + "'",
@@ -212,7 +203,7 @@ JoinIdentifierPos CollectJoinOnKeysMatcher::getTableForIdentifiers(const ASTPtr 
     std::vector<const ASTIdentifier *> identifiers;
     getIdentifiers(ast, identifiers);
     if (identifiers.empty())
-        return JoinIdentifierPos::NotColumn;
+        return JoinIdentifierPos::NotApplicable;
 
     JoinIdentifierPos table_number = JoinIdentifierPos::Unknown;
 

@@ -121,7 +121,7 @@ private:
 };
 
 
-REGISTER_FUNCTION(ArrayFlatten)
+void registerFunctionArrayFlatten(FunctionFactory & factory)
 {
     factory.registerFunction<ArrayFlatten>();
     factory.registerAlias("flatten", "arrayFlatten", FunctionFactory::CaseInsensitive);

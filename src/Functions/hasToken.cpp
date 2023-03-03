@@ -18,7 +18,7 @@ using FunctionHasToken = FunctionsStringSearch<HasTokenImpl<NameHasToken, Volnit
 
 }
 
-REGISTER_FUNCTION(HasToken)
+void registerFunctionHasToken(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionHasToken>();
 }

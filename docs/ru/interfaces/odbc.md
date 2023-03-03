@@ -1,7 +1,6 @@
 ---
-slug: /ru/interfaces/odbc
-sidebar_position: 23
-sidebar_label: "ODBC-драйвер"
+toc_priority: 23
+toc_title: "ODBC-драйвер"
 ---
 
 

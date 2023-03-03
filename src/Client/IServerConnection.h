@@ -44,9 +44,9 @@ struct Packet
 struct ExternalTableData
 {
     /// Pipe of data form table;
-    std::unique_ptr<QueryPipelineBuilder> pipe;
+    std::unique_ptr<Pipe> pipe;
     std::string table_name;
-    std::function<std::unique_ptr<QueryPipelineBuilder>()> creating_pipe_callback;
+    std::function<std::unique_ptr<Pipe>()> creating_pipe_callback;
     /// Flag if need to stop reading.
     std::atomic_bool is_cancelled = false;
 };
@@ -82,19 +82,15 @@ public:
 
     virtual const String & getDescription() const = 0;
 
-    virtual std::vector<std::pair<String, String>> getPasswordComplexityRules() const = 0;
-
     /// If last flag is true, you need to call sendExternalTablesData after.
     virtual void sendQuery(
         const ConnectionTimeouts & timeouts,
         const String & query,
-        const NameToNameMap & query_parameters,
         const String & query_id_,
         UInt64 stage,
         const Settings * settings,
         const ClientInfo * client_info,
-        bool with_pending_data,
-        std::function<void(const Progress &)> process_progress_callback) = 0;
+        bool with_pending_data) = 0;
 
     virtual void sendCancel() = 0;
 
@@ -124,7 +120,7 @@ public:
     virtual bool isConnected() const = 0;
 
     /// Check if connection is still active with ping request.
-    virtual bool checkConnected(const ConnectionTimeouts & /*timeouts*/) = 0;
+    virtual bool checkConnected() = 0;
 
     /** Disconnect.
       * This may be used, if connection is left in unsynchronised state

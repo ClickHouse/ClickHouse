@@ -29,13 +29,7 @@ public:
         size_t size = arguments.size();
         DataTypes res(size);
         for (size_t i = 0; i < size; ++i)
-        {
-            /// Nullable(Nothing) is processed separately, don't convert it to Nothing.
-            if (arguments[i]->onlyNull())
-                res[i] = arguments[i];
-            else
-                res[i] = removeNullable(arguments[i]);
-        }
+            res[i] = removeNullable(arguments[i]);
         return res;
     }
 
@@ -47,16 +41,12 @@ public:
     {
         bool has_nullable_types = false;
         bool has_null_types = false;
-        std::unordered_set<size_t> arguments_that_can_be_only_null;
-        if (nested_function)
-            arguments_that_can_be_only_null = nested_function->getArgumentsThatCanBeOnlyNull();
-
-        for (size_t i = 0; i < arguments.size(); ++i)
+        for (const auto & arg_type : arguments)
         {
-            if (arguments[i]->isNullable())
+            if (arg_type->isNullable())
             {
                 has_nullable_types = true;
-                if (arguments[i]->onlyNull() && !arguments_that_can_be_only_null.contains(i))
+                if (arg_type->onlyNull())
                 {
                     has_null_types = true;
                     break;
@@ -97,7 +87,7 @@ public:
                 transformed_nested_function->getParameters());
         }
 
-        bool return_type_is_nullable = !properties.returns_default_when_only_null && nested_function->getResultType()->canBeInsideNullable();
+        bool return_type_is_nullable = !properties.returns_default_when_only_null && nested_function->getReturnType()->canBeInsideNullable();
         bool serialize_flag = return_type_is_nullable || properties.returns_default_when_only_null;
 
         if (arguments.size() == 1)
@@ -118,14 +108,14 @@ public:
         {
             if (return_type_is_nullable)
             {
-                return std::make_shared<AggregateFunctionNullVariadic<true, true>>(nested_function, arguments, params);
+                return std::make_shared<AggregateFunctionNullVariadic<true, true, true>>(nested_function, arguments, params);
             }
             else
             {
                 if (serialize_flag)
-                    return std::make_shared<AggregateFunctionNullVariadic<false, true>>(nested_function, arguments, params);
+                    return std::make_shared<AggregateFunctionNullVariadic<false, true, true>>(nested_function, arguments, params);
                 else
-                    return std::make_shared<AggregateFunctionNullVariadic<false, true>>(nested_function, arguments, params);
+                    return std::make_shared<AggregateFunctionNullVariadic<false, true, false>>(nested_function, arguments, params);
             }
         }
     }

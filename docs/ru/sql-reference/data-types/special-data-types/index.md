@@ -1,7 +1,8 @@
 ---
-slug: /ru/sql-reference/data-types/special-data-types/
-sidebar_label: "Служебные типы данных"
-sidebar_position: 55
+toc_folder_title: "Служебные типы данных"
+toc_hidden: true
+toc_priority: 55
+toc_title: hidden
 ---
 
 # Служебные типы данных {#sluzhebnye-tipy-dannykh}

@@ -6,7 +6,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnString.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/HashTable/HashMap.h>
 
@@ -161,11 +161,11 @@ private:
             Y max_y = data.max_y;
             Float64 diff_y = max_y - min_y;
 
-            if (diff_y != 0.0)
+            if (diff_y)
             {
                 for (size_t i = 0; i <= diff_x; ++i)
                 {
-                    auto it = data.points.find(static_cast<X>(min_x_local + i));
+                    auto it = data.points.find(min_x_local + i);
                     bool found = it != data.points.end();
                     value += getBar(found ? std::round(((it->getMapped() - min_y) / diff_y) * 7) + 1 : 0.0);
                 }
@@ -173,7 +173,7 @@ private:
             else
             {
                 for (size_t i = 0; i <= diff_x; ++i)
-                    value += getBar(data.points.has(min_x_local + static_cast<X>(i)) ? 1 : 0);
+                    value += getBar(data.points.has(min_x_local + i) ? 1 : 0);
             }
         }
         else
@@ -194,7 +194,7 @@ private:
             auto upper_bound = [&](size_t bucket_num)
             {
                 bound.second = (bucket_num + 1) * multiple_d;
-                bound.first = static_cast<size_t>(std::floor(bound.second));
+                bound.first = std::floor(bound.second);
             };
             upper_bound(cur_bucket_num);
             for (size_t i = 0; i <= (diff_x + 1); ++i)
@@ -202,7 +202,7 @@ private:
                 if (i == bound.first) // is bound
                 {
                     Float64 proportion = bound.second - bound.first;
-                    auto it = data.points.find(min_x_local + static_cast<X>(i));
+                    auto it = data.points.find(min_x_local + i);
                     bool found = (it != data.points.end());
                     if (found && proportion > 0)
                         new_y = new_y.value_or(0) + it->getMapped() * proportion;
@@ -229,7 +229,7 @@ private:
                 }
                 else
                 {
-                    auto it = data.points.find(min_x_local + static_cast<X>(i));
+                    auto it = data.points.find(min_x_local + i);
                     if (it != data.points.end())
                         new_y = new_y.value_or(0) + it->getMapped();
                 }
@@ -249,7 +249,7 @@ private:
                 value += getBar(point_y ? 1 : 0);
             };
 
-            if (diff_y != 0.0)
+            if (diff_y)
                 std::for_each(new_points.begin(), new_points.end(), get_bars);
             else
                 std::for_each(new_points.begin(), new_points.end(), get_bars_for_constant);
@@ -261,14 +261,14 @@ private:
 public:
     AggregateFunctionSparkbar(const DataTypes & arguments, const Array & params)
         : IAggregateFunctionDataHelper<AggregateFunctionSparkbarData<X, Y>, AggregateFunctionSparkbar>(
-        arguments, params, std::make_shared<DataTypeString>())
+        arguments, params)
     {
         width = params.at(0).safeGet<UInt64>();
         if (params.size() == 3)
         {
             specified_min_max_x = true;
-            min_x = static_cast<X>(params.at(1).safeGet<X>());
-            max_x = static_cast<X>(params.at(2).safeGet<X>());
+            min_x = params.at(1).safeGet<X>();
+            max_x = params.at(2).safeGet<X>();
         }
         else
         {
@@ -283,6 +283,11 @@ public:
         return "sparkbar";
     }
 
+    DataTypePtr getReturnType() const override
+    {
+        return std::make_shared<DataTypeString>();
+    }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * /*arena*/) const override
     {
         X x = assert_cast<const ColumnVector<X> *>(columns[0])->getData()[row_num];
@@ -293,7 +298,7 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr __restrict rhs, Arena * /*arena*/) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * /*arena*/) const override
     {
         this->data(place).merge(this->data(rhs));
     }

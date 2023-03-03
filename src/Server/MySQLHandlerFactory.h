@@ -5,7 +5,7 @@
 #include <Server/IServer.h>
 #include <Server/TCPServerConnectionFactory.h>
 
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_SSL
 #    include <openssl/rsa.h>
@@ -36,7 +36,7 @@ private:
     bool ssl_enabled = false;
 #endif
 
-    std::atomic<unsigned> last_connection_id = 0;
+    std::atomic<size_t> last_connection_id = 0;
 public:
     explicit MySQLHandlerFactory(IServer & server_);
 

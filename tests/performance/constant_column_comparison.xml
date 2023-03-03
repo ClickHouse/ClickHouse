@@ -1,4 +1,14 @@
 <test>
+    <tags>
+        <tag>comparison</tag>
+    </tags>
+
+    <preconditions>
+        <table_exists>hits_100m_single</table_exists>
+    </preconditions>
+
+
+
     <query><![CDATA[SELECT count() FROM hits_100m_single WHERE URL < '']]></query>
     <query><![CDATA[SELECT count() FROM hits_100m_single WHERE URL < 'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzz']]></query>
     <query><![CDATA[SELECT count() FROM hits_100m_single WHERE URL < 'http://some_url']]></query>
@@ -20,4 +30,5 @@
     <query><![CDATA[SELECT count() FROM hits_100m_single WHERE Title < '']]></query>
     <query><![CDATA[SELECT count() FROM hits_100m_single WHERE Title < 'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzz']]></query>
     <query><![CDATA[SELECT count() FROM hits_100m_single WHERE Title < 'Какой-то заголовок']]></query>
+
 </test>

@@ -481,6 +481,10 @@ target_include_directories(_icui18n SYSTEM PUBLIC "${ICU_SOURCE_DIR}/i18n/")
 target_compile_definitions(_icuuc PRIVATE -DU_COMMON_IMPLEMENTATION)
 target_compile_definitions(_icui18n PRIVATE -DU_I18N_IMPLEMENTATION)
 
+if (COMPILER_CLANG)
+    target_compile_options(_icudata PRIVATE -Wno-unused-command-line-argument)
+endif ()
+
 add_library(_icu INTERFACE)
 target_link_libraries(_icu INTERFACE _icui18n _icuuc _icudata)
 add_library(ch_contrib::icu ALIAS _icu)

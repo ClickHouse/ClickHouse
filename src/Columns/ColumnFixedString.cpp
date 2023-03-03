@@ -54,12 +54,12 @@ MutableColumnPtr ColumnFixedString::cloneResized(size_t size) const
 bool ColumnFixedString::isDefaultAt(size_t index) const
 {
     assert(index < size());
-    return memoryIsZero(chars.data() + index * n, 0, n);
+    return memoryIsZero(chars.data() + index * n, n);
 }
 
 void ColumnFixedString::insert(const Field & x)
 {
-    const String & s = x.get<const String &>();
+    const String & s = DB::get<const String &>(x);
 
     if (s.size() > n)
         throw Exception("Too large string '" + s + "' for FixedString column", ErrorCodes::TOO_LARGE_STRING_SIZE);
@@ -240,7 +240,7 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
             size_t res_chars_size = res->chars.size();
             while (mask)
             {
-                size_t index = std::countr_zero(mask);
+                size_t index = __builtin_ctzll(mask);
                 res->chars.resize(res_chars_size + n);
                 memcpySmallAllowReadWriteOverflow15(&res->chars[res_chars_size], data_pos + index * n, n);
                 res_chars_size += n;
@@ -277,8 +277,8 @@ void ColumnFixedString::expand(const IColumn::Filter & mask, bool inverted)
     if (mask.size() < size())
         throw Exception("Mask size should be no less than data size.", ErrorCodes::LOGICAL_ERROR);
 
-    ssize_t index = mask.size() - 1;
-    ssize_t from = size() - 1;
+    int index = mask.size() - 1;
+    int from = size() - 1;
     chars.resize_fill(mask.size() * n, 0);
     while (index >= 0)
     {

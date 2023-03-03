@@ -3,7 +3,7 @@
 #include <Common/TerminalSize.h>
 #include <IO/ConnectionTimeoutsContext.h>
 #include <Formats/registerFormats.h>
-#include <Common/scope_guard_safe.h>
+#include <base/scope_guard_safe.h>
 #include <unistd.h>
 #include <filesystem>
 
@@ -160,7 +160,7 @@ void ClusterCopierApp::mainImpl()
     registerTableFunctions();
     registerStorages();
     registerDictionaries();
-    registerDisks(/* global_skip_access_check= */ true);
+    registerDisks();
     registerFormats();
 
     static const std::string default_database = "_local";

@@ -96,7 +96,7 @@ FunctionBasePtr JoinGetOverloadResolver<or_null>::buildImpl(const ColumnsWithTyp
     return std::make_unique<FunctionJoinGet<or_null>>(getContext(), table_lock, storage_join, attr_name, argument_types, return_type);
 }
 
-REGISTER_FUNCTION(JoinGet)
+void registerFunctionJoinGet(FunctionFactory & factory)
 {
     // joinGet
     factory.registerFunction<JoinGetOverloadResolver<false>>();

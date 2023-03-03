@@ -177,11 +177,11 @@ public:
     String getName() const override { return "intervalLengthSum"; }
 
     explicit AggregateFunctionIntervalLengthSum(const DataTypes & arguments)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionIntervalLengthSum<T, Data>>(arguments, {}, createResultType())
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionIntervalLengthSum<T, Data>>(arguments, {})
     {
     }
 
-    static DataTypePtr createResultType()
+    DataTypePtr getReturnType() const override
     {
         if constexpr (std::is_floating_point_v<T>)
             return std::make_shared<DataTypeFloat64>();
@@ -196,7 +196,7 @@ public:
         const Array & params,
         const AggregateFunctionProperties & /*properties*/) const override
     {
-        return std::make_shared<AggregateFunctionNullVariadic<false, false>>(nested_function, arguments, params);
+        return std::make_shared<AggregateFunctionNullVariadic<false, false, false>>(nested_function, arguments, params);
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, const size_t row_num, Arena *) const override

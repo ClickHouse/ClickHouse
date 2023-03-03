@@ -24,9 +24,6 @@ void ASTKillQueryQuery::formatQueryImpl(const FormatSettings & settings, FormatS
         case Type::PartMoveToShard:
             settings.ostr << "PART_MOVE_TO_SHARD";
             break;
-        case Type::Transaction:
-            settings.ostr << "TRANSACTION";
-            break;
     }
 
     formatOnCluster(settings);

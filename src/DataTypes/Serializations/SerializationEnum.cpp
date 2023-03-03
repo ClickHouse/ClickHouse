@@ -18,13 +18,13 @@ void SerializationEnum<Type>::serializeText(const IColumn & column, size_t row_n
 template <typename Type>
 void SerializationEnum<Type>::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeEscapedString(this->getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]).toView(), ostr);
+    writeEscapedString(this->getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
 
 template <typename Type>
 void SerializationEnum<Type>::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    if (settings.tsv.enum_as_number)
+    if (settings.tsv.input_format_enum_as_number)
         assert_cast<ColumnType &>(column).getData().push_back(readValue(istr));
     else
     {
@@ -52,7 +52,7 @@ void SerializationEnum<Type>::deserializeTextQuoted(IColumn & column, ReadBuffer
 template <typename Type>
 void SerializationEnum<Type>::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    if (settings.tsv.enum_as_number)
+    if (settings.tsv.input_format_enum_as_number)
     {
         assert_cast<ColumnType &>(column).getData().push_back(readValue(istr));
         if (!istr.eof())
@@ -69,13 +69,13 @@ void SerializationEnum<Type>::deserializeWholeText(IColumn & column, ReadBuffer 
 template <typename Type>
 void SerializationEnum<Type>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeJSONString(this->getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]).toView(), ostr, settings);
+    writeJSONString(this->getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]), ostr, settings);
 }
 
 template <typename Type>
 void SerializationEnum<Type>::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeXMLStringForTextElement(this->getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]).toView(), ostr);
+    writeXMLStringForTextElement(this->getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
 
 template <typename Type>
@@ -100,7 +100,7 @@ void SerializationEnum<Type>::serializeTextCSV(const IColumn & column, size_t ro
 template <typename Type>
 void SerializationEnum<Type>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    if (settings.csv.enum_as_number)
+    if (settings.csv.input_format_enum_as_number)
         assert_cast<ColumnType &>(column).getData().push_back(readValue(istr));
     else
     {

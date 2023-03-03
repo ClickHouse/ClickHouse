@@ -18,7 +18,7 @@
 #include <Common/typeid_cast.h>
 #include <Core/Defines.h>
 
-#include "config.h"
+#include <Common/config.h>
 
 
 namespace DB
@@ -33,7 +33,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-/** Functions using deprecated dictionaries
+/** Functions using Yandex.Metrica dictionaries
   * - dictionaries of regions, operating systems, search engines.
   *
   * Climb up the tree to a certain level.

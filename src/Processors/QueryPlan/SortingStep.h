@@ -2,7 +2,7 @@
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Core/SortDescription.h>
 #include <QueryPipeline/SizeLimits.h>
-#include <Interpreters/TemporaryDataOnDisk.h>
+#include <Disks/IVolume.h>
 
 namespace DB
 {
@@ -11,34 +11,18 @@ namespace DB
 class SortingStep : public ITransformingStep
 {
 public:
-    enum class Type
-    {
-        Full,
-        FinishSorting,
-        MergingSorted,
-    };
-
-    struct Settings
-    {
-        size_t max_block_size;
-        SizeLimits size_limits;
-        size_t max_bytes_before_remerge = 0;
-        double remerge_lowered_memory_bytes_ratio = 0;
-        size_t max_bytes_before_external_sort = 0;
-        TemporaryDataOnDiskScopePtr tmp_data = nullptr;
-        size_t min_free_disk_space = 0;
-
-        explicit Settings(const Context & context);
-        explicit Settings(size_t max_block_size_);
-    };
-
     /// Full
     SortingStep(
         const DataStream & input_stream,
-        SortDescription description_,
+        const SortDescription & description_,
+        size_t max_block_size_,
         UInt64 limit_,
-        const Settings & settings_,
-        bool optimize_sorting_by_input_stream_properties_);
+        SizeLimits size_limits_,
+        size_t max_bytes_before_remerge_,
+        double remerge_lowered_memory_bytes_ratio_,
+        size_t max_bytes_before_external_sort_,
+        VolumePtr tmp_volume_,
+        size_t min_free_disk_space_);
 
     /// FinishSorting
     SortingStep(
@@ -62,39 +46,31 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    UInt64 getLimit() const { return limit; }
     /// Add limit or change it to lower value.
     void updateLimit(size_t limit_);
 
-    const SortDescription & getSortDescription() const { return result_description; }
-
-    void convertToFinishSorting(SortDescription prefix_description);
-
-    Type getType() const { return type; }
-    const Settings & getSettings() const { return sort_settings; }
-
 private:
-    void updateOutputStream() override;
 
-    void mergingSorted(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, UInt64 limit_);
-    void mergeSorting(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, UInt64 limit_);
-    void finishSorting(
-        QueryPipelineBuilder & pipeline, const SortDescription & input_sort_desc, const SortDescription & result_sort_desc, UInt64 limit_);
-    void fullSort(
-        QueryPipelineBuilder & pipeline,
-        const SortDescription & result_sort_desc,
-        UInt64 limit_,
-        bool skip_partial_sort = false);
+    enum class Type
+    {
+        Full,
+        FinishSorting,
+        MergingSorted,
+    };
 
     Type type;
 
     SortDescription prefix_description;
-    const SortDescription result_description;
+    SortDescription result_description;
+    size_t max_block_size;
     UInt64 limit;
+    SizeLimits size_limits;
 
-    Settings sort_settings;
-
-    const bool optimize_sorting_by_input_stream_properties = false;
+    size_t max_bytes_before_remerge = 0;
+    double remerge_lowered_memory_bytes_ratio = 0;
+    size_t max_bytes_before_external_sort = 0;
+    VolumePtr tmp_volume;
+    size_t min_free_disk_space = 0;
 };
 
 }

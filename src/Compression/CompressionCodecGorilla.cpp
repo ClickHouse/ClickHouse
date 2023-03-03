@@ -11,7 +11,7 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/BitHelpers.h>
 
-#include <cstring>
+#include <string.h>
 #include <algorithm>
 #include <type_traits>
 
@@ -208,7 +208,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest,
 
     const UInt32 items_count = source_size / sizeof(T);
 
-    unalignedStoreLE<UInt32>(dest, items_count);
+    unalignedStore<UInt32>(dest, items_count);
     dest += sizeof(items_count);
 
     T prev_value{};
@@ -217,8 +217,8 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest,
 
     if (source < source_end)
     {
-        prev_value = unalignedLoadLE<T>(source);
-        unalignedStoreLE<T>(dest, prev_value);
+        prev_value = unalignedLoad<T>(source);
+        unalignedStore<T>(dest, prev_value);
 
         source += sizeof(prev_value);
         dest += sizeof(prev_value);
@@ -228,7 +228,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest,
 
     while (source < source_end)
     {
-        const T curr_value = unalignedLoadLE<T>(source);
+        const T curr_value = unalignedLoad<T>(source);
         source += sizeof(curr_value);
 
         const auto xored_data = curr_value ^ prev_value;
@@ -259,7 +259,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest,
 
     writer.flush();
 
-    return static_cast<UInt32>((dest - dest_start) + (writer.count() + 7) / 8);
+    return (dest - dest_start) + (writer.count() + 7) / 8;
 }
 
 template <typename T>
@@ -274,7 +274,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
     if (source + sizeof(UInt32) > source_end)
         return;
 
-    const UInt32 items_count = unalignedLoadLE<UInt32>(source);
+    const UInt32 items_count = unalignedLoad<UInt32>(source);
     source += sizeof(items_count);
 
     T prev_value{};
@@ -283,8 +283,8 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
     if (source + sizeof(T) > source_end || items_count < 1)
         return;
 
-    prev_value = unalignedLoadLE<T>(source);
-    unalignedStoreLE<T>(dest, prev_value);
+    prev_value = unalignedLoad<T>(source);
+    unalignedStore<T>(dest, prev_value);
 
     source += sizeof(prev_value);
     dest += sizeof(prev_value);
@@ -320,13 +320,13 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
                         ErrorCodes::CANNOT_DECOMPRESS);
             }
 
-            xored_data = static_cast<T>(reader.readBits(curr_xored_info.data_bits));
+            xored_data = reader.readBits(curr_xored_info.data_bits);
             xored_data <<= curr_xored_info.trailing_zero_bits;
             curr_value = prev_value ^ xored_data;
         }
         // else: 0b0 prefix - use prev_value
 
-        unalignedStoreLE<T>(dest, curr_value);
+        unalignedStore<T>(dest, curr_value);
         dest += sizeof(curr_value);
 
         prev_xored_info = curr_xored_info;
@@ -344,7 +344,7 @@ UInt8 getDataBytesSize(const IDataType * column_type)
     if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8)
         return static_cast<UInt8>(max_size);
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec Gorilla is only applicable for data types of size 1, 2, 4, 8 bytes. Given type {}",
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec Delta is only applicable for data types of size 1, 2, 4, 8 bytes. Given type {}",
             column_type->getName());
 }
 
@@ -419,7 +419,7 @@ void CompressionCodecGorilla::doDecompressData(const char * source, UInt32 sourc
 
     UInt8 bytes_to_skip = uncompressed_size % bytes_size;
 
-    if (static_cast<UInt32>(2 + bytes_to_skip) > source_size)
+    if (UInt32(2 + bytes_to_skip) > source_size)
         throw Exception("Cannot decompress. File has wrong header", ErrorCodes::CANNOT_DECOMPRESS);
 
     memcpy(dest, &source[2], bytes_to_skip);
@@ -443,7 +443,7 @@ void CompressionCodecGorilla::doDecompressData(const char * source, UInt32 sourc
 
 void registerCodecGorilla(CompressionCodecFactory & factory)
 {
-    UInt8 method_code = static_cast<UInt8>(CompressionMethodByte::Gorilla);
+    UInt8 method_code = UInt8(CompressionMethodByte::Gorilla);
     factory.registerCompressionCodecWithType("Gorilla", method_code,
         [&](const ASTPtr & arguments, const IDataType * column_type) -> CompressionCodecPtr
     {

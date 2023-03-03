@@ -637,7 +637,7 @@ void obfuscateIdentifier(std::string_view src, WriteBuffer & result, WordMap & o
     {
         std::string_view word(word_begin, src_pos - word_begin);
 
-        if (keep_words.contains(word))
+        if (keep_words.count(word))
         {
             result.write(word.data(), word.size());
         }
@@ -889,7 +889,7 @@ void obfuscateQueries(
             std::string whole_token_uppercase(whole_token);
             Poco::toUpperInPlace(whole_token_uppercase);
 
-            if (keywords.contains(whole_token_uppercase)
+            if (keywords.count(whole_token_uppercase)
                 || known_identifier_func(whole_token))
             {
                 /// Keep keywords as is.

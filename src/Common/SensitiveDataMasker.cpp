@@ -9,21 +9,14 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/ProfileEvents.h>
 
 #ifndef NDEBUG
 #    include <iostream>
 #endif
-
-
-namespace ProfileEvents
-{
-    extern const Event QueryMaskingRulesMatch;
-}
 
 
 namespace DB
@@ -172,10 +165,6 @@ size_t SensitiveDataMasker::wipeSensitiveData(std::string & data) const
     size_t matches = 0;
     for (const auto & rule : all_masking_rules)
         matches += rule->apply(data);
-
-    if (matches)
-        ProfileEvents::increment(ProfileEvents::QueryMaskingRulesMatch, matches);
-
     return matches;
 }
 
@@ -193,20 +182,6 @@ void SensitiveDataMasker::printStats()
 size_t SensitiveDataMasker::rulesCount() const
 {
     return all_masking_rules.size();
-}
-
-
-std::string wipeSensitiveDataAndCutToLength(const std::string & str, size_t max_length)
-{
-    std::string res = str;
-
-    if (auto * masker = SensitiveDataMasker::getInstance())
-        masker->wipeSensitiveData(res);
-
-    if (max_length && (res.length() > max_length))
-        res.resize(max_length);
-
-    return res;
 }
 
 }

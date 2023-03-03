@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import time
 import sys
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 from github import Github
 
@@ -21,7 +21,7 @@ from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from upload_result_helper import upload_results
 
-NAME = "Push to Dockerhub"
+NAME = "Push to Dockerhub (actions)"
 
 TEMP_PATH = os.path.join(RUNNER_TEMP, "docker_images_check")
 
@@ -52,7 +52,7 @@ class DockerImage:
             and self.only_amd64 == other.only_amd64
         )
 
-    def __lt__(self, other: Any) -> bool:
+    def __lt__(self, other) -> bool:
         if not isinstance(other, DockerImage):
             return False
         if self.parent and not other.parent:
@@ -270,7 +270,7 @@ def build_and_push_one_image(
 def process_single_image(
     image: DockerImage,
     versions: List[str],
-    additional_cache: str,
+    additional_cache,
     push: bool,
     child: bool,
 ) -> List[Tuple[str, str, str]]:
@@ -464,7 +464,7 @@ def main():
     with open(changed_json, "w", encoding="utf-8") as images_file:
         json.dump(result_images, images_file)
 
-    s3_helper = S3Helper()
+    s3_helper = S3Helper("https://s3.amazonaws.com")
 
     s3_path_prefix = (
         str(pr_info.number) + "/" + pr_info.sha + "/" + NAME.lower().replace(" ", "_")
@@ -480,7 +480,7 @@ def main():
     if not args.reports:
         return
 
-    gh = Github(get_best_robot_token(), per_page=100)
+    gh = Github(get_best_robot_token())
     post_commit_status(gh, pr_info.sha, NAME, description, status, url)
 
     prepared_events = prepare_tests_results_for_clickhouse(

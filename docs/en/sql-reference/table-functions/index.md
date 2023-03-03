@@ -1,28 +1,27 @@
 ---
-slug: /en/sql-reference/table-functions/
-sidebar_label: Table Functions
-sidebar_position: 34
+toc_folder_title: Table Functions
+toc_priority: 34
+toc_title: Introduction
 ---
 
-# Table Functions 
+# Table Functions {#table-functions}
 
 Table functions are methods for constructing tables.
 
 You can use table functions in:
 
--  [FROM](../../sql-reference/statements/select/from.md) clause of the `SELECT` query.
+-   [FROM](../../sql-reference/statements/select/from.md) clause of the `SELECT` query.
 
-   The method for creating a temporary table that is available only in the current query. The table is deleted when the query finishes.
+        The method for creating a temporary table that is available only in the current query. The table is deleted when the query finishes.
 
 -   [CREATE TABLE AS table_function()](../../sql-reference/statements/create/table.md) query.
 
-   It's one of the methods of creating a table.
+        It's one of the methods of creating a table.
 
 -   [INSERT INTO TABLE FUNCTION](../../sql-reference/statements/insert-into.md#inserting-into-table-function) query.
 
-:::warning
-You can’t use table functions if the [allow_ddl](../../operations/settings/permissions-for-queries.md#settings_allow_ddl) setting is disabled.
-:::
+!!! warning "Warning"
+    You can’t use table functions if the [allow_ddl](../../operations/settings/permissions-for-queries.md#settings_allow_ddl) setting is disabled.
 
 | Function                                                         | Description                                                                                                                            |
 |------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------|
@@ -39,7 +38,4 @@ You can’t use table functions if the [allow_ddl](../../operations/settings/per
 | [s3](../../sql-reference/table-functions/s3.md)                  | Creates a [S3](../../engines/table-engines/integrations/s3.md)-engine table.                                                           |
 | [sqlite](../../sql-reference/table-functions/sqlite.md)          | Creates a [sqlite](../../engines/table-engines/integrations/sqlite.md)-engine table.                                                       |
 
-:::note
-Only these table functions are enabled in readonly mode :
-null, view, viewIfPermitted, numbers, numbers_mt, generateRandom, values, cluster, clusterAllReplicas 
-:::
+[Original article](https://clickhouse.com/docs/en/sql-reference/table-functions/) <!--hide-->

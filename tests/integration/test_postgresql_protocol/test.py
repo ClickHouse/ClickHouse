@@ -56,7 +56,7 @@ def psql_client():
             "-f",
             docker_compose,
             "up",
-            "--force-recreate",
+            "--no-recreate",
             "-d",
             "--build",
         ]
@@ -99,7 +99,7 @@ def java_container():
             "-f",
             docker_compose,
             "up",
-            "--force-recreate",
+            "--no-recreate",
             "-d",
             "--build",
         ]

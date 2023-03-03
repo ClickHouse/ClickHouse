@@ -5,7 +5,7 @@
 #include <Interpreters/Session.h>
 #include <Access/Credentials.h>
 
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/OpenSSLHelpers.h>
 
 #include <base/scope_guard.h>
@@ -182,11 +182,7 @@ void Sha256Password::authenticate(
         const auto * ciphertext = reinterpret_cast<const unsigned char *>(unpack_auth_response.data());
 
         unsigned char plaintext[RSA_size(&private_key)];
-#if USE_BORINGSSL
         int plaintext_size = RSA_private_decrypt(unpack_auth_response.size(), ciphertext, plaintext, &private_key, RSA_PKCS1_OAEP_PADDING);
-#else
-        int plaintext_size = RSA_private_decrypt(static_cast<int>(unpack_auth_response.size()), ciphertext, plaintext, &private_key, RSA_PKCS1_OAEP_PADDING);
-#endif
         if (plaintext_size == -1)
         {
             if (!sent_public_key)

@@ -51,7 +51,7 @@ struct Impl
 
 }
 
-REGISTER_FUNCTION(NormalizeQuery)
+void registerFunctionNormalizeQuery(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionStringToString<Impl<true>, Impl<true>>>();
     factory.registerFunction<FunctionStringToString<Impl<false>, Impl<false>>>();

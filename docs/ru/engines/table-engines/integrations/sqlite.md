@@ -1,7 +1,6 @@
 ---
-slug: /ru/engines/table-engines/integrations/sqlite
-sidebar_position: 7
-sidebar_label: SQLite
+toc_priority: 7
+toc_title: SQLite
 ---
 
 # SQLite {#sqlite}

@@ -11,6 +11,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License. */
 
+#include <base/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
 #include <Core/BackgroundSchedulePool.h>
 
@@ -21,12 +22,16 @@ limitations under the License. */
 namespace DB
 {
 
+using Time = std::chrono::time_point<std::chrono::system_clock>;
+using Seconds = std::chrono::seconds;
+using MilliSeconds = std::chrono::milliseconds;
+
 
 struct BlocksMetadata
 {
     String hash;
     UInt64 version;
-    std::chrono::time_point<std::chrono::system_clock> time;
+    Time time;
 };
 
 struct MergeableBlocks
@@ -44,24 +49,14 @@ class Pipe;
 using Pipes = std::vector<Pipe>;
 
 
-class StorageLiveView final : public IStorage, WithContext
+class StorageLiveView final : public shared_ptr_helper<StorageLiveView>, public IStorage, WithContext
 {
+friend struct shared_ptr_helper<StorageLiveView>;
 friend class LiveViewSource;
 friend class LiveViewEventsSource;
 friend class LiveViewSink;
 
-using Time = std::chrono::time_point<std::chrono::system_clock>;
-using Seconds = std::chrono::seconds;
-using MilliSeconds = std::chrono::milliseconds;
-
 public:
-    StorageLiveView(
-        const StorageID & table_id_,
-        ContextPtr context_,
-        const ASTCreateQuery & query,
-        const ColumnsDescription & columns,
-        const String & comment);
-
     ~StorageLiveView() override;
     String getName() const override { return "LiveView"; }
     bool isView() const override { return true; }
@@ -85,6 +80,19 @@ public:
     bool supportsFinal() const override { return true; }
 
     NamesAndTypesList getVirtuals() const override;
+
+    bool isTemporary() const { return is_temporary; }
+    bool isPeriodicallyRefreshed() const { return is_periodically_refreshed; }
+
+    Seconds getTimeout() const { return temporary_live_view_timeout; }
+    Seconds getPeriodicRefresh() const { return periodic_live_view_refresh; }
+
+    /// Check if we have any readers
+    /// must be called with mutex locked
+    bool hasUsers()
+    {
+        return blocks_ptr.use_count() > 1;
+    }
 
     /// Check we have any active readers
     /// must be called with mutex locked
@@ -143,7 +151,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        size_t num_streams) override;
+        unsigned num_streams) override;
 
     Pipe watch(
         const Names & column_names,
@@ -151,7 +159,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size,
-        size_t num_streams) override;
+        unsigned num_streams) override;
 
     std::shared_ptr<BlocksPtr> getBlocksPtr() { return blocks_ptr; }
     MergeableBlocksPtr getMergeableBlocks() { return mergeable_blocks; }
@@ -187,7 +195,10 @@ private:
 
     Poco::Logger * log;
 
+    bool is_temporary = false;
     bool is_periodically_refreshed = false;
+
+    Seconds temporary_live_view_timeout;
     Seconds periodic_live_view_refresh;
 
     /// Mutex to protect access to sample block and inner_blocks_query
@@ -216,6 +227,13 @@ private:
 
     /// Must be called with mutex locked
     void scheduleNextPeriodicRefresh();
+
+    StorageLiveView(
+        const StorageID & table_id_,
+        ContextPtr context_,
+        const ASTCreateQuery & query,
+        const ColumnsDescription & columns,
+        const String & comment);
 };
 
 }

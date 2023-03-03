@@ -1,7 +1,6 @@
 ---
-slug: /zh/sql-reference/table-functions/numbers
-sidebar_position: 39
-sidebar_label: numbers
+toc_priority: 39
+toc_title: numbers
 ---
 
 # numbers {#numbers}

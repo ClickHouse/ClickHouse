@@ -3,6 +3,8 @@
 #include <Core/SortDescription.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 
+namespace JSONBuilder { class JSONMap; }
+
 namespace DB
 {
 
@@ -25,24 +27,23 @@ public:
 
     /// Tuples with those columns are distinct.
     /// It doesn't mean that columns are distinct separately.
-    /// Removing any column from this list breaks this invariant.
+    /// Removing any column from this list brakes this invariant.
     NameSet distinct_columns = {};
 
     /// QueryPipeline has single port. Totals or extremes ports are not counted.
     bool has_single_port = false;
 
-    /// Sorting scope. Please keep the mutual order (more strong mode should have greater value).
-    enum class SortScope
+    /// How data is sorted.
+    enum class SortMode
     {
-        None   = 0,
-        Chunk  = 1, /// Separate chunks are sorted
-        Stream = 2, /// Each data steam is sorted
-        Global = 3, /// Data is globally sorted
+        Chunk, /// Separate chunks are sorted
+        Port, /// Data from each port is sorted
+        Stream, /// Data is globally sorted
     };
 
     /// It is not guaranteed that header has columns from sort_description.
     SortDescription sort_description = {};
-    SortScope sort_scope = SortScope::None;
+    SortMode sort_mode = SortMode::Chunk;
 
     /// Things which may be added:
     /// * limit
@@ -54,7 +55,7 @@ public:
         return distinct_columns == other.distinct_columns
             && has_single_port == other.has_single_port
             && sort_description == other.sort_description
-            && (sort_description.empty() || sort_scope == other.sort_scope);
+            && (sort_description.empty() || sort_mode == other.sort_mode);
     }
 
     bool hasEqualHeaderWith(const DataStream & other) const
@@ -110,19 +111,12 @@ public:
     /// Get description of processors added in current step. Should be called after updatePipeline().
     virtual void describePipeline(FormatSettings & /*settings*/) const {}
 
-    /// Append extra processors for this step.
-    void appendExtraProcessors(const Processors & extra_processors);
-
 protected:
     DataStreams input_streams;
     std::optional<DataStream> output_stream;
 
     /// Text description about what current step does.
     std::string step_description;
-
-    /// This field is used to store added processors from this step.
-    /// It is used only for introspection (EXPLAIN PIPELINE).
-    Processors processors;
 
     static void describePipeline(const Processors & processors, FormatSettings & settings);
 };

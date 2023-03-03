@@ -25,9 +25,9 @@ struct FirstSignificantSubdomainCustomLookup
     {
     }
 
-    TLDType operator()(StringRef host) const
+    bool operator()(const char *pos, size_t len) const
     {
-        return tld_list.lookup(host);
+        return tld_list.has(StringRef{pos, len});
     }
 };
 

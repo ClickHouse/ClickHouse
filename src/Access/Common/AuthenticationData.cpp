@@ -71,7 +71,7 @@ const AuthenticationTypeInfo & AuthenticationTypeInfo::get(AuthenticationType ty
 }
 
 
-AuthenticationData::Digest AuthenticationData::Util::encodeSHA256(std::string_view text [[maybe_unused]])
+AuthenticationData::Digest AuthenticationData::Util::encodeSHA256(const std::string_view & text [[maybe_unused]])
 {
 #if USE_SSL
     Digest hash;
@@ -86,7 +86,7 @@ AuthenticationData::Digest AuthenticationData::Util::encodeSHA256(std::string_vi
 }
 
 
-AuthenticationData::Digest AuthenticationData::Util::encodeSHA1(std::string_view text)
+AuthenticationData::Digest AuthenticationData::Util::encodeSHA1(const std::string_view & text)
 {
     Poco::SHA1Engine engine;
     engine.update(text.data(), text.size());
@@ -210,17 +210,6 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash)
     throw Exception("setPasswordHashBinary(): authentication type " + toString(type) + " not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-void AuthenticationData::setSalt(String salt_)
-{
-    if (type != AuthenticationType::SHA256_PASSWORD)
-        throw Exception("setSalt(): authentication type " + toString(type) + " not supported", ErrorCodes::NOT_IMPLEMENTED);
-    salt = std::move(salt_);
-}
-
-String AuthenticationData::getSalt() const
-{
-    return salt;
-}
 
 void AuthenticationData::setSSLCertificateCommonNames(boost::container::flat_set<String> common_names_)
 {

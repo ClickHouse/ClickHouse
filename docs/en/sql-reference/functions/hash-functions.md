@@ -1,20 +1,19 @@
 ---
-slug: /en/sql-reference/functions/hash-functions
-sidebar_position: 50
-sidebar_label: Hash
+toc_priority: 50
+toc_title: Hash
 ---
 
-# Hash Functions
+# Hash Functions {#hash-functions}
 
 Hash functions can be used for the deterministic pseudo-random shuffling of elements.
 
 Simhash is a hash function, which returns close hash values for close (similar) arguments.
 
-## halfMD5
+## halfMD5 {#hash-functions-halfmd5}
 
 [Interprets](../../sql-reference/functions/type-conversion-functions.md#type_conversion_functions-reinterpretAsString) all the input parameters as strings and calculates the [MD5](https://en.wikipedia.org/wiki/MD5) hash value for each of them. Then combines hashes, takes the first 8 bytes of the hash of the resulting string, and interprets them as `UInt64` in big-endian byte order.
 
-```sql
+``` sql
 halfMD5(par1, ...)
 ```
 
@@ -23,7 +22,7 @@ Consider using the [sipHash64](#hash_functions-siphash64) function instead.
 
 **Arguments**
 
-The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md). For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data).
+The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md).
 
 **Returned Value**
 
@@ -31,31 +30,31 @@ A [UInt64](../../sql-reference/data-types/int-uint.md) data type hash value.
 
 **Example**
 
-```sql
+``` sql
 SELECT halfMD5(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS halfMD5hash, toTypeName(halfMD5hash) AS type;
 ```
 
-```response
+``` text
 ┌────────halfMD5hash─┬─type───┐
 │ 186182704141653334 │ UInt64 │
 └────────────────────┴────────┘
 ```
 
-## MD4
+## MD4 {#hash_functions-md4}
 
 Calculates the MD4 from a string and returns the resulting set of bytes as FixedString(16).
 
-## MD5
+## MD5 {#hash_functions-md5}
 
 Calculates the MD5 from a string and returns the resulting set of bytes as FixedString(16).
 If you do not need MD5 in particular, but you need a decent cryptographic 128-bit hash, use the ‘sipHash128’ function instead.
 If you want to get the same result as output by the md5sum utility, use lower(hex(MD5(s))).
 
-## sipHash64
+## sipHash64 {#hash_functions-siphash64}
 
 Produces a 64-bit [SipHash](https://131002.net/siphash/) hash value.
 
-```sql
+``` sql
 sipHash64(par1,...)
 ```
 
@@ -70,7 +69,7 @@ Function [interprets](../../sql-reference/functions/type-conversion-functions.md
 
 **Arguments**
 
-The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md). For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data).
+The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md).
 
 **Returned Value**
 
@@ -78,29 +77,29 @@ A [UInt64](../../sql-reference/data-types/int-uint.md) data type hash value.
 
 **Example**
 
-```sql
+``` sql
 SELECT sipHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS SipHash, toTypeName(SipHash) AS type;
 ```
 
-```response
+``` text
 ┌──────────────SipHash─┬─type───┐
 │ 13726873534472839665 │ UInt64 │
 └──────────────────────┴────────┘
 ```
 
-## sipHash128
+## sipHash128 {#hash_functions-siphash128}
 
 Produces a 128-bit [SipHash](https://131002.net/siphash/) hash value. Differs from [sipHash64](#hash_functions-siphash64) in that the final xor-folding state is done up to 128 bits.
 
 **Syntax**
 
-```sql
+``` sql
 sipHash128(par1,...)
 ```
 
 **Arguments**
 
-The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md). For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data).
+The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md).
 
 **Returned value**
 
@@ -112,23 +111,23 @@ Type: [FixedString(16)](../../sql-reference/data-types/fixedstring.md).
 
 Query:
 
-```sql
+``` sql
 SELECT hex(sipHash128('foo', '\x01', 3));
 ```
 
 Result:
 
-```response
+``` text
 ┌─hex(sipHash128('foo', '', 3))────┐
 │ 9DE516A64A414D4B1B609415E4523F24 │
 └──────────────────────────────────┘
 ```
 
-## cityHash64
+## cityHash64 {#cityhash64}
 
 Produces a 64-bit [CityHash](https://github.com/google/cityhash) hash value.
 
-```sql
+``` sql
 cityHash64(par1,...)
 ```
 
@@ -136,7 +135,7 @@ This is a fast non-cryptographic hash function. It uses the CityHash algorithm f
 
 **Arguments**
 
-The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md). For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data).
+The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md).
 
 **Returned Value**
 
@@ -146,11 +145,11 @@ A [UInt64](../../sql-reference/data-types/int-uint.md) data type hash value.
 
 Call example:
 
-```sql
+``` sql
 SELECT cityHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS CityHash, toTypeName(CityHash) AS type;
 ```
 
-```response
+``` text
 ┌─────────────CityHash─┬─type───┐
 │ 12072650598913549138 │ UInt64 │
 └──────────────────────┴────────┘
@@ -158,27 +157,27 @@ SELECT cityHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:0
 
 The following example shows how to compute the checksum of the entire table with accuracy up to the row order:
 
-```sql
+``` sql
 SELECT groupBitXor(cityHash64(*)) FROM table
 ```
 
-## intHash32
+## intHash32 {#inthash32}
 
 Calculates a 32-bit hash code from any type of integer.
 This is a relatively fast non-cryptographic hash function of average quality for numbers.
 
-## intHash64
+## intHash64 {#inthash64}
 
 Calculates a 64-bit hash code from any type of integer.
 It works faster than intHash32. Average quality.
 
-## SHA1, SHA224, SHA256, SHA512
+## SHA1, SHA224, SHA256, SHA512 {#sha}
 
 Calculates SHA-1, SHA-224, SHA-256, SHA-512 hash from a string and returns the resulting set of bytes as [FixedString](../data-types/fixedstring.md).
 
 **Syntax**
 
-```sql
+``` sql
 SHA1('s')
 ...
 SHA512('s')
@@ -204,70 +203,32 @@ Use the [hex](../functions/encoding-functions.md#hex) function to represent the 
 
 Query:
 
-```sql
+``` sql
 SELECT hex(SHA1('abc'));
 ```
 
 Result:
 
-```response
+``` text
 ┌─hex(SHA1('abc'))─────────────────────────┐
 │ A9993E364706816ABA3E25717850C26C9CD0D89D │
 └──────────────────────────────────────────┘
 ```
 
-## BLAKE3
-
-Calculates BLAKE3 hash string and returns the resulting set of bytes as [FixedString](../data-types/fixedstring.md).
-
-**Syntax**
-
-```sql
-BLAKE3('s')
-```
-
-This cryptographic hash-function is integrated into ClickHouse with BLAKE3 Rust library. The function is rather fast and shows approximately two times faster performance compared to SHA-2, while generating hashes of the same length as SHA-256.
-
-**Arguments**
-
-- s - input string for BLAKE3 hash calculation. [String](../data-types/string.md).
-
-**Return value**
-
-- BLAKE3 hash as a byte array with type FixedString(32).
-
-Type: [FixedString](../data-types/fixedstring.md).
-
-**Example**
-
-Use function [hex](../functions/encoding-functions.md#hex) to represent the result as a hex-encoded string.
-
-Query:
-```sql
-SELECT hex(BLAKE3('ABC'))
-```
-
-Result:
-```sql
-┌─hex(BLAKE3('ABC'))───────────────────────────────────────────────┐
-│ D1717274597CF0289694F75D96D444B992A096F1AFD8E7BBFA6EBB1D360FEDFC │
-└──────────────────────────────────────────────────────────────────┘
-```
-
-## URLHash(url\[, N\])
+## URLHash(url\[, N\]) {#urlhashurl-n}
 
 A fast, decent-quality non-cryptographic hash function for a string obtained from a URL using some type of normalization.
 `URLHash(s)` – Calculates a hash from a string without one of the trailing symbols `/`,`?` or `#` at the end, if present.
 `URLHash(s, N)` – Calculates a hash from a string up to the N level in the URL hierarchy, without one of the trailing symbols `/`,`?` or `#` at the end, if present.
-Levels are the same as in URLHierarchy.
+Levels are the same as in URLHierarchy. 
 
-## farmFingerprint64
+## farmFingerprint64 {#farmfingerprint64}
 
-## farmHash64
+## farmHash64 {#farmhash64}
 
 Produces a 64-bit [FarmHash](https://github.com/google/farmhash) or Fingerprint value. `farmFingerprint64` is preferred for a stable and portable value.
 
-```sql
+``` sql
 farmFingerprint64(par1, ...)
 farmHash64(par1, ...)
 ```
@@ -276,7 +237,7 @@ These functions use the `Fingerprint64` and `Hash64` methods respectively from a
 
 **Arguments**
 
-The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md). For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data)..
+The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md).
 
 **Returned Value**
 
@@ -284,30 +245,23 @@ A [UInt64](../../sql-reference/data-types/int-uint.md) data type hash value.
 
 **Example**
 
-```sql
+``` sql
 SELECT farmHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS FarmHash, toTypeName(FarmHash) AS type;
 ```
 
-```response
+``` text
 ┌─────────────FarmHash─┬─type───┐
 │ 17790458267262532859 │ UInt64 │
 └──────────────────────┴────────┘
 ```
 
-## javaHash
+## javaHash {#hash_functions-javahash}
 
-Calculates JavaHash from a [string](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452), 
-[Byte](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Byte.java#l405), 
-[Short](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Short.java#l410), 
-[Integer](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Integer.java#l959), 
-[Long](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Long.java#l1060). 
-This hash function is neither fast nor having a good quality. The only reason to use it is when this algorithm is already used in another system and you have to calculate exactly the same result.
-
-Note that Java only support calculating signed integers hash, so if you want to calculate unsigned integers hash you must cast it to proper signed ClickHouse types.
+Calculates [JavaHash](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452) from a string. This hash function is neither fast nor having a good quality. The only reason to use it is when this algorithm is already used in another system and you have to calculate exactly the same result.
 
 **Syntax**
 
-```sql
+``` sql
 SELECT javaHash('')
 ```
 
@@ -319,39 +273,25 @@ A `Int32` data type hash value.
 
 Query:
 
-```sql
-SELECT javaHash(toInt32(123));
-```
-
-Result:
-
-```response
-┌─javaHash(toInt32(123))─┐
-│               123      │
-└────────────────────────┘
-```
-
-Query:
-
-```sql
+``` sql
 SELECT javaHash('Hello, world!');
 ```
 
 Result:
 
-```response
+``` text
 ┌─javaHash('Hello, world!')─┐
 │               -1880044555 │
 └───────────────────────────┘
 ```
 
-## javaHashUTF16LE
+## javaHashUTF16LE {#javahashutf16le}
 
 Calculates [JavaHash](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452) from a string, assuming it contains bytes representing a string in UTF-16LE encoding.
 
 **Syntax**
 
-```sql
+``` sql
 javaHashUTF16LE(stringUtf16le)
 ```
 
@@ -369,23 +309,23 @@ Correct query with UTF-16LE encoded string.
 
 Query:
 
-```sql
+``` sql
 SELECT javaHashUTF16LE(convertCharset('test', 'utf-8', 'utf-16le'));
 ```
 
 Result:
 
-```response
+``` text
 ┌─javaHashUTF16LE(convertCharset('test', 'utf-8', 'utf-16le'))─┐
 │                                                      3556498 │
 └──────────────────────────────────────────────────────────────┘
 ```
 
-## hiveHash
+## hiveHash {#hash-functions-hivehash}
 
 Calculates `HiveHash` from a string.
 
-```sql
+``` sql
 SELECT hiveHash('')
 ```
 
@@ -401,29 +341,29 @@ Type: `hiveHash`.
 
 Query:
 
-```sql
+``` sql
 SELECT hiveHash('Hello, world!');
 ```
 
 Result:
 
-```response
+``` text
 ┌─hiveHash('Hello, world!')─┐
 │                 267439093 │
 └───────────────────────────┘
 ```
 
-## metroHash64
+## metroHash64 {#metrohash64}
 
 Produces a 64-bit [MetroHash](http://www.jandrewrogers.com/2015/05/27/metrohash/) hash value.
 
-```sql
+``` sql
 metroHash64(par1, ...)
 ```
 
 **Arguments**
 
-The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md). For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data).
+The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md).
 
 **Returned Value**
 
@@ -431,34 +371,34 @@ A [UInt64](../../sql-reference/data-types/int-uint.md) data type hash value.
 
 **Example**
 
-```sql
+``` sql
 SELECT metroHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS MetroHash, toTypeName(MetroHash) AS type;
 ```
 
-```response
+``` text
 ┌────────────MetroHash─┬─type───┐
 │ 14235658766382344533 │ UInt64 │
 └──────────────────────┴────────┘
 ```
 
-## jumpConsistentHash
+## jumpConsistentHash {#jumpconsistenthash}
 
 Calculates JumpConsistentHash form a UInt64.
 Accepts two arguments: a UInt64-type key and the number of buckets. Returns Int32.
 For more information, see the link: [JumpConsistentHash](https://arxiv.org/pdf/1406.2294.pdf)
 
-## murmurHash2_32, murmurHash2_64
+## murmurHash2_32, murmurHash2_64 {#murmurhash2-32-murmurhash2-64}
 
 Produces a [MurmurHash2](https://github.com/aappleby/smhasher) hash value.
 
-```sql
+``` sql
 murmurHash2_32(par1, ...)
 murmurHash2_64(par1, ...)
 ```
 
 **Arguments**
 
-Both functions take a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md). For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data).
+Both functions take a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md).
 
 **Returned Value**
 
@@ -467,23 +407,23 @@ Both functions take a variable number of input parameters. Arguments can be any 
 
 **Example**
 
-```sql
+``` sql
 SELECT murmurHash2_64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS MurmurHash2, toTypeName(MurmurHash2) AS type;
 ```
 
-```response
+``` text
 ┌──────────MurmurHash2─┬─type───┐
 │ 11832096901709403633 │ UInt64 │
 └──────────────────────┴────────┘
 ```
 
-## gccMurmurHash
+## gccMurmurHash {#gccmurmurhash}
 
 Calculates a 64-bit [MurmurHash2](https://github.com/aappleby/smhasher) hash value using the same hash seed as [gcc](https://github.com/gcc-mirror/gcc/blob/41d6b10e96a1de98e90a7c0378437c3255814b16/libstdc%2B%2B-v3/include/bits/functional_hash.h#L191). It is portable between CLang and GCC builds.
 
 **Syntax**
 
-```sql
+``` sql
 gccMurmurHash(par1, ...)
 ```
 
@@ -501,7 +441,7 @@ Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
 Query:
 
-```sql
+``` sql
 SELECT
     gccMurmurHash(1, 2, 3) AS res1,
     gccMurmurHash(('a', [1, 2, 3], 4, (4, ['foo', 'bar'], 1, (1, 2)))) AS res2
@@ -509,24 +449,24 @@ SELECT
 
 Result:
 
-```response
+``` text
 ┌─────────────────res1─┬────────────────res2─┐
 │ 12384823029245979431 │ 1188926775431157506 │
 └──────────────────────┴─────────────────────┘
 ```
 
-## murmurHash3_32, murmurHash3_64
+## murmurHash3_32, murmurHash3_64 {#murmurhash3-32-murmurhash3-64}
 
 Produces a [MurmurHash3](https://github.com/aappleby/smhasher) hash value.
 
-```sql
+``` sql
 murmurHash3_32(par1, ...)
 murmurHash3_64(par1, ...)
 ```
 
 **Arguments**
 
-Both functions take a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md). For some data types calculated value of hash function may be the same for the same values even if types of arguments differ (integers of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data).
+Both functions take a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md).
 
 **Returned Value**
 
@@ -535,23 +475,23 @@ Both functions take a variable number of input parameters. Arguments can be any 
 
 **Example**
 
-```sql
+``` sql
 SELECT murmurHash3_32(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS MurmurHash3, toTypeName(MurmurHash3) AS type;
 ```
 
-```response
+``` text
 ┌─MurmurHash3─┬─type───┐
 │     2152717 │ UInt32 │
 └─────────────┴────────┘
 ```
 
-## murmurHash3_128
+## murmurHash3_128 {#murmurhash3-128}
 
 Produces a 128-bit [MurmurHash3](https://github.com/aappleby/smhasher) hash value.
 
 **Syntax**
 
-```sql
+``` sql
 murmurHash3_128(expr)
 ```
 
@@ -569,23 +509,23 @@ Type: [FixedString(16)](../../sql-reference/data-types/fixedstring.md).
 
 Query:
 
-```sql
+``` sql
 SELECT hex(murmurHash3_128('foo', 'foo', 'foo'));
 ```
 
 Result:
 
-```response
+``` text
 ┌─hex(murmurHash3_128('foo', 'foo', 'foo'))─┐
 │ F8F7AD9B6CD4CF117A71E277E2EC2931          │
 └───────────────────────────────────────────┘
 ```
 
-## xxHash32, xxHash64
+## xxHash32, xxHash64 {#hash-functions-xxhash32}
 
 Calculates `xxHash` from a string. It is proposed in two flavors, 32 and 64 bits.
 
-```sql
+``` sql
 SELECT xxHash32('')
 
 OR
@@ -595,21 +535,21 @@ SELECT xxHash64('')
 
 **Returned value**
 
-A `UInt32` or `UInt64` data type hash value.
+A `Uint32` or `Uint64` data type hash value.
 
-Type: `UInt32` for `xxHash32` and `UInt64` for `xxHash64`.
+Type: `xxHash`.
 
 **Example**
 
 Query:
 
-```sql
+``` sql
 SELECT xxHash32('Hello, world!');
 ```
 
 Result:
 
-```response
+``` text
 ┌─xxHash32('Hello, world!')─┐
 │                 834093149 │
 └───────────────────────────┘
@@ -619,7 +559,7 @@ Result:
 
 -   [xxHash](http://cyan4973.github.io/xxHash/).
 
-## ngramSimHash
+## ngramSimHash {#ngramsimhash}
 
 Splits a ASCII string into n-grams of `ngramsize` symbols and returns the n-gram `simhash`. Is case sensitive.
 
@@ -627,7 +567,7 @@ Can be used for detection of semi-duplicate strings with [bitHammingDistance](..
 
 **Syntax**
 
-```sql
+``` sql
 ngramSimHash(string[, ngramsize])
 ```
 
@@ -646,19 +586,19 @@ Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
 Query:
 
-```sql
+``` sql
 SELECT ngramSimHash('ClickHouse') AS Hash;
 ```
 
 Result:
 
-```response
+``` text
 ┌───────Hash─┐
 │ 1627567969 │
 └────────────┘
 ```
 
-## ngramSimHashCaseInsensitive
+## ngramSimHashCaseInsensitive {#ngramsimhashcaseinsensitive}
 
 Splits a ASCII string into n-grams of `ngramsize` symbols and returns the n-gram `simhash`. Is case insensitive.
 
@@ -666,7 +606,7 @@ Can be used for detection of semi-duplicate strings with [bitHammingDistance](..
 
 **Syntax**
 
-```sql
+``` sql
 ngramSimHashCaseInsensitive(string[, ngramsize])
 ```
 
@@ -685,19 +625,19 @@ Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
 Query:
 
-```sql
+``` sql
 SELECT ngramSimHashCaseInsensitive('ClickHouse') AS Hash;
 ```
 
 Result:
 
-```response
+``` text
 ┌──────Hash─┐
 │ 562180645 │
 └───────────┘
 ```
 
-## ngramSimHashUTF8
+## ngramSimHashUTF8 {#ngramsimhashutf8}
 
 Splits a UTF-8 string into n-grams of `ngramsize` symbols and returns the n-gram `simhash`. Is case sensitive.
 
@@ -705,7 +645,7 @@ Can be used for detection of semi-duplicate strings with [bitHammingDistance](..
 
 **Syntax**
 
-```sql
+``` sql
 ngramSimHashUTF8(string[, ngramsize])
 ```
 
@@ -724,19 +664,19 @@ Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
 Query:
 
-```sql
+``` sql
 SELECT ngramSimHashUTF8('ClickHouse') AS Hash;
 ```
 
 Result:
 
-```response
+``` text
 ┌───────Hash─┐
 │ 1628157797 │
 └────────────┘
 ```
 
-## ngramSimHashCaseInsensitiveUTF8
+## ngramSimHashCaseInsensitiveUTF8 {#ngramsimhashcaseinsensitiveutf8}
 
 Splits a UTF-8 string into n-grams of `ngramsize` symbols and returns the n-gram `simhash`. Is case insensitive.
 
@@ -744,7 +684,7 @@ Can be used for detection of semi-duplicate strings with [bitHammingDistance](..
 
 **Syntax**
 
-```sql
+``` sql
 ngramSimHashCaseInsensitiveUTF8(string[, ngramsize])
 ```
 
@@ -763,19 +703,19 @@ Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
 Query:
 
-```sql
+``` sql
 SELECT ngramSimHashCaseInsensitiveUTF8('ClickHouse') AS Hash;
 ```
 
 Result:
 
-```response
+``` text
 ┌───────Hash─┐
 │ 1636742693 │
 └────────────┘
 ```
 
-## wordShingleSimHash
+## wordShingleSimHash {#wordshinglesimhash}
 
 Splits a ASCII string into parts (shingles) of `shinglesize` words and returns the word shingle `simhash`. Is case sensitive.
 
@@ -783,7 +723,7 @@ Can be used for detection of semi-duplicate strings with [bitHammingDistance](..
 
 **Syntax**
 
-```sql
+``` sql
 wordShingleSimHash(string[, shinglesize])
 ```
 
@@ -802,19 +742,19 @@ Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
 Query:
 
-```sql
+``` sql
 SELECT wordShingleSimHash('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).') AS Hash;
 ```
 
 Result:
 
-```response
+``` text
 ┌───────Hash─┐
 │ 2328277067 │
 └────────────┘
 ```
 
-## wordShingleSimHashCaseInsensitive
+## wordShingleSimHashCaseInsensitive {#wordshinglesimhashcaseinsensitive}
 
 Splits a ASCII string into parts (shingles) of `shinglesize` words and returns the word shingle `simhash`. Is case insensitive.
 
@@ -822,7 +762,7 @@ Can be used for detection of semi-duplicate strings with [bitHammingDistance](..
 
 **Syntax**
 
-```sql
+``` sql
 wordShingleSimHashCaseInsensitive(string[, shinglesize])
 ```
 
@@ -841,19 +781,19 @@ Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
 Query:
 
-```sql
+``` sql
 SELECT wordShingleSimHashCaseInsensitive('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).') AS Hash;
 ```
 
 Result:
 
-```response
+``` text
 ┌───────Hash─┐
 │ 2194812424 │
 └────────────┘
 ```
 
-## wordShingleSimHashUTF8
+## wordShingleSimHashUTF8 {#wordshinglesimhashutf8}
 
 Splits a UTF-8 string into parts (shingles) of `shinglesize` words and returns the word shingle `simhash`. Is case sensitive.
 
@@ -861,7 +801,7 @@ Can be used for detection of semi-duplicate strings with [bitHammingDistance](..
 
 **Syntax**
 
-```sql
+``` sql
 wordShingleSimHashUTF8(string[, shinglesize])
 ```
 
@@ -880,19 +820,19 @@ Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
 Query:
 
-```sql
+``` sql
 SELECT wordShingleSimHashUTF8('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).') AS Hash;
 ```
 
 Result:
 
-```response
+``` text
 ┌───────Hash─┐
 │ 2328277067 │
 └────────────┘
 ```
 
-## wordShingleSimHashCaseInsensitiveUTF8
+## wordShingleSimHashCaseInsensitiveUTF8 {#wordshinglesimhashcaseinsensitiveutf8}
 
 Splits a UTF-8 string into parts (shingles) of `shinglesize` words and returns the word shingle `simhash`. Is case insensitive.
 
@@ -900,7 +840,7 @@ Can be used for detection of semi-duplicate strings with [bitHammingDistance](..
 
 **Syntax**
 
-```sql
+``` sql
 wordShingleSimHashCaseInsensitiveUTF8(string[, shinglesize])
 ```
 
@@ -919,19 +859,19 @@ Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
 Query:
 
-```sql
+``` sql
 SELECT wordShingleSimHashCaseInsensitiveUTF8('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).') AS Hash;
 ```
 
 Result:
 
-```response
+``` text
 ┌───────Hash─┐
 │ 2194812424 │
 └────────────┘
 ```
 
-## ngramMinHash
+## ngramMinHash {#ngramminhash}
 
 Splits a ASCII string into n-grams of `ngramsize` symbols and calculates hash values for each n-gram. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case sensitive.
 
@@ -939,7 +879,7 @@ Can be used for detection of semi-duplicate strings with [tupleHammingDistance](
 
 **Syntax**
 
-```sql
+``` sql
 ngramMinHash(string[, ngramsize, hashnum])
 ```
 
@@ -959,19 +899,19 @@ Type: [Tuple](../../sql-reference/data-types/tuple.md)([UInt64](../../sql-refere
 
 Query:
 
-```sql
+``` sql
 SELECT ngramMinHash('ClickHouse') AS Tuple;
 ```
 
 Result:
 
-```response
+``` text
 ┌─Tuple──────────────────────────────────────┐
 │ (18333312859352735453,9054248444481805918) │
 └────────────────────────────────────────────┘
 ```
 
-## ngramMinHashCaseInsensitive
+## ngramMinHashCaseInsensitive {#ngramminhashcaseinsensitive}
 
 Splits a ASCII string into n-grams of `ngramsize` symbols and calculates hash values for each n-gram. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case insensitive.
 
@@ -979,7 +919,7 @@ Can be used for detection of semi-duplicate strings with [tupleHammingDistance](
 
 **Syntax**
 
-```sql
+``` sql
 ngramMinHashCaseInsensitive(string[, ngramsize, hashnum])
 ```
 
@@ -999,19 +939,19 @@ Type: [Tuple](../../sql-reference/data-types/tuple.md)([UInt64](../../sql-refere
 
 Query:
 
-```sql
+``` sql
 SELECT ngramMinHashCaseInsensitive('ClickHouse') AS Tuple;
 ```
 
 Result:
 
-```response
+``` text
 ┌─Tuple──────────────────────────────────────┐
 │ (2106263556442004574,13203602793651726206) │
 └────────────────────────────────────────────┘
 ```
 
-## ngramMinHashUTF8
+## ngramMinHashUTF8 {#ngramminhashutf8}
 
 Splits a UTF-8 string into n-grams of `ngramsize` symbols and calculates hash values for each n-gram. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case sensitive.
 
@@ -1019,7 +959,7 @@ Can be used for detection of semi-duplicate strings with [tupleHammingDistance](
 
 **Syntax**
 
-```sql
+``` sql
 ngramMinHashUTF8(string[, ngramsize, hashnum])
 ```
 
@@ -1039,19 +979,19 @@ Type: [Tuple](../../sql-reference/data-types/tuple.md)([UInt64](../../sql-refere
 
 Query:
 
-```sql
+``` sql
 SELECT ngramMinHashUTF8('ClickHouse') AS Tuple;
 ```
 
 Result:
 
-```response
+``` text
 ┌─Tuple──────────────────────────────────────┐
 │ (18333312859352735453,6742163577938632877) │
 └────────────────────────────────────────────┘
 ```
 
-## ngramMinHashCaseInsensitiveUTF8
+## ngramMinHashCaseInsensitiveUTF8 {#ngramminhashcaseinsensitiveutf8}
 
 Splits a UTF-8 string into n-grams of `ngramsize` symbols and calculates hash values for each n-gram. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case insensitive.
 
@@ -1059,7 +999,7 @@ Can be used for detection of semi-duplicate strings with [tupleHammingDistance](
 
 **Syntax**
 
-```sql
+``` sql
 ngramMinHashCaseInsensitiveUTF8(string [, ngramsize, hashnum])
 ```
 
@@ -1079,25 +1019,25 @@ Type: [Tuple](../../sql-reference/data-types/tuple.md)([UInt64](../../sql-refere
 
 Query:
 
-```sql
+``` sql
 SELECT ngramMinHashCaseInsensitiveUTF8('ClickHouse') AS Tuple;
 ```
 
 Result:
 
-```response
+``` text
 ┌─Tuple───────────────────────────────────────┐
 │ (12493625717655877135,13203602793651726206) │
 └─────────────────────────────────────────────┘
 ```
 
-## ngramMinHashArg
+## ngramMinHashArg {#ngramminhasharg}
 
 Splits a ASCII string into n-grams of `ngramsize` symbols and returns the n-grams with minimum and maximum hashes, calculated by the [ngramMinHash](#ngramminhash) function with the same input. Is case sensitive.
 
 **Syntax**
 
-```sql
+``` sql
 ngramMinHashArg(string[, ngramsize, hashnum])
 ```
 
@@ -1117,25 +1057,25 @@ Type: [Tuple](../../sql-reference/data-types/tuple.md)([Tuple](../../sql-referen
 
 Query:
 
-```sql
+``` sql
 SELECT ngramMinHashArg('ClickHouse') AS Tuple;
 ```
 
 Result:
 
-```response
+``` text
 ┌─Tuple─────────────────────────────────────────────────────────────────────────┐
 │ (('ous','ick','lic','Hou','kHo','use'),('Hou','lic','ick','ous','ckH','Cli')) │
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## ngramMinHashArgCaseInsensitive
+## ngramMinHashArgCaseInsensitive {#ngramminhashargcaseinsensitive}
 
 Splits a ASCII string into n-grams of `ngramsize` symbols and returns the n-grams with minimum and maximum hashes, calculated by the [ngramMinHashCaseInsensitive](#ngramminhashcaseinsensitive) function with the same input. Is case insensitive.
 
 **Syntax**
 
-```sql
+``` sql
 ngramMinHashArgCaseInsensitive(string[, ngramsize, hashnum])
 ```
 
@@ -1155,25 +1095,25 @@ Type: [Tuple](../../sql-reference/data-types/tuple.md)([Tuple](../../sql-referen
 
 Query:
 
-```sql
+``` sql
 SELECT ngramMinHashArgCaseInsensitive('ClickHouse') AS Tuple;
 ```
 
 Result:
 
-```response
+``` text
 ┌─Tuple─────────────────────────────────────────────────────────────────────────┐
 │ (('ous','ick','lic','kHo','use','Cli'),('kHo','lic','ick','ous','ckH','Hou')) │
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## ngramMinHashArgUTF8
+## ngramMinHashArgUTF8 {#ngramminhashargutf8}
 
 Splits a UTF-8 string into n-grams of `ngramsize` symbols and returns the n-grams with minimum and maximum hashes, calculated by the [ngramMinHashUTF8](#ngramminhashutf8) function with the same input. Is case sensitive.
 
 **Syntax**
 
-```sql
+``` sql
 ngramMinHashArgUTF8(string[, ngramsize, hashnum])
 ```
 
@@ -1193,25 +1133,25 @@ Type: [Tuple](../../sql-reference/data-types/tuple.md)([Tuple](../../sql-referen
 
 Query:
 
-```sql
+``` sql
 SELECT ngramMinHashArgUTF8('ClickHouse') AS Tuple;
 ```
 
 Result:
 
-```response
+``` text
 ┌─Tuple─────────────────────────────────────────────────────────────────────────┐
 │ (('ous','ick','lic','Hou','kHo','use'),('kHo','Hou','lic','ick','ous','ckH')) │
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## ngramMinHashArgCaseInsensitiveUTF8
+## ngramMinHashArgCaseInsensitiveUTF8 {#ngramminhashargcaseinsensitiveutf8}
 
 Splits a UTF-8 string into n-grams of `ngramsize` symbols and returns the n-grams with minimum and maximum hashes, calculated by the [ngramMinHashCaseInsensitiveUTF8](#ngramminhashcaseinsensitiveutf8) function with the same input. Is case insensitive.
 
 **Syntax**
 
-```sql
+``` sql
 ngramMinHashArgCaseInsensitiveUTF8(string[, ngramsize, hashnum])
 ```
 
@@ -1231,19 +1171,19 @@ Type: [Tuple](../../sql-reference/data-types/tuple.md)([Tuple](../../sql-referen
 
 Query:
 
-```sql
+``` sql
 SELECT ngramMinHashArgCaseInsensitiveUTF8('ClickHouse') AS Tuple;
 ```
 
 Result:
 
-```response
+``` text
 ┌─Tuple─────────────────────────────────────────────────────────────────────────┐
 │ (('ckH','ous','ick','lic','kHo','use'),('kHo','lic','ick','ous','ckH','Hou')) │
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## wordShingleMinHash
+## wordShingleMinHash {#wordshingleminhash}
 
 Splits a ASCII string into parts (shingles) of `shinglesize` words and calculates hash values for each word shingle. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case sensitive.
 
@@ -1251,7 +1191,7 @@ Can be used for detection of semi-duplicate strings with [tupleHammingDistance](
 
 **Syntax**
 
-```sql
+``` sql
 wordShingleMinHash(string[, shinglesize, hashnum])
 ```
 
@@ -1271,19 +1211,19 @@ Type: [Tuple](../../sql-reference/data-types/tuple.md)([UInt64](../../sql-refere
 
 Query:
 
-```sql
+``` sql
 SELECT wordShingleMinHash('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).') AS Tuple;
 ```
 
 Result:
 
-```response
+``` text
 ┌─Tuple──────────────────────────────────────┐
 │ (16452112859864147620,5844417301642981317) │
 └────────────────────────────────────────────┘
 ```
 
-## wordShingleMinHashCaseInsensitive
+## wordShingleMinHashCaseInsensitive {#wordshingleminhashcaseinsensitive}
 
 Splits a ASCII string into parts (shingles) of `shinglesize` words and calculates hash values for each word shingle. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case insensitive.
 
@@ -1291,7 +1231,7 @@ Can be used for detection of semi-duplicate strings with [tupleHammingDistance](
 
 **Syntax**
 
-```sql
+``` sql
 wordShingleMinHashCaseInsensitive(string[, shinglesize, hashnum])
 ```
 
@@ -1311,19 +1251,19 @@ Type: [Tuple](../../sql-reference/data-types/tuple.md)([UInt64](../../sql-refere
 
 Query:
 
-```sql
+``` sql
 SELECT wordShingleMinHashCaseInsensitive('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).') AS Tuple;
 ```
 
 Result:
 
-```response
+``` text
 ┌─Tuple─────────────────────────────────────┐
 │ (3065874883688416519,1634050779997673240) │
 └───────────────────────────────────────────┘
 ```
 
-## wordShingleMinHashUTF8
+## wordShingleMinHashUTF8 {#wordshingleminhashutf8}
 
 Splits a UTF-8 string into parts (shingles) of `shinglesize` words and calculates hash values for each word shingle. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case sensitive.
 
@@ -1331,7 +1271,7 @@ Can be used for detection of semi-duplicate strings with [tupleHammingDistance](
 
 **Syntax**
 
-```sql
+``` sql
 wordShingleMinHashUTF8(string[, shinglesize, hashnum])
 ```
 
@@ -1351,19 +1291,19 @@ Type: [Tuple](../../sql-reference/data-types/tuple.md)([UInt64](../../sql-refere
 
 Query:
 
-```sql
+``` sql
 SELECT wordShingleMinHashUTF8('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).') AS Tuple;
 ```
 
 Result:
 
-```response
+``` text
 ┌─Tuple──────────────────────────────────────┐
 │ (16452112859864147620,5844417301642981317) │
 └────────────────────────────────────────────┘
 ```
 
-## wordShingleMinHashCaseInsensitiveUTF8
+## wordShingleMinHashCaseInsensitiveUTF8 {#wordshingleminhashcaseinsensitiveutf8}
 
 Splits a UTF-8 string into parts (shingles) of `shinglesize` words and calculates hash values for each word shingle. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case insensitive.
 
@@ -1371,7 +1311,7 @@ Can be used for detection of semi-duplicate strings with [tupleHammingDistance](
 
 **Syntax**
 
-```sql
+``` sql
 wordShingleMinHashCaseInsensitiveUTF8(string[, shinglesize, hashnum])
 ```
 
@@ -1391,25 +1331,25 @@ Type: [Tuple](../../sql-reference/data-types/tuple.md)([UInt64](../../sql-refere
 
 Query:
 
-```sql
+``` sql
 SELECT wordShingleMinHashCaseInsensitiveUTF8('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).') AS Tuple;
 ```
 
 Result:
 
-```response
+``` text
 ┌─Tuple─────────────────────────────────────┐
 │ (3065874883688416519,1634050779997673240) │
 └───────────────────────────────────────────┘
 ```
 
-## wordShingleMinHashArg
+## wordShingleMinHashArg {#wordshingleminhasharg}
 
 Splits a ASCII string into parts (shingles) of `shinglesize` words each and returns the shingles with minimum and maximum word hashes, calculated by the [wordshingleMinHash](#wordshingleminhash) function with the same input. Is case sensitive.
 
 **Syntax**
 
-```sql
+``` sql
 wordShingleMinHashArg(string[, shinglesize, hashnum])
 ```
 
@@ -1429,25 +1369,25 @@ Type: [Tuple](../../sql-reference/data-types/tuple.md)([Tuple](../../sql-referen
 
 Query:
 
-```sql
+``` sql
 SELECT wordShingleMinHashArg('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).', 1, 3) AS Tuple;
 ```
 
 Result:
 
-```response
+``` text
 ┌─Tuple─────────────────────────────────────────────────────────────────┐
 │ (('OLAP','database','analytical'),('online','oriented','processing')) │
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
-## wordShingleMinHashArgCaseInsensitive
+## wordShingleMinHashArgCaseInsensitive {#wordshingleminhashargcaseinsensitive}
 
 Splits a ASCII string into parts (shingles) of `shinglesize` words each and returns the shingles with minimum and maximum word hashes, calculated by the [wordShingleMinHashCaseInsensitive](#wordshingleminhashcaseinsensitive) function with the same input. Is case insensitive.
 
 **Syntax**
 
-```sql
+``` sql
 wordShingleMinHashArgCaseInsensitive(string[, shinglesize, hashnum])
 ```
 
@@ -1467,25 +1407,25 @@ Type: [Tuple](../../sql-reference/data-types/tuple.md)([Tuple](../../sql-referen
 
 Query:
 
-```sql
+``` sql
 SELECT wordShingleMinHashArgCaseInsensitive('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).', 1, 3) AS Tuple;
 ```
 
 Result:
 
-```response
+``` text
 ┌─Tuple──────────────────────────────────────────────────────────────────┐
 │ (('queries','database','analytical'),('oriented','processing','DBMS')) │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-## wordShingleMinHashArgUTF8
+## wordShingleMinHashArgUTF8 {#wordshingleminhashargutf8}
 
 Splits a UTF-8 string into parts (shingles) of `shinglesize` words each and returns the shingles with minimum and maximum word hashes, calculated by the [wordShingleMinHashUTF8](#wordshingleminhashutf8) function with the same input. Is case sensitive.
 
 **Syntax**
 
-```sql
+``` sql
 wordShingleMinHashArgUTF8(string[, shinglesize, hashnum])
 ```
 
@@ -1505,25 +1445,25 @@ Type: [Tuple](../../sql-reference/data-types/tuple.md)([Tuple](../../sql-referen
 
 Query:
 
-```sql
+``` sql
 SELECT wordShingleMinHashArgUTF8('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).', 1, 3) AS Tuple;
 ```
 
 Result:
 
-```response
+``` text
 ┌─Tuple─────────────────────────────────────────────────────────────────┐
 │ (('OLAP','database','analytical'),('online','oriented','processing')) │
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
-## wordShingleMinHashArgCaseInsensitiveUTF8
+## wordShingleMinHashArgCaseInsensitiveUTF8 {#wordshingleminhashargcaseinsensitiveutf8}
 
 Splits a UTF-8 string into parts (shingles) of `shinglesize` words each and returns the shingles with minimum and maximum word hashes, calculated by the [wordShingleMinHashCaseInsensitiveUTF8](#wordshingleminhashcaseinsensitiveutf8) function with the same input. Is case insensitive.
 
 **Syntax**
 
-```sql
+``` sql
 wordShingleMinHashArgCaseInsensitiveUTF8(string[, shinglesize, hashnum])
 ```
 
@@ -1543,13 +1483,13 @@ Type: [Tuple](../../sql-reference/data-types/tuple.md)([Tuple](../../sql-referen
 
 Query:
 
-```sql
+``` sql
 SELECT wordShingleMinHashArgCaseInsensitiveUTF8('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).', 1, 3) AS Tuple;
 ```
 
 Result:
 
-```response
+``` text
 ┌─Tuple──────────────────────────────────────────────────────────────────┐
 │ (('queries','database','analytical'),('oriented','processing','DBMS')) │
 └────────────────────────────────────────────────────────────────────────┘

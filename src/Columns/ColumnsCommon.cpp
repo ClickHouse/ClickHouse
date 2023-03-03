@@ -2,14 +2,13 @@
 #include <Columns/ColumnVector.h>
 #include <Common/typeid_cast.h>
 #include <Common/HashTable/HashSet.h>
-#include <bit>
 #include "ColumnsCommon.h"
 
 
 namespace DB
 {
 
-#if defined(__SSE2__)
+#if defined(__SSE2__) && defined(__POPCNT__)
 /// Transform 64-byte mask to 64-bit mask.
 static UInt64 toBits64(const Int8 * bytes64)
 {
@@ -28,7 +27,7 @@ static UInt64 toBits64(const Int8 * bytes64)
 }
 #endif
 
-size_t countBytesInFilter(const UInt8 * filt, size_t start, size_t end)
+size_t countBytesInFilter(const UInt8 * filt, size_t sz)
 {
     size_t count = 0;
 
@@ -38,20 +37,18 @@ size_t countBytesInFilter(const UInt8 * filt, size_t start, size_t end)
       */
 
     const Int8 * pos = reinterpret_cast<const Int8 *>(filt);
-    pos += start;
+    const Int8 * end = pos + sz;
 
-    const Int8 * end_pos = pos + (end - start);
+#if defined(__SSE2__) && defined(__POPCNT__)
+    const Int8 * end64 = pos + sz / 64 * 64;
 
-#if defined(__SSE2__)
-    const Int8 * end_pos64 = pos + (end - start) / 64 * 64;
-
-    for (; pos < end_pos64; pos += 64)
-        count += std::popcount(toBits64(pos));
+    for (; pos < end64; pos += 64)
+        count += __builtin_popcountll(toBits64(pos));
 
     /// TODO Add duff device for tail?
 #endif
 
-    for (; pos < end_pos; ++pos)
+    for (; pos < end; ++pos)
         count += *pos != 0;
 
     return count;
@@ -59,10 +56,10 @@ size_t countBytesInFilter(const UInt8 * filt, size_t start, size_t end)
 
 size_t countBytesInFilter(const IColumn::Filter & filt)
 {
-    return countBytesInFilter(filt.data(), 0, filt.size());
+    return countBytesInFilter(filt.data(), filt.size());
 }
 
-size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * null_map, size_t start, size_t end)
+size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * null_map)
 {
     size_t count = 0;
 
@@ -71,20 +68,20 @@ size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * nu
       * It would be better to use != 0, then this does not allow SSE2.
       */
 
-    const Int8 * pos = reinterpret_cast<const Int8 *>(filt.data()) + start;
-    const Int8 * pos2 = reinterpret_cast<const Int8 *>(null_map) + start;
-    const Int8 * end_pos = pos + (end - start);
+    const Int8 * pos = reinterpret_cast<const Int8 *>(filt.data());
+    const Int8 * pos2 = reinterpret_cast<const Int8 *>(null_map);
+    const Int8 * end = pos + filt.size();
 
-#if defined(__SSE2__)
-    const Int8 * end_pos64 = pos + (end - start) / 64 * 64;
+#if defined(__SSE2__) && defined(__POPCNT__)
+    const Int8 * end64 = pos + filt.size() / 64 * 64;
 
-    for (; pos < end_pos64; pos += 64, pos2 += 64)
-        count += std::popcount(toBits64(pos) & ~toBits64(pos2));
+    for (; pos < end64; pos += 64, pos2 += 64)
+        count += __builtin_popcountll(toBits64(pos) & ~toBits64(pos2));
 
         /// TODO Add duff device for tail?
 #endif
 
-    for (; pos < end_pos; ++pos, ++pos2)
+    for (; pos < end; ++pos, ++pos2)
         count += (*pos & ~*pos2) != 0;
 
     return count;
@@ -99,18 +96,17 @@ std::vector<size_t> countColumnsSizeInSelector(IColumn::ColumnIndex num_columns,
     return counts;
 }
 
-bool memoryIsByte(const void * data, size_t start, size_t end, uint8_t byte)
+bool memoryIsByte(const void * data, size_t size, uint8_t byte)
 {
-    size_t size = end - start;
     if (size == 0)
         return true;
-    const auto * ptr = reinterpret_cast<const uint8_t *>(data) + start;
+    const auto * ptr = reinterpret_cast<const uint8_t *>(data);
     return *ptr == byte && memcmp(ptr, ptr + 1, size - 1) == 0;
 }
 
-bool memoryIsZero(const void * data, size_t start, size_t end)
+bool memoryIsZero(const void * data, size_t size)
 {
-    return memoryIsByte(data, start, end, 0x0);
+    return memoryIsByte(data, size, 0x0);
 }
 
 namespace ErrorCodes
@@ -260,7 +256,7 @@ namespace
             {
                 while (mask)
                 {
-                    size_t index = std::countr_zero(mask);
+                    size_t index = __builtin_ctzll(mask);
                     copy_array(offsets_pos + index);
                 #ifdef __BMI__
                     mask = _blsr_u64(mask);

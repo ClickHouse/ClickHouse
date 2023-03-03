@@ -7,7 +7,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <boost/range/algorithm/set_algorithm.hpp>
-#include <boost/range/algorithm/copy.hpp>
 #include <boost/range/algorithm_ext/push_back.hpp>
 #include <base/sort.h>
 
@@ -285,56 +284,6 @@ std::vector<UUID> RolesOrUsersSet::getMatchingIDs(const AccessControl & access_c
 bool operator ==(const RolesOrUsersSet & lhs, const RolesOrUsersSet & rhs)
 {
     return (lhs.all == rhs.all) && (lhs.ids == rhs.ids) && (lhs.except_ids == rhs.except_ids);
-}
-
-std::vector<UUID> RolesOrUsersSet::findDependencies() const
-{
-    std::vector<UUID> res;
-    boost::range::copy(ids, std::back_inserter(res));
-    boost::range::copy(except_ids, std::back_inserter(res));
-    return res;
-}
-
-void RolesOrUsersSet::replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids)
-{
-    std::vector<UUID> new_ids;
-
-    for (auto it = ids.begin(); it != ids.end();)
-    {
-        auto id = *it;
-        auto it_new_id = old_to_new_ids.find(id);
-        if (it_new_id != old_to_new_ids.end())
-        {
-            auto new_id = it_new_id->second;
-            new_ids.push_back(new_id);
-            it = ids.erase(it);
-        }
-        else
-        {
-            ++it;
-        }
-    }
-
-    boost::range::copy(new_ids, std::inserter(ids, ids.end()));
-    new_ids.clear();
-
-    for (auto it = except_ids.begin(); it != except_ids.end();)
-    {
-        auto id = *it;
-        auto it_new_id = old_to_new_ids.find(id);
-        if (it_new_id != old_to_new_ids.end())
-        {
-            auto new_id = it_new_id->second;
-            new_ids.push_back(new_id);
-            it = except_ids.erase(it);
-        }
-        else
-        {
-            ++it;
-        }
-    }
-
-    boost::range::copy(new_ids, std::inserter(except_ids, except_ids.end()));
 }
 
 }

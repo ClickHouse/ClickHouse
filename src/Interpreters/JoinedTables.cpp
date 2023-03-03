@@ -1,13 +1,10 @@
 #include <Interpreters/JoinedTables.h>
 
-#include <Core/SettingsEnums.h>
-
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/InJoinSubqueriesPreprocessor.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/getTableExpressions.h>
-#include <Functions/FunctionsExternalDictionaries.h>
 
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTFunction.h>
@@ -60,18 +57,9 @@ void replaceJoinedTable(const ASTSelectQuery & select_query)
     if (!join || !join->table_expression)
         return;
 
-    const auto & table_join = join->table_join->as<ASTTableJoin &>();
-
     /// TODO: Push down for CROSS JOIN is not OK [disabled]
-    if (table_join.kind == JoinKind::Cross)
-        return;
-
-    /* Do not push down predicates for ASOF because it can lead to incorrect results
-     * (for example, if we will filter a suitable row before joining and will choose another, not the closest row).
-     * ANY join behavior can also be different with this optimization,
-     * but it's ok because we don't guarantee which row to choose for ANY, unlike ASOF, where we have to pick the closest one.
-     */
-    if (table_join.strictness == JoinStrictness::Asof)
+    const auto & table_join = join->table_join->as<ASTTableJoin &>();
+    if (table_join.kind == ASTTableJoin::Kind::Cross)
         return;
 
     auto & table_expr = join->table_expression->as<ASTTableExpression &>();
@@ -173,13 +161,12 @@ using RenameQualifiedIdentifiersVisitor = InDepthNodeVisitor<RenameQualifiedIden
 
 }
 
-JoinedTables::JoinedTables(ContextPtr context_, const ASTSelectQuery & select_query_, bool include_all_columns_)
+JoinedTables::JoinedTables(ContextPtr context_, const ASTSelectQuery & select_query, bool include_all_columns_)
     : context(context_)
-    , table_expressions(getTableExpressions(select_query_))
+    , table_expressions(getTableExpressions(select_query))
     , include_all_columns(include_all_columns_)
-    , left_table_expression(extractTableExpression(select_query_, 0))
-    , left_db_and_table(getDatabaseAndTable(select_query_, 0))
-    , select_query(select_query_)
+    , left_table_expression(extractTableExpression(select_query, 0))
+    , left_db_and_table(getDatabaseAndTable(select_query, 0))
 {}
 
 bool JoinedTables::isLeftTableSubquery() const
@@ -207,7 +194,7 @@ StoragePtr JoinedTables::getLeftTableStorage()
         return {};
 
     if (isLeftTableFunction())
-        return context->getQueryContext()->executeTableFunction(left_table_expression, &select_query);
+        return context->getQueryContext()->executeTableFunction(left_table_expression);
 
     StorageID table_id = StorageID::createEmpty();
     if (left_db_and_table)
@@ -305,7 +292,6 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
         return {};
 
     auto settings = context->getSettingsRef();
-    MultiEnum<JoinAlgorithm> join_algorithm = settings.join_algorithm;
     auto table_join = std::make_shared<TableJoin>(settings, context->getTemporaryVolume());
 
     const ASTTablesInSelectQueryElement * ast_join = select_query.join();
@@ -319,32 +305,9 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
         if (storage)
         {
             if (auto storage_join = std::dynamic_pointer_cast<StorageJoin>(storage); storage_join)
-            {
                 table_join->setStorageJoin(storage_join);
-            }
-
-            if (auto storage_dict = std::dynamic_pointer_cast<StorageDictionary>(storage);
-                storage_dict && join_algorithm.isSet(JoinAlgorithm::DIRECT))
-            {
-                FunctionDictHelper dictionary_helper(context);
-
-                auto dictionary_name = storage_dict->getDictionaryName();
-                auto dictionary = dictionary_helper.getDictionary(dictionary_name);
-                if (!dictionary)
-                {
-                    LOG_TRACE(&Poco::Logger::get("JoinedTables"), "Can't use dictionary join: dictionary '{}' was not found", dictionary_name);
-                    return nullptr;
-                }
-
-                auto dictionary_kv = std::dynamic_pointer_cast<const IKeyValueEntity>(dictionary);
-                table_join->setStorageJoin(dictionary_kv);
-            }
-
-            if (auto storage_kv = std::dynamic_pointer_cast<IKeyValueEntity>(storage);
-                storage_kv && join_algorithm.isSet(JoinAlgorithm::DIRECT))
-            {
-                table_join->setStorageJoin(storage_kv);
-            }
+            else if (auto storage_dict = std::dynamic_pointer_cast<StorageDictionary>(storage); storage_dict)
+                table_join->setStorageJoin(storage_dict);
         }
     }
 

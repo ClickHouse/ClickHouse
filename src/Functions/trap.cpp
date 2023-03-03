@@ -14,7 +14,6 @@
 #include <cstdlib>
 #include <unistd.h>
 #include <sys/mman.h>
-#include <dlfcn.h>
 
 
 namespace DB
@@ -26,7 +25,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_ALLOCATE_MEMORY;
-    extern const int CANNOT_DLOPEN;
 }
 
 
@@ -138,7 +136,7 @@ public:
             }
             else if (mode == "access context")
             {
-                (void)context->getCurrentQueryId();
+                (void)context.getCurrentQueryId();
             }
             else if (mode == "stack overflow")
             {
@@ -168,12 +166,6 @@ public:
                     maps.push_back(map);
                 }
             }
-            else if (mode == "dlopen")
-            {
-                void * handle = dlopen("libc.so.6", RTLD_NOW);
-                if (!handle)
-                    throw Exception(ErrorCodes::CANNOT_DLOPEN, "Cannot dlopen: ({})", dlerror()); // NOLINT(concurrency-mt-unsafe) // MT-Safe on Linux, see man dlerror
-            }
             else
                 throw Exception("Unknown trap mode", ErrorCodes::BAD_ARGUMENTS);
         }
@@ -185,11 +177,19 @@ public:
 };
 
 
-REGISTER_FUNCTION(Trap)
+void registerFunctionTrap(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionTrap>();
 }
 
+}
+
+#else
+
+namespace DB
+{
+    class FunctionFactory;
+    void registerFunctionTrap(FunctionFactory &) {}
 }
 
 #endif

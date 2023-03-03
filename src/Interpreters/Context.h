@@ -7,32 +7,22 @@
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/MergeTreeTransactionHolder.h>
 #include <Parsers/IAST_fwd.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Storages/IStorage_fwd.h>
 #include <Common/MultiVersion.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/RemoteHostFilter.h>
-#include <Common/ThreadPool.h>
 #include <Common/isLocalAddress.h>
 #include <base/types.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
-#include <Storages/ColumnsDescription.h>
-#include <IO/IResourceManager.h>
 
-#include <Server/HTTP/HTTPContext.h>
-
-
-#include "config.h"
+#include "config_core.h"
 
 #include <boost/container/flat_set.hpp>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
-
-#include <thread>
 #include <exception>
 
 
@@ -50,8 +40,6 @@ struct User;
 using UserPtr = std::shared_ptr<const User>;
 struct EnabledRolesInfo;
 class EnabledRowPolicies;
-struct RowPolicyFilter;
-using RowPolicyFilterPtr = std::shared_ptr<const RowPolicyFilter>;
 class EnabledQuota;
 struct QuotaUsage;
 class AccessFlags;
@@ -60,14 +48,13 @@ class AccessRightsElements;
 enum class RowPolicyFilterType;
 class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
+class ExternalModelsLoader;
 class ExternalUserDefinedExecutableFunctionsLoader;
-class IUserDefinedSQLObjectsLoader;
 class InterserverCredentials;
 using InterserverCredentialsPtr = std::shared_ptr<const InterserverCredentials>;
 class InterserverIOHandler;
 class BackgroundSchedulePool;
 class MergeList;
-class MovesList;
 class ReplicatedFetchList;
 class Cluster;
 class Compiler;
@@ -76,7 +63,6 @@ class MMappedFileCache;
 class UncompressedCache;
 class ProcessList;
 class QueryStatus;
-using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 class Macros;
 struct Progress;
 struct FileProgress;
@@ -92,11 +78,6 @@ class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
 class ZooKeeperLog;
 class SessionLog;
-class BackupsWorker;
-class TransactionsInfoLog;
-class ProcessorsProfileLog;
-class FilesystemCacheLog;
-class AsynchronousInsertLog;
 struct MergeTreeSettings;
 class StorageS3Settings;
 class IDatabase;
@@ -111,7 +92,6 @@ class AccessControl;
 class Credentials;
 class GSSAcceptorContext;
 struct SettingsConstraintsAndProfileIDs;
-class SettingsProfileElements;
 class RemoteHostFilter;
 struct StorageID;
 class IDisk;
@@ -136,7 +116,6 @@ struct PartUUIDs;
 using PartUUIDsPtr = std::shared_ptr<PartUUIDs>;
 class KeeperDispatcher;
 class Session;
-struct WriteSettings;
 
 class IInputFormat;
 class IOutputFormat;
@@ -173,14 +152,6 @@ using ReadTaskCallback = std::function<String()>;
 
 using MergeTreeReadTaskCallback = std::function<std::optional<PartitionReadResponse>(PartitionReadRequest)>;
 
-class TemporaryDataOnDiskScope;
-using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
-
-#if USE_ROCKSDB
-class MergeTreeMetadataCache;
-using MergeTreeMetadataCachePtr = std::shared_ptr<MergeTreeMetadataCache>;
-#endif
-
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
 struct IHostContext
@@ -207,7 +178,6 @@ struct SharedContextHolder
 private:
     std::unique_ptr<ContextSharedPart> shared;
 };
-
 
 /** A set of known objects that can be used in the query.
   * Consists of a shared part (always common to all sessions and queries)
@@ -240,16 +210,12 @@ private:
     using FileProgressCallback = std::function<void(const FileProgress & progress)>;
     FileProgressCallback file_progress_callback; /// Callback for tracking progress of file loading.
 
-    std::weak_ptr<QueryStatus> process_list_elem;  /// For tracking total resource usage for query.
-    bool has_process_list_elem = false;     /// It's impossible to check if weak_ptr was initialized or not
+    QueryStatus * process_list_elem = nullptr;  /// For tracking total resource usage for query.
     StorageID insertion_table = StorageID::createEmpty();  /// Saved insertion table in query context
     bool is_distributed = false;  /// Whether the current context it used for distributed query
 
     String default_format;  /// Format, used when server formats data by itself and if query does not have FORMAT specification.
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
-
-    String insert_format; /// Format, used in insert query.
-
     TemporaryTablesMapping external_tables_mapping;
     Scalars scalars;
     /// Used to store constant values which are different on each instance during distributed plan, such as _shard_num.
@@ -308,43 +274,6 @@ private:
     /// Record names of created objects of factories (for testing, etc)
     struct QueryFactoriesInfo
     {
-        QueryFactoriesInfo() = default;
-
-        QueryFactoriesInfo(const QueryFactoriesInfo & rhs)
-        {
-            std::lock_guard<std::mutex> lock(rhs.mutex);
-            aggregate_functions = rhs.aggregate_functions;
-            aggregate_function_combinators = rhs.aggregate_function_combinators;
-            database_engines = rhs.database_engines;
-            data_type_families = rhs.data_type_families;
-            dictionaries = rhs.dictionaries;
-            formats = rhs.formats;
-            functions = rhs.functions;
-            storages = rhs.storages;
-            table_functions = rhs.table_functions;
-        }
-
-        QueryFactoriesInfo(QueryFactoriesInfo && rhs) = delete;
-
-        QueryFactoriesInfo & operator=(QueryFactoriesInfo rhs)
-        {
-            swap(rhs);
-            return *this;
-        }
-
-        void swap(QueryFactoriesInfo & rhs)
-        {
-            std::swap(aggregate_functions, rhs.aggregate_functions);
-            std::swap(aggregate_function_combinators, rhs.aggregate_function_combinators);
-            std::swap(database_engines, rhs.database_engines);
-            std::swap(data_type_families, rhs.data_type_families);
-            std::swap(dictionaries, rhs.dictionaries);
-            std::swap(formats, rhs.formats);
-            std::swap(functions, rhs.functions);
-            std::swap(storages, rhs.storages);
-            std::swap(table_functions, rhs.table_functions);
-        }
-
         std::unordered_set<std::string> aggregate_functions;
         std::unordered_set<std::string> aggregate_function_combinators;
         std::unordered_set<std::string> database_engines;
@@ -354,11 +283,9 @@ private:
         std::unordered_set<std::string> functions;
         std::unordered_set<std::string> storages;
         std::unordered_set<std::string> table_functions;
-
-        mutable std::mutex mutex;
     };
 
-    /// Needs to be changed while having const context in factories methods
+    /// Needs to be chandged while having const context in factories methods
     mutable QueryFactoriesInfo query_factories_info;
 
     /// TODO: maybe replace with temporary tables?
@@ -375,34 +302,10 @@ private:
     /// A flag, used to distinguish between user query and internal query to a database engine (MaterializedPostgreSQL).
     bool is_internal_query = false;
 
-    inline static ContextPtr global_context_instance;
 
-    /// A flag, used to mark if reader needs to apply deleted rows mask.
-    bool apply_deleted_mask = true;
-
-    /// Temporary data for query execution accounting.
-    TemporaryDataOnDiskScopePtr temp_data_on_disk;
 public:
-    /// Some counters for current query execution.
-    /// Most of them are workarounds and should be removed in the future.
-    struct KitchenSink
-    {
-        std::atomic<size_t> analyze_counter = 0;
-
-        KitchenSink() = default;
-
-        KitchenSink(const KitchenSink & rhs)
-            : analyze_counter(rhs.analyze_counter.load())
-        {}
-
-        KitchenSink & operator=(const KitchenSink & rhs)
-        {
-            analyze_counter = rhs.analyze_counter.load();
-            return *this;
-        }
-    };
-
-    KitchenSink kitchen_sink;
+    // Top-level OpenTelemetry trace context for the query. Makes sense only for a query context.
+    OpenTelemetryTraceContext query_trace_context;
 
 private:
     using SampleBlockCache = std::unordered_map<std::string, Block>;
@@ -426,11 +329,6 @@ private:
                                                     /// thousands of signatures.
                                                     /// And I hope it will be replaced with more common Transaction sometime.
 
-    MergeTreeTransactionPtr merge_tree_transaction;     /// Current transaction context. Can be inside session or query context.
-                                                        /// It's shared with all children contexts.
-    MergeTreeTransactionHolder merge_tree_transaction_holder;   /// It will rollback or commit transaction on Context destruction.
-
-    /// Use copy constructor or createGlobal() instead
     Context();
     Context(const Context &);
     Context & operator=(const Context &);
@@ -454,10 +352,7 @@ public:
     /// A list of warnings about server configuration to place in `system.warnings` table.
     Strings getWarnings() const;
 
-    VolumePtr getTemporaryVolume() const; /// TODO: remove, use `getTempDataOnDisk`
-
-    TemporaryDataOnDiskScopePtr getTempDataOnDisk() const;
-    void setTempDataOnDisk(TemporaryDataOnDiskScopePtr temp_data_on_disk_);
+    VolumePtr getTemporaryVolume() const;
 
     void setPath(const String & path);
     void setFlagsPath(const String & path);
@@ -465,11 +360,9 @@ public:
     void setDictionariesLibPath(const String & path);
     void setUserScriptsPath(const String & path);
 
-    void addWarningMessage(const String & msg) const;
+    void addWarningMessage(const String & msg);
 
-    void setTemporaryStorageInCache(const String & cache_disk_name, size_t max_size);
-    void setTemporaryStoragePolicy(const String & policy_name, size_t max_size);
-    void setTemporaryStoragePath(const String & path, size_t max_size);
+    VolumePtr setTemporaryStorage(const String & path, const String & policy_name = "");
 
     using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
@@ -517,13 +410,13 @@ public:
     /// Checks access rights.
     /// Empty database means the current database.
     void checkAccess(const AccessFlags & flags) const;
-    void checkAccess(const AccessFlags & flags, std::string_view database) const;
-    void checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table) const;
-    void checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, std::string_view column) const;
-    void checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, const std::vector<std::string_view> & columns) const;
-    void checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, const Strings & columns) const;
+    void checkAccess(const AccessFlags & flags, const std::string_view & database) const;
+    void checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table) const;
+    void checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column) const;
+    void checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) const;
+    void checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns) const;
     void checkAccess(const AccessFlags & flags, const StorageID & table_id) const;
-    void checkAccess(const AccessFlags & flags, const StorageID & table_id, std::string_view column) const;
+    void checkAccess(const AccessFlags & flags, const StorageID & table_id, const std::string_view & column) const;
     void checkAccess(const AccessFlags & flags, const StorageID & table_id, const std::vector<std::string_view> & columns) const;
     void checkAccess(const AccessFlags & flags, const StorageID & table_id, const Strings & columns) const;
     void checkAccess(const AccessRightsElement & element) const;
@@ -531,7 +424,7 @@ public:
 
     std::shared_ptr<const ContextAccess> getAccess() const;
 
-    RowPolicyFilterPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const;
+    ASTPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const;
 
     /// Finds and sets extra row policies to be used based on `client_info.initial_user`,
     /// if the initial user exists.
@@ -542,10 +435,6 @@ public:
 
     std::shared_ptr<const EnabledQuota> getQuota() const;
     std::optional<QuotaUsage> getQuotaUsage() const;
-
-    /// Resource management related
-    ResourceManagerPtr getResourceManager() const;
-    ClassifierPtr getClassifier() const;
 
     /// We have to copy external tables inside executeQuery() to track limits. Therefore, set callback for it. Must set once.
     void setExternalTablesInitializer(ExternalTablesInitializer && initializer);
@@ -619,9 +508,7 @@ public:
     const QueryFactoriesInfo & getQueryFactoriesInfo() const { return query_factories_info; }
     void addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const;
 
-    /// For table functions s3/file/url/hdfs/input we can use structure from
-    /// insertion table depending on select expression.
-    StoragePtr executeTableFunction(const ASTPtr & table_expression, const ASTSelectQuery * select_query_hint = nullptr);
+    StoragePtr executeTableFunction(const ASTPtr & table_expression);
 
     void addViewSource(const StoragePtr & storage);
     StoragePtr getViewSource() const;
@@ -638,9 +525,8 @@ public:
     void setCurrentDatabaseNameInGlobalContext(const String & name);
     void setCurrentQueryId(const String & query_id);
 
-    void killCurrentQuery() const;
+    void killCurrentQuery();
 
-    bool hasInsertionTable() const { return !insertion_table.empty(); }
     void setInsertionTable(StorageID db_and_table) { insertion_table = std::move(db_and_table); }
     const StorageID & getInsertionTable() const { return insertion_table; }
 
@@ -650,9 +536,6 @@ public:
     String getDefaultFormat() const;    /// If default_format is not specified, some global default format is returned.
     void setDefaultFormat(const String & name);
 
-    String getInsertFormat() const;
-    void setInsertFormat(const String & name);
-
     MultiVersion<Macros>::Version getMacros() const;
     void setMacros(std::unique_ptr<Macros> && macros);
 
@@ -660,46 +543,40 @@ public:
     void setSettings(const Settings & settings_);
 
     /// Set settings by name.
-    void setSetting(std::string_view name, const String & value);
-    void setSetting(std::string_view name, const Field & value);
+    void setSetting(const StringRef & name, const String & value);
+    void setSetting(const StringRef & name, const Field & value);
     void applySettingChange(const SettingChange & change);
     void applySettingsChanges(const SettingsChanges & changes);
 
     /// Checks the constraints.
-    void checkSettingsConstraints(const SettingsProfileElements & profile_elements) const;
     void checkSettingsConstraints(const SettingChange & change) const;
     void checkSettingsConstraints(const SettingsChanges & changes) const;
     void checkSettingsConstraints(SettingsChanges & changes) const;
     void clampToSettingsConstraints(SettingsChanges & changes) const;
-    void checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
-
-    /// Reset settings to default value
-    void resetSettingsToDefaultValue(const std::vector<String> & names);
 
     /// Returns the current constraints (can return null).
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfiles() const;
 
+    const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     const ExternalDictionariesLoader & getExternalDictionariesLoader() const;
+    const ExternalModelsLoader & getExternalModelsLoader() const;
+    const ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader() const;
+    EmbeddedDictionaries & getEmbeddedDictionaries();
     ExternalDictionariesLoader & getExternalDictionariesLoader();
     ExternalDictionariesLoader & getExternalDictionariesLoaderUnlocked();
-    const EmbeddedDictionaries & getEmbeddedDictionaries() const;
-    EmbeddedDictionaries & getEmbeddedDictionaries();
-    void tryCreateEmbeddedDictionaries(const Poco::Util::AbstractConfiguration & config) const;
-    void loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration & config);
-
-    const ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader() const;
     ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader();
     ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoaderUnlocked();
-    const IUserDefinedSQLObjectsLoader & getUserDefinedSQLObjectsLoader() const;
-    IUserDefinedSQLObjectsLoader & getUserDefinedSQLObjectsLoader();
+    ExternalModelsLoader & getExternalModelsLoader();
+    ExternalModelsLoader & getExternalModelsLoaderUnlocked();
+    void tryCreateEmbeddedDictionaries(const Poco::Util::AbstractConfiguration & config) const;
+    void loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration & config);
     void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
+    void loadOrReloadModels(const Poco::Util::AbstractConfiguration & config);
 
 #if USE_NLP
     SynonymsExtensions & getSynonymsExtensions() const;
     Lemmatizers & getLemmatizers() const;
 #endif
-
-    BackupsWorker & getBackupsWorker() const;
 
     /// I/O formats.
     InputFormatPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings = std::nullopt) const;
@@ -708,7 +585,6 @@ public:
     OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const;
 
     InterserverIOHandler & getInterserverIOHandler();
-    const InterserverIOHandler & getInterserverIOHandler() const;
 
     /// How other servers can access this for downloading replicated data.
     void setInterserverIOAddress(const String & host, UInt16 port);
@@ -716,7 +592,7 @@ public:
 
     /// Credentials which server will use to communicate with others
     void updateInterserverCredentials(const Poco::Util::AbstractConfiguration & config);
-    InterserverCredentialsPtr getInterserverCredentials() const;
+    InterserverCredentialsPtr getInterserverCredentials();
 
     /// Interserver requests scheme (http or https)
     void setInterserverScheme(const String & scheme);
@@ -747,8 +623,6 @@ public:
 
     ContextMutablePtr getGlobalContext() const;
 
-    static ContextPtr getGlobalContextInstance() { return global_context_instance; }
-
     bool hasGlobalContext() const { return !global_context.expired(); }
     bool isGlobalContext() const
     {
@@ -777,9 +651,9 @@ public:
     /** Set in executeQuery and InterpreterSelectQuery. Then it is used in QueryPipeline,
       *  to update and monitor information about the total number of resources spent for the query.
       */
-    void setProcessListElement(QueryStatusPtr elem);
+    void setProcessListElement(QueryStatus * elem);
     /// Can return nullptr if the query was not inserted into the ProcessList.
-    QueryStatusPtr getProcessListElement() const;
+    QueryStatus * getProcessListElement() const;
 
     /// List all queries.
     ProcessList & getProcessList();
@@ -789,9 +663,6 @@ public:
 
     MergeList & getMergeList();
     const MergeList & getMergeList() const;
-
-    MovesList & getMovesList();
-    const MovesList & getMovesList() const;
 
     ReplicatedFetchList & getReplicatedFetchList();
     const ReplicatedFetchList & getReplicatedFetchList() const;
@@ -810,14 +681,8 @@ public:
 
     UInt32 getZooKeeperSessionUptime() const;
 
-#if USE_ROCKSDB
-    MergeTreeMetadataCachePtr getMergeTreeMetadataCache() const;
-    MergeTreeMetadataCachePtr tryGetMergeTreeMetadataCache() const;
-#endif
-
 #if USE_NURAFT
     std::shared_ptr<KeeperDispatcher> & getKeeperDispatcher() const;
-    std::shared_ptr<KeeperDispatcher> & tryGetKeeperDispatcher() const;
 #endif
     void initializeKeeperDispatcher(bool start_async) const;
     void shutdownKeeperDispatcher() const;
@@ -837,15 +702,14 @@ public:
     void setSystemZooKeeperLogAfterInitializationIfNeeded();
 
     /// Create a cache of uncompressed blocks of specified size. This can be done only once.
-    void setUncompressedCache(size_t max_size_in_bytes, const String & uncompressed_cache_policy);
+    void setUncompressedCache(size_t max_size_in_bytes);
     std::shared_ptr<UncompressedCache> getUncompressedCache() const;
     void dropUncompressedCache() const;
 
     /// Create a cache of marks of specified size. This can be done only once.
-    void setMarkCache(size_t cache_size_in_bytes, const String & mark_cache_policy);
+    void setMarkCache(size_t cache_size_in_bytes);
     std::shared_ptr<MarkCache> getMarkCache() const;
     void dropMarkCache() const;
-    ThreadPool & getLoadMarksThreadpool() const;
 
     /// Create a cache of index uncompressed blocks of specified size. This can be done only once.
     void setIndexUncompressedCache(size_t max_size_in_bytes);
@@ -881,8 +745,6 @@ public:
 
     ThrottlerPtr getReplicatedFetchesThrottler() const;
     ThrottlerPtr getReplicatedSendsThrottler() const;
-    ThrottlerPtr getRemoteReadThrottler() const;
-    ThrottlerPtr getRemoteWriteThrottler() const;
 
     /// Has distributed_ddl configuration or not.
     bool hasDistributedDDL() const;
@@ -908,10 +770,6 @@ public:
     /// Call after initialization before using trace collector.
     void initializeTraceCollector();
 
-#if USE_ROCKSDB
-    void initializeMergeTreeMetadataCache(const String & dir, size_t size);
-#endif
-
     bool hasTraceCollector() const;
 
     /// Nullptr if the query log is not ready for this moment.
@@ -925,10 +783,6 @@ public:
     std::shared_ptr<OpenTelemetrySpanLog> getOpenTelemetrySpanLog() const;
     std::shared_ptr<ZooKeeperLog> getZooKeeperLog() const;
     std::shared_ptr<SessionLog> getSessionLog() const;
-    std::shared_ptr<TransactionsInfoLog> getTransactionsInfoLog() const;
-    std::shared_ptr<ProcessorsProfileLog> getProcessorsProfileLog() const;
-    std::shared_ptr<FilesystemCacheLog> getFilesystemCacheLog() const;
-    std::shared_ptr<AsynchronousInsertLog> getAsynchronousInsertLog() const;
 
     /// Returns an object used to log operations with parts if it possible.
     /// Provide table name to make required checks.
@@ -962,7 +816,7 @@ public:
     StoragePolicyPtr getStoragePolicy(const String & name) const;
 
     /// Get the server uptime in seconds.
-    double getUptimeSeconds() const;
+    time_t getUptimeSeconds() const;
 
     using ConfigReloadCallback = std::function<void()>;
     void setConfigReloadCallback(ConfigReloadCallback && callback);
@@ -973,10 +827,7 @@ public:
     bool isInternalQuery() const { return is_internal_query; }
     void setInternalQuery(bool internal) { is_internal_query = internal; }
 
-    bool applyDeletedMask() const { return apply_deleted_mask; }
-    void setApplyDeletedMask(bool apply) { apply_deleted_mask = apply; }
-
-    ActionLocksManagerPtr getActionLocksManager() const;
+    ActionLocksManagerPtr getActionLocksManager();
 
     enum class ApplicationType
     {
@@ -984,7 +835,6 @@ public:
         CLIENT,         /// clickhouse-client
         LOCAL,          /// clickhouse-local
         KEEPER,         /// clickhouse-keeper (also daemon)
-        DISKS,          /// clickhouse-disks
     };
 
     ApplicationType getApplicationType() const;
@@ -1004,13 +854,8 @@ public:
     /// Query parameters for prepared statements.
     bool hasQueryParameters() const;
     const NameToNameMap & getQueryParameters() const;
-
-    /// Throws if parameter with the given name already set.
     void setQueryParameter(const String & name, const String & value);
     void setQueryParameters(const NameToNameMap & parameters) { query_parameters = parameters; }
-
-    /// Overrides values of existing parameters.
-    void addQueryParameters(const NameToNameMap & parameters);
 
     /// Add started bridge command. It will be killed after context destruction
     void addBridgeCommand(std::unique_ptr<ShellCommand> cmd) const;
@@ -1024,14 +869,6 @@ public:
     ZooKeeperMetadataTransactionPtr getZooKeeperMetadataTransaction() const;
     /// Removes context of current distributed DDL.
     void resetZooKeeperMetadataTransaction();
-
-    void checkTransactionsAreAllowed(bool explicit_tcl_query = false) const;
-    void initCurrentTransaction(MergeTreeTransactionPtr txn);
-    void setCurrentTransaction(MergeTreeTransactionPtr txn);
-    MergeTreeTransactionPtr getCurrentTransaction() const;
-
-    bool isServerCompletelyStarted() const;
-    void setServerCompletelyStarted();
 
     PartUUIDsPtr getPartUUIDs() const;
     PartUUIDsPtr getIgnoredPartUUIDs() const;
@@ -1047,29 +884,14 @@ public:
 
     /// Background executors related methods
     void initializeBackgroundExecutorsIfNeeded();
-    bool areBackgroundExecutorsInitialized();
 
     MergeMutateBackgroundExecutorPtr getMergeMutateExecutor() const;
     OrdinaryBackgroundExecutorPtr getMovesExecutor() const;
     OrdinaryBackgroundExecutorPtr getFetchesExecutor() const;
     OrdinaryBackgroundExecutorPtr getCommonExecutor() const;
 
-    enum class FilesystemReaderType
-    {
-        SYNCHRONOUS_LOCAL_FS_READER,
-        ASYNCHRONOUS_LOCAL_FS_READER,
-        ASYNCHRONOUS_REMOTE_FS_READER,
-    };
-
-    IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type) const;
-
-    ThreadPool & getThreadPoolWriter() const;
-
     /** Get settings for reading from filesystem. */
     ReadSettings getReadSettings() const;
-
-    /** Get settings for writing to filesystem. */
-    WriteSettings getWriteSettings() const;
 
 private:
     std::unique_lock<std::recursive_mutex> getLock() const;
@@ -1089,55 +911,6 @@ private:
     StoragePolicySelectorPtr getStoragePolicySelector(std::lock_guard<std::mutex> & lock) const;
 
     DiskSelectorPtr getDiskSelector(std::lock_guard<std::mutex> & /* lock */) const;
-};
-
-struct HTTPContext : public IHTTPContext
-{
-    explicit HTTPContext(ContextPtr context_)
-        : context(Context::createCopy(context_))
-    {}
-
-    uint64_t getMaxHstsAge() const override
-    {
-        return context->getSettingsRef().hsts_max_age;
-    }
-
-    uint64_t getMaxUriSize() const override
-    {
-        return context->getSettingsRef().http_max_uri_size;
-    }
-
-    uint64_t getMaxFields() const override
-    {
-        return context->getSettingsRef().http_max_fields;
-    }
-
-    uint64_t getMaxFieldNameSize() const override
-    {
-        return context->getSettingsRef().http_max_field_name_size;
-    }
-
-    uint64_t getMaxFieldValueSize() const override
-    {
-        return context->getSettingsRef().http_max_field_value_size;
-    }
-
-    uint64_t getMaxChunkSize() const override
-    {
-        return context->getSettingsRef().http_max_chunk_size;
-    }
-
-    Poco::Timespan getReceiveTimeout() const override
-    {
-        return context->getSettingsRef().http_receive_timeout;
-    }
-
-    Poco::Timespan getSendTimeout() const override
-    {
-        return context->getSettingsRef().http_send_timeout;
-    }
-
-    ContextPtr context;
 };
 
 }

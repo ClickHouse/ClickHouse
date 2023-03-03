@@ -1,7 +1,6 @@
 ---
-slug: /ru/sql-reference/statements/show
-sidebar_position: 37
-sidebar_label: SHOW
+toc_priority: 37
+toc_title: SHOW
 ---
 
 # SHOW Queries {#show-queries}
@@ -305,7 +304,7 @@ SHOW USERS
 
 ## SHOW ROLES {#show-roles-statement}
 
-Выводит список [ролей](../../operations/access-rights.md#role-management). Для просмотра параметров ролей, см. системные таблицы [system.roles](../../operations/system-tables/roles.md#system_tables-roles) и [system.role_grants](../../operations/system-tables/role-grants.md#system_tables-role_grants).
+Выводит список [ролей](../../operations/access-rights.md#role-management). Для просмотра параметров ролей, см. системные таблицы [system.roles](../../operations/system-tables/roles.md#system_tables-roles) и [system.role-grants](../../operations/system-tables/role-grants.md#system_tables-role_grants).
 
 ### Синтаксис {#show-roles-syntax}
 
@@ -367,9 +366,8 @@ SHOW ACCESS
 
 Возвращает список кластеров. Все доступные кластеры перечислены в таблице [system.clusters](../../operations/system-tables/clusters.md).
 
-:::info "Note"
+!!! info "Note"
     По запросу `SHOW CLUSTER name` вы получите содержимое таблицы system.clusters для этого кластера.
-:::
 
 ### Синтаксис {#show-cluster-syntax}
 

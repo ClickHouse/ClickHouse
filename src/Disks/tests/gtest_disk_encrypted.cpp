@@ -96,7 +96,7 @@ TEST_F(DiskEncryptedTest, WriteAndRead)
 
     /// Write a file.
     {
-        auto buf = encrypted_disk->writeFile("a.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, {});
+        auto buf = encrypted_disk->writeFile("a.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
         writeString(std::string_view{"Some text"}, *buf);
     }
 
@@ -122,7 +122,7 @@ TEST_F(DiskEncryptedTest, Append)
 
     /// Write a file (we use the append mode).
     {
-        auto buf = encrypted_disk->writeFile("a.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
+        auto buf = encrypted_disk->writeFile("a.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
         writeString(std::string_view{"Some text"}, *buf);
     }
 
@@ -132,7 +132,7 @@ TEST_F(DiskEncryptedTest, Append)
 
     /// Append the file.
     {
-        auto buf = encrypted_disk->writeFile("a.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
+        auto buf = encrypted_disk->writeFile("a.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
         writeString(std::string_view{" Another text"}, *buf);
     }
 
@@ -148,7 +148,7 @@ TEST_F(DiskEncryptedTest, Truncate)
 
     /// Write a file (we use the append mode).
     {
-        auto buf = encrypted_disk->writeFile("a.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
+        auto buf = encrypted_disk->writeFile("a.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
         writeString(std::string_view{"Some text"}, *buf);
     }
 
@@ -178,7 +178,7 @@ TEST_F(DiskEncryptedTest, ZeroFileSize)
 
     /// Write nothing to a file.
     {
-        auto buf = encrypted_disk->writeFile("a.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, {});
+        auto buf = encrypted_disk->writeFile("a.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
     }
 
     EXPECT_EQ(encrypted_disk->getFileSize("a.txt"), 0);
@@ -187,7 +187,7 @@ TEST_F(DiskEncryptedTest, ZeroFileSize)
 
     /// Append the file with nothing.
     {
-        auto buf = encrypted_disk->writeFile("a.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
+        auto buf = encrypted_disk->writeFile("a.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
     }
 
     EXPECT_EQ(encrypted_disk->getFileSize("a.txt"), 0);
@@ -211,7 +211,7 @@ TEST_F(DiskEncryptedTest, AnotherFolder)
 
     /// Write a file.
     {
-        auto buf = encrypted_disk->writeFile("a.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, {});
+        auto buf = encrypted_disk->writeFile("a.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
         writeString(std::string_view{"Some text"}, *buf);
     }
 
@@ -231,11 +231,11 @@ TEST_F(DiskEncryptedTest, RandomIV)
 
     /// Write two files with the same contents.
     {
-        auto buf = encrypted_disk->writeFile("a.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, {});
+        auto buf = encrypted_disk->writeFile("a.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
         writeString(std::string_view{"Some text"}, *buf);
     }
     {
-        auto buf = encrypted_disk->writeFile("b.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, {});
+        auto buf = encrypted_disk->writeFile("b.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
         writeString(std::string_view{"Some text"}, *buf);
     }
 
@@ -277,7 +277,7 @@ TEST_F(DiskEncryptedTest, RemoveFileDuringWriting)
     std::thread t1{[&]
     {
         for (size_t i = 0; i != n; ++i)
-            encrypted_disk->writeFile("a.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append, {});
+            encrypted_disk->writeFile("a.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
     }};
 
     std::thread t2{[&]

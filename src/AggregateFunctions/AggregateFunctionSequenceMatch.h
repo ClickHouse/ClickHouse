@@ -126,8 +126,8 @@ template <typename T, typename Data, typename Derived>
 class AggregateFunctionSequenceBase : public IAggregateFunctionDataHelper<Data, Derived>
 {
 public:
-    AggregateFunctionSequenceBase(const DataTypes & arguments, const Array & params, const String & pattern_, const DataTypePtr & result_type_)
-        : IAggregateFunctionDataHelper<Data, Derived>(arguments, params, result_type_)
+    AggregateFunctionSequenceBase(const DataTypes & arguments, const Array & params, const String & pattern_)
+        : IAggregateFunctionDataHelper<Data, Derived>(arguments, params)
         , pattern(pattern_)
     {
         arg_count = arguments.size();
@@ -163,7 +163,7 @@ public:
         this->data(place).deserialize(buf);
     }
 
-    bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
+    bool haveSameStateRepresentation(const IAggregateFunction & rhs) const override
     {
         return this->getName() == rhs.getName() && this->haveEqualArgumentTypes(rhs);
     }
@@ -272,7 +272,7 @@ private:
 
                     actions.emplace_back(PatternActionType::SpecificEvent, event_number - 1);
                     dfa_states.back().transition = DFATransition::SpecificEvent;
-                    dfa_states.back().event = static_cast<uint32_t>(event_number - 1);
+                    dfa_states.back().event = event_number - 1;
                     dfa_states.emplace_back();
                     conditions_in_pattern.set(event_number - 1);
                 }
@@ -617,11 +617,13 @@ class AggregateFunctionSequenceMatch final : public AggregateFunctionSequenceBas
 {
 public:
     AggregateFunctionSequenceMatch(const DataTypes & arguments, const Array & params, const String & pattern_)
-        : AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatch<T, Data>>(arguments, params, pattern_, std::make_shared<DataTypeUInt8>()) {}
+        : AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatch<T, Data>>(arguments, params, pattern_) {}
 
     using AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceMatch<T, Data>>::AggregateFunctionSequenceBase;
 
     String getName() const override { return "sequenceMatch"; }
+
+    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeUInt8>(); }
 
     bool allocatesMemoryInArena() const override { return false; }
 
@@ -653,11 +655,13 @@ class AggregateFunctionSequenceCount final : public AggregateFunctionSequenceBas
 {
 public:
     AggregateFunctionSequenceCount(const DataTypes & arguments, const Array & params, const String & pattern_)
-        : AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceCount<T, Data>>(arguments, params, pattern_, std::make_shared<DataTypeUInt64>()) {}
+        : AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceCount<T, Data>>(arguments, params, pattern_) {}
 
     using AggregateFunctionSequenceBase<T, Data, AggregateFunctionSequenceCount<T, Data>>::AggregateFunctionSequenceBase;
 
     String getName() const override { return "sequenceCount"; }
+
+    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeUInt64>(); }
 
     bool allocatesMemoryInArena() const override { return false; }
 

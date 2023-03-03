@@ -1,13 +1,23 @@
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
+#include <algorithm>
+#include <vector>
+#include <compare>
+#include <numeric>
+#include <unordered_map>
 #include <map>
+#include <iostream>
+#include <set>
+#include <cassert>
 
-#include <Common/logger_useful.h>
+
+#include <base/logger_useful.h>
+#include <base/types.h>
 #include <base/scope_guard.h>
 #include <Common/Stopwatch.h>
-#include <IO/WriteBufferFromString.h>
+#include "IO/WriteBufferFromString.h"
+#include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/IntersectionsIndexes.h>
-
 
 namespace DB
 {
@@ -35,13 +45,14 @@ public:
 
 PartitionReadResponse ParallelReplicasReadingCoordinator::Impl::handleRequest(PartitionReadRequest request)
 {
-    auto * log = &Poco::Logger::get("ParallelReplicasReadingCoordinator");
-    Stopwatch watch;
-
-    String request_description = request.toString();
+    AtomicStopwatch watch;
     std::lock_guard lock(mutex);
 
     auto partition_it = partitions.find(request.partition_id);
+
+    SCOPE_EXIT({
+        LOG_TRACE(&Poco::Logger::get("ParallelReplicasReadingCoordinator"), "Time for handling request: {}ns", watch.elapsed());
+    });
 
     PartToRead::PartAndProjectionNames part_and_projection
     {
@@ -69,7 +80,6 @@ PartitionReadResponse ParallelReplicasReadingCoordinator::Impl::handleRequest(Pa
         partition_reading.mark_ranges_in_part.insert({part_and_projection, std::move(mark_ranges_index)});
         partitions.insert({request.partition_id, std::move(partition_reading)});
 
-        LOG_TRACE(log, "Request is first in partition, accepted in {} ns: {}", watch.elapsed(), request_description);
         return {.denied = false, .mark_ranges = std::move(request.mark_ranges)};
     }
 
@@ -85,7 +95,6 @@ PartitionReadResponse ParallelReplicasReadingCoordinator::Impl::handleRequest(Pa
     {
         case PartSegments::IntersectionResult::REJECT:
         {
-            LOG_TRACE(log, "Request rejected in {} ns: {}", watch.elapsed(), request_description);
             return {.denied = true, .mark_ranges = {}};
         }
         case PartSegments::IntersectionResult::EXACTLY_ONE_INTERSECTION:
@@ -101,12 +110,6 @@ PartitionReadResponse ParallelReplicasReadingCoordinator::Impl::handleRequest(Pa
 
             auto result_ranges = result.convertToMarkRangesFinal();
             const bool denied = result_ranges.empty();
-
-            if (denied)
-                LOG_TRACE(log, "Request rejected due to intersection in {} ns: {}", watch.elapsed(), request_description);
-            else
-                LOG_TRACE(log, "Request accepted partially in {} ns: {}", watch.elapsed(), request_description);
-
             return {.denied = denied, .mark_ranges = std::move(result_ranges)};
         }
         case PartSegments::IntersectionResult::NO_INTERSECTION:
@@ -118,12 +121,11 @@ PartitionReadResponse ParallelReplicasReadingCoordinator::Impl::handleRequest(Pa
             );
             partition_reading.mark_ranges_in_part.insert({part_and_projection, std::move(mark_ranges_index)});
 
-            LOG_TRACE(log, "Request accepted in {} ns: {}", watch.elapsed(), request_description);
             return {.denied = false, .mark_ranges = std::move(request.mark_ranges)};
         }
     }
 
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 PartitionReadResponse ParallelReplicasReadingCoordinator::handleRequest(PartitionReadRequest request)

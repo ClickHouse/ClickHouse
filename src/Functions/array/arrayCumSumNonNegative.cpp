@@ -126,7 +126,7 @@ struct ArrayCumSumNonNegativeImpl
 struct NameArrayCumSumNonNegative { static constexpr auto name = "arrayCumSumNonNegative"; };
 using FunctionArrayCumSumNonNegative = FunctionArrayMapped<ArrayCumSumNonNegativeImpl, NameArrayCumSumNonNegative>;
 
-REGISTER_FUNCTION(ArrayCumSumNonNegative)
+void registerFunctionArrayCumSumNonNegative(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArrayCumSumNonNegative>();
 }

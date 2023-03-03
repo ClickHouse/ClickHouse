@@ -9,7 +9,7 @@
 #include <IO/ReadBuffer.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Interpreters/Context.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Poco/Event.h>
 
 
@@ -82,7 +82,6 @@ public:
         String format_name;
         size_t max_threads;
         size_t min_chunk_bytes;
-        size_t max_block_size;
         bool is_server;
     };
 
@@ -92,7 +91,6 @@ public:
         , file_segmentation_engine(params.file_segmentation_engine)
         , format_name(params.format_name)
         , min_chunk_bytes(params.min_chunk_bytes)
-        , max_block_size(params.max_block_size)
         , is_server(params.is_server)
         , pool(params.max_threads)
     {
@@ -190,7 +188,6 @@ private:
     FormatFactory::FileSegmentationEngine file_segmentation_engine;
     const String format_name;
     const size_t min_chunk_bytes;
-    const size_t max_block_size;
 
     BlockMissingValues last_block_missing_values;
 

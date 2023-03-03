@@ -41,7 +41,18 @@ responseWriteBuffer(HTTPServerRequest & request, HTTPServerResponse & response, 
     CompressionMethod http_response_compression_method = CompressionMethod::None;
 
     if (!http_response_compression_methods.empty())
-        http_response_compression_method = chooseHTTPCompressionMethod(http_response_compression_methods);
+    {
+        /// If client supports brotli - it's preferred.
+        /// Both gzip and deflate are supported. If the client supports both, gzip is preferred.
+        /// NOTE parsing of the list of methods is slightly incorrect.
+
+        if (std::string::npos != http_response_compression_methods.find("br"))
+            http_response_compression_method = CompressionMethod::Brotli;
+        else if (std::string::npos != http_response_compression_methods.find("gzip"))
+            http_response_compression_method = CompressionMethod::Gzip;
+        else if (std::string::npos != http_response_compression_methods.find("deflate"))
+            http_response_compression_method = CompressionMethod::Zlib;
+    }
 
     bool client_supports_http_compression = http_response_compression_method != CompressionMethod::None;
 
@@ -158,17 +169,15 @@ StaticRequestHandler::StaticRequestHandler(IServer & server_, const String & exp
 {
 }
 
-HTTPRequestHandlerFactoryPtr createStaticHandlerFactory(IServer & server,
-    const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix)
+HTTPRequestHandlerFactoryPtr createStaticHandlerFactory(IServer & server, const std::string & config_prefix)
 {
-    int status = config.getInt(config_prefix + ".handler.status", 200);
-    std::string response_content = config.getRawString(config_prefix + ".handler.response_content", "Ok.\n");
-    std::string response_content_type = config.getString(config_prefix + ".handler.content_type", "text/plain; charset=UTF-8");
+    int status = server.config().getInt(config_prefix + ".handler.status", 200);
+    std::string response_content = server.config().getRawString(config_prefix + ".handler.response_content", "Ok.\n");
+    std::string response_content_type = server.config().getString(config_prefix + ".handler.content_type", "text/plain; charset=UTF-8");
     auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<StaticRequestHandler>>(
         server, std::move(response_content), std::move(status), std::move(response_content_type));
 
-    factory->addFiltersFromConfig(config, config_prefix);
+    factory->addFiltersFromConfig(server.config(), config_prefix);
 
     return factory;
 }

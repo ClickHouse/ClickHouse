@@ -232,8 +232,8 @@ public:
 private:
     static bool isIPv4Mapped(const UInt8 * address)
     {
-        return (unalignedLoadLE<UInt64>(address) == 0) &&
-               ((unalignedLoadLE<UInt64>(address + 8) & 0x00000000FFFFFFFFull) == 0x00000000FFFF0000ull);
+        return (unalignedLoad<UInt64>(address) == 0) &&
+               ((unalignedLoad<UInt64>(address + 8) & 0x00000000FFFFFFFFull) == 0x00000000FFFF0000ull);
     }
 
     static void cutAddress(const unsigned char * address, char *& dst, UInt8 zeroed_tail_bytes_count)
@@ -265,11 +265,9 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
-
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!isStringOrFixedString(removeNullable(arguments[0])))
+        if (!isStringOrFixedString(arguments[0]))
         {
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
@@ -282,37 +280,22 @@ public:
             return makeNullable(result_type);
         }
 
-        return arguments[0]->isNullable() ? makeNullable(result_type) : result_type;
+        return result_type;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        ColumnPtr column = arguments[0].column;
-        ColumnPtr null_map_column;
-        const NullMap * null_map = nullptr;
-        if (column->isNullable())
-        {
-            const auto * column_nullable = assert_cast<const ColumnNullable *>(column.get());
-            column = column_nullable->getNestedColumnPtr();
-            null_map_column = column_nullable->getNullMapColumnPtr();
-            null_map = &column_nullable->getNullMapData();
-        }
+        const ColumnPtr & column = arguments[0].column;
 
         if constexpr (exception_mode == IPStringToNumExceptionMode::Throw)
         {
             if (cast_ipv4_ipv6_default_on_conversion_error)
             {
-                auto result = convertToIPv6<IPStringToNumExceptionMode::Default>(column, null_map);
-                if (null_map && !result->isNullable())
-                    return ColumnNullable::create(result, null_map_column);
-                return result;
+                return convertToIPv6<IPStringToNumExceptionMode::Default>(column);
             }
         }
 
-        auto result = convertToIPv6<exception_mode>(column, null_map);
-        if (null_map && !result->isNullable())
-            return ColumnNullable::create(IColumn::mutate(result), IColumn::mutate(null_map_column));
-        return result;
+        return convertToIPv6<exception_mode>(column);
     }
 
 private:
@@ -407,11 +390,9 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
-
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!isString(removeNullable(arguments[0])))
+        if (!isString(arguments[0]))
         {
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
@@ -424,37 +405,22 @@ public:
             return makeNullable(result_type);
         }
 
-        return arguments[0]->isNullable() ? makeNullable(result_type) : result_type;
+        return result_type;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        ColumnPtr column = arguments[0].column;
-        ColumnPtr null_map_column;
-        const NullMap * null_map = nullptr;
-        if (column->isNullable())
-        {
-            const auto * column_nullable = assert_cast<const ColumnNullable *>(column.get());
-            column = column_nullable->getNestedColumnPtr();
-            null_map_column = column_nullable->getNullMapColumnPtr();
-            null_map = &column_nullable->getNullMapData();
-        }
+        const ColumnPtr & column = arguments[0].column;
 
         if constexpr (exception_mode == IPStringToNumExceptionMode::Throw)
         {
             if (cast_ipv4_ipv6_default_on_conversion_error)
             {
-                auto result = convertToIPv4<IPStringToNumExceptionMode::Default>(column, null_map);
-                if (null_map && !result->isNullable())
-                    return ColumnNullable::create(result, null_map_column);
-                return result;
+                return convertToIPv4<IPStringToNumExceptionMode::Default>(column);
             }
         }
 
-        auto result = convertToIPv4<exception_mode>(column, null_map);
-        if (null_map && !result->isNullable())
-            return ColumnNullable::create(IColumn::mutate(result), IColumn::mutate(null_map_column));
-        return result;
+        return convertToIPv4<exception_mode>(column);
     }
 
 private:
@@ -514,11 +480,7 @@ private:
     static void mapIPv4ToIPv6(UInt32 in, UInt8 * buf)
     {
         unalignedStore<UInt64>(buf, 0);
-#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-            unalignedStoreLE<UInt64>(buf + 8, 0x00000000FFFF0000ull | (static_cast<UInt64>(ntohl(in)) << 32));
-#else
-            unalignedStoreLE<UInt64>(buf + 8, 0x00000000FFFF0000ull | (static_cast<UInt64>(__builtin_bswap32(ntohl(in))) << 32));
-#endif
+        unalignedStore<UInt64>(buf + 8, 0x00000000FFFF0000ull | (static_cast<UInt64>(ntohl(in)) << 32));
     }
 };
 
@@ -544,7 +506,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!isString(removeNullable(arguments[0])))
+        if (!isString(arguments[0]))
         {
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
@@ -557,7 +519,7 @@ public:
             return makeNullable(result_type);
         }
 
-        return arguments[0]->isNullable() ? makeNullable(result_type) : result_type;
+        return result_type;
     }
 };
 
@@ -581,7 +543,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!isStringOrFixedString(removeNullable(arguments[0])))
+        if (!isStringOrFixedString(arguments[0]))
         {
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
@@ -594,7 +556,7 @@ public:
             return makeNullable(result_type);
         }
 
-        return arguments[0]->isNullable() ? makeNullable(result_type) : result_type;
+        return result_type;
     }
 };
 
@@ -689,18 +651,18 @@ struct ParseMACImpl
       */
     static UInt64 parse(const char * pos)
     {
-        return (static_cast<UInt64>(unhex(pos[0])) << 44)
-               | (static_cast<UInt64>(unhex(pos[1])) << 40)
-               | (static_cast<UInt64>(unhex(pos[3])) << 36)
-               | (static_cast<UInt64>(unhex(pos[4])) << 32)
-               | (static_cast<UInt64>(unhex(pos[6])) << 28)
-               | (static_cast<UInt64>(unhex(pos[7])) << 24)
-               | (static_cast<UInt64>(unhex(pos[9])) << 20)
-               | (static_cast<UInt64>(unhex(pos[10])) << 16)
-               | (static_cast<UInt64>(unhex(pos[12])) << 12)
-               | (static_cast<UInt64>(unhex(pos[13])) << 8)
-               | (static_cast<UInt64>(unhex(pos[15])) << 4)
-               | (static_cast<UInt64>(unhex(pos[16])));
+        return (UInt64(unhex(pos[0])) << 44)
+               | (UInt64(unhex(pos[1])) << 40)
+               | (UInt64(unhex(pos[3])) << 36)
+               | (UInt64(unhex(pos[4])) << 32)
+               | (UInt64(unhex(pos[6])) << 28)
+               | (UInt64(unhex(pos[7])) << 24)
+               | (UInt64(unhex(pos[9])) << 20)
+               | (UInt64(unhex(pos[10])) << 16)
+               | (UInt64(unhex(pos[12])) << 12)
+               | (UInt64(unhex(pos[13])) << 8)
+               | (UInt64(unhex(pos[15])) << 4)
+               | (UInt64(unhex(pos[16])));
     }
 
     static constexpr auto name = "MACStringToNum";
@@ -716,12 +678,12 @@ struct ParseOUIImpl
       */
     static UInt64 parse(const char * pos)
     {
-        return (static_cast<UInt64>(unhex(pos[0])) << 20)
-               | (static_cast<UInt64>(unhex(pos[1])) << 16)
-               | (static_cast<UInt64>(unhex(pos[3])) << 12)
-               | (static_cast<UInt64>(unhex(pos[4])) << 8)
-               | (static_cast<UInt64>(unhex(pos[6])) << 4)
-               | (static_cast<UInt64>(unhex(pos[7])));
+        return (UInt64(unhex(pos[0])) << 20)
+               | (UInt64(unhex(pos[1])) << 16)
+               | (UInt64(unhex(pos[3])) << 12)
+               | (UInt64(unhex(pos[4])) << 8)
+               | (UInt64(unhex(pos[6])) << 4)
+               | (UInt64(unhex(pos[7])));
     }
 
     static constexpr auto name = "MACStringToOUI";
@@ -933,9 +895,9 @@ private:
         if (bits_to_keep >= 8 * sizeof(UInt32))
             return { src, src };
         if (bits_to_keep == 0)
-            return { static_cast<UInt32>(0), static_cast<UInt32>(-1) };
+            return { UInt32(0), UInt32(-1) };
 
-        UInt32 mask = static_cast<UInt32>(-1) << (8 * sizeof(UInt32) - bits_to_keep);
+        UInt32 mask = UInt32(-1) << (8 * sizeof(UInt32) - bits_to_keep);
         UInt32 lower = src & mask;
         UInt32 upper = lower | ~mask;
 
@@ -1132,7 +1094,7 @@ public:
 struct NameFunctionIPv4NumToString { static constexpr auto name = "IPv4NumToString"; };
 struct NameFunctionIPv4NumToStringClassC { static constexpr auto name = "IPv4NumToStringClassC"; };
 
-REGISTER_FUNCTION(Coding)
+void registerFunctionsCoding(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionCutIPv6>();
     factory.registerFunction<FunctionIPv4ToIPv6>();

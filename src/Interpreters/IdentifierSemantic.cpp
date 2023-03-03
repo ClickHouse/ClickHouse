@@ -142,33 +142,6 @@ std::optional<String> IdentifierSemantic::extractNestedName(const ASTIdentifier 
     return {};
 }
 
-String IdentifierSemantic::extractNestedName(const ASTIdentifier & identifier, const DatabaseAndTableWithAlias & table)
-{
-    auto match = IdentifierSemantic::canReferColumnToTable(identifier, table);
-    size_t to_strip = 0;
-    switch (match)
-    {
-        case IdentifierSemantic::ColumnMatch::TableName:
-        case IdentifierSemantic::ColumnMatch::AliasedTableName:
-        case IdentifierSemantic::ColumnMatch::TableAlias:
-            to_strip = 1;
-            break;
-        case IdentifierSemantic::ColumnMatch::DBAndTable:
-            to_strip = 2;
-            break;
-        default:
-            break;
-    }
-    String res;
-    for (size_t i = to_strip, sz = identifier.name_parts.size(); i < sz; ++i)
-    {
-        if (!res.empty())
-            res += ".";
-        res += identifier.name_parts[i];
-    }
-    return res;
-}
-
 bool IdentifierSemantic::doesIdentifierBelongTo(const ASTIdentifier & identifier, const String & database, const String & table)
 {
     size_t num_components = identifier.name_parts.size();
@@ -272,7 +245,7 @@ IdentifierSemantic::getIdentsMembership(ASTPtr ast, const std::vector<TableWithC
     for (const auto * ident : idents)
     {
         /// short name clashes with alias, ambiguous
-        if (ident->isShort() && aliases.contains(ident->shortName()))
+        if (ident->isShort() && aliases.count(ident->shortName()))
             return {};
         const auto pos = getIdentMembership(*ident, tables);
         if (!pos)
@@ -322,35 +295,22 @@ std::optional<size_t> IdentifierMembershipCollector::getIdentsMembership(ASTPtr 
     return IdentifierSemantic::getIdentsMembership(ast, tables, aliases);
 }
 
-void splitConjunctionsAst(const ASTPtr & node, ASTs & result)
+static void collectConjunctions(const ASTPtr & node, std::vector<ASTPtr> & members)
 {
-    if (!node)
-        return;
-
-    result.emplace_back(node);
-
-    for (size_t idx = 0; idx < result.size();)
+    if (const auto * func = node->as<ASTFunction>(); func && func->name == "and")
     {
-        ASTPtr expression = result.at(idx);
-
-        if (const auto * function = expression->as<ASTFunction>(); function && function->name == "and")
-        {
-            result.erase(result.begin() + idx);
-
-            for (auto & child : function->arguments->children)
-                result.emplace_back(child);
-
-            continue;
-        }
-        ++idx;
+        for (const auto & child : func->arguments->children)
+            collectConjunctions(child, members);
+        return;
     }
+    members.push_back(node);
 }
 
-ASTs splitConjunctionsAst(const ASTPtr & node)
+std::vector<ASTPtr> collectConjunctions(const ASTPtr & node)
 {
-    ASTs result;
-    splitConjunctionsAst(node, result);
-    return result;
+    std::vector<ASTPtr> members;
+    collectConjunctions(node, members);
+    return members;
 }
 
 }

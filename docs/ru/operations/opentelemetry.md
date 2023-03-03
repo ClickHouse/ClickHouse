@@ -1,14 +1,13 @@
 ---
-slug: /ru/operations/opentelemetry
-sidebar_position: 62
-sidebar_label: Поддержка OpenTelemetry
+toc_priority: 62
+toc_title: Поддержка OpenTelemetry
 ---
 
 # [экспериментально] Поддержка OpenTelemetry
 
 ClickHouse поддерживает [OpenTelemetry](https://opentelemetry.io/) — открытый стандарт для сбора трассировок и метрик из распределенного приложения.
 
-:::danger "Предупреждение"
+!!! warning "Предупреждение"
 Поддержка стандарта экспериментальная и будет со временем меняться.
 
 ## Обеспечение поддержки контекста трассировки в ClickHouse

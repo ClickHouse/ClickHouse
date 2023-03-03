@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 
+import os
 import json
 import logging
-import os
 import sys
 import time
-from typing import Any, List, Optional
+from typing import Optional
 
 import requests  # type: ignore
 
@@ -18,7 +18,7 @@ def get_with_retries(
     url: str,
     retries: int = DOWNLOAD_RETRIES_COUNT,
     sleep: int = 3,
-    **kwargs: Any,
+    **kwargs,
 ) -> requests.Response:
     logging.info(
         "Getting URL with %i tries and sleep %i in between: %s", retries, sleep, url
@@ -41,22 +41,22 @@ def get_with_retries(
     return response
 
 
-def get_build_name_for_check(check_name: str) -> str:
-    return CI_CONFIG["tests_config"][check_name]["required_build"]  # type: ignore
+def get_build_name_for_check(check_name):
+    return CI_CONFIG["tests_config"][check_name]["required_build"]
 
 
-def read_build_urls(build_name: str, reports_path: str) -> List[str]:
+def get_build_urls(build_name, reports_path):
     for root, _, files in os.walk(reports_path):
         for f in files:
             if build_name in f:
                 logging.info("Found build report json %s", f)
                 with open(os.path.join(root, f), "r", encoding="utf-8") as file_handler:
                     build_report = json.load(file_handler)
-                    return build_report["build_urls"]  # type: ignore
+                    return build_report["build_urls"]
     return []
 
 
-def download_build_with_progress(url, path):
+def dowload_build_with_progress(url, path):
     logging.info("Downloading from %s to temp path %s", url, path)
     for i in range(DOWNLOAD_RETRIES_COUNT):
         try:
@@ -104,14 +104,14 @@ def download_builds(result_path, build_urls, filter_fn):
         if filter_fn(url):
             fname = os.path.basename(url.replace("%2B", "+").replace("%20", " "))
             logging.info("Will download %s to %s", fname, result_path)
-            download_build_with_progress(url, os.path.join(result_path, fname))
+            dowload_build_with_progress(url, os.path.join(result_path, fname))
 
 
 def download_builds_filter(
     check_name, reports_path, result_path, filter_fn=lambda _: True
 ):
     build_name = get_build_name_for_check(check_name)
-    urls = read_build_urls(build_name, reports_path)
+    urls = get_build_urls(build_name, reports_path)
     print(urls)
 
     if not urls:
@@ -123,6 +123,12 @@ def download_builds_filter(
 def download_all_deb_packages(check_name, reports_path, result_path):
     download_builds_filter(
         check_name, reports_path, result_path, lambda x: x.endswith("deb")
+    )
+
+
+def download_shared_build(check_name, reports_path, result_path):
+    download_builds_filter(
+        check_name, reports_path, result_path, lambda x: x.endswith("shared_build.tgz")
     )
 
 

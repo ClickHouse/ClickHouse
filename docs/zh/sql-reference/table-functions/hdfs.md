@@ -1,7 +1,6 @@
 ---
-slug: /zh/sql-reference/table-functions/hdfs
-sidebar_position: 45
-sidebar_label: hdfs
+toc_priority: 45
+toc_title: hdfs
 ---
 
 # hdfs {#hdfs}

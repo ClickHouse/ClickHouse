@@ -1,10 +1,11 @@
 #pragma once
+
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/RequestResponse.h>
-#include <Processors/Chunk.h>
+
+#include <Processors/Sources/SourceWithProgress.h>
 
 
 namespace DB
@@ -15,12 +16,6 @@ class UncompressedCache;
 class MarkCache;
 struct PrewhereExprInfo;
 
-struct ChunkAndProgress
-{
-    Chunk chunk;
-    size_t num_read_rows = 0;
-    size_t num_read_bytes = 0;
-};
 
 struct ParallelReadingExtension
 {
@@ -33,11 +28,11 @@ struct ParallelReadingExtension
     Names colums_to_read;
 };
 
-/// Base class for MergeTreeThreadSelectAlgorithm and MergeTreeSelectAlgorithm
-class IMergeTreeSelectAlgorithm
+/// Base class for MergeTreeThreadSelectProcessor and MergeTreeSelectProcessor
+class MergeTreeBaseSelectProcessor : public SourceWithProgress
 {
 public:
-    IMergeTreeSelectAlgorithm(
+    MergeTreeBaseSelectProcessor(
         Block header,
         const MergeTreeData & storage_,
         const StorageSnapshotPtr & storage_snapshot_,
@@ -49,9 +44,9 @@ public:
         const MergeTreeReaderSettings & reader_settings_,
         bool use_uncompressed_cache_,
         const Names & virt_column_names_ = {},
-        std::optional<ParallelReadingExtension> extension_ = {});
+        std::optional<ParallelReadingExtension> extension = {});
 
-    virtual ~IMergeTreeSelectAlgorithm();
+    ~MergeTreeBaseSelectProcessor() override;
 
     static Block transformHeader(
         Block block, const PrewhereInfoPtr & prewhere_info, const DataTypePtr & partition_value_type, const Names & virtual_columns);
@@ -61,25 +56,9 @@ public:
         const MergeTreeReadTaskColumns & task_columns,
         const Block & sample_block);
 
-    Block getHeader() const { return result_header; }
-
-    ChunkAndProgress read();
-
-    void cancel() { is_cancelled = true; }
-
-    const MergeTreeReaderSettings & getSettings() const { return reader_settings; }
-
-    virtual std::string getName() const = 0;
-
 protected:
-    /// This struct allow to return block with no columns but with non-zero number of rows similar to Chunk
-    struct BlockAndProgress
-    {
-        Block block;
-        size_t row_count = 0;
-        size_t num_read_rows = 0;
-        size_t num_read_bytes = 0;
-    };
+
+    Chunk generate() final;
 
     /// Creates new this->task and return a flag whether it was successful or not
     virtual bool getNewTaskImpl() = 0;
@@ -95,43 +74,21 @@ protected:
     /// Closes readers and unlock part locks
     virtual void finish() = 0;
 
-    virtual BlockAndProgress readFromPart();
+    virtual Chunk readFromPart();
 
-    BlockAndProgress readFromPartImpl();
+    Chunk readFromPartImpl();
 
-    /// Used for filling header with no rows as well as block with data
+    /// Two versions for header and chunk.
     static void
-    injectVirtualColumns(Block & block, size_t row_count, MergeTreeReadTask * task, const DataTypePtr & partition_value_type, const Names & virtual_columns);
+    injectVirtualColumns(Block & block, MergeTreeReadTask * task, const DataTypePtr & partition_value_type, const Names & virtual_columns);
+    static void
+    injectVirtualColumns(Chunk & chunk, MergeTreeReadTask * task, const DataTypePtr & partition_value_type, const Names & virtual_columns);
 
-    static std::unique_ptr<PrewhereExprInfo> getPrewhereActions(PrewhereInfoPtr prewhere_info, const ExpressionActionsSettings & actions_settings);
-
-    static void initializeRangeReadersImpl(
-         MergeTreeRangeReader & range_reader,
-         std::deque<MergeTreeRangeReader> & pre_range_readers,
-         PrewhereInfoPtr prewhere_info,
-         const PrewhereExprInfo * prewhere_actions,
-         IMergeTreeReader * reader,
-         bool has_lightweight_delete,
-         const MergeTreeReaderSettings & reader_settings,
-         const std::vector<std::unique_ptr<IMergeTreeReader>> & pre_reader_for_step,
-         const PrewhereExprStep & lightweight_delete_filter_step,
-         const Names & non_const_virtual_column_names);
-
-    /// Sets up data readers for each step of prewhere and where
-    void initializeMergeTreeReadersForPart(
-        MergeTreeData::DataPartPtr & data_part,
-        const MergeTreeReadTaskColumns & task_columns, const StorageMetadataPtr & metadata_snapshot,
-        const MarkRanges & mark_ranges, const IMergeTreeReader::ValueSizeMap & value_size_map,
-        const ReadBufferFromFileBase::ProfileCallback & profile_callback);
-
-    /// Sets up range readers corresponding to data readers
     void initializeRangeReaders(MergeTreeReadTask & task);
 
     const MergeTreeData & storage;
     StorageSnapshotPtr storage_snapshot;
 
-    /// This step is added when the part has lightweight delete mask
-    const PrewhereExprStep lightweight_delete_filter_step { nullptr, LightweightDeleteDescription::FILTER_COLUMN.name, true, true };
     PrewhereInfoPtr prewhere_info;
     std::unique_ptr<PrewhereExprInfo> prewhere_actions;
 
@@ -145,22 +102,17 @@ protected:
 
     Names virt_column_names;
 
-    /// These columns will be filled by the merge tree range reader
-    Names non_const_virtual_column_names;
-
     DataTypePtr partition_value_type;
 
     /// This header is used for chunks from readFromPart().
-    Block header_without_const_virtual_columns;
-    /// A result of getHeader(). A chunk which this header is returned from read().
-    Block result_header;
+    Block header_without_virtual_columns;
 
     std::shared_ptr<UncompressedCache> owned_uncompressed_cache;
     std::shared_ptr<MarkCache> owned_mark_cache;
 
     using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
     MergeTreeReaderPtr reader;
-    std::vector<MergeTreeReaderPtr> pre_reader_for_step;
+    MergeTreeReaderPtr pre_reader;
 
     MergeTreeReadTaskPtr task;
 
@@ -169,22 +121,8 @@ protected:
     std::deque<MergeTreeReadTaskPtr> delayed_tasks;
     std::deque<MarkRanges> buffered_ranges;
 
-    /// This setting is used in base algorithm only to additionally limit the number of granules to read.
-    /// It is changed in ctor of MergeTreeThreadSelectAlgorithm.
-    ///
-    /// The reason why we have it here is because MergeTreeReadPool takes the full task
-    /// ignoring min_marks_to_read setting in case of remote disk (see MergeTreeReadPool::getTask).
-    /// In this case, we won't limit the number of rows to read based on adaptive granularity settings.
-    ///
-    /// Big reading tasks are better for remote disk and prefetches.
-    /// So, for now it's easier to limit max_rows_to_read.
-    /// Somebody need to refactor this later.
-    size_t min_marks_to_read = 0;
-
 private:
     Poco::Logger * log = &Poco::Logger::get("MergeTreeBaseSelectProcessor");
-
-    std::atomic<bool> is_cancelled{false};
 
     enum class Status
     {
@@ -219,14 +157,12 @@ private:
     /// It won't work with reading in order or reading in reverse order, because we can possibly seek back.
     bool getDelayedTasks();
 
-    /// It will form a request to coordinator and
+    /// It will form a request a request to coordinator and
     /// then reinitialize the mark ranges of this->task object
     Status performRequestToCoordinator(MarkRanges requested_ranges, bool delayed);
 
     void splitCurrentTaskRangesAndFillBuffer();
-    static Block applyPrewhereActions(Block block, const PrewhereInfoPtr & prewhere_info);
-};
 
-using MergeTreeSelectAlgorithmPtr = std::unique_ptr<IMergeTreeSelectAlgorithm>;
+};
 
 }

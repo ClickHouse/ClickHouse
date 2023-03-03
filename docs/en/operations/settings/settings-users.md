@@ -1,16 +1,14 @@
 ---
-slug: /en/operations/settings/settings-users
-sidebar_position: 63
-sidebar_label: User Settings
+toc_priority: 63
+toc_title: User Settings
 ---
 
-# User Settings
+# User Settings {#user-settings}
 
 The `users` section of the `user.xml` configuration file contains user settings.
 
-:::note
-ClickHouse also supports [SQL-driven workflow](../../operations/access-rights.md#access-control) for managing users. We recommend using it.
-:::
+!!! note "Information"
+    ClickHouse also supports [SQL-driven workflow](../../operations/access-rights.md#access-control) for managing users. We recommend using it.
 
 Structure of the `users` section:
 
@@ -30,12 +28,12 @@ Structure of the `users` section:
         <profile>profile_name</profile>
 
         <quota>default</quota>
-        <default_database>default</default_database>
+        <default_database>default<default_database>
         <databases>
             <database_name>
                 <table_name>
                     <filter>expression</filter>
-                </table_name>
+                <table_name>
             </database_name>
         </databases>
     </user_name>
@@ -118,9 +116,8 @@ To open access for user from any network, specify:
 <ip>::/0</ip>
 ```
 
-:::warning
-It’s insecure to open access from any network unless you have a firewall properly configured or the server is not directly connected to Internet.
-:::
+!!! warning "Warning"
+    It’s insecure to open access from any network unless you have a firewall properly configured or the server is not directly connected to Internet.
 
 To open access only from localhost, specify:
 

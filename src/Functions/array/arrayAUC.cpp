@@ -132,7 +132,7 @@ public:
         if (count_positive == 0 || count_positive == size)
             return std::numeric_limits<ResultType>::quiet_NaN();
 
-        return static_cast<ResultType>(area) / count_positive / (size - count_positive);
+        return ResultType(area) / count_positive / (size - count_positive);
     }
 };
 
@@ -140,7 +140,7 @@ public:
 /// auc(array_score, array_label) - Calculate AUC with array of score and label
 using FunctionArrayAUC = FunctionArrayScalarProduct<ArrayAUCImpl, NameArrayAUC>;
 
-REGISTER_FUNCTION(ArrayAUC)
+void registerFunctionArrayAUC(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArrayAUC>();
 }

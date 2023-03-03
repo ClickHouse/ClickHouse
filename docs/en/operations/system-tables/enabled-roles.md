@@ -1,7 +1,4 @@
----
-slug: /en/operations/system-tables/enabled-roles
----
-# enabled_roles
+# system.enabled_roles {#system_tables-enabled_roles}
 
 Contains all active roles at the moment, including current role of the current user and granted roles for current role.
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Processors/ISource.h>
+#include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/RowsBeforeLimitCounter.h>
 #include <QueryPipeline/Pipe.h>
 #include <atomic>
@@ -14,7 +14,7 @@ using RemoteQueryExecutorPtr = std::shared_ptr<RemoteQueryExecutor>;
 class RemoteQueryExecutorReadContext;
 
 /// Source from RemoteQueryExecutor. Executes remote query and returns query result chunks.
-class RemoteSource : public ISource
+class RemoteSource : public SourceWithProgress
 {
 public:
     /// Flag add_aggregation_info tells if AggregatedChunkInfo should be added to result chunk.
@@ -32,8 +32,6 @@ public:
     void onUpdatePorts() override;
 
     int schedule() override { return fd; }
-
-    void setStorageLimits(const std::shared_ptr<const StorageLimitsList> & storage_limits_) override;
 
 protected:
     std::optional<Chunk> tryGenerate() override;

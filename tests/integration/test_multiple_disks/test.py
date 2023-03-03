@@ -590,13 +590,6 @@ def test_jbod_overflow(start_cluster, name, engine):
         )
 
         node1.query(f"SYSTEM STOP MERGES {name}")
-        # The test tries to utilize 35/40=87.5% of space, while during last
-        # INSERT parts mover may see up to ~100% of used space on disk due to
-        # reservations (since INSERT first reserves the space and later write
-        # the same, more or less, amount of space, and util the reservation had
-        # been destroyed it will be taken into account as reserved on the
-        # disk).
-        node1.query(f"SYSTEM STOP MOVES {name}")
 
         # small jbod size is 40MB, so lets insert 5MB batch 7 times
         for i in range(7):
@@ -628,7 +621,6 @@ def test_jbod_overflow(start_cluster, name, engine):
         assert used_disks[-1] == "external"
 
         node1.query(f"SYSTEM START MERGES {name}")
-        node1.query(f"SYSTEM START MOVES {name}")
         time.sleep(1)
 
         node1.query_with_retry("OPTIMIZE TABLE {} FINAL".format(name))
@@ -854,15 +846,14 @@ def get_paths_for_partition_from_part_log(node, table, partition_id):
 
 
 @pytest.mark.parametrize(
-    "name,engine,use_metadata_cache",
+    "name,engine",
     [
-        pytest.param("altering_mt", "MergeTree()", "false", id="mt"),
-        pytest.param("altering_mt", "MergeTree()", "true", id="mt_use_metadata_cache"),
+        pytest.param("altering_mt", "MergeTree()", id="mt"),
         # ("altering_replicated_mt","ReplicatedMergeTree('/clickhouse/altering_replicated_mt', '1')",),
         # SYSTEM STOP MERGES doesn't disable merges assignments
     ],
 )
-def test_alter_move(start_cluster, name, engine, use_metadata_cache):
+def test_alter_move(start_cluster, name, engine):
     try:
         node1.query(
             """
@@ -872,9 +863,9 @@ def test_alter_move(start_cluster, name, engine, use_metadata_cache):
             ) ENGINE = {engine}
             ORDER BY tuple()
             PARTITION BY toYYYYMM(EventDate)
-            SETTINGS storage_policy='jbods_with_external', use_metadata_cache={use_metadata_cache}
+            SETTINGS storage_policy='jbods_with_external'
         """.format(
-                name=name, engine=engine, use_metadata_cache=use_metadata_cache
+                name=name, engine=engine
             )
         )
 
@@ -884,8 +875,6 @@ def test_alter_move(start_cluster, name, engine, use_metadata_cache):
         node1.query("INSERT INTO {} VALUES(toDate('2019-03-16'), 66)".format(name))
         node1.query("INSERT INTO {} VALUES(toDate('2019-04-10'), 42)".format(name))
         node1.query("INSERT INTO {} VALUES(toDate('2019-04-11'), 43)".format(name))
-        assert node1.query("CHECK TABLE " + name) == "1\n"
-
         used_disks = get_used_disks_for_table(node1, name)
         assert all(
             d.startswith("jbod") for d in used_disks
@@ -903,7 +892,6 @@ def test_alter_move(start_cluster, name, engine, use_metadata_cache):
                 name, first_part
             )
         )
-        assert node1.query("CHECK TABLE " + name) == "1\n"
         disk = node1.query(
             "SELECT disk_name FROM system.parts WHERE table = '{}' and name = '{}' and active = 1".format(
                 name, first_part
@@ -918,7 +906,6 @@ def test_alter_move(start_cluster, name, engine, use_metadata_cache):
         node1.query(
             "ALTER TABLE {} MOVE PART '{}' TO DISK 'jbod1'".format(name, first_part)
         )
-        assert node1.query("CHECK TABLE " + name) == "1\n"
         disk = node1.query(
             "SELECT disk_name FROM system.parts WHERE table = '{}' and name = '{}' and active = 1".format(
                 name, first_part
@@ -933,7 +920,6 @@ def test_alter_move(start_cluster, name, engine, use_metadata_cache):
         node1.query(
             "ALTER TABLE {} MOVE PARTITION 201904 TO VOLUME 'external'".format(name)
         )
-        assert node1.query("CHECK TABLE " + name) == "1\n"
         disks = (
             node1.query(
                 "SELECT disk_name FROM system.parts WHERE table = '{}' and partition = '201904' and active = 1".format(
@@ -952,7 +938,6 @@ def test_alter_move(start_cluster, name, engine, use_metadata_cache):
 
         time.sleep(1)
         node1.query("ALTER TABLE {} MOVE PARTITION 201904 TO DISK 'jbod2'".format(name))
-        assert node1.query("CHECK TABLE " + name) == "1\n"
         disks = (
             node1.query(
                 "SELECT disk_name FROM system.parts WHERE table = '{}' and partition = '201904' and active = 1".format(
@@ -1252,16 +1237,10 @@ def test_concurrent_alter_move_and_drop(start_cluster, name, engine):
         def alter_drop(num):
             for i in range(num):
                 partition = random.choice([201903, 201904])
-                op = random.choice(["drop", "detach"])
-                try:
-                    node1.query(
-                        "ALTER TABLE {} {} PARTITION {}".format(name, op, partition)
-                    )
-                except QueryRuntimeException as e:
-                    if "Code: 650" in e.stderr:
-                        pass
-                    else:
-                        raise e
+                drach = random.choice(["drop", "detach"])
+                node1.query(
+                    "ALTER TABLE {} {} PARTITION {}".format(name, drach, partition)
+                )
 
         insert(100)
         p = Pool(15)
@@ -1669,7 +1648,7 @@ def test_freeze(start_cluster):
             ) ENGINE = MergeTree
             ORDER BY tuple()
             PARTITION BY toYYYYMM(d)
-            SETTINGS storage_policy='small_jbod_with_external', compress_marks=false, compress_primary_key=false
+            SETTINGS storage_policy='small_jbod_with_external'
         """
         )
 

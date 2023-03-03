@@ -13,14 +13,10 @@ namespace ErrorCodes
 }
 
 SerializationInfoTuple::SerializationInfoTuple(
-    MutableSerializationInfos elems_, Names names_, const Settings & settings_)
+    MutableSerializationInfos elems_, const Settings & settings_)
     : SerializationInfo(ISerialization::Kind::DEFAULT, settings_)
     , elems(std::move(elems_))
-    , names(std::move(names_))
 {
-    assert(names.size() == elems.size());
-    for (size_t i = 0; i < names.size(); ++i)
-        name_to_elem[names[i]] = elems[i];
 }
 
 bool SerializationInfoTuple::hasCustomSerialization() const
@@ -44,34 +40,22 @@ void SerializationInfoTuple::add(const SerializationInfo & other)
 {
     SerializationInfo::add(other);
 
-    const auto & other_info = assert_cast<const SerializationInfoTuple &>(other);
-    for (const auto & [name, elem] : name_to_elem)
-    {
-        auto it = other_info.name_to_elem.find(name);
-        if (it != other_info.name_to_elem.end())
-            elem->add(*it->second);
-        else
-            elem->addDefaults(other_info.getData().num_rows);
-    }
-}
+    const auto & info_tuple = assert_cast<const SerializationInfoTuple &>(other);
+    assert(elems.size() == info_tuple.elems.size());
 
-void SerializationInfoTuple::addDefaults(size_t length)
-{
-    for (const auto & elem : elems)
-        elem->addDefaults(length);
+    for (size_t i = 0; i < elems.size(); ++i)
+        elems[i]->add(*info_tuple.elems[i]);
 }
 
 void SerializationInfoTuple::replaceData(const SerializationInfo & other)
 {
     SerializationInfo::add(other);
 
-    const auto & other_info = assert_cast<const SerializationInfoTuple &>(other);
-    for (const auto & [name, elem] : name_to_elem)
-    {
-        auto it = other_info.name_to_elem.find(name);
-        if (it != other_info.name_to_elem.end())
-            elem->replaceData(*it->second);
-    }
+    const auto & info_tuple = assert_cast<const SerializationInfoTuple &>(other);
+    assert(elems.size() == info_tuple.elems.size());
+
+    for (size_t i = 0; i < elems.size(); ++i)
+        elems[i]->replaceData(*info_tuple.elems[i]);
 }
 
 MutableSerializationInfoPtr SerializationInfoTuple::clone() const
@@ -81,7 +65,7 @@ MutableSerializationInfoPtr SerializationInfoTuple::clone() const
     for (const auto & elem : elems)
         elems_cloned.push_back(elem->clone());
 
-    return std::make_shared<SerializationInfoTuple>(std::move(elems_cloned), names, settings);
+    return std::make_shared<SerializationInfoTuple>(std::move(elems_cloned), settings);
 }
 
 void SerializationInfoTuple::serialializeKindBinary(WriteBuffer & out) const
@@ -115,7 +99,7 @@ void SerializationInfoTuple::fromJSON(const Poco::JSON::Object & object)
 
     if (!object.has("subcolumns"))
         throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Missed field 'subcolumns' in SerializationInfo of columns SerializationInfoTuple");
+            "Missed field '{}' in SerializationInfo of columns SerializationInfoTuple");
 
     auto subcolumns = object.getArray("subcolumns");
     if (elems.size() != subcolumns->size())
@@ -124,7 +108,7 @@ void SerializationInfoTuple::fromJSON(const Poco::JSON::Object & object)
             "Expected: {}, got: {}", elems.size(), subcolumns->size());
 
     for (size_t i = 0; i < elems.size(); ++i)
-        elems[i]->fromJSON(*subcolumns->getObject(static_cast<unsigned>(i)));
+        elems[i]->fromJSON(*subcolumns->getObject(i));
 }
 
 }

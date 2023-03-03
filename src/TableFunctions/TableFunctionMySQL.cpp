@@ -1,4 +1,4 @@
-#include "config.h"
+#include "config_core.h"
 
 #if USE_MYSQL
 #include <Databases/MySQL/FetchTablesColumnsList.h>
@@ -45,7 +45,7 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr 
     mysql_settings.connect_timeout = settings.external_storage_connect_timeout_sec;
     mysql_settings.read_write_timeout = settings.external_storage_rw_timeout_sec;
 
-    for (auto * it = args.begin(); it != args.end(); ++it)
+    for (auto it = args.begin(); it != args.end(); ++it)
     {
         const ASTSetQuery * settings_ast = (*it)->as<ASTSetQuery>();
         if (settings_ast)
@@ -81,7 +81,7 @@ StoragePtr TableFunctionMySQL::executeImpl(
 {
     auto columns = getActualTableStructure(context);
 
-    auto res = std::make_shared<StorageMySQL>(
+    auto res = StorageMySQL::create(
         StorageID(getDatabaseName(), table_name),
         std::move(*pool),
         configuration->database,

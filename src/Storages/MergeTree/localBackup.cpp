@@ -13,13 +13,9 @@ namespace ErrorCodes
     extern const int DIRECTORY_ALREADY_EXISTS;
 }
 
-namespace
-{
 
-void localBackupImpl(
-    const DiskPtr & disk, const String & source_path,
-    const String & destination_path, bool make_source_readonly, size_t level,
-    std::optional<size_t> max_level, const NameSet & files_to_copy_instead_of_hardlinks)
+static void localBackupImpl(const DiskPtr & disk, const String & source_path, const String & destination_path, size_t level,
+                            std::optional<size_t> max_level)
 {
     if (max_level && level > *max_level)
         return;
@@ -36,20 +32,18 @@ void localBackupImpl(
 
         if (!disk->isDirectory(source))
         {
-            if (make_source_readonly)
-                disk->setReadOnly(source);
-            if (files_to_copy_instead_of_hardlinks.contains(it->name()))
-                disk->copyFile(source, *disk, destination);
-            else
-                disk->createHardLink(source, destination);
+            disk->setReadOnly(source);
+            disk->createHardLink(source, destination);
         }
         else
         {
-            localBackupImpl(disk, source, destination, make_source_readonly, level + 1, max_level, files_to_copy_instead_of_hardlinks);
+            localBackupImpl(disk, source, destination, level + 1, max_level);
         }
     }
 }
 
+namespace
+{
 class CleanupOnFail
 {
 public:
@@ -86,10 +80,7 @@ private:
 };
 }
 
-void localBackup(
-    const DiskPtr & disk, const String & source_path,
-    const String & destination_path, bool make_source_readonly,
-    std::optional<size_t> max_level, bool copy_instead_of_hardlinks, const NameSet & files_to_copy_intead_of_hardlinks)
+void localBackup(const DiskPtr & disk, const String & source_path, const String & destination_path, std::optional<size_t> max_level)
 {
     if (disk->exists(destination_path) && !disk->isDirectoryEmpty(destination_path))
     {
@@ -109,10 +100,7 @@ void localBackup(
     {
         try
         {
-            if (copy_instead_of_hardlinks)
-                disk->copyDirectoryContent(source_path, disk, destination_path);
-            else
-                localBackupImpl(disk, source_path, destination_path, make_source_readonly, 0, max_level, files_to_copy_intead_of_hardlinks);
+            localBackupImpl(disk, source_path, destination_path, 0, max_level);
         }
         catch (const DB::ErrnoException & e)
         {

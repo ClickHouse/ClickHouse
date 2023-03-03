@@ -1,7 +1,6 @@
 ---
-slug: /ru/sql-reference/statements/describe-table
-sidebar_position: 42
-sidebar_label: DESCRIBE TABLE
+toc_priority: 42
+toc_title: DESCRIBE
 ---
 
 # DESCRIBE TABLE {#misc-describe-table}

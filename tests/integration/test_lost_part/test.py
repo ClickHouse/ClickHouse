@@ -40,8 +40,7 @@ def remove_part_from_disk(node, table, part_name):
 def test_lost_part_same_replica(start_cluster):
     for node in [node1, node2]:
         node.query(
-            "CREATE TABLE mt0 (id UInt64, date Date) ENGINE ReplicatedMergeTree('/clickhouse/tables/t', '{}') ORDER BY tuple() PARTITION BY date "
-            "SETTINGS cleanup_delay_period=1, cleanup_delay_period_random_add=1".format(
+            "CREATE TABLE mt0 (id UInt64, date Date) ENGINE ReplicatedMergeTree('/clickhouse/tables/t', '{}') ORDER BY tuple() PARTITION BY date".format(
                 node.name
             )
         )
@@ -74,9 +73,6 @@ def test_lost_part_same_replica(start_cluster):
     node1.query("ATTACH TABLE mt0")
 
     node1.query("SYSTEM START MERGES mt0")
-    res, err = node1.query_and_get_answer_with_error("SYSTEM SYNC REPLICA mt0")
-    print("result: ", res)
-    print("error: ", res)
 
     for i in range(10):
         result = node1.query("SELECT count() FROM system.replication_queue")
@@ -105,8 +101,7 @@ def test_lost_part_same_replica(start_cluster):
 def test_lost_part_other_replica(start_cluster):
     for node in [node1, node2]:
         node.query(
-            "CREATE TABLE mt1 (id UInt64) ENGINE ReplicatedMergeTree('/clickhouse/tables/t1', '{}') ORDER BY tuple() "
-            "SETTINGS cleanup_delay_period=1, cleanup_delay_period_random_add=1".format(
+            "CREATE TABLE mt1 (id UInt64) ENGINE ReplicatedMergeTree('/clickhouse/tables/t1', '{}') ORDER BY tuple()".format(
                 node.name
             )
         )
@@ -138,9 +133,6 @@ def test_lost_part_other_replica(start_cluster):
     node1.query("CHECK TABLE mt1")
 
     node2.query("SYSTEM START REPLICATION QUEUES")
-    res, err = node1.query_and_get_answer_with_error("SYSTEM SYNC REPLICA mt1")
-    print("result: ", res)
-    print("error: ", res)
 
     for i in range(10):
         result = node2.query("SELECT count() FROM system.replication_queue")
@@ -170,8 +162,7 @@ def test_lost_part_other_replica(start_cluster):
 def test_lost_part_mutation(start_cluster):
     for node in [node1, node2]:
         node.query(
-            "CREATE TABLE mt2 (id UInt64) ENGINE ReplicatedMergeTree('/clickhouse/tables/t2', '{}') ORDER BY tuple() "
-            "SETTINGS cleanup_delay_period=1, cleanup_delay_period_random_add=1".format(
+            "CREATE TABLE mt2 (id UInt64) ENGINE ReplicatedMergeTree('/clickhouse/tables/t2', '{}') ORDER BY tuple()".format(
                 node.name
             )
         )
@@ -199,9 +190,6 @@ def test_lost_part_mutation(start_cluster):
     node1.query("CHECK TABLE mt2")
 
     node1.query("SYSTEM START MERGES mt2")
-    res, err = node1.query_and_get_answer_with_error("SYSTEM SYNC REPLICA mt2")
-    print("result: ", res)
-    print("error: ", res)
 
     for i in range(10):
         result = node1.query("SELECT count() FROM system.replication_queue")
@@ -228,9 +216,7 @@ def test_lost_last_part(start_cluster):
     for node in [node1, node2]:
         node.query(
             "CREATE TABLE mt3 (id UInt64, p String) ENGINE ReplicatedMergeTree('/clickhouse/tables/t3', '{}') "
-            "ORDER BY tuple() PARTITION BY p SETTINGS cleanup_delay_period=1, cleanup_delay_period_random_add=1".format(
-                node.name
-            )
+            "ORDER BY tuple() PARTITION BY p".format(node.name)
         )
 
     node1.query("SYSTEM STOP MERGES mt3")
@@ -254,15 +240,11 @@ def test_lost_last_part(start_cluster):
 
     for i in range(10):
         result = node1.query("SELECT count() FROM system.replication_queue")
-        assert int(result) <= 2, "Have a lot of entries in queue {}".format(
+        assert int(result) <= 1, "Have a lot of entries in queue {}".format(
             node1.query("SELECT * FROM system.replication_queue FORMAT Vertical")
         )
         if node1.contains_in_log("Cannot create empty part") and node1.contains_in_log(
             "DROP/DETACH PARTITION"
-        ):
-            break
-        if node1.contains_in_log(
-            "Created empty part 8b8f0fede53df97513a9fb4cb19dc1e4_0_0_0 "
         ):
             break
         time.sleep(1)
