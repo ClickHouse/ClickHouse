@@ -121,7 +121,7 @@ MemoryTracker::~MemoryTracker()
 
 String MemoryTracker::getDebugLog() const
 {
-    return fmt::format("MemoryTracker(addr {} level {} peak {} ammount {})",
+    return fmt::format("MemoryTracker(addr {} level {} peak {} amount {})",
                        size_t(this),
                        magic_enum::enum_name(level),
                        ReadableSize(getPeak()),

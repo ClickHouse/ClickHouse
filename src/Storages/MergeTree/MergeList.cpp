@@ -28,7 +28,7 @@ ThreadGroupSwitcher::~ThreadGroupSwitcher()
         return;
 
     CurrentThread::detachGroup();
-    CurrentThread::attachTo(prev_thread_group);
+    CurrentThread::attachToGroup(prev_thread_group);
 }
 
 MergeListElement::MergeListElement(
