@@ -130,7 +130,7 @@ FileSegments FileCache::getImpl(
     {
         if (file_segment_metadata.file_segment->isDownloaded())
         {
-            if (file_segment_metadata.file_segment->getDownloadedSize() == 0)
+            if (file_segment_metadata.file_segment->getDownloadedSize(true) == 0)
             {
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
@@ -504,11 +504,11 @@ KeyMetadata::iterator FileCache::addFileSegment(
     return file_segment_metadata_it;
 }
 
-bool FileCache::tryReserve(const Key & key, size_t offset, size_t size)
+bool FileCache::tryReserve(const Key & key, size_t offset, size_t size, KeyMetadataPtr key_metadata)
 {
     assertInitialized();
     auto lock = cache_guard.lock();
-    auto locked_key = createLockedKey(key, KeyNotFoundPolicy::THROW);
+    auto locked_key = createLockedKey(key, key_metadata);
     return tryReserveUnlocked(key, offset, size, locked_key, lock);
 }
 
@@ -1016,7 +1016,6 @@ FileSegmentsHolderPtr FileCache::getSnapshot()
 {
     assertInitialized();
 
-    auto cache_lock = cache_guard.lock();
     auto lock = metadata.lock();
     performDelayedRemovalOfDeletedKeysFromMetadata(lock);
 
