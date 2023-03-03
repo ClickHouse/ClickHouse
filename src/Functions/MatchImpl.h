@@ -7,7 +7,8 @@
 #include <Core/ColumnNumbers.h>
 #include "Regexps.h"
 
-#include "config.h"
+#include "config_functions.h"
+#include <Common/config.h>
 #include <re2_st/re2.h>
 
 
@@ -22,10 +23,10 @@ namespace ErrorCodes
 namespace impl
 {
 
-/// Is the [I]LIKE expression reduced to finding a substring in a string?
+/// Is the [I]LIKE expression equivalent to a substring search?
 inline bool likePatternIsSubstring(std::string_view pattern, String & res)
 {
-    if (pattern.size() < 2 || !pattern.starts_with('%') || !pattern.ends_with('%'))
+    if (pattern.size() < 2 || pattern.front() != '%' || pattern.back() != '%')
         return false;
 
     res.clear();
@@ -44,9 +45,25 @@ inline bool likePatternIsSubstring(std::string_view pattern, String & res)
             case '\\':
                 ++pos;
                 if (pos == end)
+                    /// pattern ends with \% --> trailing % is to be taken literally and pattern doesn't qualify for substring search
                     return false;
                 else
-                    res += *pos;
+                {
+                    switch (*pos)
+                    {
+                        /// Known LIKE escape sequences:
+                        case '%':
+                        case '_':
+                        case '\\':
+                            res += *pos;
+                            break;
+                        /// For all other escape sequences, the backslash loses its special meaning
+                        default:
+                            res += '\\';
+                            res += *pos;
+                            break;
+                    }
+                }
                 break;
             default:
                 res += *pos;
@@ -101,7 +118,9 @@ struct MatchImpl
     static constexpr bool case_insensitive = (case_ == MatchTraits::Case::Insensitive);
     static constexpr bool negate = (result_ == MatchTraits::Result::Negate);
 
-    using Searcher = std::conditional_t<case_insensitive, VolnitskyCaseInsensitiveUTF8, VolnitskyUTF8>;
+    using Searcher = std::conditional_t<case_insensitive,
+          VolnitskyCaseInsensitiveUTF8,
+          VolnitskyUTF8>;
 
     static void vectorConstant(
         const ColumnString::Chars & haystack_data,
@@ -113,12 +132,13 @@ struct MatchImpl
         const size_t haystack_size = haystack_offsets.size();
 
         assert(haystack_size == res.size());
+
         assert(start_pos_ == nullptr);
 
         if (haystack_offsets.empty())
             return;
 
-        /// Special case that the [I]LIKE expression reduces to finding a substring in a string
+        /// A simple case where the [I]LIKE expression reduces to finding a substring in a string
         String strstr_pattern;
         if (is_like && impl::likePatternIsSubstring(needle, strstr_pattern))
         {
@@ -155,101 +175,105 @@ struct MatchImpl
             /// Tail, in which there can be no substring.
             if (i < res.size())
                 memset(&res[i], negate, (res.size() - i) * sizeof(res[0]));
-
-            return;
-        }
-
-        const auto & regexp = Regexps::Regexp(Regexps::createRegexp<is_like, /*no_capture*/ true, case_insensitive>(needle));
-
-        String required_substring;
-        bool is_trivial;
-        bool required_substring_is_prefix; /// for `anchored` execution of the regexp.
-
-        regexp.getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
-
-        if (required_substring.empty())
-        {
-            if (!regexp.getRE2()) /// An empty regexp. Always matches.
-                memset(res.data(), !negate, haystack_size * sizeof(res[0]));
-            else
-            {
-                size_t prev_offset = 0;
-                for (size_t i = 0; i < haystack_size; ++i)
-                {
-                    const bool match = regexp.getRE2()->Match(
-                            {reinterpret_cast<const char *>(&haystack_data[prev_offset]), haystack_offsets[i] - prev_offset - 1},
-                            0,
-                            haystack_offsets[i] - prev_offset - 1,
-                            re2_st::RE2::UNANCHORED,
-                            nullptr,
-                            0);
-                    res[i] = negate ^ match;
-
-                    prev_offset = haystack_offsets[i];
-                }
-            }
         }
         else
         {
-            /// NOTE This almost matches with the case of impl::likePatternIsSubstring.
+            const auto & regexp = Regexps::Regexp(Regexps::createRegexp<is_like, /*no_capture*/ true, case_insensitive>(needle));
 
-            const UInt8 * const begin = haystack_data.data();
-            const UInt8 * const end = haystack_data.begin() + haystack_data.size();
-            const UInt8 * pos = begin;
+            String required_substring;
+            bool is_trivial;
+            bool required_substring_is_prefix; /// for `anchored` execution of the regexp.
 
-            /// The current index in the array of strings.
-            size_t i = 0;
+            regexp.getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
 
-            Searcher searcher(required_substring.data(), required_substring.size(), end - pos);
-
-            /// We will search for the next occurrence in all rows at once.
-            while (pos < end && end != (pos = searcher.search(pos, end - pos)))
+            if (required_substring.empty())
             {
-                /// Determine which index it refers to.
-                while (begin + haystack_offsets[i] <= pos)
+                if (!regexp.getRE2()) /// An empty regexp. Always matches.
                 {
-                    res[i] = negate;
-                    ++i;
+                    if (haystack_size)
+                        memset(res.data(), !negate, haystack_size * sizeof(res[0]));
                 }
-
-                /// We check that the entry does not pass through the boundaries of strings.
-                if (pos + required_substring.size() < begin + haystack_offsets[i])
+                else
                 {
-                    /// And if it does not, if necessary, we check the regexp.
-                    if (is_trivial)
-                        res[i] = !negate;
-                    else
+                    size_t prev_offset = 0;
+                    for (size_t i = 0; i < haystack_size; ++i)
                     {
-                        const char * str_data = reinterpret_cast<const char *>(&haystack_data[haystack_offsets[i - 1]]);
-                        size_t str_size = haystack_offsets[i] - haystack_offsets[i - 1] - 1;
-
-                        /** Even in the case of `required_substring_is_prefix` use UNANCHORED check for regexp,
-                          *  so that it can match when `required_substring` occurs into the string several times,
-                          *  and at the first occurrence, the regexp is not a match.
-                          */
-                        const size_t start_pos = (required_substring_is_prefix) ? (reinterpret_cast<const char *>(pos) - str_data) : 0;
-                        const size_t end_pos = str_size;
-
                         const bool match = regexp.getRE2()->Match(
-                                {str_data, str_size},
-                                start_pos,
-                                end_pos,
+                                {reinterpret_cast<const char *>(&haystack_data[prev_offset]), haystack_offsets[i] - prev_offset - 1},
+                                0,
+                                haystack_offsets[i] - prev_offset - 1,
                                 re2_st::RE2::UNANCHORED,
                                 nullptr,
                                 0);
                         res[i] = negate ^ match;
+
+                        prev_offset = haystack_offsets[i];
                     }
                 }
-                else
-                    res[i] = negate;
-
-                pos = begin + haystack_offsets[i];
-                ++i;
             }
+            else
+            {
+                /// NOTE This almost matches with the case of impl::likePatternIsSubstring.
 
-            /// Tail, in which there can be no substring.
-            if (i < res.size())
-                memset(&res[i], negate, (res.size() - i) * sizeof(res[0]));
+                const UInt8 * const begin = haystack_data.data();
+                const UInt8 * const end = haystack_data.begin() + haystack_data.size();
+                const UInt8 * pos = begin;
+
+                /// The current index in the array of strings.
+                size_t i = 0;
+
+                Searcher searcher(required_substring.data(), required_substring.size(), end - pos);
+
+                /// We will search for the next occurrence in all rows at once.
+                while (pos < end && end != (pos = searcher.search(pos, end - pos)))
+                {
+                    /// Determine which index it refers to.
+                    while (begin + haystack_offsets[i] <= pos)
+                    {
+                        res[i] = negate;
+                        ++i;
+                    }
+
+                    /// We check that the entry does not pass through the boundaries of strings.
+                    if (pos + required_substring.size() < begin + haystack_offsets[i])
+                    {
+                        /// And if it does not, if necessary, we check the regexp.
+
+                        if (is_trivial)
+                            res[i] = !negate;
+                        else
+                        {
+                            const char * str_data = reinterpret_cast<const char *>(&haystack_data[haystack_offsets[i - 1]]);
+                            size_t str_size = haystack_offsets[i] - haystack_offsets[i - 1] - 1;
+
+                            /** Even in the case of `required_substring_is_prefix` use UNANCHORED check for regexp,
+                              *  so that it can match when `required_substring` occurs into the string several times,
+                              *  and at the first occurrence, the regexp is not a match.
+                              */
+                            const size_t start_pos = (required_substring_is_prefix) ? (reinterpret_cast<const char *>(pos) - str_data) : 0;
+                            const size_t end_pos = str_size;
+
+                            const bool match = regexp.getRE2()->Match(
+                                    {str_data, str_size},
+                                    start_pos,
+                                    end_pos,
+                                    re2_st::RE2::UNANCHORED,
+                                    nullptr,
+                                    0);
+                            res[i] = negate ^ match;
+                        }
+                    }
+                    else
+                        res[i] = negate;
+
+                    pos = begin + haystack_offsets[i];
+                    ++i;
+                }
+
+                /// Tail, in which there can be no substring.
+                if (i < res.size())
+                    memset(&res[i], negate, (res.size() - i) * sizeof(res[0]));
+            }
         }
     }
 
@@ -267,7 +291,7 @@ struct MatchImpl
         if (haystack.empty())
             return;
 
-        /// Special case that the [I]LIKE expression reduces to finding a substring in a string
+        /// A simple case where the LIKE expression reduces to finding a substring in a string
         String strstr_pattern;
         if (is_like && impl::likePatternIsSubstring(needle, strstr_pattern))
         {
@@ -309,105 +333,109 @@ struct MatchImpl
             /// Tail, in which there can be no substring.
             if (i < res.size())
                 memset(&res[i], negate, (res.size() - i) * sizeof(res[0]));
-
-            return;
-        }
-
-        const auto & regexp = Regexps::Regexp(Regexps::createRegexp<is_like, /*no_capture*/ true, case_insensitive>(needle));
-
-        String required_substring;
-        bool is_trivial;
-        bool required_substring_is_prefix; /// for `anchored` execution of the regexp.
-
-        regexp.getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
-
-        if (required_substring.empty())
-        {
-            if (!regexp.getRE2()) /// An empty regexp. Always matches.
-                memset(res.data(), !negate, haystack_size * sizeof(res[0]));
-            else
-            {
-                size_t offset = 0;
-                for (size_t i = 0; i < haystack_size; ++i)
-                {
-                    const bool match = regexp.getRE2()->Match(
-                            {reinterpret_cast<const char *>(&haystack[offset]), N},
-                            0,
-                            N,
-                            re2_st::RE2::UNANCHORED,
-                            nullptr,
-                            0);
-                    res[i] = negate ^ match;
-
-                    offset += N;
-                }
-            }
         }
         else
         {
-            /// NOTE This almost matches with the case of likePatternIsSubstring.
+            const auto & regexp = Regexps::Regexp(Regexps::createRegexp<is_like, /*no_capture*/ true, case_insensitive>(needle));
 
-            const UInt8 * const begin = haystack.data();
-            const UInt8 * const end = haystack.data() + haystack.size();
-            const UInt8 * pos = begin;
+            String required_substring;
+            bool is_trivial;
+            bool required_substring_is_prefix; /// for `anchored` execution of the regexp.
 
-            size_t i = 0;
-            const UInt8 * next_pos = begin;
+            regexp.getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
 
-            /// If required substring is larger than string size - it cannot be found.
-            if (required_substring.size() <= N)
+            if (required_substring.empty())
             {
-                Searcher searcher(required_substring.data(), required_substring.size(), end - pos);
-
-                /// We will search for the next occurrence in all rows at once.
-                while (pos < end && end != (pos = searcher.search(pos, end - pos)))
+                if (!regexp.getRE2()) /// An empty regexp. Always matches.
                 {
-                    /// Let's determine which index it refers to.
-                    while (next_pos + N <= pos)
+                    if (haystack_size)
+                        memset(res.data(), !negate, haystack_size * sizeof(res[0]));
+                }
+                else
+                {
+                    size_t offset = 0;
+                    for (size_t i = 0; i < haystack_size; ++i)
                     {
-                        res[i] = negate;
-                        next_pos += N;
-                        ++i;
+                        const bool match = regexp.getRE2()->Match(
+                                {reinterpret_cast<const char *>(&haystack[offset]), N},
+                                0,
+                                N,
+                                re2_st::RE2::UNANCHORED,
+                                nullptr,
+                                0);
+                        res[i] = negate ^ match;
+
+                        offset += N;
                     }
-                    next_pos += N;
-
-                    if (pos + required_substring.size() <= next_pos)
-                    {
-                        /// And if it does not, if necessary, we check the regexp.
-                        if (is_trivial)
-                            res[i] = !negate;
-                        else
-                        {
-                            const char * str_data = reinterpret_cast<const char *>(next_pos - N);
-
-                            /** Even in the case of `required_substring_is_prefix` use UNANCHORED check for regexp,
-                            *  so that it can match when `required_substring` occurs into the string several times,
-                            *  and at the first occurrence, the regexp is not a match.
-                            */
-                            const size_t start_pos = (required_substring_is_prefix) ? (reinterpret_cast<const char *>(pos) - str_data) : 0;
-                            const size_t end_pos = N;
-
-                            const bool match = regexp.getRE2()->Match(
-                                    {str_data, N},
-                                    start_pos,
-                                    end_pos,
-                                    re2_st::RE2::UNANCHORED,
-                                    nullptr,
-                                    0);
-                            res[i] = negate ^ match;
-                        }
-                    }
-                    else
-                        res[i] = negate;
-
-                    pos = next_pos;
-                    ++i;
                 }
             }
+            else
+            {
+                /// NOTE This almost matches with the case of likePatternIsSubstring.
 
-            /// Tail, in which there can be no substring.
-            if (i < res.size())
-                memset(&res[i], negate, (res.size() - i) * sizeof(res[0]));
+                const UInt8 * const begin = haystack.data();
+                const UInt8 * const end = haystack.data() + haystack.size();
+                const UInt8 * pos = begin;
+
+                size_t i = 0;
+                const UInt8 * next_pos = begin;
+
+                /// If required substring is larger than string size - it cannot be found.
+                if (required_substring.size() <= N)
+                {
+                    Searcher searcher(required_substring.data(), required_substring.size(), end - pos);
+
+                    /// We will search for the next occurrence in all rows at once.
+                    while (pos < end && end != (pos = searcher.search(pos, end - pos)))
+                    {
+                        /// Let's determine which index it refers to.
+                        while (next_pos + N <= pos)
+                        {
+                            res[i] = negate;
+                            next_pos += N;
+                            ++i;
+                        }
+                        next_pos += N;
+
+                        if (pos + required_substring.size() <= next_pos)
+                        {
+                            /// And if it does not, if necessary, we check the regexp.
+
+                            if (is_trivial)
+                                res[i] = !negate;
+                            else
+                            {
+                                const char * str_data = reinterpret_cast<const char *>(next_pos - N);
+
+                                /** Even in the case of `required_substring_is_prefix` use UNANCHORED check for regexp,
+                                *  so that it can match when `required_substring` occurs into the string several times,
+                                *  and at the first occurrence, the regexp is not a match.
+                                */
+                                const size_t start_pos = (required_substring_is_prefix) ? (reinterpret_cast<const char *>(pos) - str_data) : 0;
+                                const size_t end_pos = N;
+
+                                const bool match = regexp.getRE2()->Match(
+                                        {str_data, N},
+                                        start_pos,
+                                        end_pos,
+                                        re2_st::RE2::UNANCHORED,
+                                        nullptr,
+                                        0);
+                                res[i] = negate ^ match;
+                            }
+                        }
+                        else
+                            res[i] = negate;
+
+                        pos = next_pos;
+                        ++i;
+                    }
+                }
+
+                /// Tail, in which there can be no substring.
+                if (i < res.size())
+                    memset(&res[i], negate, (res.size() - i) * sizeof(res[0]));
+            }
         }
     }
 
@@ -423,6 +451,7 @@ struct MatchImpl
 
         assert(haystack_size == needle_offset.size());
         assert(haystack_size == res.size());
+
         assert(start_pos_ == nullptr);
 
         if (haystack_offsets.empty())
@@ -469,7 +498,9 @@ struct MatchImpl
                 if (required_substr.empty())
                 {
                     if (!regexp->getRE2()) /// An empty regexp. Always matches.
+                    {
                         res[i] = !negate;
+                    }
                     else
                     {
                         const bool match = regexp->getRE2()->Match(
@@ -488,11 +519,15 @@ struct MatchImpl
                     const auto * match = searcher.search(cur_haystack_data, cur_haystack_length);
 
                     if (match == cur_haystack_data + cur_haystack_length)
+                    {
                         res[i] = negate; // no match
+                    }
                     else
                     {
                         if (is_trivial)
+                        {
                             res[i] = !negate; // no wildcards in pattern
+                        }
                         else
                         {
                             const size_t start_pos = (required_substring_is_prefix) ? (match - cur_haystack_data) : 0;
@@ -528,6 +563,7 @@ struct MatchImpl
 
         assert(haystack_size == needle_offset.size());
         assert(haystack_size == res.size());
+
         assert(start_pos_ == nullptr);
 
         if (haystack.empty())
@@ -574,7 +610,9 @@ struct MatchImpl
                 if (required_substr.empty())
                 {
                     if (!regexp->getRE2()) /// An empty regexp. Always matches.
+                    {
                         res[i] = !negate;
+                    }
                     else
                     {
                         const bool match = regexp->getRE2()->Match(
@@ -593,11 +631,15 @@ struct MatchImpl
                     const auto * match = searcher.search(cur_haystack_data, cur_haystack_length);
 
                     if (match == cur_haystack_data + cur_haystack_length)
+                    {
                         res[i] = negate; // no match
+                    }
                     else
                     {
                         if (is_trivial)
+                        {
                             res[i] = !negate; // no wildcards in pattern
+                        }
                         else
                         {
                             const size_t start_pos = (required_substring_is_prefix) ? (match - cur_haystack_data) : 0;

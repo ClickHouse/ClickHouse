@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/table-functions/numbers
 sidebar_position: 39
 sidebar_label: numbers
 ---

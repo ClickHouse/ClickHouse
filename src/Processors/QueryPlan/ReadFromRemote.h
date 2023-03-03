@@ -27,7 +27,7 @@ public:
         QueryProcessingStage::Enum stage_,
         StorageID main_table_,
         ASTPtr table_func_ptr_,
-        ContextMutablePtr context_,
+        ContextPtr context_,
         ThrottlerPtr throttler_,
         Scalars scalars_,
         Tables external_tables_,
@@ -39,17 +39,20 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-    void enforceSorting(SortDescription output_sort_description);
-    void enforceAggregationInOrder();
-
 private:
+    enum class Mode
+    {
+        PerReplica,
+        PerShard
+    };
+
     ClusterProxy::SelectStreamFactory::Shards shards;
     QueryProcessingStage::Enum stage;
 
     StorageID main_table;
     ASTPtr table_func_ptr;
 
-    ContextMutablePtr context;
+    ContextPtr context;
 
     ThrottlerPtr throttler;
     Scalars scalars;
@@ -75,7 +78,7 @@ public:
         QueryProcessingStage::Enum stage_,
         StorageID main_table_,
         ASTPtr table_func_ptr_,
-        ContextMutablePtr context_,
+        ContextPtr context_,
         ThrottlerPtr throttler_,
         Scalars scalars_,
         Tables external_tables_,
@@ -85,9 +88,6 @@ public:
     String getName() const override { return "ReadFromRemoteParallelReplicas"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
-
-    void enforceSorting(SortDescription output_sort_description);
-    void enforceAggregationInOrder();
 
 private:
 
@@ -100,7 +100,7 @@ private:
     StorageID main_table;
     ASTPtr table_func_ptr;
 
-    ContextMutablePtr context;
+    ContextPtr context;
 
     ThrottlerPtr throttler;
     Scalars scalars;

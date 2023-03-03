@@ -6,7 +6,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/MySQL/ASTCreateQuery.h>
@@ -155,7 +154,7 @@ static ColumnsDescription createColumnsDescription(const NamesAndTypesList & col
     /// but this produce endless recursion in gcc-11, and leads to SIGSEGV
     /// (see git blame for details).
     auto column_name_and_type = columns_name_and_type.begin();
-    const auto * declare_column_ast = columns_definition->children.begin();
+    auto declare_column_ast = columns_definition->children.begin();
     for (; column_name_and_type != columns_name_and_type.end(); column_name_and_type++, declare_column_ast++)
     {
         const auto & declare_column = (*declare_column_ast)->as<MySQLParser::ASTDeclareColumn>();
@@ -544,29 +543,15 @@ void InterpreterDropImpl::validate(const InterpreterDropImpl::TQuery & /*query*/
 ASTs InterpreterDropImpl::getRewrittenQueries(
     const InterpreterDropImpl::TQuery & drop_query, ContextPtr context, const String & mapped_to_database, const String & mysql_database)
 {
-    /// Skip drop database|view|dictionary|others
-    if (drop_query.kind != TQuery::Kind::Table)
+    const auto & database_name = resolveDatabase(drop_query.getDatabase(), mysql_database, mapped_to_database, context);
+
+    /// Skip drop database|view|dictionary
+    if (database_name != mapped_to_database || !drop_query.table || drop_query.is_view || drop_query.is_dictionary)
         return {};
-    TQuery::QualifiedNames tables = drop_query.names;
-    ASTs rewritten_querys;
-    for (const auto & table: tables)
-    {
-        const auto & database_name = resolveDatabase(table.schema, mysql_database, mapped_to_database, context);
-        if (database_name != mapped_to_database)
-            continue;
-        auto rewritten_query = std::make_shared<ASTDropQuery>();
-        rewritten_query->setTable(table.shortName);
-        rewritten_query->setDatabase(mapped_to_database);
-        if (drop_query.is_truncate)
-            rewritten_query->kind = ASTDropQuery::Kind::Truncate;
-        else
-            rewritten_query->kind = ASTDropQuery::Kind::Drop;
-        rewritten_query->is_view = false;
-        //To avoid failure, we always set exists
-        rewritten_query->if_exists = true;
-        rewritten_querys.push_back(rewritten_query);
-    }
-    return rewritten_querys;
+
+    ASTPtr rewritten_query = drop_query.clone();
+    rewritten_query->as<ASTDropQuery>()->setDatabase(mapped_to_database);
+    return ASTs{rewritten_query};
 }
 
 void InterpreterRenameImpl::validate(const InterpreterRenameImpl::TQuery & rename_query, ContextPtr /*context*/)

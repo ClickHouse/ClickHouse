@@ -22,7 +22,6 @@ public:
     bool changed{false};
     bool temporary{false};
     bool caches{false};
-    bool full{false};
 
     String cluster_str;
     String from;

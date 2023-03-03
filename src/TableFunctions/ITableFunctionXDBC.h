@@ -5,7 +5,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <BridgeHelper/XDBCBridgeHelper.h>
 
-#include "config.h"
+#include <Common/config.h>
 
 namespace DB
 {

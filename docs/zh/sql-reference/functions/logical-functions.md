@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/functions/logical-functions
 sidebar_position: 37
 sidebar_label: 逻辑函数
 ---

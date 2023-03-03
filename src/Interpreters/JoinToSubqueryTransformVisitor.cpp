@@ -153,7 +153,7 @@ private:
                 data.addTableColumns(identifier.name(), columns);
 
                 // QualifiedAsterisk's transformers start to appear at child 1
-                for (const auto * it = qualified_asterisk->children.begin() + 1; it != qualified_asterisk->children.end(); ++it)
+                for (auto it = qualified_asterisk->children.begin() + 1; it != qualified_asterisk->children.end(); ++it)
                 {
                     IASTColumnsTransformer::transform(*it, columns);
                 }
@@ -209,7 +209,7 @@ struct RewriteTablesVisitorData
     {
         if (done)
             return;
-        ASTs new_tables{left, right};
+        std::vector<ASTPtr> new_tables{left, right};
         ast->children.swap(new_tables);
         done = true;
     }
@@ -546,13 +546,10 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
                 {
                     auto alias = aliases.find(ident->name())->second;
                     auto alias_ident = alias->clone();
-                    if (auto * alias_ident_typed = alias_ident->as<ASTIdentifier>())
-                    {
-                        alias_ident_typed->restoreTable();
-                        bool alias_equals_column_name = alias_ident->getColumnNameWithoutAlias() == ident->getColumnNameWithoutAlias();
-                        if (!alias_equals_column_name)
-                            throw Exception("Alias clashes with qualified column '" + ident->name() + "'", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
-                    }
+                    alias_ident->as<ASTIdentifier>()->restoreTable();
+                    bool alias_equals_column_name = alias_ident->getColumnNameWithoutAlias() == ident->getColumnNameWithoutAlias();
+                    if (!alias_equals_column_name)
+                        throw Exception("Alias clashes with qualified column '" + ident->name() + "'", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
                 }
                 String short_name = ident->shortName();
                 String original_long_name;
@@ -560,11 +557,11 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
                     original_long_name = ident->name();
 
                 size_t count = countTablesWithColumn(tables, short_name);
-                const auto & table = tables[*table_pos];
 
                 /// isValidIdentifierBegin retuired to be consistent with TableJoin::deduplicateAndQualifyColumnNames
                 if (count > 1 || aliases.contains(short_name) || !isValidIdentifierBegin(short_name.at(0)))
                 {
+                    const auto & table = tables[*table_pos];
                     IdentifierSemantic::setColumnLongName(*ident, table.table); /// table.column -> table_alias.column
                     const auto & unique_long_name = ident->name();
 
@@ -578,13 +575,6 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
                 }
                 else
                 {
-                    if (!table.hasColumn(short_name))
-                    {
-                        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
-                                        "There's no column '{}' in table '{}'",
-                                        ident->name(),
-                                        table.table.getQualifiedNamePrefix(false));
-                    }
                     ident->setShortName(short_name); /// table.column -> column
                     needed_columns[*table_pos].no_clashes.emplace(short_name);
                 }

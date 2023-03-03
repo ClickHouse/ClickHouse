@@ -101,7 +101,7 @@ def _format_header(header, branch_name, branch_url=None):
         result = "ClickHouse " + result
     result += " for "
     if branch_url:
-        result += f'<a href="{branch_url}">{branch_name}</a>'
+        result += '<a href="{url}">{name}</a>'.format(url=branch_url, name=branch_name)
     else:
         result += branch_name
     return result
@@ -140,7 +140,9 @@ def _get_html_url(url):
     if isinstance(url, tuple):
         href, name = url[0], _get_html_url_name(url)
     if href and name:
-        return f'<a href="{href}">{_get_html_url_name(url)}</a>'
+        return '<a href="{href}">{name}</a>'.format(
+            href=href, name=_get_html_url_name(url)
+        )
     return ""
 
 
@@ -197,7 +199,13 @@ def create_test_html_report(
                 num_fails = num_fails + 1
                 is_fail_id = 'id="fail' + str(num_fails) + '" '
 
-            row += f'<td {is_fail_id}style="{style}">{test_status}</td>'
+            row += (
+                "<td "
+                + is_fail_id
+                + 'style="{}">'.format(style)
+                + test_status
+                + "</td>"
+            )
 
             if test_time is not None:
                 row += "<td>" + test_time + "</td>"
@@ -221,8 +229,8 @@ def create_test_html_report(
         if has_test_logs and not with_raw_logs:
             headers.append("Logs")
 
-        headers_html = "".join(["<th>" + h + "</th>" for h in headers])
-        test_part = HTML_TEST_PART.format(headers=headers_html, rows=rows_part)
+        headers = "".join(["<th>" + h + "</th>" for h in headers])
+        test_part = HTML_TEST_PART.format(headers=headers, rows=rows_part)
     else:
         test_part = ""
 
@@ -275,6 +283,8 @@ tr:hover td {{filter: brightness(95%);}}
 <th>Compiler</th>
 <th>Build type</th>
 <th>Sanitizer</th>
+<th>Bundled</th>
+<th>Libraries</th>
 <th>Status</th>
 <th>Build log</th>
 <th>Build time</th>
@@ -308,31 +318,34 @@ def create_build_html_report(
         build_results, build_logs_urls, artifact_urls_list
     ):
         row = "<tr>"
-        row += f"<td>{build_result.compiler}</td>"
+        row += "<td>{}</td>".format(build_result.compiler)
         if build_result.build_type:
-            row += f"<td>{build_result.build_type}</td>"
+            row += "<td>{}</td>".format(build_result.build_type)
         else:
-            row += "<td>relwithdebuginfo</td>"
+            row += "<td>{}</td>".format("relwithdebuginfo")
         if build_result.sanitizer:
-            row += f"<td>{build_result.sanitizer}</td>"
+            row += "<td>{}</td>".format(build_result.sanitizer)
         else:
-            row += "<td>none</td>"
+            row += "<td>{}</td>".format("none")
+
+        row += "<td>{}</td>".format(build_result.bundled)
+        row += "<td>{}</td>".format(build_result.libraries)
 
         if build_result.status:
             style = _get_status_style(build_result.status)
-            row += f'<td style="{style}">{build_result.status}</td>'
+            row += '<td style="{}">{}</td>'.format(style, build_result.status)
         else:
             style = _get_status_style("error")
-            row += f'<td style="{style}">error</td>'
+            row += '<td style="{}">{}</td>'.format(style, "error")
 
-        row += f'<td><a href="{build_log_url}">link</a></td>'
+        row += '<td><a href="{}">link</a></td>'.format(build_log_url)
 
         if build_result.elapsed_seconds:
             delta = datetime.timedelta(seconds=build_result.elapsed_seconds)
         else:
-            delta = "unknown"  # type: ignore
+            delta = "unknown"
 
-        row += f"<td>{delta}</td>"
+        row += "<td>{}</td>".format(str(delta))
 
         links = ""
         link_separator = "<br/>"
@@ -344,7 +357,7 @@ def create_build_html_report(
                 links += link_separator
             if links:
                 links = links[: -len(link_separator)]
-            row += f"<td>{links}</td>"
+            row += "<td>{}</td>".format(links)
 
         row += "</tr>"
         rows += row

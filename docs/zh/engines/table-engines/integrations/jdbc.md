@@ -1,5 +1,4 @@
 ---
-slug: /zh/engines/table-engines/integrations/jdbc
 sidebar_position: 34
 sidebar_label: JDBC表引擎
 ---

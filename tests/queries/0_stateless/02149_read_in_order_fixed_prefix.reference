@@ -8,13 +8,11 @@ ExpressionTransform
   (Limit)
   Limit
     (Sorting)
-    FinishSortingTransform
-      PartialSortingTransform
-        MergingSortedTransform 2 → 1
-          (Expression)
-          ExpressionTransform × 2
-            (ReadFromMergeTree)
-            MergeTreeInOrder × 2 0 → 1
+    MergingSortedTransform 2 → 1
+      (Expression)
+      ExpressionTransform × 2
+        (ReadFromMergeTree)
+        MergeTreeInOrder × 2 0 → 1
 2020-10-01	9
 2020-10-01	9
 2020-10-01	9
@@ -25,16 +23,14 @@ ExpressionTransform
   (Limit)
   Limit
     (Sorting)
-    FinishSortingTransform
-      PartialSortingTransform
-        MergingSortedTransform 2 → 1
-          (Expression)
-          ExpressionTransform × 2
-            (ReadFromMergeTree)
+    MergingSortedTransform 2 → 1
+      (Expression)
+      ExpressionTransform × 2
+        (ReadFromMergeTree)
+        ReverseTransform
+          MergeTreeReverse 0 → 1
             ReverseTransform
               MergeTreeReverse 0 → 1
-                ReverseTransform
-                  MergeTreeReverse 0 → 1
 2020-10-01	9
 2020-10-01	9
 2020-10-01	9

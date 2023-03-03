@@ -1,9 +1,9 @@
 ---
-slug: /en/sql-reference/functions/encryption-functions
 sidebar_position: 67
 sidebar_label: Encryption
-title: "Encryption functions"
 ---
+
+# Encryption functions
 
 These functions  implement encryption and decryption of data with AES (Advanced Encryption Standard) algorithm.
 
@@ -293,53 +293,6 @@ Result:
 ```
 
 Notice how only a portion of the data was properly decrypted, and the rest is gibberish since either `mode`, `key`, or `iv` were different upon encryption.
-
-## tryDecrypt
-
-Similar to `decrypt`, but returns NULL if decryption fails because of using the wrong key.
-
-**Examples**
-
-Let's create a table where `user_id` is the unique user id, `encrypted` is an encrypted string field, `iv` is an initial vector for decrypt/encrypt. Assume that users know their id and the key to decrypt the encrypted field:
-
-```sql
-CREATE TABLE decrypt_null (
-  dt DateTime,
-  user_id UInt32,
-  encrypted String,
-  iv String
-) ENGINE = Memory;
-```
-
-Insert some data:
-
-```sql
-INSERT INTO decrypt_null VALUES
-    ('2022-08-02 00:00:00', 1, encrypt('aes-256-gcm', 'value1', 'keykeykeykeykeykeykeykeykeykey01', 'iv1'), 'iv1'),
-    ('2022-09-02 00:00:00', 2, encrypt('aes-256-gcm', 'value2', 'keykeykeykeykeykeykeykeykeykey02', 'iv2'), 'iv2'),
-    ('2022-09-02 00:00:01', 3, encrypt('aes-256-gcm', 'value3', 'keykeykeykeykeykeykeykeykeykey03', 'iv3'), 'iv3');
-```
-
-Query:
-
-```sql
-SELECT
-    dt,
-    user_id,
-    tryDecrypt('aes-256-gcm', encrypted, 'keykeykeykeykeykeykeykeykeykey02', iv) AS value
-FROM decrypt_null
-ORDER BY user_id ASC
-```
-
-Result:
-
-```
-┌──────────────────dt─┬─user_id─┬─value──┐
-│ 2022-08-02 00:00:00 │       1 │ ᴺᵁᴸᴸ   │
-│ 2022-09-02 00:00:00 │       2 │ value2 │
-│ 2022-09-02 00:00:01 │       3 │ ᴺᵁᴸᴸ   │
-└─────────────────────┴─────────┴────────┘
-```
 
 ## aes_decrypt_mysql
 

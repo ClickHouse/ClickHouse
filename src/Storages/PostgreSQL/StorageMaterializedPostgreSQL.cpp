@@ -279,7 +279,7 @@ void StorageMaterializedPostgreSQL::read(
         ContextPtr context_,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        size_t num_streams)
+        unsigned num_streams)
 {
     auto nested_table = getNested();
 

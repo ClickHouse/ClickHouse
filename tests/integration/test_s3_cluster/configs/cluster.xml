@@ -20,20 +20,20 @@
         </shard>
     </cluster_simple>
 
-    <cluster_non_existent_port>
+
+    <!-- A part of the cluster above, represents only one shard-->
+    <first_shard>
         <shard>
             <replica>
                 <host>s0_0_0</host>
                 <port>9000</port>
             </replica>
-        </shard>
-        <shard>
             <replica>
-                <host>s0_0_0</host>
-                <port>19000</port>
+                <host>s0_0_1</host>
+                <port>9000</port>
             </replica>
         </shard>
-    </cluster_non_existent_port>
+    </first_shard>
 
     </remote_servers>
     <macros>

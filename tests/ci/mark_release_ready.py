@@ -5,12 +5,13 @@ from env_helper import GITHUB_JOB_URL
 from get_robot_token import get_best_robot_token
 from github_helper import GitHub
 from pr_info import PRInfo
-from release import RELEASE_READY_STATUS
+
+RELEASE_READY_STATUS = "Ready for release"
 
 
 def main():
     pr_info = PRInfo()
-    gh = GitHub(get_best_robot_token(), create_cache_dir=False, per_page=100)
+    gh = GitHub(get_best_robot_token(), per_page=100)
     commit = get_commit(gh, pr_info.sha)
     commit.create_status(
         context=RELEASE_READY_STATUS,

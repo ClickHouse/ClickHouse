@@ -4,7 +4,6 @@
 #include <Common/getRandomASCIIString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
-#include <optional>
 #include <ranges>
 #include <filesystem>
 
@@ -16,7 +15,7 @@ namespace DB
 
 static std::string getTempFileName(const std::string & dir)
 {
-    return fs::path(dir) / getRandomASCIIString(32);
+    return fs::path(dir) / getRandomASCIIString();
 }
 
 SetLastModifiedOperation::SetLastModifiedOperation(const std::string & path_, Poco::Timestamp new_timestamp_, IDisk & disk_)
@@ -63,7 +62,7 @@ UnlinkFileOperation::UnlinkFileOperation(const std::string & path_, IDisk & disk
 
 void UnlinkFileOperation::execute(std::unique_lock<std::shared_mutex> &)
 {
-    auto buf = disk.readFile(path, ReadSettings{}, std::nullopt, disk.getFileSize(path));
+    auto buf = disk.readFile(path);
     readStringUntilEOF(prev_data, *buf);
     disk.removeFile(path);
 }
@@ -325,15 +324,11 @@ void UnlinkMetadataFileOperation::execute(std::unique_lock<std::shared_mutex> & 
 
 void UnlinkMetadataFileOperation::undo()
 {
-    /// Operations MUST be reverted in the reversed order, so
-    /// when we apply operation #1 (write) and operation #2 (unlink)
-    /// we should revert #2 and only after it #1. Otherwise #1 will overwrite
-    /// file with incorrect data.
-    if (unlink_operation)
-        unlink_operation->undo();
-
     if (write_operation)
         write_operation->undo();
+
+    if (unlink_operation)
+        unlink_operation->undo();
 }
 
 void SetReadonlyFileOperation::execute(std::unique_lock<std::shared_mutex> & metadata_lock)

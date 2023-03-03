@@ -1,5 +1,4 @@
 ---
-slug: /en/engines/table-engines/special/memory
 sidebar_position: 110
 sidebar_label:  Memory
 ---

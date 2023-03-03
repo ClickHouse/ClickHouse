@@ -1,6 +1,3 @@
----
-slug: /ru/operations/system-tables/table_engines
----
 # system.table_engines {#system-table-engines}
 
 Содержит информацию про движки таблиц, поддерживаемые сервером, а также об их возможностях.

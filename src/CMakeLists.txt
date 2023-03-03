@@ -11,14 +11,22 @@ if(COMPILER_PIPE)
 else()
     set(MAX_COMPILER_MEMORY 1500)
 endif()
-set(MAX_LINKER_MEMORY 3500)
+if(USE_STATIC_LIBRARIES)
+    set(MAX_LINKER_MEMORY 3500)
+else()
+    set(MAX_LINKER_MEMORY 2500)
+endif()
 include(../cmake/limit_jobs.cmake)
+
+set (CONFIG_VERSION "${CMAKE_CURRENT_BINARY_DIR}/Common/config_version.h")
+set (CONFIG_COMMON "${CMAKE_CURRENT_BINARY_DIR}/Common/config.h")
 
 include (../cmake/version.cmake)
 message (STATUS "Will build ${VERSION_FULL} revision ${VERSION_REVISION} ${VERSION_OFFICIAL}")
 include (configure_config.cmake)
-configure_file (Common/config.h.in ${CONFIG_INCLUDE_PATH}/config.h)
-configure_file (Common/config_version.h.in ${CONFIG_INCLUDE_PATH}/config_version.h)
+configure_file (Common/config.h.in ${CONFIG_COMMON})
+configure_file (Common/config_version.h.in ${CONFIG_VERSION})
+configure_file (Core/config_core.h.in "${CMAKE_CURRENT_BINARY_DIR}/Core/include/config_core.h")
 
 if (USE_DEBUG_HELPERS)
     get_target_property(MAGIC_ENUM_INCLUDE_DIR ch_contrib::magic_enum INTERFACE_INCLUDE_DIRECTORIES)
@@ -33,14 +41,6 @@ endif ()
 # If turned ON, this option defines such macro.
 # See `src/Common/TargetSpecific.h`
 option(ENABLE_MULTITARGET_CODE "Enable platform-dependent code" ON)
-
-if (NO_SSE3_OR_HIGHER)
-    # Optimized x86 code in DECLARE_*_SPECIFIC_CODE blocks (see `src/Common/TargetSpecific.h`) is sometimes marked FORCE_INLINE. As a
-    # result, its instruction set requirements (e.g. SSE4.2) leak into generic code. This is normally not a problem for standard x86 builds
-    # because generic code is compiled with SSE 4.2 anyways. But it breaks SSE2-only builds. Therefore disabling the multitarget code
-    # machinery and always use generic code. (The cleaner alternative is removing FORCE_INLINE but that impacts performance too much.)
-    set(ENABLE_MULTITARGET_CODE OFF)
-endif()
 
 if (ENABLE_MULTITARGET_CODE)
     add_definitions(-DENABLE_MULTITARGET_CODE=1)
@@ -62,13 +62,12 @@ add_subdirectory (Storages)
 add_subdirectory (Parsers)
 add_subdirectory (IO)
 add_subdirectory (Functions)
-add_subdirectory (Analyzer)
-add_subdirectory (Planner)
 add_subdirectory (Interpreters)
 add_subdirectory (AggregateFunctions)
 add_subdirectory (Client)
 add_subdirectory (TableFunctions)
 add_subdirectory (Processors)
+add_subdirectory (Formats)
 add_subdirectory (Compression)
 add_subdirectory (Server)
 add_subdirectory (Coordination)
@@ -84,7 +83,6 @@ add_headers_and_sources(clickhouse_common_io Common)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)
 add_headers_and_sources(clickhouse_common_io IO)
 add_headers_and_sources(clickhouse_common_io IO/Archives)
-add_headers_and_sources(clickhouse_common_io IO/Resource)
 add_headers_and_sources(clickhouse_common_io IO/S3)
 list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/new_delete.cpp)
 
@@ -103,7 +101,6 @@ if (TARGET ch_contrib::nats_io)
 endif()
 
 add_headers_and_sources(dbms Storages/MeiliSearch)
-add_headers_and_sources(dbms Storages/NamedCollections)
 
 if (TARGET ch_contrib::amqp_cpp)
     add_headers_and_sources(dbms Storages/RabbitMQ)
@@ -148,6 +145,7 @@ else()
 endif ()
 
 list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
+list (APPEND clickhouse_common_io_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
 
 list (APPEND dbms_sources Functions/IFunction.cpp Functions/FunctionFactory.cpp Functions/FunctionHelpers.cpp Functions/extractTimeZoneFromFunctionArguments.cpp Functions/FunctionsLogical.cpp Functions/indexHint.cpp)
 list (APPEND dbms_headers Functions/IFunction.h Functions/FunctionFactory.h Functions/FunctionHelpers.h Functions/extractTimeZoneFromFunctionArguments.h Functions/FunctionsLogical.h Functions/indexHint.h)
@@ -196,6 +194,10 @@ endif ()
 
 add_library(clickhouse_common_io ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
 
+if (SPLIT_SHARED_LIBRARIES)
+    target_compile_definitions(clickhouse_common_io PRIVATE SPLIT_SHARED_LIBRARIES)
+endif ()
+
 add_library (clickhouse_malloc OBJECT Common/malloc.cpp)
 set_source_files_properties(Common/malloc.cpp PROPERTIES COMPILE_FLAGS "-fno-builtin")
 
@@ -219,31 +221,32 @@ add_subdirectory(Common/Config)
 
 set (all_modules)
 macro(add_object_library name common_path)
-    add_headers_and_sources(dbms ${common_path})
+    if (USE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
+        add_headers_and_sources(dbms ${common_path})
+    else ()
+        list (APPEND all_modules ${name})
+        add_headers_and_sources(${name} ${common_path})
+        add_library(${name} SHARED ${${name}_sources} ${${name}_headers})
+        if (OS_DARWIN)
+            target_link_libraries (${name} PRIVATE -Wl,-undefined,dynamic_lookup)
+        else()
+            target_link_libraries (${name} PRIVATE -Wl,--unresolved-symbols=ignore-all)
+        endif()
+    endif ()
 endmacro()
 
 add_object_library(clickhouse_access Access)
 add_object_library(clickhouse_backups Backups)
 add_object_library(clickhouse_core Core)
 add_object_library(clickhouse_core_mysql Core/MySQL)
-if (ENABLE_OPENSSL OR ENABLE_OPENSSL_DYNAMIC)
-    add_headers_and_sources(dbms Compression)
-    list(REMOVE_ITEM dbms_headers Compression/CompressionCodecEncrypted.h)
-    list(REMOVE_ITEM dbms_sources Compression/CompressionCodecEncrypted.cpp)
-else ()
-    add_object_library(clickhouse_compression Compression)
-endif ()
+add_object_library(clickhouse_compression Compression)
 add_object_library(clickhouse_querypipeline QueryPipeline)
 add_object_library(clickhouse_datatypes DataTypes)
 add_object_library(clickhouse_datatypes_serializations DataTypes/Serializations)
 add_object_library(clickhouse_databases Databases)
 add_object_library(clickhouse_databases_mysql Databases/MySQL)
 add_object_library(clickhouse_disks Disks)
-add_object_library(clickhouse_analyzer Analyzer)
-add_object_library(clickhouse_analyzer_passes Analyzer/Passes)
-add_object_library(clickhouse_planner Planner)
 add_object_library(clickhouse_interpreters Interpreters)
-add_object_library(clickhouse_interpreters_cache Interpreters/Cache)
 add_object_library(clickhouse_interpreters_access Interpreters/Access)
 add_object_library(clickhouse_interpreters_mysql Interpreters/MySQL)
 add_object_library(clickhouse_interpreters_clusterproxy Interpreters/ClusterProxy)
@@ -272,18 +275,33 @@ add_object_library(clickhouse_processors_ttl Processors/TTL)
 add_object_library(clickhouse_processors_merges_algorithms Processors/Merges/Algorithms)
 add_object_library(clickhouse_processors_queryplan Processors/QueryPlan)
 add_object_library(clickhouse_processors_queryplan_optimizations Processors/QueryPlan/Optimizations)
-add_object_library(clickhouse_user_defined_functions Functions/UserDefined)
 
 if (TARGET ch_contrib::nuraft)
     add_object_library(clickhouse_coordination Coordination)
 endif()
 
-add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
-target_link_libraries (dbms PRIVATE ch_contrib::libdivide)
-if (TARGET ch_contrib::jemalloc)
-    target_link_libraries (dbms PRIVATE ch_contrib::jemalloc)
-endif()
-set (all_modules dbms)
+if (USE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
+    add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
+    target_link_libraries (dbms PRIVATE ch_contrib::libdivide)
+    if (TARGET ch_contrib::jemalloc)
+        target_link_libraries (dbms PRIVATE ch_contrib::jemalloc)
+    endif()
+    set (all_modules dbms)
+else()
+    add_library (dbms SHARED ${dbms_headers} ${dbms_sources})
+    target_link_libraries (dbms PUBLIC ${all_modules})
+    target_link_libraries (clickhouse_interpreters PRIVATE ch_contrib::libdivide)
+    if (TARGET ch_contrib::jemalloc)
+        target_link_libraries (clickhouse_interpreters PRIVATE ch_contrib::jemalloc)
+    endif()
+    list (APPEND all_modules dbms)
+    # force all split libs to be linked
+    if (OS_DARWIN)
+        set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-undefined,error")
+    else()
+        set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-as-needed")
+    endif()
+endif ()
 
 macro (dbms_target_include_directories)
     foreach (module ${all_modules})
@@ -294,12 +312,6 @@ endmacro ()
 macro (dbms_target_link_libraries)
     foreach (module ${all_modules})
         target_link_libraries (${module} ${ARGN})
-    endforeach ()
-endmacro ()
-
-macro (dbms_target_include_directories)
-    foreach (module ${all_modules})
-        target_include_directories (${module} ${ARGN})
     endforeach ()
 endmacro ()
 
@@ -315,7 +327,7 @@ set_source_files_properties(
         Common/Elf.cpp
         Common/Dwarf.cpp
         Common/SymbolIndex.cpp
-        PROPERTIES COMPILE_FLAGS "-O2 ${WITHOUT_COVERAGE}")
+        PROPERTIES COMPILE_FLAGS "-O3 ${WITHOUT_COVERAGE}")
 
 target_link_libraries (clickhouse_common_io
         PRIVATE
@@ -347,6 +359,8 @@ target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::re2_st)
 target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::re2)
 
 target_link_libraries(clickhouse_common_io
+        PRIVATE
+            ${EXECINFO_LIBRARIES}
         PUBLIC
             boost::program_options
             boost::system
@@ -361,7 +375,6 @@ if (TARGET ch_contrib::cpuid)
 endif()
 
 dbms_target_link_libraries(PUBLIC ch_contrib::abseil_swiss_tables)
-target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::abseil_swiss_tables)
 
 # Make dbms depend on roaring instead of clickhouse_common_io so that roaring itself can depend on clickhouse_common_io
 # That way we we can redirect malloc/free functions avoiding circular dependencies
@@ -556,15 +569,6 @@ if (TARGET ch_contrib::rapidjson)
 endif()
 
 dbms_target_link_libraries(PUBLIC ch_contrib::consistent_hashing)
-
-if (TARGET ch_contrib::annoy)
-    dbms_target_link_libraries(PUBLIC ch_contrib::annoy)
-endif()
-
-if (TARGET ch_rust::skim)
-    # Add only -I, library is needed only for clickhouse-client/clickhouse-local
-    dbms_target_include_directories(PRIVATE $<TARGET_PROPERTY:ch_rust::skim,INTERFACE_INCLUDE_DIRECTORIES>)
-endif()
 
 include ("${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake")
 

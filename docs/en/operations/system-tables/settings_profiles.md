@@ -1,6 +1,3 @@
----
-slug: /en/operations/system-tables/settings_profiles
----
 # settings_profiles
 
 Contains properties of configured setting profiles.

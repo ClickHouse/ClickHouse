@@ -1,9 +1,8 @@
 #include <memory>
-
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
-
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnFixedString.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnWithTypeAndName.h>
 
@@ -23,12 +22,9 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/FieldToDataType.h>
-#include <DataTypes/DataTypesDecimal.h>
 
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnSet.h>
+#include <Columns/ColumnConst.h>
 
 #include <Storages/StorageSet.h>
 
@@ -52,7 +48,7 @@
 #include <Interpreters/interpretSubquery.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
-#include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
+#include <Interpreters/UserDefinedExecutableFunctionFactory.h>
 
 
 namespace DB
@@ -91,42 +87,6 @@ static size_t getTypeDepth(const DataTypePtr & type)
     return 0;
 }
 
-template <typename T>
-static bool decimalEqualsFloat(Field field, Float64 float_value)
-{
-    auto decimal_field = field.get<DecimalField<T>>();
-    auto decimal_to_float = DecimalUtils::convertTo<Float64>(decimal_field.getValue(), decimal_field.getScale());
-    return decimal_to_float == float_value;
-}
-
-/// Applies stricter rules than convertFieldToType:
-/// Doesn't allow :
-/// - loss of precision converting to Decimal
-static bool convertFieldToTypeStrict(const Field & from_value, const IDataType & to_type, Field & result_value)
-{
-    result_value = convertFieldToType(from_value, to_type);
-    if (Field::isDecimal(from_value.getType()) && Field::isDecimal(result_value.getType()))
-        return applyVisitor(FieldVisitorAccurateEquals{}, from_value, result_value);
-    if (from_value.getType() == Field::Types::Float64 && Field::isDecimal(result_value.getType()))
-    {
-        /// Convert back to Float64 and compare
-        if (result_value.getType() == Field::Types::Decimal32)
-            return decimalEqualsFloat<Decimal32>(result_value, from_value.get<Float64>());
-        if (result_value.getType() == Field::Types::Decimal64)
-            return decimalEqualsFloat<Decimal64>(result_value, from_value.get<Float64>());
-        if (result_value.getType() == Field::Types::Decimal128)
-            return decimalEqualsFloat<Decimal128>(result_value, from_value.get<Float64>());
-        if (result_value.getType() == Field::Types::Decimal256)
-            return decimalEqualsFloat<Decimal256>(result_value, from_value.get<Float64>());
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown decimal type {}", result_value.getTypeName());
-    }
-    return true;
-}
-
-/// The `convertFieldToTypeStrict` is used to prevent unexpected results in case of conversion with loss of precision.
-/// Example: `SELECT 33.3 :: Decimal(9, 1) AS a WHERE a IN (33.33 :: Decimal(9, 2))`
-/// 33.33 in the set is converted to 33.3, but it is not equal to 33.3 in the column, so the result should still be empty.
-/// We can not include values that don't represent any possible value from the type of filtered column to the set.
 template<typename Collection>
 static Block createBlockFromCollection(const Collection & collection, const DataTypes & types, bool transform_null_in)
 {
@@ -143,11 +103,10 @@ static Block createBlockFromCollection(const Collection & collection, const Data
     {
         if (columns_num == 1)
         {
-            Field field;
-            bool is_conversion_ok = convertFieldToTypeStrict(value, *types[0], field);
+            auto field = convertFieldToType(value, *types[0]);
             bool need_insert_null = transform_null_in && types[0]->isNullable();
-            if (is_conversion_ok && (!field.isNull() || need_insert_null))
-                columns[0]->insert(field);
+            if (!field.isNull() || need_insert_null)
+                columns[0]->insert(std::move(field));
         }
         else
         {
@@ -155,7 +114,7 @@ static Block createBlockFromCollection(const Collection & collection, const Data
                 throw Exception("Invalid type in set. Expected tuple, got "
                     + String(value.getTypeName()), ErrorCodes::INCORRECT_ELEMENT_OF_SET);
 
-            const auto & tuple = value.template get<const Tuple &>();
+            const auto & tuple = DB::get<const Tuple &>(value);
             size_t tuple_size = tuple.size();
 
             if (tuple_size != columns_num)
@@ -168,10 +127,7 @@ static Block createBlockFromCollection(const Collection & collection, const Data
             size_t i = 0;
             for (; i < tuple_size; ++i)
             {
-                bool is_conversion_ok = convertFieldToTypeStrict(tuple[i], *types[i], tuple_values[i]);
-                if (!is_conversion_ok)
-                    break;
-
+                tuple_values[i] = convertFieldToType(tuple[i], *types[i]);
                 bool need_insert_null = transform_null_in && types[i]->isNullable();
                 if (tuple_values[i].isNull() && !need_insert_null)
                     break;
@@ -350,9 +306,9 @@ Block createBlockForSet(
     {
         auto type_index = right_arg_type->getTypeId();
         if (type_index == TypeIndex::Tuple)
-            block = createBlockFromCollection(right_arg_value.get<const Tuple &>(), set_element_types, tranform_null_in);
+            block = createBlockFromCollection(DB::get<const Tuple &>(right_arg_value), set_element_types, tranform_null_in);
         else if (type_index == TypeIndex::Array)
-            block = createBlockFromCollection(right_arg_value.get<const Array &>(), set_element_types, tranform_null_in);
+            block = createBlockFromCollection(DB::get<const Array &>(right_arg_value), set_element_types, tranform_null_in);
         else
             throw_unsupported_type(right_arg_type);
     }
@@ -924,20 +880,20 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         {
             case GroupByKind::GROUPING_SETS:
             {
-                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForGroupingSets>(std::move(arguments_indexes), keys_info.grouping_set_keys, data.getContext()->getSettingsRef().force_grouping_standard_compatibility)), { "__grouping_set" }, column_name);
+                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForGroupingSets>(std::move(arguments_indexes), keys_info.grouping_set_keys)), { "__grouping_set" }, column_name);
                 break;
             }
             case GroupByKind::ROLLUP:
-                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForRollup>(std::move(arguments_indexes), aggregation_keys_number, data.getContext()->getSettingsRef().force_grouping_standard_compatibility)), { "__grouping_set" }, column_name);
+                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForRollup>(std::move(arguments_indexes), aggregation_keys_number)), { "__grouping_set" }, column_name);
                 break;
             case GroupByKind::CUBE:
             {
-                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForCube>(std::move(arguments_indexes), aggregation_keys_number, data.getContext()->getSettingsRef().force_grouping_standard_compatibility)), { "__grouping_set" }, column_name);
+                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingForCube>(std::move(arguments_indexes), aggregation_keys_number)), { "__grouping_set" }, column_name);
                 break;
             }
             case GroupByKind::ORDINARY:
             {
-                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingOrdinary>(std::move(arguments_indexes), data.getContext()->getSettingsRef().force_grouping_standard_compatibility)), {}, column_name);
+                data.addFunction(std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGroupingOrdinary>(std::move(arguments_indexes))), {}, column_name);
                 break;
             }
             default:

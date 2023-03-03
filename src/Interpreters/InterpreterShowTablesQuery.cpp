@@ -7,7 +7,7 @@
 #include <Interpreters/InterpreterShowTablesQuery.h>
 #include <DataTypes/DataTypeString.h>
 #include <Storages/ColumnsDescription.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Common/FileCacheFactory.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Access/Common/AccessFlags.h>
 #include <Common/typeid_cast.h>
@@ -111,15 +111,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     DatabaseCatalog::instance().assertDatabaseExists(database);
 
     WriteBufferFromOwnString rewritten_query;
-
-    if (query.full)
-    {
-        rewritten_query << "SELECT name, engine FROM system.";
-    }
-    else
-    {
-        rewritten_query << "SELECT name FROM system.";
-    }
+    rewritten_query << "SELECT name FROM system.";
 
     if (query.dictionaries)
         rewritten_query << "dictionaries ";
@@ -158,7 +150,7 @@ BlockIO InterpreterShowTablesQuery::execute()
     const auto & query = query_ptr->as<ASTShowTablesQuery &>();
     if (query.caches)
     {
-        getContext()->checkAccess(AccessType::SHOW_FILESYSTEM_CACHES);
+        getContext()->checkAccess(AccessType::SHOW_CACHES);
 
         Block sample_block{ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "Caches")};
         MutableColumns res_columns = sample_block.cloneEmptyColumns();

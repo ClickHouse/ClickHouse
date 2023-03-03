@@ -30,6 +30,9 @@
 [submodule "contrib/re2"]
 	path = contrib/re2
 	url = https://github.com/google/re2.git
+[submodule "contrib/llvm"]
+	path = contrib/llvm
+	url = https://github.com/ClickHouse/llvm
 [submodule "contrib/mariadb-connector-c"]
 	path = contrib/mariadb-connector-c
 	url = https://github.com/ClickHouse/mariadb-connector-c.git
@@ -65,6 +68,12 @@
 [submodule "contrib/libgsasl"]
 	path = contrib/libgsasl
 	url = https://github.com/ClickHouse/libgsasl.git
+[submodule "contrib/libcxx"]
+	path = contrib/libcxx
+	url = https://github.com/ClickHouse/libcxx.git
+[submodule "contrib/libcxxabi"]
+	path = contrib/libcxxabi
+	url = https://github.com/ClickHouse/libcxxabi.git
 [submodule "contrib/snappy"]
 	path = contrib/snappy
 	url = https://github.com/ClickHouse/snappy.git
@@ -104,13 +113,13 @@
 	url = https://github.com/ClickHouse/aws-sdk-cpp.git
 [submodule "aws-c-event-stream"]
 	path = contrib/aws-c-event-stream
-	url = https://github.com/awslabs/aws-c-event-stream.git
+	url = https://github.com/ClickHouse/aws-c-event-stream.git
 [submodule "aws-c-common"]
 	path = contrib/aws-c-common
 	url = https://github.com/ClickHouse/aws-c-common.git
 [submodule "aws-checksums"]
 	path = contrib/aws-checksums
-	url = https://github.com/awslabs/aws-checksums.git
+	url = https://github.com/ClickHouse/aws-checksums.git
 [submodule "contrib/curl"]
 	path = contrib/curl
 	url = https://github.com/curl/curl.git
@@ -250,10 +259,6 @@
 [submodule "contrib/minizip-ng"]
 	path = contrib/minizip-ng
 	url = https://github.com/zlib-ng/minizip-ng
-[submodule "contrib/annoy"]
-	path = contrib/annoy
-	url = https://github.com/ClickHouse/annoy.git
-	branch = ClickHouse-master
 [submodule "contrib/qpl"]
 	path = contrib/qpl
 	url = https://github.com/intel/qpl.git
@@ -272,55 +277,6 @@
 [submodule "contrib/c-ares"]
 	path = contrib/c-ares
 	url = https://github.com/ClickHouse/c-ares
-[submodule "contrib/llvm-project"]
-	path = contrib/llvm-project
-	url = https://github.com/ClickHouse/llvm-project.git
-[submodule "contrib/corrosion"]
-	path = contrib/corrosion
-	url = https://github.com/corrosion-rs/corrosion.git
-[submodule "contrib/morton-nd"]
-	path = contrib/morton-nd
-	url = https://github.com/morton-nd/morton-nd
-[submodule "contrib/xxHash"]
-	path = contrib/xxHash
-	url = https://github.com/Cyan4973/xxHash.git
-[submodule "contrib/openssl"]
-	path = contrib/openssl
-	url = https://github.com/openssl/openssl
-	branch = openssl-3.0
-[submodule "contrib/google-benchmark"]
-	path = contrib/google-benchmark
-	url = https://github.com/google/benchmark.git
 [submodule "contrib/libdivide"]
 	path = contrib/libdivide
 	url = https://github.com/ridiculousfish/libdivide.git
-[submodule "contrib/aws-crt-cpp"]
-	path = contrib/aws-crt-cpp
-	url = https://github.com/ClickHouse/aws-crt-cpp.git
-[submodule "contrib/aws-c-io"]
-	path = contrib/aws-c-io
-	url = https://github.com/ClickHouse/aws-c-io.git
-[submodule "contrib/aws-c-mqtt"]
-	path = contrib/aws-c-mqtt
-	url = https://github.com/awslabs/aws-c-mqtt.git
-[submodule "contrib/aws-c-auth"]
-	path = contrib/aws-c-auth
-	url = https://github.com/awslabs/aws-c-auth.git
-[submodule "contrib/aws-c-cal"]
-	path = contrib/aws-c-cal
-	url = https://github.com/ClickHouse/aws-c-cal.git
-[submodule "contrib/aws-c-sdkutils"]
-	path = contrib/aws-c-sdkutils
-	url = https://github.com/awslabs/aws-c-sdkutils.git
-[submodule "contrib/aws-c-http"]
-	path = contrib/aws-c-http
-	url = https://github.com/awslabs/aws-c-http.git
-[submodule "contrib/aws-c-s3"]
-	path = contrib/aws-c-s3
-	url = https://github.com/awslabs/aws-c-s3.git
-[submodule "contrib/aws-c-compression"]
-	path = contrib/aws-c-compression
-	url = https://github.com/awslabs/aws-c-compression.git
-[submodule "contrib/aws-s2n-tls"]
-	path = contrib/aws-s2n-tls
-	url = https://github.com/aws/s2n-tls.git

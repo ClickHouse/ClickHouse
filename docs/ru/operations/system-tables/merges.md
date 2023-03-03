@@ -1,6 +1,3 @@
----
-slug: /ru/operations/system-tables/merges
----
 # system.merges {#system-merges}
 
 Содержит информацию о производящихся прямо сейчас слияниях и мутациях кусков для таблиц семейства MergeTree.

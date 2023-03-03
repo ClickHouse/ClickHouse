@@ -1,5 +1,4 @@
 ---
-slug: /zh/engines/table-engines/integrations/hdfs
 sidebar_position: 36
 sidebar_label: HDFS
 ---

@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/functions/ym-dict-functions
 sidebar_position: 59
 sidebar_label: Embedded Dictionaries
 ---
@@ -131,7 +130,7 @@ Type: `UInt32`.
 ### regionToPopulation(id\[, geobase\])
 
 Gets the population for a region.
-The population can be recorded in files with the geobase. See the section “Dictionaries”.
+The population can be recorded in files with the geobase. See the section “External dictionaries”.
 If the population is not recorded for the region, it returns 0.
 In the geobase, the population might be recorded for child regions, but not for parent regions.
 

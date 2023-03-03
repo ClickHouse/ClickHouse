@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/aggregate-functions/reference/uniqexact
 sidebar_position: 191
 ---
 

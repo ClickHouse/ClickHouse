@@ -109,7 +109,7 @@ public:
 
     using Base::Base;
 
-    template <typename Func, bool>
+    template <typename Func>
     void ALWAYS_INLINE mergeToViaEmplace(Self & that, Func && func)
     {
         for (auto it = this->begin(), end = this->end(); it != end; ++it)

@@ -1,5 +1,4 @@
 ---
-slug: /zh/operations/backup
 sidebar_position: 49
 sidebar_label: "\u6570\u636E\u5907\u4EFD"
 ---

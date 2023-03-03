@@ -7,6 +7,7 @@
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/IColumn.h>
 
 #include <Common/Exception.h>
@@ -85,9 +86,6 @@ class FunctionArrayMapped : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static constexpr bool is_argument_type_map = std::is_same_v<typename Impl::data_type, DataTypeMap>;
-    static constexpr bool is_argument_type_array = std::is_same_v<typename Impl::data_type, DataTypeArray>;
-    static constexpr auto argument_type_name = is_argument_type_map ? "Map" : "Array";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayMapped>(); }
 
     String getName() const override
@@ -115,25 +113,20 @@ public:
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                             "Function {} needs one argument with data", getName());
 
-        size_t nested_types_count = is_argument_type_map ? (arguments.size() - 1) * 2 : (arguments.size() - 1);
+        size_t nested_types_count = std::is_same_v<typename Impl::data_type, DataTypeMap> ? (arguments.size() - 1) * 2 : (arguments.size() - 1);
         DataTypes nested_types(nested_types_count);
         for (size_t i = 0; i < arguments.size() - 1; ++i)
         {
             const auto * array_type = checkAndGetDataType<typename Impl::data_type>(&*arguments[i + 1]);
             if (!array_type)
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Argument {} of function {} must be {}. Found {} instead",
-                    toString(i + 2),
-                    getName(),
-                    argument_type_name,
-                    arguments[i + 1]->getName());
-            if constexpr (is_argument_type_map)
+                throw Exception("Argument " + toString(i + 2) + " of function " + getName() + " must be array. Found "
+                                + arguments[i + 1]->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            if constexpr (std::is_same_v<typename Impl::data_type, DataTypeMap>)
             {
                 nested_types[2 * i] = recursiveRemoveLowCardinality(array_type->getKeyType());
                 nested_types[2 * i + 1] = recursiveRemoveLowCardinality(array_type->getValueType());
             }
-            else if constexpr (is_argument_type_array)
+            else if constexpr (std::is_same_v<typename Impl::data_type, DataTypeArray>)
             {
                 nested_types[i] = recursiveRemoveLowCardinality(array_type->getNestedType());
             }
@@ -157,7 +150,7 @@ public:
                             "Function {} needs at least {} argument, passed {}",
                             getName(), min_args, arguments.size());
 
-        if ((arguments.size() == 1) && is_argument_type_array)
+        if ((arguments.size() == 1) && std::is_same_v<typename Impl::data_type, DataTypeArray>)
         {
             const auto * data_type = checkAndGetDataType<typename Impl::data_type>(arguments[0].type.get());
 
@@ -171,7 +164,7 @@ public:
                 throw Exception("The only argument for function " + getName() + " must be array of UInt8. Found "
                                 + arguments[0].type->getName() + " instead", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            if constexpr (is_argument_type_array)
+            if constexpr (std::is_same_v<typename Impl::data_type, DataTypeArray>)
                 return Impl::getReturnType(nested_type, nested_type);
             else
                 throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Unreachable code reached");
@@ -185,10 +178,8 @@ public:
             const auto * data_type_function = checkAndGetDataType<DataTypeFunction>(arguments[0].type.get());
 
             if (!data_type_function)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "First argument for function {} must be a function. Actual {}",
-                    getName(),
-                    arguments[0].type->getName());
+                throw Exception("First argument for function " + getName() + " must be a function",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             /// The types of the remaining arguments are already checked in getLambdaArgumentTypes.
 
@@ -203,7 +194,10 @@ public:
                 throw Exception("Expression for function " + getName() + " must return UInt8 or Nullable(UInt8), found "
                                 + return_type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            static_assert(is_argument_type_map || is_argument_type_array, "unsupported type");
+            static_assert(
+                std::is_same_v<typename Impl::data_type, DataTypeMap> ||
+                std::is_same_v<typename Impl::data_type, DataTypeArray>,
+                "unsupported type");
 
             if (arguments.size() < 2)
             {
@@ -215,10 +209,10 @@ public:
             if (!first_array_type)
                 throw DB::Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unsupported type {}", arguments[1].type->getName());
 
-            if constexpr (is_argument_type_array)
+            if constexpr (std::is_same_v<typename Impl::data_type, DataTypeArray>)
                 return Impl::getReturnType(return_type, first_array_type->getNestedType());
 
-            if constexpr (is_argument_type_map)
+            if constexpr (std::is_same_v<typename Impl::data_type, DataTypeMap>)
                 return Impl::getReturnType(return_type, first_array_type->getKeyValueTypes());
 
             throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Unreachable code reached");
@@ -236,11 +230,7 @@ public:
             {
                 const ColumnConst * column_const_array = checkAndGetColumnConst<typename Impl::column_type>(column_array_ptr.get());
                 if (!column_const_array)
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_COLUMN,
-                        "Expected {} column, found {}",
-                        argument_type_name,
-                        column_array_ptr->getName());
+                    throw Exception("Expected array column, found " + column_array_ptr->getName(), ErrorCodes::ILLEGAL_COLUMN);
                 column_array_ptr = column_const_array->convertToFullColumn();
                 column_array = assert_cast<const typename Impl::column_type *>(column_array_ptr.get());
             }
@@ -290,15 +280,13 @@ public:
                 {
                     const ColumnConst * column_const_array = checkAndGetColumnConst<typename Impl::column_type>(column_array_ptr.get());
                     if (!column_const_array)
-                        throw Exception(
-                            ErrorCodes::ILLEGAL_COLUMN, "Expected {} column, found {}", argument_type_name, column_array_ptr->getName());
+                        throw Exception("Expected array column, found " + column_array_ptr->getName(), ErrorCodes::ILLEGAL_COLUMN);
                     column_array_ptr = recursiveRemoveLowCardinality(column_const_array->convertToFullColumn());
                     column_array = checkAndGetColumn<typename Impl::column_type>(column_array_ptr.get());
                 }
 
                 if (!array_type)
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Expected {} type, found {}", argument_type_name, array_type_ptr->getName());
+                    throw Exception("Expected array type, found " + array_type_ptr->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
                 if (!offsets_column)
                 {
@@ -309,11 +297,7 @@ public:
                     /// The first condition is optimization: do not compare data if the pointers are equal.
                     if (getOffsetsPtr(*column_array) != offsets_column
                         && getOffsets(*column_array) != typeid_cast<const ColumnArray::ColumnOffsets &>(*offsets_column).getData())
-                        throw Exception(
-                            ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH,
-                            "{}s passed to {} must have equal size",
-                            argument_type_name,
-                            getName());
+                        throw Exception("Arrays passed to " + getName() + " must have equal size", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
                 }
 
                 if (i == 1)
@@ -322,7 +306,7 @@ public:
                     column_first_array = column_array;
                 }
 
-                if constexpr (is_argument_type_map)
+                if constexpr (std::is_same_v<DataTypeMap, typename Impl::data_type>)
                 {
                     arrays.emplace_back(ColumnWithTypeAndName(
                         column_array->getNestedData().getColumnPtr(0), recursiveRemoveLowCardinality(array_type->getKeyType()), array_with_type_and_name.name+".key"));
@@ -343,8 +327,14 @@ public:
             replicated_column_function->appendArguments(arrays);
 
             auto lambda_result = replicated_column_function->reduce();
+
+            /// Convert LowCardinality(T) -> T and Const(LowCardinality(T)) -> Const(T),
+            /// because we removed LowCardinality from return type of lambda expression.
             if (lambda_result.column->lowCardinality())
                 lambda_result.column = lambda_result.column->convertToFullColumnIfLowCardinality();
+
+            if (const auto * const_column = checkAndGetColumnConst<ColumnLowCardinality>(lambda_result.column.get()))
+                lambda_result.column = const_column->removeLowCardinality();
 
             if (Impl::needBoolean())
             {

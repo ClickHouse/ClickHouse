@@ -1,5 +1,4 @@
 ---
-slug: /ru/getting-started/example-datasets/nyc-taxi
 sidebar_position: 20
 sidebar_label: "Данные о такси в Нью-Йорке"
 ---

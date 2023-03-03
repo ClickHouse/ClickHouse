@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/functions/uuid-functions
 sidebar_position: 53
 sidebar_label: UUID
 ---
@@ -211,18 +210,11 @@ SELECT toUUIDOrZero('61f0c404-5cb3-11e7-907b-a6006ad3dba0T') AS uuid
 
 ## UUIDStringToNum
 
-Accepts `string` containing 36 characters in the format `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, and returns a [FixedString(16)](../../sql-reference/data-types/fixedstring.md) as its binary representation, with its format optionally specified by `variant` (`Big-endian` by default).
-
-**Syntax**
+Accepts a string containing 36 characters in the format `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, and returns it as a set of bytes in a [FixedString(16)](../../sql-reference/data-types/fixedstring.md).
 
 ``` sql
-UUIDStringToNum(string[, variant = 1])
+UUIDStringToNum(String)
 ```
-
-**Arguments**
-
--   `string` — String of 36 characters or FixedString(36). [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `variant` — Integer, representing a variant as specified by [RFC4122](https://datatracker.ietf.org/doc/html/rfc4122#section-4.1.1). 1 = `Big-endian` (default), 2 = `Microsoft`.
 
 **Returned value**
 
@@ -242,32 +234,13 @@ SELECT
 └──────────────────────────────────────┴──────────────────┘
 ```
 
-``` sql
-SELECT
-    '612f3c40-5d3b-217e-707b-6a546a3d7b29' AS uuid,
-    UUIDStringToNum(uuid, 2) AS bytes
-```
-
-``` text
-┌─uuid─────────────────────────────────┬─bytes────────────┐
-│ 612f3c40-5d3b-217e-707b-6a546a3d7b29 │ @</a;]~!p{jTj={) │
-└──────────────────────────────────────┴──────────────────┘
-```
-
 ## UUIDNumToString
 
-Accepts `binary` containing a binary representation of a UUID, with its format optionally specified by `variant` (`Big-endian` by default), and returns a string containing 36 characters in text format.
-
-**Syntax**
+Accepts a [FixedString(16)](../../sql-reference/data-types/fixedstring.md) value, and returns a string containing 36 characters in text format.
 
 ``` sql
-UUIDNumToString(binary[, variant = 1])
+UUIDNumToString(FixedString(16))
 ```
-
-**Arguments**
-
--   `binary` — [FixedString(16)](../../sql-reference/data-types/fixedstring.md) as a binary representation of a UUID.
--   `variant` — Integer, representing a variant as specified by [RFC4122](https://datatracker.ietf.org/doc/html/rfc4122#section-4.1.1). 1 = `Big-endian` (default), 2 = `Microsoft`.
 
 **Returned value**
 
@@ -284,18 +257,6 @@ SELECT
 ``` text
 ┌─bytes────────────┬─uuid─────────────────────────────────┐
 │ a/<@];!~p{jTj={) │ 612f3c40-5d3b-217e-707b-6a546a3d7b29 │
-└──────────────────┴──────────────────────────────────────┘
-```
-
-``` sql
-SELECT
-    '@</a;]~!p{jTj={)' AS bytes,
-    UUIDNumToString(toFixedString(bytes, 16), 2) AS uuid
-```
-
-``` text
-┌─bytes────────────┬─uuid─────────────────────────────────┐
-│ @</a;]~!p{jTj={) │ 612f3c40-5d3b-217e-707b-6a546a3d7b29 │
 └──────────────────┴──────────────────────────────────────┘
 ```
 

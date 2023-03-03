@@ -2,7 +2,6 @@
 
 #include <memory>
 
-#include <Access/EnabledRowPolicies.h>
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -24,7 +23,6 @@ class Logger;
 
 namespace DB
 {
-
 class SubqueryForSet;
 class InterpreterSelectWithUnionQuery;
 class Context;
@@ -35,9 +33,6 @@ using GroupingSetsParamsList = std::vector<GroupingSetsParams>;
 
 struct TreeRewriterResult;
 using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
-
-struct RowPolicy;
-using RowPolicyPtr = std::shared_ptr<const RowPolicy>;
 
 
 /** Interprets the SELECT query. Returns the stream of blocks with the results of the query before `to_stage` stage.
@@ -134,10 +129,6 @@ public:
 
     FilterDAGInfoPtr getAdditionalQueryInfo() const { return additional_filter_info; }
 
-    RowPolicyFilterPtr getRowPolicyFilter() const;
-
-    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context) const override;
-
     static SortDescription getSortDescription(const ASTSelectQuery & query, const ContextPtr & context);
     static UInt64 getLimitForSorting(const ASTSelectQuery & query, const ContextPtr & context);
 
@@ -218,7 +209,7 @@ private:
     /// Is calculated in getSampleBlock. Is used later in readImpl.
     ExpressionAnalysisResult analysis_result;
     /// For row-level security.
-    RowPolicyFilterPtr row_policy_filter;
+    ASTPtr row_policy_filter;
     FilterDAGInfoPtr filter_info;
 
     /// For additional_filter setting.

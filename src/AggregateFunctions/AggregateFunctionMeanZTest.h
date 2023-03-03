@@ -36,7 +36,7 @@ private:
 
 public:
     AggregateFunctionMeanZTest(const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionMeanZTest<Data>>({arguments}, params, createResultType())
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionMeanZTest<Data>>({arguments}, params)
     {
         pop_var_x = params.at(0).safeGet<Float64>();
         pop_var_y = params.at(1).safeGet<Float64>();
@@ -63,7 +63,7 @@ public:
         return Data::name;
     }
 
-    static DataTypePtr createResultType()
+    DataTypePtr getReturnType() const override
     {
         DataTypes types
         {

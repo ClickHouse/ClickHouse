@@ -20,11 +20,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 /**
  * ORDER-PRESERVING parallel formatting of data formats.
  * The idea is similar to ParallelParsingInputFormat.
@@ -172,12 +167,6 @@ private:
 
     void finalizeImpl() override;
 
-    void resetFormatterImpl() override
-    {
-        /// Resetting parallel formatting is not obvious and it's not used anywhere
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method resetFormatterImpl is not implemented for parallel formatting");
-    }
-
     InternalFormatterCreator internal_formatter_creator;
 
     /// Status to synchronize multiple threads.
@@ -238,6 +227,7 @@ private:
     size_t rows_consumed = 0;
     std::atomic_bool are_totals_written = false;
 
+    Statistics statistics;
     /// We change statistics in onProgress() which can be called from different threads.
     std::mutex statistics_mutex;
     bool save_totals_and_extremes_in_statistics;

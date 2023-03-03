@@ -20,7 +20,7 @@
 #include <Common/BridgeProtocolVersion.h>
 #include <Common/logger_useful.h>
 #include <Server/HTTP/HTMLForm.h>
-#include "config.h"
+#include <Common/config.h>
 
 #include <mutex>
 #include <memory>

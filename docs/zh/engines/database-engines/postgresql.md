@@ -1,5 +1,4 @@
 ---
-slug: /zh/engines/database-engines/postgresql
 sidebar_position: 35
 sidebar_label: PostgreSQL
 ---

@@ -25,8 +25,6 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeMap.h>
-#include <DataTypes/NestedUtils.h>
-#include <DataTypes/DataTypeFactory.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
@@ -47,6 +45,7 @@
 #include <ValidSchema.hh>
 
 #include <Poco/Buffer.h>
+#include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 #include <Poco/Net/HTTPRequest.h>
@@ -105,45 +104,45 @@ static void insertNumber(IColumn & column, WhichDataType type, T value)
     switch (type.idx)
     {
         case TypeIndex::UInt8:
-            assert_cast<ColumnUInt8 &>(column).insertValue(static_cast<UInt8>(value));
+            assert_cast<ColumnUInt8 &>(column).insertValue(value);
             break;
         case TypeIndex::Date: [[fallthrough]];
         case TypeIndex::UInt16:
-            assert_cast<ColumnUInt16 &>(column).insertValue(static_cast<UInt16>(value));
+            assert_cast<ColumnUInt16 &>(column).insertValue(value);
             break;
         case TypeIndex::DateTime: [[fallthrough]];
         case TypeIndex::UInt32:
-            assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(value));
+            assert_cast<ColumnUInt32 &>(column).insertValue(value);
             break;
         case TypeIndex::UInt64:
-            assert_cast<ColumnUInt64 &>(column).insertValue(static_cast<UInt64>(value));
+            assert_cast<ColumnUInt64 &>(column).insertValue(value);
             break;
         case TypeIndex::Int8:
-            assert_cast<ColumnInt8 &>(column).insertValue(static_cast<Int8>(value));
+            assert_cast<ColumnInt8 &>(column).insertValue(value);
             break;
         case TypeIndex::Int16:
-            assert_cast<ColumnInt16 &>(column).insertValue(static_cast<Int16>(value));
+            assert_cast<ColumnInt16 &>(column).insertValue(value);
             break;
         case TypeIndex::Int32:
-            assert_cast<ColumnInt32 &>(column).insertValue(static_cast<Int32>(value));
+            assert_cast<ColumnInt32 &>(column).insertValue(value);
             break;
         case TypeIndex::Int64:
-            assert_cast<ColumnInt64 &>(column).insertValue(static_cast<Int64>(value));
+            assert_cast<ColumnInt64 &>(column).insertValue(value);
             break;
         case TypeIndex::Float32:
-            assert_cast<ColumnFloat32 &>(column).insertValue(static_cast<Float32>(value));
+            assert_cast<ColumnFloat32 &>(column).insertValue(value);
             break;
         case TypeIndex::Float64:
-            assert_cast<ColumnFloat64 &>(column).insertValue(static_cast<Float64>(value));
+            assert_cast<ColumnFloat64 &>(column).insertValue(value);
             break;
         case TypeIndex::Decimal32:
-            assert_cast<ColumnDecimal<Decimal32> &>(column).insertValue(static_cast<Int32>(value));
+            assert_cast<ColumnDecimal<Decimal32> &>(column).insertValue(value);
             break;
         case TypeIndex::Decimal64:
-            assert_cast<ColumnDecimal<Decimal64> &>(column).insertValue(static_cast<Int64>(value));
+            assert_cast<ColumnDecimal<Decimal64> &>(column).insertValue(value);
             break;
         case TypeIndex::DateTime64:
-            assert_cast<ColumnDecimal<DateTime64> &>(column).insertValue(static_cast<Int64>(value));
+            assert_cast<ColumnDecimal<DateTime64> &>(column).insertValue(value);
             break;
         default:
             throw Exception("Type is not compatible with Avro", ErrorCodes::ILLEGAL_COLUMN);
@@ -283,15 +282,14 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
             if (root_node->leaves() == 2
                 && (root_node->leafAt(0)->type() == avro::AVRO_NULL || root_node->leafAt(1)->type() == avro::AVRO_NULL))
             {
-                int non_null_union_index = root_node->leafAt(0)->type() == avro::AVRO_NULL ? 1 : 0;
+                size_t non_null_union_index = root_node->leafAt(0)->type() == avro::AVRO_NULL ? 1 : 0;
                 if (target.isNullable())
                 {
-                    auto nested_deserialize = this->createDeserializeFn(
-                        root_node->leafAt(non_null_union_index), removeNullable(target_type));
+                    auto nested_deserialize = this->createDeserializeFn(root_node->leafAt(non_null_union_index), removeNullable(target_type));
                     return [non_null_union_index, nested_deserialize](IColumn & column, avro::Decoder & decoder)
                     {
                         ColumnNullable & col = assert_cast<ColumnNullable &>(column);
-                        int union_index = static_cast<int>(decoder.decodeUnionIndex());
+                        size_t union_index = decoder.decodeUnionIndex();
                         if (union_index == non_null_union_index)
                         {
                             nested_deserialize(col.getNestedColumn(), decoder);
@@ -309,7 +307,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
                     auto nested_deserialize = this->createDeserializeFn(root_node->leafAt(non_null_union_index), target_type);
                     return [non_null_union_index, nested_deserialize](IColumn & column, avro::Decoder & decoder)
                     {
-                        int union_index = static_cast<int>(decoder.decodeUnionIndex());
+                        size_t union_index = decoder.decodeUnionIndex();
                         if (union_index == non_null_union_index)
                             nested_deserialize(column, decoder);
                         else
@@ -346,8 +344,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
             if (target.isString())
             {
                 std::vector<std::string> symbols;
-                symbols.reserve(root_node->names());
-                for (int i = 0; i < static_cast<int>(root_node->names()); ++i)
+                for (size_t i = 0; i < root_node->names(); ++i)
                 {
                     symbols.push_back(root_node->nameAt(i));
                 }
@@ -362,7 +359,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
             {
                 const auto & enum_type = dynamic_cast<const IDataTypeEnum &>(*target_type);
                 Row symbol_mapping;
-                for (int i = 0; i < static_cast<int>(root_node->names()); ++i)
+                for (size_t i = 0; i < root_node->names(); ++i)
                 {
                     symbol_mapping.push_back(enum_type.castToValue(root_node->nameAt(i)));
                 }
@@ -399,7 +396,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
                 if (root_node->leaves() != nested_types.size())
                     throw Exception(ErrorCodes::INCORRECT_DATA, "The number of leaves in record doesn't match the number of elements in tuple");
 
-                for (int i = 0; i != static_cast<int>(root_node->leaves()); ++i)
+                for (size_t i = 0; i != root_node->leaves(); ++i)
                 {
                     const auto & name = root_node->nameAt(i);
                     size_t pos = tuple_type.getPositionByName(name);
@@ -507,8 +504,7 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(avro::NodePtr root_node)
         case avro::AVRO_UNION:
         {
             std::vector<SkipFn> union_skip_fns;
-            union_skip_fns.reserve(root_node->leaves());
-            for (int i = 0; i < static_cast<int>(root_node->leaves()); ++i)
+            for (size_t i = 0; i < root_node->leaves(); ++i)
             {
                 union_skip_fns.push_back(createSkipFn(root_node->leafAt(i)));
             }
@@ -549,8 +545,7 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(avro::NodePtr root_node)
         case avro::AVRO_RECORD:
         {
             std::vector<SkipFn> field_skip_fns;
-            field_skip_fns.reserve(root_node->leaves());
-            for (int i = 0; i < static_cast<int>(root_node->leaves()); ++i)
+            for (size_t i = 0; i < root_node->leaves(); ++i)
             {
                 field_skip_fns.push_back(createSkipFn(root_node->leafAt(i)));
             }
@@ -575,39 +570,6 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(avro::NodePtr root_node)
         default:
             throw Exception("Unsupported Avro type " + root_node->name().fullname() + " (" + toString(int(root_node->type())) + ")", ErrorCodes::ILLEGAL_COLUMN);
     }
-}
-
-void AvroDeserializer::Action::deserializeNested(MutableColumns & columns, avro::Decoder & decoder, RowReadExtension & ext) const
-{
-    /// We should deserialize all nested columns together, because
-    /// in avro we have single row Array(Record) and we can
-    /// deserialize it once.
-
-    std::vector<ColumnArray::Offsets *> arrays_offsets;
-    arrays_offsets.reserve(nested_column_indexes.size());
-    std::vector<IColumn *> nested_columns;
-    nested_columns.reserve(nested_column_indexes.size());
-    for (size_t index : nested_column_indexes)
-    {
-        ColumnArray & column_array = assert_cast<ColumnArray &>(*columns[index]);
-        arrays_offsets.push_back(&column_array.getOffsets());
-        nested_columns.push_back(&column_array.getData());
-        ext.read_columns[index] = true;
-    }
-
-    size_t total = 0;
-    for (size_t n = decoder.arrayStart(); n != 0; n = decoder.arrayNext())
-    {
-        total += n;
-        for (size_t i = 0; i < n; ++i)
-        {
-            for (size_t j = 0; j != nested_deserializers.size(); ++j)
-                nested_deserializers[j](*nested_columns[j], decoder);
-        }
-    }
-
-    for (auto & offsets : arrays_offsets)
-        offsets->push_back(offsets->back() + total);
 }
 
 static inline std::string concatPath(const std::string & a, const std::string & b)
@@ -637,7 +599,7 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
         const auto & column = header.getByPosition(target_column_idx);
         try
         {
-            AvroDeserializer::Action action(static_cast<int>(target_column_idx), createDeserializeFn(node, column.type));
+            AvroDeserializer::Action action(target_column_idx, createDeserializeFn(node, column.type));
             column_found[target_column_idx] = true;
             return action;
         }
@@ -650,7 +612,7 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
     else if (node->type() == avro::AVRO_RECORD)
     {
         std::vector<AvroDeserializer::Action> field_actions(node->leaves());
-        for (int i = 0; i < static_cast<int>(node->leaves()); ++i)
+        for (size_t i = 0; i < node->leaves(); ++i)
         {
             const auto & field_node = node->leafAt(i);
             const auto & field_name = node->nameAt(i);
@@ -661,49 +623,13 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
     else if (node->type() == avro::AVRO_UNION)
     {
         std::vector<AvroDeserializer::Action> branch_actions(node->leaves());
-        for (int i = 0; i < static_cast<int>(node->leaves()); ++i)
+        for (size_t i = 0; i < node->leaves(); ++i)
         {
             const auto & branch_node = node->leafAt(i);
             const auto & branch_name = nodeName(branch_node);
             branch_actions[i] = createAction(header, branch_node, concatPath(current_path, branch_name));
         }
         return AvroDeserializer::Action::unionAction(branch_actions);
-    }
-    else if (node->type() == avro::AVRO_ARRAY)
-    {
-        /// If header doesn't have column with current_path name and node is Array(Record),
-        /// check if we have a flattened Nested table with such name.
-        Names nested_names = Nested::getAllNestedColumnsForTable(header, current_path);
-        auto nested_avro_node = node->leafAt(0);
-        if (nested_names.empty() || nested_avro_node->type() != avro::AVRO_RECORD)
-            return AvroDeserializer::Action(createSkipFn(node));
-
-        /// Check that all nested columns are Arrays.
-        std::unordered_map<String, DataTypePtr> nested_types;
-        for (const auto & name : nested_names)
-        {
-            auto type = header.getByName(name).type;
-            if (!isArray(type))
-                return AvroDeserializer::Action(createSkipFn(node));
-            nested_types[Nested::splitName(name).second] = assert_cast<const DataTypeArray *>(type.get())->getNestedType();
-        }
-
-        /// Create nested deserializer for each nested column.
-        std::vector<DeserializeFn> nested_deserializers;
-        std::vector<size_t> nested_indexes;
-        for (int i = 0; i != static_cast<int>(nested_avro_node->leaves()); ++i)
-        {
-            const auto & name = nested_avro_node->nameAt(i);
-            if (!nested_types.contains(name))
-                return AvroDeserializer::Action(createSkipFn(node));
-            size_t nested_column_index = header.getPositionByName(Nested::concatenateName(current_path, name));
-            column_found[nested_column_index] = true;
-            auto nested_deserializer = createDeserializeFn(nested_avro_node->leafAt(i), nested_types[name]);
-            nested_deserializers.emplace_back(nested_deserializer);
-            nested_indexes.push_back(nested_column_index);
-        }
-
-        return AvroDeserializer::Action(nested_indexes, nested_deserializers);
     }
     else
     {
@@ -906,15 +832,11 @@ AvroConfluentRowInputFormat::AvroConfluentRowInputFormat(
     const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, in_, params_)
     , schema_registry(getConfluentSchemaRegistry(format_settings_))
+    , input_stream(std::make_unique<InputStreamReadBufferAdapter>(*in))
+    , decoder(avro::binaryDecoder())
     , format_settings(format_settings_)
 
 {
-}
-
-void AvroConfluentRowInputFormat::readPrefix()
-{
-    input_stream = std::make_unique<InputStreamReadBufferAdapter>(*in);
-    decoder = avro::binaryDecoder();
     decoder->init(*input_stream);
 }
 
@@ -978,7 +900,7 @@ NamesAndTypesList AvroSchemaReader::readSchema()
         throw Exception("Root schema must be a record", ErrorCodes::TYPE_MISMATCH);
 
     NamesAndTypesList names_and_types;
-    for (int i = 0; i != static_cast<int>(root_node->leaves()); ++i)
+    for (size_t i = 0; i != root_node->leaves(); ++i)
         names_and_types.emplace_back(root_node->nameAt(i), avroNodeToDataType(root_node->leafAt(i)));
 
     return names_and_types;
@@ -993,7 +915,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node)
         case avro::Type::AVRO_LONG:
             return std::make_shared<DataTypeInt64>();
         case avro::Type::AVRO_BOOL:
-            return DataTypeFactory::instance().get("Bool");
+            return std::make_shared<DataTypeUInt8>();
         case avro::Type::AVRO_FLOAT:
             return std::make_shared<DataTypeFloat32>();
         case avro::Type::AVRO_DOUBLE:
@@ -1007,14 +929,14 @@ DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node)
             if (node->names() < 128)
             {
                 EnumValues<Int8>::Values values;
-                for (int i = 0; i != static_cast<int>(node->names()); ++i)
+                for (size_t i = 0; i != node->names(); ++i)
                     values.emplace_back(node->nameAt(i), i);
                 return std::make_shared<DataTypeEnum8>(std::move(values));
             }
             else if (node->names() < 32768)
             {
                 EnumValues<Int16>::Values values;
-                for (int i = 0; i != static_cast<int>(node->names()); ++i)
+                for (size_t i = 0; i != node->names(); ++i)
                     values.emplace_back(node->nameAt(i), i);
                 return std::make_shared<DataTypeEnum16>(std::move(values));
             }
@@ -1030,7 +952,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node)
         case avro::Type::AVRO_UNION:
             if (node->leaves() == 2 && (node->leafAt(0)->type() == avro::Type::AVRO_NULL || node->leafAt(1)->type() == avro::Type::AVRO_NULL))
             {
-                int nested_leaf_index = node->leafAt(0)->type() == avro::Type::AVRO_NULL ? 1 : 0;
+                size_t nested_leaf_index = node->leafAt(0)->type() == avro::Type::AVRO_NULL ? 1 : 0;
                 auto nested_type = avroNodeToDataType(node->leafAt(nested_leaf_index));
                 return nested_type->canBeInsideNullable() ? makeNullable(nested_type) : nested_type;
             }
@@ -1043,7 +965,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node)
             nested_types.reserve(node->leaves());
             Names nested_names;
             nested_names.reserve(node->leaves());
-            for (int i = 0; i != static_cast<int>(node->leaves()); ++i)
+            for (size_t i = 0; i != node->leaves(); ++i)
             {
                 nested_types.push_back(avroNodeToDataType(node->leafAt(i)));
                 nested_names.push_back(node->nameAt(i));

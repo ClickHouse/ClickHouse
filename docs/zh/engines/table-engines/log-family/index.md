@@ -1,5 +1,4 @@
 ---
-slug: /zh/engines/table-engines/log-family/
 sidebar_label: 日志引擎系列
 sidebar_position: 29
 ---
@@ -11,7 +10,7 @@ sidebar_position: 29
 这系列的引擎有：
 
 -   [StripeLog](stripelog.md)
--   [Log](log.md)
+-   [日志](log.md)
 -   [TinyLog](tinylog.md)
 
 ## 共同属性 {#table_engines-log-engine-family-common-properties}

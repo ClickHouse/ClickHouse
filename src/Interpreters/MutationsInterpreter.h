@@ -43,9 +43,7 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         MutationCommands commands_,
         ContextPtr context_,
-        bool can_execute_,
-        bool return_all_columns_ = false,
-        bool return_deleted_rows_ = false);
+        bool can_execute_);
 
     void validate();
 
@@ -158,12 +156,6 @@ private:
 
     /// Columns, that we need to read for calculation of skip indices, projections or TTL expressions.
     ColumnDependencies dependencies;
-
-    // whether all columns should be returned, not just updated
-    bool return_all_columns;
-
-    // whether we should return deleted or nondeleted rows on DELETE mutation
-    bool return_deleted_rows;
 };
 
 }

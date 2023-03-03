@@ -124,7 +124,7 @@ namespace DB
                 return "none";
         }
 
-        UNREACHABLE();
+        __builtin_unreachable();
     }
 
     QueryPipeline RedisDictionarySource::loadAll()
@@ -220,7 +220,7 @@ namespace DB
                 if (isInteger(type))
                     key << DB::toString(key_columns[i]->get64(row));
                 else if (isString(type))
-                    key << (*key_columns[i])[row].get<const String &>();
+                    key << get<const String &>((*key_columns[i])[row]);
                 else
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of key in Redis dictionary");
             }

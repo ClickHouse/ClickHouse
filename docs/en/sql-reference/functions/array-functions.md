@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/functions/array-functions
 sidebar_position: 35
 sidebar_label: Arrays
 ---

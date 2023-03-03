@@ -575,6 +575,15 @@ std::optional<FileInfo> BackupCoordinationRemote::getFileInfo(const SizeAndCheck
     return deserializeFileInfo(file_info_str);
 }
 
+std::optional<SizeAndChecksum> BackupCoordinationRemote::getFileSizeAndChecksum(const String & file_name) const
+{
+    auto zk = getZooKeeper();
+    String size_and_checksum;
+    if (!zk->tryGet(zookeeper_path + "/file_names/" + escapeForFileName(file_name), size_and_checksum))
+        return std::nullopt;
+    return deserializeSizeAndChecksum(size_and_checksum);
+}
+
 String BackupCoordinationRemote::getNextArchiveSuffix()
 {
     auto zk = getZooKeeper();

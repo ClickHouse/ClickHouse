@@ -1,11 +1,10 @@
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_HDFS
 
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
 #include <Storages/HDFS/HDFSCommon.h>
 #include <Common/Throttler.h>
-#include <Common/safe_cast.h>
 #include <hdfs/hdfs.h>
 
 namespace DB
@@ -58,7 +57,7 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
 
     int write(const char * start, size_t size) const
     {
-        int bytes_written = hdfsWrite(fs.get(), fout, start, safe_cast<int>(size));
+        int bytes_written = hdfsWrite(fs.get(), fout, start, size);
         if (write_settings.remote_throttler)
             write_settings.remote_throttler->add(bytes_written);
 

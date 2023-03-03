@@ -34,11 +34,6 @@ String ITableFunctionFileLike::getFormatFromFirstArgument()
     return FormatFactory::instance().getFormatFromFileName(filename, true);
 }
 
-bool ITableFunctionFileLike::supportsReadingSubsetOfColumns()
-{
-    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format);
-}
-
 void ITableFunctionFileLike::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
     /// Parse args

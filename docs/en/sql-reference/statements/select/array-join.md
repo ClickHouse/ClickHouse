@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/statements/select/array-join
 sidebar_label: ARRAY JOIN
 ---
 

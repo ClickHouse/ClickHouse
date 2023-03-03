@@ -7,7 +7,7 @@
 
 #include <variant>
 
-#include "config.h"
+#include "config_core.h"
 
 
 namespace DB

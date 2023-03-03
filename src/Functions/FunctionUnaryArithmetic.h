@@ -3,7 +3,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/Native.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
@@ -13,7 +12,7 @@
 #include <Functions/IsOperation.h>
 #include <Functions/castTypeToEither.h>
 
-#include "config.h"
+#include <Common/config.h>
 #include <Common/TargetSpecific.h>
 
 #if USE_EMBEDDED_COMPILER
@@ -146,8 +145,7 @@ class FunctionUnaryArithmetic : public IFunction
             DataTypeDecimal<Decimal64>,
             DataTypeDecimal<Decimal128>,
             DataTypeDecimal<Decimal256>,
-            DataTypeFixedString,
-            DataTypeInterval
+            DataTypeFixedString
         >(type, std::forward<F>(f));
     }
 
@@ -212,12 +210,6 @@ public:
                 if constexpr (!Op<DataTypeFixedString>::allow_fixed_string)
                     return false;
                 result = std::make_shared<DataType>(type.getN());
-            }
-            else if constexpr (std::is_same_v<DataTypeInterval, DataType>)
-            {
-                if constexpr (!IsUnaryOperation<Op>::negate)
-                    return false;
-                result = std::make_shared<DataTypeInterval>(type.getKind());
             }
             else
             {

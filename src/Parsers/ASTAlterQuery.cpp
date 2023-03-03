@@ -124,7 +124,7 @@ const char * ASTAlterCommand::typeToString(ASTAlterCommand::Type type)
         case MODIFY_DATABASE_SETTING: return "MODIFY_DATABASE_SETTING";
         case MODIFY_COMMENT: return "MODIFY_COMMENT";
     }
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
@@ -378,7 +378,7 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
     }
     else if (type == ASTAlterCommand::FREEZE_ALL)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "FREEZE" << (settings.hilite ? hilite_none : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "FREEZE";
 
         if (!with_name.empty())
         {
@@ -399,7 +399,7 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
     }
     else if (type == ASTAlterCommand::UNFREEZE_ALL)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "UNFREEZE" << (settings.hilite ? hilite_none : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "UNFREEZE";
 
         if (!with_name.empty())
         {
@@ -531,6 +531,24 @@ bool ASTAlterQuery::isFetchAlter() const
 bool ASTAlterQuery::isDropPartitionAlter() const
 {
     return isOneCommandTypeOnly(ASTAlterCommand::DROP_PARTITION) || isOneCommandTypeOnly(ASTAlterCommand::DROP_DETACHED_PARTITION);
+}
+
+bool ASTAlterQuery::isMovePartitionToDiskOrVolumeAlter() const
+{
+    if (command_list)
+    {
+        if (command_list->children.empty())
+            return false;
+        for (const auto & child : command_list->children)
+        {
+            const auto & command = child->as<const ASTAlterCommand &>();
+            if (command.type != ASTAlterCommand::MOVE_PARTITION ||
+                (command.move_destination_type != DataDestinationType::DISK && command.move_destination_type != DataDestinationType::VOLUME))
+                return false;
+        }
+        return true;
+    }
+    return false;
 }
 
 

@@ -8,13 +8,16 @@ set (SRCS
     getPageSize.cpp
     getThreadId.cpp
     JSON.cpp
+    LineReader.cpp
     mremap.cpp
     phdr_cache.cpp
     preciseExp10.cpp
+    setTerminalEcho.cpp
     shift10.cpp
     sleep.cpp
     terminalColors.cpp
     errnoToString.cpp
+    ReplxxLineReader.cpp
     StringRef.cpp
     safeExit.cpp
     throwError.cpp
@@ -38,6 +41,10 @@ else ()
 endif ()
 
 target_include_directories(common PUBLIC .. "${CMAKE_CURRENT_BINARY_DIR}/..")
+
+if (OS_DARWIN AND NOT USE_STATIC_LIBRARIES)
+    target_link_libraries(common PUBLIC -Wl,-U,_inside_main)
+endif()
 
 target_link_libraries (common
     PUBLIC

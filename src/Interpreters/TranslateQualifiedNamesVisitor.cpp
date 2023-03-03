@@ -149,7 +149,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTFunction & node, const ASTPtr &, D
     if (!func_arguments) return;
 
     String func_name_lowercase = Poco::toLower(node.name);
-    if ((func_name_lowercase == "count" || func_name_lowercase == "countstate") &&
+    if (func_name_lowercase == "count" &&
         func_arguments->children.size() == 1 &&
         func_arguments->children[0]->as<ASTAsterisk>())
         func_arguments->children.clear();
@@ -299,7 +299,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
             }
 
             // QualifiedAsterisk's transformers start to appear at child 1
-            for (const auto * it = qualified_asterisk->children.begin() + 1; it != qualified_asterisk->children.end(); ++it)
+            for (auto it = qualified_asterisk->children.begin() + 1; it != qualified_asterisk->children.end(); ++it)
             {
                 IASTColumnsTransformer::transform(*it, columns);
             }

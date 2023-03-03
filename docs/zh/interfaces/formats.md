@@ -1,5 +1,4 @@
 ---
-slug: /zh/interfaces/formats
 sidebar_position: 21
 sidebar_label: 输入/输出格式
 ---

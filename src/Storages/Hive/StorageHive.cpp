@@ -727,7 +727,7 @@ HiveFilePtr StorageHive::getHiveFileIfNeeded(
                             hive_file->getPath(),
                             hive_file->describeMinMaxIndex(sub_minmax_idxes[i]));
 
-                        skip_splits.insert(static_cast<int>(i));
+                        skip_splits.insert(i);
                     }
                 }
                 hive_file->setSkipSplits(skip_splits);
@@ -749,7 +749,7 @@ Pipe StorageHive::read(
     ContextPtr context_,
     QueryProcessingStage::Enum /* processed_stage */,
     size_t max_block_size,
-    size_t num_streams)
+    unsigned num_streams)
 {
     lazyInitialize();
 
@@ -773,6 +773,7 @@ Pipe StorageHive::read(
     sources_info->partition_name_types = partition_name_types;
 
     const auto header_block = storage_snapshot->metadata->getSampleBlock();
+    bool support_subset_columns = supportsSubcolumns();
 
     auto settings = context_->getSettingsRef();
     auto case_insensitive_matching = [&]() -> bool
@@ -792,14 +793,15 @@ Pipe StorageHive::read(
             sample_block.insert(header_block.getByName(column));
             continue;
         }
-
-        auto subset_column = nested_columns_extractor.extractColumn(column);
-        if (subset_column)
+        else if (support_subset_columns)
         {
-            sample_block.insert(std::move(*subset_column));
-            continue;
+            auto subset_column = nested_columns_extractor.extractColumn(column);
+            if (subset_column)
+            {
+                sample_block.insert(std::move(*subset_column));
+                continue;
+            }
         }
-
         if (column == "_path")
             sources_info->need_path_column = true;
         if (column == "_file")
@@ -827,7 +829,7 @@ Pipe StorageHive::read(
 }
 
 HiveFiles StorageHive::collectHiveFiles(
-    size_t max_threads,
+    unsigned max_threads,
     const SelectQueryInfo & query_info,
     const HiveTableMetadataPtr & hive_table_metadata,
     const HDFSFSPtr & fs,
@@ -935,13 +937,7 @@ StorageHive::totalRowsImpl(const Settings & settings, const SelectQueryInfo & qu
     auto hive_table_metadata = hive_metastore_client->getTableMetadata(hive_database, hive_table);
     HDFSBuilderWrapper builder = createHDFSBuilder(hdfs_namenode_url, getContext()->getGlobalContext()->getConfigRef());
     HDFSFSPtr fs = createHDFSFS(builder.get());
-    HiveFiles hive_files = collectHiveFiles(
-        settings.max_threads,
-        query_info,
-        hive_table_metadata,
-        fs,
-        context_,
-        prune_level);
+    HiveFiles hive_files = collectHiveFiles(settings.max_threads, query_info, hive_table_metadata, fs, context_, prune_level);
 
     UInt64 total_rows = 0;
     for (const auto & hive_file : hive_files)

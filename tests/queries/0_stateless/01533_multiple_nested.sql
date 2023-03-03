@@ -1,5 +1,5 @@
 -- Tags: no-s3-storage
--- no-s3 because read FileOpen metric
+-- Temporary supressed
 DROP TABLE IF EXISTS nested;
 
 SET flatten_nested = 0;

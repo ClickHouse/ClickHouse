@@ -1,4 +1,4 @@
-#include "config.h"
+#include "config_core.h"
 
 #include <Compression/CompressionFactory.h>
 #include <Parsers/ASTFunction.h>
@@ -176,9 +176,7 @@ void registerCodecDelta(CompressionCodecFactory & factory);
 void registerCodecT64(CompressionCodecFactory & factory);
 void registerCodecDoubleDelta(CompressionCodecFactory & factory);
 void registerCodecGorilla(CompressionCodecFactory & factory);
-#if USE_BORINGSSL
 void registerCodecEncrypted(CompressionCodecFactory & factory);
-#endif
 void registerCodecFPC(CompressionCodecFactory & factory);
 
 #endif
@@ -195,9 +193,7 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecT64(*this);
     registerCodecDoubleDelta(*this);
     registerCodecGorilla(*this);
-#if USE_BORINGSSL
     registerCodecEncrypted(*this);
-#endif
     registerCodecFPC(*this);
     #ifdef ENABLE_QPL_COMPRESSION
         registerCodecDeflateQpl(*this);

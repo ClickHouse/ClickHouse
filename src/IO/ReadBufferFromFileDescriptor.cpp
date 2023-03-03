@@ -233,7 +233,7 @@ void ReadBufferFromFileDescriptor::rewind()
 
 
 /// Assuming file descriptor supports 'select', check that we have data to read or wait until timeout.
-bool ReadBufferFromFileDescriptor::poll(size_t timeout_microseconds) const
+bool ReadBufferFromFileDescriptor::poll(size_t timeout_microseconds)
 {
     fd_set fds;
     FD_ZERO(&fds);

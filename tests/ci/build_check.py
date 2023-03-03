@@ -38,6 +38,10 @@ BUILD_LOG_NAME = "build_log.log"
 def _can_export_binaries(build_config: BuildConfig) -> bool:
     if build_config["package_type"] != "deb":
         return False
+    if build_config["bundled"] != "bundled":
+        return False
+    if build_config["libraries"] == "shared":
+        return False
     if build_config["sanitizer"] != "":
         return True
     if build_config["build_type"] != "":
@@ -56,9 +60,8 @@ def get_packager_cmd(
 ) -> str:
     package_type = build_config["package_type"]
     comp = build_config["compiler"]
-    cmake_flags = "-DENABLE_CLICKHOUSE_SELF_EXTRACTING=1"
     cmd = (
-        f"cd {packager_path} && CMAKE_FLAGS='{cmake_flags}' ./packager --output-dir={output_path} "
+        f"cd {packager_path} && ./packager --output-dir={output_path} "
         f"--package-type={package_type} --compiler={comp}"
     )
 
@@ -66,6 +69,8 @@ def get_packager_cmd(
         cmd += f" --build-type={build_config['build_type']}"
     if build_config["sanitizer"]:
         cmd += f" --sanitizer={build_config['sanitizer']}"
+    if build_config["libraries"] == "shared":
+        cmd += " --shared-libraries"
     if build_config["tidy"] == "enable":
         cmd += " --clang-tidy"
 
@@ -171,7 +176,7 @@ def create_json_artifact(
     build_config: BuildConfig,
     elapsed: int,
     success: bool,
-) -> None:
+):
     subprocess.check_call(
         f"echo 'BUILD_URLS=build_urls_{build_name}' >> $GITHUB_ENV", shell=True
     )
@@ -215,7 +220,7 @@ def upload_master_static_binaries(
     build_config: BuildConfig,
     s3_helper: S3Helper,
     build_output_path: str,
-) -> None:
+):
     """Upload binary artifacts to a static S3 links"""
     static_binary_name = build_config.get("static_binary_name", False)
     if pr_info.number != 0:

@@ -258,7 +258,7 @@
     M(250, NOT_ENOUGH_BLOCK_NUMBERS) \
     M(251, NO_SUCH_REPLICA) \
     M(252, TOO_MANY_PARTS) \
-    M(253, REPLICA_ALREADY_EXISTS) \
+    M(253, REPLICA_IS_ALREADY_EXIST) \
     M(254, NO_ACTIVE_REPLICAS) \
     M(255, TOO_MANY_RETRIES_TO_FETCH_PARTS) \
     M(256, PARTITION_ALREADY_EXISTS) \
@@ -635,14 +635,6 @@
     M(664, ACCESS_STORAGE_DOESNT_ALLOW_BACKUP) \
     M(665, CANNOT_CONNECT_NATS) \
     M(666, CANNOT_USE_CACHE) \
-    M(667, NOT_INITIALIZED) \
-    M(668, INVALID_STATE) \
-    M(669, NAMED_COLLECTION_DOESNT_EXIST) \
-    M(670, NAMED_COLLECTION_ALREADY_EXISTS) \
-    M(671, NAMED_COLLECTION_IS_IMMUTABLE) \
-    M(672, INVALID_SCHEDULER_NODE) \
-    M(673, RESOURCE_ACCESS_DENIED) \
-    M(674, RESOURCE_NOT_FOUND) \
     \
     M(999, KEEPER_EXCEPTION) \
     M(1000, POCO_EXCEPTION) \
@@ -681,7 +673,7 @@ namespace ErrorCodes
 
     ErrorCode getErrorCodeByName(std::string_view error_name)
     {
-        for (int i = 0, end = ErrorCodes::end(); i < end; ++i)
+        for (size_t i = 0, end = ErrorCodes::end(); i < end; ++i)
         {
             std::string_view name = ErrorCodes::getName(i);
 

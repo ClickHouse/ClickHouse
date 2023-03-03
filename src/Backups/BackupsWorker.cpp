@@ -16,7 +16,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTBackupQuery.h>
-#include <Parsers/ASTFunction.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/logger_useful.h>
@@ -91,8 +90,7 @@ namespace
         }
         catch (...)
         {
-            if (coordination)
-                coordination->setError(current_host, Exception{getCurrentExceptionCode(), getCurrentExceptionMessage(true, true)});
+            coordination->setError(current_host, Exception{getCurrentExceptionCode(), getCurrentExceptionMessage(true, true)});
         }
     }
 
@@ -166,11 +164,10 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
         backup_coordination = makeBackupCoordination(backup_settings.coordination_zk_path, context, backup_settings.internal);
     }
 
-    auto backup_info = BackupInfo::fromAST(*backup_query->backup_name);
-    String backup_name_for_logging = backup_info.toStringForLogging();
     try
     {
-        addInfo(backup_id, backup_name_for_logging, backup_settings.internal, BackupStatus::CREATING_BACKUP);
+        auto backup_info = BackupInfo::fromAST(*backup_query->backup_name);
+        addInfo(backup_id, backup_info.toString(), backup_settings.internal, BackupStatus::CREATING_BACKUP);
 
         /// Prepare context to use.
         ContextPtr context_in_use = context;
@@ -181,20 +178,18 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
             /// For ON CLUSTER queries we will need to change some settings.
             /// For ASYNC queries we have to clone the context anyway.
             context_in_use = mutable_context = Context::createCopy(context);
-            mutable_context->makeQueryContext();
         }
 
         if (backup_settings.async)
         {
             backups_thread_pool.scheduleOrThrowOnError(
-                [this, backup_query, backup_id, backup_name_for_logging, backup_info, backup_settings, backup_coordination, context_in_use, mutable_context]
+                [this, backup_query, backup_id, backup_settings, backup_info, backup_coordination, context_in_use, mutable_context]
                 {
                     doBackup(
                         backup_query,
                         backup_id,
-                        backup_name_for_logging,
-                        backup_info,
                         backup_settings,
+                        backup_info,
                         backup_coordination,
                         context_in_use,
                         mutable_context,
@@ -206,9 +201,8 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
             doBackup(
                 backup_query,
                 backup_id,
-                backup_name_for_logging,
-                backup_info,
                 backup_settings,
+                backup_info,
                 backup_coordination,
                 context_in_use,
                 mutable_context,
@@ -219,7 +213,6 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
     }
     catch (...)
     {
-        tryLogCurrentException(log, fmt::format("Failed to start {} {}", (backup_settings.internal ? "internal backup" : "backup"), backup_name_for_logging));
         /// Something bad happened, the backup has not built.
         setStatusSafe(backup_id, BackupStatus::BACKUP_FAILED);
         sendCurrentExceptionToCoordination(backup_coordination, backup_settings.host_id);
@@ -231,9 +224,8 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
 void BackupsWorker::doBackup(
     const std::shared_ptr<ASTBackupQuery> & backup_query,
     const OperationID & backup_id,
-    const String & backup_name_for_logging,
-    const BackupInfo & backup_info,
     BackupSettings backup_settings,
+    const BackupInfo & backup_info,
     std::shared_ptr<IBackupCoordination> backup_coordination,
     const ContextPtr & context,
     ContextMutablePtr mutable_context,
@@ -286,7 +278,6 @@ void BackupsWorker::doBackup(
         backup_create_params.is_internal_backup = backup_settings.internal;
         backup_create_params.backup_coordination = backup_coordination;
         backup_create_params.backup_uuid = backup_settings.backup_uuid;
-        backup_create_params.deduplicate_files = backup_settings.deduplicate_files;
         BackupMutablePtr backup = BackupFactory::instance().createBackup(backup_create_params);
 
         /// Write the backup.
@@ -343,7 +334,7 @@ void BackupsWorker::doBackup(
         /// Close the backup.
         backup.reset();
 
-        LOG_INFO(log, "{} {} was created successfully", (backup_settings.internal ? "Internal backup" : "Backup"), backup_name_for_logging);
+        LOG_INFO(log, "{} {} was created successfully", (backup_settings.internal ? "Internal backup" : "Backup"), backup_info.toString());
         setStatus(backup_id, BackupStatus::BACKUP_CREATED);
         setNumFilesAndSize(backup_id, num_files, uncompressed_size, compressed_size);
     }
@@ -352,7 +343,7 @@ void BackupsWorker::doBackup(
         /// Something bad happened, the backup has not built.
         if (called_async)
         {
-            tryLogCurrentException(log, fmt::format("Failed to make {} {}", (backup_settings.internal ? "internal backup" : "backup"), backup_name_for_logging));
+            tryLogCurrentException(log, fmt::format("Failed to make {} {}", (backup_settings.internal ? "internal backup" : "backup"), backup_info.toString()));
             setStatusSafe(backup_id, BackupStatus::BACKUP_FAILED);
             sendCurrentExceptionToCoordination(backup_coordination, backup_settings.host_id);
         }
@@ -391,8 +382,7 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
     try
     {
         auto backup_info = BackupInfo::fromAST(*restore_query->backup_name);
-        String backup_name_for_logging = backup_info.toStringForLogging();
-        addInfo(restore_id, backup_name_for_logging, restore_settings.internal, BackupStatus::RESTORING);
+        addInfo(restore_id, backup_info.toString(), restore_settings.internal, BackupStatus::RESTORING);
 
         /// Prepare context to use.
         ContextMutablePtr context_in_use = context;
@@ -402,20 +392,17 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
             /// For ON CLUSTER queries we will need to change some settings.
             /// For ASYNC queries we have to clone the context anyway.
             context_in_use = Context::createCopy(context);
-            context_in_use->makeQueryContext();
         }
 
         if (restore_settings.async)
         {
             backups_thread_pool.scheduleOrThrowOnError(
-                [this, restore_query, restore_id, backup_name_for_logging, backup_info, restore_settings, restore_coordination, context_in_use]
-                {
+                [this, restore_query, restore_id, restore_settings, backup_info, restore_coordination, context_in_use] {
                     doRestore(
                         restore_query,
                         restore_id,
-                        backup_name_for_logging,
-                        backup_info,
                         restore_settings,
+                        backup_info,
                         restore_coordination,
                         context_in_use,
                         /* called_async= */ true);
@@ -426,9 +413,8 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
             doRestore(
                 restore_query,
                 restore_id,
-                backup_name_for_logging,
-                backup_info,
                 restore_settings,
+                backup_info,
                 restore_coordination,
                 context_in_use,
                 /* called_async= */ false);
@@ -449,9 +435,8 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
 void BackupsWorker::doRestore(
     const std::shared_ptr<ASTBackupQuery> & restore_query,
     const OperationID & restore_id,
-    const String & backup_name_for_logging,
-    const BackupInfo & backup_info,
     RestoreSettings restore_settings,
+    const BackupInfo & backup_info,
     std::shared_ptr<IRestoreCoordination> restore_coordination,
     ContextMutablePtr context,
     bool called_async)
@@ -554,7 +539,7 @@ void BackupsWorker::doRestore(
             restore_coordination->setStage(restore_settings.host_id, Stage::COMPLETED, "");
         }
 
-        LOG_INFO(log, "Restored from {} {} successfully", (restore_settings.internal ? "internal backup" : "backup"), backup_name_for_logging);
+        LOG_INFO(log, "Restored from {} {} successfully", (restore_settings.internal ? "internal backup" : "backup"), backup_info.toString());
         setStatus(restore_id, BackupStatus::RESTORED);
     }
     catch (...)
@@ -562,7 +547,7 @@ void BackupsWorker::doRestore(
         /// Something bad happened, the backup has not built.
         if (called_async)
         {
-            tryLogCurrentException(log, fmt::format("Failed to restore from {} {}", (restore_settings.internal ? "internal backup" : "backup"), backup_name_for_logging));
+            tryLogCurrentException(log, fmt::format("Failed to restore from {} {}", (restore_settings.internal ? "internal backup" : "backup"), backup_info.toString()));
             setStatusSafe(restore_id, BackupStatus::RESTORE_FAILED);
             sendCurrentExceptionToCoordination(restore_coordination, restore_settings.host_id);
         }

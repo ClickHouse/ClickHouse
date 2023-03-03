@@ -139,21 +139,21 @@ inline void writeBoolText(bool x, WriteBuffer & buf)
 template <typename T>
 inline size_t writeFloatTextFastPath(T x, char * buffer)
 {
-    Int64 result = 0;
+    int result = 0;
 
     if constexpr (std::is_same_v<T, double>)
     {
         /// The library Ryu has low performance on integers.
         /// This workaround improves performance 6..10 times.
 
-        if (DecomposedFloat64(x).isIntegerInRepresentableRange())
+        if (DecomposedFloat64(x).is_integer_in_representable_range())
             result = itoa(Int64(x), buffer) - buffer;
         else
             result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
     }
     else
     {
-        if (DecomposedFloat32(x).isIntegerInRepresentableRange())
+        if (DecomposedFloat32(x).is_integer_in_representable_range())
             result = itoa(Int32(x), buffer) - buffer;
         else
             result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
@@ -372,7 +372,7 @@ void writeJSONNumber(T x, WriteBuffer & ostr, const FormatSettings & settings)
     bool is_finite = isFinite(x);
 
     const bool need_quote = (is_integer<T> && (sizeof(T) >= 8) && settings.json.quote_64bit_integers)
-        || (settings.json.quote_denormals && !is_finite) || (is_floating_point<T> && (sizeof(T) >= 8) && settings.json.quote_64bit_floats);
+        || (settings.json.quote_denormals && !is_finite);
 
     if (need_quote)
         writeChar('"', ostr);
@@ -624,6 +624,9 @@ inline void writeXMLStringForTextElement(std::string_view s, WriteBuffer & buf)
     writeXMLStringForTextElement(s.data(), s.data() + s.size(), buf);
 }
 
+template <typename IteratorSrc, typename IteratorDst>
+void formatHex(IteratorSrc src, IteratorDst dst, size_t num_bytes);
+void formatUUID(const UInt8 * src16, UInt8 * dst36);
 void formatUUID(std::reverse_iterator<const UInt8 *> src16, UInt8 * dst36);
 
 inline void writeUUIDText(const UUID & uuid, WriteBuffer & buf)
@@ -1098,25 +1101,6 @@ inline String toString(const T & x)
     return buf.str();
 }
 
-template <typename T>
-inline String toStringWithFinalSeparator(const std::vector<T> & x, const String & final_sep)
-{
-    WriteBufferFromOwnString buf;
-    for (auto it = x.begin(); it != x.end(); ++it)
-    {
-        if (it != x.begin())
-        {
-            if (std::next(it) == x.end())
-                writeString(final_sep, buf);
-            else
-                writeString(", ", buf);
-        }
-        writeQuoted(*it, buf);
-    }
-
-    return buf.str();
-}
-
 inline void writeNullTerminatedString(const String & s, WriteBuffer & buffer)
 {
     /// c_str is guaranteed to return zero-terminated string
@@ -1145,7 +1129,7 @@ inline void writeBinaryBigEndian(const T & x, WriteBuffer & buf)    /// Assuming
 {
     for (size_t i = 0; i != std::size(x.items); ++i)
     {
-        const auto & item = x.items[(std::endian::native == std::endian::little) ? std::size(x.items) - i - 1 : i];
+        const auto & item = x.items[std::size(x.items) - i - 1];
         writeBinaryBigEndian(item, buf);
     }
 }

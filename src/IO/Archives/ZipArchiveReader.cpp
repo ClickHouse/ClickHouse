@@ -4,7 +4,6 @@
 #include <IO/Archives/ZipArchiveWriter.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Common/quoteString.h>
-#include <base/errnoToString.h>
 #include <unzip.h>
 
 
@@ -281,7 +280,7 @@ private:
     bool nextImpl() override
     {
         RawHandle raw_handle = handle.getRawHandle();
-        auto bytes_read = unzReadCurrentFile(raw_handle, internal_buffer.begin(), static_cast<int>(internal_buffer.size()));
+        auto bytes_read = unzReadCurrentFile(raw_handle, internal_buffer.begin(), internal_buffer.size());
 
         if (bytes_read < 0)
             checkResult(bytes_read);
@@ -554,11 +553,11 @@ void ZipArchiveReader::checkResult(int code) const
     if (code >= UNZ_OK)
         return;
 
-    String message = "Code = ";
+    String message = "Code= ";
     switch (code)
     {
         case UNZ_OK: return;
-        case UNZ_ERRNO: message += "ERRNO, errno = " + errnoToString(); break;
+        case UNZ_ERRNO: message += "ERRNO, errno= " + String{strerror(errno)}; break;
         case UNZ_PARAMERROR: message += "PARAMERROR"; break;
         case UNZ_BADZIPFILE: message += "BADZIPFILE"; break;
         case UNZ_INTERNALERROR: message += "INTERNALERROR"; break;

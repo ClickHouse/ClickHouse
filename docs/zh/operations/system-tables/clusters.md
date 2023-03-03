@@ -1,6 +1,3 @@
----
-slug: /zh/operations/system-tables/clusters
----
 # system.clusters{#system-clusters}
 
 包含有关配置文件中可用的集群及其中的服务器的信息。

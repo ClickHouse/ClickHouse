@@ -109,7 +109,7 @@ namespace DB
                     readDateTimeText(time, in);
                     if (time < 0)
                         time = 0;
-                    assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(time));
+                    assert_cast<ColumnUInt32 &>(column).insertValue(time);
                     break;
                 }
                 case ValueType::vtUUID:

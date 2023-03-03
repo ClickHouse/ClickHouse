@@ -32,13 +32,6 @@
         v2 += v1; v1 = ROTL(v1, 17); v1 ^= v2; v2 = ROTL(v2, 32); \
     } while(0)
 
-/// Define macro CURRENT_BYTES_IDX for building index used in current_bytes array
-/// to ensure correct byte order on different endian machines
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-#define CURRENT_BYTES_IDX(i) (7 - i)
-#else
-#define CURRENT_BYTES_IDX(i) (i)
-#endif
 
 class SipHash
 {
@@ -62,7 +55,7 @@ private:
     ALWAYS_INLINE void finalize()
     {
         /// In the last free byte, we write the remainder of the division by 256.
-        current_bytes[CURRENT_BYTES_IDX(7)] = static_cast<UInt8>(cnt);
+        current_bytes[7] = cnt;
 
         v3 ^= current_word;
         SIPROUND;
@@ -99,7 +92,7 @@ public:
         {
             while (cnt & 7 && data < end)
             {
-                current_bytes[CURRENT_BYTES_IDX(cnt & 7)] = *data;
+                current_bytes[cnt & 7] = *data;
                 ++data;
                 ++cnt;
             }
@@ -132,13 +125,13 @@ public:
         current_word = 0;
         switch (end - data)
         {
-            case 7: current_bytes[CURRENT_BYTES_IDX(6)] = data[6]; [[fallthrough]];
-            case 6: current_bytes[CURRENT_BYTES_IDX(5)] = data[5]; [[fallthrough]];
-            case 5: current_bytes[CURRENT_BYTES_IDX(4)] = data[4]; [[fallthrough]];
-            case 4: current_bytes[CURRENT_BYTES_IDX(3)] = data[3]; [[fallthrough]];
-            case 3: current_bytes[CURRENT_BYTES_IDX(2)] = data[2]; [[fallthrough]];
-            case 2: current_bytes[CURRENT_BYTES_IDX(1)] = data[1]; [[fallthrough]];
-            case 1: current_bytes[CURRENT_BYTES_IDX(0)] = data[0]; [[fallthrough]];
+            case 7: current_bytes[6] = data[6]; [[fallthrough]];
+            case 6: current_bytes[5] = data[5]; [[fallthrough]];
+            case 5: current_bytes[4] = data[4]; [[fallthrough]];
+            case 4: current_bytes[3] = data[3]; [[fallthrough]];
+            case 3: current_bytes[2] = data[2]; [[fallthrough]];
+            case 2: current_bytes[1] = data[1]; [[fallthrough]];
+            case 1: current_bytes[0] = data[0]; [[fallthrough]];
             case 0: break;
         }
     }
@@ -164,13 +157,8 @@ public:
     void get128(char * out)
     {
         finalize();
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        unalignedStore<UInt64>(out + 8, v0 ^ v1);
-        unalignedStore<UInt64>(out, v2 ^ v3);
-#else
-        unalignedStore<UInt64>(out, v0 ^ v1);
-        unalignedStore<UInt64>(out + 8, v2 ^ v3);
-#endif
+        unalignedStoreLE<UInt64>(out, v0 ^ v1);
+        unalignedStoreLE<UInt64>(out + 8, v2 ^ v3);
     }
 
     template <typename T>
@@ -194,13 +182,6 @@ public:
         finalize();
         return v0 ^ v1 ^ v2 ^ v3;
     }
-
-    UInt128 get128()
-    {
-        UInt128 res;
-        get128(res);
-        return res;
-    }
 };
 
 
@@ -220,7 +201,9 @@ inline UInt128 sipHash128(const char * data, const size_t size)
 {
     SipHash hash;
     hash.update(data, size);
-    return hash.get128();
+    UInt128 res;
+    hash.get128(res);
+    return res;
 }
 
 inline UInt64 sipHash64(const char * data, const size_t size)
@@ -242,5 +225,3 @@ inline UInt64 sipHash64(const std::string & s)
 {
     return sipHash64(s.data(), s.size());
 }
-
-#undef CURRENT_BYTES_IDX

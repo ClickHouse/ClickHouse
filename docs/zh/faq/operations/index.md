@@ -1,5 +1,4 @@
 ---
-slug: /zh/faq/operations/
 title: 关于操作ClickHouse服务器和集群的问题
 toc_hidden_folder: true
 sidebar_position: 3

@@ -1,11 +1,12 @@
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
+#include <Disks/TemporaryFileOnDisk.h>
 #include <Common/getRandomASCIIString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <Poco/TemporaryFile.h>
 #include <ranges>
 #include <filesystem>
-
 
 namespace DB
 {
@@ -78,11 +79,6 @@ std::string MetadataStorageFromDisk::readFileToString(const std::string & path) 
     return result;
 }
 
-std::string MetadataStorageFromDisk::readInlineDataToString(const std::string & path) const
-{
-    return readMetadata(path)->getInlineData();
-}
-
 DiskObjectStorageMetadataPtr MetadataStorageFromDisk::readMetadataUnlocked(const std::string & path, std::shared_lock<std::shared_mutex> &) const
 {
     auto metadata = std::make_unique<DiskObjectStorageMetadata>(disk->getPath(), object_storage_root_path, path);
@@ -127,7 +123,7 @@ void MetadataStorageFromDiskTransaction::createHardLink(const std::string & path
     addOperation(std::make_unique<CreateHardlinkOperation>(path_from, path_to, *metadata_storage.disk, metadata_storage));
 }
 
-MetadataTransactionPtr MetadataStorageFromDisk::createTransaction()
+MetadataTransactionPtr MetadataStorageFromDisk::createTransaction() const
 {
     return std::make_shared<MetadataStorageFromDiskTransaction>(*this);
 }
@@ -247,16 +243,6 @@ void MetadataStorageFromDiskTransaction::writeStringToFile(
      const std::string & data)
 {
     addOperation(std::make_unique<WriteFileOperation>(path, *metadata_storage.getDisk(), data));
-}
-
-void MetadataStorageFromDiskTransaction::writeInlineDataToFile(
-     const std::string & path,
-     const std::string & data)
-{
-    auto metadata = std::make_unique<DiskObjectStorageMetadata>(
-        metadata_storage.getDisk()->getPath(), metadata_storage.getObjectStorageRootPath(), path);
-    metadata->setInlineData(data);
-    writeStringToFile(path, metadata->serializeToString());
 }
 
 void MetadataStorageFromDiskTransaction::setLastModified(const std::string & path, const Poco::Timestamp & timestamp)

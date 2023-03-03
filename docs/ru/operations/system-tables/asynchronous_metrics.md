@@ -1,6 +1,3 @@
----
-slug: /ru/operations/system-tables/asynchronous_metrics
----
 # system.asynchronous_metrics {#system_tables-asynchronous_metrics}
 
 Содержит метрики, которые периодически вычисляются в фоновом режиме. Например, объём используемой оперативной памяти.

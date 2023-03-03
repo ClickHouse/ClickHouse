@@ -82,8 +82,6 @@ public:
 
     virtual const String & getDescription() const = 0;
 
-    virtual std::vector<std::pair<String, String>> getPasswordComplexityRules() const = 0;
-
     /// If last flag is true, you need to call sendExternalTablesData after.
     virtual void sendQuery(
         const ConnectionTimeouts & timeouts,

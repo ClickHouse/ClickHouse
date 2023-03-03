@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <string>
 #include <Core/Defines.h>
-#include <Interpreters/Cache/FileCache_fwd.h>
+#include <Common/FileCache_fwd.h>
 #include <Common/Throttler_fwd.h>
 
 namespace DB
@@ -76,12 +76,11 @@ struct ReadSettings
     /// For 'pread_threadpool' method. Lower is more priority.
     size_t priority = 0;
 
-    bool load_marks_asynchronously = true;
-
     size_t remote_fs_read_max_backoff_ms = 10000;
     size_t remote_fs_read_backoff_max_tries = 4;
 
     bool enable_filesystem_cache = true;
+    size_t filesystem_cache_max_wait_sec = 1;
     bool read_from_filesystem_cache_if_exists_otherwise_bypass_cache = false;
     bool enable_filesystem_cache_log = false;
     bool is_file_cache_persistent = false; /// Some files can be made non-evictable.
@@ -104,9 +103,6 @@ struct ReadSettings
     size_t http_retry_initial_backoff_ms = 100;
     size_t http_retry_max_backoff_ms = 1600;
     bool http_skip_not_found_url_for_globs = true;
-
-    /// Monitoring
-    bool for_object_storage = false; // to choose which profile events should be incremented
 
     ReadSettings adjustBufferSize(size_t file_size) const
     {

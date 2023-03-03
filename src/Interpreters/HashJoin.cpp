@@ -3,7 +3,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include <Common/StackTrace.h>
 #include <Common/logger_useful.h>
 
 #include <Columns/ColumnConst.h>
@@ -178,7 +177,7 @@ namespace JoinStuff
     }
 }
 
-static void correctNullabilityInplace(ColumnWithTypeAndName & column, bool nullable)
+static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column, bool nullable)
 {
     if (nullable)
     {
@@ -193,9 +192,11 @@ static void correctNullabilityInplace(ColumnWithTypeAndName & column, bool nulla
 
         JoinCommon::removeColumnNullability(column);
     }
+
+    return std::move(column);
 }
 
-static void correctNullabilityInplace(ColumnWithTypeAndName & column, bool nullable, const ColumnUInt8 & negative_null_map)
+static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column, bool nullable, const ColumnUInt8 & negative_null_map)
 {
     if (nullable)
     {
@@ -209,6 +210,8 @@ static void correctNullabilityInplace(ColumnWithTypeAndName & column, bool nulla
     }
     else
         JoinCommon::removeColumnNullability(column);
+
+    return std::move(column);
 }
 
 HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_, bool any_take_last_row_)
@@ -221,17 +224,11 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
     , right_sample_block(right_sample_block_)
     , log(&Poco::Logger::get("HashJoin"))
 {
-    LOG_DEBUG(log, "Datatype: {}, kind: {}, strictness: {}, right header: {}", data->type, kind, strictness, right_sample_block.dumpStructure());
-    LOG_DEBUG(log, "Keys: {}", TableJoin::formatClauses(table_join->getClauses(), true));
+    LOG_DEBUG(log, "Right sample block: {}", right_sample_block.dumpStructure());
 
     if (isCrossOrComma(kind))
     {
         data->type = Type::CROSS;
-        sample_block_with_columns_to_add = right_sample_block;
-    }
-    else if (table_join->getClauses().empty())
-    {
-        data->type = Type::EMPTY;
         sample_block_with_columns_to_add = right_sample_block;
     }
     else if (table_join->oneDisjunct())
@@ -244,6 +241,15 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
     {
         /// required right keys concept does not work well if multiple disjuncts, we need all keys
         sample_block_with_columns_to_add = right_table_keys = materializeBlock(right_sample_block);
+    }
+
+    LOG_TRACE(log, "Columns to add: [{}], required right [{}]",
+              sample_block_with_columns_to_add.dumpStructure(), fmt::join(required_right_keys.getNames(), ", "));
+    {
+        std::vector<String> log_text;
+        for (const auto & clause : table_join->getClauses())
+            log_text.push_back(clause.formatDebug());
+        LOG_TRACE(log, "Joining on: {}", fmt::join(log_text, " | "));
     }
 
     JoinCommon::convertToFullColumnsInplace(right_table_keys);
@@ -297,6 +303,8 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
 
     for (auto & maps : data->maps)
         dataMapInit(maps);
+
+    LOG_DEBUG(log, "Join type: {}, kind: {}, strictness: {}", data->type, kind, strictness);
 }
 
 HashJoin::Type HashJoin::chooseMethod(JoinKind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes)
@@ -617,7 +625,7 @@ namespace
             APPLY_FOR_JOIN_VARIANTS(M)
         #undef M
         }
-        UNREACHABLE();
+        __builtin_unreachable();
     }
 }
 
@@ -632,10 +640,7 @@ void HashJoin::initRightBlockStructure(Block & saved_block_sample)
 
     bool multiple_disjuncts = !table_join->oneDisjunct();
     /// We could remove key columns for LEFT | INNER HashJoin but we should keep them for JoinSwitcher (if any).
-    bool save_key_columns = table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO) ||
-                            table_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH) ||
-                            isRightOrFull(kind) ||
-                            multiple_disjuncts;
+    bool save_key_columns = table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO) || isRightOrFull(kind) || multiple_disjuncts;
     if (save_key_columns)
     {
         saved_block_sample = right_table_keys.cloneEmpty();
@@ -649,9 +654,7 @@ void HashJoin::initRightBlockStructure(Block & saved_block_sample)
     /// Save non key columns
     for (auto & column : sample_block_with_columns_to_add)
     {
-        if (auto * col = saved_block_sample.findByName(column.name))
-            *col = column;
-        else
+        if (!saved_block_sample.findByName(column.name))
             saved_block_sample.insert(column);
     }
 }
@@ -878,8 +881,7 @@ public:
     static void assertBlockEqualsStructureUpToLowCard(const Block & lhs_block, const Block & rhs_block)
     {
         if (lhs_block.columns() != rhs_block.columns())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Different number of columns in blocks [{}] and [{}]",
-                lhs_block.dumpStructure(), rhs_block.dumpStructure());
+            throw Exception("Different number of columns in blocks", ErrorCodes::LOGICAL_ERROR);
 
         for (size_t i = 0; i < lhs_block.columns(); ++i)
         {
@@ -1471,7 +1473,7 @@ void HashJoin::joinBlockImpl(
                 ColumnWithTypeAndName right_col(col.column, col.type, right_col_name);
                 if (right_col.type->lowCardinality() != right_key.type->lowCardinality())
                     JoinCommon::changeLowCardinalityInplace(right_col);
-                correctNullabilityInplace(right_col, is_nullable);
+                right_col = correctNullability(std::move(right_col), is_nullable);
                 block.insert(std::move(right_col));
             }
         }
@@ -1489,7 +1491,7 @@ void HashJoin::joinBlockImpl(
         {
             const auto & right_key = required_right_keys.getByPosition(i);
             auto right_col_name = getTableJoin().renamedRightColumnName(right_key.name);
-            if (!block.findByName(right_col_name))
+            if (!block.findByName(right_col_name /*right_key.name*/))
             {
                 const auto & left_name = required_right_keys_sources[i];
 
@@ -1505,11 +1507,11 @@ void HashJoin::joinBlockImpl(
                 ColumnWithTypeAndName right_col(thin_column, col.type, right_col_name);
                 if (right_col.type->lowCardinality() != right_key.type->lowCardinality())
                     JoinCommon::changeLowCardinalityInplace(right_col);
-                correctNullabilityInplace(right_col, is_nullable, null_map_filter);
+                right_col = correctNullability(std::move(right_col), is_nullable, null_map_filter);
                 block.insert(std::move(right_col));
 
                 if constexpr (jf.need_replication)
-                    right_keys_to_replicate.push_back(block.getPositionByName(right_col_name));
+                    right_keys_to_replicate.push_back(block.getPositionByName(right_key.name));
             }
         }
     }
@@ -1676,9 +1678,6 @@ void HashJoin::checkTypesOfKeys(const Block & block) const
 
 void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 {
-    if (data->released)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot join after data has been released");
-
     for (const auto & onexpr : table_join->getClauses())
     {
         auto cond_column_name = onexpr.condColumnNames();
@@ -1854,7 +1853,7 @@ private:
                 throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys (type: {})", parent.data->type)   ;
         }
 
-        UNREACHABLE();
+        __builtin_unreachable();
     }
 
     template <JoinStrictness STRICTNESS, typename Map>
@@ -1946,13 +1945,16 @@ private:
     }
 };
 
-IBlocksStreamPtr HashJoin::getNonJoinedBlocks(const Block & left_sample_block,
+std::shared_ptr<NotJoinedBlocks> HashJoin::getNonJoinedBlocks(const Block & left_sample_block,
                                                               const Block & result_sample_block,
                                                               UInt64 max_block_size) const
 {
-    if (!JoinCommon::hasNonJoinedBlocks(*table_join))
+    if (table_join->strictness() == JoinStrictness::Asof ||
+        table_join->strictness() == JoinStrictness::Semi ||
+        !isRightOrFull(table_join->kind()))
+    {
         return {};
-
+    }
     bool multiple_disjuncts = !table_join->oneDisjunct();
 
     if (multiple_disjuncts)
@@ -1960,7 +1962,7 @@ IBlocksStreamPtr HashJoin::getNonJoinedBlocks(const Block & left_sample_block,
         /// ... calculate `left_columns_count` ...
         size_t left_columns_count = left_sample_block.columns();
         auto non_joined = std::make_unique<NotJoinedHash<true>>(*this, max_block_size);
-        return std::make_unique<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, *table_join);
+        return std::make_shared<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, table_join->leftToRightKeyRemap());
 
     }
     else
@@ -1968,7 +1970,7 @@ IBlocksStreamPtr HashJoin::getNonJoinedBlocks(const Block & left_sample_block,
         size_t left_columns_count = left_sample_block.columns();
         assert(left_columns_count == result_sample_block.columns() - required_right_keys.columns() - sample_block_with_columns_to_add.columns());
         auto non_joined = std::make_unique<NotJoinedHash<false>>(*this, max_block_size);
-        return std::make_unique<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, *table_join);
+        return std::make_shared<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, table_join->leftToRightKeyRemap());
     }
 }
 
@@ -1988,41 +1990,6 @@ void HashJoin::reuseJoinedData(const HashJoin & join)
             used_flags.reinit<kind_, strictness_>(map_.getBufferSizeInCells(data->type) + 1);
         });
     }
-}
-
-BlocksList HashJoin::releaseJoinedBlocks()
-{
-    BlocksList right_blocks = std::move(data->blocks);
-    data->released = true;
-    BlocksList restored_blocks;
-
-    /// names to positions optimization
-    std::vector<size_t> positions;
-    std::vector<bool> is_nullable;
-    if (!right_blocks.empty())
-    {
-        positions.reserve(right_sample_block.columns());
-        const Block & tmp_block = *right_blocks.begin();
-        for (const auto & sample_column : right_sample_block)
-        {
-            positions.emplace_back(tmp_block.getPositionByName(sample_column.name));
-            is_nullable.emplace_back(JoinCommon::isNullable(sample_column.type));
-        }
-    }
-
-    for (Block & saved_block : right_blocks)
-    {
-        Block restored_block;
-        for (size_t i = 0; i < positions.size(); ++i)
-        {
-            auto & column = saved_block.getByPosition(positions[i]);
-            correctNullabilityInplace(column, is_nullable[i]);
-            restored_block.insert(column);
-        }
-        restored_blocks.emplace_back(std::move(restored_block));
-    }
-
-    return restored_blocks;
 }
 
 const ColumnWithTypeAndName & HashJoin::rightAsofKeyColumn() const

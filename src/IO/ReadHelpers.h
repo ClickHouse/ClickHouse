@@ -558,10 +558,9 @@ void readStringUntilWhitespace(String & s, ReadBuffer & buf);
   * - string could be placed in quotes; quotes could be single: ' if FormatSettings::CSV::allow_single_quotes is true
   *   or double: " if FormatSettings::CSV::allow_double_quotes is true;
   * - or string could be unquoted - this is determined by first character;
-  * - if string is unquoted, then:
-  *     - If settings.custom_delimiter is not specified, it is read until next settings.delimiter, either until end of line (CR or LF) or until end of stream;
-  *     - If settings.custom_delimiter is specified it reads until first occurrences of settings.custom_delimiter in buffer.
-  *       This works only if provided buffer is PeekableReadBuffer.
+  * - if string is unquoted, then it is read until next delimiter,
+  *   either until end of line (CR or LF),
+  *   or until end of stream;
   *   but spaces and tabs at begin and end of unquoted string are consumed but ignored (note that this behaviour differs from RFC).
   * - if string is in quotes, then it will be read until closing quote,
   *   but sequences of two consecutive quotes are parsed as single quote inside string;
@@ -570,13 +569,6 @@ void readCSVString(String & s, ReadBuffer & buf, const FormatSettings::CSV & set
 
 /// Differ from readCSVString in that it doesn't remove quotes around field if any.
 void readCSVField(String & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
-
-/// Read string in CSV format until the first occurrence of first_delimiter or second_delimiter.
-/// Similar to readCSVString if string is in quotes, we read only data in quotes.
-String readCSVStringWithTwoPossibleDelimiters(PeekableReadBuffer & buf, const FormatSettings::CSV & settings, const String & first_delimiter, const String & second_delimiter);
-
-/// Same as above but includes quotes in the result if any.
-String readCSVFieldWithTwoPossibleDelimiters(PeekableReadBuffer & buf, const FormatSettings::CSV & settings, const String & first_delimiter, const String & second_delimiter);
 
 /// Read and append result to array of characters.
 template <typename Vector>
@@ -612,9 +604,6 @@ bool tryReadJSONStringInto(Vector & s, ReadBuffer & buf)
 {
     return readJSONStringInto<Vector, bool>(s, buf);
 }
-
-template <typename Vector>
-bool tryReadQuotedStringInto(Vector & s, ReadBuffer & buf);
 
 /// Reads chunk of data between {} in that way,
 /// that it has balanced parentheses sequence of {}.
@@ -747,7 +736,6 @@ inline ReturnType readDateTextImpl(ExtendedDayNum & date, ReadBuffer & buf)
         readDateTextImpl<ReturnType>(local_date, buf);
     else if (!readDateTextImpl<ReturnType>(local_date, buf))
         return false;
-
     /// When the parameter is out of rule or out of range, Date32 uses 1925-01-01 as the default value (-DateLUT::instance().getDayNumOffsetEpoch(), -16436) and Date uses 1970-01-01.
     date = DateLUT::instance().makeDayNum(local_date.year(), local_date.month(), local_date.day(), -static_cast<Int32>(DateLUT::instance().getDayNumOffsetEpoch()));
     return ReturnType(true);
@@ -868,10 +856,10 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
     const char * s = buf.position();
 
     /// YYYY-MM-DD hh:mm:ss
-    static constexpr auto date_time_broken_down_length = 19;
-    /// YYYY-MM-DD
-    static constexpr auto date_broken_down_length = 10;
-    bool optimistic_path_for_date_time_input = s + date_time_broken_down_length <= buf.buffer().end();
+    static constexpr auto DateTimeStringInputSize = 19;
+    ///YYYY-MM-DD
+    static constexpr auto DateStringInputSize = 10;
+    bool optimistic_path_for_date_time_input = s + DateTimeStringInputSize <= buf.buffer().end();
 
     if (optimistic_path_for_date_time_input)
     {
@@ -884,8 +872,7 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
             UInt8 hour = 0;
             UInt8 minute = 0;
             UInt8 second = 0;
-
-            /// Simply determine whether it is YYYY-MM-DD hh:mm:ss or YYYY-MM-DD by the content of the tenth character in an optimistic scenario
+            ///simply determine whether it is YYYY-MM-DD hh:mm:ss or YYYY-MM-DD by the content of the tenth character in an optimistic scenario
             bool dt_long = (s[10] == ' ' || s[10] == 'T');
             if (dt_long)
             {
@@ -900,10 +887,9 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
                 datetime = date_lut.makeDateTime(year, month, day, hour, minute, second);
 
             if (dt_long)
-                buf.position() += date_time_broken_down_length;
+                buf.position() += DateTimeStringInputSize;
             else
-                buf.position() += date_broken_down_length;
-
+                buf.position() += DateStringInputSize;
             return ReturnType(true);
         }
         else
@@ -975,16 +961,15 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         components.whole = components.whole / common::exp10_i32(scale);
     }
 
-    bool is_ok = true;
     if constexpr (std::is_same_v<ReturnType, void>)
         datetime64 = DecimalUtils::decimalFromComponents<DateTime64>(components, scale);
     else
-        is_ok = DecimalUtils::tryGetDecimalFromComponents<DateTime64>(components, scale, datetime64);
+        DecimalUtils::tryGetDecimalFromComponents<DateTime64>(components, scale, datetime64);
 
     datetime64 *= negative_multiplier;
 
 
-    return ReturnType(is_ok);
+    return ReturnType(true);
 }
 
 inline void readDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance())
@@ -1009,33 +994,21 @@ inline bool tryReadDateTime64Text(DateTime64 & datetime64, UInt32 scale, ReadBuf
 
 inline void readDateTimeText(LocalDateTime & datetime, ReadBuffer & buf)
 {
-    char s[10];
-    size_t size = buf.read(s, 10);
-    if (10 != size)
+    char s[19];
+    size_t size = buf.read(s, 19);
+    if (19 != size)
     {
         s[size] = 0;
-        throw ParsingException(std::string("Cannot parse DateTime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
+        throw ParsingException(std::string("Cannot parse datetime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
     }
 
     datetime.year((s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0'));
     datetime.month((s[5] - '0') * 10 + (s[6] - '0'));
     datetime.day((s[8] - '0') * 10 + (s[9] - '0'));
 
-    /// Allow to read Date as DateTime
-    if (buf.eof() || !(*buf.position() == ' ' || *buf.position() == 'T'))
-        return;
-
-    ++buf.position();
-    size = buf.read(s, 8);
-    if (8 != size)
-    {
-        s[size] = 0;
-        throw ParsingException(std::string("Cannot parse time component of DateTime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
-    }
-
-    datetime.hour((s[0] - '0') * 10 + (s[1] - '0'));
-    datetime.minute((s[3] - '0') * 10 + (s[4] - '0'));
-    datetime.second((s[6] - '0') * 10 + (s[7] - '0'));
+    datetime.hour((s[11] - '0') * 10 + (s[12] - '0'));
+    datetime.minute((s[14] - '0') * 10 + (s[15] - '0'));
+    datetime.second((s[17] - '0') * 10 + (s[18] - '0'));
 }
 
 
@@ -1089,7 +1062,7 @@ inline void readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little 
 {
     for (size_t i = 0; i != std::size(x.items); ++i)
     {
-        auto & item = x.items[(std::endian::native == std::endian::little) ? std::size(x.items) - i - 1 : i];
+        auto & item = x.items[std::size(x.items) - i - 1];
         readBinaryBigEndian(item, buf);
     }
 }
@@ -1116,7 +1089,6 @@ inline void readText(is_floating_point auto & x, ReadBuffer & buf) { readFloatTe
 
 inline void readText(String & x, ReadBuffer & buf) { readEscapedString(x, buf); }
 inline void readText(LocalDate & x, ReadBuffer & buf) { readDateText(x, buf); }
-inline void readText(DayNum & x, ReadBuffer & buf) { readDateText(x, buf); }
 inline void readText(LocalDateTime & x, ReadBuffer & buf) { readDateTimeText(x, buf); }
 inline void readText(UUID & x, ReadBuffer & buf) { readUUIDText(x, buf); }
 
@@ -1198,7 +1170,6 @@ inline void readCSV(T & x, ReadBuffer & buf)
 
 inline void readCSV(String & x, ReadBuffer & buf, const FormatSettings::CSV & settings) { readCSVString(x, buf, settings); }
 inline void readCSV(LocalDate & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
-inline void readCSV(DayNum & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline void readCSV(LocalDateTime & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline void readCSV(UUID & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline void readCSV(UInt128 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
@@ -1459,8 +1430,6 @@ void skipToCarriageReturnOrEOF(ReadBuffer & buf);
 /// Skip to next character after next unescaped \n. If no \n in stream, skip to end. Does not throw on invalid escape sequences.
 void skipToUnescapedNextLineOrEOF(ReadBuffer & buf);
 
-/// Skip to next character after next \0. If no \0 in stream, skip to end.
-void skipNullTerminated(ReadBuffer & buf);
 
 /** This function just copies the data from buffer's internal position (in.position())
   * to current position (from arguments) into memory.

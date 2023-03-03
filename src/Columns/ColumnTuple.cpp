@@ -109,7 +109,7 @@ void ColumnTuple::get(size_t n, Field & res) const
     const size_t tuple_size = columns.size();
 
     res = Tuple();
-    Tuple & res_tuple = res.get<Tuple &>();
+    Tuple & res_tuple = DB::get<Tuple &>(res);
     res_tuple.reserve(tuple_size);
 
     for (size_t i = 0; i < tuple_size; ++i)
@@ -137,7 +137,7 @@ void ColumnTuple::insertData(const char *, size_t)
 
 void ColumnTuple::insert(const Field & x)
 {
-    const auto & tuple = x.get<const Tuple &>();
+    const auto & tuple = DB::get<const Tuple &>(x);
 
     const size_t tuple_size = columns.size();
     if (tuple.size() != tuple_size)
@@ -495,17 +495,17 @@ void ColumnTuple::getExtremes(Field & min, Field & max) const
     max = max_tuple;
 }
 
-void ColumnTuple::forEachSubcolumn(ColumnCallback callback) const
+void ColumnTuple::forEachSubcolumn(ColumnCallback callback)
 {
-    for (const auto & column : columns)
+    for (auto & column : columns)
         callback(column);
 }
 
-void ColumnTuple::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
+void ColumnTuple::forEachSubcolumnRecursively(ColumnCallback callback)
 {
-    for (const auto & column : columns)
+    for (auto & column : columns)
     {
-        callback(*column);
+        callback(column);
         column->forEachSubcolumnRecursively(callback);
     }
 }
@@ -568,17 +568,6 @@ double ColumnTuple::getRatioOfDefaultRows(double sample_ratio) const
 void ColumnTuple::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const
 {
     return getIndicesOfNonDefaultRowsImpl<ColumnTuple>(indices, from, limit);
-}
-
-void ColumnTuple::finalize()
-{
-    for (auto & column : columns)
-        column->finalize();
-}
-
-bool ColumnTuple::isFinalized() const
-{
-    return std::all_of(columns.begin(), columns.end(), [](const auto & column) { return column->isFinalized(); });
 }
 
 }

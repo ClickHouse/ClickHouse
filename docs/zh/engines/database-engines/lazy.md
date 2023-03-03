@@ -1,5 +1,4 @@
 ---
-slug: /zh/engines/database-engines/lazy
 sidebar_position: 31
 sidebar_label: Lazy
 ---

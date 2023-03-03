@@ -59,7 +59,7 @@ bool ColumnFixedString::isDefaultAt(size_t index) const
 
 void ColumnFixedString::insert(const Field & x)
 {
-    const String & s = x.get<const String &>();
+    const String & s = DB::get<const String &>(x);
 
     if (s.size() > n)
         throw Exception("Too large string '" + s + "' for FixedString column", ErrorCodes::TOO_LARGE_STRING_SIZE);
@@ -277,8 +277,8 @@ void ColumnFixedString::expand(const IColumn::Filter & mask, bool inverted)
     if (mask.size() < size())
         throw Exception("Mask size should be no less than data size.", ErrorCodes::LOGICAL_ERROR);
 
-    ssize_t index = mask.size() - 1;
-    ssize_t from = size() - 1;
+    int index = mask.size() - 1;
+    int from = size() - 1;
     chars.resize_fill(mask.size() * n, 0);
     while (index >= 0)
     {

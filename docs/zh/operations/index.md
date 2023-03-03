@@ -1,5 +1,4 @@
 ---
-slug: /zh/operations/
 sidebar_position: 43
 sidebar_label: "操作"
 ---

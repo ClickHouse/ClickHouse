@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/aggregate-functions/reference/avgweighted
 sidebar_position: 107
 ---
 

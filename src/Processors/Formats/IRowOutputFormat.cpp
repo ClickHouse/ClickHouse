@@ -10,11 +10,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-IRowOutputFormat::IRowOutputFormat(const Block & header, WriteBuffer & out_)
+IRowOutputFormat::IRowOutputFormat(const Block & header, WriteBuffer & out_, const Params & params_)
     : IOutputFormat(header, out_)
     , num_columns(header.columns())
     , types(header.getDataTypes())
     , serializations(header.getSerializations())
+    , params(params_)
 {
 }
 
@@ -25,19 +26,20 @@ void IRowOutputFormat::consume(DB::Chunk chunk)
 
     for (size_t row = 0; row < num_rows; ++row)
     {
-        if (haveWrittenData())
+        if (!first_row || getRowsReadBefore() != 0)
             writeRowBetweenDelimiter();
 
         write(columns, row);
+
+        if (params.callback)
+            params.callback(columns, row);
+
         first_row = false;
     }
 }
 
 void IRowOutputFormat::consumeTotals(DB::Chunk chunk)
 {
-    if (!supportTotals())
-        return;
-
     auto num_rows = chunk.getNumRows();
     if (num_rows != 1)
         throw Exception("Got " + toString(num_rows) + " in totals chunk, expected 1", ErrorCodes::LOGICAL_ERROR);
@@ -51,9 +53,6 @@ void IRowOutputFormat::consumeTotals(DB::Chunk chunk)
 
 void IRowOutputFormat::consumeExtremes(DB::Chunk chunk)
 {
-    if (!supportExtremes())
-        return;
-
     auto num_rows = chunk.getNumRows();
     const auto & columns = chunk.getColumns();
     if (num_rows != 2)

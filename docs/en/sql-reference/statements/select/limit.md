@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/statements/select/limit
 sidebar_label: LIMIT
 ---
 

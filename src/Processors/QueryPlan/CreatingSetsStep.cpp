@@ -122,8 +122,11 @@ void CreatingSetsStep::describePipeline(FormatSettings & settings) const
     IQueryPlanStep::describePipeline(processors, settings);
 }
 
-void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::SubqueriesForSets subqueries_for_sets, ContextPtr context)
+void addCreatingSetsStep(QueryPlan & query_plan, PreparedSetsPtr prepared_sets, ContextPtr context)
 {
+    if (!prepared_sets || prepared_sets->empty())
+        return;
+
     DataStreams input_streams;
     input_streams.emplace_back(query_plan.getCurrentDataStream());
 
@@ -131,7 +134,7 @@ void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::SubqueriesForSets
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(query_plan)));
     query_plan = QueryPlan();
 
-    for (auto & [description, subquery_for_set] : subqueries_for_sets)
+    for (auto & [description, subquery_for_set] : prepared_sets->detachSubqueries())
     {
         if (!subquery_for_set.hasSource())
             continue;
@@ -161,14 +164,6 @@ void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::SubqueriesForSets
     auto creating_sets = std::make_unique<CreatingSetsStep>(std::move(input_streams));
     creating_sets->setStepDescription("Create sets before main query execution");
     query_plan.unitePlans(std::move(creating_sets), std::move(plans));
-}
-
-void addCreatingSetsStep(QueryPlan & query_plan, PreparedSetsPtr prepared_sets, ContextPtr context)
-{
-    if (!prepared_sets || prepared_sets->empty())
-        return;
-
-    addCreatingSetsStep(query_plan, prepared_sets->detachSubqueries(), context);
 }
 
 }

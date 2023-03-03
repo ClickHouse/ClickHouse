@@ -63,7 +63,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        size_t num_streams) override;
+        unsigned num_streams) override;
 
     NamesAndTypesList getVirtuals() const override;
 
@@ -73,7 +73,7 @@ private:
     static bool hasStateColumn(const Names & column_names, const StorageSnapshotPtr & storage_snapshot);
 
 protected:
-    const FormatSettings format_settings = {};
+    const FormatSettings format_settings;
 
     StorageSystemPartsBase(const StorageID & table_id_, NamesAndTypesList && columns_);
 

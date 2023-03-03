@@ -1,6 +1,5 @@
 #pragma once
 
-#include "Storages/MergeTree/IDataPartStorage.h"
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 namespace DB
@@ -20,13 +19,13 @@ public:
         const MergeTreeData & storage_,
         const String & name_,
         const MergeTreePartInfo & info_,
-        const MutableDataPartStoragePtr & data_part_storage_,
+        const DataPartStoragePtr & data_part_storage_,
         const IMergeTreeDataPart * parent_part_ = nullptr);
 
     MergeTreeDataPartWide(
         MergeTreeData & storage_,
         const String & name_,
-        const MutableDataPartStoragePtr & data_part_storage_,
+        const DataPartStoragePtr & data_part_storage_,
         const IMergeTreeDataPart * parent_part_ = nullptr);
 
     MergeTreeReaderPtr getReader(
@@ -40,12 +39,13 @@ public:
         const ReadBufferFromFileBase::ProfileCallback & profile_callback) const override;
 
     MergeTreeWriterPtr getWriter(
+        DataPartStorageBuilderPtr data_part_storage_builder,
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
-        const MergeTreeIndexGranularity & computed_index_granularity) override;
+        const MergeTreeIndexGranularity & computed_index_granularity) const override;
 
     bool isStoredOnDisk() const override { return true; }
 
@@ -53,18 +53,11 @@ public:
 
     bool isStoredOnRemoteDiskWithZeroCopySupport() const override;
 
-    bool supportsVerticalMerge() const override { return true; }
-
     String getFileNameForColumn(const NameAndTypePair & column) const override;
 
     ~MergeTreeDataPartWide() override;
 
     bool hasColumnFiles(const NameAndTypePair & column) const override;
-
-protected:
-    static void loadIndexGranularityImpl(
-        MergeTreeIndexGranularity & index_granularity_, MergeTreeIndexGranularityInfo & index_granularity_info_,
-        const IDataPartStorage & data_part_storage_, const std::string & any_column_file_name);
 
 private:
     void checkConsistency(bool require_part_metadata) const override;

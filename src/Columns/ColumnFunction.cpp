@@ -6,7 +6,6 @@
 #include <Common/assert_cast.h>
 #include <IO/WriteHelpers.h>
 #include <Functions/IFunction.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 
 
 namespace ProfileEvents
@@ -24,18 +23,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ColumnFunction::ColumnFunction(
-    size_t size,
-    FunctionBasePtr function_,
-    const ColumnsWithTypeAndName & columns_to_capture,
-    bool is_short_circuit_argument_,
-    bool is_function_compiled_,
-    bool recursively_convert_result_to_full_column_if_low_cardinality_)
-    : elements_size(size)
-    , function(function_)
-    , is_short_circuit_argument(is_short_circuit_argument_)
-    , recursively_convert_result_to_full_column_if_low_cardinality(recursively_convert_result_to_full_column_if_low_cardinality_)
-    , is_function_compiled(is_function_compiled_)
+ColumnFunction::ColumnFunction(size_t size, FunctionBasePtr function_, const ColumnsWithTypeAndName & columns_to_capture, bool is_short_circuit_argument_, bool is_function_compiled_)
+        : elements_size(size), function(function_), is_short_circuit_argument(is_short_circuit_argument_), is_function_compiled(is_function_compiled_)
 {
     appendArguments(columns_to_capture);
 }
@@ -124,13 +113,7 @@ ColumnPtr ColumnFunction::filter(const Filter & filt, ssize_t result_size_hint) 
     else
         filtered_size = capture.front().column->size();
 
-    return ColumnFunction::create(
-        filtered_size,
-        function,
-        capture,
-        is_short_circuit_argument,
-        is_function_compiled,
-        recursively_convert_result_to_full_column_if_low_cardinality);
+    return ColumnFunction::create(filtered_size, function, capture, is_short_circuit_argument, is_function_compiled);
 }
 
 void ColumnFunction::expand(const Filter & mask, bool inverted)
@@ -152,13 +135,7 @@ ColumnPtr ColumnFunction::permute(const Permutation & perm, size_t limit) const
     for (auto & column : capture)
         column.column = column.column->permute(perm, limit);
 
-    return ColumnFunction::create(
-        limit,
-        function,
-        capture,
-        is_short_circuit_argument,
-        is_function_compiled,
-        recursively_convert_result_to_full_column_if_low_cardinality);
+    return ColumnFunction::create(limit, function, capture, is_short_circuit_argument, is_function_compiled);
 }
 
 ColumnPtr ColumnFunction::index(const IColumn & indexes, size_t limit) const
@@ -167,13 +144,7 @@ ColumnPtr ColumnFunction::index(const IColumn & indexes, size_t limit) const
     for (auto & column : capture)
         column.column = column.column->index(indexes, limit);
 
-    return ColumnFunction::create(
-        limit,
-        function,
-        capture,
-        is_short_circuit_argument,
-        is_function_compiled,
-        recursively_convert_result_to_full_column_if_low_cardinality);
+    return ColumnFunction::create(limit, function, capture, is_short_circuit_argument, is_function_compiled);
 }
 
 std::vector<MutableColumnPtr> ColumnFunction::scatter(IColumn::ColumnIndex num_columns,
@@ -202,13 +173,7 @@ std::vector<MutableColumnPtr> ColumnFunction::scatter(IColumn::ColumnIndex num_c
     {
         auto & capture = captures[part];
         size_t capture_size = capture.empty() ? counts[part] : capture.front().column->size();
-        columns.emplace_back(ColumnFunction::create(
-            capture_size,
-            function,
-            std::move(capture),
-            is_short_circuit_argument,
-            is_function_compiled,
-            recursively_convert_result_to_full_column_if_low_cardinality));
+        columns.emplace_back(ColumnFunction::create(capture_size, function, std::move(capture), is_short_circuit_argument));
     }
 
     return columns;
@@ -272,9 +237,6 @@ void ColumnFunction::appendArgument(const ColumnWithTypeAndName & column)
 
 DataTypePtr ColumnFunction::getResultType() const
 {
-    if (recursively_convert_result_to_full_column_if_low_cardinality)
-        return recursiveRemoveLowCardinality(function->getResultType());
-
     return function->getResultType();
 }
 
@@ -308,17 +270,7 @@ ColumnWithTypeAndName ColumnFunction::reduce() const
         ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
 
     res.column = function->execute(columns, res.type, elements_size);
-    if (recursively_convert_result_to_full_column_if_low_cardinality)
-    {
-        res.column = recursiveRemoveLowCardinality(res.column);
-        res.type = recursiveRemoveLowCardinality(res.type);
-    }
     return res;
-}
-
-ColumnPtr ColumnFunction::recursivelyConvertResultToFullColumnIfLowCardinality() const
-{
-    return ColumnFunction::create(elements_size, function, captured_columns, is_short_circuit_argument, is_function_compiled, true);
 }
 
 const ColumnFunction * checkAndGetShortCircuitArgument(const ColumnPtr & column)

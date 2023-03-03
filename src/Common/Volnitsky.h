@@ -404,8 +404,7 @@ public:
         /// And also adding from the end guarantees that we will find first occurrence because we will lookup bigger offsets first.
         for (auto i = static_cast<ssize_t>(needle_size - sizeof(VolnitskyTraits::Ngram)); i >= 0; --i)
         {
-            bool ok = VolnitskyTraits::putNGram<CaseSensitive, ASCII>(
-                needle + i, static_cast<int>(i + 1), needle, needle_size, callback);
+            bool ok = VolnitskyTraits::putNGram<CaseSensitive, ASCII>(needle + i, i + 1, needle, needle_size, callback);
 
             /** `putNGramUTF8CaseInsensitive` does not work if characters with lower and upper cases
               * are represented by different number of bytes or code points.
@@ -498,7 +497,7 @@ private:
     /// last index of offsets that was not processed
     size_t last;
 
-    /// limit for adding to hashtable. In worst case with case insensitive search, the table will be filled at most as half
+    /// limit for adding to hashtable. In worst case with case insentive search, the table will be filled at most as half
     static constexpr size_t small_limit = VolnitskyTraits::hash_size / 8;
 
 public:

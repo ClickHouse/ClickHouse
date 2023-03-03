@@ -1,3 +1,4 @@
+-- Tags: no-s3-storage
 drop table if exists t;
 
 create table t (i int, j int) engine MergeTree order by i;

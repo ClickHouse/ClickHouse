@@ -35,8 +35,6 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_DATE;
     extern const int INCORRECT_DATA;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
-    extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
 }
 
 template <typename IteratorSrc, typename IteratorDst>
@@ -319,17 +317,12 @@ template void readStringUntilEOFInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8
 /** Parse the escape sequence, which can be simple (one character after backslash) or more complex (multiple characters).
   * It is assumed that the cursor is located on the `\` symbol
   */
-template <typename Vector, typename ReturnType = void>
-static ReturnType parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
+template <typename Vector>
+static void parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
 {
     ++buf.position();
     if (buf.eof())
-    {
-        if constexpr (std::is_same_v<ReturnType, void>)
-            throw Exception("Cannot parse escape sequence", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
-        else
-            return ReturnType(false);
-    }
+        throw Exception("Cannot parse escape sequence", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
 
     char char_after_backslash = *buf.position();
 
@@ -368,8 +361,6 @@ static ReturnType parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
         s.push_back(decoded_char);
         ++buf.position();
     }
-
-    return ReturnType(true);
 }
 
 
@@ -528,18 +519,14 @@ template void readEscapedStringInto<NullOutput>(NullOutput & s, ReadBuffer & buf
   *  backslash escape sequences are also parsed,
   *  that could be slightly confusing.
   */
-template <char quote, bool enable_sql_style_quoting, typename Vector, typename ReturnType = void>
-static ReturnType readAnyQuotedStringInto(Vector & s, ReadBuffer & buf)
+template <char quote, bool enable_sql_style_quoting, typename Vector>
+static void readAnyQuotedStringInto(Vector & s, ReadBuffer & buf)
 {
-    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
     if (buf.eof() || *buf.position() != quote)
     {
-        if constexpr (throw_exception)
-            throw ParsingException(ErrorCodes::CANNOT_PARSE_QUOTED_STRING,
-                "Cannot parse quoted string: expected opening quote '{}', got '{}'",
-                std::string{quote}, buf.eof() ? "EOF" : std::string{*buf.position()});
-        else
-            return ReturnType(false);
+        throw ParsingException(ErrorCodes::CANNOT_PARSE_QUOTED_STRING,
+            "Cannot parse quoted string: expected opening quote '{}', got '{}'",
+            std::string{quote}, buf.eof() ? "EOF" : std::string{*buf.position()});
     }
 
     ++buf.position();
@@ -565,26 +552,15 @@ static ReturnType readAnyQuotedStringInto(Vector & s, ReadBuffer & buf)
                 continue;
             }
 
-            return ReturnType(true);
+            return;
         }
 
         if (*buf.position() == '\\')
-        {
-            if constexpr (throw_exception)
-                parseComplexEscapeSequence<Vector, ReturnType>(s, buf);
-            else
-            {
-                if (!parseComplexEscapeSequence<Vector, ReturnType>(s, buf))
-                    return ReturnType(false);
-            }
-        }
+            parseComplexEscapeSequence(s, buf);
     }
 
-    if constexpr (throw_exception)
-        throw ParsingException("Cannot parse quoted string: expected closing quote",
-            ErrorCodes::CANNOT_PARSE_QUOTED_STRING);
-    else
-        return ReturnType(false);
+    throw ParsingException("Cannot parse quoted string: expected closing quote",
+        ErrorCodes::CANNOT_PARSE_QUOTED_STRING);
 }
 
 template <bool enable_sql_style_quoting, typename Vector>
@@ -592,14 +568,6 @@ void readQuotedStringInto(Vector & s, ReadBuffer & buf)
 {
     readAnyQuotedStringInto<'\'', enable_sql_style_quoting>(s, buf);
 }
-
-template <typename Vector>
-bool tryReadQuotedStringInto(Vector & s, ReadBuffer & buf)
-{
-    return readAnyQuotedStringInto<'\'', false, Vector, bool>(s, buf);
-}
-
-template bool tryReadQuotedStringInto(String & s, ReadBuffer & buf);
 
 template <bool enable_sql_style_quoting, typename Vector>
 void readDoubleQuotedStringInto(Vector & s, ReadBuffer & buf)
@@ -668,16 +636,14 @@ concept WithResize = requires (T value)
 template <typename Vector>
 void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV & settings)
 {
-    /// Empty string
     if (buf.eof())
-        return;
+        throwReadAfterEOF();
 
     const char delimiter = settings.delimiter;
     const char maybe_quote = *buf.position();
-    const String & custom_delimiter = settings.custom_delimiter;
 
     /// Emptiness and not even in quotation marks.
-    if (custom_delimiter.empty() && maybe_quote == delimiter)
+    if (maybe_quote == delimiter)
         return;
 
     if ((settings.allow_single_quotes && maybe_quote == '\'') || (settings.allow_double_quotes && maybe_quote == '"'))
@@ -715,42 +681,6 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
     }
     else
     {
-        /// If custom_delimiter is specified, we should read until first occurrences of
-        /// custom_delimiter in buffer.
-        if (!custom_delimiter.empty())
-        {
-            PeekableReadBuffer * peekable_buf = dynamic_cast<PeekableReadBuffer *>(&buf);
-            if (!peekable_buf)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Reading CSV string with custom delimiter is allowed only when using PeekableReadBuffer");
-
-            while (true)
-            {
-                if (peekable_buf->eof())
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected EOF while reading CSV string, expected custom delimiter \"{}\"", custom_delimiter);
-
-                char * next_pos = reinterpret_cast<char *>(memchr(peekable_buf->position(), custom_delimiter[0], peekable_buf->available()));
-                if (!next_pos)
-                    next_pos = peekable_buf->buffer().end();
-
-                appendToStringOrVector(s, *peekable_buf, next_pos);
-                peekable_buf->position() = next_pos;
-
-                if (!buf.hasPendingData())
-                    continue;
-
-                {
-                    PeekableReadBufferCheckpoint checkpoint{*peekable_buf, true};
-                    if (checkString(custom_delimiter, *peekable_buf))
-                        return;
-                }
-
-                s.push_back(*peekable_buf->position());
-                ++peekable_buf->position();
-            }
-
-            return;
-        }
-
         /// Unquoted case. Look for delimiter or \r or \n.
         while (!buf.eof())
         {
@@ -845,72 +775,6 @@ void readCSVField(String & s, ReadBuffer & buf, const FormatSettings::CSV & sett
         s.push_back(quote);
 }
 
-void readCSVWithTwoPossibleDelimitersImpl(String & s, PeekableReadBuffer & buf, const String & first_delimiter, const String & second_delimiter)
-{
-    /// Check that delimiters are not empty.
-    if (first_delimiter.empty() || second_delimiter.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read CSV field with two possible delimiters, one of delimiters '{}' and '{}' is empty", first_delimiter, second_delimiter);
-
-    /// Read all data until first_delimiter or second_delimiter
-    while (true)
-    {
-        if (buf.eof())
-            throw Exception(ErrorCodes::INCORRECT_DATA, R"(Unexpected EOF while reading CSV string, expected on of delimiters "{}" or "{}")", first_delimiter, second_delimiter);
-
-        char * next_pos = buf.position();
-        while (next_pos != buf.buffer().end() && *next_pos != first_delimiter[0] && *next_pos != second_delimiter[0])
-            ++next_pos;
-
-        appendToStringOrVector(s, buf, next_pos);
-        buf.position() = next_pos;
-        if (!buf.hasPendingData())
-            continue;
-
-        if (*buf.position() == first_delimiter[0])
-        {
-            PeekableReadBufferCheckpoint checkpoint(buf, true);
-            if (checkString(first_delimiter, buf))
-                return;
-        }
-
-        if (*buf.position() == second_delimiter[0])
-        {
-            PeekableReadBufferCheckpoint checkpoint(buf, true);
-            if (checkString(second_delimiter, buf))
-                return;
-        }
-
-        s.push_back(*buf.position());
-        ++buf.position();
-    }
-}
-
-String readCSVStringWithTwoPossibleDelimiters(PeekableReadBuffer & buf, const FormatSettings::CSV & settings, const String & first_delimiter, const String & second_delimiter)
-{
-    String res;
-
-    /// If value is quoted, use regular CSV reading since we need to read only data inside quotes.
-    if (!buf.eof() && ((settings.allow_single_quotes && *buf.position() == '\'') || (settings.allow_double_quotes && *buf.position() == '"')))
-        readCSVStringInto(res, buf, settings);
-    else
-        readCSVWithTwoPossibleDelimitersImpl(res, buf, first_delimiter, second_delimiter);
-
-    return res;
-}
-
-String readCSVFieldWithTwoPossibleDelimiters(PeekableReadBuffer & buf, const FormatSettings::CSV & settings, const String & first_delimiter, const String & second_delimiter)
-{
-    String res;
-
-    /// If value is quoted, use regular CSV reading since we need to read only data inside quotes.
-    if (!buf.eof() && ((settings.allow_single_quotes && *buf.position() == '\'') || (settings.allow_double_quotes && *buf.position() == '"')))
-         readCSVField(res, buf, settings);
-    else
-        readCSVWithTwoPossibleDelimitersImpl(res, buf, first_delimiter, second_delimiter);
-
-    return res;
-}
-
 template void readCSVStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
 template void readCSVStringInto<NullOutput>(NullOutput & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
 
@@ -964,7 +828,6 @@ template void readJSONStringInto<PaddedPODArray<UInt8>, void>(PaddedPODArray<UIn
 template bool readJSONStringInto<PaddedPODArray<UInt8>, bool>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 template void readJSONStringInto<NullOutput>(NullOutput & s, ReadBuffer & buf);
 template void readJSONStringInto<String>(String & s, ReadBuffer & buf);
-template bool readJSONStringInto<String, bool>(String & s, ReadBuffer & buf);
 
 template <typename Vector, typename ReturnType>
 ReturnType readJSONObjectPossiblyInvalid(Vector & s, ReadBuffer & buf)
@@ -1106,12 +969,10 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
+    /// YYYY-MM-DD hh:mm:ss
+    static constexpr auto date_time_broken_down_length = 19;
     /// YYYY-MM-DD
     static constexpr auto date_broken_down_length = 10;
-    /// hh:mm:ss
-    static constexpr auto time_broken_down_length = 8;
-    /// YYYY-MM-DD hh:mm:ss
-    static constexpr auto date_time_broken_down_length = date_broken_down_length + 1 + time_broken_down_length;
 
     char s[date_time_broken_down_length];
     char * s_pos = s;
@@ -1134,15 +995,16 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
     if (s_pos == s + 4 && !buf.eof() && !isNumericASCII(*buf.position()))
     {
         const auto already_read_length = s_pos - s;
+        const size_t remaining_date_time_size = date_time_broken_down_length - already_read_length;
         const size_t remaining_date_size = date_broken_down_length - already_read_length;
 
-        size_t size = buf.read(s_pos, remaining_date_size);
-        if (size != remaining_date_size)
+        size_t size = buf.read(s_pos, remaining_date_time_size);
+        if (size != remaining_date_time_size && size != remaining_date_size)
         {
             s_pos[size] = 0;
 
             if constexpr (throw_exception)
-                throw ParsingException(std::string("Cannot parse DateTime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
+                throw ParsingException(std::string("Cannot parse datetime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
             else
                 return false;
         }
@@ -1155,24 +1017,11 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
         UInt8 minute = 0;
         UInt8 second = 0;
 
-        if (!buf.eof() && (*buf.position() == ' ' || *buf.position() == 'T'))
+        if (size == remaining_date_time_size)
         {
-            ++buf.position();
-            size = buf.read(s, time_broken_down_length);
-
-            if (size != time_broken_down_length)
-            {
-                s_pos[size] = 0;
-
-                if constexpr (throw_exception)
-                    throw ParsingException(std::string("Cannot parse time component of DateTime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
-                else
-                    return false;
-            }
-
-            hour = (s[0] - '0') * 10 + (s[1] - '0');
-            minute = (s[3] - '0') * 10 + (s[4] - '0');
-            second = (s[6] - '0') * 10 + (s[7] - '0');
+            hour = (s[11] - '0') * 10 + (s[12] - '0');
+            minute = (s[14] - '0') * 10 + (s[15] - '0');
+            second = (s[17] - '0') * 10 + (s[18] - '0');
         }
 
         if (unlikely(year == 0))
@@ -1414,25 +1263,6 @@ void skipToUnescapedNextLineOrEOF(ReadBuffer & buf)
     }
 }
 
-void skipNullTerminated(ReadBuffer & buf)
-{
-    while (!buf.eof())
-    {
-        char * next_pos = find_first_symbols<'\0'>(buf.position(), buf.buffer().end());
-        buf.position() = next_pos;
-
-        if (!buf.hasPendingData())
-            continue;
-
-        if (*buf.position() == '\0')
-        {
-            ++buf.position();
-            return;
-        }
-    }
-}
-
-
 void saveUpToPosition(ReadBuffer & in, Memory<> & memory, char * current)
 {
     assert(current >= in.position());
@@ -1532,43 +1362,6 @@ static void readParsedValueInto(Vector & s, ReadBuffer & buf, ParseFunc parse_fu
     peekable_buf.position() = end;
 }
 
-template <typename Vector>
-static void readQuotedStringFieldInto(Vector & s, ReadBuffer & buf)
-{
-    assertChar('\'', buf);
-    s.push_back('\'');
-    while (!buf.eof())
-    {
-        char * next_pos = find_first_symbols<'\\', '\''>(buf.position(), buf.buffer().end());
-
-        s.append(buf.position(), next_pos);
-        buf.position() = next_pos;
-
-        if (!buf.hasPendingData())
-            continue;
-
-        if (*buf.position() == '\'')
-            break;
-
-        s.push_back(*buf.position());
-        if (*buf.position() == '\\')
-        {
-            ++buf.position();
-            if (!buf.eof())
-            {
-                s.push_back(*buf.position());
-                ++buf.position();
-            }
-        }
-    }
-
-    if (buf.eof())
-        return;
-
-    ++buf.position();
-    s.push_back('\'');
-}
-
 template <char opening_bracket, char closing_bracket, typename Vector>
 static void readQuotedFieldInBracketsInto(Vector & s, ReadBuffer & buf)
 {
@@ -1586,19 +1379,20 @@ static void readQuotedFieldInBracketsInto(Vector & s, ReadBuffer & buf)
         if (!buf.hasPendingData())
             continue;
 
+        s.push_back(*buf.position());
+
         if (*buf.position() == '\'')
         {
-            readQuotedStringFieldInto(s, buf);
+            readQuotedStringInto<false>(s, buf);
+            s.push_back('\'');
         }
         else if (*buf.position() == opening_bracket)
         {
-            s.push_back(opening_bracket);
             ++balance;
             ++buf.position();
         }
         else if (*buf.position() == closing_bracket)
         {
-            s.push_back(closing_bracket);
             --balance;
             ++buf.position();
         }
@@ -1621,7 +1415,11 @@ void readQuotedFieldInto(Vector & s, ReadBuffer & buf)
     /// - Number: integer, float, decimal.
 
     if (*buf.position() == '\'')
-        readQuotedStringFieldInto(s, buf);
+    {
+        s.push_back('\'');
+        readQuotedStringInto<false>(s, buf);
+        s.push_back('\'');
+    }
     else if (*buf.position() == '[')
         readQuotedFieldInBracketsInto<'[', ']'>(s, buf);
     else if (*buf.position() == '(')

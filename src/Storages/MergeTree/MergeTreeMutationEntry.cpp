@@ -61,7 +61,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
         *out << "format version: 1\n"
             << "create time: " << LocalDateTime(create_time) << "\n";
         *out << "commands: ";
-        commands.writeText(*out, /* with_pure_metadata_commands = */ false);
+        commands.writeText(*out);
         *out << "\n";
         if (tid.isPrehistoric())
         {
@@ -174,7 +174,7 @@ std::shared_ptr<const IBackupEntry> MergeTreeMutationEntry::backup() const
     out << "block number: " << block_number << "\n";
 
     out << "commands: ";
-    commands.writeText(out, /* with_pure_metadata_commands = */ false);
+    commands.writeText(out);
     out << "\n";
 
     return std::make_shared<BackupEntryFromMemory>(out.str());

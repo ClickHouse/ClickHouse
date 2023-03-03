@@ -317,7 +317,7 @@ public:
             if (attribute_default_value.isNull())
                 default_value_is_null = true;
             else
-                default_value = static_cast<DictionaryAttributeType>(attribute_default_value.get<DictionaryAttributeType>());
+                default_value = attribute_default_value.get<NearestFieldType<DictionaryAttributeType>>();
         }
         else
         {
@@ -689,3 +689,5 @@ static ColumnPtr getColumnFromPODArray(const PaddedPODArray<T> & array, size_t s
 }
 
 }
+
+

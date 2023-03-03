@@ -620,9 +620,9 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
 
             array_join_key.column = array_join_key.column->convertToFullColumnIfConst();
 
-            const auto * array = getArrayJoinColumnRawPtr(array_join_key.column);
+            const ColumnArray * array = typeid_cast<const ColumnArray *>(array_join_key.column.get());
             if (!array)
-                throw Exception("ARRAY JOIN of not array nor map: " + action.node->result_name, ErrorCodes::TYPE_MISMATCH);
+                throw Exception("ARRAY JOIN of not array: " + action.node->result_name, ErrorCodes::TYPE_MISMATCH);
 
             for (auto & column : columns)
                 if (column.column)
@@ -635,7 +635,7 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
             auto & res_column = columns[action.result_position];
 
             res_column.column = array->getDataPtr();
-            res_column.type = getArrayJoinDataType(array_join_key.type)->getNestedType();
+            res_column.type = assert_cast<const DataTypeArray &>(*array_join_key.type).getNestedType();
             res_column.name = action.node->result_name;
 
             num_rows = res_column.column->size();
@@ -1008,7 +1008,7 @@ ExpressionActionsChain::ArrayJoinStep::ArrayJoinStep(ArrayJoinActionPtr array_jo
 
         if (array_join->columns.contains(column.name))
         {
-            const auto & array = getArrayJoinDataType(column.type);
+            const auto * array = typeid_cast<const DataTypeArray *>(column.type.get());
             column.type = array->getNestedType();
             /// Arrays are materialized
             column.column = nullptr;
@@ -1073,8 +1073,8 @@ void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_
     }
 
     /// Result will also contain joined columns.
-    for (const auto & column : analyzed_join->columnsAddedByJoin())
-        required_names.emplace(column.name);
+    for (const auto & column_name : analyzed_join->columnsAddedByJoin())
+        required_names.emplace(column_name);
 
     for (const auto & column : result_columns)
     {

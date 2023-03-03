@@ -8,7 +8,8 @@
 #include <Functions/checkHyperscanRegexp.h>
 #include "Regexps.h"
 
-#include "config.h"
+#include "config_functions.h"
+#include <Common/config.h>
 
 #if USE_VECTORSCAN
 #    include <hs.h>
@@ -91,7 +92,7 @@ struct MultiMatchAllIndicesImpl
         hs_error_t err = hs_clone_scratch(regexps->getScratch(), &scratch);
 
         if (err != HS_SUCCESS)
-            throw Exception("Could not clone scratch space for vectorscan", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+            throw Exception("Could not clone scratch space for hyperscan", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
         MultiRegexps::ScratchPtr smart_scratch(scratch);
 
@@ -116,7 +117,7 @@ struct MultiMatchAllIndicesImpl
             err = hs_scan(
                 regexps->getDB(),
                 reinterpret_cast<const char *>(haystack_data.data()) + offset,
-                static_cast<unsigned>(length),
+                length,
                 0,
                 smart_scratch.get(),
                 on_match,
@@ -203,7 +204,7 @@ struct MultiMatchAllIndicesImpl
             hs_error_t err = hs_clone_scratch(regexps->getScratch(), &scratch);
 
             if (err != HS_SUCCESS)
-                throw Exception("Could not clone scratch space for vectorscan", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+                throw Exception("Could not clone scratch space for hyperscan", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
             MultiRegexps::ScratchPtr smart_scratch(scratch);
 
@@ -227,7 +228,7 @@ struct MultiMatchAllIndicesImpl
             err = hs_scan(
                 regexps->getDB(),
                 reinterpret_cast<const char *>(haystack_data.data()) + prev_haystack_offset,
-                static_cast<unsigned>(cur_haystack_length),
+                cur_haystack_length,
                 0,
                 smart_scratch.get(),
                 on_match,

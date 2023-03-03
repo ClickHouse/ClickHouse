@@ -4,6 +4,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <IO/Progress.h>
 #include <Common/MemoryTracker.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ProfileEvents.h>
 #include <base/StringRef.h>
 #include <Common/ConcurrentBoundedQueue.h>
@@ -32,6 +33,7 @@ class ThreadStatus;
 class QueryProfilerReal;
 class QueryProfilerCPU;
 class QueryThreadLog;
+struct OpenTelemetrySpanHolder;
 class TasksStatsCounters;
 struct RUsageCounters;
 struct PerfEventsCounters;
@@ -78,7 +80,7 @@ public:
     InternalProfileEventsQueueWeakPtr profile_queue_ptr;
     std::function<void()> fatal_error_callback;
 
-    std::unordered_set<UInt64> thread_ids;
+    std::vector<UInt64> thread_ids;
     std::unordered_set<ThreadStatusPtr> threads;
 
     /// The first thread created this thread group
@@ -87,6 +89,10 @@ public:
     LogsLevel client_logs_level = LogsLevel::none;
 
     String query;
+    /// Query without new lines (see toOneLineQuery())
+    /// Used to print in case of fatal error
+    /// (to avoid calling extra code in the fatal error handler)
+    String one_line_query;
     UInt64 normalized_query_hash = 0;
 
     std::vector<ProfileEventsCountersAndMemory> finished_threads_counters_memory;
@@ -129,6 +135,8 @@ public:
     Int64 untracked_memory = 0;
     /// Each thread could new/delete memory in range of (-untracked_memory_limit, untracked_memory_limit) without access to common counters.
     Int64 untracked_memory_limit = 4 * 1024 * 1024;
+    /// Increase limit in case of exception.
+    Int64 untracked_memory_limit_increase = 0;
 
     /// Statistics of read and write rows/bytes
     Progress progress_in;
@@ -136,6 +144,12 @@ public:
 
     using Deleter = std::function<void()>;
     Deleter deleter;
+
+    // This is the current most-derived OpenTelemetry span for this thread. It
+    // can be changed throughout the query execution, whenever we enter a new
+    // span or exit it. See OpenTelemetrySpanHolder that is normally responsible
+    // for these changes.
+    OpenTelemetryTraceContext thread_trace_context;
 
 protected:
     ThreadGroupStatusPtr thread_group;
@@ -292,7 +306,7 @@ protected:
     void logToQueryThreadLog(QueryThreadLog & thread_log, const String & current_database, std::chrono::time_point<std::chrono::system_clock> now);
 
 
-    void assertState(ThreadState permitted_state, const char * description = nullptr) const;
+    void assertState(const std::initializer_list<int> & permitted_states, const char * description = nullptr) const;
 
 
 private:

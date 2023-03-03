@@ -11,20 +11,18 @@ def process_result(result_folder):
     description = ""
     test_results = []
     checks = (
-        "duplicate includes",
-        "shellcheck",
-        "style",
-        "black",
-        "mypy",
-        "typos",
-        "whitespaces",
-        "workflows",
-        "submodules",
-        "docs spelling",
+        ("header duplicates", "duplicate_output.txt"),
+        ("shellcheck", "shellcheck_output.txt"),
+        ("style", "style_output.txt"),
+        ("black", "black_output.txt"),
+        ("typos", "typos_output.txt"),
+        ("whitespaces", "whitespaces_output.txt"),
+        ("workflows", "workflows_output.txt"),
+        ("submodules", "submodules_output.txt"),
+        ("doc typos", "doc_spell_output.txt"),
     )
 
-    for name in checks:
-        out_file = name.replace(" ", "_") + "_output.txt"
+    for name, out_file in checks:
         full_path = os.path.join(result_folder, out_file)
         if not os.path.exists(full_path):
             logging.info("No %s check log on path %s", name, full_path)

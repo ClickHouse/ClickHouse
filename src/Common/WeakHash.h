@@ -11,16 +11,13 @@ namespace DB
 /// The main purpose why this class needed is to support data initialization. Initially, every bit is 1.
 class WeakHash32
 {
-    static constexpr UInt32 kDefaultInitialValue = ~UInt32(0);
-
 public:
-
     using Container = PaddedPODArray<UInt32>;
 
-    explicit WeakHash32(size_t size, UInt32 initial_value = kDefaultInitialValue) : data(size, initial_value) {}
+    explicit WeakHash32(size_t size) : data(size, ~UInt32(0)) {}
     WeakHash32(const WeakHash32 & other) { data.assign(other.data); }
 
-    void reset(size_t size, UInt32 initial_value = kDefaultInitialValue) { data.assign(size, initial_value); }
+    void reset(size_t size) { data.assign(size, ~UInt32(0)); }
 
     const Container & getData() const { return data; }
     Container & getData() { return data; }

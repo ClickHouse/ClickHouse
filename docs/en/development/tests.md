@@ -1,10 +1,10 @@
 ---
-slug: /en/development/tests
 sidebar_position: 70
 sidebar_label: Testing
-title: ClickHouse Testing
 description: Most of ClickHouse features can be tested with functional tests and they are mandatory to use for every change in ClickHouse code that can be tested that way.
 ---
+
+# ClickHouse Testing
 
 ## Functional Tests
 
@@ -139,7 +139,7 @@ If the system clickhouse-server is already running and you do not want to stop i
 Build tests allow to check that build is not broken on various alternative configurations and on some foreign systems. These tests are automated as well.
 
 Examples:
--   cross-compile for Darwin x86_64 (macOS)
+-   cross-compile for Darwin x86_64 (Mac OS X)
 -   cross-compile for FreeBSD x86_64
 -   cross-compile for Linux AArch64
 -   build on Ubuntu with libraries from system packages (discouraged)

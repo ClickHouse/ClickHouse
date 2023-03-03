@@ -1,5 +1,4 @@
 ---
-slug: /ru/development/style
 sidebar_position: 69
 sidebar_label: "Как писать код на C++"
 ---

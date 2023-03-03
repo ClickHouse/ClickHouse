@@ -115,6 +115,7 @@ void registerOutputFormatNative(FormatFactory & factory)
     factory.registerOutputFormat("Native", [](
         WriteBuffer & buf,
         const Block & sample,
+        const RowOutputFormatParams &,
         const FormatSettings &)
     {
         return std::make_shared<NativeOutputFormat>(buf, sample);

@@ -1,6 +1,3 @@
----
-slug: /zh/engines/table-engines/mergetree-family/replacingmergetree
----
 # ReplacingMergeTree {#replacingmergetree}
 
 该引擎和 [MergeTree](mergetree.md) 的不同之处在于它会删除排序键值相同的重复项。

@@ -6,6 +6,8 @@
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Storages/IStorage.h>
 #include <Core/Protocol.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeString.h>
 
 
 namespace DB
@@ -29,6 +31,9 @@ LocalConnection::LocalConnection(ContextPtr context_, bool send_progress_, bool 
     /// Authenticate and create a context to execute queries.
     session.authenticate("default", "", Poco::Net::SocketAddress{});
     session.makeSessionContext();
+
+    if (!CurrentThread::isInitialized())
+        thread_status.emplace();
 }
 
 LocalConnection::~LocalConnection()

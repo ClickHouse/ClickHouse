@@ -1,10 +1,8 @@
 #include <Common/typeid_cast.h>
-#include <Common/checkStackSize.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Interpreters/OptimizeIfChains.h>
 #include <IO/WriteHelpers.h>
-
 
 namespace DB
 {
@@ -19,8 +17,6 @@ void OptimizeIfChainsVisitor::visit(ASTPtr & current_ast)
 {
     if (!current_ast)
         return;
-
-    checkStackSize();
 
     for (ASTPtr & child : current_ast->children)
     {

@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/data-types/boolean
 sidebar_position: 43
 sidebar_label: Boolean
 ---

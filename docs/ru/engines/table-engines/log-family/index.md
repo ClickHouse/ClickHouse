@@ -1,5 +1,4 @@
 ---
-slug: /ru/engines/table-engines/log-family/
 sidebar_label: "Семейство Log"
 sidebar_position: 29
 ---

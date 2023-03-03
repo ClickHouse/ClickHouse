@@ -26,9 +26,9 @@ namespace ErrorCodes
 
 static constexpr size_t MAX_STRINGS_SIZE = 1ULL << 30;
 
-void SerializationFixedString::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
+void SerializationFixedString::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
-    const String & s = field.get<const String &>();
+    const String & s = get<const String &>(field);
     ostr.write(s.data(), std::min(s.size(), n));
     if (s.size() < n)
         for (size_t i = s.size(); i < n; ++i)
@@ -36,22 +36,22 @@ void SerializationFixedString::serializeBinary(const Field & field, WriteBuffer 
 }
 
 
-void SerializationFixedString::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const
+void SerializationFixedString::deserializeBinary(Field & field, ReadBuffer & istr) const
 {
     field = String();
-    String & s = field.get<String &>();
+    String & s = get<String &>(field);
     s.resize(n);
     istr.readStrict(s.data(), n);
 }
 
 
-void SerializationFixedString::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void SerializationFixedString::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
     ostr.write(reinterpret_cast<const char *>(&assert_cast<const ColumnFixedString &>(column).getChars()[n * row_num]), n);
 }
 
 
-void SerializationFixedString::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationFixedString::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 {
     ColumnFixedString::Chars & data = assert_cast<ColumnFixedString &>(column).getChars();
     size_t old_size = data.size();

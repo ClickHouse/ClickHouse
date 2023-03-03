@@ -390,7 +390,7 @@ namespace
             case CALL_WITH_STREAM_IO: return "ExecuteQueryWithStreamIO()";
             case CALL_MAX: break;
         }
-        UNREACHABLE();
+        __builtin_unreachable();
     }
 
     bool isInputStreaming(CallType call_type)
@@ -550,7 +550,7 @@ namespace
             case CALL_WITH_STREAM_IO: return std::make_unique<Responder<CALL_WITH_STREAM_IO>>();
             case CALL_MAX: break;
         }
-        UNREACHABLE();
+        __builtin_unreachable();
     }
 
 
@@ -662,7 +662,6 @@ namespace
         std::optional<Session> session;
         ContextMutablePtr query_context;
         std::optional<CurrentThread::QueryScope> query_scope;
-        OpenTelemetry::TracingContextHolderPtr thread_trace_context;
         String query_text;
         ASTPtr ast;
         ASTInsertQuery * insert_query = nullptr;
@@ -840,12 +839,6 @@ namespace
 
         query_context->setCurrentQueryId(query_info.query_id());
         query_scope.emplace(query_context);
-
-        /// Set up tracing context for this query on current thread
-        thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>("GRPCServer",
-            query_context->getClientInfo().client_trace_context,
-            query_context->getSettingsRef(),
-            query_context->getOpenTelemetrySpanLog());
 
         /// Prepare for sending exceptions and logs.
         const Settings & settings = query_context->getSettingsRef();
@@ -1082,8 +1075,7 @@ namespace
                     NamesAndTypesList columns;
                     for (size_t column_idx : collections::range(external_table.columns_size()))
                     {
-                        /// TODO: consider changing protocol
-                        const auto & name_and_type = external_table.columns(static_cast<int>(column_idx));
+                        const auto & name_and_type = external_table.columns(column_idx);
                         NameAndTypePair column;
                         column.name = name_and_type.name();
                         if (column.name.empty())
@@ -1367,7 +1359,6 @@ namespace
         io = {};
         query_scope.reset();
         query_context.reset();
-        thread_trace_context.reset();
         session.reset();
     }
 
@@ -1871,11 +1862,6 @@ void GRPCServer::start()
 
     queue = builder.AddCompletionQueue();
     grpc_server = builder.BuildAndStart();
-    if (nullptr == grpc_server)
-    {
-        throw DB::Exception("Can't start grpc server, there is a port conflict", DB::ErrorCodes::NETWORK_ERROR);
-    }
-
     runner->start();
 }
 

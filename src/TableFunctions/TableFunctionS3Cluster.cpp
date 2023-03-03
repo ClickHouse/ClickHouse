@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_AWS_S3
 
@@ -82,10 +82,19 @@ void TableFunctionS3Cluster::parseArguments(const ASTPtr & ast_function, Context
 
 ColumnsDescription TableFunctionS3Cluster::getActualTableStructure(ContextPtr context) const
 {
-    context->checkAccess(getSourceAccessType());
-
     if (configuration.structure == "auto")
-        return StorageS3::getTableStructureFromData(configuration, false, std::nullopt, context);
+    {
+        context->checkAccess(getSourceAccessType());
+        return StorageS3::getTableStructureFromData(
+            configuration.format,
+            S3::URI(Poco::URI(configuration.url)),
+            configuration.auth_settings.access_key_id,
+            configuration.auth_settings.secret_access_key,
+            configuration.compression_method,
+            false,
+            std::nullopt,
+            context);
+    }
 
     return parseColumnsListFromString(configuration.structure, context);
 }
@@ -95,38 +104,46 @@ StoragePtr TableFunctionS3Cluster::executeImpl(
     const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     StoragePtr storage;
-    ColumnsDescription columns;
 
+    ColumnsDescription columns;
     if (configuration.structure != "auto")
-    {
         columns = parseColumnsListFromString(configuration.structure, context);
-    }
     else if (!structure_hint.empty())
-    {
         columns = structure_hint;
-    }
 
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
         /// On worker node this filename won't contains globs
+        Poco::URI uri (configuration.url);
+        S3::URI s3_uri (uri);
         storage = std::make_shared<StorageS3>(
-            configuration,
+            s3_uri,
+            configuration.auth_settings.access_key_id,
+            configuration.auth_settings.secret_access_key,
             StorageID(getDatabaseName(), table_name),
+            configuration.format,
+            configuration.rw_settings,
             columns,
             ConstraintsDescription{},
-            /* comment */String{},
+            String{},
             context,
-            /* format_settings */std::nullopt, /// No format_settings for S3Cluster
+            // No format_settings for S3Cluster
+            std::nullopt,
+            configuration.compression_method,
             /*distributed_processing=*/true);
     }
     else
     {
         storage = std::make_shared<StorageS3Cluster>(
-            configuration,
+            configuration.url,
+            configuration.auth_settings.access_key_id,
+            configuration.auth_settings.secret_access_key,
             StorageID(getDatabaseName(), table_name),
+            configuration.cluster_name, configuration.format,
             columns,
             ConstraintsDescription{},
-            context);
+            context,
+            configuration.compression_method);
     }
 
     storage->startup();

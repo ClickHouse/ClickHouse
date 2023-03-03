@@ -1,5 +1,4 @@
 ---
-slug: /en/engines/database-engines/postgresql
 sidebar_position: 40
 sidebar_label: PostgreSQL
 ---

@@ -164,7 +164,7 @@ inline Int64 getMaxValueForByteSize(Int8 byte_size)
         default:
             assert(false && "only 1, 2, 4 and 8 data sizes are supported");
     }
-    UNREACHABLE();
+    __builtin_unreachable();
 }
 
 struct WriteSpec
@@ -353,7 +353,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
 
     writer.flush();
 
-    return static_cast<UInt32>((dest - dest_start) + (writer.count() + 7) / 8);
+    return (dest - dest_start) + (writer.count() + 7) / 8;
 }
 
 template <typename ValueType>
@@ -414,7 +414,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
         if (write_spec.data_bits != 0)
         {
             const UInt8 sign = reader.readBit();
-            double_delta = static_cast<UnsignedDeltaType>(reader.readBits(write_spec.data_bits - 1) + 1);
+            double_delta = reader.readBits(write_spec.data_bits - 1) + 1;
             if (sign)
             {
                 /// It's well defined for unsigned data types.
@@ -445,7 +445,7 @@ UInt8 getDataBytesSize(const IDataType * column_type)
     if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8)
         return static_cast<UInt8>(max_size);
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec DoubleDelta is only applicable for data types of size 1, 2, 4, 8 bytes. Given type {}",
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec Delta is only applicable for data types of size 1, 2, 4, 8 bytes. Given type {}",
             column_type->getName());
 }
 

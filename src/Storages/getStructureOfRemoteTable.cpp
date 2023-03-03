@@ -196,11 +196,11 @@ ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
             size_t size = name_col.size();
             for (size_t i = 0; i < size; ++i)
             {
-                auto name = name_col[i].get<const String &>();
-                auto type_name = type_col[i].get<const String &>();
+                auto name = get<const String &>(name_col[i]);
+                auto type_name = get<const String &>(type_col[i]);
 
                 auto storage_column = storage_columns.tryGetPhysical(name);
-                if (storage_column && storage_column->type->hasDynamicSubcolumns())
+                if (storage_column && isObject(storage_column->type))
                     res.add(ColumnDescription(std::move(name), DataTypeFactory::instance().get(type_name)));
             }
         }

@@ -1,5 +1,4 @@
 ---
-slug: /ru/getting-started/example-datasets/
 sidebar_label: "Тестовые массивы данных"
 sidebar_position: 14
 ---

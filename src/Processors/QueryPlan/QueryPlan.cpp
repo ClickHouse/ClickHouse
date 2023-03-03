@@ -333,8 +333,8 @@ static void explainStep(
     {
         if (step.hasOutputStream())
         {
-            settings.out << prefix << "Sorting (" << step.getOutputStream().sort_scope << ")";
-            if (step.getOutputStream().sort_scope != DataStream::SortScope::None)
+            settings.out << prefix << "Sorting (" << step.getOutputStream().sort_mode << ")";
+            if (step.getOutputStream().sort_mode != DataStream::SortMode::None)
             {
                 settings.out << ": ";
                 dumpSortDescription(step.getOutputStream().sort_description, settings.out);
@@ -447,8 +447,8 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
 
 void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_settings)
 {
-    QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes);
-    QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes);
+    QueryPlanOptimizations::optimizeTree(optimization_settings, *root, nodes);
+    QueryPlanOptimizations::optimizePrimaryKeyCondition(*root);
 }
 
 void QueryPlan::explainEstimate(MutableColumns & columns)

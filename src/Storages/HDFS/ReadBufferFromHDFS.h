@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include <Common/config.h>
 
 #if USE_HDFS
 #include <IO/ReadBuffer.h>
@@ -29,8 +29,7 @@ public:
         const String & hdfs_file_path_,
         const Poco::Util::AbstractConfiguration & config_,
         const ReadSettings & read_settings_,
-        size_t read_until_position_ = 0,
-        bool use_external_buffer = false);
+        size_t read_until_position_ = 0);
 
     ~ReadBufferFromHDFS() override;
 
@@ -50,7 +49,6 @@ public:
 
 private:
     std::unique_ptr<ReadBufferFromHDFSImpl> impl;
-    bool use_external_buffer;
 };
 }
 

@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/statements/select/group-by
 sidebar_label: GROUP BY
 ---
 
@@ -213,10 +212,9 @@ If the `WITH TOTALS` modifier is specified, another row will be calculated. This
 
 This extra row is only produced in `JSON*`, `TabSeparated*`, and `Pretty*` formats, separately from the other rows:
 
--   In `XML` and `JSON*` formats, this row is output as a separate ‘totals’ field.
--   In `TabSeparated*`, `CSV*` and `Vertical` formats, the row comes after the main result, preceded by an empty row (after the other data).
+-   In `JSON*` formats, this row is output as a separate ‘totals’ field.
+-   In `TabSeparated*` formats, the row comes after the main result, preceded by an empty row (after the other data).
 -   In `Pretty*` formats, the row is output as a separate table after the main result.
--   In `Template` format, the row is output according to specified template.
 -   In the other formats it is not available.
 
 :::note    
@@ -242,54 +240,6 @@ The other alternatives include only the rows that pass through HAVING in ‘tota
 If `max_rows_to_group_by` and `group_by_overflow_mode = 'any'` are not used, all variations of `after_having` are the same, and you can use any of them (for example, `after_having_auto`).
 
 You can use `WITH TOTALS` in subqueries, including subqueries in the [JOIN](../../../sql-reference/statements/select/join.md) clause (in this case, the respective total values are combined).
-
-## GROUP BY ALL
-
-`GROUP BY ALL` is equivalent to listing all the SELECT-ed expressions that are not aggregate functions.
-
-For example:
-
-``` sql
-SELECT
-    a * 2,
-    b,
-    count(c),
-FROM t
-GROUP BY ALL
-```
-
-is the same as
-
-``` sql
-SELECT
-    a * 2,
-    b,
-    count(c),
-FROM t
-GROUP BY a * 2, b
-```
-
-For a special case that if there is a function having both aggregate functions and other fields as its arguments, the `GROUP BY` keys will contain the maximum non-aggregate fields we can extract from it.
-
-For example:
-
-``` sql
-SELECT
-    substring(a, 4, 2),
-    substring(substring(a, 1, 2), 1, count(b))
-FROM t
-GROUP BY ALL
-```
-
-is the same as
-
-``` sql
-SELECT
-    substring(a, 4, 2),
-    substring(substring(a, 1, 2), 1, count(b))
-FROM t
-GROUP BY substring(a, 4, 2), substring(a, 1, 2)
-```
 
 ## Examples
 

@@ -1,6 +1,3 @@
----
-slug: /ru/operations/system-tables/trace_log
----
 # system.trace_log {#system_tables-trace_log}
 
 Содержит экземпляры трассировки стека адресов вызова, собранные с помощью семплирующего профайлера запросов.

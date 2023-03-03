@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include "config_formats.h"
 #if USE_CAPNP
 
 #include <Formats/FormatSchemaInfo.h>
@@ -29,8 +29,6 @@ public:
 
     capnp::StructSchema getMessageSchema(const FormatSchemaInfo & schema_info);
 };
-
-std::pair<String, String> splitCapnProtoFieldName(const String & name);
 
 bool compareEnumNames(const String & first, const String & second, FormatSettings::EnumComparingMode mode);
 

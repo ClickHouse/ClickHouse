@@ -353,11 +353,11 @@ struct HashTableFixedGrower
 
     size_t bufSize() const               { return 1ULL << key_bits; }
     size_t place(size_t x) const         { return x; }
-    /// You could write UNREACHABLE(), but the compiler does not optimize everything, and it turns out less efficiently.
+    /// You could write __builtin_unreachable(), but the compiler does not optimize everything, and it turns out less efficiently.
     size_t next(size_t pos) const        { return pos + 1; }
     bool overflow(size_t /*elems*/) const { return false; }
 
-    void increaseSize() { UNREACHABLE(); }
+    void increaseSize() { __builtin_unreachable(); }
     void set(size_t /*num_elems*/) {}
     void setBufSize(size_t /*buf_size_*/) {}
 };
@@ -389,11 +389,6 @@ public:
         zeroValue()->~Cell();
     }
 
-    void clearHasZeroFlag()
-    {
-        has_zero = false;
-    }
-
     Cell * zeroValue()             { return std::launder(reinterpret_cast<Cell*>(&zero_value_storage)); }
     const Cell * zeroValue() const { return std::launder(reinterpret_cast<const Cell*>(&zero_value_storage)); }
 };
@@ -404,7 +399,6 @@ struct ZeroValueStorage<false, Cell>
     bool hasZero() const { return false; }
     void setHasZero() { throw DB::Exception("HashTable: logical error", DB::ErrorCodes::LOGICAL_ERROR); }
     void clearHasZero() {}
-    void clearHasZeroFlag() {}
 
     Cell * zeroValue()             { return nullptr; }
     const Cell * zeroValue() const { return nullptr; }
@@ -438,12 +432,20 @@ struct AllocatorBufferDeleter<true, Allocator, Cell>
 
 
 // The HashTable
-template <typename Key, typename Cell, typename Hash, typename Grower, typename Allocator>
-class HashTable : private boost::noncopyable,
-                  protected Hash,
-                  protected Allocator,
-                  protected Cell::State,
-                  public ZeroValueStorage<Cell::need_zero_value_storage, Cell> /// empty base optimization
+template
+<
+    typename Key,
+    typename Cell,
+    typename Hash,
+    typename Grower,
+    typename Allocator
+>
+class HashTable :
+    private boost::noncopyable,
+    protected Hash,
+    protected Allocator,
+    protected Cell::State,
+    protected ZeroValueStorage<Cell::need_zero_value_storage, Cell>     /// empty base optimization
 {
 public:
     // If we use an allocator with inline memory, check that the initial
@@ -658,17 +660,6 @@ protected:
                 ///   [1]: https://github.com/google/sanitizers/issues/854#issuecomment-329661378
                 __msan_unpoison(it.ptr, sizeof(*it.ptr));
             }
-
-            /// Everything had been destroyed in the loop above, reset the flag
-            /// only, without calling destructor.
-            this->clearHasZeroFlag();
-        }
-        else
-        {
-            /// NOTE: it is OK to call dtor for trivially destructible type
-            /// even the object hadn't been initialized, so no need to has
-            /// hasZero() check.
-            this->clearHasZero();
         }
     }
 
@@ -920,10 +911,10 @@ protected:
     bool ALWAYS_INLINE emplaceIfZero(const Key & x, LookupResult & it, bool & inserted, size_t hash_value)
     {
         /// If it is claimed that the zero key can not be inserted into the table.
-        if constexpr (!Cell::need_zero_value_storage)
+        if (!Cell::need_zero_value_storage)
             return false;
 
-        if (unlikely(Cell::isZero(x, *this)))
+        if (Cell::isZero(x, *this))
         {
             it = this->zeroValue();
 
@@ -999,11 +990,6 @@ protected:
         emplaceNonZeroImpl(place_value, key_holder, it, inserted, hash_value);
     }
 
-    void ALWAYS_INLINE prefetchByHash(size_t hash_key) const
-    {
-        const auto place = grower.place(hash_key);
-        __builtin_prefetch(&buf[place]);
-    }
 
 public:
     void reserve(size_t num_elements)
@@ -1028,6 +1014,7 @@ public:
         return res;
     }
 
+
     /// Reinsert node pointed to by iterator
     void ALWAYS_INLINE reinsert(iterator & it, size_t hash_value)
     {
@@ -1038,13 +1025,6 @@ public:
                 Cell::move(it.getPtr(), &buf[place_value]);
     }
 
-    template <typename KeyHolder>
-    void ALWAYS_INLINE prefetch(KeyHolder && key_holder) const
-    {
-        const auto & key = keyHolderGetKey(key_holder);
-        const auto key_hash = hash(key);
-        prefetchByHash(key_hash);
-    }
 
     /** Insert the key.
       * Return values:
@@ -1301,6 +1281,7 @@ public:
         Cell::State::read(rb);
 
         destroyElements();
+        this->clearHasZero();
         m_size = 0;
 
         size_t new_size = 0;
@@ -1324,6 +1305,7 @@ public:
         Cell::State::readText(rb);
 
         destroyElements();
+        this->clearHasZero();
         m_size = 0;
 
         size_t new_size = 0;
@@ -1357,6 +1339,7 @@ public:
     void clear()
     {
         destroyElements();
+        this->clearHasZero();
         m_size = 0;
 
         memset(static_cast<void*>(buf), 0, grower.bufSize() * sizeof(*buf));
@@ -1367,6 +1350,7 @@ public:
     void clearAndShrink()
     {
         destroyElements();
+        this->clearHasZero();
         m_size = 0;
         free();
     }

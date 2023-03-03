@@ -37,10 +37,9 @@ public:
         size_t temporary_data_merge_threads_,
         bool storage_has_evenly_distributed_read_,
         bool group_by_use_nulls_,
-        SortDescription sort_description_for_merging_,
+        InputOrderInfoPtr group_by_info_,
         SortDescription group_by_sort_description_,
-        bool should_produce_results_in_order_of_bucket_number_,
-        bool memory_bound_merging_of_aggregation_results_enabled_);
+        bool should_produce_results_in_order_of_bucket_number_);
 
     static Block appendGroupingColumn(Block block, const Names & keys, bool has_grouping, bool use_nulls);
 
@@ -54,11 +53,6 @@ public:
     void describePipeline(FormatSettings & settings) const override;
 
     const Aggregator::Params & getParams() const { return params; }
-
-    bool inOrder() const { return !sort_description_for_merging.empty(); }
-    bool isGroupingSets() const { return !grouping_sets_params.empty(); }
-    void applyOrder(SortDescription sort_description_for_merging_, SortDescription group_by_sort_description_);
-    bool memoryBoundMergingWillBeUsed() const;
 
 private:
     void updateOutputStream() override;
@@ -74,16 +68,12 @@ private:
     bool storage_has_evenly_distributed_read;
     bool group_by_use_nulls;
 
-    /// Both sort descriptions are needed for aggregate-in-order optimisation.
-    /// Both sort descriptions are subset of GROUP BY key columns (or monotonic functions over it).
-    /// Sort description for merging is a sort description for input and a prefix of group_by_sort_description.
-    /// group_by_sort_description contains all GROUP BY keys and is used for final merging of aggregated data.
-    SortDescription sort_description_for_merging;
+    InputOrderInfoPtr group_by_info;
     SortDescription group_by_sort_description;
 
-    /// These settings are used to determine if we should resize pipeline to 1 at the end.
-    bool should_produce_results_in_order_of_bucket_number;
-    bool memory_bound_merging_of_aggregation_results_enabled;
+    /// It determines if we should resize pipeline to 1 at the end.
+    /// Needed in case of distributed memory efficient aggregation.
+    const bool should_produce_results_in_order_of_bucket_number;
 
     Processors aggregating_in_order;
     Processors aggregating_sorted;

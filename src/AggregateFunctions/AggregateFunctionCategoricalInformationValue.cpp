@@ -35,20 +35,20 @@ private:
     using Counter = UInt64;
     size_t category_count;
 
-    static Counter & counter(AggregateDataPtr __restrict place, size_t i, bool what)
+    Counter & counter(AggregateDataPtr __restrict place, size_t i, bool what) const
     {
         return reinterpret_cast<Counter *>(place)[i * 2 + (what ? 1 : 0)];
     }
 
-    static const Counter & counter(ConstAggregateDataPtr __restrict place, size_t i, bool what)
+    const Counter & counter(ConstAggregateDataPtr __restrict place, size_t i, bool what) const
     {
         return reinterpret_cast<const Counter *>(place)[i * 2 + (what ? 1 : 0)];
     }
 
 public:
-    AggregateFunctionCategoricalIV(const DataTypes & arguments_, const Array & params_)
-        : IAggregateFunctionHelper<AggregateFunctionCategoricalIV>{arguments_, params_, createResultType()}
-        , category_count{arguments_.size() - 1}
+    AggregateFunctionCategoricalIV(const DataTypes & arguments_, const Array & params_) :
+        IAggregateFunctionHelper<AggregateFunctionCategoricalIV>{arguments_, params_},
+        category_count{arguments_.size() - 1}
     {
         // notice: argument types has been checked before
     }
@@ -121,7 +121,7 @@ public:
         buf.readStrict(place, sizeOfData());
     }
 
-    static DataTypePtr createResultType()
+    DataTypePtr getReturnType() const override
     {
         return std::make_shared<DataTypeArray>(
             std::make_shared<DataTypeNumber<Float64>>());

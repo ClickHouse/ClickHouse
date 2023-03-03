@@ -1,5 +1,4 @@
 ---
-slug: /en/engines/table-engines/mergetree-family/versionedcollapsingmergetree
 sidebar_position: 80
 sidebar_label:  VersionedCollapsingMergeTree
 ---

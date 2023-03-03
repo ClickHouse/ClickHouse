@@ -590,13 +590,6 @@ def test_jbod_overflow(start_cluster, name, engine):
         )
 
         node1.query(f"SYSTEM STOP MERGES {name}")
-        # The test tries to utilize 35/40=87.5% of space, while during last
-        # INSERT parts mover may see up to ~100% of used space on disk due to
-        # reservations (since INSERT first reserves the space and later write
-        # the same, more or less, amount of space, and util the reservation had
-        # been destroyed it will be taken into account as reserved on the
-        # disk).
-        node1.query(f"SYSTEM STOP MOVES {name}")
 
         # small jbod size is 40MB, so lets insert 5MB batch 7 times
         for i in range(7):
@@ -628,7 +621,6 @@ def test_jbod_overflow(start_cluster, name, engine):
         assert used_disks[-1] == "external"
 
         node1.query(f"SYSTEM START MERGES {name}")
-        node1.query(f"SYSTEM START MOVES {name}")
         time.sleep(1)
 
         node1.query_with_retry("OPTIMIZE TABLE {} FINAL".format(name))
@@ -1252,16 +1244,10 @@ def test_concurrent_alter_move_and_drop(start_cluster, name, engine):
         def alter_drop(num):
             for i in range(num):
                 partition = random.choice([201903, 201904])
-                op = random.choice(["drop", "detach"])
-                try:
-                    node1.query(
-                        "ALTER TABLE {} {} PARTITION {}".format(name, op, partition)
-                    )
-                except QueryRuntimeException as e:
-                    if "Code: 650" in e.stderr:
-                        pass
-                    else:
-                        raise e
+                drach = random.choice(["drop", "detach"])
+                node1.query(
+                    "ALTER TABLE {} {} PARTITION {}".format(name, drach, partition)
+                )
 
         insert(100)
         p = Pool(15)
@@ -1669,7 +1655,7 @@ def test_freeze(start_cluster):
             ) ENGINE = MergeTree
             ORDER BY tuple()
             PARTITION BY toYYYYMM(d)
-            SETTINGS storage_policy='small_jbod_with_external', compress_marks=false, compress_primary_key=false
+            SETTINGS storage_policy='small_jbod_with_external'
         """
         )
 

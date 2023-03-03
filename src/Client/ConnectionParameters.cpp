@@ -9,6 +9,7 @@
 #include <Common/Exception.h>
 #include <Common/isLocalAddress.h>
 #include <Common/DNSResolver.h>
+#include <base/setTerminalEcho.h>
 #include <base/scope_guard.h>
 
 #include <readpassphrase/readpassphrase.h>

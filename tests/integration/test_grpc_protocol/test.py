@@ -37,13 +37,7 @@ import clickhouse_grpc_pb2_grpc
 
 config_dir = os.path.join(SCRIPT_DIR, "./configs")
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance(
-    "node",
-    main_configs=["configs/grpc_config.xml"],
-    # Bug in TSAN reproduces in this test https://github.com/grpc/grpc/issues/29550#issuecomment-1188085387
-    # second_deadlock_stack -- just ordinary option we use everywhere, don't want to overwrite it
-    env_variables={"TSAN_OPTIONS": "report_atomic_races=0 second_deadlock_stack=1"},
-)
+node = cluster.add_instance("node", main_configs=["configs/grpc_config.xml"])
 main_channel = None
 
 
@@ -374,27 +368,26 @@ progress {
   read_bytes: 16
   total_rows_to_read: 8
 }
-, output: "0\\t0\\n1\\t0"
+, output: "0\\t0\\n1\\t0\\n"
 , progress {
   read_rows: 2
   read_bytes: 16
 }
-, output: "\\n2\\t0\\n3\\t0"
+, output: "2\\t0\\n3\\t0\\n"
 , progress {
   read_rows: 2
   read_bytes: 16
 }
-, output: "\\n4\\t0\\n5\\t0"
+, output: "4\\t0\\n5\\t0\\n"
 , progress {
   read_rows: 2
   read_bytes: 16
 }
-, output: "\\n6\\t0\\n7\\t0"
-, output: "\\n"
-stats {
+, output: "6\\t0\\n7\\t0\\n"
+, stats {
   rows: 8
   blocks: 4
-  allocated_bytes: 1092
+  allocated_bytes: 324
   applied_limit: true
   rows_before_limit: 8
 }
@@ -751,7 +744,7 @@ def test_opentelemetry_context_propagation():
     assert (
         node.query(
             f"SELECT attribute['db.statement'], attribute['clickhouse.tracestate'] FROM system.opentelemetry_span_log "
-            f"WHERE trace_id='{trace_id}' AND operation_name='query'"
+            f"WHERE trace_id='{trace_id}' AND parent_span_id={parent_span_id}"
         )
         == "SELECT 1\tsome custom state\n"
     )

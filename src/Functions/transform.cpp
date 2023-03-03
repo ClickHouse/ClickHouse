@@ -395,7 +395,7 @@ private:
         if (!out)
             return false;
 
-        executeImplNumToNumWithConstDefault<T, U>(in->getData(), out->getData(), static_cast<U>(cache.const_default_value.get<U>()));
+        executeImplNumToNumWithConstDefault<T, U>(in->getData(), out->getData(), cache.const_default_value.get<U>());
         return true;
     }
 
@@ -418,7 +418,7 @@ private:
         if (!out)
             return false;
 
-        executeImplNumToNumWithConstDefault<T, U>(in->getData(), out->getData(), static_cast<U>(cache.const_default_value.get<U>()));
+        executeImplNumToNumWithConstDefault<T, U>(in->getData(), out->getData(), cache.const_default_value.get<U>());
         return true;
     }
 
@@ -697,8 +697,7 @@ private:
         if (!out)
             return false;
 
-        executeImplStringToNumWithConstDefault<U>(
-            in->getChars(), in->getOffsets(), out->getData(), static_cast<U>(cache.const_default_value.get<U>()));
+        executeImplStringToNumWithConstDefault<U>(in->getChars(), in->getOffsets(), out->getData(), cache.const_default_value.get<U>());
         return true;
     }
 
@@ -870,10 +869,8 @@ private:
             const auto * it = table.find(bit_cast<UInt64>(src[i]));
             if (it)
                 memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));    /// little endian.
-            else if constexpr (is_decimal<U>)
-                dst[i] = static_cast<typename U::NativeType>(dst_default[i]);
             else
-                dst[i] = static_cast<U>(dst_default[i]); // NOLINT(bugprone-signed-char-misuse,cert-str34-c)
+                dst[i] = dst_default[i]; // NOLINT
         }
     }
 
@@ -980,10 +977,8 @@ private:
             const auto * it = table.find(ref);
             if (it)
                 memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));
-            else if constexpr (is_decimal<U>)
-                dst[i] = static_cast<typename U::NativeType>(dst_default[i]);
             else
-                dst[i] = static_cast<U>(dst_default[i]); // NOLINT(bugprone-signed-char-misuse,cert-str34-c)
+                dst[i] = dst_default[i]; // NOLINT
         }
     }
 

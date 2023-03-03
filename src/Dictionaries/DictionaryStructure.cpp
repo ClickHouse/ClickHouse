@@ -55,7 +55,6 @@ std::optional<AttributeUnderlyingType> tryGetAttributeUnderlyingType(TypeIndex i
 
     return magic_enum::enum_cast<AttributeUnderlyingType>(static_cast<TypeIndexUnderlying>(index));
 }
-
 }
 
 
@@ -284,7 +283,7 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
     std::unordered_set<String> attribute_names;
     std::vector<DictionaryAttribute> res_attributes;
 
-    const FormatSettings format_settings = {};
+    const FormatSettings format_settings;
 
     for (const auto & config_elem : config_elems)
     {

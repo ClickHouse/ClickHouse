@@ -115,7 +115,7 @@ std::map<size_t, std::vector<ASTPtr>> moveExpressionToJoinOn(
     const Aliases & aliases)
 {
     std::map<size_t, std::vector<ASTPtr>> asts_to_join_on;
-    for (const auto & node : splitConjunctionsAst(ast))
+    for (const auto & node : collectConjunctions(ast))
     {
         if (const auto * func = node->as<ASTFunction>(); func && func->name == NameEquals::name)
         {
@@ -149,7 +149,7 @@ ASTPtr makeOnExpression(const std::vector<ASTPtr> & expressions)
     if (expressions.size() == 1)
         return expressions[0]->clone();
 
-    ASTs arguments;
+    std::vector<ASTPtr> arguments;
     arguments.reserve(expressions.size());
     for (const auto & ast : expressions)
         arguments.emplace_back(ast->clone());

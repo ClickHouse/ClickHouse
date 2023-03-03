@@ -77,11 +77,6 @@ public:
         state = uint128(0, 0);
     }
 
-    void sync() override
-    {
-        out.sync();
-    }
-
     uint128 getHash()
     {
         next();

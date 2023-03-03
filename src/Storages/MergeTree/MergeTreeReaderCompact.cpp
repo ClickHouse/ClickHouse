@@ -15,19 +15,18 @@ namespace ErrorCodes
 
 
 MergeTreeReaderCompact::MergeTreeReaderCompact(
-    MergeTreeDataPartInfoForReaderPtr data_part_info_for_read_,
+    DataPartCompactPtr data_part_,
     NamesAndTypesList columns_,
     const StorageMetadataPtr & metadata_snapshot_,
     UncompressedCache * uncompressed_cache_,
     MarkCache * mark_cache_,
     MarkRanges mark_ranges_,
     MergeTreeReaderSettings settings_,
-    ThreadPool * load_marks_threadpool_,
     ValueSizeMap avg_value_size_hints_,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
     clockid_t clock_type_)
     : IMergeTreeReader(
-        data_part_info_for_read_,
+        data_part_,
         columns_,
         metadata_snapshot_,
         uncompressed_cache_,
@@ -36,22 +35,49 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         settings_,
         avg_value_size_hints_)
     , marks_loader(
-          data_part_info_for_read_->getDataPartStorage(),
+          data_part->data_part_storage,
           mark_cache,
-          data_part_info_for_read_->getIndexGranularityInfo().getMarksFilePath(MergeTreeDataPartCompact::DATA_FILE_NAME),
-          data_part_info_for_read_->getMarksCount(),
-          data_part_info_for_read_->getIndexGranularityInfo(),
+          data_part->index_granularity_info.getMarksFilePath(MergeTreeDataPartCompact::DATA_FILE_NAME),
+          data_part->getMarksCount(),
+          data_part->index_granularity_info,
           settings.save_marks_in_cache,
           settings.read_settings,
-          load_marks_threadpool_,
-          data_part_info_for_read_->getColumns().size())
+          data_part->getColumns().size())
 {
     try
     {
-        fillColumnPositions();
+        size_t columns_num = columns_to_read.size();
+
+        column_positions.resize(columns_num);
+        read_only_offsets.resize(columns_num);
+
+        for (size_t i = 0; i < columns_num; ++i)
+        {
+            const auto & column_to_read = columns_to_read[i];
+
+            if (column_to_read.isSubcolumn())
+            {
+                auto storage_column_from_part = getColumnInPart(
+                    {column_to_read.getNameInStorage(), column_to_read.getTypeInStorage()});
+
+                if (!storage_column_from_part.type->tryGetSubcolumnType(column_to_read.getSubcolumnName()))
+                    continue;
+            }
+
+            auto position = data_part->getColumnPosition(column_to_read.getNameInStorage());
+            if (!position && typeid_cast<const DataTypeArray *>(column_to_read.type.get()))
+            {
+                /// If array of Nested column is missing in part,
+                /// we have to read its offsets if they exist.
+                position = findColumnForOffsets(column_to_read.name);
+                read_only_offsets[i] = (position != std::nullopt);
+            }
+
+            column_positions[i] = std::move(position);
+        }
 
         /// Do not use max_read_buffer_size, but try to lower buffer size with maximal size of granule to avoid reading much data.
-        auto buffer_size = getReadBufferSize(*data_part_info_for_read, marks_loader, column_positions, all_mark_ranges);
+        auto buffer_size = getReadBufferSize(data_part, marks_loader, column_positions, all_mark_ranges);
         if (buffer_size)
             settings.read_settings = settings.read_settings.adjustBufferSize(buffer_size);
 
@@ -59,15 +85,13 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
             throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read to empty buffer.");
 
         const String path = MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION;
-        auto data_part_storage = data_part_info_for_read->getDataPartStorage();
-
         if (uncompressed_cache)
         {
             auto buffer = std::make_unique<CachedCompressedReadBuffer>(
-                std::string(fs::path(data_part_storage->getFullPath()) / path),
-                [this, path, data_part_storage]()
+                std::string(fs::path(data_part->data_part_storage->getFullPath()) / path),
+                [this, path]()
                 {
-                    return data_part_storage->readFile(
+                    return data_part->data_part_storage->readFile(
                         path,
                         settings.read_settings,
                         std::nullopt, std::nullopt);
@@ -89,7 +113,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         {
             auto buffer =
                 std::make_unique<CompressedReadBufferFromFile>(
-                    data_part_storage->readFile(
+                    data_part->data_part_storage->readFile(
                         path,
                         settings.read_settings,
                         std::nullopt, std::nullopt),
@@ -108,46 +132,8 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
     }
     catch (...)
     {
-        data_part_info_for_read->reportBroken();
+        storage.reportBrokenPart(data_part);
         throw;
-    }
-}
-
-void MergeTreeReaderCompact::fillColumnPositions()
-{
-    size_t columns_num = columns_to_read.size();
-
-    column_positions.resize(columns_num);
-    read_only_offsets.resize(columns_num);
-
-    for (size_t i = 0; i < columns_num; ++i)
-    {
-        const auto & column_to_read = columns_to_read[i];
-
-        auto position = data_part_info_for_read->getColumnPosition(column_to_read.getNameInStorage());
-        bool is_array = isArray(column_to_read.type);
-
-        if (column_to_read.isSubcolumn())
-        {
-            auto storage_column_from_part = getColumnInPart(
-                {column_to_read.getNameInStorage(), column_to_read.getTypeInStorage()});
-
-            auto subcolumn_name = column_to_read.getSubcolumnName();
-            if (!storage_column_from_part.type->hasSubcolumn(subcolumn_name))
-                position.reset();
-        }
-
-        if (!position && is_array)
-        {
-            /// If array of Nested column is missing in part,
-            /// we have to read its offsets if they exist.
-            position = findColumnForOffsets(column_to_read);
-            read_only_offsets[i] = (position != std::nullopt);
-        }
-
-        column_positions[i] = std::move(position);
-        if (read_only_offsets[i])
-            partially_read_columns.insert(column_to_read.name);
     }
 }
 
@@ -170,7 +156,7 @@ size_t MergeTreeReaderCompact::readRows(
 
     while (read_rows < max_rows_to_read)
     {
-        size_t rows_to_read = data_part_info_for_read->getIndexGranularity().getMarkRows(from_mark);
+        size_t rows_to_read = data_part->index_granularity.getMarkRows(from_mark);
 
         for (size_t pos = 0; pos < num_columns; ++pos)
         {
@@ -193,7 +179,7 @@ size_t MergeTreeReaderCompact::readRows(
             catch (Exception & e)
             {
                 if (e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
-                    data_part_info_for_read->reportBroken();
+                    storage.reportBrokenPart(data_part);
 
                 /// Better diagnostics.
                 e.addMessage("(while reading column " + columns_to_read[pos].name + ")");
@@ -201,7 +187,7 @@ size_t MergeTreeReaderCompact::readRows(
             }
             catch (...)
             {
-                data_part_info_for_read->reportBroken();
+                storage.reportBrokenPart(data_part);
                 throw;
             }
         }
@@ -228,8 +214,7 @@ void MergeTreeReaderCompact::readData(
 
     auto buffer_getter = [&](const ISerialization::SubstreamPath & substream_path) -> ReadBuffer *
     {
-        bool is_offsets = !substream_path.empty() && substream_path.back().type == ISerialization::Substream::ArraySizes;
-        if (only_offsets && !is_offsets)
+        if (only_offsets && (substream_path.size() != 1 || substream_path[0].type != ISerialization::Substream::ArraySizes))
             return nullptr;
 
         return data_buffer;
@@ -294,7 +279,7 @@ void MergeTreeReaderCompact::seekToMark(size_t row_index, size_t column_index)
 void MergeTreeReaderCompact::adjustUpperBound(size_t last_mark)
 {
     size_t right_offset = 0;
-    if (last_mark < data_part_info_for_read->getMarksCount()) /// Otherwise read until the end of file
+    if (last_mark < data_part->getMarksCount()) /// Otherwise read until the end of file
         right_offset = marks_loader.getMark(last_mark).offset_in_compressed_file;
 
     if (right_offset == 0)
@@ -322,7 +307,7 @@ bool MergeTreeReaderCompact::isContinuousReading(size_t mark, size_t column_posi
         return false;
     const auto & [last_mark, last_column] = *last_read_granule;
     return (mark == last_mark && column_position == last_column + 1)
-        || (mark == last_mark + 1 && column_position == 0 && last_column == data_part_info_for_read->getColumns().size() - 1);
+        || (mark == last_mark + 1 && column_position == 0 && last_column == data_part->getColumns().size() - 1);
 }
 
 namespace
@@ -374,16 +359,16 @@ private:
 }
 
 size_t MergeTreeReaderCompact::getReadBufferSize(
-    const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
+    const DataPartPtr & part,
     MergeTreeMarksLoader & marks_loader,
     const ColumnPositions & column_positions,
     const MarkRanges & mark_ranges)
 {
     size_t buffer_size = 0;
     size_t columns_num = column_positions.size();
-    size_t file_size = data_part_info_for_reader.getFileSizeOrZero(MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION);
+    size_t file_size = part->getFileSizeOrZero(MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION);
 
-    MarksCounter counter(data_part_info_for_reader.getMarksCount(), data_part_info_for_reader.getColumns().size());
+    MarksCounter counter(part->getMarksCount(), part->getColumns().size());
 
     for (const auto & mark_range : mark_ranges)
     {

@@ -82,7 +82,6 @@ public:
     ASTPtr clone() const override;
 
     bool distinct = false;
-    bool group_by_all = false;
     bool group_by_with_totals = false;
     bool group_by_with_rollup = false;
     bool group_by_with_cube = false;

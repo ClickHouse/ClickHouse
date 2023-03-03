@@ -1,5 +1,4 @@
 ---
-slug: /ru/operations/system-tables/
 sidebar_position: 52
 sidebar_label: "Системные таблицы"
 ---

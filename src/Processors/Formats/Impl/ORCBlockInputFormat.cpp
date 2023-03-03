@@ -3,7 +3,7 @@
 #if USE_ORC
 
 #include <Formats/FormatFactory.h>
-#include <Formats/SchemaInferenceUtils.h>
+#include <Formats/ReadSchemaUtils.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
@@ -54,19 +54,14 @@ Chunk ORCBlockInputFormat::generate()
         throw ParsingException(
             ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of ORC data: {}", table_result.status().ToString());
 
-    /// We should extract the number of rows directly from the stripe, because in case when
-    /// record batch contains 0 columns (for example if we requested only columns that
-    /// are not presented in data) the number of rows in record batch will be 0.
-    size_t num_rows = file_reader->GetRawORCReader()->getStripe(stripe_current)->getNumberOfRows();
-
     auto table = table_result.ValueOrDie();
-    if (!table || !num_rows)
+    if (!table || !table->num_rows())
         return {};
 
     ++stripe_current;
 
     Chunk res;
-    arrow_column_to_ch_column->arrowTableToCHChunk(res, table, num_rows);
+    arrow_column_to_ch_column->arrowTableToCHChunk(res, table);
     /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
     /// Otherwise fill the missing columns with zero values of its type.
     if (format_settings.defaults_for_omitted_fields)
@@ -106,7 +101,7 @@ static size_t countIndicesForType(std::shared_ptr<arrow::DataType> type)
     if (type->id() == arrow::Type::MAP)
     {
         auto * map_type = static_cast<arrow::MapType *>(type.get());
-        return countIndicesForType(map_type->key_type()) + countIndicesForType(map_type->item_type()) + 1;
+        return countIndicesForType(map_type->key_type()) + countIndicesForType(map_type->item_type());
     }
 
     return 1;
@@ -141,7 +136,7 @@ void ORCBlockInputFormat::prepareReader()
     if (is_stopped)
         return;
 
-    stripe_total = static_cast<int>(file_reader->NumberOfStripes());
+    stripe_total = file_reader->NumberOfStripes();
     stripe_current = 0;
 
     arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(
@@ -164,7 +159,7 @@ void ORCBlockInputFormat::prepareReader()
     {
         /// LIST type require 2 indices, STRUCT - the number of elements + 1,
         /// so we should recursively count the number of indices we need for this type.
-        int indexes_count = static_cast<int>(countIndicesForType(schema->field(i)->type()));
+        int indexes_count = countIndicesForType(schema->field(i)->type());
         const auto & name = schema->field(i)->name();
         if (getPort().getHeader().has(name, ignore_case) || nested_table_names.contains(ignore_case ? boost::to_lower_copy(name) : name))
         {
@@ -189,9 +184,8 @@ NamesAndTypesList ORCSchemaReader::readSchema()
     getFileReaderAndSchema(in, file_reader, schema, format_settings, is_stopped);
     auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(
         *schema, "ORC", format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference);
-    if (format_settings.schema_inference_make_columns_nullable)
-        return getNamesAndRecursivelyNullableTypes(header);
-    return header.getNamesAndTypesList();}
+    return getNamesAndRecursivelyNullableTypes(header);
+}
 
 void registerInputFormatORC(FormatFactory & factory)
 {
@@ -204,7 +198,6 @@ void registerInputFormatORC(FormatFactory & factory)
             {
                 return std::make_shared<ORCBlockInputFormat>(buf, sample, settings);
             });
-    factory.markFormatSupportsSubcolumns("ORC");
     factory.markFormatSupportsSubsetOfColumns("ORC");
 }
 
@@ -217,11 +210,6 @@ void registerORCSchemaReader(FormatFactory & factory)
             return std::make_shared<ORCSchemaReader>(buf, settings);
         }
         );
-
-    factory.registerAdditionalInfoForSchemaCacheGetter("ORC", [](const FormatSettings & settings)
-    {
-        return fmt::format("schema_inference_make_columns_nullable={}", settings.schema_inference_make_columns_nullable);
-    });
 }
 
 }

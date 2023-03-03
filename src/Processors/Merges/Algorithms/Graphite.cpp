@@ -103,17 +103,17 @@ Graphite::RollupRule selectPatternForPath(
             if (first_match->type == first_match->TypeUndef && pattern.type == pattern.TypeAll)
             {
                 /// There is only default pattern for both retention and aggregation
-                return {&pattern, &pattern};
+                return std::pair(&pattern, &pattern);
             }
             if (pattern.type != first_match->type)
             {
                 if (first_match->type == first_match->TypeRetention)
                 {
-                    return {first_match, &pattern};
+                    return std::pair(first_match, &pattern);
                 }
                 if (first_match->type == first_match->TypeAggregation)
                 {
-                    return {&pattern, first_match};
+                    return std::pair(&pattern, first_match);
                 }
             }
         }
@@ -125,7 +125,7 @@ Graphite::RollupRule selectPatternForPath(
                 if (pattern.type == pattern.TypeAll)
                 {
                     /// Only for not default patterns with both function and retention parameters
-                    return {&pattern, &pattern};
+                    return std::pair(&pattern, &pattern);
                 }
                 if (first_match->type == first_match->TypeUndef)
                 {
@@ -136,11 +136,11 @@ Graphite::RollupRule selectPatternForPath(
                 {
                     if (first_match->type == first_match->TypeRetention)
                     {
-                        return {first_match, &pattern};
+                        return std::pair(first_match, &pattern);
                     }
                     if (first_match->type == first_match->TypeAggregation)
                     {
-                        return {&pattern, first_match};
+                        return std::pair(&pattern, first_match);
                     }
                 }
             }
@@ -332,7 +332,8 @@ std::string buildTaggedRegex(std::string regexp_str)
   *     </default>
   * </graphite_rollup>
   */
-static const Pattern & appendGraphitePattern(
+static const Pattern &
+appendGraphitePattern(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_element, Patterns & patterns,
     bool default_rule,

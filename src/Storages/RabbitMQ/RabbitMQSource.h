@@ -2,7 +2,7 @@
 
 #include <Processors/ISource.h>
 #include <Storages/RabbitMQ/StorageRabbitMQ.h>
-#include <Storages/RabbitMQ/RabbitMQConsumer.h>
+#include <Storages/RabbitMQ/ReadBufferFromRabbitMQConsumer.h>
 
 
 namespace DB
@@ -23,11 +23,11 @@ public:
     ~RabbitMQSource() override;
 
     String getName() const override { return storage.getName(); }
-    RabbitMQConsumerPtr getBuffer() { return consumer; }
+    ConsumerBufferPtr getBuffer() { return buffer; }
 
     Chunk generate() override;
 
-    bool queueEmpty() const { return !consumer || consumer->queueEmpty(); }
+    bool queueEmpty() const { return !buffer || buffer->queueEmpty(); }
     bool needChannelUpdate();
     void updateChannel();
     bool sendAck();
@@ -47,7 +47,7 @@ private:
     const Block non_virtual_header;
     const Block virtual_header;
 
-    RabbitMQConsumerPtr consumer;
+    ConsumerBufferPtr buffer;
 
     Poco::Timespan max_execution_time = 0;
     Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};

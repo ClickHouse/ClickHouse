@@ -2,6 +2,7 @@
 
 #include <variant>
 #include <optional>
+#include <shared_mutex>
 #include <deque>
 #include <vector>
 
@@ -186,7 +187,7 @@ public:
       * Use only after all calls to joinBlock was done.
       * left_sample_block is passed without account of 'use_nulls' setting (columns will be converted to Nullable inside).
       */
-    IBlocksStreamPtr getNonJoinedBlocks(
+    std::shared_ptr<NotJoinedBlocks> getNonJoinedBlocks(
         const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
     /// Number of keys in all built JOIN maps.
@@ -278,7 +279,7 @@ public:
             #undef M
             }
 
-            UNREACHABLE();
+            __builtin_unreachable();
         }
 
         size_t getTotalByteCountImpl(Type which) const
@@ -294,7 +295,7 @@ public:
             #undef M
             }
 
-            UNREACHABLE();
+            __builtin_unreachable();
         }
 
         size_t getBufferSizeInCells(Type which) const
@@ -310,7 +311,7 @@ public:
             #undef M
             }
 
-            UNREACHABLE();
+            __builtin_unreachable();
         }
     };
 
@@ -335,8 +336,6 @@ public:
 
         /// Additional data - strings for string keys and continuation elements of single-linked lists of references to rows.
         Arena pool;
-
-        bool released = false;
     };
 
     using RightTableDataPtr = std::shared_ptr<RightTableData>;
@@ -351,12 +350,9 @@ public:
     void reuseJoinedData(const HashJoin & join);
 
     RightTableDataPtr getJoinedData() const { return data; }
-    BlocksList releaseJoinedBlocks();
 
     bool isUsed(size_t off) const { return used_flags.getUsedSafe(off); }
     bool isUsed(const Block * block_ptr, size_t row_idx) const { return used_flags.getUsedSafe(block_ptr, row_idx); }
-
-    void debugKeys() const;
 
 private:
     template<bool> friend class NotJoinedHash;
@@ -364,15 +360,15 @@ private:
     friend class JoinSource;
 
     std::shared_ptr<TableJoin> table_join;
-    const JoinKind kind;
-    const JoinStrictness strictness;
+    JoinKind kind;
+    JoinStrictness strictness;
 
     /// This join was created from StorageJoin and it is already filled.
     bool from_storage_join = false;
 
     bool any_take_last_row; /// Overwrite existing values when encountering the same key again
     std::optional<TypeIndex> asof_type;
-    const ASOFJoinInequality asof_inequality;
+    ASOFJoinInequality asof_inequality;
 
     /// Right table data. StorageJoin shares it between many Join objects.
     /// Flags that indicate that particular row already used in join.

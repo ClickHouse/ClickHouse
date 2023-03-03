@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
-#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Common/formatReadable.h>
 #include <base/range.h>
 
@@ -23,6 +22,7 @@ MergeTreeReadPool::MergeTreeReadPool(
     size_t sum_marks_,
     size_t min_marks_for_concurrent_read_,
     RangesInDataParts && parts_,
+    const MergeTreeData & data_,
     const StorageSnapshotPtr & storage_snapshot_,
     const PrewhereInfoPtr & prewhere_info_,
     const Names & column_names_,
@@ -32,6 +32,7 @@ MergeTreeReadPool::MergeTreeReadPool(
     bool do_not_steal_tasks_)
     : backoff_settings{backoff_settings_}
     , backoff_state{threads_}
+    , data{data_}
     , storage_snapshot{storage_snapshot_}
     , column_names{column_names_}
     , virtual_column_names{virtual_column_names_}
@@ -213,11 +214,11 @@ std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(const RangesInDataParts &
         per_part_sum_marks.push_back(sum_marks);
 
         auto task_columns = getReadTaskColumns(
-            LoadedMergeTreeDataPartInfoForReader(part.data_part), storage_snapshot,
+            data, storage_snapshot, part.data_part,
             column_names, virtual_column_names, prewhere_info, /*with_subcolumns=*/ true);
 
         auto size_predictor = !predict_block_size_bytes ? nullptr
-            : IMergeTreeSelectAlgorithm::getSizePredictor(part.data_part, task_columns, sample_block);
+            : MergeTreeBaseSelectProcessor::getSizePredictor(part.data_part, task_columns, sample_block);
 
         auto & per_part = per_part_params.emplace_back();
 
@@ -263,7 +264,7 @@ void MergeTreeReadPool::fillPerThreadInfo(
         {
             PartInfo part_info{parts[i], per_part_sum_marks[i], i};
             if (parts[i].data_part->isStoredOnDisk())
-                parts_per_disk[parts[i].data_part->getDataPartStorage().getDiskName()].push_back(std::move(part_info));
+                parts_per_disk[parts[i].data_part->data_part_storage->getDiskName()].push_back(std::move(part_info));
             else
                 parts_per_disk[""].push_back(std::move(part_info));
         }

@@ -15,7 +15,6 @@
     #include <Common/Stopwatch.h>
 #endif
 
-
 namespace DB
 {
 
@@ -25,8 +24,8 @@ namespace ErrorCodes
 }
 
 
-PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem)
-    : process_list_element(std::move(elem))
+PipelineExecutor::PipelineExecutor(Processors & processors, QueryStatus * elem)
+    : process_list_element(elem)
 {
     if (process_list_element)
     {
@@ -42,7 +41,7 @@ PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, Que
         /// If exception was thrown while pipeline initialization, it means that query pipeline was not build correctly.
         /// It is logical error, and we need more information about pipeline.
         WriteBufferFromOwnString buf;
-        printPipeline(*processors, buf);
+        printPipeline(processors, buf);
         buf.finalize();
         exception.addMessage("Query pipeline:\n" + buf.str());
 
@@ -306,10 +305,6 @@ void PipelineExecutor::spawnThreads()
         {
             /// ThreadStatus thread_status;
 
-            SCOPE_EXIT_SAFE(
-                if (thread_group)
-                    CurrentThread::detachQueryIfNotDetached();
-            );
             setThreadName("QueryPipelineEx");
 
             if (thread_group)

@@ -108,6 +108,7 @@ public:
 
     virtual std::optional<FileInfo> getFileInfo(const String & file_name) const = 0;
     virtual std::optional<FileInfo> getFileInfo(const SizeAndChecksum & size_and_checksum) const = 0;
+    virtual std::optional<SizeAndChecksum> getFileSizeAndChecksum(const String & file_name) const = 0;
 
     /// Generates a new archive suffix, e.g. "001", "002", "003", ...
     virtual String getNextArchiveSuffix() = 0;

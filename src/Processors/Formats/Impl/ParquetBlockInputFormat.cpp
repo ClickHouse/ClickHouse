@@ -4,7 +4,7 @@
 #if USE_PARQUET
 
 #include <Formats/FormatFactory.h>
-#include <Formats/SchemaInferenceUtils.h>
+#include <Formats/ReadSchemaUtils.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/copyData.h>
 #include <arrow/api.h>
@@ -55,22 +55,13 @@ Chunk ParquetBlockInputFormat::generate()
         return res;
 
     std::shared_ptr<arrow::Table> table;
-
-    std::unique_ptr<::arrow::RecordBatchReader> rbr;
-    std::vector<int> row_group_indices { row_group_current };
-    arrow::Status get_batch_reader_status = file_reader->GetRecordBatchReader(row_group_indices, column_indices, &rbr);
-
-    if (!get_batch_reader_status.ok())
-        throw ParsingException{"Error while reading Parquet data: " + get_batch_reader_status.ToString(), ErrorCodes::CANNOT_READ_ALL_DATA};
-
-    arrow::Status read_status = rbr->ReadAll(&table);
-
+    arrow::Status read_status = file_reader->ReadRowGroup(row_group_current, column_indices, &table);
     if (!read_status.ok())
         throw ParsingException{"Error while reading Parquet data: " + read_status.ToString(), ErrorCodes::CANNOT_READ_ALL_DATA};
 
     ++row_group_current;
 
-    arrow_column_to_ch_column->arrowTableToCHChunk(res, table, table->num_rows());
+    arrow_column_to_ch_column->arrowTableToCHChunk(res, table);
 
     /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
     /// Otherwise fill the missing columns with zero values of its type.
@@ -161,7 +152,7 @@ void ParquetBlockInputFormat::prepareReader()
         /// STRUCT type require the number of indexes equal to the number of
         /// nested elements, so we should recursively
         /// count the number of indices we need for this type.
-        int indexes_count = static_cast<int>(countIndicesForType(schema->field(i)->type()));
+        int indexes_count = countIndicesForType(schema->field(i)->type());
         const auto & name = schema->field(i)->name();
 
         if (getPort().getHeader().has(name, ignore_case) || nested_table_names.contains(ignore_case ? boost::to_lower_copy(name) : name))
@@ -187,9 +178,7 @@ NamesAndTypesList ParquetSchemaReader::readSchema()
     getFileReaderAndSchema(in, file_reader, schema, format_settings, is_stopped);
     auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(
         *schema, "Parquet", format_settings.parquet.skip_columns_with_unsupported_types_in_schema_inference);
-    if (format_settings.schema_inference_make_columns_nullable)
-        return getNamesAndRecursivelyNullableTypes(header);
-    return header.getNamesAndTypesList();
+    return getNamesAndRecursivelyNullableTypes(header);
 }
 
 void registerInputFormatParquet(FormatFactory & factory)
@@ -203,7 +192,6 @@ void registerInputFormatParquet(FormatFactory & factory)
             {
                 return std::make_shared<ParquetBlockInputFormat>(buf, sample, settings);
             });
-    factory.markFormatSupportsSubcolumns("Parquet");
     factory.markFormatSupportsSubsetOfColumns("Parquet");
 }
 
@@ -216,11 +204,6 @@ void registerParquetSchemaReader(FormatFactory & factory)
             return std::make_shared<ParquetSchemaReader>(buf, settings);
         }
         );
-
-    factory.registerAdditionalInfoForSchemaCacheGetter("Parquet", [](const FormatSettings & settings)
-    {
-        return fmt::format("schema_inference_make_columns_nullable={}", settings.schema_inference_make_columns_nullable);
-    });
 }
 
 }

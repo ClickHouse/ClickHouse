@@ -62,8 +62,7 @@ private:
 
 public:
     AggregateFunctionIntersectionsMax(AggregateFunctionIntersectionsKind kind_, const DataTypes & arguments)
-        : IAggregateFunctionDataHelper<MaxIntersectionsData<PointType>, AggregateFunctionIntersectionsMax<PointType>>(arguments, {}, createResultType(kind_))
-        , kind(kind_)
+        : IAggregateFunctionDataHelper<MaxIntersectionsData<PointType>, AggregateFunctionIntersectionsMax<PointType>>(arguments, {}), kind(kind_)
     {
         if (!isNativeNumber(arguments[0]))
             throw Exception{getName() + ": first argument must be represented by integer", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -82,9 +81,9 @@ public:
             : "maxIntersectionsPosition";
     }
 
-    static DataTypePtr createResultType(AggregateFunctionIntersectionsKind kind_)
+    DataTypePtr getReturnType() const override
     {
-        if (kind_ == AggregateFunctionIntersectionsKind::Count)
+        if (kind == AggregateFunctionIntersectionsKind::Count)
             return std::make_shared<DataTypeUInt64>();
         else
             return std::make_shared<DataTypeNumber<PointType>>();
@@ -117,7 +116,16 @@ public:
         const auto & value = this->data(place).value;
         size_t size = value.size();
         writeVarUInt(size, buf);
-        buf.write(reinterpret_cast<const char *>(value.data()), size * sizeof(value[0]));
+
+        for (size_t i = 0; i < size; ++i)
+        {
+            /// In this version, pairs were serialized with padding.
+            /// We must ensure that padding bytes are zero-filled.
+            char bytes[sizeof(value[0])]{};
+            unalignedStore<PointType>(&bytes[offsetof(typename MaxIntersectionsData<PointType>::Value, first)], value[i].first);
+            unalignedStore<Int64>(&bytes[offsetof(typename MaxIntersectionsData<PointType>::Value, second)], value[i].second);
+            buf.write(bytes, sizeof(value[0]));
+        }
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override

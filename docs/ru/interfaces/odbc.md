@@ -1,5 +1,4 @@
 ---
-slug: /ru/interfaces/odbc
 sidebar_position: 23
 sidebar_label: "ODBC-драйвер"
 ---

@@ -42,7 +42,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     if (read_hint.has_value())
         estimated_size = *read_hint;
     else if (file_size.has_value())
-        estimated_size = *file_size;
+        estimated_size = file_size.has_value() ? *file_size : 0;
 
     if (!existing_memory
         && settings.local_fs_method == LocalFSReadMethod::mmap
@@ -77,21 +77,13 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         }
         else if (settings.local_fs_method == LocalFSReadMethod::pread_fake_async)
         {
-            auto context = Context::getGlobalContextInstance();
-            if (!context)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context not initialized");
-
-            auto & reader = context->getThreadPoolReader(Context::FilesystemReaderType::SYNCHRONOUS_LOCAL_FS_READER);
+            static AsynchronousReaderPtr reader = std::make_shared<SynchronousReader>();
             res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
                 reader, settings.priority, filename, buffer_size, actual_flags, existing_memory, alignment, file_size);
         }
         else if (settings.local_fs_method == LocalFSReadMethod::pread_threadpool)
         {
-            auto context = Context::getGlobalContextInstance();
-            if (!context)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context not initialized");
-
-            auto & reader = context->getThreadPoolReader(Context::FilesystemReaderType::ASYNCHRONOUS_LOCAL_FS_READER);
+            static AsynchronousReaderPtr reader = std::make_shared<ThreadPoolReader>(16, 1000000);
             res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
                 reader, settings.priority, filename, buffer_size, actual_flags, existing_memory, alignment, file_size);
         }
@@ -158,15 +150,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
 #endif
 
     ProfileEvents::increment(ProfileEvents::CreatedReadBufferOrdinary);
-
-    size_t buffer_size = settings.local_fs_buffer_size;
-    /// Check if the buffer can be smaller than default
-    if (read_hint.has_value() && *read_hint > 0 && *read_hint < buffer_size)
-        buffer_size = *read_hint;
-    if (file_size.has_value() && *file_size < buffer_size)
-        buffer_size = *file_size;
-
-    return create(buffer_size, flags);
+    return create(settings.local_fs_buffer_size, flags);
 }
 
 }

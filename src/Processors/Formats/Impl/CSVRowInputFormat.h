@@ -75,7 +75,7 @@ public:
 class CSVSchemaReader : public FormatWithNamesAndTypesSchemaReader
 {
 public:
-    CSVSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, const FormatSettings & format_settings_);
+    CSVSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, const FormatSettings & format_setting_);
 
 private:
     DataTypes readRowAndGetDataTypes() override;
@@ -83,6 +83,6 @@ private:
     CSVFormatReader reader;
 };
 
-std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows);
+std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size, size_t min_rows);
 
 }
