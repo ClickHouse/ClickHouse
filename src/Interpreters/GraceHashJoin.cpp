@@ -10,7 +10,6 @@
 #include <Core/ProtocolDefines.h>
 #include <Disks/IVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
-#include <IO/WriteBufferFromTemporaryFile.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
 
@@ -410,8 +409,6 @@ void GraceHashJoin::initialize(const Block & sample_block)
 
 void GraceHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed)
 {
-    std::shared_lock current_bucket_lock(current_bucket_mutex);
-
     if (block.rows() == 0)
     {
         hash_join->joinBlock(block, not_processed);
@@ -551,7 +548,7 @@ public:
 
 IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
 {
-    std::unique_lock current_bucket_lock(current_bucket_mutex);
+    std::lock_guard current_bucket_lock(current_bucket_mutex);
 
     if (current_bucket == nullptr)
         return nullptr;
