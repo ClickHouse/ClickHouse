@@ -134,7 +134,7 @@ jobs:
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 compatibility_check.py --check-name "Compatibility check (x86)" --check-glibc --check-distributions
+          cd "$REPO_COPY/tests/ci" && python3 compatibility_check.py --check-name "Compatibility check (amd64)" --check-glibc --check-distributions
       - name: Cleanup
         if: always()
         run: |
