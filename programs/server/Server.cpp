@@ -775,7 +775,7 @@ try
         server_settings.io_thread_pool_queue_size);
 
     BackupsIOThreadPool::initialize(
-        server_settings.max_backuos_io_thread_pool_size,
+        server_settings.max_backups_io_thread_pool_size,
         server_settings.max_backups_io_thread_pool_free_size,
         server_settings.backups_io_thread_pool_queue_size);
 
