@@ -145,18 +145,18 @@ def set_capacity(
         raise ValueError("Queue status is not in ['in_progress', 'queued']")
 
     scale_down, scale_up = get_scales(runner_type)
-    capacity_reserve = max(0, asg["DesiredCapacity"] - running)
+    # How much nodes are free (positive) or need to be added (negative)
+    capacity_reserve = asg["DesiredCapacity"] - running - queued
     stop = False
-    if queued:
+    if capacity_reserve < 0:
         # This part is about scaling up
-        # First, let's check if there's enough runners to cover the queue
-        stop = stop or (asg["DesiredCapacity"] - running - queued) > 0
-
+        capacity_deficit = -capacity_reserve
+        # It looks that we are still OK, since no queued jobs exist
+        stop = stop or queued == 0
+        # Are we already at the capacity limits
         stop = stop or asg["MaxSize"] <= asg["DesiredCapacity"]
         # Let's calculate a new desired capacity
-        desired_capacity = asg["DesiredCapacity"] + (
-            (queued - capacity_reserve) // scale_up
-        )
+        desired_capacity = asg["DesiredCapacity"] + (capacity_deficit // scale_up)
         desired_capacity = max(desired_capacity, asg["MinSize"])
         desired_capacity = min(desired_capacity, asg["MaxSize"])
         # Finally, should the capacity be even changed
@@ -181,8 +181,7 @@ def set_capacity(
         return
 
     # Now we will calculate if we need to scale down
-    stop = stop or asg["DesiredCapacity"] <= asg["MinSize"]
-    stop = stop or asg["DesiredCapacity"] <= running
+    stop = stop or asg["DesiredCapacity"] == asg["MinSize"]
     desired_capacity = asg["DesiredCapacity"] - (capacity_reserve // scale_down)
     desired_capacity = max(desired_capacity, asg["MinSize"])
     desired_capacity = min(desired_capacity, asg["MaxSize"])
