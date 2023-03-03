@@ -476,7 +476,6 @@ void TCPHandler::runImpl()
 
             LOG_DEBUG(log, "Processed in {} sec.", state.watch.elapsedSeconds());
             query_duration_already_logged = true;
-            LOG_TRACE(log, "Resetting 1");
             if (state.is_connection_closed)
                 break;
 
@@ -485,7 +484,6 @@ void TCPHandler::runImpl()
                 sendLogs();
                 sendEndOfStream();
             }
-            LOG_TRACE(log, "Resetting query state 1");
             /// QueryState should be cleared before QueryScope, since otherwise
             /// the MemoryTracker will be wrong for possible deallocations.
             /// (i.e. deallocations from the Aggregator with two-level aggregation)
