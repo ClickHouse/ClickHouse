@@ -2316,7 +2316,7 @@ bool ReplicatedMergeTreeMergePredicate::canMergeSinglePart(
         return false;
     }
 
-    std::lock_guard<std::mutex> lock(queue.state_mutex);
+    std::lock_guard lock(queue.state_mutex);
 
     /// We look for containing parts in queue.virtual_parts (and not in prev_virtual_parts) because queue.virtual_parts is newer
     /// and it is guaranteed that it will contain all merges assigned before this object is constructed.
@@ -2334,7 +2334,7 @@ bool ReplicatedMergeTreeMergePredicate::canMergeSinglePart(
 
 bool ReplicatedMergeTreeMergePredicate::partParticipatesInReplaceRange(const MergeTreeData::DataPartPtr & part, String * out_reason) const
 {
-    std::lock_guard<std::mutex> lock(queue.state_mutex);
+    std::lock_guard lock(queue.state_mutex);
     for (const auto & entry : queue.queue)
     {
         if (entry->type != ReplicatedMergeTreeLogEntry::REPLACE_RANGE)
@@ -2457,7 +2457,7 @@ bool ReplicatedMergeTreeMergePredicate::isGoingToBeDropped(const MergeTreePartIn
 
 String ReplicatedMergeTreeMergePredicate::getCoveringVirtualPart(const String & part_name) const
 {
-    std::lock_guard<std::mutex> lock(queue.state_mutex);
+    std::lock_guard lock(queue.state_mutex);
     return queue.virtual_parts.getContainingPart(MergeTreePartInfo::fromPartName(part_name, queue.format_version));
 }
 

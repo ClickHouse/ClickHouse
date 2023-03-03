@@ -208,7 +208,7 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(size_t thread)
     return std::make_unique<MergeTreeReadTask>(
         part.data_part, ranges_to_get_from_part, part.part_index_in_query,
         per_part.column_name_set, per_part.task_columns,
-        prewhere_info && prewhere_info->remove_prewhere_column, std::move(curr_task_size_predictor));
+        std::move(curr_task_size_predictor));
 }
 
 Block MergeTreeReadPool::getHeader() const
@@ -459,7 +459,6 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t thread)
         part.part_index_in_query,
         per_part.column_name_set,
         per_part.task_columns,
-        prewhere_info && prewhere_info->remove_prewhere_column,
         std::move(curr_task_size_predictor));
 }
 
