@@ -12,6 +12,7 @@ cluster = ClickHouseCluster(__file__)
 num_nodes = 10
 ddl_task_timeout = 640
 
+
 def generate_cluster_def():
     path = os.path.join(
         os.path.dirname(os.path.realpath(__file__)),
