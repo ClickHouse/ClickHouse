@@ -42,6 +42,9 @@ void TableNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
 
     buffer << ", table_name: " << storage_id.getFullNameNotQuoted();
 
+    if (!temporary_table_name.empty())
+        buffer << ", temporary_table_name: " << temporary_table_name;
+
     if (table_expression_modifiers)
     {
         buffer << ", ";
@@ -52,15 +55,8 @@ void TableNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
 bool TableNode::isEqualImpl(const IQueryTreeNode & rhs) const
 {
     const auto & rhs_typed = assert_cast<const TableNode &>(rhs);
-
-    if (table_expression_modifiers && rhs_typed.table_expression_modifiers && table_expression_modifiers != rhs_typed.table_expression_modifiers)
-        return false;
-    else if (table_expression_modifiers && !rhs_typed.table_expression_modifiers)
-        return false;
-    else if (!table_expression_modifiers && rhs_typed.table_expression_modifiers)
-        return false;
-
-    return storage_id == rhs_typed.storage_id;
+    return storage_id == rhs_typed.storage_id && table_expression_modifiers == rhs_typed.table_expression_modifiers &&
+        temporary_table_name == rhs_typed.temporary_table_name;
 }
 
 void TableNode::updateTreeHashImpl(HashState & state) const
@@ -68,6 +64,9 @@ void TableNode::updateTreeHashImpl(HashState & state) const
     auto full_name = storage_id.getFullNameNotQuoted();
     state.update(full_name.size());
     state.update(full_name);
+
+    state.update(temporary_table_name.size());
+    state.update(temporary_table_name);
 
     if (table_expression_modifiers)
         table_expression_modifiers->updateTreeHash(state);
@@ -77,12 +76,16 @@ QueryTreeNodePtr TableNode::cloneImpl() const
 {
     auto result_table_node = std::make_shared<TableNode>(storage, storage_id, storage_lock, storage_snapshot);
     result_table_node->table_expression_modifiers = table_expression_modifiers;
+    result_table_node->temporary_table_name = temporary_table_name;
 
     return result_table_node;
 }
 
 ASTPtr TableNode::toASTImpl() const
 {
+    if (!temporary_table_name.empty())
+        return std::make_shared<ASTTableIdentifier>(temporary_table_name);
+
     return std::make_shared<ASTTableIdentifier>(storage_id.getDatabaseName(), storage_id.getTableName());
 }
 
