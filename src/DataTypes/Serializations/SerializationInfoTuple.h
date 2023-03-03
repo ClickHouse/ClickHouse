@@ -19,7 +19,11 @@ public:
     void replaceData(const SerializationInfo & other) override;
 
     MutableSerializationInfoPtr clone() const override;
-    MutableSerializationInfoPtr createWithType(const IDataType & type, const Settings & new_settings) const override;
+
+    MutableSerializationInfoPtr createWithType(
+        const IDataType & old_type,
+        const IDataType & new_type,
+        const Settings & new_settings) const override;
 
     void serialializeKindBinary(WriteBuffer & out) const override;
     void deserializeFromKindsBinary(ReadBuffer & in) override;

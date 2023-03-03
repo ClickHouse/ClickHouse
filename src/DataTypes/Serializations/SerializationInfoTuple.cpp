@@ -97,16 +97,24 @@ MutableSerializationInfoPtr SerializationInfoTuple::clone() const
     return std::make_shared<SerializationInfoTuple>(std::move(elems_cloned), names, settings);
 }
 
-MutableSerializationInfoPtr SerializationInfoTuple::createWithType(const IDataType & type, const Settings & new_settings) const
+MutableSerializationInfoPtr SerializationInfoTuple::createWithType(
+    const IDataType & old_type,
+    const IDataType & new_type,
+    const Settings & new_settings) const
 {
-    const auto & type_tuple = assert_cast<const DataTypeTuple &>(type);
-    const auto & tuple_elements = type_tuple.getElements();
-    assert(elems.size() == tuple_elements.size());
+    const auto & old_tuple = assert_cast<const DataTypeTuple &>(old_type);
+    const auto & new_tuple = assert_cast<const DataTypeTuple &>(new_type);
+
+    const auto & old_elements = old_tuple.getElements();
+    const auto & new_elements = new_tuple.getElements();
+
+    assert(elems.size() == old_elements.size());
+    assert(elems.size() == new_elements.size());
 
     MutableSerializationInfos infos;
     infos.reserve(elems.size());
     for (size_t i = 0; i < elems.size(); ++i)
-        infos.push_back(elems[i]->createWithType(*tuple_elements[i], new_settings));
+        infos.push_back(elems[i]->createWithType(*old_elements[i], *new_elements[i], new_settings));
 
     return std::make_shared<SerializationInfoTuple>(std::move(infos), names, new_settings);
 }
