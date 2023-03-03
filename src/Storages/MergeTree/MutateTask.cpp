@@ -219,17 +219,17 @@ getColumnsForNewDataPart(
             continue;
         }
 
-        auto old_type = part_columns.getPhysical(name);
+        auto old_type = part_columns.getPhysical(name).type;
         auto new_type = updated_header.getByName(new_name).type;
-
-        if (!new_type->supportsSparseSerialization())
-            continue;
 
         SerializationInfo::Settings settings
         {
             .ratio_of_defaults_for_sparse = source_part->storage.getSettings()->ratio_of_defaults_for_sparse_serialization,
             .choose_kind = false
         };
+
+        if (!new_type->supportsSparseSerialization() || settings.isAlwaysDefault())
+            continue;
 
         auto new_info = new_type->createSerializationInfo(settings);
         if (!old_info->structureEquals(*new_info))
@@ -238,13 +238,7 @@ getColumnsForNewDataPart(
             continue;
         }
 
-        if (!old_info->hasCustomSerialization())
-        {
-            new_serialization_infos.emplace(new_name, old_info);
-            continue;
-        }
-
-        new_info = old_info->createWithType(*new_type, settings);
+        new_info = old_info->createWithType(*old_type, *new_type, settings);
         new_serialization_infos.emplace(new_name, std::move(new_info));
     }
 
