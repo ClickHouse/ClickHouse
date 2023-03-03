@@ -203,6 +203,7 @@ namespace
 
 bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    // poco_assert("ParserCreateRowPolicyQuery::parseImpl" == nullptr);
     bool alter = false;
     if (attach_mode)
     {

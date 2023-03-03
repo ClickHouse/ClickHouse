@@ -3,6 +3,8 @@
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 
+#include <Common/logger_useful.h>
+
 
 namespace DB
 {
@@ -18,6 +20,12 @@ size_t EnabledRowPolicies::Hash::operator()(const MixedFiltersKey & key) const
     return std::hash<std::string_view>{}(key.database) - std::hash<std::string_view>{}(key.table_name) + static_cast<size_t>(key.filter_type);
 }
 
+
+// size_t EnabledRowPolicies::Hash::operator()(const MixedFiltersKey & key) const
+// {
+//     return std::hash<std::string_view>{}(key.database) + static_cast<size_t>(key.filter_type);
+// }
+
 EnabledRowPolicies::EnabledRowPolicies() : params()
 {
 }
@@ -32,11 +40,37 @@ EnabledRowPolicies::~EnabledRowPolicies() = default;
 RowPolicyFilterPtr EnabledRowPolicies::getFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const
 {
     /// We don't lock `mutex` here.
+
     auto loaded = mixed_filters.load();
+    {
+
+
+        for (auto it = loaded->begin(); it != loaded->end(); ++it)
+        {
+            LOG_TRACE((&Poco::Logger::get("EnabledRowPolicies::getFilter")), "  db: {}, table {}", it->first.database, it->first.table_name);
+
+        }
+
+    }
+
+
+
+
     auto it = loaded->find({database, table_name, filter_type});
     if (it == loaded->end())
-        return {};
+    {
+        it = loaded->find({database, "*", filter_type});
+        if (it == loaded->end())
+        {
+            LOG_TRACE((&Poco::Logger::get("EnabledRowPolicies::getFilter")), "db: {}, table {} - not found ({} records)",
+                database, table_name, loaded->size());
+            return {};
+        }
+    }
 
+
+    LOG_TRACE((&Poco::Logger::get("EnabledRowPolicies::getFilter")), "db: {}, table {} - found ({} records)",
+        database, table_name, loaded->size());
     return it->second;
 }
 

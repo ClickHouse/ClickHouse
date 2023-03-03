@@ -12,6 +12,7 @@ namespace DB
 class AccessControl;
 struct RolesOrUsersSet;
 struct RowPolicy;
+
 using RowPolicyPtr = std::shared_ptr<const RowPolicy>;
 
 /// Stores read and parsed row policies.
@@ -35,14 +36,18 @@ private:
         ASTPtr parsed_filters[static_cast<size_t>(RowPolicyFilterType::MAX)];
     };
 
+    using PolicyMap = std::unordered_map<UUID, PolicyInfo>;
+
     void ensureAllRowPoliciesRead();
     void rowPolicyAddedOrChanged(const UUID & policy_id, const RowPolicyPtr & new_policy);
     void rowPolicyRemoved(const UUID & policy_id);
     void mixFilters();
     void mixFiltersFor(EnabledRowPolicies & enabled);
 
+
     const AccessControl & access_control;
-    std::unordered_map<UUID, PolicyInfo> all_policies;
+    PolicyMap database_policies;
+    PolicyMap table_policies;
     bool all_policies_read = false;
     scope_guard subscription;
     std::map<EnabledRowPolicies::Params, std::weak_ptr<EnabledRowPolicies>> enabled_row_policies;
