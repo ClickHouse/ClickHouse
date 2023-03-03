@@ -7,7 +7,7 @@ import logging
 import time
 from dataclasses import dataclass
 from pprint import pformat
-from typing import Any, List, Literal, Optional
+from typing import Any, List, Literal, Optional, Tuple
 
 import boto3  # type: ignore
 import requests  # type: ignore
@@ -48,6 +48,19 @@ class Queue:
     status: Literal["in_progress", "queued"]
     lentgh: int
     label: str
+
+
+def get_scales(runner_type: str) -> Tuple[int, int]:
+    "returns the multipliers for scaling down and up ASG by types"
+    # Scaling down is quicker on the lack of running jobs than scaling up on
+    # queue
+    scale_down = 3
+    scale_up = 5
+    if runner_type == "style-checker":
+        # the style checkers have so many noise, so it scales up too quickly
+        scale_down = 2
+        scale_up = 10
+    return scale_down, scale_up
 
 
 ### VENDORING
@@ -131,6 +144,7 @@ def set_capacity(
             continue
         raise ValueError("Queue status is not in ['in_progress', 'queued']")
 
+    scale_down, scale_up = get_scales(runner_type)
     capacity_reserve = max(0, asg["DesiredCapacity"] - running)
     stop = False
     if queued:
@@ -139,9 +153,10 @@ def set_capacity(
         stop = stop or (asg["DesiredCapacity"] - running - queued) > 0
 
         stop = stop or asg["MaxSize"] <= asg["DesiredCapacity"]
-        # Let's calculate a new desired capacity. Here the scale is used to not
-        # scale up and down too quickly
-        desired_capacity = asg["DesiredCapacity"] + ((queued - capacity_reserve) // 5)
+        # Let's calculate a new desired capacity
+        desired_capacity = asg["DesiredCapacity"] + (
+            (queued - capacity_reserve) // scale_up
+        )
         desired_capacity = max(desired_capacity, asg["MinSize"])
         desired_capacity = min(desired_capacity, asg["MaxSize"])
         # Finally, should the capacity be even changed
@@ -168,8 +183,7 @@ def set_capacity(
     # Now we will calculate if we need to scale down
     stop = stop or asg["DesiredCapacity"] <= asg["MinSize"]
     stop = stop or asg["DesiredCapacity"] <= running
-    # Scale down quicker than scale up
-    desired_capacity = asg["DesiredCapacity"] - (capacity_reserve // 3)
+    desired_capacity = asg["DesiredCapacity"] - (capacity_reserve // scale_down)
     desired_capacity = max(desired_capacity, asg["MinSize"])
     desired_capacity = min(desired_capacity, asg["MaxSize"])
     stop = stop or asg["DesiredCapacity"] == desired_capacity
