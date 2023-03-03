@@ -109,6 +109,7 @@ namespace ErrorCodes
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
     extern const int UNKNOWN_PROTOCOL;
     extern const int AUTHENTICATION_FAILED;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_)
@@ -415,17 +416,25 @@ void TCPHandler::runImpl()
             after_check_cancelled.restart();
             after_send_progress.restart();
 
+            auto finish_or_cancel = [this]()
+            {
+                if (state.is_cancelled)
+                    state.io.onCancelOrConnectionLoss();
+                else
+                    state.io.onFinish();
+            };
+
             if (state.io.pipeline.pushing())
             {
                 /// FIXME: check explicitly that insert query suggests to receive data via native protocol,
                 state.need_receive_data_for_insert = true;
                 processInsertQuery();
-                state.io.onFinish();
+                finish_or_cancel();
             }
             else if (state.io.pipeline.pulling())
             {
                 processOrdinaryQueryWithProcessors();
-                state.io.onFinish();
+                finish_or_cancel();
             }
             else if (state.io.pipeline.completed())
             {
@@ -454,7 +463,7 @@ void TCPHandler::runImpl()
                     executor.execute();
                 }
 
-                state.io.onFinish();
+                finish_or_cancel();
 
                 std::lock_guard lock(task_callback_mutex);
 
@@ -468,7 +477,7 @@ void TCPHandler::runImpl()
             }
             else
             {
-                state.io.onFinish();
+                finish_or_cancel();
             }
 
             /// Do it before sending end of stream, to have a chance to show log message in client.
@@ -660,6 +669,7 @@ bool TCPHandler::readDataNext()
             {
                 LOG_INFO(log, "Client has dropped the connection, cancel the query.");
                 state.is_connection_closed = true;
+                state.is_cancelled = true;
                 break;
             }
 
@@ -703,6 +713,9 @@ void TCPHandler::readData()
 
     while (readDataNext())
         ;
+
+    if (state.is_cancelled)
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 }
 
 
@@ -713,6 +726,9 @@ void TCPHandler::skipData()
 
     while (readDataNext())
         ;
+
+    if (state.is_cancelled)
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 }
 
 
@@ -749,7 +765,10 @@ void TCPHandler::processInsertQuery()
         while (readDataNext())
             executor.push(std::move(state.block_for_insert));
 
-        executor.finish();
+        if (state.is_cancelled)
+            executor.cancel();
+        else
+            executor.finish();
     };
 
     if (num_threads > 1)
@@ -1048,7 +1067,7 @@ bool TCPHandler::receiveProxyHeader()
     /// Only PROXYv1 is supported.
     /// Validation of protocol is not fully performed.
 
-    LimitReadBuffer limit_in(*in, 107, true); /// Maximum length from the specs.
+    LimitReadBuffer limit_in(*in, 107, /* trow_exception */ true, /* exact_limit */ {}); /// Maximum length from the specs.
 
     assertString("PROXY ", limit_in);
 
@@ -1316,6 +1335,9 @@ bool TCPHandler::receivePacket()
                 std::this_thread::sleep_for(ms);
             }
 
+            LOG_INFO(log, "Received 'Cancel' packet from the client, canceling the query");
+            state.is_cancelled = true;
+
             return false;
         }
 
@@ -1357,6 +1379,7 @@ String TCPHandler::receiveReadTaskResponseAssumeLocked()
     {
         if (packet_type == Protocol::Client::Cancel)
         {
+            LOG_INFO(log, "Received 'Cancel' packet from the client, canceling the read task");
             state.is_cancelled = true;
             /// For testing connection collector.
             if (unlikely(sleep_in_receive_cancel.totalMilliseconds()))
@@ -1390,6 +1413,7 @@ std::optional<ParallelReadResponse> TCPHandler::receivePartitionMergeTreeReadTas
     {
         if (packet_type == Protocol::Client::Cancel)
         {
+            LOG_INFO(log, "Received 'Cancel' packet from the client, canceling the MergeTree read task");
             state.is_cancelled = true;
             /// For testing connection collector.
             if (unlikely(sleep_in_receive_cancel.totalMilliseconds()))

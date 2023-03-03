@@ -125,7 +125,7 @@ void PrometheusMetricsWriter::write(WriteBuffer & wb) const
     {
         for (size_t i = 0, end = CurrentStatusInfo::end(); i < end; ++i)
         {
-            std::lock_guard<std::mutex> lock(CurrentStatusInfo::locks[static_cast<CurrentStatusInfo::Status>(i)]);
+            std::lock_guard lock(CurrentStatusInfo::locks[static_cast<CurrentStatusInfo::Status>(i)]);
             std::string metric_name{CurrentStatusInfo::getName(static_cast<CurrentStatusInfo::Status>(i))};
             std::string metric_doc{CurrentStatusInfo::getDocumentation(static_cast<CurrentStatusInfo::Status>(i))};
 
