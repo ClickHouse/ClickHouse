@@ -50,7 +50,7 @@ void download(const std::string & cache_base_path, DB::FileSegment & file_segmen
         fs::create_directories(subdir);
 
     std::string data(size, '0');
-    file_segment.write(data.data(), size, file_segment.getCurrentWriteOffset());
+    file_segment.write(data.data(), size, file_segment.getCurrentWriteOffset(false));
 }
 
 using Range = FileSegment::Range;
@@ -102,7 +102,7 @@ void download(FileSegment & file_segment)
 
     ASSERT_EQ(file_segment.getOrSetDownloader(), FileSegment::getCallerId());
     ASSERT_EQ(file_segment.state(), State::DOWNLOADING);
-    ASSERT_EQ(file_segment.getDownloadedSize(), 0);
+    ASSERT_EQ(file_segment.getDownloadedSize(false), 0);
 
     ASSERT_TRUE(file_segment.reserve(file_segment.range().size()));
     download(cache_base_path, file_segment);
@@ -115,7 +115,7 @@ void download(FileSegment & file_segment)
 void assertDownloadFails(FileSegment & file_segment)
 {
     ASSERT_EQ(file_segment.getOrSetDownloader(), FileSegment::getCallerId());
-    ASSERT_EQ(file_segment.getDownloadedSize(), 0);
+    ASSERT_EQ(file_segment.getDownloadedSize(false), 0);
     ASSERT_FALSE(file_segment.reserve(file_segment.range().size()));
     file_segment.complete();
 }

@@ -192,11 +192,11 @@ public:
 
     void incrementHitsCount() { ++hits_count; }
 
-    size_t getCurrentWriteOffset() const;
+    size_t getCurrentWriteOffset(bool sync) const;
 
-    size_t getFirstNonDownloadedOffset() const;
+    size_t getFirstNonDownloadedOffset(bool sync) const;
 
-    size_t getDownloadedSize() const;
+    size_t getDownloadedSize(bool sync) const;
 
     /// Now detached status can be used in the following cases:
     /// 1. there is only 1 remaining file segment holder
@@ -262,12 +262,7 @@ public:
     size_t getReservedSize() const;
 
 private:
-    size_t getFirstNonDownloadedOffsetUnlocked(const FileSegmentGuard::Lock &) const;
-    size_t getCurrentWriteOffsetUnlocked(const FileSegmentGuard::Lock &) const;
-    size_t getDownloadedSizeUnlocked(const FileSegmentGuard::Lock &) const;
-
     String getInfoForLogUnlocked(const FileSegmentGuard::Lock &) const;
-
     String getDownloaderUnlocked(const FileSegmentGuard::Lock &) const;
     void resetDownloaderUnlocked(const FileSegmentGuard::Lock &);
     void resetDownloadingStateUnlocked(const FileSegmentGuard::Lock &);
@@ -318,6 +313,7 @@ private:
     /// downloaded_size should always be less or equal to reserved_size
     std::atomic<size_t> downloaded_size = 0;
     std::atomic<size_t> reserved_size = 0;
+    mutable std::mutex download_mutex;
 
     mutable FileSegmentGuard segment_guard;
     std::weak_ptr<KeyMetadata> key_metadata;

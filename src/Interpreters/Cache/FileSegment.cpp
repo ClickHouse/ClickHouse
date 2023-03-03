@@ -96,36 +96,23 @@ size_t FileSegment::getReservedSize() const
     return reserved_size;
 }
 
-size_t FileSegment::getFirstNonDownloadedOffset() const
+size_t FileSegment::getFirstNonDownloadedOffset(bool sync) const
 {
-    auto lock = segment_guard.lock();
-    return getFirstNonDownloadedOffsetUnlocked(lock);
+    return range().left + getDownloadedSize(sync);
 }
 
-size_t FileSegment::getFirstNonDownloadedOffsetUnlocked(const FileSegmentGuard::Lock & lock) const
+size_t FileSegment::getCurrentWriteOffset(bool sync) const
 {
-    return range().left + getDownloadedSizeUnlocked(lock);
+    return getFirstNonDownloadedOffset(sync);
 }
 
-size_t FileSegment::getCurrentWriteOffset() const
+size_t FileSegment::getDownloadedSize(bool sync) const
 {
-    auto lock = segment_guard.lock();
-    return getCurrentWriteOffsetUnlocked(lock);
-}
-
-size_t FileSegment::getCurrentWriteOffsetUnlocked(const FileSegmentGuard::Lock & lock) const
-{
-    return getFirstNonDownloadedOffsetUnlocked(lock);
-}
-
-size_t FileSegment::getDownloadedSize() const
-{
-    auto lock = segment_guard.lock();
-    return getDownloadedSizeUnlocked(lock);
-}
-
-size_t FileSegment::getDownloadedSizeUnlocked(const FileSegmentGuard::Lock &) const
-{
+    if (sync)
+    {
+        std::lock_guard lock(download_mutex);
+        return downloaded_size;
+    }
     return downloaded_size;
 }
 
@@ -195,7 +182,7 @@ void FileSegment::resetDownloadingStateUnlocked([[maybe_unused]] const FileSegme
     assert(isDownloaderUnlocked(lock));
     assert(download_state == State::DOWNLOADING);
 
-    size_t current_downloaded_size = getDownloadedSizeUnlocked(lock);
+    size_t current_downloaded_size = getDownloadedSize(true);
     /// range().size() can equal 0 in case of write-though cache.
     if (current_downloaded_size != 0 && current_downloaded_size == range().size())
         setDownloadedUnlocked(lock);
@@ -312,14 +299,14 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
                 ErrorCodes::LOGICAL_ERROR,
                 "Expected DOWNLOADING state, got {}", stateToString(download_state));
 
-        size_t first_non_downloaded_offset = getFirstNonDownloadedOffsetUnlocked(lock);
+        size_t first_non_downloaded_offset = getFirstNonDownloadedOffset(false);
         if (offset != first_non_downloaded_offset)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Attempt to write {} bytes to offset: {}, but current write offset is {}",
                 size, offset, first_non_downloaded_offset);
 
-        size_t current_downloaded_size = getDownloadedSizeUnlocked(lock);
+        size_t current_downloaded_size = getDownloadedSize(false);
         chassert(reserved_size >= current_downloaded_size);
         size_t free_reserved_size = reserved_size - current_downloaded_size;
 
@@ -347,6 +334,8 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
     {
         cache_writer->write(from, size);
 
+        std::lock_guard lock(download_mutex);
+
         cache_writer->next();
 
         downloaded_size += size;
@@ -366,7 +355,7 @@ void FileSegment::write(const char * from, size_t size, size_t offset)
         throw;
     }
 
-    chassert(getFirstNonDownloadedOffset() == offset + size);
+    chassert(getFirstNonDownloadedOffset(false) == offset + size);
 }
 
 FileSegment::State FileSegment::wait()
@@ -420,7 +409,7 @@ bool FileSegment::reserve(size_t size_to_reserve)
         assertNotDetachedUnlocked(lock);
         assertIsDownloaderUnlocked("reserve", lock);
 
-        expected_downloaded_size = getDownloadedSizeUnlocked(lock);
+        expected_downloaded_size = getDownloadedSize(false);
 
         is_file_segment_size_exceeded = expected_downloaded_size + size_to_reserve > range().size();
         if (is_file_segment_size_exceeded && !is_unbound)
@@ -452,7 +441,7 @@ bool FileSegment::reserve(size_t size_to_reserve)
         if (is_unbound && is_file_segment_size_exceeded)
             segment_range.right = range().left + expected_downloaded_size + size_to_reserve;
 
-        reserved = cache->tryReserve(key(), offset(), size_to_reserve);
+        reserved = cache->tryReserve(key(), offset(), size_to_reserve, key_metadata.lock());
         if (reserved)
         {
             /// No lock is required because reserved size is always
@@ -480,8 +469,8 @@ void FileSegment::setDownloadedUnlocked([[maybe_unused]] const FileSegmentGuard:
         remote_file_reader.reset();
     }
 
-    assert(getDownloadedSizeUnlocked(lock) > 0);
-    assert(std::filesystem::file_size(file_path) > 0);
+    chassert(getDownloadedSize(false) > 0);
+    chassert(std::filesystem::file_size(file_path) > 0);
 }
 
 void FileSegment::setDownloadFailedUnlocked(const FileSegmentGuard::Lock & lock)
@@ -547,7 +536,7 @@ void FileSegment::completeUnlocked(LockedKey & locked_key, const CacheGuard::Loc
 
     const bool is_downloader = isDownloaderUnlocked(segment_lock);
     const bool is_last_holder = locked_key.isLastHolder(offset());
-    const size_t current_downloaded_size = getDownloadedSizeUnlocked(segment_lock);
+    const size_t current_downloaded_size = getDownloadedSize(true);
 
     SCOPE_EXIT({
         if (is_downloader)
@@ -587,8 +576,8 @@ void FileSegment::completeUnlocked(LockedKey & locked_key, const CacheGuard::Loc
     {
         case State::DOWNLOADED:
         {
-            chassert(getDownloadedSizeUnlocked(segment_lock) == range().size());
-            chassert(getDownloadedSizeUnlocked(segment_lock) == std::filesystem::file_size(file_path));
+            chassert(getDownloadedSize(false) == range().size());
+            chassert(getDownloadedSize(false) == std::filesystem::file_size(file_path));
             chassert(!cache_writer);
 
             is_completed = true;
@@ -648,17 +637,17 @@ String FileSegment::getInfoForLog() const
     return getInfoForLogUnlocked(lock);
 }
 
-String FileSegment::getInfoForLogUnlocked(const FileSegmentGuard::Lock & lock) const
+String FileSegment::getInfoForLogUnlocked(const FileSegmentGuard::Lock &) const
 {
     WriteBufferFromOwnString info;
     info << "File segment: " << range().toString() << ", ";
     info << "key: " << key().toString() << ", ";
     info << "state: " << download_state << ", ";
-    info << "downloaded size: " << getDownloadedSizeUnlocked(lock) << ", ";
+    info << "downloaded size: " << getDownloadedSize(false) << ", ";
     info << "reserved size: " << reserved_size.load() << ", ";
     info << "downloader id: " << (downloader_id.empty() ? "None" : downloader_id) << ", ";
-    info << "current write offset: " << getCurrentWriteOffsetUnlocked(lock) << ", ";
-    info << "first non-downloaded offset: " << getFirstNonDownloadedOffsetUnlocked(lock) << ", ";
+    info << "current write offset: " << getCurrentWriteOffset(false) << ", ";
+    info << "first non-downloaded offset: " << getFirstNonDownloadedOffset(false) << ", ";
     info << "caller id: " << getCallerId() << ", ";
     info << "kind: " << toString(segment_kind);
 
@@ -755,7 +744,7 @@ FileSegmentPtr FileSegment::getSnapshot(const FileSegmentPtr & file_segment)
         CreateFileSegmentSettings(file_segment->getKind()));
 
     snapshot->hits_count = file_segment->getHitsCount();
-    snapshot->downloaded_size = file_segment->getDownloadedSizeUnlocked(lock);
+    snapshot->downloaded_size = file_segment->getDownloadedSize(false);
     snapshot->download_state = file_segment->download_state;
 
     snapshot->ref_count = file_segment.use_count();

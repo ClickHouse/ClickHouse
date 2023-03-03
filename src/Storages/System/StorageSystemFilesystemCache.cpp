@@ -61,7 +61,7 @@ void StorageSystemFilesystemCache::fillData(MutableColumns & res_columns, Contex
             res_columns[6]->insert(FileSegment::stateToString(file_segment->state()));
             res_columns[7]->insert(file_segment->getHitsCount());
             res_columns[8]->insert(file_segment->getRefCount());
-            res_columns[9]->insert(file_segment->getDownloadedSize());
+            res_columns[9]->insert(file_segment->getDownloadedSize(false));
             res_columns[10]->insert(file_segment->isPersistent());
             res_columns[11]->insert(toString(file_segment->getKind()));
         }

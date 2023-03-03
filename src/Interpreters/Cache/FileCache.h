@@ -100,7 +100,7 @@ public:
 
     size_t getMaxFileSegmentSize() const { return max_file_segment_size; }
 
-    bool tryReserve(const Key & key, size_t offset, size_t size);
+    bool tryReserve(const Key & key, size_t offset, size_t size, KeyMetadataPtr key_metadata);
 
     FileSegmentsHolderPtr getSnapshot();
 
