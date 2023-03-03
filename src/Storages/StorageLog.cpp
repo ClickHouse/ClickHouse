@@ -118,7 +118,7 @@ private:
 
             if (limited_by_file_size)
             {
-                limited.emplace(*plain, file_size - offset, false);
+                limited.emplace(*plain, file_size - offset, /* trow_exception */ false, /* exact_limit */ std::optional<size_t>());
                 compressed.emplace(*limited);
             }
             else
