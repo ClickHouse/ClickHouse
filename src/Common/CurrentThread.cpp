@@ -67,8 +67,8 @@ void CurrentThread::attachInternalTextLogsQueue(const std::shared_ptr<InternalTe
 
 void CurrentThread::setFatalErrorCallback(std::function<void()> callback)
 {
-    if (unlikely(!current_thread))
-        return;
+    /// It does not make sense to set a callback for sending logs to a client if there's no thread status
+    chassert(current_thread);
     current_thread->setFatalErrorCallback(callback);
 }
 
