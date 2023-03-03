@@ -135,11 +135,13 @@ Example of configuration for versions later or equal to 22.8:
             </cache>
         </disks>
         <policies>
-            <volumes>
-                <main>
-                    <disk>cache</disk>
-                </main>
-            </volumes>
+            <s3-cache>
+                <volumes>
+                    <main>
+                        <disk>cache</disk>
+                    </main>
+                </volumes>
+            </s3-cache>
         <policies>
     </storage_configuration>
 ```
