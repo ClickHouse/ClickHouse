@@ -233,6 +233,11 @@ bool AccessRightsElements::sameDatabaseAndTableAndParameter() const
     return (size() < 2) || std::all_of(std::next(begin()), end(), [this](const AccessRightsElement & e) { return e.sameDatabaseAndTableAndParameter(front()); });
 }
 
+bool AccessRightsElements::sameDatabaseAndTable() const
+{
+    return (size() < 2) || std::all_of(std::next(begin()), end(), [this](const AccessRightsElement & e) { return e.sameDatabaseAndTable(front()); });
+}
+
 bool AccessRightsElements::sameOptions() const
 {
     return (size() < 2) || std::all_of(std::next(begin()), end(), [this](const AccessRightsElement & e) { return e.sameOptions(front()); });

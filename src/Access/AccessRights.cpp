@@ -124,20 +124,29 @@ namespace
                     const auto & element = sorted[i];
                     if (element.access_flags)
                     {
-                        auto per_parameter = element.access_flags.splitIntoParameterTypes();
-                        if (per_parameter.size() == 1)
+                        const bool all_granted = sorted.size() == 1 && element.access_flags.contains(AccessFlags::allFlags());
+                        if (all_granted)
                         {
                             /// Easy case: one Element is converted to one AccessRightsElement.
                             res.emplace_back(element.getResult());
                         }
                         else
                         {
-                            /// Difficult case: one element is converted into multiple AccessRightsElements.
-                            for (const auto & [_, parameter_flags] : per_parameter)
+                            auto per_parameter = element.access_flags.splitIntoParameterTypes();
+                            if (per_parameter.size() == 1)
                             {
-                                auto current_element{element};
-                                current_element.access_flags = parameter_flags;
-                                res.emplace_back(current_element.getResult());
+                                /// Easy case: one Element is converted to one AccessRightsElement.
+                                res.emplace_back(element.getResult());
+                            }
+                            else
+                            {
+                                /// Difficult case: one element is converted into multiple AccessRightsElements.
+                                for (const auto & [_, parameter_flags] : per_parameter)
+                                {
+                                    auto current_element{element};
+                                    current_element.access_flags = parameter_flags;
+                                    res.emplace_back(current_element.getResult());
+                                }
                             }
                         }
                     }
