@@ -35,7 +35,7 @@ FROM
     FROM default.workflow_jobs
     WHERE has(labels, 'self-hosted')
         AND hasAny({RUNNER_TYPE_LABELS}, labels)
-        AND started_at > now() - INTERVAL 2 DAY
+        AND started_at > now() - INTERVAL 1 DAY
     GROUP BY ALL
     HAVING last_status IN ('in_progress', 'queued')
 )
@@ -231,6 +231,7 @@ def main(dry_run: bool = True) -> None:
             for queue in queues
             if runner_type in queue["labels"]
         ]
+        runner_queues = runner_queues or [Queue("in_progress", 0, runner_type)]
         set_capacity(runner_type, runner_queues, asg_client, dry_run)
 
 
