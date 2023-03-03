@@ -175,23 +175,22 @@ static void setExceptionStackTrace(QueryLogElement & elem)
 
 
 /// Log exception (with query info) into text log (not into system table).
-static void logException(ContextPtr context, QueryLogElement & elem)
+static void logException(ContextPtr context, QueryLogElement & elem, bool log_error = true)
 {
     String comment;
     if (!elem.log_comment.empty())
         comment = fmt::format(" (comment: {})", elem.log_comment);
 
-    if (elem.stack_trace.empty())
-        LOG_ERROR(
-            &Poco::Logger::get("executeQuery"),
+    String message;
+    if (elem.stack_trace.empty() || !log_error)
+        message = fmt::format(
             "{} (from {}){} (in query: {})",
             elem.exception,
             context->getClientInfo().current_address.toString(),
             comment,
             toOneLineQuery(elem.query));
     else
-        LOG_ERROR(
-            &Poco::Logger::get("executeQuery"),
+        message = fmt::format(
             "{} (from {}){} (in query: {})"
             ", Stack trace (when copying this message, always include the lines below):\n\n{}",
             elem.exception,
@@ -199,6 +198,11 @@ static void logException(ContextPtr context, QueryLogElement & elem)
             comment,
             toOneLineQuery(elem.query),
             elem.stack_trace);
+
+    if (log_error)
+        LOG_ERROR(&Poco::Logger::get("executeQuery"), message);
+    else
+        LOG_INFO(&Poco::Logger::get("executeQuery"), message);
 }
 
 static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr context, UInt64 current_time_us, ASTPtr ast, const std::shared_ptr<OpenTelemetry::SpanHolder> & query_span)
@@ -978,7 +982,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                                        quota(quota),
                                        status_info_to_query_log,
                                        implicit_txn_control,
-                                       query_span]() mutable
+                                       query_span](bool log_error) mutable
             {
                 if (implicit_txn_control)
                 {
@@ -1015,9 +1019,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     status_info_to_query_log(elem, info, ast, context);
                 }
 
-                if (current_settings.calculate_text_stack_trace)
+                if (current_settings.calculate_text_stack_trace && log_error)
                     setExceptionStackTrace(elem);
-                logException(context, elem);
+                logException(context, elem, log_error);
 
                 /// In case of exception we log internal queries also
                 if (log_queries && elem.type >= log_queries_min_type && static_cast<Int64>(elem.query_duration_ms) >= log_queries_min_query_duration_ms)
@@ -1138,7 +1142,7 @@ void executeQuery(
 
         /// If not - copy enough data into 'parse_buf'.
         WriteBufferFromVector<PODArray<char>> out(parse_buf);
-        LimitReadBuffer limit(istr, max_query_size + 1, false);
+        LimitReadBuffer limit(istr, max_query_size + 1, /* trow_exception */ false, /* exact_limit */ {});
         copyData(limit, out);
         out.finalize();
 

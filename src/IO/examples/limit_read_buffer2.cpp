@@ -30,7 +30,7 @@ try
 
         ReadBuffer in(src.data(), src.size(), 0);
 
-        LimitReadBuffer limit_in(in, 1, false);
+        LimitReadBuffer limit_in(in, 1, /* trow_exception */ false, /* exact_limit */ {});
 
         {
             WriteBufferFromString out(dst);
@@ -67,7 +67,7 @@ try
             char x;
             readChar(x, in);
 
-            LimitReadBuffer limit_in(in, 1, false);
+            LimitReadBuffer limit_in(in, 1, /* trow_exception */ false, /* exact_limit */ {});
 
             copyData(limit_in, out);
 
@@ -112,7 +112,7 @@ try
         ReadBuffer in(src.data(), src.size(), 0);
 
         {
-            LimitReadBuffer limit_in(in, 1, false);
+            LimitReadBuffer limit_in(in, 1, /* trow_exception */ false, /* exact_limit */ {});
 
             char x;
             readChar(x, limit_in);
