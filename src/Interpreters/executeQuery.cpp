@@ -225,9 +225,9 @@ static void logException(ContextPtr context, QueryLogElement & elem, bool log_er
             elem.stack_trace);
 
     if (log_error)
-        LOG_ERROR(&Poco::Logger::get("executeQuery"), message);
+        LOG_ERROR(&Poco::Logger::get("executeQuery"), fmt::runtime(message));
     else
-        LOG_INFO(&Poco::Logger::get("executeQuery"), message);
+        LOG_INFO(&Poco::Logger::get("executeQuery"), fmt::runtime(message));
 }
 
 
