@@ -66,17 +66,20 @@ struct Settings;
  * Since merge is executed with multiple threads, this class
  * switches the parent MemoryTracker as part of the thread group to account all the memory used.
  */
-class ThreadGroupSwitcher : boost::noncopyable
+class ThreadGroupSwitcher : private boost::noncopyable
 {
 public:
-    explicit ThreadGroupSwitcher(MergeListEntry & merge_list_entry_);
+    explicit ThreadGroupSwitcher(MergeListEntry * merge_list_entry_);
+    ThreadGroupSwitcher(ThreadGroupSwitcher && other);
+    ThreadGroupSwitcher& operator=(ThreadGroupSwitcher && other);
     ~ThreadGroupSwitcher();
 private:
-    MergeListEntry & merge_list_entry;
+    ThreadGroupSwitcher() = default;
+    void swap(ThreadGroupSwitcher & other);
+
+    MergeListEntry * merge_list_entry = nullptr;
     ThreadGroupStatusPtr prev_thread_group;
 };
-
-using ThreadGroupSwitcherPtr = std::unique_ptr<ThreadGroupSwitcher>;
 
 struct MergeListElement : boost::noncopyable
 {

@@ -11,14 +11,14 @@ namespace DB
 {
 
 
-ThreadGroupSwitcher::ThreadGroupSwitcher(MergeListEntry & merge_list_entry_)
+ThreadGroupSwitcher::ThreadGroupSwitcher(MergeListEntry * merge_list_entry_)
     : merge_list_entry(merge_list_entry_)
 {
     prev_thread_group = CurrentThread::getGroup();
     if (!prev_thread_group)
         return;
 
-    CurrentThread::detachGroupIfNotDetached();
+    CurrentThread::detachGroup();
     CurrentThread::attachToGroup(merge_list_entry_->thread_group);
 }
 
@@ -27,9 +27,36 @@ ThreadGroupSwitcher::~ThreadGroupSwitcher()
     if (!prev_thread_group)
         return;
 
+    if (!merge_list_entry)
+        return;
+
     CurrentThread::detachGroup();
     CurrentThread::attachToGroup(prev_thread_group);
 }
+
+ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupSwitcher && other)
+{
+    this->swap(other);
+}
+
+ThreadGroupSwitcher& ThreadGroupSwitcher::operator=(ThreadGroupSwitcher && other)
+{
+    if (this != &other)
+    {
+        auto tmp = ThreadGroupSwitcher();
+        tmp.swap(other);
+        this->swap(tmp);
+    }
+    return *this;
+}
+
+void ThreadGroupSwitcher::swap(ThreadGroupSwitcher & other)
+{
+    std::swap(merge_list_entry, other.merge_list_entry);
+    std::swap(prev_thread_group, other.prev_thread_group);
+    std::swap(prev_query_id, other.prev_query_id);
+}
+
 
 MergeListElement::MergeListElement(
     const StorageID & table_id_,
