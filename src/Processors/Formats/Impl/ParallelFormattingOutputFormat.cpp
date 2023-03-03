@@ -15,7 +15,7 @@ namespace DB
         collector_finished.wait();
 
         {
-            std::lock_guard<std::mutex> lock(collector_thread_mutex);
+            std::lock_guard lock(collector_thread_mutex);
             if (collector_thread.joinable())
                 collector_thread.join();
         }
@@ -80,7 +80,7 @@ namespace DB
         }
 
         {
-            std::lock_guard<std::mutex> lock(collector_thread_mutex);
+            std::lock_guard lock(collector_thread_mutex);
             if (collector_thread.joinable())
                 collector_thread.join();
         }
@@ -137,7 +137,7 @@ namespace DB
 
                 {
                     /// Notify other threads.
-                    std::lock_guard<std::mutex> lock(mutex);
+                    std::lock_guard lock(mutex);
                     unit.status = READY_TO_INSERT;
                     writer_condvar.notify_all();
                 }
@@ -227,7 +227,7 @@ namespace DB
             unit.actual_memory_size = out_buffer.getActualSize();
 
             {
-                std::lock_guard<std::mutex> lock(mutex);
+                std::lock_guard lock(mutex);
                 unit.status = READY_TO_READ;
                 collector_condvar.notify_all();
             }
