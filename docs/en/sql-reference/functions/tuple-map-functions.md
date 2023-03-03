@@ -68,7 +68,9 @@ Result:
 
 ## mapFromArrays
 
-mapFromArrays merges an array of keys and an array of values into a Map.
+Merges an [Array](../../sql-reference/data-types/array.md) of keys and an [Array](../../sql-reference/data-types/array.md) of values into a [Map(key, value)](../../sql-reference/data-types/map.md).
+
+The function is a more convenient alternative to `CAST((key_array, value_array), 'Map(key_type, value_type)')`. For example, instead of writing `CAST((['aa', 'bb'], [4, 5]), 'Map(String, UInt32)')`, you can write `mapFromArrays(['aa', 'bb'], [4, 5])`.
   
 **Syntax**
 
@@ -78,7 +80,7 @@ mapFromArrays(keys, values)
 
 Alias: `MAP_FROM_ARRAYS(keys, values)`
   
-**Parameters**
+**Arguments**
 -   `keys` — Given key array to create a map from. The nested type of array must be: [String](../../sql-reference/data-types/string.md), [Integer](../../sql-reference/data-types/int-uint.md), [LowCardinality](../../sql-reference/data-types/lowcardinality.md), [FixedString](../../sql-reference/data-types/fixedstring.md), [UUID](../../sql-reference/data-types/uuid.md), [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), [Date32](../../sql-reference/data-types/date32.md), [Enum](../../sql-reference/data-types/enum.md)
 -   `values`  - Given value array to create a map from.
   
@@ -269,7 +271,7 @@ Determines  whether the `map` contains the `key` parameter.
 mapContains(map, key)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `map` — Map. [Map](../../sql-reference/data-types/map.md).
 -   `key` — Key. Type matches the type of keys of `map` parameter.
@@ -314,7 +316,7 @@ Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operat
 mapKeys(map)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `map` — Map. [Map](../../sql-reference/data-types/map.md).
 
@@ -357,7 +359,7 @@ Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operat
 mapValues(map)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `map` — Map. [Map](../../sql-reference/data-types/map.md).
 
@@ -396,7 +398,7 @@ Result:
 mapContainsKeyLike(map, pattern)
 ```  
   
-**Parameters**
+**Arguments**
   
 -   `map` — Map. [Map](../../sql-reference/data-types/map.md).  
 -   `pattern`  - String pattern to match.  
@@ -434,7 +436,7 @@ Result:
 mapExtractKeyLike(map, pattern)
 ```  
   
-**Parameters**
+**Arguments**
   
 -   `map` — Map. [Map](../../sql-reference/data-types/map.md).  
 -   `pattern`  - String pattern to match.  
@@ -463,8 +465,6 @@ Result:
 │ {}                         │
 └────────────────────────────┘
 ```  
-
-
   
 ## mapApply  
   
@@ -474,7 +474,7 @@ Result:
 mapApply(func, map)
 ```  
   
-**Parameters**
+**Arguments**
   
 -   `func`  - [Lambda function](../../sql-reference/functions/index.md#higher-order-functions---operator-and-lambdaparams-expr-function).
 -   `map` — [Map](../../sql-reference/data-types/map.md).
@@ -514,7 +514,7 @@ Result:
 mapFilter(func, map)
 ```  
   
-**Parameters**
+**Arguments**
 
 -   `func`  - [Lambda function](../../sql-reference/functions/index.md#higher-order-functions---operator-and-lambdaparams-expr-function).
 -   `map` — [Map](../../sql-reference/data-types/map.md).  
@@ -556,7 +556,7 @@ Result:
 mapUpdate(map1, map2)
 ```  
   
-**Parameters**
+**Arguments**
 
 -   `map1` [Map](../../sql-reference/data-types/map.md).
 -   `map2` [Map](../../sql-reference/data-types/map.md).
