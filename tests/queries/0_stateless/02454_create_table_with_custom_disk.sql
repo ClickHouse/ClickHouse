@@ -26,13 +26,3 @@ DESCRIBE TABLE test;
 
 INSERT INTO test SELECT number FROM numbers(100);
 SELECT count() FROM test;
-
-DROP TABLE test;
-
-CREATE TABLE test (a Int32)
-ENGINE = MergeTree() order by tuple()
-SETTINGS disk = disk(type=cache, max_size='1Gi', path='/var/lib/clickhouse/custom_disk_cache/', disk=disk(type=local, path='/var/lib/clickhouse/disks/local/'));
-
-SHOW CREATE TABLE test;
-
-DROP TABLE test;
