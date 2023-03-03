@@ -54,6 +54,7 @@ namespace ErrorCodes
     extern const int CANNOT_ASSIGN_ALTER;
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int MEMORY_LIMIT_EXCEEDED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 constexpr const char * TASK_PROCESSED_OUT_REASON = "Task has been already processed";
@@ -456,6 +457,15 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
     try
     {
         auto query_context = task.makeQueryContext(context, zookeeper);
+
+        chassert(!query_context->getCurrentTransaction());
+        if (query_context->getSettingsRef().implicit_transaction)
+        {
+            if (query_context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot begin an implicit transaction inside distributed DDL query");
+            query_context->setSetting("implicit_transaction", Field{0});
+        }
+
         if (!task.is_initial_query)
             query_scope.emplace(query_context);
         executeQuery(istr, ostr, !task.is_initial_query, query_context, {});
@@ -691,10 +701,9 @@ bool DDLWorker::taskShouldBeExecutedOnLeader(const ASTPtr & ast_ddl, const Stora
     if (auto * alter = ast_ddl->as<ASTAlterQuery>())
     {
         // Setting alters should be executed on all replicas
-        if (alter->isSettingsAlter())
-            return false;
-
-        if (alter->isFreezeAlter())
+        if (alter->isSettingsAlter() ||
+            alter->isFreezeAlter() ||
+            alter->isMovePartitionToDiskOrVolumeAlter())
             return false;
     }
 

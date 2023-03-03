@@ -467,7 +467,7 @@ Port for exchanging data between ClickHouse servers.
 
 The hostname that can be used by other servers to access this server.
 
-If omitted, it is defined in the same way as the `hostname-f` command.
+If omitted, it is defined in the same way as the `hostname -f` command.
 
 Useful for breaking away from a specific network interface.
 
