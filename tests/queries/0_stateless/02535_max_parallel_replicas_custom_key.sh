@@ -12,8 +12,7 @@ function run_with_custom_key {
             for max_replicas in {1..3}; do
                 echo "filter_type='$filter_type' max_replicas=$max_replicas prefer_localhost_replica=$prefer_localhost_replica"
                 query="$1 SETTINGS max_parallel_replicas=$max_replicas\
-    , parallel_replicas_mode='custom_key'\
-    , parallel_replicas_custom_key={'02535_custom_key': '$2'}\
+    , parallel_replicas_custom_key='$2'\
     , parallel_replicas_custom_key_filter_type='$filter_type'\
     , prefer_localhost_replica=$prefer_localhost_replica"
                 $CLICKHOUSE_CLIENT --query="$query"
@@ -32,15 +31,14 @@ run_with_custom_key "SELECT * FROM cluster(test_cluster_one_shard_three_replicas
 $CLICKHOUSE_CLIENT --query="DROP TABLE 02535_custom_key"
 
 $CLICKHOUSE_CLIENT --query="CREATE TABLE 02535_custom_key (x String, y Int32) ENGINE = MergeTree ORDER BY cityHash64(x)"
-$CLICKHOUSE_CLIENT --query="INSERT INTO 02535_custom_key SELECT toString(number), number FROM numbers(1000)"
+$CLICKHOUSE_CLIENT --query="INSERT INTO 02535_custom_key SELECT toString(number), number % 3 FROM numbers(1000)"
 
 function run_count_with_custom_key {
-    run_with_custom_key "SELECT count() FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), 02535_custom_key)" "$1"
+    run_with_custom_key "SELECT y, count() FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), 02535_custom_key) GROUP BY y ORDER BY y" "$1"
 }
 
-run_count_with_custom_key "cityHash64(x)"
 run_count_with_custom_key "y"
-run_count_with_custom_key "cityHash64(x) + y"
-run_count_with_custom_key "cityHash64(x) + 1"
+run_count_with_custom_key "cityHash64(y)"
+run_count_with_custom_key "cityHash64(y) + 1"
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE 02535_custom_key"

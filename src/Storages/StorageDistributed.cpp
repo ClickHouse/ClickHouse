@@ -264,12 +264,6 @@ size_t getClusterQueriedNodes(const Settings & settings, const ClusterPtr & clus
     return (num_remote_shards + num_local_shards) * settings.max_parallel_replicas;
 }
 
-bool canUseCustomKey(const Settings & settings, const Cluster & cluster)
-{
-    return settings.max_parallel_replicas > 1 && settings.parallel_replicas_mode == ParallelReplicasMode::CUSTOM_KEY
-        && cluster.getShardCount() == 1 && cluster.getShardsInfo()[0].getAllNodeCount() > 1;
-}
-
 }
 
 /// For destruction of std::unique_ptr of type that is incomplete in class definition.
@@ -412,36 +406,9 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
 
     size_t nodes = getClusterQueriedNodes(settings, cluster);
 
-    const auto use_virtual_shards = [&]
-    {
-        if (!canUseCustomKey(settings, *cluster))
-            return false;
-
-        auto distributed_table = DatabaseAndTableWithAlias(
-            *getTableExpression(query_info.query->as<ASTSelectQuery &>(), 0), local_context->getCurrentDatabase());
-
-        if (containsCustomKeyForTable(settings.parallel_replicas_custom_key, distributed_table, *local_context))
-        {
-            LOG_INFO(log, "Found custom_key for {}", distributed_table.getQualifiedNamePrefix(false));
-            return true;
-        }
-
-        DatabaseAndTableWithAlias remote_table_info;
-        remote_table_info.database = remote_database;
-        remote_table_info.table = remote_table;
-        if (containsCustomKeyForTable(settings.parallel_replicas_custom_key, remote_table_info, *local_context))
-        {
-            LOG_INFO(log, "Found custom_key for {}", remote_table_info.getQualifiedNamePrefix(false));
-            return true;
-        }
-
-        return false;
-    };
-
-    if (use_virtual_shards())
+    if (query_info.use_custom_key)
     {
         LOG_INFO(log, "Single shard cluster used with custom_key, transforming replicas into virtual shards");
-
         query_info.cluster = cluster->getClusterWithReplicasAsShards(settings, settings.max_parallel_replicas);
     }
     else
@@ -816,25 +783,9 @@ void StorageDistributed::read(
     auto settings = local_context->getSettingsRef();
 
     ClusterProxy::AdditionalShardFilterGenerator additional_shard_filter_generator;
-    if (canUseCustomKey(settings, *getCluster()))
+    if (query_info.use_custom_key)
     {
-        const auto get_custom_key_ast = [&]() -> ASTPtr
-        {
-            auto distributed_table = DatabaseAndTableWithAlias(
-                *getTableExpression(query_info.query->as<ASTSelectQuery &>(), 0), local_context->getCurrentDatabase());
-            if (auto custom_key_ast = parseCustomKeyForTable(settings.parallel_replicas_custom_key, distributed_table, *local_context))
-                return custom_key_ast;
-
-            DatabaseAndTableWithAlias remote_table_info;
-            remote_table_info.database = remote_database;
-            remote_table_info.table = remote_table;
-            if (auto custom_key_ast = parseCustomKeyForTable(settings.parallel_replicas_custom_key, remote_table_info, *local_context))
-                return custom_key_ast;
-
-            return nullptr;
-        };
-
-        if (auto custom_key_ast = get_custom_key_ast())
+        if (auto custom_key_ast = parseCustomKeyForTable(settings.parallel_replicas_custom_key, *local_context))
         {
             if (query_info.getCluster()->getShardCount() == 1)
             {

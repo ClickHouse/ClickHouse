@@ -1,10 +1,11 @@
 -- Tags: replica
 
+SET allow_experimental_parallel_reading_from_replicas=0;
+
 DROP TABLE IF EXISTS t;
 CREATE TABLE t (x String) ENGINE = MergeTree ORDER BY x;
 INSERT INTO t VALUES ('Hello');
 
-SET parallel_replicas_mode = 'sample_key';
 SET max_parallel_replicas = 3;
 SELECT * FROM remote('127.0.0.{2|3|4}', currentDatabase(), t);
 
