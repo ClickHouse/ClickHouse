@@ -402,6 +402,9 @@ def test_introspection():
     assert instance.query("SHOW GRANTS FOR B") == TSV(
         ["GRANT CREATE ON *.* TO B WITH GRANT OPTION"]
     )
+    assert instance.query("SHOW GRANTS FOR default") == TSV(
+        ["GRANT ALL ON *.* TO default WITH GRANT OPTION"]
+    )
     assert instance.query("SHOW GRANTS FOR A,B") == TSV(
         [
             "GRANT SELECT ON test.table TO A",

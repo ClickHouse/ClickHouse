@@ -55,11 +55,20 @@ struct AccessRightsElement
 
     bool sameDatabaseAndTableAndParameter(const AccessRightsElement & other) const
     {
-        return (database == other.database) && (any_database == other.any_database)
-            && (table == other.table) && (any_table == other.any_table)
-            && (parameter == other.parameter) && (any_parameter == other.any_parameter)
+        return sameDatabaseAndTable(other) && sameParameter(other);
+    }
+
+    bool sameParameter(const AccessRightsElement & other) const
+    {
+        return (parameter == other.parameter) && (any_parameter == other.any_parameter)
             && (access_flags.getParameterType() == other.access_flags.getParameterType())
             && (isGlobalWithParameter() == other.isGlobalWithParameter());
+    }
+
+    bool sameDatabaseAndTable(const AccessRightsElement & other) const
+    {
+        return (database == other.database) && (any_database == other.any_database)
+            && (table == other.table) && (any_table == other.any_table);
     }
 
     bool sameOptions(const AccessRightsElement & other) const
@@ -92,6 +101,7 @@ public:
 
     bool empty() const;
     bool sameDatabaseAndTableAndParameter() const;
+    bool sameDatabaseAndTable() const;
     bool sameOptions() const;
 
     /// Resets flags which cannot be granted.

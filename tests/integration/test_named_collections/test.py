@@ -100,7 +100,9 @@ def test_default_access(cluster):
     )
     node.restart_clickhouse()
     assert (
-        node.query("select collection['key1'] from system.named_collections").strip()
+        node.query(
+            "select collection['key1'] from system.named_collections where name = 'collection1'"
+        ).strip()
         == "value1"
     )
     replace_in_users_config(
@@ -111,7 +113,9 @@ def test_default_access(cluster):
     )
     node.restart_clickhouse()
     assert (
-        node.query("select collection['key1'] from system.named_collections").strip()
+        node.query(
+            "select collection['key1'] from system.named_collections where name = 'collection1'"
+        ).strip()
         == "[HIDDEN]"
     )
     replace_in_users_config(
@@ -122,13 +126,19 @@ def test_default_access(cluster):
     )
     node.restart_clickhouse()
     assert (
-        node.query("select collection['key1'] from system.named_collections").strip()
+        node.query(
+            "select collection['key1'] from system.named_collections where name = 'collection1'"
+        ).strip()
         == "value1"
     )
 
 
 def test_granular_access_show_query(cluster):
     node = cluster.instances["node"]
+    assert (
+        "GRANT ALL ON *.* TO default WITH GRANT OPTION"
+        == node.query("SHOW GRANTS FOR default").strip()
+    )  # includes named collections control
     assert 1 == int(node.query("SELECT count() FROM system.named_collections"))
     assert (
         "collection1" == node.query("SELECT name FROM system.named_collections").strip()
