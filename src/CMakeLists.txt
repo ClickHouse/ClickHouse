@@ -229,7 +229,6 @@ add_object_library(clickhouse_core_mysql Core/MySQL)
 add_object_library(clickhouse_compression Compression)
 add_object_library(clickhouse_querypipeline QueryPipeline)
 add_object_library(clickhouse_datatypes DataTypes)
-add_object_library(clickhouse_datatypes_serializations DataTypes/Serializations)
 add_object_library(clickhouse_databases Databases)
 add_object_library(clickhouse_databases_mysql Databases/MySQL)
 add_object_library(clickhouse_disks Disks)
@@ -401,6 +400,7 @@ dbms_target_link_libraries (
         clickhouse_common_zookeeper
         clickhouse_dictionaries_embedded
         clickhouse_parsers
+        clickhouse_serializations
         ch_contrib::lz4
         Poco::JSON
         string_utils
