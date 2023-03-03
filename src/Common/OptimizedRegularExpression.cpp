@@ -47,6 +47,25 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
     Substrings trivial_substrings(1);
     Substring * last_substring = &trivial_substrings.back();
 
+    std::string bracket_string;
+    bool appending_bracket_string = false;
+
+    auto finish_last_substring = [&]()
+    {
+        if (depth != 0)
+            return;
+        /// combine last substr and bracket string
+        last_substring->first += bracket_string;
+        bracket_string = "";
+        /// if we can still append, no need to finish it. e.g. abc(de)fg should capture abcdefg
+        if (!last_substring->first.empty() && !appending_bracket_string)
+        {
+            trivial_substrings.resize(trivial_substrings.size() + 1);
+            last_substring = &trivial_substrings.back();
+        }
+        appending_bracket_string = false;
+    };
+
     bool in_curly_braces = false;
     bool in_square_braces = false;
 
@@ -83,15 +102,21 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
                                 last_substring->second = pos - begin;
                             last_substring->first.push_back(*pos);
                         }
+                        else if (depth == 1 && appending_bracket_string)
+                        {
+                            bracket_string += *pos;
+                        }
                         break;
                     default:
                         /// all other escape sequences are not supported
                         is_trivial = false;
-                        if (!last_substring->first.empty())
-                        {
-                            trivial_substrings.resize(trivial_substrings.size() + 1);
-                            last_substring = &trivial_substrings.back();
-                        }
+                        appending_bracket_string = false;
+                        //if (!last_substring->first.empty())
+                        //{
+                        //    trivial_substrings.resize(trivial_substrings.size() + 1);
+                        //    last_substring = &trivial_substrings.back();
+                        //}
+                        finish_last_substring();
                         break;
                 }
 
@@ -102,8 +127,13 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
             case '|':
                 if (depth == 0)
                     has_alternative_on_depth_0 = true;
+                if (depth == 1)
+                {
+                    appending_bracket_string = false;
+                    bracket_string = "";
+                }
                 is_trivial = false;
-                if (!in_square_braces && !last_substring->first.empty())
+                if (!in_square_braces && !last_substring->first.empty() && depth == 0)
                 {
                     trivial_substrings.resize(trivial_substrings.size() + 1);
                     last_substring = &trivial_substrings.back();
@@ -116,11 +146,10 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
                 {
                     ++depth;
                     is_trivial = false;
-                    if (!last_substring->first.empty())
-                    {
-                        trivial_substrings.resize(trivial_substrings.size() + 1);
-                        last_substring = &trivial_substrings.back();
-                    }
+                    /// we dont change the value of appending_bracket_string when depth > 1
+                    /// e.g. (de(fg)) should capture defg
+                    if (depth == 1)
+                        appending_bracket_string = true;
 
                     /// Check for case-insensitive flag.
                     if (pos + 1 < end && pos[1] == '?')
@@ -143,6 +172,10 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
                                 break;
                         }
                     }
+                    if (pos + 2 < end && pos[1] == '?' && pos[2] == ':')
+                    {
+                        pos += 2;
+                    }
                 }
                 ++pos;
                 break;
@@ -151,11 +184,8 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
                 in_square_braces = true;
                 ++depth;
                 is_trivial = false;
-                if (!last_substring->first.empty())
-                {
-                    trivial_substrings.resize(trivial_substrings.size() + 1);
-                    last_substring = &trivial_substrings.back();
-                }
+                appending_bracket_string = false;
+                finish_last_substring();
                 ++pos;
                 break;
 
@@ -166,11 +196,12 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
                 in_square_braces = false;
                 --depth;
                 is_trivial = false;
-                if (!last_substring->first.empty())
-                {
-                    trivial_substrings.resize(trivial_substrings.size() + 1);
-                    last_substring = &trivial_substrings.back();
-                }
+                finish_last_substring();
+                //if (!last_substring->first.empty())
+                //{
+                //    trivial_substrings.resize(trivial_substrings.size() + 1);
+                //    last_substring = &trivial_substrings.back();
+                //}
                 ++pos;
                 break;
 
@@ -179,22 +210,21 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
                 {
                     --depth;
                     is_trivial = false;
-                    if (!last_substring->first.empty())
+                    if (pos + 1 < end && (pos[1] == '?' || pos[1] == '*'))
                     {
-                        trivial_substrings.resize(trivial_substrings.size() + 1);
-                        last_substring = &trivial_substrings.back();
+                        /// TODO: (abc(def)?) should remain the abc part.
+                        bracket_string = "";
+                        appending_bracket_string = false;
                     }
+                    finish_last_substring();
                 }
                 ++pos;
                 break;
 
             case '^': case '$': case '.': case '+':
                 is_trivial = false;
-                if (!last_substring->first.empty() && !in_square_braces)
-                {
-                    trivial_substrings.resize(trivial_substrings.size() + 1);
-                    last_substring = &trivial_substrings.back();
-                }
+                appending_bracket_string = false;
+                finish_last_substring();
                 ++pos;
                 break;
 
@@ -206,12 +236,20 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
                 [[fallthrough]];
             case '*':
                 is_trivial = false;
-                if (!last_substring->first.empty() && !in_square_braces)
+                if (depth == 0 && !last_substring->first.empty() && !in_square_braces)
                 {
                     last_substring->first.resize(last_substring->first.size() - 1);
-                    trivial_substrings.resize(trivial_substrings.size() + 1);
-                    last_substring = &trivial_substrings.back();
                 }
+                if (depth >= 1 && appending_bracket_string)
+                {
+                    /// ab(*cd) should be ab
+                    appending_bracket_string = false;
+                    if (!bracket_string.empty())
+                    {
+                        bracket_string.resize(bracket_string.size() - 1);
+                    }
+                }
+                finish_last_substring();
                 ++pos;
                 break;
 
@@ -232,10 +270,15 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
                         last_substring->second = pos - begin;
                     last_substring->first.push_back(*pos);
                 }
+                else if (depth >= 1 && appending_bracket_string)
+                    bracket_string += *pos;
                 ++pos;
                 break;
         }
     }
+
+    appending_bracket_string = false;
+    finish_last_substring();
 
     if (last_substring && last_substring->first.empty())
         trivial_substrings.pop_back();

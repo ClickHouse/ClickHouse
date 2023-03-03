@@ -95,6 +95,7 @@ public:
         out_required_substring_is_prefix = required_substring_is_prefix;
     }
 
+    static void analyze(std::string_view regexp_, std::string & required_substring, bool & is_trivial, bool & required_substring_is_prefix);
 private:
     bool is_trivial;
     bool required_substring_is_prefix;
@@ -104,8 +105,6 @@ private:
     std::optional<DB::ASCIICaseInsensitiveStringSearcher> case_insensitive_substring_searcher;
     std::unique_ptr<RegexType> re2;
     unsigned number_of_subpatterns;
-
-    static void analyze(std::string_view regexp_, std::string & required_substring, bool & is_trivial, bool & required_substring_is_prefix);
 };
 
 using OptimizedRegularExpression = OptimizedRegularExpressionImpl<true>;
