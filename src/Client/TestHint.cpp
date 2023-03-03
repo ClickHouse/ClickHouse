@@ -6,25 +6,46 @@
 #include <IO/ReadHelpers.h>
 #include <Parsers/Lexer.h>
 
+namespace DB::ErrorCodes
+{
+extern const int CANNOT_PARSE_TEXT;
+}
+
 namespace
 {
 
 /// Parse error as number or as a string (name of the error code const)
-int parseErrorCode(DB::ReadBufferFromString & in)
+DB::TestHint::error_vector parseErrorCode(DB::ReadBufferFromString & in)
 {
-    int code = -1;
-    String code_name;
+    DB::TestHint::error_vector error_codes{};
 
-    auto * pos = in.position();
-    tryReadText(code, in);
-    if (pos != in.position())
+    while (!in.eof())
     {
-        return code;
+        int code = -1;
+        String code_name;
+        auto * pos = in.position();
+
+        tryReadText(code, in);
+        if (pos == in.position())
+        {
+            readStringUntilWhitespace(code_name, in);
+            code = DB::ErrorCodes::getErrorCodeByName(code_name);
+        }
+        error_codes.push_back(code);
+
+        if (in.eof())
+            break;
+        skipWhitespaceIfAny(in);
+        if (in.eof())
+            break;
+        char c;
+        in.readStrict(c);
+        if (c != '|')
+            throw DB::Exception(DB::ErrorCodes::CANNOT_PARSE_TEXT, "Expected separator '|'. Got '{}'", c);
+        skipWhitespaceIfAny(in);
     }
 
-    /// Try parse as string
-    readStringUntilWhitespace(code_name, in);
-    return DB::ErrorCodes::getErrorCodeByName(code_name);
+    return error_codes;
 }
 
 }
@@ -85,9 +106,9 @@ void TestHint::parse(const String & hint, bool is_leading_hint)
         if (!is_leading_hint)
         {
             if (item == "serverError")
-                server_error = parseErrorCode(in);
+                server_errors = parseErrorCode(in);
             else if (item == "clientError")
-                client_error = parseErrorCode(in);
+                client_errors = parseErrorCode(in);
         }
 
         if (item == "echo")

@@ -1,6 +1,10 @@
 #pragma once
 
 #include <optional>
+#include <vector>
+
+#include <fmt/format.h>
+
 #include <Core/Types.h>
 
 
@@ -12,10 +16,13 @@ namespace DB
 /// The following comment hints are supported:
 ///
 /// - "-- { serverError 60 }" -- in case of you are expecting server error.
+/// - "-- { serverError 16 | 36 }" -- in case of you are expecting one of the 2 errors
 ///
 /// - "-- { clientError 20 }" -- in case of you are expecting client error.
+/// - "-- { clientError 20 | 60 | 92 }" -- It's expected that the client will return one of the 3 errors.
 ///
 /// - "-- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }" -- by error name.
+/// - "-- { serverError NO_SUCH_COLUMN_IN_TABLE | BAD_ARGUMENTS }" -- by error name.
 ///
 /// - "-- { clientError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }" -- by error name.
 ///
@@ -43,29 +50,67 @@ namespace DB
 class TestHint
 {
 public:
+    using error_vector = std::vector<int>;
     TestHint(const String & query_);
 
-    int serverError() const { return server_error; }
-    int clientError() const { return client_error; }
+    const auto & serverErrors() const { return server_errors; }
+    const auto & clientErrors() const { return client_errors; }
     std::optional<bool> echoQueries() const { return echo; }
 
 private:
     const String & query;
-    int server_error = 0;
-    int client_error = 0;
+    error_vector server_errors{};
+    error_vector client_errors{};
     std::optional<bool> echo;
 
     void parse(const String & hint, bool is_leading_hint);
 
     bool allErrorsExpected(int actual_server_error, int actual_client_error) const
     {
-        return (server_error || client_error) && (server_error == actual_server_error) && (client_error == actual_client_error);
+        if (actual_server_error && std::find(server_errors.begin(), server_errors.end(), actual_server_error) == server_errors.end())
+            return false;
+        if (!actual_server_error && server_errors.size())
+            return false;
+
+        if (actual_client_error && std::find(client_errors.begin(), client_errors.end(), actual_client_error) == client_errors.end())
+            return false;
+        if (!actual_client_error && client_errors.size())
+            return false;
+
+        return true;
     }
 
     bool lostExpectedError(int actual_server_error, int actual_client_error) const
     {
-        return (server_error && !actual_server_error) || (client_error && !actual_client_error);
+        return (server_errors.size() && !actual_server_error) || (client_errors.size() && !actual_client_error);
     }
 };
 
 }
+
+template <>
+struct fmt::formatter<DB::TestHint::error_vector>
+{
+    static constexpr auto parse(format_parse_context & ctx)
+    {
+        const auto * it = ctx.begin();
+        const auto * end = ctx.end();
+
+        /// Only support {}.
+        if (it != end && *it != '}')
+            throw format_error("Invalid format");
+
+        return it;
+    }
+
+    template <typename FormatContext>
+    auto format(const DB::TestHint::error_vector & error_vector, FormatContext & ctx)
+    {
+        if (error_vector.empty())
+            return format_to(ctx.out(), "{}", 0);
+        else if (error_vector.size() == 1)
+            return format_to(ctx.out(), "{}", error_vector[0]);
+        else
+            return format_to(ctx.out(), "One of [{}]", fmt::join(error_vector, ", "));
+    }
+};
