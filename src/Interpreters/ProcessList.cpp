@@ -362,7 +362,9 @@ QueryStatus::QueryStatus(
 
 QueryStatus::~QueryStatus()
 {
-    assert(executors.empty());
+    /// Check that all executors were invalidated.
+    for (const auto & e : executors)
+        assert(!e->executor);
 
     if (auto * memory_tracker = getMemoryTracker())
     {
@@ -394,35 +396,21 @@ CancellationCode QueryStatus::cancelQuery(bool)
     is_killed.store(true);
 
     std::unique_lock lock(executors_mutex);
-
-    /// Track all cancelled executors.
-    std::unordered_set<ExecutorHolder *> cancelled;
-    /// We cancel executors from the left to the right, so if the last executor
-    /// was cancelled, then all executors were cancelled.
-    while (!cancelled.contains(executors.back().get()))
+    for (const auto & e : executors)
     {
-        size_t size = executors.size();
-        /// We should create a copy of executor holder, because it can be
-        /// removed from vector in removePipelineExecutor from another thread
-        /// and reference will be invalid.
-        for (auto e : executors)
-        {
-            if (cancelled.contains(e.get()))
-                continue;
-            /// We should call cancel() with unlocked executors_mutex, because
-            /// cancel() can try to lock some internal mutex that is already locked by query executing
-            /// thread, and query executing thread can call removePipelineExecutor and lock executors_mutex,
-            /// which will lead to deadlock.
-            lock.unlock();
-            e->cancel();
-            lock.lock();
-            cancelled.insert(e.get());
-            /// While executors_mutex was unlocked, removePipelineExecutor could be called and
-            /// the size of executors could have changed. In this case we should start iterating
-            /// over it again to avoid using invalid iterators.
-            if (executors.size() != size)
-                break;
-        }
+        /// We should call cancel() with unlocked executors_mutex, because
+        /// cancel() can try to lock some internal mutex that is already locked by query executing
+        /// thread, and query executing thread can call removePipelineExecutor and lock executors_mutex,
+        /// which will lead to deadlock.
+        /// Note that the size and the content of executors cannot be changed while
+        /// executors_mutex is unlocked, because:
+        /// 1) We don't allow adding new executors while cancelling query in addPipelineExecutor
+        /// 2) We don't actually remove executor holder from executors in removePipelineExecutor,
+        /// just mark that executor is invalid.
+        /// So, it's safe to continue iteration over executors after subsequent mutex locking.
+        lock.unlock();
+        e->cancel();
+        lock.lock();
     }
 
     return CancellationCode::CancelSent;
@@ -446,9 +434,8 @@ void QueryStatus::removePipelineExecutor(PipelineExecutor * e)
     std::lock_guard lock(executors_mutex);
     auto it = std::find_if(executors.begin(), executors.end(), [e](const ExecutorHolderPtr & x){ return x->executor == e; });
     assert(it != executors.end());
-    /// Invalidate executor pointer inside holder.
+    /// Invalidate executor pointer inside holder, but don't remove holder from the executors (to avoid race with cancelQuery)
     (*it)->remove();
-    executors.erase(it);
 }
 
 bool QueryStatus::checkTimeLimit()
