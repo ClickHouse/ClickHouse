@@ -9,6 +9,7 @@
 #include <base/types.h>
 #include <base/scope_guard.h>
 #include <Poco/Net/NetException.h>
+#include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>
@@ -1029,7 +1030,16 @@ void TCPHandler::receiveHello()
         return;
     }
 
-    session->authenticate(user, password, socket().peerAddress());
+    session = makeSession();
+    auto & client_info = session->getClientInfo();
+
+    /// Extract the last entry from comma separated list of forwarded_for addresses.
+    /// Only the last proxy can be trusted (if any).
+    String forwarded_address = client_info.getLastForwardedFor();
+    if (!forwarded_address.empty() && server.config().getBool("auth_use_forwarded_address", false))
+        session->authenticate(user, password, Poco::Net::SocketAddress(forwarded_address, socket().peerAddress().port()));
+    else
+        session->authenticate(user, password, socket().peerAddress());
 }
 
 
