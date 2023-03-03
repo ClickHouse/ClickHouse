@@ -68,7 +68,7 @@ ISource::Status RemoteSource::prepare()
     /// RemoteQueryExecutor it should be finished explicitly.
     if (status == Status::Finished)
     {
-        query_executor->finish(&read_context);
+        query_executor->finish();
         if (dependency_port)
             dependency_port->finish();
         is_async_state = false;
@@ -119,7 +119,7 @@ std::optional<Chunk> RemoteSource::tryGenerate()
 
     if (async_read)
     {
-        auto res = query_executor->read(read_context);
+        auto res = query_executor->asyncRead();
 
         if (res.getType() == RemoteQueryExecutor::ReadResult::Type::Nothing)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Got an empty packet from the RemoteQueryExecutor. This is a bug");
@@ -146,7 +146,7 @@ std::optional<Chunk> RemoteSource::tryGenerate()
 
     if (!block)
     {
-        query_executor->finish(&read_context);
+        query_executor->finish();
         return {};
     }
 
@@ -167,7 +167,7 @@ std::optional<Chunk> RemoteSource::tryGenerate()
 void RemoteSource::onCancel()
 {
     was_query_canceled = true;
-    query_executor->cancel(&read_context);
+    query_executor->cancel();
 }
 
 void RemoteSource::onUpdatePorts()
@@ -175,7 +175,7 @@ void RemoteSource::onUpdatePorts()
     if (getPort().isFinished())
     {
         was_query_canceled = true;
-        query_executor->finish(&read_context);
+        query_executor->finish();
     }
 }
 

@@ -12,8 +12,6 @@ namespace DB
 class RemoteQueryExecutor;
 using RemoteQueryExecutorPtr = std::shared_ptr<RemoteQueryExecutor>;
 
-class RemoteQueryExecutorReadContext;
-
 /// Source from RemoteQueryExecutor. Executes remote query and returns query result chunks.
 class RemoteSource final : public ISource
 {
@@ -55,7 +53,6 @@ private:
 
     const bool async_read;
     bool is_async_state = false;
-    std::unique_ptr<RemoteQueryExecutorReadContext> read_context;
     UUID uuid;
     int fd = -1;
 };

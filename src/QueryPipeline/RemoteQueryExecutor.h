@@ -88,10 +88,11 @@ public:
     ///                     (for which this code was written in general).
     ///                     But clickhouse-benchmark uses the same code,
     ///                     and it should pass INITIAL_QUERY.
-    void sendQuery(ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::SECONDARY_QUERY);
+    void sendQuery(ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::SECONDARY_QUERY, AsyncCallback async_callback = {});
 
     /// Query is resent to a replica, the query itself can be modified.
     std::atomic<bool> resent_query { false };
+    std::atomic<bool> recreate_read_context { false };
 
     struct ReadResult
     {
@@ -145,16 +146,15 @@ public:
     ReadResult read();
 
     /// Async variant of read. Returns ready block or file descriptor which may be used for polling.
-    /// ReadContext is an internal read state. Pass empty ptr first time, reuse created one for every call.
-    ReadResult read(std::unique_ptr<ReadContext> & read_context);
+    ReadResult asyncRead();
 
     /// Receive all remain packets and finish query.
     /// It should be cancelled after read returned empty block.
-    void finish(std::unique_ptr<ReadContext> * read_context = nullptr);
+    void finish();
 
     /// Cancel query execution. Sends Cancel packet and ignore others.
     /// This method may be called from separate thread.
-    void cancel(std::unique_ptr<ReadContext> * read_context = nullptr);
+    void cancel();
 
     /// Get totals and extremes if any.
     Block getTotals() { return std::move(totals); }
@@ -179,6 +179,10 @@ public:
 
     const Block & getHeader() const { return header; }
 
+    IConnections & getConnections() { return *connections; }
+
+    bool needToSkipUnavailableShard() const { return context->getSettingsRef().skip_unavailable_shards && (0 == connections->size()); }
+
 private:
     RemoteQueryExecutor(
         const String & query_, const Block & header_, ContextPtr context_,
@@ -189,8 +193,9 @@ private:
     Block totals;
     Block extremes;
 
-    std::function<std::unique_ptr<IConnections>()> create_connections;
+    std::function<std::unique_ptr<IConnections>(AsyncCallback)> create_connections;
     std::unique_ptr<IConnections> connections;
+    std::unique_ptr<ReadContext> read_context;
 
     const String query;
     String query_id;
@@ -280,10 +285,10 @@ private:
 
     /// Cancel query and restart it with info about duplicate UUIDs
     /// only for `allow_experimental_query_deduplication`.
-    ReadResult restartQueryWithoutDuplicatedUUIDs(std::unique_ptr<ReadContext> * read_context = nullptr);
+    ReadResult restartQueryWithoutDuplicatedUUIDs();
 
     /// If wasn't sent yet, send request to cancel all connections to replicas
-    void tryCancel(const char * reason, std::unique_ptr<ReadContext> * read_context);
+    void tryCancel(const char * reason);
 
     /// Returns true if query was sent
     bool isQueryPending() const;
