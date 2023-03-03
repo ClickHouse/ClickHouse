@@ -68,9 +68,9 @@ bool MutatePlainMergeTreeTask::executeStep()
     ProfileEventsScope profile_events_scope(&profile_counters);
 
     /// Make out memory tracker a parent of current thread memory tracker
-    ThreadGroupSwitcherPtr switcher;
+    std::optional<ThreadGroupSwitcher> switcher;
     if (merge_list_entry)
-        switcher = std::make_unique<ThreadGroupSwitcher>(*merge_list_entry);
+        switcher = ThreadGroupSwitcher(merge_list_entry.get());
 
     switch (state)
     {
