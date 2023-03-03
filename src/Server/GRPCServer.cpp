@@ -986,7 +986,10 @@ namespace
                 executor.push(block);
         }
 
-        executor.finish();
+        if (isQueryCancelled())
+            executor.cancel();
+        else
+            executor.finish();
     }
 
     void Call::initializePipeline(const Block & header)
