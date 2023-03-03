@@ -142,10 +142,7 @@ public:
         Key key{user_id, session_id};
         auto it = sessions.find(key);
         if (it == sessions.end())
-        {
-            LOG_INFO(log, "Session {} not found for user {}, probably it's already closed", session_id, user_id);
             return;
-        }
 
         if (!it->second.unique())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot close session {} with refcount {}", session_id, it->second.use_count());
