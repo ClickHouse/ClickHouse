@@ -44,7 +44,9 @@ def create_tables(cluster):
 def insert_data(cluster, row_num):
     create_tables(cluster)
     n1 = nodes[0]
-    n1.query(f"INSERT INTO dist_table SELECT number % 4, number FROM numbers({row_num})")
+    n1.query(
+        f"INSERT INTO dist_table SELECT number % 4, number FROM numbers({row_num})"
+    )
     n1.query("SYSTEM FLUSH DISTRIBUTED dist_table")
 
 
