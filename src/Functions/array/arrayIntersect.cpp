@@ -35,12 +35,12 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-class FunctionArrayIntersect : public IFunction
+class FunctionArrayIntersect : public IFunction, WithContext
 {
 public:
     static constexpr auto name = "arrayIntersect";
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionArrayIntersect>(context); }
-    explicit FunctionArrayIntersect(ContextPtr context_) : context(context_) {}
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionArrayIntersect>(context_); }
+    explicit FunctionArrayIntersect(ContextPtr context_) : WithContext(context_) {}
 
     String getName() const override { return name; }
 
@@ -55,8 +55,6 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
 
 private:
-    ContextPtr context;
-
     /// Initially allocate a piece of memory for 64 elements. NOTE: This is just a guess.
     static constexpr size_t INITIAL_SIZE_DEGREE = 6;
 
@@ -286,10 +284,10 @@ FunctionArrayIntersect::CastArgumentsResult FunctionArrayIntersect::castColumns(
     return {.initial = initial_columns, .casted = casted_columns};
 }
 
-static ColumnPtr callFunctionNotEquals(ColumnWithTypeAndName first, ColumnWithTypeAndName second, ContextPtr context)
+static ColumnPtr callFunctionNotEquals(ColumnWithTypeAndName first, ColumnWithTypeAndName second, ContextPtr context_)
 {
     ColumnsWithTypeAndName args{first, second};
-    auto eq_func = FunctionFactory::instance().get("notEquals", context)->build(args);
+    auto eq_func = FunctionFactory::instance().get("notEquals", context_)->build(args);
     return eq_func->execute(args, eq_func->getResultType(), args.front().column->size());
 }
 
@@ -345,7 +343,7 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
                     auto overflow_mask = callFunctionNotEquals(
                             {arg.nested_column->getPtr(), nested_init_type, ""},
                             {initial_column->getPtr(), nested_cast_type, ""},
-                            context);
+                            getContext());
 
                     arg.overflow_mask = &typeid_cast<const ColumnUInt8 *>(overflow_mask.get())->getData();
                     arrays.column_holders.emplace_back(std::move(overflow_mask));

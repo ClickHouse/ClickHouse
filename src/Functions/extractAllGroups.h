@@ -47,19 +47,17 @@ enum class ExtractAllGroupsResultKind
  *   [['abc', 'def', 'ghi'], ['111', '222', '333']
 */
 template <typename Impl>
-class FunctionExtractAllGroups : public IFunction
+class FunctionExtractAllGroups : public IFunction, WithContext
 {
-    ContextPtr context;
-
 public:
     static constexpr auto Kind = Impl::Kind;
     static constexpr auto name = Impl::Name;
 
     explicit FunctionExtractAllGroups(ContextPtr context_)
-        : context(context_)
+        : WithContext(context_)
     {}
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionExtractAllGroups>(context); }
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionExtractAllGroups>(context_); }
 
     String getName() const override { return name; }
 
@@ -158,7 +156,7 @@ public:
         else
         {
             /// Additional limit to fail fast on supposedly incorrect usage.
-            const auto max_matches_per_row = context->getSettingsRef().regexp_max_matches_per_row;
+            const auto max_matches_per_row = getContext()->getSettingsRef().regexp_max_matches_per_row;
 
             PODArray<StringPiece, 0> all_matches;
             /// Number of times RE matched on each row of haystack column.

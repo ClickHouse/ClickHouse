@@ -38,14 +38,14 @@ struct FilesystemCapacity
 };
 
 template <typename Impl>
-class FilesystemImpl : public IFunction
+class FilesystemImpl : public IFunction, WithContext
 {
 public:
     static constexpr auto name = Impl::name;
 
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FilesystemImpl<Impl>>(context_); }
 
-    explicit FilesystemImpl(ContextPtr context_) : context(context_) { }
+    explicit FilesystemImpl(ContextPtr context_) : WithContext(context_) { }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -79,7 +79,7 @@ public:
     {
         if (arguments.empty())
         {
-            auto disk = context->getDisk("default");
+            auto disk = getContext()->getDisk("default");
             return DataTypeUInt64().createColumnConst(input_rows_count, Impl::get(disk));
         }
         else
@@ -87,7 +87,7 @@ public:
             auto col = arguments[0].column;
             if (const ColumnString * col_str = checkAndGetColumn<ColumnString>(col.get()))
             {
-                auto disk_map = context->getDisksMap();
+                auto disk_map = getContext()->getDisksMap();
 
                 auto col_res = ColumnVector<UInt64>::create(col_str->size());
                 auto & data = col_res->getData();
@@ -105,9 +105,6 @@ public:
                 arguments[0].column->getName(), getName());
         }
     }
-
-private:
-    ContextPtr context;
 };
 
 }

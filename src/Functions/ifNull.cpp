@@ -16,16 +16,16 @@ namespace
 /// Implements the function ifNull which takes 2 arguments and returns
 /// the value of the 1st argument if it is not null. Otherwise it returns
 /// the value of the 2nd argument.
-class FunctionIfNull : public IFunction
+class FunctionIfNull : public IFunction, WithContext
 {
 public:
     static constexpr auto name = "ifNull";
 
-    explicit FunctionIfNull(ContextPtr context_) : context(context_) {}
+    explicit FunctionIfNull(ContextPtr context_) : WithContext(context_) {}
 
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextPtr context_)
     {
-        return std::make_shared<FunctionIfNull>(context);
+        return std::make_shared<FunctionIfNull>(context_);
     }
 
     std::string getName() const override
@@ -64,11 +64,11 @@ public:
 
         ColumnsWithTypeAndName columns{arguments[0]};
 
-        auto is_not_null = FunctionFactory::instance().get("isNotNull", context)->build(columns);
+        auto is_not_null = FunctionFactory::instance().get("isNotNull", getContext())->build(columns);
         auto is_not_null_type = std::make_shared<DataTypeUInt8>();
         auto is_not_null_res = is_not_null->execute(columns, is_not_null_type, input_rows_count);
 
-        auto assume_not_null = FunctionFactory::instance().get("assumeNotNull", context)->build(columns);
+        auto assume_not_null = FunctionFactory::instance().get("assumeNotNull", getContext())->build(columns);
         auto assume_not_null_type = removeNullable(arguments[0].type);
         auto assume_nut_null_res = assume_not_null->execute(columns, assume_not_null_type, input_rows_count);
 
@@ -79,12 +79,9 @@ public:
                 arguments[1],
         };
 
-        auto func_if = FunctionFactory::instance().get("if", context)->build(if_columns);
+        auto func_if = FunctionFactory::instance().get("if", getContext())->build(if_columns);
         return func_if->execute(if_columns, result_type, input_rows_count);
     }
-
-private:
-    ContextPtr context;
 };
 
 }

@@ -142,13 +142,13 @@ struct InvalidType;
 
 
 template <template <typename> class Op, typename Name, bool is_injective>
-class FunctionUnaryArithmetic : public IFunction
+class FunctionUnaryArithmetic : public IFunction, WithContext
 {
     static constexpr bool allow_decimal = IsUnaryOperation<Op>::negate || IsUnaryOperation<Op>::abs || IsUnaryOperation<Op>::sign;
     static constexpr bool allow_fixed_string = Op<UInt8>::allow_fixed_string;
     static constexpr bool is_sign_function = IsUnaryOperation<Op>::sign;
 
-    ContextPtr context;
+    bool has_context = false;
 
     template <typename F>
     static bool castType(const IDataType * type, F && f)
@@ -178,7 +178,7 @@ class FunctionUnaryArithmetic : public IFunction
     }
 
     static FunctionOverloadResolverPtr
-    getFunctionForTupleArithmetic(const DataTypePtr & type, ContextPtr context)
+    getFunctionForTupleArithmetic(const DataTypePtr & type, ContextPtr context_)
     {
         if (!isTuple(type))
             return {};
@@ -189,7 +189,7 @@ class FunctionUnaryArithmetic : public IFunction
         if constexpr (!IsUnaryOperation<Op>::negate)
             return {};
 
-        return FunctionFactory::instance().get("tupleNegate", context);
+        return FunctionFactory::instance().get("tupleNegate", context_);
     }
 
 public:
@@ -198,7 +198,7 @@ public:
 
     FunctionUnaryArithmetic() = default;
 
-    explicit FunctionUnaryArithmetic(ContextPtr context_) : context(context_) {}
+    explicit FunctionUnaryArithmetic(ContextPtr context_) : WithContext(context_), has_context(context_) {}
 
     String getName() const override
     {
@@ -213,13 +213,13 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return getReturnTypeImplStatic(arguments, context);
+        return getReturnTypeImplStatic(arguments, has_context ? getContext() : ContextPtr{});
     }
 
-    static DataTypePtr getReturnTypeImplStatic(const DataTypes & arguments, ContextPtr context)
+    static DataTypePtr getReturnTypeImplStatic(const DataTypes & arguments, ContextPtr context_)
     {
         /// Special case when the function is negate, argument is tuple.
-        if (auto function_builder = getFunctionForTupleArithmetic(arguments[0], context))
+        if (auto function_builder = getFunctionForTupleArithmetic(arguments[0], context_))
         {
             ColumnsWithTypeAndName new_arguments(1);
 
@@ -269,7 +269,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         /// Special case when the function is negate, argument is tuple.
-        if (auto function_builder = getFunctionForTupleArithmetic(arguments[0].type, context))
+        if (auto function_builder = getFunctionForTupleArithmetic(arguments[0].type, has_context ? getContext() : ContextPtr{}))
         {
             return function_builder->build(arguments)->execute(arguments, result_type, input_rows_count);
         }

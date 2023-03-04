@@ -16,13 +16,13 @@ namespace
 
 /// Implements the CASE construction when it is
 /// provided an expression. Users should not call this function.
-class FunctionCaseWithExpression : public IFunction
+class FunctionCaseWithExpression : public IFunction, WithContext
 {
 public:
     static constexpr auto name = "caseWithExpression";
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionCaseWithExpression>(context_); }
 
-    explicit FunctionCaseWithExpression(ContextPtr context_) : context(context_) {}
+    explicit FunctionCaseWithExpression(ContextPtr context_) : WithContext(context_) {}
     bool isVariadic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -88,19 +88,16 @@ public:
         ColumnWithTypeAndName src_array_col{nullptr, src_array_type, ""};
         ColumnWithTypeAndName dst_array_col{nullptr, dst_array_type, ""};
 
-        auto fun_array = FunctionFactory::instance().get("array", context);
+        auto fun_array = FunctionFactory::instance().get("array", getContext());
 
         src_array_col.column = fun_array->build(src_array_elems)->execute(src_array_elems, src_array_type, input_rows_count);
         dst_array_col.column = fun_array->build(dst_array_elems)->execute(dst_array_elems, dst_array_type, input_rows_count);
 
         /// Execute transform.
         ColumnsWithTypeAndName transform_args{args.front(), src_array_col, dst_array_col, args.back()};
-        return FunctionFactory::instance().get("transform", context)->build(transform_args)
+        return FunctionFactory::instance().get("transform", getContext())->build(transform_args)
             ->execute(transform_args, result_type, input_rows_count);
     }
-
-private:
-    ContextPtr context;
 };
 
 }

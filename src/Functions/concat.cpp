@@ -187,13 +187,13 @@ using FunctionConcatAssumeInjective = ConcatImpl<NameConcatAssumeInjective, true
 
 
 /// Also works with arrays.
-class ConcatOverloadResolver : public IFunctionOverloadResolver
+class ConcatOverloadResolver : public IFunctionOverloadResolver, WithContext
 {
 public:
     static constexpr auto name = "concat";
-    static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<ConcatOverloadResolver>(context); }
+    static FunctionOverloadResolverPtr create(ContextPtr context_) { return std::make_unique<ConcatOverloadResolver>(context_); }
 
-    explicit ConcatOverloadResolver(ContextPtr context_) : context(context_) {}
+    explicit ConcatOverloadResolver(ContextPtr context_) : WithContext(context_) {}
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -203,11 +203,11 @@ public:
     {
         if (isArray(arguments.at(0).type))
         {
-            return FunctionFactory::instance().getImpl("arrayConcat", context)->build(arguments);
+            return FunctionFactory::instance().getImpl("arrayConcat", getContext())->build(arguments);
         }
         else
             return std::make_unique<FunctionToFunctionBaseAdaptor>(
-                FunctionConcat::create(context), collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }), return_type);
+                FunctionConcat::create(getContext()), collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }), return_type);
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -220,9 +220,6 @@ public:
         /// We always return Strings from concat, even if arguments were fixed strings.
         return std::make_shared<DataTypeString>();
     }
-
-private:
-    ContextPtr context;
 };
 
 }

@@ -24,15 +24,15 @@ namespace
 /** finalizeAggregation(agg_state) - get the result from the aggregation state.
 * Takes state of aggregate function. Returns result of aggregation (finalized state).
 */
-class FunctionEvalMLMethod : public IFunction
+class FunctionEvalMLMethod : public IFunction, WithContext
 {
 public:
     static constexpr auto name = "evalMLMethod";
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextPtr context_)
     {
-        return std::make_shared<FunctionEvalMLMethod>(context);
+        return std::make_shared<FunctionEvalMLMethod>(context_);
     }
-    explicit FunctionEvalMLMethod(ContextPtr context_) : context(context_)
+    explicit FunctionEvalMLMethod(ContextPtr context_) : WithContext(context_)
     {}
 
     String getName() const override
@@ -85,10 +85,8 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
                             arguments[0].column->getName(), getName());
 
-        return agg_function->predictValues(arguments, context);
+        return agg_function->predictValues(arguments, getContext());
     }
-
-    ContextPtr context;
 };
 
 }

@@ -17,11 +17,11 @@ ColumnPtr FunctionComparison<LessOrEqualsOp, NameLessOrEquals>::executeTupleImpl
     const ColumnsWithTypeAndName & x, const ColumnsWithTypeAndName & y, size_t tuple_size, size_t input_rows_count) const
 {
     return executeTupleLessGreaterImpl(
-        FunctionFactory::instance().get("less", context),
-        FunctionFactory::instance().get("lessOrEquals", context),
-        FunctionFactory::instance().get("and", context),
-        FunctionFactory::instance().get("or", context),
-        FunctionFactory::instance().get("equals", context),
+        FunctionFactory::instance().get("less", getContext()),
+        FunctionFactory::instance().get("lessOrEquals", getContext()),
+        FunctionFactory::instance().get("and", getContext()),
+        FunctionFactory::instance().get("or", getContext()),
+        FunctionFactory::instance().get("equals", getContext()),
         x, y, tuple_size, input_rows_count);
 }
 

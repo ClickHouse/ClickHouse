@@ -19,17 +19,17 @@ namespace
 /// Implements the function coalesce which takes a set of arguments and
 /// returns the value of the leftmost non-null argument. If no such value is
 /// found, coalesce() returns NULL.
-class FunctionCoalesce : public IFunction
+class FunctionCoalesce : public IFunction, WithContext
 {
 public:
     static constexpr auto name = "coalesce";
 
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextPtr context_)
     {
-        return std::make_shared<FunctionCoalesce>(context);
+        return std::make_shared<FunctionCoalesce>(context_);
     }
 
-    explicit FunctionCoalesce(ContextPtr context_) : context(context_) {}
+    explicit FunctionCoalesce(ContextPtr context_) : WithContext(context_) {}
 
     std::string getName() const override
     {
@@ -110,8 +110,8 @@ public:
                 break;
         }
 
-        auto is_not_null = FunctionFactory::instance().get("isNotNull", context);
-        auto assume_not_null = FunctionFactory::instance().get("assumeNotNull", context);
+        auto is_not_null = FunctionFactory::instance().get("isNotNull", getContext());
+        auto assume_not_null = FunctionFactory::instance().get("assumeNotNull", getContext());
 
         ColumnsWithTypeAndName multi_if_args;
         ColumnsWithTypeAndName tmp_args(1);
@@ -148,9 +148,9 @@ public:
         /// TODO: make "multiIf" the same efficient.
         FunctionOverloadResolverPtr if_function;
         if (multi_if_args.size() == 3)
-            if_function = FunctionFactory::instance().get("if", context);
+            if_function = FunctionFactory::instance().get("if", getContext());
         else
-            if_function = FunctionFactory::instance().get("multiIf", context);
+            if_function = FunctionFactory::instance().get("multiIf", getContext());
 
         ColumnPtr res = if_function->build(multi_if_args)->execute(multi_if_args, result_type, input_rows_count);
 
@@ -167,9 +167,6 @@ public:
 
         return res;
     }
-
-private:
-    ContextPtr context;
 };
 
 }

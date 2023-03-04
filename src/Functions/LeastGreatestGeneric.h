@@ -88,17 +88,17 @@ private:
 
 
 template <LeastGreatest kind, typename SpecializedFunction>
-class LeastGreatestOverloadResolver : public IFunctionOverloadResolver
+class LeastGreatestOverloadResolver : public IFunctionOverloadResolver, WithContext
 {
 public:
     static constexpr auto name = kind == LeastGreatest::Least ? "least" : "greatest";
 
-    static FunctionOverloadResolverPtr create(ContextPtr context)
+    static FunctionOverloadResolverPtr create(ContextPtr context_)
     {
-        return std::make_unique<LeastGreatestOverloadResolver<kind, SpecializedFunction>>(context);
+        return std::make_unique<LeastGreatestOverloadResolver<kind, SpecializedFunction>>(context_);
     }
 
-    explicit LeastGreatestOverloadResolver(ContextPtr context_) : context(context_) {}
+    explicit LeastGreatestOverloadResolver(ContextPtr context_) : WithContext(context_) {}
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -112,10 +112,10 @@ public:
 
         /// More efficient specialization for two numeric arguments.
         if (arguments.size() == 2 && isNumber(arguments[0].type) && isNumber(arguments[1].type))
-            return std::make_unique<FunctionToFunctionBaseAdaptor>(SpecializedFunction::create(context), argument_types, return_type);
+            return std::make_unique<FunctionToFunctionBaseAdaptor>(SpecializedFunction::create(getContext()), argument_types, return_type);
 
         return std::make_unique<FunctionToFunctionBaseAdaptor>(
-            FunctionLeastGreatestGeneric<kind>::create(context), argument_types, return_type);
+            FunctionLeastGreatestGeneric<kind>::create(getContext()), argument_types, return_type);
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
@@ -124,13 +124,10 @@ public:
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} cannot be called without arguments", getName());
 
         if (types.size() == 2 && isNumber(types[0]) && isNumber(types[1]))
-            return SpecializedFunction::create(context)->getReturnTypeImpl(types);
+            return SpecializedFunction::create(getContext())->getReturnTypeImpl(types);
 
         return getLeastSupertype(types);
     }
-
-private:
-    ContextPtr context;
 };
 
 }
