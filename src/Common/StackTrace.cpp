@@ -425,14 +425,15 @@ String toStringCached(const StackTrace::FramePointers & pointers, size_t offset,
     std::lock_guard lock{stacktrace_cache_mutex};
 
     StackTraceCache & cache = cacheInstance();
+    const StackTraceRefTriple key{pointers, offset, size};
 
-    if (auto it = cache.find(StackTraceRefTriple{pointers, offset, size}); it != cache.end())
+    if (auto it = cache.find(key); it != cache.end())
         return it->second;
     else
     {
-        std::stringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        std::ostringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         out.exceptions(std::ios::failbit);
-        toStringEveryLineImpl(false, {pointers, offset, size}, [&](std::string_view str) { out << str << '\n'; });
+        toStringEveryLineImpl(false, key, [&](std::string_view str) { out << str << '\n'; });
 
         return cache.emplace(StackTraceTriple{pointers, offset, size}, out.str()).first->second;
     }
@@ -447,7 +448,7 @@ std::string StackTrace::toString(void ** frame_pointers_raw, size_t offset, size
 {
     __msan_unpoison(frame_pointers_raw, size * sizeof(*frame_pointers_raw));
 
-    StackTrace::FramePointers frame_pointers;
+    StackTrace::FramePointers frame_pointers{};
     std::copy_n(frame_pointers_raw, size, frame_pointers.begin());
 
     return toStringCached(frame_pointers, offset, size);
