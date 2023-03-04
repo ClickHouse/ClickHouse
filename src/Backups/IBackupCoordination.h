@@ -1,12 +1,9 @@
 #pragma once
 
 #include <optional>
-
 #include <fmt/format.h>
-#include <fmt/core.h>
-
-#include <Core/Types.h>
 #include <Common/hex.h>
+#include <Core/Types.h>
 
 
 namespace DB
@@ -91,6 +88,8 @@ public:
         /// Position in the archive.
         UInt64 pos_in_archive = static_cast<UInt64>(-1);
 
+        /// Note: this format doesn't allow to parse data back
+        /// It is useful only for debugging purposes
         [[ maybe_unused ]] String describe()
         {
             String result;

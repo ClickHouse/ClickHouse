@@ -1,4 +1,3 @@
-#include <iterator>
 #include <Backups/BackupCoordinationRemote.h>
 #include <Access/Common/AccessEntityType.h>
 #include <IO/ReadBufferFromString.h>
@@ -8,7 +7,6 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/escapeForFileName.h>
 #include <Common/hex.h>
-#include "QueryPipeline/ProfileInfo.h"
 #include <Backups/BackupCoordinationStage.h>
 
 
@@ -168,8 +166,13 @@ namespace
 }
 
 BackupCoordinationRemote::BackupCoordinationRemote(
-    const String & root_zookeeper_path_, const String & backup_uuid_, zkutil::GetZooKeeper get_zookeeper_, bool is_internal_)
-    : root_zookeeper_path(root_zookeeper_path_)
+    const BackupKeeperSettings & keeper_settings_,
+    const String & root_zookeeper_path_,
+    const String & backup_uuid_,
+    zkutil::GetZooKeeper get_zookeeper_,
+    bool is_internal_)
+    : keeper_settings(keeper_settings_)
+    , root_zookeeper_path(root_zookeeper_path_)
     , zookeeper_path(root_zookeeper_path_ + "/backup-" + backup_uuid_)
     , backup_uuid(backup_uuid_)
     , get_zookeeper(get_zookeeper_)
@@ -178,9 +181,9 @@ BackupCoordinationRemote::BackupCoordinationRemote(
     zookeeper_retries_info = ZooKeeperRetriesInfo(
         "BackupCoordinationRemote",
         &Poco::Logger::get("BackupCoordinationRemote"),
-        20,
-        10,
-        1000);
+        keeper_settings.keeper_max_retries,
+        keeper_settings.keeper_retry_initial_backoff_ms,
+        keeper_settings.keeper_retry_max_backoff_ms);
 
     createRootNodes();
     stage_sync.emplace(
@@ -540,7 +543,7 @@ std::vector<FileInfo> BackupCoordinationRemote::getAllFileInfos() const
         retries_ctl.retryLoop([&]()
         {
             auto zk = getZooKeeper();
-            batched_escaped_names = split_vector(zk->getChildren(zookeeper_path + "/file_names"), 1000);
+            batched_escaped_names = split_vector(zk->getChildren(zookeeper_path + "/file_names"), keeper_settings.batch_size_for_keeper_multiread);
         });
     }
 
