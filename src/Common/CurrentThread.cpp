@@ -126,11 +126,7 @@ void CurrentThread::flushUntrackedMemory()
 {
     if (unlikely(!current_thread))
         return;
-    if (current_thread->untracked_memory == 0)
-        return;
-
-    current_thread->memory_tracker.adjustWithUntrackedMemory(current_thread->untracked_memory);
-    current_thread->untracked_memory = 0;
+    current_thread->flushUntrackedMemory();
 }
 
 }
