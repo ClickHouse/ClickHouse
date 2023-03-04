@@ -10,6 +10,7 @@ $CLICKHOUSE_CLIENT --query_id="$QUERY_ID" -n -q "
 create temporary table tmp as select * from numbers(500000000);
 select * from remote('127.0.0.2', 'system.numbers_mt') where number in (select * from tmp);" &> /dev/null &
 
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
 
 while true
 do
