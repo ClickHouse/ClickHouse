@@ -37,15 +37,17 @@ RunnerDescriptions = List[RunnerDescription]
 
 
 def get_dead_runners_in_ec2(runners: RunnerDescriptions) -> RunnerDescriptions:
+    """Returns instances that are offline/dead in EC2, or not found in EC2"""
     ids = {
         runner.name: runner
         for runner in runners
         # Only `i-deadbead123` are valid names for an instance ID
-        if runner.offline and not runner.busy and runner.name.startswith("i-")
+        if runner.name.startswith("i-") and runner.offline and not runner.busy
     }
     if not ids:
         return []
 
+    # Delete all offline runners with wrong name
     result_to_delete = [
         runner
         for runner in runners
@@ -57,7 +59,7 @@ def get_dead_runners_in_ec2(runners: RunnerDescriptions) -> RunnerDescriptions:
     i = 0
     inc = 100
 
-    print("Checking ids", ids.keys())
+    print("Checking ids: ", " ".join(ids.keys()))
     instances_statuses = []
     while i < len(ids.keys()):
         try:
@@ -106,6 +108,9 @@ def get_lost_ec2_instances(runners: RunnerDescriptions) -> List[dict]:
         Filters=[{"Name": "tag-key", "Values": ["github:runner-type"]}]
     )["Reservations"]
     lost_instances = []
+    offline_runners = [
+        runner.name for runner in runners if runner.offline and not runner.busy
+    ]
     # Here we refresh the runners to get the most recent state
     now = datetime.now().timestamp()
 
@@ -124,6 +129,10 @@ def get_lost_ec2_instances(runners: RunnerDescriptions) -> List[dict]:
             if not (
                 UNIVERSAL_LABEL in runner_type or runner_type in RUNNER_TYPE_LABELS
             ):
+                continue
+
+            if instance["InstanceId"] in offline_runners:
+                lost_instances.append(instance)
                 continue
 
             if instance["State"]["Name"] == "running" and (

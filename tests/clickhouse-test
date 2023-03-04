@@ -76,8 +76,9 @@ def trim_for_log(s):
     if not s:
         return s
     lines = s.splitlines()
-    if len(lines) > 100:
-        return "\n".join(lines[:50] + ["#" * 100] + lines[-50:])
+    if len(lines) > 10000:
+        separator = "-" * 40 + str(len(lines) - 10000) + " lines are hidden" +  "-" * 40
+        return "\n".join(lines[:5000] + [] + [separator] + [] + lines[-5000:])
     else:
         return "\n".join(lines)
 
@@ -94,7 +95,7 @@ class HTTPError(Exception):
 
 # Helpers to execute queries via HTTP interface.
 def clickhouse_execute_http(
-    base_args, query, timeout=30, settings=None, default_format=None, max_http_retries=5
+    base_args, query, timeout=30, settings=None, default_format=None, max_http_retries=5, retry_error_codes=False
 ):
     if args.secure:
         client = http.client.HTTPSConnection(
@@ -131,7 +132,8 @@ def clickhouse_execute_http(
             )
             res = client.getresponse()
             data = res.read()
-            break
+            if res.status == 200 or (not retry_error_codes):
+                break
         except Exception as ex:
             if i == max_http_retries - 1:
                 raise ex
@@ -143,8 +145,8 @@ def clickhouse_execute_http(
 
     return data
 
-def clickhouse_execute(base_args, query, timeout=30, settings=None, max_http_retries=5):
-    return clickhouse_execute_http(base_args, query, timeout, settings, max_http_retries=max_http_retries).strip()
+def clickhouse_execute(base_args, query, timeout=30, settings=None, max_http_retries=5, retry_error_codes=False):
+    return clickhouse_execute_http(base_args, query, timeout, settings, max_http_retries=max_http_retries, retry_error_codes=retry_error_codes).strip()
 
 
 def clickhouse_execute_json(base_args, query, timeout=60, settings=None, max_http_retries=5):
@@ -1045,7 +1047,7 @@ class TestCase:
     @staticmethod
     def send_test_name_failed(suite: str, case: str):
         pid = os.getpid()
-        clickhouse_execute(args, f"SELECT 'Running test {suite}/{case} from pid={pid}'")
+        clickhouse_execute(args, f"SELECT 'Running test {suite}/{case} from pid={pid}'", retry_error_codes=True)
 
     def run_single_test(
         self, server_logs_level, client_options
