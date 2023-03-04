@@ -604,7 +604,7 @@ bool BackupCoordinationRemote::hasConcurrentBackups(const std::atomic<size_t> &)
         return false;
 
     auto zk = getZooKeeper();
-    std::string backup_stage_path = zookeeper_path +"/stage";
+    std::string backup_stage_path = zookeeper_path + "/stage";
 
     if (!zk->exists(root_zookeeper_path))
         zk->createAncestors(root_zookeeper_path);
