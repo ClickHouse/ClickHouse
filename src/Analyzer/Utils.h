@@ -22,6 +22,9 @@ bool isNameOfGlobalInFunction(const std::string & function_name);
 /// Returns global in function name for local in function name
 std::string getGlobalInFunctionNameForLocalInFunctionName(const std::string & function_name);
 
+/// Add unique suffix to names of duplicate columns in block
+void makeUniqueColumnNamesInBlock(Block & block);
+
 /** Build cast function that cast expression into type.
   * If resolve = true, then result cast function is resolved during build, otherwise
   * result cast function is not resolved during build.

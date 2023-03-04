@@ -1,6 +1,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
@@ -117,6 +118,10 @@ StorageView::StorageView(
     SelectQueryDescription description;
 
     description.inner_query = query.select->ptr();
+
+    NormalizeSelectWithUnionQueryVisitor::Data data{SetOperationMode::Unspecified};
+    NormalizeSelectWithUnionQueryVisitor{data}.visit(description.inner_query);
+
     is_parameterized_view = query.isParameterizedView();
     parameter_types = analyzeReceiveQueryParamsWithType(description.inner_query);
     storage_metadata.setSelectQuery(description);

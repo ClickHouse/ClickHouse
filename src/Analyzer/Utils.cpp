@@ -130,6 +130,25 @@ std::string getGlobalInFunctionNameForLocalInFunctionName(const std::string & fu
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid local IN function name {}", function_name);
 }
 
+void makeUniqueColumnNamesInBlock(Block & block)
+{
+    NameSet block_column_names;
+    size_t unique_column_name_counter = 1;
+
+    for (auto & column_with_type : block)
+    {
+        if (!block_column_names.contains(column_with_type.name))
+        {
+            block_column_names.insert(column_with_type.name);
+            continue;
+        }
+
+        column_with_type.name += '_';
+        column_with_type.name += std::to_string(unique_column_name_counter);
+        ++unique_column_name_counter;
+    }
+}
+
 QueryTreeNodePtr buildCastFunction(const QueryTreeNodePtr & expression,
     const DataTypePtr & type,
     const ContextPtr & context,
