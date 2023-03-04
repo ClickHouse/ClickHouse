@@ -263,6 +263,13 @@ QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const ReplacementMap & replacem
         const auto [node_to_clone, place_for_cloned_node] = nodes_to_clone.back();
         nodes_to_clone.pop_back();
 
+        auto already_cloned_node_it = old_pointer_to_new_pointer.find(node_to_clone);
+        if (already_cloned_node_it != old_pointer_to_new_pointer.end())
+        {
+            *place_for_cloned_node = already_cloned_node_it->second;
+            continue;
+        }
+
         auto it = replacement_map.find(node_to_clone);
         auto node_clone = it != replacement_map.end() ? it->second : node_to_clone->cloneImpl();
         *place_for_cloned_node = node_clone;
