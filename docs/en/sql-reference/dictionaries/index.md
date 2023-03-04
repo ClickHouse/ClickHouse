@@ -126,7 +126,7 @@ LIFETIME(...) -- Lifetime of dictionary in memory
 
 There are a variety of ways to store dictionaries in memory.
 
-We recommend [flat](#flat), [hashed](#hashed) and [complex_key_hashed](#complex-key-hashed), which provide optimal processing speed.
+We recommend [flat](#flat), [hashed](#hashed) and [complex_key_hashed](#complex_key_hashed), which provide optimal processing speed.
 
 Caching is not recommended because of potentially poor performance and difficulties in selecting optimal parameters. Read more in the section [cache](#cache).
 
@@ -381,7 +381,7 @@ LAYOUT(HASHED_ARRAY())
 
 ### complex_key_hashed_array
 
-This type of storage is for use with composite [keys](#dictionary-key-and-fields). Similar to [hashed_array](#hashed-array).
+This type of storage is for use with composite [keys](#dictionary-key-and-fields). Similar to [hashed_array](#hashed_array).
 
 Configuration example:
 
@@ -1029,7 +1029,7 @@ SOURCE(SOURCE_TYPE(param1 val1 ... paramN valN)) -- Source configuration
 
 The source is configured in the `source` section.
 
-For source types [Local file](#local_file), [Executable file](#executable), [HTTP(s)](#http), [ClickHouse](#clickhouse)
+For source types [Local file](#local_file), [Executable file](#executable), [HTTP(s)](#https), [ClickHouse](#clickhouse)
 optional settings are available:
 
 ``` xml
@@ -1066,7 +1066,7 @@ Types of sources (`source_type`):
     -   [Cassandra](#cassandra)
     -   [PostgreSQL](#postgresql)
 
-## Local File
+## Local File {#local_file}
 
 Example of settings:
 
@@ -1096,7 +1096,7 @@ When a dictionary with source `FILE` is created via DDL command (`CREATE DICTION
 
 -   [Dictionary function](../../sql-reference/table-functions/dictionary.md#dictionary-function)
 
-## Executable File
+## Executable File {#executable}
 
 Working with executable files depends on [how the dictionary is stored in memory](#storig-dictionaries-in-memory). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request to the executable file’s STDIN. Otherwise, ClickHouse starts the executable file and treats its output as dictionary data.
 
@@ -1125,7 +1125,7 @@ Setting fields:
 
 That dictionary source can be configured only via XML configuration. Creating dictionaries with executable source via DDL is disabled; otherwise, the DB user would be able to execute arbitrary binaries on the ClickHouse node.
 
-## Executable Pool
+## Executable Pool {#executable_pool}
 
 Executable pool allows loading data from pool of processes. This source does not work with dictionary layouts that need to load all data from source. Executable pool works if the dictionary [is stored](#ways-to-store-dictionaries-in-memory) using `cache`, `complex_key_cache`, `ssd_cache`, `complex_key_ssd_cache`, `direct`, or `complex_key_direct` layouts.
 
@@ -1160,7 +1160,7 @@ Setting fields:
 
 That dictionary source can be configured only via XML configuration. Creating dictionaries with executable source via DDL is disabled, otherwise, the DB user would be able to execute arbitrary binary on ClickHouse node.
 
-## Http(s)
+## Http(s) {#https}
 
 Working with an HTTP(s) server depends on [how the dictionary is stored in memory](#storig-dictionaries-in-memory). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request via the `POST` method.
 
@@ -1992,9 +1992,9 @@ Configuration fields:
 | Tag                                                  | Description                                                                                                                                                                                                                                                                                                                                     | Required |
 |------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------|
 | `name`                                               | Column name.                                                                                                                                                                                                                                                                                                                                    | Yes      |
-| `type`                                               | ClickHouse data type: [UInt8](../../sql-reference/data-types/int-uint.md), [UInt16](../../sql-reference/data-types/int-uint.md), [UInt32](../../sql-reference/data-types/int-uint.md), [UInt64](../../sql-reference/data-types/int-uint.md), [Int8](../../sql-reference/data-types/int-uint.md), [Int16](../../sql-reference/data-types/int-uint.md), [Int32](../../sql-reference/data-types/int-uint.md), [Int64](../../sql-reference/data-types/int-uint.md), [Float32](../../sql-reference/data-types/float.md), [Float64](../../sql-reference/data-types/float.md), [UUID](../../sql-reference/data-types/uuid.md), [Decimal32](../../sql-reference/data-types/decimal.md), [Decimal64](../../sql-reference/data-types/decimal.md), [Decimal128](../../sql-reference/data-types/decimal.md), [Decimal256](../../sql-reference/data-types/decimal.md),[Date](../../sql-reference/data-types/date), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md), [String](../../sql-reference/data-types/string.md), [Array](../../sql-reference/data-types/array.md).<br/>ClickHouse tries to cast value from dictionary to the specified data type. For example, for MySQL, the field might be `TEXT`, `VARCHAR`, or `BLOB` in the MySQL source table, but it can be uploaded as `String` in ClickHouse.<br/>[Nullable](../../sql-reference/data-types/nullable.md) is currently supported for [Flat](#flat), [Hashed](#hashed), [ComplexKeyHashed](#complex_key_hashed), [Direct](#direct), [ComplexKeyDirect](#complex-key-direct), [RangeHashed](#range_hashed), Polygon, [Cache](#cache), [ComplexKeyCache](#complex_key_cache), [SSDCache](#ssd-cache), [SSDComplexKeyCache](#complex-key-ssd_cache) dictionaries. In [IPTrie](#ip_trie) dictionaries `Nullable` types are not supported.       | Yes      |
-| `null_value`                                         | Default value for a non-existing element.<br/>In the example, it is an empty string. [NULL](../syntax.md#null-literal) value can be used only for the `Nullable` types (see the previous line with types description).                                                                                                                                                                                                                       | Yes      |
-| `expression`                                         | [Expression](../../sql-reference/syntax.md#syntax-expressions) that ClickHouse executes on the value.<br/>The expression can be a column name in the remote SQL database. Thus, you can use it to create an alias for the remote column.<br/><br/>Default value: no expression.                                                              | No       |
+| `type`                                               | ClickHouse data type: [UInt8](../../sql-reference/data-types/int-uint.md), [UInt16](../../sql-reference/data-types/int-uint.md), [UInt32](../../sql-reference/data-types/int-uint.md), [UInt64](../../sql-reference/data-types/int-uint.md), [Int8](../../sql-reference/data-types/int-uint.md), [Int16](../../sql-reference/data-types/int-uint.md), [Int32](../../sql-reference/data-types/int-uint.md), [Int64](../../sql-reference/data-types/int-uint.md), [Float32](../../sql-reference/data-types/float.md), [Float64](../../sql-reference/data-types/float.md), [UUID](../../sql-reference/data-types/uuid.md), [Decimal32](../../sql-reference/data-types/decimal.md), [Decimal64](../../sql-reference/data-types/decimal.md), [Decimal128](../../sql-reference/data-types/decimal.md), [Decimal256](../../sql-reference/data-types/decimal.md),[Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md), [String](../../sql-reference/data-types/string.md), [Array](../../sql-reference/data-types/array.md).<br/>ClickHouse tries to cast value from dictionary to the specified data type. For example, for MySQL, the field might be `TEXT`, `VARCHAR`, or `BLOB` in the MySQL source table, but it can be uploaded as `String` in ClickHouse.<br/>[Nullable](../../sql-reference/data-types/nullable.md) is currently supported for [Flat](#flat), [Hashed](#hashed), [ComplexKeyHashed](#complex_key_hashed), [Direct](#direct), [ComplexKeyDirect](#complex_key_direct), [RangeHashed](#range_hashed), Polygon, [Cache](#cache), [ComplexKeyCache](#complex_key_cache), [SSDCache](#ssd_cache), [SSDComplexKeyCache](#complex_key_ssd_cache) dictionaries. In [IPTrie](#ip_trie) dictionaries `Nullable` types are not supported.       | Yes      |
+| `null_value`                                         | Default value for a non-existing element.<br/>In the example, it is an empty string. [NULL](../syntax.md#null) value can be used only for the `Nullable` types (see the previous line with types description).                                                                                                                                                                                                                       | Yes      |
+| `expression`                                         | [Expression](../../sql-reference/syntax.md#expressions) that ClickHouse executes on the value.<br/>The expression can be a column name in the remote SQL database. Thus, you can use it to create an alias for the remote column.<br/><br/>Default value: no expression.                                                              | No       |
 | <a name="hierarchical-dict-attr"></a> `hierarchical` | If `true`, the attribute contains the value of a parent key for the current key. See [Hierarchical Dictionaries](#hierarchical-dictionaries).<br/><br/>Default value: `false`.                                                                                               | No       |
 | `injective`                                          | Flag that shows whether the `id -> attribute` image is [injective](https://en.wikipedia.org/wiki/Injective_function).<br/>If `true`, ClickHouse can automatically place after the `GROUP BY` clause the requests to dictionaries with injection. Usually it significantly reduces the amount of such requests.<br/><br/>Default value: `false`. | No       |
 | `is_object_id`                                       | Flag that shows whether the query is executed for a MongoDB document by `ObjectID`.<br/><br/>Default value: `false`.
@@ -2031,7 +2031,7 @@ This hierarchy can be expressed as the following dictionary table.
 
 This table contains a column `parent_region` that contains the key of the nearest parent for the element.
 
-ClickHouse supports the [hierarchical](#dictionary-key-and-fields#hierarchical-dict-attr) property for [external dictionary](../../sql-reference/dictionaries/external-dictionaries/) attributes. This property allows you to configure the hierarchical dictionary similar to described above.
+ClickHouse supports the hierarchical property for external dictionary attributes. This property allows you to configure the hierarchical dictionary similar to described above.
 
 The [dictGetHierarchy](../../sql-reference/functions/ext-dict-functions.md#dictgethierarchy) function allows you to get the parent chain of an element.
 
@@ -2122,7 +2122,7 @@ When configuring the polygon dictionary, the key must have one of two types:
 
 Points can be specified as an array or a tuple of their coordinates. In the current implementation, only two-dimensional points are supported.
 
-The user can [upload their own data](#dictionary-sources) in all formats supported by ClickHouse.
+The user can upload their own data in all formats supported by ClickHouse.
 
 There are 3 types of [in-memory storage](#storig-dictionaries-in-memory) available:
 
