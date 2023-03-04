@@ -362,9 +362,11 @@ QueryStatus::QueryStatus(
 
 QueryStatus::~QueryStatus()
 {
+#if !defined(NDEBUG)
     /// Check that all executors were invalidated.
     for (const auto & e : executors)
         assert(!e->executor);
+#endif
 
     if (auto * memory_tracker = getMemoryTracker())
     {
