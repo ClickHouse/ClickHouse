@@ -376,6 +376,10 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
 void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
+    /// We don't want a local context to stuck in `ExpressionActions` in `StorageInMemoryMetadata`
+    chassert(!context->hasSessionContext());
+    chassert(!context->hasQueryContext());
+
     if (type == ADD_COLUMN)
     {
         ColumnDescription column(column_name, data_type);
@@ -1174,8 +1178,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                         if (default_expression)
                         {
                             ASTPtr query = default_expression->clone();
-                            auto syntax_result = TreeRewriter(context).analyze(query, all_columns.getAll());
-                            const auto actions = ExpressionAnalyzer(query, syntax_result, context).getActions(true);
+                            auto syntax_result = TreeRewriter(context->getGlobalContext()).analyze(query, all_columns.getAll());
+                            const auto actions = ExpressionAnalyzer(query, syntax_result, context->getGlobalContext()).getActions(true);
                             const auto required_columns = actions->getRequiredColumns();
 
                             if (required_columns.end() != std::find(required_columns.begin(), required_columns.end(), command.column_name))
@@ -1331,7 +1335,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     if (all_columns.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot DROP or CLEAR all columns");
 
-    validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns.getAll(), context);
+    validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns.getAll(), context->getGlobalContext());
 }
 
 bool AlterCommands::hasSettingsAlterCommand() const

@@ -2,6 +2,7 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Storages/IndicesDescription.h>
 
+#include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
@@ -70,6 +71,10 @@ IndexDescription & IndexDescription::operator=(const IndexDescription & other)
 
 IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context)
 {
+    /// We don't want a local context to stuck in `ExpressionActions` in `StorageInMemoryMetadata`
+    chassert(!context->hasSessionContext());
+    chassert(!context->hasQueryContext());
+
     const auto * index_definition = definition_ast->as<ASTIndexDeclaration>();
     if (!index_definition)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create skip index from non ASTIndexDeclaration AST");

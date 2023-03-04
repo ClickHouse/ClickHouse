@@ -306,9 +306,9 @@ void StorageMergeTree::alter(
 
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
-    auto maybe_mutation_commands = commands.getMutationCommands(new_metadata, local_context->getSettingsRef().materialize_ttl_after_modify, local_context);
+    auto maybe_mutation_commands = commands.getMutationCommands(new_metadata, local_context->getSettingsRef().materialize_ttl_after_modify, getContext());
     Int64 mutation_version = -1;
-    commands.apply(new_metadata, local_context);
+    commands.apply(new_metadata, getContext());
 
     /// This alter can be performed at new_metadata level only
     if (commands.isSettingsAlter())

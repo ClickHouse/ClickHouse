@@ -828,6 +828,10 @@ std::vector<String> ColumnsDescription::getAllRegisteredNames() const
 
 Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context)
 {
+   /// We don't want a local context to stuck in `ExpressionActions` in `StorageInMemoryMetadata`
+   chassert(!context->hasSessionContext());
+   chassert(!context->hasQueryContext());
+
     for (const auto & child : default_expr_list->children)
         if (child->as<ASTSelectQuery>() || child->as<ASTSelectWithUnionQuery>() || child->as<ASTSubquery>())
             throw Exception(ErrorCodes::THERE_IS_NO_DEFAULT_VALUE, "Select query is not allowed in columns DEFAULT expression");

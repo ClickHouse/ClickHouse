@@ -69,14 +69,14 @@ struct ProjectionDescription
 
     /// Parse projection from definition AST
     static ProjectionDescription
-    getProjectionFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr query_context);
+    getProjectionFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context);
 
     static ProjectionDescription getMinMaxCountProjection(
         const ColumnsDescription & columns,
         ASTPtr partition_columns,
         const Names & minmax_columns,
         const ASTs & primary_key_asts,
-        ContextPtr query_context);
+        ContextPtr context);
 
     ProjectionDescription() = default;
 
@@ -94,7 +94,7 @@ struct ProjectionDescription
 
     /// Recalculate projection with new columns because projection expression may change
     /// if something change in columns.
-    void recalculateWithNewColumns(const ColumnsDescription & new_columns, ContextPtr query_context);
+    void recalculateWithNewColumns(const ColumnsDescription & new_columns, ContextPtr context);
 
     bool isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const;
 
@@ -117,10 +117,10 @@ struct ProjectionsDescription : public IHints<1, ProjectionsDescription>
     /// Convert description to string
     String toString() const;
     /// Parse description from string
-    static ProjectionsDescription parse(const String & str, const ColumnsDescription & columns, ContextPtr query_context);
+    static ProjectionsDescription parse(const String & str, const ColumnsDescription & columns, ContextPtr context);
 
     /// Return common expression for all stored projections
-    ExpressionActionsPtr getSingleExpressionForProjections(const ColumnsDescription & columns, ContextPtr query_context) const;
+    ExpressionActionsPtr getSingleExpressionForProjections(const ColumnsDescription & columns, ContextPtr context) const;
 
     bool operator==(const ProjectionsDescription & other) const { return projections == other.projections; }
     bool operator!=(const ProjectionsDescription & other) const { return !(*this == other); }

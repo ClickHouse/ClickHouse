@@ -1064,7 +1064,7 @@ void StorageBuffer::alter(const AlterCommands & params, ContextPtr local_context
     optimize({} /*query*/, metadata_snapshot, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, {}, false /*cleanup*/, local_context);
 
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
-    params.apply(new_metadata, local_context);
+    params.apply(new_metadata, getContext());
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
     setInMemoryMetadata(new_metadata);
 }

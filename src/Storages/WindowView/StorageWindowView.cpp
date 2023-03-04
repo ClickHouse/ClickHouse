@@ -445,7 +445,7 @@ void StorageWindowView::alter(
     auto table_id = getStorageID();
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
-    params.apply(new_metadata, local_context);
+    params.apply(new_metadata, getContext());
 
     const auto & new_select = new_metadata.select;
     const auto & new_select_query = new_metadata.select.inner_query;

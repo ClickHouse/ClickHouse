@@ -5100,7 +5100,7 @@ void StorageReplicatedMergeTree::alter(
         /// We don't replicate storage_settings_ptr ALTER. It's local operation.
         /// Also we don't upgrade alter lock to table structure lock.
         StorageInMemoryMetadata future_metadata = getInMemoryMetadata();
-        commands.apply(future_metadata, query_context);
+        commands.apply(future_metadata, getContext());
 
         merge_strategy_picker.refreshState();
 
@@ -5131,7 +5131,7 @@ void StorageReplicatedMergeTree::alter(
         auto current_metadata = getInMemoryMetadataPtr();
 
         StorageInMemoryMetadata future_metadata = *current_metadata;
-        commands.apply(future_metadata, query_context);
+        commands.apply(future_metadata, getContext());
 
         ReplicatedMergeTreeTableMetadata future_metadata_in_zk(*this, current_metadata);
         if (ast_to_str(future_metadata.sorting_key.definition_ast) != ast_to_str(current_metadata->sorting_key.definition_ast))
@@ -5200,7 +5200,7 @@ void StorageReplicatedMergeTree::alter(
         alter_entry->create_time = time(nullptr);
 
         auto maybe_mutation_commands = commands.getMutationCommands(
-            *current_metadata, query_context->getSettingsRef().materialize_ttl_after_modify, query_context);
+            *current_metadata, query_context->getSettingsRef().materialize_ttl_after_modify, getContext());
         bool have_mutation = !maybe_mutation_commands.empty();
         alter_entry->have_mutation = have_mutation;
 

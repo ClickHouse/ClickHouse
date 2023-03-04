@@ -258,7 +258,7 @@ void StorageMaterializedView::alter(
     auto table_id = getStorageID();
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
-    params.apply(new_metadata, local_context);
+    params.apply(new_metadata, getContext());
 
     /// start modify query
     if (local_context->getSettingsRef().allow_experimental_alter_materialized_view_structure)
