@@ -4403,6 +4403,17 @@ class ClickHouseInstance:
                 objects = objects + self.get_s3_data_objects(path)
         return objects
 
+    def create_format_schema(self, file_name, content):
+        self.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "echo '{}' > {}".format(
+                    content, "/var/lib/clickhouse/format_schemas/" + file_name
+                ),
+            ]
+        )
+
 
 class ClickHouseKiller(object):
     def __init__(self, clickhouse_node):

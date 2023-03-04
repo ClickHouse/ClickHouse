@@ -8,13 +8,13 @@ import logging
 import time
 
 
-def get_options(i, backward_compatibility_check):
+def get_options(i, upgrade_check):
     options = []
     client_options = []
-    if 0 < i:
+    if i > 0:
         options.append("--order=random")
 
-    if i % 3 == 2 and not backward_compatibility_check:
+    if i % 3 == 2 and not upgrade_check:
         options.append(
             '''--db-engine="Replicated('/test/db/test_{}', 's1', 'r1')"'''.format(i)
         )
@@ -38,16 +38,16 @@ def get_options(i, backward_compatibility_check):
             client_options.append("join_algorithm='full_sorting_merge'")
         if join_alg_num % 4 == 3:
             client_options.append("join_algorithm='auto'")
-            client_options.append('max_rows_in_join=1000')
+            client_options.append("max_rows_in_join=1000")
 
     if i % 5 == 1:
         client_options.append("memory_tracker_fault_probability=0.001")
 
-    if i % 2 == 1 and not backward_compatibility_check:
+    if i % 2 == 1 and not upgrade_check:
         client_options.append("group_by_use_nulls=1")
 
     # 12 % 3 == 0, so it's Atomic database
-    if i == 12 and not backward_compatibility_check:
+    if i == 12 and not upgrade_check:
         client_options.append("implicit_transaction=1")
         client_options.append("throw_on_unsupported_query_inside_transaction=0")
 
@@ -63,11 +63,9 @@ def run_func_test(
     num_processes,
     skip_tests_option,
     global_time_limit,
-    backward_compatibility_check,
+    upgrade_check,
 ):
-    backward_compatibility_check_option = (
-        "--backward-compatibility-check" if backward_compatibility_check else ""
-    )
+    upgrade_check_option = "--upgrade-check" if upgrade_check else ""
     global_time_limit_option = ""
     if global_time_limit:
         global_time_limit_option = "--global_time_limit={}".format(global_time_limit)
@@ -77,14 +75,14 @@ def run_func_test(
         for i in range(num_processes)
     ]
     pipes = []
-    for i in range(0, len(output_paths)):
-        f = open(output_paths[i], "w")
+    for i, path in enumerate(output_paths):
+        f = open(path, "w")
         full_command = "{} {} {} {} {}".format(
             cmd,
-            get_options(i, backward_compatibility_check),
+            get_options(i, upgrade_check),
             global_time_limit_option,
             skip_tests_option,
-            backward_compatibility_check_option,
+            upgrade_check_option,
         )
         logging.info("Run func tests '%s'", full_command)
         p = Popen(full_command, shell=True, stdout=f, stderr=f)
@@ -176,7 +174,7 @@ def prepare_for_hung_check(drop_databases):
                 for db in databases:
                     if db == "system":
                         continue
-                    command = make_query_command(f'DETACH DATABASE {db}')
+                    command = make_query_command(f"DETACH DATABASE {db}")
                     # we don't wait for drop
                     Popen(command, shell=True)
                 break
@@ -211,7 +209,7 @@ def prepare_for_hung_check(drop_databases):
     # Even if all clickhouse-test processes are finished, there are probably some sh scripts,
     # which still run some new queries. Let's ignore them.
     try:
-        query = """clickhouse client -q "SELECT count() FROM system.processes where where elapsed > 300" """
+        query = """clickhouse client -q "SELECT count() FROM system.processes where elapsed > 300" """
         output = (
             check_output(query, shell=True, stderr=STDOUT, timeout=30)
             .decode("utf-8")
@@ -235,7 +233,7 @@ if __name__ == "__main__":
     parser.add_argument("--output-folder")
     parser.add_argument("--global-time-limit", type=int, default=1800)
     parser.add_argument("--num-parallel", type=int, default=cpu_count())
-    parser.add_argument("--backward-compatibility-check", action="store_true")
+    parser.add_argument("--upgrade-check", action="store_true")
     parser.add_argument("--hung-check", action="store_true", default=False)
     # make sense only for hung check
     parser.add_argument("--drop-databases", action="store_true", default=False)
@@ -250,7 +248,7 @@ if __name__ == "__main__":
         args.num_parallel,
         args.skip_func_tests,
         args.global_time_limit,
-        args.backward_compatibility_check,
+        args.upgrade_check,
     )
 
     logging.info("Will wait functests to finish")
@@ -303,11 +301,12 @@ if __name__ == "__main__":
             ]
         )
         hung_check_log = os.path.join(args.output_folder, "hung_check.log")
-        tee = Popen(['/usr/bin/tee', hung_check_log], stdin=PIPE)
+        tee = Popen(["/usr/bin/tee", hung_check_log], stdin=PIPE)
         res = call(cmd, shell=True, stdout=tee.stdin, stderr=STDOUT)
-        tee.stdin.close()
+        if tee.stdin is not None:
+            tee.stdin.close()
         if res != 0 and have_long_running_queries:
-            logging.info("Hung check failed with exit code {}".format(res))
+            logging.info("Hung check failed with exit code %d", res)
         else:
             hung_check_status = "No queries hung\tOK\t\\N\t\n"
             with open(
@@ -315,6 +314,5 @@ if __name__ == "__main__":
             ) as results:
                 results.write(hung_check_status)
             os.remove(hung_check_log)
-
 
     logging.info("Stress test finished")
