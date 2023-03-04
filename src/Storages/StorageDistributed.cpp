@@ -729,7 +729,7 @@ public:
         return global_in_or_join_nodes;
     }
 
-    bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
+    static bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
     {
         auto * function_node = parent->as<FunctionNode>();
         if (function_node && isNameOfGlobalInFunction(function_node->getFunctionName()))
@@ -856,12 +856,25 @@ QueryTreeNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
         return temporary_table_expression_node;
     }
 
-    auto subquery_ast = subquery_node->toAST();
     auto subquery_options = SelectQueryOptions(QueryProcessingStage::Complete, subquery_depth, true /*is_subquery*/);
     auto context_copy = Context::createCopy(mutable_context);
     updateContextForSubqueryExecution(context_copy);
 
-    InterpreterSelectQueryAnalyzer interpreter(subquery_ast, context_copy, subquery_options);
+    InterpreterSelectQueryAnalyzer interpreter(subquery_node, context_copy, subquery_options);
+    auto & query_plan = interpreter.getQueryPlan();
+
+    auto sample_block_with_unique_names = query_plan.getCurrentDataStream().header;
+    makeUniqueColumnNamesInBlock(sample_block_with_unique_names);
+
+    if (!blocksHaveEqualStructure(sample_block_with_unique_names, query_plan.getCurrentDataStream().header))
+    {
+        auto actions_dag = ActionsDAG::makeConvertingActions(
+            query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
+            sample_block_with_unique_names.getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Position);
+        auto converting_step = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(actions_dag));
+        query_plan.addStep(std::move(converting_step));
+    }
 
     Block sample = interpreter.getSampleBlock();
     NamesAndTypesList columns = sample.getNamesAndTypesList();
@@ -987,6 +1000,10 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
         else if (auto * in_function_node = global_in_or_join_node.query_node->as<FunctionNode>())
         {
             auto & in_function_subquery_node = in_function_node->getArguments().getNodes().at(1);
+            auto in_function_node_type = in_function_subquery_node->getNodeType();
+            if (in_function_node_type != QueryTreeNodeType::QUERY && in_function_node_type != QueryTreeNodeType::UNION)
+                continue;
+
             auto temporary_table_expression_node = executeSubqueryNode(in_function_subquery_node,
                 planner_context->getMutableQueryContext(),
                 global_in_or_join_node.subquery_depth);

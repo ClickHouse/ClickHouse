@@ -1954,21 +1954,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                   *
                   * Example: SELECT (SELECT 2 AS x, x)
                   */
-                NameSet block_column_names;
-                size_t unique_column_name_counter = 1;
-
-                for (auto & column_with_type : block)
-                {
-                    if (!block_column_names.contains(column_with_type.name))
-                    {
-                        block_column_names.insert(column_with_type.name);
-                        continue;
-                    }
-
-                    column_with_type.name += '_';
-                    column_with_type.name += std::to_string(unique_column_name_counter);
-                    ++unique_column_name_counter;
-                }
+                makeUniqueColumnNamesInBlock(block);
 
                 scalar_block.insert({
                     ColumnTuple::create(block.getColumns()),
@@ -5062,7 +5048,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         /// Do not constant fold get scalar functions
         bool disable_constant_folding = function_name == "__getScalar" || function_name == "shardNum" ||
-            function_name == "shardCount";
+            function_name == "shardCount" || function_name == "hostName";
 
         /** If function is suitable for constant folding try to convert it to constant.
           * Example: SELECT plus(1, 1);

@@ -465,6 +465,17 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             {
                 from_stage = storage->getQueryProcessingStage(query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);
                 storage->read(query_plan, columns_names, storage_snapshot, table_expression_query_info, query_context, from_stage, max_block_size, max_streams);
+
+                if (query_context->hasQueryContext() && !select_query_options.is_internal)
+                {
+                    auto local_storage_id = storage->getStorageID();
+                    query_context->getQueryContext()->addQueryAccessInfo(
+                        backQuoteIfNeed(local_storage_id.getDatabaseName()),
+                        local_storage_id.getFullTableName(),
+                        columns_names,
+                        {},
+                        {});
+                }
             }
 
             if (query_plan.isInitialized())
