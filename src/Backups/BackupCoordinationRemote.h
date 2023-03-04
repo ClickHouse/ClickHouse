@@ -4,6 +4,7 @@
 #include <Backups/BackupCoordinationReplicatedAccess.h>
 #include <Backups/BackupCoordinationReplicatedTables.h>
 #include <Backups/BackupCoordinationStageSync.h>
+#include <Storages/MergeTree/ZooKeeperRetries.h>
 
 
 namespace DB
@@ -74,6 +75,7 @@ private:
     const zkutil::GetZooKeeper get_zookeeper;
     const bool is_internal;
 
+    mutable ZooKeeperRetriesInfo zookeeper_retries_info;
     std::optional<BackupCoordinationStageSync> stage_sync;
 
     mutable std::mutex mutex;
