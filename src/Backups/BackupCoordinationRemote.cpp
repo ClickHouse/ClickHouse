@@ -540,7 +540,7 @@ std::vector<FileInfo> BackupCoordinationRemote::getAllFileInfos() const
         retries_ctl.retryLoop([&]()
         {
             auto zk = getZooKeeper();
-            batched_escaped_names = split_vector(zk->getChildren(zookeeper_path + "/file_names"), 0);
+            batched_escaped_names = split_vector(zk->getChildren(zookeeper_path + "/file_names"), 1000);
         });
     }
 
