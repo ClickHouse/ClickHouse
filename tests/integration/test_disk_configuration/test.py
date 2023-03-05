@@ -294,6 +294,12 @@ def test_merge_tree_custom_disk_setting(start_cluster):
         ).strip()
     )
 
+    node1.query(f"DROP TABLE {TABLE_NAME} SYNC")
+    node1.query(f"DROP TABLE {TABLE_NAME}_2 SYNC")
+    node1.query(f"DROP TABLE {TABLE_NAME}_3 SYNC")
+    node1.query(f"DROP TABLE {TABLE_NAME}_4 SYNC")
+    node2.query(f"DROP TABLE {TABLE_NAME}_4 SYNC")
+
 
 def test_merge_tree_nested_custom_disk_setting(start_cluster):
     node = cluster.instances["node1"]
@@ -307,9 +313,9 @@ def test_merge_tree_nested_custom_disk_setting(start_cluster):
     )
 
     node.query(
-        """
-        DROP TABLE IF EXISTS test;
-        CREATE TABLE test (a Int32)
+        f"""
+        DROP TABLE IF EXISTS {TABLE_NAME} SYNC;
+        CREATE TABLE {TABLE_NAME} (a Int32)
         ENGINE = MergeTree() order by tuple()
         SETTINGS disk = disk(
                 type=cache,
@@ -323,13 +329,13 @@ def test_merge_tree_nested_custom_disk_setting(start_cluster):
     """
     )
 
-    node.query("INSERT INTO test SELECT number FROM numbers(100)")
+    node.query(f"INSERT INTO {TABLE_NAME} SELECT number FROM numbers(100)")
     node.query("SYSTEM DROP FILESYSTEM CACHE")
 
     # Check cache is filled
     assert 0 == int(node.query("SELECT count() FROM system.filesystem_cache"))
-    assert 100 == int(node.query("SELECT count() FROM test"))
-    node.query("SELECT * FROM test")
+    assert 100 == int(node.query(f"SELECT count() FROM {TABLE_NAME}"))
+    node.query(f"SELECT * FROM {TABLE_NAME}")
     assert 0 < int(node.query("SELECT count() FROM system.filesystem_cache"))
 
     # Check s3 is filled
@@ -339,12 +345,13 @@ def test_merge_tree_nested_custom_disk_setting(start_cluster):
 
     node.restart_clickhouse()
 
-    assert 100 == int(node.query("SELECT count() FROM test"))
+    assert 100 == int(node.query(f"SELECT count() FROM {TABLE_NAME}"))
 
     expected = """
         SETTINGS disk = disk(type = cache, max_size = \\'[HIDDEN]\\', path = \\'[HIDDEN]\\', disk = disk(type = s3, endpoint = \\'[HIDDEN]\\'
     """
-    assert expected.strip() in node.query(f"SHOW CREATE TABLE test").strip()
+    assert expected.strip() in node.query(f"SHOW CREATE TABLE {TABLE_NAME}").strip()
+    node.query(f"DROP TABLE {TABLE_NAME} SYNC")
 
 
 def test_merge_tree_setting_override(start_cluster):
@@ -419,3 +426,4 @@ def test_merge_tree_setting_override(start_cluster):
     assert (
         len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True))) > 0
     )
+    node.query(f"DROP TABLE {TABLE_NAME} SYNC")
