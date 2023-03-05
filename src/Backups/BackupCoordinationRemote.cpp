@@ -579,6 +579,8 @@ std::vector<FileInfo> BackupCoordinationRemote::getAllFileInfos() const
             for (size_t i = 0; i < batch.size(); ++i)
             {
                 auto file_name = batch[i];
+                if (sizes_and_checksums.value()[i].error != Coordination::Error::ZOK)
+                    throw zkutil::KeeperException(sizes_and_checksums.value()[i].error);
                 auto size_and_checksum = sizes_and_checksums.value()[i].data;
                 auto size = deserializeSizeAndChecksum(size_and_checksum).first;
 
@@ -611,6 +613,8 @@ std::vector<FileInfo> BackupCoordinationRemote::getAllFileInfos() const
         for (size_t i = 0; i < non_empty_file_names.size(); ++i)
         {
             FileInfo file_info;
+            if (non_empty_file_infos_serialized.value()[i].error != Coordination::Error::ZOK)
+                throw zkutil::KeeperException(non_empty_file_infos_serialized.value()[i].error);
             file_info = deserializeFileInfo(non_empty_file_infos_serialized.value()[i].data);
             file_info.file_name = unescapeForFileName(non_empty_file_names[i]);
             non_empty_files_infos.emplace_back(std::move(file_info));
