@@ -63,9 +63,6 @@ bool queryHasWithTotalsInAnySubqueryInJoinTree(const QueryTreeNodePtr & query_no
 /// Returns `and` function node that has condition nodes as its arguments
 QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, const ContextPtr & context);
 
-/// Try extract boolean constant from condition node
-std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr & condition_node);
-
 /// Replace tables nodes and table function nodes with dummy table nodes
 using ResultReplacementMap = std::unordered_map<QueryTreeNodePtr, QueryTreeNodePtr>;
 QueryTreeNodePtr replaceTablesAndTableFunctionsWithDummyTables(const QueryTreeNodePtr & query_node,

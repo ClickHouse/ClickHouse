@@ -31,4 +31,11 @@ void assertNoFunctionNodes(const QueryTreeNodePtr & node,
     std::string_view exception_function_name,
     std::string_view exception_place_message);
 
+/** Validate tree size. If size of tree is greater than max size throws exception.
+  * Additionally for each node in tree, update node to tree size map.
+  */
+void validateTreeSize(const QueryTreeNodePtr & node,
+    size_t max_size,
+    std::unordered_map<QueryTreeNodePtr, size_t> & node_to_tree_size);
+
 }

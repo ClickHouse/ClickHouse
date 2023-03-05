@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
@@ -170,6 +171,27 @@ QueryTreeNodePtr buildCastFunction(const QueryTreeNodePtr & expression,
     }
 
     return cast_function_node;
+}
+
+std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr & condition_node)
+{
+    const auto * constant_node = condition_node->as<ConstantNode>();
+    if (!constant_node)
+        return {};
+
+    const auto & value = constant_node->getValue();
+    auto constant_type = constant_node->getResultType();
+    constant_type = removeNullable(removeLowCardinality(constant_type));
+
+    auto which_constant_type = WhichDataType(constant_type);
+    if (!which_constant_type.isUInt8() && !which_constant_type.isNothing())
+        return {};
+
+    if (value.isNull())
+        return false;
+
+    UInt8 predicate_value = value.safeGet<UInt8>();
+    return predicate_value > 0;
 }
 
 static ASTPtr convertIntoTableExpressionAST(const QueryTreeNodePtr & table_expression_node)

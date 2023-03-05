@@ -19,7 +19,7 @@ bool isNameOfLocalInFunction(const std::string & function_name);
 /// Returns true if function name is name of global IN function or its variations, false otherwise
 bool isNameOfGlobalInFunction(const std::string & function_name);
 
-/// Returns global in function name for local in function name
+/// Returns global IN function name for local IN function name
 std::string getGlobalInFunctionNameForLocalInFunctionName(const std::string & function_name);
 
 /// Add unique suffix to names of duplicate columns in block
@@ -33,6 +33,9 @@ QueryTreeNodePtr buildCastFunction(const QueryTreeNodePtr & expression,
     const DataTypePtr & type,
     const ContextPtr & context,
     bool resolve = true);
+
+/// Try extract boolean constant from condition node
+std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr & condition_node);
 
 /** Add table expression in tables in select query children.
   * If table expression node is not of identifier node, table node, query node, table function node, join node or array join node type throws logical error exception.
