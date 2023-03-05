@@ -53,12 +53,18 @@ void MySQLSettings::loadFromQueryContext(ContextPtr context, ASTStorage & storag
 
     const Settings & settings = context->getQueryContext()->getSettingsRef();
 
-    /// Setting from SETTING clause have bigger priority.
-    if (!mysql_datatypes_support_level.changed
-        && settings.mysql_datatypes_support_level.value != mysql_datatypes_support_level.value)
+    if (settings.mysql_datatypes_support_level.value != mysql_datatypes_support_level.value)
     {
         static constexpr auto setting_name = "mysql_datatypes_support_level";
         set(setting_name, settings.mysql_datatypes_support_level.toString());
+
+        if (!storage_def.settings)
+        {
+            auto settings_ast = std::make_shared<ASTSetQuery>();
+            settings_ast->is_standalone = false;
+            storage_def.set(storage_def.settings, settings_ast);
+        }
+
         auto & changes = storage_def.settings->changes;
         if (changes.end() == std::find_if(
                 changes.begin(), changes.end(),

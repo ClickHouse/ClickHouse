@@ -221,9 +221,9 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         {
             if (engine_name == "MySQL")
             {
-                mysql_settings->loadFromQuery(*engine_define);
+                mysql_settings->loadFromQueryContext(context, *engine_define);
                 if (engine_define->settings)
-                    mysql_settings->loadFromQueryContext(context, *engine_define); /// Will override only if not changed.
+                    mysql_settings->loadFromQuery(*engine_define);
 
                 auto mysql_pool = createMySQLPoolWithFailover(configuration, *mysql_settings);
 
