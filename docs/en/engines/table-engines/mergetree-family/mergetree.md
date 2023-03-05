@@ -450,29 +450,32 @@ INDEX sample_index3 (lower(str), str) TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 
 
 Conditions in the `WHERE` clause contains calls of the functions that operate with columns. If the column is a part of an index, ClickHouse tries to use this index when performing the functions. ClickHouse supports different subsets of functions for using indexes.
 
-The `set` index can be used with all functions. Function subsets for other indexes are shown in the table below.
+Indexes of type `set` can be utilized by all functions. The other index types are supported as follows:
 
 | Function (operator) / Index                                                                                | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter |
-|------------------------------------------------------------------------------------------------------------|-------------|--------|-------------|-------------|---------------|
-| [equals (=, ==)](/docs/en/sql-reference/functions/comparison-functions.md/#function-equals)                 | ✔           | ✔      | ✔           | ✔           | ✔             |
-| [notEquals(!=, &lt;&gt;)](/docs/en/sql-reference/functions/comparison-functions.md/#function-notequals)         | ✔           | ✔      | ✔           | ✔           | ✔             |
-| [like](/docs/en/sql-reference/functions/string-search-functions.md/#function-like)                          | ✔           | ✔      | ✔           | ✔           | ✗             |
-| [notLike](/docs/en/sql-reference/functions/string-search-functions.md/#function-notlike)                    | ✔           | ✔      | ✔           | ✔           | ✗             |
-| [startsWith](/docs/en/sql-reference/functions/string-functions.md/#startswith)                              | ✔           | ✔      | ✔           | ✔           | ✗             |
-| [endsWith](/docs/en/sql-reference/functions/string-functions.md/#endswith)                                  | ✗           | ✗      | ✔           | ✔           | ✗             |
-| [multiSearchAny](/docs/en/sql-reference/functions/string-search-functions.md/#function-multisearchany)      | ✗           | ✗      | ✔           | ✗           | ✗             |
-| [in](/docs/en/sql-reference/functions/in-functions#in-functions)                                        | ✔           | ✔      | ✔           | ✔           | ✔             |
-| [notIn](/docs/en/sql-reference/functions/in-functions#in-functions)                                     | ✔           | ✔      | ✔           | ✔           | ✔             |
-| [less (<)](/docs/en/sql-reference/functions/comparison-functions.md/#function-less)                        | ✔           | ✔      | ✗           | ✗           | ✗             |
-| [greater (>)](/docs/en/sql-reference/functions/comparison-functions.md/#function-greater)                  | ✔           | ✔      | ✗           | ✗           | ✗             |
-| [lessOrEquals (<=)](/docs/en/sql-reference/functions/comparison-functions.md/#function-lessorequals)       | ✔           | ✔      | ✗           | ✗           | ✗             |
-| [greaterOrEquals (>=)](/docs/en/sql-reference/functions/comparison-functions.md/#function-greaterorequals) | ✔           | ✔      | ✗           | ✗           | ✗             |
-| [empty](/docs/en/sql-reference/functions/array-functions#function-empty)                                | ✔           | ✔      | ✗           | ✗           | ✗             |
-| [notEmpty](/docs/en/sql-reference/functions/array-functions#function-notempty)                          | ✔           | ✔      | ✗           | ✗           | ✗             |
-| hasToken                                                                                                   | ✗           | ✗      | ✗           | ✔           | ✗             |
-| hasTokenOrNull                                                                                                   | ✗           | ✗      | ✗           | ✔           | ✗             |
-| hasTokenCaseInsensitive                                                                                                   | ✗           | ✗      | ✗           | ✔           | ✗             |
-| hasTokenCaseInsensitiveOrNull                                                                                                   | ✗           | ✗      | ✗           | ✔           | ✗             |
+|------------------------------------------------------------------------------------------------------------|-------------|--------|------------|------------|--------------|
+| [equals (=, ==)](/docs/en/sql-reference/functions/comparison-functions.md/#function-equals)                | ✔           | ✔      | ✔          | ✔          | ✔            |
+| [notEquals(!=, &lt;&gt;)](/docs/en/sql-reference/functions/comparison-functions.md/#function-notequals)    | ✔           | ✔      | ✔          | ✔          | ✔            |
+| [like](/docs/en/sql-reference/functions/string-search-functions.md/#function-like)                         | ✔           | ✔      | ✔          | ✔          | ✗            |
+| [notLike](/docs/en/sql-reference/functions/string-search-functions.md/#function-notlike)                   | ✔           | ✔      | ✔          | ✔          | ✗            |
+| [startsWith](/docs/en/sql-reference/functions/string-functions.md/#startswith)                             | ✔           | ✔      | ✔          | ✔          | ✗            |
+| [endsWith](/docs/en/sql-reference/functions/string-functions.md/#endswith)                                 | ✗           | ✗      | ✔          | ✔          | ✗            |
+| [multiSearchAny](/docs/en/sql-reference/functions/string-search-functions.md/#function-multisearchany)     | ✗           | ✗      | ✔          | ✗          | ✗            |
+| [in](/docs/en/sql-reference/functions/in-functions#in-functions)                                           | ✔           | ✔      | ✔          | ✔          | ✔            |
+| [notIn](/docs/en/sql-reference/functions/in-functions#in-functions)                                        | ✔           | ✔      | ✔          | ✔          | ✔            |
+| [less (<)](/docs/en/sql-reference/functions/comparison-functions.md/#function-less)                        | ✔           | ✔      | ✗          | ✗          | ✗            |
+| [greater (>)](/docs/en/sql-reference/functions/comparison-functions.md/#function-greater)                  | ✔           | ✔      | ✗          | ✗          | ✗            |
+| [lessOrEquals (<=)](/docs/en/sql-reference/functions/comparison-functions.md/#function-lessorequals)       | ✔           | ✔      | ✗          | ✗          | ✗            |
+| [greaterOrEquals (>=)](/docs/en/sql-reference/functions/comparison-functions.md/#function-greaterorequals) | ✔           | ✔      | ✗          | ✗          | ✗            |
+| [empty](/docs/en/sql-reference/functions/array-functions#function-empty)                                   | ✔           | ✔      | ✗          | ✗          | ✗            |
+| [notEmpty](/docs/en/sql-reference/functions/array-functions#function-notempty)                             | ✔           | ✔      | ✗          | ✗          | ✗            |
+| [has](/docs/en/sql-reference/functions/array-functions#function-has)                                       | ✗           | ✗      | ✔          | ✔          | ✔            |
+| [hasAny](/docs/en/sql-reference/functions/array-functions#function-hasAny)                                 | ✗           | ✗      | ✗          | ✗          | ✔            |
+| [hasAll](/docs/en/sql-reference/functions/array-functions#function-hasAll)                                 | ✗           | ✗      | ✗          | ✗          | ✔            |
+| hasToken                                                                                                   | ✗           | ✗      | ✗          | ✔          | ✗            |
+| hasTokenOrNull                                                                                             | ✗           | ✗      | ✗          | ✔          | ✗            |
+| hasTokenCaseInsensitive                                                                                    | ✗           | ✗      | ✗          | ✔          | ✗            |
+| hasTokenCaseInsensitiveOrNull                                                                              | ✗           | ✗      | ✗          | ✔          | ✗            |
 
 Functions with a constant argument that is less than ngram size can’t be used by `ngrambf_v1` for query optimization.
 
