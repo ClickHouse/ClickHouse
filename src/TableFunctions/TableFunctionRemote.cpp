@@ -52,7 +52,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
     size_t max_args = is_cluster_function ? 4 : 6;
     NamedCollectionPtr named_collection;
     std::vector<std::pair<std::string, ASTPtr>> complex_args;
-    if (!is_cluster_function && (named_collection = tryGetNamedCollectionWithOverrides(args, false, &complex_args)))
+    if (!is_cluster_function && (named_collection = tryGetNamedCollectionWithOverrides(args, context, false, &complex_args)))
     {
         validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(
             *named_collection,

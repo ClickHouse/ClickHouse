@@ -280,7 +280,7 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
 StorageMySQL::Configuration StorageMySQL::getConfiguration(ASTs engine_args, ContextPtr context_, MySQLSettings & storage_settings)
 {
     StorageMySQL::Configuration configuration;
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context_))
     {
         configuration = StorageMySQL::processNamedCollectionResult(*named_collection, storage_settings);
     }
@@ -294,11 +294,10 @@ StorageMySQL::Configuration StorageMySQL::getConfiguration(ASTs engine_args, Con
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context_);
 
-        const auto & host_port = checkAndGetLiteralArgument<String>(engine_args[0], "host:port");
+        configuration.addresses_expr = checkAndGetLiteralArgument<String>(engine_args[0], "host:port");
         size_t max_addresses = context_->getSettingsRef().glob_expansion_max_elements;
 
-        configuration.addresses_expr = host_port;
-        configuration.addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 3306);
+        configuration.addresses = parseRemoteDescriptionForExternalDatabase(configuration.addresses_expr, max_addresses, 3306);
         configuration.database = checkAndGetLiteralArgument<String>(engine_args[1], "database");
         configuration.table = checkAndGetLiteralArgument<String>(engine_args[2], "table");
         configuration.username = checkAndGetLiteralArgument<String>(engine_args[3], "username");

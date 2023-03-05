@@ -186,7 +186,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         ASTs & arguments = engine->arguments->children;
         auto mysql_settings = std::make_unique<MySQLSettings>();
 
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(arguments))
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(arguments, context))
         {
             configuration = StorageMySQL::processNamedCollectionResult(*named_collection, *mysql_settings, false);
         }
@@ -222,7 +222,8 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             if (engine_name == "MySQL")
             {
                 mysql_settings->loadFromQuery(*engine_define);
-                mysql_settings->loadFromQueryContext(context, *engine_define); /// Will override only if not changed.
+                if (engine_define->settings)
+                    mysql_settings->loadFromQueryContext(context, *engine_define); /// Will override only if not changed.
 
                 auto mysql_pool = createMySQLPoolWithFailover(configuration, *mysql_settings);
 
@@ -315,7 +316,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         auto use_table_cache = false;
         StoragePostgreSQL::Configuration configuration;
 
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args))
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
         {
             configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, false);
             use_table_cache = named_collection->getOrDefault<UInt64>("use_tables_cache", 0);
@@ -378,7 +379,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         ASTs & engine_args = engine->arguments->children;
         StoragePostgreSQL::Configuration configuration;
 
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args))
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
         {
             configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, false);
         }

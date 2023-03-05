@@ -30,7 +30,7 @@ namespace
         return NamedCollectionFactory::instance().tryGet(collection_name);
     }
 
-    std::optional<std::pair<std::string, std::variant<Field, ASTPtr>>> getKeyValueFromAST(ASTPtr ast, bool fallback_to_ast_value)
+    std::optional<std::pair<std::string, std::variant<Field, ASTPtr>>> getKeyValueFromAST(ASTPtr ast, bool fallback_to_ast_value, ContextPtr context)
     {
         const auto * function = ast->as<ASTFunction>();
         if (!function || function->name != "equals")
@@ -42,14 +42,16 @@ namespace
         if (function_args.size() != 2)
             return std::nullopt;
 
-        auto context = Context::getGlobalContextInstance();
         auto literal_key = evaluateConstantExpressionOrIdentifierAsLiteral(function_args[0], context);
         auto key = checkAndGetLiteralArgument<String>(literal_key, "key");
 
         ASTPtr literal_value;
         try
         {
-            literal_value = evaluateConstantExpressionOrIdentifierAsLiteral(function_args[1], context);
+            if (key == "database" || key == "db")
+                literal_value = evaluateConstantExpressionForDatabaseName(function_args[1], context);
+            else
+                literal_value = evaluateConstantExpressionOrIdentifierAsLiteral(function_args[1], context);
         }
         catch (...)
         {
@@ -65,7 +67,7 @@ namespace
 
 
 MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
-    ASTs asts, bool throw_unknown_collection, std::vector<std::pair<std::string, ASTPtr>> * complex_args)
+    ASTs asts, ContextPtr context, bool throw_unknown_collection, std::vector<std::pair<std::string, ASTPtr>> * complex_args)
 {
     if (asts.empty())
         return nullptr;
@@ -83,7 +85,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
 
     for (auto * it = std::next(asts.begin()); it != asts.end(); ++it)
     {
-        auto value_override = getKeyValueFromAST(*it, complex_args != nullptr);
+        auto value_override = getKeyValueFromAST(*it, complex_args != nullptr, context);
 
         if (!value_override && !(*it)->as<ASTFunction>())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value argument or function");
