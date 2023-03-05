@@ -8,9 +8,11 @@
 #include <Functions/FunctionsConversion.h>
 #include <Functions/IFunction.h>
 #include <Functions/castTypeToEither.h>
+#include <Functions/numLiteralChars.h>
 
 #include <IO/WriteHelpers.h>
 #include <base/types.h>
+#include <boost/algorithm/string/case_conv.hpp>
 
 namespace DB
 {
@@ -22,6 +24,8 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
+    extern const int CANNOT_PARSE_TEXT;
 }
 
 namespace
@@ -79,41 +83,12 @@ namespace
            39447, 39812, 40177, 40543, 40908, 41273, 41638, 42004, 42369, 42734, 43099, 43465, 43830, 44195, 44560, 44926, 45291, 45656,
            46021, 46387, 46752, 47117, 47482, 47847, 48212, 48577, 48942, 49308, 49673};
 
-    Int64 numLiteralChars(const char * cur, const char * end)
-    {
-        bool found = false;
-        Int64 count = 0;
-        while (cur < end)
-        {
-            if (*cur == '\'')
-            {
-                if (cur + 1 < end && *(cur + 1) == '\'')
-                {
-                    count += 2;
-                    cur += 2;
-                }
-                else
-                {
-                    found = true;
-                    break;
-                }
-            }
-            else
-            {
-                ++count;
-                ++cur;
-            }
-        }
-        return found ? count : -1;
-    }
-
     struct DateTime
     {
         Int32 year = 1970;
         Int32 month = 1;
         Int32 day = 1;
         std::vector<Int32> day_of_month_values;
-        bool is_ad = true; // AD -> true, BC -> false.
 
         Int32 week = 1; // Week of year based on ISO week date, e.g: 27
         Int32 day_of_week = 1; // Day of week, Monday:1, Tuesday:2, ..., Sunday:7
@@ -144,7 +119,6 @@ namespace
             month = 1;
             day = 1;
             day_of_month_values.clear();
-            is_ad = true;
 
             week = 1;
             day_of_week = 1;
@@ -301,20 +275,18 @@ namespace
             second = second_;
         }
 
-        void setEra(String & text)
+        void setEra(String & text) // NOLINT
         {
-            Poco::toLowerInPlace(text);
-            if (text == "ad")
-                is_ad = true;
-            else if (text == "bc")
-                is_ad = false;
-            else
+            boost::to_lower(text);
+            if (text == "bc")
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Era BC exceeds the range of DateTime");
+            else if (text != "ad")
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown era {}", text);
         }
 
         ALWAYS_INLINE void setAMPM(String & text)
         {
-            Poco::toLowerInPlace(text);
+            boost::to_lower(text);
             if (text == "am")
                 is_am = true;
             else if (text == "pm")
@@ -450,10 +422,6 @@ namespace
 
         Int64 checkAndGetDateTime(const DateLUTImpl & time_zone)
         {
-            /// Era is BC and year of era is provided
-            if (is_year_of_era && !is_ad)
-                year = -1 * (year - 1);
-
             if (is_hour_of_half_day && !is_am)
                 hour += 12;
 
@@ -572,7 +540,7 @@ namespace
             String format = getFormat(arguments);
             const auto * time_zone = getTimeZone(arguments).first;
 
-            std::vector<Action> instructions;
+            std::vector<Instruction> instructions;
             parseFormat(format, instructions);
 
             auto col_res = ColumnDateTime::create();
@@ -610,7 +578,7 @@ namespace
 
 
     private:
-        class Action
+        class Instruction
         {
         private:
             enum class NeedCheckSpace
@@ -629,10 +597,10 @@ namespace
             std::string literal;
 
         public:
-            explicit Action(Func && func_, const char * func_name_) : func(std::move(func_)), func_name(func_name_) { }
+            explicit Instruction(Func && func_, const char * func_name_) : func(std::move(func_)), func_name(func_name_) { }
 
-            explicit Action(const String & literal_) : literal(literal_) { }
-            explicit Action(String && literal_) : literal(std::move(literal_)) { }
+            explicit Instruction(const String & literal_) : literal(literal_) { }
+            explicit Instruction(String && literal_) : literal(std::move(literal_)) { }
 
             /// For debug
             [[maybe_unused]] String toString() const
@@ -705,7 +673,7 @@ namespace
 
             static void checkSpace(Pos cur, Pos end, size_t len, const String & msg)
             {
-                if (cur > end || cur + len > end)
+                if (cur > end || cur + len > end) [[unlikely]]
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unable to parse because {}", msg);
             }
 
@@ -727,10 +695,10 @@ namespace
                 checkSpace(cur, end, 3, "Parsing DayOfWeekTextShort requires size >= 3");
 
                 String text(cur, 3);
-                Poco::toLowerInPlace(text);
+                boost::to_lower(text);
                 auto it = dayOfWeekMap.find(text);
                 if (it == dayOfWeekMap.end())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown day of week short text {}", text);
+                    throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Unknown day of week short text {}", text);
                 date.setDayOfWeek(it->second.second);
                 cur += 3;
                 return cur;
@@ -741,10 +709,10 @@ namespace
                 checkSpace(cur, end, 3, "Parsing MonthOfYearTextShort requires size >= 3");
 
                 String text(cur, 3);
-                Poco::toLowerInPlace(text);
+                boost::to_lower(text);
                 auto it = monthMap.find(text);
                 if (it == monthMap.end())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown month of year short text {}", text);
+                    throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Unknown month of year short text {}", text);
 
                 date.setMonth(it->second.second);
                 cur += 3;
@@ -885,18 +853,18 @@ namespace
             {
                 checkSpace(cur, end, 6, "jodaDayOfWeekText requires the size >= 6");
                 String text1(cur, 3);
-                Poco::toLowerInPlace(text1);
+                boost::to_lower(text1);
                 auto it = dayOfWeekMap.find(text1);
                 if (it == dayOfWeekMap.end())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown day of week text: {}", text1);
+                    throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Unknown day of week text: {}", text1);
                 cur += 3;
 
                 size_t left_size = it->second.first.size();
                 checkSpace(cur, end, left_size, "jodaDayOfWeekText requires the second parg size >= " + std::to_string(left_size));
                 String text2(cur, left_size);
-                Poco::toLowerInPlace(text2);
+                boost::to_lower(text2);
                 if (text2 != it->second.first)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown day of week text: {}", text1 + text2);
+                    throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Unknown day of week text: {}", text1 + text2);
                 cur += left_size;
 
                 date.setDayOfWeek(it->second.second);
@@ -1168,10 +1136,10 @@ namespace
                 checkSpace(cur, end, 3, "jodaDayOfWeekText requires size >= 3");
 
                 String text1(cur, 3);
-                Poco::toLowerInPlace(text1);
+                boost::to_lower(text1);
                 auto it = dayOfWeekMap.find(text1);
                 if (it == dayOfWeekMap.end())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown day of week text: {}", text1);
+                    throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Unknown day of week text: {}", text1);
                 cur += 3;
                 date.setDayOfWeek(it->second.second);
 
@@ -1179,7 +1147,7 @@ namespace
                 if (cur + left_size <= end)
                 {
                     String text2(cur, left_size);
-                    Poco::toLowerInPlace(text2);
+                    boost::to_lower(text2);
                     if (text2 == it->second.first)
                     {
                         cur += left_size;
@@ -1217,10 +1185,10 @@ namespace
             {
                 checkSpace(cur, end, 3, "jodaMonthOfYearText requires size >= 3");
                 String text1(cur, 3);
-                Poco::toLowerInPlace(text1);
+                boost::to_lower(text1);
                 auto it = monthMap.find(text1);
                 if (it == monthMap.end())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown month of year text: {}", text1);
+                    throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Unknown month of year text: {}", text1);
                 cur += 3;
                 date.setMonth(it->second.second);
 
@@ -1228,7 +1196,7 @@ namespace
                 if (cur + left_size <= end)
                 {
                     String text2(cur, left_size);
-                    Poco::toLowerInPlace(text2);
+                    boost::to_lower(text2);
                     if (text2 == it->second.first)
                     {
                         cur += left_size;
@@ -1306,7 +1274,7 @@ namespace
         };
 
 
-        ALWAYS_INLINE void parseFormat(const String & format, std::vector<Action> & instructions) const
+        ALWAYS_INLINE void parseFormat(const String & format, std::vector<Instruction> & instructions) const
         {
             if constexpr (parse_syntax == ParseDateTimeTraits::ParseSyntax::MySQL)
                 parseMysqlFormat(format, instructions);
@@ -1320,7 +1288,7 @@ namespace
                     getName());
         }
 
-        ALWAYS_INLINE void parseMysqlFormat(const String & format, std::vector<Action> & instructions) const
+        ALWAYS_INLINE void parseMysqlFormat(const String & format, std::vector<Instruction> & instructions) const
         {
 #define ACTION_ARGS(func) &(func), #func
 
@@ -1328,13 +1296,13 @@ namespace
             Pos end = pos + format.size();
             while (true)
             {
-                Pos percent_pos = find_first_symbols<'%'>(pos, end);
-                if (percent_pos < end)
+                Pos next_percent_pos = find_first_symbols<'%'>(pos, end);
+                if (next_percent_pos < end)
                 {
-                    if (pos < percent_pos)
-                        instructions.emplace_back(String(pos, percent_pos - pos));
+                    if (pos < next_percent_pos)
+                        instructions.emplace_back(String(pos, next_percent_pos - pos));
 
-                    pos = percent_pos + 1;
+                    pos = next_percent_pos + 1;
                     if (pos >= end)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sign '%' is the last in format, if you need it, use '%%'");
 
@@ -1342,37 +1310,37 @@ namespace
                     {
                         // Abbreviated weekday [Mon...Sun]
                         case 'a':
-                            instructions.emplace_back(ACTION_ARGS(Action::mysqlDayOfWeekTextShort));
+                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlDayOfWeekTextShort));
                             break;
 
                         // Abbreviated month [Jan...Dec]
                         case 'b':
-                            instructions.emplace_back(ACTION_ARGS(Action::mysqlMonthOfYearTextShort));
+                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlMonthOfYearTextShort));
                             break;
 
                         // Month as a decimal number (01-12)
                         case 'c':
-                            instructions.emplace_back(ACTION_ARGS(Action::mysqlMonth));
+                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlMonth));
                             break;
 
                         // Year, divided by 100, zero-padded
                         case 'C':
-                            instructions.emplace_back(ACTION_ARGS(Action::mysqlCentury));
+                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlCentury));
                             break;
 
                         // Day of month, zero-padded (01-31)
                         case 'd':
-                            instructions.emplace_back(ACTION_ARGS(Action::mysqlDayOfMonth));
+                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlDayOfMonth));
                             break;
 
                         // Short MM/DD/YY date, equivalent to %m/%d/%y
                         case 'D':
-                            instructions.emplace_back(ACTION_ARGS(Action::mysqlAmericanDate));
+                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlAmericanDate));
                             break;
 
                         // Day of month, space-padded ( 1-31)  23
                         case 'e':
-                            instructions.emplace_back(ACTION_ARGS(Action::mysqlDayOfMonthSpacePadded));
+                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlDayOfMonthSpacePadded));
                             break;
 
                         // Fractional seconds
@@ -1381,57 +1349,57 @@ namespace
 
                         // Short YYYY-MM-DD date, equivalent to %Y-%m-%d   2001-08-23
                         case 'F':
-                            instructions.emplace_back(ACTION_ARGS(Action::mysqlISO8601Date));
+                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlISO8601Date));
                             break;
 
                         // Last two digits of year of ISO 8601 week number (see %G)
                         case 'g':
-                            instructions.emplace_back(ACTION_ARGS(Action::mysqlISO8601Year2));
+                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlISO8601Year2));
                             break;
 
                         // Year of ISO 8601 week number (see %V)
                         case 'G':
-                            instructions.emplace_back(ACTION_ARGS(Action::mysqlISO8601Year4));
+                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlISO8601Year4));
                             break;
 
                         // Day of the year (001-366)   235
                         case 'j':
-                            instructions.emplace_back(ACTION_ARGS(Action::mysqlDayOfYear));
+                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlDayOfYear));
                             break;
 
                         // Month as a decimal number (01-12)
                         case 'm':
-                            instructions.emplace_back(ACTION_ARGS(Action::mysqlMonth));
+                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlMonth));
                             break;
 
                         // ISO 8601 weekday as number with Monday as 1 (1-7)
                         case 'u':
-                            instructions.emplace_back(ACTION_ARGS(Action::mysqlDayOfWeek));
+                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlDayOfWeek));
                             break;
 
                         // ISO 8601 week number (01-53)
                         case 'V':
-                            instructions.emplace_back(ACTION_ARGS(Action::mysqlISO8601Week));
+                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlISO8601Week));
                             break;
 
                         // Weekday as a decimal number with Sunday as 0 (0-6)  4
                         case 'w':
-                            instructions.emplace_back(ACTION_ARGS(Action::mysqlDayOfWeek0To6));
+                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlDayOfWeek0To6));
                             break;
 
                         // Full weekday [Monday...Sunday]
                         case 'W':
-                            instructions.emplace_back(ACTION_ARGS(Action::mysqlDayOfWeekTextLong));
+                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlDayOfWeekTextLong));
                             break;
 
                         // Two digits year
                         case 'y':
-                            instructions.emplace_back(ACTION_ARGS(Action::mysqlYear2));
+                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlYear2));
                             break;
 
                         // Four digits year
                         case 'Y':
-                            instructions.emplace_back(ACTION_ARGS(Action::mysqlYear4));
+                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlYear4));
                             break;
 
                         // Quarter (1-4)
@@ -1441,74 +1409,74 @@ namespace
 
                         // Offset from UTC timezone as +hhmm or -hhmm
                         case 'z':
-                            instructions.emplace_back(ACTION_ARGS(Action::mysqlTimezoneOffset));
+                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlTimezoneOffset));
                             break;
 
                         /// Time components. If the argument is Date, not a DateTime, then this components will have default value.
 
                         // Minute (00-59)
                         case 'M':
-                            instructions.emplace_back(ACTION_ARGS(Action::mysqlMinute));
+                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlMinute));
                             break;
 
                         // AM or PM
                         case 'p':
-                            instructions.emplace_back(ACTION_ARGS(Action::mysqlAMPM));
+                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlAMPM));
                             break;
 
                         // 12-hour HH:MM time, equivalent to %h:%i %p 2:55 PM
                         case 'r':
-                            instructions.emplace_back(ACTION_ARGS(Action::mysqlHHMM12));
+                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlHHMM12));
                             break;
 
                         // 24-hour HH:MM time, equivalent to %H:%i 14:55
                         case 'R':
-                            instructions.emplace_back(ACTION_ARGS(Action::mysqlHHMM24));
+                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlHHMM24));
                             break;
 
                         // Seconds
                         case 's':
-                            instructions.emplace_back(ACTION_ARGS(Action::mysqlSecond));
+                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlSecond));
                             break;
 
                         // Seconds
                         case 'S':
-                            instructions.emplace_back(ACTION_ARGS(Action::mysqlSecond));
+                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlSecond));
                             break;
 
                         // ISO 8601 time format (HH:MM:SS), equivalent to %H:%i:%S 14:55:02
                         case 'T':
-                            instructions.emplace_back(ACTION_ARGS(Action::mysqlISO8601Time));
+                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlISO8601Time));
                             break;
 
                         // Hour in 12h format (01-12)
                         case 'h':
-                            instructions.emplace_back(ACTION_ARGS(Action::mysqlHour12));
+                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlHour12));
                             break;
 
                         // Hour in 24h format (00-23)
                         case 'H':
-                            instructions.emplace_back(ACTION_ARGS(Action::mysqlHour24));
+                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlHour24));
                             break;
 
                         // Minute of hour range [0, 59]
                         case 'i':
-                            instructions.emplace_back(ACTION_ARGS(Action::mysqlMinute));
+                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlMinute));
                             break;
 
                         // Hour in 12h format (01-12)
                         case 'I':
-                            instructions.emplace_back(ACTION_ARGS(Action::mysqlHour12));
+                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlHour12));
                             break;
 
                         // Hour in 24h format (00-23)
                         case 'k':
-                            instructions.emplace_back(ACTION_ARGS(Action::mysqlHour24));
+                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlHour24));
                             break;
 
                         // Hour in 12h format (01-12)
                         case 'l':
-                            instructions.emplace_back(ACTION_ARGS(Action::mysqlHour12));
+                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlHour12));
                             break;
 
                         case 't':
@@ -1555,7 +1523,7 @@ namespace
 #undef ACTION_ARGS
         }
 
-        void parseJodaFormat(const String & format, std::vector<Action> & instructions) const
+        void parseJodaFormat(const String & format, std::vector<Instruction> & instructions) const
         {
 #define ACTION_ARGS_WITH_BIND(func, arg) std::bind_front(&(func), (arg)), #func
 
@@ -1574,7 +1542,6 @@ namespace
                     if (pos + 1 < end && *(pos + 1) == '\'')
                     {
                         instructions.emplace_back(String(cur_token, 1));
-                        // ++reserve_size;
                         pos += 2;
                     }
                     else
@@ -1608,61 +1575,61 @@ namespace
                     switch (*cur_token)
                     {
                         case 'G':
-                            instructions.emplace_back(ACTION_ARGS_WITH_BIND(Action::jodaEra, repetitions));
+                            instructions.emplace_back(ACTION_ARGS_WITH_BIND(Instruction::jodaEra, repetitions));
                             break;
                         case 'C':
-                            instructions.emplace_back(ACTION_ARGS_WITH_BIND(Action::jodaCenturyOfEra, repetitions));
+                            instructions.emplace_back(ACTION_ARGS_WITH_BIND(Instruction::jodaCenturyOfEra, repetitions));
                             break;
                         case 'Y':
-                            instructions.emplace_back(ACTION_ARGS_WITH_BIND(Action::jodaYearOfEra, repetitions));
+                            instructions.emplace_back(ACTION_ARGS_WITH_BIND(Instruction::jodaYearOfEra, repetitions));
                             break;
                         case 'x':
-                            instructions.emplace_back(ACTION_ARGS_WITH_BIND(Action::jodaWeekYear, repetitions));
+                            instructions.emplace_back(ACTION_ARGS_WITH_BIND(Instruction::jodaWeekYear, repetitions));
                             break;
                         case 'w':
-                            instructions.emplace_back(ACTION_ARGS_WITH_BIND(Action::jodaWeekOfWeekYear, repetitions));
+                            instructions.emplace_back(ACTION_ARGS_WITH_BIND(Instruction::jodaWeekOfWeekYear, repetitions));
                             break;
                         case 'e':
-                            instructions.emplace_back(ACTION_ARGS_WITH_BIND(Action::jodaDayOfWeek1Based, repetitions));
+                            instructions.emplace_back(ACTION_ARGS_WITH_BIND(Instruction::jodaDayOfWeek1Based, repetitions));
                             break;
                         case 'E':
-                            instructions.emplace_back(ACTION_ARGS_WITH_BIND(Action::jodaDayOfWeekText, repetitions));
+                            instructions.emplace_back(ACTION_ARGS_WITH_BIND(Instruction::jodaDayOfWeekText, repetitions));
                             break;
                         case 'y':
-                            instructions.emplace_back(ACTION_ARGS_WITH_BIND(Action::jodaYear, repetitions));
+                            instructions.emplace_back(ACTION_ARGS_WITH_BIND(Instruction::jodaYear, repetitions));
                             break;
                         case 'D':
-                            instructions.emplace_back(ACTION_ARGS_WITH_BIND(Action::jodaDayOfYear, repetitions));
+                            instructions.emplace_back(ACTION_ARGS_WITH_BIND(Instruction::jodaDayOfYear, repetitions));
                             break;
                         case 'M':
                             if (repetitions <= 2)
-                                instructions.emplace_back(ACTION_ARGS_WITH_BIND(Action::jodaMonthOfYear, repetitions));
+                                instructions.emplace_back(ACTION_ARGS_WITH_BIND(Instruction::jodaMonthOfYear, repetitions));
                             else
-                                instructions.emplace_back(ACTION_ARGS_WITH_BIND(Action::jodaMonthOfYearText, repetitions));
+                                instructions.emplace_back(ACTION_ARGS_WITH_BIND(Instruction::jodaMonthOfYearText, repetitions));
                             break;
                         case 'd':
-                            instructions.emplace_back(ACTION_ARGS_WITH_BIND(Action::jodaDayOfMonth, repetitions));
+                            instructions.emplace_back(ACTION_ARGS_WITH_BIND(Instruction::jodaDayOfMonth, repetitions));
                             break;
                         case 'a':
-                            instructions.emplace_back(ACTION_ARGS_WITH_BIND(Action::jodaHalfDayOfDay, repetitions));
+                            instructions.emplace_back(ACTION_ARGS_WITH_BIND(Instruction::jodaHalfDayOfDay, repetitions));
                             break;
                         case 'K':
-                            instructions.emplace_back(ACTION_ARGS_WITH_BIND(Action::jodaHourOfHalfDay, repetitions));
+                            instructions.emplace_back(ACTION_ARGS_WITH_BIND(Instruction::jodaHourOfHalfDay, repetitions));
                             break;
                         case 'h':
-                            instructions.emplace_back(ACTION_ARGS_WITH_BIND(Action::jodaClockHourOfHalfDay, repetitions));
+                            instructions.emplace_back(ACTION_ARGS_WITH_BIND(Instruction::jodaClockHourOfHalfDay, repetitions));
                             break;
                         case 'H':
-                            instructions.emplace_back(ACTION_ARGS_WITH_BIND(Action::jodaHourOfDay, repetitions));
+                            instructions.emplace_back(ACTION_ARGS_WITH_BIND(Instruction::jodaHourOfDay, repetitions));
                             break;
                         case 'k':
-                            instructions.emplace_back(ACTION_ARGS_WITH_BIND(Action::jodaClockHourOfDay, repetitions));
+                            instructions.emplace_back(ACTION_ARGS_WITH_BIND(Instruction::jodaClockHourOfDay, repetitions));
                             break;
                         case 'm':
-                            instructions.emplace_back(ACTION_ARGS_WITH_BIND(Action::jodaMinuteOfHour, repetitions));
+                            instructions.emplace_back(ACTION_ARGS_WITH_BIND(Instruction::jodaMinuteOfHour, repetitions));
                             break;
                         case 's':
-                            instructions.emplace_back(ACTION_ARGS_WITH_BIND(Action::jodaSecondOfMinute, repetitions));
+                            instructions.emplace_back(ACTION_ARGS_WITH_BIND(Instruction::jodaSecondOfMinute, repetitions));
                             break;
                         case 'S':
                             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for fractional seconds");
