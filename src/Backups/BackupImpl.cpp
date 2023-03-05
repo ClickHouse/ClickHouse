@@ -22,8 +22,12 @@
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
+#include <Poco/DOM/AutoPtr.h>
+#include <Poco/DOM/Document.h>
+#include <Poco/DOM/Element.h>
+#include <Poco/DOM/Text.h>
+#include <Poco/Net/NetException.h>
 #include <Poco/Util/XMLConfiguration.h>
-#include <Poco/DOM/DOMParser.h>
 
 
 namespace DB
@@ -317,11 +321,23 @@ void BackupImpl::writeBackupMetadata()
 {
     assert(!is_internal_backup);
 
-    Poco::AutoPtr<Poco::Util::XMLConfiguration> config{new Poco::Util::XMLConfiguration()};
-    config->setInt("version", CURRENT_BACKUP_VERSION);
-    config->setBool("deduplicate_files", deduplicate_files);
-    config->setString("timestamp", toString(LocalDateTime{timestamp}));
-    config->setString("uuid", toString(*uuid));
+    Poco::AutoPtr<Poco::XML::Document> document(new Poco::XML::Document());
+    Poco::AutoPtr<Poco::XML::Element> root(document->createElement("config"));
+    document->appendChild(root);
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> abstract_config{new Poco::Util::XMLConfiguration()};
+
+    auto append_to_config = [&document](auto && parent, const std::string & key, const std::string & value)
+    {
+        Poco::AutoPtr<Poco::XML::Element> element(document->createElement(key));
+        parent->appendChild(element);
+        Poco::AutoPtr<Poco::XML::Text> text(document->createTextNode(value));
+        element->appendChild(text);
+    };
+
+    append_to_config(root, "version", toString(CURRENT_BACKUP_VERSION));
+    append_to_config(root, "deduplicate_files", deduplicate_files ? "true" : "false");
+    append_to_config(root, "timestamp", toString(LocalDateTime{timestamp}));
+    append_to_config(root, "uuid", toString(*uuid));
 
     auto all_file_infos = coordination->getAllFileInfos();
 
@@ -336,8 +352,8 @@ void BackupImpl::writeBackupMetadata()
 
         if (base_backup_in_use)
         {
-            config->setString("base_backup", base_backup_info->toString());
-            config->setString("base_backup_uuid", toString(*base_backup_uuid));
+            append_to_config(root, "base_backup", base_backup_info->toString());
+            append_to_config(root, "base_backup_uuid", toString(*base_backup_uuid));
         }
     }
 
@@ -346,31 +362,36 @@ void BackupImpl::writeBackupMetadata()
     num_entries = 0;
     size_of_entries = 0;
 
-    for (size_t i = 0; i != all_file_infos.size(); ++i)
+
+    Poco::AutoPtr<Poco::XML::Element> contents(document->createElement("contents"));
+    root->appendChild(contents);
+
+    for (auto & info : all_file_infos)
     {
-        const auto & info = all_file_infos[i];
-        String prefix = i ? "contents.file[" + std::to_string(i) + "]." : "contents.file.";
-        config->setString(prefix + "name", info.file_name);
-        config->setUInt64(prefix + "size", info.size);
+        Poco::AutoPtr<Poco::XML::Element> file_element(document->createElement("file"));
+        contents->appendChild(file_element);
+
+        append_to_config(file_element, "name", info.file_name);
+        append_to_config(file_element, "size", toString(info.size));
 
         if (info.size)
         {
-            config->setString(prefix + "checksum", hexChecksum(info.checksum));
+            append_to_config(file_element, "checksum", hexChecksum(info.checksum));
             if (info.base_size)
             {
-                config->setBool(prefix + "use_base", true);
+                append_to_config(file_element, "use_base", "true");
                 if (info.base_size != info.size)
                 {
-                    config->setUInt64(prefix + "base_size", info.base_size);
-                    config->setString(prefix + "base_checksum", hexChecksum(info.base_checksum));
+                    append_to_config(file_element, "base_size", toString(info.base_size));
+                    append_to_config(file_element, "base_checksum", hexChecksum(info.base_checksum));
                 }
             }
             if (!info.data_file_name.empty() && (info.data_file_name != info.file_name))
-                config->setString(prefix + "data_file", info.data_file_name);
+                append_to_config(file_element, "data_file", info.data_file_name);
             if (!info.archive_suffix.empty())
-                config->setString(prefix + "archive_suffix", info.archive_suffix);
+                append_to_config(file_element, "archive_suffix", info.archive_suffix);
             if (info.pos_in_archive != static_cast<size_t>(-1))
-                config->setUInt64(prefix + "pos_in_archive", info.pos_in_archive);
+                append_to_config(file_element, "pos_in_archive", toString(info.pos_in_archive));
         }
 
         total_size += info.size;
@@ -382,8 +403,10 @@ void BackupImpl::writeBackupMetadata()
         }
     }
 
+    abstract_config->load(document);
+
     std::ostringstream stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    config->save(stream);
+    abstract_config->save(stream);
     String str = stream.str();
 
     checkLockFile(true);
