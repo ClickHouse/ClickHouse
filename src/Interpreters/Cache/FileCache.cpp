@@ -919,7 +919,8 @@ void FileCache::loadMetadata()
 
 void FileCache::performDelayedRemovalOfDeletedKeysFromMetadata(const CacheMetadataGuard::Lock &)
 {
-    cleanup_keys_metadata_queue->clear([this](const Key & cleanup_key)
+    Key cleanup_key;
+    while (cleanup_keys_metadata_queue->tryPop(cleanup_key))
     {
         auto it = metadata.find(cleanup_key);
         if (it == metadata.end())
@@ -948,7 +949,7 @@ void FileCache::performDelayedRemovalOfDeletedKeysFromMetadata(const CacheMetada
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
-    });
+    }
     /// TODO: add assertCacheCorrectness().
 }
 
@@ -989,6 +990,7 @@ LockedKeyPtr FileCache::createLockedKey(const Key & key, KeyNotFoundPolicy key_n
     if (key_metadata->removed)
     {
         /// If it is removed, then do perform delayed removal.
+        cleanup_keys_metadata_queue->remove(key);
         metadata.erase(it);
         /// Get metadata one more time.
         /// Throw exception if KeyNotFoundPolicy::THROW, return nullptr if KeyNotFoundPolicy::RETURN_NULL.
@@ -1029,6 +1031,7 @@ FileSegmentsHolderPtr FileCache::getSnapshot()
         /// Perform delayed removal of deleted key from cache metadata.
         if (key_metadata->removed)
         {
+            cleanup_keys_metadata_queue->remove(it->first);
             it = metadata.erase(it);
             continue;
         }

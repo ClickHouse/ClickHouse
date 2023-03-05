@@ -30,9 +30,9 @@ struct LockedKey : private boost::noncopyable
 
     void remove(size_t offset, const FileSegmentGuard::Lock &, const CacheGuard::Lock &);
 
-    bool isLastHolder(size_t offset);
+    bool isLastHolder(size_t offset) const;
 
-    const KeyMetadataPtr getKeyMetadata() const { return key_metadata.lock(); }
+    KeyMetadataPtr getKeyMetadata() const { return key_metadata.lock(); }
 
     std::vector<size_t> delete_offsets;
 
@@ -51,22 +51,14 @@ private:
 
 struct KeysQueue
 {
-    ConcurrentBoundedQueue<FileCacheKey> keys{100000}; /// TODO: add a setting for the size
+public:
+    void add(const FileCacheKey & key);
+    void remove(const FileCacheKey & key);
+    bool tryPop(FileCacheKey & key);
 
-    void add(const FileCacheKey & key)
-    {
-        [[maybe_unused]] const auto pushed = keys.tryPush(key);
-        chassert(pushed);
-    }
-
-    void clear(std::function<void(const FileCacheKey &)> && func)
-    {
-        FileCacheKey key;
-        while (keys.tryPop(key))
-        {
-            func(key);
-        }
-    }
+private:
+    std::unordered_set<FileCacheKey> keys;
+    std::mutex mutex;
 };
 
 }
