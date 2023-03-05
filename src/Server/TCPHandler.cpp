@@ -488,11 +488,8 @@ void TCPHandler::runImpl()
             /// the MemoryTracker will be wrong for possible deallocations.
             /// (i.e. deallocations from the Aggregator with two-level aggregation)
             state.reset();
-            LOG_TRACE(log, "Resetting query scope 1");
             query_scope.reset();
-            LOG_TRACE(log, "Resetting query context 1");
             thread_trace_context.reset();
-            LOG_TRACE(log, "Resetting finished 1");
         }
         catch (const Exception & e)
         {
@@ -607,7 +604,6 @@ void TCPHandler::runImpl()
         state.reset();
         query_scope.reset();
         thread_trace_context.reset();
-        LOG_TRACE(log, "Resetting query context 2");
         /// It is important to destroy query context here. We do not want it to live arbitrarily longer than the query.
         query_context.reset();
         LOG_TRACE(log, "Resetting finished");

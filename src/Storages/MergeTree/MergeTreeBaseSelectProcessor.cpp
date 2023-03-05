@@ -86,6 +86,8 @@ IMergeTreeSelectAlgorithm::IMergeTreeSelectAlgorithm(
         LOG_TEST(log, "Original PREWHERE DAG:\n{}\nPREWHERE actions:\n{}",
             (prewhere_info->prewhere_actions ? prewhere_info->prewhere_actions->dumpDAG(): std::string("<nullptr>")),
             (prewhere_actions ? prewhere_actions->dump() : std::string("<nullptr>")));
+
+    LOG_TRACE(log, "Creating BaseSelectProcessor for {}", std::string(CurrentThread::getQueryId()));
 }
 
 bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionActionsSettings & actions_settings, PrewhereExprInfo & prewhere);
