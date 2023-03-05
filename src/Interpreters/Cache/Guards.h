@@ -8,7 +8,7 @@ namespace DB
 {
 /**
  * FileCache::get/getOrSet/set
- * 1. CacheMetadataGuard::Lock (take key lock and relase metadata lock)
+ * 1. CacheMetadataGuard::Lock (take key lock and release metadata lock)
  * 2. KeyGuard::Lock (hold till the end of the method)
  *
  * FileCache::tryReserve
