@@ -410,6 +410,16 @@ def test_config_reload(cluster):
         ).strip()
     )
 
+    replace_in_server_config(node, "value2", "value1")
+    node.query("SYSTEM RELOAD CONFIG")
+
+    assert (
+        "value1"
+        == node.query(
+            "select collection['key1'] from system.named_collections where name = 'collection1'"
+        ).strip()
+    )
+
 
 def test_sql_commands(cluster):
     node = cluster.instances["node"]
