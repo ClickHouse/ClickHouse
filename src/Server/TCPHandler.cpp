@@ -605,7 +605,6 @@ void TCPHandler::runImpl()
         /// the MemoryTracker will be wrong for possible deallocations.
         /// (i.e. deallocations from the Aggregator with two-level aggregation)
         state.reset();
-        LOG_TRACE(log, "Resetting query scope 2");
         query_scope.reset();
         thread_trace_context.reset();
         LOG_TRACE(log, "Resetting query context 2");
