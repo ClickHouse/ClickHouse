@@ -41,7 +41,7 @@ void LockedKey::remove(FileSegmentPtr file_segment, const CacheGuard::Lock & cac
     remove(file_segment->offset(), file_segment->lock(), cache_lock);
 }
 
-bool LockedKey::isLastHolder(size_t offset)
+bool LockedKey::isLastHolder(size_t offset) const
 {
     const auto * file_segment_metadata = getKeyMetadata()->getByOffset(offset);
     return file_segment_metadata->file_segment.use_count() == 2;
@@ -150,6 +150,31 @@ void LockedKey::cleanupKeyDirectory() const
         fs::remove_all(key_path);
     }
     cleanup_keys_metadata_queue->add(key);
+}
+
+void KeysQueue::add(const FileCacheKey & key)
+{
+    std::lock_guard lock(mutex);
+    keys.insert(key);
+}
+
+void KeysQueue::remove(const FileCacheKey & key)
+{
+    std::lock_guard lock(mutex);
+    bool erased = keys.erase(key);
+    if (!erased)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No such key to erase: {}", key.toString());
+}
+
+bool KeysQueue::tryPop(FileCacheKey & key)
+{
+    std::lock_guard lock(mutex);
+    if (keys.empty())
+        return false;
+    auto it = keys.begin();
+    key = *it;
+    keys.erase(it);
+    return true;
 }
 
 }
