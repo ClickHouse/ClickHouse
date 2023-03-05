@@ -1195,7 +1195,7 @@ void registerStorageRabbitMQ(StorageFactory & factory)
     {
         auto rabbitmq_settings = std::make_unique<RabbitMQSettings>();
 
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args))
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext()))
         {
             for (const auto & setting : rabbitmq_settings->all())
             {

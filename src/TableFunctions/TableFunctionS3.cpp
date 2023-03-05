@@ -32,7 +32,7 @@ namespace ErrorCodes
 void TableFunctionS3::parseArgumentsImpl(
     const String & error_message, ASTs & args, ContextPtr context, StorageS3::Configuration & s3_configuration, bool get_format_from_file)
 {
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(args))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context))
     {
         StorageS3::processNamedCollectionResult(s3_configuration, *named_collection);
     }
