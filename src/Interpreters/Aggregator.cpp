@@ -1441,6 +1441,10 @@ void Aggregator::prepareAggregateInstructions(
             materialized_columns.push_back(columns.at(pos)->convertToFullColumnIfConst());
             aggregate_columns[i][j] = materialized_columns.back().get();
 
+            /// Sparse columns without defaults may be handled incorrectly.
+            if (aggregate_columns[i][j]->getNumberOfDefaultRows() == 0)
+                allow_sparse_arguments = false;
+
             auto full_column = allow_sparse_arguments
                 ? aggregate_columns[i][j]->getPtr()
                 : recursiveRemoveSparse(aggregate_columns[i][j]->getPtr());
