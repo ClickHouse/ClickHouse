@@ -33,6 +33,12 @@ namespace CurrentMetrics
 namespace DB
 {
     class ZooKeeperLog;
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 }
 
 namespace zkutil
