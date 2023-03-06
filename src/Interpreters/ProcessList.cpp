@@ -397,23 +397,26 @@ CancellationCode QueryStatus::cancelQuery(bool)
 
     is_killed.store(true);
 
-    std::unique_lock lock(executors_mutex);
-    for (const auto & e : executors)
+    std::vector<ExecutorHolderPtr> executors_snapshot;
+
     {
-        /// We should call cancel() with unlocked executors_mutex, because
-        /// cancel() can try to lock some internal mutex that is already locked by query executing
-        /// thread, and query executing thread can call removePipelineExecutor and lock executors_mutex,
-        /// which will lead to deadlock.
-        /// Note that the size and the content of executors cannot be changed while
-        /// executors_mutex is unlocked, because:
-        /// 1) We don't allow adding new executors while cancelling query in addPipelineExecutor
-        /// 2) We don't actually remove executor holder from executors in removePipelineExecutor,
-        /// just mark that executor is invalid.
-        /// So, it's safe to continue iteration over executors after subsequent mutex locking.
-        lock.unlock();
-        e->cancel();
-        lock.lock();
+        /// Create a snapshot of executors under a mutex.
+        std::lock_guard lock(executors_mutex);
+        executors_snapshot = executors;
     }
+    
+    /// We should call cancel() for each executor with unlocked executors_mutex, because
+    /// cancel() can try to lock some internal mutex that is already locked by query executing
+    /// thread, and query executing thread can call removePipelineExecutor and lock executors_mutex,
+    /// which will lead to deadlock.
+    /// Note that the size and the content of executors cannot be changed while
+    /// executors_mutex is unlocked, because:
+    /// 1) We don't allow adding new executors while cancelling query in addPipelineExecutor
+    /// 2) We don't actually remove executor holder from executors in removePipelineExecutor,
+    /// just mark that executor is invalid.
+    /// So, it's ok to use a snapshot created above under a mutex, it won't be any differ from actual executors.
+    for (const auto & e : executors_shapshot)
+        e->cancel();
 
     return CancellationCode::CancelSent;
 }
