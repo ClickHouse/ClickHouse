@@ -151,6 +151,17 @@ static void readAndInsertInteger(ReadBuffer & in, IColumn & column, const DataTy
     }
 }
 
+static void readAndInsertIPv4(ReadBuffer & in, IColumn & column, BSONType bson_type)
+{
+    /// We expect BSON type Int32 as IPv4 value.
+    if (bson_type != BSONType::INT32)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON Int32 into column with type IPv4");
+
+    UInt32 value;
+    readBinary(value, in);
+    assert_cast<ColumnIPv4 &>(column).insertValue(IPv4(value));
+}
+
 template <typename T>
 static void readAndInsertDouble(ReadBuffer & in, IColumn & column, const DataTypePtr & data_type, BSONType bson_type)
 {
@@ -296,37 +307,52 @@ static void readAndInsertString(ReadBuffer & in, IColumn & column, BSONType bson
     }
 }
 
+static void readAndInsertIPv6(ReadBuffer & in, IColumn & column, BSONType bson_type)
+{
+    if (bson_type != BSONType::BINARY)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into IPv6 column", getBSONTypeName(bson_type));
+
+    auto size = readBSONSize(in);
+    auto subtype = getBSONBinarySubtype(readBSONType(in));
+    if (subtype != BSONBinarySubtype::BINARY)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON Binary subtype {} into IPv6 column", getBSONBinarySubtypeName(subtype));
+
+    if (size != sizeof(IPv6))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Cannot parse value of type IPv6, size of binary data is not equal to the binary size of IPv6 value: {} != {}",
+            size,
+            sizeof(IPv6));
+
+    IPv6 value;
+    readBinary(value, in);
+    assert_cast<ColumnIPv6 &>(column).insertValue(value);
+}
+
+
 static void readAndInsertUUID(ReadBuffer & in, IColumn & column, BSONType bson_type)
 {
-    if (bson_type == BSONType::BINARY)
-    {
-        auto size = readBSONSize(in);
-        auto subtype = getBSONBinarySubtype(readBSONType(in));
-        if (subtype == BSONBinarySubtype::UUID || subtype == BSONBinarySubtype::UUID_OLD)
-        {
-            if (size != sizeof(UUID))
-                throw Exception(
-                    ErrorCodes::INCORRECT_DATA,
-                    "Cannot parse value of type UUID, size of binary data is not equal to the binary size of UUID value: {} != {}",
-                    size,
-                    sizeof(UUID));
-
-            UUID value;
-            readBinary(value, in);
-            assert_cast<ColumnUUID &>(column).insertValue(value);
-        }
-        else
-        {
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Cannot insert BSON Binary subtype {} into UUID column",
-                getBSONBinarySubtypeName(subtype));
-        }
-    }
-    else
-    {
+    if (bson_type != BSONType::BINARY)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into UUID column", getBSONTypeName(bson_type));
-    }
+
+    auto size = readBSONSize(in);
+    auto subtype = getBSONBinarySubtype(readBSONType(in));
+    if (subtype != BSONBinarySubtype::UUID && subtype != BSONBinarySubtype::UUID_OLD)
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN,
+            "Cannot insert BSON Binary subtype {} into UUID column",
+            getBSONBinarySubtypeName(subtype));
+
+    if (size != sizeof(UUID))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Cannot parse value of type UUID, size of binary data is not equal to the binary size of UUID value: {} != {}",
+            size,
+            sizeof(UUID));
+
+    UUID value;
+    readBinary(value, in);
+    assert_cast<ColumnUUID &>(column).insertValue(value);
 }
 
 void BSONEachRowRowInputFormat::readArray(IColumn & column, const DataTypePtr & data_type, BSONType bson_type)
@@ -589,6 +615,16 @@ bool BSONEachRowRowInputFormat::readField(IColumn & column, const DataTypePtr & 
         case TypeIndex::String:
         {
             readAndInsertString<false>(*in, column, bson_type);
+            return true;
+        }
+        case TypeIndex::IPv4:
+        {
+            readAndInsertIPv4(*in, column, bson_type);
+            return true;
+        }
+        case TypeIndex::IPv6:
+        {
+            readAndInsertIPv6(*in, column, bson_type);
             return true;
         }
         case TypeIndex::UUID:
