@@ -62,7 +62,7 @@ public:
     {
         assert(!rhs_ports.first->isConnected() && !rhs_ports.second->isConnected());
 
-        std::lock_guard<std::mutex> lock(mux);
+        std::lock_guard lock(mux);
         if (input_port || output_port)
         {
             assert(input_port && output_port);

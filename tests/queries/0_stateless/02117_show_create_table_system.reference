@@ -977,6 +977,7 @@ CREATE TABLE system.settings
     `max` Nullable(String),
     `readonly` UInt8,
     `type` String,
+    `default` String,
     `alias_for` String
 )
 ENGINE = SystemSettings
