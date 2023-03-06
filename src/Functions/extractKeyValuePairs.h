@@ -16,15 +16,16 @@ class ExtractKeyValuePairs : public IFunction
 public:
     using CharArgument = std::optional<char>;
     using SetArgument = std::unordered_set<char>;
+    using BoolArgument = std::optional<bool>;
 
     struct ParsedArguments
     {
         ColumnPtr data_column;
-        CharArgument escape_character;
-        CharArgument key_value_pair_delimiter;
-        CharArgument item_delimiter;
-        CharArgument enclosing_character;
-        SetArgument value_special_characters_allow_list;
+        CharArgument key_value_pair_delimiter = {};
+        CharArgument item_delimiter = {};
+        CharArgument enclosing_character = {};
+        SetArgument value_special_characters_allow_list = {};
+        BoolArgument with_escaping = {};
     };
 
     ExtractKeyValuePairs();

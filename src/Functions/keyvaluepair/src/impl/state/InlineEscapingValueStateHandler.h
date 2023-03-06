@@ -14,7 +14,6 @@ public:
     using ElementType = std::string;
 
     InlineEscapingValueStateHandler(
-        char escape_character_,
         char item_delimiter_,
         std::optional<char> enclosing_character_,
         std::unordered_set<char> special_character_allowlist_);
@@ -28,7 +27,6 @@ public:
     [[nodiscard]] static NextState readEmpty(std::string_view, size_t pos, ElementType & value);
 
 private:
-    const char escape_character;
     const char item_delimiter;
     std::unordered_set<char> special_character_allowlist;
 
