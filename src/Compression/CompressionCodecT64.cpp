@@ -720,6 +720,9 @@ void registerCodecT64(CompressionCodecFactory & factory)
 {
     auto reg_func = [&](const ASTPtr & arguments, const IDataType * type) -> CompressionCodecPtr
     {
+        if (!type)
+            throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "T64 codec is not supported for use without specified column type");
+
         Variant variant = Variant::Byte;
 
         if (arguments && !arguments->children.empty())
@@ -743,7 +746,7 @@ void registerCodecT64(CompressionCodecFactory & factory)
         }
 
         auto type_idx = typeIdx(type);
-        if (type && type_idx == TypeIndex::Nothing)
+        if (type_idx == TypeIndex::Nothing)
             throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "T64 codec is not supported for specified type {}", type->getName());
         return std::make_shared<CompressionCodecT64>(type_idx, variant);
     };

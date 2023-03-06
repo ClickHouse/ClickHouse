@@ -7,7 +7,7 @@
 #include <Compression/CompressionFactory.h>
 #include <base/unaligned.h>
 #include <Parsers/IAST_fwd.h>
-#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/BitHelpers.h>
@@ -145,6 +145,8 @@ namespace ErrorCodes
     extern const int CANNOT_COMPRESS;
     extern const int CANNOT_DECOMPRESS;
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
+    extern const int ILLEGAL_CODEC_PARAMETER;
 }
 
 namespace
@@ -549,10 +551,31 @@ void registerCodecDoubleDelta(CompressionCodecFactory & factory)
     factory.registerCompressionCodecWithType("DoubleDelta", method_code,
         [&](const ASTPtr & arguments, const IDataType * column_type) -> CompressionCodecPtr
     {
-        if (arguments)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec DoubleDelta does not accept any arguments");
+        UInt8 data_bytes_size = 0;
+        if (arguments && !arguments->children.empty())
+        {
+            if (arguments->children.size() > 1)
+                throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "DoubleDelta codec must have 1 parameter, given {}", arguments->children.size());
 
-        UInt8 data_bytes_size = column_type ? getDataBytesSize(column_type) : 0;
+            const auto children = arguments->children;
+            const auto * literal = children[0]->as<ASTLiteral>();
+            if (!literal || literal->value.getType() != Field::Types::Which::UInt64)
+                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "DoubleDelta codec argument must be unsigned integer");
+
+            size_t user_bytes_size = literal->value.safeGet<UInt64>();
+            if (user_bytes_size != 1 && user_bytes_size != 2 && user_bytes_size != 4 && user_bytes_size != 8)
+                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Argument value for DoubleDelta codec can be 1, 2, 4 or 8, given {}", user_bytes_size);
+            data_bytes_size = static_cast<UInt8>(user_bytes_size);
+        }
+        else if (column_type)
+        {
+            data_bytes_size = getDataBytesSize(column_type);
+        }
+        else
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "DoubleDelta codec cannot be used without column type or bytes_size argument");
+        }
+
         return std::make_shared<CompressionCodecDoubleDelta>(data_bytes_size);
     });
 }
