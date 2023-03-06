@@ -21,6 +21,11 @@ RUNNER_TYPE_LABELS = [
     "style-checker",
     "style-checker-aarch64",
 ]
+
+# 4 HOUR - is a balance to get the most precise values
+#   - Our longest possible running check is around 5h on the worst scenario
+#   - The long queue won't be wiped out and replaced, so the measurmenet is fine
+#   - If the data is spoiled by something, we are from the bills perspective
 QUEUE_QUERY = f"""SELECT
     last_status AS status,
     toUInt32(count()) AS length,
@@ -35,7 +40,7 @@ FROM
     FROM default.workflow_jobs
     WHERE has(labels, 'self-hosted')
         AND hasAny({RUNNER_TYPE_LABELS}, labels)
-        AND started_at > now() - INTERVAL 1 DAY
+        AND started_at > now() - INTERVAL 4 HOUR
     GROUP BY ALL
     HAVING last_status IN ('in_progress', 'queued')
 )
