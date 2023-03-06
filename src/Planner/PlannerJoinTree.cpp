@@ -1193,6 +1193,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             if (table_expression == left_table_expression)
             {
                 query_plans_stack.push_back(std::move(left_table_expression_query_plan));
+                left_table_expression = {};
                 continue;
             }
 
