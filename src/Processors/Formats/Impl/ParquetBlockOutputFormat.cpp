@@ -37,27 +37,29 @@ static parquet::ParquetVersion::type getParquetVersion(const FormatSettings & se
 
 parquet::Compression::type getParquetCompression(FormatSettings::ParquetCompression method)
 {
-    switch (method)
-    {
-        case FormatSettings::ParquetCompression::NONE:
-            return parquet::Compression::type::UNCOMPRESSED;
-        case FormatSettings::ParquetCompression::SNAPPY:
+    if (method == FormatSettings::ParquetCompression::NONE)
+        return parquet::Compression::type::UNCOMPRESSED;
+
 #if USE_SNAPPY
-            return parquet::Compression::type::SNAPPY;
+    if (method == FormatSettings::ParquetCompression::SNAPPY)
+        return parquet::Compression::type::SNAPPY;
 #endif
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Snappy compression method is not supported");
-        case FormatSettings::ParquetCompression::BROTLI:
+
 #if USE_BROTLI
-            return parquet::Compression::type::BROTLI;
+    if (method == FormatSettings::ParquetCompression::BROTLI)
+        return parquet::Compression::type::BROTLI;
 #endif
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Brotli compression method is not supported");
-        case FormatSettings::ParquetCompression::ZSTD:
-            return parquet::Compression::type::ZSTD;
-        case FormatSettings::ParquetCompression::LZ4:
-            return parquet::Compression::type::LZ4;
-        case FormatSettings::ParquetCompression::GZIP:
-            return parquet::Compression::type::GZIP;
-    }
+
+    if (method == FormatSettings::ParquetCompression::ZSTD)
+        return parquet::Compression::type::ZSTD;
+
+    if (method == FormatSettings::ParquetCompression::LZ4)
+        return parquet::Compression::type::LZ4;
+
+    if (method == FormatSettings::ParquetCompression::GZIP)
+        return parquet::Compression::type::GZIP;
+
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported compression method");
 }
 
 }
