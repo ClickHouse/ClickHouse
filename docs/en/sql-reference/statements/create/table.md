@@ -17,10 +17,11 @@ By default, tables are created only on the current server. Distributed DDL queri
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr1] [compression_codec] [TTL expr1],
-    name2 [type2] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr2] [compression_codec] [TTL expr2],
+    name1 [type1] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr1] [compression_codec] [TTL expr1] [COMMENT 'comment for column'],
+    name2 [type2] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr2] [compression_codec] [TTL expr2] [COMMENT 'comment for column'],
     ...
 ) ENGINE = engine
+  COMMENT 'comment for table'
 ```
 
 Creates a table named `table_name` in the `db` database or the current database if `db` is not set, with the structure specified in brackets and the `engine` engine.
@@ -31,6 +32,8 @@ A column description is `name type` in the simplest case. Example: `RegionID UIn
 Expressions can also be defined for default values (see below).
 
 If necessary, primary key can be specified, with one or more key expressions.
+
+Comments can be added for columns and for the table.
 
 ### With a Schema Similar to Other Table
 
@@ -127,6 +130,26 @@ Default expressions may be defined as an arbitrary expression from table constan
 
 Normal default value. If the INSERT query does not specify the corresponding column, it will be filled in by computing the corresponding expression.
 
+Example:
+
+```sql
+CREATE OR REPLACE TABLE test
+(
+    id UInt64,
+    updated_at DateTime DEFAULT now(),
+    updated_at_date Date DEFAULT toDate(updated_at)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO test (id) Values (1);
+
+SELECT * FROM test;
+┌─id─┬──────────updated_at─┬─updated_at_date─┐
+│  1 │ 2023-02-24 17:06:46 │      2023-02-24 │
+└────┴─────────────────────┴─────────────────┘
+```
+
 ### MATERIALIZED
 
 `MATERIALIZED expr`
@@ -135,12 +158,70 @@ Materialized expression. Such a column can’t be specified for INSERT, because 
 For an INSERT without a list of columns, these columns are not considered.
 In addition, this column is not substituted when using an asterisk in a SELECT query. This is to preserve the invariant that the dump obtained using `SELECT *` can be inserted back into the table using INSERT without specifying the list of columns.
 
+Example:
+
+```sql
+CREATE OR REPLACE TABLE test
+(
+    id UInt64,
+    updated_at DateTime MATERIALIZED now(),
+    updated_at_date Date MATERIALIZED toDate(updated_at)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO test Values (1);
+
+SELECT * FROM test;
+┌─id─┐
+│  1 │
+└────┘
+
+SELECT id, updated_at, updated_at_date FROM test;
+┌─id─┬──────────updated_at─┬─updated_at_date─┐
+│  1 │ 2023-02-24 17:08:08 │      2023-02-24 │
+└────┴─────────────────────┴─────────────────┘
+
+SELECT * FROM test SETTINGS asterisk_include_materialized_columns=1;
+┌─id─┬──────────updated_at─┬─updated_at_date─┐
+│  1 │ 2023-02-24 17:08:08 │      2023-02-24 │
+└────┴─────────────────────┴─────────────────┘
+```
+
 ### EPHEMERAL
 
 `EPHEMERAL [expr]`
 
 Ephemeral column. Such a column isn't stored in the table and cannot be SELECTed, but can be referenced in the defaults of CREATE statement. If `expr` is omitted type for column is required.
 INSERT without list of columns will skip such column, so SELECT/INSERT invariant is preserved -  the dump obtained using `SELECT *` can be inserted back into the table using INSERT without specifying the list of columns.
+
+Example:
+
+```sql
+CREATE OR REPLACE TABLE test
+(
+    id UInt64,
+    unhexed String EPHEMERAL,
+    hexed FixedString(4) DEFAULT unhex(unhexed)
+)
+ENGINE = MergeTree
+ORDER BY id
+
+INSERT INTO test (id, unhexed) Values (1, '5a90b714');
+
+SELECT
+    id,
+    hexed,
+    hex(hexed)
+FROM test
+FORMAT Vertical;
+
+Row 1:
+──────
+id:         1
+hexed:      Z��
+hex(hexed): 5A90B714
+```
 
 ### ALIAS
 
@@ -156,6 +237,29 @@ If you add a new column to a table but later change its default expression, the 
 
 It is not possible to set default values for elements in nested data structures.
 
+```sql
+CREATE OR REPLACE TABLE test
+(
+    id UInt64,
+    size_bytes Int64,
+    size String Alias formatReadableSize(size_bytes)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO test Values (1, 4678899);
+
+SELECT id, size_bytes, size FROM test;
+┌─id─┬─size_bytes─┬─size─────┐
+│  1 │    4678899 │ 4.46 MiB │
+└────┴────────────┴──────────┘
+
+SELECT * FROM test SETTINGS asterisk_include_alias_columns=1;
+┌─id─┬─size_bytes─┬─size─────┐
+│  1 │    4678899 │ 4.46 MiB │
+└────┴────────────┴──────────┘
+```
+
 ## Primary Key
 
 You can define a [primary key](../../../engines/table-engines/mergetree-family/mergetree.md#primary-keys-and-indexes-in-queries) when creating a table. Primary key can be specified in two ways:
@@ -166,7 +270,7 @@ You can define a [primary key](../../../engines/table-engines/mergetree-family/m
 CREATE TABLE db.table_name
 (
     name1 type1, name2 type2, ...,
-    PRIMARY KEY(expr1[, expr2,...])]
+    PRIMARY KEY(expr1[, expr2,...])
 )
 ENGINE = engine;
 ```

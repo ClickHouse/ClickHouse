@@ -199,6 +199,11 @@ public:
         return getIndexes().getRatioOfDefaultRows(sample_ratio);
     }
 
+    UInt64 getNumberOfDefaultRows() const override
+    {
+        return getIndexes().getNumberOfDefaultRows();
+    }
+
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
     {
         return getIndexes().getIndicesOfNonDefaultRows(indices, from, limit);
@@ -220,6 +225,8 @@ public:
     void nestedToNullable() { dictionary.getColumnUnique().nestedToNullable(); }
     void nestedRemoveNullable() { dictionary.getColumnUnique().nestedRemoveNullable(); }
     MutableColumnPtr cloneNullable() const;
+
+    ColumnPtr cloneWithDefaultOnNull() const;
 
     const IColumnUnique & getDictionary() const { return dictionary.getColumnUnique(); }
     IColumnUnique & getDictionary() { return dictionary.getColumnUnique(); }

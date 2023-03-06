@@ -79,7 +79,13 @@ IMergeTreeSelectAlgorithm::IMergeTreeSelectAlgorithm(
     result_header = header_without_const_virtual_columns;
     injectPartConstVirtualColumns(0, result_header, nullptr, partition_value_type, virt_column_names);
 
-    LOG_TEST(log, "PREWHERE actions: {}", (prewhere_actions ? prewhere_actions->dump() : std::string("<nullptr>")));
+    if (prewhere_actions)
+        LOG_TRACE(log, "PREWHERE condition was split into {} steps: {}", prewhere_actions->steps.size(), prewhere_actions->dumpConditions());
+
+    if (prewhere_info)
+        LOG_TEST(log, "Original PREWHERE DAG:\n{}\nPREWHERE actions:\n{}",
+            (prewhere_info->prewhere_actions ? prewhere_info->prewhere_actions->dumpDAG(): std::string("<nullptr>")),
+            (prewhere_actions ? prewhere_actions->dump() : std::string("<nullptr>")));
 }
 
 bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionActionsSettings & actions_settings, PrewhereExprInfo & prewhere);

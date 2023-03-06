@@ -880,7 +880,7 @@ void IMergeTreeDataPart::writeMetadata(const String & filename, const WriteSetti
         }
         catch (...)
         {
-            tryLogCurrentException("DataPartStorageOnDiskFull");
+            tryLogCurrentException("IMergeTreeDataPart");
         }
 
         throw;
