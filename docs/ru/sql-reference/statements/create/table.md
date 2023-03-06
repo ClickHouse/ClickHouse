@@ -344,7 +344,9 @@ REPLACE TABLE myOldTable SELECT * FROM myOldTable WHERE CounterID <12345;
 
 ### Синтаксис
 
+```sql
 {CREATE [OR REPLACE]|REPLACE} TABLE [db.]table_name
+```
 
 Для данного запроса можно использовать любые варианты синтаксиса запроса `CREATE`. Запрос `REPLACE` для несуществующей таблицы вызовет ошибку.
 

@@ -103,6 +103,7 @@ public:
     uint64_t getKeyArenaSize() const;
     uint64_t getLatestSnapshotBufSize() const;
 
+    void recalculateStorageStats();
 private:
     /// In our state machine we always have a single snapshot which is stored
     /// in memory in compressed (serialized) format.
