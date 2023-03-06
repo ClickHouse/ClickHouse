@@ -359,7 +359,7 @@ SortAnalysisResult analyzeSort(const QueryNode & query_node,
     before_sort_actions_outputs.clear();
 
     PlannerActionsVisitor actions_visitor(planner_context);
-
+    bool has_with_fill = false;
     std::unordered_set<std::string_view> before_sort_actions_dag_output_node_names;
 
     /** We add only sort node sort expression in before ORDER BY actions DAG.
@@ -370,6 +370,7 @@ SortAnalysisResult analyzeSort(const QueryNode & query_node,
     {
         auto & sort_node_typed = sort_node->as<SortNode &>();
         auto expression_dag_nodes = actions_visitor.visit(before_sort_actions, sort_node_typed.getExpression());
+        has_with_fill |= sort_node_typed.withFill();
 
         for (auto & action_dag_node : expression_dag_nodes)
         {
@@ -381,10 +382,55 @@ SortAnalysisResult analyzeSort(const QueryNode & query_node,
         }
     }
 
+    if (has_with_fill)
+    {
+        for (auto & output_node : before_sort_actions_outputs)
+            output_node = &before_sort_actions->materializeNode(*output_node);
+    }
+
+    /// We add only INPUT columns necessary for INTERPOLATE expression in before ORDER BY actions DAG
+    if (query_node.hasInterpolate())
+    {
+        auto & interpolate_list_node = query_node.getInterpolate()->as<ListNode &>();
+
+        PlannerActionsVisitor interpolate_actions_visitor(planner_context);
+        auto interpolate_actions_dag = std::make_shared<ActionsDAG>();
+
+        for (auto & interpolate_node : interpolate_list_node.getNodes())
+        {
+            auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
+            interpolate_actions_visitor.visit(interpolate_actions_dag, interpolate_node_typed.getExpression());
+            interpolate_actions_visitor.visit(interpolate_actions_dag, interpolate_node_typed.getInterpolateExpression());
+        }
+
+        std::unordered_map<std::string_view, const ActionsDAG::Node *> before_sort_actions_inputs_name_to_node;
+        for (const auto & node : before_sort_actions->getInputs())
+            before_sort_actions_inputs_name_to_node.emplace(node->result_name, node);
+
+        for (const auto & node : interpolate_actions_dag->getNodes())
+        {
+            if (before_sort_actions_dag_output_node_names.contains(node.result_name) ||
+                node.type != ActionsDAG::ActionType::INPUT)
+                continue;
+
+            auto input_node_it = before_sort_actions_inputs_name_to_node.find(node.result_name);
+            if (input_node_it == before_sort_actions_inputs_name_to_node.end())
+            {
+                auto input_column = ColumnWithTypeAndName{node.column, node.result_type, node.result_name};
+                const auto * input_node = &before_sort_actions->addInput(std::move(input_column));
+                auto [it, _] = before_sort_actions_inputs_name_to_node.emplace(node.result_name, input_node);
+                input_node_it = it;
+            }
+
+            before_sort_actions_outputs.push_back(input_node_it->second);
+            before_sort_actions_dag_output_node_names.insert(node.result_name);
+        }
+    }
+
     auto actions_step_before_sort = std::make_unique<ActionsChainStep>(before_sort_actions);
     actions_chain.addStep(std::move(actions_step_before_sort));
 
-    return SortAnalysisResult{std::move(before_sort_actions)};
+    return SortAnalysisResult{std::move(before_sort_actions), has_with_fill};
 }
 
 /** Construct limit by analysis result.
@@ -488,21 +534,30 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
 
     const auto * chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
     auto project_names_input = chain_available_output_columns ? *chain_available_output_columns : join_tree_input_columns;
+    bool has_with_fill = sort_analysis_result_optional.has_value() && sort_analysis_result_optional->has_with_fill;
 
-    /** If there is DISTINCT we must preserve non constant projection output columns
+    /** If there is WITH FILL we must use non constant projection columns.
+      *
+      * Example: SELECT 1 AS value ORDER BY value ASC WITH FILL FROM 0 TO 5 STEP 1;
+      *
+      * If there is DISTINCT we must preserve non constant projection output columns
       * in project names actions, to prevent removing of unused expressions during chain finalize.
       *
       * Example: SELECT DISTINCT id, 1 AS value FROM test_table ORDER BY id;
       */
-    if (query_node.isDistinct())
+    if (has_with_fill || query_node.isDistinct())
     {
         std::unordered_set<std::string_view> projection_column_names;
-        for (auto & [column_name, _] : projection_analysis_result.projection_column_names_with_display_aliases)
-            projection_column_names.insert(column_name);
+
+        if (query_node.isDistinct())
+        {
+            for (auto & [column_name, _] : projection_analysis_result.projection_column_names_with_display_aliases)
+                projection_column_names.insert(column_name);
+        }
 
         for (auto & column : project_names_input)
         {
-            if (projection_column_names.contains(column.name))
+            if (has_with_fill || projection_column_names.contains(column.name))
                 column.column = nullptr;
         }
     }

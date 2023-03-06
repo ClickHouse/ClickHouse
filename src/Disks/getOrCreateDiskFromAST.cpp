@@ -27,11 +27,6 @@ std::string getOrCreateDiskFromDiskAST(const ASTFunction & function, ContextPtr 
     auto disk_name = DiskSelector::TMP_INTERNAL_DISK_PREFIX
         + toString(sipHash128(disk_setting_string.data(), disk_setting_string.size()));
 
-    LOG_TRACE(
-        &Poco::Logger::get("getOrCreateDiskFromDiskAST"),
-        "Using disk name `{}` for custom disk {}",
-        disk_name, disk_setting_string);
-
     auto result_disk = context->getOrCreateDisk(disk_name, [&](const DisksMap & disks_map) -> DiskPtr {
         const auto * function_args_expr = assert_cast<const ASTExpressionList *>(function.arguments.get());
         const auto & function_args = function_args_expr->children;

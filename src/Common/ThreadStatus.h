@@ -290,6 +290,8 @@ public:
 
     void logToQueryViewsLog(const ViewRuntimeData & vinfo);
 
+    void flushUntrackedMemory();
+
 protected:
     void applyQuerySettings();
 
