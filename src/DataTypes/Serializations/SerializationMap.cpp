@@ -372,7 +372,7 @@ static MutableColumns scatterString(
     return scattered_columns;
 }
 
-MutableColumns scatterColumn(
+static MutableColumns scatterColumn(
     const IColumn & column,
     const IColumn::Selector & selector,
     const std::vector<UInt64> & column_sizes)
@@ -411,7 +411,6 @@ static std::vector<ColumnPtr> scatterToShards(const IColumn & column, size_t num
 
         shards_offsets.push_back(&offsets_column->getData());
         shards_offsets_columns.push_back(std::move(offsets_column));
-
         shards_offsets.back()->resize(column_map.size());
     }
 
@@ -599,8 +598,11 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
         sources[i] = GatherUtils::createArraySource(shard_array, false, shard_array.size());
     }
 
-    GatherUtils::concatInplace(sources, column_nested);
-    column = std::move(mutable_column);
+    // GatherUtils::concatInplace(sources, column_nested);
+    // column = std::move(mutable_column);
+
+    auto res = GatherUtils::concat(sources);
+    column_nested.insertRangeFrom(*res, 0, res->size());
 }
 
 }

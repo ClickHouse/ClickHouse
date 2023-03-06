@@ -115,14 +115,16 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     addTotalRowsApprox(data_part->rows_count);
 
     /// Add columns because we don't want to read empty blocks
-    injectRequiredColumns(LoadedMergeTreeDataPartInfoForReader(data_part), storage_snapshot, /*with_subcolumns=*/ false, columns_to_read);
+    injectRequiredColumns(LoadedMergeTreeDataPartInfoForReader(data_part), storage_snapshot, /*with_subcolumns=*/ true, columns_to_read);
 
     NamesAndTypesList columns_for_reader;
     if (take_column_types_from_storage)
     {
         auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
             .withExtendedObjects()
+            .withSubcolumns()
             .withSystemColumns();
+
         columns_for_reader = storage_snapshot->getColumnsByNames(options, columns_to_read);
     }
     else

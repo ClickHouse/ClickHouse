@@ -11,6 +11,7 @@
 
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
+#include <DataTypes/DataTypeMap.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
@@ -41,6 +42,31 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+static void splitToSubcolumns(NamesAndTypesList & columns_list)
+{
+    for (auto it = columns_list.begin(); it != columns_list.end(); )
+    {
+        if (const auto * type_map = typeid_cast<const DataTypeMap *>(it->type.get());
+            type_map && type_map->getNumShards() > 1)
+        {
+            auto old_column = std::move(*it);
+            it = columns_list.erase(it);
+
+            auto new_type = std::make_shared<DataTypeMap>(type_map->getNestedType(), 1);
+            for (size_t i = 0; i < type_map->getNumShards(); ++i)
+            {
+                auto subcolumn_name = "shard" + toString(i);
+                auto new_column = NameAndTypePair{old_column.name, subcolumn_name, old_column.type, new_type};
+                it = columns_list.insert(it, std::move(new_column));
+                ++it;
+            }
+        }
+        else
+        {
+            ++it;
+        }
+    }
+}
 
 /// PK columns are sorted and merged, ordinary columns are gathered using info from merge step
 static void extractMergingAndGatheringColumns(
@@ -84,18 +110,15 @@ static void extractMergingAndGatheringColumns(
     for (const auto & column : storage_columns)
     {
         if (key_columns.contains(column.name))
-        {
             merging_columns.emplace_back(column);
-            merging_column_names.emplace_back(column.name);
-        }
         else
-        {
             gathering_columns.emplace_back(column);
-            gathering_column_names.emplace_back(column.name);
-        }
     }
-}
 
+    splitToSubcolumns(gathering_columns);
+    merging_column_names = merging_columns.getNames();
+    gathering_column_names = gathering_columns.getNames();
+}
 
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
 {
@@ -239,15 +262,15 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
 
     switch (global_ctx->chosen_merge_algorithm)
     {
-        case MergeAlgorithm::Horizontal :
+        case MergeAlgorithm::Horizontal:
         {
-            global_ctx->merging_columns = global_ctx->storage_columns;
-            global_ctx->merging_column_names = global_ctx->all_column_names;
+            global_ctx->merging_columns.splice(global_ctx->merging_columns.end(), std::move(global_ctx->gathering_columns));
+            global_ctx->merging_column_names = global_ctx->merging_columns.getNames();
             global_ctx->gathering_columns.clear();
             global_ctx->gathering_column_names.clear();
             break;
         }
-        case MergeAlgorithm::Vertical :
+        case MergeAlgorithm::Vertical:
         {
             ctx->rows_sources_file = createTemporaryFile(ctx->tmp_disk->getPath());
             ctx->rows_sources_uncompressed_write_buf = ctx->tmp_disk->writeFile(fileName(ctx->rows_sources_file->path()), DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, global_ctx->context->getWriteSettings());
@@ -477,12 +500,8 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
 
 void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
 {
-    const auto & [column_name, column_type] = *ctx->it_name_and_type;
-    Names column_names{column_name};
-
     ctx->progress_before = global_ctx->merge_list_element_ptr->progress.load(std::memory_order_relaxed);
-
-    global_ctx->column_progress = std::make_unique<MergeStageProgress>(ctx->progress_before, ctx->column_sizes->columnWeight(column_name));
+    global_ctx->column_progress = std::make_unique<MergeStageProgress>(ctx->progress_before, ctx->column_sizes->columnWeight(ctx->it_name_and_type->name));
 
     Pipes pipes;
     for (size_t part_num = 0; part_num < global_ctx->future_part->parts.size(); ++part_num)
@@ -491,7 +510,7 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
             *global_ctx->data,
             global_ctx->storage_snapshot,
             global_ctx->future_part->parts[part_num],
-            column_names,
+            Names{ctx->it_name_and_type->name},
             ctx->read_with_direct_io,
             true,
             false,
@@ -522,7 +541,7 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
     ctx->column_to = std::make_unique<MergedColumnOnlyOutputStream>(
         global_ctx->new_data_part,
         global_ctx->metadata_snapshot,
-        ctx->executor->getHeader(),
+        NamesAndTypesList{*ctx->it_name_and_type},
         ctx->compression_codec,
         /// we don't need to recalc indices here
         /// because all of them were already recalculated and written
@@ -717,7 +736,7 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
     }
 
     if (global_ctx->chosen_merge_algorithm != MergeAlgorithm::Vertical)
-        global_ctx->to->finalizePart(global_ctx->new_data_part, ctx->need_sync);
+        global_ctx->to->finalizePart(global_ctx->new_data_part, ctx->need_sync, &global_ctx->storage_columns);
     else
         global_ctx->to->finalizePart(global_ctx->new_data_part, ctx->need_sync, &global_ctx->storage_columns, &global_ctx->checksums_gathered_columns);
 
