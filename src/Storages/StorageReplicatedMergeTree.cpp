@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <ranges>
 
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Common/Macros.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/StringUtils/StringUtils.h>
