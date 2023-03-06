@@ -1,14 +1,14 @@
 #include "InlineEscapingValueStateHandler.h"
+#include "util/EscapedCharacterReader.h"
 
 namespace DB
 {
 
 InlineEscapingValueStateHandler::InlineEscapingValueStateHandler(
-    char escape_character_,
     char item_delimiter_,
     std::optional<char> enclosing_character_,
     std::unordered_set<char> special_character_allowlist_)
-    : StateHandler(enclosing_character_), escape_character(escape_character_)
+    : StateHandler(enclosing_character_)
     , item_delimiter(item_delimiter_), special_character_allowlist(special_character_allowlist_)
 {
 }
@@ -48,27 +48,38 @@ NextState InlineEscapingValueStateHandler::read(std::string_view file, size_t po
 
     while (pos < file.size())
     {
-        const auto current_character = file[pos++];
+        const auto current_character = file[pos];
+        const auto next_pos = pos + 1u;
 
         if (escape)
         {
             escape = false;
-            value.push_back(current_character);
-            continue;
+
+//            if (auto escaped_character = EscapedCharacterReader::read({file.begin() + pos, file.end()}))
+//            {
+//                value.push_back(*escaped_character);
+//            }
+//            else
+            {
+                // Discard in case of failures. It can fail either on converting characters into a number (\xHEX \0OCTAL)
+                // or if there isn't enough characters left in the string
+                return {next_pos, State::WAITING_KEY };
+            }
         }
-        else if (escape_character == current_character)
+        else if (EscapedCharacterReader::isEscapeCharacter(current_character))
         {
             escape = true;
-            continue;
         }
-        if (current_character == item_delimiter || !isValidCharacter(current_character))
+        else if (current_character == item_delimiter || !isValidCharacter(current_character))
         {
-            return {pos, State::FLUSH_PAIR};
+            return {next_pos, State::FLUSH_PAIR};
         }
         else
         {
             value.push_back(current_character);
         }
+
+        pos = next_pos;
     }
 
     return {pos, State::FLUSH_PAIR};

@@ -63,9 +63,9 @@ auto ExtractKeyValuePairs::getExtractor(const ParsedArguments & parsed_arguments
 {
     auto builder = KeyValuePairExtractorBuilder();
 
-    if (parsed_arguments.escape_character)
+    if (parsed_arguments.with_escaping.value_or(true))
     {
-        builder.withEscapeCharacter(parsed_arguments.escape_character.value());
+        builder.withEscaping();
     }
 
     if (parsed_arguments.key_value_pair_delimiter)
@@ -124,57 +124,63 @@ ExtractKeyValuePairs::ParsedArguments ExtractKeyValuePairs::parseArguments(const
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument", name);
     }
 
-    SetArgument value_special_characters_allow_list;
-
     auto data_column = arguments[0].column;
 
     if (arguments.size() == 1u)
     {
-        return ParsedArguments{data_column, {}, {}, {}, {}, value_special_characters_allow_list};
+        return ParsedArguments{data_column};
     }
 
-    auto escape_character = extractControlCharacter(arguments[1].column);
+    auto key_value_pair_delimiter = extractControlCharacter(arguments[1].column);
 
     if (arguments.size() == 2u)
     {
-        return ParsedArguments{data_column, escape_character, {}, {}, {}, value_special_characters_allow_list};
+        return ParsedArguments{data_column, key_value_pair_delimiter};
     }
 
-    auto key_value_pair_delimiter = extractControlCharacter(arguments[2].column);
+    auto item_delimiter = extractControlCharacter(arguments[2].column);
 
     if (arguments.size() == 3u)
     {
-        return ParsedArguments{data_column, escape_character, key_value_pair_delimiter, {}, {}, value_special_characters_allow_list};
+        return ParsedArguments{
+            data_column, key_value_pair_delimiter, item_delimiter};
     }
 
-    auto item_delimiter = extractControlCharacter(arguments[3].column);
+    auto enclosing_character = extractControlCharacter(arguments[3].column);
 
     if (arguments.size() == 4u)
     {
         return ParsedArguments{
-            data_column, escape_character, key_value_pair_delimiter, item_delimiter, {}, value_special_characters_allow_list};
-    }
-
-    auto enclosing_character = extractControlCharacter(arguments[4].column);
-
-    if (arguments.size() == 5u)
-    {
-        return ParsedArguments{
             data_column,
-            escape_character,
             key_value_pair_delimiter,
             item_delimiter,
             enclosing_character,
-            value_special_characters_allow_list};
+        };
     }
 
-    auto value_special_characters_allow_list_characters = arguments[5].column->getDataAt(0).toView();
+    auto value_special_characters_allow_list_characters = arguments[4].column->getDataAt(0).toView();
+
+    SetArgument value_special_characters_allow_list;
 
     value_special_characters_allow_list.insert(
-        value_special_characters_allow_list_characters.begin(), value_special_characters_allow_list_characters.end());
+        value_special_characters_allow_list_characters.begin(), value_special_characters_allow_list_characters.end()
+    );
+
+    if (arguments.size() == 5u)
+    {
+        return ParsedArguments {
+            data_column, key_value_pair_delimiter, item_delimiter, enclosing_character, value_special_characters_allow_list
+        };
+    }
+
+    // extractKeyValuePairs - extractKeyValuePairsWithEscaping
+
+    auto with_escaping_character = extractControlCharacter(arguments[5].column);
+
+    bool with_escaping = with_escaping_character && with_escaping_character == '1';
 
     return ParsedArguments{
-        data_column, escape_character, key_value_pair_delimiter, item_delimiter, enclosing_character, value_special_characters_allow_list
+        data_column, key_value_pair_delimiter, item_delimiter, enclosing_character, value_special_characters_allow_list, with_escaping
     };
 }
 
