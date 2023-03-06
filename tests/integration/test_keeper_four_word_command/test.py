@@ -682,6 +682,9 @@ def test_cmd_rqld(started_cluster):
 
 
 def test_cmd_clrs(started_cluster):
+    if node1.is_built_with_sanitizer():
+        return
+
     def get_memory_purges():
         return node1.query(
             "SELECT value FROM system.events WHERE event = 'MemoryAllocatorPurge' SETTINGS system_events_show_zero_values = 1"
