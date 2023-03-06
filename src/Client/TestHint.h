@@ -11,6 +11,8 @@
 namespace DB
 {
 
+class Lexer;
+
 /// Checks expected server and client error codes.
 ///
 /// The following comment hints are supported:
@@ -63,7 +65,7 @@ private:
     error_vector client_errors{};
     std::optional<bool> echo;
 
-    void parse(const String & hint, bool is_leading_hint);
+    void parse(Lexer & comment_lexer, bool is_leading_hint);
 
     bool allErrorsExpected(int actual_server_error, int actual_client_error) const
     {
