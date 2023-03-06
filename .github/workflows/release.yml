@@ -15,7 +15,7 @@ jobs:
     - name: Deploy packages and assets
       run: |
         GITHUB_TAG="${GITHUB_REF#refs/tags/}"
-        curl --silent --data '' \
+        curl --silent --data '' --no-buffer \
           '${{ secrets.PACKAGES_RELEASE_URL }}/release/'"${GITHUB_TAG}"'?binary=binary_darwin&binary=binary_darwin_aarch64&sync=true'
   ############################################################################################
   ##################################### Docker images  #######################################
