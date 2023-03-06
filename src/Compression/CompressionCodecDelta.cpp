@@ -193,7 +193,8 @@ void registerCodecDelta(CompressionCodecFactory & factory)
     UInt8 method_code = static_cast<UInt8>(CompressionMethodByte::Delta);
     auto codec_builder = [&](const ASTPtr & arguments, const IDataType * column_type) -> CompressionCodecPtr
     {
-        UInt8 delta_bytes_size = 0;
+        /// Default bytes size is 1.
+        UInt8 delta_bytes_size = 1;
 
         if (arguments && !arguments->children.empty())
         {
@@ -213,10 +214,6 @@ void registerCodecDelta(CompressionCodecFactory & factory)
         else if (column_type)
         {
             delta_bytes_size = getDeltaBytesSize(column_type);
-        }
-        else
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Delta codec cannot be used without column type or delta_size argument");
         }
 
         return std::make_shared<CompressionCodecDelta>(delta_bytes_size);

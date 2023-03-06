@@ -33,7 +33,7 @@ public:
         Bit
     };
 
-    CompressionCodecT64(TypeIndex type_idx_, Variant variant_);
+    CompressionCodecT64(std::optional<TypeIndex> type_idx_, Variant variant_);
 
     uint8_t getMethodByte() const override;
 
@@ -53,7 +53,7 @@ protected:
     bool isGenericCompression() const override { return false; }
 
 private:
-    TypeIndex type_idx;
+    std::optional<TypeIndex> type_idx;
     Variant variant;
 };
 
@@ -91,9 +91,12 @@ enum class MagicNumber : uint8_t
     IPv4        = 21,
 };
 
-MagicNumber serializeTypeId(TypeIndex type_id)
+MagicNumber serializeTypeId(std::optional<TypeIndex> type_id)
 {
-    switch (type_id)
+    if (!type_id)
+        throw Exception(ErrorCodes::CANNOT_COMPRESS, "T64 codec doesn't support compression without information about column type");
+
+    switch (*type_id)
     {
         case TypeIndex::UInt8:      return MagicNumber::UInt8;
         case TypeIndex::UInt16:     return MagicNumber::UInt16;
@@ -115,7 +118,7 @@ MagicNumber serializeTypeId(TypeIndex type_id)
             break;
     }
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Type is not supported by T64 codec: {}", static_cast<UInt32>(type_id));
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Type is not supported by T64 codec: {}", static_cast<UInt32>(*type_id));
 }
 
 TypeIndex deserializeTypeId(uint8_t serialized_type_id)
@@ -632,7 +635,7 @@ UInt32 CompressionCodecT64::doCompressData(const char * src, UInt32 src_size, ch
     memcpy(dst, &cookie, 1);
     dst += 1;
 
-    switch (baseType(type_idx))
+    switch (baseType(*type_idx))
     {
         case TypeIndex::Int8:
             return 1 + compressData<Int8>(src, src_size, dst, variant);
@@ -699,7 +702,7 @@ uint8_t CompressionCodecT64::getMethodByte() const
     return codecId();
 }
 
-CompressionCodecT64::CompressionCodecT64(TypeIndex type_idx_, Variant variant_)
+CompressionCodecT64::CompressionCodecT64(std::optional<TypeIndex> type_idx_, Variant variant_)
     : type_idx(type_idx_)
     , variant(variant_)
 {
@@ -712,7 +715,7 @@ CompressionCodecT64::CompressionCodecT64(TypeIndex type_idx_, Variant variant_)
 void CompressionCodecT64::updateHash(SipHash & hash) const
 {
     getCodecDesc()->updateTreeHash(hash);
-    hash.update(type_idx);
+    hash.update(type_idx ? *type_idx : TypeIndex::Nothing);
     hash.update(variant);
 }
 
@@ -720,9 +723,6 @@ void registerCodecT64(CompressionCodecFactory & factory)
 {
     auto reg_func = [&](const ASTPtr & arguments, const IDataType * type) -> CompressionCodecPtr
     {
-        if (!type)
-            throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "T64 codec is not supported for use without specified column type");
-
         Variant variant = Variant::Byte;
 
         if (arguments && !arguments->children.empty())
@@ -745,9 +745,14 @@ void registerCodecT64(CompressionCodecFactory & factory)
                 throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Wrong modification for T64: {}", name);
         }
 
-        auto type_idx = typeIdx(type);
-        if (type_idx == TypeIndex::Nothing)
-            throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "T64 codec is not supported for specified type {}", type->getName());
+        std::optional<TypeIndex> type_idx;
+        if (type)
+        {
+            type_idx = typeIdx(type);
+            if (type_idx == TypeIndex::Nothing)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "T64 codec is not supported for specified type {}", type->getName());
+        }
         return std::make_shared<CompressionCodecT64>(type_idx, variant);
     };
 

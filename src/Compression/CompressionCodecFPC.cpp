@@ -109,7 +109,8 @@ void registerCodecFPC(CompressionCodecFactory & factory)
     auto method_code = static_cast<UInt8>(CompressionMethodByte::FPC);
     auto codec_builder = [&](const ASTPtr & arguments, const IDataType * column_type) -> CompressionCodecPtr
     {
-        UInt8 float_width = 0;
+        /// Set default float width to 4.
+        UInt8 float_width = 4;
         if (column_type != nullptr)
             float_width = getFloatBytesSize(*column_type);
 
@@ -143,9 +144,6 @@ void registerCodecFPC(CompressionCodecFactory & factory)
                 float_width = static_cast<UInt8>(user_float_width);
             }
         }
-
-        if (float_width == 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "FPC codec cannot be used without column type or float size argument");
 
         return std::make_shared<CompressionCodecFPC>(float_width, level);
     };
