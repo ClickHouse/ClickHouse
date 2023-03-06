@@ -1,53 +1,15 @@
-#include "TestHint.h"
+#include <charconv>
+#include <string_view>
 
-#include <Common/Exception.h>
-#include <Common/ErrorCodes.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
+#include <Client/TestHint.h>
+
 #include <Parsers/Lexer.h>
+#include <Common/ErrorCodes.h>
+#include <Common/Exception.h>
 
 namespace DB::ErrorCodes
 {
 extern const int CANNOT_PARSE_TEXT;
-}
-
-namespace
-{
-
-/// Parse error as number or as a string (name of the error code const)
-DB::TestHint::error_vector parseErrorCode(DB::ReadBufferFromString & in)
-{
-    DB::TestHint::error_vector error_codes{};
-
-    while (!in.eof())
-    {
-        int code = -1;
-        String code_name;
-        auto * pos = in.position();
-
-        tryReadText(code, in);
-        if (pos == in.position())
-        {
-            readStringUntilWhitespace(code_name, in);
-            code = DB::ErrorCodes::getErrorCodeByName(code_name);
-        }
-        error_codes.push_back(code);
-
-        if (in.eof())
-            break;
-        skipWhitespaceIfAny(in);
-        if (in.eof())
-            break;
-        char c;
-        in.readStrict(c);
-        if (c != '|')
-            throw DB::Exception(DB::ErrorCodes::CANNOT_PARSE_TEXT, "Expected separator '|'. Got '{}'", c);
-        skipWhitespaceIfAny(in);
-    }
-
-    return error_codes;
-}
-
 }
 
 namespace DB
@@ -81,8 +43,8 @@ TestHint::TestHint(const String & query_)
                     size_t pos_end = comment.find('}', pos_start);
                     if (pos_end != String::npos)
                     {
-                        String hint(comment.begin() + pos_start + 1, comment.begin() + pos_end);
-                        parse(hint, is_leading_hint);
+                        Lexer comment_lexer(comment.c_str() + pos_start + 1, comment.c_str() + pos_end, 0);
+                        parse(comment_lexer, is_leading_hint);
                     }
                 }
             }
@@ -90,33 +52,76 @@ TestHint::TestHint(const String & query_)
     }
 }
 
-void TestHint::parse(const String & hint, bool is_leading_hint)
+void TestHint::parse(Lexer & comment_lexer, bool is_leading_hint)
 {
-    ReadBufferFromString in(hint);
-    String item;
+    std::unordered_set<String> commands{"echo", "echoOn", "echoOff"};
 
-    while (!in.eof())
+    std::unordered_set<String> command_errors{
+        "serverError",
+        "clientError",
+    };
+
+    for (Token token = comment_lexer.nextToken(); !token.isEnd(); token = comment_lexer.nextToken())
     {
-        readStringUntilWhitespace(item, in);
-        if (in.eof())
-            break;
-
-        skipWhitespaceIfAny(in);
-
-        if (!is_leading_hint)
+        String item = String(token.begin, token.end);
+        if (token.type == TokenType::BareWord && commands.contains(item))
         {
-            if (item == "serverError")
-                server_errors = parseErrorCode(in);
-            else if (item == "clientError")
-                client_errors = parseErrorCode(in);
+            if (item == "echo")
+                echo.emplace(true);
+            if (item == "echoOn")
+                echo.emplace(true);
+            if (item == "echoOff")
+                echo.emplace(false);
         }
+        else if (!is_leading_hint && token.type == TokenType::BareWord && command_errors.contains(item))
+        {
+            /// Everything after this must be a list of errors separated by comma
+            error_vector error_codes;
+            while (!token.isEnd())
+            {
+                token = comment_lexer.nextToken();
+                if (token.type == TokenType::Whitespace)
+                    continue;
+                if (token.type == TokenType::Number)
+                {
+                    int code;
+                    auto [p, ec] = std::from_chars(token.begin, token.end, code);
+                    if (p == token.begin)
+                        throw DB::Exception(
+                            DB::ErrorCodes::CANNOT_PARSE_TEXT,
+                            "Could not parse integer number for errorcode: {}",
+                            std::string_view(token.begin, token.end));
+                    error_codes.push_back(code);
+                }
+                else if (token.type == TokenType::BareWord)
+                {
+                    int code = code = DB::ErrorCodes::getErrorCodeByName(std::string_view(token.begin, token.end));
+                    error_codes.push_back(code);
+                }
+                else
+                    throw DB::Exception(
+                        DB::ErrorCodes::CANNOT_PARSE_TEXT,
+                        "Could not parse error code in {}: {}",
+                        getTokenName(token.type),
+                        std::string_view(token.begin, token.end));
+                do
+                {
+                    token = comment_lexer.nextToken();
+                } while (!token.isEnd() && token.type == TokenType::Whitespace);
 
-        if (item == "echo")
-            echo.emplace(true);
-        if (item == "echoOn")
-            echo.emplace(true);
-        if (item == "echoOff")
-            echo.emplace(false);
+                if (!token.isEnd() && token.type != TokenType::Comma)
+                    throw DB::Exception(
+                        DB::ErrorCodes::CANNOT_PARSE_TEXT,
+                        "Could not parse error code. Expected ','. Got '{}'",
+                        std::string_view(token.begin, token.end));
+            }
+
+            if (item == "serverError")
+                server_errors = error_codes;
+            else
+                client_errors = error_codes;
+            break;
+        }
     }
 }
 
