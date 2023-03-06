@@ -70,12 +70,12 @@ class ThreadGroupSwitcher : private boost::noncopyable
 {
 public:
     explicit ThreadGroupSwitcher(MergeListEntry * merge_list_entry_);
-    ThreadGroupSwitcher(ThreadGroupSwitcher && other);
-    ThreadGroupSwitcher& operator=(ThreadGroupSwitcher && other);
+    ThreadGroupSwitcher(ThreadGroupSwitcher && other) noexcept;
+    ThreadGroupSwitcher& operator=(ThreadGroupSwitcher && other) noexcept;
     ~ThreadGroupSwitcher();
 private:
-    ThreadGroupSwitcher() = default;
-    void swap(ThreadGroupSwitcher & other);
+    ThreadGroupSwitcher() noexcept = default;
+    void swap(ThreadGroupSwitcher & other) noexcept;
 
     MergeListEntry * merge_list_entry = nullptr;
     ThreadGroupStatusPtr prev_thread_group;
