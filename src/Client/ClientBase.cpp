@@ -1188,6 +1188,10 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
                 columns_description = ColumnsDescription::parse(packet.multistring_message[1]);
                 return receiveSampleBlock(out, columns_description, parsed_query);
 
+            case Protocol::Server::TimezoneUpdate:
+                DateLUT::setDefaultTimezone(packet.server_timezone);
+                break;
+
             default:
                 throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
                     "Unexpected packet from server (expected Data, Exception or Log, got {})",
@@ -1531,6 +1535,10 @@ bool ClientBase::receiveEndOfQuery()
 
             case Protocol::Server::ProfileEvents:
                 onProfileEvents(packet.block);
+                break;
+
+            case Protocol::Server::TimezoneUpdate:
+                DateLUT::setDefaultTimezone(packet.server_timezone);
                 break;
 
             default:
