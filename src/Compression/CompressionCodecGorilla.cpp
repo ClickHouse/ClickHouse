@@ -448,7 +448,8 @@ void registerCodecGorilla(CompressionCodecFactory & factory)
     UInt8 method_code = static_cast<UInt8>(CompressionMethodByte::Gorilla);
     auto codec_builder = [&](const ASTPtr & arguments, const IDataType * column_type) -> CompressionCodecPtr
     {
-        UInt8 data_bytes_size = 0;
+        /// Default bytes size is 1
+        UInt8 data_bytes_size = 1;
         if (arguments && !arguments->children.empty())
         {
             if (arguments->children.size() > 1)
@@ -467,10 +468,6 @@ void registerCodecGorilla(CompressionCodecFactory & factory)
         else if (column_type)
         {
             data_bytes_size = getDataBytesSize(column_type);
-        }
-        else
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Gorilla codec cannot be used without column type or bytes_size argument");
         }
 
         return std::make_shared<CompressionCodecGorilla>(data_bytes_size);

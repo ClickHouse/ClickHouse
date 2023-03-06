@@ -551,7 +551,8 @@ void registerCodecDoubleDelta(CompressionCodecFactory & factory)
     factory.registerCompressionCodecWithType("DoubleDelta", method_code,
         [&](const ASTPtr & arguments, const IDataType * column_type) -> CompressionCodecPtr
     {
-        UInt8 data_bytes_size = 0;
+        /// Default bytes size is 1.
+        UInt8 data_bytes_size = 1;
         if (arguments && !arguments->children.empty())
         {
             if (arguments->children.size() > 1)
@@ -570,10 +571,6 @@ void registerCodecDoubleDelta(CompressionCodecFactory & factory)
         else if (column_type)
         {
             data_bytes_size = getDataBytesSize(column_type);
-        }
-        else
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "DoubleDelta codec cannot be used without column type or bytes_size argument");
         }
 
         return std::make_shared<CompressionCodecDoubleDelta>(data_bytes_size);
