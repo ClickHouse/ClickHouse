@@ -96,8 +96,11 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
     result.expression = ExpressionAnalyzer(expr_list, syntax, context).getActions(true);
     result.sample_block = result.expression->getSampleBlock();
 
-    for (const auto & elem : result.sample_block)
+    for (auto & elem : result.sample_block)
     {
+        if (!elem.column)
+            elem.column = elem.type->createColumn();
+
         result.column_names.push_back(elem.name);
         result.data_types.push_back(elem.type);
     }
