@@ -202,8 +202,8 @@ void registerCodecDelta(CompressionCodecFactory & factory)
 
             const auto children = arguments->children;
             const auto * literal = children[0]->as<ASTLiteral>();
-            if (!literal)
-                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Delta codec argument must be integer");
+            if (!literal || literal->value.getType() != Field::Types::Which::UInt64)
+                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Delta codec argument must be unsigned integer");
 
             size_t user_bytes_size = literal->value.safeGet<UInt64>();
             if (user_bytes_size != 1 && user_bytes_size != 2 && user_bytes_size != 4 && user_bytes_size != 8)
@@ -213,6 +213,10 @@ void registerCodecDelta(CompressionCodecFactory & factory)
         else if (column_type)
         {
             delta_bytes_size = getDeltaBytesSize(column_type);
+        }
+        else
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Delta codec cannot be used without column type or delta_size argument");
         }
 
         return std::make_shared<CompressionCodecDelta>(delta_bytes_size);
