@@ -556,15 +556,13 @@ namespace
                 Pos end = str_ref.data + str_ref.size;
                 for (const auto & instruction : instructions)
                 {
-                    // std::cout << "instruction:" << instruction.toString() << std::endl;
                     cur = instruction.perform(cur, end, date);
-                    // std::cout << "date:" << date.toString() << std::endl;
                 }
 
                 // Ensure all input was consumed.
                 if (cur < end)
                     throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
+                        ErrorCodes::CANNOT_PARSE_TEXT,
                         "Invalid format input {} is malformed at {}",
                         str_ref.toView(),
                         std::string_view(cur, end - cur));
