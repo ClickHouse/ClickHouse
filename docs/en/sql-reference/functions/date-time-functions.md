@@ -1126,15 +1126,48 @@ Rounds the time to the half hour.
 
 ## toYYYYMM
 
-Converts a date or date with time to a UInt32 number containing the year and month number (YYYY \* 100 + MM).
+Converts a date or date with time to a UInt32 number containing the year and month number (YYYY \* 100 + MM). Accepts a second optional timezone argument. If provided, the timezone must be a string constant.
+
+### example
+```sql
+SELECT
+    toYYYYMM(now(), 'US/Eastern')
+```
+```response
+┌─toYYYYMM(now(), 'US/Eastern')─┐
+│                        202303 │ 
+└───────────────────────────────┘
+```
 
 ## toYYYYMMDD
 
-Converts a date or date with time to a UInt32 number containing the year and month number (YYYY \* 10000 + MM \* 100 + DD).
+Converts a date or date with time to a UInt32 number containing the year and month number (YYYY \* 10000 + MM \* 100 + DD). Accepts a second optional timezone argument. If provided, the timezone must be a string constant.
+
+### example
+```sql
+SELECT
+    toYYYYMMDD(now(), 'US/Eastern')
+```
+```response
+┌─toYYYYMMDD(now(), 'US/Eastern')─┐
+│                        20230302 │
+└─────────────────────────────────┘
+```
 
 ## toYYYYMMDDhhmmss
 
-Converts a date or date with time to a UInt64 number containing the year and month number (YYYY \* 10000000000 + MM \* 100000000 + DD \* 1000000 + hh \* 10000 + mm \* 100 + ss).
+Converts a date or date with time to a UInt64 number containing the year and month number (YYYY \* 10000000000 + MM \* 100000000 + DD \* 1000000 + hh \* 10000 + mm \* 100 + ss). Accepts a second optional timezone argument. If provided, the timezone must be a string constant.
+
+### example
+```sql
+SELECT
+    toYYYYMMDDhhmmss(now(), 'US/Eastern')
+```
+```response
+┌─toYYYYMMDDhhmmss(now(), 'US/Eastern')─┐
+│                        20230302112209 │
+└───────────────────────────────────────┘
+```
 
 ## addYears, addMonths, addWeeks, addDays, addHours, addMinutes, addSeconds, addQuarters
 
@@ -1231,8 +1264,8 @@ Using replacement fields, you can define a pattern for the resulting string. “
 | %e       | day of the month, space-padded (1-31)                   | &nbsp; 2   |
 | %f       | fractional second from the fractional part of DateTime64 | 1234560   |
 | %F       | short YYYY-MM-DD date, equivalent to %Y-%m-%d           | 2018-01-02 |
-| %G       | four-digit year format for ISO week number, calculated from the week-based year [defined by the ISO 8601](https://en.wikipedia.org/wiki/ISO_8601#Week_dates) standard, normally useful only with %V  | 2018         |
 | %g       | two-digit year format, aligned to ISO 8601, abbreviated from four-digit notation                                | 18       |
+| %G       | four-digit year format for ISO week number, calculated from the week-based year [defined by the ISO 8601](https://en.wikipedia.org/wiki/ISO_8601#Week_dates) standard, normally useful only with %V  | 2018         |
 | %h       | hour in 12h format (01-12)                              | 09         |
 | %H       | hour in 24h format (00-23)                              | 22         |
 | %i       | minute (00-59)                                          | 33         |

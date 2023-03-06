@@ -1946,7 +1946,7 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
     }
 
     auto conjunction = getConjunctionNodes(predicate, allowed_nodes);
-    if (conjunction.rejected.size() == 1 && WhichDataType{conjunction.rejected.front()->result_type}.isFloat())
+    if (conjunction.rejected.size() == 1 && WhichDataType{removeNullable(conjunction.rejected.front()->result_type)}.isFloat())
         return nullptr;
 
     auto actions = cloneActionsForConjunction(conjunction.allowed, all_inputs);
@@ -2014,7 +2014,7 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
                 node.children.swap(new_children);
                 *predicate = std::move(node);
             }
-            else if (!WhichDataType{new_children.front()->result_type}.isFloat())
+            else if (!WhichDataType{removeNullable(new_children.front()->result_type)}.isFloat())
             {
                 /// If type is different, cast column.
                 /// This case is possible, cause AND can use any numeric type as argument.
@@ -2045,7 +2045,7 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
             /// remove the AND.
             /// Just update children and rebuild it.
             predicate->children.swap(new_children);
-            if (WhichDataType{predicate->children.front()->result_type}.isFloat())
+            if (WhichDataType{removeNullable(predicate->children.front()->result_type)}.isFloat())
             {
                 Node node;
                 node.type = ActionType::COLUMN;
