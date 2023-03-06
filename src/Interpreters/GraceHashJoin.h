@@ -140,7 +140,6 @@ private:
 
     FileBucket * current_bucket = nullptr;
 
-    /// Function `getDelayedBlocks` is a critical section, we process only one bucket at a time.
     mutable std::mutex current_bucket_mutex;
 
     InMemoryJoinPtr hash_join;

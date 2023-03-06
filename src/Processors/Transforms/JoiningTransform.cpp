@@ -328,7 +328,10 @@ IProcessor::Status DelayedJoinedBlocksWorkerTransform::prepare()
     }
 
     if (!output.canPush())
+    {
+        input.setNotNeeded();
         return Status::PortFull;
+    }
 
     if (inputs.size() != 1 && outputs.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DelayedJoinedBlocksWorkerTransform must have exactly one input port");
@@ -419,7 +422,7 @@ IProcessor::Status DelayedJoinedBlocksTransform::prepare()
         if (output.isFinished())
         {
             /// If at least one output is finished, then we have read all data from buckets.
-            /// Some workers can still can busy with joining the last chunk of data in memory,
+            /// Some workers can still be busy with joining the last chunk of data in memory,
             /// but after that they also will finish when they will try to get next chunk.
             finished = true;
             continue;
