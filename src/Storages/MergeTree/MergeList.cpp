@@ -34,12 +34,12 @@ ThreadGroupSwitcher::~ThreadGroupSwitcher()
     CurrentThread::attachToGroup(prev_thread_group);
 }
 
-ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupSwitcher && other)
+ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupSwitcher && other) noexcept
 {
     this->swap(other);
 }
 
-ThreadGroupSwitcher& ThreadGroupSwitcher::operator=(ThreadGroupSwitcher && other)
+ThreadGroupSwitcher& ThreadGroupSwitcher::operator=(ThreadGroupSwitcher && other) noexcept
 {
     if (this != &other)
     {
@@ -50,7 +50,7 @@ ThreadGroupSwitcher& ThreadGroupSwitcher::operator=(ThreadGroupSwitcher && other
     return *this;
 }
 
-void ThreadGroupSwitcher::swap(ThreadGroupSwitcher & other)
+void ThreadGroupSwitcher::swap(ThreadGroupSwitcher & other) noexcept
 {
     std::swap(merge_list_entry, other.merge_list_entry);
     std::swap(prev_thread_group, other.prev_thread_group);
@@ -92,7 +92,10 @@ MergeListElement::MergeListElement(
 
     thread_group = std::make_shared<ThreadGroupStatus>();
 
-    auto p_counters = CurrentThread::get().current_performance_counters;
+    thread_group->query_context = CurrentThread::get().getQueryContext();
+    thread_group->global_context = CurrentThread::get().getGlobalContext();
+
+    auto * p_counters = CurrentThread::get().current_performance_counters;
     while (p_counters && p_counters->level != VariableContext::Process)
         p_counters = p_counters->getParent();
     thread_group->performance_counters.setParent(p_counters);
