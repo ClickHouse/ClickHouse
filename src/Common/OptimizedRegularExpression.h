@@ -95,7 +95,13 @@ public:
         out_required_substring_is_prefix = required_substring_is_prefix;
     }
 
-    static void analyze(std::string_view regexp_, std::string & required_substring, bool & is_trivial, bool & required_substring_is_prefix);
+    static const char * analyze(
+        std::string_view regexp_,
+        const char * pos,
+        std::string & required_substring,
+        bool & is_trivial,
+        bool & required_substring_is_prefix,
+        std::vector<std::string> & alternatives);
 private:
     bool is_trivial;
     bool required_substring_is_prefix;

@@ -1,3 +1,5 @@
+#include <set>
+
 #include <Common/Exception.h>
 #include <Common/PODArray.h>
 #include <Common/OptimizedRegularExpression.h>
@@ -16,11 +18,13 @@ namespace DB
 
 
 template <bool thread_safe>
-void OptimizedRegularExpressionImpl<thread_safe>::analyze(
+const char * OptimizedRegularExpressionImpl<thread_safe>::analyze(
     std::string_view regexp,
+    const char * pos,
     std::string & required_substring,
     bool & is_trivial,
-    bool & required_substring_is_prefix)
+    bool & required_substring_is_prefix,
+    std::vector<std::string> & alternatives)
 {
     /** The expression is trivial if all the metacharacters in it are escaped.
       * The non-alternative string is
@@ -30,9 +34,9 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
       *  and also avoid substrings of the form `http://` or `www` and some other
       *   (this is the hack for typical use case in web analytics applications).
       */
-    const char * begin = regexp.data();
-    const char * pos = begin;
+    const char * begin = pos;
     const char * end = regexp.data() + regexp.size();
+    bool first_call = begin == regexp.data();
     int depth = 0;
     is_trivial = true;
     required_substring_is_prefix = false;
@@ -47,23 +51,46 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
     Substrings trivial_substrings(1);
     Substring * last_substring = &trivial_substrings.back();
 
-    std::string bracket_string;
-    bool appending_bracket_string = false;
-
-    auto finish_last_substring = [&]()
+    auto finish_non_trivial_char = [&]()
     {
         if (depth != 0)
             return;
-        /// combine last substr and bracket string
-        last_substring->first += bracket_string;
-        bracket_string = "";
-        /// if we can still append, no need to finish it. e.g. abc(de)fg should capture abcdefg
-        if (!last_substring->first.empty() && !appending_bracket_string)
+
+        if (!last_substring->first.empty())
         {
             trivial_substrings.resize(trivial_substrings.size() + 1);
             last_substring = &trivial_substrings.back();
         }
-        appending_bracket_string = false;
+    };
+
+
+    auto finish_group = [&](std::string group_required_string, bool group_is_trivial, bool group_is_prefix, std::vector<std::string> & group_alternatives)
+    {
+        if (alternatives.empty() && !group_alternatives.empty())
+        {
+            /// Check if group alternatives has empty strings
+            bool has_empty_str = false;
+            for (const std::string & alter : group_alternatives)
+                has_empty_str |= alter.empty();
+            if (!has_empty_str)
+                alternatives = std::move(group_alternatives);
+        }
+
+        if (group_is_prefix)
+            last_substring->first += group_required_string;
+        else
+        {
+            finish_non_trivial_char();
+            last_substring->first = group_required_string;
+        }
+        /// if we can still append, no need to finish it. e.g. abc(de)fg should capture abcdefg
+        if (!last_substring->first.empty() && !group_is_trivial)
+        {
+            trivial_substrings.resize(trivial_substrings.size() + 1);
+            last_substring = &trivial_substrings.back();
+        }
+        if (!group_is_trivial)
+            is_trivial = false;
     };
 
     bool in_curly_braces = false;
@@ -92,31 +119,19 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
                     case '$':
                     case '.':
                     case '[':
+                    case ']':
                     case '?':
                     case '*':
                     case '+':
+                    case '-':
                     case '{':
-                        if (depth == 0 && !in_curly_braces && !in_square_braces)
-                        {
-                            if (last_substring->first.empty())
-                                last_substring->second = pos - begin;
-                            last_substring->first.push_back(*pos);
-                        }
-                        else if (depth == 1 && appending_bracket_string)
-                        {
-                            bracket_string += *pos;
-                        }
-                        break;
+                    case '}':
+                    case '/':
+                        goto ordinary;
                     default:
                         /// all other escape sequences are not supported
                         is_trivial = false;
-                        appending_bracket_string = false;
-                        //if (!last_substring->first.empty())
-                        //{
-                        //    trivial_substrings.resize(trivial_substrings.size() + 1);
-                        //    last_substring = &trivial_substrings.back();
-                        //}
-                        finish_last_substring();
+                        finish_non_trivial_char();
                         break;
                 }
 
@@ -125,32 +140,18 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
             }
 
             case '|':
-                if (depth == 0)
-                    has_alternative_on_depth_0 = true;
-                if (depth == 1)
-                {
-                    appending_bracket_string = false;
-                    bracket_string = "";
-                }
                 is_trivial = false;
-                if (!in_square_braces && !last_substring->first.empty() && depth == 0)
-                {
-                    trivial_substrings.resize(trivial_substrings.size() + 1);
-                    last_substring = &trivial_substrings.back();
-                }
                 ++pos;
+                if (depth == 0)
+                {
+                    has_alternative_on_depth_0 = true;
+                    goto finish;
+                }
                 break;
 
             case '(':
                 if (!in_square_braces)
                 {
-                    ++depth;
-                    is_trivial = false;
-                    /// we dont change the value of appending_bracket_string when depth > 1
-                    /// e.g. (de(fg)) should capture defg
-                    if (depth == 1)
-                        appending_bracket_string = true;
-
                     /// Check for case-insensitive flag.
                     if (pos + 1 < end && pos[1] == '?')
                     {
@@ -176,6 +177,23 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
                     {
                         pos += 2;
                     }
+                    std::string group_required_substr;
+                    bool group_is_trival;
+                    bool group_is_prefix;
+                    std::vector<std::string> group_alters;
+                    pos = analyze(regexp, pos + 1, group_required_substr, group_is_trival, group_is_prefix, group_alters);
+                    /// pos should be ')', if not, then it is not a valid regular expression
+                    if (pos == end)
+                        return pos;
+
+                    /// For ()? ()* (){0,1}, we can just ignore the whole group.
+                    if ((pos + 1 < end && (pos[1] == '?' || pos[1] == '*')) ||
+                        (pos + 2 < end && pos[1] == '{' && pos[2] == '0'))
+                    {
+                        finish_non_trivial_char();
+                    }
+                    else
+                        finish_group(group_required_substr, group_is_trival, group_is_prefix, group_alters);
                 }
                 ++pos;
                 break;
@@ -184,8 +202,7 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
                 in_square_braces = true;
                 ++depth;
                 is_trivial = false;
-                appending_bracket_string = false;
-                finish_last_substring();
+                finish_non_trivial_char();
                 ++pos;
                 break;
 
@@ -193,38 +210,25 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
                 if (!in_square_braces)
                     goto ordinary;
 
-                in_square_braces = false;
                 --depth;
+                if (depth == 0)
+                    in_square_braces = false;
                 is_trivial = false;
-                finish_last_substring();
-                //if (!last_substring->first.empty())
-                //{
-                //    trivial_substrings.resize(trivial_substrings.size() + 1);
-                //    last_substring = &trivial_substrings.back();
-                //}
+                finish_non_trivial_char();
                 ++pos;
                 break;
 
             case ')':
                 if (!in_square_braces)
                 {
-                    --depth;
-                    is_trivial = false;
-                    if (pos + 1 < end && (pos[1] == '?' || pos[1] == '*'))
-                    {
-                        /// TODO: (abc(def)?) should remain the abc part.
-                        bracket_string = "";
-                        appending_bracket_string = false;
-                    }
-                    finish_last_substring();
+                    goto finish;
                 }
                 ++pos;
                 break;
 
             case '^': case '$': case '.': case '+':
                 is_trivial = false;
-                appending_bracket_string = false;
-                finish_last_substring();
+                finish_non_trivial_char();
                 ++pos;
                 break;
 
@@ -240,16 +244,7 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
                 {
                     last_substring->first.resize(last_substring->first.size() - 1);
                 }
-                if (depth >= 1 && appending_bracket_string)
-                {
-                    /// ab(*cd) should be ab
-                    appending_bracket_string = false;
-                    if (!bracket_string.empty())
-                    {
-                        bracket_string.resize(bracket_string.size() - 1);
-                    }
-                }
-                finish_last_substring();
+                finish_non_trivial_char();
                 ++pos;
                 break;
 
@@ -270,22 +265,19 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
                         last_substring->second = pos - begin;
                     last_substring->first.push_back(*pos);
                 }
-                else if (depth >= 1 && appending_bracket_string)
-                    bracket_string += *pos;
                 ++pos;
                 break;
         }
     }
-
-    appending_bracket_string = false;
-    finish_last_substring();
-
+finish:
     if (last_substring && last_substring->first.empty())
         trivial_substrings.pop_back();
 
     if (!is_trivial)
     {
-        if (!has_alternative_on_depth_0 && !has_case_insensitive_flag)
+        /// we calculate required substring even though has_alternative_on_depth_0.
+        /// we will clear the required substring after putting it to alternatives.
+        if (!has_case_insensitive_flag)
         {
             /// We choose the non-alternative substring of the maximum length for first search.
 
@@ -305,7 +297,7 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
                 }
             }
 
-            if (max_length >= MIN_LENGTH_FOR_STRSTR)
+            if (max_length >= MIN_LENGTH_FOR_STRSTR || !first_call)
             {
                 required_substring = candidate_it->first;
                 required_substring_is_prefix = candidate_it->second == 0;
@@ -317,6 +309,30 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
         required_substring = trivial_substrings.front().first;
         required_substring_is_prefix = trivial_substrings.front().second == 0;
     }
+
+    /// if it is xxx|xxx|xxx, we should call the next xxx|xxx recursively and collect the result.
+    if (has_alternative_on_depth_0)
+    {
+        if (alternatives.empty())
+            alternatives.push_back(required_substring);
+        std::vector<std::string> next_alternatives;
+        /// this two vals are useless, xxx|xxx cannot be trivial nor prefix.
+        bool next_is_trivial;
+        bool next_is_prefix;
+        pos = analyze(regexp, pos, required_substring, next_is_trivial, next_is_prefix, next_alternatives);
+        /// For xxx|xxx|xxx, we only conbine the alternatives and return a empty required_substring.
+        if (next_alternatives.empty())
+        {
+            alternatives.push_back(required_substring);
+        }
+        else
+        {
+            alternatives.insert(alternatives.end(), next_alternatives.begin(), next_alternatives.end());
+        }
+        required_substring.clear();
+    }
+
+    return pos;
 
 /*    std::cerr
         << "regexp: " << regexp
@@ -330,7 +346,8 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
 template <bool thread_safe>
 OptimizedRegularExpressionImpl<thread_safe>::OptimizedRegularExpressionImpl(const std::string & regexp_, int options)
 {
-    analyze(regexp_, required_substring, is_trivial, required_substring_is_prefix);
+    std::vector<std::string> alternatives; /// this vector collects patterns in (xx|xx|xx). for now it's not used.
+    analyze(regexp_, regexp_.data(), required_substring, is_trivial, required_substring_is_prefix, alternatives);
 
     /// Just three following options are supported
     if (options & (~(RE_CASELESS | RE_NO_CAPTURE | RE_DOT_NL)))
