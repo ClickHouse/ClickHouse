@@ -415,7 +415,7 @@ CancellationCode QueryStatus::cancelQuery(bool)
     /// 2) We don't actually remove executor holder from executors in removePipelineExecutor,
     /// just mark that executor is invalid.
     /// So, it's ok to use a snapshot created above under a mutex, it won't be any differ from actual executors.
-    for (const auto & e : executors_shapshot)
+    for (const auto & e : executors_snapshot)
         e->cancel();
 
     return CancellationCode::CancelSent;
