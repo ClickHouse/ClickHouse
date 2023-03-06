@@ -410,13 +410,12 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(const QueryTreeNodePtr & tabl
         }
 
         /// Apply trivial_count optimization if possible
-        bool is_trivial_count_applied = is_single_table_expression && table_node && select_query_info.has_aggregates
+        bool is_trivial_count_applied = !select_query_options.only_analyze && is_single_table_expression && table_node && select_query_info.has_aggregates
             && applyTrivialCountIfPossible(query_plan, *table_node, select_query_info.query_tree, planner_context->getQueryContext(), columns_names);
 
         if (is_trivial_count_applied)
         {
-            if (!select_query_options.only_analyze)
-                from_stage = QueryProcessingStage::WithMergeableState;
+            from_stage = QueryProcessingStage::WithMergeableState;
         }
         else
         {
