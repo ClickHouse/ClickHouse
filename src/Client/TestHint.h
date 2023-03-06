@@ -18,13 +18,13 @@ class Lexer;
 /// The following comment hints are supported:
 ///
 /// - "-- { serverError 60 }" -- in case of you are expecting server error.
-/// - "-- { serverError 16 | 36 }" -- in case of you are expecting one of the 2 errors
+/// - "-- { serverError 16, 36 }" -- in case of you are expecting one of the 2 errors
 ///
 /// - "-- { clientError 20 }" -- in case of you are expecting client error.
-/// - "-- { clientError 20 | 60 | 92 }" -- It's expected that the client will return one of the 3 errors.
+/// - "-- { clientError 20, 60, 92 }" -- It's expected that the client will return one of the 3 errors.
 ///
 /// - "-- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }" -- by error name.
-/// - "-- { serverError NO_SUCH_COLUMN_IN_TABLE | BAD_ARGUMENTS }" -- by error name.
+/// - "-- { serverError NO_SUCH_COLUMN_IN_TABLE,  BAD_ARGUMENTS }" -- by error name.
 ///
 /// - "-- { clientError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }" -- by error name.
 ///
