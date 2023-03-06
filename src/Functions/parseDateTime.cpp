@@ -89,14 +89,12 @@ namespace
         Int32 year = 1970;
         Int32 month = 1;
         Int32 day = 1;
-        std::vector<Int32> day_of_month_values;
 
         Int32 week = 1; // Week of year based on ISO week date, e.g: 27
         Int32 day_of_week = 1; // Day of week, Monday:1, Tuesday:2, ..., Sunday:7
         bool week_date_format = false;
 
         Int32 day_of_year = 1;
-        std::vector<Int32> day_of_year_values;
         bool day_of_year_format = false;
 
         bool century_format = false;
@@ -119,14 +117,12 @@ namespace
             year = 1970;
             month = 1;
             day = 1;
-            day_of_month_values.clear();
 
             week = 1;
             day_of_week = 1;
             week_date_format = false;
 
             day_of_year = 1;
-            day_of_year_values.clear();
             day_of_year_format = false;
 
             century_format = false;
@@ -185,12 +181,11 @@ namespace
             }
         }
 
-        ALWAYS_INLINE void appendDayOfMonth(Int32 day_of_month)
+        void setDayOfMonth(Int32 day_of_month)
         {
             if (day_of_month < 1 || day_of_month > 31)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for day of month must be in the range [1, 31]", day_of_month);
 
-            day_of_month_values.push_back(day_of_month);
             day = day_of_month;
             week_date_format = false;
             day_of_year_format = false;
@@ -206,7 +201,6 @@ namespace
             if (day_of_year_ < 1 || day_of_year_ > 366)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for day of year must be in the range [1, 366]", day_of_year_);
 
-            day_of_year_values.push_back(day_of_year_);
             day_of_year = day_of_year_;
             day_of_year_format = true;
             week_date_format = false;
@@ -426,20 +420,6 @@ namespace
             if (is_hour_of_half_day && !is_am)
                 hour += 12;
 
-            /// Ensure all day of year values are valid for ending year value
-            for (const auto d : day_of_month_values)
-            {
-                if (!isDateValid(year, month, d))
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid day of month, year:{} month:{} day:{}", year, month, d);
-            }
-
-            // Ensure all day of year values are valid for ending year value
-            for (const auto d : day_of_year_values)
-            {
-                if (!isDayOfYearValid(year, d))
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid day of year, year:{} day of year:{}", year, d);
-            }
-
             // Convert the parsed date/time into a timestamp.
             Int32 days_since_epoch;
             if (week_date_format)
@@ -454,7 +434,6 @@ namespace
             /// Time zone is not specified, use local time zone
             if (!time_zone_offset)
                 *time_zone_offset = time_zone.timezoneOffset(seconds_since_epoch);
-            // std::cout << "time_zone:" << time_zone.getTimeZone() << ",offset:" << *time_zone_offset << std::endl;
 
             /// Time zone is specified in format string.
             if (seconds_since_epoch >= *time_zone_offset)
@@ -765,7 +744,7 @@ namespace
             {
                 Int32 day_of_month;
                 cur = readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, flag, day_of_month);
-                date.appendDayOfMonth(day_of_month);
+                date.setDayOfMonth(day_of_month);
                 return cur;
             }
 
@@ -781,7 +760,7 @@ namespace
                 Int32 day;
                 cur = readNumber2<Int32, NeedCheckSpace::No>(cur, end, flag, day);
                 cur = assertChar<NeedCheckSpace::No>(cur, end, '/', flag);
-                date.appendDayOfMonth(day);
+                date.setDayOfMonth(day);
 
                 Int32 year;
                 cur = readNumber2<Int32, NeedCheckSpace::No>(cur, end, flag, year);
@@ -799,7 +778,7 @@ namespace
                 day_of_month = 10 * day_of_month + (*cur - '0');
                 ++cur;
 
-                date.appendDayOfMonth(day_of_month);
+                date.setDayOfMonth(day_of_month);
                 return cur;
             }
 
@@ -818,7 +797,7 @@ namespace
 
                 date.setYear(year);
                 date.setMonth(month);
-                date.appendDayOfMonth(day);
+                date.setDayOfMonth(day);
                 return cur;
             }
 
@@ -1265,7 +1244,7 @@ namespace
                 Int32 day_of_month;
                 cur = readNumberWithVariableLength(
                     cur, end, false, false, false, repetitions, std::max(repetitions, 2), flag, day_of_month);
-                date.appendDayOfMonth(day_of_month);
+                date.setDayOfMonth(day_of_month);
                 return cur;
             }
 
