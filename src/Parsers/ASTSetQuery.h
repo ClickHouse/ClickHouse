@@ -35,6 +35,8 @@ public:
     void formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const override;
 
     void updateTreeHashImpl(SipHash & hash_state) const override;
+
+    QueryKind getQueryKind() const override { return QueryKind::Set; }
 };
 
 }

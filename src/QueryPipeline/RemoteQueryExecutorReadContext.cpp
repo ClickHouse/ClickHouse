@@ -1,6 +1,7 @@
 #if defined(OS_LINUX)
 
 #include <QueryPipeline/RemoteQueryExecutorReadContext.h>
+#include <base/defines.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Client/IConnections.h>
@@ -219,9 +220,15 @@ RemoteQueryExecutorReadContext::~RemoteQueryExecutorReadContext()
 {
     /// connection_fd is closed by Poco::Net::Socket or Epoll
     if (pipe_fd[0] != -1)
-        close(pipe_fd[0]);
+    {
+        int err = close(pipe_fd[0]);
+        chassert(!err || errno == EINTR);
+    }
     if (pipe_fd[1] != -1)
-        close(pipe_fd[1]);
+    {
+        int err = close(pipe_fd[1]);
+        chassert(!err || errno == EINTR);
+    }
 }
 
 }

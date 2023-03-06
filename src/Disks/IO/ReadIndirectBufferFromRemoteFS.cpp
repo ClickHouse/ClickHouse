@@ -95,7 +95,7 @@ bool ReadIndirectBufferFromRemoteFS::nextImpl()
     chassert(internal_buffer.size() == read_settings.remote_fs_buffer_size);
     chassert(file_offset_of_buffer_end <= impl->getFileSize());
 
-    auto [size, offset] = impl->readInto(internal_buffer.begin(), internal_buffer.size(), file_offset_of_buffer_end, /* ignore */0);
+    auto [size, offset, _] = impl->readInto(internal_buffer.begin(), internal_buffer.size(), file_offset_of_buffer_end, /* ignore */0);
 
     chassert(offset <= size);
     chassert(size <= internal_buffer.size());

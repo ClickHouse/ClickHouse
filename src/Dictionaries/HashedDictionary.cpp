@@ -1,3 +1,5 @@
+#include <Dictionaries/HashedDictionary.h>
+
 #include <numeric>
 #include <boost/noncopyable.hpp>
 
@@ -9,16 +11,15 @@
 
 #include <Core/Defines.h>
 
+#include <DataTypes/DataTypesDecimal.h>
+
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
-#include <DataTypes/DataTypesDecimal.h>
 #include <Functions/FunctionHelpers.h>
 
-#include <Dictionaries//DictionarySource.h>
+#include <Dictionaries/DictionarySource.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
-
-#include "HashedDictionary.h"
 
 
 namespace
@@ -59,7 +60,6 @@ public:
     explicit ParallelDictionaryLoader(HashedDictionary & dictionary_)
         : dictionary(dictionary_)
         , shards(dictionary.configuration.shards)
-        , simple_key(dictionary.dict_struct.getKeysSize() == 1)
         , pool(shards)
         , shards_queues(shards)
     {
@@ -116,7 +116,6 @@ public:
 private:
     HashedDictionary & dictionary;
     const size_t shards;
-    bool simple_key;
     ThreadPool pool;
     std::vector<std::optional<ConcurrentBoundedQueue<Block>>> shards_queues;
     std::vector<UInt64> shards_slots;
@@ -188,7 +187,7 @@ HashedDictionary<dictionary_key_type, sparse, sharded>::HashedDictionary(
     const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
-    const HashedDictionaryStorageConfiguration & configuration_,
+    const HashedDictionaryConfiguration & configuration_,
     BlockPtr update_field_loaded_block_)
     : IDictionary(dict_id_)
     , log(&Poco::Logger::get("HashedDictionary"))
@@ -205,7 +204,6 @@ HashedDictionary<dictionary_key_type, sparse, sharded>::HashedDictionary(
 
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
 HashedDictionary<dictionary_key_type, sparse, sharded>::~HashedDictionary()
-try
 {
     /// Do a regular sequential destroy in case of non sharded dictionary
     ///
@@ -215,8 +213,7 @@ try
         return;
 
     size_t shards = std::max<size_t>(configuration.shards, 1);
-    size_t attributes_tables = std::max<size_t>(attributes.size(), 1 /* no_attributes_containers */);
-    ThreadPool pool(shards * attributes_tables);
+    ThreadPool pool(shards);
 
     size_t hash_tables_count = 0;
     auto schedule_destroy = [&hash_tables_count, &pool](auto & container)
@@ -224,7 +221,7 @@ try
         if (container.empty())
             return;
 
-        pool.scheduleOrThrowOnError([&container, thread_group = CurrentThread::getGroup()]
+        pool.trySchedule([&container, thread_group = CurrentThread::getGroup()]
         {
             if (thread_group)
                 CurrentThread::attachToIfDetached(thread_group);
@@ -250,7 +247,7 @@ try
     {
         for (size_t attribute_index = 0; attribute_index < attributes.size(); ++attribute_index)
         {
-            getAttributeContainer(attribute_index, [&](auto & containers)
+            getAttributeContainers(attribute_index, [&](auto & containers)
             {
                 for (size_t shard = 0; shard < shards; ++shard)
                 {
@@ -263,10 +260,6 @@ try
     LOG_TRACE(log, "Destroying {} non empty hash tables (using {} threads)", hash_tables_count, pool.getMaxThreads());
     pool.wait();
     LOG_TRACE(log, "Hash tables destroyed");
-}
-catch (...)
-{
-    tryLogCurrentException("HashedDictionary", "Error while destroying dictionary in parallel, will do a sequential destroy.");
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
@@ -291,11 +284,11 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getColumn(
     const size_t attribute_index = dict_struct.attribute_name_to_index.find(attribute_name)->second;
     auto & attribute = attributes[attribute_index];
 
-    bool is_attribute_nullable = attribute.is_nullable_set.has_value();
+    bool is_attribute_nullable = attribute.is_nullable_sets.has_value();
 
     ColumnUInt8::MutablePtr col_null_map_to;
     ColumnUInt8::Container * vec_null_map_to = nullptr;
-    if (attribute.is_nullable_set)
+    if (is_attribute_nullable)
     {
         col_null_map_to = ColumnUInt8::create(size, false);
         vec_null_map_to = &col_null_map_to->getData();
@@ -409,21 +402,21 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse, sharded>::hasKeys
     }
 
     const auto & attribute = attributes.front();
-    bool is_attribute_nullable = attribute.is_nullable_set.has_value();
+    bool is_attribute_nullable = attribute.is_nullable_sets.has_value();
 
-    getAttributeContainer(0, [&](const auto & containers)
+    getAttributeContainers(0 /*attribute_index*/, [&](const auto & containers)
     {
         for (size_t requested_key_index = 0; requested_key_index < keys_size; ++requested_key_index)
         {
             auto key = extractor.extractCurrentKey();
-            const auto & container = containers[getShard(key)];
+            auto shard = getShard(key);
+            const auto & container = containers[shard];
 
             out[requested_key_index] = container.find(key) != container.end();
+            if (is_attribute_nullable && !out[requested_key_index])
+                out[requested_key_index] = (*attribute.is_nullable_sets)[shard].find(key) != nullptr;
 
             keys_found += out[requested_key_index];
-
-            if (is_attribute_nullable && !out[requested_key_index])
-                out[requested_key_index] = attribute.is_nullable_set->find(key) != nullptr;
 
             extractor.rollbackCurrentKey();
         }
@@ -457,10 +450,12 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse, sharded>::getHierarchy(C
 
         auto is_key_valid_func = [&](auto & hierarchy_key)
         {
-            if (unlikely(hierarchical_attribute.is_nullable_set) && hierarchical_attribute.is_nullable_set->find(hierarchy_key))
+            auto shard = getShard(hierarchy_key);
+
+            if (unlikely(hierarchical_attribute.is_nullable_sets) && (*hierarchical_attribute.is_nullable_sets)[shard].find(hierarchy_key))
                 return true;
 
-            const auto & map = child_key_to_parent_key_maps[getShard(hierarchy_key)];
+            const auto & map = child_key_to_parent_key_maps[shard];
             return map.find(hierarchy_key) != map.end();
         };
 
@@ -529,10 +524,12 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse, sharded>::isInHie
 
         auto is_key_valid_func = [&](auto & hierarchy_key)
         {
-            if (unlikely(hierarchical_attribute.is_nullable_set) && hierarchical_attribute.is_nullable_set->find(hierarchy_key))
+            auto shard = getShard(hierarchy_key);
+
+            if (unlikely(hierarchical_attribute.is_nullable_sets) && (*hierarchical_attribute.is_nullable_sets)[shard].find(hierarchy_key))
                 return true;
 
-            const auto & map = child_key_to_parent_key_maps[getShard(hierarchy_key)];
+            const auto & map = child_key_to_parent_key_maps[shard];
             return map.find(hierarchy_key) != map.end();
         };
 
@@ -643,8 +640,8 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::createAttributes()
             using AttributeType = typename Type::AttributeType;
             using ValueType = DictionaryValueType<AttributeType>;
 
-            auto is_nullable_set = dictionary_attribute.is_nullable ? std::make_optional<NullableSet>() : std::optional<NullableSet>{};
-            Attribute attribute{dictionary_attribute.underlying_type, std::move(is_nullable_set), CollectionsHolder<ValueType>(configuration.shards)};
+            auto is_nullable_sets = dictionary_attribute.is_nullable ? std::make_optional<NullableSets>(configuration.shards) : std::optional<NullableSets>{};
+            Attribute attribute{dictionary_attribute.underlying_type, std::move(is_nullable_sets), CollectionsHolder<ValueType>(configuration.shards)};
             attributes.emplace_back(std::move(attribute));
         };
 
@@ -747,9 +744,9 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::blockToAttributes(c
     {
         const IColumn & attribute_column = *block.safeGetByPosition(skip_keys_size_offset + attribute_index).column;
         auto & attribute = attributes[attribute_index];
-        bool attribute_is_nullable = attribute.is_nullable_set.has_value();
+        bool attribute_is_nullable = attribute.is_nullable_sets.has_value();
 
-        getAttributeContainer(attribute_index, [&](auto & containers)
+        getAttributeContainers(attribute_index, [&](auto & containers)
         {
             using ContainerType = std::decay_t<decltype(containers.front())>;
             using AttributeValueType = typename ContainerType::mapped_type;
@@ -760,7 +757,7 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::blockToAttributes(c
                 auto & container = containers[shard];
 
                 auto it = container.find(key);
-                bool key_is_nullable_and_already_exists = attribute_is_nullable && attribute.is_nullable_set->find(key) != nullptr;
+                bool key_is_nullable_and_already_exists = attribute_is_nullable && (*attribute.is_nullable_sets)[shard].find(key) != nullptr;
 
                 if (key_is_nullable_and_already_exists || it != container.end())
                 {
@@ -773,9 +770,10 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::blockToAttributes(c
 
                 attribute_column.get(key_index, column_value_to_insert);
 
-                if (attribute.is_nullable_set && column_value_to_insert.isNull())
+                if (attribute_is_nullable && column_value_to_insert.isNull())
                 {
-                    attribute.is_nullable_set->insert(key);
+                    (*attribute.is_nullable_sets)[shard].insert(key);
+                    ++new_element_count;
                     keys_extractor.rollbackCurrentKey();
                     continue;
                 }
@@ -793,7 +791,6 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::blockToAttributes(c
                 }
 
                 ++new_element_count;
-
                 keys_extractor.rollbackCurrentKey();
             }
 
@@ -830,7 +827,7 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::resize(size_t added
 
     for (size_t attribute_index = 0; attribute_index < attributes_size; ++attribute_index)
     {
-        getAttributeContainer(attribute_index, [added_rows](auto & containers)
+        getAttributeContainers(attribute_index, [added_rows](auto & containers)
         {
             auto & container = containers.front();
             size_t reserve_size = added_rows + container.size();
@@ -859,6 +856,7 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::getItemsImpl(
     for (size_t key_index = 0; key_index < keys_size; ++key_index)
     {
         auto key = keys_extractor.extractCurrentKey();
+        auto shard = getShard(key);
 
         const auto & container = attribute_containers[getShard(key)];
         const auto it = container.find(key);
@@ -872,11 +870,13 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::getItemsImpl(
         {
             if constexpr (is_nullable)
             {
-                bool is_value_nullable = (attribute.is_nullable_set->find(key) != nullptr) || default_value_extractor.isNullAt(key_index);
+                bool is_value_nullable = ((*attribute.is_nullable_sets)[shard].find(key) != nullptr) || default_value_extractor.isNullAt(key_index);
                 set_value(key_index, default_value_extractor[key_index], is_value_nullable);
             }
             else
+            {
                 set_value(key_index, default_value_extractor[key_index], false);
+            }
         }
 
         keys_extractor.rollbackCurrentKey();
@@ -940,9 +940,9 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::calculateBytesAlloc
     size_t attributes_size = attributes.size();
     bytes_allocated += attributes_size * sizeof(attributes.front());
 
-    for (size_t i = 0; i < attributes_size; ++i)
+    for (size_t attribute_index = 0; attribute_index < attributes_size; ++attribute_index)
     {
-        getAttributeContainer(i, [&](const auto & containers)
+        getAttributeContainers(attribute_index, [&](const auto & containers)
         {
             for (const auto & container : containers)
             {
@@ -968,10 +968,14 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::calculateBytesAlloc
             }
         });
 
-        bytes_allocated += sizeof(attributes[i].is_nullable_set);
+        const auto & attribute = attributes[attribute_index];
+        bytes_allocated += sizeof(attribute.is_nullable_sets);
 
-        if (attributes[i].is_nullable_set.has_value())
-            bytes_allocated = attributes[i].is_nullable_set->getBufferSizeInBytes();
+        if (attribute.is_nullable_sets.has_value())
+        {
+            for (auto & is_nullable_set : *attribute.is_nullable_sets)
+                bytes_allocated += is_nullable_set.getBufferSizeInBytes();
+        }
     }
 
     if (unlikely(attributes_size == 0))
@@ -1016,7 +1020,7 @@ Pipe HashedDictionary<dictionary_key_type, sparse, sharded>::read(const Names & 
     {
         const auto & attribute = attributes.front();
 
-        getAttributeContainer(0, [&](auto & containers)
+        getAttributeContainers(0 /*attribute_index*/, [&](auto & containers)
         {
             for (const auto & container : containers)
             {
@@ -1026,17 +1030,19 @@ Pipe HashedDictionary<dictionary_key_type, sparse, sharded>::read(const Names & 
                 {
                     keys.emplace_back(key);
                 }
-
-                if (attribute.is_nullable_set)
-                {
-                    const auto & is_nullable_set = *attribute.is_nullable_set;
-                    keys.reserve(is_nullable_set.size());
-
-                    for (auto & node : is_nullable_set)
-                        keys.emplace_back(node.getKey());
-                }
             }
         });
+
+        if (attribute.is_nullable_sets)
+        {
+            for (auto & is_nullable_set : *attribute.is_nullable_sets)
+            {
+                keys.reserve(is_nullable_set.size());
+
+                for (auto & node : is_nullable_set)
+                    keys.emplace_back(node.getKey());
+            }
+        }
     }
     else
     {
@@ -1074,8 +1080,8 @@ Pipe HashedDictionary<dictionary_key_type, sparse, sharded>::read(const Names & 
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
-template <typename GetContainerFunc>
-void HashedDictionary<dictionary_key_type, sparse, sharded>::getAttributeContainer(size_t attribute_index, GetContainerFunc && get_container_func)
+template <typename GetContainersFunc>
+void HashedDictionary<dictionary_key_type, sparse, sharded>::getAttributeContainers(size_t attribute_index, GetContainersFunc && get_containers_func)
 {
     assert(attribute_index < attributes.size());
 
@@ -1088,30 +1094,31 @@ void HashedDictionary<dictionary_key_type, sparse, sharded>::getAttributeContain
         using ValueType = DictionaryValueType<AttributeType>;
 
         auto & attribute_containers = std::get<CollectionsHolder<ValueType>>(attribute.containers);
-        std::forward<GetContainerFunc>(get_container_func)(attribute_containers);
+        std::forward<GetContainersFunc>(get_containers_func)(attribute_containers);
     };
 
     callOnDictionaryAttributeType(attribute.type, type_call);
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse, bool sharded>
-template <typename GetContainerFunc>
-void HashedDictionary<dictionary_key_type, sparse, sharded>::getAttributeContainer(size_t attribute_index, GetContainerFunc && get_container_func) const
+template <typename GetContainersFunc>
+void HashedDictionary<dictionary_key_type, sparse, sharded>::getAttributeContainers(size_t attribute_index, GetContainersFunc && get_containers_func) const
 {
-    const_cast<std::decay_t<decltype(*this)> *>(this)->getAttributeContainer(attribute_index, [&](auto & attribute_container)
+    const_cast<std::decay_t<decltype(*this)> *>(this)->getAttributeContainers(attribute_index, [&](auto & attribute_containers)
     {
-        std::forward<GetContainerFunc>(get_container_func)(attribute_container);
+        std::forward<GetContainersFunc>(get_containers_func)(attribute_containers);
     });
 }
 
-template class HashedDictionary<DictionaryKeyType::Simple, false, false>;
-template class HashedDictionary<DictionaryKeyType::Simple, false, true>;
-template class HashedDictionary<DictionaryKeyType::Simple, true, false>;
-template class HashedDictionary<DictionaryKeyType::Simple, true, true>;
-template class HashedDictionary<DictionaryKeyType::Complex, false, false>;
-template class HashedDictionary<DictionaryKeyType::Complex, false, true>;
-template class HashedDictionary<DictionaryKeyType::Complex, true, false>;
-template class HashedDictionary<DictionaryKeyType::Complex, true, true>;
+template class HashedDictionary<DictionaryKeyType::Simple, false, /*sparse*/ false /*sharded*/>;
+template class HashedDictionary<DictionaryKeyType::Simple, false /*sparse*/, true /*sharded*/>;
+template class HashedDictionary<DictionaryKeyType::Simple, true /*sparse*/, false /*sharded*/>;
+template class HashedDictionary<DictionaryKeyType::Simple, true /*sparse*/, true /*sharded*/>;
+
+template class HashedDictionary<DictionaryKeyType::Complex, false /*sparse*/, false /*sharded*/>;
+template class HashedDictionary<DictionaryKeyType::Complex, false /*sparse*/, true /*sharded*/>;
+template class HashedDictionary<DictionaryKeyType::Complex, true /*sparse*/, false /*sharded*/>;
+template class HashedDictionary<DictionaryKeyType::Complex, true /*sparse*/, true /*sharded*/>;
 
 void registerDictionaryHashed(DictionaryFactory & factory)
 {
@@ -1141,19 +1148,9 @@ void registerDictionaryHashed(DictionaryFactory & factory)
         std::string dictionary_layout_name;
 
         if (dictionary_key_type == DictionaryKeyType::Simple)
-        {
-            if (sparse)
-                dictionary_layout_name = "sparse_hashed";
-            else
-                dictionary_layout_name = "hashed";
-        }
+            dictionary_layout_name = sparse ? "sparse_hashed" : "hashed";
         else
-        {
-            if (sparse)
-                dictionary_layout_name = "complex_key_sparse_hashed";
-            else
-                dictionary_layout_name = "complex_key_hashed";
-        }
+            dictionary_layout_name = sparse ? "complex_key_sparse_hashed" : "complex_key_hashed";
 
         const std::string dictionary_layout_prefix = ".layout." + dictionary_layout_name;
         const bool preallocate = config.getBool(config_prefix + dictionary_layout_prefix + ".preallocate", false);
@@ -1168,7 +1165,7 @@ void registerDictionaryHashed(DictionaryFactory & factory)
         if (shard_load_queue_backlog <= 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,"{}: SHARD_LOAD_QUEUE_BACKLOG parameter should be greater then zero", full_name);
 
-        HashedDictionaryStorageConfiguration configuration{
+        HashedDictionaryConfiguration configuration{
             static_cast<UInt64>(shards),
             static_cast<UInt64>(shard_load_queue_backlog),
             require_nonempty,

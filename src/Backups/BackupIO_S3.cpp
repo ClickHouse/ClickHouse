@@ -4,18 +4,17 @@
 #include <Common/quoteString.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
 #include <Interpreters/Context.h>
-#include <IO/IOThreadPool.h>
+#include <IO/BackupsIOThreadPool.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/S3/copyS3File.h>
+#include <IO/S3/Client.h>
+
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <aws/core/auth/AWSCredentials.h>
-#include <aws/s3/S3Client.h>
-#include <aws/s3/model/DeleteObjectRequest.h>
-#include <aws/s3/model/DeleteObjectsRequest.h>
-#include <aws/s3/model/ListObjectsRequest.h>
+
 #include <filesystem>
 
 
@@ -31,7 +30,7 @@ namespace ErrorCodes
 
 namespace
 {
-    std::shared_ptr<Aws::S3::S3Client>
+    std::shared_ptr<S3::Client>
     makeS3Client(const S3::URI & s3_uri, const String & access_key_id, const String & secret_access_key, const ContextPtr & context)
     {
         auto settings = context->getStorageS3Settings().getSettings(s3_uri.uri.toString());
@@ -71,9 +70,9 @@ namespace
                 context->getConfigRef().getBool("s3.use_insecure_imds_request", false)));
     }
 
-    Aws::Vector<Aws::S3::Model::Object> listObjects(Aws::S3::S3Client & client, const S3::URI & s3_uri, const String & file_name)
+    Aws::Vector<Aws::S3::Model::Object> listObjects(S3::Client & client, const S3::URI & s3_uri, const String & file_name)
     {
-        Aws::S3::Model::ListObjectsRequest request;
+        S3::ListObjectsRequest request;
         request.SetBucket(s3_uri.bucket);
         request.SetPrefix(fs::path{s3_uri.key} / file_name);
         request.SetMaxKeys(1);
@@ -168,7 +167,7 @@ void BackupWriterS3::copyFileNative(DiskPtr src_disk, const String & src_file_na
         std::string src_bucket = object_storage->getObjectsNamespace();
         auto file_path = fs::path(s3_uri.key) / dest_file_name;
         copyS3File(client, src_bucket, objects[0].absolute_path, src_offset, src_size, s3_uri.bucket, file_path, request_settings, {},
-                   threadPoolCallbackRunner<void>(IOThreadPool::get(), "BackupWriterS3"));
+                   threadPoolCallbackRunner<void>(BackupsIOThreadPool::get(), "BackupWriterS3"));
     }
 }
 
@@ -176,7 +175,7 @@ void BackupWriterS3::copyDataToFile(
     const CreateReadBufferFunction & create_read_buffer, UInt64 offset, UInt64 size, const String & dest_file_name)
 {
     copyDataToS3File(create_read_buffer, offset, size, client, s3_uri.bucket, fs::path(s3_uri.key) / dest_file_name, request_settings, {},
-                     threadPoolCallbackRunner<void>(IOThreadPool::get(), "BackupWriterS3"));
+                     threadPoolCallbackRunner<void>(BackupsIOThreadPool::get(), "BackupWriterS3"));
 }
 
 BackupWriterS3::~BackupWriterS3() = default;
@@ -223,12 +222,12 @@ std::unique_ptr<WriteBuffer> BackupWriterS3::writeFile(const String & file_name)
         request_settings,
         std::nullopt,
         DBMS_DEFAULT_BUFFER_SIZE,
-        threadPoolCallbackRunner<void>(IOThreadPool::get(), "BackupWriterS3"));
+        threadPoolCallbackRunner<void>(BackupsIOThreadPool::get(), "BackupWriterS3"));
 }
 
 void BackupWriterS3::removeFile(const String & file_name)
 {
-    Aws::S3::Model::DeleteObjectRequest request;
+    S3::DeleteObjectRequest request;
     request.SetBucket(s3_uri.bucket);
     request.SetKey(fs::path(s3_uri.key) / file_name);
     auto outcome = client->DeleteObject(request);
@@ -285,7 +284,7 @@ void BackupWriterS3::removeFilesBatch(const Strings & file_names)
 
         Aws::S3::Model::Delete delkeys;
         delkeys.SetObjects(current_chunk);
-        Aws::S3::Model::DeleteObjectsRequest request;
+        S3::DeleteObjectsRequest request;
         request.SetBucket(s3_uri.bucket);
         request.SetDelete(delkeys);
 

@@ -108,11 +108,16 @@ private:
     struct Checker
     {
         Constraint constraint;
+        using NameResolver = std::function<std::string_view(std::string_view)>;
+        NameResolver setting_name_resolver;
+
         String explain;
         int code = 0;
 
         // Allows everything
-        Checker() = default;
+        explicit Checker(NameResolver setting_name_resolver_)
+            : setting_name_resolver(std::move(setting_name_resolver_))
+        {}
 
         // Forbidden with explanation
         Checker(const String & explain_, int code_)
@@ -122,8 +127,9 @@ private:
         {}
 
         // Allow or forbid depending on range defined by constraint, also used to return stored constraint
-        explicit Checker(const Constraint & constraint_)
+        explicit Checker(const Constraint & constraint_, NameResolver setting_name_resolver_)
             : constraint(constraint_)
+            , setting_name_resolver(std::move(setting_name_resolver_))
         {}
 
         // Perform checking
@@ -137,10 +143,6 @@ private:
         {
             return std::hash<std::string_view>{}(txt);
         }
-        size_t operator()(const String & txt) const
-        {
-            return std::hash<String>{}(txt);
-        }
     };
 
     bool checkImpl(const Settings & current_settings, SettingChange & change, ReactionOnViolation reaction) const;
@@ -149,9 +151,15 @@ private:
     Checker getChecker(const Settings & current_settings, std::string_view setting_name) const;
     Checker getMergeTreeChecker(std::string_view short_name) const;
 
+    std::string_view resolveSettingNameWithCache(std::string_view name) const;
+
     // Special container for heterogeneous lookups: to avoid `String` construction during `find(std::string_view)`
     using Constraints = std::unordered_map<String, Constraint, StringHash, std::equal_to<>>;
     Constraints constraints;
+    /// to avoid creating new string every time we cache the alias resolution
+    /// we cannot use resolveName from BaseSettings::Traits because MergeTreeSettings have added prefix
+    /// we store only resolved aliases inside the Constraints so to correctly search the container we always need to use resolved name
+    std::unordered_map<std::string, std::string, StringHash, std::equal_to<>> settings_alias_cache;
 
     const AccessControl * access_control;
 };
