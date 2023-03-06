@@ -286,6 +286,14 @@ Same as `toIPv4`, but if the IPv4 address has an invalid format, it returns 0.
 
 Same as `toIPv4`, but if the IPv4 address has an invalid format, it returns null.
 
+## toIPv6OrDefault(string)
+
+Same as `toIPv6`, but if the IPv6 address has an invalid format, it returns 0.
+
+## toIPv6OrNull(string)
+
+Same as `toIPv6`, but if the IPv6 address has an invalid format, it returns null.
+
 ## toIPv6
 
 Converts a string form of IPv6 address to [IPv6](../../sql-reference/data-types/domains/ipv6.md) type. If the IPv6 address has an invalid format, returns an empty value.
