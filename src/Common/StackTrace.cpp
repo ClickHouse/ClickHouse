@@ -291,7 +291,7 @@ void StackTrace::tryCapture()
 #endif
 }
 
-// Clickhouse uses bundled libc++ so type names will be same on every system thus it's save to hardcode them
+/// ClickHouse uses bundled libc++ so type names will be the same on every system thus it's safe to hardcode them
 constexpr std::pair<std::string_view, std::string_view> replacements[]
     = {{"::__1", ""}, {"std::basic_string<char, std::char_traits<char>, std::allocator<char>>", "String"}};
 
