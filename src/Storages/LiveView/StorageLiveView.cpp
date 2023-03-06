@@ -27,7 +27,7 @@ limitations under the License. */
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Common/SipHash.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 
 #include <Storages/LiveView/StorageLiveView.h>
 #include <Storages/LiveView/LiveViewSource.h>

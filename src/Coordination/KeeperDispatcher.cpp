@@ -4,7 +4,7 @@
 #include <Poco/Path.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Common/setThreadName.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/checkStackSize.h>
