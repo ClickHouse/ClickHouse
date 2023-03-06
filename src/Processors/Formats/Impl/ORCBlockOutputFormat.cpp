@@ -23,7 +23,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
-{
+{7
 
 namespace ErrorCodes
 {
@@ -36,24 +36,22 @@ namespace
 
 orc::CompressionKind getORCCompression(FormatSettings::ORCCompression method)
 {
-    if (method == FormatSettings::ORCCompression::NONE)
-        return orc::CompressionKind::CompressionKind_NONE;
-
+    switch (method)
+    {
+        case FormatSettings::ORCCompression::NONE:
+            return orc::CompressionKind::CompressionKind_NONE;
+        case FormatSettings::ORCCompression::SNAPPY:
 #if USE_SNAPPY
-    if (method == FormatSettings::ORCCompression::SNAPPY)
-        return orc::CompressionKind::CompressionKind_SNAPPY;
+            return orc::CompressionKind::CompressionKind_SNAPPY;
 #endif
-
-    if (method == FormatSettings::ORCCompression::ZSTD)
-        return orc::CompressionKind::CompressionKind_ZSTD;
-
-    if (method == FormatSettings::ORCCompression::LZ4)
-        return orc::CompressionKind::CompressionKind_LZ4;
-
-    if (method == FormatSettings::ORCCompression::ZLIB)
-        return orc::CompressionKind::CompressionKind_ZLIB;
-
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported compression method");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Snappy compression method is not supported");
+        case FormatSettings::ORCCompression::ZSTD:
+            return orc::CompressionKind::CompressionKind_ZSTD;
+        case FormatSettings::ORCCompression::LZ4:
+            return orc::CompressionKind::CompressionKind_LZ4;
+        case FormatSettings::ORCCompression::ZLIB:
+            return orc::CompressionKind::CompressionKind_ZLIB;
+    }
 }
 
 }
