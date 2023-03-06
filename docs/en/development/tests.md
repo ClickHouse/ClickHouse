@@ -39,11 +39,58 @@ To add new test, create a `.sql` or `.sh` file in `queries/0_stateless` director
 
 Tests should use (create, drop, etc) only tables in `test` database that is assumed to be created beforehand; also tests can use temporary tables.
 
+### Restricting test runs
+
+A test can have zero or more _test tags_ specifying restrictions for test runs.
+
+For `.sh` tests tags are written as a comment on the second line:
+
+```bash
+#!/usr/bin/env bash
+# Tags: no-fasttest
+```
+
+For `.sql` tests tags are placed in the first line as a SQL comment:
+
+```sql
+-- Tags: no-fasttest
+SELECT 1
+```
+
+|Tag name | What it does | Usage example |
+|---|---|---|
+| `disabled`|  Test is not run ||
+| `long` | Test's execution time is extended from 1 to 10 minutes ||
+| `deadlock` | Test is run in a loop for a long time ||
+| `race` | Same as `deadlock`. Prefer `deadlock` ||
+| `shard` | Server is required to listen to `127.0.0.*` ||
+| `distributed` | Same as `shard`. Prefer `shard` ||
+| `global` | Same as `shard`. Prefer `shard` ||
+| `zookeeper` | Test requires Zookeeper or ClickHouse Keeper to run | Test uses `ReplicatedMergeTree` |
+| `replica` | Same as `zookeeper`. Prefer `zookeeper` ||
+| `no-fasttest`|  Test is not run under [Fast test](continuous-integration#fast-test) | Test uses `MySQL` table engine which is disabled in Fast test|
+| `no-[asan, tsan, msan, ubsan]` | Disables tests in build with [sanitizers](#sanitizers) | Test is run under QEMU which doesn't work with sanitizers |
+| `no-replicated-database` |||
+| `no-ordinary-database` |||
+| `no-parallel` | Disables running other tests in parallel with this one | Test reads from `system` tables and invariants may be broken|
+| `no-parallel-replicas` |||
+| `no-debug` |||
+| `no-stress` |||
+| `no-polymorphic-parts` |||
+| `no-random-settings` |||
+| `no-random-merge-tree-settings` |||
+| `no-backward-compatibility-check` |||
+| `no-cpu-x86_64` |||
+| `no-cpu-aarch64` |||
+| `no-cpu-ppc64le` |||
+| `no-s3-storage` |||
+
+In addition to the above settings, you can use `USE_*` flags from `system.build_options` to define usage of particular ClickHouse features.
+For example, if your test uses a MySQL table, you should add a tag `use-mysql`.
+
 ### Choosing the Test Name
 
 The name of the test starts with a five-digit prefix followed by a descriptive name, such as `00422_hash_function_constexpr.sql`. To choose the prefix, find the largest prefix already present in the directory, and increment it by one. In the meantime, some other tests might be added with the same numeric prefix, but this is OK and does not lead to any problems, you don't have to change it later.
-
-Some tests are marked with `zookeeper`, `shard` or `long` in their names. `zookeeper` is for tests that are using ZooKeeper. `shard` is for tests that requires server to listen `127.0.0.*`; `distributed` or `global` have the same meaning. `long` is for tests that run slightly longer that one second. You can disable these groups of tests using `--no-zookeeper`, `--no-shard` and `--no-long` options, respectively. Make sure to add a proper prefix to your test name if it needs ZooKeeper or distributed queries.
 
 ### Checking for an Error that Must Occur
 

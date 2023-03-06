@@ -796,7 +796,7 @@ bool StorageReplicatedMergeTree::createTableIfNotExists(const StorageMetadataPtr
         auto code = zookeeper->tryMulti(ops, responses);
         if (code == Coordination::Error::ZNODEEXISTS)
         {
-            LOG_WARNING(log, "It looks like the table {} was created by another server at the same moment, will retry", zookeeper_path);
+            LOG_INFO(log, "It looks like the table {} was created by another server at the same moment, will retry", zookeeper_path);
             continue;
         }
         else if (code != Coordination::Error::ZOK)
@@ -876,7 +876,7 @@ void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metada
             case Coordination::Error::ZNODEEXISTS:
                 throw Exception(ErrorCodes::REPLICA_ALREADY_EXISTS, "Replica {} already exists", replica_path);
             case Coordination::Error::ZBADVERSION:
-                LOG_ERROR(log, "Retrying createReplica(), because some other replicas were created at the same time");
+                LOG_INFO(log, "Retrying createReplica(), because some other replicas were created at the same time");
                 break;
             case Coordination::Error::ZNONODE:
                 throw Exception(ErrorCodes::ALL_REPLICAS_LOST, "Table {} was suddenly removed", zookeeper_path);

@@ -134,7 +134,7 @@ static void terminateRequestedSignalHandler(int sig, siginfo_t *, void *)
 }
 
 
-static std::atomic<bool> fatal_error_printed{false};
+static std::atomic_flag fatal_error_printed;
 
 /** Handler for "fault" or diagnostic signals. Send data about fault to separate thread to write into log.
   */
@@ -165,7 +165,7 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
         for (size_t i = 0; i < 300; ++i)
         {
             /// We will synchronize with the thread printing the messages with an atomic variable to finish earlier.
-            if (fatal_error_printed)
+            if (fatal_error_printed.test())
                 break;
 
             /// This coarse method of synchronization is perfectly ok for fatal signals.
@@ -421,7 +421,7 @@ private:
         if (thread_ptr)
             thread_ptr->onFatalError();
 
-        fatal_error_printed = true;
+        fatal_error_printed.test_and_set();
     }
 };
 
