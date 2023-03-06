@@ -1082,6 +1082,13 @@ If unsuccessful, several attempts are made to connect to various replicas.
 
 Default value: 50.
 
+## connect_timeout_with_failover_secure_ms
+
+The timeout in milliseconds for connecting to a secure remote server for a Distributed table engine, if the ‘shard’ and ‘replica’ sections are used in the cluster definition.
+If unsuccessful, several attempts are made to connect to various replicas.
+
+Default value: 1000.
+
 ## connection_pool_max_wait_ms {#connection-pool-max-wait-ms}
 
 The wait time in milliseconds for a connection when the connection pool is full.
