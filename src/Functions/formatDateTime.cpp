@@ -865,16 +865,14 @@ public:
     template <typename T>
     size_t parseFormat(const String & format, std::vector<Instruction<T>> & instructions, UInt32 scale, String & out_template) const
     {
+        static_assert(
+            format_syntax == FormatDateTimeTraits::FormatSyntax::MySQL || format_syntax == FormatDateTimeTraits::FormatSyntax::Joda,
+            "format syntax must be one of MySQL or Joda");
+
         if constexpr (format_syntax == FormatDateTimeTraits::FormatSyntax::MySQL)
             return parseMySQLFormat(format, instructions, scale, out_template);
-        else if constexpr (format_syntax == FormatDateTimeTraits::FormatSyntax::Joda)
-            return parseJodaFormat(format, instructions, scale, out_template);
         else
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "Unknown datetime format style {} in function {}",
-                magic_enum::enum_name(format_syntax),
-                getName());
+            return parseJodaFormat(format, instructions, scale, out_template);
     }
 
     template <typename T>
@@ -896,7 +894,7 @@ public:
         };
 
         const char * pos = format.data();
-        const char * const end = pos + format.size();
+        const char * const end = format.data() + format.size();
 
         while (true)
         {
@@ -1187,8 +1185,7 @@ public:
 
         size_t reserve_size = 0;
         const char * pos = format.data();
-        const char * end = pos + format.size();
-
+        const char * end = format.data() + format.size();
         while (pos < end)
         {
             const char * cur_token = pos;
