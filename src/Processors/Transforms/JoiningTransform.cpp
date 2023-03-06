@@ -333,8 +333,6 @@ IProcessor::Status DelayedJoinedBlocksWorkerTransform::prepare()
     if (inputs.size() != 1 && outputs.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DelayedJoinedBlocksWorkerTransform must have exactly one input port");
 
-
-
     if (output_chunk)
     {
         input.setNotNeeded();
@@ -413,7 +411,6 @@ void DelayedJoinedBlocksTransform::work()
     delayed_blocks = join->getDelayedBlocks();
     finished = finished || delayed_blocks == nullptr;
 }
-
 
 IProcessor::Status DelayedJoinedBlocksTransform::prepare()
 {
