@@ -4608,25 +4608,47 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         auto if_function_condition = if_function_arguments[0];
         resolveExpressionNode(if_function_condition, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
-        QueryTreeNodePtr constant_if_result_node;
         auto constant_condition = tryExtractConstantFromConditionNode(if_function_condition);
 
         if (constant_condition.has_value() && if_function_arguments.size() == 3)
         {
-            if (*constant_condition)
-                constant_if_result_node = if_function_arguments[1];
-            else
-                constant_if_result_node = if_function_arguments[2];
-        }
+            QueryTreeNodePtr constant_if_result_node;
+            QueryTreeNodePtr possibly_invalid_argument_node;
 
-        if (constant_if_result_node)
-        {
-            auto result_projection_names = resolveExpressionNode(constant_if_result_node,
-                scope,
-                false /*allow_lambda_expression*/,
-                false /*allow_table_expression*/);
-            node = std::move(constant_if_result_node);
-            return result_projection_names;
+            if (*constant_condition)
+            {
+                possibly_invalid_argument_node = if_function_arguments[2];
+                constant_if_result_node = if_function_arguments[1];
+            }
+            else
+            {
+                possibly_invalid_argument_node = if_function_arguments[1];
+                constant_if_result_node = if_function_arguments[2];
+            }
+
+            bool apply_constant_if_optimization = false;
+
+            try
+            {
+                resolveExpressionNode(possibly_invalid_argument_node,
+                    scope,
+                    false /*allow_lambda_expression*/,
+                    false /*allow_table_expression*/);
+            }
+            catch (...)
+            {
+                apply_constant_if_optimization = true;
+            }
+
+            if (apply_constant_if_optimization)
+            {
+                auto result_projection_names = resolveExpressionNode(constant_if_result_node,
+                    scope,
+                    false /*allow_lambda_expression*/,
+                    false /*allow_table_expression*/);
+                node = std::move(constant_if_result_node);
+                return result_projection_names;
+            }
         }
     }
 

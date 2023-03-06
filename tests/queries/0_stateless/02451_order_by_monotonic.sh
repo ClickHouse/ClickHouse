@@ -17,12 +17,12 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE t_order_by_monotonic (t DateTime, c1 String)
        SELECT '2022-09-09 12:00:30', toString(number % 2)|| 'x' FROM numbers(3)"
 
 $CLICKHOUSE_CLIENT --optimize_aggregation_in_order=1 -q "SELECT count() FROM
-    (SELECT toStartOfMinute(t) AS s, c1 FROM t_order_by_monotonic GROUP BY s, c1)"
+    (SELECT toStartOfMinute(t) AS s, c1 FROM t_order_by_monotonic AS test GROUP BY s, c1)"
 
-$CLICKHOUSE_CLIENT --optimize_read_in_order=1 -q "SELECT toStartOfMinute(t) AS s, c1 FROM t_order_by_monotonic ORDER BY s, c1"
+$CLICKHOUSE_CLIENT --optimize_read_in_order=1 -q "SELECT toStartOfMinute(t) AS s, c1 FROM t_order_by_monotonic AS test ORDER BY s, c1"
 
-explain_sort_description "SELECT toStartOfMinute(t) AS s, c1 FROM t_order_by_monotonic ORDER BY s, c1"
-explain_sort_description "SELECT toStartOfMinute(t) AS s, c1 FROM t_order_by_monotonic ORDER BY s"
+explain_sort_description "SELECT toStartOfMinute(t) AS s, c1 FROM t_order_by_monotonic AS test ORDER BY s, c1"
+explain_sort_description "SELECT toStartOfMinute(t) AS s, c1 FROM t_order_by_monotonic AS test ORDER BY s"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_order_by_monotonic"
 
@@ -30,11 +30,11 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE t_order_by_monotonic (a Int64, b Int64) ENGI
 
 $CLICKHOUSE_CLIENT -q "INSERT INTO t_order_by_monotonic VALUES (1, 1) (1, 2), (2, 1) (2, 2)"
 
-explain_sort_description "SELECT * FROM t_order_by_monotonic ORDER BY -a"
-explain_sort_description "SELECT * FROM t_order_by_monotonic ORDER BY -a, -b"
-explain_sort_description "SELECT * FROM t_order_by_monotonic ORDER BY a DESC, -b"
-explain_sort_description "SELECT * FROM t_order_by_monotonic ORDER BY -a, b DESC"
-explain_sort_description "SELECT * FROM t_order_by_monotonic ORDER BY -a, b"
-explain_sort_description "SELECT * FROM t_order_by_monotonic ORDER BY a, -b"
+explain_sort_description "SELECT * FROM t_order_by_monotonic AS test ORDER BY -a"
+explain_sort_description "SELECT * FROM t_order_by_monotonic AS test ORDER BY -a, -b"
+explain_sort_description "SELECT * FROM t_order_by_monotonic AS test ORDER BY a DESC, -b"
+explain_sort_description "SELECT * FROM t_order_by_monotonic AS test ORDER BY -a, b DESC"
+explain_sort_description "SELECT * FROM t_order_by_monotonic AS test ORDER BY -a, b"
+explain_sort_description "SELECT * FROM t_order_by_monotonic AS test ORDER BY a, -b"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_order_by_monotonic"
