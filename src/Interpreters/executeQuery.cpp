@@ -1280,7 +1280,7 @@ void executeQuery(
     QueryResultDetails result_details
     {
         .query_id = context->getClientInfo().current_query_id,
-        .timezone = DateLUT::instance("").getTimeZone(),
+        .timezone = DateLUT::instance().getTimeZone(),
     };
 
     std::unique_ptr<WriteBuffer> compressed_buffer;
