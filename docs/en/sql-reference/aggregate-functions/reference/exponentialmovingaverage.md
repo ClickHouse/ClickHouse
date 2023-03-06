@@ -11,15 +11,15 @@ sidebar_title: exponentialMovingAverage
 **Syntax**
 
 ```sql
-exponentialMovingAverage(x)(value, timestamp)
+exponentialMovingAverage(x)(value, timeunit)
 ```
 
-Each `value` corresponds to the determinate `timestamp`. The half-life `x` is the time lag at which the exponential weights decay by one-half. The function returns a weighted average: the older the time point, the less weight the corresponding value is considered to be.
+Each `value` corresponds to the determinate `timeunit`. The half-life `x` is the time lag at which the exponential weights decay by one-half. The function returns a weighted average: the older the time point, the less weight the corresponding value is considered to be.
 
 **Arguments**
 
 -   `value` — Value. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md).
--   `timestamp` — Timestamp. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md).
+-   `timeunit` — Timeunit. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md). Timeunit is not timestamp (seconds), it's -- an index of the time interval. Can be calculated using [intDiv](../../unctions/arithmetic-functions/#intdiva-b).
 
 **Parameters**
 
@@ -147,4 +147,34 @@ Result:
 │     1 │   48 │                0.813 │ ████████████████████████████████████████▋ │
 │     1 │   49 │                0.825 │ █████████████████████████████████████████▎│
 └───────┴──────┴──────────────────────┴────────────────────────────────────────────┘
+```
+
+```sql
+CREATE TABLE data
+ENGINE = Memory AS
+SELECT
+    10 AS value,
+    toDateTime('2020-01-01') + (3600 * number) AS time
+FROM numbers_mt(10);
+
+
+SELECT
+    value,
+    time,
+    exponentialMovingAverage(1)(value, intDiv(toUInt32(time),3600)) OVER (ORDER BY time ASC) res
+FROM data
+ORDER BY time;
+
+┌─value─┬────────────────time─┬─────────res─┐
+│    10 │ 2020-01-01 00:00:00 │           5 │
+│    10 │ 2020-01-01 01:00:00 │         7.5 │
+│    10 │ 2020-01-01 02:00:00 │        8.75 │
+│    10 │ 2020-01-01 03:00:00 │       9.375 │
+│    10 │ 2020-01-01 04:00:00 │      9.6875 │
+│    10 │ 2020-01-01 05:00:00 │     9.84375 │
+│    10 │ 2020-01-01 06:00:00 │    9.921875 │
+│    10 │ 2020-01-01 07:00:00 │   9.9609375 │
+│    10 │ 2020-01-01 08:00:00 │  9.98046875 │
+│    10 │ 2020-01-01 09:00:00 │ 9.990234375 │
+└───────┴─────────────────────┴─────────────┘
 ```
