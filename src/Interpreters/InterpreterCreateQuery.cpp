@@ -1709,7 +1709,11 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     else
     {
         if (create.temporary)
+        {
             required_access.emplace_back(AccessType::CREATE_TEMPORARY_TABLE);
+            if (create.storage && create.storage->engine && create.storage->engine->name != "Memory")
+                required_access.emplace_back(AccessType::CREATE_ARBITRARY_TEMPORARY_TABLE);
+        }
         else
         {
             if (create.replace_table)
