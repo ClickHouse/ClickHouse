@@ -576,8 +576,8 @@ void FileSegment::completeUnlocked(LockedKey & locked_key, const CacheGuard::Loc
     {
         case State::DOWNLOADED:
         {
-            chassert(getDownloadedSize(false) == range().size());
-            chassert(getDownloadedSize(false) == std::filesystem::file_size(file_path));
+            chassert(current_downloaded_size == range().size());
+            chassert(current_downloaded_size == std::filesystem::file_size(file_path));
             chassert(!cache_writer);
 
             is_completed = true;
