@@ -32,20 +32,19 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     std::unordered_map<std::string, UInt64> column_sizes_,
     const StorageMetadataPtr & metadata_snapshot,
     const Names & queried_columns_,
+    const std::optional<NameSet> & supported_columns_,
     Poco::Logger * log_)
     : table_columns{collections::map<std::unordered_set>(
         metadata_snapshot->getColumns().getAllPhysical(), [](const NameAndTypePair & col) { return col.name; })}
     , queried_columns{queried_columns_}
+    , supported_columns{supported_columns_}
     , sorting_key_names{NameSet(
           metadata_snapshot->getSortingKey().column_names.begin(), metadata_snapshot->getSortingKey().column_names.end())}
     , block_with_constants{KeyCondition::getBlockWithConstants(query_info.query->clone(), query_info.syntax_analyzer_result, context)}
     , log{log_}
     , column_sizes{std::move(column_sizes_)}
+    , move_all_conditions_to_prewhere(context->getSettingsRef().move_all_conditions_to_prewhere)
 {
-    const auto & primary_key = metadata_snapshot->getPrimaryKey();
-    if (!primary_key.column_names.empty())
-        first_primary_key_column = primary_key.column_names[0];
-
     for (const auto & name : queried_columns)
     {
         auto it = column_sizes.find(name);
@@ -193,10 +192,13 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node,
             /// Condition depend on some column. Constant expressions are not moved.
             !cond.identifiers.empty()
             && !cannotBeMoved(node, is_final)
-            /// Do not take into consideration the conditions consisting only of the first primary key column
-            && !hasPrimaryKeyAtoms(node)
+            /// When use final, do not take into consideration the conditions with non-sorting keys. Because final select
+            /// need to use all sorting keys, it will cause correctness issues if we filter other columns before final merge.
+            && (!is_final || isExpressionOverSortingKey(node))
             /// Only table columns are considered. Not array joined columns. NOTE We're assuming that aliases was expanded.
             && isSubsetOfTableColumns(cond.identifiers)
+            /// Some identifiers can unable to support PREWHERE (usually because of different types in Merge engine)
+            && identifiersSupportsPrewhere(cond.identifiers)
             /// Do not move conditions involving all queried columns.
             && cond.identifiers.size() < queried_columns.size();
 
@@ -275,23 +277,26 @@ void MergeTreeWhereOptimizer::optimize(ASTSelectQuery & select) const
         if (!it->viable)
             break;
 
-        bool moved_enough = false;
-        if (total_size_of_queried_columns > 0)
+        if (!move_all_conditions_to_prewhere)
         {
-            /// If we know size of queried columns use it as threshold. 10% ratio is just a guess.
-            moved_enough = total_size_of_moved_conditions > 0
-                && (total_size_of_moved_conditions + it->columns_size) * 10 > total_size_of_queried_columns;
-        }
-        else
-        {
-            /// Otherwise, use number of moved columns as a fallback.
-            /// It can happen, if table has only compact parts. 25% ratio is just a guess.
-            moved_enough = total_number_of_moved_columns > 0
-                && (total_number_of_moved_columns + it->identifiers.size()) * 4 > queried_columns.size();
-        }
+            bool moved_enough = false;
+            if (total_size_of_queried_columns > 0)
+            {
+                /// If we know size of queried columns use it as threshold. 10% ratio is just a guess.
+                moved_enough = total_size_of_moved_conditions > 0
+                    && (total_size_of_moved_conditions + it->columns_size) * 10 > total_size_of_queried_columns;
+            }
+            else
+            {
+                /// Otherwise, use number of moved columns as a fallback.
+                /// It can happen, if table has only compact parts. 25% ratio is just a guess.
+                moved_enough = total_number_of_moved_columns > 0
+                    && (total_number_of_moved_columns + it->identifiers.size()) * 4 > queried_columns.size();
+            }
 
-        if (moved_enough)
-            break;
+            if (moved_enough)
+                break;
+        }
 
         move_condition(it);
     }
@@ -320,48 +325,34 @@ UInt64 MergeTreeWhereOptimizer::getIdentifiersColumnSize(const NameSet & identif
     return size;
 }
 
-
-bool MergeTreeWhereOptimizer::hasPrimaryKeyAtoms(const ASTPtr & ast) const
+bool MergeTreeWhereOptimizer::identifiersSupportsPrewhere(const NameSet & identifiers) const
 {
-    if (const auto * func = ast->as<ASTFunction>())
-    {
-        const auto & args = func->arguments->children;
+    if (!supported_columns.has_value())
+        return true;
 
-        if ((func->name == "not" && 1 == args.size()) || func->name == "and" || func->name == "or")
-        {
-            for (const auto & arg : args)
-                if (hasPrimaryKeyAtoms(arg))
-                    return true;
-
+    for (const auto & identifier : identifiers)
+        if (!supported_columns->contains(identifier))
             return false;
-        }
-    }
 
-    return isPrimaryKeyAtom(ast);
+    return true;
 }
 
-
-bool MergeTreeWhereOptimizer::isPrimaryKeyAtom(const ASTPtr & ast) const
+bool MergeTreeWhereOptimizer::isExpressionOverSortingKey(const ASTPtr & ast) const
 {
     if (const auto * func = ast->as<ASTFunction>())
     {
-        if (!KeyCondition::atom_map.contains(func->name))
-            return false;
-
         const auto & args = func->arguments->children;
-        if (args.size() != 2)
-            return false;
-
-        const auto & first_arg_name = args.front()->getColumnName();
-        const auto & second_arg_name = args.back()->getColumnName();
-
-        if ((first_primary_key_column == first_arg_name && isConstant(args[1]))
-            || (first_primary_key_column == second_arg_name && isConstant(args[0]))
-            || (first_primary_key_column == first_arg_name && functionIsInOrGlobalInOperator(func->name)))
-            return true;
+        for (const auto & arg : args)
+        {
+            if (isConstant(ast) || sorting_key_names.contains(arg->getColumnName()))
+                continue;
+            if (!isExpressionOverSortingKey(arg))
+                return false;
+        }
+        return true;
     }
 
-    return false;
+    return isConstant(ast) || sorting_key_names.contains(ast->getColumnName());
 }
 
 

@@ -317,6 +317,7 @@ static bool checkCapnProtoType(const capnp::Type & capnp_type, const DataTypePtr
         case TypeIndex::UInt16:
             return capnp_type.isUInt16();
         case TypeIndex::DateTime: [[fallthrough]];
+        case TypeIndex::IPv4: [[fallthrough]];
         case TypeIndex::UInt32:
             return capnp_type.isUInt32();
         case TypeIndex::UInt64:
@@ -355,6 +356,7 @@ static bool checkCapnProtoType(const capnp::Type & capnp_type, const DataTypePtr
         case TypeIndex::LowCardinality:
             return checkCapnProtoType(capnp_type, assert_cast<const DataTypeLowCardinality *>(data_type.get())->getDictionaryType(), mode, error_message, column_name);
         case TypeIndex::FixedString: [[fallthrough]];
+        case TypeIndex::IPv6: [[fallthrough]];
         case TypeIndex::String:
             return capnp_type.isText() || capnp_type.isData();
         default:
