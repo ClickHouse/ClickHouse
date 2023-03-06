@@ -49,7 +49,6 @@
 #include <Interpreters/InterpreterTransactionControlQuery.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
-#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/QueryLog.h>
