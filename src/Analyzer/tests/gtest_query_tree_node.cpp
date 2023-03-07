@@ -36,7 +36,7 @@ public:
         return std::make_shared<SourceNode>();
     }
 
-    ASTPtr toASTImpl() const override
+    ASTPtr toASTImpl(ConvertToASTOptions /* options */) const override
     {
         return nullptr;
     }
