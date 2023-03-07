@@ -1,5 +1,8 @@
 #pragma once
-#if defined(OS_LINUX)
+
+#include "config.h"
+
+#if USE_LIBURING
 
 #include <Common/ThreadPool.h>
 #include <IO/AsynchronousReader.h>
