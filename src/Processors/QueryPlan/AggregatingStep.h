@@ -117,13 +117,8 @@ public:
         DataStreams input_streams_,
         Aggregator::Params params_,
         bool final_,
-        //size_t max_block_size_,
         size_t merge_threads_,
         size_t temporary_data_merge_threads_
-        //bool group_by_use_nulls_,
-        //SortDescription group_by_sort_description_,
-        //bool should_produce_results_in_order_of_bucket_number_
-        //bool memory_bound_merging_of_aggregation_results_enabled_
     );
 
     String getName() const override { return "AggregatingProjection"; }
@@ -132,15 +127,8 @@ public:
 private:
     Aggregator::Params params;
     bool final;
-    //size_t max_block_size;
     size_t merge_threads;
     size_t temporary_data_merge_threads;
-
-    //bool storage_has_evenly_distributed_read;
-    //bool group_by_use_nulls;
-    //SortDescription group_by_sort_description;
-    //bool should_produce_results_in_order_of_bucket_number;
-    //bool memory_bound_merging_of_aggregation_results_enabled;
 
     Processors aggregating;
 };
