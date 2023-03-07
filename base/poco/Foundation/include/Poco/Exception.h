@@ -74,6 +74,8 @@ public:
     int code() const;
     /// Returns the exception code if defined.
 
+    void setErrorCode(int code) { _code = code; }
+
     virtual std::string displayText() const;
     /// Returns a string consisting of the
     /// message name and the message text.

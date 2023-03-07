@@ -42,6 +42,21 @@ static std::pair<Field, std::shared_ptr<const IDataType>> getFieldAndDataTypeFro
     return {res, type};
 }
 
+static String getColumnName(const IAST & ast)
+{
+    try
+    {
+        return ast.getColumnName();
+    }
+    catch (Exception & e)
+    {
+        if (e.code() == ErrorCodes::LOGICAL_ERROR && startsWith(e.message(), "Trying to get name of not a column"))
+            e.setErrorCode(ErrorCodes::BAD_ARGUMENTS);
+
+        throw;
+    }
+}
+
 std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(const ASTPtr & node, const ContextPtr & context)
 {
     if (ASTLiteral * literal = node->as<ASTLiteral>())
@@ -70,7 +85,7 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
     if (context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY && context->getSettingsRef().normalize_function_names)
         FunctionNameNormalizer().visit(ast.get());
 
-    String result_name = ast->getColumnName();
+    String result_name = getColumnName(*ast);
     auto syntax_result = TreeRewriter(context).analyze(ast, source_columns);
 
     /// AST potentially could be transformed to literal during TreeRewriter analyze.

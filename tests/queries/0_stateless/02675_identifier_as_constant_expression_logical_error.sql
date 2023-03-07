@@ -1,0 +1,1 @@
+SELECT NULL FROM cluster('test_cluster_two_shards', currentDatabase(executable('', 'JSON', 'data String', SETTINGS max_command_execution_time = 100, command_read_timeout = 1)), t) -- { serverError BAD_ARGUMENTS }
