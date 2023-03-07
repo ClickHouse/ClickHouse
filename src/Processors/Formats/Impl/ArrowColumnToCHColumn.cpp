@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <Common/DateLUTImpl.h>
 #include <base/types.h>
 #include <Processors/Chunk.h>
@@ -528,6 +529,38 @@ static std::shared_ptr<arrow::ChunkedArray> getNestedArrowColumn(std::shared_ptr
     return std::make_shared<arrow::ChunkedArray>(array_vector);
 }
 
+static ColumnWithTypeAndName readIPv6ColumnFromBinaryData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
+{
+    size_t total_size = 0;
+    for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
+    {
+        auto & chunk = dynamic_cast<arrow::BinaryArray &>(*(arrow_column->chunk(chunk_i)));
+        const size_t chunk_length = chunk.length();
+
+        for (size_t i = 0; i != chunk_length; ++i)
+        {
+            /// If at least one value size is not 16 bytes, fallback to reading String column and further cast to IPv6.
+            if (chunk.value_length(i) != sizeof(IPv6))
+                return readColumnWithStringData<arrow::BinaryArray>(arrow_column, column_name);
+        }
+        total_size += chunk_length;
+    }
+
+    auto internal_type = std::make_shared<DataTypeIPv6>();
+    auto internal_column = internal_type->createColumn();
+    auto & data = assert_cast<ColumnIPv6 &>(*internal_column).getData();
+    data.reserve(total_size * sizeof(IPv6));
+
+    for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
+    {
+        auto & chunk = dynamic_cast<arrow::BinaryArray &>(*(arrow_column->chunk(chunk_i)));
+        std::shared_ptr<arrow::Buffer> buffer = chunk.value_data();
+        const auto * raw_data = reinterpret_cast<const IPv6 *>(buffer->data());
+        data.insert_assume_reserved(raw_data, raw_data + chunk.length());
+    }
+    return {std::move(internal_column), std::move(internal_type), column_name};
+}
+
 static ColumnWithTypeAndName readColumnFromArrowColumn(
     std::shared_ptr<arrow::ChunkedArray> & arrow_column,
     const std::string & column_name,
@@ -559,7 +592,11 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
     {
         case arrow::Type::STRING:
         case arrow::Type::BINARY:
+        {
+            if (type_hint && isIPv6(type_hint))
+                return readIPv6ColumnFromBinaryData(arrow_column, column_name);
             return readColumnWithStringData<arrow::BinaryArray>(arrow_column, column_name);
+        }
         case arrow::Type::FIXED_SIZE_BINARY:
             return readColumnWithFixedStringData(arrow_column, column_name);
         case arrow::Type::LARGE_BINARY:
