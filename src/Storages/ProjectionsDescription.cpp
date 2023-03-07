@@ -86,8 +86,12 @@ bool ProjectionDescription::operator==(const ProjectionDescription & other) cons
 }
 
 ProjectionDescription
-ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr query_context)
+ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context)
 {
+    /// We don't want a local context to stuck in `ExpressionActions` in `StorageInMemoryMetadata`
+    chassert(!context->hasSessionContext());
+    chassert(!context->hasQueryContext());
+
     const auto * projection_definition = definition_ast->as<ASTProjectionDeclaration>();
 
     if (!projection_definition)
@@ -106,10 +110,10 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     auto query = projection_definition->query->as<ASTProjectionSelectQuery &>();
     result.query_ast = query.cloneToASTSelect();
 
-    auto external_storage_holder = std::make_shared<TemporaryTableHolder>(query_context, columns, ConstraintsDescription{});
+    auto external_storage_holder = std::make_shared<TemporaryTableHolder>(context, columns, ConstraintsDescription{});
     StoragePtr storage = external_storage_holder->getTable();
     InterpreterSelectQuery select(
-        result.query_ast, query_context, storage, {},
+        result.query_ast, context, storage, {},
         /// Here we ignore ast optimizations because otherwise aggregation keys may be removed from result header as constants.
         SelectQueryOptions{QueryProcessingStage::WithMergeableState}.modify().ignoreAlias().ignoreASTOptimizations());
 
@@ -146,8 +150,8 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
                 order_expression = function_node;
             }
             auto columns_with_state = ColumnsDescription(result.sample_block.getNamesAndTypesList());
-            metadata.sorting_key = KeyDescription::getSortingKeyFromAST(order_expression, columns_with_state, query_context, {});
-            metadata.primary_key = KeyDescription::getKeyFromAST(order_expression, columns_with_state, query_context);
+            metadata.sorting_key = KeyDescription::getSortingKeyFromAST(order_expression, columns_with_state, context, {});
+            metadata.primary_key = KeyDescription::getKeyFromAST(order_expression, columns_with_state, context);
             metadata.primary_key.definition_ast = nullptr;
         }
         else
@@ -161,8 +165,8 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     else
     {
         result.type = ProjectionDescription::Type::Normal;
-        metadata.sorting_key = KeyDescription::getSortingKeyFromAST(query.orderBy(), columns, query_context, {});
-        metadata.primary_key = KeyDescription::getKeyFromAST(query.orderBy(), columns, query_context);
+        metadata.sorting_key = KeyDescription::getSortingKeyFromAST(query.orderBy(), columns, context, {});
+        metadata.primary_key = KeyDescription::getKeyFromAST(query.orderBy(), columns, context);
         metadata.primary_key.definition_ast = nullptr;
     }
 
@@ -185,8 +189,12 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     ASTPtr partition_columns,
     const Names & minmax_columns,
     const ASTs & primary_key_asts,
-    ContextPtr query_context)
+    ContextPtr context)
 {
+    /// We don't want a local context to stuck in `ExpressionActions` in `StorageInMemoryMetadata`
+    chassert(!context->hasSessionContext());
+    chassert(!context->hasQueryContext());
+
     ProjectionDescription result;
     result.is_minmax_count_projection = true;
 
@@ -217,10 +225,10 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     result.name = MINMAX_COUNT_PROJECTION_NAME;
     result.query_ast = select_query->cloneToASTSelect();
 
-    auto external_storage_holder = std::make_shared<TemporaryTableHolder>(query_context, columns, ConstraintsDescription{});
+    auto external_storage_holder = std::make_shared<TemporaryTableHolder>(context, columns, ConstraintsDescription{});
     StoragePtr storage = external_storage_holder->getTable();
     InterpreterSelectQuery select(
-        result.query_ast, query_context, storage, {},
+        result.query_ast, context, storage, {},
         /// Here we ignore ast optimizations because otherwise aggregation keys may be removed from result header as constants.
         SelectQueryOptions{QueryProcessingStage::WithMergeableState}.modify().ignoreAlias().ignoreASTOptimizations());
     result.required_columns = select.getRequiredColumns();
@@ -268,9 +276,9 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
 }
 
 
-void ProjectionDescription::recalculateWithNewColumns(const ColumnsDescription & new_columns, ContextPtr query_context)
+void ProjectionDescription::recalculateWithNewColumns(const ColumnsDescription & new_columns, ContextPtr context)
 {
-    *this = getProjectionFromAST(definition_ast, new_columns, query_context);
+    *this = getProjectionFromAST(definition_ast, new_columns, context);
 }
 
 
@@ -311,7 +319,7 @@ String ProjectionsDescription::toString() const
     return serializeAST(list, true);
 }
 
-ProjectionsDescription ProjectionsDescription::parse(const String & str, const ColumnsDescription & columns, ContextPtr query_context)
+ProjectionsDescription ProjectionsDescription::parse(const String & str, const ColumnsDescription & columns, ContextPtr context)
 {
     ProjectionsDescription result;
     if (str.empty())
@@ -322,7 +330,7 @@ ProjectionsDescription ProjectionsDescription::parse(const String & str, const C
 
     for (const auto & projection_ast : list->children)
     {
-        auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, query_context);
+        auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, context);
         result.add(std::move(projection));
     }
 
@@ -403,15 +411,19 @@ std::vector<String> ProjectionsDescription::getAllRegisteredNames() const
 }
 
 ExpressionActionsPtr
-ProjectionsDescription::getSingleExpressionForProjections(const ColumnsDescription & columns, ContextPtr query_context) const
+ProjectionsDescription::getSingleExpressionForProjections(const ColumnsDescription & columns, ContextPtr context) const
 {
+    /// We don't want a local context to stuck in `ExpressionActions` in `StorageInMemoryMetadata`
+    chassert(!context->hasSessionContext());
+    chassert(!context->hasQueryContext());
+
     ASTPtr combined_expr_list = std::make_shared<ASTExpressionList>();
     for (const auto & projection : projections)
         for (const auto & projection_expr : projection.query_ast->children)
             combined_expr_list->children.push_back(projection_expr->clone());
 
-    auto syntax_result = TreeRewriter(query_context).analyze(combined_expr_list, columns.getAllPhysical());
-    return ExpressionAnalyzer(combined_expr_list, syntax_result, query_context).getActions(false);
+    auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, columns.getAllPhysical());
+    return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
 }
 
 }

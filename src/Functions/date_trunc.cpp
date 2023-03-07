@@ -20,14 +20,14 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionDateTrunc : public IFunction
+class FunctionDateTrunc : public IFunction, WithContext
 {
 public:
     static constexpr auto name = "dateTrunc";
 
-    explicit FunctionDateTrunc(ContextPtr context_) : context(context_) {}
+    explicit FunctionDateTrunc(ContextPtr context_) : WithContext(context_) {}
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionDateTrunc>(context); }
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionDateTrunc>(context_); }
 
     String getName() const override { return name; }
 
@@ -122,7 +122,7 @@ public:
         const ColumnPtr interval_column = ColumnConst::create(ColumnInt64::create(1, interval_value), input_rows_count);
         temp_columns[1] = {interval_column, std::make_shared<DataTypeInterval>(datepart_kind), ""};
 
-        auto to_start_of_interval = FunctionFactory::instance().get("toStartOfInterval", context);
+        auto to_start_of_interval = FunctionFactory::instance().get("toStartOfInterval", getContext());
 
         if (arguments.size() == 2)
             return to_start_of_interval->build(temp_columns)->execute(temp_columns, result_type, input_rows_count);
@@ -142,7 +142,6 @@ public:
     }
 
 private:
-    ContextPtr context;
     mutable IntervalKind::Kind datepart_kind = IntervalKind::Kind::Second;
 };
 

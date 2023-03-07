@@ -557,7 +557,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     Block defaults_sample_block;
     /// set missing types and wrap default_expression's in a conversion-function if necessary
     if (!default_expr_list->children.empty())
-        defaults_sample_block = validateColumnsDefaultsAndGetSampleBlock(default_expr_list, column_names_and_types, context_);
+        defaults_sample_block = validateColumnsDefaultsAndGetSampleBlock(default_expr_list, column_names_and_types, context_->getGlobalContext());
 
     bool sanity_check_compression_codecs = !attach && !context_->getSettingsRef().allow_suspicious_codecs;
     bool allow_experimental_codecs = attach || context_->getSettingsRef().allow_experimental_codecs;
@@ -683,7 +683,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         if (create.columns_list->indices)
             for (const auto & index : create.columns_list->indices->children)
             {
-                IndexDescription index_desc = IndexDescription::getIndexFromAST(index->clone(), properties.columns, getContext());
+                IndexDescription index_desc = IndexDescription::getIndexFromAST(index->clone(), properties.columns, getContext()->getGlobalContext());
                 const auto & settings = getContext()->getSettingsRef();
                 if (index_desc.type == INVERTED_INDEX_NAME && !settings.allow_experimental_inverted_index)
                 {
@@ -698,7 +698,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         if (create.columns_list->projections)
             for (const auto & projection_ast : create.columns_list->projections->children)
             {
-                auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, properties.columns, getContext());
+                auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, properties.columns, getContext()->getGlobalContext());
                 properties.projections.add(std::move(projection));
             }
 

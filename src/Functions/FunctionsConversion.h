@@ -1667,7 +1667,7 @@ static inline bool isDateTime64(const ColumnsWithTypeAndName & arguments)
 }
 
 template <typename ToDataType, typename Name, typename MonotonicityImpl>
-class FunctionConvert : public IFunction
+class FunctionConvert : public IFunction, WithContext
 {
 public:
     using Monotonic = MonotonicityImpl;
@@ -1686,11 +1686,14 @@ public:
                                                 std::is_same_v<ToDataType, DataTypeDate32> ||
                                                 std::is_same_v<ToDataType, DataTypeDateTime>;
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionConvert>(context); }
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionConvert>(context_); }
     static FunctionPtr create() { return std::make_shared<FunctionConvert>(); }
 
     FunctionConvert() = default;
-    explicit FunctionConvert(ContextPtr context_) : context(context_) {}
+    explicit FunctionConvert(ContextPtr context_) : WithContext(context_)
+    {
+        has_context = !!context_;
+    }
 
     String getName() const override
     {
@@ -1879,7 +1882,7 @@ public:
     }
 
 private:
-    ContextPtr context;
+    bool has_context = false;
     mutable bool checked_return_type = false;
     mutable bool to_nullable = false;
 
@@ -1985,7 +1988,7 @@ private:
         {
             bool cast_ipv4_ipv6_default_on_conversion_error = false;
             if constexpr (is_any_of<ToDataType, DataTypeIPv4, DataTypeIPv6>)
-                if (context && (cast_ipv4_ipv6_default_on_conversion_error = context->getSettingsRef().cast_ipv4_ipv6_default_on_conversion_error))
+                if (has_context && (cast_ipv4_ipv6_default_on_conversion_error = getContext()->getSettingsRef().cast_ipv4_ipv6_default_on_conversion_error))
                     done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, ConvertReturnZeroOnErrorTag{});
 
             if (!cast_ipv4_ipv6_default_on_conversion_error)
@@ -2752,7 +2755,7 @@ public:
 };
 
 template <typename FunctionName>
-class FunctionCast final : public FunctionCastBase
+class FunctionCast final : public FunctionCastBase, WithContext
 {
 public:
     using WrapperType = std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr &, const ColumnNullable *, size_t)>;
@@ -2764,11 +2767,11 @@ public:
             , const DataTypePtr & return_type_
             , std::optional<Diagnostic> diagnostic_
             , CastType cast_type_)
-        : cast_name(cast_name_), monotonicity_for_range(std::move(monotonicity_for_range_))
+        : WithContext(context_), cast_name(cast_name_), monotonicity_for_range(std::move(monotonicity_for_range_))
         , argument_types(argument_types_), return_type(return_type_), diagnostic(std::move(diagnostic_))
         , cast_type(cast_type_)
-        , context(context_)
     {
+        has_context = !!context_;
     }
 
     const DataTypes & getArgumentTypes() const override { return argument_types; }
@@ -2814,7 +2817,7 @@ private:
 
     std::optional<Diagnostic> diagnostic;
     CastType cast_type;
-    ContextPtr context;
+    bool has_context = true;
 
     static WrapperType createFunctionAdaptor(FunctionPtr function, const DataTypePtr & from_type)
     {
@@ -2855,7 +2858,7 @@ private:
         }
         else if (!can_apply_accurate_cast)
         {
-            FunctionPtr function = FunctionTo<ToDataType>::Type::create(context);
+            FunctionPtr function = FunctionTo<ToDataType>::Type::create(has_context ? getContext() : ContextPtr{});
             return createFunctionAdaptor(function, from_type);
         }
 
@@ -3917,9 +3920,9 @@ private:
             return false;
         };
 
-        bool cast_ipv4_ipv6_default_on_conversion_error_value = context && context->getSettingsRef().cast_ipv4_ipv6_default_on_conversion_error;
-        bool input_format_ipv4_default_on_conversion_error_value = context && context->getSettingsRef().input_format_ipv4_default_on_conversion_error;
-        bool input_format_ipv6_default_on_conversion_error_value = context && context->getSettingsRef().input_format_ipv6_default_on_conversion_error;
+        bool cast_ipv4_ipv6_default_on_conversion_error_value = has_context && getContext()->getSettingsRef().cast_ipv4_ipv6_default_on_conversion_error;
+        bool input_format_ipv4_default_on_conversion_error_value = has_context && getContext()->getSettingsRef().input_format_ipv4_default_on_conversion_error;
+        bool input_format_ipv6_default_on_conversion_error_value = has_context && getContext()->getSettingsRef().input_format_ipv6_default_on_conversion_error;
 
         auto make_custom_serialization_wrapper = [&, cast_ipv4_ipv6_default_on_conversion_error_value, input_format_ipv4_default_on_conversion_error_value, input_format_ipv6_default_on_conversion_error_value](const auto & types) -> bool
         {

@@ -30,15 +30,14 @@ namespace
   * formatRowNoNewline(...) trims the newline character of each row.
   */
 template <bool no_newline>
-class FunctionFormatRow : public IFunction
+class FunctionFormatRow : public IFunction, WithContext
 {
 public:
     static constexpr auto name = no_newline ? "formatRowNoNewline" : "formatRow";
 
     FunctionFormatRow(String format_name_, Names arguments_column_names_, ContextPtr context_)
-        : format_name(std::move(format_name_))
+        : WithContext(context_), format_name(std::move(format_name_))
         , arguments_column_names(std::move(arguments_column_names_))
-        , context(std::move(context_))
     {
         if (!FormatFactory::instance().getAllFormats().contains(format_name))
             throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown format {}", format_name);
@@ -70,8 +69,8 @@ public:
         }
 
         materializeBlockInplace(arg_columns);
-        auto format_settings = getFormatSettings(context);
-        auto out = FormatFactory::instance().getOutputFormat(format_name, buffer, arg_columns, context, format_settings);
+        auto format_settings = getFormatSettings(getContext());
+        auto out = FormatFactory::instance().getOutputFormat(format_name, buffer, arg_columns, getContext(), format_settings);
 
         /// This function make sense only for row output formats.
         auto * row_output_format = dynamic_cast<IRowOutputFormat *>(out.get());
@@ -105,16 +104,15 @@ public:
 private:
     String format_name;
     Names arguments_column_names;
-    ContextPtr context;
 };
 
 template <bool no_newline>
-class FormatRowOverloadResolver : public IFunctionOverloadResolver
+class FormatRowOverloadResolver : public IFunctionOverloadResolver, WithContext
 {
 public:
     static constexpr auto name = no_newline ? "formatRowNoNewline" : "formatRow";
-    static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<FormatRowOverloadResolver>(context); }
-    explicit FormatRowOverloadResolver(ContextPtr context_) : context(context_) { }
+    static FunctionOverloadResolverPtr create(ContextPtr context_) { return std::make_unique<FormatRowOverloadResolver>(context_); }
+    explicit FormatRowOverloadResolver(ContextPtr context_) : WithContext(context_) { }
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -134,7 +132,7 @@ public:
 
         if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments.at(0).column.get()))
             return std::make_unique<FunctionToFunctionBaseAdaptor>(
-                std::make_shared<FunctionFormatRow<no_newline>>(name_col->getValue<String>(), std::move(arguments_column_names), context),
+                std::make_shared<FunctionFormatRow<no_newline>>(name_col->getValue<String>(), std::move(arguments_column_names), getContext()),
                 collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
                 return_type);
         else
@@ -142,9 +140,6 @@ public:
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeString>(); }
-
-private:
-    ContextPtr context;
 };
 
 }

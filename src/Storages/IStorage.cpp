@@ -174,7 +174,7 @@ void IStorage::alter(const AlterCommands & params, ContextPtr context, AlterLock
 {
     auto table_id = getStorageID();
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
-    params.apply(new_metadata, context);
+    params.apply(new_metadata, context->getGlobalContext());
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata);
     setInMemoryMetadata(new_metadata);
 }

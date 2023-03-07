@@ -643,17 +643,16 @@ struct NameGreaterOrEquals { static constexpr auto name = "greaterOrEquals"; };
 
 
 template <template <typename, typename> class Op, typename Name>
-class FunctionComparison : public IFunction
+class FunctionComparison : public IFunction, WithContext
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionComparison>(context); }
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionComparison>(context_); }
 
     explicit FunctionComparison(ContextPtr context_)
-        : context(context_), check_decimal_overflow(decimalCheckComparisonOverflow(context)) {}
+        : WithContext(context_), check_decimal_overflow(decimalCheckComparisonOverflow(getContext())) {}
 
 private:
-    ContextPtr context;
     bool check_decimal_overflow = true;
 
     template <typename T0, typename T1>
@@ -1195,7 +1194,7 @@ public:
 
         if (left_tuple && right_tuple)
         {
-            auto func = FunctionToOverloadResolverAdaptor(FunctionComparison<Op, Name>::create(context));
+            auto func = FunctionToOverloadResolverAdaptor(FunctionComparison<Op, Name>::create(getContext()));
 
             bool has_nullable = false;
             bool has_null = false;
