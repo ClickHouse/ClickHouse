@@ -7,6 +7,7 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/isDiskFunction.h>
 #include <Interpreters/Context.h>
 
 namespace DB
@@ -17,15 +18,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-bool isDiskFunction(ASTPtr ast)
-{
-    if (!ast)
-        return false;
-
-    const auto * function = ast->as<ASTFunction>();
-    return function && function->name == "disk" && function->arguments->as<ASTExpressionList>();
-}
-
 std::string getOrCreateDiskFromDiskAST(const ASTFunction & function, ContextPtr context)
 {
     /// We need a unique name for a created custom disk, but it needs to be the same
@@ -34,11 +26,6 @@ std::string getOrCreateDiskFromDiskAST(const ASTFunction & function, ContextPtr 
     auto disk_setting_string = serializeAST(function, true);
     auto disk_name = DiskSelector::TMP_INTERNAL_DISK_PREFIX
         + toString(sipHash128(disk_setting_string.data(), disk_setting_string.size()));
-
-    LOG_TRACE(
-        &Poco::Logger::get("getOrCreateDiskFromDiskAST"),
-        "Using disk name `{}` for custom disk {}",
-        disk_name, disk_setting_string);
 
     auto result_disk = context->getOrCreateDisk(disk_name, [&](const DisksMap & disks_map) -> DiskPtr {
         const auto * function_args_expr = assert_cast<const ASTExpressionList *>(function.arguments.get());

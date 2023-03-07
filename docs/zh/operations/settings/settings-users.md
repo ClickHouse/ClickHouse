@@ -10,8 +10,9 @@ sidebar_label: "\u7528\u6237\u8BBE\u7F6E"
 
 `user.xml` 中的 `users` 配置段包含了用户配置
 
-!!! note "提示"
-    ClickHouse还支持 [SQL驱动的工作流](../access-rights.md#access-control) 用于管理用户。 我们建议使用它。
+:::note
+ClickHouse还支持 [SQL驱动的工作流](../access-rights.md#access-control) 用于管理用户。 我们建议使用它。
+:::
 
 `users` 配置段的结构:
 

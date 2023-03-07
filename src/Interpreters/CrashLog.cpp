@@ -80,7 +80,7 @@ void collectCrashLog(Int32 signal, UInt64 thread_id, const String & query_id, co
         for (size_t i = stack_trace_offset; i < stack_trace_size; ++i)
             trace.push_back(reinterpret_cast<uintptr_t>(stack_trace.getFramePointers()[i]));
 
-        stack_trace.toStringEveryLine([&trace_full](const std::string & line) { trace_full.push_back(line); });
+        stack_trace.toStringEveryLine([&trace_full](std::string_view line) { trace_full.push_back(line); });
 
         CrashLogElement element{static_cast<time_t>(time / 1000000000), time, signal, thread_id, query_id, trace, trace_full};
         crash_log_owned->add(element);

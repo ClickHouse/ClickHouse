@@ -82,11 +82,7 @@ inline bool parseIPv4(T * &src, EOFfunction eof, unsigned char * dst, int32_t fi
             break;
     }
 
-    if constexpr (std::endian::native == std::endian::little)
-        memcpy(dst, &result, sizeof(result));
-    else
-        reverseMemcpy(dst, &result, sizeof(result));
-
+    memcpy(dst, &result, sizeof(result));
     return true;
 }
 

@@ -549,7 +549,7 @@ jobs:
           docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
           sudo rm -fr "$TEMP_PATH"
   InstallPackagesTestAarch64:
-    needs: [BuilderDebRelease]
+    needs: [BuilderDebAarch64]
     runs-on: [self-hosted, style-checker-aarch64]
     steps:
       - name: Set envs
