@@ -19,7 +19,9 @@
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <boost/algorithm/string/replace.hpp>
+#include <Common/ProfileEventsScope.h>
 
 
 namespace CurrentMetrics
@@ -203,20 +205,44 @@ getColumnsForNewDataPart(
     }
 
     SerializationInfoByName new_serialization_infos;
-    for (const auto & [name, info] : serialization_infos)
+    for (const auto & [name, old_info] : serialization_infos)
     {
         if (removed_columns.contains(name))
             continue;
 
         auto it = renamed_columns_from_to.find(name);
-        if (it != renamed_columns_from_to.end())
-            new_serialization_infos.emplace(it->second, info);
-        else
-            new_serialization_infos.emplace(name, info);
+        auto new_name = it == renamed_columns_from_to.end() ? name : it->second;
+
+        if (!updated_header.has(new_name))
+        {
+            new_serialization_infos.emplace(new_name, old_info);
+            continue;
+        }
+
+        auto old_type = part_columns.getPhysical(name).type;
+        auto new_type = updated_header.getByName(new_name).type;
+
+        SerializationInfo::Settings settings
+        {
+            .ratio_of_defaults_for_sparse = source_part->storage.getSettings()->ratio_of_defaults_for_sparse_serialization,
+            .choose_kind = false
+        };
+
+        if (!new_type->supportsSparseSerialization() || settings.isAlwaysDefault())
+            continue;
+
+        auto new_info = new_type->createSerializationInfo(settings);
+        if (!old_info->structureEquals(*new_info))
+        {
+            new_serialization_infos.emplace(new_name, std::move(new_info));
+            continue;
+        }
+
+        new_info = old_info->createWithType(*old_type, *new_type, settings);
+        new_serialization_infos.emplace(new_name, std::move(new_info));
     }
 
-    /// In compact parts we read all columns, because they all stored in a
-    /// single file
+    /// In compact parts we read all columns, because they all stored in a single file
     if (!isWidePart(source_part) || !isFullPartStorage(source_part->getDataPartStorage()))
         return {updated_header.getNamesAndTypesList(), new_serialization_infos};
 
@@ -497,7 +523,15 @@ static NameSet collectFilesToSkip(
     auto source_updated_stream_counts = getStreamCounts(source_part, updated_header.getNames());
     auto new_updated_stream_counts = getStreamCounts(new_part, updated_header.getNames());
 
-    /// Skip updated files
+    /// Skip all modified files in new part.
+    for (const auto & [stream_name, _] : new_updated_stream_counts)
+    {
+        files_to_skip.insert(stream_name + ".bin");
+        files_to_skip.insert(stream_name + mrk_extension);
+    }
+
+    /// Skip files that we read from source part and do not write in new part.
+    /// E.g. ALTER MODIFY from LowCardinality(String) to String.
     for (const auto & [stream_name, _] : source_updated_stream_counts)
     {
         /// If we read shared stream and do not write it
@@ -885,6 +919,7 @@ public:
                 ctx->space_reservation,
                 false, // TODO Do we need deduplicate for projections
                 {},
+                false, // no cleanup
                 projection_merging_params,
                 NO_TRANSACTION_PTR,
                 /* need_prefix */ true,
@@ -898,6 +933,7 @@ public:
         /// Need execute again
         return true;
     }
+
 private:
     String name;
     MergeTreeData::MutableDataPartsVector parts;
@@ -1213,8 +1249,8 @@ private:
             skip_part_indices,
             ctx->compression_codec,
             ctx->txn,
-            false,
-            false,
+            /*reset_columns=*/ true,
+            /*blocks_are_granules_size=*/ false,
             ctx->context->getWriteSettings());
 
         ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
@@ -1252,6 +1288,7 @@ private:
 
     std::unique_ptr<PartMergerWriter> part_merger_writer_task;
 };
+
 
 class MutateSomePartColumnsTask : public IExecutableTask
 {
@@ -1530,6 +1567,45 @@ bool MutateTask::execute()
     return false;
 }
 
+static bool canSkipConversionToNullable(const MergeTreeDataPartPtr & part, const MutationCommand & command)
+{
+    if (command.type != MutationCommand::READ_COLUMN)
+        return false;
+
+    auto part_column = part->tryGetColumn(command.column_name);
+    if (!part_column)
+        return false;
+
+    /// For ALTER MODIFY COLUMN from 'Type' to 'Nullable(Type)' we can skip mutatation and
+    /// apply only metadata conversion. But it doesn't work for custom serialization.
+    const auto * to_nullable = typeid_cast<const DataTypeNullable *>(command.data_type.get());
+    if (!to_nullable)
+        return false;
+
+    if (!part_column->type->equals(*to_nullable->getNestedType()))
+        return false;
+
+    auto serialization = part->getSerialization(command.column_name);
+    if (serialization->getKind() != ISerialization::Kind::DEFAULT)
+        return false;
+
+    return true;
+}
+
+static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, const MutationCommand & command, const ContextPtr & context)
+{
+    if (command.partition)
+    {
+        auto command_partition_id = part->storage.getPartitionIDFromQuery(command.partition, context);
+        if (part->info.partition_id != command_partition_id)
+            return true;
+    }
+
+    if (canSkipConversionToNullable(part, command))
+        return true;
+
+    return false;
+}
 
 bool MutateTask::prepare()
 {
@@ -1548,11 +1624,8 @@ bool MutateTask::prepare()
     context_for_reading->setSetting("force_primary_key", false);
 
     for (const auto & command : *ctx->commands)
-    {
-        if (command.partition == nullptr || ctx->source_part->info.partition_id == ctx->data->getPartitionIDFromQuery(
-                command.partition, context_for_reading))
+        if (!canSkipMutationCommandForPart(ctx->source_part, command, context_for_reading))
             ctx->commands_for_part.emplace_back(command);
-    }
 
     if (ctx->source_part->isStoredOnDisk() && !isStorageTouchedByMutations(
         *ctx->data, ctx->source_part, ctx->metadata_snapshot, ctx->commands_for_part, context_for_reading))

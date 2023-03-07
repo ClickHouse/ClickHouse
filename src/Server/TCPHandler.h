@@ -21,6 +21,7 @@
 
 #include "IServer.h"
 #include "Server/TCPProtocolStackData.h"
+#include "Storages/MergeTree/RequestResponse.h"
 #include "base/types.h"
 
 
@@ -220,7 +221,7 @@ private:
     void receiveQuery();
     void receiveIgnoredPartUUIDs();
     String receiveReadTaskResponseAssumeLocked();
-    std::optional<PartitionReadResponse> receivePartitionMergeTreeReadTaskResponseAssumeLocked();
+    std::optional<ParallelReadResponse> receivePartitionMergeTreeReadTaskResponseAssumeLocked();
     bool receiveData(bool scalar);
     bool readDataNext();
     void readData();
@@ -253,7 +254,8 @@ private:
     void sendEndOfStream();
     void sendPartUUIDs();
     void sendReadTaskRequestAssumeLocked();
-    void sendMergeTreeReadTaskRequestAssumeLocked(PartitionReadRequest request);
+    void sendMergeTreeAllRangesAnnounecementAssumeLocked(InitialAllRangesAnnouncement announcement);
+    void sendMergeTreeReadTaskRequestAssumeLocked(ParallelReadRequest request);
     void sendProfileInfo(const ProfileInfo & info);
     void sendTotals(const Block & totals);
     void sendExtremes(const Block & extremes);
@@ -271,6 +273,8 @@ private:
 
     /// This function is called from different threads.
     void updateProgress(const Progress & value);
+
+    Poco::Net::SocketAddress getClientAddress(const ClientInfo & client_info);
 };
 
 }

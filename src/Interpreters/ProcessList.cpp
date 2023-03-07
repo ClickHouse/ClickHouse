@@ -3,17 +3,13 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Parsers/IAST.h>
 #include <Parsers/queryNormalization.h>
-#include <Parsers/toOneLineQuery.h>
 #include <Processors/Executors/PipelineExecutor.h>
-#include <Common/typeid_cast.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
-#include <IO/WriteHelpers.h>
 #include <Common/logger_useful.h>
 #include <chrono>
 
@@ -526,6 +522,7 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
     QueryStatusInfo res{};
 
     res.query             = query;
+    res.query_kind        = query_kind;
     res.client_info       = client_info;
     res.elapsed_microseconds = watch.elapsedMicroseconds();
     res.is_cancelled      = is_killed.load(std::memory_order_relaxed);

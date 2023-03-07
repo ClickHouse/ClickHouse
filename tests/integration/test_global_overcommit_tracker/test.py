@@ -5,7 +5,11 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance(
-    "node", main_configs=["configs/global_overcommit_tracker.xml"]
+    "node",
+    main_configs=["configs/global_overcommit_tracker.xml"],
+    user_configs=[
+        "configs/users.xml",
+    ],
 )
 
 

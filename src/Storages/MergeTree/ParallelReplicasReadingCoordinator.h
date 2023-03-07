@@ -7,15 +7,28 @@
 namespace DB
 {
 
+/// The main class to spread mark ranges across replicas dynamically
+/// The reason why it uses pimpl - this header file is included in
+/// multiple other files like Context or RemoteQueryExecutor
 class ParallelReplicasReadingCoordinator
 {
 public:
-    ParallelReplicasReadingCoordinator();
+    class ImplInterface;
+
+    explicit ParallelReplicasReadingCoordinator(size_t replicas_count_);
     ~ParallelReplicasReadingCoordinator();
-    PartitionReadResponse handleRequest(PartitionReadRequest request);
+
+    void setMode(CoordinationMode mode);
+    void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement);
+    ParallelReadResponse handleRequest(ParallelReadRequest request);
+
 private:
-    class Impl;
-    std::unique_ptr<Impl> pimpl;
+    void initialize();
+
+    CoordinationMode mode{CoordinationMode::Default};
+    size_t replicas_count{0};
+    std::atomic<bool> initialized{false};
+    std::unique_ptr<ImplInterface> pimpl;
 };
 
 using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;

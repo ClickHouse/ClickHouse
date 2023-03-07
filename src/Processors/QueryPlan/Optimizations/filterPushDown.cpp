@@ -53,6 +53,53 @@ static void checkChildrenSize(QueryPlan::Node * node, size_t child_num)
                         child_num, child->getInputStreams().size(), node->children.size());
 }
 
+static bool identifiersIsAmongAllGroupingSets(const GroupingSetsParamsList & grouping_sets_params, const NameSet & identifiers_in_predicate)
+{
+    for (const auto & grouping_set : grouping_sets_params)
+    {
+        for (const auto & identifier : identifiers_in_predicate)
+        {
+            if (std::find(grouping_set.used_keys.begin(), grouping_set.used_keys.end(), identifier) == grouping_set.used_keys.end())
+                return false;
+        }
+    }
+    return true;
+}
+
+static NameSet findIdentifiersOfNode(const ActionsDAG::Node * node)
+{
+    NameSet res;
+
+    /// We treat all INPUT as identifier
+    if (node->type == ActionsDAG::ActionType::INPUT)
+    {
+        res.emplace(node->result_name);
+        return res;
+    }
+
+    std::queue<const ActionsDAG::Node *> queue;
+    queue.push(node);
+
+    while (!queue.empty())
+    {
+        const auto * top = queue.front();
+        for (const auto * child : top->children)
+        {
+            if (child->type == ActionsDAG::ActionType::INPUT)
+            {
+                res.emplace(child->result_name);
+            }
+            else
+            {
+                /// Only push non INPUT child into the queue
+                queue.push(child);
+            }
+        }
+        queue.pop();
+    }
+    return res;
+}
+
 static ActionsDAGPtr splitFilter(QueryPlan::Node * parent_node, const Names & allowed_inputs, size_t child_idx = 0)
 {
     QueryPlan::Node * child_node = parent_node->children.front();
@@ -176,6 +223,20 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (auto * aggregating = typeid_cast<AggregatingStep *>(child.get()))
     {
+        /// If aggregating is GROUPING SETS, and not all the identifiers exist in all
+        /// of the grouping sets, we could not push the filter down.
+        if (aggregating->isGroupingSets())
+        {
+
+            const auto & actions = filter->getExpression();
+            const auto & filter_node = actions->findInOutputs(filter->getFilterColumnName());
+
+            auto identifiers_in_predicate = findIdentifiersOfNode(&filter_node);
+
+            if (!identifiersIsAmongAllGroupingSets(aggregating->getGroupingSetsParamsList(), identifiers_in_predicate))
+                return 0;
+        }
+
         const auto & params = aggregating->getParams();
         const auto & keys = params.keys;
 
@@ -333,8 +394,19 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     // {
     // }
 
-    if (auto updated_steps = simplePushDownOverStep<SortingStep>(parent_node, nodes, child))
-        return updated_steps;
+    if (auto * sorting = typeid_cast<SortingStep *>(child.get()))
+    {
+        const auto & sort_description = sorting->getSortDescription();
+        auto sort_description_it = std::find_if(sort_description.begin(), sort_description.end(), [&](auto & sort_column_description)
+        {
+            return sort_column_description.column_name == filter->getFilterColumnName();
+        });
+        bool can_remove_filter = sort_description_it == sort_description.end();
+
+        Names allowed_inputs = child->getOutputStream().header.getNames();
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_inputs, can_remove_filter))
+            return updated_steps;
+    }
 
     if (auto updated_steps = simplePushDownOverStep<CreateSetAndFilterOnTheFlyStep>(parent_node, nodes, child))
         return updated_steps;
