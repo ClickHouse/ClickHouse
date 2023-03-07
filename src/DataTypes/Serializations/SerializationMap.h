@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
+#include <base/FnTraits.h>
 
 
 namespace DB
@@ -84,6 +85,9 @@ private:
 
     template <typename Reader>
     void deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reader && reader) const;
+
+    template <typename Settings, Fn<void(size_t)> Func>
+    void applyForShards(Settings & settings, Func && func) const;
 };
 
 }
