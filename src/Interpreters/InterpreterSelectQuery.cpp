@@ -523,7 +523,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         {
             if (auto custom_key_ast = parseCustomKeyForTable(settings.parallel_replicas_custom_key, *context))
             {
-                LOG_INFO(log, "Processing query on a replica using custom_key");
+                LOG_TRACE(log, "Processing query on a replica using custom_key '{}'", settings.parallel_replicas_custom_key.value);
                 if (!storage)
                     throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Storage is unknown when trying to parse custom key for parallel replica");
 
@@ -537,11 +537,11 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             }
             else if (settings.parallel_replica_offset > 0)
             {
-                LOG_DEBUG(
-                    log,
-                    "Will use no data on this replica because parallel replicas processing with custom_key has been requested"
-                    " (setting 'max_parallel_replicas') but the table does not have custom_key defined for it or it's invalid (settings `parallel_replicas_custom_key`)");
-                parallel_replicas_custom_filter_ast = std::make_shared<ASTLiteral>(false);
+                throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Parallel replicas processing with custom_key has been requested "
+                        "(setting 'max_parallel_replicas') but the table does not have custom_key defined for it "
+                        "or it's invalid (settings `parallel_replicas_custom_key`)");
             }
         }
         else if (auto * distributed = dynamic_cast<StorageDistributed *>(storage.get());
