@@ -1,83 +1,32 @@
-import logging
-import os
-import json
 import helpers.client
-import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
+import pyspark
+import logging
+import os
+import json
+import pytest
+import time
+
+from helpers.s3_tools import prepare_s3_bucket, upload_directory, get_file_contents
+
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-
-
-def prepare_s3_bucket(started_cluster):
-    bucket_read_write_policy = {
-        "Version": "2012-10-17",
-        "Statement": [
-            {
-                "Sid": "",
-                "Effect": "Allow",
-                "Principal": {"AWS": "*"},
-                "Action": "s3:GetBucketLocation",
-                "Resource": "arn:aws:s3:::root",
-            },
-            {
-                "Sid": "",
-                "Effect": "Allow",
-                "Principal": {"AWS": "*"},
-                "Action": "s3:ListBucket",
-                "Resource": "arn:aws:s3:::root",
-            },
-            {
-                "Sid": "",
-                "Effect": "Allow",
-                "Principal": {"AWS": "*"},
-                "Action": "s3:GetObject",
-                "Resource": "arn:aws:s3:::root/*",
-            },
-            {
-                "Sid": "",
-                "Effect": "Allow",
-                "Principal": {"AWS": "*"},
-                "Action": "s3:PutObject",
-                "Resource": "arn:aws:s3:::root/*",
-            },
-        ],
-    }
-
-    minio_client = started_cluster.minio_client
-    minio_client.set_bucket_policy(
-        started_cluster.minio_bucket, json.dumps(bucket_read_write_policy)
-    )
-
-
-def upload_test_table(started_cluster):
-    bucket = started_cluster.minio_bucket
-
-    for address, dirs, files in os.walk(SCRIPT_DIR + "/taxis"):
-        address_without_prefix = address[len(SCRIPT_DIR) :]
-
-        for name in files:
-            started_cluster.minio_client.fput_object(
-                bucket,
-                os.path.join(address_without_prefix, name),
-                os.path.join(address, name),
-            )
+TABLE_NAME = "test_iceberg_table"
+USER_FILES_PATH = "/ClickHouse/tests/integration/test_storage_iceberg/_instances/node1/database/user_files"
 
 
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        cluster.add_instance("main_server", with_minio=True)
+        cluster.add_instance("node1", with_minio=True)
 
         logging.info("Starting cluster...")
         cluster.start()
 
         prepare_s3_bucket(cluster)
         logging.info("S3 bucket created")
-
-        upload_test_table(cluster)
-        logging.info("Test table uploaded")
 
         yield cluster
 
@@ -95,64 +44,57 @@ def run_query(instance, query, stdin=None, settings=None):
     return result
 
 
-def test_create_query(started_cluster):
-    instance = started_cluster.instances["main_server"]
-    bucket = started_cluster.minio_bucket
-
-    create_query = f"""CREATE TABLE iceberg ENGINE=Iceberg('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/taxis/', 'minio', 'minio123')"""
-
-    run_query(instance, create_query)
-
-
-def test_select_query(started_cluster):
-    instance = started_cluster.instances["main_server"]
-    bucket = started_cluster.minio_bucket
-    columns = [
-        "vendor_id",
-        "trip_id",
-        "trip_distance",
-        "fare_amount",
-        "store_and_fwd_flag",
-    ]
-
-    # create query in case table doesn't exist
-    create_query = f"""CREATE TABLE IF NOT EXISTS iceberg ENGINE=Iceberg('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/taxis/', 'minio', 'minio123')"""
-
-    run_query(instance, create_query)
-
-    select_query = "SELECT {} FROM iceberg FORMAT TSV"
-    select_table_function_query = "SELECT {col} FROM iceberg('http://{ip}:{port}/{bucket}/taxis/', 'minio', 'minio123') FORMAT TSV"
-
-    for column_name in columns:
-        result = run_query(instance, select_query.format(column_name)).splitlines()
-        assert len(result) > 0
-
-    for column_name in columns:
-        result = run_query(
-            instance,
-            select_table_function_query.format(
-                col=column_name,
-                ip=started_cluster.minio_ip,
-                port=started_cluster.minio_port,
-                bucket=bucket,
-            ),
-        ).splitlines()
-        assert len(result) > 0
+def get_spark():
+    builder = (
+        pyspark.sql.SparkSession.builder.appName("spark_test")
+        .config(
+            "spark.jars.packages",
+            "org.apache.iceberg:iceberg-spark-runtime-3.3_2.12:1.1.0",
+        )
+        .config(
+            "spark.sql.catalog.spark_catalog",
+            "org.apache.iceberg.spark.SparkSessionCatalog",
+        )
+        .config("spark.sql.catalog.local", "org.apache.iceberg.spark.SparkCatalog")
+        .config("spark.sql.catalog.spark_catalog.type", "hadoop")
+        .config("spark.sql.catalog.spark_catalog.warehouse", "/iceberg_data")
+        .master("local")
+    )
+    return builder.master("local").getOrCreate()
 
 
-def test_describe_query(started_cluster):
-    instance = started_cluster.instances["main_server"]
-    bucket = started_cluster.minio_bucket
-    result = instance.query(
-        f"DESCRIBE iceberg('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/taxis/', 'minio', 'minio123') FORMAT TSV",
+def test_basic(started_cluster):
+    instance = started_cluster.instances["node1"]
+
+    data_path = f"/var/lib/clickhouse/user_files/{TABLE_NAME}.parquet"
+    inserted_data = "SELECT number, toString(number) FROM numbers(100)"
+    instance.query(
+        f"INSERT INTO TABLE FUNCTION file('{data_path}') {inserted_data} FORMAT Parquet"
     )
 
-    assert result == TSV(
-        [
-            ["vendor_id", "Nullable(Int64)"],
-            ["trip_id", "Nullable(Int64)"],
-            ["trip_distance", "Nullable(Float32)"],
-            ["fare_amount", "Nullable(Float64)"],
-            ["store_and_fwd_flag", "Nullable(String)"],
-        ]
+    instance.exec_in_container(
+        ["bash", "-c", "chmod 777 -R /var/lib/clickhouse/user_files"],
+        user="root",
+    )
+
+    spark = get_spark()
+    result_path = f"/{TABLE_NAME}_result"
+
+    spark.read.load(f"file://{USER_FILES_PATH}/{TABLE_NAME}.parquet").writeTo(
+        TABLE_NAME
+    ).using("iceberg").create()
+
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    upload_directory(
+        minio_client, bucket, "/iceberg_data/default/test_iceberg_table", ""
+    )
+
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS {TABLE_NAME};
+        CREATE TABLE {TABLE_NAME} ENGINE=Iceberg('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/iceberg_data/default/test_iceberg_table/', 'minio', 'minio123')"""
+    )
+    assert instance.query(f"SELECT * FROM {TABLE_NAME}") == instance.query(
+        inserted_data
     )

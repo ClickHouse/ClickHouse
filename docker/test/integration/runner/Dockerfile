@@ -32,6 +32,7 @@ RUN apt-get update \
     libssl-dev \
     libcurl4-openssl-dev \
     gdb \
+    default-jdk \
     software-properties-common \
     libkrb5-dev \
     krb5-user \
@@ -92,14 +93,19 @@ RUN python3 -m pip install \
     tzlocal==2.1 \
     urllib3 \
     requests-kerberos \
+    pyspark==3.3.2 \
+    delta-spark==2.2.0 \
     pyhdfs \
     azure-storage-blob \
-    meilisearch==0.18.3 
+    meilisearch==0.18.3
 
 COPY modprobe.sh /usr/local/bin/modprobe
 COPY dockerd-entrypoint.sh /usr/local/bin/
 COPY compose/ /compose/
 COPY misc/ /misc/
+
+RUN wget https://dlcdn.apache.org/spark/spark-3.3.2/spark-3.3.2-bin-hadoop3.tgz
+RUN tar xzvf spark-3.3.2-bin-hadoop3.tgz -C /
 
 RUN set -x \
   && addgroup --system dockremap \

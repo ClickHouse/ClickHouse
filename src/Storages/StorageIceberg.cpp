@@ -215,8 +215,14 @@ std::vector<String> IcebergMetadataParser<Configuration, MetadataReadHelper>::ge
 template <typename Configuration, typename MetadataReadHelper>
 String IcebergMetadataParser<Configuration, MetadataReadHelper>::generateQueryFromKeys(const std::vector<String> & keys, const String &)
 {
-    std::string new_query = fmt::format("{{{}}}", fmt::join(keys, ","));
-    return new_query;
+    if (keys.size() == 1)
+    {
+        return fmt::format("{}", keys[0]);
+    }
+    else
+    {
+        return fmt::format("{{{}}}", fmt::join(keys, ","));
+    }
 }
 
 template IcebergMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::IcebergMetadataParser(
