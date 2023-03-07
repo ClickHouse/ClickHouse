@@ -117,7 +117,9 @@ Result:
 
 ## quantilesApprox
 
-Exactly computes the [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using the [Greenwald-Khanna](https://dl.acm.org/doi/10.1145/375663.375670) algorithm.
+Computes the [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using the [Greenwald-Khanna](http://infolab.stanford.edu/~datar/courses/cs361a/papers/quantiles.pdf) algorithm. The Greenwald-Khanna algorithm is an algorithm used to compute quantiles on a stream of data in a highly efficient manner. It was introduced by Michael Greenwald and Sanjeev Khanna in 2001. It is widely used in databases and big data systems where computing accurate quantiles on a large stream of data in real-time is necessary. The algorithm is highly efficient, taking only O(log n) space and O(log log n) time per item (where n is the size of the input stream). It is also highly accurate, providing approximate quantile values with high probability. 
+
+`quantilesApprox` is different from other quantiles functions in ClickHouse, because it enables user to control the accuracy of the approximate quantiles.
 
 **Syntax**
 
@@ -131,7 +133,7 @@ quantilesApprox(accuracy, level1, level2, ...)(expr)
 
 **Parameters**
 
--   `accuracy` — Accuracy of quantile. Constant positive integer. The larger the better.
+-   `accuracy` — Accuracy of quantile. Constant positive integer. Larger accuracy value means less error. For example, if the accuracy argument is set to 100, for example, the computed quantiles will have an error no greater than 1% with high probability. There is a trade-off between the accuracy of the computed quantiles and the computational complexity of the algorithm. A larger accuracy requires more memory and computational resources to compute the quantiles accurately, while a smaller accuracy argument allows for a faster and more memory-efficient computation but with a slightly lower accuracy.
 
 -   `levelN` — Level of quantile. Constant floating-point number from 0 to 1.
 
@@ -151,10 +153,32 @@ Query:
 
 
 ``` sql
-WITH arrayJoin([0, 6, 7, 9, 10]) AS x
-SELECT quantilesApprox(100, 0.1, 0.2, 0.3)(x)
+SELECT quantilesApprox(1, 0.25, 0.5, 0.75)(number + 1)
+FROM numbers(1000)
 
-┌─quantilesApprox(100, 0.1, 0.2, 0.3)(x)─┐
-│ [0,0,6]                                │
-└────────────────────────────────────────┘
+┌─quantilesApprox(1, 0.25, 0.5, 0.75)(plus(number, 1))─┐
+│ [1,1,1]                                              │
+└──────────────────────────────────────────────────────┘
+
+SELECT quantilesApprox(10, 0.25, 0.5, 0.75)(number + 1)
+FROM numbers(1000)
+
+┌─quantilesApprox(10, 0.25, 0.5, 0.75)(plus(number, 1))─┐
+│ [156,413,659]                                         │
+└───────────────────────────────────────────────────────┘
+
+
+SELECT quantilesApprox(100, 0.25, 0.5, 0.75)(number + 1)
+FROM numbers(1000)
+
+┌─quantilesApprox(100, 0.25, 0.5, 0.75)(plus(number, 1))─┐
+│ [251,498,741]                                          │
+└────────────────────────────────────────────────────────┘
+
+SELECT quantilesApprox(1000, 0.25, 0.5, 0.75)(number + 1)
+FROM numbers(1000)
+
+┌─quantilesApprox(1000, 0.25, 0.5, 0.75)(plus(number, 1))─┐
+│ [249,499,749]                                           │
+└─────────────────────────────────────────────────────────┘
 ```
