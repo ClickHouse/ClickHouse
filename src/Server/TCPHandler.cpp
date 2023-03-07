@@ -446,7 +446,6 @@ void TCPHandler::runImpl()
                             sendSelectProfileEvents();
                             sendLogs();
 
-
                             return false;
                         };
 
@@ -1035,7 +1034,6 @@ void TCPHandler::sendInsertProfileEvents()
 
     sendProfileEvents();
 }
-
 
 bool TCPHandler::receiveProxyHeader()
 {
