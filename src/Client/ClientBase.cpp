@@ -1020,10 +1020,6 @@ bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_)
             onProfileEvents(packet.block);
             return true;
 
-        case Protocol::Server::TimezoneUpdate:
-            DateLUT::setDefaultTimezone(packet.server_timezone);
-            return true;
-
         default:
             throw Exception(
                 ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}", packet.type, connection->getDescription());
@@ -1187,10 +1183,6 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
             case Protocol::Server::TableColumns:
                 columns_description = ColumnsDescription::parse(packet.multistring_message[1]);
                 return receiveSampleBlock(out, columns_description, parsed_query);
-
-            case Protocol::Server::TimezoneUpdate:
-                DateLUT::setDefaultTimezone(packet.server_timezone);
-                break;
 
             default:
                 throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
@@ -1500,7 +1492,7 @@ void ClientBase::receiveLogsAndProfileEvents(ASTPtr parsed_query)
 {
     auto packet_type = connection->checkPacket(0);
 
-    while (packet_type && (*packet_type == Protocol::Server::Log || *packet_type == Protocol::Server::ProfileEvents))
+    while (packet_type && (*packet_type == Protocol::Server::Log || *packet_type == Protocol::Server::ProfileEvents ))
     {
         receiveAndProcessPacket(parsed_query, false);
         packet_type = connection->checkPacket(0);
@@ -1535,10 +1527,6 @@ bool ClientBase::receiveEndOfQuery()
 
             case Protocol::Server::ProfileEvents:
                 onProfileEvents(packet.block);
-                break;
-
-            case Protocol::Server::TimezoneUpdate:
-                DateLUT::setDefaultTimezone(packet.server_timezone);
                 break;
 
             default:
@@ -1611,6 +1599,8 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
     progress_indication.resetProgress();
     profile_events.watch.restart();
 
+    const std::string old_timezone = DateLUT::instance().getTimeZone();
+
     {
         /// Temporarily apply query settings to context.
         std::optional<Settings> old_settings;
@@ -1659,6 +1649,9 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
 
         bool is_async_insert = global_context->getSettingsRef().async_insert && insert && insert->hasInlinedData();
 
+        if (!global_context->getSettingsRef().timezone.toString().empty())
+            DateLUT::setDefaultTimezone(global_context->getSettingsRef().timezone);
+
         /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
         if (insert && (!insert->select || input_function) && !insert->watch && !is_async_insert)
         {
@@ -1693,6 +1686,10 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
                 query_parameters.insert_or_assign(name, value);
 
             global_context->addQueryParameters(set_query->query_parameters);
+
+            if (!global_context->getSettingsRef().timezone.toString().empty())
+                DateLUT::setDefaultTimezone(global_context->getSettingsRef().timezone);
+
         }
         if (const auto * use_query = parsed_query->as<ASTUseQuery>())
         {
@@ -1703,6 +1700,8 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
             connection->setDefaultDatabase(new_database);
         }
     }
+    else
+        DateLUT::setDefaultTimezone(old_timezone);
 
     /// Always print last block (if it was not printed already)
     if (profile_events.last_block)
