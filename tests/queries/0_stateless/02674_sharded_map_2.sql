@@ -1,4 +1,4 @@
--- Tags: no-random-settings, no-parallel
+-- Tags: no-random-settings, no-parallel, no-storage-s3
 
 DROP TABLE IF EXISTS t_sharded_map_2;
 

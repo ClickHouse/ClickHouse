@@ -8,6 +8,8 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnArray.h>
 #include <Core/Field.h>
 #include <Formats/FormatSettings.h>
 #include <Common/assert_cast.h>
@@ -580,29 +582,53 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
     auto & column_map = assert_cast<ColumnMap &>(*mutable_column);
     auto & column_nested = column_map.getNestedColumn();
 
-    std::vector<ColumnPtr> shard_arrays(num_shards);
+    std::vector<ColumnPtr> shard_keys(num_shards);
+    std::vector<ColumnPtr> shard_values(num_shards);
+
     settings.path.push_back(ISerialization::Substream::MapShard);
 
     for (size_t i = 0; i < num_shards; ++i)
     {
         settings.path.back().map_shard_num = i;
-        shard_arrays[i] = column_nested.cloneEmpty();
-        nested->deserializeBinaryBulkWithMultipleStreams(shard_arrays[i], limit, settings, state, cache);
-    }
-    settings.path.pop_back();
 
-    std::vector<std::unique_ptr<GatherUtils::IArraySource>> sources(num_shards);
+        ColumnPtr shard_column = column_nested.cloneEmpty();
+        nested->deserializeBinaryBulkWithMultipleStreams(shard_column, limit, settings, state, cache);
+
+        const auto & shard_array = assert_cast<const ColumnArray &>(*shard_column);
+        const auto & shard_tuple = assert_cast<const ColumnTuple &>(shard_array.getData());
+
+        shard_keys[i] = ColumnArray::create(shard_tuple.getColumnPtr(0), shard_array.getOffsetsPtr());
+        shard_values[i] = ColumnArray::create(shard_tuple.getColumnPtr(1), shard_array.getOffsetsPtr());
+    }
+
+    settings.path.pop_back();
+    using Sources = std::vector<std::unique_ptr<GatherUtils::IArraySource>>;
+
+    Sources keys_sources(num_shards);
+    Sources values_sources(num_shards);
+
     for (size_t i = 0; i < num_shards; ++i)
     {
-        const auto & shard_array = assert_cast<const ColumnArray &>(*shard_arrays[i]);
-        sources[i] = GatherUtils::createArraySource(shard_array, false, shard_array.size());
+        const auto & keys_array = assert_cast<const ColumnArray &>(*shard_keys[i]);
+        keys_sources[i] = GatherUtils::createArraySource(keys_array, false, keys_array.size());
+
+        const auto & values_array = assert_cast<const ColumnArray &>(*shard_values[i]);
+        values_sources[i] = GatherUtils::createArraySource(values_array, false, values_array.size());
     }
 
-    // GatherUtils::concatInplace(sources, column_nested);
-    // column = std::move(mutable_column);
+    auto res_keys = GatherUtils::concat(keys_sources);
+    auto res_values = GatherUtils::concat(values_sources);
 
-    auto res = GatherUtils::concat(sources);
-    column_nested.insertRangeFrom(*res, 0, res->size());
+    const auto & keys_array = assert_cast<const ColumnArray &>(*res_keys);
+    const auto & values_array = assert_cast<const ColumnArray &>(*res_values);
+
+    assert(keys_array.getOffsets() == values_offsets.getOffsets());
+
+    auto res_array = ColumnArray::create(
+        ColumnTuple::create(Columns{keys_array.getDataPtr(), values_array.getDataPtr()}),
+        keys_array.getOffsetsPtr());
+
+    column_nested.insertRangeFrom(*res_array, 0, res_array->size());
 }
 
 }
