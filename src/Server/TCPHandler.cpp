@@ -1224,14 +1224,7 @@ void TCPHandler::receiveHello()
 
     session = makeSession();
     auto & client_info = session->getClientInfo();
-
-    /// Extract the last entry from comma separated list of forwarded_for addresses.
-    /// Only the last proxy can be trusted (if any).
-    String forwarded_address = client_info.getLastForwardedFor();
-    if (!forwarded_address.empty() && server.config().getBool("auth_use_forwarded_address", false))
-        session->authenticate(user, password, Poco::Net::SocketAddress(forwarded_address, socket().peerAddress().port()));
-    else
-        session->authenticate(user, password, socket().peerAddress());
+    session->authenticate(user, password, getClientAddress(client_info));
 }
 
 void TCPHandler::receiveAddendum()
@@ -1522,11 +1515,16 @@ void TCPHandler::receiveQuery()
         /// so we should not rely on that. However, in this particular case we got client_info from other clickhouse-server, so it's ok.
         if (client_info.initial_user.empty())
         {
-            LOG_DEBUG(log, "User (no user, interserver mode)");
+            LOG_DEBUG(log, "User (no user, interserver mode) (client: {})", getClientAddress(client_info).toString());
         }
         else
         {
-            LOG_DEBUG(log, "User (initial, interserver mode): {}", client_info.initial_user);
+            LOG_DEBUG(log, "User (initial, interserver mode): {} (client: {})", client_info.initial_user, getClientAddress(client_info).toString());
+            /// In case of inter-server mode authorization is done with the
+            /// initial address of the client, not the real address from which
+            /// the query was come, since the real address is the address of
+            /// the initiator server, while we are interested in client's
+            /// address.
             session->authenticate(AlwaysAllowCredentials{client_info.initial_user}, client_info.initial_address);
         }
 #else
@@ -2010,6 +2008,17 @@ void TCPHandler::run()
         else
             throw;
     }
+}
+
+Poco::Net::SocketAddress TCPHandler::getClientAddress(const ClientInfo & client_info)
+{
+    /// Extract the last entry from comma separated list of forwarded_for addresses.
+    /// Only the last proxy can be trusted (if any).
+    String forwarded_address = client_info.getLastForwardedFor();
+    if (!forwarded_address.empty() && server.config().getBool("auth_use_forwarded_address", false))
+        return Poco::Net::SocketAddress(forwarded_address, socket().peerAddress().port());
+    else
+        return socket().peerAddress();
 }
 
 }

@@ -522,7 +522,9 @@ class SettingsRandomizer:
         "merge_tree_coarse_index_granularity": lambda: random.randint(2, 32),
         "optimize_distinct_in_order": lambda: random.randint(0, 1),
         "optimize_sorting_by_input_stream_properties": lambda: random.randint(0, 1),
-        "enable_memory_bound_merging_of_aggregation_results": lambda: random.randint(0, 1),
+        "enable_memory_bound_merging_of_aggregation_results": lambda: random.randint(
+            0, 1
+        ),
     }
 
     @staticmethod
@@ -535,10 +537,9 @@ class SettingsRandomizer:
 
 class MergeTreeSettingsRandomizer:
     settings = {
-        # Temporary disable due to large number of failures. TODO: fix.
-        # "ratio_of_defaults_for_sparse_serialization": threshold_generator(
-        #     0.1, 0.6, 0.0, 1.0
-        # ),
+        "ratio_of_defaults_for_sparse_serialization": threshold_generator(
+            0.3, 0.5, 0.0, 1.0
+        ),
         "prefer_fetch_merged_part_size_threshold": threshold_generator(
             0.2, 0.5, 1, 10 * 1024 * 1024 * 1024
         ),
@@ -1204,7 +1205,7 @@ class TestCase:
             )
             result.check_if_need_retry(args, stdout, stderr, self.runs_count)
             # to avoid breaking CSV parser
-            result.description = result.description.replace('\0', '')
+            result.description = result.description.replace("\0", "")
 
             if result.status == TestStatus.FAIL:
                 result.description = self.add_info_about_settings(result.description)
@@ -1660,7 +1661,12 @@ def check_server_started(args):
             print("\nConnection timeout, will not retry")
             break
         except Exception as e:
-            print("\nUexpected exception, will not retry: ", type(e).__name__, ": ", str(e))
+            print(
+                "\nUexpected exception, will not retry: ",
+                type(e).__name__,
+                ": ",
+                str(e),
+            )
             break
 
     print("\nAll connection tries failed")
@@ -1936,6 +1942,7 @@ def reportCoverage(args):
         """,
         )
     )
+
 
 def reportLogStats(args):
     query = """
