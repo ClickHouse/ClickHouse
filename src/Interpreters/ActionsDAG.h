@@ -367,6 +367,8 @@ private:
     static ActionsDAGPtr cloneActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);
 };
 
+const ActionsDAG::Node * getOriginalNodeForOutputAlias(const ActionsDAGPtr & actions, const String & output_name);
+
 /// This is an ugly way to bypass impossibility to forward declare ActionDAG::Node.
 struct ActionDAGNodes
 {
