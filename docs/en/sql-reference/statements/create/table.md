@@ -124,6 +124,10 @@ If the data type and default expression are defined explicitly, this expression 
 
 Default expressions may be defined as an arbitrary expression from table constants and columns. When creating and changing the table structure, it checks that expressions do not contain loops. For INSERT, it checks that expressions are resolvable – that all columns they can be calculated from have been passed.
 
+:::info
+Kafka Engine doesn't support columns with default value of type `DEFAULT/MATERIALIZED/EPHEMERAL/ALIAS`. If you need columns with any default type, they can be added at `MATERIALIZED VIEW` level, see [Kafka Engine](../../../engines/table-engines/integrations/kafka.md#description).
+:::
+
 ### DEFAULT
 
 `DEFAULT expr`
