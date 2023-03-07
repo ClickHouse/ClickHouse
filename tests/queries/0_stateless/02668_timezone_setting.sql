@@ -5,5 +5,5 @@ SELECT toDateTime64(toDateTime64('1999-12-12 23:23:23.123', 3), 3, 'Europe/Zuric
 SET timezone = 'Europe/Zurich';
 SELECT toDateTime64(toDateTime64('1999-12-12 23:23:23.123', 3), 3, 'Asia/Novosibirsk');
 
-SET timezone = 'Абырвалг'; -- { clientError CANNOT_PARSE_DATETIME }
-select now();  -- { clientError CANNOT_PARSE_DATETIME }
+SET timezone = 'Абырвалг';
+select now(); -- { serverError POCO_EXCEPTION }

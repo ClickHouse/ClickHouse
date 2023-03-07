@@ -107,7 +107,6 @@ namespace ErrorCodes
     extern const int UNRECOGNIZED_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_OPEN_FILE;
-    extern const int CANNOT_PARSE_DATETIME;
 }
 
 }
@@ -1021,6 +1020,10 @@ bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_)
             onProfileEvents(packet.block);
             return true;
 
+        case Protocol::Server::TimezoneUpdate:
+            DateLUT::setDefaultTimezone(packet.server_timezone);
+            return true;
+
         default:
             throw Exception(
                 ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}", packet.type, connection->getDescription());
@@ -1184,6 +1187,10 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
             case Protocol::Server::TableColumns:
                 columns_description = ColumnsDescription::parse(packet.multistring_message[1]);
                 return receiveSampleBlock(out, columns_description, parsed_query);
+
+            case Protocol::Server::TimezoneUpdate:
+                DateLUT::setDefaultTimezone(packet.server_timezone);
+                break;
 
             default:
                 throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
@@ -1493,7 +1500,7 @@ void ClientBase::receiveLogsAndProfileEvents(ASTPtr parsed_query)
 {
     auto packet_type = connection->checkPacket(0);
 
-    while (packet_type && (*packet_type == Protocol::Server::Log || *packet_type == Protocol::Server::ProfileEvents ))
+    while (packet_type && (*packet_type == Protocol::Server::Log || *packet_type == Protocol::Server::ProfileEvents))
     {
         receiveAndProcessPacket(parsed_query, false);
         packet_type = connection->checkPacket(0);
@@ -1528,6 +1535,10 @@ bool ClientBase::receiveEndOfQuery()
 
             case Protocol::Server::ProfileEvents:
                 onProfileEvents(packet.block);
+                break;
+
+            case Protocol::Server::TimezoneUpdate:
+                DateLUT::setDefaultTimezone(packet.server_timezone);
                 break;
 
             default:
@@ -1600,11 +1611,6 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
     progress_indication.resetProgress();
     profile_events.watch.restart();
 
-    /// A query may contain timezone setting. To handle this, old client-wide tz is saved here.
-    /// If timezone was set for a query, after its execution client tz will be back to old one.
-    /// If it was a settings query, new setting will be applied to client.
-    const std::string old_timezone = DateLUT::instance().getTimeZone();
-
     {
         /// Temporarily apply query settings to context.
         std::optional<Settings> old_settings;
@@ -1653,19 +1659,6 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
 
         bool is_async_insert = global_context->getSettingsRef().async_insert && insert && insert->hasInlinedData();
 
-        /// pre-load timezone from (query) settings -- new timezone may also be specified in query.
-        try
-        {
-            if (!global_context->getSettingsRef().timezone.toString().empty())
-                DateLUT::setDefaultTimezone(global_context->getSettingsRef().timezone);
-        }
-        catch (Poco::Exception &)
-        {
-            throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME,
-                            "Invalid time zone {} in client settings. Use `SET timezone = \'New/TZ\'` to set a proper timezone.",
-                            global_context->getSettingsRef().timezone.toString());
-        }
-
         /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
         if (insert && (!insert->select || input_function) && !insert->watch && !is_async_insert)
         {
@@ -1700,18 +1693,6 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
                 query_parameters.insert_or_assign(name, value);
 
             global_context->addQueryParameters(set_query->query_parameters);
-
-            try
-            {
-            if (!global_context->getSettingsRef().timezone.toString().empty())
-                DateLUT::setDefaultTimezone(global_context->getSettingsRef().timezone);
-            }
-            catch (Poco::Exception &)
-            {
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME,
-                            "Invalid time zone {} in client settings. Use `SET timezone = \'New/TZ\'` to set a proper timezone.",
-                            global_context->getSettingsRef().timezone.toString());
-            }
         }
         if (const auto * use_query = parsed_query->as<ASTUseQuery>())
         {
@@ -1722,8 +1703,6 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
             connection->setDefaultDatabase(new_database);
         }
     }
-    else
-        DateLUT::setDefaultTimezone(old_timezone);
 
     /// Always print last block (if it was not printed already)
     if (profile_events.last_block)
