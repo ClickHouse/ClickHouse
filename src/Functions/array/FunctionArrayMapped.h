@@ -7,6 +7,7 @@
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/IColumn.h>
 
 #include <Common/Exception.h>
@@ -36,7 +37,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
-    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
+    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -360,7 +361,7 @@ public:
                     if (getOffsetsPtr(*column_array) != offsets_column
                         && getOffsets(*column_array) != typeid_cast<const ColumnArray::ColumnOffsets &>(*offsets_column).getData())
                         throw Exception(
-                            ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH,
+                            ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
                             "{}s passed to {} must have equal size",
                             argument_type_name,
                             getName());
@@ -393,8 +394,14 @@ public:
             replicated_column_function->appendArguments(arrays);
 
             auto lambda_result = replicated_column_function->reduce();
+
+            /// Convert LowCardinality(T) -> T and Const(LowCardinality(T)) -> Const(T),
+            /// because we removed LowCardinality from return type of lambda expression.
             if (lambda_result.column->lowCardinality())
                 lambda_result.column = lambda_result.column->convertToFullColumnIfLowCardinality();
+
+            if (const auto * const_column = checkAndGetColumnConst<ColumnLowCardinality>(lambda_result.column.get()))
+                lambda_result.column = const_column->removeLowCardinality();
 
             if (Impl::needBoolean())
             {
