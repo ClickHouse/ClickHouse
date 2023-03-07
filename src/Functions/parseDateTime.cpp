@@ -25,7 +25,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
-    extern const int CANNOT_PARSE_TEXT;
+    extern const int CANNOT_PARSE_DATETIME;
     extern const int NOT_ENOUGH_SPACE;
 }
 
@@ -117,7 +117,7 @@ namespace
         bool is_hour_of_half_day = false; /// Whether the hour is of half day
 
         bool has_time_zone_offset = false; /// If true, time zone offset if explicitly specified.
-        Int32 time_zone_offset = 0; /// Offset in seconds between current timezone to UTC.
+        Int64 time_zone_offset = 0; /// Offset in seconds between current timezone to UTC.
 
         void reset()
         {
@@ -152,7 +152,7 @@ namespace
         void setCentury(Int32 century)
         {
             if (century < 19 || century > 21)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for century must be in the range [19, 21]", century);
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for century must be in the range [19, 21]", century);
 
             century_format = true;
             year = 100 * century;
@@ -162,7 +162,7 @@ namespace
         void setDayOfWeek(Int32 day_of_week_)
         {
             if (day_of_week_ < 1 || day_of_week_ > 7)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for day of week must be in the range [1, 7]", day_of_week_);
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for day of week must be in the range [1, 7]", day_of_week_);
 
             day_of_week = day_of_week_;
             week_date_format = true;
@@ -177,7 +177,7 @@ namespace
         void setMonth(Int32 month_)
         {
             if (month_ < 1 || month_ > 12)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for month of year must be in the range [1, 12]", month_);
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for month of year must be in the range [1, 12]", month_);
 
             month = month_;
             week_date_format = false;
@@ -192,7 +192,7 @@ namespace
         void setDayOfMonth(Int32 day_of_month)
         {
             if (day_of_month < 1 || day_of_month > 31)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for day of month must be in the range [1, 31]", day_of_month);
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for day of month must be in the range [1, 31]", day_of_month);
 
             day = day_of_month;
             week_date_format = false;
@@ -204,10 +204,10 @@ namespace
             }
         }
 
-        ALWAYS_INLINE void appendDayOfYear(Int32 day_of_year_)
+        ALWAYS_INLINE void setDayOfYear(Int32 day_of_year_)
         {
             if (day_of_year_ < 1 || day_of_year_ > 366)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for day of year must be in the range [1, 366]", day_of_year_);
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for day of year must be in the range [1, 366]", day_of_year_);
 
             day_of_year = day_of_year_;
             day_of_year_format = true;
@@ -226,7 +226,7 @@ namespace
             else if (year_ >= 0 && year_ < 70)
                 year_ += 2000;
             else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for year2 must be in the range [0, 99]", year_);
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for year2 must be in the range [0, 99]", year_);
 
             setYear(year_, is_year_of_era_, is_week_year);
         }
@@ -234,7 +234,7 @@ namespace
         void setYear(Int32 year_, bool is_year_of_era_ = false, bool is_week_year = false)
         {
             if (year_ < minYear || year_ > maxYear)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for year must be in the range [{}, {}]", year_, minYear, maxYear);
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for year must be in the range [{}, {}]", year_, minYear, maxYear);
 
             year = year_;
             century_format = false;
@@ -250,7 +250,7 @@ namespace
         void setWeek(Int32 week_)
         {
             if (week_ < 1 || week_ > 53)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for week of week year must be in the range [1, 53]", week_);
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for week of week year must be in the range [1, 53]", week_);
 
             week = week_;
             week_date_format = true;
@@ -265,7 +265,7 @@ namespace
         void setMinute(Int32 minute_)
         {
             if (minute_ < 0 || minute_ > 59)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for minute must be in the range [0, 59]", minute_);
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for minute must be in the range [0, 59]", minute_);
 
             minute = minute_;
         }
@@ -273,7 +273,7 @@ namespace
         void setSecond(Int32 second_)
         {
             if (second_ < 0 || second_ > 59)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Value {} for second must be in the range [0, 59]", second_);
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for second must be in the range [0, 59]", second_);
 
             second = second_;
         }
@@ -282,9 +282,9 @@ namespace
         {
             boost::to_lower(text);
             if (text == "bc")
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Era BC exceeds the range of DateTime");
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Era BC exceeds the range of DateTime");
             else if (text != "ad")
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown era {}", text);
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Unknown era {}", text);
         }
 
         ALWAYS_INLINE void setAMPM(String & text)
@@ -295,7 +295,7 @@ namespace
             else if (text == "pm")
                 is_am = false;
             else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown half day of day: {}", text);
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Unknown half day of day: {}", text);
         }
 
         ALWAYS_INLINE void setHour(Int32 hour_, bool is_hour_of_half_day_ = false, bool is_clock_hour_ = false)
@@ -328,7 +328,7 @@ namespace
 
             if (hour_ < min_hour || hour_ > max_hour)
                 throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
+                    ErrorCodes::CANNOT_PARSE_DATETIME,
                     "Value {} for hour must be in the range [{}, {}] if_hour_of_half_day={} and is_clock_hour={}",
                     hour,
                     max_hour,
@@ -395,7 +395,7 @@ namespace
         {
             /// The range of week_of_year[1, 53], day_of_week[1, 7] already checked before
             if (week_year_ < minYear || week_year_ > maxYear)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid week year {}", week_year_);
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid week year {}", week_year_);
 
             Int32 days_since_epoch_of_jan_fourth = daysSinceEpochFromDate(week_year_, 1, 4);
             Int32 first_day_of_week_year = extractISODayOfTheWeek(days_since_epoch_of_jan_fourth);
@@ -405,7 +405,7 @@ namespace
         static ALWAYS_INLINE Int32 daysSinceEpochFromDayOfYear(Int32 year_, Int32 day_of_year_)
         {
             if (!isDayOfYearValid(year_, day_of_year_))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid day of year, year:{} day of year:{}", year_, day_of_year_);
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid day of year, year:{} day of year:{}", year_, day_of_year_);
 
             Int32 res = daysSinceEpochFromDate(year_, 1, 1);
             res += day_of_year_ - 1;
@@ -415,7 +415,7 @@ namespace
         static ALWAYS_INLINE Int32 daysSinceEpochFromDate(Int32 year_, Int32 month_, Int32 day_)
         {
             if (!isDateValid(year_, month_, day_))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid date, year:{} month:{} day:{}", year_, month_, day_);
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid date, year:{} month:{} day:{}", year_, month_, day_);
 
             Int32 res = cumulativeYearDays[year_ - 1970];
             res += isLeapYear(year_) ? cumulativeLeapDays[month_ - 1] : cumulativeDays[month_ - 1];
@@ -440,14 +440,14 @@ namespace
             Int64 seconds_since_epoch = days_since_epoch * 86400 + hour * 3600 + minute * 60 + second;
 
             /// Time zone is not specified, use local time zone
-            if (has_time_zone_offset)
-                time_zone_offset = static_cast<Int32>(time_zone.timezoneOffset(seconds_since_epoch));
+            if (!has_time_zone_offset)
+                time_zone_offset = time_zone.timezoneOffset(seconds_since_epoch);
 
             /// Time zone is specified in format string.
             if (seconds_since_epoch >= time_zone_offset)
                 seconds_since_epoch -= time_zone_offset;
             else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Seconds since epoch is negative");
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Seconds since epoch is negative");
 
             return seconds_since_epoch;
         }
@@ -548,7 +548,7 @@ namespace
                 // Ensure all input was consumed.
                 if (cur < end)
                     throw Exception(
-                        ErrorCodes::CANNOT_PARSE_TEXT,
+                        ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Invalid format input {} is malformed at {}",
                         str_ref.toView(),
                         std::string_view(cur, end - cur));
@@ -607,7 +607,7 @@ namespace
                     checkSpace(cur, end, literal.size(), "required literal size not matched", flag);
                     if (std::string_view(cur, literal.size()) != literal)
                         throw Exception(
-                            ErrorCodes::LOGICAL_ERROR,
+                            ErrorCodes::CANNOT_PARSE_DATETIME,
                             "Unable to parse flag {} from {} because literal {} is expected but {} provided",
                             flag,
                             std::string_view(cur, end - cur),
@@ -682,7 +682,7 @@ namespace
 
                 if (*cur != ch)
                     throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
+                        ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse flag {} from {} because char {} is expected but {} provided",
                         flag,
                         std::string_view(cur, end - cur),
@@ -702,7 +702,7 @@ namespace
                 auto it = dayOfWeekMap.find(text);
                 if (it == dayOfWeekMap.end())
                     throw Exception(
-                        ErrorCodes::CANNOT_PARSE_TEXT,
+                        ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse flag {} from {} because of unknown day of week short text {} ",
                         flag,
                         std::string_view(cur, end - cur),
@@ -721,7 +721,7 @@ namespace
                 auto it = monthMap.find(text);
                 if (it == monthMap.end())
                     throw Exception(
-                        ErrorCodes::CANNOT_PARSE_TEXT,
+                        ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse flag {} from {} because of unknown month of year short text {}",
                         flag,
                         std::string_view(cur, end - cur),
@@ -829,7 +829,7 @@ namespace
             {
                 Int32 day_of_year;
                 cur = readNumber3<Int32, NeedCheckSpace::Yes>(cur, end, flag, day_of_year);
-                date.appendDayOfYear(day_of_year);
+                date.setDayOfYear(day_of_year);
                 return cur;
             }
 
@@ -870,7 +870,7 @@ namespace
                 auto it = dayOfWeekMap.find(text1);
                 if (it == dayOfWeekMap.end())
                     throw Exception(
-                        ErrorCodes::CANNOT_PARSE_TEXT,
+                        ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse first part of flag {} from {} because of unknown day of week text: {}",
                         flag,
                         std::string_view(cur, end - cur),
@@ -883,7 +883,7 @@ namespace
                 boost::to_lower(text2);
                 if (text2 != it->second.first)
                     throw Exception(
-                        ErrorCodes::CANNOT_PARSE_TEXT,
+                        ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse second part of flag {} from {} because of unknown day of week text: {}",
                         flag,
                         std::string_view(cur, end - cur),
@@ -921,7 +921,7 @@ namespace
                     sign = 1;
                 else
                     throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
+                        ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse flag {} from {} because of unknown sign time zone offset: {}",
                         flag,
                         std::string_view(cur, end - cur),
@@ -1101,7 +1101,7 @@ namespace
                 /// Need to have read at least one digit.
                 if (cur <= start)
                     throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
+                        ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse flag {} from {} because read number failed",
                         flag,
                         std::string_view(cur, end - cur));
@@ -1172,7 +1172,7 @@ namespace
                 auto it = dayOfWeekMap.find(text1);
                 if (it == dayOfWeekMap.end())
                     throw Exception(
-                        ErrorCodes::CANNOT_PARSE_TEXT,
+                        ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse flag {} from {} because of unknown day of week text: {}",
                         flag,
                         std::string_view(cur, end - cur),
@@ -1206,7 +1206,7 @@ namespace
             {
                 Int32 day_of_year;
                 cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 3), flag, day_of_year);
-                date.appendDayOfYear(day_of_year);
+                date.setDayOfYear(day_of_year);
                 return cur;
             }
 
@@ -1226,7 +1226,7 @@ namespace
                 auto it = monthMap.find(text1);
                 if (it == monthMap.end())
                     throw Exception(
-                        ErrorCodes::CANNOT_PARSE_TEXT,
+                        ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse flag {} from {} because of unknown month of year text: {}",
                         flag,
                         std::string_view(cur, end - cur),
