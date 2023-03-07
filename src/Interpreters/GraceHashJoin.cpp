@@ -52,7 +52,7 @@ namespace
 
         Block read()
         {
-            std::lock_guard<std::mutex> lock(mutex);
+            std::lock_guard lock(mutex);
 
             if (eof)
                 return {};
