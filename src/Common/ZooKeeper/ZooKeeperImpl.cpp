@@ -358,12 +358,27 @@ ZooKeeper::ZooKeeper(
     if (!args.auth_scheme.empty())
         sendAuth(args.auth_scheme, args.identity);
 
-    send_thread = ThreadFromGlobalPool([this] { sendThread(); });
-    receive_thread = ThreadFromGlobalPool([this] { receiveThread(); });
+    try
+    {
+        send_thread = ThreadFromGlobalPool([this] { sendThread(); });
+        receive_thread = ThreadFromGlobalPool([this] { receiveThread(); });
 
-    initApiVersion();
+        initApiVersion();
 
-    ProfileEvents::increment(ProfileEvents::ZooKeeperInit);
+        ProfileEvents::increment(ProfileEvents::ZooKeeperInit);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to connect to ZooKeeper");
+
+        if (send_thread.joinable())
+            send_thread.join();
+
+        if (receive_thread.joinable())
+            receive_thread.join();
+
+        throw;
+    }
 }
 
 

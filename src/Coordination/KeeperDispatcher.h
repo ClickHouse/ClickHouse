@@ -230,6 +230,8 @@ public:
     {
         return server->recalculateStorageStats();
     }
+
+    static void cleanResources();
 };
 
 }
