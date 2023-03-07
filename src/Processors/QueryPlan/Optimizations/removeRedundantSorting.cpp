@@ -188,7 +188,14 @@ private:
             return false;
 
         /// remove sorting
-        parent_node->children.front() = sorting_node->children.front();
+        for (auto & child : parent_node->children)
+        {
+            if (child == sorting_node)
+            {
+                child = sorting_node->children.front();
+                break;
+            }
+        }
 
         /// sorting removed, so need to update sorting traits for upstream steps
         const DataStream * input_stream = &parent_node->children.front()->step->getOutputStream();

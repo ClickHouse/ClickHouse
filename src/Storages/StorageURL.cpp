@@ -13,7 +13,6 @@
 #include <Parsers/ASTIdentifier.h>
 
 #include <IO/ConnectionTimeouts.h>
-#include <IO/ConnectionTimeoutsContext.h>
 #include <IO/IOThreadPool.h>
 #include <IO/ParallelReadBuffer.h>
 #include <IO/WriteBufferFromHTTP.h>
@@ -31,6 +30,7 @@
 #include <Common/NamedCollections/NamedCollections.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
+#include <IO/HTTPHeaderEntries.h>
 
 #include <algorithm>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -82,6 +82,10 @@ static bool urlWithGlobs(const String & uri)
     return (uri.find('{') != std::string::npos && uri.find('}') != std::string::npos) || uri.find('|') != std::string::npos;
 }
 
+static ConnectionTimeouts getHTTPTimeouts(ContextPtr context)
+{
+    return ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), {context->getConfigRef().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT), 0});
+}
 
 IStorageURLBase::IStorageURLBase(
     const String & uri_,
@@ -455,6 +459,7 @@ StorageURLSink::StorageURLSink(
     ContextPtr context,
     const ConnectionTimeouts & timeouts,
     const CompressionMethod compression_method,
+    const HTTPHeaderEntries & headers,
     const String & http_method)
     : SinkToStorage(sample_block)
 {
@@ -462,7 +467,7 @@ StorageURLSink::StorageURLSink(
     std::string content_encoding = toContentEncodingName(compression_method);
 
     write_buf = wrapWriteBufferWithCompressionMethod(
-        std::make_unique<WriteBufferFromHTTP>(Poco::URI(uri), http_method, content_type, content_encoding, timeouts),
+        std::make_unique<WriteBufferFromHTTP>(Poco::URI(uri), http_method, content_type, content_encoding, headers, timeouts),
         compression_method,
         3);
     writer = FormatFactory::instance().getOutputFormat(format, *write_buf, sample_block, context, format_settings);
@@ -527,6 +532,7 @@ public:
         ContextPtr context_,
         const ConnectionTimeouts & timeouts_,
         const CompressionMethod compression_method_,
+        const HTTPHeaderEntries & headers_,
         const String & http_method_)
         : PartitionedSink(partition_by, context_, sample_block_)
         , uri(uri_)
@@ -536,6 +542,7 @@ public:
         , context(context_)
         , timeouts(timeouts_)
         , compression_method(compression_method_)
+        , headers(headers_)
         , http_method(http_method_)
     {
     }
@@ -545,7 +552,7 @@ public:
         auto partition_path = PartitionedSink::replaceWildcards(uri, partition_id);
         context->getRemoteHostFilter().checkURL(Poco::URI(partition_path));
         return std::make_shared<StorageURLSink>(
-            partition_path, format, format_settings, sample_block, context, timeouts, compression_method, http_method);
+            partition_path, format, format_settings, sample_block, context, timeouts, compression_method, headers, http_method);
     }
 
 private:
@@ -557,6 +564,7 @@ private:
     const ConnectionTimeouts timeouts;
 
     const CompressionMethod compression_method;
+    const HTTPHeaderEntries headers;
     const String http_method;
 };
 
@@ -632,7 +640,7 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
             {},
             Poco::Net::HTTPRequest::HTTP_GET,
             {},
-            ConnectionTimeouts::getHTTPTimeouts(context),
+            getHTTPTimeouts(context),
             compression_method,
             credentials,
             headers,
@@ -716,7 +724,7 @@ Pipe IStorageURLBase::read(
                 local_context,
                 columns_description,
                 max_block_size,
-                ConnectionTimeouts::getHTTPTimeouts(local_context),
+                getHTTPTimeouts(local_context),
                 compression_method,
                 download_threads,
                 headers,
@@ -740,7 +748,7 @@ Pipe IStorageURLBase::read(
             local_context,
             columns_description,
             max_block_size,
-            ConnectionTimeouts::getHTTPTimeouts(local_context),
+            getHTTPTimeouts(local_context),
             compression_method,
             max_download_threads,
             headers,
@@ -775,6 +783,7 @@ Pipe StorageURLWithFailover::read(
 
     auto uri_info = std::make_shared<StorageURLSource::URIInfo>();
     uri_info->uri_list_to_read.emplace_back(uri_options);
+
     auto pipe = Pipe(std::make_shared<StorageURLSource>(
         uri_info,
         getReadMethod(),
@@ -786,7 +795,7 @@ Pipe StorageURLWithFailover::read(
         local_context,
         columns_description,
         max_block_size,
-        ConnectionTimeouts::getHTTPTimeouts(local_context),
+        getHTTPTimeouts(local_context),
         compression_method,
         local_context->getSettingsRef().max_download_threads,
         headers,
@@ -815,8 +824,9 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
             format_settings,
             metadata_snapshot->getSampleBlock(),
             context,
-            ConnectionTimeouts::getHTTPTimeouts(context),
+            getHTTPTimeouts(context),
             compression_method,
+            headers,
             http_method);
     }
     else
@@ -827,8 +837,9 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
             format_settings,
             metadata_snapshot->getSampleBlock(),
             context,
-            ConnectionTimeouts::getHTTPTimeouts(context),
+            getHTTPTimeouts(context),
             compression_method,
+            headers,
             http_method);
     }
 }
@@ -896,7 +907,7 @@ std::optional<time_t> IStorageURLBase::getLastModificationTime(
             Poco::URI(url),
             Poco::Net::HTTPRequest::HTTP_GET,
             {},
-            ConnectionTimeouts::getHTTPTimeouts(context),
+            getHTTPTimeouts(context),
             credentials,
             settings.max_http_get_redirects,
             settings.max_read_buffer_size,
