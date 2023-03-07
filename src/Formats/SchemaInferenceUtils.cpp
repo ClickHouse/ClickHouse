@@ -131,6 +131,7 @@ namespace
 
             type_indexes.erase(TypeIndex::Date);
             type_indexes.erase(TypeIndex::DateTime);
+            type_indexes.insert(TypeIndex::String);
             return;
         }
 
@@ -1084,7 +1085,7 @@ DataTypePtr makeNullableRecursively(DataTypePtr type)
         return key_type && value_type ? std::make_shared<DataTypeMap>(removeNullable(key_type), value_type) : nullptr;
     }
 
-    if (which.isLowCarnality())
+    if (which.isLowCardinality())
     {
         const auto * lc_type = assert_cast<const DataTypeLowCardinality *>(type.get());
         auto nested_type = makeNullableRecursively(lc_type->getDictionaryType());
