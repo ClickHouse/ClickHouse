@@ -56,6 +56,11 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
             packer.pack_uint32(assert_cast<const ColumnUInt32 &>(column).getElement(row_num));
             return;
         }
+        case TypeIndex::IPv4:
+        {
+            packer.pack_uint32(assert_cast<const ColumnIPv4 &>(column).getElement(row_num));
+            return;
+        }
         case TypeIndex::UInt64:
         {
             packer.pack_uint64(assert_cast<const ColumnUInt64 &>(column).getElement(row_num));
@@ -108,6 +113,13 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
             const std::string_view & string = assert_cast<const ColumnFixedString &>(column).getDataAt(row_num).toView();
             packer.pack_bin(static_cast<unsigned>(string.size()));
             packer.pack_bin_body(string.data(), static_cast<unsigned>(string.size()));
+            return;
+        }
+        case TypeIndex::IPv6:
+        {
+            const std::string_view & data = assert_cast<const ColumnIPv6 &>(column).getDataAt(row_num).toView();
+            packer.pack_bin(static_cast<unsigned>(data.size()));
+            packer.pack_bin_body(data.data(), static_cast<unsigned>(data.size()));
             return;
         }
         case TypeIndex::Array:
