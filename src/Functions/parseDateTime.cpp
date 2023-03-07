@@ -532,17 +532,19 @@ namespace
             auto col_res = ColumnDateTime::create();
             col_res->reserve(input_rows_count);
             auto & data_res = col_res->getData();
-            DateTime date;
+
+            /// Make datetime fit in a cache line.
+            alignas(64) DateTime datetime;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                date.reset();
+                datetime.reset();
 
                 StringRef str_ref = col_str->getDataAt(i);
                 Pos cur = str_ref.data;
                 Pos end = str_ref.data + str_ref.size;
                 for (const auto & instruction : instructions)
                 {
-                    cur = instruction.perform(cur, end, date);
+                    cur = instruction.perform(cur, end, datetime);
                 }
 
                 // Ensure all input was consumed.
@@ -553,7 +555,7 @@ namespace
                         str_ref.toView(),
                         std::string_view(cur, end - cur));
 
-                Int64 time = date.checkAndGetDateTime(time_zone);
+                Int64 time = datetime.checkAndGetDateTime(time_zone);
                 data_res.push_back(static_cast<UInt32>(time));
             }
 
