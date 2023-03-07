@@ -131,6 +131,7 @@ namespace
 
             type_indexes.erase(TypeIndex::Date);
             type_indexes.erase(TypeIndex::DateTime);
+            type_indexes.insert(TypeIndex::String);
             return;
         }
 
