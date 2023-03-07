@@ -120,6 +120,34 @@ void FilterStep::updateOutputStream()
         input_streams.front(),
         FilterTransform::transformHeader(input_streams.front().header, actions_dag.get(), filter_column_name, remove_filter_column),
         getDataStreamTraits());
+
+    if (!getDataStreamTraits().preserves_sorting)
+        return;
+
+    const ActionsDAGPtr & actions = actions_dag;
+    // LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "ActionsDAG dump:\n{}", actions->dumpDAG());
+
+    const auto & input_sort_description = getInputStreams().front().sort_description;
+    for (size_t i = 0, s = input_sort_description.size(); i < s; ++i)
+    {
+        const auto & desc = input_sort_description[i];
+        String alias;
+        const auto & origin_column = desc.column_name;
+        for (const auto & column : output_stream->header)
+        {
+            const auto * original_node = getOriginalNodeForOutputAlias(actions, column.name);
+            if (original_node && original_node->result_name == origin_column)
+            {
+                alias = column.name;
+                break;
+            }
+        }
+
+        if (alias.empty())
+            return;
+
+        output_stream->sort_description[i].column_name = alias;
+    }
 }
 
 }
