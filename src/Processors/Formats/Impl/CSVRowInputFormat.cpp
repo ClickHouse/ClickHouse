@@ -102,6 +102,12 @@ void CSVRowInputFormat::setReadBuffer(ReadBuffer & in_)
     buf->setSubBuffer(in_);
 }
 
+void CSVRowInputFormat::resetParser()
+{
+    RowInputFormatWithNamesAndTypes::resetParser();
+    buf->reset();
+}
+
 static void skipEndOfLine(ReadBuffer & in)
 {
     /// \n (Unix) or \r\n (DOS/Windows) or \n\r (Mac OS Classic)
@@ -293,7 +299,7 @@ bool CSVFormatReader::readField(
         return false;
     }
 
-    if (format_settings.null_as_default && !type->isNullable() && !type->isLowCardinalityNullable())
+    if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
     {
         /// If value is null but type is not nullable then use default value instead.
         return SerializationNullable::deserializeTextCSVImpl(column, *buf, format_settings, serialization);
