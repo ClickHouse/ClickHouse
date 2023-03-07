@@ -684,12 +684,6 @@ void DataPartStorageOnDiskBase::clearDirectory(
         request.emplace_back(fs::path(dir) / "delete-on-destroy.txt", true);
         request.emplace_back(fs::path(dir) / "txn_version.txt", true);
 
-        /// Inverted index
-        request.emplace_back(fs::path(dir) / "skp_idx_af.gin_dict", true);
-        request.emplace_back(fs::path(dir) / "skp_idx_af.gin_post", true);
-        request.emplace_back(fs::path(dir) / "skp_idx_af.gin_seg", true);
-        request.emplace_back(fs::path(dir) / "skp_idx_af.gin_sid", true);
-
         disk->removeSharedFiles(request, !can_remove_shared_data, names_not_to_remove);
         disk->removeDirectory(dir);
     }

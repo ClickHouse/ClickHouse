@@ -24,6 +24,7 @@
 #include <Common/logger_useful.h>
 #include <Common/SettingsChanges.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTSetQuery.h>
@@ -45,6 +46,9 @@
 
 #include <chrono>
 #include <sstream>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 #if USE_SSL
 #include <Poco/Net/X509Certificate.h>
@@ -619,7 +623,7 @@ void HTTPHandler::processQuery(
         if (buffer_until_eof)
         {
             const std::string tmp_path(server.context()->getTemporaryVolume()->getDisk()->getPath());
-            const std::string tmp_path_template(tmp_path + "http_buffers/");
+            const std::string tmp_path_template(fs::path(tmp_path) / "http_buffers/");
 
             auto create_tmp_disk_buffer = [tmp_path_template] (const WriteBufferPtr &)
             {
@@ -675,7 +679,7 @@ void HTTPHandler::processQuery(
     std::unique_ptr<ReadBuffer> in;
 
     static const NameSet reserved_param_names{"compress", "decompress", "user", "password", "quota_key", "query_id", "stacktrace",
-        "buffer_size", "wait_end_of_query", "session_id", "session_timeout", "session_check", "client_protocol_version"};
+        "buffer_size", "wait_end_of_query", "session_id", "session_timeout", "session_check", "client_protocol_version", "close_session"};
 
     Names reserved_param_suffixes;
 
@@ -831,12 +835,20 @@ void HTTPHandler::processQuery(
     customizeContext(request, context);
 
     executeQuery(*in, *used_output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, context,
-        [&response, this] (const String & current_query_id, const String & content_type, const String & format, const String & timezone)
+        [&response, this] (const QueryResultDetails & details)
         {
-            response.setContentType(content_type_override.value_or(content_type));
-            response.add("X-ClickHouse-Query-Id", current_query_id);
-            response.add("X-ClickHouse-Format", format);
-            response.add("X-ClickHouse-Timezone", timezone);
+            response.add("X-ClickHouse-Query-Id", details.query_id);
+
+            if (content_type_override)
+                response.setContentType(*content_type_override);
+            else if (details.content_type)
+                response.setContentType(*details.content_type);
+
+            if (details.format)
+                response.add("X-ClickHouse-Format", *details.format);
+
+            if (details.timezone)
+                response.add("X-ClickHouse-Timezone", *details.timezone);
         }
     );
 
@@ -946,6 +958,14 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
     /// In case of exception, send stack trace to client.
     bool with_stacktrace = false;
+    /// Close http session (if any) after processing the request
+    bool close_session = false;
+    String session_id;
+
+    SCOPE_EXIT_SAFE({
+        if (close_session && !session_id.empty())
+            session->closeSession(session_id);
+    });
 
     OpenTelemetry::TracingContextHolderPtr thread_trace_context;
     SCOPE_EXIT({
@@ -995,6 +1015,9 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
         HTMLForm params(default_settings, request);
         with_stacktrace = params.getParsed<bool>("stacktrace", false);
+        close_session = params.getParsed<bool>("close_session", false);
+        if (close_session)
+            session_id = params.get("session_id");
 
         /// FIXME: maybe this check is already unnecessary.
         /// Workaround. Poco does not detect 411 Length Required case.
