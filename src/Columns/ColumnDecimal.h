@@ -59,10 +59,7 @@ public:
     void insertFrom(const IColumn & src, size_t n) override { data.push_back(static_cast<const Self &>(src).getData()[n]); }
     void insertData(const char * src, size_t /*length*/) override;
     void insertDefault() override { data.push_back(T()); }
-    virtual void insertManyDefaults(size_t length) override
-    {
-        data.resize_fill(data.size() + length);
-    }
+    void insertManyDefaults(size_t length) override { data.resize_fill(data.size() + length); }
     void insert(const Field & x) override { data.push_back(x.get<T>()); }
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
@@ -137,6 +134,11 @@ public:
     double getRatioOfDefaultRows(double sample_ratio) const override
     {
         return this->template getRatioOfDefaultRowsImpl<Self>(sample_ratio);
+    }
+
+    UInt64 getNumberOfDefaultRows() const override
+    {
+        return this->template getNumberOfDefaultRowsImpl<Self>();
     }
 
     void getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const override

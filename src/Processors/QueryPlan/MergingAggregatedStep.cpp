@@ -73,11 +73,14 @@ MergingAggregatedStep::MergingAggregatedStep(
     }
 }
 
-void MergingAggregatedStep::updateInputSortDescription(SortDescription sort_description, DataStream::SortScope sort_scope)
+void MergingAggregatedStep::applyOrder(SortDescription sort_description, DataStream::SortScope sort_scope)
 {
     auto & input_stream = input_streams.front();
     input_stream.sort_scope = sort_scope;
     input_stream.sort_description = sort_description;
+
+    /// Columns might be reordered during optimisation, so we better to update sort description.
+    group_by_sort_description = std::move(sort_description);
 
     if (memoryBoundMergingWillBeUsed() && should_produce_results_in_order_of_bucket_number)
     {

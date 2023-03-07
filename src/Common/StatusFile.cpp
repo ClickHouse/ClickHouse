@@ -5,9 +5,10 @@
 #include <cerrno>
 
 #include <Common/logger_useful.h>
-#include <base/errnoToString.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/LocalDateTime.h>
+#include <base/errnoToString.h>
+#include <base/defines.h>
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/LimitReadBuffer.h>
@@ -50,7 +51,7 @@ StatusFile::StatusFile(std::string path_, FillFunction fill_)
         std::string contents;
         {
             ReadBufferFromFile in(path, 1024);
-            LimitReadBuffer limit_in(in, 1024, false);
+            LimitReadBuffer limit_in(in, 1024, /* trow_exception */ false, /* exact_limit */ {});
             readStringUntilEOF(contents, limit_in);
         }
 
@@ -88,7 +89,8 @@ StatusFile::StatusFile(std::string path_, FillFunction fill_)
     }
     catch (...)
     {
-        close(fd);
+        int err = close(fd);
+        chassert(!err || errno == EINTR);
         throw;
     }
 }

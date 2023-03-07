@@ -209,12 +209,14 @@ ASTPtr MatcherNode::toASTImpl() const
     ASTPtr result;
     ASTPtr transformers;
 
-    if (!children.empty())
+    const auto & column_transformers = getColumnTransformers().getNodes();
+
+    if (!column_transformers.empty())
     {
         transformers = std::make_shared<ASTColumnsTransformerList>();
 
-        for (const auto & child : children)
-            transformers->children.push_back(child->toAST());
+        for (const auto & column_transformer : column_transformers)
+            transformers->children.push_back(column_transformer->toAST());
     }
 
     if (matcher_type == MatcherNodeType::ASTERISK)

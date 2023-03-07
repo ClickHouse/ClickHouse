@@ -339,6 +339,7 @@
     <background_buffer_flush_schedule_pool_size>16</background_buffer_flush_schedule_pool_size>
     <background_pool_size>16</background_pool_size>
     <background_merges_mutations_concurrency_ratio>2</background_merges_mutations_concurrency_ratio>
+    <background_merges_mutations_scheduling_policy>round_robin</background_merges_mutations_scheduling_policy>
     <background_move_pool_size>8</background_move_pool_size>
     <background_fetches_pool_size>8</background_fetches_pool_size>
     <background_common_pool_size>8</background_common_pool_size>
@@ -1516,7 +1517,7 @@
     <!--     <size>1073741824</size> -->
     <!--     <max_entries>1024</max_entries> -->
     <!--     <max_entry_size>1048576</max_entry_size> -->
-    <!--     <max_entry_records>30000000</max_entry_records> -->
+    <!--     <max_entry_rows>30000000</max_entry_rows> -->
     <!-- </query_cache> -->
 
     <!-- Uncomment if enable merge tree metadata cache -->

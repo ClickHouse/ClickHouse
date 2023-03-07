@@ -655,7 +655,7 @@ bool MergeTreeConditionInverted::tryPrepareSetGinFilter(
         return false;
 
     ConstSetPtr prepared_set = rhs.tryGetPreparedSet();
-    if (!prepared_set && !prepared_set->hasExplicitSetElements())
+    if (!prepared_set || !prepared_set->hasExplicitSetElements())
         return false;
 
     for (const auto & data_type : prepared_set->getDataTypes())
@@ -747,7 +747,7 @@ void invertedIndexValidator(const IndexDescription & index, bool /*attach*/)
             const auto & gin_type = assert_cast<const DataTypeArray &>(*index_data_type);
             data_type = WhichDataType(gin_type.getNestedType());
         }
-        else if (data_type.isLowCarnality())
+        else if (data_type.isLowCardinality())
         {
             const auto & low_cardinality = assert_cast<const DataTypeLowCardinality &>(*index_data_type);
             data_type = WhichDataType(low_cardinality.getDictionaryType());
