@@ -95,7 +95,7 @@ void TestHint::parse(Lexer & comment_lexer, bool is_leading_hint)
                 }
                 else if (token.type == TokenType::BareWord)
                 {
-                    int code = code = DB::ErrorCodes::getErrorCodeByName(std::string_view(token.begin, token.end));
+                    int code = DB::ErrorCodes::getErrorCodeByName(std::string_view(token.begin, token.end));
                     error_codes.push_back(code);
                 }
                 else
