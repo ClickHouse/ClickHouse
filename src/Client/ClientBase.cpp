@@ -107,6 +107,7 @@ namespace ErrorCodes
     extern const int UNRECOGNIZED_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_OPEN_FILE;
+    extern const int CANNOT_PARSE_DATETIME;
 }
 
 }
@@ -1599,6 +1600,9 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
     progress_indication.resetProgress();
     profile_events.watch.restart();
 
+    /// A query may contain timezone setting. To handle this, old client-wide tz is saved here.
+    /// If timezone was set for a query, after its execution client tz will be back to old one.
+    /// If it was a settings query, new setting will be applied to client.
     const std::string old_timezone = DateLUT::instance().getTimeZone();
 
     {
@@ -1649,8 +1653,18 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
 
         bool is_async_insert = global_context->getSettingsRef().async_insert && insert && insert->hasInlinedData();
 
-        if (!global_context->getSettingsRef().timezone.toString().empty())
-            DateLUT::setDefaultTimezone(global_context->getSettingsRef().timezone);
+        /// pre-load timezone from (query) settings -- new timezone may also be specified in query.
+        try
+        {
+            if (!global_context->getSettingsRef().timezone.toString().empty())
+                DateLUT::setDefaultTimezone(global_context->getSettingsRef().timezone);
+        }
+        catch (Poco::Exception &)
+        {
+            throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME,
+                            "Invalid time zone {} in client settings. Use `SET timezone = \'New/TZ\'` to set a proper timezone.",
+                            global_context->getSettingsRef().timezone.toString());
+        }
 
         /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
         if (insert && (!insert->select || input_function) && !insert->watch && !is_async_insert)
@@ -1687,9 +1701,17 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
 
             global_context->addQueryParameters(set_query->query_parameters);
 
+            try
+            {
             if (!global_context->getSettingsRef().timezone.toString().empty())
                 DateLUT::setDefaultTimezone(global_context->getSettingsRef().timezone);
-
+            }
+            catch (Poco::Exception &)
+            {
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME,
+                            "Invalid time zone {} in client settings. Use `SET timezone = \'New/TZ\'` to set a proper timezone.",
+                            global_context->getSettingsRef().timezone.toString());
+            }
         }
         if (const auto * use_query = parsed_query->as<ASTUseQuery>())
         {
