@@ -446,6 +446,7 @@ void TCPHandler::runImpl()
                             sendSelectProfileEvents();
                             sendLogs();
 
+
                             return false;
                         };
 
@@ -483,6 +484,9 @@ void TCPHandler::runImpl()
             {
                 std::lock_guard lock(task_callback_mutex);
                 sendLogs();
+                if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_TIMEZONE_UPDATES
+                    && client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE)
+                    sendTimezone();
                 sendEndOfStream();
             }
 
@@ -1034,6 +1038,14 @@ void TCPHandler::sendInsertProfileEvents()
 
     sendProfileEvents();
 }
+
+void TCPHandler::sendTimezone()
+{
+    writeVarUInt(Protocol::Server::TimezoneUpdate, *out);
+    writeStringBinary(DateLUT::instance().getTimeZone(), *out);
+    out->next();
+}
+
 
 bool TCPHandler::receiveProxyHeader()
 {

@@ -158,6 +158,7 @@ void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & t
                 fillWordsFromBlock(packet.block);
                 continue;
 
+            case Protocol::Server::TimezoneUpdate:
             case Protocol::Server::Progress:
             case Protocol::Server::ProfileInfo:
             case Protocol::Server::Totals:
