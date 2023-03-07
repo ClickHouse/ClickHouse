@@ -404,7 +404,7 @@ CancellationCode QueryStatus::cancelQuery(bool)
         std::lock_guard lock(executors_mutex);
         executors_snapshot = executors;
     }
-    
+
     /// We should call cancel() for each executor with unlocked executors_mutex, because
     /// cancel() can try to lock some internal mutex that is already locked by query executing
     /// thread, and query executing thread can call removePipelineExecutor and lock executors_mutex,
