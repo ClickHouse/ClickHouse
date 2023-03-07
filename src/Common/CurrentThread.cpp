@@ -40,7 +40,7 @@ ThreadStatus & CurrentThread::get()
 
 ProfileEvents::Counters & CurrentThread::getProfileEvents()
 {
-    return current_thread ? current_thread->performance_counters : ProfileEvents::global_counters;
+    return current_thread ? *current_thread->current_performance_counters : ProfileEvents::global_counters;
 }
 
 void CurrentThread::updateProgressIn(const Progress & value)
@@ -67,8 +67,8 @@ void CurrentThread::attachInternalTextLogsQueue(const std::shared_ptr<InternalTe
 
 void CurrentThread::setFatalErrorCallback(std::function<void()> callback)
 {
-    if (unlikely(!current_thread))
-        return;
+    /// It does not make sense to set a callback for sending logs to a client if there's no thread status
+    chassert(current_thread);
     current_thread->setFatalErrorCallback(callback);
 }
 
@@ -108,6 +108,25 @@ ThreadGroupStatusPtr CurrentThread::getGroup()
         return nullptr;
 
     return current_thread->getThreadGroup();
+}
+
+MemoryTracker * CurrentThread::getUserMemoryTracker()
+{
+    if (unlikely(!current_thread))
+        return nullptr;
+
+    auto * tracker = current_thread->memory_tracker.getParent();
+    while (tracker && tracker->level != VariableContext::User)
+        tracker = tracker->getParent();
+
+    return tracker;
+}
+
+void CurrentThread::flushUntrackedMemory()
+{
+    if (unlikely(!current_thread))
+        return;
+    current_thread->flushUntrackedMemory();
 }
 
 }
