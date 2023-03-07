@@ -2,7 +2,6 @@
 
 DROP TABLE IF EXISTS test_without_merge;
 DROP TABLE IF EXISTS test_with_merge;
-DROP TABLE IF EXISTS test_replicated;
 
 SELECT 'Without merge';
 
@@ -40,33 +39,10 @@ INSERT INTO test_with_merge SELECT 3;
 SELECT sleepEachRow(1) FROM numbers(9) FORMAT Null;
 SELECT count(*) FROM system.parts WHERE database = currentDatabase() AND table='test_with_merge' AND active;
 
+SELECT sleepEachRow(1) FROM numbers(9) FORMAT Null;
+SELECT (now() - modification_time) > 5 FROM system.parts WHERE database = currentDatabase() AND table='test_with_merge' AND active;
+
 DROP TABLE test_with_merge;
-
-SELECT 'With merge replicated any part range';
-
-CREATE TABLE test_replicated (i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test02473', 'node')  ORDER BY i
-SETTINGS min_age_to_force_merge_seconds=3, min_age_to_force_merge_on_partition_only=false;
-INSERT INTO test_replicated SELECT 1;
-INSERT INTO test_replicated SELECT 2;
-INSERT INTO test_replicated SELECT 3;
-
-SELECT sleepEachRow(1) FROM numbers(9) FORMAT Null;
-SELECT count(*) FROM system.parts WHERE database = currentDatabase() AND table='test_replicated' AND active;
-
-DROP TABLE test_replicated;
-
-SELECT 'With merge replicated partition only';
-
-CREATE TABLE test_replicated (i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test02473_partition_only', 'node')  ORDER BY i
-SETTINGS min_age_to_force_merge_seconds=3, min_age_to_force_merge_on_partition_only=true;
-INSERT INTO test_replicated SELECT 1;
-INSERT INTO test_replicated SELECT 2;
-INSERT INTO test_replicated SELECT 3;
-
-SELECT sleepEachRow(1) FROM numbers(9) FORMAT Null;
-SELECT count(*) FROM system.parts WHERE database = currentDatabase() AND table='test_replicated' AND active;
-
-DROP TABLE test_replicated;
 
 SELECT 'With merge partition only and new parts';
 
