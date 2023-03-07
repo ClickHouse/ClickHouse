@@ -1,7 +1,6 @@
-#pragma once
+#include <Common/likePatternToRegexp.h>
 
 #include <Common/Exception.h>
-#include <base/types.h>
 
 namespace DB
 {
@@ -11,8 +10,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
 }
 
-/// Transforms the [I]LIKE expression into regexp re2. For example, abc%def -> ^abc.*def$
-inline String likePatternToRegexp(std::string_view pattern)
+String likePatternToRegexp(std::string_view pattern)
 {
     String res;
     res.reserve(pattern.size() * 2);
