@@ -593,8 +593,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
                 Names queried_columns = syntax_analyzer_result->requiredSourceColumns();
                 const auto & supported_prewhere_columns = storage->supportedPrewhereColumns();
-                if (supported_prewhere_columns.has_value())
-                    std::erase_if(queried_columns, [&](const auto & name) { return !supported_prewhere_columns->contains(name); });
 
                 MergeTreeWhereOptimizer{
                     current_info,
@@ -602,6 +600,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                     std::move(column_compressed_sizes),
                     metadata_snapshot,
                     queried_columns,
+                    supported_prewhere_columns,
                     log};
             }
         }
