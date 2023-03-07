@@ -102,7 +102,12 @@ private:
 
         if (and_operands.size() == 1)
         {
-            assert(!function_node.getResultType()->isNullable());
+            /// AND operator can have UInt8 or bool as its type.
+            /// bool is used if a bool constant is at least one operand.
+            /// Because we reduce the number of operands here by eliminating the same equality checks,
+            /// the only situation we can end up here is we had AND check where all the equality checks are the same so we know the type is UInt8.
+            /// Otherwise, we will have > 1 operands and we don't have to do anything.
+            assert(!function_node.getResultType()->isNullable() && and_operands[0]->getResultType()->equals(*function_node.getResultType()));
             node = std::move(and_operands[0]);
             return;
         }
@@ -204,9 +209,17 @@ private:
 
         if (or_operands.size() == 1)
         {
-            assert(!function_node.getResultType()->isNullable());
-            node = std::move(or_operands[0]);
-            return;
+            /// if the result type of operand is the same as the result type of OR
+            /// we can replace OR with the operand
+            if (or_operands[0]->getResultType()->equals(*function_node.getResultType()))
+            {
+                assert(!function_node.getResultType()->isNullable());
+                node = std::move(or_operands[0]);
+                return;
+            }
+
+            /// otherwise add a stub 0 to make OR correct
+            or_operands.push_back(std::make_shared<ConstantNode>(static_cast<UInt8>(0)));
         }
 
         auto or_function_resolver = FunctionFactory::instance().get("or", getContext());
