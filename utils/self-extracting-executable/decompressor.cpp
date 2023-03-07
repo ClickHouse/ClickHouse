@@ -170,7 +170,7 @@ int decompress(char * input, char * output, off_t start, off_t end, size_t max_n
 
 bool isSudo()
 {
-    return getuid() == 0 && geteuid() == 0 && getenv("SUDO_USER") && getenv("SUDO_UID") && getenv("SUDO_GID"); // NOLINT(concurrency-mt-unsafe)
+    return geteuid() == 0 && getenv("SUDO_USER") && getenv("SUDO_UID") && getenv("SUDO_GID"); // NOLINT(concurrency-mt-unsafe)
 }
 
 /// Read data about files and decomrpess them.
@@ -423,6 +423,13 @@ int main(int/* argc*/, char* argv[])
     else
         name = file_path;
 
+    struct stat input_info;
+    if (0 != stat(self, &input_info))
+    {
+        perror("stat");
+        return 1;
+    }
+
 #if !defined(OS_DARWIN) && !defined(OS_FREEBSD)
     /// get inode of this executable
     uint64_t inode = getInode(self);
@@ -447,13 +454,6 @@ int main(int/* argc*/, char* argv[])
     if (lockf(lock, F_LOCK, 0))
     {
         perror("lockf");
-        return 1;
-    }
-
-    struct stat input_info;
-    if (0 != stat(self, &input_info))
-    {
-        perror("stat");
         return 1;
     }
 
