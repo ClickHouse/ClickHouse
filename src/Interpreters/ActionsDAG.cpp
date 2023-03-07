@@ -1946,6 +1946,9 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
     }
 
     auto conjunction = getConjunctionNodes(predicate, allowed_nodes);
+    if (conjunction.rejected.size() == 1 && WhichDataType{removeNullable(conjunction.rejected.front()->result_type)}.isFloat())
+        return nullptr;
+
     auto actions = cloneActionsForConjunction(conjunction.allowed, all_inputs);
     if (!actions)
         return nullptr;
@@ -2011,10 +2014,12 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
                 node.children.swap(new_children);
                 *predicate = std::move(node);
             }
-            else
+            else if (!WhichDataType{removeNullable(new_children.front()->result_type)}.isFloat())
             {
                 /// If type is different, cast column.
                 /// This case is possible, cause AND can use any numeric type as argument.
+                /// But casting floats to UInt8 or Bool produces different results.
+                /// so we can't apply this optimization to them.
                 Node node;
                 node.type = ActionType::COLUMN;
                 node.result_name = predicate->result_type->getName();
@@ -2036,8 +2041,20 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
         else
         {
             /// Predicate is function AND, which still have more then one argument.
+            /// Or there is only one argument that is a float and we can't just
+            /// remove the AND.
             /// Just update children and rebuild it.
             predicate->children.swap(new_children);
+            if (WhichDataType{removeNullable(predicate->children.front()->result_type)}.isFloat())
+            {
+                Node node;
+                node.type = ActionType::COLUMN;
+                node.result_name = "1";
+                node.column = DataTypeUInt8().createColumnConst(0, 1u);
+                node.result_type = std::make_shared<DataTypeUInt8>();
+                const auto * const_col = &nodes.emplace_back(std::move(node));
+                predicate->children.emplace_back(const_col);
+            }
             auto arguments = prepareFunctionArguments(predicate->children);
 
             FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
