@@ -388,7 +388,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
 
                 if (static_cast<size_t>(best_partition_it->second.min_age) >= data_settings->min_age_to_force_merge_seconds)
                     return selectAllPartsToMergeWithinPartition(
-                        future_part, can_merge_callback, best_partition_it->first, true, metadata_snapshot, txn, out_disable_reason);
+                        future_part, can_merge_callback, best_partition_it->first, true, metadata_snapshot, txn, out_disable_reason, true);
             }
 
             if (out_disable_reason)
