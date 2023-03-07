@@ -127,6 +127,9 @@ void ExpressionStep::updateOutputStream()
     output_stream = createOutputStream(
         input_streams.front(), ExpressionTransform::transformHeader(input_streams.front().header, *actions_dag), getDataStreamTraits());
 
+    if (!getDataStreamTraits().preserves_sorting)
+        return;
+
     const ActionsDAGPtr & actions = actions_dag;
     LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "ActionsDAG dump:\n{}", actions->dumpDAG());
 

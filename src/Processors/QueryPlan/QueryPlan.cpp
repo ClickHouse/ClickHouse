@@ -15,6 +15,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
+#include <Processors/QueryPlan/QueryPlanVisitor.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -453,20 +454,29 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
     }
 }
 
-void updateRootInputStream(QueryPlan::Node & root)
+static void updateDataStreams(QueryPlan::Node & root)
 {
-    auto* to = root.step.get();
-    const auto * from = root.children.front()->step.get();
+    class UpdateDataStreams : public QueryPlanVisitor<UpdateDataStreams, false>
+    {
+    public:
+        explicit UpdateDataStreams(QueryPlan::Node * root_) : QueryPlanVisitor<UpdateDataStreams, false>(root_) { }
 
-    auto * to_update = dynamic_cast<ITransformingStep *>(to);
-    if (!to_update)
-        return;
-    const auto * update_from = dynamic_cast<const ITransformingStep *>(from);
-    if (!update_from)
-        return;
+        static bool visitTopDownImpl(QueryPlan::Node * /*current_node*/, QueryPlan::Node * /*parent_node*/) { return true; }
 
-    if (update_from->hasOutputStream())
-        to_update->updateInputStream(update_from->getOutputStream());
+        static void visitBottomUpImpl(QueryPlan::Node * current_node, QueryPlan::Node * parent_node)
+        {
+            if (!parent_node || parent_node->children.size() != 1)
+                return;
+
+            if (!current_node->step->hasOutputStream())
+                return;
+
+            if (auto * parent_transform_step = dynamic_cast<ITransformingStep *>(parent_node->step.get()); parent_transform_step)
+                parent_transform_step->updateInputStream(current_node->step->getOutputStream());
+        }
+    };
+
+    UpdateDataStreams(&root).visit();
 }
 
 void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_settings)
@@ -480,7 +490,7 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
     QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes);
     QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes);
 
-    updateRootInputStream(*root);
+    updateDataStreams(*root);
 }
 
 void QueryPlan::explainEstimate(MutableColumns & columns)
