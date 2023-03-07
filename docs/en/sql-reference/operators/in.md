@@ -235,10 +235,10 @@ If `some_predicate` is not selective enough, it will return large amount of data
 
 When [max_parallel_replicas](#settings-max_parallel_replicas) is greater than 1, distributed queries are further transformed.
 
-For example, if [parallel_replicas_mode](#settings-parallel_replicas_mode) is set to `sample_key`, the following:
+For example, the following:
 ```sql
 SELECT CounterID, count() FROM distributed_table_1 WHERE UserID IN (SELECT UserID FROM local_table_2 WHERE CounterID < 100)
-SETTINGS max_parallel_replicas=3, parallel_replicas_mode='sample_key'
+SETTINGS max_parallel_replicas=3
 ```
 
 is transformed on each server into
@@ -256,4 +256,4 @@ Therefore adding the [max_parallel_replicas](#settings-max_parallel_replicas) se
 
 One workaround if local_table_2 does not meet the requirements, is to use `GLOBAL IN` or `GLOBAL JOIN`.
 
-If a table doesn't have a sampling key, more flexible options for [parallel_replicas_mode](#settings-parallel_replicas_mode) can be used that can produce different and more optimal behaviour.
+If a table doesn't have a sampling key, more flexible options for [parallel_replicas_custom_key](#settings-parallel_replicas_custom_key) can be used that can produce different and more optimal behaviour.

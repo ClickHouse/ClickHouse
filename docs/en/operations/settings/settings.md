@@ -1248,8 +1248,8 @@ Possible values:
 Default value: 1.
 
 :::warning
-Disable this setting if you use [max_parallel_replicas](#settings-max_parallel_replicas) with [parallel_replicas_mode](#settings-parallel_replicas_mode) set to `sample_key` or `read_tasks`.
-If [parallel_replicas_mode](#settings-parallel_replicas_mode) is set to `custom_key`, disable this setting only if it's used on a cluster with multiple shards containing multiple replicas.
+Disable this setting if you use [max_parallel_replicas](#settings-max_parallel_replicas) without [parallel_replicas_custom_key](#settings-parallel_replicas_custom_key).
+If [parallel_replicas_custom_key](#settings-parallel_replicas_custom_key) is set, disable this setting only if it's used on a cluster with multiple shards containing multiple replicas.
 If it's used on a cluster with a single shard and multiple replicas, disabling this setting will have negative effects.
 :::
 
@@ -1275,11 +1275,14 @@ Default value: `1`.
 
 **Additional Info**
 
-This options will produce different results depending on the value of [parallel_replicas_mode](#settings-parallel_replicas_mode).
+This options will produce different results depending on the settings used.
 
-### `sample_key`
+:::warning
+This setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain requirements. See [Distributed Subqueries and max_parallel_replicas](../../sql-reference/operators/in.md/#max_parallel_replica-subqueries) for more details.
+:::
 
-If [parallel_replicas_mode](#settings-parallel_replicas_mode) is set to `sample_key`, this setting is useful for replicated tables with a sampling key. 
+### Parallel processing using `SAMPLE` key
+
 A query may be processed faster if it is executed on several servers in parallel. But the query performance may degrade in the following cases:
 
 - The position of the sampling key in the partitioning key does not allow efficient range scans.
@@ -1287,45 +1290,21 @@ A query may be processed faster if it is executed on several servers in parallel
 - The sampling key is an expression that is expensive to calculate.
 - The cluster latency distribution has a long tail, so that querying more servers increases the query overall latency.
 
-### `custom_key`
+### Parallel processing using [parallel_replicas_custom_key](#settings-parallel_replicas_custom_key)
 
-If [parallel_replicas_mode](#settings-parallel_replicas_mode) is set to `custom_key`, this setting is useful for any replicated table.
-A query may be processed faster if it is executed on several servers in parallel but it depends on the used [parallel_replicas_custom_key](#settings-parallel_replicas_custom_key)
-and [parallel_replicas_custom_key_filter_type](#settings-parallel_replicas_custom_key_filter_type).
-
-Use `default` for [parallel_replicas_custom_key_filter_type](#settings-parallel_replicas_custom_key_filter_type) unless the data is split across the entire integer space (e.g. column contains hash values),
-then `range` should be used.
-Simple expressions using primary keys are preferred.
-
-If the `custom_key` mode is used on a cluster that consists of a single shard with multiple replicas, those replicas will be converted into virtual shards.
-Otherwise, it will behave same as `sample_key` mode, it will use multiple replicas of each shard.
-
-:::warning
-This setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain requirements. See [Distributed Subqueries and max_parallel_replicas](../../sql-reference/operators/in.md/#max_parallel_replica-subqueries) for more details.
-:::
-
-## parallel_replicas_mode {#settings-parallel_replicas_mode}
-
-Mode of splitting work between replicas.
-
-Possible values:
-
--   `sample_key` — Use `SAMPLE` key defined in the `SAMPLE BY` clause to split the work between replicas.
--   `custom_key` — Define an arbitrary integer expression to use for splitting work between replicas.
--   `read_tasks` — Split tasks for reading physical parts between replicas.
-
-Default value: `sample_key`.
+This setting is useful for any replicated table.
 
 ## parallel_replicas_custom_key {#settings-parallel_replicas_custom_key}
 
-Map of arbitrary integer expression that can be used to split work between replicas for a specific table.
-If it's used with `cluster` function, the key can be name of the local table defined inside the `cluster` function.
-If it's used with `Distributed` engine, the key can be name of the distributed table, alias or the local table for which the `Distributed` engine is created.
+An arbitrary integer expression that can be used to split work between replicas for a specific table.
 The value can be any integer expression.
+A query may be processed faster if it is executed on several servers in parallel but it depends on the used [parallel_replicas_custom_key](#settings-parallel_replicas_custom_key)
+and [parallel_replicas_custom_key_filter_type](#settings-parallel_replicas_custom_key_filter_type).
 
-Used only if `parallel_replicas_mode` is set to `custom_key`.
+Simple expressions using primary keys are preferred.
 
-Default value: `{}`.
+If the setting is used on a cluster that consists of a single shard with multiple replicas, those replicas will be converted into virtual shards.
+Otherwise, it will behave same as for `SAMPLE` key, it will use multiple replicas of each shard.
 
 ## parallel_replicas_custom_key_filter_type {#settings-parallel_replicas_custom_key_filter_type}
 

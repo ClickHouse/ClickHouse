@@ -671,7 +671,7 @@ std::unique_ptr<Cluster> Cluster::getClusterWithMultipleShards(const std::vector
 namespace
 {
 
-void shuffleReplicas(auto & replicas, const Settings & settings)
+void shuffleReplicas(std::vector<Cluster::Address> & replicas, const Settings & settings, size_t replicas_needed)
 {
     std::random_device rd;
     std::mt19937 gen{rd()};
@@ -679,15 +679,25 @@ void shuffleReplicas(auto & replicas, const Settings & settings)
     if (settings.prefer_localhost_replica)
     {
         // force for local replica to always be included
-        auto local_replica = std::find_if(replicas.begin(), replicas.end(), [](const auto & replica) { return replica.is_local; });
-        if (local_replica != replicas.end())
-        {
-            if (local_replica != replicas.begin())
-                std::swap(*replicas.begin(), *local_replica);
+        auto first_non_local_replica = std::partition(replicas.begin(), replicas.end(), [](const auto & replica) { return replica.is_local; });
+        size_t local_replicas_count = first_non_local_replica - replicas.begin();
 
-            std::shuffle(replicas.begin() + 1, replicas.end(), gen);
+        if (local_replicas_count == replicas_needed)
+        {
+            /// we have exact amount of local replicas as needed, no need to do anything
             return;
         }
+
+        if (local_replicas_count > replicas_needed)
+        {
+            /// we can use only local replicas, shuffle them
+            std::shuffle(replicas.begin(), first_non_local_replica, gen);
+            return;
+        }
+
+        /// shuffle just non local replicas
+        std::shuffle(first_non_local_replica, replicas.end(), gen);
+        return;
     }
 
     std::shuffle(replicas.begin(), replicas.end(), gen);
@@ -751,7 +761,7 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
         {
             auto shuffled_replicas = replicas;
             // shuffle replicas so we don't always pick the same subset
-            shuffleReplicas(shuffled_replicas, settings);
+            shuffleReplicas(shuffled_replicas, settings, max_replicas_from_shard);
             create_shards_from_replicas(std::span{shuffled_replicas.begin(), max_replicas_from_shard});
         }
     }
