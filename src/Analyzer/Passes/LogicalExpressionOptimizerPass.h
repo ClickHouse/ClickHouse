@@ -6,9 +6,9 @@ namespace DB
 {
 
 /**
- * This pass tries to do optimizations on logical expression
+ * This pass tries to do optimizations on logical expression:
  *
- * Replaces chains of equality functions inside an OR with a single IN operator.
+ * 1. Replaces chains of equality functions inside an OR with a single IN operator.
  * The replacement is done if:
  *  - one of the operands  of the equality function is a constant
  *  - length of chain is at least 'optimize_min_equality_disjunction_chain_length' long OR the expression has type of LowCardinality
@@ -26,7 +26,7 @@ namespace DB
  * WHERE b = 'test' OR a IN (1, 2);
  * -------------------------------
  *
- * Removes duplicate OR checks
+ * 2. Removes duplicate OR checks
  * -------------------------------
  * SELECT *
  * FROM table
@@ -39,7 +39,7 @@ namespace DB
  * WHERE a = 1 OR b = 'test';
  * -------------------------------
  *
- * Replaces AND chains with a single constant.
+ * 3. Replaces AND chains with a single constant.
  * The replacement is done if:
  *  - one of the operands  of the equality function is a constant
  *  - constants are different for same expression
@@ -55,7 +55,7 @@ namespace DB
  * WHERE 0;
  * -------------------------------
  *
- * Removes duplicate AND checks
+ * 4. Removes duplicate AND checks
  * -------------------------------
  * SELECT *
  * FROM table
@@ -74,7 +74,7 @@ class LogicalExpressionOptimizerPass final : public IQueryTreePass
 public:
     String getName() override { return "LogicalExpressionOptimizer"; }
 
-    String getDescription() override { return "Transform all the 'or's with equality check to a single IN function"; }
+    String getDescription() override { return "Transform equality chain to a single IN function or a constant if possible"; }
 
     void run(QueryTreeNodePtr query_tree_node, ContextPtr context) override;
 };
