@@ -70,7 +70,7 @@ private:
     /// Used when there are single level to get.
     Float64 level = 0.5;
 
-    /// Used when function name is "quantileApprox" or "quantilesApprox"
+    /// Used for the approximate version of the algorithm (Greenwald-Khanna)
     ssize_t accuracy = 10000;
 
     DataTypePtr & argument_type;
