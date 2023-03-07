@@ -115,14 +115,14 @@ Result:
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-## quantilesGK
+## quantilesApprox
 
 Exactly computes the [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using the [Greenwald-Khanna](https://dl.acm.org/doi/10.1145/375663.375670) algorithm.
 
 **Syntax**
 
 ``` sql
-quantilesGK(accuracy, level1, level2, ...)(expr)
+quantilesApprox(accuracy, level1, level2, ...)(expr)
 ```
 
 **Arguments**
@@ -152,9 +152,9 @@ Query:
 
 ``` sql
 WITH arrayJoin([0, 6, 7, 9, 10]) AS x
-SELECT quantilesGK(100, 0.1, 0.2, 0.3)(x)
+SELECT quantilesApprox(100, 0.1, 0.2, 0.3)(x)
 
-┌─quantilesGK(100, 0.1, 0.2, 0.3)(x)─┐
-│ [0,0,6]                            │
-└────────────────────────────────────┘
+┌─quantilesApprox(100, 0.1, 0.2, 0.3)(x)─┐
+│ [0,0,6]                                │
+└────────────────────────────────────────┘
 ```

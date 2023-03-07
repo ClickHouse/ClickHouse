@@ -1,9 +1,9 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/quantileGK
+slug: /en/sql-reference/aggregate-functions/reference/quantileApprox
 sidebar_position: 204
 ---
 
-# quantileGK
+# quantileApprox
 
 Computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using the [Greenwald-Khanna](http://infolab.stanford.edu/~datar/courses/cs361a/papers/quantiles.pdf) algorithm.
 
@@ -11,10 +11,10 @@ Computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric dat
 **Syntax**
 
 ``` sql
-quantileGK(accuracy, level)(expr)
+quantileApprox(accuracy, level)(expr)
 ```
 
-Alias: `medianGK`.
+Alias: `medianApprox`.
 
 **Arguments**
 
@@ -40,12 +40,12 @@ Type:
 
 ``` sql
 WITH arrayJoin([0, 6, 7, 9, 10]) AS x
-SELECT quantileGK(100, 0.5)(x)
+SELECT quantileApprox(100, 0.5)(x)
 
 
-┌─quantileGK(100, 0.5)(x)─┐
-│                       7 │
-└─────────────────────────┘
+┌─quantileApprox(100, 0.5)(x)─┐
+│                           7 │
+└──────────────----───────────┘
 ```
 
 
