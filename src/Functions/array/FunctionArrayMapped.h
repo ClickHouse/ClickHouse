@@ -37,7 +37,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
-    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
+    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -361,7 +361,7 @@ public:
                     if (getOffsetsPtr(*column_array) != offsets_column
                         && getOffsets(*column_array) != typeid_cast<const ColumnArray::ColumnOffsets &>(*offsets_column).getData())
                         throw Exception(
-                            ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH,
+                            ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
                             "{}s passed to {} must have equal size",
                             argument_type_name,
                             getName());

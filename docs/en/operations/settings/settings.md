@@ -851,6 +851,15 @@ Result:
 └─────────────┴───────────┘
 ```
 
+## log_processors_profiles {#settings-log_processors_profiles}
+
+Write time that processor spent during execution/waiting for data to `system.processors_profile_log` table.
+
+See also:
+
+-   [`system.processors_profile_log`](../../operations/system-tables/processors_profile_log.md#system-processors_profile_log)
+-   [`EXPLAIN PIPELINE`](../../sql-reference/statements/explain.md#explain-pipeline)
+
 ## max_insert_block_size {#settings-max_insert_block_size}
 
 The size of blocks (in a count of rows) to form for insertion into a table.
@@ -3939,3 +3948,71 @@ Default value: `0`.
 :::note
 Use this setting only for backward compatibility if your use cases depend on old syntax.
 :::
+
+## final {#final}
+
+Automatically applies [FINAL](../../sql-reference/statements/select/from/#final-modifier) modifier to all tables in a query, to tables where [FINAL](../../sql-reference/statements/select/from/#final-modifier) is applicable, including joined tables and tables in sub-queries, and 
+distributed tables.
+
+Possible values:
+
+- 0 - disabled
+- 1 - enabled
+
+Default value: `0`.
+
+Example:
+
+```sql
+CREATE TABLE test
+(
+    key Int64,
+    some String
+)
+ENGINE = ReplacingMergeTree
+ORDER BY key;
+
+INSERT INTO test FORMAT Values (1, 'first');
+INSERT INTO test FORMAT Values (1, 'second');
+
+SELECT * FROM test;
+┌─key─┬─some───┐
+│   1 │ second │
+└─────┴────────┘
+┌─key─┬─some──┐
+│   1 │ first │
+└─────┴───────┘
+
+SELECT * FROM test SETTINGS final = 1;
+┌─key─┬─some───┐
+│   1 │ second │
+└─────┴────────┘
+
+SET final = 1;
+SELECT * FROM test;
+┌─key─┬─some───┐
+│   1 │ second │
+└─────┴────────┘
+```
+
+## asterisk_include_materialized_columns {#asterisk_include_materialized_columns}
+
+Include [MATERIALIZED](../../sql-reference/statements/create/table/#materialized) columns for wildcard query (`SELECT *`).
+
+Possible values:
+
+- 0 - disabled
+- 1 - enabled
+
+Default value: `0`.
+
+## asterisk_include_alias_columns {#asterisk_include_alias_columns}
+
+Include [ALIAS](../../sql-reference/statements/create/table/#alias) columns for wildcard query (`SELECT *`).
+
+Possible values:
+
+- 0 - disabled
+- 1 - enabled
+
+Default value: `0`.
