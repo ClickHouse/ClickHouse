@@ -86,31 +86,38 @@ namespace
 
     struct DateTime
     {
-        Int32 year = 1970;
-        Int32 month = 1;
-        Int32 day = 1;
+        /// If both week_date_format and week_date_format is false, date is composed of year, month and day
+        Int32 year = 1970; /// year, range [1970, 2106]
+        Int32 month = 1; /// month of year, range [1, 12]
+        Int32 day = 1; /// day of month, range [1, 31]
 
-        Int32 week = 1; // Week of year based on ISO week date, e.g: 27
-        Int32 day_of_week = 1; // Day of week, Monday:1, Tuesday:2, ..., Sunday:7
-        bool week_date_format = false;
+        Int32 week = 1; /// ISO week of year, range [1, 53]
+        Int32 day_of_week = 1; /// day of week, range [1, 7], 1 represents Monday, 2 represents Tuesday...
+        bool week_date_format
+            = false; /// If true, date is composed of week year(reuse year), week of year(use week) and day of week(use day_of_week)
 
-        Int32 day_of_year = 1;
-        bool day_of_year_format = false;
+        Int32 day_of_year = 1; /// day of year, range [1, 366]
+        bool day_of_year_format = false; /// If true, date is composed of year(reuse year), day of year(use day_of_year)
 
-        bool century_format = false;
+        bool century_format = false; /// If true, year is calculated from century, range [19, 21]
 
-        bool is_year_of_era = false; // Year of era cannot be zero or negative.
-        bool has_year = false; // Whether year was explicitly specified.
+        bool is_year_of_era = false; /// If true, year is calculated from era and year of era, the latter cannot be zero or negative.
+        bool has_year = false; /// Whether year was explicitly specified.
 
+        /// If is_clock_hour = true, is_hour_of_half_day = true, hour's range is [1, 12]
+        /// If is_clock_hour = true, is_hour_of_half_day = false, hour's range is [1, 24]
+        /// If is_clock_hour = false, is_hour_of_half_day = true, hour's range is [0, 11]
+        /// If is_clock_hour = false, is_hour_of_half_day = false, hour's range is [0, 23]
         Int32 hour = 0;
-        Int32 minute = 0;
-        Int32 second = 0;
+        Int32 minute = 0; /// range [0, 59]
+        Int32 second = 0; /// range [0, 59]
 
-        bool is_am = true; // AM -> true, PM -> false
-        bool is_clock_hour = false; // Whether most recent hour specifier is clockhour
-        bool is_hour_of_half_day = false; // Whether most recent hour specifier is of half day.
+        bool is_am = true; /// AM -> true, PM -> false
+        bool is_clock_hour = false; /// Whether the hour is clockhour
+        bool is_hour_of_half_day = false; /// Whether the hour is of half day
 
-        std::optional<Int64> time_zone_offset;
+        bool has_time_zone_offset = false; /// If true, time zone offset if explicitly specified.
+        Int32 time_zone_offset = 0; /// Offset in seconds between current timezone to UTC.
 
         void reset()
         {
@@ -127,18 +134,19 @@ namespace
 
             century_format = false;
 
-            is_year_of_era = false; // Year of era cannot be zero or negative.
-            has_year = false; // Whether year was explicitly specified.
+            is_year_of_era = false;
+            has_year = false;
 
             hour = 0;
             minute = 0;
             second = 0;
 
-            is_am = true; // AM -> true, PM -> false
-            is_clock_hour = false; // Whether most recent hour specifier is clockhour
-            is_hour_of_half_day = false; // Whether most recent hour specifier is of half day.
+            is_am = true;
+            is_clock_hour = false;
+            is_hour_of_half_day = false;
 
-            time_zone_offset.reset();
+            has_time_zone_offset = false;
+            time_zone_offset = 0;
         }
 
         void setCentury(Int32 century)
@@ -432,12 +440,12 @@ namespace
             Int64 seconds_since_epoch = days_since_epoch * 86400 + hour * 3600 + minute * 60 + second;
 
             /// Time zone is not specified, use local time zone
-            if (!time_zone_offset)
-                *time_zone_offset = time_zone.timezoneOffset(seconds_since_epoch);
+            if (has_time_zone_offset)
+                time_zone_offset = static_cast<Int32>(time_zone.timezoneOffset(seconds_since_epoch));
 
             /// Time zone is specified in format string.
-            if (seconds_since_epoch >= *time_zone_offset)
-                seconds_since_epoch -= *time_zone_offset;
+            if (seconds_since_epoch >= time_zone_offset)
+                seconds_since_epoch -= time_zone_offset;
             else
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Seconds since epoch is negative");
 
@@ -926,7 +934,8 @@ namespace
                 Int32 minute;
                 cur = readNumber2<Int32, NeedCheckSpace::No>(cur, end, flag, minute);
 
-                *date.time_zone_offset = sign * (hour * 3600 + minute * 60);
+                date.has_time_zone_offset = true;
+                date.time_zone_offset = sign * (hour * 3600 + minute * 60);
                 return cur;
             }
 
