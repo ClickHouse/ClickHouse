@@ -1054,7 +1054,7 @@ void StorageDistributed::initializeFromDisk()
     {
         pool.scheduleOrThrowOnError([&]()
         {
-            createDirectoryMonitors(disk);
+            initializeDirectoryQueuesForDisk(disk);
         });
     }
     pool.wait();
@@ -1093,7 +1093,7 @@ void StorageDistributed::shutdown()
 void StorageDistributed::drop()
 {
     // Some INSERT in-between shutdown() and drop() can call
-    // requireDirectoryMonitor() again, so call shutdown() to clear them, but
+    // getDirectoryQueue() again, so call shutdown() to clear them, but
     // when the drop() (this function) executed none of INSERT is allowed in
     // parallel.
     //
@@ -1156,7 +1156,7 @@ StoragePolicyPtr StorageDistributed::getStoragePolicy() const
     return storage_policy;
 }
 
-void StorageDistributed::createDirectoryMonitors(const DiskPtr & disk)
+void StorageDistributed::initializeDirectoryQueuesForDisk(const DiskPtr & disk)
 {
     const std::string path(disk->getPath() + relative_data_path);
     fs::create_directories(path);
@@ -1168,11 +1168,14 @@ void StorageDistributed::createDirectoryMonitors(const DiskPtr & disk)
         const auto & dir_path = it->path();
         if (std::filesystem::is_directory(dir_path))
         {
+            /// Created by DistributedSink
             const auto & tmp_path = dir_path / "tmp";
-
-            /// "tmp" created by DistributedSink
             if (std::filesystem::is_directory(tmp_path) && std::filesystem::is_empty(tmp_path))
                 std::filesystem::remove(tmp_path);
+
+            const auto & broken_path = dir_path / "broken";
+            if (std::filesystem::is_directory(broken_path) && std::filesystem::is_empty(broken_path))
+                std::filesystem::remove(broken_path);
 
             if (std::filesystem::is_empty(dir_path))
             {
@@ -1182,14 +1185,14 @@ void StorageDistributed::createDirectoryMonitors(const DiskPtr & disk)
             }
             else
             {
-                requireDirectoryMonitor(disk, dir_path.filename().string());
+                getDirectoryQueue(disk, dir_path.filename().string());
             }
         }
     }
 }
 
 
-StorageDistributedDirectoryMonitor& StorageDistributed::requireDirectoryMonitor(const DiskPtr & disk, const std::string & name)
+DistributedAsyncInsertDirectoryQueue & StorageDistributed::getDirectoryQueue(const DiskPtr & disk, const std::string & name)
 {
     const std::string & disk_path = disk->getPath();
     const std::string key(disk_path + name);
@@ -1198,8 +1201,8 @@ StorageDistributedDirectoryMonitor& StorageDistributed::requireDirectoryMonitor(
     auto & node_data = cluster_nodes_data[key];
     if (!node_data.directory_monitor)
     {
-        node_data.connection_pool = StorageDistributedDirectoryMonitor::createPool(name, *this);
-        node_data.directory_monitor = std::make_unique<StorageDistributedDirectoryMonitor>(
+        node_data.connection_pool = DistributedAsyncInsertDirectoryQueue::createPool(name, *this);
+        node_data.directory_monitor = std::make_unique<DistributedAsyncInsertDirectoryQueue>(
             *this, disk, relative_data_path + name,
             node_data.connection_pool,
             monitors_blocker,
@@ -1208,9 +1211,9 @@ StorageDistributedDirectoryMonitor& StorageDistributed::requireDirectoryMonitor(
     return *node_data.directory_monitor;
 }
 
-std::vector<StorageDistributedDirectoryMonitor::Status> StorageDistributed::getDirectoryMonitorsStatuses() const
+std::vector<DistributedAsyncInsertDirectoryQueue::Status> StorageDistributed::getDirectoryQueueStatuses() const
 {
-    std::vector<StorageDistributedDirectoryMonitor::Status> statuses;
+    std::vector<DistributedAsyncInsertDirectoryQueue::Status> statuses;
     std::lock_guard lock(cluster_nodes_mutex);
     statuses.reserve(cluster_nodes_data.size());
     for (const auto & node : cluster_nodes_data)
@@ -1221,7 +1224,7 @@ std::vector<StorageDistributedDirectoryMonitor::Status> StorageDistributed::getD
 std::optional<UInt64> StorageDistributed::totalBytes(const Settings &) const
 {
     UInt64 total_bytes = 0;
-    for (const auto & status : getDirectoryMonitorsStatuses())
+    for (const auto & status : getDirectoryQueueStatuses())
         total_bytes += status.bytes_count;
     return total_bytes;
 }
@@ -1382,7 +1385,7 @@ void StorageDistributed::flushClusterNodesAllData(ContextPtr local_context)
     /// Sync SYSTEM FLUSH DISTRIBUTED with TRUNCATE
     auto table_lock = lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
 
-    std::vector<std::shared_ptr<StorageDistributedDirectoryMonitor>> directory_monitors;
+    std::vector<std::shared_ptr<DistributedAsyncInsertDirectoryQueue>> directory_monitors;
 
     {
         std::lock_guard lock(cluster_nodes_mutex);

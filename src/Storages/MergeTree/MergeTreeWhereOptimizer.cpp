@@ -32,10 +32,12 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     std::unordered_map<std::string, UInt64> column_sizes_,
     const StorageMetadataPtr & metadata_snapshot,
     const Names & queried_columns_,
+    const std::optional<NameSet> & supported_columns_,
     Poco::Logger * log_)
     : table_columns{collections::map<std::unordered_set>(
         metadata_snapshot->getColumns().getAllPhysical(), [](const NameAndTypePair & col) { return col.name; })}
     , queried_columns{queried_columns_}
+    , supported_columns{supported_columns_}
     , sorting_key_names{NameSet(
           metadata_snapshot->getSortingKey().column_names.begin(), metadata_snapshot->getSortingKey().column_names.end())}
     , block_with_constants{KeyCondition::getBlockWithConstants(query_info.query->clone(), query_info.syntax_analyzer_result, context)}
@@ -195,6 +197,8 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node,
             && (!is_final || isExpressionOverSortingKey(node))
             /// Only table columns are considered. Not array joined columns. NOTE We're assuming that aliases was expanded.
             && isSubsetOfTableColumns(cond.identifiers)
+            /// Some identifiers can unable to support PREWHERE (usually because of different types in Merge engine)
+            && identifiersSupportsPrewhere(cond.identifiers)
             /// Do not move conditions involving all queried columns.
             && cond.identifiers.size() < queried_columns.size();
 
@@ -319,6 +323,18 @@ UInt64 MergeTreeWhereOptimizer::getIdentifiersColumnSize(const NameSet & identif
             size += column_sizes.at(identifier);
 
     return size;
+}
+
+bool MergeTreeWhereOptimizer::identifiersSupportsPrewhere(const NameSet & identifiers) const
+{
+    if (!supported_columns.has_value())
+        return true;
+
+    for (const auto & identifier : identifiers)
+        if (!supported_columns->contains(identifier))
+            return false;
+
+    return true;
 }
 
 bool MergeTreeWhereOptimizer::isExpressionOverSortingKey(const ASTPtr & ast) const
