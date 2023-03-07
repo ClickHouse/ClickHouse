@@ -98,7 +98,7 @@ protected:
 
     QueryTreeNodePtr cloneImpl() const override;
 
-    ASTPtr toASTImpl() const override;
+    ASTPtr toASTImpl(ConvertToASTOptions options) const override;
 
 private:
     Names argument_names;

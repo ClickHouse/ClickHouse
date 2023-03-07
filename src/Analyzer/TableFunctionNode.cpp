@@ -113,14 +113,14 @@ QueryTreeNodePtr TableFunctionNode::cloneImpl() const
     return result;
 }
 
-ASTPtr TableFunctionNode::toASTImpl() const
+ASTPtr TableFunctionNode::toASTImpl(ConvertToASTOptions options) const
 {
     auto table_function_ast = std::make_shared<ASTFunction>();
 
     table_function_ast->name = table_function_name;
 
     const auto & arguments = getArguments();
-    table_function_ast->children.push_back(arguments.toAST());
+    table_function_ast->children.push_back(arguments.toAST(options));
     table_function_ast->arguments = table_function_ast->children.back();
 
     return table_function_ast;
