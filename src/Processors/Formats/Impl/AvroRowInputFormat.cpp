@@ -145,6 +145,9 @@ static void insertNumber(IColumn & column, WhichDataType type, T value)
         case TypeIndex::DateTime64:
             assert_cast<ColumnDecimal<DateTime64> &>(column).insertValue(static_cast<Int64>(value));
             break;
+        case TypeIndex::IPv4:
+            assert_cast<ColumnIPv4 &>(column).insertValue(IPv4(static_cast<UInt32>(value)));
+            break;
         default:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type is not compatible with Avro");
     }
@@ -416,6 +419,15 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
         {
             size_t fixed_size = root_node->fixedSize();
             if ((target.isFixedString() && target_type->getSizeOfValueInMemory() == fixed_size) || target.isString())
+            {
+                return [tmp_fixed = std::vector<uint8_t>(fixed_size)](IColumn & column, avro::Decoder & decoder) mutable
+                {
+                    decoder.decodeFixed(tmp_fixed.size(), tmp_fixed);
+                    column.insertData(reinterpret_cast<const char *>(tmp_fixed.data()), tmp_fixed.size());
+                    return true;
+                };
+            }
+            else if (target.isIPv6() && fixed_size == sizeof(IPv6))
             {
                 return [tmp_fixed = std::vector<uint8_t>(fixed_size)](IColumn & column, avro::Decoder & decoder) mutable
                 {
