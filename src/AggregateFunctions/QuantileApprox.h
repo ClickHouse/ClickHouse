@@ -18,7 +18,7 @@ namespace ErrorCodes
 }
 
 template <typename T>
-class GKSampler
+class ApproxSampler
 {
 public:
     struct Stats
@@ -40,9 +40,9 @@ public:
         QueryResult(size_t index_, Int64 rank_, T value_) : index(index_), rank(rank_), value(value_) { }
     };
 
-    GKSampler() = default;
+    ApproxSampler() = default;
 
-    explicit GKSampler(
+    explicit ApproxSampler(
         double relative_error_,
         size_t compress_threshold_ = default_compress_threshold,
         size_t count_ = 0,
@@ -126,7 +126,7 @@ public:
     }
 
 
-    void merge(const GKSampler & other)
+    void merge(const ApproxSampler & other)
     {
         if (other.count == 0)
             return;
@@ -395,16 +395,16 @@ private:
 };
 
 template <typename Value>
-class QuantileGK
+class QuantileApprox
 {
 private:
-    using Data = GKSampler<Value>;
+    using Data = ApproxSampler<Value>;
     mutable Data data;
 
 public:
-    QuantileGK() = default;
+    QuantileApprox() = default;
 
-    explicit QuantileGK(size_t accuracy) : data(1.0 / static_cast<double>(accuracy)) { }
+    explicit QuantileApprox(size_t accuracy) : data(1.0 / static_cast<double>(accuracy)) { }
 
     void add(const Value & x)
     {
@@ -417,7 +417,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method add with weight is not implemented for GKSampler");
     }
 
-    void merge(const QuantileGK & rhs)
+    void merge(const QuantileApprox & rhs)
     {
         if (!data.isCompressed())
             data.compress();

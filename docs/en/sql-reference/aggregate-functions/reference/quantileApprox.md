@@ -5,7 +5,7 @@ sidebar_position: 204
 
 # quantileGK
 
-Computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using the [Greenwald-Khanna](https://dl.acm.org/doi/10.1145/375663.375670) algorithm.
+Computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using the [Greenwald-Khanna](http://infolab.stanford.edu/~datar/courses/cs361a/papers/quantiles.pdf) algorithm.
 
 
 **Syntax**

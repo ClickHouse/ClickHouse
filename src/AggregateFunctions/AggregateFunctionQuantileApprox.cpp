@@ -1,5 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionQuantile.h>
-#include <AggregateFunctions/QuantileGK.h>
+#include <AggregateFunctions/QuantileApprox.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Helpers.h>
 #include <DataTypes/DataTypeDate.h>
@@ -17,8 +17,8 @@ namespace ErrorCodes
 namespace
 {
 
-template <typename Value, bool _> using FuncQuantileGK = AggregateFunctionQuantile<Value, QuantileGK<Value>, NameQuantileGK, false, void, false>;
-template <typename Value, bool _> using FuncQuantilesGK = AggregateFunctionQuantile<Value, QuantileGK<Value>, NameQuantilesGK, false, void, true>;
+template <typename Value, bool _> using FuncQuantileApprox = AggregateFunctionQuantile<Value, QuantileApprox<Value>, NameQuantileApprox, false, void, false>;
+template <typename Value, bool _> using FuncQuantilesApprox = AggregateFunctionQuantile<Value, QuantileApprox<Value>, NameQuantilesApprox, false, void, true>;
 
 template <template <typename, bool> class Function>
 AggregateFunctionPtr createAggregateFunctionQuantile(
@@ -56,16 +56,16 @@ AggregateFunctionPtr createAggregateFunctionQuantile(
 
 }
 
-void registerAggregateFunctionsQuantileGK(AggregateFunctionFactory & factory)
+void registerAggregateFunctionsQuantileApprox(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
 
-    factory.registerFunction(NameQuantileGK::name, createAggregateFunctionQuantile<FuncQuantileGK>);
-    factory.registerFunction(NameQuantilesGK::name, {createAggregateFunctionQuantile<FuncQuantilesGK>, properties});
+    factory.registerFunction(NameQuantileApprox::name, createAggregateFunctionQuantile<FuncQuantileApprox>);
+    factory.registerFunction(NameQuantilesApprox::name, {createAggregateFunctionQuantile<FuncQuantilesApprox>, properties});
 
     /// 'median' is an alias for 'quantile'
-    factory.registerAlias("medianGK", NameQuantileGK::name);
+    factory.registerAlias("medianApprox", NameQuantileApprox::name);
 }
 
 }
