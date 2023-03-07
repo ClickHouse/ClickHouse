@@ -1,7 +1,7 @@
 ---
 slug: /en/interfaces/formats
 sidebar_position: 21
-sidebar_label: Input and Output Formats
+sidebar_label: All Input and Output Formats
 title: Formats for Input and Output Data
 ---
 
@@ -684,7 +684,7 @@ Example:
 ## JSONColumns {#jsoncolumns}
 
 :::tip
-The output of the JSONColumns* formats provides the ClickHouse field name and then the content of each row of the table for that field; 
+The output of the JSONColumns* formats provides the ClickHouse field name and then the content of each row of the table for that field;
 visually, the data is rotated 90 degrees to the left.
 :::
 
