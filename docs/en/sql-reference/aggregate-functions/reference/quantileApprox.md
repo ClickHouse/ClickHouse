@@ -5,8 +5,9 @@ sidebar_position: 204
 
 # quantileApprox
 
-Computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using the [Greenwald-Khanna](http://infolab.stanford.edu/~datar/courses/cs361a/papers/quantiles.pdf) algorithm.
+Computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using the [Greenwald-Khanna](http://infolab.stanford.edu/~datar/courses/cs361a/papers/quantiles.pdf) algorithm. The Greenwald-Khanna algorithm is an algorithm used to compute quantiles on a stream of data in a highly efficient manner. It was introduced by Michael Greenwald and Sanjeev Khanna in 2001. It is widely used in databases and big data systems where computing accurate quantiles on a large stream of data in real-time is necessary. The algorithm is highly efficient, taking only O(log n) space and O(log log n) time per item (where n is the size of the input). It is also highly accurate, providing an approximate quantile value with high probability. 
 
+`quantileApprox` is different from other quantile functions in ClickHouse, because it enables user to control the accuracy of the approximate quantile result.
 
 **Syntax**
 
@@ -18,7 +19,7 @@ Alias: `medianApprox`.
 
 **Arguments**
 
--   `accuracy` — Accuracy of quantile. Constant positive integer. The larger the better.
+-   `accuracy` — Accuracy of quantile. Constant positive integer. Larger accuracy value means less error. For example, if the accuracy argument is set to 100, the computed quantile will have an error no greater than 1% with high probability. There is a trade-off between the accuracy of the computed quantiles and the computational complexity of the algorithm. A larger accuracy requires more memory and computational resources to compute the quantile accurately, while a smaller accuracy argument allows for a faster and more memory-efficient computation but with a slightly lower accuracy.
 
 -   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
 
@@ -39,13 +40,33 @@ Type:
 **Example**
 
 ``` sql
-WITH arrayJoin([0, 6, 7, 9, 10]) AS x
-SELECT quantileApprox(100, 0.5)(x)
+SELECT quantileApprox(1, 0.25)(number + 1)
+FROM numbers(1000)
 
+┌─quantileApprox(1, 0.25)(plus(number, 1))─┐
+│                                        1 │
+└──────────────────────────────────────────┘
 
-┌─quantileApprox(100, 0.5)(x)─┐
-│                           7 │
-└──────────────----───────────┘
+SELECT quantileApprox(10, 0.25)(number + 1)
+FROM numbers(1000)
+
+┌─quantileApprox(10, 0.25)(plus(number, 1))─┐
+│                                       156 │
+└───────────────────────────────────────────┘
+
+SELECT quantileApprox(100, 0.25)(number + 1)
+FROM numbers(1000)
+
+┌─quantileApprox(100, 0.25)(plus(number, 1))─┐
+│                                        251 │
+└────────────────────────────────────────────┘
+
+SELECT quantileApprox(1000, 0.25)(number + 1)
+FROM numbers(1000)
+
+┌─quantileApprox(1000, 0.25)(plus(number, 1))─┐
+│                                         249 │
+└─────────────────────────────────────────────┘
 ```
 
 
