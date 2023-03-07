@@ -170,3 +170,4 @@ filter_type='range' max_replicas=3 prefer_localhost_replica=1
 0	334
 1	333
 2	333
+1
