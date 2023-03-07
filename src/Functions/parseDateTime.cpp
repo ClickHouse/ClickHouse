@@ -1756,7 +1756,7 @@ namespace
 REGISTER_FUNCTION(ParseDateTime)
 {
     factory.registerFunction<FunctionParseDateTime>();
-    factory.registerAlias("TO_UNIXTIME", "parseDateTime");
+    factory.registerAlias("TO_UNIX_TIMESTAMP", "parseDateTime");
 
     factory.registerFunction<FunctionParseDateTimeInJodaSyntax>();
 }
