@@ -110,8 +110,15 @@ ASTPtr ColumnNode::toASTImpl() const
             }
             else if (auto * table_node = column_source->as<TableNode>())
             {
-                const auto & table_storage_id = table_node->getStorageID();
-                column_identifier_parts = {table_storage_id.getDatabaseName(), table_storage_id.getTableName()};
+                if (!table_node->getTemporaryTableName().empty())
+                {
+                    column_identifier_parts = { table_node->getTemporaryTableName() };
+                }
+                else
+                {
+                    const auto & table_storage_id = table_node->getStorageID();
+                    column_identifier_parts = { table_storage_id.getDatabaseName(), table_storage_id.getTableName() };
+                }
             }
         }
     }

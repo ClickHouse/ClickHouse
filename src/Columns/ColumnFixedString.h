@@ -200,6 +200,11 @@ public:
         return getRatioOfDefaultRowsImpl<ColumnFixedString>(sample_ratio);
     }
 
+    UInt64 getNumberOfDefaultRows() const override
+    {
+        return getNumberOfDefaultRowsImpl<ColumnFixedString>();
+    }
+
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
     {
         return getIndicesOfNonDefaultRowsImpl<ColumnFixedString>(indices, from, limit);
