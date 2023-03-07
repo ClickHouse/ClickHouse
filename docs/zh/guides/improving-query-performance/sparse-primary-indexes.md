@@ -1,6 +1,6 @@
 ---
 slug: /zh/guides/improving-query-performance/sparse-primary-indexes
-sidebar_label: Sparse Primary Indexes
+sidebar_label: 主键稀疏索引
 sidebar_position: 20
 ---
 

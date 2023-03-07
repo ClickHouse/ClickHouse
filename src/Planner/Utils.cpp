@@ -13,12 +13,17 @@
 
 #include <Functions/FunctionFactory.h>
 
+#include <Storages/StorageDummy.h>
+
 #include <Interpreters/Context.h>
 
+#include <Analyzer/Utils.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
+#include <Analyzer/TableNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/JoinNode.h>
 
@@ -355,6 +360,35 @@ std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr &
 
     UInt8 predicate_value = value.safeGet<UInt8>();
     return predicate_value > 0;
+}
+
+QueryTreeNodePtr replaceTablesAndTableFunctionsWithDummyTables(const QueryTreeNodePtr & query_node,
+    const ContextPtr & context,
+    ResultReplacementMap * result_replacement_map)
+{
+    auto & query_node_typed = query_node->as<QueryNode &>();
+    auto table_expressions = extractTableExpressions(query_node_typed.getJoinTree());
+    std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> replacement_map;
+
+    for (auto & table_expression : table_expressions)
+    {
+        auto * table_node = table_expression->as<TableNode>();
+        auto * table_function_node = table_expression->as<TableFunctionNode>();
+        if (!table_node && !table_function_node)
+            continue;
+
+        const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
+        auto storage_dummy = std::make_shared<StorageDummy>(storage_snapshot->storage.getStorageID(),
+            storage_snapshot->metadata->getColumns());
+        auto dummy_table_node = std::make_shared<TableNode>(std::move(storage_dummy), context);
+
+        if (result_replacement_map)
+            result_replacement_map->emplace(table_expression, dummy_table_node);
+
+        replacement_map.emplace(table_expression.get(), std::move(dummy_table_node));
+    }
+
+    return query_node->cloneAndReplace(replacement_map);
 }
 
 }
