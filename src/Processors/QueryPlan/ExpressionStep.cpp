@@ -87,10 +87,70 @@ void ExpressionStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Expression", expression->toTree());
 }
 
+namespace
+{
+    const ActionsDAG::Node * getOriginalNodeForOutputAlias(const ActionsDAGPtr & actions, const String & output_name)
+    {
+        /// find alias in output
+        const ActionsDAG::Node * output_alias = nullptr;
+        for (const auto * node : actions->getOutputs())
+        {
+            if (node->result_name == output_name)
+            {
+                output_alias = node;
+                break;
+            }
+        }
+        if (!output_alias)
+        {
+            // logDebug("getOriginalNodeForOutputAlias: no output alias found", output_name);
+            return nullptr;
+        }
+
+        /// find original(non alias) node it refers to
+        const ActionsDAG::Node * node = output_alias;
+        while (node && node->type == ActionsDAG::ActionType::ALIAS)
+        {
+            chassert(!node->children.empty());
+            node = node->children.front();
+        }
+        if (node && node->type != ActionsDAG::ActionType::INPUT)
+            return nullptr;
+
+        return node;
+    }
+
+}
+
 void ExpressionStep::updateOutputStream()
 {
     output_stream = createOutputStream(
         input_streams.front(), ExpressionTransform::transformHeader(input_streams.front().header, *actions_dag), getDataStreamTraits());
+
+    const ActionsDAGPtr & actions = actions_dag;
+    LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "ActionsDAG dump:\n{}", actions->dumpDAG());
+
+    const auto & input_sort_description = getInputStreams().front().sort_description;
+    for (size_t i = 0, s = input_sort_description.size(); i < s; ++i)
+    {
+        const auto & desc = input_sort_description[i];
+        String alias;
+        const auto & origin_column = desc.column_name;
+        for (const auto & column : output_stream->header)
+        {
+            const auto * original_node = getOriginalNodeForOutputAlias(actions, column.name);
+            if (original_node && original_node->result_name == origin_column)
+            {
+                alias = column.name;
+                break;
+            }
+        }
+
+        if (alias.empty())
+            return;
+
+        output_stream->sort_description[i].column_name = alias;
+    }
 }
 
 }

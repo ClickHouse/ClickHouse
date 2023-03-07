@@ -14,6 +14,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ITransformingStep.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -452,6 +453,22 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
     }
 }
 
+void updateRootInputStream(QueryPlan::Node & root)
+{
+    auto* to = root.step.get();
+    const auto * from = root.children.front()->step.get();
+
+    auto * to_update = dynamic_cast<ITransformingStep *>(to);
+    if (!to_update)
+        return;
+    const auto * update_from = dynamic_cast<const ITransformingStep *>(from);
+    if (!update_from)
+        return;
+
+    if (update_from->hasOutputStream())
+        to_update->updateInputStream(update_from->getOutputStream());
+}
+
 void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_settings)
 {
     /// optimization need to be applied before "mergeExpressions" optimization
@@ -462,6 +479,8 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
 
     QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes);
     QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes);
+
+    updateRootInputStream(*root);
 }
 
 void QueryPlan::explainEstimate(MutableColumns & columns)
