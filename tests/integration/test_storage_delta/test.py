@@ -1,83 +1,47 @@
-import logging
-import os
-import json
 import helpers.client
-import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
+import pytest
+import logging
+import os
+import json
+import time
+
+import pyspark
+import delta
+from delta import *
+from pyspark.sql.types import (
+    StructType,
+    StructField,
+    StringType,
+    IntegerType,
+    DateType,
+    TimestampType,
+    BooleanType,
+    ArrayType,
+)
+from pyspark.sql.functions import current_timestamp
+from datetime import datetime
+
+from helpers.s3_tools import prepare_s3_bucket, upload_directory, get_file_contents
+
+
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-
-
-def prepare_s3_bucket(started_cluster):
-    bucket_read_write_policy = {
-        "Version": "2012-10-17",
-        "Statement": [
-            {
-                "Sid": "",
-                "Effect": "Allow",
-                "Principal": {"AWS": "*"},
-                "Action": "s3:GetBucketLocation",
-                "Resource": "arn:aws:s3:::root",
-            },
-            {
-                "Sid": "",
-                "Effect": "Allow",
-                "Principal": {"AWS": "*"},
-                "Action": "s3:ListBucket",
-                "Resource": "arn:aws:s3:::root",
-            },
-            {
-                "Sid": "",
-                "Effect": "Allow",
-                "Principal": {"AWS": "*"},
-                "Action": "s3:GetObject",
-                "Resource": "arn:aws:s3:::root/*",
-            },
-            {
-                "Sid": "",
-                "Effect": "Allow",
-                "Principal": {"AWS": "*"},
-                "Action": "s3:PutObject",
-                "Resource": "arn:aws:s3:::root/*",
-            },
-        ],
-    }
-
-    minio_client = started_cluster.minio_client
-    minio_client.set_bucket_policy(
-        started_cluster.minio_bucket, json.dumps(bucket_read_write_policy)
-    )
-
-
-def upload_test_table(started_cluster):
-    bucket = started_cluster.minio_bucket
-
-    for address, dirs, files in os.walk(SCRIPT_DIR + "/test_table"):
-        address_without_prefix = address[len(SCRIPT_DIR) :]
-
-        for name in files:
-            started_cluster.minio_client.fput_object(
-                bucket,
-                os.path.join(address_without_prefix, name),
-                os.path.join(address, name),
-            )
+TABLE_NAME = "test_delta_table"
+USER_FILES_PATH = "/ClickHouse/tests/integration/test_storage_delta/_instances/node1/database/user_files"
 
 
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        cluster.add_instance("main_server", with_minio=True)
+        cluster.add_instance("node1", with_minio=True)
 
         logging.info("Starting cluster...")
         cluster.start()
 
         prepare_s3_bucket(cluster)
-        logging.info("S3 bucket created")
-
-        upload_test_table(cluster)
-        logging.info("Test table uploaded")
 
         yield cluster
 
@@ -85,82 +49,144 @@ def started_cluster():
         cluster.shutdown()
 
 
-def run_query(instance, query, stdin=None, settings=None):
-    # type: (ClickHouseInstance, str, object, dict) -> str
-
-    logging.info("Running query '{}'...".format(query))
-    result = instance.query(query, stdin=stdin, settings=settings)
-    logging.info("Query finished")
-
-    return result
-
-
-def test_create_query(started_cluster):
-    instance = started_cluster.instances["main_server"]
-    bucket = started_cluster.minio_bucket
-
-    create_query = f"""CREATE TABLE deltalake ENGINE=DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/test_table/', 'minio', 'minio123')"""
-
-    run_query(instance, create_query)
-
-
-def test_select_query(started_cluster):
-    instance = started_cluster.instances["main_server"]
-    bucket = started_cluster.minio_bucket
-    columns = [
-        "begin_lat",
-        "begin_lon",
-        "driver",
-        "end_lat",
-        "end_lon",
-        "fare",
-        "rider",
-        "ts",
-        "uuid",
-    ]
-
-    # create query in case table doesn't exist
-    create_query = f"""CREATE TABLE IF NOT EXISTS deltalake ENGINE=DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/test_table/', 'minio', 'minio123')"""
-
-    run_query(instance, create_query)
-
-    select_query = "SELECT {} FROM deltalake FORMAT TSV"
-    select_table_function_query = "SELECT {col} FROM deltaLake('http://{ip}:{port}/{bucket}/test_table/', 'minio', 'minio123') FORMAT TSV"
-
-    for column_name in columns:
-        result = run_query(instance, select_query.format(column_name)).splitlines()
-        assert len(result) > 0
-
-    for column_name in columns:
-        result = run_query(
-            instance,
-            select_table_function_query.format(
-                col=column_name,
-                ip=started_cluster.minio_ip,
-                port=started_cluster.minio_port,
-                bucket=bucket,
-            ),
-        ).splitlines()
-        assert len(result) > 0
-
-
-def test_describe_query(started_cluster):
-    instance = started_cluster.instances["main_server"]
-    bucket = started_cluster.minio_bucket
-    result = instance.query(
-        f"DESCRIBE deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/test_table/', 'minio', 'minio123') FORMAT TSV",
+def get_spark():
+    builder = (
+        pyspark.sql.SparkSession.builder.appName("spark_test")
+        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+        .config(
+            "spark.sql.catalog.spark_catalog",
+            "org.apache.spark.sql.delta.catalog.DeltaCatalog",
+        )
+        .master("local")
     )
 
-    assert result == TSV(
+    return configure_spark_with_delta_pip(builder).master("local").getOrCreate()
+
+
+def get_delta_metadata(delta_metadata_file):
+    jsons = [json.loads(x) for x in delta_metadata_file.splitlines()]
+    combined_json = {}
+    for d in jsons:
+        combined_json.update(d)
+    return combined_json
+
+
+def test_basic(started_cluster):
+    instance = started_cluster.instances["node1"]
+
+    data_path = f"/var/lib/clickhouse/user_files/{TABLE_NAME}.parquet"
+    inserted_data = "SELECT number, toString(number) FROM numbers(100)"
+    instance.query(
+        f"INSERT INTO TABLE FUNCTION file('{data_path}') {inserted_data} FORMAT Parquet"
+    )
+
+    instance.exec_in_container(
+        ["bash", "-c", "chmod 777 -R /var/lib/clickhouse/user_files"],
+        user="root",
+    )
+
+    spark = get_spark()
+    result_path = f"/{TABLE_NAME}_result"
+
+    spark.read.load(f"file://{USER_FILES_PATH}/{TABLE_NAME}.parquet").write.mode(
+        "overwrite"
+    ).option("compression", "none").format("delta").option(
+        "delta.columnMapping.mode", "name"
+    ).save(
+        result_path
+    )
+
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    upload_directory(minio_client, bucket, result_path, "")
+
+    data = get_file_contents(
+        minio_client,
+        bucket,
+        "/test_delta_table_result/_delta_log/00000000000000000000.json",
+    )
+    delta_metadata = get_delta_metadata(data)
+
+    stats = json.loads(delta_metadata["add"]["stats"])
+    assert stats["numRecords"] == 100
+    assert next(iter(stats["minValues"].values())) == 0
+    assert next(iter(stats["maxValues"].values())) == 99
+
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS {TABLE_NAME};
+        CREATE TABLE {TABLE_NAME} ENGINE=DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/test_delta_table_result/', 'minio', 'minio123')"""
+    )
+    assert instance.query(f"SELECT * FROM {TABLE_NAME}") == instance.query(
+        inserted_data
+    )
+
+
+def test_types(started_cluster):
+    spark = get_spark()
+    result_file = f"{TABLE_NAME}_result_2"
+    delta_table = (
+        DeltaTable.create(spark)
+        .tableName(TABLE_NAME)
+        .location(f"/{result_file}")
+        .addColumn("a", "INT")
+        .addColumn("b", "STRING")
+        .addColumn("c", "DATE")
+        .addColumn("d", "ARRAY<STRING>")
+        .addColumn("e", "BOOLEAN")
+        .execute()
+    )
+    data = [
+        (
+            123,
+            "string",
+            datetime.strptime("2000-01-01", "%Y-%m-%d"),
+            ["str1", "str2"],
+            True,
+        )
+    ]
+
+    schema = StructType(
         [
-            ["begin_lat", "Nullable(Float64)"],
-            ["begin_lon", "Nullable(Float64)"],
-            ["driver", "Nullable(String)"],
-            ["end_lat", "Nullable(Float64)"],
-            ["end_lon", "Nullable(Float64)"],
-            ["fare", "Nullable(Float64)"],
-            ["rider", "Nullable(String)"],
-            ["ts", "Nullable(Int64)"],
-            ["uuid", "Nullable(String)"],
+            StructField("a", IntegerType()),
+            StructField("b", StringType()),
+            StructField("c", DateType()),
+            StructField("d", ArrayType(StringType())),
+            StructField("e", BooleanType()),
+        ]
+    )
+    df = spark.createDataFrame(data=data, schema=schema)
+    df.printSchema()
+    df.write.mode("append").format("delta").saveAsTable(TABLE_NAME)
+
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    upload_directory(minio_client, bucket, f"/{result_file}", "")
+
+    instance = started_cluster.instances["node1"]
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS {TABLE_NAME};
+        CREATE TABLE {TABLE_NAME} ENGINE=DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', 'minio123')"""
+    )
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 1
+    assert (
+        instance.query(f"SELECT * FROM {TABLE_NAME}").strip()
+        == "123\tstring\t2000-01-01\t['str1','str2']\ttrue"
+    )
+
+    table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', 'minio123')"
+    assert (
+        instance.query(f"SELECT * FROM {table_function}").strip()
+        == "123\tstring\t2000-01-01\t['str1','str2']\ttrue"
+    )
+
+    assert instance.query(f"DESCRIBE {table_function} FORMAT TSV") == TSV(
+        [
+            ["a", "Nullable(Int32)"],
+            ["b", "Nullable(String)"],
+            ["c", "Nullable(Date32)"],
+            ["d", "Array(Nullable(String))"],
+            ["e", "Nullable(Bool)"],
         ]
     )

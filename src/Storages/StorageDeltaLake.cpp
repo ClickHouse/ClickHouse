@@ -86,7 +86,6 @@ void DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::init(ContextPtr
 template <typename Configuration, typename MetadataReadHelper>
 std::vector<String> DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::getJsonLogFiles() const
 {
-
     /// DeltaLake format stores all metadata json files in _delta_log directory
     static constexpr auto deltalake_metadata_directory = "_delta_log";
     static constexpr auto meta_file_suffix = ".json";
@@ -121,8 +120,14 @@ void DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::handleJSON(cons
 template <typename Configuration, typename MetadataReadHelper>
 String DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::generateQueryFromKeys(const std::vector<String> & keys, const String &)
 {
-    std::string new_query = fmt::format("{{{}}}", fmt::join(keys, ","));
-    return new_query;
+    if (keys.size() == 1)
+    {
+        return fmt::format("{}", keys[0]);
+    }
+    else
+    {
+        return fmt::format("{{{}}}", fmt::join(keys, ","));
+    }
 }
 
 template DeltaLakeMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::DeltaLakeMetadataParser(

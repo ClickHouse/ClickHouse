@@ -71,10 +71,9 @@ public:
 
         Configuration new_configuration(configuration);
 
-        new_configuration.appendToPath(
-            std::filesystem::path(Name::data_directory_prefix) / MetadataParser::generateQueryFromKeys(keys, configuration.format));
+        new_configuration.appendToPath(MetadataParser::generateQueryFromKeys(keys, configuration.format));
 
-        LOG_DEBUG(log, "Table path: {}, new uri: {}", configuration.url.key, configuration.getPath());
+        LOG_DEBUG(log, "Table path: {}, new uri: {}", configuration.url.key, new_configuration.getPath());
 
         return new_configuration;
     }
