@@ -148,7 +148,7 @@ ReadFromMergeTree::ReadFromMergeTree(
     Poco::Logger * log_,
     MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr_,
     bool enable_parallel_reading)
-    : ISourceStep(DataStream{.header = IMergeTreeSelectAlgorithm::transformHeader(
+    : SourceStepWithFilter(DataStream{.header = IMergeTreeSelectAlgorithm::transformHeader(
         storage_snapshot_->getSampleBlockForColumns(real_column_names_),
         getPrewhereInfoFromQueryInfo(query_info_),
         data_.getPartitionValueType(),
@@ -1098,7 +1098,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(Merge
     return selectRangesToRead(
         std::move(parts),
         prewhere_info,
-        added_filter_nodes,
+        filter_nodes,
         storage_snapshot->metadata,
         storage_snapshot->getMetadataForQuery(),
         query_info,
