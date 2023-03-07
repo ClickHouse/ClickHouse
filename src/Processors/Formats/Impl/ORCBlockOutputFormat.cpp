@@ -23,7 +23,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
-{7
+{
 
 namespace ErrorCodes
 {
