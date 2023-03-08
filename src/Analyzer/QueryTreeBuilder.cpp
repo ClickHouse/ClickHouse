@@ -356,6 +356,9 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
         current_query_tree->getLimitByNode() = buildExpressionList(select_limit_by, current_context);
 
     /// Combine limit expression with limit and offset settings into final limit expression
+    /// The sequence of application is next - offset expression, limit expression, offset setting, limit setting.
+    /// Since offset setting is applied after limit expression, but we want to transfer settings into expression
+    /// we must decrease limit expression by offset setting and then add offset setting to offset expression.
     ///    select_limit - limit expression
     ///    limit        - limit setting
     ///    offset       - offset setting
