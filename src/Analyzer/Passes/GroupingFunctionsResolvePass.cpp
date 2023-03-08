@@ -164,12 +164,17 @@ void resolveGroupingFunctions(QueryTreeNodePtr & query_node, ContextPtr context)
                 grouping_sets_used_aggregation_keys_list.emplace_back();
                 auto & grouping_sets_used_aggregation_keys = grouping_sets_used_aggregation_keys_list.back();
 
+                QueryTreeNodePtrWithHashSet used_keys_in_set;
+
                 for (auto & grouping_set_key_node : grouping_set_keys_list_node_typed.getNodes())
                 {
+                    if (used_keys_in_set.contains(grouping_set_key_node))
+                        continue;
+                    used_keys_in_set.insert(grouping_set_key_node);
+                    grouping_sets_used_aggregation_keys.push_back(grouping_set_key_node);
+
                     if (aggregation_key_to_index.contains(grouping_set_key_node))
                         continue;
-
-                    grouping_sets_used_aggregation_keys.push_back(grouping_set_key_node);
                     aggregation_key_to_index.emplace(grouping_set_key_node, aggregation_node_index);
                     ++aggregation_node_index;
                 }
