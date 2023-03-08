@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <string_view>
+#include <unordered_set>
 #include "State.h"
 
 namespace DB
@@ -51,12 +52,12 @@ concept CValueStateHandler = CInlineEscapingValueStateHandler<T> || CNoEscapingV
 
 struct StateHandler
 {
-    explicit StateHandler(std::optional<char> enclosing_character);
+    StateHandler() = default;
     StateHandler(const StateHandler &) = default;
 
     virtual ~StateHandler() = default;
 
-    const std::optional<char> enclosing_character;
+    const std::unordered_set<char> quoting_characters;
 
 protected:
     [[nodiscard]] static std::string_view createElement(std::string_view file, std::size_t begin, std::size_t end);
