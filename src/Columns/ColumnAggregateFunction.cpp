@@ -606,18 +606,24 @@ MutableColumns ColumnAggregateFunction::scatter(IColumn::ColumnIndex num_columns
         column = createView();
 
     size_t num_rows = size();
-
+    if (num_rows != selector.size()) [[unlikely]]
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector: {} doesn't match size of column: {}",
+                selector.size(), num_rows);
+    const auto & partition_info = selector.getPartitionInfo(num_columns);
+    const auto & offsets_map = partition_info.offsets_map;
+    for (size_t i = 0; i < num_columns; ++i)
     {
-        size_t reserve_size = static_cast<size_t>(static_cast<double>(num_rows) / num_columns * 1.1); /// 1.1 is just a guess. Better to use n-sigma rule.
-
-        if (reserve_size > 1)
-            for (auto & column : columns)
-                column->reserve(reserve_size);
+        auto from = partition_info.partitions_offset[i];
+        auto end = partition_info.partitions_offset[i + 1];
+        if (from == end) [[unlikely]]
+            continue;
+        auto & column = columns[i];
+        column->reserve(end - from);
+        for (size_t j = from; j < end; ++j)
+        {
+            assert_cast<ColumnAggregateFunction &>(*column).data.push_back(data[offsets_map[j]]);
+        }
     }
-
-    for (size_t i = 0; i < num_rows; ++i)
-        assert_cast<ColumnAggregateFunction &>(*columns[selector[i]]).data.push_back(data[i]);
-
     return columns;
 }
 

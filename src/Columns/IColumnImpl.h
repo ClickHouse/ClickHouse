@@ -44,7 +44,7 @@ std::vector<IColumn::MutablePtr> IColumn::scatterImpl(ColumnIndex num_columns,
 {
     size_t num_rows = size();
 
-    if (num_rows != selector.size())
+    if (num_rows != selector.size()) [[unlikely]]
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector: {} doesn't match size of column: {}",
                 selector.size(), num_rows);
 
@@ -53,15 +53,16 @@ std::vector<IColumn::MutablePtr> IColumn::scatterImpl(ColumnIndex num_columns,
         column = cloneEmpty();
     const auto & partition_info = selector.getPartitionInfo(num_columns);
     const auto & offsets_map = partition_info.offsets_map;
-    for (size_t i = 0, sz = partition_info.partitions_length.size() - 1; i < sz; ++i)
+    for (size_t i = 0; i < num_columns; ++i)
     {
-        auto from = partition_info.partitions_length[i];
-        auto length = partition_info.partitions_length[i+1] - from;
-        if (!length) [[unlikely]]
+        const auto & from = partition_info.partitions_offset[i];
+        const auto & end = partition_info.partitions_offset[i + 1];
+        auto length = end - from;
+        if (from == end) [[unlikely]]
             continue;
         auto & column = columns[i];
         column->reserve(length);
-        for (size_t j = from, e = from + length; j < e; ++j)
+        for (size_t j = from; j < end; ++j)
         {
             static_cast<Derived &>(*column).insertFrom(*this, offsets_map[j]);
         }

@@ -95,28 +95,28 @@ const PartitionSelector::PartitionInfo & PartitionSelector::getPartitionInfo(siz
     if (partition_info.offsets_map.size() != selector.size() || partition_info.offsets_map.empty() || force_update) [[unlikely]]
     {
         auto rows = selector.size();
-        std::vector<size_t> partitions_length(buckets + 1, 0);
+        std::vector<size_t> partitions_offset(buckets + 1, 0);
         Array offsets_map(rows, 0);
         for (size_t i = 0; i < rows; ++i)
         {
-            partitions_length[selector[i]]++;
+            partitions_offset[selector[i]]++;
         }
         for (size_t i = 1; i <= buckets; ++i)
         {
-            partitions_length[i] += partitions_length[i - 1];
+            partitions_offset[i] += partitions_offset[i - 1];
         }
         for (size_t i = rows; i-- > 0;)
         {
-            offsets_map[partitions_length[selector[i]] - 1] = i;
-            partitions_length[selector[i]]--;
+            offsets_map[partitions_offset[selector[i]] - 1] = i;
+            partitions_offset[selector[i]]--;
         }
-        partition_info.partitions_length.swap(partitions_length);
+        partition_info.partitions_offset.swap(partitions_offset);
         partition_info.offsets_map.swap(offsets_map);
     }
-    
-    if (partition_info.partitions_length.size() != buckets + 1) [[unlikely]]
+
+    if (partition_info.partitions_offset.size() != buckets + 1) [[unlikely]]
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "buckets({}) is not match with {}. selector size:{}", buckets, partition_info.partitions_length.size(), selector.size());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "buckets({}) is not match with {}. selector size:{}", buckets, partition_info.partitions_offset.size(), selector.size());
     }
 
     return partition_info;

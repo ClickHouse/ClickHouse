@@ -653,78 +653,72 @@ bool checkColumn(const IColumn * column)
 class PartitionSelector
 {
 public:
-  using Index = IColumn::ColumnIndex;
-  using Array = PaddedPODArray<Index>;
+    using Index = IColumn::ColumnIndex;
+    using Array = PaddedPODArray<Index>;
 
-  struct PartitionInfo
-  {
-    Array offsets_map;
-    std::vector<size_t> partitions_length;
-  };
+    struct PartitionInfo
+    {
+        Array offsets_map;
+        std::vector<size_t> partitions_offset;
+    };
 
-  explicit PartitionSelector(size_t num_rows) : selector(num_rows) { }
+    explicit PartitionSelector(size_t num_rows) : selector(num_rows) { }
 
-  explicit PartitionSelector(size_t num_rows, const Index & x) : selector(num_rows, x) { }
+    explicit PartitionSelector(size_t num_rows, const Index & x) : selector(num_rows, x) { }
 
-  PartitionSelector() = default;
-  PartitionSelector(PartitionSelector && other) noexcept
-  {
-    swap(other);
-  }
+    PartitionSelector() = default;
+    PartitionSelector(PartitionSelector && other) noexcept { swap(other); }
 
-  inline void reserve(size_t n) { selector.reserve(n); }
-  inline Index & operator [] (ssize_t n)
-  {
-    return selector[n];
-  }
-  inline const Index & operator [] (ssize_t n) const { return selector[n]; }
-  inline void push_back(Index && x) { selector.push_back(x); }
-  inline void emplace_back(Index && x) { selector.emplace_back(x); }
-  inline size_t size() const { return selector.size(); }
-  inline void swap(Array & rhs)
-  { 
-    selector.swap(rhs);
-    partition_info.partitions_length.clear();
-    partition_info.offsets_map.clear();
-  }
-  inline Array::iterator begin() { return selector.begin(); }
-  inline Array::iterator end() { return selector.end(); }
-  inline Array::const_iterator begin() const { return selector.begin(); }
-  inline Array::const_iterator end() const { return selector.end(); }
-  inline Array::const_iterator cbegin() const { return selector.cbegin(); }
-  inline Array::const_iterator cend() const { return selector.cend(); }
-  inline void assign(size_t n, const Index & x) { selector.assign(n, x); }
-  inline void resize(size_t n) { selector.resize(n); }
-  inline void resize_fill(size_t n) { selector.resize_fill(n); }
-  inline void resize_fill(size_t n , const Index & x) { selector.resize_fill(n, x); }
-  inline bool empty() const { return selector.empty(); }
-  inline size_t capacity() const { return selector.capacity(); }
-  inline void clear()
-  {
-    selector.clear();
-    partition_info.partitions_length.clear();
-    partition_info.offsets_map.clear();
-  }
-  inline Index * data() { return selector.data(); }
-  inline const Index * data() const { return selector.data(); }
-  PartitionSelector & operator=(PartitionSelector && other) noexcept
-  {
-    swap(other);
-    return *this;
-  }
-  inline void swap(PartitionSelector & other)
-  {
-    selector.swap(other.selector);
-    partition_info.partitions_length.swap(other.partition_info.partitions_length);
-    partition_info.offsets_map.swap(other.partition_info.offsets_map);
-  }
+    inline void reserve(size_t n) { selector.reserve(n); }
+    inline Index & operator[](ssize_t n) { return selector[n]; }
+    inline const Index & operator[](ssize_t n) const { return selector[n]; }
+    inline void push_back(Index && x) { selector.push_back(x); }
+    inline void emplace_back(Index && x) { selector.emplace_back(x); }
+    inline size_t size() const { return selector.size(); }
+    inline void swap(Array & rhs)
+    {
+        selector.swap(rhs);
+        partition_info.partitions_offset.clear();
+        partition_info.offsets_map.clear();
+    }
+    inline Array::iterator begin() { return selector.begin(); }
+    inline Array::iterator end() { return selector.end(); }
+    inline Array::const_iterator begin() const { return selector.begin(); }
+    inline Array::const_iterator end() const { return selector.end(); }
+    inline Array::const_iterator cbegin() const { return selector.cbegin(); }
+    inline Array::const_iterator cend() const { return selector.cend(); }
+    inline void assign(size_t n, const Index & x) { selector.assign(n, x); }
+    inline void resize(size_t n) { selector.resize(n); }
+    inline void resize_fill(size_t n) { selector.resize_fill(n); }
+    inline void resize_fill(size_t n, const Index & x) { selector.resize_fill(n, x); }
+    inline bool empty() const { return selector.empty(); }
+    inline size_t capacity() const { return selector.capacity(); }
+    inline void clear()
+    {
+        selector.clear();
+        partition_info.partitions_offset.clear();
+        partition_info.offsets_map.clear();
+    }
+    inline Index * data() { return selector.data(); }
+    inline const Index * data() const { return selector.data(); }
+    PartitionSelector & operator=(PartitionSelector && other) noexcept
+    {
+        swap(other);
+        return *this;
+    }
+    inline void swap(PartitionSelector & other)
+    {
+        selector.swap(other.selector);
+        partition_info.partitions_offset.swap(other.partition_info.partitions_offset);
+        partition_info.offsets_map.swap(other.partition_info.offsets_map);
+    }
 
-  const PartitionInfo & getPartitionInfo(size_t buckets, bool force_update = false) const;
+    const PartitionInfo & getPartitionInfo(size_t buckets, bool force_update = false) const;
 
 private:
-  Array selector;
-  Array map_offsets;
-  mutable PartitionInfo partition_info;
+    Array selector;
+    Array map_offsets;
+    mutable PartitionInfo partition_info;
 };
 
 /// True if column's an ColumnConst instance. It's just a syntax sugar for type check.
