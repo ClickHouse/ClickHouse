@@ -989,7 +989,7 @@ Default value: `100`.
 
 ## max_io_thread_pool_free_size {#max-io-thread-pool-free-size}
 
-If the number of **idle** threads in the IO Thread pool is greater than `max_io_thread_pool_free_size`, then ClickHouse releases resources occupied by some threads and the pool size is decreased. Threads can be created again if necessary.
+If the number of **idle** threads in the IO Thread pool exceeds `max_io_thread_pool_free_size`, ClickHouse will release resources occupied by idling threads and decrease the pool size. Threads can be created again if necessary.
 
 Possible values:
 
