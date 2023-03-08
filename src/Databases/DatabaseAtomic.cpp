@@ -273,7 +273,7 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     else
         renameNoReplace(old_metadata_path, new_metadata_path);
 
-    /// After metadata was successfully moved, the following methods should not throw (if them do, it's a logical error)
+    /// After metadata was successfully moved, the following methods should not throw (if they do, it's a logical error)
     table_data_path = detach(*this, table_name, table->storesDataOnDisk());
     if (exchange)
         other_table_data_path = detach(other_db, to_table_name, other_table->storesDataOnDisk());
@@ -509,6 +509,9 @@ void DatabaseAtomic::tryCreateMetadataSymlink()
     {
         try
         {
+            /// fs::exists could return false for broken symlink
+            if (FS::isSymlinkNoThrow(metadata_symlink))
+                fs::remove(metadata_symlink);
             fs::create_directory_symlink(metadata_path, path_to_metadata_symlink);
         }
         catch (...)

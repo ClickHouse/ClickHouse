@@ -285,6 +285,56 @@ def avro_confluent_message(schema_registry_client, value):
 # Tests
 
 
+def test_kafka_prohibited_column_types(kafka_cluster):
+    def assert_returned_exception(e):
+        assert e.value.returncode == 36
+        assert (
+            "KafkaEngine doesn't support DEFAULT/MATERIALIZED/EPHEMERAL/ALIAS expressions for columns."
+            in str(e.value)
+        )
+
+    # check column with DEFAULT expression
+    with pytest.raises(QueryRuntimeException) as exception:
+        instance.query(
+            """
+                CREATE TABLE test.kafka (a Int, b Int DEFAULT 0)
+                ENGINE = Kafka('{kafka_broker}:19092', '{kafka_topic_new}', '{kafka_group_name_new}', '{kafka_format_json_each_row}', '\\n')
+                """
+        )
+    assert_returned_exception(exception)
+
+    # check EPHEMERAL
+    with pytest.raises(QueryRuntimeException) as exception:
+        instance.query(
+            """
+                CREATE TABLE test.kafka (a Int, b Int EPHEMERAL)
+                ENGINE = Kafka('{kafka_broker}:19092', '{kafka_topic_new}', '{kafka_group_name_new}', '{kafka_format_json_each_row}', '\\n')
+                """
+        )
+    assert_returned_exception(exception)
+
+    # check ALIAS
+    with pytest.raises(QueryRuntimeException) as exception:
+        instance.query(
+            """
+                CREATE TABLE test.kafka (a Int, b String Alias toString(a))
+                ENGINE = Kafka('{kafka_broker}:19092', '{kafka_topic_new}', '{kafka_group_name_new}', '{kafka_format_json_each_row}', '\\n')
+                """
+        )
+    assert_returned_exception(exception)
+
+    # check MATERIALIZED
+    # check ALIAS
+    with pytest.raises(QueryRuntimeException) as exception:
+        instance.query(
+            """
+                CREATE TABLE test.kafka (a Int, b String MATERIALIZED toString(a))
+                ENGINE = Kafka('{kafka_broker}:19092', '{kafka_topic_new}', '{kafka_group_name_new}', '{kafka_format_json_each_row}', '\\n')
+                """
+        )
+    assert_returned_exception(exception)
+
+
 def test_kafka_settings_old_syntax(kafka_cluster):
     assert TSV(
         instance.query(
