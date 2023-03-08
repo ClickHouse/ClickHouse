@@ -1,4 +1,3 @@
-#include <Common/quoteString.h>
 #include <Common/FieldVisitorToString.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTAlterNamedCollectionQuery.h>

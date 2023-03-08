@@ -1,7 +1,6 @@
 #include <Parsers/MySQL/ASTAlterQuery.h>
 
 #include <Interpreters/StorageID.h>
-#include <Common/quoteString.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>

@@ -1,4 +1,3 @@
-#include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
 #include <Parsers/ASTExpressionList.h>
