@@ -19,8 +19,8 @@ Kafka lets you:
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
-    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    name1 [type1],
+    name2 [type2],
     ...
 ) ENGINE = Kafka()
 SETTINGS
@@ -113,6 +113,10 @@ Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
 
 </details>
 
+:::info
+The Kafka table engine doesn't support columns with [default value](../../../sql-reference/statements/create/table.md#default_value). If you need columns with default value, you can add them at materialized view level (see below).
+:::
+
 ## Description {#description}
 
 The delivered messages are tracked automatically, so each message in a group is only counted once. If you want to get the data twice, then create a copy of the table with another group name.
@@ -124,10 +128,6 @@ Groups are flexible and synced on the cluster. For instance, if you have 10 topi
 1.  Use the engine to create a Kafka consumer and consider it a data stream.
 2.  Create a table with the desired structure.
 3.  Create a materialized view that converts data from the engine and puts it into a previously created table.
-
-:::info
-Kafka Engine doesn't support columns with default value of type `DEFAULT/MATERIALIZED/EPHEMERAL/ALIAS`. If you need columns with any default type, they can be added at `MATERIALIZED VIEW` level.
-:::
 
 When the `MATERIALIZED VIEW` joins the engine, it starts collecting data in the background. This allows you to continually receive messages from Kafka and convert them to the required format using `SELECT`.
 One kafka table can have as many materialized views as you like, they do not read data from the kafka table directly, but receive new records (in blocks), this way you can write to several tables with different detail level (with grouping - aggregation and without).
