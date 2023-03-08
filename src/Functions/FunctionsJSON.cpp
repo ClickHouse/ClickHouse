@@ -140,8 +140,7 @@ public:
                 bool added_to_column = false;
                 if (document_ok)
                 {
-                    auto return_type = impl.getReturnType(Name::name, arguments);
-                    if (TypeIndex::Tuple == return_type->getTypeId())
+                    if (std::string(Name::name) == "JSONExtractTuple")
                     {
                         std::vector<std::pair<Element, bool>> elements;
                         std::string_view last_key;

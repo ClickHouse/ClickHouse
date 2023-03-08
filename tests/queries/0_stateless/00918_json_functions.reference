@@ -266,8 +266,6 @@ u
 v
 --show error: type should be const string
 --show error: index type should be integer
-
-
 --JSONExtractTuple--
 ('hello')
 ('hello','[-100,200,300]')
