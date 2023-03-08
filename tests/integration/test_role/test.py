@@ -430,7 +430,10 @@ def test_role_expiration():
     instance.query("GRANT SELECT ON tre TO rre")
 
     assert instance.query("SELECT * FROM tre", user="ure") == "0\n"
-    time.sleep(10)  # wait for role expiration
+
+    # access_control_improvements/role_cache_expiration_time value is 2 for the test
+    # so we wait >2 seconds until the role is expired
+    time.sleep(5)
 
     instance.query("CREATE TABLE IF NOT EXISTS tre1 (id Int) Engine=Log")
     instance.query("INSERT INTO tre1 VALUES (0)")
@@ -461,10 +464,15 @@ def test_two_roles_expiration():
     instance.query("GRANT SELECT ON tre TO rre")
 
     assert instance.query("SELECT * FROM tre", user="ure") == "0\n"
-    time.sleep(10)  # wait for role expiration
+
+    # access_control_improvements/role_cache_expiration_time value is 2 for the test
+    # so we wait >2 seconds until the roles are expired
+    time.sleep(5)
+
     instance.query(
         "GRANT SELECT ON tre1 TO rre_second"
-    )  # we expect that both rre and rre_second are gone from cache
+    )  # we expect that both rre and rre_second are gone from cache upon this operation
+
     instance.query("CREATE TABLE IF NOT EXISTS tre1 (id Int) Engine=Log")
     instance.query("INSERT INTO tre1 VALUES (0)")
     instance.query("GRANT SELECT ON tre1 TO rre")
