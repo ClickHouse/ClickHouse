@@ -22,9 +22,8 @@ public:
     {
         ColumnPtr data_column;
         CharArgument key_value_pair_delimiter = {};
-        CharArgument item_delimiter = {};
-        CharArgument enclosing_character = {};
-        SetArgument value_special_characters_allow_list = {};
+        SetArgument pair_delimiters = {};
+        SetArgument quoting_characters = {};
         BoolArgument with_escaping = {};
     };
 

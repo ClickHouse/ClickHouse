@@ -73,17 +73,9 @@ auto ExtractKeyValuePairs::getExtractor(const ParsedArguments & parsed_arguments
         builder.withKeyValuePairDelimiter(parsed_arguments.key_value_pair_delimiter.value());
     }
 
-    if (parsed_arguments.item_delimiter)
-    {
-        builder.withItemDelimiter(parsed_arguments.item_delimiter.value());
-    }
+    builder.withItemDelimiter(parsed_arguments.pair_delimiters);
 
-    if (parsed_arguments.enclosing_character)
-    {
-        builder.withEnclosingCharacter(parsed_arguments.enclosing_character.value());
-    }
-
-    builder.withValueSpecialCharacterAllowlist(parsed_arguments.value_special_characters_allow_list);
+    builder.withQuotingCharacters(parsed_arguments.quoting_characters);
 
     return builder.build();
 }
@@ -138,49 +130,43 @@ ExtractKeyValuePairs::ParsedArguments ExtractKeyValuePairs::parseArguments(const
         return ParsedArguments{data_column, key_value_pair_delimiter};
     }
 
-    auto item_delimiter = extractControlCharacter(arguments[2].column);
+    auto pair_delimiters_characters = arguments[2].column->getDataAt(0).toView();
+
+    SetArgument pair_delimiters;
+
+    pair_delimiters.insert(pair_delimiters_characters.begin(), pair_delimiters_characters.end());
 
     if (arguments.size() == 3u)
     {
         return ParsedArguments{
-            data_column, key_value_pair_delimiter, item_delimiter};
+            data_column, key_value_pair_delimiter, pair_delimiters
+        };
     }
 
-    auto enclosing_character = extractControlCharacter(arguments[3].column);
+
+    auto quoting_characters_str = arguments[3].column->getDataAt(0).toView();
+
+    SetArgument quoting_characters;
+
+    quoting_characters.insert(quoting_characters_str.begin(), quoting_characters_str.end());
 
     if (arguments.size() == 4u)
     {
         return ParsedArguments{
             data_column,
             key_value_pair_delimiter,
-            item_delimiter,
-            enclosing_character,
+            pair_delimiters,
+            quoting_characters,
         };
     }
 
-    auto value_special_characters_allow_list_characters = arguments[4].column->getDataAt(0).toView();
 
-    SetArgument value_special_characters_allow_list;
-
-    value_special_characters_allow_list.insert(
-        value_special_characters_allow_list_characters.begin(), value_special_characters_allow_list_characters.end()
-    );
-
-    if (arguments.size() == 5u)
-    {
-        return ParsedArguments {
-            data_column, key_value_pair_delimiter, item_delimiter, enclosing_character, value_special_characters_allow_list
-        };
-    }
-
-    // extractKeyValuePairs - extractKeyValuePairsWithEscaping
-
-    auto with_escaping_character = extractControlCharacter(arguments[5].column);
+    auto with_escaping_character = extractControlCharacter(arguments[4].column);
 
     bool with_escaping = with_escaping_character && with_escaping_character == '1';
 
     return ParsedArguments{
-        data_column, key_value_pair_delimiter, item_delimiter, enclosing_character, value_special_characters_allow_list, with_escaping
+        data_column, key_value_pair_delimiter, pair_delimiters, quoting_characters, with_escaping
     };
 }
 

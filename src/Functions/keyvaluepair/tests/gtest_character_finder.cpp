@@ -69,33 +69,32 @@ TEST(CharacterFinderTest, FindFirst)
 
 TEST(CharacterFinderTest, FindFirstNot)
 {
-//    CharacterFinder finder;
+    CharacterFinder finder;
 
 //     Test empty haystack
-//    std::string_view empty;
-//    std::vector<char> needles = {'a', 'b', 'c'};
-//    test_find_first_not(finder, empty, needles, std::nullopt);
-//
-//    // Test haystack with no needles
-//    std::string_view no_needles = "hello world";
-//    std::vector<char> empty_needles = {};
-//    test_find_first_not(finder, no_needles, empty_needles, std::make_optional<std::pair<char, CharacterFinder::Position>>('h', 0));
-//
-//    // Test haystack with a single needle
-//    std::string_view single_needle = "hello world";
-//    std::vector<char> single_needles = {'o'};
-//    test_find_first_not(finder, single_needle, single_needles, std::make_optional<std::pair<char, CharacterFinder::Position>>('h', 0));
+    std::string_view empty;
+    std::vector<char> needles = {'a', 'b', 'c'};
+    test_find_first_not(finder, empty, needles, std::nullopt);
+
+    // Test haystack with no needles
+    std::string_view no_needles = "hello world";
+    std::vector<char> empty_needles = {};
+    test_find_first_not(finder, no_needles, empty_needles, std::make_optional<std::pair<char, CharacterFinder::Position>>('h', 0));
+
+    // Test haystack with a single needle
+    std::string_view single_needle = "hello world";
+    std::vector<char> single_needles = {'o'};
+    test_find_first_not(finder, single_needle, single_needles, std::make_optional<std::pair<char, CharacterFinder::Position>>('h', 0));
 
 //     Test haystack with multiple needles
-//    std::string_view multiple_needles = "hello world";
-//    std::vector<char> all_needles = {'h', 'e', 'l', 'o', 'w', 'r', 'd'};
-//    test_find_first_not(finder, multiple_needles, all_needles, std::nullopt);
+    std::string_view multiple_needles = "hello world";
+    std::vector<char> all_needles = {'h', 'e', 'l', 'o', 'w', 'r', 'd', ' '};
+    test_find_first_not(finder, multiple_needles, all_needles, std::nullopt);
 
     // 17 byte long string, only loop takes place
     std::string_view multiple_needles_haystack = "helloworldddddd";
-    const auto * res = find_first_not_symbols<'h', 'e', 'l', 'o', 'w', 'r', 'd'>(multiple_needles_haystack.begin(), multiple_needles_haystack.end());
 
-    ASSERT_EQ(res, multiple_needles_haystack.end());
+    test_find_first_not(finder, multiple_needles_haystack, {'h', 'e', 'l', 'o', 'w', 'r', 'd'}, std::nullopt);
 }
 
 }

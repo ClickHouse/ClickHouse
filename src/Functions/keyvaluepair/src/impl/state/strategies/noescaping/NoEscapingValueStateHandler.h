@@ -1,7 +1,8 @@
 #pragma once
 
-#include "StateHandler.h"
 #include <unordered_set>
+#include "Functions/keyvaluepair/src/impl/state/ExtractorConfiguration.h"
+#include "Functions/keyvaluepair/src/impl/state/StateHandler.h"
 
 namespace DB
 {
@@ -11,10 +12,7 @@ class NoEscapingValueStateHandler : public StateHandler
 public:
     using ElementType = std::string_view;
 
-    NoEscapingValueStateHandler(
-        char item_delimiter_,
-        std::optional<char> enclosing_character_,
-        std::unordered_set<char> special_character_allowlist_);
+    NoEscapingValueStateHandler(ExtractorConfiguration extractor_configuration_);
 
     [[nodiscard]] NextState wait(std::string_view file, size_t pos) const;
 
@@ -25,8 +23,7 @@ public:
     [[nodiscard]] static NextState readEmpty(std::string_view, size_t pos, ElementType & value);
 
 private:
-    const char item_delimiter;
-    std::unordered_set<char> special_character_allowlist;
+    ExtractorConfiguration extractor_configuration;
 
     bool isValidCharacter(char character) const;
 };
