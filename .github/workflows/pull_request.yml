@@ -37,7 +37,6 @@ jobs:
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 run_check.py
   PythonUnitTests:
-    needs: CheckLabels
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
