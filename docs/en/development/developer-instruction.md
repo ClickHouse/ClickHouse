@@ -39,7 +39,7 @@ Next, you need to download the source files onto your working machine. This is c
 
 In the command line terminal run:
 
-    git clone --recursive--shallow-submodules git@github.com:your_github_username/ClickHouse.git
+    git clone --recursive --shallow-submodules git@github.com:your_github_username/ClickHouse.git
     cd ClickHouse
 
 Note: please, substitute *your_github_username* with what is appropriate!
