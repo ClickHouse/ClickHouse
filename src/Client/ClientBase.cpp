@@ -1338,7 +1338,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             throw;
         }
 
-        if (have_data_in_stdin)
+        if (have_data_in_stdin && !cancelled)
             sendDataFromStdin(sample, columns_description_for_query, parsed_query);
     }
     else if (parsed_insert_query->data)
@@ -1348,7 +1348,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         try
         {
             sendDataFrom(data_in, sample, columns_description_for_query, parsed_query, have_data_in_stdin);
-            if (have_data_in_stdin)
+            if (have_data_in_stdin && !cancelled)
                 sendDataFromStdin(sample, columns_description_for_query, parsed_query);
         }
         catch (Exception & e)
