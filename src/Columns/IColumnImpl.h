@@ -51,18 +51,21 @@ std::vector<IColumn::MutablePtr> IColumn::scatterImpl(ColumnIndex num_columns,
     std::vector<MutablePtr> columns(num_columns);
     for (auto & column : columns)
         column = cloneEmpty();
-
+    const auto & partition_info = selector.getPartitionInfo(num_columns);
+    const auto & offsets_map = partition_info.offsets_map;
+    for (size_t i = 0, sz = partition_info.partitions_length.size() - 1; i < sz; ++i)
     {
-        size_t reserve_size = static_cast<size_t>(num_rows * 1.1 / num_columns);    /// 1.1 is just a guess. Better to use n-sigma rule.
-
-        if (reserve_size > 1)
-            for (auto & column : columns)
-                column->reserve(reserve_size);
+        auto from = partition_info.partitions_length[i];
+        auto length = partition_info.partitions_length[i+1] - from;
+        if (!length) [[unlikely]]
+            continue;
+        auto & column = columns[i];
+        column->reserve(length);
+        for (size_t j = from, e = from + length; j < e; ++j)
+        {
+            static_cast<Derived &>(*column).insertFrom(*this, offsets_map[j]);
+        }
     }
-
-    for (size_t i = 0; i < num_rows; ++i)
-        static_cast<Derived &>(*columns[selector[i]]).insertFrom(*this, i);
-
     return columns;
 }
 

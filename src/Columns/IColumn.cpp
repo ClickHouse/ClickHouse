@@ -1,8 +1,10 @@
+#include <vector>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
+#include <Common/Exception.h>
 #include <Core/Field.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 
@@ -86,6 +88,38 @@ bool isColumnNullable(const IColumn & column)
 bool isColumnConst(const IColumn & column)
 {
     return checkColumn<ColumnConst>(column);
+}
+
+const PartitionSelector::PartitionInfo & PartitionSelector::getPartitionInfo(size_t buckets, bool force_update) const
+{
+    if (partition_info.offsets_map.size() != selector.size() || partition_info.offsets_map.empty() || force_update) [[unlikely]]
+    {
+        auto rows = selector.size();
+        std::vector<size_t> partitions_length(buckets + 1, 0);
+        Array offsets_map(rows, 0);
+        for (size_t i = 0; i < rows; ++i)
+        {
+            partitions_length[selector[i]]++;
+        }
+        for (size_t i = 1; i <= buckets; ++i)
+        {
+            partitions_length[i] += partitions_length[i - 1];
+        }
+        for (size_t i = rows; i-- > 0;)
+        {
+            offsets_map[partitions_length[selector[i]] - 1] = i;
+            partitions_length[selector[i]]--;
+        }
+        partition_info.partitions_length.swap(partitions_length);
+        partition_info.offsets_map.swap(offsets_map);
+    }
+    
+    if (partition_info.partitions_length.size() != buckets + 1) [[unlikely]]
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "buckets({}) is not match with {}. selector size:{}", buckets, partition_info.partitions_length.size(), selector.size());
+    }
+
+    return partition_info;
 }
 
 }
