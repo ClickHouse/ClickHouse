@@ -300,3 +300,13 @@ WITH '{"i": 1, "f": 1.2}' AS json SELECT JSONExtract(json, 'i', JSONType(json, '
 
 SELECT '--show error: index type should be integer';
 SELECT JSONExtract('[]', JSONExtract('0', 'UInt256'), 'UInt256'); -- { serverError 43 }
+
+SELECT '--JSONExtractTuple--';
+SELECT JSONExtractTuple('{"a": "hello", "b": [-100, 200.0, 300]}', 'a');
+SELECT JSONExtractTuple('{"a": "hello", "b": [-100, 200.0, 300]}', 'a', 'b');
+SELECT JSONExtractTuple('{"a": "hello", "b": [-100, 200.0, 300]}', 'a', 'c');
+SELECT JSONExtractTuple('{"a": "hello", "b": [-100, 200.0,', 'a', 'b');
+select JSONExtractTuple('{"abc":"\\n\\u0000"}', 'abc');
+select JSONExtractTuple('{"abc":"\\u263a"}', 'abc');
+select JSONExtractTuple('{"abc":"\\u263"}', 'abc');
+select JSONExtractTuple('{"abc":"hello}', 'abc');

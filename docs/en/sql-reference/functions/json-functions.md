@@ -506,3 +506,20 @@ SELECT
 │                ᴺᵁᴸᴸ │                          3 │
 └─────────────────────┴────────────────────────────┘
 ```
+
+## JSONExtractTuple(json\[, indices_or_keys\]…)
+
+Parses a JSON and return multiple JSON Objects as a tuple.
+
+If the value does not exist or has a wrong type, an NULL value will be returned.
+
+Examples:
+
+``` sql
+
+SELECT JSONExtractTuple('{"a":"bc","b":"cc"}', 'a', 'c')
+
+┌─JSONExtractTuple('{"a":"bc","b":"cc"}', 'a', 'c')─┐
+│ ('bc',NULL)                                       │
+└───────────────────────────────────────────────────┘
+```
