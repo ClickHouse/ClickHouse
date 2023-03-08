@@ -244,7 +244,7 @@ public:
         time_t drop_time{};
     };
     using TablesMarkedAsDropped = std::list<TableMarkedAsDropped>;
-    
+
     TablesMarkedAsDropped getTablesMarkedDropped()
     {
         std::lock_guard lock(tables_marked_dropped_mutex);
