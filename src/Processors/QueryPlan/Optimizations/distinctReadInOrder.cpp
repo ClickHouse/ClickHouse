@@ -1,5 +1,7 @@
 #include <memory>
 #include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -7,6 +9,54 @@
 
 namespace DB::QueryPlanOptimizations
 {
+/// build actions DAG from stack of steps
+static ActionsDAGPtr buildActionsForPlanPath(std::vector<ActionsDAGPtr> & dag_stack)
+{
+    if (dag_stack.empty())
+        return nullptr;
+
+    ActionsDAGPtr path_actions = dag_stack.back()->clone();
+    dag_stack.pop_back();
+    while (!dag_stack.empty())
+    {
+        ActionsDAGPtr clone = dag_stack.back()->clone();
+        dag_stack.pop_back();
+        path_actions->mergeInplace(std::move(*clone));
+    }
+    return path_actions;
+}
+
+const ActionsDAG::Node * getOriginalNodeForOutputAlias(const ActionsDAGPtr & actions, const String & output_name)
+{
+    /// find alias in output
+    const ActionsDAG::Node * output_alias = nullptr;
+    for (const auto * node : actions->getOutputs())
+    {
+        if (node->result_name == output_name)
+        {
+            output_alias = node;
+            break;
+        }
+    }
+    if (!output_alias)
+    {
+        // logDebug("getOriginalNodeForOutputAlias: no output alias found", output_name);
+        return nullptr;
+    }
+
+    /// find original(non alias) node it refers to
+    const ActionsDAG::Node * node = output_alias;
+    while (node && node->type == ActionsDAG::ActionType::ALIAS)
+    {
+        chassert(!node->children.empty());
+        node = node->children.front();
+    }
+    if (node && node->type != ActionsDAG::ActionType::INPUT)
+        return nullptr;
+
+    return node;
+}
+
 size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node)
 {
     /// check if it is preliminary distinct node
@@ -24,6 +74,7 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node)
     /// (2) gather transforming steps to update their sorting properties later
     std::vector<ITransformingStep *> steps_to_update;
     QueryPlan::Node * node = parent_node;
+    std::vector<ActionsDAGPtr> dag_stack;
     while (!node->children.empty())
     {
         auto * step = dynamic_cast<ITransformingStep *>(node->step.get());
@@ -36,6 +87,11 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node)
 
         steps_to_update.push_back(step);
 
+        if (const auto * const expr = typeid_cast<const ExpressionStep *>(step); expr)
+            dag_stack.push_back(expr->getExpression());
+        else if (const auto * const filter = typeid_cast<const FilterStep *>(step); filter)
+            dag_stack.push_back(filter->getExpression());
+
         node = node->children.front();
     }
 
@@ -44,19 +100,30 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node)
     if (!read_from_merge_tree)
         return 0;
 
+    LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "ReadFromMergeTree");
+
     /// if reading from merge tree doesn't provide any output order, we can do nothing
     /// it means that no ordering can provided or supported for a particular sorting key
     /// for example, tuple() or sipHash(string)
     if (read_from_merge_tree->getOutputStream().sort_description.empty())
         return 0;
 
-    /// find non-const columns in DISTINCT
+    LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "There is sort description");
+
+    /// find original non-const columns in DISTINCT
+    auto actions = buildActionsForPlanPath(dag_stack);
     const ColumnsWithTypeAndName & distinct_columns = pre_distinct->getOutputStream().header.getColumnsWithTypeAndName();
-    std::set<std::string_view> non_const_columns;
+    std::set<std::string_view> original_distinct_columns;
     for (const auto & column : distinct_columns)
     {
-        if (!isColumnConst(*column.column))
-            non_const_columns.emplace(column.name);
+        if (isColumnConst(*column.column))
+            continue;
+
+        const auto * input_node =  getOriginalNodeForOutputAlias(actions, column.name);
+        if (!input_node)
+            break;
+
+        original_distinct_columns.insert(input_node->result_name);
     }
 
     const Names& sorting_key_columns = read_from_merge_tree->getStorageMetadata()->getSortingKeyColumns();
@@ -64,15 +131,19 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node)
     size_t number_of_sorted_distinct_columns = 0;
     for (const auto & column_name : sorting_key_columns)
     {
-        if (non_const_columns.end() == non_const_columns.find(column_name))
+        if (original_distinct_columns.end() == original_distinct_columns.find(column_name))
             break;
 
         ++number_of_sorted_distinct_columns;
     }
+
     /// apply optimization only when distinct columns match or form prefix of sorting key
     /// todo: check if reading in order optimization would be beneficial when sorting key is prefix of columns in DISTINCT
-    if (number_of_sorted_distinct_columns != non_const_columns.size())
+    if (number_of_sorted_distinct_columns != original_distinct_columns.size())
+    {
+        LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "number_of_sorted_distinct_columns != original_distinct_columns.size()");
         return 0;
+    }
 
     /// check if another read in order optimization is already applied
     /// apply optimization only if another read in order one uses less sorting columns
@@ -88,7 +159,10 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node)
     const int direction = 0; /// for DISTINCT direction doesn't matter, ReadFromMergeTree will choose proper one
     bool can_read = read_from_merge_tree->requestReadingInOrder(number_of_sorted_distinct_columns, direction, pre_distinct->getLimitHint());
     if (!can_read)
+    {
+        LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "Can't read in order");
         return 0;
+    }
 
     /// update data stream's sorting properties for found transforms
     const DataStream * input_stream = &read_from_merge_tree->getOutputStream();
