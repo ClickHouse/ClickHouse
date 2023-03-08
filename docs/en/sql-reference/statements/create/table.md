@@ -17,10 +17,11 @@ By default, tables are created only on the current server. Distributed DDL queri
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr1] [compression_codec] [TTL expr1],
-    name2 [type2] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr2] [compression_codec] [TTL expr2],
+    name1 [type1] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr1] [compression_codec] [TTL expr1] [COMMENT 'comment for column'],
+    name2 [type2] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr2] [compression_codec] [TTL expr2] [COMMENT 'comment for column'],
     ...
 ) ENGINE = engine
+  COMMENT 'comment for table'
 ```
 
 Creates a table named `table_name` in the `db` database or the current database if `db` is not set, with the structure specified in brackets and the `engine` engine.
@@ -31,6 +32,8 @@ A column description is `name type` in the simplest case. Example: `RegionID UIn
 Expressions can also be defined for default values (see below).
 
 If necessary, primary key can be specified, with one or more key expressions.
+
+Comments can be added for columns and for the table.
 
 ### With a Schema Similar to Other Table
 
@@ -107,7 +110,7 @@ If the type is not `Nullable` and if `NULL` is specified, it will be treated as 
 
 See also [data_type_default_nullable](../../../operations/settings/settings.md#data_type_default_nullable) setting.
 
-## Default Values
+## Default Values {#default_values}
 
 The column description can specify an expression for a default value, in one of the following ways: `DEFAULT expr`, `MATERIALIZED expr`, `ALIAS expr`.
 
@@ -267,7 +270,7 @@ You can define a [primary key](../../../engines/table-engines/mergetree-family/m
 CREATE TABLE db.table_name
 (
     name1 type1, name2 type2, ...,
-    PRIMARY KEY(expr1[, expr2,...])]
+    PRIMARY KEY(expr1[, expr2,...])
 )
 ENGINE = engine;
 ```
@@ -573,7 +576,7 @@ SELECT * FROM base.t1;
 You can add a comment to the table when you creating it.
 
 :::note
-The comment is supported for all table engines except [Kafka](../../../engines/table-engines/integrations/kafka.md), [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md) and [EmbeddedRocksDB](../../../engines/table-engines/integrations/embedded-rocksdb.md).
+The comment clause is supported by all table engines except [Kafka](../../../engines/table-engines/integrations/kafka.md), [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md) and [EmbeddedRocksDB](../../../engines/table-engines/integrations/embedded-rocksdb.md).
 :::
 
 
