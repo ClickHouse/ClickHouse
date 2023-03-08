@@ -7,7 +7,7 @@ namespace DB
 
 struct ValidationParams
 {
-    bool group_by_use_nulls;
+    bool group_by_use_nulls = false;
 };
 
 /** Validate aggregates in query node.

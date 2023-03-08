@@ -697,7 +697,9 @@ struct IdentifierResolveScope
         }
 
         if (auto * union_node = scope_node->as<UnionNode>())
+        {
             context = union_node->getContext();
+        }
         else if (auto * query_node = scope_node->as<QueryNode>())
         {
             context = query_node->getContext();
