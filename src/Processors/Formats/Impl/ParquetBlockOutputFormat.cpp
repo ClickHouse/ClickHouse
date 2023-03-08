@@ -20,7 +20,7 @@ namespace ErrorCodes
 namespace
 {
 
-static parquet::ParquetVersion::type getParquetVersion(const FormatSettings & settings)
+parquet::ParquetVersion::type getParquetVersion(const FormatSettings & settings)
 {
     switch (settings.parquet.output_version)
     {
