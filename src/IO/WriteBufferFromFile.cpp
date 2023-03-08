@@ -3,6 +3,7 @@
 #include <cerrno>
 
 #include <Common/ProfileEvents.h>
+#include <base/defines.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
@@ -71,8 +72,18 @@ WriteBufferFromFile::WriteBufferFromFile(
 
 WriteBufferFromFile::~WriteBufferFromFile()
 {
+    if (fd < 0)
+        return;
+
     finalize();
-    ::close(fd);
+    int err = ::close(fd);
+    /// Everything except for EBADF should be ignored in dtor, since all of
+    /// others (EINTR/EIO/ENOSPC/EDQUOT) could be possible during writing to
+    /// fd, and then write already failed and the error had been reported to
+    /// the user/caller.
+    ///
+    /// Note, that for close() on Linux, EINTR should *not* be retried.
+    chassert(!(err && errno == EBADF));
 }
 
 void WriteBufferFromFile::finalizeImpl()

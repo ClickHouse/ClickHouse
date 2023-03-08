@@ -272,7 +272,7 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
         {
             const auto & type = types[column_idx];
             const auto & serialization = serializations[column_idx];
-            if (format_settings.null_as_default && !type->isNullable() && !type->isLowCardinalityNullable())
+            if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
                 read = SerializationNullable::deserializeTextQuotedImpl(column, *buf, format_settings, serialization);
             else
                 serialization->deserializeTextQuoted(column, *buf, format_settings);
@@ -602,6 +602,17 @@ void ValuesBlockInputFormat::readSuffix()
 
 void ValuesBlockInputFormat::resetParser()
 {
+    if (got_exception)
+    {
+        /// In case of exception always reset the templates and parser type,
+        /// because they may be in the invalid state.
+        for (size_t i = 0; i < num_columns; ++i)
+        {
+            templates[i].reset();
+            parser_type_for_column[i] = ParserType::Streaming;
+        }
+    }
+
     IInputFormat::resetParser();
     // I'm not resetting parser modes here.
     // There is a good chance that all messages have the same format.

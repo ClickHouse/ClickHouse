@@ -12,6 +12,7 @@
 #include <Common/NetException.h>
 #include <Common/setThreadName.h>
 #include <Common/logger_useful.h>
+#include <base/defines.h>
 #include <chrono>
 #include <Common/PipeFDs.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -87,14 +88,18 @@ struct SocketInterruptablePollWrapper
         socket_event.data.fd = sockfd;
         if (epoll_ctl(epollfd, EPOLL_CTL_ADD, sockfd, &socket_event) < 0)
         {
-            ::close(epollfd);
+            int err = ::close(epollfd);
+            chassert(!err || errno == EINTR);
+
             throwFromErrno("Cannot insert socket into epoll queue", ErrorCodes::SYSTEM_ERROR);
         }
         pipe_event.events = EPOLLIN | EPOLLERR | EPOLLPRI;
         pipe_event.data.fd = pipe.fds_rw[0];
         if (epoll_ctl(epollfd, EPOLL_CTL_ADD, pipe.fds_rw[0], &pipe_event) < 0)
         {
-            ::close(epollfd);
+            int err = ::close(epollfd);
+            chassert(!err || errno == EINTR);
+
             throwFromErrno("Cannot insert socket into epoll queue", ErrorCodes::SYSTEM_ERROR);
         }
 #endif
@@ -198,7 +203,8 @@ struct SocketInterruptablePollWrapper
 #if defined(POCO_HAVE_FD_EPOLL)
     ~SocketInterruptablePollWrapper()
     {
-        ::close(epollfd);
+        int err = ::close(epollfd);
+        chassert(!err || errno == EINTR);
     }
 #endif
 };
