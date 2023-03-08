@@ -133,7 +133,7 @@ clickhouse-client # or "clickhouse-client --password" if you set up a password.
 
 </details>
 
-You can replace `stable` with `lts` to use different [release kinds](/docs/en/faq/operations/production.md) based on your needs.
+You can replace `stable` with `lts` to use different [release kinds](/docs/knowledgebase/production.md) based on your needs.
 
 You can also download and install packages manually from [here](https://packages.clickhouse.com/deb/pool/main/c/).
 
@@ -231,7 +231,7 @@ clickhouse-client # or "clickhouse-client --password" if you set up a password.
 
 </details>
 
-You can replace `stable` with `lts` to use different [release kinds](/docs/en/faq/operations/production.md) based on your needs.
+You can replace `stable` with `lts` to use different [release kinds](/docs/knowledgebase/production.md) based on your needs.
 
 Then run these commands to install packages:
 

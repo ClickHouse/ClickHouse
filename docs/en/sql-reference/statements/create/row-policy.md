@@ -5,7 +5,7 @@ sidebar_label: ROW POLICY
 title: "CREATE ROW POLICY"
 ---
 
-Creates a [row policy](../../../guides/sre/user-management/index.mdd#row-policy-management), i.e. a filter used to determine which rows a user can read from a table.
+Creates a [row policy](../../../guides/sre/user-management/index.md#row-policy-management), i.e. a filter used to determine which rows a user can read from a table.
 
 :::warning
 Row policies makes sense only for users with readonly access. If user can modify table or copy partitions between tables, it defeats the restrictions of row policies.

@@ -1853,7 +1853,7 @@ Default value: `/var/lib/clickhouse/access/`.
 
 **See also**
 
-- [Access Control and Account Management](../../guides/sre/user-management/index.mdd#access-control)
+- [Access Control and Account Management](../../guides/sre/user-management/index.md#access-control)
 
 ## user_directories {#user_directories}
 
