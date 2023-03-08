@@ -6,7 +6,6 @@
 namespace DB
 {
 
-/// Implements `grants` system table, which allows you to get information about grants.
 class StorageSystemMarkedDroppedTables final : public IStorageSystemOneBlock<StorageSystemMarkedDroppedTables>
 {
 public:
