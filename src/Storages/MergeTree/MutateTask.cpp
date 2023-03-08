@@ -626,6 +626,12 @@ static NameToNameVector collectFilesForRenames(
         }
     }
 
+    if (!source_part->getSerializationInfos().empty()
+        && new_part->getSerializationInfos().empty())
+    {
+        rename_vector.emplace_back(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, "");
+    }
+
     return rename_vector;
 }
 
