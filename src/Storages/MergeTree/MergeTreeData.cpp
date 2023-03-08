@@ -525,7 +525,6 @@ void MergeTreeData::checkProperties(
 
         for (const auto & index : new_metadata.secondary_indices)
         {
-
             MergeTreeIndexFactory::instance().validate(index, attach);
 
             if (indices_names.find(index.name) != indices_names.end())
