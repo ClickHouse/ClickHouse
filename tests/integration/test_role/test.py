@@ -414,6 +414,7 @@ def test_function_current_roles():
         == "['R1']\t['R1']\t['R1']\n"
     )
 
+
 def test_role_expiration():
     instance.query("CREATE USER ure")
     instance.query("CREATE ROLE rre")
@@ -442,6 +443,7 @@ def test_role_expiration():
     instance.query("DROP TABLE tre")
     instance.query("DROP TABLE tre1")
 
+
 def test_two_roles_expiration():
     instance.query("CREATE USER ure")
     instance.query("CREATE ROLE rre")
@@ -460,8 +462,9 @@ def test_two_roles_expiration():
 
     assert instance.query("SELECT * FROM tre", user="ure") == "0\n"
     time.sleep(10)  # wait for role expiration
-    instance.query("GRANT SELECT ON tre1 TO rre_second") # we expect that both rre and rre_second are gone from cache
-
+    instance.query(
+        "GRANT SELECT ON tre1 TO rre_second"
+    )  # we expect that both rre and rre_second are gone from cache
     instance.query("CREATE TABLE IF NOT EXISTS tre1 (id Int) Engine=Log")
     instance.query("INSERT INTO tre1 VALUES (0)")
     instance.query("GRANT SELECT ON tre1 TO rre")
