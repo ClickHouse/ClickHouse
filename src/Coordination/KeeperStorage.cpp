@@ -11,7 +11,7 @@
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ZooKeeper/IKeeper.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/LockMemoryExceptionInThread.h>
