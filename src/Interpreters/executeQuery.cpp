@@ -998,7 +998,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     {
                         double elapsed_seconds = static_cast<double>(info.elapsed_microseconds) / 1000000.0;
                         double rows_per_second = static_cast<double>(elem.read_rows) / elapsed_seconds;
-                        LOG_INFO(
+                        LOG_DEBUG(
                             &Poco::Logger::get("executeQuery"),
                             "Read {} rows, {} in {} sec., {} rows/sec., {}/sec.",
                             elem.read_rows,
