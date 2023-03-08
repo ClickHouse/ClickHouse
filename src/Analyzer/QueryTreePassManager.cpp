@@ -26,7 +26,6 @@
 #include <Analyzer/Passes/IfChainToMultiIfPass.h>
 #include <Analyzer/Passes/OrderByTupleEliminationPass.h>
 #include <Analyzer/Passes/NormalizeCountVariantsPass.h>
-#include <Analyzer/Passes/CustomizeFunctionsPass.h>
 #include <Analyzer/Passes/AggregateFunctionsArithmericOperationsPass.h>
 #include <Analyzer/Passes/UniqInjectiveFunctionsEliminationPass.h>
 #include <Analyzer/Passes/OrderByLimitByDuplicateEliminationPass.h>
@@ -39,7 +38,9 @@
 #include <Analyzer/Passes/AutoFinalOnQueryPass.h>
 #include <Analyzer/Passes/ArrayExistsToHasPass.h>
 #include <Analyzer/Passes/ComparisonTupleEliminationPass.h>
+#include <Analyzer/Passes/LogicalExpressionOptimizerPass.h>
 #include <Analyzer/Passes/CrossToInnerJoinPass.h>
+#include <Analyzer/Passes/ShardNumColumnToFunctionPass.h>
 
 
 namespace DB
@@ -147,8 +148,6 @@ private:
 
 /** ClickHouse query tree pass manager.
   *
-  * TODO: Support _shard_num into shardNum() rewriting.
-  * TODO: Support logical expressions optimizer.
   * TODO: Support setting convert_query_to_cnf.
   * TODO: Support setting optimize_using_constraints.
   * TODO: Support setting optimize_substitute_columns.
@@ -242,8 +241,6 @@ void addQueryTreePasses(QueryTreePassManager & manager)
     manager.addPass(std::make_unique<RewriteArrayExistsToHasPass>());
     manager.addPass(std::make_unique<NormalizeCountVariantsPass>());
 
-    manager.addPass(std::make_unique<CustomizeFunctionsPass>());
-
     manager.addPass(std::make_unique<AggregateFunctionsArithmericOperationsPass>());
     manager.addPass(std::make_unique<UniqInjectiveFunctionsEliminationPass>());
     manager.addPass(std::make_unique<OptimizeGroupByFunctionKeysPass>());
@@ -265,11 +262,12 @@ void addQueryTreePasses(QueryTreePassManager & manager)
 
     manager.addPass(std::make_unique<ConvertOrLikeChainPass>());
 
+    manager.addPass(std::make_unique<LogicalExpressionOptimizerPass>());
+
     manager.addPass(std::make_unique<GroupingFunctionsResolvePass>());
-
     manager.addPass(std::make_unique<AutoFinalOnQueryPass>());
-
     manager.addPass(std::make_unique<CrossToInnerJoinPass>());
+    manager.addPass(std::make_unique<ShardNumColumnToFunctionPass>());
 }
 
 }
