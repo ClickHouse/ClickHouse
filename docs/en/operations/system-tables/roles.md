@@ -3,7 +3,7 @@ slug: /en/operations/system-tables/roles
 ---
 # roles
 
-Contains information about configured [roles](../../guides/sre/user-management/index.mdd#role-management).
+Contains information about configured [roles](../../guides/sre/user-management/index.md#role-management).
 
 Columns:
 
