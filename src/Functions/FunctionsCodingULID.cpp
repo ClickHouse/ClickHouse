@@ -7,6 +7,7 @@
 #include <Columns/ColumnsDateTime.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
+#include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -41,14 +42,18 @@ public:
 
     String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() != 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Wrong number of arguments for function {}: 1 expected.", getName());
+        if (arguments.size() < 1 || arguments.size() > 2)
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Wrong number of arguments for function {}: should be 1 or 2",
+                getName());
 
         const auto * arg_fixed_string = checkAndGetDataType<DataTypeFixedString>(arguments[0].type.get());
         const auto * arg_string = checkAndGetDataType<DataTypeString>(arguments[0].type.get());
@@ -60,7 +65,18 @@ public:
                 arguments[0].type->getName(),
                 getName());
 
-        return std::make_shared<DataTypeDateTime64>(DATETIME_SCALE, "");
+        String timezone;
+        if (arguments.size() == 2)
+        {
+            timezone = extractTimeZoneNameFromColumn(*arguments[1].column);
+
+            if (timezone.empty())
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Function {} supports a 2nd argument (optional) that must be a valid time zone",
+                    getName());
+        }
+
+        return std::make_shared<DataTypeDateTime64>(DATETIME_SCALE, timezone);
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -105,7 +121,7 @@ public:
 
                 size_t string_size = offsets_src[i] - src_offset;
                 if (string_size == ULID_LENGTH + 1)
-                    time = decode(vec_src.data() + offsets_src[i]);
+                    time = decode(vec_src.data() + src_offset);
 
                 src_offset += string_size;
                 vec_res[i] = time;
@@ -126,15 +142,18 @@ public:
         unsigned char buffer[16];
         int ret = ulid_decode(buffer, reinterpret_cast<const char *>(data));
         if (ret != 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot decode ULID");
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot parse ULID {}",
+                std::string_view(reinterpret_cast<const char *>(data), ULID_LENGTH)
+            );
 
         /// Timestamp in milliseconds is the first 48 bits of the decoded ULID
         Int64 ms = 0;
         memcpy(reinterpret_cast<UInt8 *>(&ms) + 2, buffer, 6);
 
-#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-        std::reverse(reinterpret_cast<UInt8 *>(&ms), reinterpret_cast<UInt8 *>(&ms) + sizeof(Int64));
-#endif
+        if constexpr (std::endian::native == std::endian::little)
+            std::reverse(reinterpret_cast<UInt8 *>(&ms), reinterpret_cast<UInt8 *>(&ms) + sizeof(Int64));
 
         return DecimalUtils::decimalFromComponents<DateTime64>(ms / intExp10(DATETIME_SCALE), ms % intExp10(DATETIME_SCALE), DATETIME_SCALE);
     }
@@ -146,10 +165,13 @@ REGISTER_FUNCTION(ULIDStringToDateTime)
     factory.registerFunction<FunctionULIDStringToDateTime>(
         {
             R"(
-Decodes ULID and returns its timestammp as DateTime64(3).
-This function takes as an argument ULID of type String or FixedString(26).
+This function extracts the timestamp from a ULID and returns it as a DateTime64(3) typed value.
+The function expects the ULID to be provided as the first argument, which can be either a String or a FixedString(26) data type.
+An optional second argument can be passed to specify a timezone for the timestamp.
 )",
-            Documentation::Examples{{"ulid", "SELECT ULIDStringToDateTime(generateULID())"}},
+            Documentation::Examples{
+                {"ulid", "SELECT ULIDStringToDateTime(generateULID())"},
+                {"timezone", "SELECT ULIDStringToDateTime(generateULID(), 'Asia/Istanbul')"}},
             Documentation::Categories{"ULID"}
         },
         FunctionFactory::CaseSensitive);
