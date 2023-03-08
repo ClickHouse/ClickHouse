@@ -355,21 +355,56 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(const ASTPtr & select_q
     if (select_limit_by)
         current_query_tree->getLimitByNode() = buildExpressionList(select_limit_by, current_context);
 
-    /// Combine limit expression with limit setting
+    /// Combine limit expression with limit and offset settings into final limit expression
+    ///    select_limit - limit expression
+    ///    limit        - limit setting
+    ///    offset       - offset setting
+    ///
+    /// if select_limit
+    ///   -- if offset >= select_limit                (expr 0)
+    ///      then (0) (0 rows)
+    ///   -- else if limit > 0                        (expr 1)
+    ///      then min(select_limit - offset, limit)   (expr 2)
+    ///   -- else
+    ///      then (select_limit - offset)             (expr 3)
+    /// else if limit > 0
+    ///    then limit
+    ///
+    /// offset = offset + of_expr
     auto select_limit = select_query_typed.limitLength();
-    if (select_limit && limit)
+    if (select_limit)
     {
-        auto function_node = std::make_shared<FunctionNode>("least");
-        function_node->getArguments().getNodes().push_back(buildExpression(select_limit, current_context));
-        function_node->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(limit));
+        /// expr 3
+        auto expr_3 = std::make_shared<FunctionNode>("minus");
+        expr_3->getArguments().getNodes().push_back(buildExpression(select_limit, current_context));
+        expr_3->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(offset));
+
+        /// expr 2
+        auto expr_2 = std::make_shared<FunctionNode>("least");
+        expr_2->getArguments().getNodes().push_back(expr_3->clone());
+        expr_2->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(limit));
+
+        /// expr 0
+        auto expr_0 = std::make_shared<FunctionNode>("greaterOrEquals");
+        expr_0->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(offset));
+        expr_0->getArguments().getNodes().push_back(buildExpression(select_limit, current_context));
+
+        /// expr 1
+        auto expr_1 = std::make_shared<ConstantNode>(limit > 0);
+
+        auto function_node = std::make_shared<FunctionNode>("multiIf");
+        function_node->getArguments().getNodes().push_back(expr_0);
+        function_node->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(0));
+        function_node->getArguments().getNodes().push_back(expr_1);
+        function_node->getArguments().getNodes().push_back(expr_2);
+        function_node->getArguments().getNodes().push_back(expr_3);
+
         current_query_tree->getLimit() = std::move(function_node);
     }
-    else if (limit)
+    else if (limit > 0)
         current_query_tree->getLimit() = std::make_shared<ConstantNode>(limit);
-    else if (select_limit)
-        current_query_tree->getLimit() = buildExpression(select_limit, current_context);
 
-    /// Combine offset expression with offset setting
+    /// Combine offset expression with offset setting into final offset expression
     auto select_offset = select_query_typed.limitOffset();
     if (select_offset && offset)
     {
