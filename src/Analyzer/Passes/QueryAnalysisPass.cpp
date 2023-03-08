@@ -6676,6 +6676,17 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     /// Resolve query node sections.
 
+    NamesAndTypes projection_columns;
+
+    if (!scope.group_by_use_nulls)
+    {
+        projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope);
+        if (query_node_typed.getProjection().getNodes().empty())
+            throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED,
+                "Empty list of columns in projection. In scope {}",
+                scope.scope_node->formatASTForErrorMessage());
+    }
+
     if (query_node_typed.hasWith())
         resolveExpressionNodeList(query_node_typed.getWithNode(), scope, true /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
@@ -6770,11 +6781,14 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         convertLimitOffsetExpression(query_node_typed.getOffset(), "OFFSET", scope);
     }
 
-    auto projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope);
-    if (query_node_typed.getProjection().getNodes().empty())
-        throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED,
-            "Empty list of columns in projection. In scope {}",
-            scope.scope_node->formatASTForErrorMessage());
+    if (scope.group_by_use_nulls)
+    {
+        projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope);
+        if (query_node_typed.getProjection().getNodes().empty())
+            throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED,
+                "Empty list of columns in projection. In scope {}",
+                scope.scope_node->formatASTForErrorMessage());
+    }
 
     /** Resolve nodes with duplicate aliases.
       * Table expressions cannot have duplicate aliases.
@@ -6843,7 +6857,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     for (const auto & column : projection_columns)
     {
-        if (isNotCreatable(column.type->getTypeId()))
+        if (isNotCreatable(column.type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Invalid projection column with type {}. In scope {}",
                 column.type->getName(),
