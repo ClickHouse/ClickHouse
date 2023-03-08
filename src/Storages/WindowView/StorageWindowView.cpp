@@ -78,6 +78,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int NOT_IMPLEMENTED;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace
