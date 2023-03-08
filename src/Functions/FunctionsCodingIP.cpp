@@ -26,7 +26,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/IPv6ToBinary.h>
 #include <Common/formatIPv6.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Common/typeid_cast.h>
 
 #include <arpa/inet.h>
