@@ -1834,7 +1834,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
     {
         /// disable logs if expects errors
         TestHint test_hint(all_queries_text);
-        if (!test_hint.clientErrors().empty() || !test_hint.serverErrors().empty())
+        if (test_hint.hasClientErrors() || test_hint.hasServerErrors())
             processTextAsSingleQuery("SET send_logs_level = 'fatal'");
     }
 
@@ -1876,7 +1876,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 // the query ends because we failed to parse it, so we consume
                 // the entire line.
                 TestHint hint(String(this_query_begin, this_query_end - this_query_begin));
-                if (!hint.serverErrors().empty())
+                if (hint.hasServerErrors())
                 {
                     // Syntax errors are considered as client errors
                     current_exception->addMessage("\nExpected server error: {}.", hint.serverErrors());
@@ -1886,7 +1886,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 if (std::find(hint.clientErrors().begin(), hint.clientErrors().end(), current_exception->code())
                     == hint.clientErrors().end())
                 {
-                    if (!hint.clientErrors().empty())
+                    if (hint.hasClientErrors())
                         current_exception->addMessage("\nExpected client error: {}.", hint.clientErrors());
 
                     current_exception->rethrow();
@@ -1936,7 +1936,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 bool error_matches_hint = true;
                 if (have_error)
                 {
-                    if (!test_hint.serverErrors().empty())
+                    if (test_hint.hasServerErrors())
                     {
                         if (!server_exception)
                         {
@@ -1953,7 +1953,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                                        test_hint.serverErrors(), server_exception->code(), full_query);
                         }
                     }
-                    if (!test_hint.clientErrors().empty())
+                    if (test_hint.hasClientErrors())
                     {
                         if (!client_exception)
                         {
@@ -1970,7 +1970,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                                        test_hint.clientErrors(), client_exception->code(), full_query);
                         }
                     }
-                    if (test_hint.clientErrors().empty() && test_hint.serverErrors().empty())
+                    if (!test_hint.hasClientErrors() && !test_hint.hasServerErrors())
                     {
                         // No error was expected but it still occurred. This is the
                         // default case without test hint, doesn't need additional
@@ -1980,14 +1980,14 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 }
                 else
                 {
-                    if (!test_hint.clientErrors().empty())
+                    if (test_hint.hasClientErrors())
                     {
                         error_matches_hint = false;
                         fmt::print(stderr,
                                    "The query succeeded but the client error '{}' was expected (query: {}).\n",
                                    test_hint.clientErrors(), full_query);
                     }
-                    if (!test_hint.serverErrors().empty())
+                    if (test_hint.hasServerErrors())
                     {
                         error_matches_hint = false;
                         fmt::print(stderr,

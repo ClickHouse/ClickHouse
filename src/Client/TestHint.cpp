@@ -9,7 +9,7 @@
 
 namespace DB::ErrorCodes
 {
-extern const int CANNOT_PARSE_TEXT;
+    extern const int CANNOT_PARSE_TEXT;
 }
 
 namespace DB
@@ -54,9 +54,9 @@ TestHint::TestHint(const String & query_)
 
 void TestHint::parse(Lexer & comment_lexer, bool is_leading_hint)
 {
-    std::unordered_set<String> commands{"echo", "echoOn", "echoOff"};
+    std::unordered_set<std::string_view> commands{"echo", "echoOn", "echoOff"};
 
-    std::unordered_set<String> command_errors{
+    std::unordered_set<std::string_view> command_errors{
         "serverError",
         "clientError",
     };
@@ -76,7 +76,7 @@ void TestHint::parse(Lexer & comment_lexer, bool is_leading_hint)
         else if (!is_leading_hint && token.type == TokenType::BareWord && command_errors.contains(item))
         {
             /// Everything after this must be a list of errors separated by comma
-            error_vector error_codes;
+            ErrorVector error_codes;
             while (!token.isEnd())
             {
                 token = comment_lexer.nextToken();

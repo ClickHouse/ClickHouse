@@ -18,7 +18,7 @@ class Lexer;
 /// The following comment hints are supported:
 ///
 /// - "-- { serverError 60 }" -- in case of you are expecting server error.
-/// - "-- { serverError 16, 36 }" -- in case of you are expecting one of the 2 errors
+/// - "-- { serverError 16, 36 }" -- in case of you are expecting one of the 2 errors.
 ///
 /// - "-- { clientError 20 }" -- in case of you are expecting client error.
 /// - "-- { clientError 20, 60, 92 }" -- It's expected that the client will return one of the 3 errors.
@@ -52,17 +52,20 @@ class Lexer;
 class TestHint
 {
 public:
-    using error_vector = std::vector<int>;
+    using ErrorVector = std::vector<int>;
     TestHint(const String & query_);
 
     const auto & serverErrors() const { return server_errors; }
     const auto & clientErrors() const { return client_errors; }
     std::optional<bool> echoQueries() const { return echo; }
 
+    bool hasClientErrors() { return !client_errors.empty(); }
+    bool hasServerErrors() { return !server_errors.empty(); }
+
 private:
     const String & query;
-    error_vector server_errors{};
-    error_vector client_errors{};
+    ErrorVector server_errors{};
+    ErrorVector client_errors{};
     std::optional<bool> echo;
 
     void parse(Lexer & comment_lexer, bool is_leading_hint);
@@ -91,7 +94,7 @@ private:
 }
 
 template <>
-struct fmt::formatter<DB::TestHint::error_vector>
+struct fmt::formatter<DB::TestHint::ErrorVector>
 {
     static constexpr auto parse(format_parse_context & ctx)
     {
@@ -106,13 +109,13 @@ struct fmt::formatter<DB::TestHint::error_vector>
     }
 
     template <typename FormatContext>
-    auto format(const DB::TestHint::error_vector & error_vector, FormatContext & ctx)
+    auto format(const DB::TestHint::ErrorVector & ErrorVector, FormatContext & ctx)
     {
-        if (error_vector.empty())
+        if (ErrorVector.empty())
             return format_to(ctx.out(), "{}", 0);
-        else if (error_vector.size() == 1)
-            return format_to(ctx.out(), "{}", error_vector[0]);
+        else if (ErrorVector.size() == 1)
+            return format_to(ctx.out(), "{}", ErrorVector[0]);
         else
-            return format_to(ctx.out(), "One of [{}]", fmt::join(error_vector, ", "));
+            return format_to(ctx.out(), "[{}]", fmt::join(ErrorVector, ", "));
     }
 };
