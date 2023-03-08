@@ -16,6 +16,21 @@ namespace ErrorCodes
     extern const int UNKNOWN_EXCEPTION;
 }
 
+static parquet::ParquetVersion::type getParquetVersion(const FormatSettings & settings)
+{
+    switch (settings.parquet.output_version)
+    {
+        case FormatSettings::ParquetVersion::V1_0:
+            return parquet::ParquetVersion::PARQUET_1_0;
+        case FormatSettings::ParquetVersion::V2_4:
+            return parquet::ParquetVersion::PARQUET_2_4;
+        case FormatSettings::ParquetVersion::V2_6:
+            return parquet::ParquetVersion::PARQUET_2_6;
+        case FormatSettings::ParquetVersion::V2_LATEST:
+            return parquet::ParquetVersion::PARQUET_2_LATEST;
+    }
+}
+
 ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
     : IOutputFormat(header_, out_), format_settings{format_settings_}
 {
@@ -44,6 +59,7 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
         auto sink = std::make_shared<ArrowBufferedOutputStream>(out);
 
         parquet::WriterProperties::Builder builder;
+        builder.version(getParquetVersion(format_settings));
 #if USE_SNAPPY
         builder.compression(parquet::Compression::SNAPPY);
 #endif

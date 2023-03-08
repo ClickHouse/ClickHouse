@@ -296,6 +296,11 @@ double ColumnMap::getRatioOfDefaultRows(double sample_ratio) const
     return getRatioOfDefaultRowsImpl<ColumnMap>(sample_ratio);
 }
 
+UInt64 ColumnMap::getNumberOfDefaultRows() const
+{
+    return getNumberOfDefaultRowsImpl<ColumnMap>();
+}
+
 void ColumnMap::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const
 {
     return getIndicesOfNonDefaultRowsImpl<ColumnMap>(indices, from, limit);

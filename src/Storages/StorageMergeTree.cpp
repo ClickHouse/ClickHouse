@@ -732,7 +732,7 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
     to_kill->removeFile();
     LOG_TRACE(log, "Cancelled part mutations and removed mutation file {}", mutation_id);
     {
-        std::lock_guard<std::mutex> lock(mutation_wait_mutex);
+        std::lock_guard lock(mutation_wait_mutex);
         mutation_wait_event.notify_all();
     }
 
@@ -1306,7 +1306,7 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
 
     std::vector<MergeTreeMutationEntry> mutations_to_delete;
     {
-        std::lock_guard<std::mutex> lock(currently_processing_in_background_mutex);
+        std::lock_guard lock(currently_processing_in_background_mutex);
 
         if (current_mutations_by_version.size() <= finished_mutations_to_keep)
             return 0;

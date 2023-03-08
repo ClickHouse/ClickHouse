@@ -1,5 +1,5 @@
 #include <Core/Defines.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Common/PODArray.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/memcpySmall.h>

@@ -54,6 +54,10 @@ SELECT * FROM view(column1=value1, column2=value2 ...)
 CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER] [TO[db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...
 ```
 
+:::tip
+Here is a step by step guide on using [Materialized views](docs/en/guides/developer/cascading-materialized-views.md).
+:::
+
 Materialized views store data transformed by the corresponding [SELECT](../../../sql-reference/statements/select/index.md) query.
 
 When creating a materialized view without `TO [db].[table]`, you must specify `ENGINE` – the table engine for storing data.
