@@ -1020,7 +1020,7 @@ Default value: `1000`.
 
 ## max_backups_io_thread_pool_free_size {#max-backups-io-thread-pool-free-size}
 
-If the number of **idle** threads in the Backups IO Thread pool is greater than `max_backup_io_thread_pool_free_size`, then ClickHouse releases resources occupied by some threads and the pool size is decreased. Threads can be created again if necessary.
+If the number of **idle** threads in the Backups IO Thread pool exceeds `max_backup_io_thread_pool_free_size`, ClickHouse will release resources occupied by idling threads and decrease the pool size. Threads can be created again if necessary.
 
 Possible values:
 
