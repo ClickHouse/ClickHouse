@@ -273,6 +273,8 @@ private:
 
     /// This function is called from different threads.
     void updateProgress(const Progress & value);
+
+    Poco::Net::SocketAddress getClientAddress(const ClientInfo & client_info);
 };
 
 }

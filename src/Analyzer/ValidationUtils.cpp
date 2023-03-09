@@ -105,7 +105,7 @@ private:
     const QueryTreeNodePtr & query_node;
 };
 
-void validateAggregates(const QueryTreeNodePtr & query_node)
+void validateAggregates(const QueryTreeNodePtr & query_node, ValidationParams params)
 {
     const auto & query_node_typed = query_node->as<QueryNode &>();
     auto join_tree_node_type = query_node_typed.getJoinTree()->getNodeType();
@@ -182,7 +182,9 @@ void validateAggregates(const QueryTreeNodePtr & query_node)
                 if (grouping_set_key->as<ConstantNode>())
                     continue;
 
-                group_by_keys_nodes.push_back(grouping_set_key);
+                group_by_keys_nodes.push_back(grouping_set_key->clone());
+                if (params.group_by_use_nulls)
+                    group_by_keys_nodes.back()->convertToNullable();
             }
         }
         else
@@ -190,7 +192,9 @@ void validateAggregates(const QueryTreeNodePtr & query_node)
             if (node->as<ConstantNode>())
                 continue;
 
-            group_by_keys_nodes.push_back(node);
+            group_by_keys_nodes.push_back(node->clone());
+            if (params.group_by_use_nulls)
+                group_by_keys_nodes.back()->convertToNullable();
         }
     }
 

@@ -14,9 +14,13 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_EXCEPTION;
+    extern const int NOT_IMPLEMENTED;
 }
 
-static parquet::ParquetVersion::type getParquetVersion(const FormatSettings & settings)
+namespace
+{
+
+parquet::ParquetVersion::type getParquetVersion(const FormatSettings & settings)
 {
     switch (settings.parquet.output_version)
     {
@@ -29,6 +33,35 @@ static parquet::ParquetVersion::type getParquetVersion(const FormatSettings & se
         case FormatSettings::ParquetVersion::V2_LATEST:
             return parquet::ParquetVersion::PARQUET_2_LATEST;
     }
+}
+
+parquet::Compression::type getParquetCompression(FormatSettings::ParquetCompression method)
+{
+    if (method == FormatSettings::ParquetCompression::NONE)
+        return parquet::Compression::type::UNCOMPRESSED;
+
+#if USE_SNAPPY
+    if (method == FormatSettings::ParquetCompression::SNAPPY)
+        return parquet::Compression::type::SNAPPY;
+#endif
+
+#if USE_BROTLI
+    if (method == FormatSettings::ParquetCompression::BROTLI)
+        return parquet::Compression::type::BROTLI;
+#endif
+
+    if (method == FormatSettings::ParquetCompression::ZSTD)
+        return parquet::Compression::type::ZSTD;
+
+    if (method == FormatSettings::ParquetCompression::LZ4)
+        return parquet::Compression::type::LZ4;
+
+    if (method == FormatSettings::ParquetCompression::GZIP)
+        return parquet::Compression::type::GZIP;
+
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported compression method");
+}
+
 }
 
 ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
@@ -60,9 +93,7 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
 
         parquet::WriterProperties::Builder builder;
         builder.version(getParquetVersion(format_settings));
-#if USE_SNAPPY
-        builder.compression(parquet::Compression::SNAPPY);
-#endif
+        builder.compression(getParquetCompression(format_settings.parquet.output_compression_method));
         auto props = builder.build();
         auto status = parquet::arrow::FileWriter::Open(
             *arrow_table->schema(),
