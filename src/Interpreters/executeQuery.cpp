@@ -451,9 +451,23 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     /// Avoid early destruction of process_list_entry if it was not saved to `res` yet (in case of exception)
     ProcessList::EntryPtr process_list_entry;
     BlockIO res;
-    std::shared_ptr<InterpreterTransactionControlQuery> implicit_txn_control{};
+    auto implicit_txn_control = std::make_shared<bool>(false);
     String query_database;
     String query_table;
+
+    auto execute_implicit_tcl_query = [implicit_txn_control](const ContextMutablePtr & query_context, ASTTransactionControl::QueryType tcl_type)
+    {
+        /// Unset the flag on COMMIT and ROLLBACK
+        SCOPE_EXIT({ if (tcl_type != ASTTransactionControl::BEGIN) *implicit_txn_control = false; });
+
+        ASTPtr tcl_ast = std::make_shared<ASTTransactionControl>(tcl_type);
+        InterpreterTransactionControlQuery tc(tcl_ast, query_context);
+        tc.execute();
+
+        /// Set the flag after successful BIGIN
+        if (tcl_type == ASTTransactionControl::BEGIN)
+            *implicit_txn_control = true;
+    };
 
     try
     {
@@ -674,14 +688,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     if (context->isGlobalContext())
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot create transactions");
 
-                    /// If there is no session (which is the default for the HTTP Handler), set up one just for this as it is necessary
-                    /// to control the transaction lifetime
-                    if (!context->hasSessionContext())
-                        context->makeSessionContext();
-
-                    auto tc = std::make_shared<InterpreterTransactionControlQuery>(ast, context);
-                    tc->executeBegin(context->getSessionContext());
-                    implicit_txn_control = std::move(tc);
+                    execute_implicit_tcl_query(context, ASTTransactionControl::BEGIN);
                 }
                 catch (Exception & e)
                 {
@@ -949,6 +956,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                                     log_processors_profiles = settings.log_processors_profiles,
                                     status_info_to_query_log,
                                     implicit_txn_control,
+                                    execute_implicit_tcl_query,
                                     pulling_pipeline = pipeline.pulling(),
                                     query_span](QueryPipeline & query_pipeline) mutable
             {
@@ -998,7 +1006,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     {
                         double elapsed_seconds = static_cast<double>(info.elapsed_microseconds) / 1000000.0;
                         double rows_per_second = static_cast<double>(elem.read_rows) / elapsed_seconds;
-                        LOG_INFO(
+                        LOG_DEBUG(
                             &Poco::Logger::get("executeQuery"),
                             "Read {} rows, {} in {} sec., {} rows/sec., {}/sec.",
                             elem.read_rows,
@@ -1062,21 +1070,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         }
                     }
 
-                    if (implicit_txn_control)
-                    {
-                        try
-                        {
-                            implicit_txn_control->executeCommit(context->getSessionContext());
-                            implicit_txn_control.reset();
-                        }
-                        catch (const Exception &)
-                        {
-                            /// An exception might happen when trying to commit the transaction. For example we might get an immediate exception
-                            /// because ZK is down and wait_changes_become_visible_after_commit_mode == WAIT_UNKNOWN
-                            implicit_txn_control.reset();
-                            throw;
-                        }
-                    }
+                    if (*implicit_txn_control)
+                        execute_implicit_tcl_query(context, ASTTransactionControl::COMMIT);
                 }
 
                 if (query_span)
@@ -1104,13 +1099,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                                        quota(quota),
                                        status_info_to_query_log,
                                        implicit_txn_control,
+                                       execute_implicit_tcl_query,
                                        query_span](bool log_error) mutable
             {
-                if (implicit_txn_control)
-                {
-                    implicit_txn_control->executeRollback(context->getSessionContext());
-                    implicit_txn_control.reset();
-                }
+                if (*implicit_txn_control)
+                    execute_implicit_tcl_query(context, ASTTransactionControl::ROLLBACK);
                 else if (auto txn = context->getCurrentTransaction())
                     txn->onException();
 
@@ -1179,15 +1172,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     }
     catch (...)
     {
-        if (implicit_txn_control)
-        {
-            implicit_txn_control->executeRollback(context->getSessionContext());
-            implicit_txn_control.reset();
-        }
+        if (*implicit_txn_control)
+            execute_implicit_tcl_query(context, ASTTransactionControl::ROLLBACK);
         else if (auto txn = context->getCurrentTransaction())
-        {
             txn->onException();
-        }
 
         if (!internal)
             onExceptionBeforeStart(query_for_logging, context, ast, query_span, start_watch.elapsedMilliseconds());

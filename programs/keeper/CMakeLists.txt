@@ -128,6 +128,7 @@ if (BUILD_STANDALONE_KEEPER)
             ch_contrib::lz4
             ch_contrib::zstd
             ch_contrib::cityhash
+            ch_contrib::jemalloc
             common ch_contrib::double_conversion
             ch_contrib::dragonbox_to_chars
             pcg_random
