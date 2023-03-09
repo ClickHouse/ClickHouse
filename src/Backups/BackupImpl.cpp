@@ -6,7 +6,7 @@
 #include <Backups/BackupCoordinationLocal.h>
 #include <Backups/BackupCoordinationRemote.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Common/quoteString.h>
 #include <Common/XMLUtils.h>
 #include <Interpreters/Context.h>
