@@ -217,13 +217,6 @@ public:
         if (!arguments.empty() && !arguments[0].column->onlyNull())
         {
             const auto & first_arg = arguments[0];
-            if (!isUnsignedInteger(first_arg.type))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of the first argument of function {}, expected unsigned integer",
-                    first_arg.type->getName(),
-                    getName());
-
             number_of_columns = first_arg.column->getUInt(0);
             if (number_of_columns > MAX_NUMBER_OF_COLUMNS)
                 throw Exception(
@@ -236,14 +229,6 @@ public:
         if (arguments.size() > 1 && !arguments[1].column->onlyNull())
         {
             const auto & second_arg = arguments[1];
-
-            if (!isUnsignedInteger(second_arg.type))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of the second argument of function {}, expected unsigned integer",
-                    second_arg.type->getName(),
-                    getName());
-
             seed = second_arg.column->getUInt(0);
         }
 
@@ -251,14 +236,6 @@ public:
         if (arguments.size() > 2)
         {
             const auto & third_arg = arguments[2];
-
-            if (!isUInt8(third_arg.type))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of the second argument of function {}, expected UInt8",
-                    third_arg.type->getName(),
-                    getName());
-
             allow_big_numbers = third_arg.column->getBool(0);
         }
 
@@ -266,14 +243,6 @@ public:
         if (arguments.size() > 3)
         {
             const auto & fourth_arg = arguments[3];
-
-            if (!isUInt8(fourth_arg.type))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of the fourth argument of function {}, expected UInt8",
-                    fourth_arg.type->getName(),
-                    getName());
-
             allow_enums = fourth_arg.column->getBool(0);
         }
 
