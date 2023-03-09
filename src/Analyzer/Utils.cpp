@@ -5,13 +5,18 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTFunction.h>
 
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 
 #include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionFactory.h>
+
+#include <Interpreters/Context.h>
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/IdentifierNode.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/JoinNode.h>
@@ -72,6 +77,29 @@ bool isNameOfInFunction(const std::string & function_name)
         function_name == "globalNotNullInIgnoreSet";
 
     return is_special_function_in;
+}
+
+QueryTreeNodePtr buildCastFunction(const QueryTreeNodePtr & expression,
+    const DataTypePtr & type,
+    const ContextPtr & context,
+    bool resolve)
+{
+    std::string cast_type = type->getName();
+    auto cast_type_constant_value = std::make_shared<ConstantValue>(std::move(cast_type), std::make_shared<DataTypeString>());
+    auto cast_type_constant_node = std::make_shared<ConstantNode>(std::move(cast_type_constant_value));
+
+    std::string cast_function_name = "_CAST";
+    auto cast_function_node = std::make_shared<FunctionNode>(cast_function_name);
+    cast_function_node->getArguments().getNodes().push_back(expression);
+    cast_function_node->getArguments().getNodes().push_back(std::move(cast_type_constant_node));
+
+    if (resolve)
+    {
+        auto cast_function = FunctionFactory::instance().get(cast_function_name, context);
+        cast_function_node->resolveAsFunction(cast_function->build(cast_function_node->getArgumentColumns()));
+    }
+
+    return cast_function_node;
 }
 
 static ASTPtr convertIntoTableExpressionAST(const QueryTreeNodePtr & table_expression_node)
