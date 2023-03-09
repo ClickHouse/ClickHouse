@@ -196,15 +196,6 @@ private:
 class ReadFromMemoryStorageStep final : public ISourceStep
 {
 public:
-    ReadFromMemoryStorageStep(const Names & columns_to_read_,
-                              const StorageSnapshotPtr & storage_snapshot_,
-                              const size_t num_streams_,
-                              const bool delay_read_for_global_subqueries_) :
-        ISourceStep(DataStream{.header = storage_snapshot_->getSampleBlockForColumns(columns_to_read_)}),
-        pipe(makePipe(columns_to_read_, storage_snapshot_, num_streams_, delay_read_for_global_subqueries_))
-    {
-    }
-
     explicit ReadFromMemoryStorageStep(Pipe pipe_) :
         ISourceStep(DataStream{.header = pipe_.getHeader()}),
         pipe(std::move(pipe_))
@@ -212,8 +203,11 @@ public:
     }
 
     ReadFromMemoryStorageStep() = delete;
-    ReadFromMemoryStorageStep(const ReadFromMemoryStorageStep&) = delete;
-    ReadFromMemoryStorageStep& operator=(const ReadFromMemoryStorageStep&) = delete;
+    ReadFromMemoryStorageStep(const ReadFromMemoryStorageStep &) = delete;
+    ReadFromMemoryStorageStep & operator=(const ReadFromMemoryStorageStep &) = delete;
+
+    ReadFromMemoryStorageStep(ReadFromMemoryStorageStep &&) = default;
+    ReadFromMemoryStorageStep & operator=(ReadFromMemoryStorageStep &&) = default;
 
     String getName() const override { return name; }
 
