@@ -1867,8 +1867,8 @@ std::set<String> ClusterCopier::getShardPartitions(const ConnectionTimeouts & ti
     String query;
     {
         WriteBufferFromOwnString wb;
-        wb << "SELECT DISTINCT " << partition_name << " AS partition FROM"
-           << " " << getQuotedTable(task_shard.table_read_shard) << " ORDER BY partition DESC";
+        wb << "SELECT " << partition_name << " AS partition FROM "
+           << getQuotedTable(task_shard.table_read_shard) << " GROUP BY partition ORDER BY partition DESC";
         query = wb.str();
     }
 
