@@ -15,11 +15,7 @@
 #include "Poco/DirectoryIterator.h"
 
 
-#if defined(POCO_OS_FAMILY_WINDOWS) && defined(POCO_WIN32_UTF8)
-#include "DirectoryIterator_WIN32U.cpp"
-#elif defined(POCO_OS_FAMILY_WINDOWS)
-#include "DirectoryIterator_WIN32.cpp"
-#elif defined(POCO_OS_FAMILY_UNIX)
+#if   defined(POCO_OS_FAMILY_UNIX)
 #include "DirectoryIterator_UNIX.cpp"
 #endif
 

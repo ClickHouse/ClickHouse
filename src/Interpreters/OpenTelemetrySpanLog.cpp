@@ -10,7 +10,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <Interpreters/Context.h>
 
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Common/CurrentThread.h>
 #include <Core/Field.h>
 

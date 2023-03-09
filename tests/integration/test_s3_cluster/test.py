@@ -32,8 +32,9 @@ def create_buckets_s3(cluster):
             # a String, b UInt64
             data = []
 
-            for number in range(100):
-                data.append([str(number) * 10, number])
+            # Make all files a bit different
+            for number in range(100 + file_number):
+                data.append([str(number + file_number) * 10, number + file_number])
 
             writer = csv.writer(f)
             writer.writerows(data)

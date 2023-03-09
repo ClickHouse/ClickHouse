@@ -269,6 +269,9 @@ void FillingTransform::transform(Chunk & chunk)
     if (on_totals)
         return;
 
+    if (!chunk.hasRows() && !generate_suffix)
+        return;
+
     Columns old_fill_columns;
     Columns old_interpolate_columns;
     Columns old_other_columns;
