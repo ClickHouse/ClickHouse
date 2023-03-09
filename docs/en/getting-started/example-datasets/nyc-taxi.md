@@ -115,6 +115,8 @@ FROM s3(
 </TabItem>
 </Tabs>
 
+## Sample Queries
+
 Let's see how many rows were inserted:
 
 ```sql
