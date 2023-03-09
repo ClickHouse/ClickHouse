@@ -86,6 +86,13 @@ struct FormatSettings
 
     UInt64 max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH;
 
+    enum class ArrowCompression
+    {
+        NONE,
+        LZ4_FRAME,
+        ZSTD
+    };
+
     struct
     {
         UInt64 row_group_size = 1000000;
@@ -96,6 +103,7 @@ struct FormatSettings
         bool case_insensitive_column_matching = false;
         bool output_string_as_string = false;
         bool output_fixed_string_as_fixed_byte_array = true;
+        ArrowCompression output_compression_method = ArrowCompression::NONE;
     } arrow;
 
     struct
@@ -183,6 +191,16 @@ struct FormatSettings
         V2_LATEST,
     };
 
+    enum class ParquetCompression
+    {
+        NONE,
+        SNAPPY,
+        ZSTD,
+        LZ4,
+        GZIP,
+        BROTLI,
+    };
+
     struct
     {
         UInt64 row_group_size = 1000000;
@@ -195,6 +213,7 @@ struct FormatSettings
         bool output_fixed_string_as_fixed_byte_array = true;
         UInt64 max_block_size = 8192;
         ParquetVersion output_version;
+        ParquetCompression output_compression_method = ParquetCompression::SNAPPY;
     } parquet;
 
     struct Pretty
@@ -276,6 +295,15 @@ struct FormatSettings
         bool accurate_types_of_literals = true;
     } values;
 
+    enum class ORCCompression
+    {
+        NONE,
+        LZ4,
+        SNAPPY,
+        ZSTD,
+        ZLIB,
+    };
+
     struct
     {
         bool import_nested = false;
@@ -285,6 +313,7 @@ struct FormatSettings
         bool case_insensitive_column_matching = false;
         std::unordered_set<int> skip_stripes = {};
         bool output_string_as_string = false;
+        ORCCompression output_compression_method = ORCCompression::NONE;
     } orc;
 
     /// For capnProto format we should determine how to
