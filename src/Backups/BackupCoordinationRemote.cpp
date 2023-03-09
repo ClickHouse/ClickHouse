@@ -6,7 +6,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/escapeForFileName.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Backups/BackupCoordinationStage.h>
 
 
@@ -552,7 +552,7 @@ std::vector<FileInfo> BackupCoordinationRemote::getAllFileInfos() const
 
     for (auto & batch : batched_escaped_names)
     {
-        std::optional<zkutil::ZooKeeper::MultiGetResponse> sizes_and_checksums;
+        zkutil::ZooKeeper::MultiGetResponse sizes_and_checksums;
         {
             Strings file_names_paths;
             file_names_paths.reserve(batch.size());
@@ -561,7 +561,7 @@ std::vector<FileInfo> BackupCoordinationRemote::getAllFileInfos() const
 
 
             ZooKeeperRetriesControl retries_ctl("getAllFileInfos::getSizesAndChecksums", zookeeper_retries_info);
-            retries_ctl.retryLoop([&]()
+            retries_ctl.retryLoop([&]
             {
                 auto zk = getZooKeeper();
                 sizes_and_checksums = zk->get(file_names_paths);
@@ -579,9 +579,9 @@ std::vector<FileInfo> BackupCoordinationRemote::getAllFileInfos() const
             for (size_t i = 0; i < batch.size(); ++i)
             {
                 auto file_name = batch[i];
-                if (sizes_and_checksums.value()[i].error != Coordination::Error::ZOK)
-                    throw zkutil::KeeperException(sizes_and_checksums.value()[i].error);
-                auto size_and_checksum = sizes_and_checksums.value()[i].data;
+                if (sizes_and_checksums[i].error != Coordination::Error::ZOK)
+                    throw zkutil::KeeperException(sizes_and_checksums[i].error);
+                const auto & size_and_checksum = sizes_and_checksums[i].data;
                 auto size = deserializeSizeAndChecksum(size_and_checksum).first;
 
                 if (size)
@@ -601,7 +601,7 @@ std::vector<FileInfo> BackupCoordinationRemote::getAllFileInfos() const
             std::move(empty_files_infos.begin(), empty_files_infos.end(), std::back_inserter(file_infos));
         }
 
-        std::optional<zkutil::ZooKeeper::MultiGetResponse> non_empty_file_infos_serialized;
+        zkutil::ZooKeeper::MultiGetResponse non_empty_file_infos_serialized;
         ZooKeeperRetriesControl retries_ctl("getAllFileInfos::getFileInfos", zookeeper_retries_info);
         retries_ctl.retryLoop([&]()
         {
@@ -613,9 +613,9 @@ std::vector<FileInfo> BackupCoordinationRemote::getAllFileInfos() const
         for (size_t i = 0; i < non_empty_file_names.size(); ++i)
         {
             FileInfo file_info;
-            if (non_empty_file_infos_serialized.value()[i].error != Coordination::Error::ZOK)
-                throw zkutil::KeeperException(non_empty_file_infos_serialized.value()[i].error);
-            file_info = deserializeFileInfo(non_empty_file_infos_serialized.value()[i].data);
+            if (non_empty_file_infos_serialized[i].error != Coordination::Error::ZOK)
+                throw zkutil::KeeperException(non_empty_file_infos_serialized[i].error);
+            file_info = deserializeFileInfo(non_empty_file_infos_serialized[i].data);
             file_info.file_name = unescapeForFileName(non_empty_file_names[i]);
             non_empty_files_infos.emplace_back(std::move(file_info));
         }
