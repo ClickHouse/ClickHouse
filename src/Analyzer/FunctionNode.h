@@ -163,6 +163,8 @@ public:
       */
     void resolveAsFunction(FunctionBasePtr function_value);
 
+    void resolveAsFunctionWithName(String name);
+
     void resolveAsFunction(const FunctionOverloadResolverPtr & resolver)
     {
         resolveAsFunction(resolver->build(getArgumentColumns()));

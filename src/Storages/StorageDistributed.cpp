@@ -44,6 +44,7 @@
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
+#include <Analyzer/Visitors/GeneralizeGroupingFunctionForDistributedVisitor.h>
 
 #include <Planner/Planner.h>
 #include <Planner/Utils.h>
@@ -686,6 +687,7 @@ void StorageDistributed::read(
             storage_snapshot,
             remote_storage_id,
             remote_table_function_ptr);
+        removeGroupingFunctionSpecializations(query_tree_with_replaced_distributed_table);
 
         query_ast = queryNodeToSelectQuery(query_tree_with_replaced_distributed_table);
 

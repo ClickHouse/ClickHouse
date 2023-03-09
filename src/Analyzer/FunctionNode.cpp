@@ -65,6 +65,11 @@ void FunctionNode::resolveAsFunction(FunctionBasePtr function_value)
     kind = FunctionKind::ORDINARY;
 }
 
+void FunctionNode::resolveAsFunctionWithName(String name)
+{
+    function_name = std::move(name);
+}
+
 void FunctionNode::resolveAsAggregateFunction(AggregateFunctionPtr aggregate_function_value)
 {
     function_name = aggregate_function_value->getName();
