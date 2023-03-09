@@ -42,12 +42,18 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static void splitToSubcolumns(NamesAndTypesList & columns_list)
+static void splitToSubcolumns(NamesAndTypesList & columns_list, const NameSet & columns_not_to_split)
 {
-    for (auto it = columns_list.begin(); it != columns_list.end(); )
+    for (auto it = columns_list.begin(); it != columns_list.end();)
     {
-        if (const auto * type_map = typeid_cast<const DataTypeMap *>(it->type.get());
-            type_map && type_map->getNumShards() > 1)
+        if (columns_not_to_split.contains(it->name))
+        {
+            ++it;
+            continue;
+        }
+
+        const auto * type_map = typeid_cast<const DataTypeMap *>(it->type.get());
+        if (type_map && type_map->getNumShards() > 1)
         {
             auto old_column = std::move(*it);
             it = columns_list.erase(it);
@@ -115,7 +121,7 @@ static void extractMergingAndGatheringColumns(
             gathering_columns.emplace_back(column);
     }
 
-    splitToSubcolumns(gathering_columns);
+    splitToSubcolumns(gathering_columns, {});
     merging_column_names = merging_columns.getNames();
     gathering_column_names = gathering_columns.getNames();
 }
@@ -264,7 +270,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     {
         case MergeAlgorithm::Horizontal:
         {
-            global_ctx->merging_columns.splice(global_ctx->merging_columns.end(), std::move(global_ctx->gathering_columns));
+            NameSet merging_columns_set(global_ctx->merging_column_names.begin(), global_ctx->merging_column_names.end());
+            global_ctx->merging_columns = global_ctx->storage_columns;
+            splitToSubcolumns(global_ctx->merging_columns, merging_columns_set);
+
             global_ctx->merging_column_names = global_ctx->merging_columns.getNames();
             global_ctx->gathering_columns.clear();
             global_ctx->gathering_column_names.clear();
@@ -320,6 +329,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
                 LOG_TRACE(ctx->log, "Adding expired column {} for part {}", column_name, global_ctx->new_data_part->name);
                 std::erase(global_ctx->gathering_column_names, column_name);
                 std::erase(global_ctx->merging_column_names, column_name);
+                std::erase(global_ctx->all_column_names, column_name);
                 ++expired_columns;
             }
         }
@@ -328,6 +338,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         {
             global_ctx->gathering_columns = global_ctx->gathering_columns.filter(global_ctx->gathering_column_names);
             global_ctx->merging_columns = global_ctx->merging_columns.filter(global_ctx->merging_column_names);
+            global_ctx->storage_columns = global_ctx->storage_columns.filter(global_ctx->all_column_names);
         }
     }
 
