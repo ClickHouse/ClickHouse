@@ -237,6 +237,10 @@ The first part of the result is:
 
 ## Download of Prepared Partitions {#download-of-prepared-partitions}
 
+:::note
+The following steps provide information about the original dataset, and a method for loading prepared partitions into a self-managed ClickHouse server environment.
+:::
+
 See https://github.com/toddwschneider/nyc-taxi-data and http://tech.marksblogg.com/billion-nyc-taxi-rides-redshift.html for the description of a dataset and instructions for downloading.
 
 Downloading will result in about 227 GB of uncompressed data in CSV files. The download takes about an hour over a 1 Gbit connection (parallel downloading from s3.amazonaws.com recovers at least half of a 1 Gbit channel).
