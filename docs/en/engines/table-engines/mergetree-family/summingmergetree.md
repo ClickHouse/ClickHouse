@@ -44,7 +44,7 @@ When creating a `SummingMergeTree` table the same [clauses](../../../engines/tab
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::important
+:::warning
 Do not use this method in new projects and, if possible, switch the old projects to the method described above.
 :::
 

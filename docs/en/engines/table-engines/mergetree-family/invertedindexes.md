@@ -15,7 +15,7 @@ tokenized cells of the string column. For example, the string cell "I will be a 
 " wi", "wil", "ill", "ll ", "l b", " be" etc. The more fine-granular the input strings are tokenized, the bigger but also the more
 useful the resulting inverted index will be.
 
-:::important
+:::warning
 Inverted indexes are experimental and should not be used in production environments yet. They may change in the future in backward-incompatible
 ways, for example with respect to their DDL/DQL syntax or performance/compression characteristics.
 :::

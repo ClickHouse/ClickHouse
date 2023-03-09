@@ -460,7 +460,7 @@ Possible values:
 
 Changes the behaviour of join operations with `ANY` strictness.
 
-:::important
+:::warning
 This setting applies only for `JOIN` operations with [Join](../../engines/table-engines/special/join.md) engine tables.
 :::
 
@@ -550,7 +550,7 @@ Default value: 64.
 
 Enables legacy ClickHouse server behaviour in `ANY INNER|LEFT JOIN` operations.
 
-:::important
+:::warning
 Use this setting only for backward compatibility if your use cases depend on legacy `JOIN` behaviour.
 :::
 
@@ -942,7 +942,7 @@ Higher values will lead to higher memory usage.
 
 The maximum size of blocks of uncompressed data before compressing for writing to a table. By default, 1,048,576 (1 MiB). Specifying a smaller block size generally leads to slightly reduced compression ratio, the compression and decompression speed increases slightly due to cache locality, and memory consumption is reduced.
 
-:::important
+:::warning
 This is an expert-level setting, and you shouldn't change it if you're just getting started with ClickHouse.
 :::
 
@@ -960,7 +960,7 @@ We are writing a UInt32-type column (4 bytes per value). When writing 8192 rows,
 
 We are writing a URL column with the String type (average size of 60 bytes per value). When writing 8192 rows, the average will be slightly less than 500 KB of data. Since this is more than 65,536, a compressed block will be formed for each mark. In this case, when reading data from the disk in the range of a single mark, extra data won’t be decompressed.
 
-:::important
+:::warning
 This is an expert-level setting, and you shouldn't change it if you're just getting started with ClickHouse.
 :::
 
@@ -1247,7 +1247,7 @@ Possible values:
 
 Default value: 1.
 
-:::important
+:::warning
 Disable this setting if you use [max_parallel_replicas](#settings-max_parallel_replicas) without [parallel_replicas_custom_key](#settings-parallel_replicas_custom_key).
 If [parallel_replicas_custom_key](#settings-parallel_replicas_custom_key) is set, disable this setting only if it's used on a cluster with multiple shards containing multiple replicas.
 If it's used on a cluster with a single shard and multiple replicas, disabling this setting will have negative effects.
@@ -1277,7 +1277,7 @@ Default value: `1`.
 
 This options will produce different results depending on the settings used.
 
-:::important
+:::warning
 This setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain requirements. See [Distributed Subqueries and max_parallel_replicas](../../sql-reference/operators/in.md/#max_parallel_replica-subqueries) for more details.
 :::
 
@@ -2186,7 +2186,7 @@ Default value: 0.
 This setting also affects broken batches (that may appears because of abnormal server (machine) termination and no `fsync_after_insert`/`fsync_directories` for [Distributed](../../engines/table-engines/special/distributed.md) table engine).
 :::
 
-:::important
+:::warning
 You should not rely on automatic batch splitting, since this may hurt performance.
 :::
 
@@ -2194,7 +2194,7 @@ You should not rely on automatic batch splitting, since this may hurt performanc
 
 Sets the priority ([nice](https://en.wikipedia.org/wiki/Nice_(Unix))) for threads that execute queries. The OS scheduler considers this priority when choosing the next thread to run on each available CPU core.
 
-:::important
+:::warning
 To use this setting, you need to set the `CAP_SYS_NICE` capability. The `clickhouse-server` package sets it up during installation. Some virtual environments do not allow you to set the `CAP_SYS_NICE` capability. In this case, `clickhouse-server` shows a message about it at the start.
 :::
 
@@ -2858,7 +2858,7 @@ Possible values:
 
 Default value: `0`.
 
-:::important
+:::warning
 Nullable primary key usually indicates bad design. It is forbidden in almost all main stream DBMS. The feature is mainly for [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) and is not heavily tested. Use with care.
 :::
 
