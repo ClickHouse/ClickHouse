@@ -1318,12 +1318,12 @@ Settings:
 
 ``` xml
  <prometheus>
-        <endpoint>/metrics</endpoint>
-        <port>8001</port>
-        <metrics>true</metrics>
-        <events>true</events>
-        <asynchronous_metrics>true</asynchronous_metrics>
-    </prometheus>
+    <endpoint>/metrics</endpoint>
+    <port>9363</port>
+    <metrics>true</metrics>
+    <events>true</events>
+    <asynchronous_metrics>true</asynchronous_metrics>
+</prometheus>
 ```
 
 ## query_log {#server_configuration_parameters-query-log}
