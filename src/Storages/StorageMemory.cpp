@@ -193,31 +193,47 @@ private:
 };
 
 
-class ReadFromMemoryStorage final : public ISourceStep
+class ReadFromMemoryStorageStep final : public ISourceStep
 {
 public:
-    ReadFromMemoryStorage(const Names & columns_to_read_,
-                          const StorageSnapshotPtr & storage_snapshot_,
-                          const size_t num_streams_,
-                          const bool delay_read_for_global_subqueries_) :
+    ReadFromMemoryStorageStep(const Names & columns_to_read_,
+                              const StorageSnapshotPtr & storage_snapshot_,
+                              const size_t num_streams_,
+                              const bool delay_read_for_global_subqueries_) :
         ISourceStep(DataStream{.header = storage_snapshot_->getSampleBlockForColumns(columns_to_read_)}),
-        storage_snapshot(storage_snapshot_),
-        columns_to_read(columns_to_read_),
-        num_streams(num_streams_),
-        delay_read_for_global_subqueries(delay_read_for_global_subqueries_)
+        pipe(makePipe(columns_to_read_, storage_snapshot_, num_streams_, delay_read_for_global_subqueries_))
     {
     }
 
+    explicit ReadFromMemoryStorageStep(Pipe pipe_) :
+        ISourceStep(DataStream{.header = pipe_.getHeader()}),
+        pipe(std::move(pipe_))
+    {
+    }
+
+    ReadFromMemoryStorageStep() = delete;
+    ReadFromMemoryStorageStep(const ReadFromMemoryStorageStep&) = delete;
+    ReadFromMemoryStorageStep& operator=(const ReadFromMemoryStorageStep&) = delete;
+
     String getName() const override { return name; }
 
-    Pipe preparePipe()
+    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
-        storage_snapshot->check(columns_to_read);
+        // use move - make sure that the call will only be made once.
+        pipeline.init(std::move(pipe));
+    }
 
-        const auto & snapshot_data = assert_cast<const StorageMemory::SnapshotData &>(*storage_snapshot->data);
+    static Pipe makePipe(const Names & columns_to_read_,
+                         const StorageSnapshotPtr & storage_snapshot_,
+                         size_t num_streams_,
+                         const bool delay_read_for_global_subqueries_)
+    {
+        storage_snapshot_->check(columns_to_read_);
+
+        const auto & snapshot_data = assert_cast<const StorageMemory::SnapshotData &>(*storage_snapshot_->data);
         auto current_data = snapshot_data.blocks;
 
-        if (delay_read_for_global_subqueries)
+        if (delay_read_for_global_subqueries_)
         {
             /// Note: for global subquery we use single source.
             /// Mainly, the reason is that at this point table is empty,
@@ -228,8 +244,8 @@ public:
             /// Since no other manipulation with data is done, multiple sources shouldn't give any profit.
 
             return Pipe(std::make_shared<MemorySource>(
-                columns_to_read,
-                storage_snapshot,
+                columns_to_read_,
+                storage_snapshot_,
                 nullptr /* data */,
                 nullptr /* parallel execution index */,
                 [current_data](std::shared_ptr<const Blocks> & data_to_initialize)
@@ -240,32 +256,23 @@ public:
 
         size_t size = current_data->size();
 
-        if (num_streams > size)
-            num_streams = size;
+        if (num_streams_ > size)
+            num_streams_ = size;
 
         Pipes pipes;
 
         auto parallel_execution_index = std::make_shared<std::atomic<size_t>>(0);
 
-        for (size_t stream = 0; stream < num_streams; ++stream)
+        for (size_t stream = 0; stream < num_streams_; ++stream)
         {
-            pipes.emplace_back(std::make_shared<MemorySource>(columns_to_read, storage_snapshot, current_data, parallel_execution_index));
+            pipes.emplace_back(std::make_shared<MemorySource>(columns_to_read_, storage_snapshot_, current_data, parallel_execution_index));
         }
         return Pipe::unitePipes(std::move(pipes));
     }
 
-    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
-    {
-        pipeline.init(preparePipe());
-    }
-
 private:
     static constexpr auto name = "ReadFromMemoryStorage";
-
-    StorageSnapshotPtr storage_snapshot;
-    Names columns_to_read;
-    size_t num_streams;
-    const bool delay_read_for_global_subqueries;
+    Pipe pipe;
 };
 
 
@@ -310,8 +317,7 @@ Pipe StorageMemory::read(
     size_t /*max_block_size*/,
     size_t num_streams)
 {
-    auto reading = std::make_unique<ReadFromMemoryStorage>(column_names, storage_snapshot, num_streams, delay_read_for_global_subqueries);
-    return reading->preparePipe();
+    return ReadFromMemoryStorageStep::makePipe(column_names, storage_snapshot, num_streams, delay_read_for_global_subqueries);
 }
 
 void StorageMemory::read(
@@ -320,18 +326,19 @@ void StorageMemory::read(
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr context,
-    QueryProcessingStage::Enum /*processed_stage*/,
-    size_t /*max_block_size*/,
+    QueryProcessingStage::Enum processed_stage,
+    size_t max_block_size,
     size_t num_streams)
 {
-    auto read_step = std::make_unique<ReadFromMemoryStorage>(column_names, storage_snapshot, num_streams, delay_read_for_global_subqueries);
-    auto pipe = read_step->preparePipe();
+    // @TODO it looks like IStorage::readFromPipe. different only step's type.
+    auto pipe = read(column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
     if (pipe.empty())
     {
         auto header = storage_snapshot->getSampleBlockForColumns(column_names);
         InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info, context);
         return;
     }
+    auto read_step = std::make_unique<ReadFromMemoryStorageStep>(std::move(pipe));
     query_plan.addStep(std::move(read_step));
 }
 
