@@ -79,7 +79,7 @@ TEST(FindNotSymbols, ExtraSymbols)
 
 TEST(FindNotSymbols, EmptyString)
 {
-    std::string_view s;
+    std::string_view s = "";
     test_find_first_not<'h', 'e', 'l', 'o', 'w', 'r', 'd', ' '>(s, s.end());
 }
 
