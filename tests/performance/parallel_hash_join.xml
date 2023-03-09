@@ -1,4 +1,4 @@
 <test>
     <!-- could test the performance of column scatter -->
-    <query> select t1.x, t2.x, t1.y, t2.y from (select number as x, number % 10 as y from numbers(10000000)) as t1 any inner join (select number as x, number % 10 as y from numbers(10000000)) as t2 on t1.x = t2.x settings join_algorithm='parallel_hash' </query>
+    <query> select t1.x, t2.x, t1.y, t2.y from (select number as x, number % 10 as y from numbers(10000000)) as t1 any inner join (select number as x, number % 10 as y from numbers(10000000)) as t2 on t1.x = t2.x FORMAT Null settings join_algorithm='parallel_hash' </query>
 </test>
