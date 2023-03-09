@@ -188,8 +188,9 @@ $ curl -vsS "http://localhost:8123/?enable_http_compression=1" -d 'SELECT number
 $ echo "SELECT 1" | gzip -c | curl -sS --data-binary @- -H 'Content-Encoding: gzip' 'http://localhost:8123/'
 ```
 
-!!! note "警告"
-    一些HTTP客户端可能会在默认情况下从服务器解压数据(使用`gzip`和`deflate`)，即使您未正确地使用了压缩设置，您也可能会得到解压数据。
+:::warning
+一些HTTP客户端可能会在默认情况下从服务器解压数据(使用`gzip`和`deflate`)，即使您未正确地使用了压缩设置，您也可能会得到解压数据。
+:::
 
 您可以使用`database`URL参数或`X-ClickHouse-Database`头来指定默认数据库。
 
@@ -447,8 +448,9 @@ $ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_threads' 'http://localhost:
 max_final_threads   2
 ```
 
-!!! note "警告"
-    在一个`predefined_query_handler`中，只支持insert类型的一个`查询`。
+:::warning
+在一个`predefined_query_handler`中，只支持insert类型的一个`查询`。
+:::
 
 ### 动态查询 {#dynamic_query_handler}
 

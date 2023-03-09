@@ -126,6 +126,32 @@ static void extractMergingAndGatheringColumns(
     gathering_column_names = gathering_columns.getNames();
 }
 
+static void addMissedColumnsToSerializationInfos(
+    size_t num_rows_in_parts,
+    const Names & part_columns,
+    const ColumnsDescription & storage_columns,
+    const SerializationInfo::Settings & info_settings,
+    SerializationInfoByName & new_infos)
+{
+    NameSet part_columns_set(part_columns.begin(), part_columns.end());
+
+    for (const auto & column : storage_columns)
+    {
+        if (part_columns_set.contains(column.name))
+            continue;
+
+        if (column.default_desc.kind != ColumnDefaultKind::Default)
+            continue;
+
+        if (column.default_desc.expression)
+            continue;
+
+        auto new_info = column.type->createSerializationInfo(info_settings);
+        new_info->addDefaults(num_rows_in_parts);
+        new_infos.emplace(column.name, std::move(new_info));
+    }
+}
+
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
 {
     String local_tmp_prefix;
@@ -234,7 +260,19 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
             ctx->force_ttl = true;
         }
 
-        infos.add(part->getSerializationInfos());
+        if (!info_settings.isAlwaysDefault())
+        {
+            auto part_infos = part->getSerializationInfos();
+
+            addMissedColumnsToSerializationInfos(
+                part->rows_count,
+                part->getColumns().getNames(),
+                global_ctx->metadata_snapshot->getColumns(),
+                info_settings,
+                part_infos);
+
+            infos.add(part_infos);
+        }
     }
 
     global_ctx->new_data_part->setColumns(global_ctx->storage_columns, infos);
