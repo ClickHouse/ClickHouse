@@ -422,13 +422,19 @@ REGISTER_FUNCTION(GenerateRandomStructure)
         {
             R"(
 Generates a random table structure.
-This function takes an optional constant argument, the number of column in the result structure.
-If argument is now specified, the number of columns is random. The maximum number of columns is 1024.
+This function takes 4 optional constant arguments: the number of column in the result structure (random by default),
+random seed (random by default), flag that indicates if big number types can be used (true by default),
+flag that indicates if enum types can be used (true by default).
+The maximum number of columns is 128.
 The function returns a value of type String.
 )",
             Documentation::Examples{
                 {"random", "SELECT generateRandomStructure()"},
-                {"with specified number of arguments", "SELECT generateRandomStructure(10)"}},
+                {"with specified number of arguments", "SELECT generateRandomStructure(10)"},
+                {"with specified seed", "SELECT generateRandomStructure(10, 42)"},
+                {"without big number types", "SELECT generateRandomStructure(10, NULL, false)"},
+                {"without enum types", "SELECT generateRandomStructure(10, NULL, false, false)"},
+            },
             Documentation::Categories{"Random"}
         },
         FunctionFactory::CaseSensitive);
