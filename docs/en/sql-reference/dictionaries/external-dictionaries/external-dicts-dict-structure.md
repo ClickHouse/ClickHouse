@@ -60,7 +60,7 @@ ClickHouse supports the following types of keys:
 
 An xml structure can contain either `<id>` or `<key>`. DDL-query must contain single `PRIMARY KEY`.
 
-:::important    
+:::warning    
 You must not describe key as an attribute.
 :::
 

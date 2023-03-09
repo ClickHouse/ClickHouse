@@ -59,11 +59,11 @@ With filtering by realm:
 </clickhouse>
 ```
 
-:::important
+:::warning
 You can define only one `kerberos` section. The presence of multiple `kerberos` sections will force ClickHouse to disable Kerberos authentication.
 :::
 
-:::important
+:::warning
 `principal` and `realm` sections cannot be specified at the same time. The presence of both `principal` and `realm` sections will force ClickHouse to disable Kerberos authentication.
 :::
 
@@ -103,7 +103,7 @@ Example (goes into `users.xml`):
 </clickhouse>
 ```
 
-:::important
+:::warning
 Note that Kerberos authentication cannot be used alongside with any other authentication mechanism. The presence of any other sections like `password` alongside `kerberos` will force ClickHouse to shutdown.
 :::
 

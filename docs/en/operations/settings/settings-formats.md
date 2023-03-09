@@ -142,7 +142,7 @@ y	Nullable(String)
 z	IPv4
 ```
 
-:::important
+:::warning
 If the `schema_inference_hints` is not formated properly, or if there is a typo or a wrong datatype, etc... the whole schema_inference_hints will be ignored.
 :::
 

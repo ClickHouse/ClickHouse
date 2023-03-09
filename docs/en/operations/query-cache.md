@@ -29,7 +29,7 @@ Transactionally inconsistent caching is traditionally provided by client tools o
 the same caching logic and configuration is often duplicated. With ClickHouse's query cache, the caching logic moves to the server side.
 This reduces maintenance effort and avoids redundancy.
 
-:::important
+:::warning
 The query cache is an experimental feature that should not be used in production. There are known cases (e.g. in distributed query
 processing) where wrong results are returned.
 :::

@@ -32,7 +32,7 @@ SET allow_experimental_lightweight_delete = true;
 
 An [alternative way to delete rows](./alter/delete.md) in ClickHouse is `ALTER TABLE ... DELETE`, which might be more efficient if you do bulk deletes only occasionally and don't need the operation to be applied instantly. In most use cases the new lightweight `DELETE FROM` behavior will be considerably faster.
 
-:::important
+:::warning
 Even though deletes are becoming more lightweight in ClickHouse, they should still not be used as aggressively as on an OLTP system. Lightweight deletes are currently efficient for wide parts, but for compact parts, they can be a heavyweight operation, and it may be better to use `ALTER TABLE` for some scenarios.
 :::
 
