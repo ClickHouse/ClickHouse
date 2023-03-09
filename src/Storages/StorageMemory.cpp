@@ -318,14 +318,21 @@ void StorageMemory::read(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & /*query_info*/,
-    ContextPtr /*context*/,
+    SelectQueryInfo & query_info,
+    ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t /*max_block_size*/,
     size_t num_streams)
 {
-    auto reading = std::make_unique<ReadFromMemoryStorage>(column_names, storage_snapshot, num_streams, delay_read_for_global_subqueries);
-    query_plan.addStep(std::move(reading));
+    auto read_step = std::make_unique<ReadFromMemoryStorage>(column_names, storage_snapshot, num_streams, delay_read_for_global_subqueries);
+    auto pipe = read_step->preparePipe();
+    if (pipe.empty())
+    {
+        auto header = storage_snapshot->getSampleBlockForColumns(column_names);
+        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info, context);
+        return;
+    }
+    query_plan.addStep(std::move(read_step));
 }
 
 
