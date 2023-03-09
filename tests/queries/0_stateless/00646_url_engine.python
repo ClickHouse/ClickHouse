@@ -83,7 +83,8 @@ class CSVHTTPServer(BaseHTTPRequestHandler):
         return
 
     def do_HEAD(self):
-        self.do_GET()
+        self._set_headers()
+        return
 
     def read_chunk(self):
         msg = ''
