@@ -984,6 +984,9 @@ DataTypePtr tryInferNumberFromString(std::string_view field, const FormatSetting
         if (tryReadIntText(tmp_int, buf) && buf.eof())
             return std::make_shared<DataTypeInt64>();
 
+        /// We cam safely get back to the start of buffer, because we read from a string and we didn't reach eof.
+        buf.position() = buf.buffer().begin();
+
         /// In case of Int64 overflow, try to infer UInt64
         UInt64 tmp_uint;
         if (tryReadIntText(tmp_uint, buf) && buf.eof())
