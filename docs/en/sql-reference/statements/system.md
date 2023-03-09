@@ -8,7 +8,7 @@ sidebar_label: SYSTEM
 
 ## RELOAD EMBEDDED DICTIONARIES
 
-Reload all [Internal dictionaries](../../sql-reference/dictionaries/internal-dicts.md).
+Reload all [Internal dictionaries](../../sql-reference/dictionaries/index.md).
 By default, internal dictionaries are disabled.
 Always returns `Ok.` regardless of the result of the internal dictionary update.
 
@@ -369,7 +369,7 @@ SYSTEM DROP FILESYSTEM CACHE
 It's too heavy and has potential for misuse.
 :::
 
-Will do sync syscall. 
+Will do sync syscall.
 
 ```sql
 SYSTEM SYNC FILE CACHE
