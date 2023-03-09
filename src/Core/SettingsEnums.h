@@ -72,6 +72,8 @@ DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeInputFormat, FormatSettings::DateTimeIn
 
 DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOutputFormat, FormatSettings::DateTimeOutputFormat)
 
+DECLARE_SETTING_ENUM_WITH_RENAME(ParquetVersion, FormatSettings::ParquetVersion)
+
 enum class LogsLevel
 {
     none = 0,    /// Disable
@@ -200,6 +202,14 @@ enum class Dialect
 };
 
 DECLARE_SETTING_ENUM(Dialect)
+
+enum class ParallelReplicasCustomKeyFilterType : uint8_t
+{
+    DEFAULT,
+    RANGE,
+};
+
+DECLARE_SETTING_ENUM(ParallelReplicasCustomKeyFilterType)
 
 DECLARE_SETTING_ENUM(LocalFSReadMethod)
 }
