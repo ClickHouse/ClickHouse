@@ -125,7 +125,7 @@ SELECT sipHash64Keyed((506097522914230528, 1084818905618843912), array('e','x','
 
 Like [sipHash64](#hash_functions-siphash64) but produces a 128-bit hash value, i.e. the final xor-folding state is done up to 128 bits.
 
-:::warning
+:::important
 This 128-bit variant differs from the reference implementation and it's weaker.
 This version exists because, when it was written, there was no official 128-bit extension for SipHash.
 New projects should probably use [sipHash128Reference](#hash_functions-siphash128reference).
@@ -165,7 +165,7 @@ Result:
 
 Same as [sipHash128](#hash_functions-siphash128) but additionally takes an explicit key argument instead of using a fixed key.
 
-:::warning
+:::important
 This 128-bit variant differs from the reference implementation and it's weaker.
 This version exists because, when it was written, there was no official 128-bit extension for SipHash.
 New projects should probably use [sipHash128ReferenceKeyed](#hash_functions-siphash128referencekeyed).

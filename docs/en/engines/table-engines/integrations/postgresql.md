@@ -74,7 +74,7 @@ All joins, aggregations, sorting, `IN [ array ]` conditions and the `LIMIT` samp
 
 PostgreSQL `Array` types are converted into ClickHouse arrays.
 
-:::warning
+:::important
 Be careful - in PostgreSQL an array data, created like a `type_name[]`, may contain multi-dimensional arrays of different dimensions in different table rows in same column. But in ClickHouse it is only allowed to have multidimensional arrays of the same count of dimensions in all table rows in same column.
 :::
 

@@ -205,7 +205,7 @@ Differs from the `TabSeparated` format in that the column names are written in t
 
 During parsing, the first row is expected to contain the column names. You can use column names to determine their position and to check their correctness.
 
-:::warning
+:::important
 If setting [input_format_with_names_use_header](/docs/en/operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to 1,
 the columns from the input data will be mapped to the columns of the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/docs/en/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
 Otherwise, the first row will be skipped.
@@ -217,7 +217,7 @@ This format is also available under the name `TSVWithNames`.
 
 Differs from the `TabSeparated` format in that the column names are written to the first row, while the column types are in the second row.
 
-:::warning
+:::important
 If setting [input_format_with_names_use_header](/docs/en/operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to 1,
 the columns from the input data will be mapped to the columns in the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/docs/en/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
 Otherwise, the first row will be skipped.
@@ -470,7 +470,7 @@ The CSV format supports the output of totals and extremes the same way as `TabSe
 
 Also prints the header row with column names, similar to [TabSeparatedWithNames](#tabseparatedwithnames).
 
-:::warning
+:::important
 If setting [input_format_with_names_use_header](/docs/en/operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to 1,
 the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/docs/en/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
 Otherwise, the first row will be skipped.
@@ -480,7 +480,7 @@ Otherwise, the first row will be skipped.
 
 Also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes).
 
-:::warning
+:::important
 If setting [input_format_with_names_use_header](/docs/en/operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to 1,
 the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/docs/en/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
 Otherwise, the first row will be skipped.
@@ -500,7 +500,7 @@ There is also `CustomSeparatedIgnoreSpaces` format, which is similar to [Templat
 
 Also prints the header row with column names, similar to [TabSeparatedWithNames](#tabseparatedwithnames).
 
-:::warning
+:::important
 If setting [input_format_with_names_use_header](/docs/en/operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to 1,
 the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/docs/en/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
 Otherwise, the first row will be skipped.
@@ -510,7 +510,7 @@ Otherwise, the first row will be skipped.
 
 Also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes).
 
-:::warning
+:::important
 If setting [input_format_with_names_use_header](/docs/en/operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to 1,
 the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/docs/en/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
 Otherwise, the first row will be skipped.
@@ -969,7 +969,7 @@ Differs from `JSONEachRow`/`JSONStringsEachRow` in that ClickHouse will also yie
 
 Differs from `JSONCompactEachRow` format in that it also prints the header row with column names, similar to [TabSeparatedWithNames](#tabseparatedwithnames).
 
-:::warning
+:::important
 If setting [input_format_with_names_use_header](/docs/en/operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to 1,
 the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/docs/en/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
 Otherwise, the first row will be skipped.
@@ -979,7 +979,7 @@ Otherwise, the first row will be skipped.
 
 Differs from `JSONCompactEachRow` format in that it also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes).
 
-:::warning
+:::important
 If setting [input_format_with_names_use_header](/docs/en/operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to 1,
 the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/docs/en/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
 Otherwise, the first row will be skipped.
@@ -991,7 +991,7 @@ the types from input data will be compared with the types of the corresponding c
 
 Differs from `JSONCompactStringsEachRow` in that in that it also prints the header row with column names, similar to [TabSeparatedWithNames](#tabseparatedwithnames).
 
-:::warning
+:::important
 If setting [input_format_with_names_use_header](/docs/en/operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to 1,
 the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/docs/en/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
 Otherwise, the first row will be skipped.
@@ -1001,7 +1001,7 @@ Otherwise, the first row will be skipped.
 
 Differs from `JSONCompactStringsEachRow` in that it also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes).
 
-:::warning
+:::important
 If setting [input_format_with_names_use_header](/docs/en/operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to 1,
 the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/docs/en/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
 Otherwise, the first row will be skipped.
@@ -1120,7 +1120,7 @@ CREATE TABLE IF NOT EXISTS example_table
 -   If `input_format_defaults_for_omitted_fields = 0`, then the default value for `x` and `a` equals `0` (as the default value for the `UInt32` data type).
 -   If `input_format_defaults_for_omitted_fields = 1`, then the default value for `x` equals `0`, but the default value of `a` equals `x * 2`.
 
-:::warning
+:::important
 When inserting data with `input_format_defaults_for_omitted_fields = 1`, ClickHouse consumes more computational resources, compared to insertion with `input_format_defaults_for_omitted_fields = 0`.
 :::
 
@@ -1450,7 +1450,7 @@ Similar to [RowBinary](#rowbinary), but with added header:
 -   [LEB128](https://en.wikipedia.org/wiki/LEB128)-encoded number of columns (N)
 -   N `String`s specifying column names
 
-:::warning
+:::important
 If setting [input_format_with_names_use_header](/docs/en/operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to 1,
 the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/docs/en/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
 Otherwise, the first row will be skipped.
@@ -1464,7 +1464,7 @@ Similar to [RowBinary](#rowbinary), but with added header:
 -   N `String`s specifying column names
 -   N `String`s specifying column types
 
-:::warning
+:::important
 If setting [input_format_with_names_use_header](/docs/en/operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to 1,
 the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/docs/en/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
 Otherwise, the first row will be skipped.
@@ -1912,7 +1912,7 @@ SET format_avro_schema_registry_url = 'http://schema-registry';
 SELECT * FROM topic1_stream;
 ```
 
-:::warning
+:::important
 Setting `format_avro_schema_registry_url` needs to be configured in `users.xml` to maintain it’s value after a restart. Also you can use the `format_avro_schema_registry_url` setting of the `Kafka` table engine.
 :::
 
