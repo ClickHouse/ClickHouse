@@ -314,11 +314,14 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     if (auto updated_steps = simplePushDownOverStep<DistinctStep>(parent_node, nodes, child))
         return updated_steps;
 
-    if (auto * join = typeid_cast<JoinStep *>(child.get()))
+    auto * join = typeid_cast<JoinStep *>(child.get());
+    auto * filled_join = typeid_cast<FilledJoinStep *>(child.get());
+
+    if (join || filled_join)
     {
         auto join_push_down = [&](JoinKind kind) -> size_t
         {
-            const auto & table_join = join->getJoin()->getTableJoin();
+            const auto & table_join = join ? join->getJoin()->getTableJoin() : filled_join->getJoin()->getTableJoin();
 
             /// Only inner and left(/right) join are supported. Other types may generate default values for left table keys.
             /// So, if we push down a condition like `key != 0`, not all rows may be filtered.
@@ -326,8 +329,8 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
                 return 0;
 
             bool is_left = kind == JoinKind::Left;
-            const auto & input_header = is_left ? join->getInputStreams().front().header : join->getInputStreams().back().header;
-            const auto & res_header = join->getOutputStream().header;
+            const auto & input_header = is_left ? child->getInputStreams().front().header : child->getInputStreams().back().header;
+            const auto & res_header = child->getOutputStream().header;
             Names allowed_keys;
             const auto & source_columns = input_header.getNames();
             for (const auto & name : source_columns)
@@ -372,7 +375,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
             return updated_steps;
 
         /// For full sorting merge join we push down both to the left and right tables, because left and right streams are not independent.
-        if (join->allowPushDownToRight())
+        if (join && join->allowPushDownToRight())
         {
             if (size_t updated_steps = join_push_down(JoinKind::Right))
                 return updated_steps;
