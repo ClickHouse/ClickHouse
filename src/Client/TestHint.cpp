@@ -52,6 +52,16 @@ TestHint::TestHint(const String & query_)
     }
 }
 
+bool TestHint::hasExpectedClientError(int error)
+{
+    return std::find(client_errors.begin(), client_errors.end(), error) != client_errors.end();
+}
+
+bool TestHint::hasExpectedServerError(int error)
+{
+    return std::find(server_errors.begin(), server_errors.end(), error) != server_errors.end();
+}
+
 void TestHint::parse(Lexer & comment_lexer, bool is_leading_hint)
 {
     std::unordered_set<std::string_view> commands{"echo", "echoOn", "echoOff"};

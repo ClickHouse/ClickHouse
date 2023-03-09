@@ -62,6 +62,9 @@ public:
     bool hasClientErrors() { return !client_errors.empty(); }
     bool hasServerErrors() { return !server_errors.empty(); }
 
+    bool hasExpectedClientError(int error);
+    bool hasExpectedServerError(int error);
+
 private:
     const String & query;
     ErrorVector server_errors{};
