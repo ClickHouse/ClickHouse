@@ -211,20 +211,13 @@ public:
     void flush()
     {
         auto * file_buffer = tryGetFileBuffer();
-        LOG_TRACE(log, "Trying to flush");
         if (file_buffer)
         {
             /// Fsync file system if needed
             if (log_file_settings.force_sync)
-            {
                 file_buffer->sync();
-            }
             else
-            {
-                LOG_TRACE(log, "Flushing with next, in buffer {}", file_buffer->offset());
                 file_buffer->next();
-                LOG_TRACE(log, "Flushed in total {}", file_buffer->count());
-            }
         }
     }
 
