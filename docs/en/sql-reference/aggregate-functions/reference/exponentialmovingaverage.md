@@ -181,7 +181,7 @@ ORDER BY time ASC;
 └───────┴─────────────────────┴─────────────┴──────────┘
 
 
--- Calculate timeunit timeunit using toRelativeHourNum
+-- Calculate timeunit using toRelativeHourNum
 SELECT
     value,
     time,
