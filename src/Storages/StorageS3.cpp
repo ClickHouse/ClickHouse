@@ -1265,7 +1265,7 @@ void StorageS3::updateConfiguration(ContextPtr ctx, StorageS3::Configuration & u
         credentials.GetAWSSecretKey(),
         upd.auth_settings.server_side_encryption_customer_key_base64,
         std::move(headers),
-        upd.auth_settings.use_environment_credentials.value_or(ctx->getConfigRef().getBool("s3.use_environment_credentials", false)),
+        upd.auth_settings.use_environment_credentials.value_or(ctx->getConfigRef().getBool("s3.use_environment_credentials", true)),
         upd.auth_settings.use_insecure_imds_request.value_or(ctx->getConfigRef().getBool("s3.use_insecure_imds_request", false)));
 }
 
@@ -1281,7 +1281,7 @@ void StorageS3::processNamedCollectionResult(StorageS3::Configuration & configur
 
     configuration.auth_settings.access_key_id = collection.getOrDefault<String>("access_key_id", "");
     configuration.auth_settings.secret_access_key = collection.getOrDefault<String>("secret_access_key", "");
-    configuration.auth_settings.use_environment_credentials = collection.getOrDefault<UInt64>("use_environment_credentials", 0);
+    configuration.auth_settings.use_environment_credentials = collection.getOrDefault<UInt64>("use_environment_credentials", 1);
 
     configuration.format = collection.getOrDefault<String>("format", "auto");
     configuration.compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
