@@ -1883,8 +1883,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                     current_exception->rethrow();
                 }
 
-                if (std::find(hint.clientErrors().begin(), hint.clientErrors().end(), current_exception->code())
-                    == hint.clientErrors().end())
+                if (!hint.hasExpectedClientError(current_exception->code()))
                 {
                     if (hint.hasClientErrors())
                         current_exception->addMessage("\nExpected client error: {}.", hint.clientErrors());
@@ -1944,9 +1943,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                             fmt::print(stderr, "Expected server error code '{}' but got no server error (query: {}).\n",
                                        test_hint.serverErrors(), full_query);
                         }
-                        else if (
-                            std::find(test_hint.serverErrors().begin(), test_hint.serverErrors().end(), server_exception->code())
-                            == test_hint.serverErrors().end())
+                        else if (!test_hint.hasExpectedServerError(server_exception->code()))
                         {
                             error_matches_hint = false;
                             fmt::print(stderr, "Expected server error code: {} but got: {} (query: {}).\n",
@@ -1961,9 +1958,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                             fmt::print(stderr, "Expected client error code '{}' but got no client error (query: {}).\n",
                                        test_hint.clientErrors(), full_query);
                         }
-                        else if (
-                            std::find(test_hint.clientErrors().begin(), test_hint.clientErrors().end(), client_exception->code())
-                            == test_hint.clientErrors().end())
+                        else if (!test_hint.hasExpectedClientError(client_exception->code()))
                         {
                             error_matches_hint = false;
                             fmt::print(stderr, "Expected client error code '{}' but got '{}' (query: {}).\n",
