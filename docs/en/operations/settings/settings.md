@@ -1248,7 +1248,9 @@ Possible values:
 Default value: 1.
 
 :::warning
-Disable this setting if you use [max_parallel_replicas](#settings-max_parallel_replicas).
+Disable this setting if you use [max_parallel_replicas](#settings-max_parallel_replicas) without [parallel_replicas_custom_key](#settings-parallel_replicas_custom_key).
+If [parallel_replicas_custom_key](#settings-parallel_replicas_custom_key) is set, disable this setting only if it's used on a cluster with multiple shards containing multiple replicas.
+If it's used on a cluster with a single shard and multiple replicas, disabling this setting will have negative effects.
 :::
 
 ## totals_mode {#totals-mode}
@@ -1273,16 +1275,47 @@ Default value: `1`.
 
 **Additional Info**
 
-This setting is useful for replicated tables with a sampling key. A query may be processed faster if it is executed on several servers in parallel. But the query performance may degrade in the following cases:
+This options will produce different results depending on the settings used.
+
+:::warning
+This setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain requirements. See [Distributed Subqueries and max_parallel_replicas](../../sql-reference/operators/in.md/#max_parallel_replica-subqueries) for more details.
+:::
+
+### Parallel processing using `SAMPLE` key
+
+A query may be processed faster if it is executed on several servers in parallel. But the query performance may degrade in the following cases:
 
 - The position of the sampling key in the partitioning key does not allow efficient range scans.
 - Adding a sampling key to the table makes filtering by other columns less efficient.
 - The sampling key is an expression that is expensive to calculate.
 - The cluster latency distribution has a long tail, so that querying more servers increases the query overall latency.
 
-:::warning
-This setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain requirements. See [Distributed Subqueries and max_parallel_replicas](../../sql-reference/operators/in.md/#max_parallel_replica-subqueries) for more details.
-:::
+### Parallel processing using [parallel_replicas_custom_key](#settings-parallel_replicas_custom_key)
+
+This setting is useful for any replicated table.
+
+## parallel_replicas_custom_key {#settings-parallel_replicas_custom_key}
+
+An arbitrary integer expression that can be used to split work between replicas for a specific table.
+The value can be any integer expression.
+A query may be processed faster if it is executed on several servers in parallel but it depends on the used [parallel_replicas_custom_key](#settings-parallel_replicas_custom_key)
+and [parallel_replicas_custom_key_filter_type](#settings-parallel_replicas_custom_key_filter_type).
+
+Simple expressions using primary keys are preferred.
+
+If the setting is used on a cluster that consists of a single shard with multiple replicas, those replicas will be converted into virtual shards.
+Otherwise, it will behave same as for `SAMPLE` key, it will use multiple replicas of each shard.
+
+## parallel_replicas_custom_key_filter_type {#settings-parallel_replicas_custom_key_filter_type}
+
+How to use `parallel_replicas_custom_key` expression for splitting work between replicas.
+
+Possible values:
+
+-   `default` — Use the default implementation using modulo operation on the `parallel_replicas_custom_key`.
+-   `range` — Split the entire value space of the expression in the ranges. This type of filtering is useful if values of `parallel_replicas_custom_key` are uniformly spread across the entire integer space, e.g. hash values.
+
+Default value: `default`.
 
 ## compile_expressions {#compile-expressions}
 
