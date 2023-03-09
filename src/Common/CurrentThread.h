@@ -100,8 +100,8 @@ public:
     /// Initializes query with current thread as master thread in constructor, and detaches it in destructor
     struct QueryScope : private boost::noncopyable
     {
-        explicit QueryScope(ContextMutablePtr query_context);
-        explicit QueryScope(ContextPtr query_context);
+        explicit QueryScope(ContextMutablePtr query_context, std::function<void()> fatal_error_callback = {});
+        explicit QueryScope(ContextPtr query_context, std::function<void()> fatal_error_callback = {});
         ~QueryScope();
 
         void logPeakMemoryUsage();
