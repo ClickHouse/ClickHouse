@@ -6,7 +6,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/escapeForFileName.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Backups/BackupCoordinationStage.h>
 
 
