@@ -11,6 +11,7 @@
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/RollupStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
@@ -61,37 +62,6 @@ namespace
                 non_const_columns.emplace(column.name);
         }
         return non_const_columns;
-    }
-
-    const ActionsDAG::Node * getOriginalNodeForOutputAlias(const ActionsDAGPtr & actions, const String & output_name)
-    {
-        /// find alias in output
-        const ActionsDAG::Node * output_alias = nullptr;
-        for (const auto * node : actions->getOutputs())
-        {
-            if (node->result_name == output_name)
-            {
-                output_alias = node;
-                break;
-            }
-        }
-        if (!output_alias)
-        {
-            logDebug("getOriginalNodeForOutputAlias: no output alias found", output_name);
-            return nullptr;
-        }
-
-        /// find original(non alias) node it refers to
-        const ActionsDAG::Node * node = output_alias;
-        while (node && node->type == ActionsDAG::ActionType::ALIAS)
-        {
-            chassert(!node->children.empty());
-            node = node->children.front();
-        }
-        if (node && node->type != ActionsDAG::ActionType::INPUT)
-            return nullptr;
-
-        return node;
     }
 
     bool compareAggregationKeysWithDistinctColumns(
@@ -176,7 +146,7 @@ namespace
         while (!node->children.empty())
         {
             const IQueryPlanStep * current_step = node->step.get();
-            if (typeid_cast<const AggregatingStep *>(current_step))
+            if (typeid_cast<const AggregatingStep *>(current_step) || typeid_cast<const MergingAggregatedStep *>(current_step))
             {
                 aggregation_before_distinct = current_step;
                 break;
@@ -208,6 +178,9 @@ namespace
 
             if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(aggregation_before_distinct); aggregating_step)
                 return compareAggregationKeysWithDistinctColumns(aggregating_step->getParams().keys, distinct_columns, actions);
+            else if (const auto * merging_aggregated_step = typeid_cast<const MergingAggregatedStep *>(aggregation_before_distinct);
+                     merging_aggregated_step)
+                return compareAggregationKeysWithDistinctColumns(merging_aggregated_step->getParams().keys, distinct_columns, actions);
         }
 
         return false;
