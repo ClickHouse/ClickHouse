@@ -7,7 +7,7 @@ title: "[experimental] Tracing ClickHouse with OpenTelemetry"
 
 [OpenTelemetry](https://opentelemetry.io/) is an open standard for collecting traces and metrics from the distributed application. ClickHouse has some support for OpenTelemetry.
 
-:::warning    
+:::important    
 This is an experimental feature that will change in backwards-incompatible ways in future releases.
 :::
 

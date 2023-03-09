@@ -43,7 +43,7 @@ When creating an `AggregatingMergeTree` table the same [clauses](../../../engine
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::warning
+:::important
 Do not use this method in new projects and, if possible, switch the old projects to the method described above.
 :::
 
