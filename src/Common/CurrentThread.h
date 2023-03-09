@@ -40,12 +40,6 @@ public:
     /// Group to which belongs current thread
     static ThreadGroupStatusPtr getGroup();
 
-    /// MemoryTracker for user that owns current thread if any
-    static MemoryTracker * getUserMemoryTracker();
-
-    /// Adjust counters in MemoryTracker hierarchy if untracked_memory is not 0.
-    static void flushUntrackedMemory();
-
     /// A logs queue used by TCPHandler to pass logs to a client
     static void attachInternalTextLogsQueue(const std::shared_ptr<InternalTextLogsQueue> & logs_queue,
                                             LogsLevel client_logs_level);
@@ -98,10 +92,10 @@ public:
     static void detachQueryIfNotDetached();
 
     /// Initializes query with current thread as master thread in constructor, and detaches it in destructor
-    struct QueryScope : private boost::noncopyable
+    struct QueryScope
     {
-        explicit QueryScope(ContextMutablePtr query_context, std::function<void()> fatal_error_callback = {});
-        explicit QueryScope(ContextPtr query_context, std::function<void()> fatal_error_callback = {});
+        explicit QueryScope(ContextMutablePtr query_context);
+        explicit QueryScope(ContextPtr query_context);
         ~QueryScope();
 
         void logPeakMemoryUsage();

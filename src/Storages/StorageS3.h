@@ -15,16 +15,16 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Poco/URI.h>
 #include <Common/logger_useful.h>
-#include <IO/S3/getObjectInfo.h>
+#include <IO/S3Common.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/Cache/SchemaCache.h>
-#include <Storages/StorageConfiguration.h>
 
 namespace Aws::S3
 {
-    class Client;
+    class S3Client;
 }
 
 namespace DB
@@ -66,7 +66,7 @@ public:
     {
     public:
         DisclosedGlobIterator(
-            const S3::Client & client_,
+            const Aws::S3::S3Client & client_,
             const S3::URI & globbed_uri_,
             ASTPtr query,
             const Block & virtual_header,
@@ -88,11 +88,10 @@ public:
     {
     public:
         explicit KeysIterator(
-            const S3::Client & client_,
+            const Aws::S3::S3Client & client_,
             const std::string & version_id_,
             const std::vector<String> & keys_,
             const String & bucket_,
-            const S3Settings::RequestSettings & request_settings_,
             ASTPtr query,
             const Block & virtual_header,
             ContextPtr context,
@@ -134,7 +133,7 @@ public:
         UInt64 max_block_size_,
         const S3Settings::RequestSettings & request_settings_,
         String compression_hint_,
-        const std::shared_ptr<const S3::Client> & client_,
+        const std::shared_ptr<const Aws::S3::S3Client> & client_,
         const String & bucket,
         const String & version_id,
         std::shared_ptr<IIterator> file_iterator_,
@@ -146,6 +145,8 @@ public:
 
     Chunk generate() override;
 
+    void onCancel() override;
+
 private:
     String name;
     String bucket;
@@ -155,7 +156,7 @@ private:
     UInt64 max_block_size;
     S3Settings::RequestSettings request_settings;
     String compression_hint;
-    std::shared_ptr<const S3::Client> client;
+    std::shared_ptr<const Aws::S3::S3Client> client;
     Block sample_block;
     std::optional<FormatSettings> format_settings;
 
@@ -208,6 +209,8 @@ private:
 
     ReaderHolder reader;
 
+    /// onCancel and generate can be called concurrently
+    std::mutex reader_mutex;
     std::vector<NameAndTypePair> requested_virtual_columns;
     std::shared_ptr<IIterator> file_iterator;
     size_t download_thread_num = 1;
@@ -238,25 +241,8 @@ private:
 class StorageS3 : public IStorage, WithContext
 {
 public:
-    struct Configuration : public StatelessTableEngineConfiguration
-    {
-        S3::URI url;
-        std::shared_ptr<const S3::Client> client;
-        S3::AuthSettings auth_settings;
-        S3Settings::RequestSettings request_settings;
-        /// If s3 configuration was passed from ast, then it is static.
-        /// If from config - it can be changed with config reload.
-        bool static_configuration = true;
-        /// Headers from ast is a part of static configuration.
-        HTTPHeaderEntries headers_from_ast;
-
-        void appendToPath(const String & suffix) { url = S3::URI{std::filesystem::path(url.uri.toString()) / suffix}; }
-
-        String getPath() const { return url.uri.toString(); } /// For logging
-    };
-
     StorageS3(
-        const StorageS3::Configuration & configuration_,
+        const StorageS3Configuration & configuration_,
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
@@ -288,29 +274,55 @@ public:
 
     bool supportsPartitionBy() const override;
 
+    static StorageS3Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context);
+
     using ObjectInfos = StorageS3Source::ObjectInfos;
 
-    static void processNamedCollectionResult(StorageS3::Configuration & configuration, const NamedCollection & collection);
-
-    static SchemaCache & getSchemaCache(const ContextPtr & ctx);
-
-    static StorageS3::Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context, bool get_format_from_file = true);
-
     static ColumnsDescription getTableStructureFromData(
-        StorageS3::Configuration & configuration,
+        const StorageS3Configuration & configuration,
+        bool distributed_processing,
         const std::optional<FormatSettings> & format_settings,
         ContextPtr ctx,
         ObjectInfos * object_infos = nullptr);
 
-protected:
-    static StorageS3::Configuration updateConfiguration(ContextPtr local_context, const Configuration & configuration);
-    static void updateConfiguration(ContextPtr, Configuration &);
+    static void processNamedCollectionResult(StorageS3Configuration & configuration, const NamedCollection & collection);
+
+    struct S3Configuration
+    {
+        const S3::URI uri;
+        std::shared_ptr<const Aws::S3::S3Client> client;
+
+        S3::AuthSettings auth_settings;
+        S3Settings::RequestSettings request_settings;
+
+        /// If s3 configuration was passed from ast, then it is static.
+        /// If from config - it can be changed with config reload.
+        bool static_configuration = true;
+
+        /// Headers from ast is a part of static configuration.
+        HTTPHeaderEntries headers_from_ast;
+
+        S3Configuration(
+            const String & url_,
+            const S3::AuthSettings & auth_settings_,
+            const S3Settings::RequestSettings & request_settings_,
+            const HTTPHeaderEntries & headers_from_ast_)
+            : uri(S3::URI(url_))
+            , auth_settings(auth_settings_)
+            , request_settings(request_settings_)
+            , static_configuration(!auth_settings_.access_key_id.empty())
+            , headers_from_ast(headers_from_ast_) {}
+    };
+
+    static SchemaCache & getSchemaCache(const ContextPtr & ctx);
 
 private:
     friend class StorageS3Cluster;
     friend class TableFunctionS3Cluster;
+    friend class StorageHudi;
+    friend class StorageDeltaLake;
 
-    Configuration s3_configuration;
+    S3Configuration s3_configuration;
     std::vector<String> keys;
     NamesAndTypesList virtual_columns;
     Block virtual_block;
@@ -325,8 +337,10 @@ private:
 
     ObjectInfos object_infos;
 
+    static void updateS3Configuration(ContextPtr, S3Configuration &);
+
     static std::shared_ptr<StorageS3Source::IIterator> createFileIterator(
-        const Configuration & s3_configuration,
+        const S3Configuration & s3_configuration,
         const std::vector<String> & keys,
         bool is_key_with_globs,
         bool distributed_processing,
@@ -338,8 +352,9 @@ private:
 
     static ColumnsDescription getTableStructureFromDataImpl(
         const String & format,
-        const Configuration & s3_configuration,
+        const S3Configuration & s3_configuration,
         const String & compression_method,
+        bool distributed_processing,
         bool is_key_with_globs,
         const std::optional<FormatSettings> & format_settings,
         ContextPtr ctx,
@@ -352,7 +367,7 @@ private:
     static std::optional<ColumnsDescription> tryGetColumnsFromCache(
         const Strings::const_iterator & begin,
         const Strings::const_iterator & end,
-        const Configuration & s3_configuration,
+        const S3Configuration & s3_configuration,
         ObjectInfos * object_infos,
         const String & format_name,
         const std::optional<FormatSettings> & format_settings,
@@ -360,7 +375,7 @@ private:
 
     static void addColumnsToCache(
         const Strings & keys,
-        const Configuration & s3_configuration,
+        const S3Configuration & s3_configuration,
         const ColumnsDescription & columns,
         const String & format_name,
         const std::optional<FormatSettings> & format_settings,

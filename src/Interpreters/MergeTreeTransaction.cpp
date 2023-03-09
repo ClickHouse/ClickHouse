@@ -315,15 +315,6 @@ bool MergeTreeTransaction::rollback() noexcept
     return true;
 }
 
-void MergeTreeTransaction::afterFinalize()
-{
-    std::lock_guard lock{mutex};
-    /// Release shared pointers just in case
-    storages.clear();
-    mutations.clear();
-    finalized = true;
-}
-
 void MergeTreeTransaction::onException()
 {
     TransactionLog::instance().rollbackTransaction(shared_from_this());
@@ -340,11 +331,6 @@ String MergeTreeTransaction::dumpDescription() const
     }
 
     std::lock_guard lock{mutex};
-    if (finalized)
-    {
-        res += ", cannot dump detailed description, transaction is finalized";
-        return res;
-    }
 
     res += fmt::format(", affects {} tables:", storages.size());
 

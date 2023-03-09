@@ -1299,13 +1299,14 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             return false;
     }
 
-    if (is_materialized_view && ParserKeyword{"TO INNER UUID"}.ignore(pos, expected))
+
+    if (ParserKeyword{"TO INNER UUID"}.ignore(pos, expected))
     {
         ParserStringLiteral literal_p;
         if (!literal_p.parse(pos, to_inner_uuid, expected))
             return false;
     }
-    else if (is_materialized_view && ParserKeyword{"TO"}.ignore(pos, expected))
+    else if (ParserKeyword{"TO"}.ignore(pos, expected))
     {
         // TO [db.]table
         if (!table_name_p.parse(pos, to_table, expected))

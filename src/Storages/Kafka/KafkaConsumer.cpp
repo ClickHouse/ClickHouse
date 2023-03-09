@@ -254,12 +254,7 @@ void KafkaConsumer::commit()
             }
             catch (const cppkafka::HandleException & e)
             {
-                // If there were actually no offsets to commit, return. Retrying won't solve
-                // anything here
-                if (e.get_error() == RD_KAFKA_RESP_ERR__NO_OFFSET)
-                    committed = true;
-                else
-                    LOG_ERROR(log, "Exception during commit attempt: {}", e.what());
+                LOG_ERROR(log, "Exception during commit attempt: {}", e.what());
             }
             --max_retries;
         }

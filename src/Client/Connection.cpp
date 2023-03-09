@@ -686,7 +686,7 @@ void Connection::sendReadTaskResponse(const String & response)
 }
 
 
-void Connection::sendMergeTreeReadTaskResponse(const ParallelReadResponse & response)
+void Connection::sendMergeTreeReadTaskResponse(const PartitionReadResponse & response)
 {
     writeVarUInt(Protocol::Client::MergeTreeReadTaskResponse, *out);
     response.serialize(*out);
@@ -960,12 +960,8 @@ Packet Connection::receivePacket()
             case Protocol::Server::ReadTaskRequest:
                 return res;
 
-            case Protocol::Server::MergeTreeAllRangesAnnounecement:
-                res.announcement = receiveInitialParallelReadAnnounecement();
-                return res;
-
             case Protocol::Server::MergeTreeReadTaskRequest:
-                res.request = receiveParallelReadRequest();
+                res.request = receivePartitionReadRequest();
                 return res;
 
             case Protocol::Server::ProfileEvents:
@@ -1118,18 +1114,11 @@ ProfileInfo Connection::receiveProfileInfo() const
     return profile_info;
 }
 
-ParallelReadRequest Connection::receiveParallelReadRequest() const
+PartitionReadRequest Connection::receivePartitionReadRequest() const
 {
-    ParallelReadRequest request;
+    PartitionReadRequest request;
     request.deserialize(*in);
     return request;
-}
-
-InitialAllRangesAnnouncement Connection::receiveInitialParallelReadAnnounecement() const
-{
-    InitialAllRangesAnnouncement announcement;
-    announcement.deserialize(*in);
-    return announcement;
 }
 
 

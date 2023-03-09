@@ -111,7 +111,7 @@ namespace MySQLReplication
         else if (query.starts_with("XA"))
         {
             if (query.starts_with("XA ROLLBACK"))
-                throw ReplicationError(ErrorCodes::LOGICAL_ERROR, "ParseQueryEvent: Unsupported query event: {}", query);
+                throw ReplicationError("ParseQueryEvent: Unsupported query event:" + query, ErrorCodes::LOGICAL_ERROR);
             typ = QUERY_EVENT_XA;
             if (!query.starts_with("XA COMMIT"))
                 transaction_complete = false;
@@ -247,7 +247,7 @@ namespace MySQLReplication
                     break;
                 }
                 default:
-                    throw ReplicationError(ErrorCodes::UNKNOWN_EXCEPTION, "ParseMetaData: Unhandled data type: {}", std::to_string(typ));
+                    throw ReplicationError("ParseMetaData: Unhandled data type:" + std::to_string(typ), ErrorCodes::UNKNOWN_EXCEPTION);
             }
         }
     }
@@ -581,9 +581,9 @@ namespace MySQLReplication
                         {
                             if (precision <= DecimalUtils::max_precision<Decimal32>)
                                 return Field(function(precision, scale, Decimal32()));
-                            else if (precision <= DecimalUtils::max_precision<Decimal64>)
+                            else if (precision <= DecimalUtils::max_precision<Decimal64>) //-V547
                                 return Field(function(precision, scale, Decimal64()));
-                            else if (precision <= DecimalUtils::max_precision<Decimal128>)
+                            else if (precision <= DecimalUtils::max_precision<Decimal128>) //-V547
                                 return Field(function(precision, scale, Decimal128()));
 
                             return Field(function(precision, scale, Decimal256()));
@@ -649,7 +649,7 @@ namespace MySQLReplication
                                     UInt32 val = 0;
                                     size_t to_read = compressed_bytes_map[compressed_decimals];
 
-                                    if (to_read)
+                                    if (to_read) //-V547
                                     {
                                         readBigEndianStrict(payload, reinterpret_cast<char *>(&val), to_read);
                                         res *= intExp10OfSize<typename DecimalType::NativeType>(static_cast<int>(compressed_decimals));
@@ -770,8 +770,8 @@ namespace MySQLReplication
                         break;
                     }
                     default:
-                        throw ReplicationError(ErrorCodes::UNKNOWN_EXCEPTION,
-                            "ParseRow: Unhandled MySQL field type: {}", std::to_string(field_type));
+                        throw ReplicationError(
+                            "ParseRow: Unhandled MySQL field type:" + std::to_string(field_type), ErrorCodes::UNKNOWN_EXCEPTION);
                 }
             }
             null_index++;
@@ -873,7 +873,7 @@ namespace MySQLReplication
                 break;
             }
             default:
-                throw ReplicationError(ErrorCodes::LOGICAL_ERROR, "Position update with unsupported event");
+                throw ReplicationError("Position update with unsupported event", ErrorCodes::LOGICAL_ERROR);
         }
     }
 
@@ -901,11 +901,11 @@ namespace MySQLReplication
         switch (header)
         {
             case PACKET_EOF:
-                throw ReplicationError(ErrorCodes::CANNOT_READ_ALL_DATA, "Master maybe lost");
+                throw ReplicationError("Master maybe lost", ErrorCodes::CANNOT_READ_ALL_DATA);
             case PACKET_ERR:
                 ERRPacket err;
                 err.readPayloadWithUnpacked(payload);
-                throw ReplicationError::createDeprecated(err.error_message, ErrorCodes::UNKNOWN_EXCEPTION);
+                throw ReplicationError(err.error_message, ErrorCodes::UNKNOWN_EXCEPTION);
         }
         // skip the generic response packets header flag.
         payload.ignore(1);
