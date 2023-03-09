@@ -14,9 +14,7 @@
 
 #include "Poco/Message.h"
 #include "Poco/Exception.h"
-#if !defined(POCO_VXWORKS)
 #include "Poco/Process.h"
-#endif
 #include "Poco/Thread.h"
 #include <algorithm>
 
@@ -109,9 +107,7 @@ Message::~Message()
 
 void Message::init()
 {
-#if !defined(POCO_VXWORKS)
 	_pid = Process::id();
-#endif
 	Thread* pThread = Thread::current();
 	if (pThread)
 	{
@@ -247,10 +243,8 @@ const std::string& Message::get(const std::string& param, const std::string& def
 
 long Message::getPid() const
 {
-#if !defined(POCO_VXWORKS)
 	if (_pid < 0)
 		_pid = Process::id();
-#endif
 	return _pid;
 }
 

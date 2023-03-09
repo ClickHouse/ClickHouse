@@ -23,9 +23,6 @@
 #include "Poco/Data/ODBC/ODBC.h"
 #include "Poco/Data/ODBC/ODBCException.h"
 #include "Poco/Data/ODBC/Utility.h"
-#ifdef POCO_OS_FAMILY_WINDOWS
-#    include <windows.h>
-#endif
 #include <sqltypes.h>
 
 

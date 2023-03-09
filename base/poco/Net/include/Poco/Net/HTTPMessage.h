@@ -56,7 +56,6 @@ namespace Net
         /// which may be UNKNOWN_CONTENT_LENGTH if
         /// no Content-Length header is present.
 
-#if defined(POCO_HAVE_INT64)
         void setContentLength64(Poco::Int64 length);
         /// Sets the Content-Length header.
         ///
@@ -73,7 +72,6 @@ namespace Net
         ///
         /// In contrast to getContentLength(), this method
         /// always returns a 64-bit integer for content length.
-#endif // defined(POCO_HAVE_INT64)
 
         bool hasContentLength() const;
         /// Returns true iff a Content-Length header is present.

@@ -32,15 +32,18 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     std::unordered_map<std::string, UInt64> column_sizes_,
     const StorageMetadataPtr & metadata_snapshot,
     const Names & queried_columns_,
+    const std::optional<NameSet> & supported_columns_,
     Poco::Logger * log_)
     : table_columns{collections::map<std::unordered_set>(
         metadata_snapshot->getColumns().getAllPhysical(), [](const NameAndTypePair & col) { return col.name; })}
     , queried_columns{queried_columns_}
+    , supported_columns{supported_columns_}
     , sorting_key_names{NameSet(
           metadata_snapshot->getSortingKey().column_names.begin(), metadata_snapshot->getSortingKey().column_names.end())}
     , block_with_constants{KeyCondition::getBlockWithConstants(query_info.query->clone(), query_info.syntax_analyzer_result, context)}
     , log{log_}
     , column_sizes{std::move(column_sizes_)}
+    , move_all_conditions_to_prewhere(context->getSettingsRef().move_all_conditions_to_prewhere)
 {
     for (const auto & name : queried_columns)
     {
@@ -194,6 +197,8 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node,
             && (!is_final || isExpressionOverSortingKey(node))
             /// Only table columns are considered. Not array joined columns. NOTE We're assuming that aliases was expanded.
             && isSubsetOfTableColumns(cond.identifiers)
+            /// Some identifiers can unable to support PREWHERE (usually because of different types in Merge engine)
+            && identifiersSupportsPrewhere(cond.identifiers)
             /// Do not move conditions involving all queried columns.
             && cond.identifiers.size() < queried_columns.size();
 
@@ -272,23 +277,26 @@ void MergeTreeWhereOptimizer::optimize(ASTSelectQuery & select) const
         if (!it->viable)
             break;
 
-        bool moved_enough = false;
-        if (total_size_of_queried_columns > 0)
+        if (!move_all_conditions_to_prewhere)
         {
-            /// If we know size of queried columns use it as threshold. 10% ratio is just a guess.
-            moved_enough = total_size_of_moved_conditions > 0
-                && (total_size_of_moved_conditions + it->columns_size) * 10 > total_size_of_queried_columns;
-        }
-        else
-        {
-            /// Otherwise, use number of moved columns as a fallback.
-            /// It can happen, if table has only compact parts. 25% ratio is just a guess.
-            moved_enough = total_number_of_moved_columns > 0
-                && (total_number_of_moved_columns + it->identifiers.size()) * 4 > queried_columns.size();
-        }
+            bool moved_enough = false;
+            if (total_size_of_queried_columns > 0)
+            {
+                /// If we know size of queried columns use it as threshold. 10% ratio is just a guess.
+                moved_enough = total_size_of_moved_conditions > 0
+                    && (total_size_of_moved_conditions + it->columns_size) * 10 > total_size_of_queried_columns;
+            }
+            else
+            {
+                /// Otherwise, use number of moved columns as a fallback.
+                /// It can happen, if table has only compact parts. 25% ratio is just a guess.
+                moved_enough = total_number_of_moved_columns > 0
+                    && (total_number_of_moved_columns + it->identifiers.size()) * 4 > queried_columns.size();
+            }
 
-        if (moved_enough)
-            break;
+            if (moved_enough)
+                break;
+        }
 
         move_condition(it);
     }
@@ -315,6 +323,18 @@ UInt64 MergeTreeWhereOptimizer::getIdentifiersColumnSize(const NameSet & identif
             size += column_sizes.at(identifier);
 
     return size;
+}
+
+bool MergeTreeWhereOptimizer::identifiersSupportsPrewhere(const NameSet & identifiers) const
+{
+    if (!supported_columns.has_value())
+        return true;
+
+    for (const auto & identifier : identifiers)
+        if (!supported_columns->contains(identifier))
+            return false;
+
+    return true;
 }
 
 bool MergeTreeWhereOptimizer::isExpressionOverSortingKey(const ASTPtr & ast) const

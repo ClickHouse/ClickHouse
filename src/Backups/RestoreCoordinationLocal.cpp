@@ -42,4 +42,9 @@ bool RestoreCoordinationLocal::acquireReplicatedAccessStorage(const String &)
     return true;
 }
 
+bool RestoreCoordinationLocal::hasConcurrentRestores(const std::atomic<size_t> & num_active_restores) const
+{
+    return (num_active_restores > 1);
+}
+
 }
