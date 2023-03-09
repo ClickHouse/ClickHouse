@@ -410,6 +410,51 @@ namespace DB
         }
     }
 
+    static void fillArrowArrayWithIPv6ColumnData(
+        ColumnPtr write_column,
+        const PaddedPODArray<UInt8> * null_bytemap,
+        const String & format_name,
+        arrow::ArrayBuilder* array_builder,
+        size_t start,
+        size_t end)
+    {
+        const auto & internal_column = assert_cast<const ColumnIPv6 &>(*write_column);
+        arrow::BinaryBuilder & builder = assert_cast<arrow::BinaryBuilder &>(*array_builder);
+        arrow::Status status;
+
+        for (size_t string_i = start; string_i < end; ++string_i)
+        {
+            if (null_bytemap && (*null_bytemap)[string_i])
+            {
+                status = builder.AppendNull();
+            }
+            else
+            {
+                std::string_view string_ref = internal_column.getDataAt(string_i).toView();
+                status = builder.Append(string_ref.data(), static_cast<int>(string_ref.size()));
+            }
+            checkStatus(status, write_column->getName(), format_name);
+        }
+    }
+
+    static void fillArrowArrayWithIPv4ColumnData(
+        ColumnPtr write_column,
+        const PaddedPODArray<UInt8> * null_bytemap,
+        const String & format_name,
+        arrow::ArrayBuilder* array_builder,
+        size_t start,
+        size_t end)
+    {
+        const auto & internal_data = assert_cast<const ColumnIPv4 &>(*write_column).getData();
+        auto & builder = assert_cast<arrow::UInt32Builder &>(*array_builder);
+        arrow::Status status;
+
+        PaddedPODArray<UInt8> arrow_null_bytemap = revertNullByteMap(null_bytemap, start, end);
+        const UInt8 * arrow_null_bytemap_raw_ptr = arrow_null_bytemap.empty() ? nullptr : arrow_null_bytemap.data();
+        status = builder.AppendValues(&(internal_data.data() + start)->toUnderType(), end - start, reinterpret_cast<const uint8_t *>(arrow_null_bytemap_raw_ptr));
+        checkStatus(status, write_column->getName(), format_name);
+    }
+
     static void fillArrowArrayWithDateColumnData(
         ColumnPtr write_column,
         const PaddedPODArray<UInt8> * null_bytemap,
@@ -513,6 +558,14 @@ namespace DB
                 fillArrowArrayWithStringColumnData<ColumnFixedString, arrow::StringBuilder>(column, null_bytemap, format_name, array_builder, start, end);
             else
                 fillArrowArrayWithStringColumnData<ColumnFixedString, arrow::BinaryBuilder>(column, null_bytemap, format_name, array_builder, start, end);
+        }
+        else if (isIPv6(column_type))
+        {
+            fillArrowArrayWithIPv6ColumnData(column, null_bytemap, format_name, array_builder, start, end);
+        }
+        else if (isIPv4(column_type))
+        {
+            fillArrowArrayWithIPv4ColumnData(column, null_bytemap, format_name, array_builder, start, end);
         }
         else if (isDate(column_type))
         {
@@ -750,6 +803,12 @@ namespace DB
 
         if (isBool(column_type))
             return arrow::boolean();
+
+        if (isIPv6(column_type))
+            return arrow::fixed_size_binary(sizeof(IPv6));
+
+        if (isIPv4(column_type))
+            return arrow::uint32();
 
         const std::string type_name = column_type->getFamilyName();
         if (const auto * arrow_type_it = std::find_if(
