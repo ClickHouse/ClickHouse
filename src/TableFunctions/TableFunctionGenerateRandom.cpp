@@ -13,6 +13,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionGenerateRandom.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
+#include <Interpreters/evaluateConstantExpression.h>
 
 #include "registerTableFunctions.h"
 
@@ -28,7 +29,7 @@ namespace ErrorCodes
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 }
 
-void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, ContextPtr /*context*/)
+void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
     ASTs & args_func = ast_function->children;
 
@@ -44,6 +45,9 @@ void TableFunctionGenerateRandom::parseArguments(const ASTPtr & ast_function, Co
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                         "Table function '{}' requires at most four arguments: "
                         " structure, [random_seed, max_string_length, max_array_length].", getName());
+
+    /// Allow constant expression for structure argument, it can be generated using generateRandomStructure function.
+    args[0] = evaluateConstantExpressionAsLiteral(args[0], context);
 
     // All the arguments must be literals.
     for (const auto & arg : args)

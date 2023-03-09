@@ -2609,3 +2609,73 @@ Result:
 │                      286 │
 └──────────────────────────┘
 ```
+
+## generateRandomStructure
+
+Generates random table structure in a format `column1_name column1_type, column2_name column2_type, ...`.
+
+**Syntax**
+
+``` sql
+generateRandomStructure([number_of_columns, seed])
+```
+
+**Arguments**
+
+- `number_of_columns` — The desired number of columns in the result table structure. If set to 0, the number of columns will be random from 1 to 128. Default value - 0.
+- `seed` - Random seed to produce stable results. If seed is not specified, it is randomly generated.
+
+All arguments must be constant.
+
+**Returned value**
+
+- Randomly generated table structure.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT generateRandomStructure()
+```
+
+Result:
+
+``` text
+┌─generateRandomStructure()─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ c1 Decimal32(5), c2 Date, c3 Tuple(LowCardinality(String), Int128, UInt64, UInt16, UInt8, IPv6), c4 Array(UInt128), c5 UInt32, c6 IPv4, c7 Decimal256(64), c8 Decimal128(3), c9 UInt256, c10 UInt64, c11 DateTime │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Query:
+
+``` sql
+SELECT generateRandomStructure(1)
+```
+
+Result:
+
+``` text
+┌─generateRandomStructure(1)─┐
+│ c1 Map(UInt256, UInt16)    │
+└────────────────────────────┘
+```
+
+Query:
+
+``` sql
+SELECT generateRandomStructure(0, 11)
+```
+
+Result:
+
+``` text
+┌─generateRandomStructure(0, 11)──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ c1 Date32, c2 String, c3 IPv6, c4 DateTime, c5 UInt16, c6 Tuple(e1 UInt32, e2 Date, e3 Date, e4 IPv6, e5 Nested(e1 DateTime, e2 FixedString(110), e3 Int256, e4 Array(Decimal64(4)), e5 Decimal128(18), e6 Enum16('v0' = 0, 'v1' = 1, 'v2' = 2, 'v3' = 3, 'v4' = 4)), e6 DateTime64(4)), c7 DateTime, c8 DateTime64(6), c9 Bool │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+This function can be used together with [generateRandom](../../sql-reference/table-functions/generate.md) to generate completely random tables.
+
