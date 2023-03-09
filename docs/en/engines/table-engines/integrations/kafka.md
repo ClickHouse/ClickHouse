@@ -102,7 +102,7 @@ Examples:
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::warning
+:::important
 Do not use this method in new projects. If possible, switch old projects to the method described above.
 :::
 

@@ -312,7 +312,7 @@ One may execute query after:
 Replica attaches locally found parts and sends info about them to Zookeeper.
 Parts present on a replica before metadata loss are not re-fetched from other ones if not being outdated (so replica restoration does not mean re-downloading all data over the network).
 
-:::warning
+:::important
 Parts in all states are moved to `detached/` folder. Parts active before data loss (committed) are attached.
 :::
 

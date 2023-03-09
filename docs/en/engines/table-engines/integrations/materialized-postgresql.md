@@ -52,6 +52,6 @@ PRIMARY KEY key;
 SELECT key, value, _version FROM postgresql_db.postgresql_replica;
 ```
 
-:::warning
+:::important
 Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.html) values is not supported. The default value for the data type will be used.
 :::
