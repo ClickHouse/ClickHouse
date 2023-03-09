@@ -1,4 +1,7 @@
-c1 Int256, c2 Bool, c3 Int16, c4 Map(Int64, Array(Bool)), c5 Enum16(\'v0\' = 0, \'v1\' = 1, \'v2\' = 2, \'v3\' = 3, \'v4\' = 4, \'v5\' = 5, \'v6\' = 6, \'v7\' = 7, \'v8\' = 8, \'v9\' = 9, \'v10\' = 10)
+c1 DateTime64(1), c2 Int16, c3 Map(Int64, Array(Bool)), c4 Decimal256(30), c5 Int128
+c1 Date, c2 Float64, c3 DateTime, c4 Map(Int64, DateTime64(4)), c5 Nested(e1 LowCardinality(String), e2 UInt32, e3 Enum16(\'v0\' = 0, \'v1\' = 1, \'v2\' = 2, \'v3\' = 3, \'v4\' = 4, \'v5\' = 5, \'v6\' = 6, \'v7\' = 7), e4 Float32, e5 Date32, e6 Int64, e7 Decimal64(0), e8 UInt16, e9 Date32, e10 Int64, e11 DateTime64(0))
+c1 Nested(e1 Int64, e2 Int16, e3 Map(Int16, LowCardinality(Nullable(String))), e4 UInt8, e5 Nested(e1 Array(Nullable(Decimal64(12))), e2 DateTime64(1), e3 UInt64, e4 FixedString(61), e5 Decimal64(13), e6 UInt8), e6 Int8), c2 DateTime64(5), c3 IPv4, c4 String, c5 String
+c1 DateTime64(1), c2 IPv4, c3 Nullable(Decimal128(37)), c4 UInt128, c5 Date
 String
 Const(String)
-2085-07-05 23:48:43.345759	10105	1535011673144902513
+2106-02-02	121	17265

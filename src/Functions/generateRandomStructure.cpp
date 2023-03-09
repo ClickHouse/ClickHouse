@@ -24,7 +24,7 @@ namespace ErrorCodes
 class FunctionGenerateRandomStructure : public IFunction
 {
 private:
-    enum class SimpleTypes
+    enum class Type
     {
         Int8,
         UInt8,
@@ -35,30 +35,26 @@ private:
         UInt32,
         Int64,
         UInt64,
-        Int128,
-        UInt128,
-        Int256,
-        UInt256,
         Float32,
         Float64,
         DateTime64,
         Decimal32,
         Decimal64,
-        Decimal128,
-        Decimal256,
         Date,
         Date32,
         DateTime,
         String,
         FixedString,
-        Enum8,
-        Enum16,
         IPv4,
         IPv6,
-    };
-
-    enum class ComplexTypes
-    {
+        Int128,
+        UInt128,
+        Int256,
+        UInt256,
+        Decimal128,
+        Decimal256,
+        Enum8,
+        Enum16,
         Nullable,
         LowCardinality,
         Array,
@@ -66,27 +62,74 @@ private:
         Map,
         Nested,
     };
-
-    enum class MapKeyTypes
+    
+    static constexpr std::array<Type, 21> simple_types
     {
-        Int8,
-        UInt8,
-        Bool,
-        Int16,
-        UInt16,
-        Int32,
-        UInt32,
-        Int64,
-        UInt64,
-        Int128,
-        UInt128,
-        Int256,
-        UInt256,
-        Date,
-        Date32,
-        DateTime,
-        String,
-        FixedString,
+        Type::Int8,
+        Type::UInt8,
+        Type::Bool,
+        Type::Int16,
+        Type::UInt16,
+        Type::Int32,
+        Type::UInt32,
+        Type::Int64,
+        Type::UInt64,
+        Type::Float32,
+        Type::Float64,
+        Type::DateTime64,
+        Type::Decimal32,
+        Type::Decimal64,
+        Type::Date,
+        Type::Date32,
+        Type::DateTime,
+        Type::String,
+        Type::FixedString,
+        Type::IPv4,
+        Type::IPv6,
+    };
+
+    static constexpr std::array<Type, 6> big_number_types
+    {
+        Type::Int128,
+        Type::UInt128,
+        Type::Int256,
+        Type::UInt256,
+        Type::Decimal128,
+        Type::Decimal256,
+    };
+
+    static constexpr std::array<Type, 2> enum_types
+    {
+        Type::Enum8,
+        Type::Enum16,
+    };
+
+    static constexpr std::array<Type, 6> complex_types
+    {
+        Type::Nullable,
+        Type::LowCardinality,
+        Type::Array,
+        Type::Tuple,
+        Type::Map,
+        Type::Nested,
+    };
+
+    static constexpr std::array<Type, 14> map_key_types
+    {
+        Type::Int8,
+        Type::UInt8,
+        Type::Bool,
+        Type::Int16,
+        Type::UInt16,
+        Type::Int32,
+        Type::UInt32,
+        Type::Int64,
+        Type::UInt64,
+        Type::Date,
+        Type::Date32,
+        Type::DateTime,
+        Type::String,
+        Type::FixedString,
     };
 
     static constexpr size_t MAX_NUMBER_OF_COLUMNS = 128;
@@ -114,48 +157,66 @@ public:
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const  override { return {0, 1}; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const  override { return {0, 1, 2, 3}; }
+    bool useDefaultImplementationForConstants() const override { return false; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (arguments.size() > 2)
+        if (arguments.size() > 4)
             throw Exception(
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 0, 1 or 2.",
+                "Number of arguments for function {} doesn't match: passed {}, expected from 0 to 4",
                 getName(), arguments.size());
 
-        if (arguments.size() > 1 && !isUnsignedInteger(arguments[0]))
+        if (!arguments.empty() && !isUnsignedInteger(arguments[0]) && !arguments[0]->onlyNull())
         {
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of the first argument of function {}, expected unsigned integer",
+                "Illegal type {} of the first argument of function {}, expected unsigned integer or Null",
                 arguments[0]->getName(),
                 getName());
         }
 
-        if (arguments.size() > 2 && !isUnsignedInteger(arguments[1]))
+        if (arguments.size() > 1 && !isUnsignedInteger(arguments[1]) && !arguments[1]->onlyNull())
         {
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of the second argument of function {}, expected unsigned integer",
+                "Illegal type {} of the second argument of function {}, expected unsigned integer or Null",
                 arguments[1]->getName(),
+                getName());
+        }
+
+        if (arguments.size() > 2 && !isUInt8(arguments[2]))
+        {
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of the third argument of function {}, expected UInt8",
+                arguments[2]->getName(),
+                getName());
+        }
+
+        if (arguments.size() > 3 && !isUInt8(arguments[3]))
+        {
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of the fourth argument of function {}, expected UInt8",
+                arguments[3]->getName(),
                 getName());
         }
 
         return std::make_shared<DataTypeString>();
     }
 
-    bool useDefaultImplementationForConstants() const override { return false; }
-
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         size_t seed = randomSeed();
         size_t number_of_columns = 0;
 
-        if (!arguments.empty())
+        if (!arguments.empty() && !arguments[0].column->onlyNull())
         {
             const auto & first_arg = arguments[0];
-
             if (!isUnsignedInteger(first_arg.type))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -165,21 +226,55 @@ public:
 
             number_of_columns = first_arg.column->getUInt(0);
             if (number_of_columns > MAX_NUMBER_OF_COLUMNS)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Maximum allowed number of columns is {}, got {}", MAX_NUMBER_OF_COLUMNS, number_of_columns);
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Maximum allowed number of columns is {}, got {}",
+                    MAX_NUMBER_OF_COLUMNS,
+                    number_of_columns);
+        }
 
-            if (arguments.size() == 2)
-            {
-                const auto & second_arg = arguments[1];
+        if (arguments.size() > 1 && !arguments[1].column->onlyNull())
+        {
+            const auto & second_arg = arguments[1];
 
-                if (!isUnsignedInteger(second_arg.type))
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Illegal type {} of the second argument of function {}, expected unsigned integer",
-                        second_arg.type->getName(),
-                        getName());
+            if (!isUnsignedInteger(second_arg.type))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of the second argument of function {}, expected unsigned integer",
+                    second_arg.type->getName(),
+                    getName());
 
-                seed = second_arg.column->getUInt(0);
-            }
+            seed = second_arg.column->getUInt(0);
+        }
+
+        bool allow_big_numbers = true;
+        if (arguments.size() > 2)
+        {
+            const auto & third_arg = arguments[2];
+
+            if (!isUInt8(third_arg.type))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of the second argument of function {}, expected UInt8",
+                    third_arg.type->getName(),
+                    getName());
+
+            allow_big_numbers = third_arg.column->getBool(0);
+        }
+
+        bool allow_enums = true;
+        if (arguments.size() > 3)
+        {
+            const auto & fourth_arg = arguments[3];
+
+            if (!isUInt8(fourth_arg.type))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of the fourth argument of function {}, expected UInt8",
+                    fourth_arg.type->getName(),
+                    getName());
+
+            allow_enums = fourth_arg.column->getBool(0);
         }
 
         pcg64 rng(seed);
@@ -192,7 +287,7 @@ public:
         {
             if (i != 0)
                 generated_structure += ", ";
-            auto type = generateRandomType(rng);
+            auto type = generateRandomType(rng, allow_big_numbers, allow_enums);
             generated_structure += "c" + std::to_string(i + 1) + " " + type;
         }
         col_res->insert(generated_structure);
@@ -205,55 +300,55 @@ private:
     {
         return rng() % MAX_NUMBER_OF_COLUMNS + 1;
     }
-
-    String generateRandomType(pcg64 & rng, bool allow_complex_types = true, size_t depth = 0) const
+    
+    String generateRandomType(pcg64 & rng, bool allow_big_numbers, bool allow_enums) const
     {
-        constexpr size_t simple_types_size = magic_enum::enum_count<SimpleTypes>();
-        constexpr size_t complex_types_size = magic_enum::enum_count<ComplexTypes>();
-        size_t type_index;
-        if (allow_complex_types)
-            type_index = rng() % (simple_types_size + complex_types_size);
-        else
-            type_index = rng() % simple_types_size;
-
-        if (type_index < simple_types_size)
+        if (allow_big_numbers)
         {
-            auto type = magic_enum::enum_value<SimpleTypes>(type_index);
-            switch (type)
-            {
-                case SimpleTypes::FixedString:
-                    return "FixedString(" + std::to_string(rng() % MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS + 1) + ")";
-                case SimpleTypes::DateTime64:
-                    return "DateTime64(" + std::to_string(rng() % MAX_DATETIME64_PRECISION) + ")";
-                case SimpleTypes::Decimal32:
-                    return "Decimal32(" + std::to_string(rng() % MAX_DECIMAL32_PRECISION) + ")";
-                case SimpleTypes::Decimal64:
-                    return "Decimal64(" + std::to_string(rng() % MAX_DECIMAL64_PRECISION) + ")";
-                case SimpleTypes::Decimal128:
-                    return "Decimal128(" + std::to_string(rng() % MAX_DECIMAL128_PRECISION) + ")";
-                case SimpleTypes::Decimal256:
-                    return "Decimal256(" + std::to_string(rng() % MAX_DECIMAL256_PRECISION) + ")";
-                case SimpleTypes::Enum8:
-                    return "Enum8(" + generateEnumValues(rng) + ")";
-                case SimpleTypes::Enum16:
-                    return "Enum16(" + generateEnumValues(rng) + ")";
-                default:
-                    return String(magic_enum::enum_name<SimpleTypes>(type));
-            }
+            if (allow_enums)
+                return generateRandomTypeImpl<true, true, true>(rng);
+            return generateRandomTypeImpl<true, false, true>(rng);
         }
 
-        auto complex_type = magic_enum::enum_value<ComplexTypes>(type_index - simple_types_size);
-        switch (complex_type)
+        if (allow_enums)
+            return generateRandomTypeImpl<false, true, true>(rng);
+        return generateRandomTypeImpl<false, false, true>(rng);
+    }
+        
+
+    template <bool allow_big_numbers, bool allow_enums, bool allow_complex_types>
+    String generateRandomTypeImpl(pcg64 & rng, size_t depth = 0) const
+    {
+        constexpr auto all_types = getAllTypes<allow_big_numbers, allow_enums, allow_complex_types>();
+        auto type = all_types[rng() % all_types.size()];
+
+        switch (type)
         {
-            case ComplexTypes::LowCardinality:
+            case Type::FixedString:
+                return "FixedString(" + std::to_string(rng() % MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS + 1) + ")";
+            case Type::DateTime64:
+                return "DateTime64(" + std::to_string(rng() % MAX_DATETIME64_PRECISION) + ")";
+            case Type::Decimal32:
+                return "Decimal32(" + std::to_string(rng() % MAX_DECIMAL32_PRECISION) + ")";
+            case Type::Decimal64:
+                return "Decimal64(" + std::to_string(rng() % MAX_DECIMAL64_PRECISION) + ")";
+            case Type::Decimal128:
+                return "Decimal128(" + std::to_string(rng() % MAX_DECIMAL128_PRECISION) + ")";
+            case Type::Decimal256:
+                return "Decimal256(" + std::to_string(rng() % MAX_DECIMAL256_PRECISION) + ")";
+            case Type::Enum8:
+                return "Enum8(" + generateEnumValues(rng) + ")";
+            case Type::Enum16:
+                return "Enum16(" + generateEnumValues(rng) + ")";
+            case Type::LowCardinality:
                 return "LowCardinality(" + generateLowCardinalityNestedType(rng) + ")";
-            case ComplexTypes::Nullable:
-                return "Nullable(" +  generateRandomType(rng, false, depth + 1) + ")";
-            case ComplexTypes::Array:
-                return "Array(" + generateRandomType(rng, true, depth + 1) + ")";
-            case ComplexTypes::Map:
-                return "Map(" + generateMapKeyType(rng) + ", " + generateRandomType(rng, true, depth + 1) + ")";
-            case ComplexTypes::Tuple:
+            case Type::Nullable:
+                return "Nullable(" +  generateRandomTypeImpl<allow_big_numbers, allow_enums, false>(rng, depth + 1) + ")";
+            case Type::Array:
+                return "Array(" + generateRandomTypeImpl<allow_big_numbers, allow_enums, true>(rng, depth + 1) + ")";
+            case Type::Map:
+                return "Map(" + generateMapKeyType(rng) + ", " + generateRandomTypeImpl<allow_big_numbers, allow_enums, true>(rng, depth + 1) + ")";
+            case Type::Tuple:
             {
                 size_t elements = rng() % MAX_TUPLE_ELEMENTS + 1;
                 bool named_tuple = rng() % 2;
@@ -264,11 +359,11 @@ private:
                         tuple_type += ", ";
                     if (named_tuple)
                         tuple_type += "e" + std::to_string(i + 1) + " ";
-                    tuple_type += generateRandomType(rng, true, depth + 1);
+                    tuple_type += generateRandomTypeImpl<allow_big_numbers, allow_enums, true>(rng, depth + 1);
                 }
                 return tuple_type + ")";
             }
-            case ComplexTypes::Nested:
+            case Type::Nested:
             {
                 size_t elements = rng() % MAX_TUPLE_ELEMENTS + 1;
                 String nested_type = "Nested(";
@@ -276,20 +371,21 @@ private:
                 {
                     if (i != 0)
                         nested_type += ", ";
-                    nested_type += "e" + std::to_string(i + 1) + " " + generateRandomType(rng, true, depth + 1);
+                    nested_type += "e" + std::to_string(i + 1) + " " + generateRandomTypeImpl<allow_big_numbers, allow_enums, true>(rng, depth + 1);
                 }
                 return nested_type + ")";
             }
+            default:
+                return String(magic_enum::enum_name<Type>(type));
         }
     }
 
     String generateMapKeyType(pcg64 & rng) const
     {
-        constexpr size_t map_keys_types_size = magic_enum::enum_count<MapKeyTypes>();
-        auto type = magic_enum::enum_value<MapKeyTypes>(rng() % map_keys_types_size);
-        if (type == MapKeyTypes::FixedString)
+        auto type = map_key_types[rng() % map_key_types.size()];
+        if (type == Type::FixedString)
             return "FixedString(" + std::to_string(rng() % MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS + 1) + ")";
-        return String(magic_enum::enum_name<MapKeyTypes>(type));
+        return String(magic_enum::enum_name<Type>(type));
     }
 
     String generateLowCardinalityNestedType(pcg64 & rng) const
@@ -316,6 +412,36 @@ private:
                 result += ", ";
             result += "'v" + std::to_string(i) + "' = " + std::to_string(i);
         }
+        return result;
+    }
+
+    template <bool allow_big_numbers, bool allow_enums, bool allow_complex_types>
+    static constexpr auto getAllTypes()
+    {
+        constexpr size_t result_size = simple_types.size() + big_number_types.size() * allow_big_numbers + enum_types.size() * allow_enums + complex_types.size() * allow_complex_types;
+        std::array<Type, result_size> result;
+        size_t index = 0;
+        for (size_t i = 0; i != simple_types.size(); ++i, ++index)
+            result[index] = simple_types[i];
+        
+        if constexpr (allow_big_numbers)
+        {
+            for (size_t i = 0; i != big_number_types.size(); ++i, ++index)
+                result[index] = big_number_types[i];
+        }
+        
+        if constexpr (allow_enums)
+        {
+            for (size_t i = 0; i != enum_types.size(); ++i, ++index)
+                result[index] = enum_types[i];
+        }
+        
+        if constexpr (allow_complex_types)
+        {
+            for (size_t i = 0; i != complex_types.size(); ++i, ++index)
+                result[index] = complex_types[i];
+        }   
+        
         return result;
     }
 };
