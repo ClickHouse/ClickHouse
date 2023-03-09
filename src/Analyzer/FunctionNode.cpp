@@ -99,7 +99,7 @@ void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
     buffer << ", function_type: " << function_type;
 
     if (function)
-        buffer << ", result_type: " + function->getResultType()->getName();
+        buffer << ", result_type: " + getResultType()->getName();
 
     const auto & parameters = getParameters();
     if (!parameters.getNodes().empty())
@@ -177,6 +177,7 @@ QueryTreeNodePtr FunctionNode::cloneImpl() const
       */
     result_function->function = function;
     result_function->kind = kind;
+    result_function->wrap_with_nullable = wrap_with_nullable;
 
     return result_function;
 }

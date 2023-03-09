@@ -1014,6 +1014,12 @@ Use Arrow FIXED_SIZE_BINARY type instead of Binary/String for FixedString column
 
 Enabled by default.
 
+### output_format_arrow_compression_method {#output_format_arrow_compression_method}
+
+Compression method used in output Arrow format. Supported codecs: `lz4_frame`, `zstd`, `none` (uncompressed)
+
+Default value: `none`.
+
 ## ORC format settings {#orc-format-settings}
 
 ### input_format_orc_import_nested {#input_format_orc_import_nested}
@@ -1056,6 +1062,12 @@ Disabled by default.
 Use ORC String type instead of Binary for String columns.
 
 Disabled by default.
+
+### output_format_orc_compression_method {#output_format_orc_compression_method}
+
+Compression method used in output ORC format. Supported codecs: `lz4`, `snappy`, `zlib`, `zstd`, `none` (uncompressed)
+
+Default value: `none`.
 
 ## Parquet format settings {#parquet-format-settings}
 
@@ -1111,6 +1123,12 @@ Enabled by default.
 The version of Parquet format used in output format. Supported versions: `1.0`, `2.4`, `2.6` and `2.latest`.
 
 Default value: `2.latest`.
+
+### output_format_parquet_compression_method {#output_format_parquet_compression_method}
+
+Compression method used in output Parquet format. Supported codecs: `snappy`, `lz4`, `brotli`, `zstd`, `gzip`, `none` (uncompressed)
+
+Default value: `snappy`.
 
 ## Hive format settings {#hive-format-settings}
 
