@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP TABLE IF EXISTS 25400_marked_dropped_tables;
 
 CREATE TABLE 25400_marked_dropped_tables (id Int32) Engine=MergeTree() ORDER BY id;
