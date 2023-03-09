@@ -26,7 +26,7 @@ static ActionsDAGPtr buildActionsForPlanPath(std::vector<ActionsDAGPtr> & dag_st
     return path_actions;
 }
 
-const ActionsDAG::Node * getOriginalNodeForOutputAlias(const ActionsDAGPtr & actions, const String & output_name)
+static const ActionsDAG::Node * getOriginalNodeForOutputAlias(const ActionsDAGPtr & actions, const String & output_name)
 {
     /// find alias in output
     const ActionsDAG::Node * output_alias = nullptr;
@@ -39,10 +39,7 @@ const ActionsDAG::Node * getOriginalNodeForOutputAlias(const ActionsDAGPtr & act
         }
     }
     if (!output_alias)
-    {
-        // logDebug("getOriginalNodeForOutputAlias: no output alias found", output_name);
         return nullptr;
-    }
 
     /// find original(non alias) node it refers to
     const ActionsDAG::Node * node = output_alias;
@@ -100,15 +97,11 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node)
     if (!read_from_merge_tree)
         return 0;
 
-    LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "ReadFromMergeTree");
-
     /// if reading from merge tree doesn't provide any output order, we can do nothing
     /// it means that no ordering can provided or supported for a particular sorting key
     /// for example, tuple() or sipHash(string)
     if (read_from_merge_tree->getOutputStream().sort_description.empty())
         return 0;
-
-    LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "There is sort description");
 
     /// find original non-const columns in DISTINCT
     auto actions = buildActionsForPlanPath(dag_stack);
@@ -140,10 +133,7 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node)
     /// apply optimization only when distinct columns match or form prefix of sorting key
     /// todo: check if reading in order optimization would be beneficial when sorting key is prefix of columns in DISTINCT
     if (number_of_sorted_distinct_columns != original_distinct_columns.size())
-    {
-        LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "number_of_sorted_distinct_columns != original_distinct_columns.size()");
         return 0;
-    }
 
     /// check if another read in order optimization is already applied
     /// apply optimization only if another read in order one uses less sorting columns
