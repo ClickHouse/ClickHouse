@@ -43,7 +43,7 @@ ENGINE = MergeTree
 PRIMARY KEY (pickup_datetime, dropoff_datetime);
 ```
 
-## Retrieve the Data from Object Storage
+## Load the Data directly from Object Storage
 
 Let's grab a small subset of the data for getting familiar with it. The data is in TSV files in object storage, which is easily streamed into
 ClickHouse Cloud using the `s3` table function. 
