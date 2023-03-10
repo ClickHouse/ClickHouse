@@ -10,16 +10,16 @@ As of writing (2023/3/10) building for s390x considered to be experimental. Not 
 
 ## Building
 
-As s390x does not support boringSSL, it uses openSSL and has two related build options. 
-- By default, the s390x build will dyamically link to openSSL libraries. It will build openSSL shared objects, so its not neccessary to install openSSL beforehand. (This options is recommended in all cases.)
-- Another option is to build openSSL in-tree. In this case two build options need to be supplied to cmake
+As s390x does not support boringssl, it uses OpenSSL and has two related build options. 
+- By default, the s390x build will dynamically link to OpenSSL libraries. It will build OpenSSL shared objects, so its not necessary to install OpenSSL beforehand. (This options is recommended in all cases.)
+- Another option is to build OpenSSL in-tree. In this case two build options need to be supplied to cmake
 ```bash
 -DENABLE_OPENSSL_DYNAMIC=0 -DENABLE_OPENSSL=1
 ```
 
 These instructions assume that the host machine is x86_64 and has all the tooling required to build natively based on the [Build instructions](../development/build.md). It also assumes that the host is Ubuntu 22.04 but should work on Ubuntu 20.04.
 
-In addition to installing the tooling used to build natively the following additional pacakges need to be installed:
+In addition to installing the tooling used to build natively the following additional packages need to be installed:
 
 ```bash
 apt-get install binutils-s390x-linux-gnu libc6-dev-s390x-cross gcc-s390x-linux-gnu binfmt-support qemu-user-static
@@ -46,19 +46,19 @@ qemu-s390x-static -L /usr/s390x-linux-gnu ./clickhouse
 
 ## Debugging
 
-Install lldb:
+Install LLDB:
 
 ```bash
 apt-get install lldb-15
 ```
 
-To Debug a s390x executable run clickhouse using qemu debug mode:
+To Debug a s390x executable run clickhouse using QEMU debug mode:
 
 ```bash
 qemu-s390x-static -g 31338 -L /usr/s390x-linux-gnu ./clickhouse
 ```
 
-In antother shell run lldb and attach, replace `<Clickhouse Parent Directory>` and `<build directory>` with the values corresponding to your environment.
+In another shell run LLDB and attach, replace `<Clickhouse Parent Directory>` and `<build directory>` with the values corresponding to your environment.
 ```bash
 lldb-15
 (lldb) target create ./clickhouse
