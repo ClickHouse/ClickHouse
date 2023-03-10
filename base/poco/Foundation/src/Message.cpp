@@ -27,8 +27,7 @@ Message::Message():
 	_tid(0), 
 	_file(0),
 	_line(0),
-	_pMap(0),
-    _fmt_str(0)
+	_pMap(0)
 {
 	init();
 }
