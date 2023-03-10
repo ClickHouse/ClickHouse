@@ -41,6 +41,7 @@
 #include <Common/TLDListsHolder.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Core/ServerUUID.h>
+#include <IO/BackupsIOThreadPool.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/IOThreadPool.h>
@@ -772,6 +773,11 @@ try
         server_settings.max_io_thread_pool_size,
         server_settings.max_io_thread_pool_free_size,
         server_settings.io_thread_pool_queue_size);
+
+    BackupsIOThreadPool::initialize(
+        server_settings.max_backups_io_thread_pool_size,
+        server_settings.max_backups_io_thread_pool_free_size,
+        server_settings.backups_io_thread_pool_queue_size);
 
     /// Initialize global local cache for remote filesystem.
     if (config().has("local_cache_for_remote_fs"))
