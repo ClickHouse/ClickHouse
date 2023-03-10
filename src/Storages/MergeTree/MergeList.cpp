@@ -144,9 +144,12 @@ MergeInfo MergeListElement::getInfo() const
 
 MergeListElement::~MergeListElement()
 {
-    CurrentThread::getMemoryTracker()->adjustWithUntrackedMemory(untracked_memory);
+    if (untracked_memory != 0)
+    {
+        CurrentThread::getMemoryTracker()->adjustWithUntrackedMemory(untracked_memory);
+        untracked_memory = 0;
+    }
     background_memory_tracker.adjustOnBackgroundTaskEnd(&memory_tracker);
-    untracked_memory = 0;
 }
 
 

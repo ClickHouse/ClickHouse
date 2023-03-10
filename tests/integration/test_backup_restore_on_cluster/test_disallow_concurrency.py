@@ -82,8 +82,12 @@ def drop_after_test():
     try:
         yield
     finally:
-        node0.query("DROP TABLE IF EXISTS tbl ON CLUSTER 'cluster' NO DELAY")
-        node0.query("DROP DATABASE IF EXISTS mydb ON CLUSTER 'cluster' NO DELAY")
+        node0.query(
+            "DROP TABLE IF EXISTS tbl ON CLUSTER 'cluster' NO DELAY",
+            settings={
+                "distributed_ddl_task_timeout": 360,
+            },
+        )
 
 
 backup_id_counter = 0
@@ -138,7 +142,12 @@ def test_concurrent_backups_on_same_node():
 
     # This restore part is added to confirm creating an internal backup & restore work
     # even when a concurrent backup is stopped
-    nodes[0].query(f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
+    nodes[0].query(
+        f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY",
+        settings={
+            "distributed_ddl_task_timeout": 360,
+        },
+    )
     nodes[0].query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
     nodes[0].query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
 
@@ -158,8 +167,13 @@ def test_concurrent_backups_on_different_nodes():
         f"SELECT status FROM system.backups WHERE status == 'CREATING_BACKUP' AND id = '{id}'",
         "CREATING_BACKUP",
     )
-    assert "Concurrent backups not supported" in nodes[2].query_and_get_error(
+    assert "Concurrent backups not supported" in nodes[0].query_and_get_error(
         f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}"
+    )
+    assert_eq_with_retry(
+        nodes[1],
+        f"SELECT status FROM system.backups WHERE status == 'BACKUP_CREATED' AND id = '{id}'",
+        "BACKUP_CREATED",
     )
 
 
@@ -185,11 +199,20 @@ def test_concurrent_restores_on_same_node():
         "BACKUP_CREATED",
     )
 
-    nodes[0].query(f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
-    nodes[0].query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name} ASYNC")
+    nodes[0].query(
+        f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY",
+        settings={
+            "distributed_ddl_task_timeout": 360,
+        },
+    )
+    restore_id = (
+        nodes[0]
+        .query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name} ASYNC")
+        .split("\t")[0]
+    )
     assert_eq_with_retry(
         nodes[0],
-        f"SELECT status FROM system.backups WHERE status == 'RESTORING'",
+        f"SELECT status FROM system.backups WHERE status == 'RESTORING' AND id == '{restore_id}'",
         "RESTORING",
     )
     assert "Concurrent restores not supported" in nodes[0].query_and_get_error(
@@ -219,8 +242,17 @@ def test_concurrent_restores_on_different_node():
         "BACKUP_CREATED",
     )
 
-    nodes[0].query(f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY")
-    nodes[0].query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name} ASYNC")
+    nodes[0].query(
+        f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY",
+        settings={
+            "distributed_ddl_task_timeout": 360,
+        },
+    )
+    restore_id = (
+        nodes[0]
+        .query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name} ASYNC")
+        .split("\t")[0]
+    )
     assert_eq_with_retry(
         nodes[0],
         f"SELECT status FROM system.backups WHERE status == 'RESTORING'",
@@ -228,4 +260,10 @@ def test_concurrent_restores_on_different_node():
     )
     assert "Concurrent restores not supported" in nodes[1].query_and_get_error(
         f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}"
+    )
+
+    assert_eq_with_retry(
+        nodes[0],
+        f"SELECT status FROM system.backups WHERE status == 'RESTORED' AND id == '{restore_id}'",
+        "RESTORED",
     )

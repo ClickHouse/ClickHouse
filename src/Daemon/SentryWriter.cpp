@@ -13,7 +13,7 @@
 #include <Common/StackTrace.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Core/ServerUUID.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 
 #include "config.h"
 #include "config_version.h"
@@ -74,7 +74,7 @@ void SentryWriter::initialize(Poco::Util::LayeredConfiguration & config)
 
     if (config.getBool("send_crash_reports.enabled", false))
     {
-        if (debug || (strlen(VERSION_OFFICIAL) > 0)) //-V560
+        if (debug || (strlen(VERSION_OFFICIAL) > 0))
             enabled = true;
     }
 

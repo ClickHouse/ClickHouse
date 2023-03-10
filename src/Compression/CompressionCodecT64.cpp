@@ -88,6 +88,7 @@ enum class MagicNumber : uint8_t
     Enum16      = 18,
     Decimal32   = 19,
     Decimal64   = 20,
+    IPv4        = 21,
 };
 
 MagicNumber serializeTypeId(TypeIndex type_id)
@@ -109,6 +110,7 @@ MagicNumber serializeTypeId(TypeIndex type_id)
         case TypeIndex::Enum16:     return MagicNumber::Enum16;
         case TypeIndex::Decimal32:  return MagicNumber::Decimal32;
         case TypeIndex::Decimal64:  return MagicNumber::Decimal64;
+        case TypeIndex::IPv4:       return MagicNumber::IPv4;
         default:
             break;
     }
@@ -136,6 +138,7 @@ TypeIndex deserializeTypeId(uint8_t serialized_type_id)
         case MagicNumber::Enum16:       return TypeIndex::Enum16;
         case MagicNumber::Decimal32:    return TypeIndex::Decimal32;
         case MagicNumber::Decimal64:    return TypeIndex::Decimal64;
+        case MagicNumber::IPv4:         return TypeIndex::IPv4;
     }
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Bad magic number in T64 codec: {}", static_cast<UInt32>(serialized_type_id));
@@ -171,6 +174,7 @@ TypeIndex baseType(TypeIndex type_idx)
             return TypeIndex::UInt16;
         case TypeIndex::UInt32:
         case TypeIndex::DateTime:
+        case TypeIndex::IPv4:
             return TypeIndex::UInt32;
         case TypeIndex::UInt64:
             return TypeIndex::UInt64;
@@ -198,6 +202,7 @@ TypeIndex typeIdx(const IDataType * data_type)
         case TypeIndex::Date:
         case TypeIndex::Int32:
         case TypeIndex::UInt32:
+        case TypeIndex::IPv4:
         case TypeIndex::DateTime:
         case TypeIndex::DateTime64:
         case TypeIndex::Decimal32:

@@ -337,19 +337,22 @@ void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
         auto new_target_table_name = generateInnerTableName(new_table_id);
         auto rename = std::make_shared<ASTRenameQuery>();
 
-        ASTRenameQuery::Table from;
         assert(target_table_id.database_name == old_table_id.database_name);
-        from.database = target_table_id.database_name;
-        from.table = target_table_id.table_name;
 
-        ASTRenameQuery::Table to;
-        to.database = new_table_id.database_name;
-        to.table = new_target_table_name;
-
-        ASTRenameQuery::Element elem;
-        elem.from = from;
-        elem.to = to;
-        rename->elements.emplace_back(elem);
+        ASTRenameQuery::Element elem
+        {
+            ASTRenameQuery::Table
+            {
+                target_table_id.database_name.empty() ? nullptr : std::make_shared<ASTIdentifier>(target_table_id.database_name),
+                std::make_shared<ASTIdentifier>(target_table_id.table_name)
+            },
+            ASTRenameQuery::Table
+            {
+                new_table_id.database_name.empty() ? nullptr : std::make_shared<ASTIdentifier>(new_table_id.database_name),
+                std::make_shared<ASTIdentifier>(new_target_table_name)
+            }
+        };
+        rename->elements.emplace_back(std::move(elem));
 
         InterpreterRenameQuery(rename, getContext()).execute();
         target_table_id.database_name = new_table_id.database_name;

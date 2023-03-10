@@ -2,18 +2,21 @@ SET allow_experimental_inverted_index = 1;
 SET log_queries = 1;
 
 ----------------------------------------------------
--- Test inverted(2)
+SELECT 'Test inverted(2)';
 
 DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE inverted(2))
             ENGINE = MergeTree() ORDER BY k
-            SETTINGS index_granularity = 2;
+            SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
 
 INSERT INTO tab VALUES (101, 'Alick a01'), (102, 'Blick a02'), (103, 'Click a03'), (104, 'Dlick a04'), (105, 'Elick a05'), (106, 'Alick a06'), (107, 'Blick a07'), (108, 'Click a08'), (109, 'Dlick a09'), (110, 'Elick a10'), (111, 'Alick b01'), (112, 'Blick b02'), (113, 'Click b03'), (114, 'Dlick b04'), (115, 'Elick b05'), (116, 'Alick b06'), (117, 'Blick b07'), (118, 'Click b08'), (119, 'Dlick b09'), (120, 'Elick b10');
 
 -- check inverted index was created
 SELECT name, type FROM system.data_skipping_indices WHERE table =='tab' AND database = currentDatabase() LIMIT 1;
+
+-- throw in a random consistency check
+CHECK TABLE tab;
 
 -- search inverted index with ==
 SELECT * FROM tab WHERE s == 'Alick a01';
@@ -55,13 +58,13 @@ SELECT read_rows==8 from system.query_log
         LIMIT 1;
 
 ----------------------------------------------------
--- Test inverted()
+SELECT 'Test inverted()';
 
 DROP TABLE IF EXISTS tab_x;
 
 CREATE TABLE tab_x(k UInt64, s String, INDEX af(s) TYPE inverted())
     ENGINE = MergeTree() ORDER BY k
-    SETTINGS index_granularity = 2;
+    SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
 
 INSERT INTO tab_x VALUES (101, 'Alick a01'), (102, 'Blick a02'), (103, 'Click a03'), (104, 'Dlick a04'), (105, 'Elick a05'), (106, 'Alick a06'), (107, 'Blick a07'), (108, 'Click a08'), (109, 'Dlick a09'), (110, 'Elick a10'), (111, 'Alick b01'), (112, 'Blick b02'), (113, 'Click b03'), (114, 'Dlick b04'), (115, 'Elick b05'), (116, 'Alick b06'), (117, 'Blick b07'), (118, 'Click b08'), (119, 'Dlick b09'), (120, 'Elick b10');
 
@@ -108,13 +111,13 @@ SELECT read_rows==4 from system.query_log
     LIMIT 1;
 
 ----------------------------------------------------
--- Test on array columns
+SELECT 'Test on array columns';
 
 DROP TABLE IF EXISTS tab;
 
 create table tab (k UInt64, s Array(String), INDEX af(s) TYPE inverted(2))
     ENGINE = MergeTree() ORDER BY k
-    SETTINGS index_granularity = 2;
+    SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
 
 INSERT INTO tab SELECT rowNumberInBlock(), groupArray(s) FROM tab_x GROUP BY k%10;
 
@@ -135,13 +138,13 @@ SELECT read_rows==2 from system.query_log
     LIMIT 1;
 
 ----------------------------------------------------
--- Test on map columns
+SELECT 'Test on map columns';
 
 DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab (k UInt64, s Map(String,String), INDEX af(mapKeys(s)) TYPE inverted(2))
     ENGINE = MergeTree() ORDER BY k
-    SETTINGS index_granularity = 2;
+    SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
 
 INSERT INTO tab VALUES (101, {'Alick':'Alick a01'}), (102, {'Blick':'Blick a02'}), (103, {'Click':'Click a03'}), (104, {'Dlick':'Dlick a04'}), (105, {'Elick':'Elick a05'}), (106, {'Alick':'Alick a06'}), (107, {'Blick':'Blick a07'}), (108, {'Click':'Click a08'}), (109, {'Dlick':'Dlick a09'}), (110, {'Elick':'Elick a10'}), (111, {'Alick':'Alick b01'}), (112, {'Blick':'Blick b02'}), (113, {'Click':'Click b03'}), (114, {'Dlick':'Dlick b04'}), (115, {'Elick':'Elick b05'}), (116, {'Alick':'Alick b06'}), (117, {'Blick':'Blick b07'}), (118, {'Click':'Click b08'}), (119, {'Dlick':'Dlick b09'}), (120, {'Elick':'Elick b10'});
 
@@ -175,13 +178,14 @@ SELECT read_rows==8 from system.query_log
     LIMIT 1;
 
 ----------------------------------------------------
--- Test inverted(2) on a column with two parts
+SELECT 'Test inverted(2) on a column with two parts';
+
 
 DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE inverted(2))
     ENGINE = MergeTree() ORDER BY k
-    SETTINGS index_granularity = 2;
+    SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
 
 INSERT INTO tab VALUES (101, 'Alick a01'), (102, 'Blick a02'), (103, 'Click a03'), (104, 'Dlick a04'), (105, 'Elick a05'), (106, 'Alick a06'), (107, 'Blick a07'), (108, 'Click a08'), (109, 'Dlick a09'), (110, 'Elick b10'), (111, 'Alick b01'), (112, 'Blick b02'), (113, 'Click b03'), (114, 'Dlick b04'), (115, 'Elick b05'), (116, 'Alick b06'), (117, 'Blick b07'), (118, 'Click b08'), (119, 'Dlick b09'), (120, 'Elick b10');
 INSERT INTO tab VALUES (201, 'rick c01'), (202, 'mick c02'), (203, 'nick c03');
@@ -203,14 +207,14 @@ SELECT read_rows==6 from system.query_log
     LIMIT 1;
 
 ----------------------------------------------------
--- Test inverted(2) on UTF-8 data
+SELECT 'Test inverted(2) on UTF-8 data';
 
 DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE inverted(2))
     ENGINE = MergeTree()
     ORDER BY k
-    SETTINGS index_granularity = 2;
+    SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
 
 INSERT INTO tab VALUES (101, 'Alick 好'), (102, 'clickhouse你好'), (103, 'Click 你'), (104, 'Dlick 你a好'), (105, 'Elick 好好你你'), (106, 'Alick 好a好a你a你');
 
@@ -231,7 +235,7 @@ SELECT read_rows==2 from system.query_log
     LIMIT 1;
 
 ----------------------------------------------------
--- Test max_digestion_size_per_segment
+SELECT 'Test max_digestion_size_per_segment';
 
 DROP TABLE IF EXISTS tab;
 
@@ -262,7 +266,7 @@ SELECT read_rows==256 from system.query_log
         LIMIT 1;
 
 ----------------------------------------------------
--- Test density==1
+SELECT 'Test density==1';
 
 DROP TABLE IF EXISTS tab;
 
@@ -291,7 +295,7 @@ SELECT read_rows==0 from system.query_log
         LIMIT 1;
 
 ----------------------------------------------------
--- Test density==0.1
+SELECT 'Test density==0.1';
 
 DROP TABLE IF EXISTS tab;
 
@@ -332,4 +336,3 @@ SELECT read_rows==512 from system.query_log
             AND type='QueryFinish' 
             AND result_rows==1
         LIMIT 1;
-
