@@ -66,4 +66,10 @@ QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, con
 /// Try extract boolean constant from condition node
 std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr & condition_node);
 
+/// Replace tables nodes and table function nodes with dummy table nodes
+using ResultReplacementMap = std::unordered_map<QueryTreeNodePtr, QueryTreeNodePtr>;
+QueryTreeNodePtr replaceTablesAndTableFunctionsWithDummyTables(const QueryTreeNodePtr & query_node,
+    const ContextPtr & context,
+    ResultReplacementMap * result_replacement_map = nullptr);
+
 }
