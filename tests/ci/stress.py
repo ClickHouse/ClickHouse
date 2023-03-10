@@ -223,6 +223,19 @@ def prepare_for_hung_check(drop_databases):
         pass
     return True
 
+def is_ubsan_build():
+    try:
+        query = """clickhouse client -q "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'" """
+        output = (
+            check_output(query, shell=True, stderr=STDOUT, timeout=30)
+            .decode("utf-8")
+            .strip()
+        )
+        return b"-fsanitize=undefined" in output
+    except Exception as e:
+        logging.info("Failed to get build flags: ", str(e))
+        return False
+
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
@@ -243,6 +256,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.drop_databases and not args.hung_check:
         raise Exception("--drop-databases only used in hung check (--hung-check)")
+
+    # FIXME Hung check with ubsan is temporarily disabled due to https://github.com/ClickHouse/ClickHouse/issues/45372
+    suppress_hung_check = is_ubsan_build()
+
     func_pipes = []
     func_pipes = run_func_test(
         args.test_cmd,
@@ -307,7 +324,7 @@ if __name__ == "__main__":
         res = call(cmd, shell=True, stdout=tee.stdin, stderr=STDOUT)
         if tee.stdin is not None:
             tee.stdin.close()
-        if res != 0 and have_long_running_queries:
+        if res != 0 and have_long_running_queries and not suppress_hung_check:
             logging.info("Hung check failed with exit code %d", res)
         else:
             hung_check_status = "No queries hung\tOK\t\\N\t\n"
