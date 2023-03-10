@@ -31,6 +31,9 @@ folder and run the following command:
 PATH=$PATH:<path to clickhouse-client> tests/clickhouse-test 01428_hash_set_nan_key
 ```
 
+Test results (`stderr` and `stdout`) are written to files `01428_hash_set_nan_key.[stderr|stdout]` which
+are located near the test file itself (so for `queries/0_stateless/foo.sql` output will be in `queries/0_stateless/foo.stdout`).
+
 For more options, see `tests/clickhouse-test --help`. You can simply run all tests or run subset of tests filtered by substring in test name: `./clickhouse-test substring`. There are also options to run tests in parallel or in randomized order.
 
 ### Adding a New Test
