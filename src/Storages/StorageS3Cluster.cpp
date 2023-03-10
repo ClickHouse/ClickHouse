@@ -114,6 +114,7 @@ Pipe StorageS3Cluster::read(
     else
     {
         auto interpreter = InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage).analyze());
+        sample_block = interpreter.getSampleBlock();
         query_to_send = interpreter.getQueryInfo().query->clone();
     }
 
