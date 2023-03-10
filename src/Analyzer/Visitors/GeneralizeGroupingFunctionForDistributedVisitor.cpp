@@ -30,7 +30,7 @@ public:
             && function_name != "groupingForCube"
             && function_name != "groupingForGroupingSets")
             return;
-        
+
         function->resolveAsFunctionWithName("GROUPING");
         if (ordinary_grouping)
             return;
