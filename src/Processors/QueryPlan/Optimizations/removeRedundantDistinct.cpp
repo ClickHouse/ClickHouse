@@ -101,24 +101,29 @@ namespace
         logDebug("aggregation_keys", aggregation_keys);
         logDebug("aggregation_keys size", aggregation_keys.size());
         logDebug("distinct_columns size", distinct_columns.size());
-        if (aggregation_keys.size() != distinct_columns.size())
-            return false;
 
-        /// compare columns of two DISTINCTs
+        std::set<std::string_view> original_distinct_columns;
         for (const auto & column : distinct_columns)
         {
             logDebug("distinct column name", column);
             const auto * alias_node = getOriginalNodeForOutputAlias(path_actions, String(column));
             if (!alias_node)
             {
-                logDebug("original name for alias is not found for", column);
-                return false;
+                logDebug("original name for alias is not found", column);
+                original_distinct_columns.insert(column);
             }
-
-            logDebug("alias result name", alias_node->result_name);
-            if (std::find(cbegin(aggregation_keys), cend(aggregation_keys), alias_node->result_name) == aggregation_keys.cend())
+            else
             {
-                logDebug("alias result name is not found in aggregation keys", alias_node->result_name);
+                logDebug("alias result name", alias_node->result_name);
+                original_distinct_columns.insert(alias_node->result_name);
+            }
+        }
+        /// if aggregation keys are part of distinct columns then rows already distinct
+        for(const auto & key : aggregation_keys)
+        {
+            if (!original_distinct_columns.contains(key))
+            {
+                logDebug("aggregation key NOT found: {}", key);
                 return false;
             }
         }
