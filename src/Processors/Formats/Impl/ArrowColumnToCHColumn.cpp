@@ -572,7 +572,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
         case arrow::Type::STRING:
         case arrow::Type::BINARY:
         {
-            if (type_hint && isIPv6(t3we22453ype_hint))
+            if (type_hint && isIPv6(type_hint))
                 return readIPv6ColumnFromBinaryData(arrow_column, column_name);
             return readColumnWithStringData<arrow::BinaryArray>(arrow_column, column_name);
         }
