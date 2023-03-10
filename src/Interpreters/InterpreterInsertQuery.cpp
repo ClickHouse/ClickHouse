@@ -161,7 +161,7 @@ Block InterpreterInsertQuery::getSampleBlock(
             if (table_sample_physical.has(current_name))
             {
                 if (!allow_materialized)
-                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert column {}, because it is a MATERIALIZED column",
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert column {}, because it is MATERIALIZED column.",
                         current_name);
                 res.insert(ColumnWithTypeAndName(table_sample_physical.getByName(current_name).type, current_name));
             }
@@ -527,7 +527,7 @@ BlockIO InterpreterInsertQuery::execute()
         {
             for (const auto & column : metadata_snapshot->getColumns())
                 if (column.default_desc.kind == ColumnDefaultKind::Materialized && header.has(column.name))
-                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert column {}, because it is a MATERIALIZED column", column.name);
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert column {}, because it is MATERIALIZED column.", column.name);
         }
 
         res.pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline));
