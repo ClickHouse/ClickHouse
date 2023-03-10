@@ -1,4 +1,4 @@
--- Tags: no-parallel,no-ordinary-database
+-- Tags: no-ordinary-database, no-parallel
 
 SET database_atomic_wait_for_drop_and_detach_synchronously = 0;
 DROP TABLE IF EXISTS 25400_marked_dropped_tables;
@@ -8,3 +8,4 @@ DROP TABLE 25400_marked_dropped_tables;
 
 SELECT table, engine FROM system.marked_dropped_tables LIMIT 1;
 DESCRIBE TABLE system.marked_dropped_tables;
+ 
