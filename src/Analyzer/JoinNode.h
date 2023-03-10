@@ -126,6 +126,13 @@ public:
         return QueryTreeNodeType::JOIN;
     }
 
+    /*
+     * Convert CROSS to INNER JOIN - changes JOIN kind and sets a new join expression
+     * (that was moved from WHERE clause).
+     * Expects the current kind to be CROSS (and join expression to be null because of that).
+     */
+    void crossToInner(const QueryTreeNodePtr & join_expression_);
+
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
