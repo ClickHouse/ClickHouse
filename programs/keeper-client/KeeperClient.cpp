@@ -1,0 +1,224 @@
+#include "KeeperClient.h"
+#include <Client/ReplxxLineReader.h>
+#include <Client/ClientBase.h>
+#include <Common/EventNotifier.h>
+#include <Common/filesystemHelpers.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <boost/program_options.hpp>
+
+
+namespace po = boost::program_options;
+namespace fs = std::filesystem;
+
+namespace DB
+{
+
+String KeeperClient::getAbsolutePath(const String & relative)
+{
+    String result;
+    if (relative.starts_with('/'))
+        result = fs::weakly_canonical(relative);
+    else
+        result = fs::weakly_canonical(cwd / relative);
+
+    if (result.ends_with('/') && result.size() > 1)
+        result.pop_back();
+
+    return result;
+}
+
+void KeeperClient::loadCommands(std::vector<std::tuple<String, size_t, Callback>> && new_commands)
+{
+    for (auto & [name, args_count, callback] : new_commands) {
+        commands.insert({{name, args_count}, callback});
+        suggest.addWords({name});
+    }
+}
+
+void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
+{
+    Poco::Util::Application::defineOptions(options);
+
+    options.addOption(
+        Poco::Util::Option("help", "h", "show help and exit")
+            .binding("help"));
+
+    options.addOption(
+        Poco::Util::Option("connection-timeout", "", "set connection timeout in seconds. default 10s.")
+            .argument("connection-timeout")
+            .binding("connection-timeout"));
+
+    options.addOption(
+        Poco::Util::Option("session-timeout", "", "set session timeout in seconds. default 10s.")
+            .argument("session-timeout")
+            .binding("session-timeout"));
+
+    options.addOption(
+        Poco::Util::Option("operation-timeout", "", "set operation timeout in seconds. default 10s.")
+            .argument("operation-timeout")
+            .binding("operation-timeout"));
+
+    options.addOption(
+        Poco::Util::Option("history-file", "", "set path of history file. default `~/.keeper-client-history`")
+            .argument("history-file")
+            .binding("history-file"));
+}
+
+void KeeperClient::initialize(Poco::Util::Application & /* self */)
+{
+    loadCommands({
+        {"set", 2, [](KeeperClient * client, const std::vector<String> & args) {
+             client->zookeeper->set(client->getAbsolutePath(args[1]), args[2]);
+         }},
+
+        {"create", 2, [](KeeperClient * client, const std::vector<String> & args) {
+             client->zookeeper->create(client->getAbsolutePath(args[1]), args[2], zkutil::CreateMode::Persistent);
+         }},
+
+        {"get", 1, [](KeeperClient * client, const std::vector<String> & args) {
+             std::cout << client->zookeeper->get(client->getAbsolutePath(args[1])) << "\n";
+         }},
+
+        {"ls", 0, [](KeeperClient * client, const std::vector<String> & /* args */) {
+             auto children = client->zookeeper->getChildren(client->cwd);
+             for (auto & child : children)
+                 std::cout << child << " ";
+             std::cout << "\n";
+         }},
+
+        {"ls", 1, [](KeeperClient * client, const std::vector<String> & args) {
+             auto children = client->zookeeper->getChildren(client->getAbsolutePath(args[1]));
+             for (auto & child : children)
+                 std::cout << child << " ";
+             std::cout << "\n";
+         }},
+
+        {"cd", 0, [](KeeperClient * /* client */, const std::vector<String> & /* args */) {
+         }},
+
+        {"cd", 1, [](KeeperClient * client, const std::vector<String> & args) {
+             auto new_path = client->getAbsolutePath(args[1]);
+             if (!client->zookeeper->exists(new_path))
+                 std::cerr << "Path " << new_path << " does not exists\n";
+             else
+                client->cwd = new_path;
+         }},
+
+        {"rm", 1, [](KeeperClient * client, const std::vector<String> & args) {
+             client->zookeeper->remove(client->getAbsolutePath(args[1]));
+         }},
+
+        {"rmr", 1, [](KeeperClient * client, const std::vector<String> & args) {
+             client->zookeeper->removeRecursive(client->getAbsolutePath(args[1]));
+         }},
+    });
+
+    String home_path;
+    const char * home_path_cstr = getenv("HOME"); // NOLINT(concurrency-mt-unsafe)
+    if (home_path_cstr)
+        home_path = home_path_cstr;
+
+    if (config().has("history-file"))
+        history_file = config().getString("history-file");
+    else
+        history_file = home_path + "/.keeper-client-history";
+
+    if (!history_file.empty() && !fs::exists(history_file))
+    {
+        try
+        {
+            FS::createFile(history_file);
+        }
+        catch (const ErrnoException & e)
+        {
+            if (e.getErrno() != EEXIST)
+                throw;
+        }
+    }
+
+    EventNotifier::init();
+}
+
+bool KeeperClient::processQueryText(const String & text)
+{
+    if (exit_strings.find(text) != exit_strings.end())
+        return false;
+
+    std::vector<std::string> tokens;
+    boost::algorithm::split(tokens, text, boost::is_any_of(" "));
+
+    try
+    {
+        auto callback = commands.find({tokens[0], tokens.size() - 1});
+        if (callback == commands.end())
+            std::cerr << "No command found with name " << tokens[0] << " and args count " << tokens.size() - 1 << "\n";
+        else
+            callback->second(this, tokens);
+    }
+    catch (Coordination::Exception & err)
+    {
+        std::cerr << err.message() << "\n";
+    }
+    return true;
+}
+
+void KeeperClient::runInteractive()
+{
+
+    LineReader::Patterns query_extenders = {"\\"};
+    LineReader::Patterns query_delimiters = {};
+
+    ReplxxLineReader lr(suggest, history_file, false, query_extenders, query_delimiters, {});
+    lr.enableBracketedPaste();
+
+    while (true)
+    {
+        auto input = lr.readLine( cwd.string() + " :) ", ":-] ");
+        if (input.empty())
+            break;
+
+        if (!processQueryText(input))
+            break;
+    }
+}
+
+int KeeperClient::main(const std::vector<String> & args)
+{
+    zkutil::ZooKeeperArgs zk_args(args[0]);
+    zk_args.connection_timeout_ms = config().getInt("connection-timeout", 10) * 1000;
+    zk_args.session_timeout_ms = config().getInt("session-timeout", 10) * 1000;
+    zk_args.operation_timeout_ms = config().getInt("operation-timeout", 10) * 1000;
+    zookeeper = std::make_unique<zkutil::ZooKeeper>(zk_args);
+
+    runInteractive();
+
+    return 0;
+}
+
+}
+
+
+int mainEntryClickHouseKeeperClient(int argc, char ** argv)
+{
+    try
+    {
+        DB::KeeperClient client;
+        client.init(argc, argv);
+        return client.run();
+    }
+    catch (const DB::Exception & e)
+    {
+        std::cerr << DB::getExceptionMessage(e, false) << std::endl;
+        return 1;
+    }
+    catch (const boost::program_options::error & e)
+    {
+        std::cerr << "Bad arguments: " << e.what() << std::endl;
+        return DB::ErrorCodes::BAD_ARGUMENTS;
+    }
+    catch (...)
+    {
+        std::cerr << DB::getCurrentExceptionMessage(true) << std::endl;
+        return 1;
+    }
+}
