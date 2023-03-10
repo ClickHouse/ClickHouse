@@ -5,9 +5,12 @@
 
 
 template <char ... symbols>
-void test_find_first_not(std::string_view haystack, std::string_view::iterator expected_output)
+void test_find_first_not(const std::string & haystack, std::size_t expected_pos)
 {
-    ASSERT_EQ(expected_output, find_first_not_symbols<symbols...>(haystack.begin(), haystack.end()));
+    const char * begin = haystack.data();
+    const char * end = haystack.data() + haystack.size();
+
+    ASSERT_EQ(begin + expected_pos, find_first_not_symbols<symbols...>(begin, end));
 }
 
 TEST(FindSymbols, SimpleTest)
@@ -45,9 +48,9 @@ TEST(FindSymbols, SimpleTest)
 
 TEST(FindNotSymbols, AllSymbolsPresent)
 {
-    std::string_view str_with_17_bytes = "hello world hello";
-    std::string_view str_with_16_bytes = {str_with_17_bytes.begin(), str_with_17_bytes.end() - 1u};
-    std::string_view str_with_15_bytes = {str_with_16_bytes.begin(), str_with_16_bytes.end() - 1u};
+    std::string str_with_17_bytes = "hello world hello";
+    std::string str_with_16_bytes = {str_with_17_bytes.begin(), str_with_17_bytes.end() - 1u};
+    std::string str_with_15_bytes = {str_with_16_bytes.begin(), str_with_16_bytes.end() - 1u};
 
     /*
      * The below variations will choose different implementation strategies:
@@ -58,35 +61,35 @@ TEST(FindNotSymbols, AllSymbolsPresent)
      * Below code asserts that all calls return the ::end of the input string. This was not true prior to this fix as mentioned in PR #47304
      * */
 
-    test_find_first_not<'h', 'e', 'l', 'o', 'w', 'r', 'd', ' '>(str_with_15_bytes, str_with_15_bytes.end());
-    test_find_first_not<'h', 'e', 'l', 'o', 'w', 'r', 'd', ' '>(str_with_16_bytes, str_with_16_bytes.end());
-    test_find_first_not<'h', 'e', 'l', 'o', 'w', 'r', 'd', ' '>(str_with_17_bytes, str_with_17_bytes.end());
+    test_find_first_not<'h', 'e', 'l', 'o', 'w', 'r', 'd', ' '>(str_with_15_bytes, str_with_15_bytes.size());
+    test_find_first_not<'h', 'e', 'l', 'o', 'w', 'r', 'd', ' '>(str_with_16_bytes, str_with_16_bytes.size());
+    test_find_first_not<'h', 'e', 'l', 'o', 'w', 'r', 'd', ' '>(str_with_17_bytes, str_with_17_bytes.size());
 }
 
 TEST(FindNotSymbols, NoSymbolsMatch)
 {
-    std::string_view s = "abcdefg";
+    std::string s = "abcdefg";
 
     // begin should be returned since the first character of the string does not match any of the below symbols
-    test_find_first_not<'h', 'i', 'j'>(s, s.begin());
+    test_find_first_not<'h', 'i', 'j'>(s, 0u);
 }
 
 TEST(FindNotSymbols, ExtraSymbols)
 {
-    std::string_view s = "hello_world_hello";
-    test_find_first_not<'h', 'e', 'l', 'o', ' '>(s, s.begin() + 5u);
+    std::string s = "hello_world_hello";
+    test_find_first_not<'h', 'e', 'l', 'o', ' '>(s, 5u);
 }
 
 TEST(FindNotSymbols, EmptyString)
 {
-    std::string_view s = "";
-    test_find_first_not<'h', 'e', 'l', 'o', 'w', 'r', 'd', ' '>(s, s.end());
+    std::string s;
+    test_find_first_not<'h', 'e', 'l', 'o', 'w', 'r', 'd', ' '>(s, s.size());
 }
 
 TEST(FindNotSymbols, SingleChar)
 {
-    std::string_view s = "a";
-    test_find_first_not<'a'>(s, s.end());
+    std::string s = "a";
+    test_find_first_not<'a'>(s, s.size());
 }
 
 TEST(FindNotSymbols, NullCharacter)
@@ -94,6 +97,6 @@ TEST(FindNotSymbols, NullCharacter)
     // special test to ensure only the passed template arguments are used as needles
     // since current find_first_symbols implementation takes in 16 characters and defaults
     // to \0.
-    auto s = std::string_view("abcdefg\0x", 9u);
-    test_find_first_not<'a', 'b', 'c', 'd', 'e', 'f', 'g'>(s, s.begin() + 7u);
+    std::string s("abcdefg\0x", 9u);
+    test_find_first_not<'a', 'b', 'c', 'd', 'e', 'f', 'g'>(s, 7u);
 }
