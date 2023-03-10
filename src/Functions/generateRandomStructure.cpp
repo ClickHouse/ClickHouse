@@ -62,8 +62,8 @@ private:
         Map,
         Nested,
     };
-    
-    static constexpr std::array<Type, 21> simple_types
+
+    static constexpr std::array<Type, 16> simple_types
     {
         Type::Int8,
         Type::UInt8,
@@ -76,24 +76,30 @@ private:
         Type::UInt64,
         Type::Float32,
         Type::Float64,
-        Type::DateTime64,
-        Type::Decimal32,
-        Type::Decimal64,
         Type::Date,
         Type::Date32,
         Type::DateTime,
         Type::String,
         Type::FixedString,
-        Type::IPv4,
-        Type::IPv6,
     };
 
-    static constexpr std::array<Type, 6> big_number_types
+    static constexpr std::array<Type, 4> big_integer_types
     {
         Type::Int128,
         Type::UInt128,
         Type::Int256,
         Type::UInt256,
+    };
+
+    static constexpr std::array<Type, 3> decimal_types
+    {
+        Type::DateTime64,
+        Type::Decimal32,
+        Type::Decimal64,
+    };
+
+    static constexpr std::array<Type, 2> big_decimal_types
+    {
         Type::Decimal128,
         Type::Decimal256,
     };
@@ -102,6 +108,12 @@ private:
     {
         Type::Enum8,
         Type::Enum16,
+    };
+
+    static constexpr std::array<Type, 2> ip_types
+    {
+        Type::IPv4,
+        Type::IPv6,
     };
 
     static constexpr std::array<Type, 6> complex_types
@@ -132,6 +144,12 @@ private:
         Type::FixedString,
     };
 
+    static constexpr std::array<Type, 2> map_key_string_types
+    {
+        Type::String,
+        Type::FixedString
+    };
+
     static constexpr size_t MAX_NUMBER_OF_COLUMNS = 128;
     static constexpr size_t MAX_TUPLE_ELEMENTS = 16;
     static constexpr size_t MAX_DATETIME64_PRECISION = 9;
@@ -157,53 +175,48 @@ public:
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const  override { return {0, 1, 2, 3}; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const  override { return {0, 1, 2, 3, 4, 5, 6}; }
     bool useDefaultImplementationForConstants() const override { return false; }
     bool useDefaultImplementationForNulls() const override { return false; }
 
-
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (arguments.size() > 4)
+        if (arguments.size() > 7)
             throw Exception(
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, expected from 0 to 4",
+                "Number of arguments for function {} doesn't match: passed {}, expected from 0 to 7",
                 getName(), arguments.size());
 
-        if (!arguments.empty() && !isUnsignedInteger(arguments[0]) && !arguments[0]->onlyNull())
+        for (size_t i = 0; i != 2; ++i)
         {
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of the first argument of function {}, expected unsigned integer or Null",
-                arguments[0]->getName(),
-                getName());
+            if (arguments.size() == i)
+                break;
+
+            if (!isUnsignedInteger(arguments[i]) && !arguments[i]->onlyNull())
+            {
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of the {} argument of function {}, expected unsigned integer or Null",
+                    i + 1,
+                    arguments[i]->getName(),
+                    getName());
+            }
         }
 
-        if (arguments.size() > 1 && !isUnsignedInteger(arguments[1]) && !arguments[1]->onlyNull())
+        for (size_t i = 2; i != 7; ++i)
         {
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of the second argument of function {}, expected unsigned integer or Null",
-                arguments[1]->getName(),
-                getName());
-        }
+            if (arguments.size() <= i)
+                break;
 
-        if (arguments.size() > 2 && !isUInt8(arguments[2]))
-        {
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of the third argument of function {}, expected UInt8",
-                arguments[2]->getName(),
-                getName());
-        }
-
-        if (arguments.size() > 3 && !isUInt8(arguments[3]))
-        {
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of the fourth argument of function {}, expected UInt8",
-                arguments[3]->getName(),
-                getName());
+            if (!isUInt8(arguments[i]))
+            {
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of the {} argument of function {}, expected UInt8",
+                    i + 1,
+                    arguments[i]->getName(),
+                    getName());
+            }
         }
 
         return std::make_shared<DataTypeString>();
@@ -216,8 +229,7 @@ public:
 
         if (!arguments.empty() && !arguments[0].column->onlyNull())
         {
-            const auto & first_arg = arguments[0];
-            number_of_columns = first_arg.column->getUInt(0);
+            number_of_columns = arguments[0].column->getUInt(0);
             if (number_of_columns > MAX_NUMBER_OF_COLUMNS)
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
@@ -227,36 +239,39 @@ public:
         }
 
         if (arguments.size() > 1 && !arguments[1].column->onlyNull())
-        {
-            const auto & second_arg = arguments[1];
-            seed = second_arg.column->getUInt(0);
-        }
+            seed = arguments[1].column->getUInt(0);
 
         bool allow_big_numbers = true;
         if (arguments.size() > 2)
-        {
-            const auto & third_arg = arguments[2];
-            allow_big_numbers = third_arg.column->getBool(0);
-        }
+            allow_big_numbers = arguments[2].column->getBool(0);
 
         bool allow_enums = true;
         if (arguments.size() > 3)
-        {
-            const auto & fourth_arg = arguments[3];
-            allow_enums = fourth_arg.column->getBool(0);
-        }
+            allow_enums = arguments[3].column->getBool(0);
+
+        bool allow_decimals = true;
+        if (arguments.size() > 4)
+            allow_decimals = arguments[4].column->getBool(0);
+
+        bool allow_ip = true;
+        if (arguments.size() > 5)
+            allow_ip = arguments[5].column->getBool(0);
+
+        bool only_string_map_key = false;
+        if (arguments.size() > 6)
+            only_string_map_key = arguments[6].column->getBool(0);
 
         pcg64 rng(seed);
         if (number_of_columns == 0)
             number_of_columns = generateNumberOfColumns(rng);
 
         auto col_res = ColumnString::create();
-        String generated_structure = "";
+        String generated_structure;
         for (size_t i = 0; i != number_of_columns; ++i)
         {
             if (i != 0)
                 generated_structure += ", ";
-            auto type = generateRandomType(rng, allow_big_numbers, allow_enums);
+            auto type = generateRandomType(rng, allow_big_numbers, allow_enums, allow_decimals, allow_ip, only_string_map_key);
             generated_structure += "c" + std::to_string(i + 1) + " " + type;
         }
         col_res->insert(generated_structure);
@@ -269,26 +284,37 @@ private:
     {
         return rng() % MAX_NUMBER_OF_COLUMNS + 1;
     }
-    
-    String generateRandomType(pcg64 & rng, bool allow_big_numbers, bool allow_enums) const
+
+    /// Helper struct to call generateRandomTypeImpl with lots of bool template arguments without writing big if/else over all bool variables.
+    template<bool ...Args>
+    struct Dispatcher
     {
-        if (allow_big_numbers)
+        static auto call(const FunctionGenerateRandomStructure * f, pcg64 & rng)
         {
-            if (allow_enums)
-                return generateRandomTypeImpl<true, true, true>(rng);
-            return generateRandomTypeImpl<true, false, true>(rng);
+            return f->generateRandomTypeImpl<Args...>(rng);
         }
 
-        if (allow_enums)
-            return generateRandomTypeImpl<false, true, true>(rng);
-        return generateRandomTypeImpl<false, false, true>(rng);
-    }
-        
+        template<class ...Args1>
+        static auto call(const FunctionGenerateRandomStructure * f, pcg64 & rng, bool b, Args1... ar1)
+        {
+            if (b)
+                return Dispatcher<Args..., true>::call(f, rng, ar1...);
+            else
+                return Dispatcher<Args..., false>::call(f, rng, ar1...);
+        }
 
-    template <bool allow_big_numbers, bool allow_enums, bool allow_complex_types>
+        friend FunctionGenerateRandomStructure;
+    };
+
+    String generateRandomType(pcg64 & rng, bool allow_big_numbers, bool allow_enums, bool allow_decimals, bool allow_ip, bool allow_only_string_map_keys) const
+    {
+        return Dispatcher<>::call(this, rng, allow_big_numbers, allow_enums, allow_decimals, allow_ip, allow_only_string_map_keys, true);
+    }
+
+    template <bool allow_big_numbers, bool allow_enums, bool allow_decimals, bool allow_ip, bool allow_only_string_map_keys, bool allow_complex_types>
     String generateRandomTypeImpl(pcg64 & rng, size_t depth = 0) const
     {
-        constexpr auto all_types = getAllTypes<allow_big_numbers, allow_enums, allow_complex_types>();
+        constexpr auto all_types = getAllTypes<allow_big_numbers, allow_enums, allow_decimals, allow_ip, allow_complex_types>();
         auto type = all_types[rng() % all_types.size()];
 
         switch (type)
@@ -312,11 +338,21 @@ private:
             case Type::LowCardinality:
                 return "LowCardinality(" + generateLowCardinalityNestedType(rng) + ")";
             case Type::Nullable:
-                return "Nullable(" +  generateRandomTypeImpl<allow_big_numbers, allow_enums, false>(rng, depth + 1) + ")";
+            {
+                auto nested_type = generateRandomTypeImpl<allow_big_numbers, allow_enums, allow_decimals, allow_ip, allow_only_string_map_keys, false>(rng, depth + 1);
+                return "Nullable(" + nested_type + ")";
+            }
             case Type::Array:
-                return "Array(" + generateRandomTypeImpl<allow_big_numbers, allow_enums, true>(rng, depth + 1) + ")";
+            {
+                auto nested_type = generateRandomTypeImpl<allow_big_numbers, allow_enums, allow_decimals, allow_ip, allow_only_string_map_keys, true>(rng, depth + 1);
+                return "Array(" + nested_type + ")";
+            }
             case Type::Map:
-                return "Map(" + generateMapKeyType(rng) + ", " + generateRandomTypeImpl<allow_big_numbers, allow_enums, true>(rng, depth + 1) + ")";
+            {
+                auto key_type = generateMapKeyType<allow_only_string_map_keys>(rng);
+                auto value_type = generateRandomTypeImpl<allow_big_numbers, allow_enums, allow_decimals, allow_ip, allow_only_string_map_keys, true>(rng, depth + 1);
+                return "Map(" + key_type + ", " + value_type + ")";
+            }
             case Type::Tuple:
             {
                 size_t elements = rng() % MAX_TUPLE_ELEMENTS + 1;
@@ -328,7 +364,7 @@ private:
                         tuple_type += ", ";
                     if (named_tuple)
                         tuple_type += "e" + std::to_string(i + 1) + " ";
-                    tuple_type += generateRandomTypeImpl<allow_big_numbers, allow_enums, true>(rng, depth + 1);
+                    tuple_type += generateRandomTypeImpl<allow_big_numbers, allow_enums, allow_decimals, allow_ip, allow_only_string_map_keys, true>(rng, depth + 1);
                 }
                 return tuple_type + ")";
             }
@@ -340,7 +376,8 @@ private:
                 {
                     if (i != 0)
                         nested_type += ", ";
-                    nested_type += "e" + std::to_string(i + 1) + " " + generateRandomTypeImpl<allow_big_numbers, allow_enums, true>(rng, depth + 1);
+                    auto element_type = generateRandomTypeImpl<allow_big_numbers, allow_enums, allow_decimals, allow_ip, allow_only_string_map_keys, true>(rng, depth + 1);
+                    nested_type += "e" + std::to_string(i + 1) + " " + element_type;
                 }
                 return nested_type + ")";
             }
@@ -349,9 +386,15 @@ private:
         }
     }
 
+    template <bool allow_only_string_map_keys>
     String generateMapKeyType(pcg64 & rng) const
     {
-        auto type = map_key_types[rng() % map_key_types.size()];
+        Type type;
+        if constexpr (allow_only_string_map_keys)
+            type = map_key_string_types[rng() % map_key_string_types.size()];
+        else
+            type = map_key_types[rng() % map_key_types.size()];
+
         if (type == Type::FixedString)
             return "FixedString(" + std::to_string(rng() % MAX_FIXEDSTRING_SIZE_WITHOUT_SUSPICIOUS + 1) + ")";
         return String(magic_enum::enum_name<Type>(type));
@@ -384,33 +427,42 @@ private:
         return result;
     }
 
-    template <bool allow_big_numbers, bool allow_enums, bool allow_complex_types>
+    template <bool allow_big_numbers, bool allow_enums, bool allow_decimals, bool allow_ip, bool allow_complex_types>
     static constexpr auto getAllTypes()
     {
-        constexpr size_t result_size = simple_types.size() + big_number_types.size() * allow_big_numbers + enum_types.size() * allow_enums + complex_types.size() * allow_complex_types;
+        constexpr size_t big_integer_types_size = big_integer_types.size() * allow_big_numbers;
+        constexpr size_t enum_types_size = enum_types.size() * allow_enums;
+        constexpr size_t decimal_types_size = decimal_types.size() * allow_decimals;
+        constexpr size_t big_decimal_types_size = big_decimal_types.size() * allow_big_numbers * allow_decimals;
+        constexpr size_t ip_types_size = ip_types.size() * allow_ip;
+        constexpr size_t complex_types_size = complex_types.size() * allow_complex_types;
+
+        constexpr size_t result_size = simple_types.size() + big_integer_types_size + enum_types_size + decimal_types_size
+            + big_decimal_types_size + ip_types_size + complex_types_size;
         std::array<Type, result_size> result;
         size_t index = 0;
+
         for (size_t i = 0; i != simple_types.size(); ++i, ++index)
             result[index] = simple_types[i];
-        
-        if constexpr (allow_big_numbers)
-        {
-            for (size_t i = 0; i != big_number_types.size(); ++i, ++index)
-                result[index] = big_number_types[i];
-        }
-        
-        if constexpr (allow_enums)
-        {
-            for (size_t i = 0; i != enum_types.size(); ++i, ++index)
-                result[index] = enum_types[i];
-        }
-        
-        if constexpr (allow_complex_types)
-        {
-            for (size_t i = 0; i != complex_types.size(); ++i, ++index)
-                result[index] = complex_types[i];
-        }   
-        
+
+        for (size_t i = 0; i != big_integer_types_size; ++i, ++index)
+            result[index] = big_integer_types[i];
+
+        for (size_t i = 0; i != enum_types_size; ++i, ++index)
+            result[index] = enum_types[i];
+
+        for (size_t i = 0; i != decimal_types_size; ++i, ++index)
+            result[index] = decimal_types[i];
+
+        for (size_t i = 0; i != big_decimal_types_size; ++i, ++index)
+            result[index] = big_decimal_types[i];
+
+        for (size_t i = 0; i != ip_types_size; ++i, ++index)
+            result[index] = ip_types[i];
+
+        for (size_t i = 0; i != complex_types_size; ++i, ++index)
+            result[index] = complex_types[i];
+
         return result;
     }
 };
@@ -422,9 +474,14 @@ REGISTER_FUNCTION(GenerateRandomStructure)
         {
             R"(
 Generates a random table structure.
-This function takes 4 optional constant arguments: the number of column in the result structure (random by default),
-random seed (random by default), flag that indicates if big number types can be used (true by default),
-flag that indicates if enum types can be used (true by default).
+This function takes 4 optional constant arguments:
+1) the number of column in the result structure (random by default)
+2) random seed (random by default)
+3) flag that indicates if big number types can be used (true by default)
+4) flag that indicates if enum types can be used (true by default)
+5) flag that indicates if decimal types can be used (true by default)
+6) flag that indicates if ip types (IPv4, IPv6) can be used (true by default)
+7) flag that indicates if map keys should be only String or FixedString (false by default)
 The maximum number of columns is 128.
 The function returns a value of type String.
 )",
@@ -433,7 +490,10 @@ The function returns a value of type String.
                 {"with specified number of arguments", "SELECT generateRandomStructure(10)"},
                 {"with specified seed", "SELECT generateRandomStructure(10, 42)"},
                 {"without big number types", "SELECT generateRandomStructure(10, NULL, false)"},
-                {"without enum types", "SELECT generateRandomStructure(10, NULL, false, false)"},
+                {"without enum types", "SELECT generateRandomStructure(10, NULL, true, false)"},
+                {"without decimal types", "SELECT generateRandomStructure(10, NULL, true, true, false)"},
+                {"without ip types", "SELECT generateRandomStructure(10, NULL, true, true, true, false)"},
+                {"with only string mak key types", "SELECT generateRandomStructure(10, NULL, true, true, true, true, true)"},
             },
             Documentation::Categories{"Random"}
         },
