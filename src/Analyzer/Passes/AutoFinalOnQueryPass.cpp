@@ -22,8 +22,7 @@ public:
 
     void visitImpl(QueryTreeNodePtr & node)
     {
-        const auto & context = getContext();
-        if (!context->getSettingsRef().final)
+        if (!getSettings().final)
             return;
 
         const auto * query_node = node->as<QueryNode>();
