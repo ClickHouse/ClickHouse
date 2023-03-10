@@ -232,7 +232,7 @@ def is_ubsan_build():
             .decode("utf-8")
             .strip()
         )
-        return b"-fsanitize=undefined" in output
+        return "-fsanitize=undefined" in output
     except Exception as e:
         logging.info("Failed to get build flags: %s", str(e))
         return False
