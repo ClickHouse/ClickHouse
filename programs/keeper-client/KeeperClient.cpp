@@ -13,6 +13,11 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 String KeeperClient::getAbsolutePath(const String & relative)
 {
     String result;
@@ -29,7 +34,8 @@ String KeeperClient::getAbsolutePath(const String & relative)
 
 void KeeperClient::loadCommands(std::vector<std::tuple<String, size_t, Callback>> && new_commands)
 {
-    for (auto & [name, args_count, callback] : new_commands) {
+    for (auto & [name, args_count, callback] : new_commands)
+    {
         commands.insert({{name, args_count}, callback});
         suggest.addWords({name});
     }
@@ -67,36 +73,43 @@ void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
 void KeeperClient::initialize(Poco::Util::Application & /* self */)
 {
     loadCommands({
-        {"set", 2, [](KeeperClient * client, const std::vector<String> & args) {
+        {"set", 2, [](KeeperClient * client, const std::vector<String> & args)
+         {
              client->zookeeper->set(client->getAbsolutePath(args[1]), args[2]);
          }},
 
-        {"create", 2, [](KeeperClient * client, const std::vector<String> & args) {
+        {"create", 2, [](KeeperClient * client, const std::vector<String> & args)
+         {
              client->zookeeper->create(client->getAbsolutePath(args[1]), args[2], zkutil::CreateMode::Persistent);
          }},
 
-        {"get", 1, [](KeeperClient * client, const std::vector<String> & args) {
+        {"get", 1, [](KeeperClient * client, const std::vector<String> & args)
+         {
              std::cout << client->zookeeper->get(client->getAbsolutePath(args[1])) << "\n";
          }},
 
-        {"ls", 0, [](KeeperClient * client, const std::vector<String> & /* args */) {
+        {"ls", 0, [](KeeperClient * client, const std::vector<String> & /* args */)
+         {
              auto children = client->zookeeper->getChildren(client->cwd);
              for (auto & child : children)
                  std::cout << child << " ";
              std::cout << "\n";
          }},
 
-        {"ls", 1, [](KeeperClient * client, const std::vector<String> & args) {
+        {"ls", 1, [](KeeperClient * client, const std::vector<String> & args)
+         {
              auto children = client->zookeeper->getChildren(client->getAbsolutePath(args[1]));
              for (auto & child : children)
                  std::cout << child << " ";
              std::cout << "\n";
          }},
 
-        {"cd", 0, [](KeeperClient * /* client */, const std::vector<String> & /* args */) {
+        {"cd", 0, [](KeeperClient * /* client */, const std::vector<String> & /* args */)
+         {
          }},
 
-        {"cd", 1, [](KeeperClient * client, const std::vector<String> & args) {
+        {"cd", 1, [](KeeperClient * client, const std::vector<String> & args)
+         {
              auto new_path = client->getAbsolutePath(args[1]);
              if (!client->zookeeper->exists(new_path))
                  std::cerr << "Path " << new_path << " does not exists\n";
@@ -104,11 +117,13 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
                 client->cwd = new_path;
          }},
 
-        {"rm", 1, [](KeeperClient * client, const std::vector<String> & args) {
+        {"rm", 1, [](KeeperClient * client, const std::vector<String> & args)
+         {
              client->zookeeper->remove(client->getAbsolutePath(args[1]));
          }},
 
-        {"rmr", 1, [](KeeperClient * client, const std::vector<String> & args) {
+        {"rmr", 1, [](KeeperClient * client, const std::vector<String> & args)
+         {
              client->zookeeper->removeRecursive(client->getAbsolutePath(args[1]));
          }},
     });
@@ -173,7 +188,7 @@ void KeeperClient::runInteractive()
 
     while (true)
     {
-        auto input = lr.readLine( cwd.string() + " :) ", ":-] ");
+        auto input = lr.readLine(cwd.string() + " :) ", ":-] ");
         if (input.empty())
             break;
 
