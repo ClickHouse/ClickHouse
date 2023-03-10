@@ -234,7 +234,7 @@ def is_ubsan_build():
         )
         return b"-fsanitize=undefined" in output
     except Exception as e:
-        logging.info("Failed to get build flags: ", str(e))
+        logging.info("Failed to get build flags: " + str(e))
         return False
 
 
