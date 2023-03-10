@@ -82,7 +82,7 @@ DatabaseMySQL::DatabaseMySQL(
 
 bool DatabaseMySQL::empty() const
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     fetchTablesIntoLocalCache(getContext());
 
@@ -99,7 +99,7 @@ bool DatabaseMySQL::empty() const
 DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & filter_by_table_name) const
 {
     Tables tables;
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     fetchTablesIntoLocalCache(local_context);
 
@@ -117,7 +117,7 @@ bool DatabaseMySQL::isTableExist(const String & name, ContextPtr local_context) 
 
 StoragePtr DatabaseMySQL::tryGetTable(const String & mysql_table_name, ContextPtr local_context) const
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     fetchTablesIntoLocalCache(local_context);
 
@@ -129,7 +129,7 @@ StoragePtr DatabaseMySQL::tryGetTable(const String & mysql_table_name, ContextPt
 
 ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     fetchTablesIntoLocalCache(local_context);
 
@@ -175,7 +175,7 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
 
 time_t DatabaseMySQL::getObjectMetadataModificationTime(const String & table_name) const
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     fetchTablesIntoLocalCache(getContext());
 
@@ -360,7 +360,7 @@ void DatabaseMySQL::cleanOutdatedTables()
 
 void DatabaseMySQL::attachTable(ContextPtr /* context_ */, const String & table_name, const StoragePtr & storage, const String &)
 {
-    std::lock_guard<std::mutex> lock{mutex};
+    std::lock_guard lock{mutex};
 
     if (!local_tables_cache.contains(table_name))
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot attach table {}.{} because it does not exist.",
@@ -383,7 +383,7 @@ void DatabaseMySQL::attachTable(ContextPtr /* context_ */, const String & table_
 
 StoragePtr DatabaseMySQL::detachTable(ContextPtr /* context */, const String & table_name)
 {
-    std::lock_guard<std::mutex> lock{mutex};
+    std::lock_guard lock{mutex};
 
     if (remove_or_detach_tables.contains(table_name))
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {}.{} is dropped",
@@ -405,7 +405,7 @@ String DatabaseMySQL::getMetadataPath() const
 void DatabaseMySQL::loadStoredObjects(ContextMutablePtr, LoadingStrictnessLevel /*mode*/, bool /* skip_startup_tables */)
 {
 
-    std::lock_guard<std::mutex> lock{mutex};
+    std::lock_guard lock{mutex};
     fs::directory_iterator iter(getMetadataPath());
 
     for (fs::directory_iterator end; iter != end; ++iter)
@@ -421,7 +421,7 @@ void DatabaseMySQL::loadStoredObjects(ContextMutablePtr, LoadingStrictnessLevel 
 
 void DatabaseMySQL::detachTablePermanently(ContextPtr, const String & table_name)
 {
-    std::lock_guard<std::mutex> lock{mutex};
+    std::lock_guard lock{mutex};
 
     fs::path remove_flag = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
 

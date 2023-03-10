@@ -9,7 +9,7 @@
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/SipHash.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Interpreters/Context.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>

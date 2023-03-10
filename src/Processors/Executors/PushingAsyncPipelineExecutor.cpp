@@ -139,9 +139,11 @@ PushingAsyncPipelineExecutor::PushingAsyncPipelineExecutor(QueryPipeline & pipel
 
 PushingAsyncPipelineExecutor::~PushingAsyncPipelineExecutor()
 {
+    /// It must be finalized explicitly. Otherwise we cancel it assuming it's due to an exception.
+    chassert(finished || std::uncaught_exceptions() || std::current_exception());
     try
     {
-        finish();
+        cancel();
     }
     catch (...)
     {
@@ -185,7 +187,7 @@ void PushingAsyncPipelineExecutor::push(Chunk chunk)
 
     if (!is_pushed)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Pipeline for PushingPipelineExecutor was finished before all data was inserted");
+                        "Pipeline for PushingAsyncPipelineExecutor was finished before all data was inserted");
 }
 
 void PushingAsyncPipelineExecutor::push(Block block)

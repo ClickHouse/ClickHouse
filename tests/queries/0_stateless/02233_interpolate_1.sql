@@ -1,3 +1,5 @@
+SET allow_experimental_analyzer = 1;
+
 # Test WITH FILL without INTERPOLATE
 SELECT n, source, inter FROM (
    SELECT toFloat32(number % 10) AS n, 'original' AS source, number as inter FROM numbers(10) WHERE number % 3 = 1
