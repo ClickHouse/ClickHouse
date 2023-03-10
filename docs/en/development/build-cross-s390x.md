@@ -11,13 +11,13 @@ As of writing (2023/3/10) building for s390x considered to be experimental. Not 
 ## Building
 
 As s390x does not support boringSSL, it uses openSSL and has two related build options. 
-- By default, the s390x build will create dynamiclly link to openSSL libraries. It will build openSSL, so its not neccessary to install openSSL beforehand. This is recommended in all cases.
+- By default, the s390x build will dyamically link to openSSL libraries. It will build openSSL shared objects, so its not neccessary to install openSSL beforehand. (This options is recommended in all cases.)
 - Another option is to build openSSL in-tree. In this case two build options need to be supplied to cmake
 ```bash
 -DENABLE_OPENSSL_DYNAMIC=0 -DENABLE_OPENSSL=1
 ```
 
-These instructions assume that the host machine is x86_64 and has all the tooling required to build natively base based on the [Build instructions](../development/build.md). It also assumes that the host is Ubuntu 22.04 but should work on Ubuntu 20.04.
+These instructions assume that the host machine is x86_64 and has all the tooling required to build natively based on the [Build instructions](../development/build.md). It also assumes that the host is Ubuntu 22.04 but should work on Ubuntu 20.04.
 
 In addition to installing the tooling used to build natively the following additional pacakges need to be installed:
 
@@ -90,7 +90,7 @@ Process 1 stopped
 
 ## Visual Studio Code integration
 
-- (CodeLLDB extension)[https://github.com/vadimcn/vscode-lldb] is required for visual debugging, (Command Variable)[https://github.com/rioj7/command-variable] extension can help dynamic lauches if using cmake variants.
+- (CodeLLDB extension)[https://github.com/vadimcn/vscode-lldb] is required for visual debugging, (Command Variable)[https://github.com/rioj7/command-variable] extension can help dynamic launches if using cmake variants.
 - Make sure to set the backend to your llvm installation ex. `"lldb.library": "/usr/lib/x86_64-linux-gnu/liblldb-15.so"`
 - Launcher:
 ```json
