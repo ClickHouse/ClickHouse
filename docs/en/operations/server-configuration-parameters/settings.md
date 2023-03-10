@@ -2,6 +2,7 @@
 slug: /en/operations/server-configuration-parameters/settings
 sidebar_position: 57
 sidebar_label: Server Settings
+description: This section contains descriptions of server settings that cannot be changed at the session or query level.
 ---
 
 # Server Settings
@@ -1025,7 +1026,7 @@ If the number of **idle** threads in the Backups IO Thread pool exceeds `max_bac
 Possible values:
 
 -   Positive integer.
--   Zero. 
+-   Zero.
 
 Default value: `0`.
 

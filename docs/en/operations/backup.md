@@ -1,5 +1,6 @@
 ---
 slug: /en/operations/backup
+description: In order to effectively mitigate possible human errors, you should carefully prepare a strategy for backing up and restoring your data.
 ---
 
 # Backup and Restore
