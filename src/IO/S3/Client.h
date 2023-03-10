@@ -223,7 +223,8 @@ public:
         const String & server_side_encryption_customer_key_base64,
         HTTPHeaderEntries headers,
         bool use_environment_credentials,
-        bool use_insecure_imds_request);
+        bool use_insecure_imds_request,
+        uint64_t expiration_window_seconds);
 
     PocoHTTPClientConfiguration createClientConfiguration(
         const String & force_region,

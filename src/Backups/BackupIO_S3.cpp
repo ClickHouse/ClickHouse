@@ -10,6 +10,7 @@
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/S3/copyS3File.h>
 #include <IO/S3/Client.h>
+#include <IO/S3/Credentials.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -67,7 +68,9 @@ namespace
             settings.auth_settings.use_environment_credentials.value_or(
                 context->getConfigRef().getBool("s3.use_environment_credentials", false)),
             settings.auth_settings.use_insecure_imds_request.value_or(
-                context->getConfigRef().getBool("s3.use_insecure_imds_request", false)));
+                context->getConfigRef().getBool("s3.use_insecure_imds_request", false)),
+            settings.auth_settings.expiration_window_seconds.value_or(
+                context->getConfigRef().getUInt64("s3.expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS)));
     }
 
     Aws::Vector<Aws::S3::Model::Object> listObjects(S3::Client & client, const S3::URI & s3_uri, const String & file_name)
