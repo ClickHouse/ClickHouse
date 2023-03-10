@@ -119,8 +119,22 @@ protected:
 
     mutable std::mutex executors_mutex;
 
+    struct ExecutorHolder
+    {
+        ExecutorHolder(PipelineExecutor * e) : executor(e) {}
+
+        void cancel();
+
+        void remove();
+
+        PipelineExecutor * executor;
+        std::mutex mutex;
+    };
+
+    using ExecutorHolderPtr = std::shared_ptr<ExecutorHolder>;
+
     /// Array of PipelineExecutors to be cancelled when a cancelQuery is received
-    std::vector<PipelineExecutor *> executors;
+    std::vector<ExecutorHolderPtr> executors;
 
     enum QueryStreamsStatus
     {
