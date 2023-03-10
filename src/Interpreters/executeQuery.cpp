@@ -303,22 +303,6 @@ static void setQuerySpecificSettings(ASTPtr & ast, ContextMutablePtr context)
     }
 }
 
-static void applySettingsFromSelectWithUnion(const ASTSelectWithUnionQuery & select_with_union, ContextMutablePtr context)
-{
-    const ASTs & children = select_with_union.list_of_selects->children;
-    if (children.empty())
-        return;
-
-    // We might have an arbitrarily complex UNION tree, so just give
-    // up if the last first-order child is not a plain SELECT.
-    // It is flattened later, when we process UNION ALL/DISTINCT.
-    const auto * last_select = children.back()->as<ASTSelectQuery>();
-    if (last_select && last_select->settings())
-    {
-        InterpreterSetQuery(last_select->settings(), context).executeForCurrentContext();
-    }
-}
-
 static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     const char * begin,
     const char * end,
@@ -466,35 +450,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
         /// to allow settings to take effect.
-        if (const auto * select_query = ast->as<ASTSelectQuery>())
-        {
-            if (auto new_settings = select_query->settings())
-                InterpreterSetQuery(new_settings, context).executeForCurrentContext();
-        }
-        else if (const auto * select_with_union_query = ast->as<ASTSelectWithUnionQuery>())
-        {
-            applySettingsFromSelectWithUnion(*select_with_union_query, context);
-        }
-        else if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
-        {
-            if (query_with_output->settings_ast)
-                InterpreterSetQuery(query_with_output->settings_ast, context).executeForCurrentContext();
+        InterpreterSetQuery::applySettingsFromQuery(ast, context);
 
-            if (const auto * create_query = ast->as<ASTCreateQuery>())
-            {
-                if (create_query->select)
-                {
-                    applySettingsFromSelectWithUnion(create_query->select->as<ASTSelectWithUnionQuery &>(), context);
-                }
-            }
-        }
-        else if (auto * insert_query = ast->as<ASTInsertQuery>())
-        {
-            context->setInsertFormat(insert_query->format);
-            if (insert_query->settings_ast)
-                InterpreterSetQuery(insert_query->settings_ast, context).executeForCurrentContext();
+        if (auto * insert_query = ast->as<ASTInsertQuery>())
             insert_query->tail = istr;
-        }
 
         setQuerySpecificSettings(ast, context);
 
