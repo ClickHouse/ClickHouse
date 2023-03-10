@@ -13,7 +13,7 @@
 #include <Common/StackTrace.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Core/ServerUUID.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 
 #include "config.h"
 #include "config_version.h"
