@@ -80,4 +80,11 @@ void InnerShuffleStep::transformPipeline(QueryPipelineBuilder & pipeline, const 
     pipeline.transform(add_gather_transform);
 }
 
+void InnerShuffleStep::updateOutputStream()
+{
+    output_stream = createOutputStream(
+        input_streams.front(),
+        input_streams.front().header,
+        getDataStreamTraits());
+}
 }

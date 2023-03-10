@@ -22,5 +22,7 @@ public:
 private:
     std::vector<String> hash_columns; // columns' name to build the hash key
 
+    void updateOutputStream() override;
+
 };
 }

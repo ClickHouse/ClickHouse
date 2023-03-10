@@ -3,6 +3,8 @@
 #include <Common/CurrentThread.h>
 #include <Common/typeid_cast.h>
 #include "Core/UUID.h"
+#include "Processors/QueryPlan/IQueryPlanStep.h"
+#include "Processors/QueryPlan/InnerShuffleStep.h"
 #include <Core/SortDescription.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -411,7 +413,10 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
 
     size_t num_streams = left->getNumStreams();
 
-    if (join->supportParallelJoin() && !right->hasTotals())
+    auto join_properties = join->getJoinProperty();
+    bool should_resize_right = (join_properties.is_thread_safe || join_properties.need_shuffle_partition_before) && !right->hasTotals() && !left->hasTotals();
+
+    if (should_resize_right)
     {
         if (!keep_left_read_in_order)
         {
@@ -419,15 +424,27 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
             num_streams = max_streams;
         }
 
-        right->resize(max_streams);
+        right->resize(num_streams);
+        if (join_properties.has_inner_join)
+            join->setupInnerJoins(max_streams);
+        if (join_properties.need_shuffle_partition_before)
+        {
+            DataStream right_datastream; // Not really use here
+            right_datastream.header = right->getHeader();
+            InnerShuffleStep right_shuffle_step(right_datastream, join->getTableJoin().getOnlyClause().key_names_right);
+            right_shuffle_step.transformPipeline(*right, BuildQueryPipelineSettings());
+        }
         auto concurrent_right_filling_transform = [&](OutputPortRawPtrs outports)
         {
             Processors processors;
+            size_t i = 0;
             for (auto & outport : outports)
             {
-                auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getHeader(), join);
+                auto final_join = join_properties.has_inner_join ? join->getInnerJoin(i) : join;
+                auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getHeader(), final_join);
                 connect(*outport, adding_joined->getInputs().front());
                 processors.emplace_back(adding_joined);
+                i += 1;
             }
             return processors;
         };
@@ -437,8 +454,11 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     else
     {
         right->resize(1);
+        if (join_properties.has_inner_join)
+            join->setupInnerJoins(max_streams);
 
-        auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getHeader(), join);
+        auto final_join = join_properties.has_inner_join ? join->getInnerJoin(0) : join;
+        auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getHeader(), final_join);
         InputPort * totals_port = nullptr;
         if (right->hasTotals())
             totals_port = adding_joined->addTotalsPort();
@@ -446,8 +466,10 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         right->addTransform(std::move(adding_joined), totals_port, nullptr);
     }
 
-    size_t num_streams_including_totals = num_streams + (left->hasTotals() ? 1 : 0);
-    right->resize(num_streams_including_totals);
+    if (left->hasTotals())
+    {
+        right->resize(num_streams + 1);
+    }
 
     /// This counter is needed for every Joining except totals, to decide which Joining will generate non joined rows.
     auto finish_counter = std::make_shared<JoiningTransform::FinishCounter>(num_streams);
@@ -479,12 +501,24 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
 
 
     Block left_header = left->getHeader();
-    Block joined_header = JoiningTransform::transformHeader(left_header, join);
+    Block joined_header = JoiningTransform::transformHeader(left_header, join_properties.has_inner_join ? join->getInnerJoin(0) : join);
 
     for (size_t i = 0; i < num_streams; ++i)
     {
+        auto final_join = join;
+        if (join_properties.has_inner_join)
+        {
+            if (should_resize_right)
+            {
+                final_join = join->getInnerJoin(i);
+            }
+            else {
+            {
+                final_join = join->getInnerJoin(0);
+            }
+        }
         auto joining = std::make_shared<JoiningTransform>(
-            left_header, output_header, join, max_block_size, false, default_totals, finish_counter);
+            left_header, output_header, final_join, max_block_size, false, default_totals, finish_counter);
 
         connect(**lit, joining->getInputs().front());
         connect(**rit, joining->getInputs().back());
@@ -523,8 +557,8 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         // Process DelayedJoinedBlocksTransform after all JoiningTransforms.
         DelayedPortsProcessor::PortNumbers delayed_ports_numbers;
         delayed_ports_numbers.reserve(joined_output_ports.size() / 2);
-        for (size_t i = 1; i < joined_output_ports.size(); i += 2)
-            delayed_ports_numbers.push_back(i);
+        for (size_t j = 1; j < joined_output_ports.size(); j += 2)
+            delayed_ports_numbers.push_back(j);
 
         auto delayed_processor = std::make_shared<DelayedPortsProcessor>(joined_header, 2 * num_streams, delayed_ports_numbers);
         if (collected_processors)
