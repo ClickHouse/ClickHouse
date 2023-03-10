@@ -1,5 +1,6 @@
 #include <Interpreters/ActionsDAG.h>
 
+#include <Analyzer/FunctionNode.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/IFunction.h>
@@ -199,6 +200,23 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
         std::move(children),
         std::move(arguments),
         std::move(result_name),
+        function_base->getResultType(),
+        all_const);
+}
+
+const ActionsDAG::Node & ActionsDAG::addFunction(
+    const FunctionNode & function,
+    NodeRawConstPtrs children,
+    std::string result_name)
+{
+    auto [arguments, all_const] = getFunctionArguments(children);
+
+    return addFunctionImpl(
+        function.getFunction(),
+        std::move(children),
+        std::move(arguments),
+        std::move(result_name),
+        function.getResultType(),
         all_const);
 }
 
@@ -214,6 +232,7 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
         std::move(children),
         std::move(arguments),
         std::move(result_name),
+        function_base->getResultType(),
         all_const);
 }
 
@@ -238,6 +257,7 @@ const ActionsDAG::Node & ActionsDAG::addFunctionImpl(
     NodeRawConstPtrs children,
     ColumnsWithTypeAndName arguments,
     std::string result_name,
+    DataTypePtr result_type,
     bool all_const)
 {
     size_t num_arguments = children.size();
@@ -247,7 +267,7 @@ const ActionsDAG::Node & ActionsDAG::addFunctionImpl(
     node.children = std::move(children);
 
     node.function_base = function_base;
-    node.result_type = node.function_base->getResultType();
+    node.result_type = result_type;
     node.function = node.function_base->prepare(arguments);
     node.is_deterministic = node.function_base->isDeterministic();
 
@@ -2264,7 +2284,15 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
                 for (const auto & child : node->children)
                     function_children.push_back(node_to_result_node.find(child)->second);
 
-                result_node = &result_dag->addFunction(node->function_base, std::move(function_children), {});
+                auto [arguments, all_const] = getFunctionArguments(function_children);
+
+                result_node = &result_dag->addFunctionImpl(
+                    node->function_base,
+                    std::move(function_children),
+                    std::move(arguments),
+                    {},
+                    node->result_type,
+                    all_const);
                 break;
             }
         }

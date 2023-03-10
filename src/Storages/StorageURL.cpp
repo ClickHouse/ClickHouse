@@ -30,6 +30,7 @@
 #include <Common/NamedCollections/NamedCollections.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
+#include <IO/HTTPHeaderEntries.h>
 
 #include <algorithm>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -458,6 +459,7 @@ StorageURLSink::StorageURLSink(
     ContextPtr context,
     const ConnectionTimeouts & timeouts,
     const CompressionMethod compression_method,
+    const HTTPHeaderEntries & headers,
     const String & http_method)
     : SinkToStorage(sample_block)
 {
@@ -465,7 +467,7 @@ StorageURLSink::StorageURLSink(
     std::string content_encoding = toContentEncodingName(compression_method);
 
     write_buf = wrapWriteBufferWithCompressionMethod(
-        std::make_unique<WriteBufferFromHTTP>(Poco::URI(uri), http_method, content_type, content_encoding, timeouts),
+        std::make_unique<WriteBufferFromHTTP>(Poco::URI(uri), http_method, content_type, content_encoding, headers, timeouts),
         compression_method,
         3);
     writer = FormatFactory::instance().getOutputFormat(format, *write_buf, sample_block, context, format_settings);
@@ -530,6 +532,7 @@ public:
         ContextPtr context_,
         const ConnectionTimeouts & timeouts_,
         const CompressionMethod compression_method_,
+        const HTTPHeaderEntries & headers_,
         const String & http_method_)
         : PartitionedSink(partition_by, context_, sample_block_)
         , uri(uri_)
@@ -539,6 +542,7 @@ public:
         , context(context_)
         , timeouts(timeouts_)
         , compression_method(compression_method_)
+        , headers(headers_)
         , http_method(http_method_)
     {
     }
@@ -548,7 +552,7 @@ public:
         auto partition_path = PartitionedSink::replaceWildcards(uri, partition_id);
         context->getRemoteHostFilter().checkURL(Poco::URI(partition_path));
         return std::make_shared<StorageURLSink>(
-            partition_path, format, format_settings, sample_block, context, timeouts, compression_method, http_method);
+            partition_path, format, format_settings, sample_block, context, timeouts, compression_method, headers, http_method);
     }
 
 private:
@@ -560,6 +564,7 @@ private:
     const ConnectionTimeouts timeouts;
 
     const CompressionMethod compression_method;
+    const HTTPHeaderEntries headers;
     const String http_method;
 };
 
@@ -821,6 +826,7 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
             context,
             getHTTPTimeouts(context),
             compression_method,
+            headers,
             http_method);
     }
     else
@@ -833,6 +839,7 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
             context,
             getHTTPTimeouts(context),
             compression_method,
+            headers,
             http_method);
     }
 }

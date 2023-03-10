@@ -1123,6 +1123,15 @@ public:
     bool canUseParallelReplicasOnInitiator() const;
     bool canUseParallelReplicasOnFollower() const;
 
+    enum class ParallelReplicasMode : uint8_t
+    {
+        SAMPLE_KEY,
+        CUSTOM_KEY,
+        READ_TASKS,
+    };
+
+    ParallelReplicasMode getParallelReplicasMode() const;
+
 private:
     std::unique_lock<std::recursive_mutex> getLock() const;
 
