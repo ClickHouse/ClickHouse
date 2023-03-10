@@ -7,6 +7,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Access/Common/AccessFlags.h>
@@ -269,6 +270,18 @@ void StorageMaterializedView::alter(
         DatabaseCatalog::instance().updateViewDependency(old_select.select_table_id, table_id, new_select.select_table_id, table_id);
 
         new_metadata.setSelectQuery(new_select);
+
+        /// check materialized view inner table structure
+        if (has_inner_table)
+        {
+            const Block & block = InterpreterSelectWithUnionQuery::getSampleBlock(new_select.select_query, local_context);
+            for (const auto & col : block.getColumnsWithTypeAndName())
+            {
+                if (!tryGetTargetTable()->getInMemoryMetadata().columns.has(col.name))
+                    throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW, "column {} is not in materialized view inner table", col.name);
+            }
+        }
+
     }
     /// end modify query
 
