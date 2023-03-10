@@ -127,7 +127,8 @@ void AsynchronousInsertQueue::InsertData::Entry::finish(std::exception_ptr excep
         promise.set_value();
     }
 
-    // Entries must be destroyed in context of user who runs async insert.
+    // To avoid races on counter of user's MemoryTracker we should free memory at this moment.
+    // Entries data must be destroyed in context of user who runs async insert.
     // Each entry in the list may correspond to a different user,
     // so we need to switch current thread's MemoryTracker.
     UserMemoryTrackerSwitcher switcher(user_memory_tracker);

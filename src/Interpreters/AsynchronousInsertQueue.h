@@ -106,6 +106,19 @@ private:
             std::atomic_bool finished = false;
         };
 
+        ~InsertData()
+        {
+            auto it = entries.begin();
+            // Entries must be destroyed in context of user who runs async insert.
+            // Each entry in the list may correspond to a different user,
+            // so we need to switch current thread's MemoryTracker parent on each iteration.
+            while (it != entries.end())
+            {
+                UserMemoryTrackerSwitcher switcher((*it)->user_memory_tracker);
+                it = entries.erase(it);
+            }
+        }
+
         using EntryPtr = std::shared_ptr<Entry>;
 
         std::list<EntryPtr> entries;
