@@ -223,6 +223,7 @@ def prepare_for_hung_check(drop_databases):
         pass
     return True
 
+
 def is_ubsan_build():
     try:
         query = """clickhouse client -q "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'" """
