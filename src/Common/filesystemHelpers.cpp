@@ -383,6 +383,14 @@ bool isSymlink(const fs::path & path)
     return fs::is_symlink(path);        /// STYLE_CHECK_ALLOW_STD_FS_SYMLINK
 }
 
+bool isSymlinkNoThrow(const fs::path & path)
+{
+    std::error_code dummy;
+    if (path.filename().empty())
+        return fs::is_symlink(path.parent_path(), dummy);      /// STYLE_CHECK_ALLOW_STD_FS_SYMLINK
+    return fs::is_symlink(path, dummy);        /// STYLE_CHECK_ALLOW_STD_FS_SYMLINK
+}
+
 fs::path readSymlink(const fs::path & path)
 {
     /// See the comment for isSymlink

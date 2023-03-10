@@ -17,7 +17,7 @@
 #include <boost/algorithm/string/predicate.hpp>
 #include <base/insertAtEnd.h>
 #include "config.h"
-#include <Common/hex.h>
+#include <base/hex.h>
 #if USE_SSL
 #     include <openssl/crypto.h>
 #     include <openssl/rand.h>

@@ -107,7 +107,7 @@ private:
             : arrays(arrays_), data_type(data_type_), result(result_) {}
 
         template <class T>
-        void operator()(Id<T>);
+        void operator()(TypeList<T>);
     };
 
     struct DecimalExecutor
@@ -120,7 +120,7 @@ private:
             : arrays(arrays_), data_type(data_type_), result(result_) {}
 
         template <class T>
-        void operator()(Id<T>);
+        void operator()(TypeList<T>);
     };
 };
 
@@ -446,7 +446,7 @@ ColumnPtr FunctionArrayIntersect::executeImpl(const ColumnsWithTypeAndName & arg
 }
 
 template <class T>
-void FunctionArrayIntersect::NumberExecutor::operator()(Id<T>)
+void FunctionArrayIntersect::NumberExecutor::operator()(TypeList<T>)
 {
     using Container = ClearableHashMapWithStackMemory<T, size_t, DefaultHash<T>,
         INITIAL_SIZE_DEGREE>;
@@ -456,7 +456,7 @@ void FunctionArrayIntersect::NumberExecutor::operator()(Id<T>)
 }
 
 template <class T>
-void FunctionArrayIntersect::DecimalExecutor::operator()(Id<T>)
+void FunctionArrayIntersect::DecimalExecutor::operator()(TypeList<T>)
 {
     using Container = ClearableHashMapWithStackMemory<T, size_t, DefaultHash<T>,
         INITIAL_SIZE_DEGREE>;

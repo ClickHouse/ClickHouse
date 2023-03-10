@@ -4,7 +4,7 @@
 #include <Common/quoteString.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
 #include <Interpreters/Context.h>
-#include <IO/IOThreadPool.h>
+#include <IO/BackupsIOThreadPool.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/HTTPHeaderEntries.h>
@@ -167,7 +167,7 @@ void BackupWriterS3::copyFileNative(DiskPtr src_disk, const String & src_file_na
         std::string src_bucket = object_storage->getObjectsNamespace();
         auto file_path = fs::path(s3_uri.key) / dest_file_name;
         copyS3File(client, src_bucket, objects[0].absolute_path, src_offset, src_size, s3_uri.bucket, file_path, request_settings, {},
-                   threadPoolCallbackRunner<void>(IOThreadPool::get(), "BackupWriterS3"));
+                   threadPoolCallbackRunner<void>(BackupsIOThreadPool::get(), "BackupWriterS3"));
     }
 }
 
@@ -175,7 +175,7 @@ void BackupWriterS3::copyDataToFile(
     const CreateReadBufferFunction & create_read_buffer, UInt64 offset, UInt64 size, const String & dest_file_name)
 {
     copyDataToS3File(create_read_buffer, offset, size, client, s3_uri.bucket, fs::path(s3_uri.key) / dest_file_name, request_settings, {},
-                     threadPoolCallbackRunner<void>(IOThreadPool::get(), "BackupWriterS3"));
+                     threadPoolCallbackRunner<void>(BackupsIOThreadPool::get(), "BackupWriterS3"));
 }
 
 BackupWriterS3::~BackupWriterS3() = default;
@@ -222,7 +222,7 @@ std::unique_ptr<WriteBuffer> BackupWriterS3::writeFile(const String & file_name)
         request_settings,
         std::nullopt,
         DBMS_DEFAULT_BUFFER_SIZE,
-        threadPoolCallbackRunner<void>(IOThreadPool::get(), "BackupWriterS3"));
+        threadPoolCallbackRunner<void>(BackupsIOThreadPool::get(), "BackupWriterS3"));
 }
 
 void BackupWriterS3::removeFile(const String & file_name)

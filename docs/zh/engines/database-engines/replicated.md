@@ -19,7 +19,6 @@ CREATE DATABASE testdb ENGINE = Replicated('zoo_path', 'shard_name', 'replica_na
 -   `shard_name` — 分片的名字。数据库副本按`shard_name`分组到分片中。
 -   `replica_name` — 副本的名字。同一分片的所有副本的副本名称必须不同。
 
-!!! note "警告"
 对于[ReplicatedMergeTree](../table-engines/mergetree-family/replication.md#table_engines-replication)表，如果没有提供参数，则使用默认参数:`/clickhouse/tables/{uuid}/{shard}`和`{replica}`。这些可以在服务器设置[default_replica_path](../../operations/server-configuration-parameters/settings.md#default_replica_path)和[default_replica_name](../../operations/server-configuration-parameters/settings.md#default_replica_name)中更改。宏`{uuid}`被展开到表的uuid， `{shard}`和`{replica}`被展开到服务器配置的值，而不是数据库引擎参数。但是在将来，可以使用Replicated数据库的`shard_name`和`replica_name`。
 
 ## 使用方式 {#specifics-and-recommendations}
@@ -52,8 +51,8 @@ CREATE TABLE r.rmt (n UInt64) ENGINE=ReplicatedMergeTree ORDER BY n;
 ```
 
 ``` text
-┌─────hosts────────────┬──status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐ 
-│ shard1|replica1      │    0    │       │          2          │        0         │ 
+┌─────hosts────────────┬──status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+│ shard1|replica1      │    0    │       │          2          │        0         │
 │ shard1|other_replica │    0    │       │          1          │        0         │
 │ other_shard|r1       │    0    │       │          0          │        0         │
 └──────────────────────┴─────────┴───────┴─────────────────────┴──────────────────┘
@@ -62,13 +61,13 @@ CREATE TABLE r.rmt (n UInt64) ENGINE=ReplicatedMergeTree ORDER BY n;
 显示系统表:
 
 ``` sql
-SELECT cluster, shard_num, replica_num, host_name, host_address, port, is_local 
+SELECT cluster, shard_num, replica_num, host_name, host_address, port, is_local
 FROM system.clusters WHERE cluster='r';
 ```
 
 ``` text
-┌─cluster─┬─shard_num─┬─replica_num─┬─host_name─┬─host_address─┬─port─┬─is_local─┐ 
-│ r       │     1     │      1      │   node3   │  127.0.0.1   │ 9002 │     0    │ 
+┌─cluster─┬─shard_num─┬─replica_num─┬─host_name─┬─host_address─┬─port─┬─is_local─┐
+│ r       │     1     │      1      │   node3   │  127.0.0.1   │ 9002 │     0    │
 │ r       │     2     │      1      │   node2   │  127.0.0.1   │ 9001 │     0    │
 │ r       │     2     │      2      │   node1   │  127.0.0.1   │ 9000 │     1    │
 └─────────┴───────────┴─────────────┴───────────┴──────────────┴──────┴──────────┘
@@ -83,9 +82,9 @@ node1 :) SELECT materialize(hostName()) AS host, groupArray(n) FROM r.d GROUP BY
 ```
 
 ``` text
-┌─hosts─┬─groupArray(n)─┐ 
-│ node1 │  [1,3,5,7,9]  │   
-│ node2 │  [0,2,4,6,8]  │    
+┌─hosts─┬─groupArray(n)─┐
+│ node1 │  [1,3,5,7,9]  │
+│ node2 │  [0,2,4,6,8]  │
 └───────┴───────────────┘
 ```
 
@@ -98,8 +97,8 @@ node4 :) CREATE DATABASE r ENGINE=Replicated('some/path/r','other_shard','r2');
 集群配置如下所示:
 
 ``` text
-┌─cluster─┬─shard_num─┬─replica_num─┬─host_name─┬─host_address─┬─port─┬─is_local─┐ 
-│ r       │     1     │      1      │   node3   │  127.0.0.1   │ 9002 │     0    │ 
+┌─cluster─┬─shard_num─┬─replica_num─┬─host_name─┬─host_address─┬─port─┬─is_local─┐
+│ r       │     1     │      1      │   node3   │  127.0.0.1   │ 9002 │     0    │
 │ r       │     1     │      2      │   node4   │  127.0.0.1   │ 9003 │     0    │
 │ r       │     2     │      1      │   node2   │  127.0.0.1   │ 9001 │     0    │
 │ r       │     2     │      2      │   node1   │  127.0.0.1   │ 9000 │     1    │
@@ -113,8 +112,8 @@ node2 :) SELECT materialize(hostName()) AS host, groupArray(n) FROM r.d GROUP BY
 ```
 
 ```text
-┌─hosts─┬─groupArray(n)─┐ 
-│ node2 │  [1,3,5,7,9]  │   
-│ node4 │  [0,2,4,6,8]  │    
+┌─hosts─┬─groupArray(n)─┐
+│ node2 │  [1,3,5,7,9]  │
+│ node4 │  [0,2,4,6,8]  │
 └───────┴───────────────┘
 ```
