@@ -120,4 +120,4 @@ Process 1 stopped
     ]
 }
 ```
-- Make sure to run the clickhouse executable in debug mode prior to launch. (It is possible to create a preLaunchTask that automates this)
+- Make sure to run the clickhouse executable in debug mode prior to launch. (It is possible to create a `preLaunchTask` that automates this)

@@ -400,7 +400,6 @@ postfix
 postfixes
 postgresql
 pre
-preLaunchTask
 prebuild
 prebuilt
 preemptable
