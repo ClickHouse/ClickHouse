@@ -25,7 +25,7 @@ TEST(OptimizeRE, analyze)
     test_f("abc(abc|fg)xyzz", "xyzz", {"abc","fg"});
     test_f("abc[k]xyzz", "xyzz");
     test_f("(abc[k]xyzz)", "xyzz");
-    test_f("abc((de)fg(hi))jk", "abcdefghijk");
+    test_f("abc((de)fg(hi))jk", "abcdefghi");
     test_f("abc((de)fghi+zzz)jk", "abcdefghi");
     test_f("abc((de)fg(hi))?jk", "abc");
     test_f("abc((de)fghi?zzz)jk", "abcdefgh");

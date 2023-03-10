@@ -150,6 +150,7 @@ const char * OptimizedRegularExpressionImpl<thread_safe>::analyze(
                 break;
 
             case '(':
+                is_trivial = false;
                 if (!in_square_braces)
                 {
                     /// Check for case-insensitive flag.
