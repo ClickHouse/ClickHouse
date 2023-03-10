@@ -23,7 +23,6 @@ static ITransformingStep::Traits getTraits(const ActionsDAGPtr & expression, con
     return ITransformingStep::Traits
     {
         {
-            .preserves_distinct_columns = !expression->hasArrayJoin(), /// I suppose it actually never happens
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
             .preserves_sorting = preserves_sorting,
@@ -51,8 +50,6 @@ FilterStep::FilterStep(
     , filter_column_name(std::move(filter_column_name_))
     , remove_filter_column(remove_filter_column_)
 {
-    /// TODO: it would be easier to remove all expressions from filter step. It should only filter by column name.
-    updateDistinctColumns(output_stream->header, output_stream->distinct_columns);
 }
 
 void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
