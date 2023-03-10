@@ -63,6 +63,8 @@ public:
 
     virtual void prefetchBeginOfRange(int64_t /* priority */) {}
 
+    const auto & getStorageSnapshot() const { return storage_snapshot; }
+
 protected:
     /// Returns actual column name in part, which can differ from table metadata.
     String getColumnNameInPart(const NameAndTypePair & required_column) const;

@@ -5,7 +5,7 @@
 #include <Storages/MergeTree/MarkRange.h>
 #include <memory>
 
-#include <Storages/UniqueMergeTree/DeleteBitmap.h>
+#include <Storages/MergeTree/Unique/DeleteBitmap.h>
 
 namespace DB
 {

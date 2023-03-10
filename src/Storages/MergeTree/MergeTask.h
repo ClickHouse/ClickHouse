@@ -12,7 +12,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
-#include <Storages/MergeTree/Unique/TableVersion.h>
 #include <Storages/MergeTree/Unique/UniqueMergeTreeWriteState.h>
 #include <Common/filesystemHelpers.h>
 
@@ -23,7 +22,6 @@ namespace DB
 {
 
 class MergeTask;
-class StorageUniqueMergeTree;
 using MergeTaskPtr = std::shared_ptr<MergeTask>;
 
 /**
@@ -68,8 +66,7 @@ public:
         MergeTreeData * data_,
         MergeTreeDataMergerMutator * mutator_,
         ActionBlocker * merges_blocker_,
-        ActionBlocker * ttl_merges_blocker_,
-        StorageUniqueMergeTree * unique_mergetree_ = nullptr)
+        ActionBlocker * ttl_merges_blocker_)
     {
         global_ctx = std::make_shared<GlobalRuntimeContext>();
 
@@ -91,7 +88,6 @@ public:
         global_ctx->ttl_merges_blocker = std::move(ttl_merges_blocker_);
         global_ctx->txn = std::move(txn);
         global_ctx->need_prefix = need_prefix;
-        global_ctx->unique_mergetree = unique_mergetree_;
         global_ctx->table_version = global_ctx->future_part->table_version;
 
         auto prepare_stage_ctx = std::make_shared<ExecuteAndFinalizeHorizontalPartRuntimeContext>();
@@ -184,7 +180,6 @@ private:
 
         scope_guard temporary_directory_lock;
 
-        StorageUniqueMergeTree * unique_mergetree;
         std::shared_ptr<const TableVersion> table_version;
         UniqueMergeTreeWriteState write_state;
         MutableColumnPtr col_encode = nullptr;

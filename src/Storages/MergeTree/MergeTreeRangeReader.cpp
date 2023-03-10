@@ -1,16 +1,15 @@
-#include <Storages/MergeTree/IMergeTreeReader.h>
-#include <Columns/FilterDescription.h>
+#include <bit>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
-#include <Common/TargetSpecific.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
-#include <base/range.h>
-#include <Interpreters/castColumn.h>
+#include <Columns/FilterDescription.h>
 #include <DataTypes/DataTypeNothing.h>
-#include <bit>
-
-#include <Storages/StorageUniqueMergeTree.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+#include <Interpreters/castColumn.h>
+#include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <base/range.h>
+#include <Common/TargetSpecific.h>
 
 #ifdef __SSE2__
 #include <emmintrin.h>
@@ -802,13 +801,12 @@ size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8 * begin, con
 }
 
 MergeTreeRangeReader::MergeTreeRangeReader(
+    const MergeTreeData & storage_,
     IMergeTreeReader * merge_tree_reader_,
     MergeTreeRangeReader * prev_reader_,
     const PrewhereExprStep * prewhere_info_,
     bool last_reader_in_chain_,
-    const Names & non_const_virtual_column_names_,
-    StorageUniqueMergeTree * storage_,
-    const std::shared_ptr<const TableVersion> & table_version_)
+    const Names & non_const_virtual_column_names_)
     : merge_tree_reader(merge_tree_reader_)
     , index_granularity(&(merge_tree_reader->data_part_info_for_read->getIndexGranularity()))
     , prev_reader(prev_reader_)
@@ -816,7 +814,7 @@ MergeTreeRangeReader::MergeTreeRangeReader(
     , last_reader_in_chain(last_reader_in_chain_)
     , is_initialized(true)
     , storage(storage_)
-    , table_version(table_version_)
+    , table_version(merge_tree_reader->getStorageSnapshot()->table_version)
 {
     if (prev_reader)
         result_sample_block = prev_reader->getSampleBlock();
@@ -1127,7 +1125,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     if (read_sample_block.has("_part_offset"))
         fillPartOffsetColumn(result, leading_begin_part_offset, leading_end_part_offset);
 
-    if (storage && !prev_reader)
+    if (storage.merging_params.mode == MergeTreeData::MergingParams::Mode::Unique && !prev_reader)
     {
         auto row_ids = getPartOffsets(result, leading_begin_part_offset, leading_end_part_offset);
         setBitmapFilter(row_ids);
@@ -1200,8 +1198,7 @@ void MergeTreeRangeReader::setBitmapFilter(const PaddedPODArray<UInt64> & rows_i
     auto part_version = table_version->getPartVersion(merge_tree_reader->data_part_info_for_read->getDataPartInfo());
 
     /// Get delete bitmap of the part
-    auto & bitmap_cache = storage->deleteBitmapCache();
-    auto part_bitmap = bitmap_cache.getOrCreate(merge_tree_reader->data_part_info_for_read->getDataPartPtr(), part_version);
+    auto part_bitmap = storage.delete_bitmap_cache.getOrCreate(merge_tree_reader->data_part_info_for_read->getDataPartPtr(), part_version);
 
     size_t start_row = rows_id[0];
     size_t end_row = rows_id[rows_id.size() - 1];

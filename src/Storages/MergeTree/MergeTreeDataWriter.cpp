@@ -28,9 +28,8 @@
 #include <Processors/Merges/Algorithms/GraphiteRollupSortedAlgorithm.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
-#include <Storages/StorageUniqueMergeTree.h>
-#include <Storages/UniqueMergeTree/PrimaryKeysEncoder.h>
-#include <Storages/UniqueMergeTree/UniqueMergeTreeWriteState.h>
+#include <Storages/MergeTree/Unique/PrimaryKeysEncoder.h>
+#include <Storages/MergeTree/Unique/UniqueMergeTreeWriteState.h>
 
 namespace ProfileEvents
 {
@@ -58,26 +57,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-    Columns filterColumns(Columns & columns, const IColumn::Filter & filter)
-    {
-        Columns res;
-        for (auto & column : columns)
-        {
-            if (column)
-            {
-                auto new_column = column->filter(filter, -1);
-
-                if (new_column->empty())
-                {
-                    res.clear();
-                    return res;
-                }
-                res.emplace_back(new_column);
-            }
-        }
-        return res;
-    }
 
 void buildScatterSelector(
         const ColumnRawPtrs & columns,
@@ -219,22 +198,13 @@ std::vector<ChunkOffsetsPtr> scatterOffsetsBySelector(ChunkOffsetsPtr chunk_offs
 }
 
 BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
-    const Block & block,
-    size_t max_parts,
-    const StorageMetadataPtr & metadata_snapshot,
-    ContextPtr context,
-    ChunkOffsetsPtr chunk_offsets,
-    bool has_delete_op)
+    const Block & block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, ChunkOffsetsPtr chunk_offsets)
 {
     BlocksWithPartition result;
     if (!block || !block.rows())
         return result;
 
-    auto header = block.cloneEmpty();
-    if (has_delete_op)
-        header.erase("__delete_op");
-
-    metadata_snapshot->check(header, true);
+    metadata_snapshot->check(block, true);
 
     if (!metadata_snapshot->hasPartitionKey()) /// Table is not partitioned.
     {
@@ -373,9 +343,10 @@ Block MergeTreeDataWriter::mergeBlock(
 }
 
 
-MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
+    BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, UniqueMergeTreeWriteState * write_state)
 {
-    return writeTempPartImpl(block, metadata_snapshot, context, data.insert_increment.get(), /*need_tmp_prefix = */true);
+    return writeTempPartImpl(block, metadata_snapshot, context, data.insert_increment.get(), /*need_tmp_prefix = */ true, write_state);
 }
 
 MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartWithoutPrefix(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, int64_t block_number, ContextPtr context)
@@ -436,11 +407,18 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
 
     temp_part.temporary_directory_lock = data.getTemporaryPartDirectoryHolder(part_dir);
 
+    /// For Unique Key model, we need fisrt sorting data by Unique Key and mergeBlock,
+    /// then sorting data by Sortint Key.
+    if (metadata_snapshot->hasUniqueKey())
+        data.getUniqueKeyExpression(metadata_snapshot)->execute(block);
+
     /// If we need to calculate some columns to sort.
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
         data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot)->execute(block);
 
-    Names sort_columns = metadata_snapshot->getSortingKeyColumns();
+    /// For Unique Key model, first sorting data by Unique Key
+    Names sort_columns = data.merging_params.mode == MergeTreeData::MergingParams::Mode::Unique ? metadata_snapshot->getUniqueKeyColumns()
+                                                                                                : metadata_snapshot->getSortingKeyColumns();
     SortDescription sort_description;
     size_t sort_columns_size = sort_columns.size();
     sort_description.reserve(sort_columns_size);
@@ -476,6 +454,50 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     if (expected_size == 0)
         return temp_part;
 
+    /// Encoding Unique Key columns
+    if (data.merging_params.mode == MergeTreeData::MergingParams::Mode::Unique)
+    {
+        auto unique_keys = metadata_snapshot->getUniqueKeyColumns();
+
+        ColumnRawPtrs unique_columns;
+        for (const auto & name : unique_keys)
+		{
+            unique_columns.emplace_back(block.getByName(name).column.get());
+        }
+        Field min_value, max_value;
+        for (const auto & col : unique_columns)
+        {
+            col->getExtremes(min_value, max_value);
+            write_state.min_key_values.emplace_back(min_value);
+            write_state.max_key_values.emplace_back(max_value);
+		}
+
+        write_state.key_column = PrimaryKeysEncoder::encode(key_columns, block.rows(), unique_keys.size());
+
+        if (!data.merging_params.version_column.empty())
+		{
+            write_state.version_column = block.getByName(data.merging_params.version_column).column;
+        }
+
+        /// Now, we should sort data by sorting key
+        sort_columns = metadata_snapshot->getSortingKeyColumns();
+        sort_description.reserve(sort_columns_size);
+
+        for (size_t i = 0; i < sort_columns_size; ++i)
+            sort_description.emplace_back(sort_columns[i], 1, 1);
+
+        if (!sort_description.empty())
+        {
+            if (!isAlreadySorted(block, sort_description))
+            {
+                stableGetPermutation(block, sort_description, perm);
+                perm_ptr = &perm;
+            }
+            else
+                ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocksAlreadySorted);
+        }
+    }
+
     DB::IMergeTreeDataPart::TTLInfos move_ttl_infos;
     const auto & move_ttl_entries = metadata_snapshot->getMoveTTLs();
     for (const auto & ttl_entry : move_ttl_entries)
@@ -492,332 +514,6 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
 
     auto data_part_storage = new_data_part->getDataPartStoragePtr();
     data_part_storage->beginTransaction();
-
-    if (data.storage_settings.get()->assign_part_uuids)
-        new_data_part->uuid = UUIDHelpers::generateV4();
-
-    const auto & data_settings = data.getSettings();
-
-    SerializationInfo::Settings settings{data_settings->ratio_of_defaults_for_sparse_serialization, true};
-    SerializationInfoByName infos(columns, settings);
-    infos.add(block);
-
-    new_data_part->setColumns(columns, infos);
-    new_data_part->rows_count = block.rows();
-    new_data_part->partition = std::move(partition);
-    new_data_part->minmax_idx = std::move(minmax_idx);
-    new_data_part->is_temp = true;
-
-    SyncGuardPtr sync_guard;
-    if (new_data_part->isStoredOnDisk())
-    {
-        /// The name could be non-unique in case of stale files from previous runs.
-        String full_path = new_data_part->getDataPartStorage().getFullPath();
-
-        if (new_data_part->getDataPartStorage().exists())
-        {
-            LOG_WARNING(log, "Removing old temporary directory {}", full_path);
-            data_part_storage->removeRecursive();
-        }
-
-        data_part_storage->createDirectories();
-
-        if (data.getSettings()->fsync_part_directory)
-        {
-            const auto disk = data_part_volume->getDisk();
-            sync_guard = disk->getDirectorySyncGuard(full_path);
-        }
-    }
-
-    if (metadata_snapshot->hasRowsTTL())
-        updateTTL(metadata_snapshot->getRowsTTL(), new_data_part->ttl_infos, new_data_part->ttl_infos.table_ttl, block, true);
-
-    for (const auto & ttl_entry : metadata_snapshot->getGroupByTTLs())
-        updateTTL(ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.group_by_ttl[ttl_entry.result_column], block, true);
-
-    for (const auto & ttl_entry : metadata_snapshot->getRowsWhereTTLs())
-        updateTTL(ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.rows_where_ttl[ttl_entry.result_column], block, true);
-
-    for (const auto & [name, ttl_entry] : metadata_snapshot->getColumnTTLs())
-        updateTTL(ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.columns_ttl[name], block, true);
-
-    const auto & recompression_ttl_entries = metadata_snapshot->getRecompressionTTLs();
-    for (const auto & ttl_entry : recompression_ttl_entries)
-        updateTTL(ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.recompression_ttl[ttl_entry.result_column], block, false);
-
-    new_data_part->ttl_infos.update(move_ttl_infos);
-
-    /// This effectively chooses minimal compression method:
-    ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
-    auto compression_codec = data.getContext()->chooseCompressionCodec(0, 0);
-
-    const auto & index_factory = MergeTreeIndexFactory::instance();
-    auto out = std::make_unique<MergedBlockOutputStream>(new_data_part, metadata_snapshot, columns,
-        index_factory.getMany(metadata_snapshot->getSecondaryIndices()), compression_codec,
-        context->getCurrentTransaction(), false, false, context->getWriteSettings());
-
-    out->writeWithPermutation(block, perm_ptr);
-
-    for (const auto & projection : metadata_snapshot->getProjections())
-    {
-        auto projection_block = projection.calculate(block, context);
-        if (projection_block.rows())
-        {
-            auto proj_temp_part = writeProjectionPart(data, log, projection_block, projection, new_data_part.get());
-            new_data_part->addProjectionPart(projection.name, std::move(proj_temp_part.part));
-            for (auto & stream : proj_temp_part.streams)
-                temp_part.streams.emplace_back(std::move(stream));
-        }
-    }
-
-    auto finalizer = out->finalizePartAsync(
-        new_data_part,
-        data_settings->fsync_after_insert,
-        nullptr, nullptr);
-
-    temp_part.part = new_data_part;
-    temp_part.streams.emplace_back(TemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
-
-    ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterRows, block.rows());
-    ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterUncompressedBytes, block.bytes());
-    ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterCompressedBytes, new_data_part->getBytesOnDisk());
-
-    return temp_part;
-}
-
-MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
-    BlockWithPartition & block_with_partition,
-    const StorageMetadataPtr & metadata_snapshot,
-    ContextPtr context,
-    UniqueMergeTreeWriteState & write_state)
-{
-    TemporaryPart temp_part;
-    Block & block = block_with_partition.block;
-
-    auto columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
-
-    for (auto & column : columns)
-        if (isObject(column.type))
-            column.type = block.getByName(column.name).type;
-
-    static const String TMP_PREFIX = "tmp_insert_";
-
-    /// This will generate unique name in scope of current server process.
-    Int64 temp_index = data.insert_increment.get();
-
-    auto minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
-    minmax_idx->update(block, data.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
-
-    MergeTreePartition partition(std::move(block_with_partition.partition));
-
-    MergeTreePartInfo new_part_info(partition.getID(metadata_snapshot->getPartitionKey().sample_block), temp_index, temp_index, 0);
-    String part_name;
-    if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-    {
-        DayNum min_date(minmax_idx->hyperrectangle[data.minmax_idx_date_column_pos].left.get<UInt64>());
-        DayNum max_date(minmax_idx->hyperrectangle[data.minmax_idx_date_column_pos].right.get<UInt64>());
-
-        const auto & date_lut = DateLUT::instance();
-
-        auto min_month = date_lut.toNumYYYYMM(min_date);
-        auto max_month = date_lut.toNumYYYYMM(max_date);
-
-        if (min_month != max_month)
-            throw Exception("Logical error: part spans more than one month.", ErrorCodes::LOGICAL_ERROR);
-
-        part_name = new_part_info.getPartNameV0(min_date, max_date);
-    }
-    else
-        part_name = new_part_info.getPartName();
-
-    String part_dir = TMP_PREFIX + part_name;
-    temp_part.temporary_directory_lock = data.getTemporaryPartDirectoryHolder(part_dir);
-
-    /// If we need to calculate some columns to sort.
-    /// For UniqueMergeTree, we should sort by UniqueKey and execute optimize_on_insert,
-    /// then sort by ORDER BY expression
-    if (metadata_snapshot->hasUniqueKey())
-        data.getUniqueKeyExpression(metadata_snapshot)->execute(block);
-
-    if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
-        data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot)->execute(block);
-
-    /// First sort by Unique Key
-    Names unique_column_names = metadata_snapshot->getUniqueKeyColumns();
-    SortDescription sort_description;
-    size_t sort_columns_size = unique_column_names.size();
-    sort_description.reserve(sort_columns_size);
-
-    for (size_t i = 0; i < sort_columns_size; ++i)
-        sort_description.emplace_back(unique_column_names[i], 1, 1);
-
-    ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocks);
-
-    /// Sort by unique key
-    IColumn::Permutation * perm_ptr = nullptr;
-    IColumn::Permutation perm;
-    if (!sort_description.empty())
-    {
-        if (!isAlreadySorted(block, sort_description))
-        {
-            stableGetPermutation(block, sort_description, perm);
-            perm_ptr = &perm;
-        }
-    }
-
-    Names partition_key_columns = metadata_snapshot->getPartitionKey().column_names;
-    // if (context->getSettingsRef().optimize_on_insert)
-    // The functions is used for UniqueMergeTree, it must execute it
-    block = mergeBlock(block, sort_description, partition_key_columns, perm_ptr, data.merging_params);
-
-    /// Size of part would not be greater than block.bytes() + epsilon
-    size_t expected_size = block.bytes();
-
-    /// If optimize_on_insert is true, block may become empty after merge.
-    /// There is no need to create empty part.
-    if (expected_size == 0)
-        return temp_part;
-
-    /// leefeng Here we should filter data by delete op and save deleted
-    /// primary key into write state
-
-    /// We should first split update and delete
-    auto * delete_column = block.findByName("__delete_op");
-
-    if (delete_column->type->getTypeId() != TypeIndex::UInt8)
-    {
-        throw Exception(
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "__delete_op column for UniqueMergeTree table must be UInt8, got {}",
-            delete_column->type->getName());
-    }
-
-    const auto & filter = typeid_cast<const ColumnUInt8 *>(delete_column->column.get())->getData();
-
-    auto unique_keys = metadata_snapshot->getUniqueKeyColumns();
-
-    ColumnRawPtrs unique_columns;
-    for (const auto & name : unique_keys)
-    {
-        unique_columns.emplace_back(block.getByName(name).column.get());
-    }
-    Field min_value, max_value;
-    for (const auto & col : unique_columns)
-    {
-        col->getExtremes(min_value, max_value);
-        write_state.min_key_values.emplace_back(min_value);
-        write_state.max_key_values.emplace_back(max_value);
-    }
-
-    size_t deleted_rows = countBytesInFilter(filter);
-    size_t block_rows = block.rows();
-    // All filter are zero, no delete
-    if (!deleted_rows)
-    {
-    }
-    /// Both all deletes
-    else if (deleted_rows == block_rows)
-    {
-        LOG_INFO(log, "All {} writes are deletes.", deleted_rows);
-        /// Encoding Primary key columns
-        ColumnRawPtrs delete_key_columns;
-        for (const auto & name : unique_keys)
-        {
-            delete_key_columns.emplace_back(block.getByName(name).column.get());
-        }
-
-        write_state.delete_key_column = PrimaryKeysEncoder::encode(delete_key_columns, block.rows(), unique_keys.size());
-        return temp_part;
-    }
-    /// Split delete keys and write keys
-    else
-    {
-        LOG_INFO(log, "{} rows are upsert, {} rows are deletes.", deleted_rows, block_rows - deleted_rows);
-        Columns key_columns;
-        for (const auto & name : unique_keys)
-        {
-            key_columns.emplace_back(block.getByName(name).column);
-        }
-
-        auto deleted_columns = filterColumns(key_columns, filter);
-
-        if (!deleted_columns.empty())
-        {
-            ColumnRawPtrs delete_key_columns;
-            for (auto & column : deleted_columns)
-                delete_key_columns.emplace_back(column.get());
-
-            write_state.delete_key_column = PrimaryKeysEncoder::encode(delete_key_columns, deleted_rows, unique_keys.size());
-        }
-
-        PaddedPODArray<UInt8> data_filter;
-        data_filter.resize(block_rows);
-        for (size_t i = 0; i < block_rows; ++i)
-        {
-            data_filter[i] = !filter[i];
-        }
-
-        auto data_columns = block.getColumns();
-        auto new_data_columns = filterColumns(data_columns, data_filter);
-        block.setColumns(new_data_columns);
-    }
-
-    /// Encoding Primary key columns
-    ColumnRawPtrs key_columns;
-    for (const auto & name : unique_keys)
-    {
-        key_columns.emplace_back(block.getByName(name).column.get());
-    }
-
-    write_state.key_column = PrimaryKeysEncoder::encode(key_columns, block.rows(), unique_keys.size());
-
-    /// Have version column
-    if (!data.merging_params.version_column.empty())
-    {
-        write_state.version_column = block.getByName(data.merging_params.version_column).column;
-    }
-
-    /// leefeng Now, we should sort block by order by expression
-    /// We should sort block after split delete and upsert, otherwise,
-    /// we may get wrong permutation.
-    Names sort_columns = metadata_snapshot->getSortingKeyColumns();
-    sort_description.reserve(sort_columns_size);
-
-    for (size_t i = 0; i < sort_columns_size; ++i)
-        sort_description.emplace_back(sort_columns[i], 1, 1);
-
-    if (!sort_description.empty())
-    {
-        if (!isAlreadySorted(block, sort_description))
-        {
-            stableGetPermutation(block, sort_description, perm);
-            perm_ptr = &perm;
-        }
-        else
-            ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocksAlreadySorted);
-    }
-
-    DB::IMergeTreeDataPart::TTLInfos move_ttl_infos;
-    const auto & move_ttl_entries = metadata_snapshot->getMoveTTLs();
-    for (const auto & ttl_entry : move_ttl_entries)
-        updateTTL(ttl_entry, move_ttl_infos, move_ttl_infos.moves_ttl[ttl_entry.result_column], block, false);
-
-    ReservationPtr reservation = data.reserveSpacePreferringTTLRules(metadata_snapshot, expected_size, move_ttl_infos, time(nullptr), 0, true);
-    VolumePtr volume = data.getStoragePolicy()->getVolume(0);
-    VolumePtr data_part_volume = createVolumeFromReservation(reservation, volume);
-
-    auto data_part_storage = std::make_shared<DataPartStorageOnDisk>(
-        data_part_volume,
-        data.relative_data_path,
-        TMP_PREFIX + part_name);
-
-    data_part_storage->beginTransaction();
-
-    auto new_data_part = data.createPart(
-        part_name,
-        data.choosePartType(expected_size, block.rows()),
-        new_part_info,
-        data_part_storage);
 
     if (data.storage_settings.get()->assign_part_uuids)
         new_data_part->uuid = UUIDHelpers::generateV4();

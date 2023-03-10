@@ -56,8 +56,7 @@ IMergeTreeSelectAlgorithm::IMergeTreeSelectAlgorithm(
     UInt64 preferred_max_column_in_block_size_bytes_,
     const MergeTreeReaderSettings & reader_settings_,
     bool use_uncompressed_cache_,
-    const Names & virt_column_names_,
-    StorageUniqueMergeTree * unique_mergetree_)
+    const Names & virt_column_names_)
     : storage(storage_)
     , storage_snapshot(storage_snapshot_)
     , prewhere_info(prewhere_info_)
@@ -70,7 +69,7 @@ IMergeTreeSelectAlgorithm::IMergeTreeSelectAlgorithm(
     , virt_column_names(virt_column_names_)
     , partition_value_type(storage.getPartitionValueType())
     , owned_uncompressed_cache(use_uncompressed_cache ? storage.getContext()->getUncompressedCache() : nullptr)
-    , owned_mark_cache(storage.getContext()->getMarkCache(), unique_mergetree(unique_mergetree_))
+    , owned_mark_cache(storage.getContext()->getMarkCache())
 {
     header_without_const_virtual_columns = applyPrewhereActions(std::move(header), prewhere_info);
     size_t non_const_columns_offset = header_without_const_virtual_columns.columns();
@@ -81,7 +80,6 @@ IMergeTreeSelectAlgorithm::IMergeTreeSelectAlgorithm(
 
     result_header = header_without_const_virtual_columns;
     injectPartConstVirtualColumns(0, result_header, nullptr, partition_value_type, virt_column_names);
-    table_version = storage_snapshot->table_version;
 
     LOG_TEST(log, "PREWHERE actions: {}", (prewhere_actions ? prewhere_actions->dump() : std::string("<nullptr>")));
 }
@@ -302,13 +300,12 @@ void IMergeTreeSelectAlgorithm::initializeRangeReadersImpl(
     if (reader_settings_.apply_deleted_mask && has_lightweight_delete)
     {
         MergeTreeRangeReader pre_range_reader(
+            data,
             pre_reader_for_step_[0].get(),
             prev_reader,
             &lightweight_delete_filter_step_,
             last_reader,
-            non_const_virtual_column_names_,
-            unique_mergetree,
-            table_version);
+            non_const_virtual_column_names_);
         pre_range_readers.push_back(std::move(pre_range_reader));
         prev_reader = &pre_range_readers.back();
         pre_readers_shift++;
@@ -329,13 +326,12 @@ void IMergeTreeSelectAlgorithm::initializeRangeReadersImpl(
             last_reader = reader_->getColumns().empty() && (i + 1 == prewhere_actions->steps.size());
 
             MergeTreeRangeReader current_reader(
+                data,
                 pre_reader_for_step_[i + pre_readers_shift].get(),
                 prev_reader,
                 &prewhere_actions_->steps[i],
                 last_reader,
-                non_const_virtual_column_names_,
-                unique_mergetree,
-                table_version);
+                non_const_virtual_column_names_);
 
             pre_range_readers.push_back(std::move(current_reader));
             prev_reader = &pre_range_readers.back();
@@ -344,8 +340,7 @@ void IMergeTreeSelectAlgorithm::initializeRangeReadersImpl(
 
     if (!last_reader)
     {
-        range_reader
-            = MergeTreeRangeReader(reader_, prev_reader, nullptr, true, non_const_virtual_column_names_, unique_mergetree, table_version);
+        range_reader = MergeTreeRangeReader(data, reader_, prev_reader, nullptr, true, non_const_virtual_column_names_);
     }
     else
     {

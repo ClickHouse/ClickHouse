@@ -22,7 +22,6 @@ struct ChunkAndProgress
     size_t num_read_bytes = 0;
 };
 
-class StorageUniqueMergeTree;
 struct TableVersion;
 
 struct ParallelReadingExtension
@@ -52,8 +51,7 @@ public:
         UInt64 preferred_max_column_in_block_size_bytes_,
         const MergeTreeReaderSettings & reader_settings_,
         bool use_uncompressed_cache_,
-        const Names & virt_column_names_ = {},
-        StorageUniqueMergeTree * unique_mergetree_ = nullptr);
+        const Names & virt_column_names_ = {});
 
     virtual ~IMergeTreeSelectAlgorithm();
 
@@ -184,9 +182,6 @@ protected:
     /// So, for now it's easier to limit max_rows_to_read.
     /// Somebody need to refactor this later.
     size_t min_marks_to_read = 0;
-
-    StorageUniqueMergeTree * unique_mergetree;
-    std::shared_ptr<const TableVersion> table_version = nullptr;
 
 private:
     Poco::Logger * log = &Poco::Logger::get("MergeTreeBaseSelectProcessor");

@@ -14,6 +14,7 @@ class ColumnVector;
 using ColumnUInt8 = ColumnVector<UInt8>;
 
 class IMergeTreeReader;
+class MergeTreeData;
 class MergeTreeIndexGranularity;
 struct PrewhereInfo;
 using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
@@ -21,7 +22,6 @@ using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
-class StorageUniqueMergeTree;
 struct TableVersion;
 
 struct PrewhereExprStep
@@ -86,13 +86,12 @@ class MergeTreeRangeReader
 {
 public:
     MergeTreeRangeReader(
+        const MergeTreeData & data_,
         IMergeTreeReader * merge_tree_reader_,
         MergeTreeRangeReader * prev_reader_,
         const PrewhereExprStep * prewhere_info_,
         bool last_reader_in_chain_,
-        const Names & non_const_virtual_column_names,
-        StorageUniqueMergeTree * storage_ = nullptr,
-        const std::shared_ptr<const TableVersion> & table_version_ = nullptr);
+        const Names & non_const_virtual_column_names);
 
     MergeTreeRangeReader() = default;
 
@@ -318,7 +317,7 @@ private:
     bool is_initialized = false;
     Names non_const_virtual_column_names;
 
-    StorageUniqueMergeTree * storage;
+    const MergeTreeData & storage;
     std::shared_ptr<const TableVersion> table_version = nullptr;
 
     ColumnPtr bitmap_filter = nullptr;

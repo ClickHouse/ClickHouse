@@ -71,10 +71,6 @@ static const double DISK_USAGE_COEFFICIENT_TO_RESERVE = 1.1;
 MergeTreeDataMergerMutator::MergeTreeDataMergerMutator(MergeTreeData & data_)
     : data(data_), log(&Poco::Logger::get(data.getLogName() + " (MergerMutator)"))
 {
-    if (data.merging_params.mode == MergeTreeData::MergingParams::Unique)
-    {
-        unique_mergetree = dynamic_cast<StorageUniqueMergeTree *>(&data);
-    }
 }
 
 
@@ -203,9 +199,9 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
     auto metadata_snapshot = data.getInMemoryMetadataPtr();
 
     std::shared_ptr<const TableVersion> table_version = nullptr;
-    if (unique_mergetree)
+    if (data.merging_params.mode == MergeTreeData::MergingParams::Unique)
     {
-        table_version = unique_mergetree->currentVersion();
+        table_version = data.table_version->get();
     }
 
     if (data_parts.empty())
@@ -293,12 +289,11 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
         size_t deleted_rows = 0;
         if (table_version)
         {
-            deleted_rows
-                = unique_mergetree->deleteBitmapCache().getOrCreate(part, table_version->getPartVersion(part->info))->cardinality();
+            deleted_rows = data.delete_bitmap_cache.getOrCreate(part, table_version->getPartVersion(part->info))->cardinality();
         }
 
         IMergeSelector::Part part_info;
-        /// TODO leefeng  here size should be replaced by part->getBytesOnDisk * ((total_rows - deleted_rows) / total_rows)
+
         part_info.size = (!deleted_rows || !part->rows_count)
             ? part->getBytesOnDisk()
             : part->getBytesOnDisk() * (part->rows_count - deleted_rows) / part->rows_count;
@@ -517,9 +512,9 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectAllPartsToMergeWithinParti
     }
 
     LOG_DEBUG(log, "Selected {} parts from {} to {}", parts.size(), parts.front()->name, parts.back()->name);
-    if (unique_mergetree)
+    if (data.merging_params.mode == MergeTreeData::MergingParams::Unique)
     {
-        future_part->table_version = unique_mergetree->currentVersion();
+        future_part->table_version = data.table_version->get();
     }
     future_part->assign(std::move(parts));
 
@@ -560,8 +555,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     const MergeTreeTransactionPtr & txn,
     bool need_prefix,
     IMergeTreeDataPart * parent_part,
-    const String & suffix,
-    StorageUniqueMergeTree * storage)
+    const String & suffix)
 {
     return std::make_shared<MergeTask>(
         future_part,
@@ -581,8 +575,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
         &data,
         this,
         &merges_blocker,
-        &ttl_merges_blocker,
-        storage);
+        &ttl_merges_blocker);
 }
 
 

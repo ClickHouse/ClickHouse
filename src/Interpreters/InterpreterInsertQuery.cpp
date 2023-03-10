@@ -165,10 +165,6 @@ Block InterpreterInsertQuery::getSampleBlock(
                         current_name);
                 res.insert(ColumnWithTypeAndName(table_sample_physical.getByName(current_name).type, current_name));
             }
-            else if (table->getName() == "UniqueMergeTree" && current_name == "__delete_op")
-            {
-                res.insert(ColumnWithTypeAndName(std::make_shared<DataTypeUInt8>(), current_name));
-            }
             else /// The table does not have a column with that name
                 throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "No such column {} in table {}",
                     current_name, table->getStorageID().getNameForLogs());

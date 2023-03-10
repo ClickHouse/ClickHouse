@@ -19,7 +19,6 @@ namespace DB
 {
 
 class MergeProgressCallback;
-class StorageUniqueMergeTree;
 
 enum class SelectPartsDecision
 {
@@ -116,8 +115,7 @@ public:
         const MergeTreeTransactionPtr & txn,
         bool need_prefix = true,
         IMergeTreeDataPart * parent_part = nullptr,
-        const String & suffix = "",
-        StorageUniqueMergeTree * storage = nullptr);
+        const String & suffix = "");
 
     /// Mutate a single data part with the specified commands. Will create and return a temporary part.
     MutateTaskPtr mutatePartToTemporaryPart(
@@ -173,7 +171,6 @@ private:
     /// Performing TTL merges independently for each partition guarantees that
     /// there is only a limited number of TTL merges and no partition stores data, that is too stale
 
-    StorageUniqueMergeTree * unique_mergetree = nullptr;
 };
 
 

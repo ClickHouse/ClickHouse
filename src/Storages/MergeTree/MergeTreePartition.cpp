@@ -11,13 +11,10 @@
 #include <Common/FieldVisitorHash.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitors.h>
-<<<<<<< HEAD
-=======
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnTuple.h>
->>>>>>> 1167d2ce8d421a8bf46ac8ac334b42a14eceda10
 #include <Common/SipHash.h>
 #include <Common/hex.h>
 #include <Common/typeid_cast.h>

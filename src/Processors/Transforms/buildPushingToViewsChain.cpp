@@ -443,12 +443,7 @@ Chain buildPushingToViewsChain(
     else if (!no_destination)
     {
         auto sink = storage->write(query_ptr, metadata_snapshot, context);
-        auto header = sink->getHeader();
-        if (storage->getName() == "UniqueMergeTree")
-        {
-            header.erase("__delete_op");
-        }
-        metadata_snapshot->check(header.getColumnsWithTypeAndName());
+        metadata_snapshot->check(sink->getHeader().getColumnsWithTypeAndName());
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
         result_chain.addSource(std::move(sink));
     }

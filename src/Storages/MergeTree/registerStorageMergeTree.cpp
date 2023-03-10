@@ -753,18 +753,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     }
     else
     {
-        if (merging_params.mode == MergeTreeData::MergingParams::Unique)
-            return std::make_shared<StorageUniqueMergeTree>(
-                args.table_id,
-                args.relative_data_path,
-                metadata,
-                args.attach,
-                args.getContext(),
-                date_column_name,
-                merging_params,
-                std::move(storage_settings),
-                args.has_force_restore_data_flag);
-
         return std::make_shared<StorageMergeTree>(
             args.table_id,
             args.relative_data_path,

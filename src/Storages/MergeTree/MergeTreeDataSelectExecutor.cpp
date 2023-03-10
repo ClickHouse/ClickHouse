@@ -65,8 +65,8 @@ namespace ErrorCodes
 }
 
 
-MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & data_, StorageUniqueMergeTree * storage_)
-    : data(data_), storage(storage_), log(&Poco::Logger::get(data.getLogName() + " (SelectExecutor)"))
+MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & data_)
+    : data(data_), log(&Poco::Logger::get(data.getLogName() + " (SelectExecutor)"))
 {
 }
 
@@ -1385,8 +1385,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
         max_block_numbers_to_read,
         log,
         merge_tree_select_result_ptr,
-        enable_parallel_reading,
-        storage);
+        enable_parallel_reading);
 
     QueryPlanPtr plan = std::make_unique<QueryPlan>();
     plan->addStep(std::move(read_from_merge_tree));

@@ -106,15 +106,13 @@ ReadFromMergeTree::ReadFromMergeTree(
     std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read_,
     Poco::Logger * log_,
     MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr_,
-    bool enable_parallel_reading,
-    StorageUniqueMergeTree * storage_)
+    bool enable_parallel_reading)
     : ISourceStep(DataStream{
         .header = IMergeTreeSelectAlgorithm::transformHeader(
             storage_snapshot_->getSampleBlockForColumns(real_column_names_),
             getPrewhereInfoFromQueryInfo(query_info_),
             data_.getPartitionValueType(),
             virt_column_names_)})
-    , storage(storage_)
     , reader_settings(getMergeTreeReaderSettings(context_, query_info_))
     , prepared_parts(std::move(parts_))
     , real_column_names(std::move(real_column_names_))
@@ -329,8 +327,7 @@ Pipe ReadFromMergeTree::readFromPool(
             prewhere_info,
             actions_settings,
             reader_settings,
-            virt_column_names,
-            storage);
+            virt_column_names);
 
         auto source = std::make_shared<MergeTreeSource>(std::move(algorithm));
 
@@ -380,8 +377,7 @@ ProcessorPtr ReadFromMergeTree::createSource(
         reader_settings,
         virt_column_names,
         part.part_index_in_query,
-        has_limit_below_one_block,
-        storage);
+        has_limit_below_one_block, );
 
     auto source = std::make_shared<MergeTreeSource>(std::move(algorithm));
 
