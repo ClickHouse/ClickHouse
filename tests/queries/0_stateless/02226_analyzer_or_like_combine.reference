@@ -77,17 +77,17 @@ SETTINGS optimize_or_like_chain = 1
 SELECT
     materialize(\'Привет, World\') AS s1,
     materialize(\'Привет, World\') AS s2
-WHERE (s1 LIKE \'hell%\') OR (s2 ILIKE \'%привет%\') OR (s1 ILIKE \'world%\')
+WHERE multiMatchAny(s1, [\'^hell\', \'(?i)^world\']) OR multiMatchAny(s2, [\'(?i)привет\'])
 SETTINGS optimize_or_like_chain = 1
 SELECT
     materialize(\'Привет, World\') AS s1,
     materialize(\'Привет, World\') AS s2
-WHERE (s1 LIKE \'hell%\') OR (s2 ILIKE \'%привет%\') OR (s1 ILIKE \'world%\')
+WHERE multiMatchAny(s1, [\'^hell\', \'(?i)^world\']) OR multiMatchAny(s2, [\'(?i)привет\'])
 SETTINGS optimize_or_like_chain = 1
 SELECT
     materialize(\'Привет, World\') AS s1,
     materialize(\'Привет, World\') AS s2
-WHERE (s1 LIKE \'hell%\') OR (s2 ILIKE \'%привет%\') OR (s1 ILIKE \'world%\')
+WHERE multiMatchAny(s1, [\'^hell\', \'(?i)^world\']) OR multiMatchAny(s2, [\'(?i)привет\'])
 SETTINGS optimize_or_like_chain = 1
 SELECT
     materialize(\'Привет, World\') AS s1,
