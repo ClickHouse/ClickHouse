@@ -443,6 +443,7 @@ try
     {
         auto buffer = std::make_unique<ReadBufferFromString>(entry->bytes);
         current_entry = entry;
+        auto bytes_size = entry->bytes.size();
         total_rows += executor.execute(*buffer);
         chunk_info->offsets.push_back(total_rows);
 
@@ -457,7 +458,7 @@ try
             elem.event_time_microseconds = timeInMicroseconds(entry->create_time);
             elem.query = key.query;
             elem.query_id = entry->query_id;
-            elem.bytes = entry->bytes.size();
+            elem.bytes = bytes_size;
             elem.exception = current_exception;
             current_exception.clear();
 
