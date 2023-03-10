@@ -79,6 +79,11 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/QueryParameterVisitor.h>
 
+#include <Poco/Logger.h>
+#include <Common/logger_useful.h>
+#include <Core/Joins.h>
+#include <Interpreters/PartitionHashJoin.h>
+
 namespace DB
 {
 
@@ -1102,6 +1107,18 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
         tried_algorithms.push_back(toString(JoinAlgorithm::FULL_SORTING_MERGE));
         if (FullSortingMergeJoin::isSupported(analyzed_join))
             return std::make_shared<FullSortingMergeJoin>(analyzed_join, right_sample_block);
+    }
+
+    if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::SHUFFLE_HASH))
+    {
+        tried_algorithms.push_back(toString(JoinAlgorithm::SHUFFLE_HASH));
+        if (analyzed_join->allowShuffleHashJoin())
+        {
+            auto inner_join_getter = [analyzed_join, right_sample_block](){
+                return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
+            };
+            return std::make_shared<PartitionHashJoin>(context, analyzed_join, inner_join_getter);
+        }
     }
 
     if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH))

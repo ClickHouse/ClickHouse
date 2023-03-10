@@ -20,6 +20,7 @@ public:
     JoinProperty getJoinProperty() const override;
     void setupInnerJoins(size_t n) override;
     JoinPtr getInnerJoin(size_t n) override;
+    bool supportTotals() const override { return false; }
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
@@ -27,6 +28,7 @@ private:
     ContextPtr context;
     std::shared_ptr<TableJoin> table_join;
     JoinGetter join_getter;
+    JoinPtr init_join;
     std::vector<JoinPtr> inner_joins;
 };
 }

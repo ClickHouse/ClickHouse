@@ -2,9 +2,9 @@
 
 #include <Common/CurrentThread.h>
 #include <Common/typeid_cast.h>
-#include "Core/UUID.h"
-#include "Processors/QueryPlan/IQueryPlanStep.h"
-#include "Processors/QueryPlan/InnerShuffleStep.h"
+#include <Core/UUID.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/InnerShuffleStep.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -31,6 +31,9 @@
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
 #include <QueryPipeline/narrowPipe.h>
+
+#include <Poco/Logger.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -414,7 +417,8 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     size_t num_streams = left->getNumStreams();
 
     auto join_properties = join->getJoinProperty();
-    bool should_resize_right = (join_properties.is_thread_safe || join_properties.need_shuffle_partition_before) && !right->hasTotals() && !left->hasTotals();
+    bool should_resize_right
+        = (join_properties.is_thread_safe || join_properties.need_shuffle_partition_before) && !right->hasTotals() && !left->hasTotals();
 
     if (should_resize_right)
     {
@@ -426,7 +430,9 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
 
         right->resize(num_streams);
         if (join_properties.has_inner_join)
-            join->setupInnerJoins(max_streams);
+        {
+            join->setupInnerJoins(num_streams);
+        }
         if (join_properties.need_shuffle_partition_before)
         {
             DataStream right_datastream; // Not really use here
@@ -449,13 +455,16 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
             return processors;
         };
         right->transform(concurrent_right_filling_transform);
-        right->resize(1);
+        if (!join_properties.need_shuffle_partition_before)
+        {
+            right->resize(1);
+        }
     }
     else
     {
         right->resize(1);
         if (join_properties.has_inner_join)
-            join->setupInnerJoins(max_streams);
+            join->setupInnerJoins(1);
 
         auto final_join = join_properties.has_inner_join ? join->getInnerJoin(0) : join;
         auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getHeader(), final_join);
@@ -470,13 +479,16 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     {
         right->resize(num_streams + 1);
     }
+    else if (!join_properties.need_shuffle_partition_before)
+    {
+        right->resize(num_streams);
+    }
 
     /// This counter is needed for every Joining except totals, to decide which Joining will generate non joined rows.
     auto finish_counter = std::make_shared<JoiningTransform::FinishCounter>(num_streams);
 
     auto lit = left->pipe.output_ports.begin();
     auto rit = right->pipe.output_ports.begin();
-
 
     std::vector<OutputPort *> joined_output_ports;
     std::vector<OutputPort *> delayed_root_output_ports;
@@ -512,7 +524,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
             {
                 final_join = join->getInnerJoin(i);
             }
-            else {
+            else
             {
                 final_join = join->getInnerJoin(0);
             }

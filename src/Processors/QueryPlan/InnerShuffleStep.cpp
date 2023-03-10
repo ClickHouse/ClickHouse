@@ -5,11 +5,11 @@
 #include <Processors/Transforms/InnerShuffleTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <base/types.h>
-#include "Processors/Port.h"
+#include <Processors/Port.h>
 
 namespace DB
 {
-static ITransformingStep::Traits getTraits(const DataStream& input_stream_)
+static ITransformingStep::Traits getTraits(const DataStream& /*input_stream_*/)
 {
     return ITransformingStep::Traits
     {
@@ -63,6 +63,7 @@ void InnerShuffleStep::transformPipeline(QueryPipelineBuilder & pipeline, const 
         {
             OutputPortRawPtrs gather_upstream_outports;
             auto gather = std::make_shared<InnerShuffleGatherTransform>(header, num_streams);
+            gathers.push_back(gather);
             auto & gather_inputs = gather->getInputs();
             for (size_t j = 0; j < num_streams; ++j)
             {

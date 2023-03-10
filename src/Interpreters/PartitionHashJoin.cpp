@@ -10,18 +10,29 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+PartitionHashJoin::PartitionHashJoin(ContextPtr context_, std::shared_ptr<TableJoin> table_join_, JoinGetter getter)
+    : context(context_)
+    , table_join(table_join_)
+    , join_getter(getter)
+{
+    init_join = join_getter();
+}
+
+
 bool PartitionHashJoin::addJoinedBlock(const Block &, bool)
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionHashJoin::addJoinedBlock should not be called");
 }
-void PartitionHashJoin::checkTypesOfKeys(const Block &) const
+void PartitionHashJoin::checkTypesOfKeys(const Block & block) const
 {
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionHashJoin::checkTypesOfKeys should not be called");
+    // throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionHashJoin::checkTypesOfKeys should not be called");
+    init_join->checkTypesOfKeys(block);
 }
 
-void PartitionHashJoin::joinBlock(Block &, std::shared_ptr<ExtraBlock> &)
+void PartitionHashJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed)
 {
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionHashJoin::joinBlock should not be called");
+    // throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionHashJoin::joinBlock should not be called");
+    init_join->joinBlock(block, not_processed);
 }
 
 void PartitionHashJoin::setTotals(const Block &)
