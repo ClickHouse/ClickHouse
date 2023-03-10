@@ -316,8 +316,11 @@ CI_CONFIG = {
         "Integration tests flaky check (asan)": {
             "required_build": "package_asan",
         },
-        "Compatibility check": {
+        "Compatibility check (amd64)": {
             "required_build": "package_release",
+        },
+        "Compatibility check (aarch64)": {
+            "required_build": "package_aarch64",
         },
         "Unit tests (release-clang)": {
             "required_build": "binary_release",
