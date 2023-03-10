@@ -4,6 +4,10 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int QUERY_WAS_CANCELLED;
+}
 
 void BlockIO::reset()
 {
@@ -58,7 +62,26 @@ void BlockIO::onFinish()
 void BlockIO::onException()
 {
     if (exception_callback)
-        exception_callback();
+        exception_callback(/* log_error */ true);
+
+    pipeline.reset();
+}
+
+void BlockIO::onCancelOrConnectionLoss()
+{
+    /// Query was not finished gracefully, so we should call exception_callback
+    /// But we don't have a real exception
+    if (exception_callback)
+    {
+        try
+        {
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled or a client has unexpectedly dropped the connection");
+        }
+        catch (...)
+        {
+            exception_callback(/* log_error */ false);
+        }
+    }
 
     pipeline.reset();
 }
