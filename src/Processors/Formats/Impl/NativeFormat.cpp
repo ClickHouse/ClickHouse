@@ -23,6 +23,7 @@ public:
               0,
               settings.skip_unknown_fields,
               settings.null_as_default,
+              settings.native.allow_types_conversion,
               settings.defaults_for_omitted_fields ? &block_missing_values : nullptr))
         , header(header_) {}
 

@@ -15,6 +15,7 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageValues.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Common/Exception.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
@@ -710,6 +711,7 @@ IProcessor::Status FinalizingViewsTransform::prepare()
     if (!output.canPush())
         return Status::PortFull;
 
+    bool materialized_views_ignore_errors = views_data->context->getSettingsRef().materialized_views_ignore_errors;
     size_t num_finished = 0;
     size_t pos = 0;
     for (auto & input : inputs)
@@ -735,7 +737,7 @@ IProcessor::Status FinalizingViewsTransform::prepare()
                 else
                     statuses[i].exception = data.exception;
 
-                if (i == 0 && statuses[0].is_first)
+                if (i == 0 && statuses[0].is_first && !materialized_views_ignore_errors)
                 {
                     output.pushData(std::move(data));
                     return Status::PortFull;
@@ -752,7 +754,7 @@ IProcessor::Status FinalizingViewsTransform::prepare()
         if (!statuses.empty())
             return Status::Ready;
 
-        if (any_exception)
+        if (any_exception && !materialized_views_ignore_errors)
             output.pushException(any_exception);
 
         output.finish();
@@ -782,6 +784,8 @@ static std::exception_ptr addStorageToException(std::exception_ptr ptr, const St
 
 void FinalizingViewsTransform::work()
 {
+    bool materialized_views_ignore_errors = views_data->context->getSettingsRef().materialized_views_ignore_errors;
+
     size_t i = 0;
     for (auto & view : views_data->views)
     {
@@ -794,6 +798,10 @@ void FinalizingViewsTransform::work()
                 any_exception = status.exception;
 
             view.setException(addStorageToException(status.exception, view.table_id));
+
+            /// Exception will be ignored, it is saved here for the system.query_views_log
+            if (materialized_views_ignore_errors)
+                tryLogException(view.exception, &Poco::Logger::get("PushingToViews"), "Cannot push to the storage, ignoring the error");
         }
         else
         {

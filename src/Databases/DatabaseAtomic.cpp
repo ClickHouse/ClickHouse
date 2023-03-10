@@ -509,6 +509,9 @@ void DatabaseAtomic::tryCreateMetadataSymlink()
     {
         try
         {
+            /// fs::exists could return false for broken symlink
+            if (FS::isSymlinkNoThrow(metadata_symlink))
+                fs::remove(metadata_symlink);
             fs::create_directory_symlink(metadata_path, path_to_metadata_symlink);
         }
         catch (...)
