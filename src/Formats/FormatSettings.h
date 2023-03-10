@@ -364,6 +364,11 @@ struct FormatSettings
         bool output_string_as_string;
         bool skip_fields_with_unsupported_types_in_schema_inference;
     } bson;
+
+    struct
+    {
+        bool allow_types_conversion = true;
+    } native;
 };
 
 }
