@@ -118,6 +118,7 @@ def clickhouse_execute_http(
         "http_connection_timeout": timeout,
         "http_receive_timeout": timeout,
         "http_send_timeout": timeout,
+        "output_format_parallel_formatting": 0,
     }
     if settings is not None:
         params.update(settings)

@@ -2,7 +2,7 @@
 
 #include <base/getThreadId.h>
 #include <Common/scope_guard_safe.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <IO/WriteBufferFromString.h>
