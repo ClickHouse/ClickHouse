@@ -60,6 +60,13 @@ install_packages previous_release_package_folder
 export USE_S3_STORAGE_FOR_MERGE_TREE=1
 # Previous version may not be ready for fault injections
 export ZOOKEEPER_FAULT_INJECTION=0
+
+# force_sync=false doesn't work correctly on some older versions
+sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
+  | sed "s|<force_sync>false</force_sync>|<force_sync>true</force_sync>|" \
+  > /etc/clickhouse-server/config.d/keeper_port.xml.tmp
+sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
+
 configure
 
 # But we still need default disk because some tables loaded only into it
