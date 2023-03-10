@@ -18,6 +18,7 @@
 #include <Storages/getStructureOfRemoteTable.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/removeGroupingFunctionSpecializations.h>
 
 #include <Columns/ColumnConst.h>
 
@@ -44,7 +45,6 @@
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
-#include <Analyzer/Visitors/GeneralizeGroupingFunctionForDistributedVisitor.h>
 
 #include <Planner/Planner.h>
 #include <Planner/Utils.h>

@@ -1,4 +1,4 @@
-#include <Analyzer/Visitors/GeneralizeGroupingFunctionForDistributedVisitor.h>
+#include <Storages/removeGroupingFunctionSpecializations.h>
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ColumnNode.h>
