@@ -52,7 +52,7 @@ class Labels:
 
 
 class ReleaseBranch:
-    CHERRYPICK_DESCRIPTION = """This pull-request is a first step of an automated \
+    CHERRYPICK_DESCRIPTION = f"""This pull-request is a first step of an automated \
     backporting.
 It contains changes like after calling a local command `git cherry-pick`.
 If you intend to continue backporting this changes, then resolve all conflicts if any.
@@ -60,13 +60,16 @@ Otherwise, if you do not want to backport them, then just close this pull-reques
 
 The check results does not matter at this step - you can safely ignore them.
 Also this pull-request will be merged automatically as it reaches the mergeable state, \
-    but you always can merge it manually.
+**do not merge it manually**.
+
+If it stuck, check the original PR for `{Labels.BACKPORTS_CREATED}` and delete it if \
+necessary.
 """
     BACKPORT_DESCRIPTION = """This pull-request is a last step of an automated \
 backporting.
 Treat it as a standard pull-request: look at the checks and resolve conflicts.
 Merge it only if you intend to backport changes to the target branch, otherwise just \
-    close it.
+close it.
 """
     REMOTE = ""
 
@@ -508,7 +511,7 @@ def main():
         logging.getLogger("git_helper").setLevel(logging.DEBUG)
     token = args.token or get_best_robot_token()
 
-    gh = GitHub(token, create_cache_dir=False, per_page=100)
+    gh = GitHub(token, create_cache_dir=False)
     bp = Backport(gh, args.repo, args.dry_run)
     # https://github.com/python/mypy/issues/3004
     bp.gh.cache_path = f"{TEMP_PATH}/gh_cache"  # type: ignore

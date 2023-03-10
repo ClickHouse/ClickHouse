@@ -748,9 +748,7 @@ void bloomFilterIndexValidator(const IndexDescription & index, bool /*attach*/)
 
         if (!data_type.isString() && !data_type.isFixedString())
             throw Exception(ErrorCodes::INCORRECT_QUERY,
-                            "Bloom filter index can be used only with `String`, `FixedString`, "
-                            "`LowCardinality(String)`, `LowCardinality(FixedString)` column "
-                            "or Array with `String` or `FixedString` values column.");
+                "Ngram and token bloom filter indexes can only be used with column types `String`, `FixedString`, `LowCardinality(String)`, `LowCardinality(FixedString)`, `Array(String)` or `Array(FixedString)`");
     }
 
     if (index.type == NgramTokenExtractor::getName())
