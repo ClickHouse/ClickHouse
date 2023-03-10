@@ -2617,7 +2617,7 @@ Generates random table structure in a format `column1_name column1_type, column2
 **Syntax**
 
 ``` sql
-generateRandomStructure([number_of_columns, seed, allow_big_numbers, allow_enums])
+generateRandomStructure([number_of_columns, seed, allow_big_numbers, allow_enums, allow_decimals, allow_ip, allow_only_string_map_keys])
 ```
 
 **Arguments**
@@ -2625,7 +2625,10 @@ generateRandomStructure([number_of_columns, seed, allow_big_numbers, allow_enums
 - `number_of_columns` — The desired number of columns in the result table structure. If set to 0 or `Null`, the number of columns will be random from 1 to 128. Default value: `Null`.
 - `seed` - Random seed to produce stable results. If seed is not specified or set to `Null`, it is randomly generated.
 - `allow_big_numbers` - Indicates if big number types (`Int128/UInt128/Int256/UInt256/Decimal128/Decinal256`) can be generated. Default value: true.
-- `allow_enums` - Indicates if enum types can be generated. Default - true.
+- `allow_enums` - Indicates if enum types (`Enum8/Enum16`) can be generated. Default - true.
+- `allow_decimals` - Indicates if decimal types (`Decimal(P, S)`) can be generated. Default - true.
+- `allow_ip` - Indicates if ip types (`IPv4/IPv6`) can be generated. Default - true.
+- `allow_only_string_map_keys` - Indicates if Map key type can be only `String/FixedString`. Default - false.
 
 All arguments must be constant.
 
@@ -2689,6 +2692,18 @@ Result:
 ┌─generateRandomStructure(6, NULL, false, false)───────────────────────────────────────────────────────┐
 │ c1 Float32, c2 Tuple(DateTime), c3 UInt8, c4 UInt16, c5 Int64, c6 Array(Map(FixedString(108), Date)) │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+``` sql
+SELECT generateRandomStructure(6, Null, false, false, false, false, true)
+```
+
+Result:
+
+``` text
+┌─generateRandomStructure(6, NULL, false, false, false, false, true)─────────────────────────────────────────────────┐
+│ c1 String, c2 UInt32, c3 Int32, c4 Int32, c5 Tuple(LowCardinality(Nullable(FixedString(101))), UInt8), c6 DateTime │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 
