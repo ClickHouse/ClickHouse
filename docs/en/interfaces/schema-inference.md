@@ -1484,7 +1484,7 @@ In Avro format ClickHouse reads its schema from the data and converts it to Clic
 | `union(null, T)`, `union(T, null)` | [Nullable(T)](../sql-reference/data-types/date.md)                             |
 | `null`                             | [Nullable(Nothing)](../sql-reference/data-types/special-data-types/nothing.md) |
 | `string (uuid)` \*                 | [UUID](../sql-reference/data-types/uuid.md)                                    |
-| `binary (decimal)` \*              | [Decimal(P, S)](../sql-reference/data-typesdecimal.md)                         |
+| `binary (decimal)` \*              | [Decimal(P, S)](../sql-reference/data-types/decimal.md)                         |
 
 \* [Avro logical types](https://avro.apache.org/docs/current/spec.html#Logical+Types)
 
