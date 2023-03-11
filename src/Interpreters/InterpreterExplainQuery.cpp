@@ -345,10 +345,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                     auto pipe = QueryPipelineBuilder::getPipe(std::move(*pipeline));
                     const auto & processors = pipe.getProcessors();
 
-                    if (settings.compact)
-                        printPipelineCompact(processors, buf, settings.query_pipeline_options.header);
-                    else
-                        printPipeline(processors, buf);
+                    printPipeline(processors, buf);
                 }
                 else
                 {
