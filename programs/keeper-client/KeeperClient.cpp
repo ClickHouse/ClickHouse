@@ -13,9 +13,45 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
+static const NameSet four_letter_word_commands
+{
+    "ruok", "mntr", "srvr", "stat", "srst", "conf",
+    "cons", "crst", "envi", "dirs", "isro", "wchs",
+    "wchc", "wchp", "dump", "csnp", "lgif", "rqld",
+};
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+}
+
+String KeeperClient::executeFourLetterCommand(const String & command)
+{
+    // We need create new socket every time because ZooKeeper forcefully shut down connection after four-letter-word command.
+    Poco::Net::StreamSocket socket;
+    socket.connect(Poco::Net::SocketAddress{zk_args.hosts[0]}, zk_args.connection_timeout_ms * 1000);
+
+    socket.setReceiveTimeout(zk_args.operation_timeout_ms * 1000);
+    socket.setSendTimeout(zk_args.operation_timeout_ms * 1000);
+    socket.setNoDelay(true);
+
+    ReadBufferFromPocoSocket in(socket);
+    WriteBufferFromPocoSocket out(socket);
+
+    out.write(command.data(), command.size());
+    out.next();
+
+    String result;
+    readStringUntilEOF(result, in);
+    in.next();
+    return result;
+}
+
+void KeeperClient::askConfirmation(const String & prompt, std::function<void()> && callback)
+{
+    std::cout << prompt << " Continue?\n";
+    need_confirmation = true;
+    confirmation_callback = callback;
 }
 
 String KeeperClient::getAbsolutePath(const String & relative)
@@ -124,7 +160,9 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
 
         {"rmr", 1, [](KeeperClient * client, const std::vector<String> & args)
          {
-             client->zookeeper->removeRecursive(client->getAbsolutePath(args[1]));
+             String path = client->getAbsolutePath(args[1]);
+             client->askConfirmation("You are going to recursively delete path " + path,
+                                     [client, path]{ client->zookeeper->removeRecursive(path); });
          }},
     });
 
@@ -164,11 +202,26 @@ bool KeeperClient::processQueryText(const String & text)
 
     try
     {
-        auto callback = commands.find({tokens[0], tokens.size() - 1});
-        if (callback == commands.end())
-            std::cerr << "No command found with name " << tokens[0] << " and args count " << tokens.size() - 1 << "\n";
+        if (need_confirmation)
+        {
+            if (tokens.size() == 1 && (tokens[0] == "y" || tokens[0] == "Y"))
+            {
+                need_confirmation = false;
+                confirmation_callback();
+            }
+
+            need_confirmation = false;
+        }
+        else if (tokens.size() == 1 && tokens[0].size() == 4 && four_letter_word_commands.find(tokens[0]) != four_letter_word_commands.end())
+            std::cout << executeFourLetterCommand(tokens[0]) << "\n";
         else
-            callback->second(this, tokens);
+        {
+            auto callback = commands.find({tokens[0], tokens.size() - 1});
+            if (callback == commands.end())
+                std::cerr << "No command found with name " << tokens[0] << " and args count " << tokens.size() - 1 << "\n";
+            else
+                callback->second(this, tokens);
+        }
     }
     catch (Coordination::Exception & err)
     {
@@ -188,7 +241,13 @@ void KeeperClient::runInteractive()
 
     while (true)
     {
-        auto input = lr.readLine(cwd.string() + " :) ", ":-] ");
+        String prompt;
+        if (need_confirmation)
+            prompt = "[y/n] ";
+        else
+            prompt = cwd.string() + " :) ";
+
+        auto input = lr.readLine(prompt, ":-] ");
         if (input.empty())
             break;
 
@@ -199,7 +258,7 @@ void KeeperClient::runInteractive()
 
 int KeeperClient::main(const std::vector<String> & args)
 {
-    zkutil::ZooKeeperArgs zk_args(args[0]);
+    zk_args.hosts = {args[0]};
     zk_args.connection_timeout_ms = config().getInt("connection-timeout", 10) * 1000;
     zk_args.session_timeout_ms = config().getInt("session-timeout", 10) * 1000;
     zk_args.operation_timeout_ms = config().getInt("operation-timeout", 10) * 1000;

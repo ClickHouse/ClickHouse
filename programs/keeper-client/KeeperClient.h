@@ -3,6 +3,9 @@
 
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Client/LineReader.h>
+#include <IO/ReadBufferFromPocoSocket.h>
+#include <IO/WriteBufferFromPocoSocket.h>
+#include <Poco/Net/StreamSocket.h>
 #include <Poco/Util/Application.h>
 #include <filesystem>
 
@@ -27,10 +30,13 @@ public:
 
 protected:
     void runInteractive();
-    void loadCommands(std::vector<std::tuple<String, size_t, Callback>> &&);
+    void loadCommands(std::vector<std::tuple<String, size_t, Callback>> && callback);
     bool processQueryText(const String & text);
 
+    String executeFourLetterCommand(const String & command);
+
     String getAbsolutePath(const String & relative);
+    void askConfirmation(const String & prompt, std::function<void()> && callback);
 
     std::map<std::pair<String, size_t>, Callback> commands;
 
@@ -38,7 +44,12 @@ protected:
     LineReader::Suggest suggest;
 
     zkutil::ZooKeeperPtr zookeeper;
+    zkutil::ZooKeeperArgs zk_args;
+
     std::filesystem::path cwd = "/";
+
+    bool need_confirmation = false;
+    std::function<void()> confirmation_callback;
 };
 
 }
