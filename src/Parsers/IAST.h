@@ -281,11 +281,13 @@ public:
 
         FormattingBuffer copy(bool increase_indent,
                               bool surround_each_list_element_with_parens,
-                              bool expression_list_prepend_whitespace) const;  // TODO: impl
+                              bool expression_list_prepend_whitespace) const;
 
         FormattingBuffer copyWithoutExpressionListPrependWhitespace() const;
 
         FormattingBuffer copyWithoutNeedParensAndWithExpressionListAlwaysStartOnNewLine() const;
+
+        FormattingBuffer copyWithoutNeedParensAndWithExtraIndent() const;
 
         bool needsParens() const;  // TODO: impl
 

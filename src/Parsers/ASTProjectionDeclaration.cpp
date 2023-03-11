@@ -15,19 +15,17 @@ ASTPtr ASTProjectionDeclaration::clone() const
 }
 
 
-void ASTProjectionDeclaration::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTProjectionDeclaration::formatImpl(const FormattingBuffer & out) const
 {
-    settings.ostr << backQuoteIfNeed(name);
-    std::string indent_str = settings.isOneLine() ? "" : std::string(4u * frame.indent, ' ');
-    settings.nlOrWs();
-    settings.ostr << indent_str << "(";
-    settings.nlOrNothing();
-    FormatStateStacked frame_nested = frame;
-    frame_nested.need_parens = false;
-    ++frame_nested.indent;
-    query->formatImpl(settings, state, frame_nested);
-    settings.nlOrNothing();
-    settings.ostr << indent_str << ")";
+    out.ostr << backQuoteIfNeed(name);
+    out.nlOrWs();
+    out.writeIndent();
+    out.ostr << "(";
+    out.nlOrNothing();
+    query->formatImpl(out.copyWithoutNeedParensAndWithExtraIndent());
+    out.nlOrNothing();
+    out.writeIndent();
+    out.ostr << ")";
 }
 
 }

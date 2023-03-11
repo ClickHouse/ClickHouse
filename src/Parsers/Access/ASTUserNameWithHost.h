@@ -47,7 +47,7 @@ public:
 
     String getID(char) const override { return "UserNamesWithHost"; }
     ASTPtr clone() const override { return std::make_shared<ASTUserNamesWithHost>(*this); }
-    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void formatImpl(const FormattingBuffer & out) const override;
 };
 
 }
