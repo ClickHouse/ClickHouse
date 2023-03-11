@@ -104,8 +104,6 @@ public:
 
     std::shared_ptr<Processors> getProcessorsPtr() { return processors; }
 
-    void collectProcessors();
-
 private:
     /// Header is common for all output below.
     Block header;

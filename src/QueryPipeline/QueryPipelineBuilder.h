@@ -185,8 +185,6 @@ public:
     static Pipe getPipe(QueryPipelineBuilder pipeline, QueryPlanResourceHolder & resources);
     static QueryPipeline getPipeline(QueryPipelineBuilder builder);
 
-    void collectProcessors() { pipe.collectProcessors(); }
-
 private:
 
     /// Destruction order: processors, header, locks, temporary storages, local contexts

@@ -867,14 +867,4 @@ void Pipe::transform(const Transformer & transformer, bool check_ports)
     max_parallel_streams = std::max<size_t>(max_parallel_streams, output_ports.size());
 }
 
-void Pipe::collectProcessors()
-{
-    if (collected_processors)
-    {
-        for (const auto & processor : *processors)
-        {
-            collected_processors->emplace_back(processor);
-        }
-    }
-}
 }
