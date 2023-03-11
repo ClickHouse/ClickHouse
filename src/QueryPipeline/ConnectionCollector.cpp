@@ -47,7 +47,7 @@ struct AsyncDrainTask
     std::shared_ptr<IConnections> shared_connections;
     void operator()() const
     {
-        ConnectionCollector::drainConnections(*shared_connections, /* throw_error= */ false);
+        ConnectionCollector::drainConnections(*shared_connections);
     }
 
     // We don't have std::unique_function yet. Wrap it in shared_ptr to make the functor copyable.
@@ -72,7 +72,7 @@ std::shared_ptr<IConnections> ConnectionCollector::enqueueConnectionCleanup(
     return connections;
 }
 
-void ConnectionCollector::drainConnections(IConnections & connections, bool throw_error)
+void ConnectionCollector::drainConnections(IConnections & connections) noexcept
 {
     bool is_drained = false;
     try
@@ -91,9 +91,6 @@ void ConnectionCollector::drainConnections(IConnections & connections, bool thro
                 break;
 
             default:
-                /// Connection should be closed in case of unexpected packet,
-                /// since this means that the connection in some bad state.
-                is_drained = false;
                 throw NetException(
                     ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
                     "Unexpected packet {} from one of the following replicas: {}. (expected EndOfStream, Log, ProfileEvents or Exception)",
@@ -115,9 +112,6 @@ void ConnectionCollector::drainConnections(IConnections & connections, bool thro
                 tryLogCurrentException(&Poco::Logger::get("ConnectionCollector"), __PRETTY_FUNCTION__);
             }
         }
-
-        if (throw_error)
-            throw;
     }
 }
 
