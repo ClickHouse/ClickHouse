@@ -245,6 +245,10 @@ private:
     std::atomic<bool> was_cancelled { false };
     std::mutex was_cancelled_mutex;
 
+    /** Thread-safe connection draining.
+      */
+    std::mutex connection_draining_mutex;
+
     /** An exception from replica was received. No need in receiving more packets or
       * requesting to cancel query execution
       */
