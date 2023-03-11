@@ -19,10 +19,10 @@ public:
     }
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
+    void formatQueryImpl(const FormattingBuffer & out) const override
     {
-        settings.writeKeyword("DESCRIBE FILESYSTEM CACHE ");
-        settings.ostr << cache_name;
+        out.writeKeyword("DESCRIBE FILESYSTEM CACHE ");
+        out.ostr << cache_name;
     }
 };
 

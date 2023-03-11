@@ -131,20 +131,20 @@ bool ASTTableOverrideList::hasOverride(const String & name) const
     return positions.contains(name);
 }
 
-void ASTTableOverrideList::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTTableOverrideList::formatImpl(const FormattingBuffer & out) const
 {
-    if (frame.expression_list_prepend_whitespace)
-        settings.ostr << ' ';
+    if (out.getExpressionListPrependWhitespace())
+        out.ostr << ' ';
 
     for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
     {
         if (it != children.begin())
         {
-            settings.ostr << ",";
-            settings.nlOrWs();
+            out.ostr << ",";
+            out.nlOrWs();
         }
 
-        (*it)->formatImpl(settings, state, frame);
+        (*it)->formatImpl(out);
     }
 }
 

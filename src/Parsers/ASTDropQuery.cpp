@@ -32,45 +32,45 @@ ASTPtr ASTDropQuery::clone() const
     return res;
 }
 
-void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTDropQuery::formatQueryImpl(const FormattingBuffer & out) const
 {
     if (kind == ASTDropQuery::Kind::Drop)
-        settings.writeKeyword("DROP ");
+        out.writeKeyword("DROP ");
     else if (kind == ASTDropQuery::Kind::Detach)
-        settings.writeKeyword("DETACH ");
+        out.writeKeyword("DETACH ");
     else if (kind == ASTDropQuery::Kind::Truncate)
-        settings.writeKeyword("TRUNCATE ");
+        out.writeKeyword("TRUNCATE ");
     else
         throw Exception(ErrorCodes::SYNTAX_ERROR, "Not supported kind of drop query.");
 
     if (temporary)
-        settings.writeKeyword("TEMPORARY ");
+        out.writeKeyword("TEMPORARY ");
 
 
     if (!table && database)
-        settings.writeKeyword("DATABASE ");
+        out.writeKeyword("DATABASE ");
     else if (is_dictionary)
-        settings.writeKeyword("DICTIONARY ");
+        out.writeKeyword("DICTIONARY ");
     else if (is_view)
-        settings.writeKeyword("VIEW ");
+        out.writeKeyword("VIEW ");
     else
-        settings.writeKeyword("TABLE ");
+        out.writeKeyword("TABLE ");
 
     if (if_exists)
-        settings.writeKeyword("IF EXISTS ");
+        out.writeKeyword("IF EXISTS ");
 
     if (!table && database)
-        settings.ostr << backQuoteIfNeed(getDatabase());
+        out.ostr << backQuoteIfNeed(getDatabase());
     else
-        settings.ostr << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
+        out.ostr << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
 
-    formatOnCluster(settings);
+    formatOnCluster(out);
 
     if (permanently)
-        settings.ostr << " PERMANENTLY";
+        out.ostr << " PERMANENTLY";
 
     if (sync)
-        settings.writeKeyword(" SYNC");
+        out.writeKeyword(" SYNC");
 }
 
 }

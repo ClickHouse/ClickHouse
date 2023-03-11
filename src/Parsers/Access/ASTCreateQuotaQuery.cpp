@@ -146,37 +146,37 @@ ASTPtr ASTCreateQuotaQuery::clone() const
 }
 
 
-void ASTCreateQuotaQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTCreateQuotaQuery::formatImpl(const FormattingBuffer & out) const
 {
     if (attach)
     {
-        settings.writeKeyword("ATTACH QUOTA");
+        out.writeKeyword("ATTACH QUOTA");
     }
     else
     {
-        settings.writeKeyword(alter ? "ALTER QUOTA" : "CREATE QUOTA");
+        out.writeKeyword(alter ? "ALTER QUOTA" : "CREATE QUOTA");
     }
 
     if (if_exists)
-        settings.writeKeyword(" IF EXISTS");
+        out.writeKeyword(" IF EXISTS");
     else if (if_not_exists)
-        settings.writeKeyword(" IF NOT EXISTS");
+        out.writeKeyword(" IF NOT EXISTS");
     else if (or_replace)
-        settings.writeKeyword(" OR REPLACE");
+        out.writeKeyword(" OR REPLACE");
 
-    formatNames(names, settings);
-    formatOnCluster(settings);
+    formatNames(names, out.copy());
+    formatOnCluster(out.copy());
 
     if (!new_name.empty())
-        formatRenameTo(new_name, settings);
+        formatRenameTo(new_name, out.copy());
 
     if (key_type)
-        formatKeyType(*key_type, settings);
+        formatKeyType(*key_type, out.copy());
 
-    formatIntervalsWithLimits(all_limits, settings);
+    formatIntervalsWithLimits(all_limits, out.copy());
 
     if (roles && (!roles->empty() || alter))
-        formatToRoles(*roles, settings);
+        formatToRoles(*roles, out.copy());
 }
 
 

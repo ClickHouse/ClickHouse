@@ -299,6 +299,8 @@ public:
 
         void setExpressionListAlwaysStartsOnNewLine(bool value = true) const;  // TOOD: impl
 
+        bool getExpressionListPrependWhitespace() const; // TODO: impl
+
         void writeIndent(bool add_extra_indent = false) const;
 
         bool insertAlias(std::string alias, Hash printed_content) const;

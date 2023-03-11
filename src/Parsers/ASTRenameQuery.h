@@ -68,44 +68,44 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Rename; }
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
+    void formatQueryImpl(const FormattingBuffer & out) const override
     {
         if (database)
         {
-            settings.writeKeyword("RENAME DATABASE ");
+            out.writeKeyword("RENAME DATABASE ");
 
             if (elements.at(0).if_exists)
-                settings.writeKeyword("IF EXISTS ");
+                out.writeKeyword("IF EXISTS ");
 
-            settings.ostr << backQuoteIfNeed(elements.at(0).from.database);
-            settings.writeKeyword(" TO ");
-            settings.ostr << backQuoteIfNeed(elements.at(0).to.database);
-            formatOnCluster(settings);
+            out.ostr << backQuoteIfNeed(elements.at(0).from.database);
+            out.writeKeyword(" TO ");
+            out.ostr << backQuoteIfNeed(elements.at(0).to.database);
+            formatOnCluster(out);
             return;
         }
 
         if (exchange && dictionary)
-            settings.writeKeyword("EXCHANGE DICTIONARIES ");
+            out.writeKeyword("EXCHANGE DICTIONARIES ");
         else if (exchange)
-            settings.writeKeyword("EXCHANGE TABLES ");
+            out.writeKeyword("EXCHANGE TABLES ");
         else if (dictionary)
-            settings.writeKeyword("RENAME DICTIONARY ");
+            out.writeKeyword("RENAME DICTIONARY ");
         else
-            settings.writeKeyword("RENAME TABLE ");
+            out.writeKeyword("RENAME TABLE ");
 
         for (auto it = elements.cbegin(); it != elements.cend(); ++it)
         {
             if (it != elements.cbegin())
-                settings.ostr << ", ";
+                out.ostr << ", ";
 
             if (it->if_exists)
-                settings.writeKeyword("IF EXISTS ");
-            settings.ostr << (!it->from.database.empty() ? backQuoteIfNeed(it->from.database) + "." : "") << backQuoteIfNeed(it->from.table);
-            settings.writeKeyword(exchange ? " AND " : " TO ");
-            settings.ostr << (!it->to.database.empty() ? backQuoteIfNeed(it->to.database) + "." : "") << backQuoteIfNeed(it->to.table);
+                out.writeKeyword("IF EXISTS ");
+            out.ostr << (!it->from.database.empty() ? backQuoteIfNeed(it->from.database) + "." : "") << backQuoteIfNeed(it->from.table);
+            out.writeKeyword(exchange ? " AND " : " TO ");
+            out.ostr << (!it->to.database.empty() ? backQuoteIfNeed(it->to.database) + "." : "") << backQuoteIfNeed(it->to.table);
         }
 
-        formatOnCluster(settings);
+        formatOnCluster(out);
     }
 };
 
