@@ -390,7 +390,7 @@ MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForRead
         Poco::Net::Socket::SocketList write_list;
         Poco::Net::Socket::SocketList except_list;
 
-        auto timeout = is_draining ? drain_timeout : receive_timeout;
+        auto timeout = receive_timeout;
         int n = 0;
 
         /// EINTR loop
