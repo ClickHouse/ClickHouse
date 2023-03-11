@@ -534,13 +534,16 @@ void RemoteQueryExecutor::finish(std::unique_ptr<ReadContext> * read_context)
 
     /// Send the request to abort the execution of the request, if not already sent.
     tryCancel("Cancelling query because enough data has been read", read_context);
-    /// Try to drain connections asynchronously.
-    if (auto conn = ConnectionCollector::enqueueConnectionCleanup(pool, connections))
     {
-        /// Drain connections synchronously.
-        CurrentMetrics::Increment metric_increment(CurrentMetrics::ActiveSyncDrainedConnections);
-        ConnectionCollector::drainConnections(*conn);
-        CurrentMetrics::add(CurrentMetrics::SyncDrainedConnections, 1);
+        /// Finish might be called in multiple threads. Make sure we release connections in thread-safe way.
+        std::lock_guard guard(connection_draining_mutex);
+        if (auto conn = ConnectionCollector::enqueueConnectionCleanup(pool, connections))
+        {
+            /// Drain connections synchronously.
+            CurrentMetrics::Increment metric_increment(CurrentMetrics::ActiveSyncDrainedConnections);
+            ConnectionCollector::drainConnections(*conn);
+            CurrentMetrics::add(CurrentMetrics::SyncDrainedConnections, 1);
+        }
     }
     finished = true;
 }
