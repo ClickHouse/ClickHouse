@@ -1,0 +1,116 @@
+digraph
+{
+  rankdir="LR";
+  { node [shape = rect]
+    subgraph cluster_0 {
+      label ="Expression";
+      style=filled;
+      color=lightgrey;
+      node [style=filled,color=white];
+      { rank = same;
+        n4 [label="ExpressionTransform"];
+      }
+    }
+    subgraph cluster_1 {
+      label ="ReadFromStorage";
+      style=filled;
+      color=lightgrey;
+      node [style=filled,color=white];
+      { rank = same;
+        n3 [label="AggregatingTransform"];
+        n2 [label="ExpressionTransform"];
+        n1 [label="SourceFromSingleChunk"];
+      }
+    }
+  }
+  n3 -> n4 [label=""];
+  n2 -> n3 [label=""];
+  n1 -> n2 [label=""];
+}
+digraph
+{
+  rankdir="LR";
+  { node [shape = rect]
+    subgraph cluster_0 {
+      label ="Expression";
+      style=filled;
+      color=lightgrey;
+      node [style=filled,color=white];
+      { rank = same;
+        n4 [label="ExpressionTransform"];
+      }
+    }
+    subgraph cluster_1 {
+      label ="ReadFromStorage";
+      style=filled;
+      color=lightgrey;
+      node [style=filled,color=white];
+      { rank = same;
+        n3 [label="AggregatingTransform"];
+        n2 [label="ExpressionTransform"];
+        n1 [label="SourceFromSingleChunk"];
+      }
+    }
+  }
+  n3 -> n4 [label=""];
+  n2 -> n3 [label=""];
+  n1 -> n2 [label=""];
+}
+digraph
+{
+  rankdir="LR";
+  { node [shape = rect]
+    subgraph cluster_0 {
+      label ="Expression";
+      style=filled;
+      color=lightgrey;
+      node [style=filled,color=white];
+      { rank = same;
+        n4 [label="ExpressionTransform"];
+      }
+    }
+    subgraph cluster_1 {
+      label ="ReadFromStorage";
+      style=filled;
+      color=lightgrey;
+      node [style=filled,color=white];
+      { rank = same;
+        n3 [label="AggregatingTransform"];
+        n2 [label="ExpressionTransform"];
+        n1 [label="SourceFromSingleChunk"];
+      }
+    }
+  }
+  n3 -> n4 [label=""];
+  n2 -> n3 [label=""];
+  n1 -> n2 [label=""];
+}
+digraph
+{
+  rankdir="LR";
+  { node [shape = rect]
+    subgraph cluster_0 {
+      label ="Expression";
+      style=filled;
+      color=lightgrey;
+      node [style=filled,color=white];
+      { rank = same;
+        n4 [label="ExpressionTransform"];
+      }
+    }
+    subgraph cluster_1 {
+      label ="ReadFromStorage";
+      style=filled;
+      color=lightgrey;
+      node [style=filled,color=white];
+      { rank = same;
+        n3 [label="AggregatingTransform"];
+        n2 [label="ExpressionTransform"];
+        n1 [label="SourceFromSingleChunk"];
+      }
+    }
+  }
+  n3 -> n4 [label=""];
+  n2 -> n3 [label=""];
+  n1 -> n2 [label=""];
+}
