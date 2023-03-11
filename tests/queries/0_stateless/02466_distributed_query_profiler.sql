@@ -12,4 +12,4 @@ settings
     -- This is to activate as much signals as possible to trigger EINTR
     query_profiler_real_time_period_ns=1,
     -- This is to use MultiplexedConnections
-    use_hedged_requests=0,
+    use_hedged_requests=0;
