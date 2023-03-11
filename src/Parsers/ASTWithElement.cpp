@@ -14,15 +14,13 @@ ASTPtr ASTWithElement::clone() const
     return res;
 }
 
-void ASTWithElement::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTWithElement::formatImpl(const FormattingBuffer & out) const
 {
-    std::string indent_str = settings.isOneLine() ? "" : std::string(4 * frame.indent, ' ');
-
-    settings.writeAlias(name);
-    settings.writeKeyword(" AS");
-    settings.nlOrWs();
-    settings.ostr << indent_str;
-    dynamic_cast<const ASTWithAlias &>(*subquery).formatImplWithoutAlias(settings, state, frame);
+    out.writeAlias(name);
+    out.writeKeyword(" AS");
+    out.nlOrWs();
+    out.writeIndent();
+    dynamic_cast<const ASTWithAlias &>(*subquery).formatImplWithoutAlias(out);
 }
 
 }

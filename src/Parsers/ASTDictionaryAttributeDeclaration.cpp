@@ -31,41 +31,41 @@ ASTPtr ASTDictionaryAttributeDeclaration::clone() const
     return res;
 }
 
-void ASTDictionaryAttributeDeclaration::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTDictionaryAttributeDeclaration::formatImpl(const FormattingBuffer & out) const
 {
-    frame.need_parens = false;
+    out.setNeedsParens(false);
 
-    settings.ostr << backQuote(name);
+    out.ostr << backQuote(name);
 
     if (type)
     {
-        settings.ostr << ' ';
-        type->formatImpl(settings, state, frame);
+        out.ostr << ' ';
+        type->formatImpl(out);
     }
 
     if (default_value)
     {
-        settings.writeKeyword(" DEFAULT ");
-        default_value->formatImpl(settings, state, frame);
+        out.writeKeyword(" DEFAULT ");
+        default_value->formatImpl(out);
     }
 
     if (expression)
     {
-        settings.writeKeyword(" EXPRESSION ");
-        expression->formatImpl(settings, state, frame);
+        out.writeKeyword(" EXPRESSION ");
+        expression->formatImpl(out);
     }
 
     if (hierarchical)
-        settings.writeKeyword(" HIERARCHICAL");
+        out.writeKeyword(" HIERARCHICAL");
 
     if (bidirectional)
-        settings.writeKeyword(" BIDIRECTIONAL");
+        out.writeKeyword(" BIDIRECTIONAL");
 
     if (injective)
-        settings.writeKeyword(" INJECTIVE");
+        out.writeKeyword(" INJECTIVE");
 
     if (is_object_id)
-        settings.writeKeyword(" IS_OBJECT_ID");
+        out.writeKeyword(" IS_OBJECT_ID");
 }
 
 }

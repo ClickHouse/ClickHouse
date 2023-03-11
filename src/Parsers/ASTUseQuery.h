@@ -22,7 +22,7 @@ public:
     ASTPtr clone() const override { return std::make_shared<ASTUseQuery>(*this); }
 
 protected:
-    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
+    void formatImpl(const FormattingBuffer & out) const override
     {
         settings.writeKeyword("USE ");
         settings.ostr << backQuoteIfNeed(database);

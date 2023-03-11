@@ -23,7 +23,7 @@ public:
         INTERSECT_DISTINCT,
     };
 
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatImpl(const FormattingBuffer & out) const override;
 
     QueryKind getQueryKind() const override { return QueryKind::SelectIntersectExcept; }
 

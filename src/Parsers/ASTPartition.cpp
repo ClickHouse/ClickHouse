@@ -27,22 +27,22 @@ ASTPtr ASTPartition::clone() const
     return res;
 }
 
-void ASTPartition::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTPartition::formatImpl(const FormattingBuffer & out) const
 {
     if (value)
     {
-        value->formatImpl(settings, state, frame);
+        value->formatImpl(out);
     }
     else
     {
         if (all)
-            settings.ostr << "ALL";
+            out.ostr << "ALL";
         else
         {
-            settings.writeKeyword("ID ");
+            out.writeKeyword("ID ");
             WriteBufferFromOwnString id_buf;
             writeQuoted(id, id_buf);
-            settings.ostr << id_buf.str();
+            out.ostr << id_buf.str();
         }
     }
 }

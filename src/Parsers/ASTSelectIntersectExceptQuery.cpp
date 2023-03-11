@@ -18,21 +18,19 @@ ASTPtr ASTSelectIntersectExceptQuery::clone() const
     return res;
 }
 
-void ASTSelectIntersectExceptQuery::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTSelectIntersectExceptQuery::formatImpl(const FormattingBuffer & out) const
 {
-    std::string indent_str = settings.isOneLine() ? "" : std::string(4 * frame.indent, ' ');
-
     for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
     {
         if (it != children.begin())
         {
-            settings.nlOrWs();
-            settings.ostr << indent_str;
-            settings.writeKeyword(fromOperator(final_operator));
-            settings.nlOrWs();
+            out.nlOrWs();
+            out.writeIndent();
+            out.writeKeyword(fromOperator(final_operator));
+            out.nlOrWs();
         }
 
-        (*it)->formatImpl(settings, state, frame);
+        (*it)->formatImpl(out);
     }
 }
 

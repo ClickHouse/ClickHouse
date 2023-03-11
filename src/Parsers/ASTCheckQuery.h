@@ -24,30 +24,28 @@ struct ASTCheckQuery : public ASTQueryWithTableAndOutput
     }
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+    void formatQueryImpl(const FormattingBuffer & out) const override
     {
-        std::string indent_str = settings.isOneLine() ? "" : std::string(4 * frame.indent, ' ');
-
-        settings.ostr << indent_str;
-        settings.writeKeyword("CHECK TABLE ");
+        out.writeIndent();
+        out.writeKeyword("CHECK TABLE ");
 
         if (table)
         {
             if (database)
             {
-                settings.ostr << indent_str;
-                settings.writeKeyword(backQuoteIfNeed(getDatabase()));
-                settings.ostr << ".";
+                out.writeIndent();
+                out.writeKeyword(backQuoteIfNeed(getDatabase()));
+                out.ostr << ".";
             }
-            settings.ostr << indent_str;
-            settings.writeKeyword(backQuoteIfNeed(getTable()));
+            out.writeIndent();
+            out.writeKeyword(backQuoteIfNeed(getTable()));
         }
 
         if (partition)
         {
-            settings.ostr << indent_str;
-            settings.writeKeyword(" PARTITION ");
-            partition->formatImpl(settings, state, frame);
+            out.writeIndent();
+            out.writeKeyword(" PARTITION ");
+            partition->formatImpl(out);
         }
     }
 };

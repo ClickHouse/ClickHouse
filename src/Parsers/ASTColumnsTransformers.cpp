@@ -19,12 +19,12 @@ namespace ErrorCodes
     extern const int CANNOT_COMPILE_REGEXP;
 }
 
-void ASTColumnsTransformerList::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTColumnsTransformerList::formatImpl(const FormattingBuffer & out) const
 {
     for (const auto & child : children)
     {
-        settings.ostr << ' ';
-        child->formatImpl(settings, state, frame);
+        out.ostr << ' ';
+        child->formatImpl(out);
     }
 }
 
@@ -44,32 +44,30 @@ void IASTColumnsTransformer::transform(const ASTPtr & transformer, ASTs & nodes)
     }
 }
 
-void ASTColumnsApplyTransformer::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTColumnsApplyTransformer::formatImpl(const FormattingBuffer & out) const
 {
-    settings.writeKeyword("APPLY ");
+    out.writeKeyword("APPLY ");
     if (!column_name_prefix.empty())
-        settings.ostr << "(";
+        out.ostr << "(";
 
     if (lambda)
     {
-        lambda->formatImpl(settings, state, frame);
+        lambda->formatImpl(out);
     }
     else
     {
-        settings.ostr << func_name;
+        out.ostr << func_name;
 
         if (parameters)
         {
-            auto nested_frame = frame;
-            nested_frame.expression_list_prepend_whitespace = false;
-            settings.ostr << "(";
-            parameters->formatImpl(settings, state, nested_frame);
-            settings.ostr << ")";
+            out.ostr << "(";
+            parameters->formatImpl(out.copyWithoutExpressionListPrependWhitespace());
+            out.ostr << ")";
         }
     }
 
     if (!column_name_prefix.empty())
-        settings.ostr << ", '" << column_name_prefix << "')";
+        out.ostr << ", '" << column_name_prefix << "')";
 }
 
 void ASTColumnsApplyTransformer::transform(ASTs & nodes) const
@@ -162,28 +160,28 @@ void ASTColumnsApplyTransformer::updateTreeHashImpl(SipHash & hash_state) const
     IAST::updateTreeHashImpl(hash_state);
 }
 
-void ASTColumnsExceptTransformer::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTColumnsExceptTransformer::formatImpl(const FormattingBuffer & out) const
 {
-    settings.writeKeyword("EXCEPT");
-    settings.writeKeyword(is_strict ? " STRICT " : " ");
+    out.writeKeyword("EXCEPT");
+    out.writeKeyword(is_strict ? " STRICT " : " ");
 
     if (children.size() > 1)
-        settings.ostr << "(";
+        out.ostr << "(";
 
     for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
     {
         if (it != children.begin())
         {
-            settings.ostr << ", ";
+            out.ostr << ", ";
         }
-        (*it)->formatImpl(settings, state, frame);
+        (*it)->formatImpl(out);
     }
 
     if (!original_pattern.empty())
-        settings.ostr << quoteString(original_pattern);
+        out.ostr << quoteString(original_pattern);
 
     if (children.size() > 1)
-        settings.ostr << ")";
+        out.ostr << ")";
 }
 
 void ASTColumnsExceptTransformer::appendColumnName(WriteBuffer & ostr) const
@@ -289,11 +287,11 @@ bool ASTColumnsExceptTransformer::isColumnMatching(const String & column_name) c
 }
 
 void ASTColumnsReplaceTransformer::Replacement::formatImpl(
-    const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+    const FormattingBuffer & out) const
 {
-    expr->formatImpl(settings, state, frame);
-    settings.writeKeyword(" AS ");
-    settings.ostr << backQuoteIfNeed(name);
+    expr->formatImpl(out);
+    out.writeKeyword(" AS ");
+    out.ostr << backQuoteIfNeed(name);
 }
 
 void ASTColumnsReplaceTransformer::Replacement::appendColumnName(WriteBuffer & ostr) const
@@ -311,24 +309,24 @@ void ASTColumnsReplaceTransformer::Replacement::updateTreeHashImpl(SipHash & has
     IAST::updateTreeHashImpl(hash_state);
 }
 
-void ASTColumnsReplaceTransformer::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTColumnsReplaceTransformer::formatImpl(const FormattingBuffer & out) const
 {
-    settings.writeKeyword("REPLACE");
-    settings.writeKeyword(is_strict ? " STRICT " : " ");
+    out.writeKeyword("REPLACE");
+    out.writeKeyword(is_strict ? " STRICT " : " ");
 
     if (children.size() > 1)
-        settings.ostr << "(";
+        out.ostr << "(";
 
     for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
     {
         if (it != children.begin())
-            settings.ostr << ", ";
+            out.ostr << ", ";
 
-        (*it)->formatImpl(settings, state, frame);
+        (*it)->formatImpl(out);
     }
 
     if (children.size() > 1)
-        settings.ostr << ")";
+        out.ostr << ")";
 }
 
 void ASTColumnsReplaceTransformer::appendColumnName(WriteBuffer & ostr) const

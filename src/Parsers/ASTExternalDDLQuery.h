@@ -32,11 +32,11 @@ public:
 
     String getID(char) const override { return "external ddl query"; }
 
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked stacked) const override
+    void formatImpl(const FormattingBuffer & out) const override
     {
-        settings.writeKeyword("EXTERNAL DDL FROM ");
-        from->formatImpl(settings, state, stacked);
-        external_ddl->formatImpl(settings, state, stacked);
+        out.writeKeyword("EXTERNAL DDL FROM ");
+        from->formatImpl(out);
+        external_ddl->formatImpl(out);
     }
 };
 

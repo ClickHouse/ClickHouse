@@ -186,7 +186,7 @@ void ASTColumns::formatImpl(const FormatSettings & s, FormatState & state, Forma
     }
 
     if (!list.children.empty())
-        s.isOneLine() ? list.formatImpl(s, state, frame) : list.formatImplMultiline(s, state, frame);
+        s.isOneLine() ? list.formatImpl(s) : list.formatImplMultiline(s);
 }
 
 
@@ -394,9 +394,7 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         settings.nlOrWs();
         settings.ostr << "(";
         FormatStateStacked frame_nested = frame;
-        settings.isOneLine() ?
-            dictionary_attributes_list->formatImpl(settings, state, frame_nested) :
-            dictionary_attributes_list->formatImplMultiline(settings, state, frame_nested);
+        settings.isOneLine() ? dictionary_attributes_list->formatImpl(settings) : dictionary_attributes_list->formatImplMultiline(settings);
         settings.nlOrNothing();
         settings.ostr << ")";
     }

@@ -32,7 +32,7 @@ public:
     ASTPtr expression;
     ASTPtr transformers;
 protected:
-    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void formatImpl(const FormattingBuffer & out) const override;
 
 private:
     std::shared_ptr<re2::RE2> column_matcher;
@@ -51,7 +51,7 @@ public:
     ASTPtr column_list;
     ASTPtr transformers;
 protected:
-    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void formatImpl(const FormattingBuffer & out) const override;
 };
 
 /// Same as ASTColumnsRegexpMatcher. Qualified identifier is first child.
@@ -70,7 +70,7 @@ public:
     ASTPtr qualifier;
     ASTPtr transformers;
 protected:
-    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void formatImpl(const FormattingBuffer & out) const override;
 
 private:
     std::shared_ptr<re2::RE2> column_matcher;
@@ -89,7 +89,7 @@ public:
     ASTPtr column_list;
     ASTPtr transformers;
 protected:
-    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void formatImpl(const FormattingBuffer & out) const override;
 };
 
 }

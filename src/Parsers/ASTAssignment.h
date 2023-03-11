@@ -26,12 +26,11 @@ public:
     }
 
 protected:
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+    void formatImpl(const FormattingBuffer & out) const override
     {
-
-        settings.writeIdentifier(column_name);
-        settings.writeOperator(" = ");
-        expression()->formatImpl(settings, state, frame);
+        out.writeIdentifier(column_name);
+        out.writeOperator(" = ");
+        expression()->formatImpl(out);
     }
 };
 

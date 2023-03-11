@@ -5,22 +5,22 @@
 namespace DB
 {
 
-void ASTTransactionControl::formatImpl(const FormatSettings & format /*state*/, FormatState &, FormatStateStacked /*frame*/) const
+void ASTTransactionControl::formatImpl(const FormattingBuffer & out) const
 {
     switch (action)
     {
         case BEGIN:
-            format.writeKeyword("BEGIN TRANSACTION");
+            out.writeKeyword("BEGIN TRANSACTION");
             break;
         case COMMIT:
-            format.writeKeyword("COMMIT");
+            out.writeKeyword("COMMIT");
             break;
         case ROLLBACK:
-            format.writeKeyword("ROLLBACK");
+            out.writeKeyword("ROLLBACK");
             break;
         case SET_SNAPSHOT:
-            format.writeKeyword("SET TRANSACTION SNAPSHOT ");
-            format.ostr << snapshot;
+            out.writeKeyword("SET TRANSACTION SNAPSHOT ");
+            out.ostr << snapshot;
             break;
     }
 }

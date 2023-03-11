@@ -72,7 +72,8 @@ void ASTDictionaryLayout::formatImpl(const FormatSettings & settings,
     if (has_brackets)
         settings.ostr << "(";
 
-    if (parameters) parameters->formatImpl(settings, state, frame);
+    if (parameters)
+        parameters->formatImpl(settings);
 
     if (has_brackets)
         settings.ostr << ")";
@@ -137,7 +138,7 @@ void ASTDictionary::formatImpl(const FormatSettings & settings, FormatState & st
     {
         settings.nlOrWs();
         settings.writeKeyword("PRIMARY KEY ");
-        primary_key->formatImpl(settings, state, frame);
+        primary_key->formatImpl(settings);
     }
 
     if (source)

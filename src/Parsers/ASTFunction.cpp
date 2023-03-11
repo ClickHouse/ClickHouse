@@ -800,7 +800,7 @@ void ASTFunction::formatImplWithoutAlias(const FormattingBuffer & out) const
                     && (first_arg_func->arguments->children.size() == 1 || first_arg_func->arguments->children.empty()))
                 {
                     if (first_arg_func->arguments->children.size() == 1)
-                        first_arg_func->arguments->children[0]->formatImpl(out, state, nested_need_parens);
+                        first_arg_func->arguments->children[0]->formatImpl(out);
                     else
                         out.ostr << "()";
                 }

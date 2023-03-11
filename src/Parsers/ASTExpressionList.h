@@ -16,8 +16,8 @@ public:
     String getID(char) const override { return "ExpressionList"; }
 
     ASTPtr clone() const override;
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
-    void formatImplMultiline(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
+    void formatImpl(const FormattingBuffer & out) const override;
+    void formatImplMultiline(const FormattingBuffer & out) const;
 
     char separator;
 };

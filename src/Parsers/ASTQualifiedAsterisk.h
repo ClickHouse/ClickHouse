@@ -30,7 +30,7 @@ public:
     ASTPtr qualifier;
     ASTPtr transformers;
 protected:
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatImpl(const FormattingBuffer & out) const override;
 };
 
 }

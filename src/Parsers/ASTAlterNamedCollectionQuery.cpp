@@ -11,39 +11,39 @@ ASTPtr ASTAlterNamedCollectionQuery::clone() const
     return std::make_shared<ASTAlterNamedCollectionQuery>(*this);
 }
 
-void ASTAlterNamedCollectionQuery::formatImpl(const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
+void ASTAlterNamedCollectionQuery::formatImpl(const FormattingBuffer & out) const
 {
-    settings.writeKeyword("Alter NAMED COLLECTION ");
-    settings.writeProbablyBackQuotedIdentifier(collection_name);
-    formatOnCluster(settings);
+    out.writeKeyword("Alter NAMED COLLECTION ");
+    out.writeProbablyBackQuotedIdentifier(collection_name);
+    formatOnCluster(out);
     if (!changes.empty())
     {
-        settings.writeKeyword(" SET ");
+        out.writeKeyword(" SET ");
         bool first = true;
         for (const auto & change : changes)
         {
             if (!first)
-                settings.ostr << ", ";
+                out.ostr << ", ";
             else
                 first = false;
 
-            formatSettingName(change.name, settings.ostr);
-            settings.ostr << " = ";
-            settings.writeSecret(applyVisitor(FieldVisitorToString(), change.value));
+            formatSettingName(change.name, out.ostr);
+            out.ostr << " = ";
+            out.writeSecret(applyVisitor(FieldVisitorToString(), change.value));
         }
     }
     if (!delete_keys.empty())
     {
-        settings.writeKeyword(" DELETE ");
+        out.writeKeyword(" DELETE ");
         bool first = true;
         for (const auto & key : delete_keys)
         {
             if (!first)
-                settings.ostr << ", ";
+                out.ostr << ", ";
             else
                 first = false;
 
-            formatSettingName(key, settings.ostr);
+            formatSettingName(key, out.ostr);
         }
     }
 }

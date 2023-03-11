@@ -30,7 +30,7 @@ public:
     String getID(char delim) const override { return "DictionaryAttributeDeclaration" + (delim + name); }
 
     ASTPtr clone() const override;
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatImpl(const FormattingBuffer & out) const override;
 };
 
 }

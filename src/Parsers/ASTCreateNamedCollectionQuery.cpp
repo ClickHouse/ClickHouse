@@ -15,25 +15,25 @@ ASTPtr ASTCreateNamedCollectionQuery::clone() const
     return std::make_shared<ASTCreateNamedCollectionQuery>(*this);
 }
 
-void ASTCreateNamedCollectionQuery::formatImpl(const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
+void ASTCreateNamedCollectionQuery::formatImpl(const FormattingBuffer & out) const
 {
-    settings.writeKeyword("CREATE NAMED COLLECTION ");
-    settings.writeProbablyBackQuotedIdentifier(collection_name);
+    out.writeKeyword("CREATE NAMED COLLECTION ");
+    out.writeProbablyBackQuotedIdentifier(collection_name);
 
-    formatOnCluster(settings);
+    formatOnCluster(out);
 
-    settings.writeKeyword(" AS ");
+    out.writeKeyword(" AS ");
     bool first = true;
     for (const auto & change : changes)
     {
         if (!first)
-            settings.ostr << ", ";
+            out.ostr << ", ";
         else
             first = false;
 
-        formatSettingName(change.name, settings.ostr);
-        settings.ostr << " = ";
-        settings.writeSecret(applyVisitor(FieldVisitorToString(), change.value));
+        formatSettingName(change.name, out.ostr);
+        out.ostr << " = ";
+        out.writeSecret(applyVisitor(FieldVisitorToString(), change.value));
     }
 }
 

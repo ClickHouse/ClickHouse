@@ -58,7 +58,7 @@ struct ASTTableExpression : public IAST
     using IAST::IAST;
     String getID(char) const override { return "TableExpression"; }
     ASTPtr clone() const override;
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatImpl(const FormattingBuffer & out) const override;
     void updateTreeHashImpl(SipHash & hash_state) const override;
 };
 
@@ -78,9 +78,9 @@ struct ASTTableJoin : public IAST
     String getID(char) const override { return "TableJoin"; }
     ASTPtr clone() const override;
 
-    void formatImplBeforeTable(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
-    void formatImplAfterTable(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatImplBeforeTable(const FormattingBuffer & out) const;
+    void formatImplAfterTable(const FormattingBuffer & out) const;
+    void formatImpl(const FormattingBuffer & settings) const override;
     void updateTreeHashImpl(SipHash & hash_state) const override;
 };
 
@@ -101,7 +101,7 @@ struct ASTArrayJoin : public IAST
     using IAST::IAST;
     String getID(char) const override { return "ArrayJoin"; }
     ASTPtr clone() const override;
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatImpl(const FormattingBuffer & out) const override;
     void updateTreeHashImpl(SipHash & hash_state) const override;
 };
 
@@ -119,7 +119,7 @@ struct ASTTablesInSelectQueryElement : public IAST
     using IAST::IAST;
     String getID(char) const override { return "TablesInSelectQueryElement"; }
     ASTPtr clone() const override;
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatImpl(const FormattingBuffer & out) const override;
 };
 
 
@@ -129,7 +129,7 @@ struct ASTTablesInSelectQuery : public IAST
     using IAST::IAST;
     String getID(char) const override { return "TablesInSelectQuery"; }
     ASTPtr clone() const override;
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatImpl(const FormattingBuffer & out) const override;
 };
 
 }

@@ -277,13 +277,23 @@ public:
 
         FormattingBuffer copyWithIndent(int indent) const;
 
-        FormattingBuffer copy(bool increase_indent, bool need_parens) const;  // TODO: impl
+        FormattingBuffer copy(bool increase_indent, bool need_parens) const;
+
+        FormattingBuffer copy(bool increase_indent,
+                              bool surround_each_list_element_with_parens,
+                              bool expression_list_prepend_whitespace) const;  // TODO: impl
+
+        FormattingBuffer copyWithoutExpressionListPrependWhitespace() const;
 
         bool needsParens() const;  // TODO: impl
 
-        void setNeedsParens(bool needs_parens) const;  // TODO: impl
+        void setNeedsParens(bool value) const;  // TODO: impl
 
-        int writeIndent() const;
+        void setExpressionListPrependWhitespace(bool value = true) const;  // TOOD: impl
+
+        void setCurrentSelect(const IAST *) const;  // TODO: impl
+
+        void writeIndent(bool add_extra_indent = false) const;
 
         bool insertAlias(std::string alias, Hash printed_content) const;
 
@@ -322,7 +332,7 @@ public:
     }
 
     // keeping the state
-    virtual void formatImpl(const FormattingBuffer & out) const
+    virtual void formatImpl(const FormattingBuffer & /*out*/) const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown element in AST: {}", getID());
     }

@@ -38,22 +38,20 @@ public:
     }
 
 protected:
-    void formatQueryImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override
+    void formatQueryImpl(const FormattingBuffer & out) const override
     {
-        std::string indent_str = s.isOneLine() ? "" : std::string(4 * frame.indent, ' ');
-
-        s.writeKeyword("WATCH ");
-        s.ostr << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
+        out.writeKeyword("WATCH ");
+        out.ostr << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
 
         if (is_watch_events)
-            s.writeKeyword(" EVENTS");
+            out.writeKeyword(" EVENTS");
 
         if (limit_length)
         {
-            s.nlOrWs();
-            s.ostr << indent_str;
-            s.writeKeyword("LIMIT ");
-            limit_length->formatImpl(s, state, frame);
+            out.nlOrWs();
+            out.writeIndent();
+            out.writeKeyword("LIMIT ");
+            limit_length->formatImpl(out);
         }
     }
 };

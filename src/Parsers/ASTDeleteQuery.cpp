@@ -30,19 +30,19 @@ ASTPtr ASTDeleteQuery::clone() const
     return res;
 }
 
-void ASTDeleteQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTDeleteQuery::formatQueryImpl(const FormattingBuffer & out) const
 {
-    settings.writeKeyword("DELETE FROM ");
+    out.writeKeyword("DELETE FROM ");
 
     if (database)
     {
-        settings.ostr << backQuoteIfNeed(getDatabase());
-        settings.ostr << ".";
+        out.ostr << backQuoteIfNeed(getDatabase());
+        out.ostr << ".";
     }
-    settings.ostr << backQuoteIfNeed(getTable());
+    out.ostr << backQuoteIfNeed(getTable());
 
-    settings.writeKeyword(" WHERE ");
-    predicate->formatImpl(settings, state, frame);
+    out.writeKeyword(" WHERE ");
+    predicate->formatImpl(out);
 }
 
 }

@@ -370,9 +370,9 @@ bool IAST::FormattingBuffer::shouldShowSecrets() const
     return settings.show_secrets;
 }
 
-int IAST::FormattingBuffer::writeIndent() const
+void IAST::FormattingBuffer::writeIndent(bool add_extra_indent) const
 {
-    std::string indent_str = settings.one_line ? "" : std::string(4 * stacked_state->indent, ' ');
+    std::string indent_str = settings.one_line ? "" : std::string(4 * stacked_state->indent + add_extra_indent, ' ');
     ostr << indent_str;
 }
 

@@ -23,25 +23,25 @@ ASTPtr ASTIndexDeclaration::clone() const
 }
 
 
-void ASTIndexDeclaration::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
+void ASTIndexDeclaration::formatImpl(const FormattingBuffer & out) const
 {
     if (part_of_create_index_query)
     {
-        s.ostr << "(";
-        expr->formatImpl(s, state, frame);
-        s.ostr << ")";
+        out.ostr << "(";
+        expr->formatImpl(out);
+        out.ostr << ")";
     }
     else
     {
-        s.ostr << backQuoteIfNeed(name);
-        s.ostr << " ";
-        expr->formatImpl(s, state, frame);
+        out.ostr << backQuoteIfNeed(name);
+        out.ostr << " ";
+        expr->formatImpl(out);
     }
 
-    s.writeKeyword(" TYPE ");
-    type->formatImpl(s, state, frame);
-    s.writeKeyword(" GRANULARITY ");
-    s.ostr << granularity;
+    out.writeKeyword(" TYPE ");
+    type->formatImpl(out);
+    out.writeKeyword(" GRANULARITY ");
+    out.ostr << granularity;
 }
 
 }

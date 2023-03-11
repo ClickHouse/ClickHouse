@@ -30,50 +30,50 @@ ASTPtr ASTTTLElement::clone() const
     return clone;
 }
 
-void ASTTTLElement::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTTTLElement::formatImpl(const FormattingBuffer & out) const
 {
-    ttl()->formatImpl(settings, state, frame);
+    ttl()->formatImpl(out);
     if (mode == TTLMode::MOVE)
     {
         if (destination_type == DataDestinationType::DISK)
-            settings.ostr << " TO DISK ";
+            out.ostr << " TO DISK ";
         else if (destination_type == DataDestinationType::VOLUME)
-            settings.ostr << " TO VOLUME ";
+            out.ostr << " TO VOLUME ";
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Unsupported destination type {} for TTL MOVE",
                     magic_enum::enum_name(destination_type));
 
         if (if_exists)
-            settings.ostr << "IF EXISTS ";
+            out.ostr << "IF EXISTS ";
 
-        settings.ostr << quoteString(destination_name);
+        out.ostr << quoteString(destination_name);
     }
     else if (mode == TTLMode::GROUP_BY)
     {
-        settings.ostr << " GROUP BY ";
+        out.ostr << " GROUP BY ";
         for (const auto * it = group_by_key.begin(); it != group_by_key.end(); ++it)
         {
             if (it != group_by_key.begin())
-                settings.ostr << ", ";
-            (*it)->formatImpl(settings, state, frame);
+                out.ostr << ", ";
+            (*it)->formatImpl(out);
         }
 
         if (!group_by_assignments.empty())
         {
-            settings.ostr << " SET ";
+            out.ostr << " SET ";
             for (const auto * it = group_by_assignments.begin(); it != group_by_assignments.end(); ++it)
             {
                 if (it != group_by_assignments.begin())
-                    settings.ostr << ", ";
-                (*it)->formatImpl(settings, state, frame);
+                    out.ostr << ", ";
+                (*it)->formatImpl(out);
             }
         }
     }
     else if (mode == TTLMode::RECOMPRESS)
     {
-        settings.ostr << " RECOMPRESS ";
-        recompression_codec->formatImpl(settings, state, frame);
+        out.ostr << " RECOMPRESS ";
+        recompression_codec->formatImpl(out);
     }
     else if (mode == TTLMode::DELETE)
     {
@@ -82,8 +82,8 @@ void ASTTTLElement::formatImpl(const FormatSettings & settings, FormatState & st
 
     if (where())
     {
-        settings.ostr << " WHERE ";
-        where()->formatImpl(settings, state, frame);
+        out.ostr << " WHERE ";
+        where()->formatImpl(out);
     }
 }
 
