@@ -417,9 +417,7 @@ MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForRead
             break;
         }
 
-        /// We treat any error as timeout for simplicity.
-        /// And we also check if read_list is still empty just in case.
-        if (n <= 0 || read_list.empty())
+        if (n == 0)
         {
             const auto & addresses = dumpAddressesUnlocked();
             for (ReplicaState & state : replica_states)
@@ -438,7 +436,9 @@ MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForRead
         }
     }
 
-    /// TODO Motivation of rand is unclear.
+    /// TODO Absolutely wrong code: read_list could be empty; motivation of rand is unclear.
+    /// This code path is disabled by default.
+
     auto & socket = read_list[thread_local_rng() % read_list.size()];
     if (fd_to_replica_state_idx.empty())
     {
