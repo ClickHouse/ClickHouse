@@ -88,7 +88,7 @@ void IDataType::forEachSubcolumn(
             if (!subpath[i].visited && ISerialization::hasSubcolumnForPath(subpath, prefix_len))
             {
                 auto name = ISerialization::getSubcolumnNameForStream(subpath, prefix_len);
-                auto subdata = ISerialization::createFromPath(subpath, prefix_len);
+                auto subdata = ISerialization::createFromPath(subpath, name, prefix_len);
                 callback(subpath, name, subdata);
             }
             subpath[i].visited = true;

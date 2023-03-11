@@ -192,19 +192,16 @@ namespace
     }
 }
 
-DataTypePtr SerializationArray::SubcolumnCreator::create(const DataTypePtr & prev) const
+void SerializationArray::SubcolumnCreator::create(SubstreamData & data, const String &) const
 {
-    return std::make_shared<DataTypeArray>(prev);
-}
+    if (data.serialization)
+        data.serialization = std::make_shared<SerializationArray>(data.serialization);
 
-SerializationPtr SerializationArray::SubcolumnCreator::create(const SerializationPtr & prev) const
-{
-    return std::make_shared<SerializationArray>(prev);
-}
+    if (data.type)
+        data.type = std::make_shared<DataTypeArray>(data.type);
 
-ColumnPtr SerializationArray::SubcolumnCreator::create(const ColumnPtr & prev) const
-{
-    return ColumnArray::create(prev, offsets);
+    if (data.column)
+        data.column = ColumnArray::create(data.column, offsets);
 }
 
 void SerializationArray::enumerateStreams(

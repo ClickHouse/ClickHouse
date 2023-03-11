@@ -98,10 +98,7 @@ private:
         const ColumnPtr null_map;
 
         explicit SubcolumnCreator(const ColumnPtr & null_map_) : null_map(null_map_) {}
-
-        DataTypePtr create(const DataTypePtr & prev) const override;
-        SerializationPtr create(const SerializationPtr & prev) const override;
-        ColumnPtr create(const ColumnPtr & prev) const override;
+        void create(SubstreamData & data, const String & name) const override;
     };
 };
 

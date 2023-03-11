@@ -1,6 +1,7 @@
 #include <DataTypes/Serializations/SerializationMap.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
+#include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/DataTypeMap.h>
 
 #include <Common/StringUtils/StringUtils.h>
@@ -457,9 +458,19 @@ static std::vector<ColumnPtr> scatterToShards(const IColumn & column, size_t num
     return shards;
 }
 
-SerializationPtr SerializationMap::SubcolumnCreator::create(const SerializationPtr & prev) const
+void SerializationMap::SubcolumnCreator::create(SubstreamData & data, const String & name) const
 {
-    return std::make_shared<SerializationNamed>(prev, shard_name, false);
+    if (data.serialization)
+    {
+        if (!shard_name.empty() && name.starts_with(shard_name))
+            data.serialization = std::make_shared<SerializationNamed>(data.serialization, shard_name, false);
+        else if (name == "keys" || name == "values")
+            data.serialization = std::make_shared<SerializationMapKeysValues>(data.serialization, num_shards);
+        else if (name == "size0")
+            data.serialization = std::make_shared<SerializationMapSize>(num_shards);
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected subcolumn {} in type Map", name);
+    }
 }
 
 void SerializationMap::enumerateStreams(
@@ -467,17 +478,27 @@ void SerializationMap::enumerateStreams(
     const StreamCallback & callback,
     const SubstreamData & data) const
 {
-    if (num_shards == 1 || !settings.position_independent_encoding)
-    {
-        auto next_data = SubstreamData(nested)
-            .withType(data.type ? assert_cast<const DataTypeMap &>(*data.type).getNestedType() : nullptr)
-            .withColumn(data.column ? assert_cast<const ColumnMap &>(*data.column).getNestedColumnPtr() : nullptr)
-            .withSerializationInfo(data.serialization_info);
+    auto next_data = SubstreamData(nested)
+        .withType(data.type ? assert_cast<const DataTypeMap &>(*data.type).getNestedType() : nullptr)
+        .withColumn(data.column ? assert_cast<const ColumnMap &>(*data.column).getNestedColumnPtr() : nullptr)
+        .withSerializationInfo(data.serialization_info);
 
+    if (num_shards == 1)
+    {
         nested->enumerateStreams(settings, callback, next_data);
+        return;
     }
 
-    if (num_shards > 1 && settings.type_map_enumerate_shards)
+    if (!settings.position_independent_encoding)
+    {
+        settings.path.push_back(ISerialization::Substream::Regular);
+        settings.path.back().creator = std::make_shared<SubcolumnCreator>("", num_shards);
+
+        nested->enumerateStreams(settings, callback, next_data);
+        settings.path.pop_back();
+    }
+
+    if (settings.type_map_enumerate_shards)
     {
         auto shard_serialization = std::make_shared<SerializationMap>(key, value, nested, 1);
 
@@ -488,10 +509,6 @@ void SerializationMap::enumerateStreams(
         std::vector<ColumnPtr> shard_columns;
         if (data.column)
             shard_columns = scatterToShards(*data.column, num_shards);
-
-        auto next_data = SubstreamData(nested)
-            .withType(data.type ? assert_cast<const DataTypeMap &>(*data.type).getNestedType() : nullptr)
-            .withSerializationInfo(data.serialization_info);
 
         settings.path.push_back(ISerialization::Substream::MapShard);
         for (size_t i = 0; i < num_shards; ++i)
@@ -510,7 +527,7 @@ void SerializationMap::enumerateStreams(
             if (data.column)
                 next_data.withColumn(shard_columns[i]);
 
-            settings.path.back().creator = std::make_shared<SubcolumnCreator>(shard_name);
+            settings.path.back().creator = std::make_shared<SubcolumnCreator>(shard_name, num_shards);
             nested->enumerateStreams(settings, callback, next_data);
         }
         settings.path.pop_back();
@@ -530,10 +547,8 @@ struct DeserializeBinaryBulkStateMap : public ISerialization::DeserializeBinaryB
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> states;
 };
 
-}
-
 template <typename Settings, Fn<void(size_t)> Func>
-void SerializationMap::applyForShards(Settings & settings, Func && func) const
+void applyForShards(size_t num_shards, Settings & settings, Func && func)
 {
     settings.path.push_back(ISerialization::Substream::MapShard);
     for (size_t i = 0; i < num_shards; ++i)
@@ -542,6 +557,8 @@ void SerializationMap::applyForShards(Settings & settings, Func && func) const
         func(i);
     }
     settings.path.pop_back();
+}
+
 }
 
 void SerializationMap::serializeBinaryBulkStatePrefix(
@@ -558,7 +575,7 @@ void SerializationMap::serializeBinaryBulkStatePrefix(
     auto map_state = std::make_shared<SerializeBinaryBulkStateMap>();
     map_state->states.resize(num_shards);
 
-    applyForShards(settings, [&](size_t i)
+    applyForShards(num_shards, settings, [&](size_t i)
     {
         nested->serializeBinaryBulkStatePrefix(extractNestedColumn(column), settings, map_state->states[i]);
     });
@@ -577,7 +594,7 @@ void SerializationMap::serializeBinaryBulkStateSuffix(
     }
 
     auto * map_state = checkAndGetState<SerializeBinaryBulkStateMap>(state);
-    applyForShards(settings, [&](size_t i)
+    applyForShards(num_shards, settings, [&](size_t i)
     {
         nested->serializeBinaryBulkStateSuffix(settings, map_state->states[i]);
     });
@@ -596,7 +613,7 @@ void SerializationMap::deserializeBinaryBulkStatePrefix(
     auto map_state = std::make_shared<DeserializeBinaryBulkStateMap>();
     map_state->states.resize(num_shards);
 
-    applyForShards(settings, [&](size_t i)
+    applyForShards(num_shards, settings, [&](size_t i)
     {
         nested->deserializeBinaryBulkStatePrefix(settings, map_state->states[i]);
     });
@@ -620,7 +637,7 @@ void SerializationMap::serializeBinaryBulkWithMultipleStreams(
     auto shards = scatterToShards(column, num_shards);
     auto * map_state = checkAndGetState<SerializeBinaryBulkStateMap>(state);
 
-    applyForShards(settings, [&](size_t i)
+    applyForShards(num_shards, settings, [&](size_t i)
     {
         nested->serializeBinaryBulkWithMultipleStreams(*shards[i], offset, limit, settings, map_state->states[i]);
     });
@@ -649,7 +666,7 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
 
     auto * map_state = checkAndGetState<DeserializeBinaryBulkStateMap>(state);
 
-    applyForShards(settings, [&](size_t i)
+    applyForShards(num_shards, settings, [&](size_t i)
     {
         ColumnPtr shard_column = column_nested.cloneEmpty();
         nested->deserializeBinaryBulkWithMultipleStreams(shard_column, limit, settings, map_state->states[i], cache);
@@ -688,6 +705,148 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
         keys_array.getOffsetsPtr());
 
     column_nested.insertRangeFrom(*res_array, 0, res_array->size());
+}
+
+static void assertSettingsNotPositionIndependent(const ISerialization::SerializeBinaryBulkSettings & settings)
+{
+    if (settings.position_independent_encoding)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "SerializationMapSubcolumn does not support serialization with position independent encoding");
+}
+
+SerializationMapSubcolumn::SerializationMapSubcolumn(SerializationPtr nested_, size_t num_shards_)
+    : SerializationWrapper(std::move(nested_)), num_shards(num_shards_)
+{
+}
+
+void SerializationMapSubcolumn::enumerateStreams(
+    EnumerateStreamsSettings & settings,
+    const StreamCallback & callback,
+    const SubstreamData & data) const
+{
+    applyForShards(num_shards, settings, [&](size_t)
+    {
+         nested_serialization->enumerateStreams(settings, callback, data);
+    });
+}
+
+void SerializationMapSubcolumn::serializeBinaryBulkStatePrefix(
+    const IColumn & column,
+    SerializeBinaryBulkSettings & settings,
+    SerializeBinaryBulkStatePtr & state) const
+{
+    assertSettingsNotPositionIndependent(settings);
+    nested_serialization->serializeBinaryBulkStatePrefix(column, settings, state);
+}
+
+void SerializationMapSubcolumn::serializeBinaryBulkWithMultipleStreams(
+    const IColumn & column,
+    size_t offset,
+    size_t limit,
+    SerializeBinaryBulkSettings & settings,
+    SerializeBinaryBulkStatePtr & state) const
+{
+    assertSettingsNotPositionIndependent(settings);
+    nested_serialization->serializeBinaryBulkWithMultipleStreams(column, offset, limit, settings, state);
+}
+
+
+void SerializationMapSubcolumn::serializeBinaryBulkStateSuffix(
+    SerializeBinaryBulkSettings & settings,
+    SerializeBinaryBulkStatePtr & state) const
+{
+    assertSettingsNotPositionIndependent(settings);
+    nested_serialization->serializeBinaryBulkStateSuffix(settings, state);
+}
+
+void SerializationMapSubcolumn::deserializeBinaryBulkStatePrefix(
+    DeserializeBinaryBulkSettings & settings,
+    DeserializeBinaryBulkStatePtr & state) const
+{
+    auto map_state = std::make_shared<DeserializeBinaryBulkStateMap>();
+    map_state->states.resize(num_shards);
+
+    applyForShards(num_shards, settings, [&](size_t i)
+    {
+        nested_serialization->deserializeBinaryBulkStatePrefix(settings, map_state->states[i]);
+    });
+
+    state = std::move(map_state);
+}
+
+SerializationMapKeysValues::SerializationMapKeysValues(SerializationPtr nested_, size_t num_shards_)
+    : SerializationMapSubcolumn(std::move(nested_), num_shards_)
+{
+}
+
+void SerializationMapKeysValues::deserializeBinaryBulkWithMultipleStreams(
+    ColumnPtr & column,
+    size_t limit,
+    DeserializeBinaryBulkSettings & settings,
+    DeserializeBinaryBulkStatePtr & state,
+    SubstreamsCache * cache) const
+{
+    std::vector<ColumnPtr> shards(num_shards);
+    auto * map_state = checkAndGetState<DeserializeBinaryBulkStateMap>(state);
+
+    applyForShards(num_shards, settings, [&](size_t i)
+    {
+        shards[i] = column->cloneEmpty();
+        nested_serialization->deserializeBinaryBulkWithMultipleStreams(shards[i], limit, settings, map_state->states[i], cache);
+    });
+
+    std::vector<std::unique_ptr<GatherUtils::IArraySource>> sources(num_shards);
+
+    for (size_t i = 0; i < num_shards; ++i)
+    {
+        const auto & shard_array = assert_cast<const ColumnArray &>(*shards[i]);
+        sources[i] = GatherUtils::createArraySource(shard_array, false, shard_array.size());
+    }
+
+    auto res = GatherUtils::concat(sources);
+    column->assumeMutableRef().insertRangeFrom(*res, 0, res->size());
+}
+
+SerializationMapSize::SerializationMapSize(size_t num_shards_)
+    : SerializationMapSubcolumn(
+        std::make_shared<SerializationNamed>(
+            std::make_shared<SerializationNumber<UInt64>>(), "size0", false), num_shards_)
+{
+}
+
+void SerializationMapSize::deserializeBinaryBulkWithMultipleStreams(
+    ColumnPtr & column,
+    size_t limit,
+    DeserializeBinaryBulkSettings & settings,
+    DeserializeBinaryBulkStatePtr & state,
+    SubstreamsCache * cache) const
+{
+    auto * map_state = checkAndGetState<DeserializeBinaryBulkStateMap>(state);
+
+    auto mutable_column = column->assumeMutable();
+    auto & result_vector = assert_cast<ColumnUInt64 &>(*mutable_column).getData();
+    size_t old_size = result_vector.size();
+
+    applyForShards(num_shards, settings, [&](size_t i)
+    {
+        ColumnPtr shard = column->cloneEmpty();
+        nested_serialization->deserializeBinaryBulkWithMultipleStreams(shard, limit, settings, map_state->states[i], cache);
+        auto & shard_vector = assert_cast<ColumnUInt64 &>(shard->assumeMutableRef()).getData();
+
+        if (i == 0)
+        {
+            result_vector.reserve(old_size + shard_vector.size());
+            result_vector.insert_assume_reserved(shard_vector.begin(), shard_vector.end());
+        }
+        else
+        {
+            assert(old_size + shard_vector.size() == result_vector.size());
+            for (size_t j = 0; j < shard_vector.size(); ++j)
+                result_vector[old_size + j] += shard_vector[j];
+        }
+    });
+
+    column = std::move(mutable_column);
 }
 
 }

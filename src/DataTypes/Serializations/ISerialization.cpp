@@ -288,7 +288,7 @@ bool ISerialization::hasSubcolumnForPath(const SubstreamPath & path, size_t pref
             || path[last_elem].type == Substream::MapShard;
 }
 
-ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath & path, size_t prefix_len)
+ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath & path, const String & name,size_t prefix_len)
 {
     assert(prefix_len <= path.size());
     if (prefix_len == 0)
@@ -298,13 +298,8 @@ ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath
     auto res = path[last_elem].data;
     for (ssize_t i = last_elem - 1; i >= 0; --i)
     {
-        const auto & creator = path[i].creator;
-        if (creator)
-        {
-            res.type = res.type ? creator->create(res.type) : res.type;
-            res.serialization = res.serialization ? creator->create(res.serialization) : res.serialization;
-            res.column = res.column ? creator->create(res.column) : res.column;
-        }
+        if (path[i].creator)
+            path[i].creator->create(res, name);
     }
 
     return res;

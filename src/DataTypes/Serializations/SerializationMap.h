@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DataTypes/Serializations/SerializationWrapper.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 #include <base/FnTraits.h>
 
@@ -73,11 +74,14 @@ private:
     struct SubcolumnCreator : public ISubcolumnCreator
     {
         const String shard_name;
-        explicit SubcolumnCreator(const String & shard_name_) : shard_name(shard_name_) {}
+        const size_t num_shards;
 
-        DataTypePtr create(const DataTypePtr & prev) const override { return prev; }
-        ColumnPtr create(const ColumnPtr & prev) const override { return prev; }
-        SerializationPtr create(const SerializationPtr & prev) const override;
+        SubcolumnCreator(const String & shard_name_, size_t num_shards_)
+            :  shard_name(shard_name_), num_shards(num_shards_)
+        {
+        }
+
+        void create(SubstreamData & data, const String & name) const override;
     };
 
     template <typename KeyWriter, typename ValueWriter>
@@ -85,10 +89,66 @@ private:
 
     template <typename Reader>
     void deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reader && reader) const;
+};
 
-    template <typename Settings, Fn<void(size_t)> Func>
-    void applyForShards(Settings & settings, Func && func) const;
+class SerializationMapSubcolumn : public SerializationWrapper
+{
+protected:
+    const size_t num_shards;
+
+public:
+    SerializationMapSubcolumn(SerializationPtr nested_, size_t num_shards_);
+
+    void enumerateStreams(
+        EnumerateStreamsSettings & settings,
+        const StreamCallback & callback,
+        const SubstreamData & data) const override;
+
+    void serializeBinaryBulkStatePrefix(
+        const IColumn & column,
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStatePtr & state) const override;
+
+    void serializeBinaryBulkStateSuffix(
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStatePtr & state) const override;
+
+    void deserializeBinaryBulkStatePrefix(
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & state) const override;
+
+    void serializeBinaryBulkWithMultipleStreams(
+        const IColumn & column,
+        size_t offset,
+        size_t limit,
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStatePtr & state) const override;
+};
+
+class SerializationMapKeysValues : public SerializationMapSubcolumn
+{
+public:
+    SerializationMapKeysValues(SerializationPtr nested_, size_t num_shards_);
+
+    void deserializeBinaryBulkWithMultipleStreams(
+        ColumnPtr & column,
+        size_t limit,
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & state,
+        SubstreamsCache * cache) const override;
+};
+
+class SerializationMapSize : public SerializationMapSubcolumn
+{
+public:
+    explicit SerializationMapSize(size_t num_shards_);
+
+    void deserializeBinaryBulkWithMultipleStreams(
+        ColumnPtr & column,
+        size_t limit,
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & state,
+        SubstreamsCache * cache) const override;
 };
 
 }
-

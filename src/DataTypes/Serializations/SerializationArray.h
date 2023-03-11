@@ -73,10 +73,7 @@ private:
         const ColumnPtr offsets;
 
         explicit SubcolumnCreator(const ColumnPtr & offsets_) : offsets(offsets_) {}
-
-        DataTypePtr create(const DataTypePtr & prev) const override;
-        SerializationPtr create(const SerializationPtr & prev) const override;
-        ColumnPtr create(const ColumnPtr & prev) const override;
+        void create(SubstreamData & prev_data, const String & name) const override;
     };
 };
 

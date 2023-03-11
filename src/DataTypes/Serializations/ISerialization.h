@@ -89,16 +89,6 @@ public:
       * Default implementations of ...WithMultipleStreams methods will call serializeBinaryBulk, deserializeBinaryBulk for single stream.
       */
 
-    struct ISubcolumnCreator
-    {
-        virtual DataTypePtr create(const DataTypePtr & prev) const = 0;
-        virtual SerializationPtr create(const SerializationPtr & prev) const = 0;
-        virtual ColumnPtr create(const ColumnPtr & prev) const = 0;
-        virtual ~ISubcolumnCreator() = default;
-    };
-
-    using SubcolumnCreatorPtr = std::shared_ptr<const ISubcolumnCreator>;
-
     struct SubstreamData
     {
         SubstreamData() = default;
@@ -130,6 +120,14 @@ public:
         ColumnPtr column;
         SerializationInfoPtr serialization_info;
     };
+
+    struct ISubcolumnCreator
+    {
+        virtual void create(SubstreamData & data, const String & name) const = 0;
+        virtual ~ISubcolumnCreator() = default;
+    };
+
+    using SubcolumnCreatorPtr = std::shared_ptr<const ISubcolumnCreator>;
 
     struct Substream
     {
@@ -378,7 +376,7 @@ public:
 
     static size_t getArrayLevel(const SubstreamPath & path);
     static bool hasSubcolumnForPath(const SubstreamPath & path, size_t prefix_len);
-    static SubstreamData createFromPath(const SubstreamPath & path, size_t prefix_len);
+    static SubstreamData createFromPath(const SubstreamPath & path, const String & name, size_t prefix_len);
 
 protected:
     template <typename State, typename StatePtr>

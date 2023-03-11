@@ -22,19 +22,16 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
 }
 
-DataTypePtr SerializationNullable::SubcolumnCreator::create(const DataTypePtr & prev) const
+void SerializationNullable::SubcolumnCreator::create(SubstreamData & data, const String &) const
 {
-    return std::make_shared<DataTypeNullable>(prev);
-}
+    if (data.serialization)
+        data.serialization = std::make_shared<SerializationNullable>(data.serialization);
 
-SerializationPtr SerializationNullable::SubcolumnCreator::create(const SerializationPtr & prev) const
-{
-    return std::make_shared<SerializationNullable>(prev);
-}
+    if (data.type)
+        data.type = std::make_shared<DataTypeNullable>(data.type);
 
-ColumnPtr SerializationNullable::SubcolumnCreator::create(const ColumnPtr & prev) const
-{
-    return ColumnNullable::create(prev, null_map);
+    if (data.column)
+        data.column = ColumnNullable::create(data.column, null_map);
 }
 
 void SerializationNullable::enumerateStreams(
