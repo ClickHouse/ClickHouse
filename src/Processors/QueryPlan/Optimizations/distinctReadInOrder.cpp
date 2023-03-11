@@ -54,6 +54,26 @@ static const ActionsDAG::Node * getOriginalNodeForOutputAlias(const ActionsDAGPt
     return node;
 }
 
+static std::set<std::string>
+getOriginalDistinctColumns(const ColumnsWithTypeAndName & distinct_columns, std::vector<ActionsDAGPtr> & dag_stack)
+{
+    auto actions = buildActionsForPlanPath(dag_stack);
+    std::set<std::string> original_distinct_columns;
+    for (const auto & column : distinct_columns)
+    {
+        /// const columns doesn't affect DISTINCT, so skip them
+        if (isColumnConst(*column.column))
+            continue;
+
+        const auto * input_node = getOriginalNodeForOutputAlias(actions, column.name);
+        if (!input_node)
+            break;
+
+        original_distinct_columns.insert(input_node->result_name);
+    }
+    return original_distinct_columns;
+}
+
 size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node)
 {
     /// check if it is preliminary distinct node
@@ -69,6 +89,7 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node)
     /// walk through the plan
     /// (1) check if nodes below preliminary distinct preserve sorting
     /// (2) gather transforming steps to update their sorting properties later
+    /// (3) gather actions DAG to find original names for columns in distinct step later
     std::vector<ITransformingStep *> steps_to_update;
     QueryPlan::Node * node = parent_node;
     std::vector<ActionsDAGPtr> dag_stack;
@@ -103,28 +124,16 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node)
     if (read_from_merge_tree->getOutputStream().sort_description.empty())
         return 0;
 
-    /// find original non-const columns in DISTINCT
-    auto actions = buildActionsForPlanPath(dag_stack);
+    /// get original names for DISTINCT columns
     const ColumnsWithTypeAndName & distinct_columns = pre_distinct->getOutputStream().header.getColumnsWithTypeAndName();
-    std::set<std::string_view> original_distinct_columns;
-    for (const auto & column : distinct_columns)
-    {
-        if (isColumnConst(*column.column))
-            continue;
+    auto original_distinct_columns = getOriginalDistinctColumns(distinct_columns, dag_stack);
 
-        const auto * input_node =  getOriginalNodeForOutputAlias(actions, column.name);
-        if (!input_node)
-            break;
-
-        original_distinct_columns.insert(input_node->result_name);
-    }
-
-    const Names& sorting_key_columns = read_from_merge_tree->getStorageMetadata()->getSortingKeyColumns();
     /// check if DISTINCT has the same columns as sorting key
+    const Names & sorting_key_columns = read_from_merge_tree->getStorageMetadata()->getSortingKeyColumns();
     size_t number_of_sorted_distinct_columns = 0;
     for (const auto & column_name : sorting_key_columns)
     {
-        if (original_distinct_columns.end() == original_distinct_columns.find(column_name))
+        if (!original_distinct_columns.contains(column_name))
             break;
 
         ++number_of_sorted_distinct_columns;
