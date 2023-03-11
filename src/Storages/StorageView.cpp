@@ -36,6 +36,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+
 namespace
 {
 
@@ -118,7 +119,7 @@ StorageView::StorageView(
 
     description.inner_query = query.select->ptr();
     is_parameterized_view = query.isParameterizedView();
-    parameter_types = analyzeReceiveQueryParamsWithType(description.inner_query);
+    view_parameter_types = analyzeReceiveQueryParamsWithType(description.inner_query);
     storage_metadata.setSelectQuery(description);
     setInMemoryMetadata(storage_metadata);
 }
@@ -167,7 +168,7 @@ void StorageView::read(
     query_plan.addStep(std::move(materializing));
 
     /// And also convert to expected structure.
-    const auto & expected_header = storage_snapshot->getSampleBlockForColumns(column_names,parameter_values);
+    const auto & expected_header = storage_snapshot->getSampleBlockForColumns(column_names,query_info.parameter_values);
     const auto & header = query_plan.getCurrentDataStream().header;
 
     const auto * select_with_union = current_inner_query->as<ASTSelectWithUnionQuery>();
@@ -203,7 +204,7 @@ static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select_quer
     return select_element->table_expression->as<ASTTableExpression>();
 }
 
-void StorageView::replaceQueryParametersIfParametrizedView(ASTPtr & outer_query)
+void StorageView::replaceQueryParametersIfParametrizedView(ASTPtr & outer_query, const NameToNameMap & parameter_values)
 {
     ReplaceQueryParameterVisitor visitor(parameter_values);
     visitor.visit(outer_query);
@@ -261,7 +262,8 @@ String StorageView::replaceQueryParameterWithValue(const String & column_name, c
         if ((pos = name.find(parameter.first)) != std::string::npos)
         {
             auto parameter_datatype_iterator = parameter_types.find(parameter.first);
-            if (parameter_datatype_iterator != parameter_types.end())
+            size_t parameter_end = pos+parameter.first.size();
+            if (parameter_datatype_iterator != parameter_types.end() && name.size() >= parameter_end && (name[parameter_end]==',' || name[parameter_end]==')'))
             {
                 String parameter_name("_CAST(" + parameter.second + ", '" + parameter_datatype_iterator->second + "')");
                 name.replace(pos, parameter.first.size(), parameter_name);
