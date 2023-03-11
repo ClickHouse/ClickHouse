@@ -13,18 +13,18 @@ QueryPipelineBuilderPtr ISourceStep::updatePipeline(QueryPipelineBuilders, const
 {
     auto pipeline = std::make_unique<QueryPipelineBuilder>();
 
-    /// Why we need initializePipeline first: since it's not add
-    /// new Processors to `pipeline->pipe`, but make an assign
-    /// with new created Pipe. And Processors for the Step is added here.
+    /// For `Source` step, since it's not add new Processors to `pipeline->pipe`
+    /// in `initializePipeline`, but make an assign with new created Pipe.
+    /// And Processors for the Step is added here. So we do not need to use
+    /// `QueryPipelineProcessorsCollector` to collect Processors.
     initializePipeline(*pipeline, settings);
 
-    QueryPipelineProcessorsCollector collector(*pipeline, this);
-
-    /// Properly collecting processors from Pipe.
-    /// At the creation time of a Pipe, since `collected_processors` is nullptr,
-    /// the processors can not be collected.
-    pipeline->collectProcessors();
-    collector.detachProcessors();
+    /// But we need to set QueryPlanStep manually for the Processors, which
+    /// will be used in `EXPLAIN PIPELINE`
+    for (auto & processor : processors)
+    {
+        processor->setQueryPlanStep(this);
+    }
     return pipeline;
 }
 
