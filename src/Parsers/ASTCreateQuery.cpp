@@ -448,11 +448,4 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
     }
 }
 
-bool ASTCreateQuery::isParameterizedView() const
-{
-    if (is_ordinary_view && select && select->hasQueryParameters())
-        return true;
-    return false;
-}
-
 }

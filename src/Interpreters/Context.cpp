@@ -108,9 +108,6 @@
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <filesystem>
 #include <re2/re2.h>
-#include <Storages/StorageView.h>
-#include <Parsers/ASTFunction.h>
-#include <base/find_symbols.h>
 
 #include <Interpreters/Cache/FileCache.h>
 
@@ -156,7 +153,6 @@ namespace ErrorCodes
     extern const int INVALID_SETTING_VALUE;
     extern const int UNKNOWN_READ_METHOD;
     extern const int NOT_IMPLEMENTED;
-    extern const int UNKNOWN_FUNCTION;
 }
 
 
@@ -1341,49 +1337,14 @@ void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String
 
 StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const ASTSelectQuery * select_query_hint)
 {
-    ASTFunction * function = assert_cast<ASTFunction *>(table_expression.get());
-    String database_name = getCurrentDatabase();
-    String table_name = function->name;
-
-    if (function->is_compound_name)
-    {
-        std::vector<std::string> parts;
-        splitInto<'.'>(parts, function->name);
-
-        if (parts.size() == 2)
-        {
-            database_name = parts[0];
-            table_name = parts[1];
-        }
-    }
-
-    StoragePtr table = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, getQueryContext());
-    if (table)
-    {
-        if (table.get()->isView() && table->as<StorageView>()->isParameterizedView())
-        {
-            function->prefer_subquery_to_function_formatting = true;
-            return table;
-        }
-    }
     auto hash = table_expression->getTreeHash();
     String key = toString(hash.first) + '_' + toString(hash.second);
+
     StoragePtr & res = table_function_results[key];
+
     if (!res)
     {
-        TableFunctionPtr table_function_ptr;
-        try
-        {
-            table_function_ptr = TableFunctionFactory::instance().get(table_expression, shared_from_this());
-        }
-        catch (Exception & e)
-        {
-            if (e.code() == ErrorCodes::UNKNOWN_FUNCTION)
-            {
-                e.addMessage(" or incorrect parameterized view");
-            }
-            throw;
-        }
+        TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_expression, shared_from_this());
         if (getSettingsRef().use_structure_from_insertion_table_in_table_functions && table_function_ptr->needStructureHint() && hasInsertionTable())
         {
             const auto & structure_hint = DatabaseCatalog::instance().getTable(getInsertionTable(), shared_from_this())->getInMemoryMetadataPtr()->getColumns();
@@ -1454,7 +1415,10 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             key = toString(new_hash.first) + '_' + toString(new_hash.second);
             table_function_results[key] = res;
         }
+
+        return res;
     }
+
     return res;
 }
 

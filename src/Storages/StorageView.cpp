@@ -25,8 +25,6 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 
-#include <Interpreters/ReplaceQueryParameterVisitor.h>
-#include <Parsers/QueryParameterVisitor.h>
 
 namespace DB
 {
@@ -122,8 +120,6 @@ StorageView::StorageView(
     NormalizeSelectWithUnionQueryVisitor::Data data{SetOperationMode::Unspecified};
     NormalizeSelectWithUnionQueryVisitor{data}.visit(description.inner_query);
 
-    is_parameterized_view = query.isParameterizedView();
-    parameter_types = analyzeReceiveQueryParamsWithType(description.inner_query);
     storage_metadata.setSelectQuery(description);
     setInMemoryMetadata(storage_metadata);
 }
@@ -172,7 +168,7 @@ void StorageView::read(
     query_plan.addStep(std::move(materializing));
 
     /// And also convert to expected structure.
-    const auto & expected_header = storage_snapshot->getSampleBlockForColumns(column_names, parameter_values);
+    const auto & expected_header = storage_snapshot->getSampleBlockForColumns(column_names);
     const auto & header = query_plan.getCurrentDataStream().header;
 
     const auto * select_with_union = current_inner_query->as<ASTSelectWithUnionQuery>();
@@ -208,30 +204,20 @@ static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select_quer
     return select_element->table_expression->as<ASTTableExpression>();
 }
 
-void StorageView::replaceQueryParametersIfParametrizedView(ASTPtr & outer_query)
-{
-    ReplaceQueryParameterVisitor visitor(parameter_values);
-    visitor.visit(outer_query);
-}
-
-void StorageView::replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_query, ASTPtr & view_name, bool parameterized_view)
+void StorageView::replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_query, ASTPtr & view_name)
 {
     ASTTableExpression * table_expression = getFirstTableExpression(outer_query);
 
     if (!table_expression->database_and_table_name)
     {
-        /// If it's a view or merge table function, add a fake db.table name.
-        /// For parameterized view, the function name is the db.view name, so add the function name
+        // If it's a view or merge table function, add a fake db.table name.
         if (table_expression->table_function)
         {
             auto table_function_name = table_expression->table_function->as<ASTFunction>()->name;
             if (table_function_name == "view" || table_function_name == "viewIfPermitted")
                 table_expression->database_and_table_name = std::make_shared<ASTTableIdentifier>("__view");
-            else if (table_function_name == "merge")
+            if (table_function_name == "merge")
                 table_expression->database_and_table_name = std::make_shared<ASTTableIdentifier>("__merge");
-            else if (parameterized_view)
-                table_expression->database_and_table_name = std::make_shared<ASTTableIdentifier>(table_function_name);
-
         }
         if (!table_expression->database_and_table_name)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: incorrect table expression");
@@ -249,47 +235,6 @@ void StorageView::replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_
     for (auto & child : table_expression->children)
         if (child.get() == view_name.get())
             child = view_query;
-        else if (child.get()
-                 && child->as<ASTFunction>()
-                 && table_expression->table_function
-                 && table_expression->table_function->as<ASTFunction>()
-                 && child->as<ASTFunction>()->name == table_expression->table_function->as<ASTFunction>()->name)
-            child = view_query;
-}
-
-String StorageView::replaceQueryParameterWithValue(const String & column_name, const NameToNameMap & parameter_values, const NameToNameMap & parameter_types)
-{
-    std::string name = column_name;
-    std::string::size_type pos = 0u;
-    for (const auto & parameter : parameter_values)
-    {
-        if ((pos = name.find(parameter.first)) != std::string::npos)
-        {
-            auto parameter_datatype_iterator = parameter_types.find(parameter.first);
-            if (parameter_datatype_iterator != parameter_types.end())
-            {
-                String parameter_name("_CAST(" + parameter.second + ", '" + parameter_datatype_iterator->second + "')");
-                name.replace(pos, parameter.first.size(), parameter_name);
-                break;
-            }
-        }
-    }
-    return name;
-}
-
-String StorageView::replaceValueWithQueryParameter(const String & column_name, const NameToNameMap & parameter_values)
-{
-    String name = column_name;
-    std::string::size_type pos = 0u;
-    for (const auto & parameter : parameter_values)
-    {
-        if ((pos = name.find("_CAST(" + parameter.second)) != std::string::npos)
-        {
-            name = name.substr(0,pos) + parameter.first + ")";
-            break;
-        }
-    }
-    return name;
 }
 
 ASTPtr StorageView::restoreViewName(ASTSelectQuery & select_query, const ASTPtr & view_name)

@@ -24,7 +24,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypeFactory.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
@@ -39,7 +38,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ASTQueryParameter.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
 
@@ -55,7 +53,6 @@
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
-#include <Parsers/QueryParameterVisitor.h>
 
 
 namespace DB
@@ -536,8 +533,7 @@ ActionsMatcher::Data::Data(
     bool only_consts_,
     bool create_source_for_in_,
     AggregationKeysInfo aggregation_keys_info_,
-    bool build_expression_with_window_functions_,
-    bool is_create_parameterized_view_)
+    bool build_expression_with_window_functions_)
     : WithContext(context_)
     , set_size_limit(set_size_limit_)
     , subquery_depth(subquery_depth_)
@@ -551,7 +547,6 @@ ActionsMatcher::Data::Data(
     , actions_stack(std::move(actions_dag), context_)
     , aggregation_keys_info(aggregation_keys_info_)
     , build_expression_with_window_functions(build_expression_with_window_functions_)
-    , is_create_parameterized_view(is_create_parameterized_view_)
     , next_unique_suffix(actions_stack.getLastActions().getOutputs().size() + 1)
 {
 }
@@ -1125,7 +1120,6 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
             const auto * function = child->as<ASTFunction>();
             const auto * identifier = child->as<ASTTableIdentifier>();
-            const auto * query_parameter = child->as<ASTQueryParameter>();
             if (function && function->name == "lambda")
             {
                 /// If the argument is a lambda expression, just remember its approximate type.
@@ -1205,15 +1199,6 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 data.addColumn(column);
                 argument_types.push_back(column.type);
                 argument_names.push_back(column.name);
-            }
-            else if (data.is_create_parameterized_view && query_parameter)
-            {
-                const auto data_type = DataTypeFactory::instance().get(query_parameter->type);
-                ColumnWithTypeAndName column(data_type,query_parameter->getColumnName());
-                data.addColumn(column);
-
-                argument_types.push_back(data_type);
-                argument_names.push_back(query_parameter->name);
             }
             else
             {

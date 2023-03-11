@@ -15,7 +15,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
-#include <Parsers/QueryParameterVisitor.h>
+#include <Interpreters/QueryParameterVisitor.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Session.h>
 #include <Server/HTTPHandlerFactory.h>

@@ -159,15 +159,13 @@ protected:
         size_t subquery_depth_,
         bool do_global_,
         bool is_explain_,
-        PreparedSetsPtr prepared_sets_,
-        bool is_create_parameterized_view_ = false);
+        PreparedSetsPtr prepared_sets_);
 
     ASTPtr query;
     const ExtractedSettings settings;
     size_t subquery_depth;
 
     TreeRewriterResultPtr syntax;
-    bool is_create_parameterized_view;
 
     const ConstStoragePtr & storage() const { return syntax->storage; } /// The main table in FROM clause, if exists.
     const TableJoin & analyzedJoin() const { return *syntax->analyzed_join; }
@@ -321,8 +319,7 @@ public:
             options_.subquery_depth,
             do_global_,
             options_.is_explain,
-            prepared_sets_,
-            options_.is_create_parameterized_view)
+            prepared_sets_)
         , metadata_snapshot(metadata_snapshot_)
         , required_result_columns(required_result_columns_)
         , query_options(options_)

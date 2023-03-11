@@ -7,7 +7,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Interpreters/StorageID.h>
 #include <IO/Operators.h>
-#include <Parsers/QueryParameterVisitor.h>
+
 
 namespace DB
 {
@@ -475,16 +475,6 @@ void ASTSelectQuery::setFinal() // NOLINT method can be made const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no table expression, it's a bug");
 
     tables_element.table_expression->as<ASTTableExpression &>().final = true;
-}
-
-bool ASTSelectQuery::hasQueryParameters() const
-{
-    if (!has_query_parameters.has_value())
-    {
-        has_query_parameters = !analyzeReceiveQueryParams(std::make_shared<ASTSelectQuery>(*this)).empty();
-    }
-
-    return  has_query_parameters.value();
 }
 
 }

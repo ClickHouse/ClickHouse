@@ -72,7 +72,7 @@ namespace
             if (query_info.view_query)
             {
                 ASTPtr tmp;
-                StorageView::replaceWithSubquery(select, query_info.view_query->clone(), tmp, query_info.is_parameterized_view);
+                StorageView::replaceWithSubquery(select, query_info.view_query->clone(), tmp);
             }
         }
     };

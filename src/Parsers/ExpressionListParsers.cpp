@@ -847,8 +847,8 @@ public:
 class FunctionLayer : public Layer
 {
 public:
-    explicit FunctionLayer(String function_name_, bool allow_function_parameters_ = true, bool is_compound_name_ = false)
-        : function_name(function_name_), allow_function_parameters(allow_function_parameters_), is_compound_name(is_compound_name_){}
+    explicit FunctionLayer(String function_name_, bool allow_function_parameters_ = true)
+        : function_name(function_name_), allow_function_parameters(allow_function_parameters_){}
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
@@ -989,7 +989,6 @@ public:
                 function_name += "Distinct";
 
             auto function_node = makeASTFunction(function_name, std::move(elements));
-            function_node->is_compound_name = is_compound_name;
 
             if (parameters)
             {
@@ -1045,7 +1044,6 @@ private:
     ASTPtr parameters;
 
     bool allow_function_parameters;
-    bool is_compound_name;
 };
 
 /// Layer for priority brackets and tuple function
@@ -2103,7 +2101,7 @@ std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_functio
     else if (function_name_lowercase == "grouping")
         return std::make_unique<FunctionLayer>(function_name_lowercase, allow_function_parameters_);
     else
-        return std::make_unique<FunctionLayer>(function_name, allow_function_parameters_, identifier->as<ASTIdentifier>()->compound());
+        return std::make_unique<FunctionLayer>(function_name, allow_function_parameters_);
 }
 
 
@@ -2222,7 +2220,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr identifier;
 
-    if (ParserCompoundIdentifier(false,true).parse(pos, identifier, expected)
+    if (ParserIdentifier(true).parse(pos, identifier, expected)
         && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
     {
         auto start = getFunctionLayer(identifier, is_table_function, allow_function_parameters);
