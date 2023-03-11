@@ -32,6 +32,7 @@ namespace ErrorCodes
 {
     extern const int CANNOT_READ_MAP_FROM_TEXT;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+    extern const int LOGICAL_ERROR;
 }
 
 SerializationMap::SerializationMap(
