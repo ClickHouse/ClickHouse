@@ -10,8 +10,6 @@ class ISourceStep : public IQueryPlanStep
 public:
     explicit ISourceStep(DataStream output_stream_);
 
-    String getName() const override { return "ISourceStep"; }
-
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
 
     virtual void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) = 0;
