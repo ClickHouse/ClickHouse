@@ -28,6 +28,34 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int NOT_IMPLEMENTED;
+}
+
+namespace
+{
+
+orc::CompressionKind getORCCompression(FormatSettings::ORCCompression method)
+{
+    if (method == FormatSettings::ORCCompression::NONE)
+        return orc::CompressionKind::CompressionKind_NONE;
+
+#if USE_SNAPPY
+    if (method == FormatSettings::ORCCompression::SNAPPY)
+        return orc::CompressionKind::CompressionKind_SNAPPY;
+#endif
+
+    if (method == FormatSettings::ORCCompression::ZSTD)
+        return orc::CompressionKind::CompressionKind_ZSTD;
+
+    if (method == FormatSettings::ORCCompression::LZ4)
+        return orc::CompressionKind::CompressionKind_LZ4;
+
+    if (method == FormatSettings::ORCCompression::ZLIB)
+        return orc::CompressionKind::CompressionKind_ZLIB;
+
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported compression method");
+}
+
 }
 
 ORCOutputStream::ORCOutputStream(WriteBuffer & out_) : out(out_) {}
@@ -544,7 +572,7 @@ void ORCBlockOutputFormat::prepareWriter()
 {
     const Block & header = getPort(PortKind::Main).getHeader();
     schema = orc::createStructType();
-    options.setCompression(orc::CompressionKind::CompressionKind_NONE);
+    options.setCompression(getORCCompression(format_settings.orc.output_compression_method));
     size_t columns_count = header.columns();
     for (size_t i = 0; i != columns_count; ++i)
         schema->addStructField(header.safeGetByPosition(i).name, getORCType(recursiveRemoveLowCardinality(data_types[i])));

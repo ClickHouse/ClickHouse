@@ -525,7 +525,8 @@ jobs:
       - name: Check docker clickhouse/clickhouse-server building
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 docker_server.py --release-type head --no-push
+          python3 docker_server.py --release-type head --no-push \
+            --image-repo clickhouse/clickhouse-server --image-path docker/server
           python3 docker_server.py --release-type head --no-push --no-ubuntu \
             --image-repo clickhouse/clickhouse-keeper --image-path docker/keeper
       - name: Cleanup
