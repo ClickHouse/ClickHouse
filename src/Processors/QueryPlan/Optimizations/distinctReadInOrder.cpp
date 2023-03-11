@@ -149,10 +149,7 @@ size_t tryDistinctReadInOrder(QueryPlan::Node * parent_node)
     const int direction = 0; /// for DISTINCT direction doesn't matter, ReadFromMergeTree will choose proper one
     bool can_read = read_from_merge_tree->requestReadingInOrder(number_of_sorted_distinct_columns, direction, pre_distinct->getLimitHint());
     if (!can_read)
-    {
-        LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "Can't read in order");
         return 0;
-    }
 
     /// update data stream's sorting properties for found transforms
     const DataStream * input_stream = &read_from_merge_tree->getOutputStream();
