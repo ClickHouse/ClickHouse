@@ -27,7 +27,7 @@ namespace ErrorCodes
 
 String KeeperClient::executeFourLetterCommand(const String & command)
 {
-    // We need create new socket every time because ZooKeeper forcefully shut down connection after four-letter-word command.
+    /// We need to create a new socket every time because ZooKeeper forcefully shuts down the connection after a four-letter-word command.
     Poco::Net::StreamSocket socket;
     socket.connect(Poco::Net::SocketAddress{zk_args.hosts[0]}, zk_args.connection_timeout_ms * 1000);
 
