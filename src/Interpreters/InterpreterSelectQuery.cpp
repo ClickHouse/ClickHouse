@@ -575,14 +575,13 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             /// and after query is replaced, we use these parameters to substitute in the parameterized view query
             if (query_info.is_parameterized_view)
             {
-                parameter_values = analyzeFunctionParamValues(query_ptr);
-                view->setParameterValues(parameter_values);
-                parameter_types = view->getParameterValues();
+                query_info.parameter_values = analyzeFunctionParamValues(query_ptr);
+                parameter_types = view->getParameterTypes();
             }
             view->replaceWithSubquery(getSelectQuery(), view_table, metadata_snapshot, view->isParameterizedView());
             if (query_info.is_parameterized_view)
             {
-                view->replaceQueryParametersIfParametrizedView(query_ptr);
+                view->replaceQueryParametersIfParametrizedView(query_ptr, query_info.parameter_values);
             }
 
         }
@@ -595,7 +594,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             required_result_column_names,
             table_join,
             query_info.is_parameterized_view,
-            parameter_values,
+            query_info.parameter_values,
             parameter_types);
 
 
