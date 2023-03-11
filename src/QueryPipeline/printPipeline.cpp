@@ -1,7 +1,7 @@
-#include <map>
-#include <set>
-#include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <QueryPipeline/printPipeline.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <set>
+#include <map>
 
 namespace DB
 {
@@ -19,7 +19,10 @@ void printPipelineCompact(const Processors & processors, WriteBuffer & out, bool
 
         auto getTuple() const { return std::forward_as_tuple(group, step, name); }
 
-        bool operator<(const Key & other) const { return getTuple() < other.getTuple(); }
+        bool operator<(const Key & other) const
+        {
+            return getTuple() < other.getTuple();
+        }
     };
 
     /// Group ports by header.
@@ -40,7 +43,8 @@ void printPipelineCompact(const Processors & processors, WriteBuffer & out, bool
 
     std::map<Key, Node> graph;
 
-    auto get_key = [](const IProcessor & processor) {
+    auto get_key = [](const IProcessor & processor)
+    {
         return Key{processor.getQueryPlanStepGroup(), processor.getQueryPlanStep(), processor.getName()};
     };
 
@@ -60,7 +64,7 @@ void printPipelineCompact(const Processors & processors, WriteBuffer & out, bool
     /// Fill edges.
     for (const auto & processor : processors)
     {
-        auto & from = graph[get_key(*processor)];
+        auto & from =  graph[get_key(*processor)];
 
         for (auto & port : processor->getOutputs())
         {
@@ -71,7 +75,8 @@ void printPipelineCompact(const Processors & processors, WriteBuffer & out, bool
             auto & edge = from.edges[&to];
 
             /// Use empty header for each edge if with_header is false.
-            const auto & header = with_header ? port.getHeader() : empty_header;
+            const auto & header = with_header ? port.getHeader()
+                                              : empty_header;
 
             /// Group by header.
             bool found = false;
@@ -148,8 +153,7 @@ void printPipelineCompact(const Processors & processors, WriteBuffer & out, bool
         {
             for (const auto & data : edge.second)
             {
-                out << "  n" << item.second.id << " -> "
-                    << "n" << edge.first->id << " [label=\"";
+                out << "  n" << item.second.id << " -> " << "n" << edge.first->id << " [label=\"";
 
                 if (data.count > 1)
                     out << "× " << data.count;
