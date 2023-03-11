@@ -28,10 +28,8 @@ ASTPtr ASTSelectWithUnionQuery::clone() const
 }
 
 
-void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTSelectWithUnionQuery::formatQueryImpl(const FormattingBuffer & out) const
 {
-    std::string indent_str = settings.isOneLine() ? "" : std::string(4 * frame.indent, ' ');
-
     auto mode_to_str = [&](auto mode)
     {
         if (mode == SelectUnionMode::UNION_DEFAULT)
@@ -59,32 +57,32 @@ void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, F
     {
         if (it != list_of_selects->children.begin())
         {
-            settings.nlOrWs();
-            settings.ostr << indent_str;
-            settings.writeKeyword(mode_to_str((is_normalized) ? union_mode : list_of_modes[it - list_of_selects->children.begin() - 1]));
+            out.nlOrWs();
+            out.writeIndent();
+            out.writeKeyword(mode_to_str((is_normalized) ? union_mode : list_of_modes[it - list_of_selects->children.begin() - 1]));
         }
 
         if (auto * node = (*it)->as<ASTSelectWithUnionQuery>())
         {
-            settings.nlOrWs();
-            settings.ostr << indent_str;
+            out.nlOrWs();
+            out.writeIndent();
 
             if (node->list_of_selects->children.size() == 1)
             {
-                (node->list_of_selects->children.at(0))->formatImpl(settings, state, frame);
+                (node->list_of_selects->children.at(0))->formatImpl(out);
             }
             else
             {
                 auto sub_query = std::make_shared<ASTSubquery>();
                 sub_query->children.push_back(*it);
-                sub_query->formatImpl(settings, state, frame);
+                sub_query->formatImpl(out);
             }
         }
         else
         {
             if (it != list_of_selects->children.begin())
-                settings.nlOrWs();
-            (*it)->formatImpl(settings, state, frame);
+                out.nlOrWs();
+            (*it)->formatImpl(out);
         }
     }
 }

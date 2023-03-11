@@ -175,18 +175,63 @@ public:
         field = nullptr;
     }
 
-    /// Convert to a string.
-
-    /// Format settings.
     struct FormatSettings
     {
+        bool hilite = false;
+        bool one_line;
+        bool always_quote_identifiers = false;
+        IdentifierQuotingStyle identifier_quoting_style = IdentifierQuotingStyle::Backticks;
+        bool show_secrets = true; /// Show secret parts of the AST (e.g. passwords, encryption keys).
+
+        FormatSettings(bool one_line_, bool always_quote_identifiers_ = false,
+                       IdentifierQuotingStyle identifier_quoting_style_ = IdentifierQuotingStyle::Backticks, bool hilite_ = false,
+                       bool show_secrets_ = true)
+            : hilite(hilite_), one_line(one_line_), always_quote_identifiers(always_quote_identifiers_),
+            identifier_quoting_style(identifier_quoting_style_), show_secrets(show_secrets_) {}
+
+//        FormatSettings(WriteBuffer & ostr_, const FormatSettings & other)
+//            : ostr(ostr_), one_line(other.one_line), always_quote_identifiers(other.always_quote_identifiers),
+//            identifier_quoting_style(other.identifier_quoting_style), hilite(other.hilite),
+//            should_show_secrets(other.should_show_secrets) {}
+//
+//        FormatSettings(const FormatSettings & other, bool always_quote_identifiers_)
+//            : ostr(other.ostr), one_line(other.one_line), always_quote_identifiers(always_quote_identifiers_),
+//            identifier_quoting_style(other.identifier_quoting_style), hilite(other.hilite),
+//            should_show_secrets(other.should_show_secrets) {}
+    };
+
+    /// State. For example, a set of nodes can be remembered, which we already walk through.
+    struct FormatState
+    {
+        /** The SELECT query in which the alias was found; identifier of a node with such an alias.
+          * It is necessary that when the node has met again, output only the alias.
+          */
+        std::set<std::tuple<
+            const IAST * /* SELECT query node */,
+            std::string /* alias */,
+            Hash /* printed content */>> printed_asts_with_alias;
+    };
+
+    /// The state that is copied when each node is formatted. For example, nesting level.
+    struct FormatStateStacked
+    {
+        UInt8 indent = 0;
+        bool need_parens = false;
+        bool expression_list_always_start_on_new_line = false;  /// Line feed and indent before expression list even if it's of single element.
+        bool expression_list_prepend_whitespace = false; /// Prepend whitespace (if it is required)
+        bool surround_each_list_element_with_parens = false;
+        const IAST * current_select = nullptr;
+    };
+
+    class FormattingBuffer
+    {
+    public:
         WriteBuffer & ostr;
     private:
-        bool one_line;
-        bool always_quote_identifiers;
-        IdentifierQuotingStyle identifier_quoting_style;
+        const FormatSettings & settings;
+        std::shared_ptr<FormatState> state = std::make_shared<FormatState>();
+        std::unique_ptr<FormatStateStacked> stacked_state = std::make_unique<FormatStateStacked>();
 
-        bool hilite;
         static const char * hilite_keyword;
         static const char * hilite_identifier;
         static const char * hilite_function;
@@ -204,34 +249,43 @@ public:
             friend struct FormatSettings;
             DB::WriteBuffer & ostr;
             bool hilite;
+        public:
             Hiliter(DB::WriteBuffer & ostr_, bool hilite_, const char * hilite_type);
+            ~Hiliter();
+
             Hiliter(const Hiliter & other) = delete;
             Hiliter(Hiliter && other) = delete;
             Hiliter & operator=(const Hiliter & other) = delete;
             Hiliter & operator=(Hiliter && other) = delete;
-            ~Hiliter();
         };
         Hiliter createHiliter(const char * hilite_type) const;
         void writePossiblyHilited(std::string_view str, const char * hilite_type) const;
         void writeIdentifierOrAlias(const String & name, bool should_hilite_as_alias = false) const;
-
-        bool should_show_secrets; /// Show secret parts of the AST (e.g. passwords, encryption keys).
     public:
-        FormatSettings(WriteBuffer & ostr_, bool one_line_, bool always_quote_identifiers_ = false,
-                       IdentifierQuotingStyle identifier_quoting_style_ = IdentifierQuotingStyle::Backticks, bool hilite_ = false,
-                       bool should_show_secrets_ = true)
-            : ostr(ostr_), one_line(one_line_), always_quote_identifiers(always_quote_identifiers_),
-            identifier_quoting_style(identifier_quoting_style_), hilite(hilite_), should_show_secrets(should_show_secrets_) {}
+        FormattingBuffer(WriteBuffer & ostr_, const FormatSettings & settings_) :
+            ostr(ostr_), settings(settings_) {}
 
-        FormatSettings(WriteBuffer & ostr_, const FormatSettings & other)
-            : ostr(ostr_), one_line(other.one_line), always_quote_identifiers(other.always_quote_identifiers),
-            identifier_quoting_style(other.identifier_quoting_style), hilite(other.hilite),
-            should_show_secrets(other.should_show_secrets) {}
+        FormattingBuffer(const FormattingBuffer &) = delete;
+        FormattingBuffer(FormattingBuffer &&) = delete;
+        FormattingBuffer & operator=(const FormattingBuffer &) = delete;
+        FormattingBuffer & operator=(FormattingBuffer &&) = delete;
 
-        FormatSettings(const FormatSettings & other, bool always_quote_identifiers_)
-            : ostr(other.ostr), one_line(other.one_line), always_quote_identifiers(always_quote_identifiers_),
-            identifier_quoting_style(other.identifier_quoting_style), hilite(other.hilite),
-            should_show_secrets(other.should_show_secrets) {}
+        // TODO(natasha): these copy* methods are still in development.
+        // I'm trying to adapt them to current usage as I go, so I'll be able to declare them final,
+        // once I see all the usages.
+        FormattingBuffer copy() const;
+
+        FormattingBuffer copyWithIndent(int indent) const;
+
+        FormattingBuffer copy(bool increase_indent, bool need_parens) const;  // TODO: impl
+
+        bool needsParens() const;  // TODO: impl
+
+        void setNeedsParens(bool needs_parens) const;  // TODO: impl
+
+        int writeIndent() const;
+
+        bool insertAlias(std::string alias, Hash printed_content) const;
 
         void writeKeyword(std::string_view str) const;
         void writeFunction(std::string_view str) const;
@@ -261,36 +315,14 @@ public:
         void writeSecret(const String & secret = "") const;
     };
 
-    /// State. For example, a set of nodes can be remembered, which we already walk through.
-    struct FormatState
+    // with new a blank state
+    void format(const FormattingBuffer & out) const
     {
-        /** The SELECT query in which the alias was found; identifier of a node with such an alias.
-          * It is necessary that when the node has met again, output only the alias.
-          */
-        std::set<std::tuple<
-            const IAST * /* SELECT query node */,
-            std::string /* alias */,
-            Hash /* printed content */>> printed_asts_with_alias;
-    };
-
-    /// The state that is copied when each node is formatted. For example, nesting level.
-    struct FormatStateStacked
-    {
-        UInt8 indent = 0;
-        bool need_parens = false;
-        bool expression_list_always_start_on_new_line = false;  /// Line feed and indent before expression list even if it's of single element.
-        bool expression_list_prepend_whitespace = false; /// Prepend whitespace (if it is required)
-        bool surround_each_list_element_with_parens = false;
-        const IAST * current_select = nullptr;
-    };
-
-    void format(const FormatSettings & settings) const
-    {
-        FormatState state;
-        formatImpl(settings, state, FormatStateStacked());
+        formatImpl(out);
     }
 
-    virtual void formatImpl(const FormatSettings & /*settings*/, FormatState & /*state*/, FormatStateStacked /*frame*/) const
+    // keeping the state
+    virtual void formatImpl(const FormattingBuffer & out) const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown element in AST: {}", getID());
     }

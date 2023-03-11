@@ -540,7 +540,7 @@ ASTSelectWithUnionQuery * ASTFunction::tryGetQueryArgument() const
 }
 
 
-void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTFunction::formatImplWithoutAlias(const FormattingBuffer & out) const
 {
     frame.expression_list_prepend_whitespace = false;
     FormatStateStacked nested_need_parens = frame;
@@ -550,17 +550,17 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
     if (auto * query = tryGetQueryArgument())
     {
-        std::string indent_str = settings.isOneLine() ? "" : std::string(4u * frame.indent, ' ');
-        settings.writeFunction(name);
-        settings.writeFunction("(");
-        settings.nlOrNothing();
+        std::string indent_str = out.isOneLine() ? "" : std::string(4u * frame.indent, ' ');
+        out.writeFunction(name);
+        out.writeFunction("(");
+        out.nlOrNothing();
         FormatStateStacked frame_nested = frame;
         frame_nested.need_parens = false;
         ++frame_nested.indent;
-        query->formatImpl(settings, state, frame_nested);
-        settings.nlOrNothing();
-        settings.ostr << indent_str;
-        settings.writeFunction(")");
+        query->formatImpl(out, state, frame_nested);
+        out.nlOrNothing();
+        out << indent_str;
+        out.writeFunction(")");
         return;
     }
 
@@ -602,21 +602,21 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                     nested_need_parens.need_parens = false;
 
                 if (need_parens)
-                    settings.ostr << '(';
+                    out.ostr << '(';
 
-                settings.writeOperator(func[1]);
+                out.writeOperator(func[1]);
 
                 if (negate_need_parens)
-                    settings.ostr << '(';
+                    out.ostr << '(';
 
-                arguments->formatImpl(settings, state, nested_need_parens);
+                arguments->formatImpl(out, state, nested_need_parens);
                 written = true;
 
                 if (negate_need_parens)
-                    settings.ostr << ')';
+                    out.ostr << ')';
 
                 if (need_parens)
-                    settings.ostr << ')';
+                    out.ostr << ')';
 
                 break;
             }
@@ -640,11 +640,11 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 }
 
                 if (frame.need_parens)
-                    settings.ostr << '(';
-                arguments->formatImpl(settings, state, nested_need_parens);
-                settings.writeOperator(func[1]);
+                    out.ostr << '(';
+                arguments->formatImpl(out, state, nested_need_parens);
+                out.writeOperator(func[1]);
                 if (frame.need_parens)
-                    settings.ostr << ')';
+                    out.ostr << ')';
 
                 written = true;
 
@@ -687,14 +687,14 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 if (name == std::string_view(func[0]))
                 {
                     if (frame.need_parens)
-                        settings.ostr << '(';
-                    arguments->children[0]->formatImpl(settings, state, nested_need_parens);
-                    settings.writeOperator(func[1]);
+                        out.ostr << '(';
+                    arguments->children[0]->formatImpl(out, state, nested_need_parens);
+                    out.writeOperator(func[1]);
 
                     auto string_literal = getOptionalStringLiteral(arguments->children[1]);
                     if (string_literal.has_value() && (name == "like" || name == "notLike" || name == "ilike" || name == "notILike"))
                     {
-                        settings.writeStringLiteralWithMetacharacters(string_literal.value(), "%_");
+                        out.writeStringLiteralWithMetacharacters(string_literal.value(), "%_");
                     }
 
                     /// Format x IN 1 as x IN (1): put parens around rhs even if there is a single element in set.
@@ -708,13 +708,13 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                         && !arguments->children[1]->as<ASTSubquery>();
 
                     if (extra_parents_around_in_rhs)
-                        settings.ostr << '(';
-                    arguments->children[1]->formatImpl(settings, state, nested_dont_need_parens);
+                        out.ostr << '(';
+                    arguments->children[1]->formatImpl(out, state, nested_dont_need_parens);
                     if (extra_parents_around_in_rhs)
-                        settings.ostr << ')';
+                        out.ostr << ')';
 
                     if (frame.need_parens)
-                        settings.ostr << ')';
+                        out.ostr << ')';
                     written = true;
                 }
             }
@@ -722,16 +722,16 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
             if (!written && name == "arrayElement"sv)
             {
                 if (frame.need_parens)
-                    settings.ostr << '(';
+                    out.ostr << '(';
 
-                arguments->children[0]->formatImpl(settings, state, nested_need_parens);
-                settings.writeOperator("[");
-                arguments->children[1]->formatImpl(settings, state, nested_dont_need_parens);
-                settings.writeOperator("]");
+                arguments->children[0]->formatImpl(out, state, nested_need_parens);
+                out.writeOperator("[");
+                arguments->children[1]->formatImpl(out, state, nested_dont_need_parens);
+                out.writeOperator("]");
                 written = true;
 
                 if (frame.need_parens)
-                    settings.ostr << ')';
+                    out.ostr << ')';
             }
 
             if (!written && name == "tupleElement"sv)
@@ -772,15 +772,15 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                         && lit_right->value.get<Int64>() >= 0)
                     {
                         if (frame.need_parens)
-                            settings.ostr << '(';
+                            out.ostr << '(';
 
-                        arguments->children[0]->formatImpl(settings, state, nested_need_parens);
-                        settings.writeOperator(".");
-                        arguments->children[1]->formatImpl(settings, state, nested_dont_need_parens);
+                        arguments->children[0]->formatImpl(out, state, nested_need_parens);
+                        out.writeOperator(".");
+                        arguments->children[1]->formatImpl(out, state, nested_dont_need_parens);
                         written = true;
 
                         if (frame.need_parens)
-                            settings.ostr << ')';
+                            out.ostr << ')';
                     }
                 }
             }
@@ -791,7 +791,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 /// Special case: one-element tuple in lhs of lambda is printed as its element.
 
                 if (frame.need_parens)
-                    settings.ostr << '(';
+                    out.ostr << '(';
 
                 const auto * first_arg_func = arguments->children[0]->as<ASTFunction>();
                 if (first_arg_func
@@ -800,42 +800,42 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                     && (first_arg_func->arguments->children.size() == 1 || first_arg_func->arguments->children.empty()))
                 {
                     if (first_arg_func->arguments->children.size() == 1)
-                        first_arg_func->arguments->children[0]->formatImpl(settings, state, nested_need_parens);
+                        first_arg_func->arguments->children[0]->formatImpl(out, state, nested_need_parens);
                     else
-                        settings.ostr << "()";
+                        out.ostr << "()";
                 }
                 else
-                    arguments->children[0]->formatImpl(settings, state, nested_need_parens);
+                    arguments->children[0]->formatImpl(out, state, nested_need_parens);
 
-                settings.writeOperator(" -> ");
-                arguments->children[1]->formatImpl(settings, state, nested_need_parens);
+                out.writeOperator(" -> ");
+                arguments->children[1]->formatImpl(out, state, nested_need_parens);
                 if (frame.need_parens)
-                    settings.ostr << ')';
+                    out.ostr << ')';
                 written = true;
             }
 
             if (!written && name == "viewIfPermitted"sv)
             {
                 /// viewIfPermitted() needs special formatting: ELSE instead of comma between arguments, and better indents too.
-                auto indent0 = settings.isOneLine() ? "" : String(4u * frame.indent, ' ');
-                auto indent1 = settings.isOneLine() ? "" : String(4u * (frame.indent + 1), ' ');
-                auto indent2 = settings.isOneLine() ? "" : String(4u * (frame.indent + 2), ' ');
-                settings.writeFunction(name);
-                settings.writeFunction("(");
-                settings.nlOrNothing();
+                auto indent0 = out.isOneLine() ? "" : String(4u * frame.indent, ' ');
+                auto indent1 = out.isOneLine() ? "" : String(4u * (frame.indent + 1), ' ');
+                auto indent2 = out.isOneLine() ? "" : String(4u * (frame.indent + 2), ' ');
+                out.writeFunction(name);
+                out.writeFunction("(");
+                out.nlOrNothing();
                 FormatStateStacked frame_nested = frame;
                 frame_nested.need_parens = false;
                 frame_nested.indent += 2;
-                arguments->children[0]->formatImpl(settings, state, frame_nested);
-                settings.nlOrWs();
-                settings.ostr << indent1;
-                settings.writeKeyword("ELSE ");
-                settings.nlOrNothing();
-                settings.ostr << indent2;
-                arguments->children[1]->formatImpl(settings, state, frame_nested);
-                settings.nlOrNothing();
-                settings.ostr << indent0;
-                settings.writeKeyword(")");
+                arguments->children[0]->formatImpl(out, state, frame_nested);
+                out.nlOrWs();
+                out.ostr << indent1;
+                out.writeKeyword("ELSE ");
+                out.nlOrNothing();
+                out.ostr << indent2;
+                arguments->children[1]->formatImpl(out, state, frame_nested);
+                out.nlOrNothing();
+                out.ostr << indent0;
+                out.writeKeyword(")");
                 return;
             }
         }
@@ -854,17 +854,17 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 if (name == std::string_view(func[0]))
                 {
                     if (frame.need_parens)
-                        settings.ostr << '(';
+                        out.ostr << '(';
                     for (size_t i = 0; i < arguments->children.size(); ++i)
                     {
                         if (i != 0)
-                            settings.writeOperator(func[1]);
+                            out.writeOperator(func[1]);
                         if (arguments->children[i]->as<ASTSetQuery>())
-                            settings.ostr << "SETTINGS ";
-                        arguments->children[i]->formatImpl(settings, state, nested_need_parens);
+                            out.ostr << "out ";
+                        arguments->children[i]->formatImpl(out, state, nested_need_parens);
                     }
                     if (frame.need_parens)
-                        settings.ostr << ')';
+                        out.ostr << ')';
                     written = true;
                 }
             }
@@ -872,66 +872,66 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
         if (!written && name == "array"sv)
         {
-            settings.writeOperator("[");
+            out.writeOperator("[");
             for (size_t i = 0; i < arguments->children.size(); ++i)
             {
                 if (i != 0)
-                    settings.ostr << ", ";
+                    out.ostr << ", ";
                 if (arguments->children[i]->as<ASTSetQuery>())
-                    settings.ostr << "SETTINGS ";
-                arguments->children[i]->formatImpl(settings, state, nested_dont_need_parens);
+                    out.ostr << "out ";
+                arguments->children[i]->formatImpl(out, state, nested_dont_need_parens);
             }
-            settings.writeOperator("]");
+            out.writeOperator("]");
             written = true;
         }
 
         if (!written && arguments->children.size() >= 2 && name == "tuple"sv)
         {
-            settings.writeOperator("(");
+            out.writeOperator("(");
             for (size_t i = 0; i < arguments->children.size(); ++i)
             {
                 if (i != 0)
-                    settings.ostr << ", ";
+                    out.ostr << ", ";
                 if (arguments->children[i]->as<ASTSetQuery>())
-                    settings.ostr << "SETTINGS ";
-                arguments->children[i]->formatImpl(settings, state, nested_dont_need_parens);
+                    out.ostr << "out ";
+                arguments->children[i]->formatImpl(out, state, nested_dont_need_parens);
             }
-            settings.writeOperator(")");
+            out.writeOperator(")");
             written = true;
         }
 
         if (!written && name == "map"sv)
         {
-            settings.writeOperator("map(");
+            out.writeOperator("map(");
             for (size_t i = 0; i < arguments->children.size(); ++i)
             {
                 if (i != 0)
-                    settings.ostr << ", ";
+                    out.ostr << ", ";
                 if (arguments->children[i]->as<ASTSetQuery>())
-                    settings.ostr << "SETTINGS ";
-                arguments->children[i]->formatImpl(settings, state, nested_dont_need_parens);
+                    out.ostr << "out ";
+                arguments->children[i]->formatImpl(out, state, nested_dont_need_parens);
             }
-            settings.writeOperator(")");
+            out.writeOperator(")");
             written = true;
         }
     }
 
     if (written)
     {
-        return finishFormatWithWindow(settings, state, frame);
+        return finishFormatWithWindow(out, state, frame);
     }
 
-    settings.writeFunction(name);
+    out.writeFunction(name);
 
     if (parameters)
     {
-        settings.writeFunction("(");
-        parameters->formatImpl(settings, state, nested_dont_need_parens);
-        settings.writeFunction(")");
+        out.writeFunction("(");
+        parameters->formatImpl(out, state, nested_dont_need_parens);
+        out.writeFunction(")");
     }
 
     if ((arguments && !arguments->children.empty()) || !no_empty_args)
-        settings.writeFunction("(");
+        out.writeFunction("(");
 
     if (arguments)
     {
@@ -939,19 +939,19 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 || name == "replaceRegexpAll");
 
         auto secret_arguments = std::make_pair(static_cast<size_t>(-1), static_cast<size_t>(-1));
-        if (!settings.shouldShowSecrets())
+        if (!out.shouldShowSecrets())
             secret_arguments = FunctionSecretArgumentsFinder(*this).getRange();
 
         for (size_t i = 0, size = arguments->children.size(); i < size; ++i)
         {
             if (i != 0)
-                settings.ostr << ", ";
+                out.ostr << ", ";
             if (arguments->children[i]->as<ASTSetQuery>())
-                settings.ostr << "SETTINGS ";
+                out.ostr << "out ";
 
-            if (!settings.shouldShowSecrets() && (secret_arguments.first <= i) && (i < secret_arguments.second))
+            if (!out.shouldShowSecrets() && (secret_arguments.first <= i) && (i < secret_arguments.second))
             {
-                settings.writeSecret();
+                out.writeSecret();
                 if (size - 1 < secret_arguments.second)
                     break; /// All other arguments should also be hidden.
                 continue;
@@ -963,19 +963,19 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 auto str = getOptionalStringLiteral(arguments->children[i]);
                 if (str.has_value())
                 {
-                    settings.writeStringLiteralWithMetacharacters(str.value(), "|()^$.[]?*+{:-");
+                    out.writeStringLiteralWithMetacharacters(str.value(), "|()^$.[]?*+{:-");
                     continue;
                 }
             }
 
-            arguments->children[i]->formatImpl(settings, state, nested_dont_need_parens);
+            arguments->children[i]->formatImpl(out, state, nested_dont_need_parens);
         }
     }
 
     if ((arguments && !arguments->children.empty()) || !no_empty_args)
-        settings.writeFunction(")");
+        out.writeFunction(")");
 
-    return finishFormatWithWindow(settings, state, frame);
+    return finishFormatWithWindow(out, state, frame);
 }
 
 bool ASTFunction::hasSecretParts() const

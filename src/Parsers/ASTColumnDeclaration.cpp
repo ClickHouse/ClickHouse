@@ -53,63 +53,59 @@ ASTPtr ASTColumnDeclaration::clone() const
     return res;
 }
 
-void ASTColumnDeclaration::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTColumnDeclaration::formatImpl(const FormattingBuffer & out) const
 {
-    frame.need_parens = false;
+    out.setNeedsParens(false);
 
     /// We have to always backquote column names to avoid ambiguouty with INDEX and other declarations in CREATE query.
-    settings.ostr << backQuote(name);
+    out.ostr << backQuote(name);
 
     if (type)
     {
-        settings.ostr << ' ';
-
-        FormatStateStacked type_frame = frame;
-        type_frame.indent = 0;
-
-        type->formatImpl(settings, state, type_frame);
+        out.ostr << ' ';
+        type->formatImpl(out.copyWithIndent(0));
     }
 
     if (null_modifier)
     {
-        settings.ostr << ' ';
-        settings.writeKeyword(*null_modifier ? "" : "NOT ");
-        settings.writeKeyword("NULL");
+        out.ostr << ' ';
+        out.writeKeyword(*null_modifier ? "" : "NOT ");
+        out.writeKeyword("NULL");
     }
 
     if (default_expression)
     {
-        settings.ostr << ' ';
-        settings.writeKeyword(default_specifier);
+        out.ostr << ' ';
+        out.writeKeyword(default_specifier);
         if (!ephemeral_default)
         {
-            settings.ostr << ' ';
-            default_expression->formatImpl(settings, state, frame);
+            out.ostr << ' ';
+            default_expression->formatImpl(out);
         }
     }
 
     if (comment)
     {
-        settings.writeKeyword(" COMMENT ");
-        comment->formatImpl(settings, state, frame);
+        out.writeKeyword(" COMMENT ");
+        comment->formatImpl(out);
     }
 
     if (codec)
     {
-        settings.ostr << ' ';
-        codec->formatImpl(settings, state, frame);
+        out.ostr << ' ';
+        codec->formatImpl(out);
     }
 
     if (ttl)
     {
-        settings.writeKeyword(" TTL ");
-        ttl->formatImpl(settings, state, frame);
+        out.writeKeyword(" TTL ");
+        ttl->formatImpl(out);
     }
 
     if (collation)
     {
-        settings.writeKeyword(" COLLATE ");
-        collation->formatImpl(settings, state, frame);
+        out.writeKeyword(" COLLATE ");
+        collation->formatImpl(out);
     }
 }
 

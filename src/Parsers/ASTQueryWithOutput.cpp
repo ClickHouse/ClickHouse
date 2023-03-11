@@ -23,31 +23,29 @@ void ASTQueryWithOutput::cloneOutputOptions(ASTQueryWithOutput & cloned) const
     }
 }
 
-void ASTQueryWithOutput::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
+void ASTQueryWithOutput::formatImpl(const FormattingBuffer & out) const
 {
-    formatQueryImpl(s, state, frame);
-
-    std::string indent_str = s.isOneLine() ? "" : std::string(4u * frame.indent, ' ');
+    formatQueryImpl(out);
 
     if (out_file)
     {
-        s.nlOrWs();
-        s.writeKeyword("INTO OUTFILE ");
-        out_file->formatImpl(s, state, frame);
+        out.nlOrWs();
+        out.writeKeyword("INTO OUTFILE ");
+        out_file->formatImpl(out);
     }
 
     if (format)
     {
-        s.nlOrWs();
-        s.writeKeyword("FORMAT ");
-        format->formatImpl(s, state, frame);
+        out.nlOrWs();
+        out.writeKeyword("FORMAT ");
+        format->formatImpl(out);
     }
 
     if (settings_ast && assert_cast<ASTSetQuery *>(settings_ast.get())->print_in_format)
     {
-        s.nlOrWs();
-        s.writeKeyword("SETTINGS ");
-        settings_ast->formatImpl(s, state, frame);
+        out.nlOrWs();
+        out.writeKeyword("SETTINGS ");
+        settings_ast->formatImpl(out);
     }
 }
 

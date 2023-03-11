@@ -9,47 +9,47 @@ namespace DB
 {
 namespace
 {
-    void formatProfileNameOrID(const String & str, bool is_id, const IAST::FormatSettings & settings)
+    void formatProfileNameOrID(const String & str, bool is_id, const IAST::FormattingBuffer & out)
     {
         if (is_id)
         {
-            settings.writeKeyword("ID");
-            settings.ostr << "(" << quoteString(str) << ")";
+            out.writeKeyword("ID");
+            out.ostr << "(" << quoteString(str) << ")";
         }
         else
         {
-            settings.ostr << backQuoteIfNeed(str);
+            out.ostr << backQuoteIfNeed(str);
         }
     }
 }
 
-void ASTSettingsProfileElement::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTSettingsProfileElement::formatImpl(const FormattingBuffer & out) const
 {
     if (!parent_profile.empty())
     {
-        settings.writeKeyword(use_inherit_keyword ? "INHERIT" : "PROFILE");
-        settings.ostr << " ";
-        formatProfileNameOrID(parent_profile, id_mode, settings);
+        out.writeKeyword(use_inherit_keyword ? "INHERIT" : "PROFILE");
+        out.ostr << " ";
+        formatProfileNameOrID(parent_profile, id_mode, out);
         return;
     }
 
-    formatSettingName(setting_name, settings.ostr);
+    formatSettingName(setting_name, out.ostr);
 
     if (!value.isNull())
     {
-        settings.ostr << " = " << applyVisitor(FieldVisitorToString{}, value);
+        out.ostr << " = " << applyVisitor(FieldVisitorToString{}, value);
     }
 
     if (!min_value.isNull())
     {
-        settings.writeKeyword(" MIN ");
-        settings.ostr << applyVisitor(FieldVisitorToString{}, min_value);
+        out.writeKeyword(" MIN ");
+        out.ostr << applyVisitor(FieldVisitorToString{}, min_value);
     }
 
     if (!max_value.isNull())
     {
-        settings.writeKeyword(" MAX ");
-        settings.ostr << applyVisitor(FieldVisitorToString{}, max_value);
+        out.writeKeyword(" MAX ");
+        out.ostr << applyVisitor(FieldVisitorToString{}, max_value);
     }
 
     if (writability)
@@ -57,13 +57,13 @@ void ASTSettingsProfileElement::formatImpl(const FormatSettings & settings, Form
         switch (*writability)
         {
             case SettingConstraintWritability::WRITABLE:
-                settings.writeKeyword(" WRITABLE");
+                out.writeKeyword(" WRITABLE");
                 break;
             case SettingConstraintWritability::CONST:
-                settings.writeKeyword(" CONST");
+                out.writeKeyword(" CONST");
                 break;
             case SettingConstraintWritability::CHANGEABLE_IN_READONLY:
-                settings.writeKeyword(" CHANGEABLE_IN_READONLY");
+                out.writeKeyword(" CHANGEABLE_IN_READONLY");
                 break;
             case SettingConstraintWritability::MAX: break;
         }
@@ -80,11 +80,11 @@ bool ASTSettingsProfileElements::empty() const
 }
 
 
-void ASTSettingsProfileElements::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTSettingsProfileElements::formatImpl(const FormattingBuffer & out) const
 {
     if (empty())
     {
-        settings.writeKeyword("NONE");
+        out.writeKeyword("NONE");
         return;
     }
 
@@ -92,10 +92,10 @@ void ASTSettingsProfileElements::formatImpl(const FormatSettings & settings, For
     for (const auto & element : elements)
     {
         if (need_comma)
-            settings.ostr << ", ";
+            out.ostr << ", ";
         need_comma = true;
 
-        element->format(settings);
+        element->format(out.copy());
     }
 }
 

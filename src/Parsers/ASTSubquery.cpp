@@ -27,7 +27,7 @@ void ASTSubquery::appendColumnNameImpl(WriteBuffer & ostr) const
     }
 }
 
-void ASTSubquery::formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTSubquery::formatImplWithoutAlias(const FormattingBuffer & out) const
 {
     /// NOTE: due to trickery of filling cte_name (in interpreters) it is hard
     /// to print it without newline (for !oneline case), since if settings.nlOrWs()
@@ -36,20 +36,16 @@ void ASTSubquery::formatImplWithoutAlias(const FormatSettings & settings, Format
     ///   (select 1 in ((select 1) as sub))
     if (!cte_name.empty())
     {
-        settings.writeIdentifier(cte_name);
+        out.writeIdentifier(cte_name);
         return;
     }
 
-    std::string indent_str = settings.isOneLine() ? "" : std::string(4u * frame.indent, ' ');
-
-    settings.ostr << "(";
-    settings.nlOrNothing();
-    FormatStateStacked frame_nested = frame;
-    frame_nested.need_parens = false;
-    ++frame_nested.indent;
-    children[0]->formatImpl(settings, state, frame_nested);
-    settings.nlOrNothing();
-    settings.ostr << indent_str << ")";
+    out.ostr << "(";
+    out.nlOrNothing();
+    children[0]->formatImpl(out.copy(true, false));
+    out.nlOrNothing();
+    out.writeIndent();
+    out.ostr << ")";
 }
 
 void ASTSubquery::updateTreeHashImpl(SipHash & hash_state) const

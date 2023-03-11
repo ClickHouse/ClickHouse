@@ -37,7 +37,7 @@ public:
     String tryGetAlias() const override;
 
 protected:
-    void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatImplWithoutAlias(const FormattingBuffer & out) const override;
     void appendColumnNameImpl(WriteBuffer & ostr) const override;
 };
 
