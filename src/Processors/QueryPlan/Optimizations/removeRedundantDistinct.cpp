@@ -119,7 +119,7 @@ namespace
             }
         }
         /// if aggregation keys are part of distinct columns then rows already distinct
-        for(const auto & key : aggregation_keys)
+        for (const auto & key : aggregation_keys)
         {
             if (!original_distinct_columns.contains(key))
             {
