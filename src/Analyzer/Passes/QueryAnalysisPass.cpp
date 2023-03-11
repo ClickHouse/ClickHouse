@@ -199,7 +199,6 @@ namespace ErrorCodes
   * TODO: SELECT (compound_expression).*, (compound_expression).COLUMNS are not supported on parser level.
   * TODO: SELECT a.b.c.*, a.b.c.COLUMNS. Qualified matcher where identifier size is greater than 2 are not supported on parser level.
   * TODO: Support function identifier resolve from parent query scope, if lambda in parent scope does not capture any columns.
-  * TODO: Support group_by_use_nulls.
   * TODO: Scalar subqueries cache.
   */
 
@@ -472,6 +471,12 @@ public:
             alias_name_to_expressions[node_alias].push_back(node);
         }
 
+        if (const auto * function = node->as<FunctionNode>())
+        {
+            if (AggregateFunctionFactory::instance().isAggregateFunctionName(function->getFunctionName()))
+                ++aggregate_functions_counter;
+        }
+
         expressions.emplace_back(node);
     }
 
@@ -490,6 +495,12 @@ public:
                 alias_name_to_expressions.erase(it);
         }
 
+        if (const auto * function = top_expression->as<FunctionNode>())
+        {
+            if (AggregateFunctionFactory::instance().isAggregateFunctionName(function->getFunctionName()))
+                --aggregate_functions_counter;
+        }
+
         expressions.pop_back();
     }
 
@@ -506,6 +517,11 @@ public:
     [[maybe_unused]] bool hasExpressionWithAlias(const std::string & alias) const
     {
         return alias_name_to_expressions.contains(alias);
+    }
+
+    bool hasAggregateFunction() const
+    {
+        return aggregate_functions_counter > 0;
     }
 
     QueryTreeNodePtr getExpressionWithAlias(const std::string & alias) const
@@ -554,6 +570,7 @@ public:
 
 private:
     QueryTreeNodes expressions;
+    size_t aggregate_functions_counter = 0;
     std::unordered_map<std::string, QueryTreeNodes> alias_name_to_expressions;
 };
 
@@ -686,7 +703,11 @@ struct IdentifierResolveScope
         if (auto * union_node = scope_node->as<UnionNode>())
             context = union_node->getContext();
         else if (auto * query_node = scope_node->as<QueryNode>())
+        {
             context = query_node->getContext();
+            group_by_use_nulls = context->getSettingsRef().group_by_use_nulls &&
+                (query_node->isGroupByWithGroupingSets() || query_node->isGroupByWithRollup() || query_node->isGroupByWithCube());
+        }
     }
 
     QueryTreeNodePtr scope_node;
@@ -734,8 +755,13 @@ struct IdentifierResolveScope
     /// Table expression node to data
     std::unordered_map<QueryTreeNodePtr, TableExpressionData> table_expression_node_to_data;
 
+    QueryTreeNodePtrWithHashSet nullable_group_by_keys;
+
     /// Use identifier lookup to result cache
     bool use_identifier_lookup_to_result_cache = true;
+
+    /// Apply nullability to aggregation keys
+    bool group_by_use_nulls = false;
 
     /// JOINs count
     size_t joins_count = 0;
@@ -5407,10 +5433,18 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
         }
     }
 
+    if (node
+        && scope.nullable_group_by_keys.contains(node)
+        && !scope.expressions_in_resolve_process_stack.hasAggregateFunction())
+    {
+        node = node->clone();
+        node->convertToNullable();
+    }
+
     /** Update aliases after expression node was resolved.
       * Do not update node in alias table if we resolve it for duplicate alias.
       */
-    if (!node_alias.empty() && use_alias_table)
+    if (!node_alias.empty() && use_alias_table && !scope.group_by_use_nulls)
     {
         auto it = scope.alias_name_to_expression_node.find(node_alias);
         if (it != scope.alias_name_to_expression_node.end())
@@ -6418,9 +6452,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     auto & query_node_typed = query_node->as<QueryNode &>();
     const auto & settings = scope.context->getSettingsRef();
 
-    if (settings.group_by_use_nulls)
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "GROUP BY use nulls is not supported");
-
     bool is_rollup_or_cube = query_node_typed.isGroupByWithRollup() || query_node_typed.isGroupByWithCube();
 
     if (query_node_typed.isGroupByWithGroupingSets() && query_node_typed.isGroupByWithTotals())
@@ -6556,15 +6587,10 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         resolveQueryJoinTreeNode(query_node_typed.getJoinTree(), scope, visitor);
     }
 
-    scope.use_identifier_lookup_to_result_cache = true;
+    if (!scope.group_by_use_nulls)
+        scope.use_identifier_lookup_to_result_cache = true;
 
     /// Resolve query node sections.
-
-    auto projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope);
-    if (query_node_typed.getProjection().getNodes().empty())
-        throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED,
-            "Empty list of columns in projection. In scope {}",
-            scope.scope_node->formatASTForErrorMessage());
 
     if (query_node_typed.hasWith())
         resolveExpressionNodeList(query_node_typed.getWithNode(), scope, true /*allow_lambda_expression*/, false /*allow_table_expression*/);
@@ -6586,6 +6612,15 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
                 resolveExpressionNodeList(grouping_sets_keys_list_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
             }
+
+            if (scope.group_by_use_nulls)
+            {
+                for (const auto & grouping_set : query_node_typed.getGroupBy().getNodes())
+                {
+                    for (const auto & group_by_elem : grouping_set->as<ListNode>()->getNodes())
+                        scope.nullable_group_by_keys.insert(group_by_elem);
+                }
+            }
         }
         else
         {
@@ -6593,6 +6628,12 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                 replaceNodesWithPositionalArguments(query_node_typed.getGroupByNode(), query_node_typed.getProjection().getNodes(), scope);
 
             resolveExpressionNodeList(query_node_typed.getGroupByNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+            if (scope.group_by_use_nulls)
+            {
+                for (const auto & group_by_elem : query_node_typed.getGroupBy().getNodes())
+                    scope.nullable_group_by_keys.insert(group_by_elem);
+            }
         }
     }
 
@@ -6644,6 +6685,12 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         resolveExpressionNode(query_node_typed.getOffset(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
         convertLimitOffsetExpression(query_node_typed.getOffset(), "OFFSET", scope);
     }
+
+    auto projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope);
+    if (query_node_typed.getProjection().getNodes().empty())
+        throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED,
+            "Empty list of columns in projection. In scope {}",
+            scope.scope_node->formatASTForErrorMessage());
 
     /** Resolve nodes with duplicate aliases.
       * Table expressions cannot have duplicate aliases.
@@ -6708,7 +6755,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             "ARRAY JOIN",
             "in PREWHERE");
 
-    validateAggregates(query_node);
+    validateAggregates(query_node, { .group_by_use_nulls = scope.group_by_use_nulls });
 
     /** WITH section can be safely removed, because WITH section only can provide aliases to query expressions
       * and CTE for other sections to use.
