@@ -46,53 +46,53 @@ void ASTInsertQuery::setTable(const String & name)
         table = std::make_shared<ASTIdentifier>(name);
 }
 
-void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTInsertQuery::formatImpl(const FormattingBuffer & out) const
 {
-    frame.need_parens = false;
+    out.setNeedsParens(false);
 
-    settings.writeKeyword("INSERT INTO ");
+    out.writeKeyword("INSERT INTO ");
     if (table_function)
     {
-        settings.writeKeyword("FUNCTION ");
-        table_function->formatImpl(settings, state, frame);
+        out.writeKeyword("FUNCTION ");
+        table_function->formatImpl(out);
         if (partition_by)
         {
-            settings.writeKeyword(" PARTITION BY ");
-            partition_by->formatImpl(settings, state, frame);
+            out.writeKeyword(" PARTITION BY ");
+            partition_by->formatImpl(out);
         }
     }
     else if (table_id)
     {
-        settings.ostr << (!table_id.database_name.empty() ? backQuoteIfNeed(table_id.database_name) + "." : "") << backQuoteIfNeed(table_id.table_name);
+        out.ostr << (!table_id.database_name.empty() ? backQuoteIfNeed(table_id.database_name) + "." : "") << backQuoteIfNeed(table_id.table_name);
     }
     else
     {
-        settings.ostr << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
+        out.ostr << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
     }
 
     if (columns)
     {
-        settings.ostr << " (";
-        columns->formatImpl(settings, state, frame);
-        settings.ostr << ")";
+        out.ostr << " (";
+        columns->formatImpl(out);
+        out.ostr << ")";
     }
 
     if (infile)
     {
-        settings.writeKeyword(" FROM INFILE ");
-        settings.ostr << quoteString(infile->as<ASTLiteral &>().value.safeGet<std::string>());
+        out.writeKeyword(" FROM INFILE ");
+        out.ostr << quoteString(infile->as<ASTLiteral &>().value.safeGet<std::string>());
         if (compression)
         {
-            settings.writeKeyword(" COMPRESSION ");
-            settings.ostr << quoteString(compression->as<ASTLiteral &>().value.safeGet<std::string>());
+            out.writeKeyword(" COMPRESSION ");
+            out.ostr << quoteString(compression->as<ASTLiteral &>().value.safeGet<std::string>());
         }
     }
 
     if (settings_ast)
     {
-        settings.nlOrWs();
-        settings.writeKeyword("SETTINGS ");
-        settings_ast->formatImpl(settings, state, frame);
+        out.nlOrWs();
+        out.writeKeyword("SETTINGS ");
+        settings_ast->formatImpl(out);
     }
 
     /// Compatibility for INSERT without SETTINGS to format in oneline, i.e.:
@@ -108,18 +108,18 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
     if (select)
     {
         if (settings_ast)
-            settings.nlOrWs();
+            out.nlOrWs();
         else
-            settings.ostr << ' ';
-        select->formatImpl(settings, state, frame);
+            out.ostr << ' ';
+        select->formatImpl(out);
     }
     else if (watch)
     {
         if (settings_ast)
-            settings.nlOrWs();
+            out.nlOrWs();
         else
-            settings.ostr << ' ';
-        watch->formatImpl(settings, state, frame);
+            out.ostr << ' ';
+        watch->formatImpl(out);
     }
 
     if (!select && !watch)
@@ -127,19 +127,19 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
         if (!format.empty())
         {
             if (settings_ast)
-                settings.nlOrWs();
+                out.nlOrWs();
             else
-                settings.ostr << ' ';
-            settings.writeKeyword("FORMAT ");
-            settings.ostr << format;
+                out.ostr << ' ';
+            out.writeKeyword("FORMAT ");
+            out.ostr << format;
         }
         else if (!infile)
         {
             if (settings_ast)
-                settings.nlOrWs();
+                out.nlOrWs();
             else
-                settings.ostr << ' ';
-            settings.writeKeyword("VALUES");
+                out.ostr << ' ';
+            out.writeKeyword("VALUES");
         }
     }
 }

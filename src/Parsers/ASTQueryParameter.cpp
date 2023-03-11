@@ -6,13 +6,13 @@
 namespace DB
 {
 
-void ASTQueryParameter::formatImplWithoutAlias(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTQueryParameter::formatImplWithoutAlias(const FormattingBuffer & out) const
 {
-    settings.writeSubstitution("{");
-    settings.writeProbablyBackQuotedIdentifier(name);
-    settings.writeSubstitution(":");
-    settings.writeProbablyBackQuotedIdentifier(type);
-    settings.writeSubstitution("}");
+    out.writeSubstitution("{");
+    out.writeProbablyBackQuotedIdentifier(name);
+    out.writeSubstitution(":");
+    out.writeProbablyBackQuotedIdentifier(type);
+    out.writeSubstitution("}");
 }
 
 void ASTQueryParameter::appendColumnNameImpl(WriteBuffer & ostr) const

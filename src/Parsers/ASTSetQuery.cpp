@@ -19,44 +19,44 @@ void ASTSetQuery::updateTreeHashImpl(SipHash & hash_state) const
     }
 }
 
-void ASTSetQuery::formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const
+void ASTSetQuery::formatImpl(const FormattingBuffer & out) const
 {
     if (is_standalone)
-        format.writeKeyword("SET ");
+        out.writeKeyword("SET ");
 
     bool first = true;
 
     for (const auto & change : changes)
     {
         if (!first)
-            format.ostr << ", ";
+            out.ostr << ", ";
         else
             first = false;
 
-        formatSettingName(change.name, format.ostr);
-        format.ostr << " = " << applyVisitor(FieldVisitorToString(), change.value);
+        formatSettingName(change.name, out.ostr);
+        out.ostr << " = " << applyVisitor(FieldVisitorToString(), change.value);
     }
 
     for (const auto & setting_name : default_settings)
     {
         if (!first)
-            format.ostr << ", ";
+            out.ostr << ", ";
         else
             first = false;
 
-        formatSettingName(setting_name, format.ostr);
-        format.ostr << " = DEFAULT";
+        formatSettingName(setting_name, out.ostr);
+        out.ostr << " = DEFAULT";
     }
 
     for (const auto & [name, value] : query_parameters)
     {
         if (!first)
-            format.ostr << ", ";
+            out.ostr << ", ";
         else
             first = false;
 
-        formatSettingName(QUERY_PARAMETER_NAME_PREFIX + name, format.ostr);
-        format.ostr << " = " << value;
+        formatSettingName(QUERY_PARAMETER_NAME_PREFIX + name, out.ostr);
+        out.ostr << " = " << value;
     }
 }
 

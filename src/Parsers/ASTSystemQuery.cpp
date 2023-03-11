@@ -84,57 +84,57 @@ void ASTSystemQuery::setTable(const String & name)
     }
 }
 
-void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTSystemQuery::formatImpl(const FormattingBuffer & out) const
 {
-    settings.writeKeyword("SYSTEM ");
-    settings.writeKeyword(typeToString(type));
+    out.writeKeyword("SYSTEM ");
+    out.writeKeyword(typeToString(type));
 
     auto print_database_table = [&]
     {
-        settings.ostr << " ";
+        out.ostr << " ";
         if (database)
         {
-            settings.writeProbablyBackQuotedIdentifier(getDatabase());
-            settings.ostr << ".";
+            out.writeProbablyBackQuotedIdentifier(getDatabase());
+            out.ostr << ".";
         }
-        settings.writeProbablyBackQuotedIdentifier(getTable());
+        out.writeProbablyBackQuotedIdentifier(getTable());
     };
 
     auto print_drop_replica = [&]
     {
-        settings.ostr << " " << quoteString(replica);
+        out.ostr << " " << quoteString(replica);
         if (table)
         {
-            settings.writeKeyword(" FROM TABLE");
+            out.writeKeyword(" FROM TABLE");
             print_database_table();
         }
         else if (!replica_zk_path.empty())
         {
-            settings.writeKeyword(" FROM ZKPATH ");
+            out.writeKeyword(" FROM ZKPATH ");
         }
         else if (database)
         {
-            settings.writeKeyword(" FROM DATABASE ");
-            settings.writeProbablyBackQuotedIdentifier(getDatabase());
+            out.writeKeyword(" FROM DATABASE ");
+            out.writeProbablyBackQuotedIdentifier(getDatabase());
         }
     };
 
     auto print_on_volume = [&]
     {
-        settings.writeKeyword(" ON VOLUME ");
-        settings.writeProbablyBackQuotedIdentifier(storage_policy);
-        settings.ostr << ".";
-        settings.writeProbablyBackQuotedIdentifier(volume);
+        out.writeKeyword(" ON VOLUME ");
+        out.writeProbablyBackQuotedIdentifier(storage_policy);
+        out.ostr << ".";
+        out.writeProbablyBackQuotedIdentifier(volume);
     };
 
     auto print_identifier = [&](const String & identifier)
     {
-        settings.ostr << " ";
-        settings.writeProbablyBackQuotedIdentifier(identifier);
+        out.ostr << " ";
+        out.writeProbablyBackQuotedIdentifier(identifier);
     };
 
     if (!cluster.empty())
-        formatOnCluster(settings);
+        formatOnCluster(out);
 
     if (   type == Type::STOP_MERGES
         || type == Type::START_MERGES
@@ -185,18 +185,18 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     }
     else if (type == Type::SUSPEND)
     {
-        settings.writeKeyword(" FOR ");
-        settings.ostr << seconds;
-        settings.writeKeyword(" SECONDS");
+        out.writeKeyword(" FOR ");
+        out.ostr << seconds;
+        out.writeKeyword(" SECONDS");
     }
     else if (type == Type::DROP_FILESYSTEM_CACHE)
     {
         if (!filesystem_cache_path.empty())
-            settings.ostr << " " << filesystem_cache_path;
+            out.ostr << " " << filesystem_cache_path;
     }
     else if (type == Type::UNFREEZE)
     {
-        settings.writeProbablyBackQuotedIdentifier(backup_name);
+        out.writeProbablyBackQuotedIdentifier(backup_name);
     }
 }
 

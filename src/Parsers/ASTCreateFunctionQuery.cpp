@@ -20,24 +20,24 @@ ASTPtr ASTCreateFunctionQuery::clone() const
     return res;
 }
 
-void ASTCreateFunctionQuery::formatImpl(const IAST::FormatSettings & settings, IAST::FormatState & state, IAST::FormatStateStacked frame) const
+void ASTCreateFunctionQuery::formatImpl(const FormattingBuffer & out) const
 {
-    settings.writeKeyword("CREATE ");
+    out.writeKeyword("CREATE ");
 
     if (or_replace)
-        settings.writeKeyword("OR REPLACE ");
+        out.writeKeyword("OR REPLACE ");
 
-    settings.writeKeyword("FUNCTION ");
+    out.writeKeyword("FUNCTION ");
 
     if (if_not_exists)
-        settings.writeKeyword("IF NOT EXISTS ");
+        out.writeKeyword("IF NOT EXISTS ");
 
-    settings.writeProbablyBackQuotedIdentifier(getFunctionName());
+    out.writeProbablyBackQuotedIdentifier(getFunctionName());
 
-    formatOnCluster(settings);
+    formatOnCluster(out);
 
-    settings.writeKeyword(" AS ");
-    function_core->formatImpl(settings, state, frame);
+    out.writeKeyword(" AS ");
+    function_core->formatImpl(out);
 }
 
 String ASTCreateFunctionQuery::getFunctionName() const

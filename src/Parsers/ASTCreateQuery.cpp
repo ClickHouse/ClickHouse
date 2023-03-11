@@ -35,50 +35,50 @@ ASTPtr ASTStorage::clone() const
     return res;
 }
 
-void ASTStorage::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
+void ASTStorage::formatImpl(const FormattingBuffer & out) const
 {
     if (engine)
     {
-        s.nlOrWs();
-        s.writeKeyword("ENGINE");
-        s.ostr << " = ";
-        engine->formatImpl(s, state, frame);
+        out.nlOrWs();
+        out.writeKeyword("ENGINE");
+        out.ostr << " = ";
+        engine->formatImpl(out);
     }
     if (partition_by)
     {
-        s.nlOrWs();
-        s.writeKeyword("PARTITION BY ");
-        partition_by->formatImpl(s, state, frame);
+        out.nlOrWs();
+        out.writeKeyword("PARTITION BY ");
+        partition_by->formatImpl(out);
     }
     if (primary_key)
     {
-        s.nlOrWs();
-        s.writeKeyword("PRIMARY KEY ");
-        primary_key->formatImpl(s, state, frame);
+        out.nlOrWs();
+        out.writeKeyword("PRIMARY KEY ");
+        primary_key->formatImpl(out);
     }
     if (order_by)
     {
-        s.nlOrWs();
-        s.writeKeyword("ORDER BY ");
-        order_by->formatImpl(s, state, frame);
+        out.nlOrWs();
+        out.writeKeyword("ORDER BY ");
+        order_by->formatImpl(out);
     }
     if (sample_by)
     {
-        s.nlOrWs();
-        s.writeKeyword("SAMPLE BY ");
-        sample_by->formatImpl(s, state, frame);
+        out.nlOrWs();
+        out.writeKeyword("SAMPLE BY ");
+        sample_by->formatImpl(out);
     }
     if (ttl_table)
     {
-        s.nlOrWs();
-        s.writeKeyword("TTL ");
-        ttl_table->formatImpl(s, state, frame);
+        out.nlOrWs();
+        out.writeKeyword("TTL ");
+        ttl_table->formatImpl(out);
     }
     if (settings)
     {
-        s.nlOrWs();
-        s.writeKeyword("SETTINGS ");
-        settings->formatImpl(s, state, frame);
+        out.nlOrWs();
+        out.writeKeyword("SETTINGS ");
+        settings->formatImpl(out);
     }
 }
 
@@ -93,7 +93,7 @@ public:
 
     ASTPtr clone() const override;
 
-    void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
+    void formatImpl(const FormattingBuffer & out) const override;
 };
 
 ASTPtr ASTColumnsElement::clone() const
@@ -105,20 +105,20 @@ ASTPtr ASTColumnsElement::clone() const
     return res;
 }
 
-void ASTColumnsElement::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
+void ASTColumnsElement::formatImpl(const FormattingBuffer & out) const
 {
     if (!elem)
         return;
 
     if (prefix.empty())
     {
-        elem->formatImpl(s, state, frame);
+        elem->formatImpl(out);
         return;
     }
 
-    s.writeKeyword(prefix);
-    s.ostr << ' ';
-    elem->formatImpl(s, state, frame);
+    out.writeKeyword(prefix);
+    out.ostr << ' ';
+    elem->formatImpl(out);
 }
 
 
@@ -140,7 +140,7 @@ ASTPtr ASTColumns::clone() const
     return res;
 }
 
-void ASTColumns::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
+void ASTColumns::formatImpl(const FormattingBuffer & out) const
 {
     ASTExpressionList list;
 
@@ -186,7 +186,7 @@ void ASTColumns::formatImpl(const FormatSettings & s, FormatState & state, Forma
     }
 
     if (!list.children.empty())
-        s.isOneLine() ? list.formatImpl(s) : list.formatImplMultiline(s);
+        out.isOneLine() ? list.formatImpl(out) : list.formatImplMultiline(out);
 }
 
 
@@ -224,38 +224,38 @@ ASTPtr ASTCreateQuery::clone() const
     return res;
 }
 
-void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTCreateQuery::formatQueryImpl(const FormattingBuffer & out) const
 {
-    frame.need_parens = false;
+    out.setNeedsParens(false);
 
     if (database && !table)
     {
-        settings.writeKeyword(attach ? "ATTACH DATABASE " : "CREATE DATABASE ");
-        settings.writeKeyword(if_not_exists ? "IF NOT EXISTS " : "");
-        settings.ostr << backQuoteIfNeed(getDatabase());
+        out.writeKeyword(attach ? "ATTACH DATABASE " : "CREATE DATABASE ");
+        out.writeKeyword(if_not_exists ? "IF NOT EXISTS " : "");
+        out.ostr << backQuoteIfNeed(getDatabase());
 
         if (uuid != UUIDHelpers::Nil)
         {
-            settings.writeKeyword(" UUID ");
-            settings.ostr << quoteString(toString(uuid));
+            out.writeKeyword(" UUID ");
+            out.ostr << quoteString(toString(uuid));
         }
 
-        formatOnCluster(settings);
+        formatOnCluster(out);
 
         if (storage)
-            storage->formatImpl(settings, state, frame);
+            storage->formatImpl(out);
 
         if (table_overrides)
         {
-            settings.nlOrWs();
-            table_overrides->formatImpl(settings, state, frame);
+            out.nlOrWs();
+            table_overrides->formatImpl(out);
         }
 
         if (comment)
         {
-            settings.nlOrWs();
-            settings.writeKeyword("COMMENT ");
-            comment->formatImpl(settings, state, frame);
+            out.nlOrWs();
+            out.writeKeyword("COMMENT ");
+            comment->formatImpl(out);
         }
 
         return;
@@ -283,35 +283,35 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         else if (is_window_view)
             what = "WINDOW VIEW";
 
-        settings.writeKeyword(action);
-        settings.ostr << " ";
-        settings.writeKeyword(temporary ? "TEMPORARY " : "");
-        settings.writeKeyword(what);
-        settings.ostr << " ";
-        settings.writeKeyword(if_not_exists ? "IF NOT EXISTS " : "");
-        settings.ostr << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
+        out.writeKeyword(action);
+        out.ostr << " ";
+        out.writeKeyword(temporary ? "TEMPORARY " : "");
+        out.writeKeyword(what);
+        out.ostr << " ";
+        out.writeKeyword(if_not_exists ? "IF NOT EXISTS " : "");
+        out.ostr << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
 
         if (uuid != UUIDHelpers::Nil)
         {
-            settings.writeKeyword(" UUID ");
-            settings.ostr << quoteString(toString(uuid));
+            out.writeKeyword(" UUID ");
+            out.ostr << quoteString(toString(uuid));
         }
 
         assert(attach || !attach_from_path);
         if (attach_from_path)
         {
-            settings.writeKeyword(" FROM ");
-            settings.ostr << quoteString(*attach_from_path);
+            out.writeKeyword(" FROM ");
+            out.ostr << quoteString(*attach_from_path);
         }
 
         if (live_view_periodic_refresh)
         {
-            settings.writeKeyword(" WITH");
-            settings.writeKeyword(" PERIODIC REFRESH ");
-            settings.ostr << *live_view_periodic_refresh;
+            out.writeKeyword(" WITH");
+            out.writeKeyword(" PERIODIC REFRESH ");
+            out.ostr << *live_view_periodic_refresh;
         }
 
-        formatOnCluster(settings);
+        formatOnCluster(out);
     }
     else
     {
@@ -324,23 +324,23 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
             action = "REPLACE";
 
         /// Always DICTIONARY
-        settings.writeKeyword(action);
-        settings.writeKeyword(" DICTIONARY ");
-        settings.writeKeyword(if_not_exists ? "IF NOT EXISTS " : "");
-        settings.ostr << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
+        out.writeKeyword(action);
+        out.writeKeyword(" DICTIONARY ");
+        out.writeKeyword(if_not_exists ? "IF NOT EXISTS " : "");
+        out.ostr << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
         if (uuid != UUIDHelpers::Nil)
         {
-            settings.writeKeyword(" UUID ");
-            settings.ostr << quoteString(toString(uuid));
+            out.writeKeyword(" UUID ");
+            out.ostr << quoteString(toString(uuid));
         }
-        formatOnCluster(settings);
+        formatOnCluster(out);
     }
 
     if (to_table_id)
     {
         assert((is_materialized_view || is_window_view) && to_inner_uuid == UUIDHelpers::Nil);
-        settings.writeKeyword(" TO ");
-        settings.ostr
+        out.writeKeyword(" TO ");
+        out.ostr
             << (!to_table_id.database_name.empty() ? backQuoteIfNeed(to_table_id.database_name) + "." : "")
             << backQuoteIfNeed(to_table_id.table_name);
     }
@@ -348,14 +348,14 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
     if (to_inner_uuid != UUIDHelpers::Nil)
     {
         assert(is_materialized_view && !to_table_id);
-        settings.writeKeyword(" TO INNER UUID ");
-        settings.ostr << quoteString(toString(to_inner_uuid));
+        out.writeKeyword(" TO INNER UUID ");
+        out.ostr << quoteString(toString(to_inner_uuid));
     }
 
     if (!as_table.empty())
     {
-        settings.writeKeyword(" AS ");
-        settings.ostr
+        out.writeKeyword(" AS ");
+        out.ostr
             << (!as_database.empty() ? backQuoteIfNeed(as_database) + "." : "") << backQuoteIfNeed(as_table);
     }
 
@@ -363,95 +363,93 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
     {
         if (columns_list && !columns_list->empty())
         {
-            frame.expression_list_always_start_on_new_line = true;
-            settings.nlOrWs();
-            settings.ostr << "(";
-            FormatStateStacked frame_nested = frame;
-            columns_list->formatImpl(settings, state, frame_nested);
-            settings.nlOrNothing();
-            settings.ostr << ")";
-            frame.expression_list_always_start_on_new_line = false; //-V519
+            out.setExpressionListAlwaysStartsOnNewLine();
+            out.nlOrWs();
+            out.ostr << "(";
+            columns_list->formatImpl(out.copy());
+            out.nlOrNothing();
+            out.ostr << ")";
+            out.setExpressionListAlwaysStartsOnNewLine(false); //-V519
         }
 
-        settings.writeKeyword(" AS ");
-        as_table_function->formatImpl(settings, state, frame);
+        out.writeKeyword(" AS ");
+        as_table_function->formatImpl(out);
     }
 
-    frame.expression_list_always_start_on_new_line = true;
+    out.setExpressionListAlwaysStartsOnNewLine(true);
 
     if (columns_list && !columns_list->empty() && !as_table_function)
     {
-        settings.nlOrWs();
-        settings.ostr << "(";
-        FormatStateStacked frame_nested = frame;
-        columns_list->formatImpl(settings, state, frame_nested);
-        settings.nlOrNothing();
-        settings.ostr << ")";
+        out.nlOrWs();
+        out.ostr << "(";
+        columns_list->formatImpl(out.copy());
+        out.nlOrNothing();
+        out.ostr << ")";
     }
 
     if (dictionary_attributes_list)
     {
-        settings.nlOrWs();
-        settings.ostr << "(";
-        FormatStateStacked frame_nested = frame;
-        settings.isOneLine() ? dictionary_attributes_list->formatImpl(settings) : dictionary_attributes_list->formatImplMultiline(settings);
-        settings.nlOrNothing();
-        settings.ostr << ")";
+        out.nlOrWs();
+        out.ostr << "(";
+        out.isOneLine() ? dictionary_attributes_list->formatImpl(out.copy())
+                        : dictionary_attributes_list->formatImplMultiline(out.copy());
+        out.nlOrNothing();
+        out.ostr << ")";
     }
 
-    frame.expression_list_always_start_on_new_line = false; //-V519
+    out.setExpressionListAlwaysStartsOnNewLine(false); //-V519
 
     if (inner_storage)
     {
-        settings.writeKeyword(" INNER");
-        inner_storage->formatImpl(settings, state, frame);
+        out.writeKeyword(" INNER");
+        inner_storage->formatImpl(out);
     }
 
     if (storage)
-        storage->formatImpl(settings, state, frame);
+        storage->formatImpl(out);
 
     if (dictionary)
-        dictionary->formatImpl(settings, state, frame);
+        dictionary->formatImpl(out);
 
     if (is_watermark_strictly_ascending)
     {
-        settings.writeKeyword(" WATERMARK STRICTLY_ASCENDING");
+        out.writeKeyword(" WATERMARK STRICTLY_ASCENDING");
     }
     else if (is_watermark_ascending)
     {
-        settings.writeKeyword(" WATERMARK ASCENDING");
+        out.writeKeyword(" WATERMARK ASCENDING");
     }
     else if (is_watermark_bounded)
     {
-        settings.writeKeyword(" WATERMARK ");
-        watermark_function->formatImpl(settings, state, frame);
+        out.writeKeyword(" WATERMARK ");
+        watermark_function->formatImpl(out);
     }
 
     if (allowed_lateness)
     {
-        settings.writeKeyword(" ALLOWED_LATENESS ");
-        lateness_function->formatImpl(settings, state, frame);
+        out.writeKeyword(" ALLOWED_LATENESS ");
+        lateness_function->formatImpl(out);
     }
 
     if (is_populate)
-        settings.writeKeyword(" POPULATE");
+        out.writeKeyword(" POPULATE");
     else if (is_create_empty)
-            settings.writeKeyword(" EMPTY");
+        out.writeKeyword(" EMPTY");
 
     if (select)
     {
-        settings.writeKeyword(" AS");
-        settings.writeKeyword(comment ? "(" : "");
-        settings.nlOrWs();
-        select->formatImpl(settings, state, frame);
-        settings.writeKeyword(comment ? ")" : "");
+        out.writeKeyword(" AS");
+        out.writeKeyword(comment ? "(" : "");
+        out.nlOrWs();
+        select->formatImpl(out);
+        out.writeKeyword(comment ? ")" : "");
     }
 
     if (comment)
     {
-        settings.writeKeyword("COMMENT ");
-        settings.nlOrWs();
-        comment->formatImpl(settings, state, frame);
+        out.writeKeyword("COMMENT ");
+        out.nlOrWs();
+        comment->formatImpl(out);
     }
 }
 

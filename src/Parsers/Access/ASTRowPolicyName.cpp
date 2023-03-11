@@ -11,16 +11,16 @@ namespace ErrorCodes
 }
 
 
-void ASTRowPolicyName::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTRowPolicyName::formatImpl(const FormattingBuffer & out) const
 {
     const String & database = full_name.database;
     const String & table_name = full_name.table_name;
     const String & short_name = full_name.short_name;
-    settings.ostr << backQuoteIfNeed(short_name);
-    settings.writeKeyword(" ON ");
-    settings.ostr << (database.empty() ? String{} : backQuoteIfNeed(database) + ".") << backQuoteIfNeed(table_name);
+    out.ostr << backQuoteIfNeed(short_name);
+    out.writeKeyword(" ON ");
+    out.ostr << (database.empty() ? String{} : backQuoteIfNeed(database) + ".") << backQuoteIfNeed(table_name);
 
-    formatOnCluster(settings);
+    formatOnCluster(out);
 }
 
 
@@ -31,7 +31,7 @@ void ASTRowPolicyName::replaceEmptyDatabase(const String & current_database)
 }
 
 
-void ASTRowPolicyNames::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTRowPolicyNames::formatImpl(const FormattingBuffer & out) const
 {
     if (full_names.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No names of row policies in AST");
@@ -61,19 +61,19 @@ void ASTRowPolicyNames::formatImpl(const FormatSettings & settings, FormatState 
     if (same_short_name)
     {
         const String & short_name = full_names[0].short_name;
-        settings.ostr << backQuoteIfNeed(short_name);
-        settings.writeKeyword(" ON ");
+        out.ostr << backQuoteIfNeed(short_name);
+        out.writeKeyword(" ON ");
 
         bool need_comma = false;
         for (const auto & full_name : full_names)
         {
             if (std::exchange(need_comma, true))
-                settings.ostr << ", ";
+                out.ostr << ", ";
             const String & database = full_name.database;
             const String & table_name = full_name.table_name;
             if (!database.empty())
-                settings.ostr << backQuoteIfNeed(database) + ".";
-            settings.ostr << backQuoteIfNeed(table_name);
+                out.ostr << backQuoteIfNeed(database) + ".";
+            out.ostr << backQuoteIfNeed(table_name);
         }
     }
     else if (same_db_and_table_name)
@@ -82,17 +82,17 @@ void ASTRowPolicyNames::formatImpl(const FormatSettings & settings, FormatState 
         for (const auto & full_name : full_names)
         {
             if (std::exchange(need_comma, true))
-                settings.ostr << ", ";
+                out.ostr << ", ";
             const String & short_name = full_name.short_name;
-            settings.ostr << backQuoteIfNeed(short_name);
+            out.ostr << backQuoteIfNeed(short_name);
         }
 
         const String & database = full_names[0].database;
         const String & table_name = full_names[0].table_name;
-        settings.writeKeyword(" ON ");
+        out.writeKeyword(" ON ");
         if (!database.empty())
-            settings.ostr << backQuoteIfNeed(database) + ".";
-        settings.ostr << backQuoteIfNeed(table_name);
+            out.ostr << backQuoteIfNeed(database) + ".";
+        out.ostr << backQuoteIfNeed(table_name);
     }
     else
     {
@@ -100,19 +100,19 @@ void ASTRowPolicyNames::formatImpl(const FormatSettings & settings, FormatState 
         for (const auto & full_name : full_names)
         {
             if (std::exchange(need_comma, true))
-                settings.ostr << ", ";
+                out.ostr << ", ";
             const String & short_name = full_name.short_name;
             const String & database = full_name.database;
             const String & table_name = full_name.table_name;
-            settings.ostr << backQuoteIfNeed(short_name);
-            settings.writeKeyword(" ON ");
+            out.ostr << backQuoteIfNeed(short_name);
+            out.writeKeyword(" ON ");
             if (!database.empty())
-                settings.ostr << backQuoteIfNeed(database) + ".";
-            settings.ostr << backQuoteIfNeed(table_name);
+                out.ostr << backQuoteIfNeed(database) + ".";
+            out.ostr << backQuoteIfNeed(table_name);
         }
     }
 
-    formatOnCluster(settings);
+    formatOnCluster(out);
 }
 
 

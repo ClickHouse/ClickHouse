@@ -7,11 +7,11 @@
 namespace DB
 {
 
-void ASTInterpolateElement::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTInterpolateElement::formatImpl(const FormattingBuffer & out) const
 {
-    settings.ostr << column;
-    settings.writeKeyword(" AS ");
-        expr->formatImpl(settings, state, frame);
+    out.ostr << column;
+    out.writeKeyword(" AS ");
+        expr->formatImpl(out);
 }
 
 }

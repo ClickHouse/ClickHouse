@@ -110,30 +110,30 @@ public:
     const ASTPtr & getTableOverride() const { return table_override; }
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+    void formatQueryImpl(const FormattingBuffer & out) const override
     {
-        settings.writeKeyword(toString(kind));
+        out.writeKeyword(toString(kind));
 
         if (ast_settings)
         {
-            settings.ostr << ' ';
-            ast_settings->formatImpl(settings, state, frame);
+            out.ostr << ' ';
+            ast_settings->formatImpl(out);
         }
 
         if (query)
         {
-            settings.nlOrWs();
-            query->formatImpl(settings, state, frame);
+            out.nlOrWs();
+            query->formatImpl(out);
         }
         if (table_function)
         {
-            settings.nlOrWs();
-            table_function->formatImpl(settings, state, frame);
+            out.nlOrWs();
+            table_function->formatImpl(out);
         }
         if (table_override)
         {
-            settings.nlOrWs();
-            table_override->formatImpl(settings, state, frame);
+            out.nlOrWs();
+            table_override->formatImpl(out);
         }
     }
 

@@ -10,11 +10,11 @@ ASTPtr ASTDropNamedCollectionQuery::clone() const
     return std::make_shared<ASTDropNamedCollectionQuery>(*this);
 }
 
-void ASTDropNamedCollectionQuery::formatImpl(const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
+void ASTDropNamedCollectionQuery::formatImpl(const FormattingBuffer & out) const
 {
-    settings.writeKeyword("DROP NAMED COLLECTION ");
-    settings.writeProbablyBackQuotedIdentifier(collection_name);
-    formatOnCluster(settings);
+    out.writeKeyword("DROP NAMED COLLECTION ");
+    out.writeProbablyBackQuotedIdentifier(collection_name);
+    formatOnCluster(out);
 }
 
 }

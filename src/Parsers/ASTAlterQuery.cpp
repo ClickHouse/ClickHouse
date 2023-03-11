@@ -127,368 +127,368 @@ const char * ASTAlterCommand::typeToString(ASTAlterCommand::Type type)
     UNREACHABLE();
 }
 
-void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTAlterCommand::formatImpl(const FormattingBuffer & out) const
 {
     if (type == ASTAlterCommand::ADD_COLUMN)
     {
-        settings.writeKeyword("ADD COLUMN ");
-        settings.writeKeyword(if_not_exists ? "IF NOT EXISTS " : "");
-        col_decl->formatImpl(settings, state, frame);
+        out.writeKeyword("ADD COLUMN ");
+        out.writeKeyword(if_not_exists ? "IF NOT EXISTS " : "");
+        col_decl->formatImpl(out);
 
         if (first)
-            settings.writeKeyword(" FIRST ");
+            out.writeKeyword(" FIRST ");
         else if (column) /// AFTER
         {
-            settings.writeKeyword(" AFTER ");
-            column->formatImpl(settings, state, frame);
+            out.writeKeyword(" AFTER ");
+            column->formatImpl(out);
         }
     }
     else if (type == ASTAlterCommand::DROP_COLUMN)
     {
-        settings.writeKeyword(clear_column ? "CLEAR " : "DROP ");
-        settings.writeKeyword("COLUMN ");
-        settings.writeKeyword(if_exists ? "IF EXISTS " : "");
-        column->formatImpl(settings, state, frame);
+        out.writeKeyword(clear_column ? "CLEAR " : "DROP ");
+        out.writeKeyword("COLUMN ");
+        out.writeKeyword(if_exists ? "IF EXISTS " : "");
+        column->formatImpl(out);
         if (partition)
         {
-            settings.writeKeyword(" IN PARTITION ");
-            partition->formatImpl(settings, state, frame);
+            out.writeKeyword(" IN PARTITION ");
+            partition->formatImpl(out);
         }
     }
     else if (type == ASTAlterCommand::MODIFY_COLUMN)
     {
-        settings.writeKeyword("MODIFY COLUMN ");
-        settings.writeKeyword(if_exists ? "IF EXISTS " : "");
-        col_decl->formatImpl(settings, state, frame);
+        out.writeKeyword("MODIFY COLUMN ");
+        out.writeKeyword(if_exists ? "IF EXISTS " : "");
+        col_decl->formatImpl(out);
 
         if (!remove_property.empty())
         {
-            settings.writeKeyword(" REMOVE ");
-            settings.writeKeyword(remove_property);
+            out.writeKeyword(" REMOVE ");
+            out.writeKeyword(remove_property);
         }
         else
         {
             if (first)
-                settings.writeKeyword(" FIRST ");
+                out.writeKeyword(" FIRST ");
             else if (column) /// AFTER
             {
-                settings.writeKeyword(" AFTER ");
-                column->formatImpl(settings, state, frame);
+                out.writeKeyword(" AFTER ");
+                column->formatImpl(out);
             }
         }
     }
     else if (type == ASTAlterCommand::MATERIALIZE_COLUMN)
     {
-        settings.writeKeyword("MATERIALIZE COLUMN ");
-        column->formatImpl(settings, state, frame);
+        out.writeKeyword("MATERIALIZE COLUMN ");
+        column->formatImpl(out);
         if (partition)
         {
-            settings.writeKeyword(" IN PARTITION ");
-            partition->formatImpl(settings, state, frame);
+            out.writeKeyword(" IN PARTITION ");
+            partition->formatImpl(out);
         }
     }
     else if (type == ASTAlterCommand::COMMENT_COLUMN)
     {
-        settings.writeKeyword("COMMENT COLUMN ");
-        settings.writeKeyword(if_exists ? "IF EXISTS " : "");
-        column->formatImpl(settings, state, frame);
-        settings.ostr << " ";
-        comment->formatImpl(settings, state, frame);
+        out.writeKeyword("COMMENT COLUMN ");
+        out.writeKeyword(if_exists ? "IF EXISTS " : "");
+        column->formatImpl(out);
+        out.ostr << " ";
+        comment->formatImpl(out);
     }
     else if (type == ASTAlterCommand::MODIFY_COMMENT)
     {
-        settings.writeKeyword("MODIFY COMMENT");
-        settings.ostr << " ";
-        comment->formatImpl(settings, state, frame);
+        out.writeKeyword("MODIFY COMMENT");
+        out.ostr << " ";
+        comment->formatImpl(out);
     }
     else if (type == ASTAlterCommand::MODIFY_ORDER_BY)
     {
-        settings.writeKeyword("MODIFY ORDER BY ");
-        order_by->formatImpl(settings, state, frame);
+        out.writeKeyword("MODIFY ORDER BY ");
+        order_by->formatImpl(out);
     }
     else if (type == ASTAlterCommand::MODIFY_SAMPLE_BY)
     {
-        settings.writeKeyword("MODIFY SAMPLE BY ");
-        sample_by->formatImpl(settings, state, frame);
+        out.writeKeyword("MODIFY SAMPLE BY ");
+        sample_by->formatImpl(out);
     }
     else if (type == ASTAlterCommand::REMOVE_SAMPLE_BY)
     {
-        settings.writeKeyword("REMOVE SAMPLE BY");
+        out.writeKeyword("REMOVE SAMPLE BY");
     }
     else if (type == ASTAlterCommand::ADD_INDEX)
     {
-        settings.writeKeyword("ADD INDEX ");
-        settings.writeKeyword(if_not_exists ? "IF NOT EXISTS " : "");
-        index_decl->formatImpl(settings, state, frame);
+        out.writeKeyword("ADD INDEX ");
+        out.writeKeyword(if_not_exists ? "IF NOT EXISTS " : "");
+        index_decl->formatImpl(out);
 
         if (first)
-            settings.writeKeyword(" FIRST ");
+            out.writeKeyword(" FIRST ");
         else if (index) /// AFTER
         {
-            settings.writeKeyword(" AFTER ");
-            index->formatImpl(settings, state, frame);
+            out.writeKeyword(" AFTER ");
+            index->formatImpl(out);
         }
     }
     else if (type == ASTAlterCommand::DROP_INDEX)
     {
-        settings.writeKeyword(clear_index ? "CLEAR " : "DROP ");
-        settings.writeKeyword("INDEX ");
-        settings.writeKeyword(if_exists ? "IF EXISTS " : "");
-        index->formatImpl(settings, state, frame);
+        out.writeKeyword(clear_index ? "CLEAR " : "DROP ");
+        out.writeKeyword("INDEX ");
+        out.writeKeyword(if_exists ? "IF EXISTS " : "");
+        index->formatImpl(out);
         if (partition)
         {
-            settings.writeKeyword(" IN PARTITION ");
-            partition->formatImpl(settings, state, frame);
+            out.writeKeyword(" IN PARTITION ");
+            partition->formatImpl(out);
         }
     }
     else if (type == ASTAlterCommand::MATERIALIZE_INDEX)
     {
-        settings.writeKeyword("MATERIALIZE INDEX ");
-        index->formatImpl(settings, state, frame);
+        out.writeKeyword("MATERIALIZE INDEX ");
+        index->formatImpl(out);
         if (partition)
         {
-            settings.writeKeyword(" IN PARTITION ");
-            partition->formatImpl(settings, state, frame);
+            out.writeKeyword(" IN PARTITION ");
+            partition->formatImpl(out);
         }
     }
     else if (type == ASTAlterCommand::ADD_CONSTRAINT)
     {
-        settings.writeKeyword("ADD CONSTRAINT ");
-        settings.writeKeyword(if_not_exists ? "IF NOT EXISTS " : "");
-        constraint_decl->formatImpl(settings, state, frame);
+        out.writeKeyword("ADD CONSTRAINT ");
+        out.writeKeyword(if_not_exists ? "IF NOT EXISTS " : "");
+        constraint_decl->formatImpl(out);
     }
     else if (type == ASTAlterCommand::DROP_CONSTRAINT)
     {
-        settings.writeKeyword("DROP CONSTRAINT ");
-        settings.writeKeyword(if_exists ? "IF EXISTS " : "");
-        constraint->formatImpl(settings, state, frame);
+        out.writeKeyword("DROP CONSTRAINT ");
+        out.writeKeyword(if_exists ? "IF EXISTS " : "");
+        constraint->formatImpl(out);
     }
     else if (type == ASTAlterCommand::ADD_PROJECTION)
     {
-        settings.writeKeyword("ADD PROJECTION ");
-        settings.writeKeyword(if_not_exists ? "IF NOT EXISTS " : "");
-        projection_decl->formatImpl(settings, state, frame);
+        out.writeKeyword("ADD PROJECTION ");
+        out.writeKeyword(if_not_exists ? "IF NOT EXISTS " : "");
+        projection_decl->formatImpl(out);
 
         if (first)
-            settings.writeKeyword(" FIRST ");
+            out.writeKeyword(" FIRST ");
         else if (projection)
         {
-            settings.writeKeyword(" AFTER ");
-            projection->formatImpl(settings, state, frame);
+            out.writeKeyword(" AFTER ");
+            projection->formatImpl(out);
         }
     }
     else if (type == ASTAlterCommand::DROP_PROJECTION)
     {
-        settings.writeKeyword(clear_projection ? "CLEAR " : "DROP ");
-        settings.writeKeyword("PROJECTION ");
-        settings.writeKeyword(if_exists ? "IF EXISTS " : "");
-        projection->formatImpl(settings, state, frame);
+        out.writeKeyword(clear_projection ? "CLEAR " : "DROP ");
+        out.writeKeyword("PROJECTION ");
+        out.writeKeyword(if_exists ? "IF EXISTS " : "");
+        projection->formatImpl(out);
         if (partition)
         {
-            settings.writeKeyword(" IN PARTITION ");
-            partition->formatImpl(settings, state, frame);
+            out.writeKeyword(" IN PARTITION ");
+            partition->formatImpl(out);
         }
     }
     else if (type == ASTAlterCommand::MATERIALIZE_PROJECTION)
     {
-        settings.writeKeyword("MATERIALIZE PROJECTION ");
-        projection->formatImpl(settings, state, frame);
+        out.writeKeyword("MATERIALIZE PROJECTION ");
+        projection->formatImpl(out);
         if (partition)
         {
-            settings.writeKeyword(" IN PARTITION ");
-            partition->formatImpl(settings, state, frame);
+            out.writeKeyword(" IN PARTITION ");
+            partition->formatImpl(out);
         }
     }
     else if (type == ASTAlterCommand::DROP_PARTITION)
     {
-        settings.writeKeyword(detach ? "DETACH" : "DROP");
-        settings.writeKeyword(part ? " PART " : " PARTITION ");
-        partition->formatImpl(settings, state, frame);
+        out.writeKeyword(detach ? "DETACH" : "DROP");
+        out.writeKeyword(part ? " PART " : " PARTITION ");
+        partition->formatImpl(out);
     }
     else if (type == ASTAlterCommand::DROP_DETACHED_PARTITION)
     {
-        settings.writeKeyword("DROP DETACHED");
-        settings.writeKeyword(part ? " PART " : " PARTITION ");
-        partition->formatImpl(settings, state, frame);
+        out.writeKeyword("DROP DETACHED");
+        out.writeKeyword(part ? " PART " : " PARTITION ");
+        partition->formatImpl(out);
     }
     else if (type == ASTAlterCommand::ATTACH_PARTITION)
     {
-        settings.writeKeyword("ATTACH ");
-        settings.writeKeyword(part ? "PART " : "PARTITION ");
-        partition->formatImpl(settings, state, frame);
+        out.writeKeyword("ATTACH ");
+        out.writeKeyword(part ? "PART " : "PARTITION ");
+        partition->formatImpl(out);
     }
     else if (type == ASTAlterCommand::MOVE_PARTITION)
     {
-        settings.writeKeyword("MOVE ");
-        settings.writeKeyword(part ? "PART " : "PARTITION ");
-        partition->formatImpl(settings, state, frame);
-        settings.ostr << " TO ";
+        out.writeKeyword("MOVE ");
+        out.writeKeyword(part ? "PART " : "PARTITION ");
+        partition->formatImpl(out);
+        out.ostr << " TO ";
         switch (move_destination_type)
         {
             case DataDestinationType::DISK:
-                settings.ostr << "DISK ";
+                out.ostr << "DISK ";
                 break;
             case DataDestinationType::VOLUME:
-                settings.ostr << "VOLUME ";
+                out.ostr << "VOLUME ";
                 break;
             case DataDestinationType::TABLE:
-                settings.ostr << "TABLE ";
+                out.ostr << "TABLE ";
                 if (!to_database.empty())
                 {
-                    settings.writeProbablyBackQuotedIdentifier(to_database);
-                    settings.ostr << ".";
+                    out.writeProbablyBackQuotedIdentifier(to_database);
+                    out.ostr << ".";
                 }
-                settings.writeProbablyBackQuotedIdentifier(to_table);
+                out.writeProbablyBackQuotedIdentifier(to_table);
                 return;
             default:
                 break;
         }
         if (move_destination_type != DataDestinationType::TABLE)
         {
-            settings.ostr << quoteString(move_destination_name);
+            out.ostr << quoteString(move_destination_name);
         }
     }
     else if (type == ASTAlterCommand::REPLACE_PARTITION)
     {
-        settings.writeKeyword(replace ? "REPLACE" : "ATTACH");
-        settings.writeKeyword(" PARTITION ");
-        partition->formatImpl(settings, state, frame);
-        settings.writeKeyword(" FROM ");
+        out.writeKeyword(replace ? "REPLACE" : "ATTACH");
+        out.writeKeyword(" PARTITION ");
+        partition->formatImpl(out);
+        out.writeKeyword(" FROM ");
         if (!from_database.empty())
         {
-            settings.writeProbablyBackQuotedIdentifier(from_database);
-            settings.ostr << ".";
+            out.writeProbablyBackQuotedIdentifier(from_database);
+            out.ostr << ".";
         }
-        settings.writeProbablyBackQuotedIdentifier(from_table);
+        out.writeProbablyBackQuotedIdentifier(from_table);
     }
     else if (type == ASTAlterCommand::FETCH_PARTITION)
     {
-        settings.writeKeyword("FETCH ");
-        settings.writeKeyword(part ? "PART " : "PARTITION ");
-        partition->formatImpl(settings, state, frame);
-        settings.writeKeyword(" FROM ");
-        settings.ostr << DB::quote << from;
+        out.writeKeyword("FETCH ");
+        out.writeKeyword(part ? "PART " : "PARTITION ");
+        partition->formatImpl(out);
+        out.writeKeyword(" FROM ");
+        out.ostr << DB::quote << from;
     }
     else if (type == ASTAlterCommand::FREEZE_PARTITION)
     {
-        settings.writeKeyword("FREEZE PARTITION ");
-        partition->formatImpl(settings, state, frame);
+        out.writeKeyword("FREEZE PARTITION ");
+        partition->formatImpl(out);
 
         if (!with_name.empty())
         {
-            settings.writeKeyword(" WITH NAME ");
-            settings.ostr << DB::quote << with_name;
+            out.writeKeyword(" WITH NAME ");
+            out.ostr << DB::quote << with_name;
         }
     }
     else if (type == ASTAlterCommand::FREEZE_ALL)
     {
-        settings.writeKeyword("FREEZE");
+        out.writeKeyword("FREEZE");
 
         if (!with_name.empty())
         {
-            settings.writeKeyword(" WITH NAME ");
-            settings.ostr << DB::quote << with_name;
+            out.writeKeyword(" WITH NAME ");
+            out.ostr << DB::quote << with_name;
         }
     }
     else if (type == ASTAlterCommand::UNFREEZE_PARTITION)
     {
-        settings.writeKeyword("UNFREEZE PARTITION ");
-        partition->formatImpl(settings, state, frame);
+        out.writeKeyword("UNFREEZE PARTITION ");
+        partition->formatImpl(out);
 
         if (!with_name.empty())
         {
-            settings.writeKeyword(" WITH NAME ");
-            settings.ostr << DB::quote << with_name;
+            out.writeKeyword(" WITH NAME ");
+            out.ostr << DB::quote << with_name;
         }
     }
     else if (type == ASTAlterCommand::UNFREEZE_ALL)
     {
-        settings.writeKeyword("UNFREEZE");
+        out.writeKeyword("UNFREEZE");
 
         if (!with_name.empty())
         {
-            settings.writeKeyword(" WITH NAME ");
-            settings.ostr << DB::quote << with_name;
+            out.writeKeyword(" WITH NAME ");
+            out.ostr << DB::quote << with_name;
         }
     }
     else if (type == ASTAlterCommand::DELETE)
     {
-        settings.writeKeyword("DELETE");
+        out.writeKeyword("DELETE");
 
         if (partition)
         {
-            settings.writeKeyword(" IN PARTITION ");
-            partition->formatImpl(settings, state, frame);
+            out.writeKeyword(" IN PARTITION ");
+            partition->formatImpl(out);
         }
 
-        settings.writeKeyword(" WHERE ");
-        predicate->formatImpl(settings, state, frame);
+        out.writeKeyword(" WHERE ");
+        predicate->formatImpl(out);
     }
     else if (type == ASTAlterCommand::UPDATE)
     {
-        settings.writeKeyword("UPDATE ");
-        update_assignments->formatImpl(settings, state, frame);
+        out.writeKeyword("UPDATE ");
+        update_assignments->formatImpl(out);
 
         if (partition)
         {
-            settings.writeKeyword(" IN PARTITION ");
-            partition->formatImpl(settings, state, frame);
+            out.writeKeyword(" IN PARTITION ");
+            partition->formatImpl(out);
         }
 
-        settings.writeKeyword(" WHERE ");
-        predicate->formatImpl(settings, state, frame);
+        out.writeKeyword(" WHERE ");
+        predicate->formatImpl(out);
     }
     else if (type == ASTAlterCommand::MODIFY_TTL)
     {
-        settings.writeKeyword("MODIFY TTL ");
-        ttl->formatImpl(settings, state, frame);
+        out.writeKeyword("MODIFY TTL ");
+        ttl->formatImpl(out);
     }
     else if (type == ASTAlterCommand::REMOVE_TTL)
     {
-        settings.writeKeyword("REMOVE TTL");
+        out.writeKeyword("REMOVE TTL");
     }
     else if (type == ASTAlterCommand::MATERIALIZE_TTL)
     {
-        settings.writeKeyword("MATERIALIZE TTL");
+        out.writeKeyword("MATERIALIZE TTL");
         if (partition)
         {
-            settings.writeKeyword(" IN PARTITION ");
-            partition->formatImpl(settings, state, frame);
+            out.writeKeyword(" IN PARTITION ");
+            partition->formatImpl(out);
         }
     }
     else if (type == ASTAlterCommand::MODIFY_SETTING)
     {
-        settings.writeKeyword("MODIFY SETTING ");
-        settings_changes->formatImpl(settings, state, frame);
+        out.writeKeyword("MODIFY SETTING ");
+        settings_changes->formatImpl(out);
     }
     else if (type == ASTAlterCommand::RESET_SETTING)
     {
-        settings.writeKeyword("RESET SETTING ");
-        settings_resets->formatImpl(settings, state, frame);
+        out.writeKeyword("RESET SETTING ");
+        settings_resets->formatImpl(out);
     }
     else if (type == ASTAlterCommand::MODIFY_DATABASE_SETTING)
     {
-        settings.writeKeyword("MODIFY SETTING ");
-        settings_changes->formatImpl(settings, state, frame);
+        out.writeKeyword("MODIFY SETTING ");
+        settings_changes->formatImpl(out);
     }
     else if (type == ASTAlterCommand::MODIFY_QUERY)
     {
-        settings.writeKeyword("MODIFY QUERY ");
-        settings.nlOrWs();
-        select->formatImpl(settings, state, frame);
+        out.writeKeyword("MODIFY QUERY ");
+        out.nlOrWs();
+        select->formatImpl(out);
     }
     else if (type == ASTAlterCommand::LIVE_VIEW_REFRESH)
     {
-        settings.writeKeyword("REFRESH ");
+        out.writeKeyword("REFRESH ");
     }
     else if (type == ASTAlterCommand::RENAME_COLUMN)
     {
-        settings.writeKeyword("RENAME COLUMN ");
-        settings.writeKeyword(if_exists ? "IF EXISTS " : "");
-        column->formatImpl(settings, state, frame);
+        out.writeKeyword("RENAME COLUMN ");
+        out.writeKeyword(if_exists ? "IF EXISTS " : "");
+        column->formatImpl(out);
 
-        settings.writeKeyword(" TO ");
-        rename_to->formatImpl(settings, state, frame);
+        out.writeKeyword(" TO ");
+        rename_to->formatImpl(out);
     }
     else
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected type of ALTER");
@@ -555,23 +555,22 @@ ASTPtr ASTAlterQuery::clone() const
     return res;
 }
 
-void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTAlterQuery::formatQueryImpl(const FormattingBuffer & out) const
 {
-    frame.need_parens = false;
+    out.setNeedsParens(false);
 
-    std::string indent_str = settings.isOneLine() ? "" : std::string(4u * frame.indent, ' ');
-    settings.ostr << indent_str;
+    out.writeIndent();
 
     switch (alter_object)
     {
         case AlterObjectType::TABLE:
-            settings.writeKeyword("ALTER TABLE ");
+            out.writeKeyword("ALTER TABLE ");
             break;
         case AlterObjectType::DATABASE:
-            settings.writeKeyword("ALTER DATABASE ");
+            out.writeKeyword("ALTER DATABASE ");
             break;
         case AlterObjectType::LIVE_VIEW:
-            settings.writeKeyword("ALTER LIVE VIEW ");
+            out.writeKeyword("ALTER LIVE VIEW ");
             break;
         default:
             break;
@@ -581,22 +580,23 @@ void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState
     {
         if (database)
         {
-            settings.ostr << indent_str << backQuoteIfNeed(getDatabase());
-            settings.ostr << ".";
+            out.writeIndent();
+            out.ostr << backQuoteIfNeed(getDatabase());
+            out.ostr << ".";
         }
-        settings.ostr << indent_str << backQuoteIfNeed(getTable());
+        out.writeIndent();
+        out.ostr << backQuoteIfNeed(getTable());
     }
     else if (alter_object == AlterObjectType::DATABASE && database)
     {
-        settings.ostr << indent_str << backQuoteIfNeed(getDatabase());
+        out.writeIndent();
+        out.ostr << backQuoteIfNeed(getDatabase());
     }
 
-    formatOnCluster(settings);
+    formatOnCluster(out);
 
-    FormatStateStacked frame_nested = frame;
-    frame_nested.need_parens = false;
-    frame_nested.expression_list_always_start_on_new_line = true;
-    static_cast<ASTExpressionList *>(command_list)->formatImplMultiline(settings);
+    static_cast<ASTExpressionList *>(command_list)->formatImplMultiline(
+        out.copyWithoutNeedParensAndWithExpressionListAlwaysStartOnNewLine());
 }
 
 }

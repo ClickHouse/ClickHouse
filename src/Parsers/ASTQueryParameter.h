@@ -22,7 +22,7 @@ public:
     ASTPtr clone() const override { return std::make_shared<ASTQueryParameter>(*this); }
 
 protected:
-    void formatImplWithoutAlias(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void formatImplWithoutAlias(const FormattingBuffer & out) const override;
     void appendColumnNameImpl(WriteBuffer & ostr) const override;
 };
 

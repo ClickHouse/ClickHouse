@@ -22,27 +22,27 @@ ASTPtr ASTPair::clone() const
 }
 
 
-void ASTPair::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTPair::formatImpl(const FormattingBuffer & out) const
 {
-    settings.writeKeyword(Poco::toUpper(first));
-    settings.ostr << " ";
+    out.writeKeyword(Poco::toUpper(first));
+    out.ostr << " ";
 
     if (second_with_brackets)
-        settings.writeKeyword("(");
+        out.writeKeyword("(");
 
-    if (!settings.shouldShowSecrets() && (first == "password"))
+    if (!out.shouldShowSecrets() && (first == "password"))
     {
         /// Hide password in the definition of a dictionary:
         /// SOURCE(CLICKHOUSE(host 'example01-01-1' port 9000 user 'default' password '[HIDDEN]' db 'default' table 'ids'))
-        settings.writeSecret();
+        out.writeSecret();
     }
     else
     {
-        second->formatImpl(settings, state, frame);
+        second->formatImpl(out);
     }
 
     if (second_with_brackets)
-        settings.writeKeyword(")");
+        out.writeKeyword(")");
 }
 
 
@@ -82,12 +82,12 @@ ASTPtr ASTFunctionWithKeyValueArguments::clone() const
 }
 
 
-void ASTFunctionWithKeyValueArguments::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTFunctionWithKeyValueArguments::formatImpl(const FormattingBuffer & out) const
 {
-    settings.writeKeyword(Poco::toUpper(name));
-    settings.ostr << (has_brackets ? "(" : "");
-    elements->formatImpl(settings, state, frame);
-    settings.ostr << (has_brackets ? ")" : "");
+    out.writeKeyword(Poco::toUpper(name));
+    out.ostr << (has_brackets ? "(" : "");
+    elements->formatImpl(out);
+    out.ostr << (has_brackets ? ")" : "");
 }
 
 

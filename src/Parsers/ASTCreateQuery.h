@@ -29,7 +29,7 @@ public:
 
     ASTPtr clone() const override;
 
-    void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
+    void formatImpl(const FormattingBuffer & out) const override;
 };
 
 
@@ -48,7 +48,7 @@ public:
 
     ASTPtr clone() const override;
 
-    void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
+    void formatImpl(const FormattingBuffer & out) const override;
 
     bool empty() const
     {
@@ -123,7 +123,7 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Create; }
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatQueryImpl(const FormattingBuffer & out) const override;
 };
 
 }

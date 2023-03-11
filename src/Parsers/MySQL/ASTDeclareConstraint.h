@@ -26,7 +26,7 @@ public:
     String getID(char /*delimiter*/) const override { return "constraint declaration"; }
 
 protected:
-    void formatImpl(const FormatSettings & /*settings*/, FormatState & /*state*/, FormatStateStacked /*frame*/) const override
+    void formatImpl(const FormattingBuffer & /*out*/) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method formatImpl is not supported by MySQLParser::ASTDeclareConstraint.");
     }

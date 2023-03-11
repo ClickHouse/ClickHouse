@@ -285,6 +285,8 @@ public:
 
         FormattingBuffer copyWithoutExpressionListPrependWhitespace() const;
 
+        FormattingBuffer copyWithoutNeedParensAndWithExpressionListAlwaysStartOnNewLine() const;
+
         bool needsParens() const;  // TODO: impl
 
         void setNeedsParens(bool value) const;  // TODO: impl
@@ -292,6 +294,8 @@ public:
         void setExpressionListPrependWhitespace(bool value = true) const;  // TOOD: impl
 
         void setCurrentSelect(const IAST *) const;  // TODO: impl
+
+        void setExpressionListAlwaysStartsOnNewLine(bool value = true) const;  // TOOD: impl
 
         void writeIndent(bool add_extra_indent = false) const;
 

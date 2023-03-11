@@ -86,22 +86,22 @@ using ASTShowCreateDictionaryQuery = ASTQueryWithTableAndOutputImpl<ASTShowCreat
 class ASTExistsDatabaseQuery : public ASTQueryWithTableAndOutputImpl<ASTExistsDatabaseQueryIDAndQueryNames>
 {
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
+    void formatQueryImpl(const FormattingBuffer & out) const override
     {
-        settings.writeKeyword(ASTExistsDatabaseQueryIDAndQueryNames::Query);
-        settings.ostr << " ";
-        settings.writeKeyword(backQuoteIfNeed(getDatabase()));
+        out.writeKeyword(ASTExistsDatabaseQueryIDAndQueryNames::Query);
+        out.ostr << " ";
+        out.writeKeyword(backQuoteIfNeed(getDatabase()));
     }
 };
 
 class ASTShowCreateDatabaseQuery : public ASTQueryWithTableAndOutputImpl<ASTShowCreateDatabaseQueryIDAndQueryNames>
 {
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
+    void formatQueryImpl(const FormattingBuffer & out) const override
     {
-        settings.writeKeyword(ASTShowCreateDatabaseQueryIDAndQueryNames::Query);
-        settings.ostr << " ";
-        settings.writeKeyword(backQuoteIfNeed(getDatabase()));
+        out.writeKeyword(ASTShowCreateDatabaseQueryIDAndQueryNames::Query);
+        out.ostr << " ";
+        out.writeKeyword(backQuoteIfNeed(getDatabase()));
     }
 };
 
@@ -126,10 +126,10 @@ public:
     }
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+    void formatQueryImpl(const FormattingBuffer & out) const override
     {
-        settings.writeKeyword("DESCRIBE TABLE");
-        table_expression->formatImpl(settings, state, frame);
+        out.writeKeyword("DESCRIBE TABLE");
+        table_expression->formatImpl(out);
     }
 
 };

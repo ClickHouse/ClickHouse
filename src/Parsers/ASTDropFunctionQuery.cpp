@@ -10,13 +10,13 @@ ASTPtr ASTDropFunctionQuery::clone() const
     return std::make_shared<ASTDropFunctionQuery>(*this);
 }
 
-void ASTDropFunctionQuery::formatImpl(const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
+void ASTDropFunctionQuery::formatImpl(const FormattingBuffer & out) const
 {
-    settings.writeKeyword("DROP FUNCTION ");
+    out.writeKeyword("DROP FUNCTION ");
     if (if_exists)
-        settings.writeKeyword("IF EXISTS ");
-    settings.writeProbablyBackQuotedIdentifier(function_name);
-    formatOnCluster(settings);
+        out.writeKeyword("IF EXISTS ");
+    out.writeProbablyBackQuotedIdentifier(function_name);
+    formatOnCluster(out);
 }
 
 }

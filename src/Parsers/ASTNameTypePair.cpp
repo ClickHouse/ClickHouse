@@ -21,12 +21,11 @@ ASTPtr ASTNameTypePair::clone() const
 }
 
 
-void ASTNameTypePair::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTNameTypePair::formatImpl(const FormattingBuffer & out) const
 {
-    std::string indent_str = settings.isOneLine() ? "" : std::string(4 * frame.indent, ' ');
-
-    settings.ostr << indent_str << backQuoteIfNeed(name) << ' ';
-    type->formatImpl(settings, state, frame);
+    out.writeIndent();
+    out.ostr << backQuoteIfNeed(name) << ' ';
+    type->formatImpl(out);
 }
 
 }

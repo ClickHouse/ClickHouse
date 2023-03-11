@@ -16,16 +16,14 @@ ASTPtr ASTDictionaryRange::clone() const
 }
 
 
-void ASTDictionaryRange::formatImpl(const FormatSettings & settings,
-                                    FormatState &,
-                                    FormatStateStacked) const
+void ASTDictionaryRange::formatImpl(const FormattingBuffer & out) const
 {
-    settings.writeKeyword("RANGE");
-    settings.ostr << "(";
-    settings.writeKeyword("MIN ");
-    settings.ostr << min_attr_name << " ";
-    settings.writeKeyword("MAX ");
-    settings.ostr << max_attr_name << ")";
+    out.writeKeyword("RANGE");
+    out.ostr << "(";
+    out.writeKeyword("MIN ");
+    out.ostr << min_attr_name << " ";
+    out.writeKeyword("MAX ");
+    out.ostr << max_attr_name << ")";
 }
 
 
@@ -38,9 +36,7 @@ ASTPtr ASTDictionaryLifetime::clone() const
 }
 
 
-void ASTDictionaryLifetime::formatImpl(const FormatSettings & settings,
-                                       FormatState &,
-                                       FormatStateStacked) const
+void ASTDictionaryLifetime::formatImpl(const FormattingBuffer & settings) const
 {
     settings.writeKeyword("LIFETIME");
     settings.ostr << "(";
@@ -61,24 +57,22 @@ ASTPtr ASTDictionaryLayout::clone() const
 }
 
 
-void ASTDictionaryLayout::formatImpl(const FormatSettings & settings,
-                                     FormatState & state,
-                                     FormatStateStacked frame) const
+void ASTDictionaryLayout::formatImpl(const FormattingBuffer & out) const
 {
-    settings.writeKeyword("LAYOUT");
-    settings.ostr << "(";
-    settings.writeKeyword(Poco::toUpper(layout_type));
+    out.writeKeyword("LAYOUT");
+    out.ostr << "(";
+    out.writeKeyword(Poco::toUpper(layout_type));
 
     if (has_brackets)
-        settings.ostr << "(";
+        out.ostr << "(";
 
     if (parameters)
-        parameters->formatImpl(settings);
+        parameters->formatImpl(out);
 
     if (has_brackets)
-        settings.ostr << ")";
+        out.ostr << ")";
 
-    settings.ostr << ")";
+    out.ostr << ")";
 }
 
 ASTPtr ASTDictionarySettings::clone() const
@@ -89,20 +83,18 @@ ASTPtr ASTDictionarySettings::clone() const
     return res;
 }
 
-void ASTDictionarySettings::formatImpl(const FormatSettings & settings,
-                                        FormatState &,
-                                        FormatStateStacked) const
+void ASTDictionarySettings::formatImpl(const FormattingBuffer & out) const
 {
-    settings.writeKeyword("SETTINGS");
-    settings.ostr << "(";
+    out.writeKeyword("SETTINGS");
+    out.ostr << "(";
     for (auto it = changes.begin(); it != changes.end(); ++it)
     {
         if (it != changes.begin())
-            settings.ostr << ", ";
+            out.ostr << ", ";
 
-        settings.ostr << it->name << " = " << applyVisitor(FieldVisitorToString(), it->value);
+        out.ostr << it->name << " = " << applyVisitor(FieldVisitorToString(), it->value);
     }
-    settings.ostr << ")";
+    out.ostr << ")";
 }
 
 
@@ -132,45 +124,45 @@ ASTPtr ASTDictionary::clone() const
 }
 
 
-void ASTDictionary::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTDictionary::formatImpl(const FormattingBuffer & out) const
 {
     if (primary_key)
     {
-        settings.nlOrWs();
-        settings.writeKeyword("PRIMARY KEY ");
-        primary_key->formatImpl(settings);
+        out.nlOrWs();
+        out.writeKeyword("PRIMARY KEY ");
+        primary_key->formatImpl(out);
     }
 
     if (source)
     {
-        settings.nlOrWs();
-        settings.writeKeyword("SOURCE(");
-        source->formatImpl(settings, state, frame);
-        settings.writeKeyword(")");
+        out.nlOrWs();
+        out.writeKeyword("SOURCE(");
+        source->formatImpl(out);
+        out.writeKeyword(")");
     }
 
     if (lifetime)
     {
-        settings.nlOrWs();
-        lifetime->formatImpl(settings, state, frame);
+        out.nlOrWs();
+        lifetime->formatImpl(out);
     }
 
     if (layout)
     {
-        settings.nlOrWs();
-        layout->formatImpl(settings, state, frame);
+        out.nlOrWs();
+        layout->formatImpl(out);
     }
 
     if (range)
     {
-        settings.nlOrWs();
-        range->formatImpl(settings, state, frame);
+        out.nlOrWs();
+        range->formatImpl(out);
     }
 
     if (dict_settings)
     {
-        settings.nlOrWs();
-        dict_settings->formatImpl(settings, state, frame);
+        out.nlOrWs();
+        dict_settings->formatImpl(out);
     }
 }
 

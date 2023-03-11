@@ -16,40 +16,40 @@ void ASTOrderByElement::updateTreeHashImpl(SipHash & hash_state) const
     IAST::updateTreeHashImpl(hash_state);
 }
 
-void ASTOrderByElement::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTOrderByElement::formatImpl(const FormattingBuffer & out) const
 {
-    children.front()->formatImpl(settings, state, frame);
-    settings.writeKeyword(direction == -1 ? " DESC" : " ASC");
+    children.front()->formatImpl(out);
+    out.writeKeyword(direction == -1 ? " DESC" : " ASC");
 
     if (nulls_direction_was_explicitly_specified)
     {
-        settings.writeKeyword(" NULLS ");
-        settings.writeKeyword(nulls_direction == direction ? "LAST" : "FIRST");
+        out.writeKeyword(" NULLS ");
+        out.writeKeyword(nulls_direction == direction ? "LAST" : "FIRST");
     }
 
     if (collation)
     {
-        settings.writeKeyword(" COLLATE ");
-        collation->formatImpl(settings, state, frame);
+        out.writeKeyword(" COLLATE ");
+        collation->formatImpl(out);
     }
 
     if (with_fill)
     {
-        settings.writeKeyword(" WITH FILL");
+        out.writeKeyword(" WITH FILL");
         if (fill_from)
         {
-            settings.writeKeyword(" FROM ");
-            fill_from->formatImpl(settings, state, frame);
+            out.writeKeyword(" FROM ");
+            fill_from->formatImpl(out);
         }
         if (fill_to)
         {
-            settings.writeKeyword(" TO ");
-            fill_to->formatImpl(settings, state, frame);
+            out.writeKeyword(" TO ");
+            fill_to->formatImpl(out);
         }
         if (fill_step)
         {
-            settings.writeKeyword(" STEP ");
-            fill_step->formatImpl(settings, state, frame);
+            out.writeKeyword(" STEP ");
+            fill_step->formatImpl(out);
         }
     }
 }

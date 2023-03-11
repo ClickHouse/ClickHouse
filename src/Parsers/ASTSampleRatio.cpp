@@ -35,9 +35,9 @@ String ASTSampleRatio::toString(Rational ratio)
         return toString(ratio.numerator) + " / " + toString(ratio.denominator);
 }
 
-void ASTSampleRatio::formatImpl(const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
+void ASTSampleRatio::formatImpl(const FormattingBuffer & out) const
 {
-    settings.ostr << toString(ratio);
+    out.ostr << toString(ratio);
 }
 
 }

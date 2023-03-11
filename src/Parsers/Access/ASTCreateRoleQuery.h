@@ -33,7 +33,7 @@ public:
 
     String getID(char) const override;
     ASTPtr clone() const override;
-    void formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const override;
+    void formatImpl(const FormattingBuffer & out) const override;
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTCreateRoleQuery>(clone()); }
 };
 }

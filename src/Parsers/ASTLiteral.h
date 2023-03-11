@@ -44,7 +44,7 @@ public:
     void updateTreeHashImpl(SipHash & hash_state) const override;
 
 protected:
-    void formatImplWithoutAlias(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void formatImplWithoutAlias(const FormattingBuffer & out) const override;
 
     void appendColumnNameImpl(WriteBuffer & ostr) const override;
 
