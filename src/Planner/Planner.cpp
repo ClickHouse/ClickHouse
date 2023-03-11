@@ -214,9 +214,14 @@ public:
         {
             /// Constness of limit is validated during query analysis stage
             limit_length = query_node.getLimit()->as<ConstantNode &>().getValue().safeGet<UInt64>();
-        }
 
-        if (query_node.hasOffset())
+            if (query_node.hasOffset() && limit_length)
+            {
+                /// Constness of offset is validated during query analysis stage
+                limit_offset = query_node.getOffset()->as<ConstantNode &>().getValue().safeGet<UInt64>();
+            }
+        }
+        else if (query_node.hasOffset())
         {
             /// Constness of offset is validated during query analysis stage
             limit_offset = query_node.getOffset()->as<ConstantNode &>().getValue().safeGet<UInt64>();

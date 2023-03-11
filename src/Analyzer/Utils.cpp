@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
@@ -32,6 +33,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 bool isNodePartOfTree(const IQueryTreeNode * node, const IQueryTreeNode * root)
@@ -79,6 +81,75 @@ bool isNameOfInFunction(const std::string & function_name)
     return is_special_function_in;
 }
 
+bool isNameOfLocalInFunction(const std::string & function_name)
+{
+    bool is_special_function_in = function_name == "in" ||
+        function_name == "notIn" ||
+        function_name == "nullIn" ||
+        function_name == "notNullIn" ||
+        function_name == "inIgnoreSet" ||
+        function_name == "notInIgnoreSet" ||
+        function_name == "nullInIgnoreSet" ||
+        function_name == "notNullInIgnoreSet";
+
+    return is_special_function_in;
+}
+
+bool isNameOfGlobalInFunction(const std::string & function_name)
+{
+    bool is_special_function_in = function_name == "globalIn" ||
+        function_name == "globalNotIn" ||
+        function_name == "globalNullIn" ||
+        function_name == "globalNotNullIn" ||
+        function_name == "globalInIgnoreSet" ||
+        function_name == "globalNotInIgnoreSet" ||
+        function_name == "globalNullInIgnoreSet" ||
+        function_name == "globalNotNullInIgnoreSet";
+
+    return is_special_function_in;
+}
+
+std::string getGlobalInFunctionNameForLocalInFunctionName(const std::string & function_name)
+{
+    if (function_name == "in")
+        return "globalIn";
+    else if (function_name == "notIn")
+        return "globalNotIn";
+    else if (function_name == "nullIn")
+        return "globalNullIn";
+    else if (function_name == "notNullIn")
+        return "globalNotNullIn";
+    else if (function_name == "inIgnoreSet")
+        return "globalInIgnoreSet";
+    else if (function_name == "notInIgnoreSet")
+        return "globalNotInIgnoreSet";
+    else if (function_name == "nullInIgnoreSet")
+        return "globalNullInIgnoreSet";
+    else if (function_name == "notNullInIgnoreSet")
+        return "globalNotNullInIgnoreSet";
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid local IN function name {}", function_name);
+}
+
+void makeUniqueColumnNamesInBlock(Block & block)
+{
+    NameSet block_column_names;
+    size_t unique_column_name_counter = 1;
+
+    for (auto & column_with_type : block)
+    {
+        if (!block_column_names.contains(column_with_type.name))
+        {
+            block_column_names.insert(column_with_type.name);
+            continue;
+        }
+
+        column_with_type.name += '_';
+        column_with_type.name += std::to_string(unique_column_name_counter);
+        ++unique_column_name_counter;
+    }
+}
+
 QueryTreeNodePtr buildCastFunction(const QueryTreeNodePtr & expression,
     const DataTypePtr & type,
     const ContextPtr & context,
@@ -100,6 +171,27 @@ QueryTreeNodePtr buildCastFunction(const QueryTreeNodePtr & expression,
     }
 
     return cast_function_node;
+}
+
+std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr & condition_node)
+{
+    const auto * constant_node = condition_node->as<ConstantNode>();
+    if (!constant_node)
+        return {};
+
+    const auto & value = constant_node->getValue();
+    auto constant_type = constant_node->getResultType();
+    constant_type = removeNullable(removeLowCardinality(constant_type));
+
+    auto which_constant_type = WhichDataType(constant_type);
+    if (!which_constant_type.isUInt8() && !which_constant_type.isNothing())
+        return {};
+
+    if (value.isNull())
+        return false;
+
+    UInt8 predicate_value = value.safeGet<UInt8>();
+    return predicate_value > 0;
 }
 
 static ASTPtr convertIntoTableExpressionAST(const QueryTreeNodePtr & table_expression_node)
