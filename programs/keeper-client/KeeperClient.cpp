@@ -204,13 +204,9 @@ bool KeeperClient::processQueryText(const String & text)
     {
         if (need_confirmation)
         {
-            if (tokens.size() == 1 && (tokens[0] == "y" || tokens[0] == "Y"))
-            {
-                need_confirmation = false;
-                confirmation_callback();
-            }
-
             need_confirmation = false;
+            if (tokens.size() == 1 && (tokens[0] == "y" || tokens[0] == "Y"))
+                confirmation_callback();
         }
         else if (tokens.size() == 1 && tokens[0].size() == 4 && four_letter_word_commands.find(tokens[0]) != four_letter_word_commands.end())
             std::cout << executeFourLetterCommand(tokens[0]) << "\n";
