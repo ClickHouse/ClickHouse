@@ -34,10 +34,10 @@ public:
       * max_protected_size == 0 means that the default protected size is equal to half of the total max size.
       */
     /// TODO: construct from special struct with cache policy parameters (also with max_protected_size).
-    SLRUCachePolicy(size_t max_size_in_bytes_, size_t max_elements_size_ = 0, double size_ratio = 0.5, OnWeightLossFunction on_weight_loss_function_ = {})
+    explicit SLRUCachePolicy(size_t max_size_in_bytes_, size_t max_entries_ = 0, double size_ratio = 0.5, OnWeightLossFunction on_weight_loss_function_ = {})
         : max_protected_size(static_cast<size_t>(max_size_in_bytes_ * std::min(1.0, size_ratio)))
         , max_size_in_bytes(max_size_in_bytes_)
-        , max_elements_size(max_elements_size_)
+        , max_entries(max_entries_)
         {
             Base::on_weight_loss_function = on_weight_loss_function_;
         }
@@ -174,7 +174,7 @@ protected:
     size_t current_size_in_bytes = 0;
     const size_t max_protected_size;
     const size_t max_size_in_bytes;
-    const size_t max_elements_size;
+    const size_t max_entries;
 
     WeightFunction weight_function;
 
@@ -188,11 +188,11 @@ protected:
         {
             /// Check if after remove all elements from probationary part there will be no more than max elements
             /// in protected queue and weight of all protected elements will be less then max protected weight.
-            /// It's not possible to check only cells.size() > max_elements_size
+            /// It's not possible to check only cells.size() > max_entries
             /// because protected elements move to probationary part and still remain in cache.
             need_remove = [&]()
             {
-                return ((max_elements_size != 0 && cells.size() - probationary_queue.size() > max_elements_size)
+                return ((max_entries != 0 && cells.size() - probationary_queue.size() > max_entries)
                 || (current_weight_size > max_weight_size)) && (queue_size > 0);
             };
         }
@@ -200,7 +200,7 @@ protected:
         {
             need_remove = [&]()
             {
-                return ((max_elements_size != 0 && cells.size() > max_elements_size)
+                return ((max_entries != 0 && cells.size() > max_entries)
                 || (current_weight_size > max_weight_size)) && (queue_size > 0);
             };
         }
