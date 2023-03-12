@@ -926,9 +926,8 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
         for (size_t i = 0; i < select_query.select()->children.size(); ++i) {
             auto node = select_query.select()->children[i];
             if (auto * identifier = node->as<ASTIdentifier>()) {
-                if (identifier->name().empty()) {
+                if (identifier->name().empty())
                     select_query.select()->children.erase(select_query.select()->children.begin()+i);
-                }
             }
         }
     }
