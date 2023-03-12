@@ -18,7 +18,6 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/queryToString.h>
 #include <Storages/IStorage.h>
-#include <Common/CurrentThread.h>
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorHash.h>
 #include <Common/DateLUT.h>
@@ -104,10 +103,9 @@ bool AsynchronousInsertQueue::InsertQuery::operator==(const InsertQuery & other)
     return query_str == other.query_str && settings == other.settings;
 }
 
-AsynchronousInsertQueue::InsertData::Entry::Entry(String && bytes_, String && query_id_, MemoryTracker * user_memory_tracker_)
+AsynchronousInsertQueue::InsertData::Entry::Entry(String && bytes_, String && query_id_)
     : bytes(std::move(bytes_))
     , query_id(std::move(query_id_))
-    , user_memory_tracker(user_memory_tracker_)
     , create_time(std::chrono::system_clock::now())
 {
 }
@@ -236,7 +234,7 @@ AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
     if (auto quota = query_context->getQuota())
         quota->used(QuotaType::WRITTEN_BYTES, bytes.size());
 
-    auto entry = std::make_shared<InsertData::Entry>(std::move(bytes), query_context->getCurrentQueryId(), CurrentThread::getUserMemoryTracker());
+    auto entry = std::make_shared<InsertData::Entry>(std::move(bytes), query_context->getCurrentQueryId());
 
     InsertQuery key{query, settings};
     InsertDataPtr data_to_process;
