@@ -29,7 +29,7 @@ namespace ErrorCodes
 /// of that value.
 /// Cache starts to evict entries when their total weight exceeds max_size_in_bytes.
 /// Value weight should not change after insertion.
-template <typename TKey, typename TMapped, typename HashFunction = std::hash<TKey>, typename WeightFunction = TrivialWeightFunction<TMapped>>
+template <typename TKey, typename TMapped, typename HashFunction = std::hash<TKey>, typename WeightFunction = EqualWeightFunction<TMapped>>
 class CacheBase
 {
 public:

@@ -6,8 +6,9 @@
 
 namespace DB
 {
+
 template <typename T>
-struct TrivialWeightFunction
+struct EqualWeightFunction
 {
     size_t operator()(const T &) const
     {
@@ -15,7 +16,7 @@ struct TrivialWeightFunction
     }
 };
 
-template <typename TKey, typename TMapped, typename HashFunction = std::hash<TKey>, typename WeightFunction = TrivialWeightFunction<TMapped>>
+template <typename TKey, typename TMapped, typename HashFunction = std::hash<TKey>, typename WeightFunction = EqualWeightFunction<TMapped>>
 class ICachePolicy
 {
 public:
