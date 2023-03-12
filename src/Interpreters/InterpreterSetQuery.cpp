@@ -49,6 +49,9 @@ static void applySettingsFromSelectWithUnion(const ASTSelectWithUnionQuery & sel
 
 void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMutablePtr context_)
 {
+    if (!ast)
+        return;
+
     if (const auto * select_query = ast->as<ASTSelectQuery>())
     {
         if (auto new_settings = select_query->settings())
