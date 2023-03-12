@@ -922,19 +922,12 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
 
     if (auto * t = query->as<ASTSelectQuery>())
     {
-        LOG_INFO(&Poco::Logger::get("TreeRewriter"), "lmx_00 enter");
-        NameSet select_columns;
-        std::vector<size_t> empty_name;
         auto & select_query = *t;
         for (size_t i = 0; i < select_query.select()->children.size(); i++) {
             auto node = select_query.select()->children[i];
             if (auto* identifier = node->as<ASTIdentifier>()) {
-                LOG_INFO(&Poco::Logger::get("TreeRewriter"), "lmx_1 {}", identifier->name());
                 if (identifier->name().empty()) {
-                    empty_name.push_back(i);
                     select_query.select()->children.erase(select_query.select()->children.begin()+i);
-                } else {
-                    select_columns.insert(identifier->name());
                 }
             }
         }
