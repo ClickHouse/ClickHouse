@@ -31,7 +31,7 @@ select JSON_VALUE('{"a":"\\n\\u0000"}', '$.a');
 \n\0
 select JSON_VALUE('{"a":"\\u263a"}', '$.a');
 ☺
-select JSON_VALUE('{"a":"b"}', "$.b");
+select JSON_VALUE('{"a":"b"}', '$.b');
 null
 SELECT '--JSON_QUERY--';
 --JSON_QUERY--
