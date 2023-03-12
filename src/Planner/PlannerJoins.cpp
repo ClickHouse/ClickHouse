@@ -18,6 +18,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 
+#include <Analyzer/Utils.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/TableNode.h>
@@ -61,6 +62,8 @@ void JoinClause::dump(WriteBuffer & buffer) const
             for (const auto & dag_node : dag_nodes)
             {
                 dag_nodes_dump += dag_node->result_name;
+                dag_nodes_dump += " ";
+                dag_nodes_dump += dag_node->result_type->getName();
                 dag_nodes_dump += ", ";
             }
 
