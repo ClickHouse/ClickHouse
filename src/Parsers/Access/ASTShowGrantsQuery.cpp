@@ -23,17 +23,17 @@ ASTPtr ASTShowGrantsQuery::clone() const
 }
 
 
-void ASTShowGrantsQuery::formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTShowGrantsQuery::formatQueryImpl(const FormattingBuffer & out) const
 {
-    settings.writeKeyword("SHOW GRANTS");
+    out.writeKeyword("SHOW GRANTS");
     if (for_roles->current_user && !for_roles->all && for_roles->names.empty() && for_roles->except_names.empty()
         && !for_roles->except_current_user)
     {
     }
     else
     {
-        settings.writeKeyword(" FOR ");
-        for_roles->format(settings);
+        out.writeKeyword(" FOR ");
+        for_roles->format(out.copy());
     }
 }
 }

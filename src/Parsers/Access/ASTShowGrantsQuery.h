@@ -16,6 +16,6 @@ public:
 
     String getID(char) const override;
     ASTPtr clone() const override;
-    void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void formatQueryImpl(const FormattingBuffer & out) const override;
 };
 }

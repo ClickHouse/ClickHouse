@@ -32,7 +32,7 @@ public:
     void replaceEmptyDatabase(const String & current_database);
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void formatQueryImpl(const FormattingBuffer & out) const override;
 
 private:
     String getKeyword() const;

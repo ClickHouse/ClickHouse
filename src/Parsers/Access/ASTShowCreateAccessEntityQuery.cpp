@@ -47,30 +47,30 @@ ASTPtr ASTShowCreateAccessEntityQuery::clone() const
 }
 
 
-void ASTShowCreateAccessEntityQuery::formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTShowCreateAccessEntityQuery::formatQueryImpl(const FormattingBuffer & out) const
 {
-    settings.writeKeyword("SHOW CREATE ");
-    settings.writeKeyword(getKeyword());
+    out.writeKeyword("SHOW CREATE ");
+    out.writeKeyword(getKeyword());
 
     if (!names.empty())
-        formatNames(names, settings);
+        formatNames(names, out.copy());
 
     if (row_policy_names)
     {
-        settings.ostr << " ";
-        row_policy_names->format(settings);
+        out.ostr << " ";
+        row_policy_names->format(out.copy());
     }
 
     if (!short_name.empty())
-        settings.ostr << " " << backQuoteIfNeed(short_name);
+        out.ostr << " " << backQuoteIfNeed(short_name);
 
     if (database_and_table_name)
     {
         const String & database = database_and_table_name->first;
         const String & table_name = database_and_table_name->second;
-        settings.writeKeyword(" ON ");
-        settings.ostr << (database.empty() ? "" : backQuoteIfNeed(database) + ".");
-        settings.ostr << (table_name.empty() ? "*" : backQuoteIfNeed(table_name));
+        out.writeKeyword(" ON ");
+        out.ostr << (database.empty() ? "" : backQuoteIfNeed(database) + ".");
+        out.ostr << (table_name.empty() ? "*" : backQuoteIfNeed(table_name));
     }
 }
 

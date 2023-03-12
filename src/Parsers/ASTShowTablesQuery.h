@@ -41,8 +41,8 @@ public:
 
 protected:
     void formatLike(const FormatSettings & settings) const;
-    void formatLimit(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
-    void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void formatLimit(const FormattingBuffer & out) const;
+    void formatQueryImpl(const FormattingBuffer & out) const override;
 };
 
 }

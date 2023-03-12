@@ -26,7 +26,7 @@ public:
     bool is_standalone = true;
     String getID(char) const override { return "TableOverride " + table_name; }
     ASTPtr clone() const override;
-    void formatImpl(const FormattingBuffer & out) const override;
+    void formatImpl(const FormattingBuffer & out_) const override;
 };
 
 /// List of table overrides, for example:

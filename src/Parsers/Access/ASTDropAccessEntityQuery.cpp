@@ -38,21 +38,21 @@ ASTPtr ASTDropAccessEntityQuery::clone() const
 }
 
 
-void ASTDropAccessEntityQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTDropAccessEntityQuery::formatImpl(const FormattingBuffer & out) const
 {
-    settings.writeKeyword("DROP ");
-    settings.writeKeyword(AccessEntityTypeInfo::get(type).name);
-    settings.writeKeyword(if_exists ? " IF EXISTS" : "");
+    out.writeKeyword("DROP ");
+    out.writeKeyword(AccessEntityTypeInfo::get(type).name);
+    out.writeKeyword(if_exists ? " IF EXISTS" : "");
 
     if (type == AccessEntityType::ROW_POLICY)
     {
-        settings.ostr << " ";
-        row_policy_names->format(settings);
+        out.ostr << " ";
+        row_policy_names->format(out);
     }
     else
-        formatNames(names, settings);
+        formatNames(names, out.copy());
 
-    formatOnCluster(settings);
+    formatOnCluster(out);
 }
 
 

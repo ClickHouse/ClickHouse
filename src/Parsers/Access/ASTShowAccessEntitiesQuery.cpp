@@ -24,20 +24,20 @@ String ASTShowAccessEntitiesQuery::getID(char) const
     return fmt::format("SHOW {} query", getKeyword());
 }
 
-void ASTShowAccessEntitiesQuery::formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTShowAccessEntitiesQuery::formatQueryImpl(const FormattingBuffer & out) const
 {
-    settings.writeKeyword("SHOW ");
+    out.writeKeyword("SHOW ");
 
     if (!short_name.empty())
-        settings.ostr << " " << backQuoteIfNeed(short_name);
+        out.ostr << " " << backQuoteIfNeed(short_name);
 
     if (database_and_table_name)
     {
         const String & database = database_and_table_name->first;
         const String & table_name = database_and_table_name->second;
-        settings.writeKeyword(" ON ");
-        settings.ostr << (database.empty() ? "" : backQuoteIfNeed(database) + ".");
-        settings.ostr << (table_name.empty() ? "*" : backQuoteIfNeed(table_name));
+        out.writeKeyword(" ON ");
+        out.ostr << (database.empty() ? "" : backQuoteIfNeed(database) + ".");
+        out.ostr << (table_name.empty() ? "*" : backQuoteIfNeed(table_name));
     }
 }
 

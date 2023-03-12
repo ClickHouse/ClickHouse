@@ -26,25 +26,28 @@ ASTPtr ASTSetRoleQuery::clone() const
 }
 
 
-void ASTSetRoleQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTSetRoleQuery::formatImpl(const FormattingBuffer & out) const
 {
     switch (kind)
     {
-        case Kind::SET_ROLE: settings.writeKeyword("SET ROLE"); break;
-        case Kind::SET_ROLE_DEFAULT: settings.writeKeyword("SET ROLE DEFAULT"); break;
-        case Kind::SET_DEFAULT_ROLE: settings.writeKeyword("SET DEFAULT ROLE"); break;
+        case Kind::SET_ROLE:
+            out.writeKeyword("SET ROLE"); break;
+        case Kind::SET_ROLE_DEFAULT:
+            out.writeKeyword("SET ROLE DEFAULT"); break;
+        case Kind::SET_DEFAULT_ROLE:
+            out.writeKeyword("SET DEFAULT ROLE"); break;
     }
 
     if (kind == Kind::SET_ROLE_DEFAULT)
         return;
 
-    settings.ostr << " ";
-    roles->format(settings);
+    out.ostr << " ";
+    roles->format(out.copy());
 
     if (kind == Kind::SET_ROLE)
         return;
 
-    settings.writeKeyword(" TO ");
-    to_users->format(settings);
+    out.writeKeyword(" TO ");
+    to_users->format(out.copy());
 }
 }

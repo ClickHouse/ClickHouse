@@ -51,32 +51,32 @@ ASTPtr ASTCreateRoleQuery::clone() const
 }
 
 
-void ASTCreateRoleQuery::formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const
+void ASTCreateRoleQuery::formatImpl(const FormattingBuffer & out) const
 {
     if (attach)
     {
-        format.writeKeyword("ATTACH ROLE");
+        out.writeKeyword("ATTACH ROLE");
     }
     else
     {
-        format.writeKeyword(alter ? "ALTER ROLE" : "CREATE ROLE");
+        out.writeKeyword(alter ? "ALTER ROLE" : "CREATE ROLE");
     }
 
     if (if_exists)
-        format.writeKeyword(" IF EXISTS");
+        out.writeKeyword(" IF EXISTS");
     else if (if_not_exists)
-        format.writeKeyword(" IF NOT EXISTS");
+        out.writeKeyword(" IF NOT EXISTS");
     else if (or_replace)
-        format.writeKeyword(" OR REPLACE");
+        out.writeKeyword(" OR REPLACE");
 
-    formatNames(names, format);
-    formatOnCluster(format);
+    formatNames(names, out.copy());
+    formatOnCluster(out);
 
     if (!new_name.empty())
-        formatRenameTo(new_name, format);
+        formatRenameTo(new_name, out.copy());
 
     if (settings && (!settings->empty() || alter))
-        formatSettings(*settings, format);
+        formatSettings(*settings, out.copy());
 }
 
 }

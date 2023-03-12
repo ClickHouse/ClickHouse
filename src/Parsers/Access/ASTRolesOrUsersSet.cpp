@@ -21,11 +21,11 @@ namespace
     }
 }
 
-void ASTRolesOrUsersSet::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTRolesOrUsersSet::formatImpl(const FormattingBuffer & out) const
 {
     if (empty())
     {
-        settings.writeKeyword("NONE");
+        out.writeKeyword("NONE");
         return;
     }
 
@@ -34,43 +34,43 @@ void ASTRolesOrUsersSet::formatImpl(const FormatSettings & settings, FormatState
     if (all)
     {
         if (std::exchange(need_comma, true))
-            settings.ostr << ", ";
-        settings.writeKeyword(use_keyword_any ? "ANY" : "ALL");
+            out.ostr << ", ";
+        out.writeKeyword(use_keyword_any ? "ANY" : "ALL");
     }
     else
     {
         for (const auto & name : names)
         {
             if (std::exchange(need_comma, true))
-                settings.ostr << ", ";
-            formatNameOrID(name, id_mode, settings);
+                out.ostr << ", ";
+            formatNameOrID(name, id_mode, out.copy());
         }
 
         if (current_user)
         {
             if (std::exchange(need_comma, true))
-                settings.ostr << ", ";
-            settings.writeKeyword("CURRENT_USER");
+                out.ostr << ", ";
+            out.writeKeyword("CURRENT_USER");
         }
     }
 
     if (except_current_user || !except_names.empty())
     {
-        settings.writeKeyword(" EXCEPT ");
+        out.writeKeyword(" EXCEPT ");
         need_comma = false;
 
         for (const auto & name : except_names)
         {
             if (std::exchange(need_comma, true))
-                settings.ostr << ", ";
-            formatNameOrID(name, id_mode, settings);
+                out.ostr << ", ";
+            formatNameOrID(name, id_mode, out.copy());
         }
 
         if (except_current_user)
         {
             if (std::exchange(need_comma, true))
-                settings.ostr << ", ";
-            settings.writeKeyword("CURRENT_USER");
+                out.ostr << ", ";
+            out.writeKeyword("CURRENT_USER");
         }
     }
 }

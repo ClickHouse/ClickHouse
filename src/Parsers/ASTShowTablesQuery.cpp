@@ -24,70 +24,70 @@ void ASTShowTablesQuery::formatLike(const FormatSettings & settings) const
     }
 }
 
-void ASTShowTablesQuery::formatLimit(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTShowTablesQuery::formatLimit(const FormattingBuffer & out) const
 {
     if (limit_length)
     {
-        settings.writeKeyword(" LIMIT ");
-        limit_length->formatImpl(settings, state, frame);
+        out.writeKeyword(" LIMIT ");
+        limit_length->formatImpl(out);
     }
 }
 
-void ASTShowTablesQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTShowTablesQuery::formatQueryImpl(const FormattingBuffer & out) const
 {
     if (databases)
     {
-        settings.writeKeyword("SHOW DATABASES");
-        formatLike(settings);
-        formatLimit(settings, state, frame);
+        out.writeKeyword("SHOW DATABASES");
+        formatLike(out.copy());
+        formatLimit(out);
 
     }
     else if (clusters)
     {
-        settings.writeKeyword("SHOW CLUSTERS");
-        formatLike(settings);
-        formatLimit(settings, state, frame);
+        out.writeKeyword("SHOW CLUSTERS");
+        formatLike(out.copy());
+        formatLimit(out);
 
     }
     else if (cluster)
     {
-        settings.writeKeyword("SHOW CLUSTER");
-        settings.ostr << " " << backQuoteIfNeed(cluster_str);
+        out.writeKeyword("SHOW CLUSTER");
+        out.ostr << " " << backQuoteIfNeed(cluster_str);
     }
     else if (caches)
     {
-        settings.writeKeyword("SHOW FILESYSTEM CACHES");
-        formatLike(settings);
-        formatLimit(settings, state, frame);
+        out.writeKeyword("SHOW FILESYSTEM CACHES");
+        formatLike(out.copy());
+        formatLimit(out);
     }
     else if (m_settings)
     {
-        settings.writeKeyword("SHOW ");
-        settings.writeKeyword(changed ? "CHANGED " : "");
-        settings.writeKeyword("SETTINGS");
-        formatLike(settings);
+        out.writeKeyword("SHOW ");
+        out.writeKeyword(changed ? "CHANGED " : "");
+        out.writeKeyword("SETTINGS");
+        formatLike(out.copy());
     }
     else
     {
-        settings.writeKeyword("SHOW ");
-        settings.writeKeyword(temporary ? "TEMPORARY " : "");
-        settings.writeKeyword(dictionaries ? "DICTIONARIES" : "TABLES");
+        out.writeKeyword("SHOW ");
+        out.writeKeyword(temporary ? "TEMPORARY " : "");
+        out.writeKeyword(dictionaries ? "DICTIONARIES" : "TABLES");
 
         if (!from.empty())
         {
-            settings.writeKeyword(" FROM ");
-            settings.ostr << backQuoteIfNeed(from);
+            out.writeKeyword(" FROM ");
+            out.ostr << backQuoteIfNeed(from);
         }
 
-        formatLike(settings);
+        formatLike(out.copy());
 
         if (where_expression)
         {
-            settings.writeKeyword(" WHERE ");
-            where_expression->formatImpl(settings, state, frame);
+            out.writeKeyword(" WHERE ");
+            where_expression->formatImpl(out);
         }
 
-        formatLimit(settings, state, frame);
+        formatLimit(out);
     }
 }
 

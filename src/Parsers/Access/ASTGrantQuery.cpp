@@ -111,11 +111,11 @@ ASTPtr ASTGrantQuery::clone() const
 }
 
 
-void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTGrantQuery::formatImpl(const FormattingBuffer & out) const
 {
-    settings.writeKeyword(attach_mode ? "ATTACH " : "");
-    settings.writeKeyword((!is_revoke && (replace_access || replace_granted_roles)) ? "REPLACE " : "");
-    settings.writeKeyword(is_revoke ? "REVOKE" : "GRANT");
+    out.writeKeyword(attach_mode ? "ATTACH " : "");
+    out.writeKeyword((!is_revoke && (replace_access || replace_granted_roles)) ? "REPLACE " : "");
+    out.writeKeyword(is_revoke ? "REVOKE" : "GRANT");
 
     if (!access_rights_elements.sameOptions())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Elements of an ASTGrantQuery are expected to have the same options");
@@ -123,37 +123,37 @@ void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, F
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A partial revoke should be revoked, not granted");
     bool grant_option = !access_rights_elements.empty() && access_rights_elements[0].grant_option;
 
-    formatOnCluster(settings);
+    formatOnCluster(out.copy());
 
     if (is_revoke)
     {
         if (grant_option)
-            settings.writeKeyword(" GRANT OPTION FOR");
+            out.writeKeyword(" GRANT OPTION FOR");
         else if (admin_option)
-            settings.writeKeyword(" ADMIN OPTION FOR");
+            out.writeKeyword(" ADMIN OPTION FOR");
     }
 
-    settings.ostr << " ";
+    out.ostr << " ";
     if (roles)
     {
-        roles->format(settings);
+        roles->format(out.copy());
         if (!access_rights_elements.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "ASTGrantQuery can contain either roles or access rights elements "
                             "to grant or revoke, not both of them");
     }
     else
-        formatElementsWithoutOptions(access_rights_elements, settings);
+        formatElementsWithoutOptions(access_rights_elements, out.copy());
 
-    settings.writeKeyword(is_revoke ? " FROM " : " TO ");
-    grantees->format(settings);
+    out.writeKeyword(is_revoke ? " FROM " : " TO ");
+    grantees->format(out.copy());
 
     if (!is_revoke)
     {
         if (grant_option)
-            settings.writeKeyword(" WITH GRANT OPTION");
+            out.writeKeyword(" WITH GRANT OPTION");
         else if (admin_option)
-            settings.writeKeyword(" WITH ADMIN OPTION");
+            out.writeKeyword(" WITH ADMIN OPTION");
     }
 }
 

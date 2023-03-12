@@ -42,7 +42,7 @@ public:
 
 protected:
     String getKeyword() const;
-    void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void formatQueryImpl(const FormattingBuffer & out) const override;
 };
 
 }

@@ -146,36 +146,36 @@ ASTPtr ASTCreateRowPolicyQuery::clone() const
 }
 
 
-void ASTCreateRowPolicyQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTCreateRowPolicyQuery::formatImpl(const FormattingBuffer & out) const
 {
     if (attach)
-        settings.writeKeyword("ATTACH ROW POLICY");
+        out.writeKeyword("ATTACH ROW POLICY");
     else
-        settings.writeKeyword(alter ? "ALTER ROW POLICY" : "CREATE ROW POLICY");
+        out.writeKeyword(alter ? "ALTER ROW POLICY" : "CREATE ROW POLICY");
 
     if (if_exists)
-        settings.writeKeyword(" IF EXISTS");
+        out.writeKeyword(" IF EXISTS");
     else if (if_not_exists)
-            settings.writeKeyword(" IF NOT EXISTS");
+        out.writeKeyword(" IF NOT EXISTS");
     else if (or_replace)
-            settings.writeKeyword(" OR REPLACE");
+        out.writeKeyword(" OR REPLACE");
 
-    settings.ostr << " ";
-    names->format(settings);
+    out.ostr << " ";
+    names->format(out);
 
-    formatOnCluster(settings);
+    formatOnCluster(out);
     assert(names->cluster.empty());
 
     if (!new_short_name.empty())
-        formatRenameTo(new_short_name, settings);
+        formatRenameTo(new_short_name, out.copy());
 
     if (is_restrictive)
-        formatAsRestrictiveOrPermissive(*is_restrictive, settings);
+        formatAsRestrictiveOrPermissive(*is_restrictive, out.copy());
 
-    formatForClauses(filters, alter, settings);
+    formatForClauses(filters, alter, out.copy());
 
     if (roles && (!roles->empty() || alter))
-        formatToRoles(*roles, settings);
+        formatToRoles(*roles, out.copy());
 }
 
 

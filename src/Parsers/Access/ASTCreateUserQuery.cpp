@@ -297,53 +297,53 @@ ASTPtr ASTCreateUserQuery::clone() const
 }
 
 
-void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const
+void ASTCreateUserQuery::formatImpl(const FormattingBuffer & out) const
 {
     if (attach)
     {
-        format.writeKeyword("ATTACH USER");
+        out.writeKeyword("ATTACH USER");
     }
     else
     {
-        format.writeKeyword(alter ? "ALTER USER" : "CREATE USER");
+        out.writeKeyword(alter ? "ALTER USER" : "CREATE USER");
     }
 
     if (if_exists)
-        format.writeKeyword(" IF EXISTS");
+        out.writeKeyword(" IF EXISTS");
     else if (if_not_exists)
-        format.writeKeyword(" IF NOT EXISTS");
+        out.writeKeyword(" IF NOT EXISTS");
     else if (or_replace)
-        format.writeKeyword(" OR REPLACE");
+        out.writeKeyword(" OR REPLACE");
 
-    format.ostr << " ";
-    names->format(format);
+    out.ostr << " ";
+    names->format(out);
 
-    formatOnCluster(format);
+    formatOnCluster(out);
 
     if (new_name)
-        formatRenameTo(*new_name, format);
+        formatRenameTo(*new_name, out.copy());
 
     if (auth_data)
-        formatAuthenticationData(*auth_data, format);
+        formatAuthenticationData(*auth_data, out.copy());
 
     if (hosts)
-        formatHosts(nullptr, *hosts, format);
+        formatHosts(nullptr, *hosts, out.copy());
     if (add_hosts)
-        formatHosts("ADD", *add_hosts, format);
+        formatHosts("ADD", *add_hosts, out.copy());
     if (remove_hosts)
-        formatHosts("DROP", *remove_hosts, format);
+        formatHosts("DROP", *remove_hosts, out.copy());
 
     if (default_database)
-        formatDefaultDatabase(*default_database, format);
+        formatDefaultDatabase(*default_database, out.copy());
 
     if (default_roles)
-        formatDefaultRoles(*default_roles, format);
+        formatDefaultRoles(*default_roles, out.copy());
 
     if (settings && (!settings->empty() || alter))
-        formatSettings(*settings, format);
+        formatSettings(*settings, out.copy());
 
     if (grantees)
-        formatGrantees(*grantees, format);
+        formatGrantees(*grantees, out.copy());
 }
 
 bool ASTCreateUserQuery::hasSecretParts() const
