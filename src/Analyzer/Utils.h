@@ -45,14 +45,6 @@ QueryTreeNodePtr extractLeftTableExpression(const QueryTreeNodePtr & join_tree_n
   */
 QueryTreeNodes buildTableExpressionsStack(const QueryTreeNodePtr & join_tree_node);
 
-/** Returns true if nested identifier can be resolved from compound type.
-  * Compound type can be tuple or array of tuples.
-  *
-  * Example: Compound type: Tuple(nested_path Tuple(nested_path_2 UInt64)). Nested identifier: nested_path_1.nested_path_2.
-  * Result: true.
-  */
-bool nestedIdentifierCanBeResolved(const DataTypePtr & compound_type, IdentifierView nested_identifier);
-
 /** Assert that there are no function nodes with specified function name in node children.
   * Do not visit subqueries.
   */

@@ -2378,7 +2378,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromCompoundExpression(const
 
     auto expression_type = compound_expression->getResultType();
 
-    if (!nestedIdentifierCanBeResolved(expression_type, nested_path))
+    if (!expression_type->hasSubcolumn(nested_path.getFullName()))
     {
         std::unordered_set<Identifier> valid_identifiers;
         collectCompoundExpressionValidIdentifiersForTypoCorrection(expression_identifier,
@@ -2405,10 +2405,15 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromCompoundExpression(const
             getHintsErrorMessageSuffix(hints));
     }
 
-    auto tuple_element_result = wrapExpressionNodeInTupleElement(compound_expression, nested_path);
-    resolveFunction(tuple_element_result, scope);
+    QueryTreeNodePtr get_subcolumn_function = std::make_shared<FunctionNode>("getSubcolumn");
+    auto & get_subcolumn_function_arguments_nodes = get_subcolumn_function->as<FunctionNode>()->getArguments().getNodes();
 
-    return tuple_element_result;
+    get_subcolumn_function_arguments_nodes.reserve(2);
+    get_subcolumn_function_arguments_nodes.push_back(compound_expression);
+    get_subcolumn_function_arguments_nodes.push_back(std::make_shared<ConstantNode>(nested_path.getFullName()));
+
+    resolveFunction(get_subcolumn_function, scope);
+    return get_subcolumn_function;
 }
 
 /** Resolve identifier from expression arguments.
