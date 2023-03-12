@@ -562,7 +562,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         /// Allow push down and other optimizations for VIEW: replace with subquery and rewrite it.
         ASTPtr view_table;
-        NameToNameMap parameter_values;
         NameToNameMap parameter_types;
         if (view)
         {
@@ -575,13 +574,13 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             /// and after query is replaced, we use these parameters to substitute in the parameterized view query
             if (query_info.is_parameterized_view)
             {
-                query_info.parameter_values = analyzeFunctionParamValues(query_ptr);
+                query_info.parameterized_view_values = analyzeFunctionParamValues(query_ptr);
                 parameter_types = view->getParameterTypes();
             }
             view->replaceWithSubquery(getSelectQuery(), view_table, metadata_snapshot, view->isParameterizedView());
             if (query_info.is_parameterized_view)
             {
-                view->replaceQueryParametersIfParametrizedView(query_ptr, query_info.parameter_values);
+                view->replaceQueryParametersIfParametrizedView(query_ptr, query_info.parameterized_view_values);
             }
 
         }
@@ -594,7 +593,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             required_result_column_names,
             table_join,
             query_info.is_parameterized_view,
-            query_info.parameter_values,
+            query_info.parameterized_view_values,
             parameter_types);
 
 
@@ -746,7 +745,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 query_info.filter_asts.push_back(parallel_replicas_custom_filter_ast);
             }
 
-            source_header = storage_snapshot->getSampleBlockForColumns(required_columns, parameter_values);
+            source_header = storage_snapshot->getSampleBlockForColumns(required_columns, query_info.parameterized_view_values);
         }
 
         /// Calculate structure of the result.
