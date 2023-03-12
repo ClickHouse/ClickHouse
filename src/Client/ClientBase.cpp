@@ -41,7 +41,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTColumnDeclaration.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 
 #include <Processors/Formats/Impl/NullFormat.h>
@@ -452,7 +451,7 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     catch (const Exception &)
     {
         /// Catch client errors like NO_ROW_DELIMITER
-        throw LocalFormatError(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
+        throw LocalFormatError(getCurrentExceptionMessage(print_stack_trace), getCurrentExceptionCode());
     }
 
     /// Received data block is immediately displayed to the user.
@@ -481,14 +480,14 @@ void ClientBase::onLogData(Block & block)
 void ClientBase::onTotals(Block & block, ASTPtr parsed_query)
 {
     initOutputFormat(block, parsed_query);
-    output_format->setTotals(materializeBlock(block));
+    output_format->setTotals(block);
 }
 
 
 void ClientBase::onExtremes(Block & block, ASTPtr parsed_query)
 {
     initOutputFormat(block, parsed_query);
-    output_format->setExtremes(materializeBlock(block));
+    output_format->setExtremes(block);
 }
 
 
@@ -630,7 +629,7 @@ try
 }
 catch (...)
 {
-    throw LocalFormatError(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
+    throw LocalFormatError(getCurrentExceptionMessage(print_stack_trace), getCurrentExceptionCode());
 }
 
 
@@ -817,15 +816,17 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
 
 void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query)
 {
-    if (fake_drop && parsed_query->as<ASTDropQuery>())
-        return;
-
-    auto query = query_to_execute;
+    if (fake_drop)
+    {
+        if (parsed_query->as<ASTDropQuery>())
+            return;
+    }
 
     /// Rewrite query only when we have query parameters.
     /// Note that if query is rewritten, comments in query are lost.
     /// But the user often wants to see comments in server logs, query log, processlist, etc.
     /// For recent versions of the server query parameters will be transferred by network and applied on the server side.
+    auto query = query_to_execute;
     if (!query_parameters.empty()
         && connection->getServerRevision(connection_parameters.timeouts) < DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
     {
@@ -835,22 +836,6 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
 
         /// Get new query after substitutions.
         query = serializeAST(*parsed_query);
-    }
-
-    if (allow_merge_tree_settings && parsed_query->as<ASTCreateQuery>())
-    {
-        /// Rewrite query if new settings were added.
-        if (addMergeTreeSettings(*parsed_query->as<ASTCreateQuery>()))
-        {
-            /// Replace query parameters because AST cannot be serialized otherwise.
-            if (!query_parameters.empty())
-            {
-                ReplaceQueryParameterVisitor visitor(query_parameters);
-                visitor.visit(parsed_query);
-            }
-
-            query = serializeAST(*parsed_query);
-        }
     }
 
     int retries_left = 10;
@@ -1616,27 +1601,13 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         };
 
         const auto * insert = parsed_query->as<ASTInsertQuery>();
-        if (const auto * select = parsed_query->as<ASTSelectQuery>(); select && select->settings())
-            apply_query_settings(*select->settings());
-        else if (const auto * select_with_union = parsed_query->as<ASTSelectWithUnionQuery>())
-        {
-            const ASTs & children = select_with_union->list_of_selects->children;
-            if (!children.empty())
-            {
-                // On the client it is enough to apply settings only for the
-                // last SELECT, since the only thing that is important to apply
-                // on the client is format settings.
-                const auto * last_select = children.back()->as<ASTSelectQuery>();
-                if (last_select && last_select->settings())
-                {
-                    apply_query_settings(*last_select->settings());
-                }
-            }
-        }
-        else if (const auto * query_with_output = parsed_query->as<ASTQueryWithOutput>(); query_with_output && query_with_output->settings_ast)
-            apply_query_settings(*query_with_output->settings_ast);
-        else if (insert && insert->settings_ast)
+        if (insert && insert->settings_ast)
             apply_query_settings(*insert->settings_ast);
+
+        /// FIXME: try to prettify this cast using `as<>()`
+        const auto * with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get());
+        if (with_output && with_output->settings_ast)
+            apply_query_settings(*with_output->settings_ast);
 
         if (!connection->checkConnected(connection_parameters.timeouts))
             connect();
@@ -1834,7 +1805,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
     {
         /// disable logs if expects errors
         TestHint test_hint(all_queries_text);
-        if (test_hint.hasClientErrors() || test_hint.hasServerErrors())
+        if (test_hint.clientError() || test_hint.serverError())
             processTextAsSingleQuery("SET send_logs_level = 'fatal'");
     }
 
@@ -1876,17 +1847,17 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 // the query ends because we failed to parse it, so we consume
                 // the entire line.
                 TestHint hint(String(this_query_begin, this_query_end - this_query_begin));
-                if (hint.hasServerErrors())
+                if (hint.serverError())
                 {
                     // Syntax errors are considered as client errors
-                    current_exception->addMessage("\nExpected server error: {}.", hint.serverErrors());
+                    current_exception->addMessage("\nExpected server error '{}'.", hint.serverError());
                     current_exception->rethrow();
                 }
 
-                if (!hint.hasExpectedClientError(current_exception->code()))
+                if (hint.clientError() != current_exception->code())
                 {
-                    if (hint.hasClientErrors())
-                        current_exception->addMessage("\nExpected client error: {}.", hint.clientErrors());
+                    if (hint.clientError())
+                        current_exception->addMessage("\nExpected client error: " + std::to_string(hint.clientError()));
 
                     current_exception->rethrow();
                 }
@@ -1926,7 +1897,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 {
                     // Surprisingly, this is a client error. A server error would
                     // have been reported without throwing (see onReceiveSeverException()).
-                    client_exception = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
+                    client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(print_stack_trace), getCurrentExceptionCode());
                     have_error = true;
                 }
 
@@ -1935,37 +1906,37 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 bool error_matches_hint = true;
                 if (have_error)
                 {
-                    if (test_hint.hasServerErrors())
+                    if (test_hint.serverError())
                     {
                         if (!server_exception)
                         {
                             error_matches_hint = false;
                             fmt::print(stderr, "Expected server error code '{}' but got no server error (query: {}).\n",
-                                       test_hint.serverErrors(), full_query);
+                                       test_hint.serverError(), full_query);
                         }
-                        else if (!test_hint.hasExpectedServerError(server_exception->code()))
+                        else if (server_exception->code() != test_hint.serverError())
                         {
                             error_matches_hint = false;
                             fmt::print(stderr, "Expected server error code: {} but got: {} (query: {}).\n",
-                                       test_hint.serverErrors(), server_exception->code(), full_query);
+                                       test_hint.serverError(), server_exception->code(), full_query);
                         }
                     }
-                    if (test_hint.hasClientErrors())
+                    if (test_hint.clientError())
                     {
                         if (!client_exception)
                         {
                             error_matches_hint = false;
                             fmt::print(stderr, "Expected client error code '{}' but got no client error (query: {}).\n",
-                                       test_hint.clientErrors(), full_query);
+                                       test_hint.clientError(), full_query);
                         }
-                        else if (!test_hint.hasExpectedClientError(client_exception->code()))
+                        else if (client_exception->code() != test_hint.clientError())
                         {
                             error_matches_hint = false;
                             fmt::print(stderr, "Expected client error code '{}' but got '{}' (query: {}).\n",
-                                       test_hint.clientErrors(), client_exception->code(), full_query);
+                                       test_hint.clientError(), client_exception->code(), full_query);
                         }
                     }
-                    if (!test_hint.hasClientErrors() && !test_hint.hasServerErrors())
+                    if (!test_hint.clientError() && !test_hint.serverError())
                     {
                         // No error was expected but it still occurred. This is the
                         // default case without test hint, doesn't need additional
@@ -1975,19 +1946,19 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 }
                 else
                 {
-                    if (test_hint.hasClientErrors())
+                    if (test_hint.clientError())
                     {
                         error_matches_hint = false;
                         fmt::print(stderr,
                                    "The query succeeded but the client error '{}' was expected (query: {}).\n",
-                                   test_hint.clientErrors(), full_query);
+                                   test_hint.clientError(), full_query);
                     }
-                    if (test_hint.hasServerErrors())
+                    if (test_hint.serverError())
                     {
                         error_matches_hint = false;
                         fmt::print(stderr,
                                    "The query succeeded but the server error '{}' was expected (query: {}).\n",
-                                   test_hint.serverErrors(), full_query);
+                                   test_hint.serverError(), full_query);
                     }
                 }
 
@@ -2093,41 +2064,6 @@ void ClientBase::initQueryIdFormats()
         query_id_formats.emplace_back("Query id:", " {query_id}\n");
 }
 
-
-bool ClientBase::addMergeTreeSettings(ASTCreateQuery & ast_create)
-{
-    if (ast_create.attach
-        || !ast_create.storage
-        || !ast_create.storage->isExtendedStorageDefinition()
-        || !ast_create.storage->engine
-        || ast_create.storage->engine->name.find("MergeTree") == std::string::npos)
-        return false;
-
-    auto all_changed = cmd_merge_tree_settings.allChanged();
-    if (all_changed.begin() == all_changed.end())
-        return false;
-
-    if (!ast_create.storage->settings)
-    {
-        auto settings_ast = std::make_shared<ASTSetQuery>();
-        settings_ast->is_standalone = false;
-        ast_create.storage->set(ast_create.storage->settings, settings_ast);
-    }
-
-    auto & storage_settings = *ast_create.storage->settings;
-    bool added_new_setting = false;
-
-    for (const auto & setting : all_changed)
-    {
-        if (!storage_settings.changes.tryGet(setting.getName()))
-        {
-            storage_settings.changes.emplace_back(setting.getName(), setting.getValue());
-            added_new_setting = true;
-        }
-    }
-
-    return added_new_setting;
-}
 
 void ClientBase::runInteractive()
 {
@@ -2359,22 +2295,6 @@ void ClientBase::showClientVersion()
     std::cout << DBMS_NAME << " " + getName() + " version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
 }
 
-namespace
-{
-
-/// Define transparent hash to we can use
-/// std::string_view with the containers
-struct TransparentStringHash
-{
-    using is_transparent = void;
-    size_t operator()(std::string_view txt) const
-    {
-        return std::hash<std::string_view>{}(txt);
-    }
-};
-
-}
-
 
 void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
 {
@@ -2382,46 +2302,6 @@ void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, 
         cmd_settings.addProgramOptionsAsMultitokens(options_description.main_description.value());
     else
         cmd_settings.addProgramOptions(options_description.main_description.value());
-
-    if (allow_merge_tree_settings)
-    {
-        /// Add merge tree settings manually, because names of some settings
-        /// may clash. Query settings have higher priority and we just
-        /// skip ambiguous merge tree settings.
-        auto & main_options = options_description.main_description.value();
-
-        std::unordered_set<std::string, TransparentStringHash, std::equal_to<>> main_option_names;
-        for (const auto & option : main_options.options())
-            main_option_names.insert(option->long_name());
-
-        for (const auto & setting : cmd_merge_tree_settings.all())
-        {
-            const auto add_setting = [&](const std::string_view name)
-            {
-                if (auto it = main_option_names.find(name); it != main_option_names.end())
-                    return;
-
-                if (allow_repeated_settings)
-                    cmd_merge_tree_settings.addProgramOptionAsMultitoken(main_options, name, setting);
-                else
-                    cmd_merge_tree_settings.addProgramOption(main_options, name, setting);
-            };
-
-            const auto & setting_name = setting.getName();
-
-            add_setting(setting_name);
-
-            const auto & settings_to_aliases = MergeTreeSettings::Traits::settingsToAliases();
-            if (auto it = settings_to_aliases.find(setting_name); it != settings_to_aliases.end())
-            {
-                for (const auto alias : it->second)
-                {
-                    add_setting(alias);
-                }
-            }
-        }
-    }
-
     /// Parse main commandline options.
     auto parser = po::command_line_parser(arguments).options(options_description.main_description.value()).allow_unregistered();
     po::parsed_options parsed = parser.run();

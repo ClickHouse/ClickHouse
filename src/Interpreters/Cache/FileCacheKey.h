@@ -1,6 +1,6 @@
 #pragma once
 #include <Core/Types.h>
-#include <base/hex.h>
+#include <Common/hex.h>
 #include <Core/UUID.h>
 
 namespace DB

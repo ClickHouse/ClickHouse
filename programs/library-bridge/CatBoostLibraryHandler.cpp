@@ -243,6 +243,7 @@ ColumnFloat64::MutablePtr CatBoostLibraryHandler::evalImpl(
     const ColumnRawPtrs & columns,
     bool cat_features_are_strings) const
 {
+    std::string error_msg = "Error occurred while applying CatBoost model: ";
     size_t column_size = columns.front()->size();
 
     auto result = ColumnFloat64::create(column_size * tree_count);
@@ -264,8 +265,7 @@ ColumnFloat64::MutablePtr CatBoostLibraryHandler::evalImpl(
                                           result_buf, column_size * tree_count))
         {
 
-            throw Exception(ErrorCodes::CANNOT_APPLY_CATBOOST_MODEL,
-                        "Error occurred while applying CatBoost model: {}", api.GetErrorString());
+            throw Exception(error_msg + api.GetErrorString(), ErrorCodes::CANNOT_APPLY_CATBOOST_MODEL);
         }
         return result;
     }
@@ -288,8 +288,7 @@ ColumnFloat64::MutablePtr CatBoostLibraryHandler::evalImpl(
                                       cat_features_buf, cat_features_count,
                                       result_buf, column_size * tree_count))
         {
-            throw Exception(ErrorCodes::CANNOT_APPLY_CATBOOST_MODEL,
-                            "Error occurred while applying CatBoost model: {}", api.GetErrorString());
+            throw Exception(error_msg + api.GetErrorString(), ErrorCodes::CANNOT_APPLY_CATBOOST_MODEL);
         }
     }
     else
@@ -305,8 +304,7 @@ ColumnFloat64::MutablePtr CatBoostLibraryHandler::evalImpl(
                 cat_features_buf, cat_features_count,
                 result_buf, column_size * tree_count))
         {
-            throw Exception(ErrorCodes::CANNOT_APPLY_CATBOOST_MODEL,
-                            "Error occurred while applying CatBoost model: {}", api.GetErrorString());
+            throw Exception(error_msg + api.GetErrorString(), ErrorCodes::CANNOT_APPLY_CATBOOST_MODEL);
         }
     }
 

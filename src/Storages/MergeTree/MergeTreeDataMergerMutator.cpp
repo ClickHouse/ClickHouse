@@ -31,7 +31,7 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/Context.h>
-#include <base/interpolate.h>
+#include <Common/interpolate.h>
 #include <Common/typeid_cast.h>
 #include <Common/escapeForFileName.h>
 #include <Parsers/queryToString.h>
@@ -525,7 +525,6 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     ReservationSharedPtr space_reservation,
     bool deduplicate,
     const Names & deduplicate_by_columns,
-    bool cleanup,
     const MergeTreeData::MergingParams & merging_params,
     const MergeTreeTransactionPtr & txn,
     bool need_prefix,
@@ -542,7 +541,6 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
         space_reservation,
         deduplicate,
         deduplicate_by_columns,
-        cleanup,
         merging_params,
         need_prefix,
         parent_part,

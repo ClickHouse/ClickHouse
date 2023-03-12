@@ -147,7 +147,7 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection, const S
                 first = false;
         }
 
-        throw Exception::createDeprecated(error_message.str(), ErrorCodes::ILLEGAL_MYSQL_VARIABLE);
+        throw Exception(error_message.str(), ErrorCodes::ILLEGAL_MYSQL_VARIABLE);
     }
 }
 

@@ -234,63 +234,6 @@ FROM
 ORDER BY number ASC"
 run_query "$query"
 
-echo "-- sum() with Floats depends on order, -> sorting is not removed here"
-query="SELECT
-    toTypeName(sum(v)),
-    sum(v)
-FROM
-(
-    SELECT v
-    FROM
-    (
-        SELECT CAST('9007199254740992', 'Float64') AS v
-        UNION ALL
-        SELECT CAST('1', 'Float64') AS v
-        UNION ALL
-        SELECT CAST('1', 'Float64') AS v
-    )
-    ORDER BY v ASC
-)"
-run_query "$query"
-
-echo "-- sum() with Nullable(Floats) depends on order, -> sorting is not removed here"
-query="SELECT
-    toTypeName(sum(v)),
-    sum(v)
-FROM
-(
-    SELECT v
-    FROM
-    (
-        SELECT '9007199254740992'::Nullable(Float64) AS v
-        UNION ALL
-        SELECT '1'::Nullable(Float64) AS v
-        UNION ALL
-        SELECT '1'::Nullable(Float64) AS v
-    )
-    ORDER BY v ASC
-)"
-run_query "$query"
-
-echo "-- sumIf() with Floats depends on order, -> sorting is not removed here"
-query="SELECT
-    toTypeName(sumIf(v, v > 0)),
-    sumIf(v, v > 0)
-FROM
-(
-    SELECT v
-    FROM
-    (
-        SELECT CAST('9007199254740992', 'Float64') AS v
-        UNION ALL
-        SELECT CAST('1', 'Float64') AS v
-        UNION ALL
-        SELECT CAST('1', 'Float64') AS v
-    )
-    ORDER BY v ASC
-)"
-run_query "$query"
-
 echo "-- disable common optimization to avoid functions to be lifted up (liftUpFunctions optimization), needed for testing with stateful function"
 ENABLE_OPTIMIZATION="SET query_plan_enable_optimizations=0;$ENABLE_OPTIMIZATION"
 echo "-- neighbor() as stateful function prevents removing inner ORDER BY since its result depends on order"

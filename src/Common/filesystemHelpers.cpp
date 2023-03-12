@@ -312,32 +312,39 @@ bool exists(const std::string & path)
 
 bool canRead(const std::string & path)
 {
-    int err = faccessat(AT_FDCWD, path.c_str(), R_OK, AT_EACCESS);
-    if (err == 0)
-        return true;
-    if (errno == EACCES)
-        return false;
+    struct stat st;
+    if (stat(path.c_str(), &st) == 0)
+    {
+        if (st.st_uid == geteuid())
+            return (st.st_mode & S_IRUSR) != 0;
+        else if (st.st_gid == getegid())
+            return (st.st_mode & S_IRGRP) != 0;
+        else
+            return (st.st_mode & S_IROTH) != 0 || geteuid() == 0;
+    }
     DB::throwFromErrnoWithPath("Cannot check read access to file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
 }
 
 bool canWrite(const std::string & path)
 {
-    int err = faccessat(AT_FDCWD, path.c_str(), W_OK, AT_EACCESS);
-    if (err == 0)
-        return true;
-    if (errno == EACCES)
-        return false;
+    struct stat st;
+    if (stat(path.c_str(), &st) == 0)
+    {
+        if (st.st_uid == geteuid())
+            return (st.st_mode & S_IWUSR) != 0;
+        else if (st.st_gid == getegid())
+            return (st.st_mode & S_IWGRP) != 0;
+        else
+            return (st.st_mode & S_IWOTH) != 0 || geteuid() == 0;
+    }
     DB::throwFromErrnoWithPath("Cannot check write access to file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
 }
 
 bool canExecute(const std::string & path)
 {
-    int err = faccessat(AT_FDCWD, path.c_str(), X_OK, AT_EACCESS);
-    if (err == 0)
-        return true;
-    if (errno == EACCES)
-        return false;
-    DB::throwFromErrnoWithPath("Cannot check write access to file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
+    if (exists(path))
+        return faccessat(AT_FDCWD, path.c_str(), X_OK, AT_EACCESS) == 0;
+    DB::throwFromErrnoWithPath("Cannot check execute access to file: " + path, path, DB::ErrorCodes::PATH_ACCESS_DENIED);
 }
 
 time_t getModificationTime(const std::string & path)
@@ -381,14 +388,6 @@ bool isSymlink(const fs::path & path)
     if (path.filename().empty())
         return fs::is_symlink(path.parent_path());      /// STYLE_CHECK_ALLOW_STD_FS_SYMLINK
     return fs::is_symlink(path);        /// STYLE_CHECK_ALLOW_STD_FS_SYMLINK
-}
-
-bool isSymlinkNoThrow(const fs::path & path)
-{
-    std::error_code dummy;
-    if (path.filename().empty())
-        return fs::is_symlink(path.parent_path(), dummy);      /// STYLE_CHECK_ALLOW_STD_FS_SYMLINK
-    return fs::is_symlink(path, dummy);        /// STYLE_CHECK_ALLOW_STD_FS_SYMLINK
 }
 
 fs::path readSymlink(const fs::path & path)

@@ -86,6 +86,7 @@ MergedColumnOnlyOutputStream::fillChecksums(
     }
 
     new_part->setColumns(columns, serialization_infos);
+
     return checksums;
 }
 

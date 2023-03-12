@@ -103,9 +103,9 @@ Its size can be configured using the server-level setting [uncompressed_cache_si
 Reset the compiled expression cache.
 The compiled expression cache is enabled/disabled with the query/user/profile-level setting [compile_expressions](../../operations/settings/settings.md#compile-expressions).
 
-## DROP QUERY CACHE
+## DROP QUERY RESULT CACHE
 
-Resets the [query cache](../../operations/query-cache.md).
+Resets the [query result cache](../../operations/query-result-cache.md).
 
 ## FLUSH LOGS
 
@@ -283,7 +283,7 @@ SYSTEM START REPLICATION QUEUES [[db.]replicated_merge_tree_family_table_name]
 Wait until a `ReplicatedMergeTree` table will be synced with other replicas in a cluster. Will run until `receive_timeout` if fetches currently disabled for the table.
 
 ``` sql
-SYSTEM SYNC REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_family_table_name
+SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name
 ```
 
 After running this statement the `[db.]replicated_merge_tree_family_table_name` fetches commands from the common replicated log into its own replication queue, and then the query waits till the replica processes all of the fetched commands.
@@ -361,16 +361,4 @@ Allows to drop filesystem cache.
 
 ```sql
 SYSTEM DROP FILESYSTEM CACHE
-```
-
-### SYNC FILE CACHE
-
-:::note
-It's too heavy and has potential for misuse.
-:::
-
-Will do sync syscall. 
-
-```sql
-SYSTEM SYNC FILE CACHE
 ```

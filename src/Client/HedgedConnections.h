@@ -94,7 +94,7 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "sendReadTaskResponse in not supported with HedgedConnections");
     }
 
-    void sendMergeTreeReadTaskResponse(const ParallelReadResponse &) override
+    void sendMergeTreeReadTaskResponse(PartitionReadResponse) override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "sendMergeTreeReadTaskResponse in not supported with HedgedConnections");
     }

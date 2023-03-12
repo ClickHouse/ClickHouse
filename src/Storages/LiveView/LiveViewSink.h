@@ -3,7 +3,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/LiveView/StorageLiveView.h>
-#include <base/hex.h>
+#include <Common/hex.h>
 
 
 namespace DB
@@ -40,10 +40,10 @@ public:
 
         std::lock_guard lock(storage.mutex);
 
-        if (storage.getBlocksHashKey(lock) != key_str)
+        if (storage.getBlocksHashKey() != key_str)
         {
             new_blocks_metadata->hash = key_str;
-            new_blocks_metadata->version = storage.getBlocksVersion(lock) + 1;
+            new_blocks_metadata->version = storage.getBlocksVersion() + 1;
             new_blocks_metadata->time = std::chrono::system_clock::now();
 
             for (auto & block : *new_blocks)
@@ -62,8 +62,8 @@ public:
         else
         {
             // only update blocks time
-            new_blocks_metadata->hash = storage.getBlocksHashKey(lock);
-            new_blocks_metadata->version = storage.getBlocksVersion(lock);
+            new_blocks_metadata->hash = storage.getBlocksHashKey();
+            new_blocks_metadata->version = storage.getBlocksVersion();
             new_blocks_metadata->time = std::chrono::system_clock::now();
 
             (*storage.blocks_metadata_ptr) = new_blocks_metadata;

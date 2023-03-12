@@ -31,12 +31,6 @@ public:
         return query_context;
     }
 
-    /// Get query context settings
-    const Settings & getSettings() const
-    {
-        return query_context->getSettingsRef();
-    }
-
     /** Get block with constants.
       * Valid only for AST tree.
       */

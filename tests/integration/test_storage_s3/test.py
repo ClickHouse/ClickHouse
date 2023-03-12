@@ -1056,13 +1056,13 @@ def test_seekable_formats(started_cluster):
     table_function = f"s3(s3_orc, structure='a Int32, b String', format='ORC')"
     exec_query_with_retry(
         instance,
-        f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1500000) settings s3_truncate_on_insert=1",
+        f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1000000) settings s3_truncate_on_insert=1",
     )
 
     result = instance.query(
-        f"SELECT count() FROM {table_function} SETTINGS max_memory_usage='60M'"
+        f"SELECT count() FROM {table_function} SETTINGS max_memory_usage='50M'"
     )
-    assert int(result) == 1500000
+    assert int(result) == 1000000
 
     instance.query(f"SELECT * FROM {table_function} FORMAT Null")
 
@@ -1073,7 +1073,7 @@ def test_seekable_formats(started_cluster):
     result = result.strip()
     assert result.endswith("MiB")
     result = result[: result.index(".")]
-    assert int(result) > 150
+    assert int(result) > 80
 
 
 def test_seekable_formats_url(started_cluster):
@@ -1083,23 +1083,23 @@ def test_seekable_formats_url(started_cluster):
     table_function = f"s3(s3_parquet, structure='a Int32, b String', format='Parquet')"
     exec_query_with_retry(
         instance,
-        f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1500000) settings s3_truncate_on_insert=1",
+        f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1000000) settings s3_truncate_on_insert=1",
     )
 
     result = instance.query(f"SELECT count() FROM {table_function}")
-    assert int(result) == 1500000
+    assert int(result) == 1000000
 
     table_function = f"s3(s3_orc, structure='a Int32, b String', format='ORC')"
     exec_query_with_retry(
         instance,
-        f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1500000) settings s3_truncate_on_insert=1",
+        f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(1000000) settings s3_truncate_on_insert=1",
     )
 
     table_function = f"url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_parquet', 'Parquet', 'a Int32, b String')"
     result = instance.query(
-        f"SELECT count() FROM {table_function} SETTINGS max_memory_usage='60M'"
+        f"SELECT count() FROM {table_function} SETTINGS max_memory_usage='50M'"
     )
-    assert int(result) == 1500000
+    assert int(result) == 1000000
 
 
 def test_empty_file(started_cluster):
@@ -1699,6 +1699,7 @@ def test_ast_auth_headers(started_cluster):
 
 
 def test_environment_credentials(started_cluster):
+    filename = "test.csv"
     bucket = started_cluster.minio_restricted_bucket
 
     instance = started_cluster.instances["s3_with_environment_credentials"]
@@ -1711,15 +1712,6 @@ def test_environment_credentials(started_cluster):
             f"select count() from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache3.jsonl')"
         ).strip()
     )
-
-    # manually defined access key should override from env
-    with pytest.raises(helpers.client.QueryRuntimeException) as ei:
-        instance.query(
-            f"select count() from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache4.jsonl', 'aws', 'aws123')"
-        )
-
-        assert ei.value.returncode == 243
-        assert "HTTP response code: 403" in ei.value.stderr
 
 
 def test_s3_list_objects_failure(started_cluster):

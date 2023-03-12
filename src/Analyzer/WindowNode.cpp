@@ -113,17 +113,11 @@ ASTPtr WindowNode::toASTImpl() const
 
     window_definition->parent_window_name = parent_window_name;
 
-    if (hasPartitionBy())
-    {
-        window_definition->children.push_back(getPartitionByNode()->toAST());
-        window_definition->partition_by = window_definition->children.back();
-    }
+    window_definition->children.push_back(getPartitionByNode()->toAST());
+    window_definition->partition_by = window_definition->children.back();
 
-    if (hasOrderBy())
-    {
-        window_definition->children.push_back(getOrderByNode()->toAST());
-        window_definition->order_by = window_definition->children.back();
-    }
+    window_definition->children.push_back(getOrderByNode()->toAST());
+    window_definition->order_by = window_definition->children.back();
 
     window_definition->frame_is_default = window_frame.is_default;
     window_definition->frame_type = window_frame.type;

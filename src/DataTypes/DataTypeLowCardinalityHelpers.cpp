@@ -113,7 +113,7 @@ ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column)
     return column;
 }
 
-ColumnPtr recursiveLowCardinalityTypeConversion(const ColumnPtr & column, const DataTypePtr & from_type, const DataTypePtr & to_type)
+ColumnPtr recursiveTypeConversion(const ColumnPtr & column, const DataTypePtr & from_type, const DataTypePtr & to_type)
 {
     if (!column)
         return column;
@@ -128,7 +128,7 @@ ColumnPtr recursiveLowCardinalityTypeConversion(const ColumnPtr & column, const 
     if (const auto * column_const = typeid_cast<const ColumnConst *>(column.get()))
     {
         const auto & nested = column_const->getDataColumnPtr();
-        auto nested_no_lc = recursiveLowCardinalityTypeConversion(nested, from_type, to_type);
+        auto nested_no_lc = recursiveTypeConversion(nested, from_type, to_type);
         if (nested.get() == nested_no_lc.get())
             return column;
 
@@ -164,7 +164,7 @@ ColumnPtr recursiveLowCardinalityTypeConversion(const ColumnPtr & column, const 
             const auto & nested_to = to_array_type->getNestedType();
 
             return ColumnArray::create(
-                    recursiveLowCardinalityTypeConversion(column_array->getDataPtr(), nested_from, nested_to),
+                    recursiveTypeConversion(column_array->getDataPtr(), nested_from, nested_to),
                     column_array->getOffsetsPtr());
         }
     }
@@ -187,7 +187,7 @@ ColumnPtr recursiveLowCardinalityTypeConversion(const ColumnPtr & column, const 
             for (size_t i = 0; i < columns.size(); ++i)
             {
                 auto & element = columns[i];
-                auto element_no_lc = recursiveLowCardinalityTypeConversion(element, from_elements.at(i), to_elements.at(i));
+                auto element_no_lc = recursiveTypeConversion(element, from_elements.at(i), to_elements.at(i));
                 if (element.get() != element_no_lc.get())
                 {
                     element = element_no_lc;

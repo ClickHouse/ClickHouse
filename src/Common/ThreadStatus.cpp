@@ -144,18 +144,9 @@ ThreadStatus::ThreadStatus()
 #endif
 }
 
-void ThreadStatus::flushUntrackedMemory()
-{
-    if (untracked_memory == 0)
-        return;
-
-    memory_tracker.adjustWithUntrackedMemory(untracked_memory);
-    untracked_memory = 0;
-}
-
 ThreadStatus::~ThreadStatus()
 {
-    flushUntrackedMemory();
+    memory_tracker.adjustWithUntrackedMemory(untracked_memory);
 
     if (thread_group)
     {
@@ -235,20 +226,17 @@ void ThreadStatus::attachInternalProfileEventsQueue(const InternalProfileEventsQ
 
 void ThreadStatus::setFatalErrorCallback(std::function<void()> callback)
 {
-    /// It does not make sense to set a callback for sending logs to a client if there's no thread group
-    chassert(thread_group);
-    std::lock_guard lock(thread_group->mutex);
     fatal_error_callback = std::move(callback);
+
+    if (!thread_group)
+        return;
+
+    std::lock_guard lock(thread_group->mutex);
     thread_group->fatal_error_callback = fatal_error_callback;
 }
 
 void ThreadStatus::onFatalError()
 {
-    /// No thread group - no callback
-    if (!thread_group)
-        return;
-
-    std::lock_guard lock(thread_group->mutex);
     if (fatal_error_callback)
         fatal_error_callback();
 }

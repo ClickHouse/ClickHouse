@@ -66,13 +66,13 @@ public:
         , kind(kind_)
     {
         if (!isNativeNumber(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{}: first argument must be represented by integer", getName());
+            throw Exception{getName() + ": first argument must be represented by integer", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         if (!isNativeNumber(arguments[1]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{}: second argument must be represented by integer", getName());
+            throw Exception{getName() + ": second argument must be represented by integer", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         if (!arguments[0]->equals(*arguments[1]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{}: arguments must have the same type", getName());
+            throw Exception{getName() + ": arguments must have the same type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
     }
 
     String getName() const override
@@ -118,19 +118,14 @@ public:
         size_t size = value.size();
         writeVarUInt(size, buf);
 
-        /// In this version, pairs were serialized with padding.
-        /// We must ensure that padding bytes are zero-filled.
-
-        static_assert(offsetof(typename MaxIntersectionsData<PointType>::Value, first) == 0);
-        static_assert(offsetof(typename MaxIntersectionsData<PointType>::Value, second) > 0);
-
-        char zero_padding[offsetof(typename MaxIntersectionsData<PointType>::Value, second) - sizeof(value[0].first)]{};
-
         for (size_t i = 0; i < size; ++i)
         {
-            writePODBinary(value[i].first, buf);
-            writePODBinary(zero_padding, buf);
-            writePODBinary(value[i].second, buf);
+            /// In this version, pairs were serialized with padding.
+            /// We must ensure that padding bytes are zero-filled.
+            char bytes[sizeof(value[0])]{};
+            unalignedStore<PointType>(&bytes[offsetof(typename MaxIntersectionsData<PointType>::Value, first)], value[i].first);
+            unalignedStore<Int64>(&bytes[offsetof(typename MaxIntersectionsData<PointType>::Value, second)], value[i].second);
+            buf.write(bytes, sizeof(value[0]));
         }
     }
 

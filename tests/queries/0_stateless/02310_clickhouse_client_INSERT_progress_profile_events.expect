@@ -1,4 +1,5 @@
 #!/usr/bin/expect -f
+# Tags: long
 
 # This is the regression for the concurrent access in ProgressIndication,
 # so it is important to read enough rows here (10e6).
@@ -16,8 +17,8 @@ match_max 100000
 set stty_init "rows 25 cols 120"
 
 expect_after {
-    -i $any_spawn_id eof { exp_continue }
-    -i $any_spawn_id timeout { exit 1 }
+    eof { exp_continue }
+    timeout { exit 1 }
 }
 
 spawn bash

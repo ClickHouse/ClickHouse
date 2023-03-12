@@ -7,7 +7,7 @@
 #include <utility>
 #include <base/range.h>
 #include <base/unaligned.h>
-#include <base/hex.h>
+#include <Common/hex.h>
 #include <Common/StringUtils/StringUtils.h>
 
 constexpr size_t IPV4_BINARY_LENGTH = 4;
@@ -82,7 +82,11 @@ inline bool parseIPv4(T * &src, EOFfunction eof, unsigned char * dst, int32_t fi
             break;
     }
 
-    memcpy(dst, &result, sizeof(result));
+    if constexpr (std::endian::native == std::endian::little)
+        memcpy(dst, &result, sizeof(result));
+    else
+        reverseMemcpy(dst, &result, sizeof(result));
+
     return true;
 }
 

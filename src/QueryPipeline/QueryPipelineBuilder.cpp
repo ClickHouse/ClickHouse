@@ -1,35 +1,34 @@
+#include <vector>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
-#include <Common/CurrentThread.h>
-#include <Common/typeid_cast.h>
-#include "Core/UUID.h"
-#include <Core/SortDescription.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/ResizeProcessor.h>
+#include <Processors/LimitTransform.h>
+#include <Processors/Transforms/TotalsHavingTransform.h>
+#include <Processors/Transforms/ExtremesTransform.h>
+#include <Processors/Transforms/CreatingSetsTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
+#include <Processors/Transforms/JoiningTransform.h>
+#include <Processors/Transforms/MergeJoinTransform.h>
+#include <Processors/Formats/IOutputFormat.h>
+#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Transforms/PartialSortingTransform.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
-#include <IO/WriteHelpers.h>
+#include <Common/typeid_cast.h>
+#include <Common/CurrentThread.h>
 #include <Processors/ConcatProcessor.h>
+#include <Core/SortDescription.h>
+#include <QueryPipeline/narrowPipe.h>
 #include <Processors/DelayedPortsProcessor.h>
-#include <Processors/Executors/PipelineExecutor.h>
-#include <Processors/Formats/IOutputFormat.h>
-#include <Processors/LimitTransform.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/ResizeProcessor.h>
 #include <Processors/RowsBeforeLimitCounter.h>
 #include <Processors/Sources/RemoteSource.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Processors/Transforms/CreatingSetsTransform.h>
-#include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Transforms/ExtremesTransform.h>
-#include <Processors/Transforms/JoiningTransform.h>
-#include <Processors/Transforms/MergeJoinTransform.h>
-#include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
-#include <Processors/Transforms/PartialSortingTransform.h>
-#include <Processors/Transforms/ReadFromMergeTreeDependencyTransform.h>
-#include <Processors/Transforms/TotalsHavingTransform.h>
-#include <QueryPipeline/narrowPipe.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 
 namespace DB
 {
@@ -619,65 +618,6 @@ void QueryPipelineBuilder::setProcessListElement(QueryStatusPtr elem)
 void QueryPipelineBuilder::setProgressCallback(ProgressCallback callback)
 {
     progress_callback = callback;
-}
-
-void QueryPipelineBuilder::connectDependencies()
-{
-    /**
-    * This is needed because among all RemoteSources there could be
-    * one or several that don't belong to the parallel replicas reading process.
-    * It could happen for example if we read through distributed table + prefer_localhost_replica=1 + parallel replicas
-    * SELECT * FROM remote('127.0.0.{1,2}', table.merge_tree)
-    * Will generate a local pipeline and a remote source. For local pipeline because of parallel replicas we will create
-    * several processors to read and several remote sources.
-    */
-    std::set<UUID> all_parallel_replicas_groups;
-    for (auto & processor : *pipe.getProcessorsPtr())
-    {
-        if (auto * remote_dependency = typeid_cast<RemoteSource *>(processor.get()); remote_dependency)
-            if (auto uuid = remote_dependency->getParallelReplicasGroupUUID(); uuid != UUIDHelpers::Nil)
-                all_parallel_replicas_groups.insert(uuid);
-        if (auto * merge_tree_dependency = typeid_cast<ReadFromMergeTreeDependencyTransform *>(processor.get()); merge_tree_dependency)
-            if (auto uuid = merge_tree_dependency->getParallelReplicasGroupUUID(); uuid != UUIDHelpers::Nil)
-                all_parallel_replicas_groups.insert(uuid);
-    }
-
-    for (const auto & group_id : all_parallel_replicas_groups)
-    {
-        std::vector<RemoteSource *> input_dependencies;
-        std::vector<ReadFromMergeTreeDependencyTransform *> output_dependencies;
-
-        for (auto & processor : *pipe.getProcessorsPtr())
-        {
-            if (auto * remote_dependency = typeid_cast<RemoteSource *>(processor.get()); remote_dependency)
-                if (auto uuid = remote_dependency->getParallelReplicasGroupUUID(); uuid == group_id)
-                    input_dependencies.emplace_back(remote_dependency);
-            if (auto * merge_tree_dependency = typeid_cast<ReadFromMergeTreeDependencyTransform *>(processor.get()); merge_tree_dependency)
-                if (auto uuid = merge_tree_dependency->getParallelReplicasGroupUUID(); uuid == group_id)
-                    output_dependencies.emplace_back(merge_tree_dependency);
-        }
-
-        if (input_dependencies.empty() || output_dependencies.empty())
-            continue;
-
-        auto input_dependency_iter = input_dependencies.begin();
-        auto output_dependency_iter = output_dependencies.begin();
-        auto scheduler = std::make_shared<ResizeProcessor>(Block{}, input_dependencies.size(), output_dependencies.size());
-
-        for (auto & scheduler_input : scheduler->getInputs())
-        {
-            (*input_dependency_iter)->connectToScheduler(scheduler_input);
-            ++input_dependency_iter;
-        }
-
-        for (auto & scheduler_output : scheduler->getOutputs())
-        {
-            (*output_dependency_iter)->connectToScheduler(scheduler_output);
-            ++output_dependency_iter;
-        }
-
-        pipe.getProcessorsPtr()->emplace_back(std::move(scheduler));
-    }
 }
 
 PipelineExecutorPtr QueryPipelineBuilder::execute()
