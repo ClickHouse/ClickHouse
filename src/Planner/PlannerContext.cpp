@@ -45,7 +45,7 @@ bool GlobalPlannerContext::hasColumnIdentifier(const ColumnIdentifier & column_i
     return column_identifiers.contains(column_identifier);
 }
 
-PlannerContext::PlannerContext(ContextPtr query_context_, GlobalPlannerContextPtr global_planner_context_)
+PlannerContext::PlannerContext(ContextMutablePtr query_context_, GlobalPlannerContextPtr global_planner_context_)
     : query_context(std::move(query_context_))
     , global_planner_context(std::move(global_planner_context_))
 {}
