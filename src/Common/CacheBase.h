@@ -37,7 +37,7 @@ public:
     using Mapped = TMapped;
     using MappedPtr = std::shared_ptr<Mapped>;
 
-    explicit CacheBase(size_t max_size_in_bytes, size_t max_elements_size = 0, String cache_policy_name = "", double size_ratio = 0.5)
+    explicit CacheBase(size_t max_size_in_bytes, size_t max_entries = 0, String cache_policy_name = "", double size_ratio = 0.5)
     {
         auto on_weight_loss_function = [&](size_t weight_loss) { onRemoveOverflowWeightLoss(weight_loss); };
 
@@ -47,17 +47,15 @@ public:
         if (cache_policy_name == "LRU")
         {
             using LRUPolicy = LRUCachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
-            cache_policy = std::make_unique<LRUPolicy>(max_size_in_bytes, max_elements_size, on_weight_loss_function);
+            cache_policy = std::make_unique<LRUPolicy>(max_size_in_bytes, max_entries, on_weight_loss_function);
         }
         else if (cache_policy_name == "SLRU")
         {
             using SLRUPolicy = SLRUCachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
-            cache_policy = std::make_unique<SLRUPolicy>(max_size_in_bytes, max_elements_size, size_ratio, on_weight_loss_function);
+            cache_policy = std::make_unique<SLRUPolicy>(max_size_in_bytes, max_entries, size_ratio, on_weight_loss_function);
         }
         else
-        {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Undeclared cache policy name: {}", cache_policy_name);
-        }
     }
 
     MappedPtr get(const Key & key)
