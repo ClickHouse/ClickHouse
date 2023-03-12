@@ -3,9 +3,11 @@
 #include <sstream>
 #include <type_traits>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/JSONParsers/DummyJSONParser.h>
@@ -233,7 +235,11 @@ class JSONValueImpl
 public:
     using Element = typename JSONParser::Element;
 
-    static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &) { return std::make_shared<DataTypeString>(); }
+    static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
+    {
+        DataTypePtr string_type = std::make_shared<DataTypeString>();
+        return std::make_shared<DataTypeNullable>(string_type);
+    }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
@@ -247,10 +253,7 @@ public:
         {
             if (status == VisitorStatus::Ok)
             {
-                if (!(current_element.isArray() || current_element.isObject()))
-                {
-                    break;
-                }
+                break;
             }
             else if (status == VisitorStatus::Error)
             {
@@ -267,7 +270,8 @@ public:
         std::stringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         out << current_element.getElement();
         auto output_str = out.str();
-        ColumnString & col_str = assert_cast<ColumnString &>(dest);
+        ColumnNullable & col_null = assert_cast<ColumnNullable &>(dest);
+        ColumnString & col_str = assert_cast<ColumnString &>(col_null.getNestedColumn());
         ColumnString::Chars & data = col_str.getChars();
         ColumnString::Offsets & offsets = col_str.getOffsets();
 
@@ -282,6 +286,7 @@ public:
         {
             col_str.insertData(output_str.data(), output_str.size());
         }
+        col_null.getNullMapColumn().insertValue(0);
         return true;
     }
 };
