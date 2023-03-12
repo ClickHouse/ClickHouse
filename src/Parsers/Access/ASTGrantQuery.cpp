@@ -13,40 +13,40 @@ namespace ErrorCodes
 
 namespace
 {
-    void formatColumnNames(const Strings & columns, const IAST::FormatSettings & settings)
+    void formatColumnNames(const Strings & columns, const IAST::FormattingBuffer & out)
     {
-        settings.ostr << "(";
+        out.ostr << "(";
         bool need_comma = false;
         for (const auto & column : columns)
         {
             if (std::exchange(need_comma, true))
-                settings.ostr << ", ";
-            settings.ostr << backQuoteIfNeed(column);
+                out.ostr << ", ";
+            out.ostr << backQuoteIfNeed(column);
         }
-        settings.ostr << ")";
+        out.ostr << ")";
     }
 
 
-    void formatONClause(const String & database, bool any_database, const String & table, bool any_table, const IAST::FormatSettings & settings)
+    void formatONClause(const String & database, bool any_database, const String & table, bool any_table, const IAST::FormattingBuffer & out)
     {
-        settings.writeKeyword("ON ");
+        out.writeKeyword("ON ");
         if (any_database)
         {
-            settings.ostr << "*.*";
+            out.ostr << "*.*";
         }
         else
         {
             if (!database.empty())
-                settings.ostr << backQuoteIfNeed(database) << ".";
+                out.ostr << backQuoteIfNeed(database) << ".";
             if (any_table)
-                settings.ostr << "*";
+                out.ostr << "*";
             else
-                settings.ostr << backQuoteIfNeed(table);
+                out.ostr << backQuoteIfNeed(table);
         }
     }
 
 
-    void formatElementsWithoutOptions(const AccessRightsElements & elements, const IAST::FormatSettings & settings)
+    void formatElementsWithoutOptions(const AccessRightsElements & elements, const IAST::FormattingBuffer & out)
     {
         bool no_output = true;
         for (size_t i = 0; i != elements.size(); ++i)
@@ -59,11 +59,11 @@ namespace
             for (const auto & keyword : keywords)
             {
                 if (!std::exchange(no_output, false))
-                    settings.ostr << ", ";
+                    out.ostr << ", ";
 
-                settings.writeKeyword(keyword);
+                out.writeKeyword(keyword);
                 if (!element.any_column)
-                    formatColumnNames(element.columns, settings);
+                    formatColumnNames(element.columns, out.copy());
             }
 
             bool next_element_on_same_db_and_table = false;
@@ -77,15 +77,15 @@ namespace
 
             if (!next_element_on_same_db_and_table)
             {
-                settings.ostr << " ";
-                formatONClause(element.database, element.any_database, element.table, element.any_table, settings);
+                out.ostr << " ";
+                formatONClause(element.database, element.any_database, element.table, element.any_table, out.copy());
             }
         }
 
         if (no_output)
         {
-            settings.writeKeyword("USAGE ON ");
-            settings.ostr << "*.*";
+            out.writeKeyword("USAGE ON ");
+            out.ostr << "*.*";
         }
     }
 }

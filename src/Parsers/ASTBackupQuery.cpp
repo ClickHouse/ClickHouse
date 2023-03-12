@@ -15,159 +15,159 @@ namespace
     using Element = ASTBackupQuery::Element;
     using ElementType = ASTBackupQuery::ElementType;
 
-    void formatPartitions(const ASTs & partitions, const IAST::FormatSettings & format)
+    void formatPartitions(const ASTs & partitions, const IAST::FormattingBuffer & out)
     {
-        format.writeKeyword((partitions.size() == 1) ? "PARTITION " : "PARTITIONS ");
+        out.writeKeyword((partitions.size() == 1) ? "PARTITION " : "PARTITIONS ");
         bool need_comma = false;
         for (const auto & partition : partitions)
         {
             if (std::exchange(need_comma, true))
-                format.ostr << ",";
-            format.ostr << " ";
-            partition->format(format);
+                out.ostr << ",";
+            out.ostr << " ";
+            partition->format(out.copy());
         }
     }
 
-    void formatExceptDatabases(const std::set<String> & except_databases, const IAST::FormatSettings & format)
+    void formatExceptDatabases(const std::set<String> & except_databases, const IAST::FormattingBuffer & out)
     {
         if (except_databases.empty())
             return;
 
-        format.writeKeyword(" EXCEPT ");
-        format.writeKeyword(except_databases.size() == 1 ? "DATABASE " : "DATABASES ");
+        out.writeKeyword(" EXCEPT ");
+        out.writeKeyword(except_databases.size() == 1 ? "DATABASE " : "DATABASES ");
 
         bool need_comma = false;
         for (const auto & database_name : except_databases)
         {
             if (std::exchange(need_comma, true))
-                format.ostr << ",";
-            format.ostr << backQuoteIfNeed(database_name);
+                out.ostr << ",";
+            out.ostr << backQuoteIfNeed(database_name);
         }
     }
 
-    void formatExceptTables(const std::set<DatabaseAndTableName> & except_tables, const IAST::FormatSettings & format)
+    void formatExceptTables(const std::set<DatabaseAndTableName> & except_tables, const IAST::FormattingBuffer & out)
     {
         if (except_tables.empty())
             return;
 
-        format.writeKeyword(" EXCEPT ");
-        format.writeKeyword(except_tables.size() == 1 ? "TABLE " : "TABLES ");
+        out.writeKeyword(" EXCEPT ");
+        out.writeKeyword(except_tables.size() == 1 ? "TABLE " : "TABLES ");
 
         bool need_comma = false;
         for (const auto & table_name : except_tables)
         {
             if (std::exchange(need_comma, true))
-                format.ostr << ", ";
+                out.ostr << ", ";
 
             if (!table_name.first.empty())
-                format.ostr << backQuoteIfNeed(table_name.first) << ".";
-            format.ostr << backQuoteIfNeed(table_name.second);
+                out.ostr << backQuoteIfNeed(table_name.first) << ".";
+            out.ostr << backQuoteIfNeed(table_name.second);
         }
     }
 
-    void formatElement(const Element & element, const IAST::FormatSettings & format)
+    void formatElement(const Element & element, const IAST::FormattingBuffer & out)
     {
         switch (element.type)
         {
             case ElementType::TABLE:
             {
-                format.writeKeyword("TABLE ");
+                out.writeKeyword("TABLE ");
 
                 if (!element.database_name.empty())
-                    format.ostr << backQuoteIfNeed(element.database_name) << ".";
-                format.ostr << backQuoteIfNeed(element.table_name);
+                    out.ostr << backQuoteIfNeed(element.database_name) << ".";
+                out.ostr << backQuoteIfNeed(element.table_name);
 
                 if ((element.new_table_name != element.table_name) || (element.new_database_name != element.database_name))
                 {
-                    format.writeKeyword(" AS ");
+                    out.writeKeyword(" AS ");
                     if (!element.new_database_name.empty())
-                        format.ostr << backQuoteIfNeed(element.new_database_name) << ".";
-                    format.ostr << backQuoteIfNeed(element.new_table_name);
+                        out.ostr << backQuoteIfNeed(element.new_database_name) << ".";
+                    out.ostr << backQuoteIfNeed(element.new_table_name);
                 }
 
                 if (element.partitions)
-                    formatPartitions(*element.partitions, format);
+                    formatPartitions(*element.partitions, out.copy());
                 break;
             }
 
             case ElementType::TEMPORARY_TABLE:
             {
-                format.writeKeyword("TEMPORARY TABLE ");
-                format.ostr << backQuoteIfNeed(element.table_name);
+                out.writeKeyword("TEMPORARY TABLE ");
+                out.ostr << backQuoteIfNeed(element.table_name);
 
                 if (element.new_table_name != element.table_name)
                 {
-                    format.writeKeyword(" AS ");
-                    format.ostr << backQuoteIfNeed(element.new_table_name);
+                    out.writeKeyword(" AS ");
+                    out.ostr << backQuoteIfNeed(element.new_table_name);
                 }
                 break;
             }
 
             case ElementType::DATABASE:
             {
-                format.writeKeyword("DATABASE ");
-                format.ostr << backQuoteIfNeed(element.database_name);
+                out.writeKeyword("DATABASE ");
+                out.ostr << backQuoteIfNeed(element.database_name);
 
                 if (element.new_database_name != element.database_name)
                 {
-                    format.writeKeyword(" AS ");
-                    format.ostr << backQuoteIfNeed(element.new_database_name);
+                    out.writeKeyword(" AS ");
+                    out.ostr << backQuoteIfNeed(element.new_database_name);
                 }
 
-                formatExceptTables(element.except_tables, format);
+                formatExceptTables(element.except_tables, out.copy());
                 break;
             }
 
             case ElementType::ALL:
             {
-                format.writeKeyword("ALL");
-                formatExceptDatabases(element.except_databases, format);
-                formatExceptTables(element.except_tables, format);
+                out.writeKeyword("ALL");
+                formatExceptDatabases(element.except_databases, out.copy());
+                formatExceptTables(element.except_tables, out.copy());
                 break;
             }
         }
     }
 
-    void formatElements(const std::vector<Element> & elements, const IAST::FormatSettings & format)
+    void formatElements(const std::vector<Element> & elements, const IAST::FormattingBuffer & out)
     {
         bool need_comma = false;
         for (const auto & element : elements)
         {
             if (std::exchange(need_comma, true))
-                format.ostr << ", ";
-            formatElement(element, format);
+                out.ostr << ", ";
+            formatElement(element, out.copy());
         }
     }
 
-    void formatSettings(const ASTPtr & settings, const ASTFunction * base_backup_name, const ASTPtr & cluster_host_ids, const IAST::FormatSettings & format)
+    void formatSettings(const ASTPtr & settings, const ASTFunction * base_backup_name, const ASTPtr & cluster_host_ids, const IAST::FormattingBuffer & out)
     {
         if (!settings && !base_backup_name && !cluster_host_ids)
             return;
 
-        format.writeKeyword(" SETTINGS ");
+        out.writeKeyword(" SETTINGS ");
         bool empty = true;
 
         if (base_backup_name)
         {
-            format.ostr << "base_backup = ";
-            base_backup_name->format(format);
+            out.ostr << "base_backup = ";
+            base_backup_name->format(out.copy());
             empty = false;
         }
 
         if (settings)
         {
             if (!empty)
-                format.ostr << ", ";
-            settings->format(format);
+                out.ostr << ", ";
+            settings->format(out.copy());
             empty = false;
         }
 
         if (cluster_host_ids)
         {
             if (!empty)
-                format.ostr << ", ";
-            format.ostr << "cluster_host_ids = ";
-            cluster_host_ids->format(format);
+                out.ostr << ", ";
+            out.ostr << "cluster_host_ids = ";
+            cluster_host_ids->format(out.copy());
         }
     }
 
@@ -262,18 +262,18 @@ ASTPtr ASTBackupQuery::clone() const
 }
 
 
-void ASTBackupQuery::formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const
+void ASTBackupQuery::formatImpl(const FormattingBuffer & out) const
 {
-    format.writeKeyword((kind == Kind::BACKUP) ? "BACKUP " : "RESTORE ");
+    out.writeKeyword((kind == Kind::BACKUP) ? "BACKUP " : "RESTORE ");
 
-    formatElements(elements, format);
-    formatOnCluster(format);
+    formatElements(elements, out.copy());
+    formatOnCluster(out);
 
-    format.writeKeyword((kind == Kind::BACKUP) ? " TO " : " FROM ");
-    backup_name->format(format);
+    out.writeKeyword((kind == Kind::BACKUP) ? " TO " : " FROM ");
+    backup_name->format(out);
 
     if (settings || base_backup_name)
-        formatSettings(settings, base_backup_name, cluster_host_ids, format);
+        formatSettings(settings, base_backup_name, cluster_host_ids, out.copy());
 }
 
 ASTPtr ASTBackupQuery::getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const
