@@ -401,7 +401,7 @@ Before version 21.11 the order of arguments was wrong, i.e. JSON_QUERY(path, jso
 
 Parses a JSON and extract a value as JSON scalar.
 
-If the value does not exist, an empty string will be returned.
+If the value does not exist, NULL will be returned.
 
 Example:
 
