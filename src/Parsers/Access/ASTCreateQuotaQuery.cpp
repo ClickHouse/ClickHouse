@@ -10,16 +10,16 @@ namespace DB
 {
 namespace
 {
-    void formatKeyType(const QuotaKeyType & key_type, const IAST::FormatSettings & settings)
+    void formatKeyType(const QuotaKeyType & key_type, const IAST::FormattingBuffer & out)
     {
         const auto & type_info = QuotaKeyTypeInfo::get(key_type);
         if (key_type == QuotaKeyType::NONE)
         {
-            settings.writeKeyword(" NOT KEYED");
+            out.writeKeyword(" NOT KEYED");
             return;
         }
 
-        settings.writeKeyword(" KEYED BY ");
+        out.writeKeyword(" KEYED BY ");
 
         if (!type_info.base_types.empty())
         {
@@ -27,57 +27,57 @@ namespace
             for (const auto & base_type : type_info.base_types)
             {
                 if (std::exchange(need_comma, true))
-                    settings.ostr << ", ";
-                settings.ostr << QuotaKeyTypeInfo::get(base_type).name;
+                    out.ostr << ", ";
+                out.ostr << QuotaKeyTypeInfo::get(base_type).name;
             }
             return;
         }
 
-        settings.ostr << type_info.name;
+        out.ostr << type_info.name;
     }
 
 
-    void formatNames(const Strings & names, const IAST::FormatSettings & settings)
+    void formatNames(const Strings & names, const IAST::FormattingBuffer & out)
     {
-        settings.ostr << " ";
+        out.ostr << " ";
         bool need_comma = false;
         for (const String & name : names)
         {
             if (std::exchange(need_comma, true))
-                settings.ostr << ", ";
-            settings.ostr << backQuoteIfNeed(name);
+                out.ostr << ", ";
+            out.ostr << backQuoteIfNeed(name);
         }
     }
 
 
-    void formatRenameTo(const String & new_name, const IAST::FormatSettings & settings)
+    void formatRenameTo(const String & new_name, const IAST::FormattingBuffer & out)
     {
-        settings.writeKeyword(" RENAME TO ");
-        settings.ostr << backQuote(new_name);
+        out.writeKeyword(" RENAME TO ");
+        out.ostr << backQuote(new_name);
     }
 
 
-    void formatLimit(QuotaType quota_type, QuotaValue max_value, const IAST::FormatSettings & settings)
+    void formatLimit(QuotaType quota_type, QuotaValue max_value, const IAST::FormattingBuffer & out)
     {
         const auto & type_info = QuotaTypeInfo::get(quota_type);
-        settings.ostr << " " << type_info.name << " = " << type_info.valueToString(max_value);
+        out.ostr << " " << type_info.name << " = " << type_info.valueToString(max_value);
     }
 
 
-    void formatIntervalWithLimits(const ASTCreateQuotaQuery::Limits & limits, const IAST::FormatSettings & settings)
+    void formatIntervalWithLimits(const ASTCreateQuotaQuery::Limits & limits, const IAST::FormattingBuffer & out)
     {
         auto interval_kind = IntervalKind::fromAvgSeconds(limits.duration.count());
         Int64 num_intervals = limits.duration.count() / interval_kind.toAvgSeconds();
 
-        settings.writeKeyword(" FOR");
-        settings.writeKeyword(limits.randomize_interval ? " RANDOMIZED" : "");
-        settings.writeKeyword(" INTERVAL");
-        settings.ostr << " " << num_intervals << " ";
-        settings.writeKeyword(interval_kind.toLowercasedKeyword());
+        out.writeKeyword(" FOR");
+        out.writeKeyword(limits.randomize_interval ? " RANDOMIZED" : "");
+        out.writeKeyword(" INTERVAL");
+        out.ostr << " " << num_intervals << " ";
+        out.writeKeyword(interval_kind.toLowercasedKeyword());
 
         if (limits.drop)
         {
-            settings.writeKeyword(" NO LIMITS");
+            out.writeKeyword(" NO LIMITS");
         }
         else
         {
@@ -90,7 +90,7 @@ namespace
             }
             if (limit_found)
             {
-                settings.writeKeyword(" MAX");
+                out.writeKeyword(" MAX");
                 bool need_comma = false;
                 for (auto quota_type : collections::range(QuotaType::MAX))
                 {
@@ -98,33 +98,33 @@ namespace
                     if (limits.max[quota_type_i])
                     {
                         if (std::exchange(need_comma, true))
-                            settings.ostr << ",";
-                        formatLimit(quota_type, *limits.max[quota_type_i], settings);
+                            out.ostr << ",";
+                        formatLimit(quota_type, *limits.max[quota_type_i], out);
                     }
                 }
             }
             else
-                settings.writeKeyword(" TRACKING ONLY");
+                out.writeKeyword(" TRACKING ONLY");
         }
     }
 
-    void formatIntervalsWithLimits(const std::vector<ASTCreateQuotaQuery::Limits> & all_limits, const IAST::FormatSettings & settings)
+    void formatIntervalsWithLimits(const std::vector<ASTCreateQuotaQuery::Limits> & all_limits, const IAST::FormattingBuffer & out)
     {
         bool need_comma = false;
         for (const auto & limits : all_limits)
         {
             if (need_comma)
-                settings.ostr << ",";
+                out.ostr << ",";
             need_comma = true;
 
-            formatIntervalWithLimits(limits, settings);
+            formatIntervalWithLimits(limits, out);
         }
     }
 
-    void formatToRoles(const ASTRolesOrUsersSet & roles, const IAST::FormatSettings & settings)
+    void formatToRoles(const ASTRolesOrUsersSet & roles, const IAST::FormattingBuffer & out)
     {
-        settings.writeKeyword(" TO ");
-        roles.format(settings);
+        out.writeKeyword(" TO ");
+        roles.format(out);
     }
 }
 

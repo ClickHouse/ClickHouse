@@ -40,7 +40,7 @@ public:
     ASTPtr clone() const override;
 
 protected:
-    void formatLike(const FormatSettings & settings) const;
+    void formatLike(const FormattingBuffer & out) const;
     void formatLimit(const FormattingBuffer & out) const;
     void formatQueryImpl(const FormattingBuffer & out) const override;
 };

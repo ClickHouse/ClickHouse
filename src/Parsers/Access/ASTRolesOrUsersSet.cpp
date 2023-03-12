@@ -7,16 +7,16 @@ namespace DB
 {
 namespace
 {
-    void formatNameOrID(const String & str, bool is_id, const IAST::FormatSettings & settings)
+    void formatNameOrID(const String & str, bool is_id, const IAST::FormattingBuffer & out)
     {
         if (is_id)
         {
-            settings.writeKeyword("ID");
-            settings.ostr << "(" << quoteString(str) << ")";
+            out.writeKeyword("ID");
+            out.ostr << "(" << quoteString(str) << ")";
         }
         else
         {
-            settings.ostr << backQuoteIfNeed(str);
+            out.ostr << backQuoteIfNeed(str);
         }
     }
 }

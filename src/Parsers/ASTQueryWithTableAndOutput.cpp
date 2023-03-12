@@ -64,11 +64,11 @@ void ASTQueryWithTableAndOutput::cloneTableOptions(ASTQueryWithTableAndOutput & 
         cloned.children.push_back(cloned.table);
     }
 }
-void ASTQueryWithTableAndOutput::formatHelper(const FormatSettings & settings, const char * name) const
+void ASTQueryWithTableAndOutput::formatHelper(const FormattingBuffer & out, const char * name) const
 {
-    settings.writeKeyword(name);
-    settings.ostr << " ";
-    settings.ostr << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
+    out.writeKeyword(name);
+    out.ostr << " ";
+    out.ostr << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
 }
 
 }

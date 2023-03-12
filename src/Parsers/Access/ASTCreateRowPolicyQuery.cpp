@@ -13,57 +13,58 @@ namespace DB
 {
 namespace
 {
-    void formatRenameTo(const String & new_short_name, const IAST::FormatSettings & settings)
+    void formatRenameTo(const String & new_short_name, const IAST::FormattingBuffer & out)
     {
-        settings.writeKeyword(" RENAME TO ");
-        settings.ostr << backQuote(new_short_name);
+        out.writeKeyword(" RENAME TO ");
+        out.ostr << backQuote(new_short_name);
     }
 
 
-    void formatAsRestrictiveOrPermissive(bool is_restrictive, const IAST::FormatSettings & settings)
+    void formatAsRestrictiveOrPermissive(bool is_restrictive, const IAST::FormattingBuffer & out)
     {
-        settings.writeKeyword(" AS ");
-        settings.ostr << (is_restrictive ? "restrictive" : "permissive");
+        out.writeKeyword(" AS ");
+        out.ostr << (is_restrictive ? "restrictive" : "permissive");
     }
 
 
-    void formatFilterExpression(const ASTPtr & expr, const IAST::FormatSettings & settings)
+    void formatFilterExpression(const ASTPtr & expr, const IAST::FormattingBuffer & out)
     {
-        settings.ostr << " ";
+        out.ostr << " ";
         if (expr)
-            expr->format(settings);
+            expr->format(out);
         else
-            settings.writeKeyword("NONE");
+            out.writeKeyword("NONE");
     }
 
 
-    void formatForClause(const boost::container::flat_set<std::string_view> & commands, const String & filter, const String & check, bool alter, const IAST::FormatSettings & settings)
+    void formatForClause(const boost::container::flat_set<std::string_view> & commands, const String & filter, const String & check,
+                         bool alter, const IAST::FormattingBuffer & out)
     {
-        settings.writeKeyword(" FOR ");
+        out.writeKeyword(" FOR ");
         bool need_comma = false;
         for (const auto & command : commands)
         {
             if (std::exchange(need_comma, true))
-                settings.ostr << ", ";
-            settings.writeKeyword(command);
+                out.ostr << ", ";
+            out.writeKeyword(command);
         }
 
         if (!filter.empty())
-            settings.writeKeyword(" USING");
+            out.writeKeyword(" USING");
 
         if (!check.empty() && (alter || (check != filter)))
-            settings.writeKeyword(" WITH CHECK");
+            out.writeKeyword(" WITH CHECK");
     }
 
 
-    void formatForClauses(const std::vector<std::pair<RowPolicyFilterType, ASTPtr>> & filters, bool alter, const IAST::FormatSettings & settings)
+    void formatForClauses(const std::vector<std::pair<RowPolicyFilterType, ASTPtr>> & filters, bool alter,
+                          const IAST::FormattingBuffer & out)
     {
         std::vector<std::pair<RowPolicyFilterType, String>> filters_as_strings;
         WriteBufferFromOwnString temp_buf;
-        IAST::FormatSettings temp_settings(temp_buf, settings);
         for (const auto & [filter_type, filter] : filters)
         {
-            formatFilterExpression(filter, temp_settings);
+            formatFilterExpression(filter, out.copyWithSettingsOnly(temp_buf));
             filters_as_strings.emplace_back(filter_type, temp_buf.str());
             temp_buf.restart();
         }
@@ -102,16 +103,16 @@ namespace
             }
 
             if (!filter.empty() || !check.empty())
-                formatForClause(commands, filter, check, alter, settings);
+                formatForClause(commands, filter, check, alter, out);
         }
         while (!filter.empty() || !check.empty());
     }
 
 
-    void formatToRoles(const ASTRolesOrUsersSet & roles, const IAST::FormatSettings & settings)
+    void formatToRoles(const ASTRolesOrUsersSet & roles, const IAST::FormattingBuffer & out)
     {
-        settings.writeKeyword(" TO ");
-        roles.format(settings);
+        out.writeKeyword(" TO ");
+        roles.format(out);
     }
 }
 

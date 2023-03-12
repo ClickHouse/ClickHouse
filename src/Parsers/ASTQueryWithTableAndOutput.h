@@ -30,7 +30,7 @@ public:
     void cloneTableOptions(ASTQueryWithTableAndOutput & cloned) const;
 
 protected:
-    void formatHelper(const FormatSettings & settings, const char * name) const;
+    void formatHelper(const FormattingBuffer & out, const char * name) const;
 };
 
 

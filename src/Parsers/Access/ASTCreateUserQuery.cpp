@@ -16,19 +16,19 @@ namespace ErrorCodes
 
 namespace
 {
-    void formatRenameTo(const String & new_name, const IAST::FormatSettings & settings)
+    void formatRenameTo(const String & new_name, const IAST::FormattingBuffer & out)
     {
-        settings.writeKeyword(" RENAME TO ");
-        settings.ostr << quoteString(new_name);
+        out.writeKeyword(" RENAME TO ");
+        out.ostr << quoteString(new_name);
     }
 
 
-    void formatAuthenticationData(const AuthenticationData & auth_data, const IAST::FormatSettings & settings)
+    void formatAuthenticationData(const AuthenticationData & auth_data, const IAST::FormattingBuffer & out)
     {
         auto auth_type = auth_data.getType();
         if (auth_type == AuthenticationType::NO_PASSWORD)
         {
-            settings.writeKeyword(" NOT IDENTIFIED");
+            out.writeKeyword(" NOT IDENTIFIED");
             return;
         }
 
@@ -92,7 +92,7 @@ namespace
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "AST: Unexpected authentication type {}", toString(auth_type));
         }
 
-        if (password && !settings.shouldShowSecrets())
+        if (password && !out.shouldShowSecrets())
         {
             prefix = "";
             password.reset();
@@ -100,66 +100,66 @@ namespace
             auth_type_name = AuthenticationTypeInfo::get(auth_type).name;
         }
 
-        settings.writeKeyword(" IDENTIFIED");
+        out.writeKeyword(" IDENTIFIED");
 
         if (!auth_type_name.empty())
         {
-            settings.writeKeyword(" WITH ");
-            settings.writeKeyword(auth_type_name);
+            out.writeKeyword(" WITH ");
+            out.writeKeyword(auth_type_name);
         }
 
         if (!prefix.empty())
         {
-            settings.ostr << " ";
-            settings.writeKeyword(prefix);
+            out.ostr << " ";
+            out.writeKeyword(prefix);
         }
 
         if (password)
         {
-            settings.ostr << " " << quoteString(*password);
+            out.ostr << " " << quoteString(*password);
         }
 
         if (salt)
         {
-            settings.ostr << " SALT " << quoteString(*salt);
+            out.ostr << " SALT " << quoteString(*salt);
         }
 
         if (parameter)
         {
-            settings.ostr << " " << quoteString(*parameter);
+            out.ostr << " " << quoteString(*parameter);
         }
         else if (parameters)
         {
-            settings.ostr << " ";
+            out.ostr << " ";
             bool need_comma = false;
             for (const auto & param : *parameters)
             {
                 if (std::exchange(need_comma, true))
-                    settings.ostr << ", ";
-                settings.ostr << quoteString(param);
+                    out.ostr << ", ";
+                out.ostr << quoteString(param);
             }
         }
     }
 
 
-    void formatHosts(const char * prefix, const AllowedClientHosts & hosts, const IAST::FormatSettings & settings)
+    void formatHosts(const char * prefix, const AllowedClientHosts & hosts, const IAST::FormattingBuffer & out)
     {
         if (prefix)
         {
-            settings.ostr << " ";
-            settings.writeKeyword(prefix);
+            out.ostr << " ";
+            out.writeKeyword(prefix);
         }
-        settings.writeKeyword(" HOST ");
+        out.writeKeyword(" HOST ");
 
         if (hosts.empty())
         {
-            settings.writeKeyword("NONE");
+            out.writeKeyword("NONE");
             return;
         }
 
         if (hosts.containsAnyHost())
         {
-            settings.writeKeyword("ANY");
+            out.writeKeyword("ANY");
             return;
         }
 
@@ -167,8 +167,8 @@ namespace
         if (hosts.containsLocalHost())
         {
             if (std::exchange(need_comma, true))
-                settings.ostr << ", ";
-            settings.writeKeyword("LOCAL");
+                out.ostr << ", ";
+            out.writeKeyword("LOCAL");
         }
 
         const auto & addresses = hosts.getAddresses();
@@ -176,20 +176,20 @@ namespace
         if (!addresses.empty() || !subnets.empty())
         {
             if (std::exchange(need_comma, true))
-                settings.ostr << ", ";
-            settings.writeKeyword("IP ");
+                out.ostr << ", ";
+            out.writeKeyword("IP ");
             bool need_comma2 = false;
             for (const auto & address : addresses)
             {
                 if (std::exchange(need_comma2, true))
-                    settings.ostr << ", ";
-                settings.ostr << quoteString(address.toString());
+                    out.ostr << ", ";
+                out.ostr << quoteString(address.toString());
             }
             for (const auto & subnet : subnets)
             {
                 if (std::exchange(need_comma2, true))
-                    settings.ostr << ", ";
-                settings.ostr << quoteString(subnet.toString());
+                    out.ostr << ", ";
+                out.ostr << quoteString(subnet.toString());
             }
         }
 
@@ -197,14 +197,14 @@ namespace
         if (!names.empty())
         {
             if (std::exchange(need_comma, true))
-                settings.ostr << ", ";
-            settings.writeKeyword("NAME ");
+                out.ostr << ", ";
+            out.writeKeyword("NAME ");
             bool need_comma2 = false;
             for (const auto & name : names)
             {
                 if (std::exchange(need_comma2, true))
-                    settings.ostr << ", ";
-                settings.ostr << quoteString(name);
+                    out.ostr << ", ";
+                out.ostr << quoteString(name);
             }
         }
 
@@ -212,14 +212,14 @@ namespace
         if (!name_regexps.empty())
         {
             if (std::exchange(need_comma, true))
-                settings.ostr << ", ";
-            settings.writeKeyword("REGEXP ");
+                out.ostr << ", ";
+            out.writeKeyword("REGEXP ");
             bool need_comma2 = false;
             for (const auto & host_regexp : name_regexps)
             {
                 if (std::exchange(need_comma2, true))
-                    settings.ostr << ", ";
-                settings.ostr << quoteString(host_regexp);
+                    out.ostr << ", ";
+                out.ostr << quoteString(host_regexp);
             }
         }
 
@@ -227,43 +227,43 @@ namespace
         if (!like_patterns.empty())
         {
             if (std::exchange(need_comma, true))
-                settings.ostr << ", ";
-            settings.writeKeyword("LIKE ");
+                out.ostr << ", ";
+            out.writeKeyword("LIKE ");
             bool need_comma2 = false;
             for (const auto & like_pattern : like_patterns)
             {
                 if (std::exchange(need_comma2, true))
-                    settings.ostr << ", ";
-                settings.ostr << quoteString(like_pattern);
+                    out.ostr << ", ";
+                out.ostr << quoteString(like_pattern);
             }
         }
     }
 
 
-    void formatDefaultRoles(const ASTRolesOrUsersSet & default_roles, const IAST::FormatSettings & settings)
+    void formatDefaultRoles(const ASTRolesOrUsersSet & default_roles, const IAST::FormattingBuffer & out)
     {
-        settings.writeKeyword(" DEFAULT ROLE ");
-        default_roles.format(settings);
+        out.writeKeyword(" DEFAULT ROLE ");
+        default_roles.format(out);
     }
 
 
-    void formatSettings(const ASTSettingsProfileElements & settings, const IAST::FormatSettings & format)
+    void formatSettings(const ASTSettingsProfileElements & settings, const IAST::FormattingBuffer & out)
     {
-        format.writeKeyword(" SETTINGS ");
-        settings.format(format);
+        out.writeKeyword(" SETTINGS ");
+        settings.format(out);
     }
 
 
-    void formatGrantees(const ASTRolesOrUsersSet & grantees, const IAST::FormatSettings & settings)
+    void formatGrantees(const ASTRolesOrUsersSet & grantees, const IAST::FormattingBuffer & out)
     {
-        settings.writeKeyword(" GRANTEES ");
-        grantees.format(settings);
+        out.writeKeyword(" GRANTEES ");
+        grantees.format(out);
     }
 
-    void formatDefaultDatabase(const ASTDatabaseOrNone & default_database, const IAST::FormatSettings & settings)
+    void formatDefaultDatabase(const ASTDatabaseOrNone & default_database, const IAST::FormattingBuffer & out)
     {
-        settings.writeKeyword(" DEFAULT DATABASE ");
-        default_database.format(settings);
+        out.writeKeyword(" DEFAULT DATABASE ");
+        default_database.format(out);
     }
 }
 

@@ -14,13 +14,13 @@ ASTPtr ASTShowTablesQuery::clone() const
     return res;
 }
 
-void ASTShowTablesQuery::formatLike(const FormatSettings & settings) const
+void ASTShowTablesQuery::formatLike(const FormattingBuffer & out) const
 {
     if (!like.empty())
     {
-        settings.writeKeyword(not_like ? " NOT" : "");
-        settings.writeKeyword(case_insensitive_like ? " ILIKE " : " LIKE ");
-        settings.ostr << DB::quote << like;
+        out.writeKeyword(not_like ? " NOT" : "");
+        out.writeKeyword(case_insensitive_like ? " ILIKE " : " LIKE ");
+        out.ostr << DB::quote << like;
     }
 }
 

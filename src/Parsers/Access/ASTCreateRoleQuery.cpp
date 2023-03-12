@@ -8,28 +8,28 @@ namespace DB
 {
 namespace
 {
-    void formatNames(const Strings & names, const IAST::FormatSettings & settings)
+    void formatNames(const Strings & names, const IAST::FormattingBuffer & out)
     {
-        settings.ostr << " ";
+        out.ostr << " ";
         bool need_comma = false;
         for (const String & name : names)
         {
             if (std::exchange(need_comma, true))
-                settings.ostr << ", ";
-            settings.ostr << backQuoteIfNeed(name);
+                out.ostr << ", ";
+            out.ostr << backQuoteIfNeed(name);
         }
     }
 
-    void formatRenameTo(const String & new_name, const IAST::FormatSettings & settings)
+    void formatRenameTo(const String & new_name, const IAST::FormattingBuffer & out)
     {
-        settings.writeKeyword(" RENAME TO ");
-        settings.ostr << quoteString(new_name);
+        out.writeKeyword(" RENAME TO ");
+        out.ostr << quoteString(new_name);
     }
 
-    void formatSettings(const ASTSettingsProfileElements & settings, const IAST::FormatSettings & format)
+    void formatSettings(const ASTSettingsProfileElements & settings, const IAST::FormattingBuffer & out)
     {
-        format.writeKeyword(" SETTINGS ");
-        settings.format(format);
+        out.writeKeyword(" SETTINGS ");
+        settings.format(out);
     }
 }
 
