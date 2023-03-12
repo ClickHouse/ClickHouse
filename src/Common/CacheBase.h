@@ -27,7 +27,7 @@ namespace ErrorCodes
 /// (default policy evicts entries which are not used for a long time).
 /// WeightFunction is a functor that takes Mapped as a parameter and returns "weight" (approximate size)
 /// of that value.
-/// Cache starts to evict entries when their total weight exceeds max_size.
+/// Cache starts to evict entries when their total weight exceeds max_size_in_bytes.
 /// Value weight should not change after insertion.
 template <typename TKey, typename TMapped, typename HashFunction = std::hash<TKey>, typename WeightFunction = TrivialWeightFunction<TMapped>>
 class CacheBase
@@ -37,7 +37,7 @@ public:
     using Mapped = TMapped;
     using MappedPtr = std::shared_ptr<Mapped>;
 
-    explicit CacheBase(size_t max_size, size_t max_elements_size = 0, String cache_policy_name = "", double size_ratio = 0.5)
+    explicit CacheBase(size_t max_size_in_bytes, size_t max_elements_size = 0, String cache_policy_name = "", double size_ratio = 0.5)
     {
         auto on_weight_loss_function = [&](size_t weight_loss) { onRemoveOverflowWeightLoss(weight_loss); };
 
@@ -47,12 +47,12 @@ public:
         if (cache_policy_name == "LRU")
         {
             using LRUPolicy = LRUCachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
-            cache_policy = std::make_unique<LRUPolicy>(max_size, max_elements_size, on_weight_loss_function);
+            cache_policy = std::make_unique<LRUPolicy>(max_size_in_bytes, max_elements_size, on_weight_loss_function);
         }
         else if (cache_policy_name == "SLRU")
         {
             using SLRUPolicy = SLRUCachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
-            cache_policy = std::make_unique<SLRUPolicy>(max_size, max_elements_size, size_ratio, on_weight_loss_function);
+            cache_policy = std::make_unique<SLRUPolicy>(max_size_in_bytes, max_elements_size, size_ratio, on_weight_loss_function);
         }
         else
         {
@@ -175,7 +175,7 @@ public:
     }
 
     size_t maxSize() const
-        TSA_NO_THREAD_SAFETY_ANALYSIS // disabled because max_size of cache_policy is a constant parameter
+        TSA_NO_THREAD_SAFETY_ANALYSIS // disabled because max_size_in_bytes of cache_policy is a constant parameter
     {
         return cache_policy->maxSize();
     }
