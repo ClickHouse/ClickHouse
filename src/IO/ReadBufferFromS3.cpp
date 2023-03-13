@@ -226,8 +226,8 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
             return getPosition();
         }
 
-        auto position = getPosition();
-        if (offset_ > position)
+        off_t position = getPosition();
+        if (impl && offset_ > position)
         {
             size_t diff = offset_ - position;
             if (diff < read_settings.remote_read_min_bytes_for_seek)
@@ -240,7 +240,8 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
         resetWorkingBuffer();
         if (impl)
         {
-            ProfileEvents::increment(ProfileEvents::ReadBufferSeekCancelConnection);
+            if (!atEndOfRequestedRangeGuess())
+                ProfileEvents::increment(ProfileEvents::ReadBufferSeekCancelConnection);
             impl.reset();
         }
     }
@@ -269,13 +270,13 @@ void ReadBufferFromS3::setReadUntilPosition(size_t position)
 {
     if (position != static_cast<size_t>(read_until_position))
     {
-        read_until_position = position;
         if (impl)
         {
-            // Not exactly a seek, but close enough.
-            ProfileEvents::increment(ProfileEvents::ReadBufferSeekCancelConnection);
+            if (!atEndOfRequestedRangeGuess())
+                ProfileEvents::increment(ProfileEvents::ReadBufferSeekCancelConnection);
             impl.reset();
         }
+        read_until_position = position;
     }
 }
 
@@ -286,15 +287,21 @@ void ReadBufferFromS3::setReadUntilEnd()
         read_until_position = 0;
         if (impl)
         {
-            ProfileEvents::increment(ProfileEvents::ReadBufferSeekCancelConnection);
+            if (!atEndOfRequestedRangeGuess())
+                ProfileEvents::increment(ProfileEvents::ReadBufferSeekCancelConnection);
             impl.reset();
         }
     }
 }
 
-SeekableReadBuffer::Range ReadBufferFromS3::getRemainingReadRange() const
-{
-    return Range{ .left = static_cast<size_t>(offset), .right = read_until_position ? std::optional{read_until_position - 1} : std::nullopt };
+bool ReadBufferFromS3::atEndOfRequestedRangeGuess() {
+    if (!impl)
+        return true;
+    if (read_until_position)
+        return getPosition() >= read_until_position;
+    if (file_size)
+        return getPosition() >= file_size;
+    return false;
 }
 
 std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
@@ -369,28 +376,13 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
 
 SeekableReadBufferPtr ReadBufferS3Factory::getReader()
 {
-    const auto next_range = range_generator.nextRange();
-    if (!next_range)
-        return nullptr;
-
-    auto reader = std::make_shared<ReadBufferFromS3>(
+    return std::make_shared<ReadBufferFromS3>(
         client_ptr,
         bucket,
         key,
         version_id,
         request_settings,
-        read_settings.adjustBufferSize(object_size),
-        false /*use_external_buffer*/,
-        next_range->first,
-        next_range->second);
-
-    return reader;
-}
-
-off_t ReadBufferS3Factory::seek(off_t off, [[maybe_unused]] int whence)
-{
-    range_generator = RangeGenerator{object_size, range_step, static_cast<size_t>(off)};
-    return off;
+        read_settings.adjustBufferSize(object_size));
 }
 
 size_t ReadBufferS3Factory::getFileSize()
