@@ -37,12 +37,21 @@ public:
     using Mapped = TMapped;
     using MappedPtr = std::shared_ptr<Mapped>;
 
-    explicit CacheBase(size_t max_size_in_bytes, size_t max_entries = 0, String cache_policy_name = "", double size_ratio = 0.5)
+    /// Use this ctor if you don't care about the internal cache policy.
+    explicit CacheBase(size_t max_size_in_bytes, size_t max_entries = 0, double size_ratio = 0.5)
+        : CacheBase("SLRU", max_size_in_bytes, max_entries, size_ratio)
+    {
+    }
+
+    /// Use this ctor if you want the user to configure the cache policy via some setting. Supports only general-purpose policies LRU and SLRU.
+    explicit CacheBase(std::string_view cache_policy_name, size_t max_size_in_bytes, size_t max_entries = 0, double size_ratio = 0.5)
     {
         auto on_weight_loss_function = [&](size_t weight_loss) { onRemoveOverflowWeightLoss(weight_loss); };
 
+        static constexpr std::string_view default_cache_policy = "SLRU";
+
         if (cache_policy_name.empty())
-            cache_policy_name = default_cache_policy_name;
+            cache_policy_name = default_cache_policy;
 
         if (cache_policy_name == "LRU")
         {
@@ -55,8 +64,13 @@ public:
             cache_policy = std::make_unique<SLRUPolicy>(max_size_in_bytes, max_entries, size_ratio, on_weight_loss_function);
         }
         else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Undeclared cache policy name: {}", cache_policy_name);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown cache policy name: {}", cache_policy_name);
     }
+
+    /// Use this ctor to provide an arbitrary cache policy.
+    explicit CacheBase(std::unique_ptr<ICachePolicy<TKey, TMapped, HashFunction, WeightFunction>> cache_policy_)
+        : cache_policy(std::move(cache_policy_))
+    {}
 
     MappedPtr get(const Key & key)
     {
@@ -187,8 +201,6 @@ private:
     using CachePolicy = ICachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
 
     std::unique_ptr<CachePolicy> cache_policy TSA_GUARDED_BY(mutex);
-
-    inline static const String default_cache_policy_name = "SLRU";
 
     std::atomic<size_t> hits{0};
     std::atomic<size_t> misses{0};
