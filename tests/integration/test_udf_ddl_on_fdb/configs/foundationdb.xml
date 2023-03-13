@@ -1,0 +1,5 @@
+<clickhouse>
+    <foundationdb>
+        <meta_node_id>test_udf_ddl_on_fdb</meta_node_id>
+    </foundationdb>
+</clickhouse>
