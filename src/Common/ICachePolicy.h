@@ -33,9 +33,6 @@ public:
     virtual void set(const Key & key, const MappedPtr & mapped, std::lock_guard<std::mutex> & /* cache_lock */) = 0;
 
     virtual ~ICachePolicy() = default;
-
-protected:
-    OnWeightLossFunction on_weight_loss_function = [](size_t) {};
 };
 
 }

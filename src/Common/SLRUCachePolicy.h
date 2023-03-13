@@ -23,6 +23,7 @@ class SLRUCachePolicy : public ICachePolicy<Key, Mapped, HashFunction, WeightFun
 {
 public:
     using MappedPtr = std::shared_ptr<Mapped>;
+
     using Base = ICachePolicy<Key, Mapped, HashFunction, WeightFunction>;
     using typename Base::OnWeightLossFunction;
 
@@ -35,9 +36,9 @@ public:
         : max_protected_size(static_cast<size_t>(max_size_in_bytes_ * std::min(1.0, size_ratio)))
         , max_size_in_bytes(max_size_in_bytes_)
         , max_entries(max_entries_)
-        {
-            Base::on_weight_loss_function = on_weight_loss_function_;
-        }
+        , on_weight_loss_function(on_weight_loss_function_)
+    {
+    }
 
     size_t weight(std::lock_guard<std::mutex> & /* cache_lock */) const override
     {
@@ -174,6 +175,7 @@ protected:
     const size_t max_entries;
 
     WeightFunction weight_function;
+    OnWeightLossFunction on_weight_loss_function;
 
     void removeOverflow(SLRUQueue & queue, const size_t max_weight_size, size_t & current_weight_size, bool is_protected)
     {
@@ -233,9 +235,7 @@ protected:
         }
 
         if (!is_protected)
-        {
-            Base::on_weight_loss_function(current_weight_lost);
-        }
+            on_weight_loss_function(current_weight_lost);
 
         if (current_size_in_bytes > (1ull << 63))
         {
