@@ -1,14 +1,14 @@
 SET send_logs_level = 'fatal';
 
-SELECT formatDateTime(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH (42) }
-SELECT formatDateTime('not a datetime', 'IGNORED'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT (43) }
-SELECT formatDateTime(now(), now()); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT (43) }
-SELECT formatDateTime(now(), 'good format pattern', now()); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT (43) }
-SELECT formatDateTime(now(), 'unescaped %'); -- { serverError BAD_ARGUMENTS (36) }
-SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%U'); -- { serverError NOT_IMPLEMENTED (48) }
-SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%v'); -- { serverError NOT_IMPLEMENTED (48) }
-SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%x'); -- { serverError NOT_IMPLEMENTED (48) }
-SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%X'); -- { serverError NOT_IMPLEMENTED (48) }
+SELECT formatDateTime(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT formatDateTime('not a datetime', 'IGNORED'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT formatDateTime(now(), now()); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT formatDateTime(now(), 'good format pattern', now()); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT formatDateTime(now(), 'unescaped %'); -- { serverError BAD_ARGUMENTS }
+SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%U'); -- { serverError NOT_IMPLEMENTED }
+SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%v'); -- { serverError NOT_IMPLEMENTED }
+SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%x'); -- { serverError NOT_IMPLEMENTED }
+SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%X'); -- { serverError NOT_IMPLEMENTED }
 
 SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%a'), formatDateTime(toDate32('2018-01-02'), '%a');
 SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%b'), formatDateTime(toDate32('2018-01-02'), '%b');
