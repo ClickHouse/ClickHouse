@@ -1,6 +1,7 @@
 #pragma once
 
-#include "StateHandler.h"
+#include "Functions/keyvaluepair/src/impl/state/ExtractorConfiguration.h"
+#include "Functions/keyvaluepair/src/impl/state/StateHandler.h"
 
 namespace DB
 {
@@ -10,7 +11,7 @@ class NoEscapingKeyStateHandler : public StateHandler
 public:
     using ElementType = std::string_view;
 
-    NoEscapingKeyStateHandler(char key_value_delimiter_, std::optional<char> enclosing_character_);
+    explicit NoEscapingKeyStateHandler(ExtractorConfiguration extractor_configuration_);
 
     [[nodiscard]] NextState wait(std::string_view file, size_t pos) const;
 
@@ -21,7 +22,7 @@ public:
     [[nodiscard]] NextState readKeyValueDelimiter(std::string_view file, size_t pos) const;
 
 private:
-    const char key_value_delimiter;
+    ExtractorConfiguration extractor_configuration;
 
     static bool isValidCharacter(char character);
 };

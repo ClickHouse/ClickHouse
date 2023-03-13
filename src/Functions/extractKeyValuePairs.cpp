@@ -47,9 +47,9 @@ static ColumnPtr extract(ColumnPtr data_column, std::shared_ptr<KeyValuePairExtr
     {
         auto row = data_column->getDataAt(i).toView();
 
-        auto inserted_rows = extractor->extract(row, keys, values);
+        auto pairs_count = extractor->extract(row, keys, values);
 
-        offset += inserted_rows;
+        offset += pairs_count;
 
         offsets->insert(offset);
     }
@@ -63,9 +63,9 @@ auto ExtractKeyValuePairs::getExtractor(const ParsedArguments & parsed_arguments
 {
     auto builder = KeyValuePairExtractorBuilder();
 
-    if (parsed_arguments.escape_character)
+    if (parsed_arguments.with_escaping.value_or(true))
     {
-        builder.withEscapeCharacter(parsed_arguments.escape_character.value());
+        builder.withEscaping();
     }
 
     if (parsed_arguments.key_value_pair_delimiter)
@@ -73,17 +73,9 @@ auto ExtractKeyValuePairs::getExtractor(const ParsedArguments & parsed_arguments
         builder.withKeyValuePairDelimiter(parsed_arguments.key_value_pair_delimiter.value());
     }
 
-    if (parsed_arguments.item_delimiter)
-    {
-        builder.withItemDelimiter(parsed_arguments.item_delimiter.value());
-    }
+    builder.withItemDelimiter(parsed_arguments.pair_delimiters);
 
-    if (parsed_arguments.enclosing_character)
-    {
-        builder.withEnclosingCharacter(parsed_arguments.enclosing_character.value());
-    }
-
-    builder.withValueSpecialCharacterAllowlist(parsed_arguments.value_special_characters_allow_list);
+    builder.withQuotingCharacters(parsed_arguments.quoting_characters);
 
     return builder.build();
 }
@@ -124,57 +116,57 @@ ExtractKeyValuePairs::ParsedArguments ExtractKeyValuePairs::parseArguments(const
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument", name);
     }
 
-    SetArgument value_special_characters_allow_list;
-
     auto data_column = arguments[0].column;
 
     if (arguments.size() == 1u)
     {
-        return ParsedArguments{data_column, {}, {}, {}, {}, value_special_characters_allow_list};
+        return ParsedArguments{data_column};
     }
 
-    auto escape_character = extractControlCharacter(arguments[1].column);
+    auto key_value_pair_delimiter = extractControlCharacter(arguments[1].column);
 
     if (arguments.size() == 2u)
     {
-        return ParsedArguments{data_column, escape_character, {}, {}, {}, value_special_characters_allow_list};
+        return ParsedArguments{data_column, key_value_pair_delimiter};
     }
 
-    auto key_value_pair_delimiter = extractControlCharacter(arguments[2].column);
+    auto pair_delimiters_characters = arguments[2].column->getDataAt(0).toView();
+
+    SetArgument pair_delimiters;
+
+    pair_delimiters.insert(pair_delimiters_characters.begin(), pair_delimiters_characters.end());
 
     if (arguments.size() == 3u)
     {
-        return ParsedArguments{data_column, escape_character, key_value_pair_delimiter, {}, {}, value_special_characters_allow_list};
+        return ParsedArguments{
+            data_column, key_value_pair_delimiter, pair_delimiters
+        };
     }
 
-    auto item_delimiter = extractControlCharacter(arguments[3].column);
+
+    auto quoting_characters_str = arguments[3].column->getDataAt(0).toView();
+
+    SetArgument quoting_characters;
+
+    quoting_characters.insert(quoting_characters_str.begin(), quoting_characters_str.end());
 
     if (arguments.size() == 4u)
     {
         return ParsedArguments{
-            data_column, escape_character, key_value_pair_delimiter, item_delimiter, {}, value_special_characters_allow_list};
-    }
-
-    auto enclosing_character = extractControlCharacter(arguments[4].column);
-
-    if (arguments.size() == 5u)
-    {
-        return ParsedArguments{
             data_column,
-            escape_character,
             key_value_pair_delimiter,
-            item_delimiter,
-            enclosing_character,
-            value_special_characters_allow_list};
+            pair_delimiters,
+            quoting_characters,
+        };
     }
 
-    auto value_special_characters_allow_list_characters = arguments[5].column->getDataAt(0).toView();
 
-    value_special_characters_allow_list.insert(
-        value_special_characters_allow_list_characters.begin(), value_special_characters_allow_list_characters.end());
+    auto with_escaping_character = extractControlCharacter(arguments[4].column);
+
+    bool with_escaping = with_escaping_character && with_escaping_character == '1';
 
     return ParsedArguments{
-        data_column, escape_character, key_value_pair_delimiter, item_delimiter, enclosing_character, value_special_characters_allow_list
+        data_column, key_value_pair_delimiter, pair_delimiters, quoting_characters, with_escaping
     };
 }
 

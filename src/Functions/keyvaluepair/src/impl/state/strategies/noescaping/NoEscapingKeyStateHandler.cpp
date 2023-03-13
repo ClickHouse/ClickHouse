@@ -3,8 +3,8 @@
 namespace DB
 {
 
-NoEscapingKeyStateHandler::NoEscapingKeyStateHandler(char key_value_delimiter_, std::optional<char> enclosing_character_)
-    : StateHandler(enclosing_character_), key_value_delimiter(key_value_delimiter_)
+NoEscapingKeyStateHandler::NoEscapingKeyStateHandler(ExtractorConfiguration extractor_configuration_)
+    : StateHandler(), extractor_configuration(std::move(extractor_configuration_))
 {
 }
 
@@ -18,7 +18,7 @@ NextState NoEscapingKeyStateHandler::wait(std::string_view file, size_t pos) con
         {
             return {pos, State::READING_KEY};
         }
-        else if (enclosing_character && current_character == enclosing_character)
+        else if (current_character == '"')
         {
             return {pos + 1u, State::READING_ENCLOSED_KEY};
         }
@@ -39,7 +39,7 @@ NextState NoEscapingKeyStateHandler::read(std::string_view file, size_t pos, Ele
     {
         const auto current_character = file[pos++];
 
-        if (current_character == key_value_delimiter)
+        if (current_character == ',')
         {
             // not checking for empty key because with current waitKey implementation
             // there is no way this piece of code will be reached for the very first key character
@@ -65,7 +65,7 @@ NextState NoEscapingKeyStateHandler::readEnclosed(std::string_view file, size_t 
     {
         const auto current_character = file[pos++];
 
-        if (enclosing_character == current_character)
+        if ('"' == current_character)
         {
             auto is_key_empty = start_index == pos;
 
@@ -91,7 +91,7 @@ NextState NoEscapingKeyStateHandler::readKeyValueDelimiter(std::string_view file
     else
     {
         const auto current_character = file[pos++];
-        return {pos, current_character == key_value_delimiter ? State::WAITING_VALUE : State::WAITING_KEY};
+        return {pos, current_character == ':' ? State::WAITING_VALUE : State::WAITING_KEY};
     }
 }
 

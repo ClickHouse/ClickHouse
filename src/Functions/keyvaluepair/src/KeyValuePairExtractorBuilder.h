@@ -1,9 +1,9 @@
 #pragma once
 
+#include "Functions/keyvaluepair/src/impl/state/strategies/noescaping/NoEscapingKeyStateHandler.h"
+#include "Functions/keyvaluepair/src/impl/state/strategies/noescaping/NoEscapingValueStateHandler.h"
 #include "KeyValuePairExtractor.h"
 #include "impl/CHKeyValuePairExtractor.h"
-#include "impl/state/NoEscapingKeyStateHandler.h"
-#include "impl/state/NoEscapingValueStateHandler.h"
 
 namespace DB
 {
@@ -14,22 +14,19 @@ public:
 
     KeyValuePairExtractorBuilder & withKeyValuePairDelimiter(char key_value_pair_delimiter_);
 
-    KeyValuePairExtractorBuilder & withEscapeCharacter(char escape_character_);
+    KeyValuePairExtractorBuilder & withItemDelimiter(std::unordered_set<char> item_delimiters_);
 
-    KeyValuePairExtractorBuilder & withItemDelimiter(char item_delimiter_);
+    KeyValuePairExtractorBuilder & withQuotingCharacters(std::unordered_set<char> quoting_characters_);
 
-    KeyValuePairExtractorBuilder & withEnclosingCharacter(std::optional<char> enclosing_character_);
-
-    KeyValuePairExtractorBuilder & withValueSpecialCharacterAllowlist(std::unordered_set<char> special_character_allow_list);
+    KeyValuePairExtractorBuilder & withEscaping();
 
     std::shared_ptr<KeyValuePairExtractor> build();
 
 private:
-    std::optional<char> key_value_pair_delimiter;
-    std::optional<char> escape_character;
-    std::optional<char> item_delimiter;
-    std::optional<char> enclosing_character;
-    std::unordered_set<char> value_special_character_allowlist;
+    bool with_escaping = false;
+    char key_value_pair_delimiter = ':';
+    std::unordered_set<char> item_delimiters = {' ', ',', ';'};
+    std::unordered_set<char> quoting_characters = {'"'};
 
     std::shared_ptr<KeyValuePairExtractor> buildWithEscaping();
 
