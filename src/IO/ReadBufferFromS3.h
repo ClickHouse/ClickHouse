@@ -69,6 +69,7 @@ public:
     size_t getFileSize() override;
 
     void setReadUntilPosition(size_t position) override;
+    void setReadUntilEnd() override;
 
     Range getRemainingReadRange() const override;
 

@@ -270,7 +270,25 @@ void ReadBufferFromS3::setReadUntilPosition(size_t position)
     if (position != static_cast<size_t>(read_until_position))
     {
         read_until_position = position;
-        impl.reset();
+        if (impl)
+        {
+            // Not exactly a seek, but close enough.
+            ProfileEvents::increment(ProfileEvents::ReadBufferSeekCancelConnection);
+            impl.reset();
+        }
+    }
+}
+
+void ReadBufferFromS3::setReadUntilEnd()
+{
+    if (read_until_position)
+    {
+        read_until_position = 0;
+        if (impl)
+        {
+            ProfileEvents::increment(ProfileEvents::ReadBufferSeekCancelConnection);
+            impl.reset();
+        }
     }
 }
 
