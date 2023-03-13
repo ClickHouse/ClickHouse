@@ -117,7 +117,6 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.parquet.skip_columns_with_unsupported_types_in_schema_inference = settings.input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference;
     format_settings.parquet.output_string_as_string = settings.output_format_parquet_string_as_string;
     format_settings.parquet.output_fixed_string_as_fixed_byte_array = settings.output_format_parquet_fixed_string_as_fixed_byte_array;
-    format_settings.parquet.max_block_size = settings.input_format_parquet_max_block_size;
     format_settings.parquet.output_compression_method = settings.output_format_parquet_compression_method;
     format_settings.pretty.charset = settings.output_format_pretty_grid_charset.toString() == "ASCII" ? FormatSettings::Pretty::Charset::ASCII : FormatSettings::Pretty::Charset::UTF8;
     format_settings.pretty.color = settings.output_format_pretty_color;
@@ -194,6 +193,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.bson.output_string_as_string = settings.output_format_bson_string_as_string;
     format_settings.bson.skip_fields_with_unsupported_types_in_schema_inference = settings.input_format_bson_skip_fields_with_unsupported_types_in_schema_inference;
     format_settings.max_binary_string_size = settings.format_binary_max_string_size;
+    format_settings.native.allow_types_conversion = settings.input_format_native_allow_types_conversion;
     format_settings.max_parser_depth = context->getSettingsRef().max_parser_depth;
     format_settings.client_protocol_version = context->getClientProtocolVersion();
 

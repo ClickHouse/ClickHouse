@@ -18,6 +18,7 @@
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <IO/copyData.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -223,8 +224,12 @@ void StorageMergeTree::read(
 
         auto cluster = local_context->getCluster(local_context->getSettingsRef().cluster_for_parallel_replicas);
 
-        Block header =
-            InterpreterSelectQuery(modified_query_ast, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+        Block header;
+
+        if (local_context->getSettingsRef().allow_experimental_analyzer)
+            header = InterpreterSelectQueryAnalyzer::getSampleBlock(modified_query_ast, local_context, SelectQueryOptions(processed_stage).analyze());
+        else
+            header = InterpreterSelectQuery(modified_query_ast, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
 
         ClusterProxy::SelectStreamFactory select_stream_factory =
             ClusterProxy::SelectStreamFactory(
