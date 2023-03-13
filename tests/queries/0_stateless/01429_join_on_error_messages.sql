@@ -15,7 +15,7 @@ SET join_algorithm = 'partial_merge';
 SELECT 1 FROM (select 1 a) A JOIN (select 1 b, 1 c) B ON a = b OR a = c; -- { serverError 48 }
 -- works for a = b OR a = b because of equivalent disjunct optimization
 
-SET join_algorithm = 'auto';
+SET join_algorithm = 'grace_hash';
 SELECT 1 FROM (select 1 a) A JOIN (select 1 b, 1 c) B ON a = b OR a = c; -- { serverError 48 }
 -- works for a = b OR a = b because of equivalent disjunct optimization
 

@@ -525,7 +525,6 @@ void MergeTreeData::checkProperties(
 
         for (const auto & index : new_metadata.secondary_indices)
         {
-
             MergeTreeIndexFactory::instance().validate(index, attach);
 
             if (indices_names.find(index.name) != indices_names.end())
@@ -4122,9 +4121,9 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
         ProfileEvents::increment(ProfileEvents::RejectedInserts);
         throw Exception(
             ErrorCodes::TOO_MANY_PARTS,
-            "Too many parts ({}) in all partitions in total. This indicates wrong choice of partition key. The threshold can be modified "
+            "Too many parts ({}) in all partitions in total in table '{}'. This indicates wrong choice of partition key. The threshold can be modified "
             "with 'max_parts_in_total' setting in <merge_tree> element in config.xml or with per-table setting.",
-            parts_count_in_total);
+            parts_count_in_total, getLogName());
     }
 
     size_t outdated_parts_over_threshold = 0;
@@ -4138,8 +4137,8 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
             ProfileEvents::increment(ProfileEvents::RejectedInserts);
             throw Exception(
                 ErrorCodes::TOO_MANY_PARTS,
-                "Too many inactive parts ({}). Parts cleaning are processing significantly slower than inserts",
-                outdated_parts_count_in_partition);
+                "Too many inactive parts ({}) in table '{}'. Parts cleaning are processing significantly slower than inserts",
+                outdated_parts_count_in_partition, getLogName());
         }
         if (settings->inactive_parts_to_delay_insert > 0 && outdated_parts_count_in_partition >= settings->inactive_parts_to_delay_insert)
             outdated_parts_over_threshold = outdated_parts_count_in_partition - settings->inactive_parts_to_delay_insert + 1;
@@ -4152,6 +4151,7 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
     const auto active_parts_to_throw_insert
         = query_settings.parts_to_throw_insert ? query_settings.parts_to_throw_insert : settings->parts_to_throw_insert;
     size_t active_parts_over_threshold = 0;
+
     {
         bool parts_are_large_enough_in_average
             = settings->max_avg_part_size_for_too_many_parts && average_part_size > settings->max_avg_part_size_for_too_many_parts;
@@ -4161,9 +4161,10 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
             ProfileEvents::increment(ProfileEvents::RejectedInserts);
             throw Exception(
                 ErrorCodes::TOO_MANY_PARTS,
-                "Too many parts ({} with average size of {}). Merges are processing significantly slower than inserts",
+                "Too many parts ({} with average size of {}) in table '{}'. Merges are processing significantly slower than inserts",
                 parts_count_in_partition,
-                ReadableSize(average_part_size));
+                ReadableSize(average_part_size),
+                getLogName());
         }
         if (active_parts_to_delay_insert > 0 && parts_count_in_partition >= active_parts_to_delay_insert
             && !parts_are_large_enough_in_average)

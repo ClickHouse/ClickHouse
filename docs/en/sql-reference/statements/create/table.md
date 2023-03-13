@@ -110,25 +110,23 @@ If the type is not `Nullable` and if `NULL` is specified, it will be treated as 
 
 See also [data_type_default_nullable](../../../operations/settings/settings.md#data_type_default_nullable) setting.
 
-## Default Values
+## Default Values {#default_values}
 
-The column description can specify an expression for a default value, in one of the following ways: `DEFAULT expr`, `MATERIALIZED expr`, `ALIAS expr`.
+The column description can specify a default value expression in the form of `DEFAULT expr`, `MATERIALIZED expr`, or `ALIAS expr`. Example: `URLDomain String DEFAULT domain(URL)`.
 
-Example: `URLDomain String DEFAULT domain(URL)`.
+The expression `expr` is optional. If it is omitted, the column type must be specified explicitly and the default value will be `0` for numeric columns, `''` (the empty string) for string columns, `[]` (the empty array) for array columns, `1970-01-01` for date columns, or `NULL` for nullable columns.
 
-If an expression for the default value is not defined, the default values will be set to zeros for numbers, empty strings for strings, empty arrays for arrays, and `1970-01-01` for dates or zero unix timestamp for DateTime, NULL for Nullable.
+The column type of a default value column can be omitted in which case it is infered from `expr`'s type. For example the type of column `EventDate DEFAULT toDate(EventTime)` will be date.
 
-If the default expression is defined, the column type is optional. If there isn’t an explicitly defined type, the default expression type is used. Example: `EventDate DEFAULT toDate(EventTime)` – the ‘Date’ type will be used for the ‘EventDate’ column.
+If both a data type and a default value expression are specified, an implicit type casting function inserted which converts the expression to the specified type. Example: `Hits UInt32 DEFAULT 0` is internally represented as `Hits UInt32 DEFAULT toUInt32(0)`.
 
-If the data type and default expression are defined explicitly, this expression will be cast to the specified type using type casting functions. Example: `Hits UInt32 DEFAULT 0` means the same thing as `Hits UInt32 DEFAULT toUInt32(0)`.
-
-Default expressions may be defined as an arbitrary expression from table constants and columns. When creating and changing the table structure, it checks that expressions do not contain loops. For INSERT, it checks that expressions are resolvable – that all columns they can be calculated from have been passed.
+A default value expression `expr` may reference arbitrary table columns and constants. ClickHouse checks that changes of the table structure do not introduce loops in the expression calculation. For INSERT, it checks that expressions are resolvable – that all columns they can be calculated from have been passed.
 
 ### DEFAULT
 
 `DEFAULT expr`
 
-Normal default value. If the INSERT query does not specify the corresponding column, it will be filled in by computing the corresponding expression.
+Normal default value. If the value of such a column is not specified in an INSERT query, it is computed from `expr`.
 
 Example:
 
@@ -154,9 +152,9 @@ SELECT * FROM test;
 
 `MATERIALIZED expr`
 
-Materialized expression. Such a column can’t be specified for INSERT, because it is always calculated.
-For an INSERT without a list of columns, these columns are not considered.
-In addition, this column is not substituted when using an asterisk in a SELECT query. This is to preserve the invariant that the dump obtained using `SELECT *` can be inserted back into the table using INSERT without specifying the list of columns.
+Materialized expression. Values of such columns are always calculated, they cannot be specified in INSERT queries.
+
+Also, default value columns of this type are not included in the result of `SELECT *`. This is to preserve the invariant that the result of a `SELECT *` can always be inserted back into the table using `INSERT`. This behavior can be disabled with setting `asterisk_include_materialized_columns`.
 
 Example:
 
@@ -192,8 +190,9 @@ SELECT * FROM test SETTINGS asterisk_include_materialized_columns=1;
 
 `EPHEMERAL [expr]`
 
-Ephemeral column. Such a column isn't stored in the table and cannot be SELECTed, but can be referenced in the defaults of CREATE statement. If `expr` is omitted type for column is required.
-INSERT without list of columns will skip such column, so SELECT/INSERT invariant is preserved -  the dump obtained using `SELECT *` can be inserted back into the table using INSERT without specifying the list of columns.
+Ephemeral column. Columns of this type are not stored in the table and it is not possible to SELECT from them. The only purpose of ephemeral columns is to build default value expressions of other columns from them.
+
+An insert without explicitly specified columns will skip columns of this type. This is to preserve the invariant that the result of a `SELECT *` can always be inserted back into the table using `INSERT`.
 
 Example:
 
@@ -205,7 +204,7 @@ CREATE OR REPLACE TABLE test
     hexed FixedString(4) DEFAULT unhex(unhexed)
 )
 ENGINE = MergeTree
-ORDER BY id
+ORDER BY id;
 
 INSERT INTO test (id, unhexed) Values (1, '5a90b714');
 
@@ -227,9 +226,9 @@ hex(hexed): 5A90B714
 
 `ALIAS expr`
 
-Synonym. Such a column isn’t stored in the table at all.
-Its values can’t be inserted in a table, and it is not substituted when using an asterisk in a SELECT query.
-It can be used in SELECTs if the alias is expanded during query parsing.
+Calculated columns (synonym). Column of this type are not stored in the table and it is not possible to INSERT values into them.
+
+When SELECT queries explicitly reference columns of this type, the value is computed at query time from `expr`. By default, `SELECT *` excludes ALIAS columns. This behavior can be disabled with setting `asteriks_include_alias_columns`.
 
 When using the ALTER query to add new columns, old data for these columns is not written. Instead, when reading old data that does not have values for the new columns, expressions are computed on the fly by default. However, if running the expressions requires different columns that are not indicated in the query, these columns will additionally be read, but only for the blocks of data that need it.
 
@@ -576,7 +575,7 @@ SELECT * FROM base.t1;
 You can add a comment to the table when you creating it.
 
 :::note
-The comment is supported for all table engines except [Kafka](../../../engines/table-engines/integrations/kafka.md), [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md) and [EmbeddedRocksDB](../../../engines/table-engines/integrations/embedded-rocksdb.md).
+The comment clause is supported by all table engines except [Kafka](../../../engines/table-engines/integrations/kafka.md), [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md) and [EmbeddedRocksDB](../../../engines/table-engines/integrations/embedded-rocksdb.md).
 :::
 
 
