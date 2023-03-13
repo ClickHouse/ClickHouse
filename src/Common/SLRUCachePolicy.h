@@ -49,7 +49,7 @@ public:
         return cells.size();
     }
 
-    size_t maxSize() const override
+    size_t maxSize(std::lock_guard<std::mutex> & /* cache_lock */) const override
     {
         return max_size_in_bytes;
     }

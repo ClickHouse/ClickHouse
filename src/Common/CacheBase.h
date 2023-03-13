@@ -188,9 +188,9 @@ public:
     }
 
     size_t maxSize() const
-        TSA_NO_THREAD_SAFETY_ANALYSIS // disabled because max_size_in_bytes of cache_policy is a constant parameter
     {
-        return cache_policy->maxSize();
+        std::lock_guard lock(mutex);
+        return cache_policy->maxSize(lock);
     }
 
     virtual ~CacheBase() = default;

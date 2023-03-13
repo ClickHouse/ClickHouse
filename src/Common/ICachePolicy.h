@@ -27,7 +27,7 @@ public:
 
     virtual size_t weight(std::lock_guard<std::mutex> & /* cache_lock */) const = 0;
     virtual size_t count(std::lock_guard<std::mutex> & /* cache_lock */) const = 0;
-    virtual size_t maxSize() const = 0;
+    virtual size_t maxSize(std::lock_guard<std::mutex>& /* cache_lock */) const = 0;
 
     virtual void reset(std::lock_guard<std::mutex> & /* cache_lock */) = 0;
     virtual void remove(const Key & key, std::lock_guard<std::mutex> & /* cache_lock */) = 0;
