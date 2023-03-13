@@ -143,7 +143,7 @@ static void checkIncompleteOrdinaryToAtomicConversion(ContextPtr context, const 
                         "Most likely it indicates that conversion of database {} from Ordinary to Atomic "
                         "was interrupted or failed in the middle. You can add <allow_reserved_database_name_tmp_convert> to config.xml "
                         "or remove convert_ordinary_to_atomic file from flags/ directory, so the server will start forcefully. "
-                        "After starting the server, you can finish conversion manually by moving the rest tables from {} to {} "
+                        "After starting the server, you can finish conversion manually by moving of the rest tables from {} to {} "
                         "(using RENAME TABLE) and executing DROP DATABASE {} and RENAME DATABASE {} TO {}",
                         backQuote(db.first), backQuote(actual_name), backQuote(actual_name), backQuote(db.first),
                         backQuote(actual_name), backQuote(db.first), backQuote(actual_name));
