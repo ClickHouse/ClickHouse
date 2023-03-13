@@ -34,15 +34,13 @@ namespace
   * It is client responsibility to update filter analysis result if filter column must be removed after chain is finalized.
   */
 FilterAnalysisResult analyzeFilter(const QueryTreeNodePtr & filter_expression_node,
-    const ColumnsWithTypeAndName & current_output_columns,
+    const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context,
     ActionsChain & actions_chain)
 {
-    const auto & filter_input = current_output_columns;
-
     FilterAnalysisResult result;
 
-    result.filter_actions = buildActionsDAGFromExpressionNode(filter_expression_node, filter_input, planner_context);
+    result.filter_actions = buildActionsDAGFromExpressionNode(filter_expression_node, input_columns, planner_context);
     result.filter_column_name = result.filter_actions->getOutputs().at(0)->result_name;
     actions_chain.addStep(std::make_unique<ActionsChainStep>(result.filter_actions));
 
@@ -52,8 +50,8 @@ FilterAnalysisResult analyzeFilter(const QueryTreeNodePtr & filter_expression_no
 /** Construct aggregation analysis result if query tree has GROUP BY or aggregates.
   * Actions before aggregation are added into actions chain, if result is not null optional.
   */
-std::pair<std::optional<AggregationAnalysisResult>, std::optional<ColumnsWithTypeAndName>> analyzeAggregation(const QueryTreeNodePtr & query_tree,
-    const ColumnsWithTypeAndName & current_output_columns,
+std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodePtr & query_tree,
+    const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context,
     ActionsChain & actions_chain)
 {
@@ -69,9 +67,7 @@ std::pair<std::optional<AggregationAnalysisResult>, std::optional<ColumnsWithTyp
 
     Names aggregation_keys;
 
-    const auto & group_by_input = current_output_columns;
-
-    ActionsDAGPtr before_aggregation_actions = std::make_shared<ActionsDAG>(group_by_input);
+    ActionsDAGPtr before_aggregation_actions = std::make_shared<ActionsDAG>(input_columns);
     before_aggregation_actions->getOutputs().clear();
 
     std::unordered_set<std::string_view> before_aggregation_actions_output_node_names;
@@ -203,14 +199,14 @@ std::pair<std::optional<AggregationAnalysisResult>, std::optional<ColumnsWithTyp
     aggregation_analysis_result.grouping_sets_parameters_list = std::move(grouping_sets_parameters_list);
     aggregation_analysis_result.group_by_with_constant_keys = group_by_with_constant_keys;
 
-    return { aggregation_analysis_result, available_columns_after_aggregation };
+    return aggregation_analysis_result;
 }
 
 /** Construct window analysis result if query tree has window functions.
   * Actions before window functions are added into actions chain, if result is not null optional.
   */
 std::optional<WindowAnalysisResult> analyzeWindow(const QueryTreeNodePtr & query_tree,
-    const ColumnsWithTypeAndName & current_output_columns,
+    const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context,
     ActionsChain & actions_chain)
 {
@@ -220,11 +216,9 @@ std::optional<WindowAnalysisResult> analyzeWindow(const QueryTreeNodePtr & query
 
     auto window_descriptions = extractWindowDescriptions(window_function_nodes, *planner_context);
 
-    const auto & window_input = current_output_columns;
-
     PlannerActionsVisitor actions_visitor(planner_context);
 
-    ActionsDAGPtr before_window_actions = std::make_shared<ActionsDAG>(window_input);
+    ActionsDAGPtr before_window_actions = std::make_shared<ActionsDAG>(input_columns);
     before_window_actions->getOutputs().clear();
 
     std::unordered_set<std::string_view> before_window_actions_output_node_names;
@@ -299,12 +293,11 @@ std::optional<WindowAnalysisResult> analyzeWindow(const QueryTreeNodePtr & query
   * It is client responsibility to update projection analysis result with project names actions after chain is finalized.
   */
 ProjectionAnalysisResult analyzeProjection(const QueryNode & query_node,
-    const ColumnsWithTypeAndName & current_output_columns,
+    const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context,
     ActionsChain & actions_chain)
 {
-    const auto & projection_input = current_output_columns;
-    auto projection_actions = buildActionsDAGFromExpressionNode(query_node.getProjectionNode(), projection_input, planner_context);
+    auto projection_actions = buildActionsDAGFromExpressionNode(query_node.getProjectionNode(), input_columns, planner_context);
 
     auto projection_columns = query_node.getProjectionColumns();
     size_t projection_columns_size = projection_columns.size();
@@ -347,13 +340,11 @@ ProjectionAnalysisResult analyzeProjection(const QueryNode & query_node,
   * Actions before sort are added into actions chain.
   */
 SortAnalysisResult analyzeSort(const QueryNode & query_node,
-    const ColumnsWithTypeAndName & current_output_columns,
+    const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context,
     ActionsChain & actions_chain)
 {
-    const auto & order_by_input = current_output_columns;
-
-    ActionsDAGPtr before_sort_actions = std::make_shared<ActionsDAG>(order_by_input);
+    ActionsDAGPtr before_sort_actions = std::make_shared<ActionsDAG>(input_columns);
     auto & before_sort_actions_outputs = before_sort_actions->getOutputs();
     before_sort_actions_outputs.clear();
 
@@ -436,13 +427,12 @@ SortAnalysisResult analyzeSort(const QueryNode & query_node,
   * Actions before limit by are added into actions chain.
   */
 LimitByAnalysisResult analyzeLimitBy(const QueryNode & query_node,
-    const ColumnsWithTypeAndName & current_output_columns,
+    const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context,
     const NameSet & required_output_nodes_names,
     ActionsChain & actions_chain)
 {
-    const auto & limit_by_input = current_output_columns;
-    auto before_limit_by_actions = buildActionsDAGFromExpressionNode(query_node.getLimitByNode(), limit_by_input, planner_context);
+    auto before_limit_by_actions = buildActionsDAGFromExpressionNode(query_node.getLimitByNode(), input_columns, planner_context);
 
     NameSet limit_by_column_names_set;
     Names limit_by_column_names;
@@ -480,8 +470,7 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
     std::optional<FilterAnalysisResult> where_analysis_result_optional;
     std::optional<size_t> where_action_step_index_optional;
 
-    const auto * input_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
-    ColumnsWithTypeAndName current_output_columns = input_columns ? *input_columns : join_tree_input_columns;
+    ColumnsWithTypeAndName current_output_columns = join_tree_input_columns;
 
     if (query_node.hasWhere())
     {
@@ -490,9 +479,9 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
         current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
     }
 
-    auto [aggregation_analysis_result_optional, aggregated_columns_optional] = analyzeAggregation(query_tree, current_output_columns, planner_context, actions_chain);
-    if (aggregated_columns_optional)
-        current_output_columns = std::move(*aggregated_columns_optional);
+    auto aggregation_analysis_result_optional = analyzeAggregation(query_tree, current_output_columns, planner_context, actions_chain);
+    if (aggregation_analysis_result_optional)
+        current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
 
     std::optional<FilterAnalysisResult> having_analysis_result_optional;
     std::optional<size_t> having_action_step_index_optional;
