@@ -11,6 +11,7 @@
 #include <IO/S3/URI.h>
 #include <IO/S3/Requests.h>
 #include <IO/S3/PocoHTTPClient.h>
+#include <IO/S3/Credentials.h>
 
 #include <aws/core/Aws.h>
 #include <aws/core/client/DefaultRetryStrategy.h>
@@ -224,7 +225,7 @@ public:
         HTTPHeaderEntries headers,
         bool use_environment_credentials,
         bool use_insecure_imds_request,
-        uint64_t expiration_window_seconds);
+        uint64_t expiration_window_seconds = DEFAULT_EXPIRATION_WINDOW_SECONDS);
 
     PocoHTTPClientConfiguration createClientConfiguration(
         const String & force_region,
