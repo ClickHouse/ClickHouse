@@ -226,9 +226,7 @@ InputFormatPtr FormatFactory::getInput(
         ? *_format_settings : getFormatSettings(context);
 
     if (!getCreators(name).input_creator)
-    {
         throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT, "Format {} is not suitable for input", name);
-    }
 
     const Settings & settings = context->getSettingsRef();
     const auto & file_segmentation_engine = getCreators(name).file_segmentation_engine;
@@ -270,21 +268,19 @@ InputFormatPtr FormatFactory::getInput(
         ParallelParsingInputFormat::Params params{
             buf, sample, parser_creator, file_segmentation_engine, name, settings.max_threads,
             settings.min_chunk_bytes_for_parallel_parsing, max_block_size, context->getApplicationType() == Context::ApplicationType::SERVER};
+
         auto format = std::make_shared<ParallelParsingInputFormat>(params);
         if (!settings.input_format_record_errors_file_path.toString().empty())
-        {
             format->setErrorsLogger(std::make_shared<ParallelInputFormatErrorsLogger>(context));
-        }
         return format;
     }
-
-
-    auto format = getInputFormat(name, buf, sample, context, max_block_size, format_settings);
-    if (!settings.input_format_record_errors_file_path.toString().empty())
+    else
     {
-        format->setErrorsLogger(std::make_shared<InputFormatErrorsLogger>(context));
+        auto format = getInputFormat(name, buf, sample, context, max_block_size, format_settings);
+        if (!settings.input_format_record_errors_file_path.toString().empty())
+             format->setErrorsLogger(std::make_shared<InputFormatErrorsLogger>(context));
+        return format;
     }
-    return format;
 }
 
 InputFormatPtr FormatFactory::getInputFormat(
