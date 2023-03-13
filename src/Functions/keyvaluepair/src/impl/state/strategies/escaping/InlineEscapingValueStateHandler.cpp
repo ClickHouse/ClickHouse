@@ -5,9 +5,41 @@
 namespace DB
 {
 
+static auto buildReadRuntimeConfig(const ExtractorConfiguration & configuration)
+{
+    const auto & [key_value_delimiter, pair_delimiters, quoting_characters]
+        = configuration;
+
+    std::vector<char> needles;
+
+    needles.push_back(EscapedCharacterReader::ESCAPE_CHARACTER);
+    needles.push_back(key_value_delimiter);
+
+    std::copy(quoting_characters.begin(), quoting_characters.end(), std::back_inserter(needles));
+    std::copy(pair_delimiters.begin(), pair_delimiters.end(), std::back_inserter(needles));
+
+    return needles;
+}
+
+static auto buildReadEnclosedRuntimeConfig(const ExtractorConfiguration & configuration)
+{
+    const auto & quoting_characters = configuration.quoting_characters;
+
+    std::vector<char> needles;
+
+    needles.push_back(EscapedCharacterReader::ESCAPE_CHARACTER);
+
+    std::copy(quoting_characters.begin(), quoting_characters.end(), std::back_inserter(needles));
+
+    return needles;
+}
+
 InlineEscapingValueStateHandler::InlineEscapingValueStateHandler(ExtractorConfiguration extractor_configuration_)
     : extractor_configuration(std::move(extractor_configuration_))
 {
+    auto read_config = buildReadRuntimeConfig(extractor_configuration);
+    auto read_enclosed_config = buildReadEnclosedRuntimeConfig(extractor_configuration);
+    runtime_configuration = RuntimeConfiguration({}, read_config, read_enclosed_config);
 }
 
 NextState InlineEscapingValueStateHandler::wait(std::string_view file, size_t pos) const
@@ -15,7 +47,7 @@ NextState InlineEscapingValueStateHandler::wait(std::string_view file, size_t po
     const auto & [key_value_delimiter, pair_delimiters, quoting_characters]
         = extractor_configuration;
 
-    while (pos < file.size())
+    if (pos < file.size())
     {
         const auto current_character = file[pos];
 
@@ -31,13 +63,10 @@ NextState InlineEscapingValueStateHandler::wait(std::string_view file, size_t po
         {
             return {pos, State::WAITING_KEY};
         }
-        // skip leading white spaces, re-think this
-        else if (current_character != ' ')
+        else
         {
             return {pos, State::READING_VALUE};
         }
-
-        pos++;
     }
 
     return {pos, State::READING_EMPTY_VALUE};
@@ -45,18 +74,10 @@ NextState InlineEscapingValueStateHandler::wait(std::string_view file, size_t po
 
 NextState InlineEscapingValueStateHandler::read(std::string_view file, size_t pos, ElementType & value) const
 {
-    CharacterFinder finder;
+    BoundsSafeCharacterFinder finder;
 
     const auto & [key_value_delimiter, pair_delimiters, quoting_characters]
         = extractor_configuration;
-
-    std::vector<char> needles;
-
-    needles.push_back(EscapedCharacterReader::ESCAPE_CHARACTER);
-    needles.push_back(key_value_delimiter);
-
-    std::copy(quoting_characters.begin(), quoting_characters.end(), std::back_inserter(needles));
-    std::copy(pair_delimiters.begin(), pair_delimiters.end(), std::back_inserter(needles));
 
     value.clear();
 
@@ -65,7 +86,7 @@ NextState InlineEscapingValueStateHandler::read(std::string_view file, size_t po
      * It might help updating current pos?
      * */
 
-    while (auto character_position_opt = finder.find_first(file, pos, needles))
+    while (auto character_position_opt = finder.find_first(file, pos, runtime_configuration.read_configuration))
     {
         auto character_position = *character_position_opt;
         auto character = file[character_position];
@@ -79,14 +100,10 @@ NextState InlineEscapingValueStateHandler::read(std::string_view file, size_t po
             }
 
             auto [next_byte_ptr, escaped_characters] = EscapedCharacterReader::read(file, character_position);
-            // fix later, -1 looks uglyyyyy
             next_pos = next_byte_ptr - file.begin();
 
             if (escaped_characters.empty())
             {
-                // I have to consider a case like the following: "name:arthur\".
-                // will it be discarded or not?
-                // current implementation will discard it.
                 return {next_pos, State::WAITING_KEY};
             }
             else
@@ -126,19 +143,13 @@ NextState InlineEscapingValueStateHandler::read(std::string_view file, size_t po
 
 NextState InlineEscapingValueStateHandler::readEnclosed(std::string_view file, size_t pos, ElementType & value) const
 {
-    CharacterFinder finder;
+    BoundsSafeCharacterFinder finder;
 
     const auto & quoting_characters = extractor_configuration.quoting_characters;
 
-    std::vector<char> needles;
-
-    needles.push_back(EscapedCharacterReader::ESCAPE_CHARACTER);
-
-    std::copy(quoting_characters.begin(), quoting_characters.end(), std::back_inserter(needles));
-
     value.clear();
 
-    while (auto character_position_opt = finder.find_first(file, pos, needles))
+    while (auto character_position_opt = finder.find_first(file, pos, runtime_configuration.read_enclosed_configuration))
     {
         auto character_position = *character_position_opt;
         auto character = file[character_position];
@@ -152,14 +163,10 @@ NextState InlineEscapingValueStateHandler::readEnclosed(std::string_view file, s
             }
 
             auto [next_byte_ptr, escaped_characters] = EscapedCharacterReader::read(file, character_position);
-            // fix later, -1 looks uglyyyyy
             next_pos = next_byte_ptr - file.begin();
 
             if (escaped_characters.empty())
             {
-                // I have to consider a case like the following: "name:arthur\".
-                // will it be discarded or not?
-                // current implementation will discard it.
                 return {next_pos, State::WAITING_KEY};
             }
             else

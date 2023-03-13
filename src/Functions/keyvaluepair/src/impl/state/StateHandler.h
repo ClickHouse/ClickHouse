@@ -57,8 +57,6 @@ struct StateHandler
 
     virtual ~StateHandler() = default;
 
-    const std::unordered_set<char> quoting_characters;
-
 protected:
     [[nodiscard]] static std::string_view createElement(std::string_view file, std::size_t begin, std::size_t end);
 };

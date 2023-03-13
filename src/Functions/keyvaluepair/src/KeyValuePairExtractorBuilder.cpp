@@ -48,7 +48,7 @@ std::shared_ptr<KeyValuePairExtractor> KeyValuePairExtractorBuilder::build()
 std::shared_ptr<KeyValuePairExtractor> KeyValuePairExtractorBuilder::buildWithoutEscaping()
 {
     ExtractorConfiguration configuration(
-        key_value_pair_delimiter.value_or(':'),
+        key_value_pair_delimiter,
         item_delimiters,
         quoting_characters
     );
@@ -67,7 +67,7 @@ std::shared_ptr<KeyValuePairExtractor> KeyValuePairExtractorBuilder::buildWithou
 std::shared_ptr<KeyValuePairExtractor> KeyValuePairExtractorBuilder::buildWithEscaping()
 {
     ExtractorConfiguration configuration(
-        key_value_pair_delimiter.value_or(':'),
+        key_value_pair_delimiter,
         item_delimiters,
         quoting_characters
     );

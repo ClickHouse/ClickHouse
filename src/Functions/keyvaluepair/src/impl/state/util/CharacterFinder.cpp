@@ -119,4 +119,28 @@ std::optional<CharacterFinder::Position> CharacterFinder::find_first_not(std::st
     return std::nullopt;
 }
 
+std::optional<BoundsSafeCharacterFinder::Position> BoundsSafeCharacterFinder::find_first(
+    std::string_view haystack, std::size_t offset, const std::vector<char> & needles
+) const
+{
+    if (haystack.size() > offset)
+    {
+        return CharacterFinder::find_first(haystack, offset, needles);
+    }
+
+    return std::nullopt;
+}
+
+std::optional<BoundsSafeCharacterFinder::Position> BoundsSafeCharacterFinder::find_first_not(
+    std::string_view haystack, std::size_t offset, const std::vector<char> & needles
+) const
+{
+    if (haystack.size() > offset)
+    {
+        return CharacterFinder::find_first_not(haystack, offset, needles);
+    }
+
+    return std::nullopt;
+}
+
 }
