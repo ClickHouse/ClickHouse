@@ -67,6 +67,9 @@ try
     ///   cd build_asan_fuzz
     ///   CC=clang CXX=clang++ cmake -D SANITIZE=address -D ENABLE_FUZZING=1 -D WITH_COVERAGE=1 ..
     ///
+    /// The corpus is located here:
+    /// https://github.com/ClickHouse/fuzz-corpus/tree/main/format_fuzzer
+    ///
     /// The fuzzer can be run as follows:
     ///   ../../../build_asan_fuzz/src/Formats/fuzzers/format_fuzzer corpus -jobs=64
 
