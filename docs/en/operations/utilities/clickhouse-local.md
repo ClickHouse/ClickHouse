@@ -8,7 +8,7 @@ sidebar_label: clickhouse-local
 
 The `clickhouse-local` program enables you to perform fast processing on local files, without having to deploy and configure the ClickHouse server. It accepts data that represent tables and queries them using [ClickHouse SQL dialect](../../sql-reference/). `clickhouse-local` uses the same core as ClickHouse server, so it supports most of the features and the same set of formats and table engines. 
 
-By default `clickhouse-local` does not have access to data on the same host, but it supports loading server configuration using `--config-file` argument. For temporary data, a unique temporary data directory is created by default.
+By default `clickhouse-local` has access to data on the same host, and it does not depend on the server's configuration. It also supports loading server configuration using `--config-file` argument. For temporary data, a unique temporary data directory is created by default.
 
 ## Usage {#usage}
 
