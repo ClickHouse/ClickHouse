@@ -35,15 +35,17 @@ public:
     virtual size_t count(std::lock_guard<std::mutex> & /* cache_lock */) const = 0;
     virtual size_t maxSize(std::lock_guard<std::mutex>& /* cache_lock */) const = 0;
 
-    virtual void reset(std::lock_guard<std::mutex> & /* cache_lock */) = 0;
-    virtual void remove(const Key & key, std::lock_guard<std::mutex> & /* cache_lock */) = 0;
     /// HashFunction usually hashes the entire key and the found key will be equal the provided key. In such cases, use get(). It is also
     /// possible to store other, non-hashed data in the key. In that case, the found key is potentially different from the provided key.
     /// Then use getWithKey() to also return the found key including it's non-hashed data.
     virtual MappedPtr get(const Key & key, std::lock_guard<std::mutex> & /* cache_lock */) = 0;
     virtual std::optional<KeyMapped> getWithKey(const Key &, std::lock_guard<std::mutex> & /*cache_lock*/) = 0;
+
     virtual void set(const Key & key, const MappedPtr & mapped, std::lock_guard<std::mutex> & /* cache_lock */) = 0;
 
+    virtual void remove(const Key & key, std::lock_guard<std::mutex> & /* cache_lock */) = 0;
+
+    virtual void reset(std::lock_guard<std::mutex> & /* cache_lock */) = 0;
     virtual std::vector<KeyMapped> dump() const = 0;
 
     virtual ~ICachePolicy() = default;
