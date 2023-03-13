@@ -156,7 +156,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if constexpr (has_static_member_function_getReturnType<Impl<DummyJSONParser>, DataTypePtr(const char *, const ColumnsWithTypeAndName &, const bool &)>::value) 
+        if constexpr (has_static_member_function_getReturnType<Impl<DummyJSONParser>, DataTypePtr(const char *, const ColumnsWithTypeAndName &, const bool &)>::value)
         {
             return Impl<DummyJSONParser>::getReturnType(Name::name, arguments, getContext()->getSettingsRef().function_return_type_allow_nullable);
         }
