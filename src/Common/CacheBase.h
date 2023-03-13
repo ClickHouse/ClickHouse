@@ -82,7 +82,17 @@ public:
             ++hits;
         else
             ++misses;
+        return res;
+    }
 
+    std::optional<KeyMapped> getWithKey(const Key & key)
+    {
+        std::lock_guard lock(mutex);
+        auto res = cache_policy->getWithKey(key, lock);
+        if (res.has_value())
+            ++hits;
+        else
+            ++misses;
         return res;
     }
 

@@ -84,16 +84,12 @@ public:
     {
         auto it = cells.find(key);
         if (it == cells.end())
-        {
-            return MappedPtr();
-        }
+            return {};
 
         Cell & cell = it->second;
 
         if (cell.is_protected)
-        {
             protected_queue.splice(protected_queue.end(), protected_queue, cell.queue_iterator);
-        }
         else
         {
             cell.is_protected = true;
@@ -103,6 +99,27 @@ public:
         }
 
         return cell.value;
+    }
+
+    std::optional<KeyMapped> getWithKey(const Key & key, std::lock_guard<std::mutex> & /*cache_lock*/) override
+    {
+        auto it = cells.find(key);
+        if (it == cells.end())
+            return std::nullopt;
+
+        Cell & cell = it->second;
+
+        if (cell.is_protected)
+            protected_queue.splice(protected_queue.end(), protected_queue, cell.queue_iterator);
+        else
+        {
+            cell.is_protected = true;
+            current_protected_size += cell.size;
+            protected_queue.splice(protected_queue.end(), probationary_queue, cell.queue_iterator);
+            removeOverflow(protected_queue, max_protected_size, current_protected_size, /*is_protected=*/true);
+        }
+
+        return std::make_optional<KeyMapped>({it->first, cell.value});
     }
 
     void set(const Key & key, const MappedPtr & mapped, std::lock_guard<std::mutex> & /* cache_lock */) override
