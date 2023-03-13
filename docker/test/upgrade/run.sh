@@ -60,6 +60,13 @@ install_packages previous_release_package_folder
 export USE_S3_STORAGE_FOR_MERGE_TREE=1
 # Previous version may not be ready for fault injections
 export ZOOKEEPER_FAULT_INJECTION=0
+
+# force_sync=false doesn't work correctly on some older versions
+sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
+  | sed "s|<force_sync>false</force_sync>|<force_sync>true</force_sync>|" \
+  > /etc/clickhouse-server/config.d/keeper_port.xml.tmp
+sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
+
 configure
 
 # But we still need default disk because some tables loaded only into it
@@ -161,7 +168,9 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Authentication failed" \
            -e "Cannot flush" \
            -e "Container already exists" \
-    /var/log/clickhouse-server/clickhouse-server.upgrade.log | zgrep -Fa "<Error>" > /test_output/upgrade_error_messages.txt \
+    clickhouse-server.upgrade.log \
+    | grep -av -e "_repl_01111_.*Mapping for table with UUID" \
+    | zgrep -Fa "<Error>" > /test_output/upgrade_error_messages.txt \
     && echo -e "Error message in clickhouse-server.log (see upgrade_error_messages.txt)$FAIL$(head_escaped /test_output/upgrade_error_messages.txt)" \
         >> /test_output/test_results.tsv \
     || echo -e "No Error messages after server upgrade$OK" >> /test_output/test_results.tsv

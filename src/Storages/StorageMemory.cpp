@@ -17,6 +17,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/QueryPlan/ISourceStep.h>
 #include <Parsers/ASTCreateQuery.h>
 
 #include <Common/FileChecker.h>
@@ -192,6 +193,83 @@ private:
 };
 
 
+class ReadFromMemoryStorageStep final : public ISourceStep
+{
+public:
+    explicit ReadFromMemoryStorageStep(Pipe pipe_) :
+        ISourceStep(DataStream{.header = pipe_.getHeader()}),
+        pipe(std::move(pipe_))
+    {
+    }
+
+    ReadFromMemoryStorageStep() = delete;
+    ReadFromMemoryStorageStep(const ReadFromMemoryStorageStep &) = delete;
+    ReadFromMemoryStorageStep & operator=(const ReadFromMemoryStorageStep &) = delete;
+
+    ReadFromMemoryStorageStep(ReadFromMemoryStorageStep &&) = default;
+    ReadFromMemoryStorageStep & operator=(ReadFromMemoryStorageStep &&) = default;
+
+    String getName() const override { return name; }
+
+    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
+    {
+        // use move - make sure that the call will only be made once.
+        pipeline.init(std::move(pipe));
+    }
+
+    static Pipe makePipe(const Names & columns_to_read_,
+                         const StorageSnapshotPtr & storage_snapshot_,
+                         size_t num_streams_,
+                         const bool delay_read_for_global_subqueries_)
+    {
+        storage_snapshot_->check(columns_to_read_);
+
+        const auto & snapshot_data = assert_cast<const StorageMemory::SnapshotData &>(*storage_snapshot_->data);
+        auto current_data = snapshot_data.blocks;
+
+        if (delay_read_for_global_subqueries_)
+        {
+            /// Note: for global subquery we use single source.
+            /// Mainly, the reason is that at this point table is empty,
+            /// and we don't know the number of blocks are going to be inserted into it.
+            ///
+            /// It may seem to be not optimal, but actually data from such table is used to fill
+            /// set for IN or hash table for JOIN, which can't be done concurrently.
+            /// Since no other manipulation with data is done, multiple sources shouldn't give any profit.
+
+            return Pipe(std::make_shared<MemorySource>(
+                columns_to_read_,
+                storage_snapshot_,
+                nullptr /* data */,
+                nullptr /* parallel execution index */,
+                [current_data](std::shared_ptr<const Blocks> & data_to_initialize)
+                {
+                    data_to_initialize = current_data;
+                }));
+        }
+
+        size_t size = current_data->size();
+
+        if (num_streams_ > size)
+            num_streams_ = size;
+
+        Pipes pipes;
+
+        auto parallel_execution_index = std::make_shared<std::atomic<size_t>>(0);
+
+        for (size_t stream = 0; stream < num_streams_; ++stream)
+        {
+            pipes.emplace_back(std::make_shared<MemorySource>(columns_to_read_, storage_snapshot_, current_data, parallel_execution_index));
+        }
+        return Pipe::unitePipes(std::move(pipes));
+    }
+
+private:
+    static constexpr auto name = "ReadFromMemoryStorage";
+    Pipe pipe;
+};
+
+
 StorageMemory::StorageMemory(
     const StorageID & table_id_,
     ColumnsDescription columns_description_,
@@ -233,47 +311,29 @@ Pipe StorageMemory::read(
     size_t /*max_block_size*/,
     size_t num_streams)
 {
-    storage_snapshot->check(column_names);
+    return ReadFromMemoryStorageStep::makePipe(column_names, storage_snapshot, num_streams, delay_read_for_global_subqueries);
+}
 
-    const auto & snapshot_data = assert_cast<const SnapshotData &>(*storage_snapshot->data);
-    auto current_data = snapshot_data.blocks;
-
-    if (delay_read_for_global_subqueries)
+void StorageMemory::read(
+    QueryPlan & query_plan,
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & query_info,
+    ContextPtr context,
+    QueryProcessingStage::Enum processed_stage,
+    size_t max_block_size,
+    size_t num_streams)
+{
+    // @TODO it looks like IStorage::readFromPipe. different only step's type.
+    auto pipe = read(column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+    if (pipe.empty())
     {
-        /// Note: for global subquery we use single source.
-        /// Mainly, the reason is that at this point table is empty,
-        /// and we don't know the number of blocks are going to be inserted into it.
-        ///
-        /// It may seem to be not optimal, but actually data from such table is used to fill
-        /// set for IN or hash table for JOIN, which can't be done concurrently.
-        /// Since no other manipulation with data is done, multiple sources shouldn't give any profit.
-
-        return Pipe(std::make_shared<MemorySource>(
-            column_names,
-            storage_snapshot,
-            nullptr /* data */,
-            nullptr /* parallel execution index */,
-            [current_data](std::shared_ptr<const Blocks> & data_to_initialize)
-            {
-                data_to_initialize = current_data;
-            }));
+        auto header = storage_snapshot->getSampleBlockForColumns(column_names);
+        InterpreterSelectQuery::addEmptySourceToQueryPlan(query_plan, header, query_info, context);
+        return;
     }
-
-    size_t size = current_data->size();
-
-    if (num_streams > size)
-        num_streams = size;
-
-    Pipes pipes;
-
-    auto parallel_execution_index = std::make_shared<std::atomic<size_t>>(0);
-
-    for (size_t stream = 0; stream < num_streams; ++stream)
-    {
-        pipes.emplace_back(std::make_shared<MemorySource>(column_names, storage_snapshot, current_data, parallel_execution_index));
-    }
-
-    return Pipe::unitePipes(std::move(pipes));
+    auto read_step = std::make_unique<ReadFromMemoryStorageStep>(std::move(pipe));
+    query_plan.addStep(std::move(read_step));
 }
 
 
