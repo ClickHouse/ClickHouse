@@ -643,7 +643,6 @@ void TCPHandler::extractConnectionSettingsFromContext(const ContextPtr & context
     interactive_delay = settings.interactive_delay;
     sleep_in_send_tables_status = settings.sleep_in_send_tables_status_ms;
     unknown_packet_in_send_data = settings.unknown_packet_in_send_data;
-    sleep_in_receive_cancel = settings.sleep_in_receive_cancel_ms;
     sleep_after_receiving_query = settings.sleep_after_receiving_query_ms;
 }
 
@@ -1318,19 +1317,9 @@ bool TCPHandler::receivePacket()
             return false;
 
         case Protocol::Client::Cancel:
-        {
-            /// For testing connection collector.
-            if (unlikely(sleep_in_receive_cancel.totalMilliseconds()))
-            {
-                std::chrono::milliseconds ms(sleep_in_receive_cancel.totalMilliseconds());
-                std::this_thread::sleep_for(ms);
-            }
-
             LOG_INFO(log, "Received 'Cancel' packet from the client, canceling the query");
             state.is_cancelled = true;
-
             return false;
-        }
 
         case Protocol::Client::Hello:
             receiveUnexpectedHello();
@@ -1372,12 +1361,6 @@ String TCPHandler::receiveReadTaskResponseAssumeLocked()
         {
             LOG_INFO(log, "Received 'Cancel' packet from the client, canceling the read task");
             state.is_cancelled = true;
-            /// For testing connection collector.
-            if (unlikely(sleep_in_receive_cancel.totalMilliseconds()))
-            {
-                std::chrono::milliseconds ms(sleep_in_receive_cancel.totalMilliseconds());
-                std::this_thread::sleep_for(ms);
-            }
             return {};
         }
         else
@@ -1406,12 +1389,6 @@ std::optional<ParallelReadResponse> TCPHandler::receivePartitionMergeTreeReadTas
         {
             LOG_INFO(log, "Received 'Cancel' packet from the client, canceling the MergeTree read task");
             state.is_cancelled = true;
-            /// For testing connection collector.
-            if (unlikely(sleep_in_receive_cancel.totalMilliseconds()))
-            {
-                std::chrono::milliseconds ms(sleep_in_receive_cancel.totalMilliseconds());
-                std::this_thread::sleep_for(ms);
-            }
             return std::nullopt;
         }
         else
@@ -1822,15 +1799,6 @@ bool TCPHandler::isQueryCancelled()
                     throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet Cancel received from client");
                 LOG_INFO(log, "Query was cancelled.");
                 state.is_cancelled = true;
-                /// For testing connection collector.
-                {
-                    if (unlikely(sleep_in_receive_cancel.totalMilliseconds()))
-                    {
-                        std::chrono::milliseconds ms(sleep_in_receive_cancel.totalMilliseconds());
-                        std::this_thread::sleep_for(ms);
-                    }
-                }
-
                 return true;
 
             default:
