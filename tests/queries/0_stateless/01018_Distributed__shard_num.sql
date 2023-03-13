@@ -2,7 +2,6 @@
 
 -- make the order static
 SET max_threads = 1;
-SET allow_experimental_analyzer = 1;
 
 DROP TABLE IF EXISTS mem1;
 DROP TABLE IF EXISTS mem2;
