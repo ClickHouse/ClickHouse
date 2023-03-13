@@ -128,6 +128,9 @@ static void insertUnsignedInteger(IColumn & column, const DataTypePtr & column_t
         case TypeIndex::UInt64:
             assert_cast<ColumnUInt64 &>(column).insertValue(value);
             break;
+        case TypeIndex::IPv4:
+            assert_cast<ColumnIPv4 &>(column).insertValue(IPv4(static_cast<UInt32>(value)));
+            break;
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Column type is not an unsigned integer.");
     }
