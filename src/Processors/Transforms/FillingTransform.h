@@ -52,4 +52,17 @@ private:
     bool should_insert_first = false;
 };
 
+
+class FillingNoopTransform : public ISimpleTransform
+{
+public:
+    FillingNoopTransform(const Block & header, const SortDescription & sort_description_)
+        : ISimpleTransform(header, FillingTransform::transformHeader(header, sort_description_), true)
+    {
+    }
+
+    void transform(Chunk &) override {}
+    String getName() const override { return "FillingNoopTransform"; }
+};
+
 }
