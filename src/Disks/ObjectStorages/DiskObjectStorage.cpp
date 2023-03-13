@@ -577,6 +577,13 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
     return result;
 }
 
+void DiskObjectStorage::writeFileUsingNativeCopy(const String & path, WriteMode mode, const IParamsForNativeCopyToDisk & params)
+{
+    LOG_TEST(log, "Write file: {}", path);
+    auto transaction = createObjectStorageTransaction();
+    return transaction->writeFileUsingNativeCopy(path, mode, params);
+}
+
 void DiskObjectStorage::applyNewSettings(
     const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String &, const DisksMap &)
 {

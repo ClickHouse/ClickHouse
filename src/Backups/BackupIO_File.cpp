@@ -3,13 +3,15 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/copyData.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/logger_useful.h>
+
 
 namespace fs = std::filesystem;
 
 
 namespace DB
 {
-BackupReaderFile::BackupReaderFile(const String & path_) : path(path_)
+BackupReaderFile::BackupReaderFile(const String & path_) : path(path_), log(&Poco::Logger::get("BackupReaderFile"))
 {
 }
 
@@ -29,6 +31,19 @@ std::unique_ptr<SeekableReadBuffer> BackupReaderFile::readFile(const String & fi
 {
     return createReadBufferFromFileBase(path / file_name, {});
 }
+
+bool BackupReaderFile::supportNativeCopy(DataSourceDescription destination_data_source_description, WriteMode mode) const
+{
+    return (destination_data_source_description == getDataSourceDescription()) && (mode == WriteMode::Rewrite);
+}
+
+void BackupReaderFile::copyFileToDiskNative(const String & file_name, size_t, DiskPtr destination_disk, const String & destination_path, WriteMode)
+{
+    std::string abs_source_path = path / file_name;
+    std::string abs_destination_path = fullPath(destination_disk, destination_path);
+    fs::copy(abs_source_path, abs_destination_path, fs::copy_options::overwrite_existing);
+}
+
 
 BackupWriterFile::BackupWriterFile(const String & path_) : path(path_)
 {

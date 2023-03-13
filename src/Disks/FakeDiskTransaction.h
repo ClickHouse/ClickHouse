@@ -68,6 +68,11 @@ public:
         return disk.writeFile(path, buf_size, mode, settings);
     }
 
+    void writeFileUsingNativeCopy(const String & path, WriteMode mode, const IParamsForNativeCopyToDisk & params) override
+    {
+        return disk.writeFileUsingNativeCopy(path, mode, params);
+    }
+
     void removeFile(const std::string & path) override
     {
         disk.removeFile(path);

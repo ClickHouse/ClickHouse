@@ -98,6 +98,15 @@ public:
 using SyncGuardPtr = std::unique_ptr<ISyncGuard>;
 
 /**
+ * The parameters for IDisk::writeFileUsingNativeCopy().
+ */
+class IParamsForNativeCopyToDisk
+{
+public:
+    virtual ~IParamsForNativeCopyToDisk() = default;
+};
+
+/**
  * A unit of storage persisting data and metadata.
  * Abstract underlying storage technology.
  * Responsible for:
@@ -208,6 +217,9 @@ public:
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         WriteMode mode = WriteMode::Rewrite,
         const WriteSettings & settings = {}) = 0;
+
+    /// Write a file using native copy, if supported.
+    virtual void writeFileUsingNativeCopy(const String & path, WriteMode mode, const IParamsForNativeCopyToDisk & params);
 
     /// Remove file. Throws exception if file doesn't exists or it's a directory.
     /// Return whether file was finally removed. (For remote disks it is not always removed).

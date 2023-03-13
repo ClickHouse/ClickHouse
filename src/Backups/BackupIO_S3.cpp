@@ -2,6 +2,7 @@
 
 #if USE_AWS_S3
 #include <Common/quoteString.h>
+#include <Disks/ObjectStorages/S3/S3ParamsForNativeCopyToDisk.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
 #include <Interpreters/Context.h>
 #include <IO/BackupsIOThreadPool.h>
@@ -96,6 +97,7 @@ BackupReaderS3::BackupReaderS3(
     , client(makeS3Client(s3_uri_, access_key_id_, secret_access_key_, context_))
     , read_settings(context_->getReadSettings())
     , request_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString()).request_settings)
+    , log(&Poco::Logger::get("BackupReaderS3"))
 {
     request_settings.max_single_read_retries = context_->getSettingsRef().s3_max_single_read_retries; // FIXME: Avoid taking value for endpoint
 }
@@ -125,6 +127,22 @@ std::unique_ptr<SeekableReadBuffer> BackupReaderS3::readFile(const String & file
 {
     return std::make_unique<ReadBufferFromS3>(
         client, s3_uri.bucket, fs::path(s3_uri.key) / file_name, s3_uri.version_id, request_settings, read_settings);
+}
+
+bool BackupReaderS3::supportNativeCopy(DataSourceDescription destination_data_source_description, WriteMode) const
+{
+    return destination_data_source_description == getDataSourceDescription();
+}
+
+void BackupReaderS3::copyFileToDiskNative(const String & file_name, size_t size, DiskPtr destination_disk, const String & destination_path, WriteMode mode)
+{
+    S3ParamsForNativeCopyToDisk params;
+    params.src_bucket = s3_uri.bucket;
+    params.src_key = fs::path(s3_uri.key) / file_name;
+    params.src_size = size;
+    params.request_settings = request_settings;
+    params.scheduler = threadPoolCallbackRunner<void>(BackupsIOThreadPool::get(), "BackupReaderS3");
+    destination_disk->writeFileUsingNativeCopy(destination_path, mode, params);
 }
 
 

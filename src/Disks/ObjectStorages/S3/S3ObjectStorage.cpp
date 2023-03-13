@@ -1,7 +1,4 @@
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
-#include <Common/ProfileEvents.h>
-#include <Interpreters/Context.h>
-
 
 #if USE_AWS_S3
 
@@ -18,10 +15,13 @@
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/S3/copyS3File.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
+#include <Disks/ObjectStorages/S3/S3ParamsForNativeCopyToDisk.h>
 #include <Disks/ObjectStorages/S3/diskSettings.h>
 
 #include <Common/getRandomASCIIString.h>
+#include <Common/ProfileEvents.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/MultiVersion.h>
@@ -202,6 +202,41 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
 
     return std::make_unique<WriteIndirectBufferFromRemoteFS>(
         std::move(s3_buffer), std::move(finalize_callback), object.absolute_path);
+}
+
+void S3ObjectStorage::writeObjectUsingNativeCopy(
+    const StoredObject & object,
+    WriteMode mode,
+    const IParamsForNativeCopyToDisk & params,
+    std::optional<ObjectAttributes> attributes,
+    FinalizeCallback && finalize_callback)
+{
+    if (mode != WriteMode::Rewrite)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 doesn't support append to files");
+
+    const auto * s3_params = typeid_cast<const S3ParamsForNativeCopyToDisk *>(&params);
+    if (!s3_params)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "S3ObjectStorage::writeObjectUsingNativeCopy() doesn't support params of type {}",
+            typeid(params).name());
+
+    auto client_ptr = client.get();
+    auto settings_ptr = s3_settings.get();
+    auto scheduler = s3_params->scheduler ? *s3_params->scheduler : threadPoolCallbackRunner<void>(getThreadPoolWriter(), "S3ObjStor_copy");
+    const auto & request_settings = s3_params->request_settings ? *s3_params->request_settings : settings_ptr->request_settings;
+
+    const String & src_bucket = s3_params->src_bucket;
+    const String & src_key = s3_params->src_key;
+    size_t src_size = s3_params->src_size;
+
+    if (src_size == static_cast<size_t>(-1))
+        src_size = S3::getObjectSize(*client_ptr, src_bucket, src_key, {}, request_settings);
+
+    copyS3File(client_ptr, src_bucket, src_key, 0, src_size, bucket, object.absolute_path,
+               request_settings, attributes, scheduler, /* for_disk_s3= */ true);
+
+    (std::move(finalize_callback))(src_size);
 }
 
 void S3ObjectStorage::findAllFiles(const std::string & path, RelativePathsWithSize & children, int max_keys) const

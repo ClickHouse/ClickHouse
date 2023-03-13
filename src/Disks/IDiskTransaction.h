@@ -68,6 +68,9 @@ public:
         const WriteSettings & settings = {},
         bool autocommit = true) = 0;
 
+    /// Write a file using native copy, if supported.
+    virtual void writeFileUsingNativeCopy(const String & path, WriteMode mode, const IParamsForNativeCopyToDisk & params) = 0;
+
     /// Remove file. Throws exception if file doesn't exists or it's a directory.
     virtual void removeFile(const std::string & path) = 0;
 
