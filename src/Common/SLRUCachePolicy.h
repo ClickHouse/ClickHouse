@@ -174,7 +174,7 @@ public:
         return res;
     }
 
-protected:
+private:
     using SLRUQueue = std::list<Key>;
     using SLRUQueueIterator = typename SLRUQueue::iterator;
 

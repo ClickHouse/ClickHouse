@@ -1,11 +1,18 @@
 #pragma once
 
+#include <Common/Exception.h>
+
 #include <functional>
 #include <memory>
 #include <mutex>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 template <typename T>
 struct EqualWeightFunction
@@ -34,6 +41,9 @@ public:
     virtual size_t weight(std::lock_guard<std::mutex> & /* cache_lock */) const = 0;
     virtual size_t count(std::lock_guard<std::mutex> & /* cache_lock */) const = 0;
     virtual size_t maxSize(std::lock_guard<std::mutex>& /* cache_lock */) const = 0;
+
+    virtual void setMaxCount(size_t /*max_count*/, std::lock_guard<std::mutex> & /* cache_lock */) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for cache policy"); }
+    virtual void setMaxSize(size_t /*max_size_in_bytes*/, std::lock_guard<std::mutex> & /* cache_lock */) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for cache policy"); }
 
     /// HashFunction usually hashes the entire key and the found key will be equal the provided key. In such cases, use get(). It is also
     /// possible to store other, non-hashed data in the key. In that case, the found key is potentially different from the provided key.
