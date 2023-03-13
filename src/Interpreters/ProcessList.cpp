@@ -362,7 +362,11 @@ QueryStatus::QueryStatus(
 
 QueryStatus::~QueryStatus()
 {
-    assert(executors.empty());
+#if !defined(NDEBUG)
+    /// Check that all executors were invalidated.
+    for (const auto & e : executors)
+        assert(!e->executor);
+#endif
 
     if (auto * memory_tracker = getMemoryTracker())
     {
@@ -373,6 +377,19 @@ QueryStatus::~QueryStatus()
     }
 }
 
+void QueryStatus::ExecutorHolder::cancel()
+{
+    std::lock_guard lock(mutex);
+    if (executor)
+        executor->cancel();
+}
+
+void QueryStatus::ExecutorHolder::remove()
+{
+    std::lock_guard lock(mutex);
+    executor = nullptr;
+}
+
 CancellationCode QueryStatus::cancelQuery(bool)
 {
     if (is_killed.load())
@@ -380,8 +397,25 @@ CancellationCode QueryStatus::cancelQuery(bool)
 
     is_killed.store(true);
 
-    std::lock_guard lock(executors_mutex);
-    for (auto * e : executors)
+    std::vector<ExecutorHolderPtr> executors_snapshot;
+
+    {
+        /// Create a snapshot of executors under a mutex.
+        std::lock_guard lock(executors_mutex);
+        executors_snapshot = executors;
+    }
+
+    /// We should call cancel() for each executor with unlocked executors_mutex, because
+    /// cancel() can try to lock some internal mutex that is already locked by query executing
+    /// thread, and query executing thread can call removePipelineExecutor and lock executors_mutex,
+    /// which will lead to deadlock.
+    /// Note that the size and the content of executors cannot be changed while
+    /// executors_mutex is unlocked, because:
+    /// 1) We don't allow adding new executors while cancelling query in addPipelineExecutor
+    /// 2) We don't actually remove executor holder from executors in removePipelineExecutor,
+    /// just mark that executor is invalid.
+    /// So, it's ok to use a snapshot created above under a mutex, it won't be any differ from actual executors.
+    for (const auto & e : executors_snapshot)
         e->cancel();
 
     return CancellationCode::CancelSent;
@@ -396,15 +430,17 @@ void QueryStatus::addPipelineExecutor(PipelineExecutor * e)
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 
     std::lock_guard lock(executors_mutex);
-    assert(std::find(executors.begin(), executors.end(), e) == executors.end());
-    executors.push_back(e);
+    assert(std::find_if(executors.begin(), executors.end(), [e](const ExecutorHolderPtr & x){ return x->executor == e; }) == executors.end());
+    executors.push_back(std::make_shared<ExecutorHolder>(e));
 }
 
 void QueryStatus::removePipelineExecutor(PipelineExecutor * e)
 {
     std::lock_guard lock(executors_mutex);
-    assert(std::find(executors.begin(), executors.end(), e) != executors.end());
-    std::erase_if(executors, [e](PipelineExecutor * x) { return x == e; });
+    auto it = std::find_if(executors.begin(), executors.end(), [e](const ExecutorHolderPtr & x){ return x->executor == e; });
+    assert(it != executors.end());
+    /// Invalidate executor pointer inside holder, but don't remove holder from the executors (to avoid race with cancelQuery)
+    (*it)->remove();
 }
 
 bool QueryStatus::checkTimeLimit()
