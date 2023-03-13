@@ -52,7 +52,6 @@ private:
     bool should_insert_first = false;
 };
 
-
 class FillingNoopTransform : public ISimpleTransform
 {
 public:
