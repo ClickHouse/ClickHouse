@@ -22,9 +22,8 @@ template <typename Key, typename Mapped, typename HashFunction = std::hash<Key>,
 class SLRUCachePolicy : public ICachePolicy<Key, Mapped, HashFunction, WeightFunction>
 {
 public:
-    using MappedPtr = std::shared_ptr<Mapped>;
-
     using Base = ICachePolicy<Key, Mapped, HashFunction, WeightFunction>;
+    using typename Base::MappedPtr;
     using typename Base::OnWeightLossFunction;
 
     /** Initialize SLRUCachePolicy with max_size_in_bytes and max_protected_size.
