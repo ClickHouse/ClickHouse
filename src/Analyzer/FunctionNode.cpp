@@ -2,11 +2,12 @@
 
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
-#include <DataTypes/IDataType.h>
-#include <Analyzer/ConstantNode.h>
 
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+
+#include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeSet.h>
 
 #include <Parsers/ASTFunction.h>
 
@@ -14,6 +15,8 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
+#include <Analyzer/Utils.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/IdentifierNode.h>
 
 namespace DB
@@ -44,17 +47,29 @@ const DataTypes & FunctionNode::getArgumentTypes() const
 ColumnsWithTypeAndName FunctionNode::getArgumentColumns() const
 {
     const auto & arguments = getArguments().getNodes();
+    size_t arguments_size = arguments.size();
+
     ColumnsWithTypeAndName argument_columns;
     argument_columns.reserve(arguments.size());
 
-    for (const auto & arg : arguments)
+    for (size_t i = 0; i < arguments_size; ++i)
     {
-        ColumnWithTypeAndName argument;
-        argument.type = arg->getResultType();
-        if (auto * constant = arg->as<ConstantNode>())
-            argument.column = argument.type->createColumnConst(1, constant->getValue());
-        argument_columns.push_back(std::move(argument));
+        const auto & argument = arguments[i];
+
+        ColumnWithTypeAndName argument_column;
+
+        if (isNameOfInFunction(function_name) && i == 1)
+            argument_column.type = std::make_shared<DataTypeSet>();
+        else
+            argument_column.type = argument->getResultType();
+
+        auto * constant = argument->as<ConstantNode>();
+        if (constant && !isNotCreatable(argument_column.type))
+            argument_column.column = argument_column.type->createColumnConst(1, constant->getValue());
+
+        argument_columns.push_back(std::move(argument_column));
     }
+
     return argument_columns;
 }
 
