@@ -7,8 +7,6 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/HashUtils.h>
 
-#include <DataTypes/DataTypeString.h>
-
 namespace DB
 {
 
@@ -99,6 +97,9 @@ private:
                 return;
             }
         }
+
+        if (and_operands.size() == function_node.getArguments().getNodes().size())
+            return;
 
         if (and_operands.size() == 1)
         {
@@ -206,6 +207,9 @@ private:
 
             or_operands.push_back(std::move(in_function));
         }
+
+        if (or_operands.size() == function_node.getArguments().getNodes().size())
+            return;
 
         if (or_operands.size() == 1)
         {
