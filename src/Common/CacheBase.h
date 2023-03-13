@@ -37,6 +37,7 @@ public:
     using Key = typename CachePolicy::Key;
     using Mapped = typename CachePolicy::Mapped;
     using MappedPtr = typename CachePolicy::MappedPtr;
+    using KeyMapped = typename CachePolicy::KeyMapped;
 
     /// Use this ctor if you don't care about the internal cache policy.
     explicit CacheBase(size_t max_size_in_bytes, size_t max_entries = 0, double size_ratio = 0.5)
@@ -158,6 +159,12 @@ public:
         std::lock_guard lock(mutex);
         out_hits = hits;
         out_misses = misses;
+    }
+
+    std::vector<KeyMapped> dump() const
+    {
+        std::lock_guard lock(mutex);
+        return cache_policy->dump();
     }
 
     void reset()

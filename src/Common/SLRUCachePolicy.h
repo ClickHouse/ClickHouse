@@ -24,6 +24,7 @@ class SLRUCachePolicy : public ICachePolicy<Key, Mapped, HashFunction, WeightFun
 public:
     using Base = ICachePolicy<Key, Mapped, HashFunction, WeightFunction>;
     using typename Base::MappedPtr;
+    using typename Base::KeyMapped;
     using typename Base::OnWeightLossFunction;
 
     /** Initialize SLRUCachePolicy with max_size_in_bytes and max_protected_size.
@@ -146,6 +147,14 @@ public:
 
         removeOverflow(protected_queue, max_protected_size, current_protected_size, /*is_protected=*/true);
         removeOverflow(probationary_queue, max_size_in_bytes, current_size_in_bytes, /*is_protected=*/false);
+    }
+
+    std::vector<KeyMapped> dump() const override
+    {
+        std::vector<KeyMapped> res;
+        for (const auto & [key, cell] : cells)
+            res.push_back({key, cell.value});
+        return res;
     }
 
 protected:

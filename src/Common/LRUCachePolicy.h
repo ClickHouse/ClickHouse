@@ -22,6 +22,7 @@ class LRUCachePolicy : public ICachePolicy<Key, Mapped, HashFunction, WeightFunc
 public:
     using Base = ICachePolicy<Key, Mapped, HashFunction, WeightFunction>;
     using typename Base::MappedPtr;
+    using typename Base::KeyMapped;
     using typename Base::OnWeightLossFunction;
 
     /** Initialize LRUCachePolicy with max_size_in_bytes and max_entries.
@@ -114,6 +115,14 @@ public:
         current_size_in_bytes += cell.size;
 
         removeOverflow();
+    }
+
+    std::vector<KeyMapped> dump() const override
+    {
+        std::vector<KeyMapped> res;
+        for (const auto & [key, cell] : cells)
+            res.push_back({key, cell.value});
+        return res;
     }
 
 protected:
