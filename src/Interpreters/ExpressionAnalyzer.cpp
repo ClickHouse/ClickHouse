@@ -1089,7 +1089,6 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
 
         if (MergeJoin::isSupported(analyzed_join))
             return std::make_shared<JoinSwitcher>(analyzed_join, right_sample_block);
-        return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
     }
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,

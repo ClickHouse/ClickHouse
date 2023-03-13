@@ -1,5 +1,5 @@
 #pragma once
-#include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Processors/QueryPlan/ISourceStep.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Storages/SelectQueryInfo.h>
@@ -29,7 +29,7 @@ using MergeTreeDataSelectAnalysisResultPtr = std::shared_ptr<MergeTreeDataSelect
 
 /// This step is created to read from MergeTree* table.
 /// For now, it takes a list of parts and creates source from it.
-class ReadFromMergeTree final : public SourceStepWithFilter
+class ReadFromMergeTree final : public ISourceStep
 {
 public:
 
@@ -121,6 +121,18 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeIndexes(JSONBuilder::JSONMap & map) const override;
 
+    void addFilter(ActionsDAGPtr expression, std::string column_name)
+    {
+        added_filter_dags.push_back(expression);
+        added_filter_nodes.nodes.push_back(&expression->findInOutputs(column_name));
+    }
+
+    void addFilterNodes(const ActionDAGNodes & filter_nodes)
+    {
+        for (const auto & node : filter_nodes.nodes)
+            added_filter_nodes.nodes.push_back(node);
+    }
+
     StorageID getStorageID() const { return data.getStorageID(); }
     UInt64 getSelectedParts() const { return selected_parts; }
     UInt64 getSelectedRows() const { return selected_rows; }
@@ -190,6 +202,9 @@ private:
     SelectQueryInfo query_info;
     PrewhereInfoPtr prewhere_info;
     ExpressionActionsSettings actions_settings;
+
+    std::vector<ActionsDAGPtr> added_filter_dags;
+    ActionDAGNodes added_filter_nodes;
 
     StorageSnapshotPtr storage_snapshot;
     StorageMetadataPtr metadata_for_reading;

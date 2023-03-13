@@ -809,14 +809,6 @@ bool BSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
     return true;
 }
 
-void BSONEachRowRowInputFormat::resetParser()
-{
-    IRowInputFormat::resetParser();
-    read_columns.clear();
-    seen_columns.clear();
-    prev_positions.clear();
-}
-
 BSONEachRowSchemaReader::BSONEachRowSchemaReader(ReadBuffer & in_, const FormatSettings & settings_)
     : IRowWithNamesSchemaReader(in_, settings_)
 {

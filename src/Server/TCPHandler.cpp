@@ -278,11 +278,7 @@ void TCPHandler::runImpl()
                 query_context->getSettingsRef(),
                 query_context->getOpenTelemetrySpanLog());
 
-            query_scope.emplace(query_context, /* fatal_error_callback */ [this]
-            {
-                std::lock_guard lock(fatal_error_mutex);
-                sendLogs();
-            });
+            query_scope.emplace(query_context);
 
             /// If query received, then settings in query_context has been updated.
             /// So it's better to update the connection settings for flexibility.
@@ -303,6 +299,11 @@ void TCPHandler::runImpl()
                 state.logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());
                 state.logs_queue->setSourceRegexp(query_context->getSettingsRef().send_logs_source_regexp);
                 CurrentThread::attachInternalTextLogsQueue(state.logs_queue, client_logs_level);
+                CurrentThread::setFatalErrorCallback([this]
+                {
+                    std::lock_guard lock(fatal_error_mutex);
+                    sendLogs();
+                });
             }
             if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS)
             {
@@ -1224,7 +1225,14 @@ void TCPHandler::receiveHello()
 
     session = makeSession();
     auto & client_info = session->getClientInfo();
-    session->authenticate(user, password, getClientAddress(client_info));
+
+    /// Extract the last entry from comma separated list of forwarded_for addresses.
+    /// Only the last proxy can be trusted (if any).
+    String forwarded_address = client_info.getLastForwardedFor();
+    if (!forwarded_address.empty() && server.config().getBool("auth_use_forwarded_address", false))
+        session->authenticate(user, password, Poco::Net::SocketAddress(forwarded_address, socket().peerAddress().port()));
+    else
+        session->authenticate(user, password, socket().peerAddress());
 }
 
 void TCPHandler::receiveAddendum()
@@ -1515,16 +1523,11 @@ void TCPHandler::receiveQuery()
         /// so we should not rely on that. However, in this particular case we got client_info from other clickhouse-server, so it's ok.
         if (client_info.initial_user.empty())
         {
-            LOG_DEBUG(log, "User (no user, interserver mode) (client: {})", getClientAddress(client_info).toString());
+            LOG_DEBUG(log, "User (no user, interserver mode)");
         }
         else
         {
-            LOG_DEBUG(log, "User (initial, interserver mode): {} (client: {})", client_info.initial_user, getClientAddress(client_info).toString());
-            /// In case of inter-server mode authorization is done with the
-            /// initial address of the client, not the real address from which
-            /// the query was come, since the real address is the address of
-            /// the initiator server, while we are interested in client's
-            /// address.
+            LOG_DEBUG(log, "User (initial, interserver mode): {}", client_info.initial_user);
             session->authenticate(AlwaysAllowCredentials{client_info.initial_user}, client_info.initial_address);
         }
 #else
@@ -2008,17 +2011,6 @@ void TCPHandler::run()
         else
             throw;
     }
-}
-
-Poco::Net::SocketAddress TCPHandler::getClientAddress(const ClientInfo & client_info)
-{
-    /// Extract the last entry from comma separated list of forwarded_for addresses.
-    /// Only the last proxy can be trusted (if any).
-    String forwarded_address = client_info.getLastForwardedFor();
-    if (!forwarded_address.empty() && server.config().getBool("auth_use_forwarded_address", false))
-        return Poco::Net::SocketAddress(forwarded_address, socket().peerAddress().port());
-    else
-        return socket().peerAddress();
 }
 
 }

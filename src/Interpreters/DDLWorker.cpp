@@ -54,7 +54,6 @@ namespace ErrorCodes
     extern const int CANNOT_ASSIGN_ALTER;
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int MEMORY_LIMIT_EXCEEDED;
-    extern const int NOT_IMPLEMENTED;
 }
 
 constexpr const char * TASK_PROCESSED_OUT_REASON = "Task has been already processed";
@@ -169,11 +168,11 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
         return {};
     }
 
-    auto write_error_status = [&](const String & host_id, const ExecutionStatus & status, const String & reason)
+    auto write_error_status = [&](const String & host_id, const String & error_message, const String & reason)
     {
-        LOG_ERROR(log, "Cannot parse DDL task {}: {}. Will try to send error status: {}", entry_name, reason, status.message);
+        LOG_ERROR(log, "Cannot parse DDL task {}: {}. Will try to send error status: {}", entry_name, reason, error_message);
         createStatusDirs(entry_path, zookeeper);
-        zookeeper->tryCreate(fs::path(entry_path) / "finished" / host_id, status.serializeText(), zkutil::CreateMode::Persistent);
+        zookeeper->tryCreate(fs::path(entry_path) / "finished" / host_id, error_message, zkutil::CreateMode::Persistent);
     };
 
     try
@@ -187,7 +186,7 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
         /// We can try to create fail node using FQDN if it equal to host name in cluster config attempt will be successful.
         /// Otherwise, that node will be ignored by DDLQueryStatusSource.
         out_reason = "Incorrect task format";
-        write_error_status(host_fqdn_id, ExecutionStatus::fromCurrentException(), out_reason);
+        write_error_status(host_fqdn_id, ExecutionStatus::fromCurrentException().serializeText(), out_reason);
         return {};
     }
 
@@ -212,7 +211,7 @@ DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_r
     catch (...)
     {
         out_reason = "Cannot parse query or obtain cluster info";
-        write_error_status(task->host_id_str, ExecutionStatus::fromCurrentException(), out_reason);
+        write_error_status(task->host_id_str, ExecutionStatus::fromCurrentException().serializeText(), out_reason);
         return {};
     }
 
@@ -457,15 +456,6 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
     try
     {
         auto query_context = task.makeQueryContext(context, zookeeper);
-
-        chassert(!query_context->getCurrentTransaction());
-        if (query_context->getSettingsRef().implicit_transaction)
-        {
-            if (query_context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot begin an implicit transaction inside distributed DDL query");
-            query_context->setSetting("implicit_transaction", Field{0});
-        }
-
         if (!task.is_initial_query)
             query_scope.emplace(query_context);
         executeQuery(istr, ostr, !task.is_initial_query, query_context, {});
@@ -650,7 +640,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
             bool status_written_by_table_or_db = task.ops.empty();
             if (status_written_by_table_or_db)
             {
-                throw Exception(ErrorCodes::UNFINISHED, "Unexpected error: {}", task.execution_status.message);
+                throw Exception(ErrorCodes::UNFINISHED, "Unexpected error: {}", task.execution_status.serializeText());
             }
             else
             {

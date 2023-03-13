@@ -44,6 +44,8 @@ def test_file_path_escaping(started_cluster):
         ]
     )
 
+
+def test_file_path_escaping_atomic_db(started_cluster):
     node.query("CREATE DATABASE IF NOT EXISTS `test 2` ENGINE = Atomic")
     node.query(
         """

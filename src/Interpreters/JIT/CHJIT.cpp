@@ -352,7 +352,7 @@ CHJIT::~CHJIT() = default;
 
 CHJIT::CompiledModule CHJIT::compileModule(std::function<void (llvm::Module &)> compile_function)
 {
-    std::lock_guard lock(jit_lock);
+    std::lock_guard<std::mutex> lock(jit_lock);
 
     auto module = createModuleForCompilation();
     compile_function(*module);
@@ -426,7 +426,7 @@ CHJIT::CompiledModule CHJIT::compileModule(std::unique_ptr<llvm::Module> module)
 
 void CHJIT::deleteCompiledModule(const CHJIT::CompiledModule & module)
 {
-    std::lock_guard lock(jit_lock);
+    std::lock_guard<std::mutex> lock(jit_lock);
 
     auto module_it = module_identifier_to_memory_manager.find(module.identifier);
     if (module_it == module_identifier_to_memory_manager.end())
@@ -438,7 +438,7 @@ void CHJIT::deleteCompiledModule(const CHJIT::CompiledModule & module)
 
 void CHJIT::registerExternalSymbol(const std::string & symbol_name, void * address)
 {
-    std::lock_guard lock(jit_lock);
+    std::lock_guard<std::mutex> lock(jit_lock);
     symbol_resolver->registerSymbol(symbol_name, address);
 }
 

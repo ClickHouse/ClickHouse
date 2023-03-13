@@ -59,7 +59,7 @@ void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & o
         {
             auto name = node.function_base->getName();
             if (legacy && name == "modulo")
-                writeCString("moduloLegacy", out);
+                writeCString("moduleLegacy", out);
             else
                 writeString(name, out);
 

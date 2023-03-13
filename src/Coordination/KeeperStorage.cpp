@@ -11,7 +11,7 @@
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ZooKeeper/IKeeper.h>
-#include <base/hex.h>
+#include <Common/hex.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/LockMemoryExceptionInThread.h>
@@ -201,10 +201,9 @@ void KeeperStorage::Node::setData(String new_data)
     data = std::move(new_data);
 }
 
-void KeeperStorage::Node::addChild(StringRef child_path, bool update_size)
+void KeeperStorage::Node::addChild(StringRef child_path)
 {
-    if (update_size) [[likely]]
-        size_bytes += sizeof child_path;
+    size_bytes += sizeof child_path;
     children.insert(child_path);
 }
 
@@ -233,13 +232,6 @@ void KeeperStorage::Node::shallowCopy(const KeeperStorage::Node & other)
     seq_num = other.seq_num;
     setData(other.getData());
     cached_digest = other.cached_digest;
-}
-
-void KeeperStorage::Node::recalculateSize()
-{
-    size_bytes = sizeof(Node);
-    size_bytes += children.size() * sizeof(decltype(children)::value_type);
-    size_bytes += data.size();
 }
 
 KeeperStorage::KeeperStorage(
@@ -2413,11 +2405,6 @@ uint64_t KeeperStorage::getTotalEphemeralNodesCount() const
         ret += nodes.size();
 
     return ret;
-}
-
-void KeeperStorage::recalculateStats()
-{
-    container.recalculateDataSize();
 }
 
 

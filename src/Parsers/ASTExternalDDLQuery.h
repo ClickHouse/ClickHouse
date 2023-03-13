@@ -41,11 +41,6 @@ public:
     }
 
     QueryKind getQueryKind() const override { return QueryKind::ExternalDDL; }
-
-    void forEachPointerToChild(std::function<void(void**)> f) override
-    {
-        f(reinterpret_cast<void **>(&from));
-    }
 };
 
 }

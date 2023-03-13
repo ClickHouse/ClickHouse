@@ -132,7 +132,6 @@ public:
     NamesAndTypesList getInsertable() const; /// ordinary + ephemeral
     NamesAndTypesList getAliases() const;
     NamesAndTypesList getEphemeral() const;
-    NamesAndTypesList getWithDefaultExpression() const; // columns with default expression, for example set by `CREATE TABLE` statement
     NamesAndTypesList getAllPhysical() const; /// ordinary + materialized.
     NamesAndTypesList getAll() const; /// ordinary + materialized + aliases + ephemeral
     /// Returns .size0/.null/...

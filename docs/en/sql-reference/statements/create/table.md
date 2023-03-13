@@ -17,11 +17,10 @@ By default, tables are created only on the current server. Distributed DDL queri
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr1] [compression_codec] [TTL expr1] [COMMENT 'comment for column'],
-    name2 [type2] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr2] [compression_codec] [TTL expr2] [COMMENT 'comment for column'],
+    name1 [type1] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr1] [compression_codec] [TTL expr1],
+    name2 [type2] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr2] [compression_codec] [TTL expr2],
     ...
 ) ENGINE = engine
-  COMMENT 'comment for table'
 ```
 
 Creates a table named `table_name` in the `db` database or the current database if `db` is not set, with the structure specified in brackets and the `engine` engine.
@@ -32,8 +31,6 @@ A column description is `name type` in the simplest case. Example: `RegionID UIn
 Expressions can also be defined for default values (see below).
 
 If necessary, primary key can be specified, with one or more key expressions.
-
-Comments can be added for columns and for the table.
 
 ### With a Schema Similar to Other Table
 
@@ -110,154 +107,54 @@ If the type is not `Nullable` and if `NULL` is specified, it will be treated as 
 
 See also [data_type_default_nullable](../../../operations/settings/settings.md#data_type_default_nullable) setting.
 
-## Default Values {#default_values}
+## Default Values
 
-The column description can specify a default value expression in the form of `DEFAULT expr`, `MATERIALIZED expr`, or `ALIAS expr`. Example: `URLDomain String DEFAULT domain(URL)`.
+The column description can specify an expression for a default value, in one of the following ways: `DEFAULT expr`, `MATERIALIZED expr`, `ALIAS expr`.
 
-The expression `expr` is optional. If it is omitted, the column type must be specified explicitly and the default value will be `0` for numeric columns, `''` (the empty string) for string columns, `[]` (the empty array) for array columns, `1970-01-01` for date columns, or `NULL` for nullable columns.
+Example: `URLDomain String DEFAULT domain(URL)`.
 
-The column type of a default value column can be omitted in which case it is infered from `expr`'s type. For example the type of column `EventDate DEFAULT toDate(EventTime)` will be date.
+If an expression for the default value is not defined, the default values will be set to zeros for numbers, empty strings for strings, empty arrays for arrays, and `1970-01-01` for dates or zero unix timestamp for DateTime, NULL for Nullable.
 
-If both a data type and a default value expression are specified, an implicit type casting function inserted which converts the expression to the specified type. Example: `Hits UInt32 DEFAULT 0` is internally represented as `Hits UInt32 DEFAULT toUInt32(0)`.
+If the default expression is defined, the column type is optional. If there isn’t an explicitly defined type, the default expression type is used. Example: `EventDate DEFAULT toDate(EventTime)` – the ‘Date’ type will be used for the ‘EventDate’ column.
 
-A default value expression `expr` may reference arbitrary table columns and constants. ClickHouse checks that changes of the table structure do not introduce loops in the expression calculation. For INSERT, it checks that expressions are resolvable – that all columns they can be calculated from have been passed.
+If the data type and default expression are defined explicitly, this expression will be cast to the specified type using type casting functions. Example: `Hits UInt32 DEFAULT 0` means the same thing as `Hits UInt32 DEFAULT toUInt32(0)`.
+
+Default expressions may be defined as an arbitrary expression from table constants and columns. When creating and changing the table structure, it checks that expressions do not contain loops. For INSERT, it checks that expressions are resolvable – that all columns they can be calculated from have been passed.
 
 ### DEFAULT
 
 `DEFAULT expr`
 
-Normal default value. If the value of such a column is not specified in an INSERT query, it is computed from `expr`.
-
-Example:
-
-```sql
-CREATE OR REPLACE TABLE test
-(
-    id UInt64,
-    updated_at DateTime DEFAULT now(),
-    updated_at_date Date DEFAULT toDate(updated_at)
-)
-ENGINE = MergeTree
-ORDER BY id;
-
-INSERT INTO test (id) Values (1);
-
-SELECT * FROM test;
-┌─id─┬──────────updated_at─┬─updated_at_date─┐
-│  1 │ 2023-02-24 17:06:46 │      2023-02-24 │
-└────┴─────────────────────┴─────────────────┘
-```
+Normal default value. If the INSERT query does not specify the corresponding column, it will be filled in by computing the corresponding expression.
 
 ### MATERIALIZED
 
 `MATERIALIZED expr`
 
-Materialized expression. Values of such columns are always calculated, they cannot be specified in INSERT queries.
-
-Also, default value columns of this type are not included in the result of `SELECT *`. This is to preserve the invariant that the result of a `SELECT *` can always be inserted back into the table using `INSERT`. This behavior can be disabled with setting `asterisk_include_materialized_columns`.
-
-Example:
-
-```sql
-CREATE OR REPLACE TABLE test
-(
-    id UInt64,
-    updated_at DateTime MATERIALIZED now(),
-    updated_at_date Date MATERIALIZED toDate(updated_at)
-)
-ENGINE = MergeTree
-ORDER BY id;
-
-INSERT INTO test Values (1);
-
-SELECT * FROM test;
-┌─id─┐
-│  1 │
-└────┘
-
-SELECT id, updated_at, updated_at_date FROM test;
-┌─id─┬──────────updated_at─┬─updated_at_date─┐
-│  1 │ 2023-02-24 17:08:08 │      2023-02-24 │
-└────┴─────────────────────┴─────────────────┘
-
-SELECT * FROM test SETTINGS asterisk_include_materialized_columns=1;
-┌─id─┬──────────updated_at─┬─updated_at_date─┐
-│  1 │ 2023-02-24 17:08:08 │      2023-02-24 │
-└────┴─────────────────────┴─────────────────┘
-```
+Materialized expression. Such a column can’t be specified for INSERT, because it is always calculated.
+For an INSERT without a list of columns, these columns are not considered.
+In addition, this column is not substituted when using an asterisk in a SELECT query. This is to preserve the invariant that the dump obtained using `SELECT *` can be inserted back into the table using INSERT without specifying the list of columns.
 
 ### EPHEMERAL
 
 `EPHEMERAL [expr]`
 
-Ephemeral column. Columns of this type are not stored in the table and it is not possible to SELECT from them. The only purpose of ephemeral columns is to build default value expressions of other columns from them.
-
-An insert without explicitly specified columns will skip columns of this type. This is to preserve the invariant that the result of a `SELECT *` can always be inserted back into the table using `INSERT`.
-
-Example:
-
-```sql
-CREATE OR REPLACE TABLE test
-(
-    id UInt64,
-    unhexed String EPHEMERAL,
-    hexed FixedString(4) DEFAULT unhex(unhexed)
-)
-ENGINE = MergeTree
-ORDER BY id;
-
-INSERT INTO test (id, unhexed) Values (1, '5a90b714');
-
-SELECT
-    id,
-    hexed,
-    hex(hexed)
-FROM test
-FORMAT Vertical;
-
-Row 1:
-──────
-id:         1
-hexed:      Z��
-hex(hexed): 5A90B714
-```
+Ephemeral column. Such a column isn't stored in the table and cannot be SELECTed, but can be referenced in the defaults of CREATE statement. If `expr` is omitted type for column is required.
+INSERT without list of columns will skip such column, so SELECT/INSERT invariant is preserved -  the dump obtained using `SELECT *` can be inserted back into the table using INSERT without specifying the list of columns.
 
 ### ALIAS
 
 `ALIAS expr`
 
-Calculated columns (synonym). Column of this type are not stored in the table and it is not possible to INSERT values into them.
-
-When SELECT queries explicitly reference columns of this type, the value is computed at query time from `expr`. By default, `SELECT *` excludes ALIAS columns. This behavior can be disabled with setting `asteriks_include_alias_columns`.
+Synonym. Such a column isn’t stored in the table at all.
+Its values can’t be inserted in a table, and it is not substituted when using an asterisk in a SELECT query.
+It can be used in SELECTs if the alias is expanded during query parsing.
 
 When using the ALTER query to add new columns, old data for these columns is not written. Instead, when reading old data that does not have values for the new columns, expressions are computed on the fly by default. However, if running the expressions requires different columns that are not indicated in the query, these columns will additionally be read, but only for the blocks of data that need it.
 
 If you add a new column to a table but later change its default expression, the values used for old data will change (for data where values were not stored on the disk). Note that when running background merges, data for columns that are missing in one of the merging parts is written to the merged part.
 
 It is not possible to set default values for elements in nested data structures.
-
-```sql
-CREATE OR REPLACE TABLE test
-(
-    id UInt64,
-    size_bytes Int64,
-    size String Alias formatReadableSize(size_bytes)
-)
-ENGINE = MergeTree
-ORDER BY id;
-
-INSERT INTO test Values (1, 4678899);
-
-SELECT id, size_bytes, size FROM test;
-┌─id─┬─size_bytes─┬─size─────┐
-│  1 │    4678899 │ 4.46 MiB │
-└────┴────────────┴──────────┘
-
-SELECT * FROM test SETTINGS asterisk_include_alias_columns=1;
-┌─id─┬─size_bytes─┬─size─────┐
-│  1 │    4678899 │ 4.46 MiB │
-└────┴────────────┴──────────┘
-```
 
 ## Primary Key
 
@@ -269,7 +166,7 @@ You can define a [primary key](../../../engines/table-engines/mergetree-family/m
 CREATE TABLE db.table_name
 (
     name1 type1, name2 type2, ...,
-    PRIMARY KEY(expr1[, expr2,...])
+    PRIMARY KEY(expr1[, expr2,...])]
 )
 ENGINE = engine;
 ```
@@ -575,7 +472,7 @@ SELECT * FROM base.t1;
 You can add a comment to the table when you creating it.
 
 :::note
-The comment clause is supported by all table engines except [Kafka](../../../engines/table-engines/integrations/kafka.md), [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md) and [EmbeddedRocksDB](../../../engines/table-engines/integrations/embedded-rocksdb.md).
+The comment is supported for all table engines except [Kafka](../../../engines/table-engines/integrations/kafka.md), [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md) and [EmbeddedRocksDB](../../../engines/table-engines/integrations/embedded-rocksdb.md).
 :::
 
 

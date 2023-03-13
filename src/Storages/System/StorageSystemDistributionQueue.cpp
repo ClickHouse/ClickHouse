@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/System/StorageSystemDistributionQueue.h>
+#include <Storages/Distributed/DirectoryMonitor.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -173,7 +174,7 @@ void StorageSystemDistributionQueue::fillData(MutableColumns & res_columns, Cont
 
         auto & distributed_table = dynamic_cast<StorageDistributed &>(*tables[database][table]);
 
-        for (const auto & status : distributed_table.getDirectoryQueueStatuses())
+        for (const auto & status : distributed_table.getDirectoryMonitorsStatuses())
         {
             size_t col_num = 0;
             res_columns[col_num++]->insert(database);

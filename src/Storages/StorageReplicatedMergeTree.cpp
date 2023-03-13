@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <ranges>
 
-#include <base/hex.h>
+#include <Common/hex.h>
 #include <Common/Macros.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -8434,11 +8434,7 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
             }
             else if (error_code == Coordination::Error::ZNONODE)
             {
-                /// We don't know what to do, because this part can be mutation part
-                /// with hardlinked columns. Since we don't have this information (about blobs not to remove)
-                /// we refuse to remove blobs.
-                LOG_WARNING(logger, "Node with parent zookeeper lock {} for part {} doesn't exist (part was unlocked before), refuse to remove blobs", zookeeper_part_uniq_node, part_name);
-                return {false, {}};
+                LOG_TRACE(logger, "Node with parent zookeeper lock {} for part {} doesn't exist (part was unlocked before)", zookeeper_part_uniq_node, part_name);
             }
             else
             {

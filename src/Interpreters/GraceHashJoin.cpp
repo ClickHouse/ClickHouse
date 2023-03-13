@@ -10,6 +10,7 @@
 #include <Core/ProtocolDefines.h>
 #include <Disks/IVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
+#include <IO/WriteBufferFromTemporaryFile.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
 
@@ -51,7 +52,7 @@ namespace
 
         Block read()
         {
-            std::lock_guard lock(mutex);
+            std::lock_guard<std::mutex> lock(mutex);
 
             if (eof)
                 return {};

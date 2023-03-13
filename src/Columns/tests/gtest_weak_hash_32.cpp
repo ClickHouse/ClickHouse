@@ -14,7 +14,7 @@
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Common/WeakHash.h>
-#include <base/hex.h>
+#include <Common/hex.h>
 
 #include <unordered_map>
 #include <iostream>
