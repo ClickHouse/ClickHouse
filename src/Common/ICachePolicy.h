@@ -16,12 +16,10 @@ struct EqualWeightFunction
     }
 };
 
-template <typename TKey, typename TMapped, typename HashFunction = std::hash<TKey>, typename WeightFunction = EqualWeightFunction<TMapped>>
+template <typename Key, typename Mapped, typename HashFunction = std::hash<Key>, typename WeightFunction = EqualWeightFunction<Mapped>>
 class ICachePolicy
 {
 public:
-    using Key = TKey;
-    using Mapped = TMapped;
     using MappedPtr = std::shared_ptr<Mapped>;
     using OnWeightLossFunction = std::function<void(size_t)>;
 

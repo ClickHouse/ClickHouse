@@ -18,15 +18,12 @@ namespace DB
 /// Value weight should not change after insertion.
 /// To work with the thread-safe implementation of this class use a class "CacheBase" with first parameter "SLRU"
 /// and next parameters in the same order as in the constructor of the current class.
-template <typename TKey, typename TMapped, typename HashFunction = std::hash<TKey>, typename WeightFunction = EqualWeightFunction<TMapped>>
-class SLRUCachePolicy : public ICachePolicy<TKey, TMapped, HashFunction, WeightFunction>
+template <typename Key, typename Mapped, typename HashFunction = std::hash<Key>, typename WeightFunction = EqualWeightFunction<Mapped>>
+class SLRUCachePolicy : public ICachePolicy<Key, Mapped, HashFunction, WeightFunction>
 {
 public:
-    using Key = TKey;
-    using Mapped = TMapped;
     using MappedPtr = std::shared_ptr<Mapped>;
-
-    using Base = ICachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
+    using Base = ICachePolicy<Key, Mapped, HashFunction, WeightFunction>;
     using typename Base::OnWeightLossFunction;
 
     /** Initialize SLRUCachePolicy with max_size_in_bytes and max_protected_size.
