@@ -1126,15 +1126,48 @@ Rounds the time to the half hour.
 
 ## toYYYYMM
 
-Converts a date or date with time to a UInt32 number containing the year and month number (YYYY \* 100 + MM).
+Converts a date or date with time to a UInt32 number containing the year and month number (YYYY \* 100 + MM). Accepts a second optional timezone argument. If provided, the timezone must be a string constant.
+
+### example
+```sql
+SELECT
+    toYYYYMM(now(), 'US/Eastern')
+```
+```response
+┌─toYYYYMM(now(), 'US/Eastern')─┐
+│                        202303 │ 
+└───────────────────────────────┘
+```
 
 ## toYYYYMMDD
 
-Converts a date or date with time to a UInt32 number containing the year and month number (YYYY \* 10000 + MM \* 100 + DD).
+Converts a date or date with time to a UInt32 number containing the year and month number (YYYY \* 10000 + MM \* 100 + DD). Accepts a second optional timezone argument. If provided, the timezone must be a string constant.
+
+### example
+```sql
+SELECT
+    toYYYYMMDD(now(), 'US/Eastern')
+```
+```response
+┌─toYYYYMMDD(now(), 'US/Eastern')─┐
+│                        20230302 │
+└─────────────────────────────────┘
+```
 
 ## toYYYYMMDDhhmmss
 
-Converts a date or date with time to a UInt64 number containing the year and month number (YYYY \* 10000000000 + MM \* 100000000 + DD \* 1000000 + hh \* 10000 + mm \* 100 + ss).
+Converts a date or date with time to a UInt64 number containing the year and month number (YYYY \* 10000000000 + MM \* 100000000 + DD \* 1000000 + hh \* 10000 + mm \* 100 + ss). Accepts a second optional timezone argument. If provided, the timezone must be a string constant.
+
+### example
+```sql
+SELECT
+    toYYYYMMDDhhmmss(now(), 'US/Eastern')
+```
+```response
+┌─toYYYYMMDDhhmmss(now(), 'US/Eastern')─┐
+│                        20230302112209 │
+└───────────────────────────────────────┘
+```
 
 ## addYears, addMonths, addWeeks, addDays, addHours, addMinutes, addSeconds, addQuarters
 
