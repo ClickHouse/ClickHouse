@@ -7,6 +7,7 @@
 #include <Storages/IStorage.h>
 
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSetQuery.h>
 
 #include <Interpreters/Context.h>
 
@@ -71,6 +72,13 @@ void TableFunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_
         buffer << '\n' << std::string(indent + 2, ' ') << "ARGUMENTS\n";
         arguments.dumpTreeImpl(buffer, format_state, indent + 4);
     }
+
+    if (!settings_changes.empty())
+    {
+        buffer << '\n' << std::string(indent + 6, ' ') << "SETTINGS";
+        for (const auto & change : settings_changes)
+            buffer << fmt::format(" {}={}", change.name, toString(change.value));
+    }
 }
 
 bool TableFunctionNode::isEqualImpl(const IQueryTreeNode & rhs) const
@@ -99,6 +107,16 @@ void TableFunctionNode::updateTreeHashImpl(HashState & state) const
 
     if (table_expression_modifiers)
         table_expression_modifiers->updateTreeHash(state);
+
+    for (const auto & change : settings_changes)
+    {
+        state.update(change.name.size());
+        state.update(change.name);
+
+        const auto & value_dump = change.value.dump();
+        state.update(value_dump.size());
+        state.update(value_dump);
+    }
 }
 
 QueryTreeNodePtr TableFunctionNode::cloneImpl() const
@@ -109,6 +127,7 @@ QueryTreeNodePtr TableFunctionNode::cloneImpl() const
     result->storage_id = storage_id;
     result->storage_snapshot = storage_snapshot;
     result->table_expression_modifiers = table_expression_modifiers;
+    result->settings_changes = settings_changes;
 
     return result;
 }
@@ -122,6 +141,14 @@ ASTPtr TableFunctionNode::toASTImpl(ConvertToASTOptions options) const
     const auto & arguments = getArguments();
     table_function_ast->children.push_back(arguments.toAST(options));
     table_function_ast->arguments = table_function_ast->children.back();
+
+    if (!settings_changes.empty())
+    {
+        auto settings_ast = std::make_shared<ASTSetQuery>();
+        settings_ast->changes = settings_changes;
+        settings_ast->is_standalone = false;
+        table_function_ast->arguments->children.push_back(std::move(settings_ast));
+    }
 
     return table_function_ast;
 }
