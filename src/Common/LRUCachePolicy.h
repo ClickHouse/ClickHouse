@@ -72,9 +72,7 @@ public:
     {
         auto it = cells.find(key);
         if (it == cells.end())
-        {
-            return MappedPtr();
-        }
+            return {};
 
         Cell & cell = it->second;
 
@@ -82,6 +80,20 @@ public:
         queue.splice(queue.end(), queue, cell.queue_iterator);
 
         return cell.value;
+    }
+
+    std::optional<KeyMapped> getWithKey(const Key & key, std::lock_guard<std::mutex> & /*cache_lock*/) override
+    {
+        auto it = cells.find(key);
+        if (it == cells.end())
+            return std::nullopt;
+
+        Cell & cell = it->second;
+
+        /// Move the key to the end of the queue. The iterator remains valid.
+        queue.splice(queue.end(), queue, cell.queue_iterator);
+
+        return std::make_optional<KeyMapped>({it->first, cell.value});
     }
 
     void set(const Key & key, const MappedPtr & mapped, std::lock_guard<std::mutex> & /* cache_lock */) override
