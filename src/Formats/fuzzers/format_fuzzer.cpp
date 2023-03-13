@@ -47,6 +47,29 @@ try
     /// - table structure on the second line,
     /// - the data for the rest of the input.
 
+    /** The corpus was generated as follows:
+
+    i=0; find ../../../../tests/queries -name '*.sql' |
+        xargs -I{} bash -c "tr '\n' ' ' <{}; echo" |
+        rg -o -i 'CREATE TABLE\s+\w+\s+\(.+?\) ENGINE' |
+        sed -r -e 's/CREATE TABLE\s+\w+\s+\((.+?)\) ENGINE/\1/i' | sort | uniq |
+        while read line; do
+            i=$((i+1));
+            clickhouse-local --query "SELECT name FROM system.formats ORDER BY rand() LIMIT 1" >> $i;
+            echo "$line" >> $i;
+            echo $RANDOM >> $i;
+            echo $i;
+        done
+    */
+
+    /// Compile the code as follows:
+    ///   mkdir build_asan_fuzz
+    ///   cd build_asan_fuzz
+    ///   CC=clang CXX=clang++ cmake -D SANITIZE=address -D ENABLE_FUZZING=1 -D WITH_COVERAGE=1 ..
+    ///
+    /// The fuzzer can be run as follows:
+    ///   ../../../build_asan_fuzz/src/Formats/fuzzers/format_fuzzer corpus -jobs=64
+
     DB::ReadBufferFromMemory in(data, size);
 
     String format;
@@ -57,12 +80,11 @@ try
     readStringUntilNewlineInto(structure, in);
     assertChar('\n', in);
 
-    ColumnsDescription description;
-    parseColumnsListFromString(structure, context);
+    ColumnsDescription description = parseColumnsListFromString(structure, context);
     auto columns_info = description.getOrdinary();
 
     Block header;
-    for (auto & info : columns_info)
+    for (const auto & info : columns_info)
     {
         ColumnWithTypeAndName column;
         column.name = info.name;
