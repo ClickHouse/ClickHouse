@@ -32,8 +32,10 @@ namespace ErrorCodes
 template <typename TKey, typename TMapped, typename HashFunction = std::hash<TKey>, typename WeightFunction = EqualWeightFunction<TMapped>>
 class CacheBase
 {
-public:
+private:
     using CachePolicy = ICachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
+
+public:
     using Key = typename CachePolicy::Key;
     using Mapped = typename CachePolicy::Mapped;
     using MappedPtr = typename CachePolicy::MappedPtr;
@@ -208,6 +210,18 @@ public:
     {
         std::lock_guard lock(mutex);
         return cache_policy->maxSize(lock);
+    }
+
+    void setMaxCount(size_t max_count)
+    {
+        std::lock_guard lock(mutex);
+        return cache_policy->setMaxCount(max_count, lock);
+    }
+
+    void setMaxSize(size_t max_size_in_bytes)
+    {
+        std::lock_guard lock(mutex);
+        return cache_policy->setMaxSize(max_size_in_bytes, lock);
     }
 
     virtual ~CacheBase() = default;

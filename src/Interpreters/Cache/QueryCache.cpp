@@ -10,6 +10,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
+#include <Common/TTLCachePolicy.h>
 #include <Core/Settings.h>
 #include <base/defines.h> /// chassert
 
@@ -152,43 +153,32 @@ size_t QueryCache::KeyHasher::operator()(const Key & key) const
     return res;
 }
 
-size_t QueryCache::QueryResult::sizeInBytes() const
+size_t QueryCache::QueryResultWeight::operator()(const QueryResult & chunks) const
 {
     size_t res = 0;
-    for (const auto & chunk : *chunks)
+    for (const auto & chunk : chunks)
         res += chunk.allocatedBytes();
     return res;
-};
+}
 
-namespace
-{
-
-auto is_stale = [](const QueryCache::Key & key)
+bool QueryCache::IsStale::operator()(const Key & key) const
 {
     return (key.expires_at < std::chrono::system_clock::now());
 };
 
-}
-
-QueryCache::Writer::Writer(std::mutex & mutex_, Cache & cache_, const Key & key_,
-    size_t & cache_size_in_bytes_, size_t max_cache_size_in_bytes_,
-    size_t max_cache_entries_,
+QueryCache::Writer::Writer(Cache & cache_, const Key & key_,
     size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_,
     std::chrono::milliseconds min_query_runtime_)
-    : mutex(mutex_)
-    , cache(cache_)
+    : cache(cache_)
     , key(key_)
-    , cache_size_in_bytes(cache_size_in_bytes_)
-    , max_cache_size_in_bytes(max_cache_size_in_bytes_)
-    , max_cache_entries(max_cache_entries_)
     , max_entry_size_in_bytes(max_entry_size_in_bytes_)
     , max_entry_size_in_rows(max_entry_size_in_rows_)
     , min_query_runtime(min_query_runtime_)
 {
-    if (auto it = cache.find(key); it != cache.end() && !is_stale(it->first))
+    if (auto entry = cache.getWithKey(key); entry.has_value() && !IsStale()(entry->key))
     {
         skip_insert = true; /// Key already contained in cache and did not expire yet --> don't replace it
-        LOG_TRACE(&Poco::Logger::get("QueryResultCache"), "Skipped insert (non-stale entry found), query: {}", key.queryStringFromAst());
+        LOG_TRACE(&Poco::Logger::get("QueryCache"), "Skipped insert (non-stale entry found), query: {}", key.queryStringFromAst());
     }
 }
 
@@ -197,18 +187,20 @@ void QueryCache::Writer::buffer(Chunk && partial_query_result)
     if (skip_insert)
         return;
 
-    auto & chunks = query_result.chunks;
+    std::lock_guard lock(mutex);
 
-    chunks->emplace_back(std::move(partial_query_result));
+    auto & chunks = *query_result;
 
-    new_entry_size_in_bytes += chunks->back().allocatedBytes();
-    new_entry_size_in_rows += chunks->back().getNumRows();
+    chunks.emplace_back(std::move(partial_query_result));
+
+    new_entry_size_in_bytes += chunks.back().allocatedBytes();
+    new_entry_size_in_rows += chunks.back().getNumRows();
 
     if ((new_entry_size_in_bytes > max_entry_size_in_bytes) || (new_entry_size_in_rows > max_entry_size_in_rows))
     {
-        chunks->clear(); /// eagerly free some space
+        chunks.clear(); /// eagerly free some space
         skip_insert = true;
-        LOG_TRACE(&Poco::Logger::get("QueryResultCache"), "Skipped insert (query result too big), new_entry_size_in_bytes: {} ({}), new_entry_size_in_rows: {} ({}), query: {}", new_entry_size_in_bytes, max_entry_size_in_bytes, new_entry_size_in_rows, max_entry_size_in_rows, key.queryStringFromAst());
+        LOG_TRACE(&Poco::Logger::get("QueryCache"), "Skipped insert (query result too big), new_entry_size_in_bytes: {} ({}), new_entry_size_in_rows: {} ({}), query: {}", new_entry_size_in_bytes, max_entry_size_in_bytes, new_entry_size_in_rows, max_entry_size_in_rows, key.queryStringFromAst());
     }
 }
 
@@ -217,81 +209,47 @@ void QueryCache::Writer::finalizeWrite()
     if (skip_insert)
         return;
 
-    if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - query_start_time) < min_query_runtime)
-    {
-        LOG_TRACE(&Poco::Logger::get("QueryResultCache"), "Skipped insert (query not expensive enough), query: {}", key.queryStringFromAst());
-        return;
-    }
-
     std::lock_guard lock(mutex);
 
-    if (auto it = cache.find(key); it != cache.end() && !is_stale(it->first))
+    if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - query_start_time) < min_query_runtime)
     {
-        /// same check as in ctor because a parallel Writer could have inserted the current key in the meantime
-        LOG_TRACE(&Poco::Logger::get("QueryResultCache"), "Skipped insert (non-stale entry found), query: {}", key.queryStringFromAst());
+        LOG_TRACE(&Poco::Logger::get("QueryCache"), "Skipped insert (query not expensive enough), query: {}", key.queryStringFromAst());
         return;
     }
 
-    auto sufficient_space_in_cache = [this]() TSA_REQUIRES(mutex)
+    if (auto entry = cache.getWithKey(key); entry.has_value() && !IsStale()(entry->key))
     {
-        return (cache_size_in_bytes + new_entry_size_in_bytes <= max_cache_size_in_bytes) && (cache.size() + 1 <= max_cache_entries);
-    };
-
-    if (!sufficient_space_in_cache())
-    {
-        size_t removed_items = 0;
-        /// Remove stale entries
-        for (auto it = cache.begin(); it != cache.end();)
-            if (is_stale(it->first))
-            {
-                cache_size_in_bytes -= it->second.sizeInBytes();
-                it = cache.erase(it);
-                ++removed_items;
-            }
-            else
-                ++it;
-        LOG_TRACE(&Poco::Logger::get("QueryCache"), "Removed {} stale entries", removed_items);
+        /// same check as in ctor because a parallel Writer could have inserted the current key in the meantime
+        LOG_TRACE(&Poco::Logger::get("QueryCache"), "Skipped insert (non-stale entry found), query: {}", key.queryStringFromAst());
+        return;
     }
 
-    if (!sufficient_space_in_cache())
-        LOG_TRACE(&Poco::Logger::get("QueryResultCache"), "Skipped insert (cache has insufficient space), query: {}", key.queryStringFromAst());
-    else
-    {
-        //// Insert or replace key
-        cache_size_in_bytes += query_result.sizeInBytes();
-        if (auto it = cache.find(key); it != cache.end())
-            cache_size_in_bytes -= it->second.sizeInBytes(); // key replacement
-
-        cache[key] = std::move(query_result);
-        LOG_TRACE(&Poco::Logger::get("QueryCache"), "Stored result of query {}", key.queryStringFromAst());
-    }
+    cache.set(key, query_result);
 }
 
-QueryCache::Reader::Reader(const Cache & cache_, const Key & key, size_t & cache_size_in_bytes_, const std::lock_guard<std::mutex> &)
+QueryCache::Reader::Reader(Cache & cache_, const Key & key, const std::lock_guard<std::mutex> &)
 {
-    auto it = cache_.find(key);
+    auto entry = cache_.getWithKey(key);
 
-    if (it == cache_.end())
+    if (!entry.has_value())
     {
         LOG_TRACE(&Poco::Logger::get("QueryCache"), "No entry found for query {}", key.queryStringFromAst());
         return;
     }
 
-    if (it->first.username.has_value() && it->first.username != key.username)
+    if (entry->key.username.has_value() && entry->key.username != key.username)
     {
         LOG_TRACE(&Poco::Logger::get("QueryCache"), "Inaccessible entry found for query {}", key.queryStringFromAst());
         return;
     }
 
-    if (is_stale(it->first))
+    if (IsStale()(entry->key))
     {
-        cache_size_in_bytes_ -= it->second.sizeInBytes();
-        const_cast<Cache &>(cache_).erase(it);
-        LOG_TRACE(&Poco::Logger::get("QueryCache"), "Stale entry found and removed for query {}", key.queryStringFromAst());
+        LOG_TRACE(&Poco::Logger::get("QueryCache"), "Stale entry found for query {}", key.queryStringFromAst());
         return;
     }
 
-    pipe = Pipe(std::make_shared<SourceFromChunks>(it->first.header, it->second.chunks));
+    pipe = Pipe(std::make_shared<SourceFromChunks>(entry->key.header, entry->mapped));
     LOG_TRACE(&Poco::Logger::get("QueryCache"), "Entry found for query {}", key.queryStringFromAst());
 }
 
@@ -316,19 +274,19 @@ Pipe && QueryCache::Reader::getPipe()
 QueryCache::Reader QueryCache::createReader(const Key & key)
 {
     std::lock_guard lock(mutex);
-    return Reader(cache, key, cache_size_in_bytes, lock);
+    return Reader(cache, key, lock);
 }
 
 QueryCache::Writer QueryCache::createWriter(const Key & key, std::chrono::milliseconds min_query_runtime)
 {
     std::lock_guard lock(mutex);
-    return Writer(mutex, cache, key, cache_size_in_bytes, max_cache_size_in_bytes, max_cache_entries, max_cache_entry_size_in_bytes, max_cache_entry_size_in_rows, min_query_runtime);
+    return Writer(cache, key, max_entry_size_in_bytes, max_entry_size_in_rows, min_query_runtime);
 }
 
 void QueryCache::reset()
 {
+    cache.reset();
     std::lock_guard lock(mutex);
-    cache.clear();
     times_executed.clear();
     cache_size_in_bytes = 0;
 }
@@ -344,13 +302,28 @@ size_t QueryCache::recordQueryRun(const Key & key)
     return times;
 }
 
+std::vector<QueryCache::Cache::KeyMapped> QueryCache::dump() const
+{
+    return cache.dump();
+}
+
+QueryCache::QueryCache()
+    : cache(std::make_unique<TTLCachePolicy<Key, QueryResult, KeyHasher, QueryResultWeight, IsStale>>())
+{
+}
+
 void QueryCache::updateConfiguration(const Poco::Util::AbstractConfiguration & config)
 {
     std::lock_guard lock(mutex);
-    max_cache_size_in_bytes = config.getUInt64("query_cache.size", 1_GiB);
-    max_cache_entries = config.getUInt64("query_cache.max_entries", 1024);
-    max_cache_entry_size_in_bytes = config.getUInt64("query_cache.max_entry_size", 1_MiB);
-    max_cache_entry_size_in_rows = config.getUInt64("query_cache.max_entry_rows", 30'000'000);
+
+    size_t max_size_in_bytes = config.getUInt64("query_cache.size", 1_GiB);
+    cache.setMaxSize(max_size_in_bytes);
+
+    size_t max_entries = config.getUInt64("query_cache.max_entries", 1024);
+    cache.setMaxCount(max_entries);
+
+    max_entry_size_in_bytes = config.getUInt64("query_cache.max_entry_size", 1_MiB);
+    max_entry_size_in_rows = config.getUInt64("query_cache.max_entry_rows", 30'000'000);
 }
 
 }

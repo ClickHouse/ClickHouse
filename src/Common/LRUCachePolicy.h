@@ -137,7 +137,7 @@ public:
         return res;
     }
 
-protected:
+private:
     using LRUQueue = std::list<Key>;
     using LRUQueueIterator = typename LRUQueue::iterator;
 
