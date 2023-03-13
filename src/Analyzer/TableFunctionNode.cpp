@@ -82,14 +82,7 @@ bool TableFunctionNode::isEqualImpl(const IQueryTreeNode & rhs) const
     if (storage && rhs_typed.storage)
         return storage_id == rhs_typed.storage_id;
 
-    if (table_expression_modifiers && rhs_typed.table_expression_modifiers && table_expression_modifiers != rhs_typed.table_expression_modifiers)
-        return false;
-    else if (table_expression_modifiers && !rhs_typed.table_expression_modifiers)
-        return false;
-    else if (!table_expression_modifiers && rhs_typed.table_expression_modifiers)
-        return false;
-
-    return true;
+    return table_expression_modifiers == rhs_typed.table_expression_modifiers;
 }
 
 void TableFunctionNode::updateTreeHashImpl(HashState & state) const
