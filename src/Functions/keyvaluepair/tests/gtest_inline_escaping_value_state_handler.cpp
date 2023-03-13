@@ -14,12 +14,14 @@ void test_wait(const auto & handler, std::string_view input, std::size_t expecte
 
 TEST(InlineEscapingValueStateHandler, Wait)
 {
-//    auto key_value_delimiters = std::unordered_set<char> {':', '='};
-//    auto pair_delimiters = std::unordered_set<char> {',', ' '};
-//    auto quoting_characters = std::unordered_set<char> {'"'};
-//
-//    ExtractorConfiguration configuration(key_value_delimiters, pair_delimiters, quoting_characters);
-//    InlineEscapingValueStateHandler handler(configuration);
+    auto pair_delimiters = std::unordered_set<char> {','};
+    auto quoting_characters = std::unordered_set<char> {'"'};
+
+    ExtractorConfiguration configuration(':', pair_delimiters, quoting_characters);
+    InlineEscapingValueStateHandler handler(configuration);
+
+    test_wait(handler, " los$ yours3lf", 0u, READING_VALUE);
+
 //
 //    test_wait(handler, "name", 0u, READING_KEY);
 //    test_wait(handler, "\\:name", 2u, READING_KEY);

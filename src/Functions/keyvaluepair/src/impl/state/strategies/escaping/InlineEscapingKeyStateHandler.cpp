@@ -5,14 +5,10 @@
 namespace DB
 {
 
-InlineEscapingKeyStateHandler::InlineEscapingKeyStateHandler(ExtractorConfiguration configuration_)
-    : extractor_configuration(std::move(configuration_))
-{}
-
-NextState InlineEscapingKeyStateHandler::wait(std::string_view file, size_t pos) const
+static auto buildWaitRuntimeConfig(const ExtractorConfiguration & configuration)
 {
     const auto & [key_value_delimiter, pair_delimiters, quoting_characters]
-        = extractor_configuration;
+        = configuration;
 
     std::vector<char> special_characters;
     special_characters.push_back(EscapedCharacterReader::ESCAPE_CHARACTER);
@@ -20,9 +16,54 @@ NextState InlineEscapingKeyStateHandler::wait(std::string_view file, size_t pos)
 
     std::copy(pair_delimiters.begin(), pair_delimiters.end(), std::back_inserter(special_characters));
 
-    CharacterFinder finder;
+    return special_characters;
+}
 
-    while (auto character_position_opt = finder.find_first_not(file, pos, special_characters))
+static auto buildReadRuntimeConfig(const ExtractorConfiguration & configuration)
+{
+    const auto & [key_value_delimiter, pair_delimiters, quoting_characters]
+        = configuration;
+
+    std::vector<char> needles;
+
+    needles.push_back(EscapedCharacterReader::ESCAPE_CHARACTER);
+    needles.push_back(key_value_delimiter);
+
+    std::copy(quoting_characters.begin(), quoting_characters.end(), std::back_inserter(needles));
+    std::copy(pair_delimiters.begin(), pair_delimiters.end(), std::back_inserter(needles));
+
+    return needles;
+}
+
+static auto buildReadEnclosedRuntimeConfig(const ExtractorConfiguration & configuration)
+{
+    const auto & quoting_characters = configuration.quoting_characters;
+
+    std::vector<char> needles;
+
+    needles.push_back(EscapedCharacterReader::ESCAPE_CHARACTER);
+
+    std::copy(quoting_characters.begin(), quoting_characters.end(), std::back_inserter(needles));
+
+    return needles;
+}
+
+InlineEscapingKeyStateHandler::InlineEscapingKeyStateHandler(ExtractorConfiguration configuration_)
+    : extractor_configuration(std::move(configuration_))
+{
+    auto wait_config = buildWaitRuntimeConfig(extractor_configuration);
+    auto read_config = buildReadRuntimeConfig(extractor_configuration);
+    auto read_enclosed_config = buildReadEnclosedRuntimeConfig(extractor_configuration);
+    runtime_configuration = RuntimeConfiguration(wait_config, read_config, read_enclosed_config);
+}
+
+NextState InlineEscapingKeyStateHandler::wait(std::string_view file, size_t pos) const
+{
+    BoundsSafeCharacterFinder finder;
+
+    const auto & quoting_characters = extractor_configuration.quoting_characters;
+
+    while (auto character_position_opt = finder.find_first_not(file, pos, runtime_configuration.wait_configuration))
     {
         auto character_position = *character_position_opt;
         auto character = file[character_position];
@@ -48,18 +89,10 @@ NextState InlineEscapingKeyStateHandler::wait(std::string_view file, size_t pos)
 
 NextState InlineEscapingKeyStateHandler::read(std::string_view file, size_t pos, ElementType & key) const
 {
-    CharacterFinder finder;
+    BoundsSafeCharacterFinder finder;
 
     const auto & [key_value_delimiter, pair_delimiters, quoting_characters]
         = extractor_configuration;
-
-    std::vector<char> needles;
-
-    needles.push_back(EscapedCharacterReader::ESCAPE_CHARACTER);
-    needles.push_back(key_value_delimiter);
-
-    std::copy(quoting_characters.begin(), quoting_characters.end(), std::back_inserter(needles));
-    std::copy(pair_delimiters.begin(), pair_delimiters.end(), std::back_inserter(needles));
 
     key.clear();
 
@@ -68,7 +101,7 @@ NextState InlineEscapingKeyStateHandler::read(std::string_view file, size_t pos,
      * It might help updating current pos?
      * */
 
-    while (auto character_position_opt = finder.find_first(file, pos, needles))
+    while (auto character_position_opt = finder.find_first(file, pos, runtime_configuration.read_configuration))
     {
         auto character_position = *character_position_opt;
         auto character = file[character_position];
@@ -82,14 +115,10 @@ NextState InlineEscapingKeyStateHandler::read(std::string_view file, size_t pos,
             }
 
             auto [next_byte_ptr, escaped_characters] = EscapedCharacterReader::read(file, character_position);
-            // fix later, -1 looks uglyyyyy
             next_pos = next_byte_ptr - file.begin();
 
             if (escaped_characters.empty())
             {
-                // I have to consider a case like the following: "name:arthur\".
-                // will it be discarded or not?
-                // current implementation will discard it.
                 return {next_pos, State::WAITING_KEY};
             }
             else
@@ -126,19 +155,13 @@ NextState InlineEscapingKeyStateHandler::read(std::string_view file, size_t pos,
 
 NextState InlineEscapingKeyStateHandler::readEnclosed(std::string_view file, size_t pos, ElementType & key) const
 {
-    CharacterFinder finder;
+    BoundsSafeCharacterFinder finder;
 
     const auto & quoting_characters = extractor_configuration.quoting_characters;
 
-    std::vector<char> needles;
-
-    needles.push_back(EscapedCharacterReader::ESCAPE_CHARACTER);
-
-    std::copy(quoting_characters.begin(), quoting_characters.end(), std::back_inserter(needles));
-
     key.clear();
 
-    while (auto character_position_opt = finder.find_first(file, pos, needles))
+    while (auto character_position_opt = finder.find_first(file, pos, runtime_configuration.read_enclosed_configuration))
     {
         auto character_position = *character_position_opt;
         auto character = file[character_position];
@@ -152,14 +175,10 @@ NextState InlineEscapingKeyStateHandler::readEnclosed(std::string_view file, siz
             }
 
             auto [next_byte_ptr, escaped_characters] = EscapedCharacterReader::read(file, character_position);
-            // fix later, -1 looks uglyyyyy
             next_pos = next_byte_ptr - file.begin();
 
             if (escaped_characters.empty())
             {
-                // I have to consider a case like the following: "name:arthur\".
-                // will it be discarded or not?
-                // current implementation will discard it.
                 return {next_pos, State::WAITING_KEY};
             }
             else

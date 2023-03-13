@@ -24,7 +24,7 @@ public:
 
 private:
     bool with_escaping = false;
-    std::optional<char> key_value_pair_delimiter;
+    char key_value_pair_delimiter = ':';
     std::unordered_set<char> item_delimiters = {' ', ',', ';'};
     std::unordered_set<char> quoting_characters = {'"'};
 

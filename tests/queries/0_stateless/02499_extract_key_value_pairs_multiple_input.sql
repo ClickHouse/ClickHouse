@@ -1,9 +1,10 @@
 -- { echoOn }
------ Enclosed elements tests -----
 
--- Expected output: {'name':'Neymar','team':'psg','age':'30','favorite_movie':'','height':'1.75'}
+-- basic tests
+
+-- expected output: {'age':'31','name':'neymar','nationality':'brazil','team':'psg'}
 WITH
-    extractKeyValuePairs('"name": "Neymar", "age": 30, team: "psg", "favorite_movie": "", height: 1.75', ':', ',', '"', '.') AS s_map,
+    extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') AS s_map,
     CAST(
             arrayMap(
                     (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
@@ -13,48 +14,11 @@ WITH
 SELECT
     x;
 
------ Escaping tests -----
-
--- Expected output: {'age':'30'}
+-- special (not control) characters in the middle of elements
+-- expected output: {'age':'3!','name':'ney!mar','nationality':'br4z!l','t&am':'@psg'}
 WITH
-    extractKeyValuePairs('na,me,: neymar, age:30', ':', ',', '"') AS s_map,
-    CAST(
-            arrayMap(
-                    (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
-                ),
-            'Map(String,String)'
-        ) AS x
-SELECT
-    x;
-
--- Expected output: {'age':'30'}
-WITH
-    extractKeyValuePairs('na$me,: neymar, age:30', ':', ',', '"') AS s_map,
-    CAST(
-            arrayMap(
-                    (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
-                ),
-            'Map(String,String)'
-        ) AS x
-SELECT
-    x;
-
--- Expected output: {'name':'neymar','favorite_quote':'Premature optimization is the r$$t of all evil','age':'30'}
-WITH
-    extractKeyValuePairs('name: neymar, favorite_quote: Premature! optimization! is! the! r!$!$t! of! all! evil, age:30', ':', ',', '"') AS s_map,
-    CAST(
-            arrayMap(
-                    (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
-                ),
-            'Map(String,String)'
-        ) AS x
-SELECT
-    x;
-
--- Expected output: {'name':'neymar','favorite_quote':'Premature optimization is the root of all evi','age':'30'}
-WITH
-    extractKeyValuePairs('name: neymar, favorite_quote: Premature!! optimization, age:30', ':', ',', '"') AS s_map,
-    CAST(
+    extractKeyValuePairs('name:ney!mar, age:3! t&am:@psg,nationality:br4z!l') AS s_map,
+        CAST(
             arrayMap(
                 (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
             ),
@@ -63,9 +27,10 @@ WITH
 SELECT
     x;
 
------ Mix Strings -----
+-- non-standard escape characters (i.e not \n, \r, \t and etc), back-slash should be preserved
+-- expected output: {'amount\\z':'$5\\h','currency':'\\$USD'}
 WITH
-    extractKeyValuePairs('9 ads =nm,  na!:me: neymar, age: 30, daojmskdpoa and a  height:   1.75, school: lupe! picasso, team: psg,', ':', ',', '"', '.') AS s_map,
+    extractKeyValuePairs('currency:\$USD, amount\z:$5\h') AS s_map,
     CAST(
             arrayMap(
                     (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
@@ -75,28 +40,43 @@ WITH
 SELECT
     x;
 
--- Expected output: {'XNFHGSSF_RHRUZHVBS_KWBT':'F'}
+-- standard escape sequences are covered by unit tests
+
+-- simple quoting
+-- expected output: {'age':'31','name':'neymar','team':'psg'}
 WITH
-    extractKeyValuePairs('XNFHGSSF_RHRUZHVBS_KWBT: F,', ':', ',', '"') AS s_map,
-    CAST(
+    extractKeyValuePairs('name:"neymar", "age":31 "team":"psg"') AS s_map,
+        CAST(
             arrayMap(
-                    (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
-                ),
-            'Map(String,String)'
-        ) AS x
+                (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+            ),
+        'Map(String,String)'
+    ) AS x
 SELECT
     x;
 
------ Allow list special value characters -----
-
--- Expected output: {'some_key':'@dolla%sign$'}
+-- empty values
+-- expected output: {'age':'','name':'','nationality':''}
 WITH
-    extractKeyValuePairs('some_key: @dolla%sign$,', ':', ',', '"', '$@%') AS s_map,
+    extractKeyValuePairs('name:"", age: , nationality:') AS s_map,
     CAST(
-            arrayMap(
-                    (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
-                ),
-            'Map(String,String)'
-        ) AS x
+        arrayMap(
+            (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+        ),
+        'Map(String,String)'
+    ) AS x
+SELECT
+    x;
+
+-- empty keys
+-- empty keys are not allowed, thus empty output is expected
+WITH
+    extractKeyValuePairs('"":abc, :def') AS s_map,
+    CAST(
+        arrayMap(
+            (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+        ),
+        'Map(String,String)'
+    ) AS x
 SELECT
     x;

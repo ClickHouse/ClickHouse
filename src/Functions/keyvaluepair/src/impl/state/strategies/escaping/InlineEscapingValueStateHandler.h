@@ -11,6 +11,23 @@ namespace DB
 
 class InlineEscapingValueStateHandler : public StateHandler
 {
+    struct RuntimeConfiguration
+    {
+        RuntimeConfiguration() = default;
+
+        RuntimeConfiguration(
+            std::vector<char> wait_configuration_,
+            std::vector<char> read_configuration_,
+            std::vector<char> read_enclosed_configuration_
+            ) : wait_configuration(std::move(wait_configuration_)),
+            read_configuration(std::move(read_configuration_)),
+            read_enclosed_configuration(std::move(read_enclosed_configuration_)) {}
+
+        std::vector<char> wait_configuration;
+        std::vector<char> read_configuration;
+        std::vector<char> read_enclosed_configuration;
+    };
+
 public:
     using ElementType = std::string;
 
@@ -26,6 +43,7 @@ public:
 
 private:
     ExtractorConfiguration extractor_configuration;
+    RuntimeConfiguration runtime_configuration;
 };
 
 }

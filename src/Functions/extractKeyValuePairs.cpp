@@ -47,9 +47,9 @@ static ColumnPtr extract(ColumnPtr data_column, std::shared_ptr<KeyValuePairExtr
     {
         auto row = data_column->getDataAt(i).toView();
 
-        auto inserted_rows = extractor->extract(row, keys, values);
+        auto pairs_count = extractor->extract(row, keys, values);
 
-        offset += inserted_rows;
+        offset += pairs_count;
 
         offsets->insert(offset);
     }
