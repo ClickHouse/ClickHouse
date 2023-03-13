@@ -277,6 +277,8 @@ public:
 
         FormattingBuffer copyWithIndent(int indent) const;
 
+        FormattingBuffer copyWithOneLine() const;
+
         FormattingBuffer copy(bool increase_indent, bool need_parens) const;
 
         FormattingBuffer copy(bool increase_indent,
@@ -288,6 +290,17 @@ public:
         FormattingBuffer copyWithoutNeedParensAndWithExpressionListAlwaysStartOnNewLine() const;
 
         FormattingBuffer copyWithoutNeedParensAndWithExtraIndent() const;
+
+        FormattingBuffer copyWithExpressionListAlwaysStartOnNewLine() const;
+
+        FormattingBuffer copyWithSettingsOnly(WriteBuffer & ostr) const;
+
+        // copy FormatStateStacked
+        FormattingBuffer copyWithNeedParens(bool need_parens = true) const;
+
+        // copy FormatStateStacked
+        // todo: duplicating copy(bool, bool)
+        FormattingBuffer copyWithNeedParensAndExtraIndent(int extra_indent) const;
 
         bool needsParens() const;  // TODO: impl
 
@@ -301,7 +314,9 @@ public:
 
         bool getExpressionListPrependWhitespace() const; // TODO: impl
 
-        void writeIndent(bool add_extra_indent = false) const;
+        void increaseIndent() const; // TODO: impl
+
+        void writeIndent(int extra_indent = 0) const;
 
         bool insertAlias(std::string alias, Hash printed_content) const;
 
