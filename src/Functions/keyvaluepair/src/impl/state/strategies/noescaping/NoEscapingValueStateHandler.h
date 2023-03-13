@@ -1,23 +1,18 @@
 #pragma once
 
-#include <string>
-#include "State.h"
-#include "StateHandler.h"
 #include <unordered_set>
+#include "Functions/keyvaluepair/src/impl/state/ExtractorConfiguration.h"
+#include "Functions/keyvaluepair/src/impl/state/StateHandler.h"
 
 namespace DB
 {
 
-class InlineEscapingValueStateHandler : public StateHandler
+class NoEscapingValueStateHandler : public StateHandler
 {
 public:
-    using ElementType = std::string;
+    using ElementType = std::string_view;
 
-    InlineEscapingValueStateHandler(
-        char escape_character_,
-        char item_delimiter_,
-        std::optional<char> enclosing_character_,
-        std::unordered_set<char> special_character_allowlist_);
+    NoEscapingValueStateHandler(ExtractorConfiguration extractor_configuration_);
 
     [[nodiscard]] NextState wait(std::string_view file, size_t pos) const;
 
@@ -28,9 +23,7 @@ public:
     [[nodiscard]] static NextState readEmpty(std::string_view, size_t pos, ElementType & value);
 
 private:
-    const char escape_character;
-    const char item_delimiter;
-    std::unordered_set<char> special_character_allowlist;
+    ExtractorConfiguration extractor_configuration;
 
     bool isValidCharacter(char character) const;
 };

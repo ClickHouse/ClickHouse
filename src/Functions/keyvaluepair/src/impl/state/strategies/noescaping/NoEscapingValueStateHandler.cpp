@@ -3,12 +3,8 @@
 namespace DB
 {
 
-NoEscapingValueStateHandler::NoEscapingValueStateHandler(
-    char item_delimiter_,
-    std::optional<char> enclosing_character_,
-    std::unordered_set<char> special_character_allowlist_)
-    : StateHandler(enclosing_character_)
-    , item_delimiter(item_delimiter_), special_character_allowlist(special_character_allowlist_)
+NoEscapingValueStateHandler::NoEscapingValueStateHandler(ExtractorConfiguration extractor_configuration_)
+    : StateHandler(), extractor_configuration(std::move(extractor_configuration_))
 {
 }
 
@@ -18,11 +14,11 @@ NextState NoEscapingValueStateHandler::wait(std::string_view file, size_t pos) c
     {
         const auto current_character = file[pos];
 
-        if (enclosing_character && current_character == enclosing_character)
+        if (current_character == '"')
         {
             return {pos + 1u, State::READING_ENCLOSED_VALUE};
         }
-        else if (current_character == item_delimiter)
+        else if (current_character == ',')
         {
             return {pos, State::READING_EMPTY_VALUE};
         }
@@ -49,7 +45,7 @@ NextState NoEscapingValueStateHandler::read(std::string_view file, size_t pos, E
     {
         const auto current_character = file[pos++];
 
-        if (current_character == item_delimiter || !isValidCharacter(current_character))
+        if (current_character == ',' || !isValidCharacter(current_character))
         {
             value = createElement(file, start_index, pos - 1);
             return {pos, State::FLUSH_PAIR};
@@ -72,7 +68,7 @@ NextState NoEscapingValueStateHandler::readEnclosed(std::string_view file, size_
     {
         const auto current_character = file[pos++];
 
-        if (enclosing_character == current_character)
+        if ('"' == current_character)
         {
             // not checking for empty value because with current waitValue implementation
             // there is no way this piece of code will be reached for the very first value character
@@ -92,7 +88,7 @@ NextState NoEscapingValueStateHandler::readEmpty(std::string_view, size_t pos, E
 
 bool NoEscapingValueStateHandler::isValidCharacter(char character) const
 {
-    return std::isalnum(character) || character == '_' || special_character_allowlist.contains(character);
+    return std::isalnum(character) || character == '_';
 }
 
 }
