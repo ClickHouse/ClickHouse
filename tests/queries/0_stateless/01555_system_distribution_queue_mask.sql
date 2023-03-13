@@ -29,7 +29,6 @@ SELECT 'no masking';
 create table dist_01555 (key Int) Engine=Distributed(test_shard_localhost, currentDatabase(), data_01555, key);
 
 insert into dist_01555 values (1)(2);
--- since test_cluster_with_incorrect_pw contains incorrect password ignore error
 system flush distributed dist_01555;
 select length(splitByChar('*', data_path)), replaceRegexpOne(data_path, '^.*/([^/]*)/' , '\\1') from system.distribution_queue where database = currentDatabase() and table = 'dist_01555' format CSV;
 
