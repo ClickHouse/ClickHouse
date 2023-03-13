@@ -6,6 +6,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/CompressionMethod.h>
+#include <IO/ParallelReadBuffer.h>
 #include <base/types.h>
 #include <Core/NamesAndTypes.h>
 
@@ -77,6 +78,26 @@ private:
             const RowInputFormatParams & params,
             const FormatSettings & settings)>;
 
+    // Advanced interface for the few more structured formats, like Parquet, which want more precise
+    // control over reading. The format is responsible for parallelizing reading+parsing.
+    // The motivating use case is ParquetBlockInputFormat, see comment there.
+    //
+    // Formats implementing this must implement InputCreator too, for non-seekable read buffers like
+    // stdin.
+    //
+    // In future we may also want to pass some information about WHERE conditions (SelectQueryInfo?)
+    // and get some information about projections (min/max/count per column per row group).
+    using MultistreamInputCreator = std::function<InputFormatPtr(
+            ParallelReadBuffer::ReadBufferFactoryPtr,
+            const Block & header,
+            const RowInputFormatParams & params,
+            const FormatSettings & settings,
+            const ReadSettings& read_settings,
+            bool is_remote_fs,
+            ThreadPoolCallbackRunner<void> io_schedule,
+            size_t max_download_threads,
+            size_t max_parsing_threads)>;
+
     using OutputCreator = std::function<OutputFormatPtr(
             WriteBuffer & buf,
             const Block & sample,
@@ -104,6 +125,7 @@ private:
     struct Creators
     {
         InputCreator input_creator;
+        MultistreamInputCreator multistream_input_creator;
         OutputCreator output_creator;
         FileSegmentationEngine file_segmentation_engine;
         SchemaReaderCreator schema_reader_creator;
@@ -182,7 +204,7 @@ public:
     bool checkIfFormatSupportAppend(const String & name, ContextPtr context, const std::optional<FormatSettings> & format_settings_ = std::nullopt);
 
     /// Register format by its name.
-    void registerInputFormat(const String & name, InputCreator input_creator);
+    void registerInputFormat(const String & name, InputCreator input_creator, MultistreamInputCreator multistream_input_creator = nullptr);
     void registerOutputFormat(const String & name, OutputCreator output_creator);
 
     /// Register file extension for format

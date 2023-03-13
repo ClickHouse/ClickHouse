@@ -331,7 +331,6 @@ namespace
                                 settings.max_read_buffer_size,
                                 read_settings,
                                 headers,
-                                ReadWriteBufferFromHTTP::Range{0, std::nullopt},
                                 &context->getRemoteHostFilter(),
                                 true,
                                 /* use_external_buffer */ false,
@@ -384,7 +383,6 @@ namespace
 
                                 auto read_buffer_factory = std::make_unique<RangedReadWriteBufferFromHTTPFactory>(
                                     res.getContentLength(),
-                                    settings.max_download_buffer_size,
                                     request_uri,
                                     http_method,
                                     callback,
@@ -403,7 +401,8 @@ namespace
                                     std::make_unique<ParallelReadBuffer>(
                                         std::move(read_buffer_factory),
                                         threadPoolCallbackRunner<void>(IOThreadPool::get(), "URLParallelRead"),
-                                        download_threads),
+                                        download_threads,
+                                        settings.max_download_buffer_size),
                                     compression_method,
                                     zstd_window_log_max);
                             }
@@ -431,7 +430,6 @@ namespace
                             settings.max_read_buffer_size,
                             read_settings,
                             headers,
-                            ReadWriteBufferFromHTTP::Range{},
                             &context->getRemoteHostFilter(),
                             delay_initialization,
                             /* use_external_buffer */ false,
@@ -936,7 +934,6 @@ std::optional<time_t> IStorageURLBase::getLastModificationTime(
             settings.max_read_buffer_size,
             context->getReadSettings(),
             headers,
-            ReadWriteBufferFromHTTP::Range{},
             &context->getRemoteHostFilter(),
             true,
             false,

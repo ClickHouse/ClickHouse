@@ -34,11 +34,15 @@ public:
     public:
         ~ReadBufferFactory() override = default;
 
+        // We usually call setReadUntilPosition() and seek() on the returned buffer before reading.
+        // So it's recommended that the returned implementation be lazy, i.e. don't start reading
+        // before the first call to nextImpl().
         virtual SeekableReadBufferPtr getReader() = 0;
-        virtual off_t seek(off_t off, int whence) = 0;
     };
 
-    ParallelReadBuffer(std::unique_ptr<ReadBufferFactory> reader_factory_, ThreadPoolCallbackRunner<void> schedule_, size_t max_working_readers);
+    using ReadBufferFactoryPtr = std::unique_ptr<ReadBufferFactory>;
+
+    ParallelReadBuffer(ReadBufferFactoryPtr reader_factory_, ThreadPoolCallbackRunner<void> schedule_, size_t max_working_readers, size_t range_step_);
 
     ~ParallelReadBuffer() override { finishAndWait(); }
 
@@ -78,6 +82,8 @@ private:
     ThreadPoolCallbackRunner<void> schedule;
 
     std::unique_ptr<ReadBufferFactory> reader_factory;
+    size_t range_step;
+    size_t next_range_start{0};
 
     /**
      * FIFO queue of readers.
@@ -94,7 +100,7 @@ private:
     std::exception_ptr background_exception = nullptr;
     std::atomic_bool emergency_stop{false};
 
-    off_t current_position{0};
+    off_t current_position{0}; // end of working_buffer
 
     bool all_completed{false};
 };

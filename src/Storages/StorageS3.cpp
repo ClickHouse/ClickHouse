@@ -629,13 +629,13 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createS3ReadBuffer(const String & k
     }
 
     auto factory = std::make_unique<ReadBufferS3Factory>(
-        client, bucket, key, version_id, download_buffer_size, object_size, request_settings, read_settings);
+        client, bucket, key, version_id, object_size, request_settings, read_settings);
 
     LOG_TRACE(log,
         "Downloading from S3 in {} threads. Object size: {}, Range size: {}.",
         download_thread_num, object_size, download_buffer_size);
 
-    return std::make_unique<ParallelReadBuffer>(std::move(factory), threadPoolCallbackRunner<void>(IOThreadPool::get(), "S3ParallelRead"), download_thread_num);
+    return std::make_unique<ParallelReadBuffer>(std::move(factory), threadPoolCallbackRunner<void>(IOThreadPool::get(), "S3ParallelRead"), download_thread_num, download_buffer_size);
 }
 
 std::unique_ptr<ReadBuffer> StorageS3Source::createAsyncS3ReadBuffer(

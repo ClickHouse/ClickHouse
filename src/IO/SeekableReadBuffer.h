@@ -26,6 +26,8 @@ public:
      * @param off Offset.
      * @param whence Seek mode (@see SEEK_SET, @see SEEK_CUR).
      * @return New position from the beginning of underlying buffer / file.
+     *
+     * What happens if you seek above the end of the file? Implementation-defined.
      */
     virtual off_t seek(off_t off, int whence) = 0;
 
@@ -40,28 +42,11 @@ public:
      */
     virtual off_t getPosition() = 0;
 
-    struct Range
-    {
-        size_t left;
-        std::optional<size_t> right;
-
-        String toString() const { return fmt::format("[{}:{}]", left, right ? std::to_string(*right) : "None"); }
-    };
-
-    /**
-     * Returns a struct, where `left` is current read position in file and `right` is the
-     * last included offset for reading according to setReadUntilPosition() or setReadUntilEnd().
-     * E.g. next nextImpl() call will read within range [left, right].
-     */
-    virtual Range getRemainingReadRange() const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getRemainingReadRange() not implemented");
-    }
-
     virtual String getInfoForLog() { return ""; }
 
     virtual size_t getFileOffsetOfBufferEnd() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFileOffsetOfBufferEnd() not implemented"); }
 
+    // If true, setReadUntilPosition() guarantees that eof will be reported at the given position.
     virtual bool supportsRightBoundedReads() const { return false; }
 
     virtual bool isIntegratedWithFilesystemCache() const { return false; }

@@ -456,10 +456,12 @@ CachedOnDiskReadBufferFromFile::getImplementationBuffer(FileSegmentPtr & file_se
             {
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
-                    "Buffer's offsets mismatch. Cached buffer offset: {}, current_write_offset: {} implementation buffer offset: {}, "
-                    "implementation buffer remaining range: {}, file segment info: {}",
-                    file_offset_of_buffer_end, current_write_offset, read_buffer_for_file_segment->getPosition(),
-                    read_buffer_for_file_segment->getRemainingReadRange().toString(), file_segment->getInfoForLog());
+                    "Buffer's offsets mismatch. Cached buffer offset: {}, current_write_offset: {}, implementation buffer offset: {}, file "
+                    "segment info: {}",
+                    file_offset_of_buffer_end,
+                    current_write_offset,
+                    read_buffer_for_file_segment->getPosition(),
+                    file_segment->getInfoForLog());
             }
 
             break;
@@ -844,10 +846,9 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
     LOG_TEST(
         log,
-        "Current count: {}, position: {}, read range: {}, file segment: {}",
+        "Current count: {}, position: {}, file segment: {}",
         implementation_buffer->count(),
         implementation_buffer->getPosition(),
-        implementation_buffer->getRemainingReadRange().toString(),
         file_segment->getInfoForLog());
 
     chassert(current_read_range.left <= file_offset_of_buffer_end);
@@ -908,9 +909,9 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 
         LOG_TEST(
             log,
-            "Read {} bytes, read type {}, position: {}, offset: {}, remaining read range: {}",
+            "Read {} bytes, read type {}, position: {}, offset: {}",
             size, toString(read_type), implementation_buffer->getPosition(),
-            implementation_buffer->getFileOffsetOfBufferEnd(), implementation_buffer->getRemainingReadRange().toString());
+            implementation_buffer->getFileOffsetOfBufferEnd());
 
         if (read_type == ReadType::CACHED)
         {
@@ -1182,12 +1183,6 @@ void CachedOnDiskReadBufferFromFile::assertCorrectness() const
 
 String CachedOnDiskReadBufferFromFile::getInfoForLog()
 {
-    String implementation_buffer_read_range_str;
-    if (implementation_buffer)
-        implementation_buffer_read_range_str = implementation_buffer->getRemainingReadRange().toString();
-    else
-        implementation_buffer_read_range_str = "None";
-
     String current_file_segment_info;
     if (current_file_segment_it != file_segments_holder->file_segments.end())
         current_file_segment_info = (*current_file_segment_it)->getInfoForLog();
@@ -1196,12 +1191,10 @@ String CachedOnDiskReadBufferFromFile::getInfoForLog()
 
     return fmt::format(
         "Buffer path: {}, hash key: {}, file_offset_of_buffer_end: {}, "
-        "internal buffer remaining read range: {}, "
         "read_type: {}, last caller: {}, file segment info: {}",
         source_file_path,
         getHexUIntLowercase(cache_key),
         file_offset_of_buffer_end,
-        implementation_buffer_read_range_str,
         toString(read_type),
         last_caller_id,
         current_file_segment_info);

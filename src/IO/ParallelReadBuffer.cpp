@@ -13,12 +13,13 @@ namespace ErrorCodes
 
 }
 
+// A subrange of the input, read by one SeekableReadBuffer.
 struct ParallelReadBuffer::ReadWorker
 {
-    explicit ReadWorker(SeekableReadBufferPtr reader_) : reader(std::move(reader_)), range(reader->getRemainingReadRange())
+    ReadWorker(SeekableReadBufferPtr reader_, size_t offset_, size_t size)
+        : reader(std::move(reader_)), offset(offset_), bytes_left(size), range_end(offset + bytes_left)
     {
-        assert(range.right);
-        bytes_left = *range.right - range.left + 1;
+        assert(bytes_left);
     }
 
     auto hasSegment() const { return current_segment_index < segments.size(); }
@@ -28,26 +29,34 @@ struct ParallelReadBuffer::ReadWorker
         assert(hasSegment());
         auto next_segment = std::move(segments[current_segment_index]);
         ++current_segment_index;
-        range.left += next_segment.size();
+        offset += next_segment.size();
         return next_segment;
     }
 
     SeekableReadBufferPtr reader;
-    std::vector<Memory<>> segments;
-    size_t current_segment_index = 0;
-    bool finished{false};
-    SeekableReadBuffer::Range range;
-    size_t bytes_left{0};
+    // Reader thread produces segments, nextImpl() consumes them.
+    std::vector<Memory<>> segments; // segments that were produced
+    size_t current_segment_index = 0; // first segment that's not consumed
+    bool finished{false}; // no more segments will be produced
+    size_t offset; // start of segments[current_segment_idx]
+    size_t bytes_left; // bytes left to produce above segments end
+    size_t range_end; // segments end + bytes_left, i.e. how far this worker will read
+
+    //                  segments[current_segment_idx..end]           range_end
+    // |-------------|--------------------------------------|------------|
+    //             offset                                     bytes_left
+
     std::atomic_bool cancel{false};
     std::mutex worker_mutex;
 };
 
 ParallelReadBuffer::ParallelReadBuffer(
-    std::unique_ptr<ReadBufferFactory> reader_factory_, ThreadPoolCallbackRunner<void> schedule_, size_t max_working_readers_)
+    std::unique_ptr<ReadBufferFactory> reader_factory_, ThreadPoolCallbackRunner<void> schedule_, size_t max_working_readers_, size_t range_step_)
     : SeekableReadBuffer(nullptr, 0)
     , max_working_readers(max_working_readers_)
     , schedule(std::move(schedule_))
     , reader_factory(std::move(reader_factory_))
+    , range_step(std::max(1ul, range_step_))
 {
     try
     {
@@ -62,13 +71,20 @@ ParallelReadBuffer::ParallelReadBuffer(
 
 bool ParallelReadBuffer::addReaderToPool()
 {
+    size_t file_size = reader_factory->getFileSize();
+    if (next_range_start >= file_size)
+        return false;
+    size_t range_start = next_range_start;
+    size_t size = std::min(range_step, file_size - range_start);
+    next_range_start += size;
+
     auto reader = reader_factory->getReader();
     if (!reader)
     {
         return false;
     }
 
-    auto worker = read_workers.emplace_back(std::make_shared<ReadWorker>(std::move(reader)));
+    auto worker = read_workers.emplace_back(std::make_shared<ReadWorker>(std::move(reader), range_start, size));
 
     ++active_working_reader;
     schedule([this, worker = std::move(worker)]() mutable { readerThreadFunction(std::move(worker)); }, 0);
@@ -100,9 +116,9 @@ off_t ParallelReadBuffer::seek(off_t offset, int whence)
     }
 
     const auto offset_is_in_range
-        = [&](const auto & range) { return static_cast<size_t>(offset) >= range.left && static_cast<size_t>(offset) <= *range.right; };
+        = [&](const auto & worker) { return static_cast<size_t>(offset) >= worker->offset && static_cast<size_t>(offset) < worker->range_end; };
 
-    while (!read_workers.empty() && (offset < current_position || !offset_is_in_range(read_workers.front()->range)))
+    while (!read_workers.empty() && (offset < current_position || !offset_is_in_range(read_workers.front())))
     {
         read_workers.front()->cancel = true;
         read_workers.pop_front();
@@ -111,7 +127,7 @@ off_t ParallelReadBuffer::seek(off_t offset, int whence)
     if (!read_workers.empty())
     {
         auto & front_worker = read_workers.front();
-        current_position = front_worker->range.left;
+        current_position = front_worker->offset;
         while (true)
         {
             std::unique_lock lock{front_worker->worker_mutex};
@@ -121,26 +137,25 @@ off_t ParallelReadBuffer::seek(off_t offset, int whence)
                 handleEmergencyStop();
 
             auto next_segment = front_worker->nextSegment();
-            if (static_cast<size_t>(offset) < current_position + next_segment.size())
+            current_position += next_segment.size();
+            if (offset < current_position)
             {
                 current_segment = std::move(next_segment);
                 working_buffer = internal_buffer = Buffer(current_segment.data(), current_segment.data() + current_segment.size());
-                current_position += current_segment.size();
                 pos = working_buffer.end() - (current_position - offset);
                 addReaders();
                 return offset;
             }
-
-            current_position += next_segment.size();
         }
+        chassert(false);
     }
 
     finishAndWait();
 
-    reader_factory->seek(offset, whence);
     all_completed = false;
     read_workers.clear();
 
+    next_range_start = offset;
     current_position = offset;
     resetWorkingBuffer();
 
@@ -249,6 +264,9 @@ void ParallelReadBuffer::readerThreadFunction(ReadWorkerPtr read_worker)
 
     try
     {
+        read_worker->reader->setReadUntilPosition(read_worker->range_end);
+        read_worker->reader->seek(read_worker->offset, SEEK_SET);
+
         while (!emergency_stop && !read_worker->cancel)
         {
             if (!read_worker->reader->next())

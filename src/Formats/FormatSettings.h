@@ -216,6 +216,10 @@ struct FormatSettings
         UInt64 max_block_size = 8192;
         ParquetVersion output_version;
         ParquetCompression output_compression_method = ParquetCompression::SNAPPY;
+        // TODO: asdqwe use ReadSettings.remote_read_min_bytes_for_seek instead.
+        size_t min_bytes_for_seek = 4 * 1024 * 1024;
+        // Limit on read size, but not on memory usage; many reads can be buffered at once.
+        size_t max_bytes_to_read_at_once = 128 * 1024 * 1024;
     } parquet;
 
     struct Pretty

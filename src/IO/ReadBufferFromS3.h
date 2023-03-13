@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/RangeGenerator.h>
 #include <Storages/StorageS3Settings.h>
 #include "config.h"
 
@@ -71,8 +70,6 @@ public:
     void setReadUntilPosition(size_t position) override;
     void setReadUntilEnd() override;
 
-    Range getRemainingReadRange() const override;
-
     size_t getFileOffsetOfBufferEnd() const override { return offset; }
 
     bool supportsRightBoundedReads() const override { return true; }
@@ -81,6 +78,9 @@ public:
 
 private:
     std::unique_ptr<ReadBuffer> initialize();
+
+    // If true, if we destroy impl now, no work was wasted. Just for metrics.
+    bool atEndOfRequestedRangeGuess();
 
     ReadSettings read_settings;
 
@@ -100,7 +100,6 @@ public:
         const String & bucket_,
         const String & key_,
         const String & version_id_,
-        size_t range_step_,
         size_t object_size_,
         const S3Settings::RequestSettings & request_settings_,
         const ReadSettings & read_settings_)
@@ -109,8 +108,6 @@ public:
         , key(key_)
         , version_id(version_id_)
         , read_settings(read_settings_)
-        , range_generator(object_size_, range_step_)
-        , range_step(range_step_)
         , object_size(object_size_)
         , request_settings(request_settings_)
     {
@@ -119,8 +116,6 @@ public:
     }
 
     SeekableReadBufferPtr getReader() override;
-
-    off_t seek(off_t off, [[maybe_unused]] int whence) override;
 
     size_t getFileSize() override;
 
@@ -132,11 +127,7 @@ private:
     const String key;
     const String version_id;
     ReadSettings read_settings;
-
-    RangeGenerator range_generator;
-    size_t range_step;
     size_t object_size;
-
     const S3Settings::RequestSettings request_settings;
 };
 

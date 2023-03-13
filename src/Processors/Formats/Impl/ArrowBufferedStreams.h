@@ -46,9 +46,7 @@ private:
 class RandomAccessFileFromSeekableReadBuffer : public arrow::io::RandomAccessFile
 {
 public:
-    RandomAccessFileFromSeekableReadBuffer(ReadBuffer & in_, off_t file_size_);
-
-    explicit RandomAccessFileFromSeekableReadBuffer(ReadBuffer & in_);
+    RandomAccessFileFromSeekableReadBuffer(ReadBuffer & in_, std::optional<off_t> file_size_, bool avoid_buffering_);
 
     arrow::Result<int64_t> GetSize() override;
 
@@ -74,6 +72,7 @@ private:
     SeekableReadBuffer & seekable_in;
     std::optional<off_t> file_size;
     bool is_open = false;
+    bool avoid_buffering = false;
 
     ARROW_DISALLOW_COPY_AND_ASSIGN(RandomAccessFileFromSeekableReadBuffer);
 };
@@ -101,7 +100,13 @@ std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(
     const FormatSettings & settings,
     std::atomic<int> & is_cancelled,
     const std::string & format_name,
-    const std::string & magic_bytes);
+    const std::string & magic_bytes,
+    // If true, we'll use ReadBuffer::setReadUntilPosition() to avoid buffering and readahead as
+    // much buffering as possible. For HTTP or S3 ReadBuffer, this means that each RandomAccessFile
+    // read call will do a new HTTP request. Used in parquet pre-buffered reading mode, which makes
+    // arrow do its own buffering and coalescing of reads.
+    // (ReadBuffer is not a good abstraction in this case, but it works.)
+    bool avoid_buffering = false);
 
 }
 

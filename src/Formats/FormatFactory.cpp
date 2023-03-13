@@ -452,12 +452,14 @@ ExternalSchemaReaderPtr FormatFactory::getExternalSchemaReader(
     return external_schema_reader_creator(format_settings);
 }
 
-void FormatFactory::registerInputFormat(const String & name, InputCreator input_creator)
+void FormatFactory::registerInputFormat(const String & name, InputCreator input_creator, MultistreamInputCreator multistream_input_creator)
 {
-    auto & target = dict[name].input_creator;
-    if (target)
+    chassert(input_creator);
+    auto & creators = dict[name];
+    if (creators.input_creator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Input format {} is already registered", name);
-    target = std::move(input_creator);
+    creators.input_creator = std::move(input_creator);
+    creators.multistream_input_creator = std::move(multistream_input_creator);
     registerFileExtension(name, name);
     KnownFormatNames::instance().add(name);
 }

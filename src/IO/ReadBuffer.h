@@ -211,7 +211,21 @@ public:
 
     /**
      * Set upper bound for read range [..., position).
-     * Required for reading from remote filesystem, when it matters how much we read.
+     * Useful for reading from remote filesystem, when it matters how much we read.
+     * Doesn't affect getFileSize().
+     * See also: SeekableReadBuffer::supportsRightBoundedReads().
+     *
+     * Behavior in weird cases is currently implementation-defined:
+     *  - setReadUntilPosition() below current position,
+     *  - setReadUntilPosition() above the end of the file,
+     *  - seek() to a position above the until position (even if you setUntilPosition() to a higher
+     *    value right after the seek!),
+     *
+     * Typical implementations discard any current buffers and connections, even if the position is
+     * adjusted only a little.
+     *
+     * Typical usage is to call it right after creating the ReadBuffer, before it started doing any
+     * work.
      */
     virtual void setReadUntilPosition(size_t /* position */) {}
 

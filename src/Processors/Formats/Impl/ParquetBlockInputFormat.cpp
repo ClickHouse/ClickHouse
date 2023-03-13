@@ -45,43 +45,33 @@ Chunk ParquetBlockInputFormat::generate()
     block_missing_values.clear();
 
     if (!file_reader)
+        prepareFileReader();
+
+    while (true)
     {
-        prepareReader();
-        file_reader->set_batch_size(format_settings.parquet.max_block_size);
-        std::vector<int> row_group_indices;
-        for (int i = 0; i < row_group_total; ++i)
+        if (!current_record_batch_reader && !prepareRowGroupReader())
+            return {};
+        if (is_stopped)
+            return {};
+
+        auto batch = current_record_batch_reader->Next();
+        if (!batch.ok())
+            throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading Parquet data: {}", batch.status().ToString());
+        if (!*batch)
         {
-            if (!skip_row_groups.contains(i))
-                row_group_indices.emplace_back(i);
+            ++row_group_current;
+            current_record_batch_reader.reset();
+            continue;
         }
-        auto read_status = file_reader->GetRecordBatchReader(row_group_indices, column_indices, &current_record_batch_reader);
-        if (!read_status.ok())
-            throw DB::ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading Parquet data: {}", read_status.ToString());
-    }
 
-    if (is_stopped)
-        return {};
-
-    auto batch = current_record_batch_reader->Next();
-    if (!batch.ok())
-    {
-        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading Parquet data: {}",
-                               batch.status().ToString());
-    }
-    if (*batch)
-    {
         auto tmp_table = arrow::Table::FromRecordBatches({*batch});
         /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
         /// Otherwise fill the missing columns with zero values of its type.
         BlockMissingValues * block_missing_values_ptr = format_settings.defaults_for_omitted_fields ? &block_missing_values : nullptr;
         arrow_column_to_ch_column->arrowTableToCHChunk(res, *tmp_table, (*tmp_table)->num_rows(), block_missing_values_ptr);
-    }
-    else
-    {
-        return {};
-    }
 
-    return res;
+        return res;
+    }
 }
 
 void ParquetBlockInputFormat::resetParser()
@@ -107,14 +97,42 @@ static void getFileReaderAndSchema(
     const FormatSettings & format_settings,
     std::atomic<int> & is_stopped)
 {
-    auto arrow_file = asArrowFile(in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES);
+    auto arrow_file = asArrowFile(in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true);
     if (is_stopped)
         return;
-    THROW_ARROW_NOT_OK(parquet::arrow::OpenFile(std::move(arrow_file), arrow::default_memory_pool(), &file_reader));
+
+    parquet::ArrowReaderProperties properties;
+    properties.set_use_threads(false);
+
+    // When reading a row group, arrow will:
+    //  1. Before reading anything, look at all the byte ranges it'll need to read from the file
+    //     (typically one per requested column in the row group). This information is in file
+    //     metadata.
+    //  2. Coalesce ranges that are close together, trading off seeks vs read amplification.
+    //     This is controlled by CacheOptions.
+    //  3. Process the columns one by one, issuing the corresponding (coalesced) range reads as
+    //     needed. Each range gets its own memory buffer allocated. These buffers stay in memory
+    //     (in arrow::io::internal::ReadRangeCache) until the whole row group reading is done.
+    //     So the memory usage of a "SELECT *" will be at least the compressed size of a row group
+    //     (typically hundreds of MB).
+    //
+    // With this coalescing, we don't need any readahead on our side, hence avoid_buffering above.
+    properties.set_pre_buffer(true);
+    auto cache_options = arrow::io::CacheOptions::LazyDefaults();
+    cache_options.hole_size_limit = format_settings.parquet.min_bytes_for_seek;
+    cache_options.range_size_limit = format_settings.parquet.max_bytes_to_read_at_once;
+    properties.set_cache_options(cache_options);
+
+    parquet::arrow::FileReaderBuilder builder;
+    THROW_ARROW_NOT_OK(builder.Open(std::move(arrow_file)));
+    builder.properties(properties);
+    // TODO: Pass custom memory_pool() to enable memory accounting with non-jemalloc allocators.
+    THROW_ARROW_NOT_OK(builder.Build(&file_reader));
+
     THROW_ARROW_NOT_OK(file_reader->GetSchema(&schema));
 }
 
-void ParquetBlockInputFormat::prepareReader()
+void ParquetBlockInputFormat::prepareFileReader()
 {
     std::shared_ptr<arrow::Schema> schema;
     getFileReaderAndSchema(*in, file_reader, schema, format_settings, is_stopped);
@@ -136,6 +154,26 @@ void ParquetBlockInputFormat::prepareReader()
         format_settings.parquet.case_insensitive_column_matching,
         format_settings.parquet.allow_missing_columns);
     column_indices = field_util.findRequiredIndices(getPort().getHeader(), *schema);
+}
+
+bool ParquetBlockInputFormat::prepareRowGroupReader()
+{
+    file_reader->set_batch_size(format_settings.parquet.max_block_size);
+
+    while (row_group_current < row_group_total && skip_row_groups.contains(row_group_current))
+        ++row_group_current;
+    if (row_group_current >= row_group_total)
+        return false;
+
+    // Read row groups one at a time. They're normally hundreds of MB each.
+    // If we ever encounter parquet files with lots of tiny row groups, we could detect this here
+    // and group them together to reduce number of seeks.
+
+    auto read_status = file_reader->GetRecordBatchReader({row_group_current}, column_indices, &current_record_batch_reader);
+    if (!read_status.ok())
+        throw DB::ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading Parquet data: {}", read_status.ToString());
+
+    return true;
 }
 
 ParquetSchemaReader::ParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
