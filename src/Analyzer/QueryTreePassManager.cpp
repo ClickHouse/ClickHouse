@@ -41,7 +41,7 @@
 #include <Analyzer/Passes/LogicalExpressionOptimizerPass.h>
 #include <Analyzer/Passes/CrossToInnerJoinPass.h>
 #include <Analyzer/Passes/ShardNumColumnToFunctionPass.h>
-
+#include <Analyzer/Passes/ConvertQueryToCNFPass.h>
 
 namespace DB
 {
@@ -234,6 +234,8 @@ void addQueryTreePasses(QueryTreePassManager & manager)
 {
     manager.addPass(std::make_unique<QueryAnalysisPass>());
     manager.addPass(std::make_unique<FunctionToSubcolumnsPass>());
+
+    manager.addPass(std::make_unique<ConvertQueryToCnfPass>());
 
     manager.addPass(std::make_unique<CountDistinctPass>());
     manager.addPass(std::make_unique<RewriteAggregateFunctionWithIfPass>());
