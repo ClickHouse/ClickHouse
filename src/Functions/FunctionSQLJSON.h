@@ -23,6 +23,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <base/range.h>
+#include <boost/tti/has_static_member_function.hpp>
 
 #include "config.h"
 
@@ -117,7 +118,6 @@ public:
 
             /// Parse JSON for every row
             Impl<JSONParser> impl;
-
             for (const auto i : collections::range(0, input_rows_count))
             {
                 std::string_view json{
@@ -156,7 +156,14 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return Impl<DummyJSONParser>::getReturnType(Name::name, arguments);
+        if constexpr (has_static_member_function_getReturnType<Impl<DummyJSONParser>, DataTypePtr(const char *, const ColumnsWithTypeAndName &, const bool &)>::value) 
+        {
+            return Impl<DummyJSONParser>::getReturnType(Name::name, arguments, getContext()->getSettingsRef().function_return_type_allow_nullable);
+        }
+        else
+        {
+            return Impl<DummyJSONParser>::getReturnType(Name::name, arguments);
+        }
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -173,6 +180,9 @@ public:
 #endif
         return FunctionSQLJSONHelpers::Executor<Name, Impl, DummyJSONParser>::run(arguments, result_type, input_rows_count, parse_depth);
     }
+
+private:
+    BOOST_TTI_HAS_STATIC_MEMBER_FUNCTION(getReturnType)
 };
 
 struct NameJSONExists
@@ -235,10 +245,22 @@ class JSONValueImpl
 public:
     using Element = typename JSONParser::Element;
 
+    static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &, const bool & allow_nullable)
+    {
+        if (allow_nullable)
+        {
+            DataTypePtr string_type = std::make_shared<DataTypeString>();
+            return std::make_shared<DataTypeNullable>(string_type);
+        }
+        else
+        {
+            return std::make_shared<DataTypeString>();
+        }
+    }
+
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
-        DataTypePtr string_type = std::make_shared<DataTypeString>();
-        return std::make_shared<DataTypeNullable>(string_type);
+        return std::make_shared<DataTypeString>();
     }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
@@ -270,8 +292,9 @@ public:
         std::stringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         out << current_element.getElement();
         auto output_str = out.str();
+        bool is_nullable_col = typeid(dest) == typeid(ColumnNullable);
         ColumnNullable & col_null = assert_cast<ColumnNullable &>(dest);
-        ColumnString & col_str = assert_cast<ColumnString &>(col_null.getNestedColumn());
+        ColumnString & col_str = is_nullable_col ? assert_cast<ColumnString &>(col_null.getNestedColumn()) : assert_cast<ColumnString &>(dest);
         ColumnString::Chars & data = col_str.getChars();
         ColumnString::Offsets & offsets = col_str.getOffsets();
 
@@ -286,7 +309,10 @@ public:
         {
             col_str.insertData(output_str.data(), output_str.size());
         }
-        col_null.getNullMapColumn().insertValue(0);
+        if (is_nullable_col)
+        {
+            col_null.getNullMapColumn().insertValue(0);
+        }
         return true;
     }
 };
