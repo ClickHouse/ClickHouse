@@ -16,15 +16,42 @@ namespace DB
     }
 }
 
+namespace
+{
 
-template <bool thread_safe>
-const char * OptimizedRegularExpressionImpl<thread_safe>::analyze(
+struct Literal
+{
+    std::string literal;
+    bool prefix; /// this literal string is the prefix of the whole string.
+    bool suffix; /// this literal string is the suffic of the whole string.
+    void clear()
+    {
+        literal.clear();
+        prefix = false;
+        suffix = false;
+    }
+};
+
+using Literals = std::vector<Literal>;
+
+size_t shortest_alter_length(const Literals & literals)
+{
+    if (literals.empty()) return 0;
+    size_t shortest = ~(0);
+    for (const auto & lit : literals)
+    {
+        if (shortest > lit.literal.size())
+            shortest = lit.literal.size();
+    }
+    return shortest;
+}
+
+const char * analyzeImpl(
     std::string_view regexp,
     const char * pos,
-    std::string & required_substring,
+    Literal & required_substring,
     bool & is_trivial,
-    bool & required_substring_is_prefix,
-    std::vector<std::string> & alternatives)
+    Literals & global_alters)
 {
     /** The expression is trivial if all the metacharacters in it are escaped.
       * The non-alternative string is
@@ -39,7 +66,7 @@ const char * OptimizedRegularExpressionImpl<thread_safe>::analyze(
     bool first_call = begin == regexp.data();
     int depth = 0;
     is_trivial = true;
-    required_substring_is_prefix = false;
+    ///required_substring_is_prefix = false;
     required_substring.clear();
     bool has_alternative_on_depth_0 = false;
     bool has_case_insensitive_flag = false;
@@ -51,46 +78,79 @@ const char * OptimizedRegularExpressionImpl<thread_safe>::analyze(
     Substrings trivial_substrings(1);
     Substring * last_substring = &trivial_substrings.back();
 
-    auto finish_non_trivial_char = [&]()
+    Literals cur_alters;
+
+    auto finish_cur_alters = [&]()
+    {
+        if (cur_alters.empty())
+            return;
+
+        if (global_alters.empty())
+        {
+            global_alters = std::move(cur_alters);
+            return;
+        }
+        if (shortest_alter_length(global_alters) > shortest_alter_length(cur_alters))
+        {
+            cur_alters.clear();
+        }
+        else
+        {
+            global_alters.clear();
+            global_alters = std::move(cur_alters);
+        }
+    };
+
+    auto finish_non_trivial_char = [&](bool create_new_substr = true)
     {
         if (depth != 0)
             return;
 
-        if (!last_substring->first.empty())
+        for (auto & alter : cur_alters)
+        {
+            if (alter.suffix)
+            {
+                alter.literal += last_substring->first;
+            }
+        }
+
+        finish_cur_alters();
+
+        if (!last_substring->first.empty() && create_new_substr)
         {
             trivial_substrings.resize(trivial_substrings.size() + 1);
             last_substring = &trivial_substrings.back();
         }
     };
 
-
-    auto finish_group = [&](std::string group_required_string, bool group_is_trivial, bool group_is_prefix, std::vector<std::string> & group_alternatives)
+    /// Resolve the string or alters in a group (xxxxx)
+    auto finish_group = [&](Literal & group_required_string, Literals & group_alters)
     {
-        if (alternatives.empty() && !group_alternatives.empty())
+        for (auto & alter : group_alters)
         {
-            /// Check if group alternatives has empty strings
-            bool has_empty_str = false;
-            for (const std::string & alter : group_alternatives)
-                has_empty_str |= alter.empty();
-            if (!has_empty_str)
-                alternatives = std::move(group_alternatives);
+            if (alter.prefix)
+            {
+                alter.literal = last_substring->first + alter.literal;
+            }
         }
 
-        if (group_is_prefix)
-            last_substring->first += group_required_string;
+        if (group_required_string.prefix)
+            last_substring->first += group_required_string.literal;
         else
         {
             finish_non_trivial_char();
-            last_substring->first = group_required_string;
+            last_substring->first = std::move(group_required_string).literal;
         }
         /// if we can still append, no need to finish it. e.g. abc(de)fg should capture abcdefg
-        if (!last_substring->first.empty() && !group_is_trivial)
+        if (!last_substring->first.empty() && !group_required_string.suffix)
         {
             trivial_substrings.resize(trivial_substrings.size() + 1);
             last_substring = &trivial_substrings.back();
         }
-        if (!group_is_trivial)
-            is_trivial = false;
+
+        /// assign group alters to current alters.
+        finish_cur_alters();
+        cur_alters = std::move(group_alters);
     };
 
     bool in_curly_braces = false;
@@ -178,23 +238,24 @@ const char * OptimizedRegularExpressionImpl<thread_safe>::analyze(
                     {
                         pos += 2;
                     }
-                    std::string group_required_substr;
-                    bool group_is_trival;
-                    bool group_is_prefix;
-                    std::vector<std::string> group_alters;
-                    pos = analyze(regexp, pos + 1, group_required_substr, group_is_trival, group_is_prefix, group_alters);
+                    Literal group_required_substr;
+                    bool group_is_trival = true;
+                    Literals group_alters;
+                    pos = analyzeImpl(regexp, pos + 1, group_required_substr, group_is_trival, group_alters);
                     /// pos should be ')', if not, then it is not a valid regular expression
                     if (pos == end)
                         return pos;
 
-                    /// For ()? ()* (){0,1}, we can just ignore the whole group.
+                    /// For ()? or ()* or (){0,1}, we can just ignore the whole group.
                     if ((pos + 1 < end && (pos[1] == '?' || pos[1] == '*')) ||
                         (pos + 2 < end && pos[1] == '{' && pos[2] == '0'))
                     {
                         finish_non_trivial_char();
                     }
                     else
-                        finish_group(group_required_substr, group_is_trival, group_is_prefix, group_alters);
+                    {
+                        finish_group(group_required_substr, group_alters);
+                    }
                 }
                 ++pos;
                 break;
@@ -271,8 +332,8 @@ const char * OptimizedRegularExpressionImpl<thread_safe>::analyze(
         }
     }
 finish:
-    if (last_substring && last_substring->first.empty())
-        trivial_substrings.pop_back();
+
+    finish_non_trivial_char(false);
 
     if (!is_trivial)
     {
@@ -300,35 +361,37 @@ finish:
 
             if (max_length >= MIN_LENGTH_FOR_STRSTR || !first_call)
             {
-                required_substring = candidate_it->first;
-                required_substring_is_prefix = candidate_it->second == 0;
+                required_substring.literal = candidate_it->first;
+                required_substring.prefix = candidate_it->second == 0;
+                required_substring.suffix = candidate_it + 1 == trivial_substrings.end();
             }
         }
     }
     else if (!trivial_substrings.empty())
     {
-        required_substring = trivial_substrings.front().first;
-        required_substring_is_prefix = trivial_substrings.front().second == 0;
+        required_substring.literal = trivial_substrings.front().first;
+        required_substring.prefix = trivial_substrings.front().second == 0;
+        required_substring.suffix = true;
     }
 
     /// if it is xxx|xxx|xxx, we should call the next xxx|xxx recursively and collect the result.
     if (has_alternative_on_depth_0)
     {
-        if (alternatives.empty())
-            alternatives.push_back(required_substring);
-        std::vector<std::string> next_alternatives;
+        /// compare the quality of required substring and alternatives and choose the better one.
+        if (shortest_alter_length(global_alters) < required_substring.literal.size())
+            global_alters = {required_substring};
+        Literals next_alternatives;
         /// this two vals are useless, xxx|xxx cannot be trivial nor prefix.
-        bool next_is_trivial;
-        bool next_is_prefix;
-        pos = analyze(regexp, pos, required_substring, next_is_trivial, next_is_prefix, next_alternatives);
+        bool next_is_trivial = true;
+        pos = analyzeImpl(regexp, pos, required_substring, next_is_trivial, next_alternatives);
         /// For xxx|xxx|xxx, we only conbine the alternatives and return a empty required_substring.
         if (next_alternatives.empty())
         {
-            alternatives.push_back(required_substring);
+            global_alters.push_back(required_substring);
         }
         else
         {
-            alternatives.insert(alternatives.end(), next_alternatives.begin(), next_alternatives.end());
+            global_alters.insert(global_alters.end(), next_alternatives.begin(), next_alternatives.end());
         }
         required_substring.clear();
     }
@@ -342,13 +405,30 @@ finish:
         << ", required_substring_is_prefix: " << required_substring_is_prefix
         << std::endl;*/
 }
+}
 
+template <bool thread_safe>
+void OptimizedRegularExpressionImpl<thread_safe>::analyze(
+        std::string_view regexp_,
+        std::string & required_substring,
+        bool & is_trivial,
+        bool & required_substring_is_prefix,
+        std::vector<std::string> & alternatives)
+{
+    Literals alter_literals;
+    Literal required_lit;
+    analyzeImpl(regexp_, regexp_.data(), required_lit, is_trivial, alter_literals);
+    required_substring = std::move(required_lit.literal);
+    required_substring_is_prefix = required_lit.prefix;
+    for (auto & lit : alter_literals)
+        alternatives.push_back(std::move(lit.literal));
+}
 
 template <bool thread_safe>
 OptimizedRegularExpressionImpl<thread_safe>::OptimizedRegularExpressionImpl(const std::string & regexp_, int options)
 {
     std::vector<std::string> alternatives; /// this vector collects patterns in (xx|xx|xx). for now it's not used.
-    analyze(regexp_, regexp_.data(), required_substring, is_trivial, required_substring_is_prefix, alternatives);
+    analyze(regexp_, required_substring, is_trivial, required_substring_is_prefix, alternatives);
 
     /// Just three following options are supported
     if (options & (~(RE_CASELESS | RE_NO_CAPTURE | RE_DOT_NL)))
