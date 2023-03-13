@@ -30,7 +30,7 @@ public:
     /** Initialize LRUCachePolicy with max_size_in_bytes and max_entries.
       * max_entries == 0 means no elements size restrictions.
       */
-    explicit LRUCachePolicy(size_t max_size_in_bytes_, size_t max_entries_ = 0, OnWeightLossFunction on_weight_loss_function_ = {})
+    LRUCachePolicy(size_t max_size_in_bytes_, size_t max_entries_, OnWeightLossFunction on_weight_loss_function_)
         : max_size_in_bytes(std::max(static_cast<size_t>(1), max_size_in_bytes_))
         , max_entries(max_entries_)
     {

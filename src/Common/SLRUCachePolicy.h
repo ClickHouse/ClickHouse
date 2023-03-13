@@ -34,7 +34,7 @@ public:
       * max_protected_size == 0 means that the default protected size is equal to half of the total max size.
       */
     /// TODO: construct from special struct with cache policy parameters (also with max_protected_size).
-    explicit SLRUCachePolicy(size_t max_size_in_bytes_, size_t max_entries_ = 0, double size_ratio = 0.5, OnWeightLossFunction on_weight_loss_function_ = {})
+    SLRUCachePolicy(size_t max_size_in_bytes_, size_t max_entries_, double size_ratio, OnWeightLossFunction on_weight_loss_function_)
         : max_protected_size(static_cast<size_t>(max_size_in_bytes_ * std::min(1.0, size_ratio)))
         , max_size_in_bytes(max_size_in_bytes_)
         , max_entries(max_entries_)
