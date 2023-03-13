@@ -21,6 +21,7 @@ class LRUCachePolicy : public ICachePolicy<Key, Mapped, HashFunction, WeightFunc
 {
 public:
     using MappedPtr = std::shared_ptr<Mapped>;
+
     using Base = ICachePolicy<Key, Mapped, HashFunction, WeightFunction>;
     using typename Base::OnWeightLossFunction;
 
@@ -30,8 +31,8 @@ public:
     LRUCachePolicy(size_t max_size_in_bytes_, size_t max_entries_, OnWeightLossFunction on_weight_loss_function_)
         : max_size_in_bytes(std::max(static_cast<size_t>(1), max_size_in_bytes_))
         , max_entries(max_entries_)
+        , on_weight_loss_function(on_weight_loss_function_)
     {
-        Base::on_weight_loss_function = on_weight_loss_function_;
     }
 
     size_t weight(std::lock_guard<std::mutex> & /* cache_lock */) const override
@@ -139,6 +140,7 @@ protected:
     const size_t max_entries;
 
     WeightFunction weight_function;
+    OnWeightLossFunction on_weight_loss_function;
 
     void removeOverflow()
     {
@@ -166,7 +168,7 @@ protected:
             --queue_size;
         }
 
-        Base::on_weight_loss_function(current_weight_lost);
+        on_weight_loss_function(current_weight_lost);
 
         if (current_size_in_bytes > (1ull << 63))
         {
