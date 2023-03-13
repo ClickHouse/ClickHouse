@@ -80,7 +80,7 @@ protected:
     void formatImplWithoutAlias(const FormattingBuffer & out) const override;
     void appendColumnNameImpl(WriteBuffer & ostr) const override;
 private:
-    void finishFormatWithWindow(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
+    void finishFormatWithWindow(const FormattingBuffer & out) const;
 };
 
 
