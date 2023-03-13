@@ -22,6 +22,7 @@
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <Storages/MergeTree/IPartMetadataManager.h>
+#include <Storages/BlockNumberDescription.h>
 
 
 namespace zkutil
@@ -438,6 +439,8 @@ public:
 
     /// True if here is lightweight deleted mask file in part.
     bool hasLightweightDelete() const { return columns.contains(LightweightDeleteDescription::FILTER_COLUMN.name); }
+
+    bool hasBlockNumber() const { return columns.contains(BlockNumberDescription::COLUMN.name); }
 
     void writeChecksums(const MergeTreeDataPartChecksums & checksums_, const WriteSettings & settings);
 

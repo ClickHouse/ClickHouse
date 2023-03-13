@@ -22,6 +22,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <Common/ProfileEventsScope.h>
+#include <Storages/BlockNumberDescription.h>
 
 
 namespace CurrentMetrics
@@ -168,6 +169,8 @@ getColumnsForNewDataPart(
     NamesAndTypesList system_columns;
     if (source_part->supportLightweightDeleteMutate())
         system_columns.push_back(LightweightDeleteDescription::FILTER_COLUMN);
+
+    system_columns.push_back(BlockNumberDescription::COLUMN);
 
     /// Preserve system columns that have persisted values in the source_part
     for (const auto & column : system_columns)

@@ -38,7 +38,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-
+#include <Storages/BlockNumberDescription.h>
 
 namespace DB
 {
@@ -475,6 +475,12 @@ static void validateUpdateColumns(
             found = true;
         }
 
+        /// Dont allow to override value of block number virtual column
+        if (!found && column_name == BlockNumberDescription::COLUMN.name)
+        {
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Update is not supported for virtual column {} ", backQuote(column_name));
+        }
+
         if (!found)
         {
             for (const auto & col : metadata_snapshot->getColumns().getMaterialized())
@@ -549,6 +555,8 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// Add _row_exists column if it is physically present in the part
     if (source.hasLightweightDeleteMask())
         all_columns.push_back({LightweightDeleteDescription::FILTER_COLUMN});
+
+    all_columns.push_back({BlockNumberDescription::COLUMN});
 
     NameSet updated_columns;
     bool materialize_ttl_recalculate_only = source.materializeTTLRecalculateOnly();
@@ -645,6 +653,8 @@ void MutationsInterpreter::prepare(bool dry_run)
                     type = physical_column->type;
                 else if (column == LightweightDeleteDescription::FILTER_COLUMN.name)
                     type = LightweightDeleteDescription::FILTER_COLUMN.type;
+                else if (column == BlockNumberDescription::COLUMN.name)
+                    type = BlockNumberDescription::COLUMN.type;
                 else
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown column {}", column);
 
@@ -912,6 +922,8 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
     if (source.hasLightweightDeleteMask())
         all_columns.push_back({LightweightDeleteDescription::FILTER_COLUMN});
 
+    all_columns.push_back({BlockNumberDescription::COLUMN});
+
     /// Next, for each stage calculate columns changed by this and previous stages.
     for (size_t i = 0; i < prepared_stages.size(); ++i)
     {
@@ -1055,6 +1067,19 @@ struct VirtualColumns
                 column.name = std::move(columns_to_read[i]);
 
                 virtuals.emplace_back(ColumnAndPosition{.column = std::move(column), .position = i});
+            }
+            else if (columns_to_read[i] == BlockNumberDescription::COLUMN.name)
+            {
+                LoadedMergeTreeDataPartInfoForReader part_info_reader(part);
+                if (!part_info_reader.getColumns().contains(BlockNumberDescription::COLUMN.name))
+                {
+                    ColumnWithTypeAndName mask_column;
+                    mask_column.type = BlockNumberDescription::COLUMN.type;
+                    mask_column.column = mask_column.type->createColumnConst(0, part->info.min_block);
+                    mask_column.name = std::move(columns_to_read[i]);
+
+                    virtuals.emplace_back(ColumnAndPosition{.column = std::move(mask_column), .position = i});
+                }
             }
         }
 

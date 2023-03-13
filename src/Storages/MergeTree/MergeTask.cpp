@@ -30,6 +30,7 @@
 #include <Processors/Transforms/TTLCalcTransform.h>
 #include <Processors/Transforms/DistinctSortedTransform.h>
 #include <Processors/Transforms/DistinctTransform.h>
+#include <Storages/BlockNumberDescription.h>
 
 namespace DB
 {
@@ -246,6 +247,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         }
     }
 
+    global_ctx->storage_columns.emplace_back(BlockNumberDescription::COLUMN);
     global_ctx->new_data_part->setColumns(global_ctx->storage_columns, infos);
 
     const auto & local_part_min_ttl = global_ctx->new_data_part->ttl_infos.part_min_ttl;
