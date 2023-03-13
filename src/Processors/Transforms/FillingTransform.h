@@ -16,7 +16,7 @@ namespace DB
 class FillingTransform : public ISimpleTransform
 {
 public:
-    FillingTransform(const Block & header_, const SortDescription & sort_description_, InterpolateDescriptionPtr interpolate_description_, bool on_totals_);
+    FillingTransform(const Block & header_, const SortDescription & sort_description_, InterpolateDescriptionPtr interpolate_description_);
 
     String getName() const override { return "FillingTransform"; }
 
@@ -33,7 +33,6 @@ private:
 
     const SortDescription sort_description; /// Contains only columns with WITH FILL.
     const InterpolateDescriptionPtr interpolate_description; /// Contains INTERPOLATE columns
-    const bool on_totals; /// FillingTransform does nothing on totals.
 
     FillingRow filling_row; /// Current row, which is used to fill gaps.
     FillingRow next_row; /// Row to which we need to generate filling rows.
