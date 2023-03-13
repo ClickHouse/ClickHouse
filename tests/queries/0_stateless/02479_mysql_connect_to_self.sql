@@ -33,7 +33,7 @@ SELECT count() FROM mysql('127.0.0.1:9004', currentDatabase(), foo, 'default', '
 
 EXPLAIN QUERY TREE dump_ast = 1
 SELECT * FROM mysql(
-    '127.0.0.1:9004', 'default', 'foo', 'default', '',
+    '127.0.0.1:9004', currentDatabase(), foo, 'default', ''
     SETTINGS connection_wait_timeout = 123, connect_timeout = 40123002, read_write_timeout = 40123001, connection_pool_size = 3
 );
 
