@@ -670,6 +670,46 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
 }
 
 
+void DiskObjectStorageTransaction::writeFileUsingNativeCopy(const String & path, WriteMode mode, const IParamsForNativeCopyToDisk & params)
+{
+    auto blob_name = object_storage.generateBlobNameForPath(path);
+    std::optional<ObjectAttributes> object_attributes;
+
+    if (metadata_helper)
+    {
+        auto revision = metadata_helper->revision_counter + 1;
+        metadata_helper->revision_counter++;
+        object_attributes = {
+            {"path", path}
+        };
+        blob_name = "r" + revisionToString(revision) + "-file-" + blob_name;
+    }
+
+    auto object = StoredObject::create(object_storage, fs::path(metadata_storage.getObjectStorageRootPath()) / blob_name);
+    auto write_operation = std::make_unique<WriteFileObjectStorageOperation>(object_storage, metadata_storage, object);
+
+    auto create_metadata_callback = [tx = shared_from_this(), mode, path, blob_name] (size_t count)
+    {
+        if (mode == WriteMode::Rewrite)
+            tx->metadata_transaction->createMetadataFile(path, blob_name, count);
+        else
+            tx->metadata_transaction->addBlobToMetadata(path, blob_name, count);
+
+        tx->metadata_transaction->commit();
+    };
+
+    operations_to_execute.emplace_back(std::move(write_operation));
+
+    /// We always use mode Rewrite because we simulate append using metadata and different files
+    return object_storage.writeObjectUsingNativeCopy(
+        object,
+        WriteMode::Rewrite,
+        params,
+        object_attributes,
+        std::move(create_metadata_callback));
+}
+
+
 void DiskObjectStorageTransaction::createHardLink(const std::string & src_path, const std::string & dst_path)
 {
     operations_to_execute.emplace_back(

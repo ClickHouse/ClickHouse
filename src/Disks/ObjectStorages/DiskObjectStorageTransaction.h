@@ -99,6 +99,8 @@ public:
         const WriteSettings & settings = {},
         bool autocommit = true) override;
 
+    void writeFileUsingNativeCopy(const String & path, WriteMode mode, const IParamsForNativeCopyToDisk & params) override;
+
     void removeFile(const std::string & path) override;
     void removeFileIfExists(const std::string & path) override;
     void removeDirectory(const std::string & path) override;

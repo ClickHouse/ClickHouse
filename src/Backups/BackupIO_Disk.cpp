@@ -1,4 +1,5 @@
 #include <Backups/BackupIO_Disk.h>
+#include <Common/logger_useful.h>
 #include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
@@ -12,7 +13,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-BackupReaderDisk::BackupReaderDisk(const DiskPtr & disk_, const String & path_) : disk(disk_), path(path_)
+BackupReaderDisk::BackupReaderDisk(const DiskPtr & disk_, const String & path_)
+    : disk(disk_), path(path_), log(&Poco::Logger::get("BackupReaderDisk"))
 {
 }
 
@@ -32,6 +34,18 @@ std::unique_ptr<SeekableReadBuffer> BackupReaderDisk::readFile(const String & fi
 {
     return disk->readFile(path / file_name);
 }
+
+bool BackupReaderDisk::supportNativeCopy(DataSourceDescription destination_data_source_description, WriteMode mode) const
+{
+    return (destination_data_source_description == getDataSourceDescription()) && (mode == WriteMode::Rewrite);
+}
+
+void BackupReaderDisk::copyFileToDiskNative(const String & file_name, size_t, DiskPtr destination_disk, const String & destination_path, WriteMode)
+{
+    auto src_path = path / file_name;
+    disk->copyFile(src_path, *destination_disk, destination_path);
+}
+
 
 BackupWriterDisk::BackupWriterDisk(const DiskPtr & disk_, const String & path_) : disk(disk_), path(path_)
 {

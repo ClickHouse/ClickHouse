@@ -38,6 +38,14 @@ void IDisk::copyFile(const String & from_file_path, IDisk & to_disk, const Strin
     out->finalize();
 }
 
+void IDisk::writeFileUsingNativeCopy(const String &, WriteMode, const IParamsForNativeCopyToDisk &)
+{
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED,
+        "Method `writeFileUsingNativeCopy()` is not implemented for disk: {}",
+        getDataSourceDescription().type);
+}
+
 
 DiskTransactionPtr IDisk::createTransaction()
 {
