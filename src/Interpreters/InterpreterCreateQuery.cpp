@@ -1735,6 +1735,7 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     {
         if (create.temporary)
         {
+            /// Currently default table engine for temporary tables is Memory. default_table_engine does not affect temporary tables.
             if (create.storage && create.storage->engine && create.storage->engine->name != "Memory")
                 required_access.emplace_back(AccessType::CREATE_ARBITRARY_TEMPORARY_TABLE);
             else
