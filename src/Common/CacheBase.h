@@ -33,9 +33,10 @@ template <typename TKey, typename TMapped, typename HashFunction = std::hash<TKe
 class CacheBase
 {
 public:
-    using Key = TKey;
-    using Mapped = TMapped;
-    using MappedPtr = std::shared_ptr<Mapped>;
+    using CachePolicy = ICachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
+    using Key = typename CachePolicy::Key;
+    using Mapped = typename CachePolicy::Mapped;
+    using MappedPtr = typename CachePolicy::MappedPtr;
 
     /// Use this ctor if you don't care about the internal cache policy.
     explicit CacheBase(size_t max_size_in_bytes, size_t max_entries = 0, double size_ratio = 0.5)
@@ -198,8 +199,6 @@ protected:
     mutable std::mutex mutex;
 
 private:
-    using CachePolicy = ICachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
-
     std::unique_ptr<CachePolicy> cache_policy TSA_GUARDED_BY(mutex);
 
     std::atomic<size_t> hits{0};
