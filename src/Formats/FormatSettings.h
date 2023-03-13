@@ -82,6 +82,7 @@ struct FormatSettings
     Float32 input_allow_errors_ratio = 0;
 
     UInt64 max_binary_string_size = 0;
+    UInt64 max_binary_array_size = 0;
     UInt64 client_protocol_version = 0;
 
     UInt64 max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH;

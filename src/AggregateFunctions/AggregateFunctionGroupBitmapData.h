@@ -20,6 +20,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int TOO_LARGE_ARRAY_SIZE;
+}
+
 enum BitmapKind
 {
     Small = 0,
@@ -113,6 +118,9 @@ public:
         {
             size_t size;
             readVarUInt(size, in);
+            static constexpr size_t max_size = 1_GiB;
+            if (size > max_size)
+                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size in groupBitmap.");
             std::unique_ptr<char[]> buf(new char[size]);
             in.readStrict(buf.get(), size);
             rb = std::make_shared<RoaringBitmap>(RoaringBitmap::read(buf.get()));
