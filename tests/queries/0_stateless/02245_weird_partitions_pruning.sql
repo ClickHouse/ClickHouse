@@ -1,9 +1,11 @@
--- We use a hack - partition by ignore(d1). In some cases there are two columns 
+-- Tags: no-random-merge-tree-settings
+
+-- We use a hack - partition by ignore(d1). In some cases there are two columns
 -- not fully correlated (<1) (date_begin - date_end or datetime - datetime_in_TZ_with_DST)
 -- If we partition by these columns instead of one it will be twice more partitions.
--- Partition by (.., ignore(d1)) allows to partition by the first column but build 
+-- Partition by (.., ignore(d1)) allows to partition by the first column but build
 -- min_max indexes for both column, so partition pruning works for both columns.
--- It's very similar to min_max skip index but gives bigger performance boost, 
+-- It's very similar to min_max skip index but gives bigger performance boost,
 -- because partition pruning happens on very early query stage.
 
 

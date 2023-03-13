@@ -82,6 +82,11 @@ void ASTStorage::formatImpl(const FormattingBuffer & out) const
     }
 }
 
+bool ASTStorage::isExtendedStorageDefinition() const
+{
+    return partition_by || primary_key || order_by || sample_by || settings;
+}
+
 
 class ASTColumnsElement : public IAST
 {
@@ -94,6 +99,11 @@ public:
     ASTPtr clone() const override;
 
     void formatImpl(const FormattingBuffer & out) const override;
+
+    void forEachPointerToChild(std::function<void(void**)> f) override
+    {
+        f(reinterpret_cast<void **>(&elem));
+    }
 };
 
 ASTPtr ASTColumnsElement::clone() const
@@ -369,7 +379,7 @@ void ASTCreateQuery::formatQueryImpl(const FormattingBuffer & out) const
             columns_list->formatImpl(out.copy());
             out.nlOrNothing();
             out.ostr << ")";
-            out.setExpressionListAlwaysStartsOnNewLine(false); //-V519
+            out.setExpressionListAlwaysStartsOnNewLine(false);
         }
 
         out.writeKeyword(" AS ");
@@ -397,7 +407,7 @@ void ASTCreateQuery::formatQueryImpl(const FormattingBuffer & out) const
         out.ostr << ")";
     }
 
-    out.setExpressionListAlwaysStartsOnNewLine(false); //-V519
+    out.setExpressionListAlwaysStartsOnNewLine(false);
 
     if (inner_storage)
     {

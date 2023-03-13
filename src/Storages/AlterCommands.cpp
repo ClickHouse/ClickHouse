@@ -719,7 +719,7 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
             { typeid(DataTypeUInt16),   typeid(DataTypeDate)     },
         };
 
-    /// Unwrap some nested and check for valid conevrsions
+    /// Unwrap some nested and check for valid conversions
     while (true)
     {
         /// types are equal, obviously pure metadata alter
@@ -749,10 +749,9 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 
         const auto * nullable_from = typeid_cast<const DataTypeNullable *>(from);
         const auto * nullable_to = typeid_cast<const DataTypeNullable *>(to);
-        if (nullable_to)
+        if (nullable_from && nullable_to)
         {
-            /// Here we allow a conversion X -> Nullable(X) to make a metadata-only conversion.
-            from = nullable_from ? nullable_from->getNestedType().get() : from;
+            from = nullable_from->getNestedType().get();
             to = nullable_to->getNestedType().get();
             continue;
         }
@@ -902,19 +901,10 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
     return result;
 }
 
-bool AlterCommands::hasInvertedIndex(const StorageInMemoryMetadata & metadata, ContextPtr context)
+bool AlterCommands::hasInvertedIndex(const StorageInMemoryMetadata & metadata)
 {
     for (const auto & index : metadata.secondary_indices)
     {
-        IndexDescription index_desc;
-        try
-        {
-            index_desc = IndexDescription::getIndexFromAST(index.definition_ast, metadata.columns, context);
-        }
-        catch (...)
-        {
-            continue;
-        }
         if (index.type == INVERTED_INDEX_NAME)
             return true;
     }
@@ -1089,8 +1079,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 {
                     String exception_message = fmt::format("Wrong column. Cannot find column {} to modify", backQuote(column_name));
                     all_columns.appendHintsMessage(exception_message, column_name);
-                    throw Exception{exception_message,
-                        ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK};
+                    throw Exception::createDeprecated(exception_message, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
                 }
                 else
                     continue;
@@ -1198,10 +1187,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             }
             else if (!command.if_exists)
             {
-                constexpr auto message_format = "Wrong column name. Cannot find column {} to drop";
-                String exception_message = fmt::format(message_format, backQuote(command.column_name));
-                all_columns.appendHintsMessage(exception_message, command.column_name);
-                throw Exception(PreformattedMessage{exception_message, message_format}, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+                 auto message = PreformattedMessage::create(
+                    "Wrong column name. Cannot find column {} to drop", backQuote(command.column_name));
+                all_columns.appendHintsMessage(message.text, command.column_name);
+                throw Exception(std::move(message), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
             }
         }
         else if (command.type == AlterCommand::COMMENT_COLUMN)
@@ -1210,10 +1199,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             {
                 if (!command.if_exists)
                 {
-                    constexpr auto message_format = "Wrong column name. Cannot find column {} to comment";
-                    String exception_message = fmt::format(message_format, backQuote(command.column_name));
-                    all_columns.appendHintsMessage(exception_message, command.column_name);
-                    throw Exception(PreformattedMessage{exception_message, message_format}, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+                    auto message = PreformattedMessage::create(
+                        "Wrong column name. Cannot find column {} to comment", backQuote(command.column_name));
+                    all_columns.appendHintsMessage(message.text, command.column_name);
+                    throw Exception(std::move(message), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
                 }
             }
         }
@@ -1247,10 +1236,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             {
                 if (!command.if_exists)
                 {
-                    constexpr auto message_format = "Wrong column name. Cannot find column {} to rename";
-                    String exception_message = fmt::format(message_format, backQuote(command.column_name));
-                    all_columns.appendHintsMessage(exception_message, command.column_name);
-                    throw Exception(PreformattedMessage{exception_message, message_format}, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+                    auto message = PreformattedMessage::create(
+                       "Wrong column name. Cannot find column {} to rename", backQuote(command.column_name));
+                    all_columns.appendHintsMessage(message.text, command.column_name);
+                    throw Exception(std::move(message), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
                 }
                 else
                     continue;

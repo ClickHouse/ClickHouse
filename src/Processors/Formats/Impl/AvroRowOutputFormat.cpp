@@ -49,10 +49,9 @@ public:
         : string_to_string_regexp(settings_.avro.string_column_pattern)
     {
         if (!string_to_string_regexp.ok())
-            throw DB::Exception(
-                "Avro: cannot compile re2: " + settings_.avro.string_column_pattern + ", error: " + string_to_string_regexp.error()
-                    + ". Look at https://github.com/google/re2/wiki/Syntax for reference.",
-                DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
+            throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP, "Avro: cannot compile re2: {}, error: {}. "
+                "Look at https://github.com/google/re2/wiki/Syntax for reference.",
+                settings_.avro.string_column_pattern, string_to_string_regexp.error());
     }
 
     bool isStringAsString(const String & column_name)
@@ -127,6 +126,11 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             return {avro::IntSchema(), [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
             {
                 encoder.encodeInt(assert_cast<const ColumnUInt32 &>(column).getElement(row_num));
+            }};
+        case TypeIndex::IPv4:
+            return {avro::IntSchema(), [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
+            {
+                encoder.encodeInt(assert_cast<const ColumnIPv4 &>(column).getElement(row_num));
             }};
         case TypeIndex::Int32:
             return {avro::IntSchema(), [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
@@ -203,6 +207,15 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             return {schema, [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
             {
                 const std::string_view & s = assert_cast<const ColumnFixedString &>(column).getDataAt(row_num).toView();
+                encoder.encodeFixed(reinterpret_cast<const uint8_t *>(s.data()), s.size());
+            }};
+        }
+        case TypeIndex::IPv6:
+        {
+            auto schema = avro::FixedSchema(sizeof(IPv6), "ipv6_" + toString(type_name_increment));
+            return {schema, [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
+            {
+                const std::string_view & s = assert_cast<const ColumnIPv6 &>(column).getDataAt(row_num).toView();
                 encoder.encodeFixed(reinterpret_cast<const uint8_t *>(s.data()), s.size());
             }};
         }

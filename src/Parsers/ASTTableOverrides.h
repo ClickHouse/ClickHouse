@@ -27,6 +27,12 @@ public:
     String getID(char) const override { return "TableOverride " + table_name; }
     ASTPtr clone() const override;
     void formatImpl(const FormattingBuffer & out_) const override;
+
+    void forEachPointerToChild(std::function<void(void**)> f) override
+    {
+        f(reinterpret_cast<void **>(&columns));
+        f(reinterpret_cast<void **>(&storage));
+    }
 };
 
 /// List of table overrides, for example:

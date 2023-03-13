@@ -92,6 +92,8 @@ protected:
         out.ostr << " ";
         out.writeKeyword(backQuoteIfNeed(getDatabase()));
     }
+
+    QueryKind getQueryKind() const override { return QueryKind::Exists; }
 };
 
 class ASTShowCreateDatabaseQuery : public ASTQueryWithTableAndOutputImpl<ASTShowCreateDatabaseQueryIDAndQueryNames>
@@ -124,6 +126,8 @@ public:
         cloneOutputOptions(*res);
         return res;
     }
+
+    QueryKind getQueryKind() const override { return QueryKind::Describe; }
 
 protected:
     void formatQueryImpl(const FormattingBuffer & out) const override

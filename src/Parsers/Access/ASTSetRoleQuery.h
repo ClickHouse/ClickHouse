@@ -27,5 +27,7 @@ public:
     String getID(char) const override;
     ASTPtr clone() const override;
     void formatImpl(const FormattingBuffer & out) const override;
+
+    QueryKind getQueryKind() const override { return QueryKind::Set; }
 };
 }

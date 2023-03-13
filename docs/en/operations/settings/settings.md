@@ -488,6 +488,23 @@ Possible values:
 
 Default value: 0.
 
+## group_by_use_nulls {#group_by_use_nulls}
+
+Changes the way the [GROUP BY clause](/docs/en/sql-reference/statements/select/group-by.md) treats the types of aggregation keys.
+When the `ROLLUP`, `CUBE`, or `GROUPING SETS` specifiers are used, some aggregation keys may not be used to produce some result rows.
+Columns for these keys are filled with either default value or `NULL` in corresponding rows depending on this setting.
+
+Possible values:
+
+-   0 — The default value for the aggregation key type is used to produce missing values.
+-   1 — ClickHouse executes `GROUP BY` the same way as the SQL standard says. The types of aggregation keys are converted to [Nullable](/docs/en/sql-reference/data-types/nullable.md/#data_type-nullable). Columns for corresponding aggregation keys are filled with [NULL](/docs/en/sql-reference/syntax.md) for rows that didn't use it.
+
+Default value: 0.
+
+See also:
+
+-   [GROUP BY clause](/docs/en/sql-reference/statements/select/group-by.md)
+
 ## partial_merge_join_optimizations {#partial_merge_join_optimizations}
 
 Disables optimizations in partial merge join algorithm for [JOIN](../../sql-reference/statements/select/join.md) queries.
@@ -833,6 +850,15 @@ Result:
 │ QueryFinish │ SELECT 1; │
 └─────────────┴───────────┘
 ```
+
+## log_processors_profiles {#settings-log_processors_profiles}
+
+Write time that processor spent during execution/waiting for data to `system.processors_profile_log` table.
+
+See also:
+
+-   [`system.processors_profile_log`](../../operations/system-tables/processors_profile_log.md#system-processors_profile_log)
+-   [`EXPLAIN PIPELINE`](../../sql-reference/statements/explain.md#explain-pipeline)
 
 ## max_insert_block_size {#settings-max_insert_block_size}
 
@@ -1222,7 +1248,9 @@ Possible values:
 Default value: 1.
 
 :::warning
-Disable this setting if you use [max_parallel_replicas](#settings-max_parallel_replicas).
+Disable this setting if you use [max_parallel_replicas](#settings-max_parallel_replicas) without [parallel_replicas_custom_key](#settings-parallel_replicas_custom_key).
+If [parallel_replicas_custom_key](#settings-parallel_replicas_custom_key) is set, disable this setting only if it's used on a cluster with multiple shards containing multiple replicas.
+If it's used on a cluster with a single shard and multiple replicas, disabling this setting will have negative effects.
 :::
 
 ## totals_mode {#totals-mode}
@@ -1247,16 +1275,47 @@ Default value: `1`.
 
 **Additional Info**
 
-This setting is useful for replicated tables with a sampling key. A query may be processed faster if it is executed on several servers in parallel. But the query performance may degrade in the following cases:
+This options will produce different results depending on the settings used.
+
+:::warning
+This setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain requirements. See [Distributed Subqueries and max_parallel_replicas](../../sql-reference/operators/in.md/#max_parallel_replica-subqueries) for more details.
+:::
+
+### Parallel processing using `SAMPLE` key
+
+A query may be processed faster if it is executed on several servers in parallel. But the query performance may degrade in the following cases:
 
 - The position of the sampling key in the partitioning key does not allow efficient range scans.
 - Adding a sampling key to the table makes filtering by other columns less efficient.
 - The sampling key is an expression that is expensive to calculate.
 - The cluster latency distribution has a long tail, so that querying more servers increases the query overall latency.
 
-:::warning
-This setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain requirements. See [Distributed Subqueries and max_parallel_replicas](../../sql-reference/operators/in.md/#max_parallel_replica-subqueries) for more details.
-:::
+### Parallel processing using [parallel_replicas_custom_key](#settings-parallel_replicas_custom_key)
+
+This setting is useful for any replicated table.
+
+## parallel_replicas_custom_key {#settings-parallel_replicas_custom_key}
+
+An arbitrary integer expression that can be used to split work between replicas for a specific table.
+The value can be any integer expression.
+A query may be processed faster if it is executed on several servers in parallel but it depends on the used [parallel_replicas_custom_key](#settings-parallel_replicas_custom_key)
+and [parallel_replicas_custom_key_filter_type](#settings-parallel_replicas_custom_key_filter_type).
+
+Simple expressions using primary keys are preferred.
+
+If the setting is used on a cluster that consists of a single shard with multiple replicas, those replicas will be converted into virtual shards.
+Otherwise, it will behave same as for `SAMPLE` key, it will use multiple replicas of each shard.
+
+## parallel_replicas_custom_key_filter_type {#settings-parallel_replicas_custom_key_filter_type}
+
+How to use `parallel_replicas_custom_key` expression for splitting work between replicas.
+
+Possible values:
+
+-   `default` — Use the default implementation using modulo operation on the `parallel_replicas_custom_key`.
+-   `range` — Split the entire value space of the expression in the ranges. This type of filtering is useful if values of `parallel_replicas_custom_key` are uniformly spread across the entire integer space, e.g. hash values.
+
+Default value: `default`.
 
 ## compile_expressions {#compile-expressions}
 
@@ -1301,9 +1360,43 @@ Possible values:
 
 Default value: `3`.
 
-## enable_experimental_query_result_cache {#enable-experimental-query-result-cache}
+## use_query_cache {#use-query-cache}
 
-If turned on, results of SELECT queries are stored in and (if available) retrieved from the [query result cache](../query-result-cache.md).
+If turned on, `SELECT` queries may utilize the [query cache](../query-cache.md). Parameters [enable_reads_from_query_cache](#enable-reads-from-query-cache)
+and [enable_writes_to_query_cache](#enable-writes-to-query-cache) control in more detail how the cache is used.
+
+Possible values:
+
+- 0 - Yes
+- 1 - No
+
+Default value: `0`.
+
+## enable_reads_from_query_cache {#enable-reads-from-query-cache}
+
+If turned on, results of `SELECT` queries are retrieved from the [query cache](../query-cache.md).
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+
+Default value: `1`.
+
+## enable_writes_to_query_cache {#enable-writes-to-query-cache}
+
+If turned on, results of `SELECT` queries are stored in the [query cache](../query-cache.md).
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+
+Default value: `1`.
+
+## query_cache_store_results_of_queries_with_nondeterministic_functions {#query--store-results-of-queries-with-nondeterministic-functions}
+
+If turned on, then results of `SELECT` queries with non-deterministic functions (e.g. `rand()`, `now()`) can be cached in the [query cache](../query-cache.md).
 
 Possible values:
 
@@ -1312,31 +1405,9 @@ Possible values:
 
 Default value: `0`.
 
-## enable_experimental_query_result_cache_passive_usage {#enable-experimental-query-result-cache-passive-usage}
+## query_cache_min_query_runs {#query-cache-min-query-runs}
 
-If turned on, results of SELECT queries are (if available) retrieved from the [query result cache](../query-result-cache.md).
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-
-Default value: `0`.
-
-## query_result_cache_store_results_of_queries_with_nondeterministic_functions {#query-result-cache-store-results-of-queries-with-nondeterministic-functions}
-
-If turned on, then results of SELECT queries with non-deterministic functions (e.g. `rand()`, `now()`) can be cached in the [query result cache](../query-result-cache.md).
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-
-Default value: `0`.
-
-## query_result_cache_min_query_runs {#query-result-cache-min-query-runs}
-
-Minimum number of times a SELECT query must run before its result is stored in the [query result cache](../query-result-cache.md).
+Minimum number of times a `SELECT` query must run before its result is stored in the [query cache](../query-cache.md).
 
 Possible values:
 
@@ -1344,9 +1415,9 @@ Possible values:
 
 Default value: `0`
 
-## query_result_cache_min_query_duration {#query-result-cache-min-query-duration}
+## query_cache_min_query_duration {#query-cache-min-query-duration}
 
-Minimum duration in milliseconds a query needs to run for its result to be stored in the [query result cache](../query-result-cache.md).
+Minimum duration in milliseconds a query needs to run for its result to be stored in the [query cache](../query-cache.md).
 
 Possible values:
 
@@ -1354,9 +1425,9 @@ Possible values:
 
 Default value: `0`
 
-## query_result_cache_ttl {#query-result-cache-ttl}
+## query_cache_ttl {#query-cache-ttl}
 
-After this time in seconds entries in the [query result cache](../query-result-cache.md) become stale.
+After this time in seconds entries in the [query cache](../query-cache.md) become stale.
 
 Possible values:
 
@@ -1364,9 +1435,9 @@ Possible values:
 
 Default value: `60`
 
-## query_result_cache_share_between_users {#query-result-cache-share-between-users}
+## query_cache_share_between_users {#query-cache-share-between-users}
 
-If turned on, the result of SELECT queries cached in the [query result cache](../query-result-cache.md) can be read by other users.
+If turned on, the result of `SELECT` queries cached in the [query cache](../query-cache.md) can be read by other users.
 It is not recommended to enable this setting due to security reasons.
 
 Possible values:
@@ -1532,6 +1603,17 @@ Possible values:
 
 Default value: `100000`.
 
+### async_insert_max_query_number {#async-insert-max-query-number}
+
+The maximum number of insert queries per block before being inserted. This setting takes effect only if [async_insert_deduplicate](#settings-async-insert-deduplicate) is enabled.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Asynchronous insertions are disabled.
+
+Default value: `450`.
+
 ### async_insert_busy_timeout_ms {#async-insert-busy-timeout-ms}
 
 The maximum timeout in milliseconds since the first `INSERT` query before inserting collected data.
@@ -1631,6 +1713,49 @@ SELECT * FROM test_table
 │ 1 │
 └───┘
 ```
+
+## insert_keeper_max_retries
+
+The setting sets the maximum number of retries for ClickHouse Keeper (or ZooKeeper) requests during insert into replicated MergeTree. Only Keeper requests which failed due to network error, Keeper session timeout, or request timeout are considered for retries.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Retries are disabled
+
+Default value: 0
+
+Keeper request retries are done after some timeout. The timeout is controlled by the following settings: `insert_keeper_retry_initial_backoff_ms`, `insert_keeper_retry_max_backoff_ms`.
+The first retry is done after `insert_keeper_retry_initial_backoff_ms` timeout. The consequent timeouts will be calculated as follows:
+```
+timeout = min(insert_keeper_retry_max_backoff_ms, latest_timeout * 2)
+```
+
+For example, if `insert_keeper_retry_initial_backoff_ms=100`, `insert_keeper_retry_max_backoff_ms=10000` and `insert_keeper_max_retries=8` then timeouts will be `100, 200, 400, 800, 1600, 3200, 6400, 10000`.
+
+Apart from fault tolerance, the retries aim to provide a better user experience - they allow to avoid returning an error during INSERT execution if Keeper is restarted, for example, due to an upgrade.
+
+## insert_keeper_retry_initial_backoff_ms {#insert_keeper_retry_initial_backoff_ms}
+
+Initial timeout(in milliseconds) to retry a failed Keeper request during INSERT query execution
+
+Possible values:
+
+-   Positive integer.
+-   0 — No timeout
+
+Default value: 100
+
+## insert_keeper_retry_max_backoff_ms {#insert_keeper_retry_max_backoff_ms}
+
+Maximum timeout (in milliseconds) to retry a failed Keeper request during INSERT query execution
+
+Possible values:
+
+-   Positive integer.
+-   0 — Maximum timeout is not limited
+
+Default value: 10000
 
 ## max_network_bytes {#settings-max-network-bytes}
 
@@ -1912,6 +2037,21 @@ Possible values:
 
 -   1 — Throwing an exception is enabled.
 -   0 — Throwing an exception is disabled.
+
+Default value: 0.
+
+## optimize_skip_merged_partitions {#optimize-skip-merged-partitions}
+
+Enables or disables optimization for [OPTIMIZE TABLE ... FINAL](../../sql-reference/statements/optimize.md) query if there is only one part with level > 0 and it doesn't have expired TTL.
+
+- `OPTIMIZE TABLE ... FINAL SETTINGS optimize_skip_merged_partitions=1`
+
+By default, `OPTIMIZE TABLE ... FINAL` query rewrites the one part even if there is only a single part.
+
+Possible values:
+
+-   1 - Enable optimization.
+-   0 - Disable optimization.
 
 Default value: 0.
 
@@ -3240,6 +3380,15 @@ SELECT
 FROM fuse_tbl
 ```
 
+## optimize_rewrite_aggregate_function_with_if
+
+Rewrite aggregate functions with if expression as argument when logically equivalent.
+For example, `avg(if(cond, col, null))` can be rewritten to `avgOrNullIf(cond, col)`. It may improve performance.
+
+:::note
+Supported only with experimental analyzer (`allow_experimental_analyzer = 1`).
+:::
+
 ## allow_experimental_database_replicated {#allow_experimental_database_replicated}
 
 Enables to create databases with [Replicated](../../engines/database-engines/replicated.md) engine.
@@ -3389,7 +3538,7 @@ Possible values:
 
 Default value: `0`.
 
-## replication_alter_partitions_sync {#replication-alter-partitions-sync}
+## alter_sync {#alter-sync}
 
 Allows to set up waiting for actions to be executed on replicas by [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) or [TRUNCATE](../../sql-reference/statements/truncate.md) queries.
 
@@ -3619,6 +3768,30 @@ Default value: `0`.
 
 -   [optimize_move_to_prewhere](#optimize_move_to_prewhere) setting
 
+## optimize_using_constraints
+
+Use [constraints](../../sql-reference/statements/create/table#constraints) for query optimization. The default is `false`.
+
+Possible values:
+
+- true, false
+
+## optimize_append_index
+
+Use [constraints](../../sql-reference/statements/create/table#constraints) in order to append index condition. The default is `false`.
+
+Possible values:
+
+- true, false
+
+## optimize_substitute_columns
+
+Use [constraints](../../sql-reference/statements/create/table#constraints) for column substitution. The default is `false`.
+
+Possible values:
+
+- true, false
+
 ## describe_include_subcolumns {#describe_include_subcolumns}
 
 Enables describing subcolumns for a [DESCRIBE](../../sql-reference/statements/describe-table.md) query. For example, members of a [Tuple](../../sql-reference/data-types/tuple.md) or subcolumns of a [Map](../../sql-reference/data-types/map.md/#map-subcolumns), [Nullable](../../sql-reference/data-types/nullable.md/#finding-null) or an [Array](../../sql-reference/data-types/array.md/#array-size) data type.
@@ -3808,3 +3981,71 @@ Default value: `0`.
 :::note
 Use this setting only for backward compatibility if your use cases depend on old syntax.
 :::
+
+## final {#final}
+
+Automatically applies [FINAL](../../sql-reference/statements/select/from/#final-modifier) modifier to all tables in a query, to tables where [FINAL](../../sql-reference/statements/select/from/#final-modifier) is applicable, including joined tables and tables in sub-queries, and 
+distributed tables.
+
+Possible values:
+
+- 0 - disabled
+- 1 - enabled
+
+Default value: `0`.
+
+Example:
+
+```sql
+CREATE TABLE test
+(
+    key Int64,
+    some String
+)
+ENGINE = ReplacingMergeTree
+ORDER BY key;
+
+INSERT INTO test FORMAT Values (1, 'first');
+INSERT INTO test FORMAT Values (1, 'second');
+
+SELECT * FROM test;
+┌─key─┬─some───┐
+│   1 │ second │
+└─────┴────────┘
+┌─key─┬─some──┐
+│   1 │ first │
+└─────┴───────┘
+
+SELECT * FROM test SETTINGS final = 1;
+┌─key─┬─some───┐
+│   1 │ second │
+└─────┴────────┘
+
+SET final = 1;
+SELECT * FROM test;
+┌─key─┬─some───┐
+│   1 │ second │
+└─────┴────────┘
+```
+
+## asterisk_include_materialized_columns {#asterisk_include_materialized_columns}
+
+Include [MATERIALIZED](../../sql-reference/statements/create/table/#materialized) columns for wildcard query (`SELECT *`).
+
+Possible values:
+
+- 0 - disabled
+- 1 - enabled
+
+Default value: `0`.
+
+## asterisk_include_alias_columns {#asterisk_include_alias_columns}
+
+Include [ALIAS](../../sql-reference/statements/create/table/#alias) columns for wildcard query (`SELECT *`).
+
+Possible values:
+
+- 0 - disabled
+- 1 - enabled
+
+Default value: `0`.

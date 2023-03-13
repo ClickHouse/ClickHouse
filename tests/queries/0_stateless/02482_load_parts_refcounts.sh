@@ -43,9 +43,7 @@ query_with_retry "OPTIMIZE TABLE load_parts_refcounts FINAL SETTINGS optimize_th
 $CLICKHOUSE_CLIENT --query "DETACH TABLE load_parts_refcounts"
 $CLICKHOUSE_CLIENT --query "ATTACH TABLE load_parts_refcounts"
 
-query_with_retry "
-    SELECT throwIf(count() == 0) FROM system.parts
-    WHERE database = '$CLICKHOUSE_DATABASE' AND table = 'load_parts_refcounts' AND NOT active FORMAT Null"
+$CLICKHOUSE_CLIENT --query "SYSTEM WAIT LOADING PARTS load_parts_refcounts"
 
 $CLICKHOUSE_CLIENT --query "
     SELECT DISTINCT refcount FROM system.parts

@@ -35,6 +35,8 @@ public:
     void formatImpl(const FormattingBuffer & out) const override;
 
     void updateTreeHashImpl(SipHash & hash_state) const override;
+
+    QueryKind getQueryKind() const override { return QueryKind::Set; }
 };
 
 }

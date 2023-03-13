@@ -25,7 +25,7 @@ public:
 
     void formatImpl(const FormattingBuffer & out) const override;
 
-    QueryKind getQueryKind() const override { return QueryKind::SelectIntersectExcept; }
+    QueryKind getQueryKind() const override { return QueryKind::Select; }
 
     ASTs getListOfSelects() const;
 

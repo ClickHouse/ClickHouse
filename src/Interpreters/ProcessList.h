@@ -52,6 +52,7 @@ class ProcessListEntry;
 struct QueryStatusInfo
 {
     String query;
+    IAST::QueryKind query_kind{};
     UInt64 elapsed_microseconds;
     size_t read_rows;
     size_t read_bytes;
@@ -118,8 +119,22 @@ protected:
 
     mutable std::mutex executors_mutex;
 
+    struct ExecutorHolder
+    {
+        ExecutorHolder(PipelineExecutor * e) : executor(e) {}
+
+        void cancel();
+
+        void remove();
+
+        PipelineExecutor * executor;
+        std::mutex mutex;
+    };
+
+    using ExecutorHolderPtr = std::shared_ptr<ExecutorHolder>;
+
     /// Array of PipelineExecutors to be cancelled when a cancelQuery is received
-    std::vector<PipelineExecutor *> executors;
+    std::vector<ExecutorHolderPtr> executors;
 
     enum QueryStreamsStatus
     {
@@ -134,7 +149,8 @@ protected:
 
     OvercommitTracker * global_overcommit_tracker = nullptr;
 
-    IAST::QueryKind query_kind;
+    /// This is used to control the maximum number of SELECT or INSERT queries.
+    IAST::QueryKind query_kind{};
 
     /// This field is unused in this class, but it
     /// increments/decrements metric in constructor/destructor.
@@ -174,11 +190,6 @@ public:
         if (!thread_group)
             return nullptr;
         return &thread_group->memory_tracker;
-    }
-
-    IAST::QueryKind getQueryKind() const
-    {
-        return query_kind;
     }
 
     bool updateProgressIn(const Progress & value)

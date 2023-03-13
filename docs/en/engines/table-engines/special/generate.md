@@ -19,7 +19,7 @@ ENGINE = GenerateRandom([random_seed] [,max_string_length] [,max_array_length])
 ```
 
 The `max_array_length` and `max_string_length` parameters specify maximum length of all
-array columns and strings correspondingly in generated data.
+array or map columns and strings correspondingly in generated data.
 
 Generate table engine supports only `SELECT` queries.
 

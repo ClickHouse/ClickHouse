@@ -7,10 +7,10 @@
 #include <string>
 #include <utility>
 #include <vector>
-#include <Functions/likePatternToRegexp.h>
 #include <Common/Exception.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/ProfileEvents.h>
+#include <Common/likePatternToRegexp.h>
 #include <base/defines.h>
 #include <base/StringRef.h>
 #include <boost/container_hash/hash.hpp>
@@ -240,7 +240,7 @@ inline Regexps constructRegexps(const std::vector<String> & str_patterns, [[mayb
         CompilerErrorPtr error(compile_error);
 
         if (error->expression < 0)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, String(error->message));
+            throw Exception::createRuntime(ErrorCodes::LOGICAL_ERROR, String(error->message));
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Pattern '{}' failed with error '{}'", str_patterns[error->expression], String(error->message));
     }

@@ -198,6 +198,10 @@ void ASTSystemQuery::formatImpl(const FormattingBuffer & out) const
     {
         out.writeProbablyBackQuotedIdentifier(backup_name);
     }
+    else if (type == Type::SYNC_FILE_CACHE)
+    {
+        settings.ostr << (settings.hilite ? hilite_none : "");
+    }
 }
 
 

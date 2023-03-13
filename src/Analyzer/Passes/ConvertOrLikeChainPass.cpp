@@ -1,17 +1,24 @@
+#include <Analyzer/Passes/ConvertOrLikeChainPass.h>
+
 #include <memory>
 #include <unordered_map>
 #include <vector>
-#include <Analyzer/Passes/ConvertOrLikeChainPass.h>
+
+#include <Common/likePatternToRegexp.h>
+
+#include <Core/Field.h>
+
+#include <DataTypes/DataTypesNumber.h>
+
+#include <Functions/FunctionFactory.h>
+
+#include <Interpreters/Context.h>
+
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Core/Field.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/likePatternToRegexp.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -19,36 +26,28 @@ namespace DB
 namespace
 {
 
-class ConvertOrLikeChainVisitor : public InDepthQueryTreeVisitor<ConvertOrLikeChainVisitor>
+class ConvertOrLikeChainVisitor : public InDepthQueryTreeVisitorWithContext<ConvertOrLikeChainVisitor>
 {
-    using FunctionNodes = std::vector<std::shared_ptr<FunctionNode>>;
-
-    const FunctionOverloadResolverPtr match_function_ref;
-    const FunctionOverloadResolverPtr or_function_resolver;
 public:
+    using Base = InDepthQueryTreeVisitorWithContext<ConvertOrLikeChainVisitor>;
+    using Base::Base;
 
-    explicit ConvertOrLikeChainVisitor(ContextPtr context)
-        : InDepthQueryTreeVisitor<ConvertOrLikeChainVisitor>()
-        , match_function_ref(FunctionFactory::instance().get("multiMatchAny", context))
-        , or_function_resolver(FunctionFactory::instance().get("or", context))
+    explicit ConvertOrLikeChainVisitor(FunctionOverloadResolverPtr or_function_resolver_,
+        FunctionOverloadResolverPtr match_function_resolver_,
+        ContextPtr context)
+        : Base(std::move(context))
+        , or_function_resolver(std::move(or_function_resolver_))
+        , match_function_resolver(std::move(match_function_resolver_))
     {}
 
-    static bool needChildVisit(VisitQueryTreeNodeType & parent, VisitQueryTreeNodeType &)
+    bool needChildVisit(VisitQueryTreeNodeType &, VisitQueryTreeNodeType &)
     {
-        ContextPtr context;
-        if (auto * query = parent->as<QueryNode>())
-            context = query->getContext();
-        else if (auto * union_node = parent->as<UnionNode>())
-            context = union_node->getContext();
-        if (context)
-        {
-            const auto & settings = context->getSettingsRef();
-            return settings.optimize_or_like_chain
-                && settings.allow_hyperscan
-                && settings.max_hyperscan_regexp_length == 0
-                && settings.max_hyperscan_regexp_total_length == 0;
-        }
-        return true;
+        const auto & settings = getSettings();
+
+        return settings.optimize_or_like_chain
+            && settings.allow_hyperscan
+            && settings.max_hyperscan_regexp_length == 0
+            && settings.max_hyperscan_regexp_total_length == 0;
     }
 
     void visitImpl(QueryTreeNodePtr & node)
@@ -61,27 +60,28 @@ public:
 
         QueryTreeNodePtrWithHashMap<Array> node_to_patterns;
         FunctionNodes match_functions;
-        for (auto & arg : function_node->getArguments())
-        {
-            unique_elems.push_back(arg);
 
-            auto * arg_func = arg->as<FunctionNode>();
-            if (!arg_func)
+        for (auto & argument : function_node->getArguments())
+        {
+            unique_elems.push_back(argument);
+
+            auto * argument_function = argument->as<FunctionNode>();
+            if (!argument_function)
                 continue;
 
-            const bool is_like  = arg_func->getFunctionName() == "like";
-            const bool is_ilike = arg_func->getFunctionName() == "ilike";
+            const bool is_like  = argument_function->getFunctionName() == "like";
+            const bool is_ilike = argument_function->getFunctionName() == "ilike";
 
             /// Not {i}like -> bail out.
             if (!is_like && !is_ilike)
                 continue;
 
-            const auto & like_arguments = arg_func->getArguments().getNodes();
+            const auto & like_arguments = argument_function->getArguments().getNodes();
             if (like_arguments.size() != 2)
                 continue;
 
-            auto identifier = like_arguments[0];
-            auto * pattern = like_arguments[1]->as<ConstantNode>();
+            const auto & like_first_argument = like_arguments[0];
+            const auto * pattern = like_arguments[1]->as<ConstantNode>();
             if (!pattern || !isString(pattern->getResultType()))
                 continue;
 
@@ -91,17 +91,20 @@ public:
                 regexp = "(?i)" + regexp;
 
             unique_elems.pop_back();
-            auto it = node_to_patterns.find(identifier);
+
+            auto it = node_to_patterns.find(like_first_argument);
             if (it == node_to_patterns.end())
             {
-                it = node_to_patterns.insert({identifier, Array{}}).first;
+                it = node_to_patterns.insert({like_first_argument, Array{}}).first;
+
                 /// The second argument will be added when all patterns are known.
                 auto match_function = std::make_shared<FunctionNode>("multiMatchAny");
-                match_function->getArguments().getNodes().push_back(identifier);
-
+                match_function->getArguments().getNodes().push_back(like_first_argument);
                 match_functions.push_back(match_function);
+
                 unique_elems.push_back(std::move(match_function));
             }
+
             it->second.push_back(regexp);
         }
 
@@ -111,23 +114,29 @@ public:
             auto & arguments = match_function->getArguments().getNodes();
             auto & patterns = node_to_patterns.at(arguments[0]);
             arguments.push_back(std::make_shared<ConstantNode>(Field{std::move(patterns)}));
-            match_function->resolveAsFunction(match_function_ref);
+            match_function->resolveAsFunction(match_function_resolver);
         }
 
         /// OR must have at least two arguments.
         if (unique_elems.size() == 1)
-            unique_elems.push_back(std::make_shared<ConstantNode>(false));
+            unique_elems.push_back(std::make_shared<ConstantNode>(static_cast<UInt8>(0)));
 
         function_node->getArguments().getNodes() = std::move(unique_elems);
         function_node->resolveAsFunction(or_function_resolver);
     }
+private:
+    using FunctionNodes = std::vector<std::shared_ptr<FunctionNode>>;
+    const FunctionOverloadResolverPtr or_function_resolver;
+    const FunctionOverloadResolverPtr match_function_resolver;
 };
 
 }
 
-void ConvertOrLikeChainPass::run(QueryTreeNodePtr query_tree_node, ContextPtr  context)
+void ConvertOrLikeChainPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
-    ConvertOrLikeChainVisitor visitor(context);
+    auto or_function_resolver = FunctionFactory::instance().get("or", context);
+    auto match_function_resolver = FunctionFactory::instance().get("multiMatchAny", context);
+    ConvertOrLikeChainVisitor visitor(std::move(or_function_resolver), std::move(match_function_resolver), std::move(context));
     visitor.visit(query_tree_node);
 }
 

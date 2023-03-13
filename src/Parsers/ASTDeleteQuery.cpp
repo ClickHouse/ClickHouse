@@ -41,6 +41,8 @@ void ASTDeleteQuery::formatQueryImpl(const FormattingBuffer & out) const
     }
     out.ostr << backQuoteIfNeed(getTable());
 
+    formatOnCluster(settings);
+
     out.writeKeyword(" WHERE ");
     predicate->formatImpl(out);
 }

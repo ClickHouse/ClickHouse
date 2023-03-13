@@ -209,9 +209,24 @@ Aliases: `DAYOFMONTH`, `DAY`.
 
 ## toDayOfWeek
 
-Converts a date or date with time to a UInt8 number containing the number of the day of the week (Monday is 1, and Sunday is 7).
+Converts a date or date with time to a UInt8 number containing the number of the day of the week.
+
+The two-argument form of `toDayOfWeek()` enables you to specify whether the week starts on Monday or Sunday, and whether the return value should be in the range from 0 to 6 or 1 to 7. If the mode argument is ommited, the default mode is 0. The time zone of the date can be specified as the third argument.
+
+| Mode | First day of week | Range                                          |
+|------|-------------------|------------------------------------------------|
+| 0    | Monday            | 1-7: Monday = 1, Tuesday = 2, ..., Sunday = 7  |
+| 1    | Monday            | 0-6: Monday = 0, Tuesday = 1, ..., Sunday = 6  |
+| 2    | Sunday            | 0-6: Sunday = 0, Monday = 1, ..., Saturday = 6 |
+| 3    | Sunday            | 1-7: Sunday = 1, Monday = 2, ..., Saturday = 7 |
 
 Alias: `DAYOFWEEK`.
+
+**Syntax**
+
+``` sql
+toDayOfWeek(t[, mode[, timezone]])
+```
 
 ## toHour
 
@@ -316,11 +331,17 @@ If `toLastDayOfMonth` is called with an argument of type `Date` greater then 214
 Rounds down a date, or date with time, to the nearest Monday.
 Returns the date.
 
-## toStartOfWeek(t\[,mode\])
+## toStartOfWeek
 
-Rounds down a date, or date with time, to the nearest Sunday or Monday by mode.
+Rounds a date or date with time down to the nearest Sunday or Monday.
 Returns the date.
-The mode argument works exactly like the mode argument to toWeek(). For the single-argument syntax, a mode value of 0 is used.
+The mode argument works exactly like the mode argument in function `toWeek()`. If no mode is specified, mode is assumed as 0.
+
+**Syntax**
+
+``` sql
+toStartOfWeek(t[, mode[, timezone]])
+```
 
 ## toStartOfDay
 
@@ -455,10 +476,12 @@ Converts a date, or date with time, to a UInt16 number containing the ISO Year n
 
 Converts a date, or date with time, to a UInt8 number containing the ISO Week number.
 
-## toWeek(date\[,mode\])
+## toWeek
 
-This function returns the week number for date or datetime. The two-argument form of toWeek() enables you to specify whether the week starts on Sunday or Monday and whether the return value should be in the range from 0 to 53 or from 1 to 53. If the mode argument is omitted, the default mode is 0.
-`toISOWeek()`is a compatibility function that is equivalent to `toWeek(date,3)`.
+This function returns the week number for date or datetime. The two-argument form of `toWeek()` enables you to specify whether the week starts on Sunday or Monday and whether the return value should be in the range from 0 to 53 or from 1 to 53. If the mode argument is omitted, the default mode is 0.
+
+`toISOWeek()` is a compatibility function that is equivalent to `toWeek(date,3)`.
+
 The following table describes how the mode argument works.
 
 | Mode | First day of week | Range | Week 1 is the first week …    |
@@ -482,13 +505,15 @@ For mode values with a meaning of “with 4 or more days this year,” weeks are
 
 For mode values with a meaning of “contains January 1”, the week contains January 1 is week 1. It does not matter how many days in the new year the week contained, even if it contained only one day.
 
+**Syntax**
+
 ``` sql
-toWeek(date, [, mode][, Timezone])
+toWeek(t[, mode[, time_zone]])
 ```
 
 **Arguments**
 
--   `date` – Date or DateTime.
+-   `t` – Date or DateTime.
 -   `mode` – Optional parameter, Range of values is \[0,9\], default is 0.
 -   `Timezone` – Optional parameter, it behaves like any other conversion function.
 
@@ -504,13 +529,19 @@ SELECT toDate('2016-12-27') AS date, toWeek(date) AS week0, toWeek(date,1) AS we
 └────────────┴───────┴───────┴───────┘
 ```
 
-## toYearWeek(date\[,mode\])
+## toYearWeek
 
 Returns year and week for a date. The year in the result may be different from the year in the date argument for the first and the last week of the year.
 
-The mode argument works exactly like the mode argument to toWeek(). For the single-argument syntax, a mode value of 0 is used.
+The mode argument works exactly like the mode argument to `toWeek()`. For the single-argument syntax, a mode value of 0 is used.
 
-`toISOYear()`is a compatibility function that is equivalent to `intDiv(toYearWeek(date,3),100)`.
+`toISOYear()` is a compatibility function that is equivalent to `intDiv(toYearWeek(date,3),100)`.
+
+**Syntax**
+
+``` sql
+toYearWeek(t[, mode[, timezone]])
+```
 
 **Example**
 
@@ -1095,15 +1126,48 @@ Rounds the time to the half hour.
 
 ## toYYYYMM
 
-Converts a date or date with time to a UInt32 number containing the year and month number (YYYY \* 100 + MM).
+Converts a date or date with time to a UInt32 number containing the year and month number (YYYY \* 100 + MM). Accepts a second optional timezone argument. If provided, the timezone must be a string constant.
+
+### example
+```sql
+SELECT
+    toYYYYMM(now(), 'US/Eastern')
+```
+```response
+┌─toYYYYMM(now(), 'US/Eastern')─┐
+│                        202303 │ 
+└───────────────────────────────┘
+```
 
 ## toYYYYMMDD
 
-Converts a date or date with time to a UInt32 number containing the year and month number (YYYY \* 10000 + MM \* 100 + DD).
+Converts a date or date with time to a UInt32 number containing the year and month number (YYYY \* 10000 + MM \* 100 + DD). Accepts a second optional timezone argument. If provided, the timezone must be a string constant.
+
+### example
+```sql
+SELECT
+    toYYYYMMDD(now(), 'US/Eastern')
+```
+```response
+┌─toYYYYMMDD(now(), 'US/Eastern')─┐
+│                        20230302 │
+└─────────────────────────────────┘
+```
 
 ## toYYYYMMDDhhmmss
 
-Converts a date or date with time to a UInt64 number containing the year and month number (YYYY \* 10000000000 + MM \* 100000000 + DD \* 1000000 + hh \* 10000 + mm \* 100 + ss).
+Converts a date or date with time to a UInt64 number containing the year and month number (YYYY \* 10000000000 + MM \* 100000000 + DD \* 1000000 + hh \* 10000 + mm \* 100 + ss). Accepts a second optional timezone argument. If provided, the timezone must be a string constant.
+
+### example
+```sql
+SELECT
+    toYYYYMMDDhhmmss(now(), 'US/Eastern')
+```
+```response
+┌─toYYYYMMDDhhmmss(now(), 'US/Eastern')─┐
+│                        20230302112209 │
+└───────────────────────────────────────┘
+```
 
 ## addYears, addMonths, addWeeks, addDays, addHours, addMinutes, addSeconds, addQuarters
 
@@ -1174,6 +1238,8 @@ Formats a Time according to the given Format string. Format is a constant expres
 
 formatDateTime uses MySQL datetime format style, refer to https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format.
 
+Alias: `DATE_FORMAT`.
+
 **Syntax**
 
 ``` sql
@@ -1189,29 +1255,39 @@ Using replacement fields, you can define a pattern for the resulting string. “
 
 | Placeholder | Description                                             | Example    |
 |----------|---------------------------------------------------------|------------|
+| %a       | abbreviated weekday name (Mon-Sun)                      | Mon        |
+| %b       | abbreviated month name (Jan-Dec)                        | Jan        |
+| %c       | month as a decimal number (01-12)                       | 01         |
 | %C       | year divided by 100 and truncated to integer (00-99)    | 20         |
 | %d       | day of the month, zero-padded (01-31)                   | 02         |
 | %D       | Short MM/DD/YY date, equivalent to %m/%d/%y             | 01/02/18   |
-| %e       | day of the month, space-padded ( 1-31)                  | &nbsp; 2   |
+| %e       | day of the month, space-padded (1-31)                   | &nbsp; 2   |
 | %f       | fractional second from the fractional part of DateTime64 | 1234560   |
 | %F       | short YYYY-MM-DD date, equivalent to %Y-%m-%d           | 2018-01-02 |
-| %G       | four-digit year format for ISO week number, calculated from the week-based year [defined by the ISO 8601](https://en.wikipedia.org/wiki/ISO_8601#Week_dates) standard, normally useful only with %V  | 2018         |
 | %g       | two-digit year format, aligned to ISO 8601, abbreviated from four-digit notation                                | 18       |
+| %G       | four-digit year format for ISO week number, calculated from the week-based year [defined by the ISO 8601](https://en.wikipedia.org/wiki/ISO_8601#Week_dates) standard, normally useful only with %V  | 2018         |
+| %h       | hour in 12h format (01-12)                              | 09         |
 | %H       | hour in 24h format (00-23)                              | 22         |
+| %i       | minute (00-59)                                          | 33         |
 | %I       | hour in 12h format (01-12)                              | 10         |
 | %j       | day of the year (001-366)                               | 002        |
+| %k       | hour in 24h format (00-23)                              | 22         |
+| %l       | hour in 12h format (01-12)                              | 09         |
 | %m       | month as a decimal number (01-12)                       | 01         |
 | %M       | minute (00-59)                                          | 33         |
 | %n       | new-line character (‘’)                                 |            |
 | %p       | AM or PM designation                                    | PM         |
 | %Q       | Quarter (1-4)                                           | 1          |
+| %r       | 12-hour HH:MM AM/PM time, equivalent to %H:%M %p        | 10:30 PM   |
 | %R       | 24-hour HH:MM time, equivalent to %H:%M                 | 22:33      |
+| %s       | second (00-59)                                          | 44         |
 | %S       | second (00-59)                                          | 44         |
 | %t       | horizontal-tab character (’)                            |            |
 | %T       | ISO 8601 time format (HH:MM:SS), equivalent to %H:%M:%S | 22:33:44   |
 | %u       | ISO 8601 weekday as number with Monday as 1 (1-7)       | 2          |
 | %V       | ISO 8601 week number (01-53)                            | 01         |
 | %w       | weekday as a decimal number with Sunday as 0 (0-6)      | 2          |
+| %W       | full weekday name (Monday-Sunday)                       | Monday     |
 | %y       | Year, last two digits (00-99)                           | 18         |
 | %Y       | Year                                                    | 2018       |
 | %z       | Time offset from UTC as +HHMM or -HHMM                  | -0500      |
@@ -1262,31 +1338,31 @@ Similar to formatDateTime, except that it formats datetime in Joda style instead
 Using replacement fields, you can define a pattern for the resulting string. 
 
 
-| Placeholder | Description | Presentation  | Examples |
-| ----------- | ----------- | ------------- | -------- |
-| G       | era                          | text          | AD | 
-| C       | century of era (>=0)         | number        | 20 | 
-| Y       | year of era (>=0)            | year          | 1996 | 
-| x       | weekyear(not supported yet)  | year          | 1996 | 
-| w       | week of weekyear(not supported yet) | number        | 27 | 
-| e       | day of week                  | number        | 2 | 
-| E       | day of week                  | text          | Tuesday; Tue | 
-| y       | year                         | year          | 1996 | 
-| D       | day of year                  | number        | 189 | 
-| M       | month of year                | month         | July; Jul; 07 | 
-| d       | day of month                 | number        | 10 | 
-| a       | halfday of day               | text          | PM | 
-| K       | hour of halfday (0~11)       | number        | 0 | 
-| h       | clockhour of halfday (1~12)  | number        | 12 | 
-| H       | hour of day (0~23)           | number        | 0 | 
-| k       | clockhour of day (1~24)      | number        | 24 | 
-| m       | minute of hour               | number        | 30 | 
-| s       | second of minute             | number        | 55 | 
-| S       | fraction of second(not supported yet) | number        | 978 | 
-| z       | time zone(short name not supported yet) | text          | Pacific Standard Time; PST | 
-| Z       | time zone offset/id(not supported yet) | zone          | -0800; -08:00; America/Los_Angeles | 
-| '       | escape for text              | delimiter|  | 
-| ''      | single quote                 | literal       | ' | 
+| Placeholder | Description                              | Presentation  | Examples                           |
+| ----------- | ---------------------------------------- | ------------- | ---------------------------------- |
+| G           | era                                      | text          | AD                                 |
+| C           | century of era (>=0)                     | number        | 20                                 |
+| Y           | year of era (>=0)                        | year          | 1996                               |
+| x           | weekyear (not supported yet)             | year          | 1996                               |
+| w           | week of weekyear (not supported yet)     | number        | 27                                 |
+| e           | day of week                              | number        | 2                                  |
+| E           | day of week                              | text          | Tuesday; Tue                       |
+| y           | year                                     | year          | 1996                               |
+| D           | day of year                              | number        | 189                                |
+| M           | month of year                            | month         | July; Jul; 07                      |
+| d           | day of month                             | number        | 10                                 |
+| a           | halfday of day                           | text          | PM                                 |
+| K           | hour of halfday (0~11)                   | number        | 0                                  |
+| h           | clockhour of halfday (1~12)              | number        | 12                                 |
+| H           | hour of day (0~23)                       | number        | 0                                  |
+| k           | clockhour of day (1~24)                  | number        | 24                                 |
+| m           | minute of hour                           | number        | 30                                 |
+| s           | second of minute                         | number        | 55                                 |
+| S           | fraction of second (not supported yet)   | number        | 978                                |
+| z           | time zone (short name not supported yet) | text          | Pacific Standard Time; PST         |
+| Z           | time zone offset/id (not supported yet)  | zone          | -0800; -08:00; America/Los_Angeles |
+| '           | escape for text                          | delimiter     |                                    |
+| ''          | single quote                             | literal       | '                                  |
 
 **Example**
 

@@ -3,6 +3,8 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
@@ -17,8 +19,22 @@ class ASTRenameQuery : public ASTQueryWithOutput, public ASTQueryWithOnCluster
 public:
     struct Table
     {
-        String database;
-        String table;
+        ASTPtr database;
+        ASTPtr table;
+
+        String getDatabase() const
+        {
+            String name;
+            tryGetIdentifierNameInto(database, name);
+            return name;
+        }
+
+        String getTable() const
+        {
+            String name;
+            tryGetIdentifierNameInto(table, name);
+            return name;
+        }
     };
 
     struct Element
@@ -56,10 +72,10 @@ public:
         query.cluster.clear();
         for (Element & elem : query.elements)
         {
-            if (elem.from.database.empty())
-                elem.from.database = params.default_database;
-            if (elem.to.database.empty())
-                elem.to.database = params.default_database;
+            if (!elem.from.database)
+                elem.from.database = std::make_shared<ASTIdentifier>(params.default_database);
+            if (!elem.to.database)
+                elem.to.database = std::make_shared<ASTIdentifier>(params.default_database);
         }
 
         return query_ptr;
@@ -77,9 +93,9 @@ protected:
             if (elements.at(0).if_exists)
                 out.writeKeyword("IF EXISTS ");
 
-            out.ostr << backQuoteIfNeed(elements.at(0).from.database);
+            out.ostr << backQuoteIfNeed(elements.at(0).from.getDatabase());
             out.writeKeyword(" TO ");
-            out.ostr << backQuoteIfNeed(elements.at(0).to.database);
+            out.ostr << backQuoteIfNeed(elements.at(0).to.getDatabase());
             formatOnCluster(out);
             return;
         }
@@ -100,9 +116,9 @@ protected:
 
             if (it->if_exists)
                 out.writeKeyword("IF EXISTS ");
-            out.ostr << (!it->from.database.empty() ? backQuoteIfNeed(it->from.database) + "." : "") << backQuoteIfNeed(it->from.table);
+            out.ostr << (!it->from.database ? backQuoteIfNeed(it->from.getDatabase()) + "." : "") << backQuoteIfNeed(it->from.getTable());
             out.writeKeyword(exchange ? " AND " : " TO ");
-            out.ostr << (!it->to.database.empty() ? backQuoteIfNeed(it->to.database) + "." : "") << backQuoteIfNeed(it->to.table);
+            out.ostr << (!it->to.database ? backQuoteIfNeed(it->to.getDatabase()) + "." : "") << backQuoteIfNeed(it->to.getTable());
         }
 
         formatOnCluster(out);

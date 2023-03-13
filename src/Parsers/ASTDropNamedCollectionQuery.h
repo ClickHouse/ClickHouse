@@ -20,6 +20,8 @@ public:
     void formatImpl(const FormattingBuffer & out) const override;
 
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTDropNamedCollectionQuery>(clone()); }
+
+    QueryKind getQueryKind() const override { return QueryKind::Drop; }
 };
 
 }

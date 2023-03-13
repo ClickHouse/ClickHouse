@@ -4,6 +4,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/IAST.h>
 
+
 namespace DB
 {
 
@@ -37,6 +38,13 @@ public:
         out.writeKeyword("EXTERNAL DDL FROM ");
         from->formatImpl(out);
         external_ddl->formatImpl(out);
+    }
+
+    QueryKind getQueryKind() const override { return QueryKind::ExternalDDL; }
+
+    void forEachPointerToChild(std::function<void(void**)> f) override
+    {
+        f(reinterpret_cast<void **>(&from));
     }
 };
 

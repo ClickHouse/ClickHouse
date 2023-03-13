@@ -24,6 +24,9 @@ void ASTOptimizeQuery::formatQueryImpl(const FormattingBuffer & out) const
     if (deduplicate)
         out.writeKeyword(" DEDUPLICATE");
 
+    if (cleanup)
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " CLEANUP" << (settings.hilite ? hilite_none : "");
+
     if (deduplicate_by_columns)
     {
         out.writeKeyword(" BY ");

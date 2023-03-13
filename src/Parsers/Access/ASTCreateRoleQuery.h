@@ -35,5 +35,7 @@ public:
     ASTPtr clone() const override;
     void formatImpl(const FormattingBuffer & out) const override;
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTCreateRoleQuery>(clone()); }
+
+    QueryKind getQueryKind() const override { return QueryKind::Create; }
 };
 }

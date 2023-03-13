@@ -12,7 +12,7 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorHash.h>
 #include <Common/typeid_cast.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Core/Block.h>
 
 
@@ -180,6 +180,15 @@ namespace
             hash.update(x.name.data(), x.name.size());
             hash.update(x.data.size());
             hash.update(x.data.data(), x.data.size());
+        }
+        void operator() (const CustomType & x) const
+        {
+            UInt8 type = Field::Types::CustomType;
+            hash.update(type);
+            hash.update(x.getTypeName());
+            auto result = x.toString();
+            hash.update(result.size());
+            hash.update(result.data(), result.size());
         }
         void operator() (const bool & x) const
         {

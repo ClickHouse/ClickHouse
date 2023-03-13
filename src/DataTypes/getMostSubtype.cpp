@@ -49,7 +49,7 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
     auto get_nothing_or_throw = [throw_if_result_is_nothing, & types](const std::string & reason)
     {
         if (throw_if_result_is_nothing)
-            throw Exception(getExceptionMessagePrefix(types) + reason, ErrorCodes::NO_COMMON_TYPE);
+            throw Exception::createDeprecated(getExceptionMessagePrefix(types) + reason, ErrorCodes::NO_COMMON_TYPE);
         return std::make_shared<DataTypeNothing>();
     };
 

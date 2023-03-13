@@ -37,6 +37,8 @@ public:
         return res;
     }
 
+    QueryKind getQueryKind() const override { return QueryKind::Create; }
+
 protected:
     void formatQueryImpl(const FormattingBuffer & out) const override
     {

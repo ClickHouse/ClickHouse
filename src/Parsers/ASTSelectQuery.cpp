@@ -132,10 +132,8 @@ void ASTSelectQuery::formatImpl(const FormattingBuffer & out) const
         out.writeKeyword("WITH CUBE");
     }
 
-    if (group_by_with_grouping_sets)
+    if (group_by_with_grouping_sets && groupBy())
     {
-        if (!groupBy()) /// sanity check, issue 43049
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Corrupt AST");
         out.nlOrWs();
         out.writeIndent(true);
         out.writeKeyword("GROUPING SETS");

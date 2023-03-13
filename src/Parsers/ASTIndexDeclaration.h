@@ -23,6 +23,12 @@ public:
 
     ASTPtr clone() const override;
     void formatImpl(const FormattingBuffer & out) const override;
+
+    void forEachPointerToChild(std::function<void(void**)> f) override
+    {
+        f(reinterpret_cast<void **>(&expr));
+        f(reinterpret_cast<void **>(&type));
+    }
 };
 
 }
