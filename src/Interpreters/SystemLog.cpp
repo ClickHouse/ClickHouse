@@ -16,6 +16,7 @@
 #include <Interpreters/SessionLog.h>
 #include <Interpreters/TextLog.h>
 #include <Interpreters/TraceLog.h>
+#include <Interpreters/HttpClientLog.h>
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
@@ -219,6 +220,7 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         global_context, "system", "transactions_info_log", config, "transactions_info_log");
     processors_profile_log = createSystemLog<ProcessorsProfileLog>(global_context, "system", "processors_profile_log", config, "processors_profile_log");
     asynchronous_insert_log = createSystemLog<AsynchronousInsertLog>(global_context, "system", "asynchronous_insert_log", config, "asynchronous_insert_log");
+    httpclient_log = createSystemLog<HttpClientLog>(global_context, "system", "httpclient_log", config, "httpclient_log");
 
     if (query_log)
         logs.emplace_back(query_log.get());
@@ -257,6 +259,8 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         logs.emplace_back(filesystem_read_prefetches_log.get());
     if (asynchronous_insert_log)
         logs.emplace_back(asynchronous_insert_log.get());
+    if (httpclient_log)
+        logs.emplace_back(httpclient_log.get());
 
     try
     {
@@ -280,6 +284,11 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     if (crash_log)
     {
         CrashLog::initialize(crash_log);
+    }
+
+    if (httpclient_log)
+    {
+        HttpClientLog::initialize(httpclient_log);
     }
 }
 
