@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <Functions/keyvaluepair/src/impl/state/util/CharacterFinder.h>
+#include <Functions/keyvaluepair/src/impl/state/strategies/util/CharacterFinder.h>
 #include "base/find_symbols.h"
 
 

@@ -47,8 +47,8 @@ void test_read_enclosed(const InlineEscapingKeyStateHandler & handler, std::stri
 
 TEST(InlineEscapingKeyStateHandler, Wait)
 {
-    auto pair_delimiters = std::unordered_set<char>{',', ' '};
-    auto quoting_characters = std::unordered_set<char>{'"'};
+    auto pair_delimiters = std::vector<char>{',', ' '};
+    auto quoting_characters = std::vector<char>{'"'};
 
     ExtractorConfiguration configuration(':', pair_delimiters, quoting_characters);
     InlineEscapingKeyStateHandler handler(configuration);
@@ -65,8 +65,8 @@ TEST(InlineEscapingKeyStateHandler, Read)
 {
     auto enclosing_character = '"';
 
-    auto pair_delimiters = std::unordered_set<char>{',', ' '};
-    auto quoting_characters = std::unordered_set<char>{enclosing_character};
+    auto pair_delimiters = std::vector<char>{',', ' '};
+    auto quoting_characters = std::vector<char>{enclosing_character};
 
     ExtractorConfiguration configuration(':', pair_delimiters, quoting_characters);
 
@@ -91,8 +91,8 @@ TEST(InlineEscapingKeyStateHandler, Read)
 
 TEST(InlineEscapingKeyStateHandler, ReadEnclosed)
 {
-    auto pair_delimiters = std::unordered_set<char>{',', ' '};
-    auto quoting_characters = std::unordered_set<char>{'"'};
+    auto pair_delimiters = std::vector<char>{',', ' '};
+    auto quoting_characters = std::vector<char>{'"'};
 
     ExtractorConfiguration configuration(':', pair_delimiters, quoting_characters);
     InlineEscapingKeyStateHandler handler(configuration);
