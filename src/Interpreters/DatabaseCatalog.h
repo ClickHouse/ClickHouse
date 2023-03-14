@@ -245,11 +245,19 @@ public:
     };
     using TablesMarkedAsDropped = std::list<TableMarkedAsDropped>;
 
-    TablesMarkedAsDropped getTablesMarkedDropped()
+    struct TableMarkedDroppedForSystemTable
     {
-        std::lock_guard lock(tables_marked_dropped_mutex);
-        return tables_marked_dropped;
-    }
+        UInt32 index;
+        String database;
+        String table;
+        UUID uuid;
+        String engine;
+        String metadata_dropped_path;
+        DateTime64 table_dropped_time;
+    };
+    using TablesMarkedDroppedForSystemTable = std::vector<TableMarkedDroppedForSystemTable>;
+
+    TablesMarkedDroppedForSystemTable getTablesMarkedDropped();
 private:
     // The global instance of database catalog. unique_ptr is to allow
     // deferred initialization. Thought I'd use std::optional, but I can't
