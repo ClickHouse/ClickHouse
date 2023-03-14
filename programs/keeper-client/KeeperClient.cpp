@@ -113,6 +113,11 @@ void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
         Poco::Util::Option("history-file", "", "set path of history file. default `~/.keeper-client-history`")
             .argument("history-file")
             .binding("history-file"));
+
+    options.addOption(
+        Poco::Util::Option("log-level", "", "set log level")
+            .argument("log-level")
+            .binding("log-level"));
 }
 
 void KeeperClient::initialize(Poco::Util::Application & /* self */)
@@ -197,6 +202,8 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
                 throw;
         }
     }
+
+    Poco::Logger::root().setLevel(config().getString("log-level", "error"));
 
     EventNotifier::init();
 }
