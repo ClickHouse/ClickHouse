@@ -4056,21 +4056,34 @@ std::shared_ptr<AsyncReadCounters> Context::getAsyncReadCounters() const
     return async_read_counters;
 }
 
+Context::ParallelReplicasMode Context::getParallelReplicasMode() const
+{
+    const auto & settings = getSettingsRef();
+
+    using enum Context::ParallelReplicasMode;
+    if (!settings.parallel_replicas_custom_key.value.empty())
+        return CUSTOM_KEY;
+
+    if (settings.allow_experimental_parallel_reading_from_replicas
+        && !settings.use_hedged_requests)
+        return READ_TASKS;
+
+    return SAMPLE_KEY;
+}
+
 bool Context::canUseParallelReplicasOnInitiator() const
 {
     const auto & settings = getSettingsRef();
-    return settings.allow_experimental_parallel_reading_from_replicas
+    return getParallelReplicasMode() == ParallelReplicasMode::READ_TASKS
         && settings.max_parallel_replicas > 1
-        && !settings.use_hedged_requests
         && !getClientInfo().collaborate_with_initiator;
 }
 
 bool Context::canUseParallelReplicasOnFollower() const
 {
     const auto & settings = getSettingsRef();
-    return settings.allow_experimental_parallel_reading_from_replicas
+    return getParallelReplicasMode() == ParallelReplicasMode::READ_TASKS
         && settings.max_parallel_replicas > 1
-        && !settings.use_hedged_requests
         && getClientInfo().collaborate_with_initiator;
 }
 
