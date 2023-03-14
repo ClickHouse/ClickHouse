@@ -1,4 +1,5 @@
 #include <set>
+#include <string>
 
 #include <Common/Exception.h>
 #include <Common/PODArray.h>
@@ -359,7 +360,7 @@ finish:
                 }
             }
 
-            if (max_length >= MIN_LENGTH_FOR_STRSTR || !first_call)
+            if (max_length >= MIN_LENGTH_FOR_STRSTR || (!first_call && max_length > 0))
             {
                 required_substring.literal = candidate_it->first;
                 required_substring.prefix = candidate_it->second == 0;
@@ -429,6 +430,7 @@ OptimizedRegularExpressionImpl<thread_safe>::OptimizedRegularExpressionImpl(cons
 {
     std::vector<std::string> alternatives; /// this vector collects patterns in (xx|xx|xx). for now it's not used.
     analyze(regexp_, required_substring, is_trivial, required_substring_is_prefix, alternatives);
+
 
     /// Just three following options are supported
     if (options & (~(RE_CASELESS | RE_NO_CAPTURE | RE_DOT_NL)))
