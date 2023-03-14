@@ -32,6 +32,7 @@ protected:
     void runInteractive();
     void loadCommands(std::vector<std::tuple<String, size_t, Callback>> && callback);
     bool processQueryText(const String & text);
+    void executeQuery(const String & query);
 
     String executeFourLetterCommand(const String & command);
 

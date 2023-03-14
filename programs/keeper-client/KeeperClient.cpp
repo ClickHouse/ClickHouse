@@ -70,10 +70,14 @@ String KeeperClient::getAbsolutePath(const String & relative)
 
 void KeeperClient::loadCommands(std::vector<std::tuple<String, size_t, Callback>> && new_commands)
 {
-    for (auto & [name, args_count, callback] : new_commands)
+    for (const auto & [name, args_count, callback] : new_commands)
     {
         commands.insert({{name, args_count}, callback});
         suggest.addWords({name});
+    }
+
+    for (const auto & command : four_letter_word_commands) {
+        suggest.addWords({command});
     }
 }
 
@@ -84,6 +88,11 @@ void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
     options.addOption(
         Poco::Util::Option("help", "h", "show help and exit")
             .binding("help"));
+
+    options.addOption(
+        Poco::Util::Option("query", "q", "will execute given query, then exit.")
+            .argument("query")
+            .binding("query"));
 
     options.addOption(
         Poco::Util::Option("connection-timeout", "", "set connection timeout in seconds. default 10s.")
@@ -192,6 +201,18 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
     EventNotifier::init();
 }
 
+void KeeperClient::executeQuery(const String & query)
+{
+    std::vector<std::string> queries;
+    boost::algorithm::split(queries, query, boost::is_any_of(";"));
+
+    for (const auto & query_text : queries)
+    {
+        if (!query_text.empty())
+            processQueryText(query_text);
+    }
+}
+
 bool KeeperClient::processQueryText(const String & text)
 {
     if (exit_strings.find(text) != exit_strings.end())
@@ -214,7 +235,12 @@ bool KeeperClient::processQueryText(const String & text)
         {
             auto callback = commands.find({tokens[0], tokens.size() - 1});
             if (callback == commands.end())
-                std::cerr << "No command found with name " << tokens[0] << " and args count " << tokens.size() - 1 << "\n";
+            {
+                if (tokens[0].size() == 4 && tokens.size() == 1)  /// Treat it like unrecognized four-letter command
+                    std::cout << executeFourLetterCommand(tokens[0]) << "\n";
+                else
+                    std::cerr << "No command found with name " << tokens[0] << " and args count " << tokens.size() - 1 << "\n";
+            }
             else
                 callback->second(this, tokens);
         }
@@ -264,7 +290,10 @@ int KeeperClient::main(const std::vector<String> & args)
     zk_args.operation_timeout_ms = config().getInt("operation-timeout", 10) * 1000;
     zookeeper = std::make_unique<zkutil::ZooKeeper>(zk_args);
 
-    runInteractive();
+    if (config().has("query"))
+        executeQuery(config().getString("query"));
+    else
+        runInteractive();
 
     return 0;
 }
