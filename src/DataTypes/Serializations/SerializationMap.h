@@ -141,7 +141,7 @@ public:
 class SerializationMapSize : public SerializationMapSubcolumn
 {
 public:
-    explicit SerializationMapSize(size_t num_shards_);
+    SerializationMapSize(size_t num_shards_, const String & subcolumn_name_);
 
     void deserializeBinaryBulkWithMultipleStreams(
         ColumnPtr & column,

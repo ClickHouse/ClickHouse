@@ -1,4 +1,4 @@
-#include <Analyzer/Passes/ConstMapElementToShardPass.h>
+#include <Analyzer/Passes/MapElementConstKeyToShardPass.h>
 
 #include <Common/WeakHash.h>
 #include <DataTypes/DataTypeMap.h>
@@ -27,10 +27,10 @@ UInt32 getWeakHash(const Field & field, const DataTypePtr & type)
     return hash.getData()[0];
 }
 
-class ConstMapElementToShardVisitor : public InDepthQueryTreeVisitorWithContext<ConstMapElementToShardVisitor>
+class MapElementConstKeyToShardVisitor : public InDepthQueryTreeVisitorWithContext<MapElementConstKeyToShardVisitor>
 {
 public:
-    using Base = InDepthQueryTreeVisitorWithContext<ConstMapElementToShardVisitor>;
+    using Base = InDepthQueryTreeVisitorWithContext<MapElementConstKeyToShardVisitor>;
     using Base::Base;
 
     void visitImpl(QueryTreeNodePtr & node) const
@@ -66,7 +66,7 @@ public:
         UInt32 key_hash = getWeakHash(const_node->getValue(), const_node->getResultType());
         UInt32 shard_num = key_hash % type_map->getNumShards();
 
-        String subcolumn_name = ".shard" + toString(shard_num);
+        auto subcolumn_name = ".shard" + toString(shard_num);
         auto new_type = std::make_shared<DataTypeMap>(type_map->getNestedType(), 1);
 
         column_node->setColumnName(column_node->getColumnName() + subcolumn_name);
@@ -76,9 +76,9 @@ public:
 
 }
 
-void ConstMapElementToShardPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void MapElementConstKeyToShardPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
-    ConstMapElementToShardVisitor visitor(context);
+    MapElementConstKeyToShardVisitor visitor(context);
     visitor.visit(query_tree_node);
 }
 

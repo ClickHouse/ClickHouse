@@ -465,12 +465,12 @@ void SerializationMap::SubcolumnCreator::create(SubstreamData & data, const Stri
     {
         if (!shard_name.empty() && name.starts_with(shard_name))
             data.serialization = std::make_shared<SerializationNamed>(data.serialization, shard_name, false);
+        else if (name.starts_with("size"))
+            data.serialization = std::make_shared<SerializationMapSize>(num_shards, name);
         else if (name == "keys" || name == "values")
             data.serialization = std::make_shared<SerializationMapKeysValues>(data.serialization, num_shards);
-        else if (name == "size0")
-            data.serialization = std::make_shared<SerializationMapSize>(num_shards);
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected subcolumn {} in type Map", name);
+        // else
+        //     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected subcolumn {} in type Map", name);
     }
 }
 
@@ -699,7 +699,7 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
     const auto & keys_array = assert_cast<const ColumnArray &>(*res_keys);
     const auto & values_array = assert_cast<const ColumnArray &>(*res_values);
 
-    assert(keys_array.getOffsets() == values_offsets.getOffsets());
+    assert(keys_array.getOffsets() == values_array.getOffsets());
 
     auto res_array = ColumnArray::create(
         ColumnTuple::create(Columns{keys_array.getDataPtr(), values_array.getDataPtr()}),
@@ -776,7 +776,7 @@ void SerializationMapSubcolumn::deserializeBinaryBulkStatePrefix(
 }
 
 SerializationMapKeysValues::SerializationMapKeysValues(SerializationPtr nested_, size_t num_shards_)
-    : SerializationMapSubcolumn(std::move(nested_), num_shards_)
+    : SerializationMapSubcolumn(nested_, num_shards_)
 {
 }
 
@@ -808,10 +808,10 @@ void SerializationMapKeysValues::deserializeBinaryBulkWithMultipleStreams(
     column->assumeMutableRef().insertRangeFrom(*res, 0, res->size());
 }
 
-SerializationMapSize::SerializationMapSize(size_t num_shards_)
+SerializationMapSize::SerializationMapSize(size_t num_shards_, const String & subcolumn_name_)
     : SerializationMapSubcolumn(
         std::make_shared<SerializationNamed>(
-            std::make_shared<SerializationNumber<UInt64>>(), "size0", false), num_shards_)
+            std::make_shared<SerializationNumber<UInt64>>(), subcolumn_name_, false), num_shards_)
 {
 }
 
