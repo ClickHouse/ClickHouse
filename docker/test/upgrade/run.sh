@@ -49,7 +49,7 @@ echo -e "Successfully cloned previous release tests$OK" >> /test_output/test_res
 echo -e "Successfully downloaded previous release packages$OK" >> /test_output/test_results.tsv
 
 # Make upgrade check more funny by forcing Ordinary engine for system database
-mkdir /var/lib/clickhouse/metadata
+mkdir -p /var/lib/clickhouse/metadata
 echo "ATTACH DATABASE system ENGINE=Ordinary" > /var/lib/clickhouse/metadata/system.sql
 
 # Install previous release packages
