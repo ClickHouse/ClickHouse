@@ -670,7 +670,7 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
         return std::make_shared<HashJoin>(table_join, right_table_expression_header);
     }
 
-    if (!table_join->oneDisjunct() && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH))
+    if (!table_join->oneDisjunct() && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH) && !table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `hash` join supports multiple ORs for keys in JOIN ON section");
 
     /// Direct JOIN with special storages that support key value access. For example JOIN with Dictionary
@@ -723,7 +723,11 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
     }
 
     if (table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
-        return std::make_shared<JoinSwitcher>(table_join, right_table_expression_header);
+    {
+        if (MergeJoin::isSupported(table_join))
+            return std::make_shared<JoinSwitcher>(table_join, right_table_expression_header);
+        return std::make_shared<HashJoin>(table_join, right_table_expression_header);
+    }
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Can't execute any of specified algorithms for specified strictness/kind and right storage type");
