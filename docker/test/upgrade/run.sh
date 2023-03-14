@@ -55,11 +55,13 @@ echo "ATTACH DATABASE system ENGINE=Ordinary" > /var/lib/clickhouse/metadata/sys
 # Install previous release packages
 install_packages previous_release_package_folder
 
-# Start server from previous release
-# Let's enable S3 storage by default
-export USE_S3_STORAGE_FOR_MERGE_TREE=1
-# Previous version may not be ready for fault injections
-export ZOOKEEPER_FAULT_INJECTION=0
+# Initial run without S3 to create system.*_log on local file system to make it
+# available for dump via clickhouse-local
+configure
+
+start
+stop
+mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.initial.log
 
 # force_sync=false doesn't work correctly on some older versions
 sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
@@ -67,14 +69,19 @@ sudo cat /etc/clickhouse-server/config.d/keeper_port.xml \
   > /etc/clickhouse-server/config.d/keeper_port.xml.tmp
 sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
 
-configure
-
 # But we still need default disk because some tables loaded only into it
 sudo cat /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml \
   | sed "s|<main><disk>s3</disk></main>|<main><disk>s3</disk></main><default><disk>default</disk></default>|" \
   > /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp    mv /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml.tmp /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 sudo chown clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
 sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
+
+# Start server from previous release
+# Let's enable S3 storage by default
+export USE_S3_STORAGE_FOR_MERGE_TREE=1
+# Previous version may not be ready for fault injections
+export ZOOKEEPER_FAULT_INJECTION=0
+configure
 
 start
 
