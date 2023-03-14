@@ -1021,6 +1021,8 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     if (!replacement_map.empty())
         query_tree_to_modify = query_tree_to_modify->cloneAndReplace(replacement_map);
 
+    removeGroupingFunctionSpecializations(query_tree_to_modify);
+
     return query_tree_to_modify;
 }
 
@@ -1053,7 +1055,6 @@ void StorageDistributed::read(
             storage_snapshot,
             remote_storage_id,
             remote_table_function_ptr);
-        removeGroupingFunctionSpecializations(query_tree_with_replaced_distributed_table);
 
         query_ast = queryNodeToSelectQuery(query_tree_distributed);
         header = InterpreterSelectQueryAnalyzer::getSampleBlock(query_ast, local_context, SelectQueryOptions(processed_stage).analyze());
