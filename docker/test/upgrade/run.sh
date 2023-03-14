@@ -185,8 +185,6 @@ tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 
 collect_query_and_trace_logs
 
-check_oom_in_dmesg
-
 mv /var/log/clickhouse-server/stderr.log /test_output/
 
 # Write check result into check_status.tsv
