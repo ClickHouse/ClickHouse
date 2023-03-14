@@ -3,7 +3,7 @@
 #include <random>
 #include <base/getThreadId.h>
 #include <Common/Exception.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Core/Settings.h>
 #include <IO/Operators.h>
 
@@ -92,7 +92,7 @@ bool Span::addAttributeImpl(std::string_view name, std::string_view value) noexc
     return true;
 }
 
-SpanHolder::SpanHolder(std::string_view _operation_name)
+SpanHolder::SpanHolder(std::string_view _operation_name, SpanKind _kind)
 {
     if (!current_thread_trace_context.isTraceEnabled())
     {
@@ -106,6 +106,7 @@ SpanHolder::SpanHolder(std::string_view _operation_name)
         this->parent_span_id = current_thread_trace_context.span_id;
         this->span_id = thread_local_rng(); // create a new id for this span
         this->operation_name = _operation_name;
+        this->kind = _kind;
         this->start_time_us
             = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
