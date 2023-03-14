@@ -47,7 +47,7 @@ public:
     static String replaceQueryParameterWithValue (const String & column_name, const NameToNameMap & parameter_values, const NameToNameMap & parameter_types);
     static String replaceValueWithQueryParameter (const String & column_name, const NameToNameMap & parameter_values);
 
-    NameToNameMap getParameterTypes() const
+    const NameToNameMap & getParameterTypes() const
     {
         return view_parameter_types;
     }
