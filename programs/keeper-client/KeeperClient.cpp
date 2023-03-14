@@ -76,9 +76,8 @@ void KeeperClient::loadCommands(std::vector<std::tuple<String, size_t, Callback>
         suggest.addWords({name});
     }
 
-    for (const auto & command : four_letter_word_commands) {
+    for (const auto & command : four_letter_word_commands)
         suggest.addWords({command});
-    }
 }
 
 void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
