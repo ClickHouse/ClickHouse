@@ -73,9 +73,15 @@ auto ExtractKeyValuePairs::getExtractor(const ParsedArguments & parsed_arguments
         builder.withKeyValuePairDelimiter(parsed_arguments.key_value_pair_delimiter.value());
     }
 
-    builder.withItemDelimiter(parsed_arguments.pair_delimiters);
+    if (!parsed_arguments.pair_delimiters.empty())
+    {
+        builder.withItemDelimiter({parsed_arguments.pair_delimiters.begin(), parsed_arguments.pair_delimiters.end()});
+    }
 
-    builder.withQuotingCharacters(parsed_arguments.quoting_characters);
+    if (!parsed_arguments.quoting_characters.empty())
+    {
+        builder.withQuotingCharacters({parsed_arguments.quoting_characters.begin(), parsed_arguments.quoting_characters.end()});
+    }
 
     return builder.build();
 }
@@ -143,7 +149,6 @@ ExtractKeyValuePairs::ParsedArguments ExtractKeyValuePairs::parseArguments(const
         };
     }
 
-
     auto quoting_characters_str = arguments[3].column->getDataAt(0).toView();
 
     SetArgument quoting_characters;
@@ -159,7 +164,6 @@ ExtractKeyValuePairs::ParsedArguments ExtractKeyValuePairs::parseArguments(const
             quoting_characters,
         };
     }
-
 
     auto with_escaping_character = extractControlCharacter(arguments[4].column);
 

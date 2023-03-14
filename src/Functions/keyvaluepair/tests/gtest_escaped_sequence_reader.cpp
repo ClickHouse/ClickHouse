@@ -1,4 +1,4 @@
-#include <Functions/keyvaluepair/src/impl/state/util/EscapedCharacterReader.h>
+#include <Functions/keyvaluepair/src/impl/state/strategies/util/EscapedCharacterReader.h>
 #include <gtest/gtest.h>
 
 namespace DB

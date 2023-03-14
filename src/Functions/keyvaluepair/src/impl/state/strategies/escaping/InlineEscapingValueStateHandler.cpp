@@ -1,45 +1,16 @@
 #include "InlineEscapingValueStateHandler.h"
-#include "Functions/keyvaluepair/src/impl/state/util/EscapedCharacterReader.h"
-#include "Functions/keyvaluepair/src/impl/state/util/CharacterFinder.h"
+#include <Functions/keyvaluepair/src/impl/state/strategies/util/CharacterFinder.h>
+#include <Functions/keyvaluepair/src/impl/state/strategies/util/EscapedCharacterReader.h>
+#include <Functions/keyvaluepair/src/impl/state/strategies/util/NeedleFactory.h>
 
 namespace DB
 {
 
-static auto buildReadRuntimeConfig(const ExtractorConfiguration & configuration)
-{
-    const auto & [key_value_delimiter, pair_delimiters, quoting_characters]
-        = configuration;
-
-    std::vector<char> needles;
-
-    needles.push_back(EscapedCharacterReader::ESCAPE_CHARACTER);
-    needles.push_back(key_value_delimiter);
-
-    std::copy(quoting_characters.begin(), quoting_characters.end(), std::back_inserter(needles));
-    std::copy(pair_delimiters.begin(), pair_delimiters.end(), std::back_inserter(needles));
-
-    return needles;
-}
-
-static auto buildReadEnclosedRuntimeConfig(const ExtractorConfiguration & configuration)
-{
-    const auto & quoting_characters = configuration.quoting_characters;
-
-    std::vector<char> needles;
-
-    needles.push_back(EscapedCharacterReader::ESCAPE_CHARACTER);
-
-    std::copy(quoting_characters.begin(), quoting_characters.end(), std::back_inserter(needles));
-
-    return needles;
-}
-
 InlineEscapingValueStateHandler::InlineEscapingValueStateHandler(ExtractorConfiguration extractor_configuration_)
     : extractor_configuration(std::move(extractor_configuration_))
 {
-    auto read_config = buildReadRuntimeConfig(extractor_configuration);
-    auto read_enclosed_config = buildReadEnclosedRuntimeConfig(extractor_configuration);
-    runtime_configuration = RuntimeConfiguration({}, read_config, read_enclosed_config);
+    read_needles = NeedleFactory::getReadNeedles(extractor_configuration);
+    read_quoted_needles = NeedleFactory::getReadQuotedNeedles(extractor_configuration);
 }
 
 NextState InlineEscapingValueStateHandler::wait(std::string_view file, size_t pos) const
@@ -51,11 +22,11 @@ NextState InlineEscapingValueStateHandler::wait(std::string_view file, size_t po
     {
         const auto current_character = file[pos];
 
-        if (quoting_characters.contains(current_character))
+        if (std::find(quoting_characters.begin(), quoting_characters.end(), current_character) != quoting_characters.end())
         {
             return {pos + 1u, State::READING_ENCLOSED_VALUE};
         }
-        else if (pair_delimiters.contains(current_character))
+        else if (std::find(pair_delimiters.begin(), pair_delimiters.end(), current_character) != pair_delimiters.end())
         {
             return {pos, State::READING_EMPTY_VALUE};
         }
@@ -86,7 +57,7 @@ NextState InlineEscapingValueStateHandler::read(std::string_view file, size_t po
      * It might help updating current pos?
      * */
 
-    while (auto character_position_opt = finder.find_first(file, pos, runtime_configuration.read_configuration))
+    while (auto character_position_opt = finder.find_first(file, pos, read_needles))
     {
         auto character_position = *character_position_opt;
         auto character = file[character_position];
@@ -118,8 +89,7 @@ NextState InlineEscapingValueStateHandler::read(std::string_view file, size_t po
         {
             return {next_pos, State::WAITING_KEY};
         }
-        // pair delimiter
-        else if (pair_delimiters.contains(character))
+        else if (std::find(pair_delimiters.begin(), pair_delimiters.end(), character) != pair_delimiters.end())
         {
             // todo try to optimize with resize and memcpy
             for (auto i = pos; i < character_position; i++)
@@ -149,7 +119,7 @@ NextState InlineEscapingValueStateHandler::readEnclosed(std::string_view file, s
 
     value.clear();
 
-    while (auto character_position_opt = finder.find_first(file, pos, runtime_configuration.read_enclosed_configuration))
+    while (auto character_position_opt = finder.find_first(file, pos, read_quoted_needles))
     {
         auto character_position = *character_position_opt;
         auto character = file[character_position];
@@ -177,7 +147,7 @@ NextState InlineEscapingValueStateHandler::readEnclosed(std::string_view file, s
                 }
             }
         }
-        else if(quoting_characters.contains(character))
+        else if(std::find(quoting_characters.begin(), quoting_characters.end(), character) != quoting_characters.end())
         {
             // todo try to optimize with resize and memcpy
             for (auto i = pos; i < character_position; i++)

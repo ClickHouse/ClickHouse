@@ -1,60 +1,17 @@
 #include "InlineEscapingKeyStateHandler.h"
-#include <Functions/keyvaluepair/src/impl/state/util/CharacterFinder.h>
-#include <Functions/keyvaluepair/src/impl/state/util/EscapedCharacterReader.h>
+#include <Functions/keyvaluepair/src/impl/state/strategies/util/CharacterFinder.h>
+#include <Functions/keyvaluepair/src/impl/state/strategies/util/EscapedCharacterReader.h>
+#include <Functions/keyvaluepair/src/impl/state/strategies/util/NeedleFactory.h>
 
 namespace DB
 {
 
-static auto buildWaitRuntimeConfig(const ExtractorConfiguration & configuration)
-{
-    const auto & [key_value_delimiter, pair_delimiters, quoting_characters]
-        = configuration;
-
-    std::vector<char> special_characters;
-    special_characters.push_back(EscapedCharacterReader::ESCAPE_CHARACTER);
-    special_characters.push_back(key_value_delimiter);
-
-    std::copy(pair_delimiters.begin(), pair_delimiters.end(), std::back_inserter(special_characters));
-
-    return special_characters;
-}
-
-static auto buildReadRuntimeConfig(const ExtractorConfiguration & configuration)
-{
-    const auto & [key_value_delimiter, pair_delimiters, quoting_characters]
-        = configuration;
-
-    std::vector<char> needles;
-
-    needles.push_back(EscapedCharacterReader::ESCAPE_CHARACTER);
-    needles.push_back(key_value_delimiter);
-
-    std::copy(quoting_characters.begin(), quoting_characters.end(), std::back_inserter(needles));
-    std::copy(pair_delimiters.begin(), pair_delimiters.end(), std::back_inserter(needles));
-
-    return needles;
-}
-
-static auto buildReadEnclosedRuntimeConfig(const ExtractorConfiguration & configuration)
-{
-    const auto & quoting_characters = configuration.quoting_characters;
-
-    std::vector<char> needles;
-
-    needles.push_back(EscapedCharacterReader::ESCAPE_CHARACTER);
-
-    std::copy(quoting_characters.begin(), quoting_characters.end(), std::back_inserter(needles));
-
-    return needles;
-}
-
 InlineEscapingKeyStateHandler::InlineEscapingKeyStateHandler(ExtractorConfiguration configuration_)
     : extractor_configuration(std::move(configuration_))
 {
-    auto wait_config = buildWaitRuntimeConfig(extractor_configuration);
-    auto read_config = buildReadRuntimeConfig(extractor_configuration);
-    auto read_enclosed_config = buildReadEnclosedRuntimeConfig(extractor_configuration);
-    runtime_configuration = RuntimeConfiguration(wait_config, read_config, read_enclosed_config);
+    wait_needles = NeedleFactory::getWaitNeedles(extractor_configuration);
+    read_needles = NeedleFactory::getReadNeedles(extractor_configuration);
+    read_quoted_needles = NeedleFactory::getReadQuotedNeedles(extractor_configuration);
 }
 
 NextState InlineEscapingKeyStateHandler::wait(std::string_view file, size_t pos) const
@@ -63,12 +20,12 @@ NextState InlineEscapingKeyStateHandler::wait(std::string_view file, size_t pos)
 
     const auto & quoting_characters = extractor_configuration.quoting_characters;
 
-    while (auto character_position_opt = finder.find_first_not(file, pos, runtime_configuration.wait_configuration))
+    while (auto character_position_opt = finder.find_first_not(file, pos, wait_needles))
     {
         auto character_position = *character_position_opt;
         auto character = file[character_position];
 
-        if (quoting_characters.contains(character))
+        if (std::find(quoting_characters.begin(), quoting_characters.end(), character) != quoting_characters.end())
         {
             return {character_position + 1u, State::READING_ENCLOSED_KEY};
         }
@@ -101,7 +58,7 @@ NextState InlineEscapingKeyStateHandler::read(std::string_view file, size_t pos,
      * It might help updating current pos?
      * */
 
-    while (auto character_position_opt = finder.find_first(file, pos, runtime_configuration.read_configuration))
+    while (auto character_position_opt = finder.find_first(file, pos, read_needles))
     {
         auto character_position = *character_position_opt;
         auto character = file[character_position];
@@ -139,8 +96,7 @@ NextState InlineEscapingKeyStateHandler::read(std::string_view file, size_t pos,
 
             return {next_pos, State::WAITING_VALUE};
         }
-        // pair delimiter
-        else if (pair_delimiters.contains(character))
+        else if (std::find(pair_delimiters.begin(), pair_delimiters.end(), character) != pair_delimiters.end())
         {
             return {next_pos, State::WAITING_KEY};
         }
@@ -161,7 +117,7 @@ NextState InlineEscapingKeyStateHandler::readEnclosed(std::string_view file, siz
 
     key.clear();
 
-    while (auto character_position_opt = finder.find_first(file, pos, runtime_configuration.read_enclosed_configuration))
+    while (auto character_position_opt = finder.find_first(file, pos, read_quoted_needles))
     {
         auto character_position = *character_position_opt;
         auto character = file[character_position];
@@ -189,7 +145,7 @@ NextState InlineEscapingKeyStateHandler::readEnclosed(std::string_view file, siz
                 }
             }
         }
-        else if(quoting_characters.contains(character))
+        else if(std::find(quoting_characters.begin(), quoting_characters.end(), character) != quoting_characters.end())
         {
             // todo try to optimize with resize and memcpy
             for (auto i = pos; i < character_position; i++)

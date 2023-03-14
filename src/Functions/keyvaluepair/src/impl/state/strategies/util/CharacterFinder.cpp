@@ -41,13 +41,10 @@ inline const char * find_first_symbols_sse42(const char * const begin, const cha
 #if defined(__SSE4_2__)
     constexpr int mode = _SIDD_UBYTE_OPS | _SIDD_CMP_EQUAL_ANY | _SIDD_LEAST_SIGNIFICANT;
 
-    if (num_chars >= 16)
+    if (num_chars > 16)
         throw std::runtime_error("Needle is too big");
 
-    char c[16] = {'\0'};
-    memcpy(c, needle, num_chars);
-
-    const __m128i set = _mm_loadu_si128(reinterpret_cast<const __m128i *>(c));
+    const __m128i set = _mm_loadu_si128(reinterpret_cast<const __m128i *>(needle));
 
     for (; pos + 15 < end; pos += 16)
     {
@@ -79,7 +76,7 @@ auto find_first_symbols_sse42(std::string_view haystack, std::string_view needle
     return find_first_symbols_sse42<positive>(haystack.begin(), haystack.end(), needle.begin(), needle.size());
 }
 
-std::optional<CharacterFinder::Position> CharacterFinder::find_first(std::string_view haystack, const std::vector<char> & needles) const
+std::optional<CharacterFinder::Position> CharacterFinder::find_first(std::string_view haystack, const std::vector<char> & needles)
 {
     if (const auto * ptr = find_first_symbols_sse42(haystack, {needles.begin(), needles.end()}))
     {
@@ -89,7 +86,7 @@ std::optional<CharacterFinder::Position> CharacterFinder::find_first(std::string
     return std::nullopt;
 }
 
-std::optional<CharacterFinder::Position> CharacterFinder::find_first(std::string_view haystack, std::size_t offset, const std::vector<char> & needles) const
+std::optional<CharacterFinder::Position> CharacterFinder::find_first(std::string_view haystack, std::size_t offset, const std::vector<char> & needles)
 {
     if (auto position = find_first({haystack.begin() + offset, haystack.end()}, needles))
     {
@@ -99,7 +96,7 @@ std::optional<CharacterFinder::Position> CharacterFinder::find_first(std::string
     return std::nullopt;
 }
 
-std::optional<CharacterFinder::Position> CharacterFinder::find_first_not(std::string_view haystack, const std::vector<char> & needles) const
+std::optional<CharacterFinder::Position> CharacterFinder::find_first_not(std::string_view haystack, const std::vector<char> & needles)
 {
     if (const auto * ptr = find_first_symbols_sse42<false>(haystack, {needles.begin(), needles.end()}))
     {
@@ -109,7 +106,7 @@ std::optional<CharacterFinder::Position> CharacterFinder::find_first_not(std::st
     return std::nullopt;
 }
 
-std::optional<CharacterFinder::Position> CharacterFinder::find_first_not(std::string_view haystack, std::size_t offset, const std::vector<char> & needles) const
+std::optional<CharacterFinder::Position> CharacterFinder::find_first_not(std::string_view haystack, std::size_t offset, const std::vector<char> & needles)
 {
     if (auto position = find_first_not({haystack.begin() + offset, haystack.end()}, needles))
     {

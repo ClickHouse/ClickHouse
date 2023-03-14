@@ -17,15 +17,15 @@ KeyValuePairExtractorBuilder & KeyValuePairExtractorBuilder::withKeyValuePairDel
     return *this;
 }
 
-KeyValuePairExtractorBuilder & KeyValuePairExtractorBuilder::withItemDelimiter(std::unordered_set<char> item_delimiters_)
+KeyValuePairExtractorBuilder & KeyValuePairExtractorBuilder::withItemDelimiter(std::vector<char> item_delimiters_)
 {
-    item_delimiters.insert(item_delimiters_.begin(), item_delimiters_.end());
+    item_delimiters = std::move(item_delimiters_);
     return *this;
 }
 
-KeyValuePairExtractorBuilder & KeyValuePairExtractorBuilder::withQuotingCharacters(std::unordered_set<char> quoting_characters_)
+KeyValuePairExtractorBuilder & KeyValuePairExtractorBuilder::withQuotingCharacters(std::vector<char> quoting_characters_)
 {
-    quoting_characters.insert(quoting_characters_.begin(), quoting_characters_.end());
+    quoting_characters = std::move(quoting_characters_);
     return *this;
 }
 

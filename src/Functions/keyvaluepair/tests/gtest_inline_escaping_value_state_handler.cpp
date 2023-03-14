@@ -14,8 +14,8 @@ void test_wait(const auto & handler, std::string_view input, std::size_t expecte
 
 TEST(InlineEscapingValueStateHandler, Wait)
 {
-    auto pair_delimiters = std::unordered_set<char> {','};
-    auto quoting_characters = std::unordered_set<char> {'"'};
+    auto pair_delimiters = std::vector<char> {','};
+    auto quoting_characters = std::vector<char> {'"'};
 
     ExtractorConfiguration configuration(':', pair_delimiters, quoting_characters);
     InlineEscapingValueStateHandler handler(configuration);
