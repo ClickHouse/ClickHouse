@@ -1227,7 +1227,7 @@ void TCPHandler::receiveHello()
     session = makeSession();
     auto & client_info = session->getClientInfo();
 
-    /// Authentification with SSL user certificate
+    /// Authentication with SSL user certificate
     if (dynamic_cast<Poco::Net::SecureStreamSocketImpl*>(socket().impl()))
     {
         Poco::Net::SecureStreamSocket secure_socket(socket());
