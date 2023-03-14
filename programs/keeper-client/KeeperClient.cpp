@@ -203,7 +203,7 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
 
 void KeeperClient::executeQuery(const String & query)
 {
-    std::vector<std::string> queries;
+    std::vector<String> queries;
     boost::algorithm::split(queries, query, boost::is_any_of(";"));
 
     for (const auto & query_text : queries)
@@ -218,7 +218,7 @@ bool KeeperClient::processQueryText(const String & text)
     if (exit_strings.find(text) != exit_strings.end())
         return false;
 
-    std::vector<std::string> tokens;
+    std::vector<String> tokens;
     boost::algorithm::split(tokens, text, boost::is_any_of(" "));
 
     try
