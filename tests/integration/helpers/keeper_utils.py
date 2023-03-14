@@ -5,7 +5,13 @@ from helper.client import CommandRequest
 
 def send_4lw_cmd(cluster, node, cmd="ruok", port=9181):
     return CommandRequest(
-        ["cluster.server_bin_path", "keeper-client", f"{cluster.get_instance_ip(node.name)}:{port}", "-q", cmd]
+        [
+            "cluster.server_bin_path",
+            "keeper-client",
+            f"{cluster.get_instance_ip(node.name)}:{port}",
+            "-q",
+            cmd,
+        ]
     ).get_answer()
 
 
