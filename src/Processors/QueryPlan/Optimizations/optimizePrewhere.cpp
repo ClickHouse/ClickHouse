@@ -198,7 +198,7 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes & nodes)
       * 2. Prewhere filter expressions.
       *
       * There can be cases when all expressions are moved to PREWHERE, but it is not
-      * enought to produce required filter output columns.
+      * enough to produce required filter output columns.
       *
       * Example: SELECT (a AND b) AS cond FROM test_table WHERE cond AND c;
       * In this example conditions a, b, c can move to PREWHERE, but PREWHERE will not contain expression and(a, b).

@@ -79,7 +79,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int TOO_DEEP_SUBQUERIES;
     extern const int NOT_IMPLEMENTED;
-    extern const int ILLEGAL_PREWHERE;
 }
 
 /** ClickHouse query planner.
