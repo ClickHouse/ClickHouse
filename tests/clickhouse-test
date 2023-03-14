@@ -2244,7 +2244,8 @@ def parse_args():
     parser.add_argument(
         "-b",
         "--binary",
-        default=find_binary("clickhouse"),
+        default="clickhouse",
+        type=find_binary,
         help="Path to clickhouse binary or name of binary in PATH",
     )
     parser.add_argument(
