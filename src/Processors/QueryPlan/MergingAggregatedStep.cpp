@@ -75,6 +75,9 @@ MergingAggregatedStep::MergingAggregatedStep(
 
 void MergingAggregatedStep::applyOrder(SortDescription sort_description, DataStream::SortScope sort_scope)
 {
+    is_order_overwritten = true;
+    overwritten_sort_scope = sort_scope;
+
     auto & input_stream = input_streams.front();
     input_stream.sort_scope = sort_scope;
     input_stream.sort_description = sort_description;
@@ -157,6 +160,8 @@ void MergingAggregatedStep::describeActions(JSONBuilder::JSONMap & map) const
 void MergingAggregatedStep::updateOutputStream()
 {
     output_stream = createOutputStream(input_streams.front(), params.getHeader(input_streams.front().header, final), getDataStreamTraits());
+    if (is_order_overwritten)  /// overwrite order again
+        applyOrder(group_by_sort_description, overwritten_sort_scope);
 
     /// Aggregation keys are distinct
     for (const auto & key : params.keys)
