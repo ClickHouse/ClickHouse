@@ -190,12 +190,20 @@ void DistributedAsyncInsertDirectoryQueue::run()
     std::lock_guard lock{mutex};
 
     bool do_sleep = false;
+    bool first_send = true;
     while (!pending_files.isFinished())
     {
         do_sleep = true;
 
         if (!hasPendingFiles())
             break;
+
+        if (should_batch_inserts && !first_send)
+        {
+            std::lock_guard status_lock(status_mutex);
+            if (status.bytes_count < min_batched_block_size_bytes)
+                break;
+        }
 
         if (!monitor_blocker.isCancelled())
         {
@@ -205,6 +213,7 @@ void DistributedAsyncInsertDirectoryQueue::run()
                 /// No errors while processing existing files.
                 /// Let's see maybe there are more files to process.
                 do_sleep = false;
+                first_send = false;
 
                 std::lock_guard status_lock(status_mutex);
                 status.last_exception = std::exception_ptr{};
