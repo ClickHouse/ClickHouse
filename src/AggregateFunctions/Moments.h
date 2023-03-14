@@ -16,7 +16,6 @@ struct Settings;
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int DECIMAL_OVERFLOW;
 }
 
 
