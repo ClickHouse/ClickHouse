@@ -57,45 +57,57 @@ using ThreadStatusPtr = ThreadStatus *;
   * Create via CurrentThread::initializeQuery (for queries) or directly (for various background tasks).
   * Use via CurrentThread::getGroup.
   */
+class ThreadGroupStatus;
+using ThreadGroupStatusPtr = std::shared_ptr<ThreadGroupStatus>;
+
 class ThreadGroupStatus
 {
 public:
-    struct ProfileEventsCountersAndMemory
-    {
-        ProfileEvents::Counters::Snapshot counters;
-        Int64 memory_usage;
-        UInt64 thread_id;
-    };
-
-    mutable std::mutex mutex;
+    /// The first thread created this thread group
+    UInt64 master_thread_id = 0;
 
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
 
-    ContextWeakPtr query_context;
-    ContextWeakPtr global_context;
+    /// Access to the members below has to be in critical section with  mutex
+    mutable std::mutex mutex;
 
     InternalTextLogsQueueWeakPtr logs_queue_ptr;
     InternalProfileEventsQueueWeakPtr profile_queue_ptr;
-    std::function<void()> fatal_error_callback;
-
-    std::unordered_set<UInt64> thread_ids;
-    std::unordered_set<ThreadStatusPtr> threads;
-
-    /// The first thread created this thread group
-    UInt64 master_thread_id = 0;
 
     LogsLevel client_logs_level = LogsLevel::none;
 
     String query;
     UInt64 normalized_query_hash = 0;
 
-    std::vector<ProfileEventsCountersAndMemory> finished_threads_counters_memory;
+    /// When new query starts, new thread group is created for it, current thread becomes master thread of the query
+    static ThreadGroupStatusPtr createForQuery(ContextPtr query_context_, std::function<void()> fatal_error_callback_ = {});
 
-    std::vector<ProfileEventsCountersAndMemory> getProfileEventsCountersAndMemoryForThreads();
+    const std::vector<UInt64> getInvolvedThreadIds() const;
+
+    void link(ThreadStatusPtr thread);
+    void unlink(ThreadStatusPtr thread);
+
+    ContextWeakPtr getQueryContextWeak() const;
+    ContextWeakPtr getGlobalContextWeak() const;
+
+    using FatalErrorCallback = std::function<void()>;
+    FatalErrorCallback getFatalErrorCallback() const;
+
+private:
+    /// Set up at creation, no race when reading
+    ContextWeakPtr query_context;
+    ContextWeakPtr global_context;
+
+    /// Set up at creation, no race when reading
+    FatalErrorCallback fatal_error_callback;
+
+    /// Set of all thread ids which has been attached to the group
+    std::unordered_set<UInt64> thread_ids;
+
+    /// Set of active threads
+    std::unordered_set<ThreadStatusPtr> threads;
 };
-
-using ThreadGroupStatusPtr = std::shared_ptr<ThreadGroupStatus>;
 
 /**
  * We use **constinit** here to tell the compiler the current_thread variable is initialized.
@@ -124,12 +136,11 @@ public:
 
     /// TODO: merge them into common entity
     ProfileEvents::Counters performance_counters{VariableContext::Thread};
-
     /// Points to performance_counters by default.
     /// Could be changed to point to another object to calculate performance counters for some narrow scope.
     ProfileEvents::Counters * current_performance_counters{&performance_counters};
-    MemoryTracker memory_tracker{VariableContext::Thread};
 
+    MemoryTracker memory_tracker{VariableContext::Thread};
     /// Small amount of untracked memory (per thread atomic-less counter)
     Int64 untracked_memory = 0;
     /// Each thread could new/delete memory in range of (-untracked_memory_limit, untracked_memory_limit) without access to common counters.
@@ -138,9 +149,6 @@ public:
     /// Statistics of read and write rows/bytes
     Progress progress_in;
     Progress progress_out;
-
-    using Deleter = std::function<void()>;
-    Deleter deleter;
 
 protected:
     /// Group of threads, to which this thread attached
@@ -153,26 +161,31 @@ protected:
     /// Use it only from current thread
     ContextWeakPtr query_context;
 
-    String query_id;
+    String query_id_from_query_context;
 
     /// A logs queue used by TCPHandler to pass logs to a client
     InternalTextLogsQueueWeakPtr logs_queue_ptr;
 
     InternalProfileEventsQueueWeakPtr profile_queue_ptr;
 
+    struct TimePoint
+    {
+        void setUp();
+        void SetUp(std::chrono::time_point<std::chrono::system_clock> now);
+
+        UInt64 nanoseconds = 0;
+        UInt64 microseconds = 0;
+        time_t seconds = 0;
+    };
+
     bool performance_counters_finalized = false;
-    UInt64 query_start_time_nanoseconds = 0;
-    UInt64 query_start_time_microseconds = 0;
-    time_t query_start_time = 0;
-    size_t queries_started = 0;
+    TimePoint query_start_time{};
 
     // CPU and Real time query profilers
     std::unique_ptr<QueryProfilerReal> query_profiler_real;
     std::unique_ptr<QueryProfilerCPU> query_profiler_cpu;
 
     Poco::Logger * log = nullptr;
-
-    friend class CurrentThread;
 
     /// Use ptr not to add extra dependencies in the header
     std::unique_ptr<RUsageCounters> last_rusage;
@@ -188,8 +201,12 @@ protected:
     friend class MemoryTrackerThreadSwitcher;
     void setQueryId(const String & query_id_)
     {
-        query_id = query_id_;
+        query_id_from_query_context = query_id_;
     }
+
+    /// This is helpful for cut linking dependencies for clickhouse_common_io
+    using Deleter = std::function<void()>;
+    Deleter deleter;
 
 public:
     ThreadStatus();
@@ -204,17 +221,11 @@ public:
     {
         DetachedFromQuery = 0,  /// We just created thread or it is a background thread
         AttachedToQuery,        /// Thread executes enqueued query
-        Died,                   /// Thread does not exist
     };
-
-    int getCurrentState() const
-    {
-        return thread_state.load(std::memory_order_relaxed);
-    }
 
     std::string_view getQueryId() const
     {
-        return query_id;
+        return query_id_from_query_context;
     }
 
     auto getQueryContext() const
@@ -243,11 +254,11 @@ public:
     ///   query.
     void setInternalThread();
 
-    /// Starts new query and create new thread group for it, current thread becomes master thread of the query
-    void initializeQuery();
-
     /// Attaches slave thread to existing thread group
-    void attachQuery(const ThreadGroupStatusPtr & thread_group_, bool check_detached = true);
+    void attachTo(const ThreadGroupStatusPtr & thread_group_, bool check_detached = true);
+
+    /// Detaches thread from the thread group and the query, dumps performance counters if they have not been dumped
+    void detachGroup();
 
     /// Returns pointer to the current profile counters to restore them back.
     /// Note: consequent call with new scope will detach previous scope.
@@ -255,7 +266,7 @@ public:
 
     InternalTextLogsQueuePtr getInternalTextLogsQueue() const
     {
-        return thread_state == Died ? nullptr : logs_queue_ptr.lock();
+        return logs_queue_ptr.lock();
     }
 
     void attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue,
@@ -263,18 +274,13 @@ public:
 
     InternalProfileEventsQueuePtr getInternalProfileEventsQueue() const
     {
-        return thread_state == Died ? nullptr : profile_queue_ptr.lock();
+        return profile_queue_ptr.lock();
     }
 
     void attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & profile_queue);
 
-    /// Callback that is used to trigger sending fatal error messages to client.
-    void setFatalErrorCallback(std::function<void()> callback);
+    /// Proper cal for fatal_error_callback
     void onFatalError();
-
-    /// Sets query context for current master thread and its thread group
-    /// NOTE: query_context have to be alive until detachQuery() is called
-    void attachQueryContext(ContextPtr query_context);
 
     /// Update several ProfileEvents counters
     void updatePerformanceCounters();
@@ -284,9 +290,6 @@ public:
 
     /// Set the counters last usage to now
     void resetPerformanceCountersLastUsage();
-
-    /// Detaches thread from the thread group and the query, dumps performance counters if they have not been dumped
-    void detachQuery(bool exit_if_already_detached = false, bool thread_exits = false);
 
     void logToQueryViewsLog(const ViewRuntimeData & vinfo);
 
@@ -303,12 +306,10 @@ protected:
 
     void logToQueryThreadLog(QueryThreadLog & thread_log, const String & current_database, std::chrono::time_point<std::chrono::system_clock> now);
 
-
     void assertState(ThreadState permitted_state, const char * description = nullptr) const;
 
-
 private:
-    void setupState(const ThreadGroupStatusPtr & thread_group_);
+    void attachGroupImp(const ThreadGroupStatusPtr & thread_group_);
 };
 
 /**

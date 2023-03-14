@@ -48,8 +48,6 @@ public:
     static void attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & queue);
     static InternalProfileEventsQueuePtr getInternalProfileEventsQueue();
 
-    static void setFatalErrorCallback(std::function<void()> callback);
-
     /// Makes system calls to update ProfileEvents that contain info from rusage and taskstats
     static void updatePerformanceCounters();
 
@@ -65,16 +63,15 @@ public:
     static void updateProgressIn(const Progress & value);
     static void updateProgressOut(const Progress & value);
 
-    /// Query management:
-
-    /// Call from master thread as soon as possible (e.g. when thread accepted connection)
-    static void initializeQuery();
-
     /// You must call one of these methods when create a query child thread:
     /// Add current thread to a group associated with the thread group
     static void attachTo(const ThreadGroupStatusPtr & thread_group);
     /// Is useful for a ThreadPool tasks
     static void attachToIfDetached(const ThreadGroupStatusPtr & thread_group);
+
+    /// Non-master threads call this method in destructor automatically
+    static void detachGroupIfNotDetached();
+    static void detachQueryIfNotDetached();
 
     /// Update ProfileEvents and dumps info to system.query_thread_log
     static void finalizePerformanceCounters();
@@ -87,10 +84,6 @@ public:
         return current_thread->getQueryId();
     }
 
-    /// Non-master threads call this method in destructor automatically
-    static void detachQuery();
-    static void detachQueryIfNotDetached();
-
     /// Initializes query with current thread as master thread in constructor, and detaches it in destructor
     struct QueryScope : private boost::noncopyable
     {
@@ -101,13 +94,6 @@ public:
         void logPeakMemoryUsage();
         bool log_peak_memory_usage_in_destructor = true;
     };
-
-private:
-    static void defaultThreadDeleter();
-
-    /// Sets query_context for current thread group
-    /// Can by used only through QueryScope
-    static void attachQueryContext(ContextPtr query_context);
 };
 
 }
