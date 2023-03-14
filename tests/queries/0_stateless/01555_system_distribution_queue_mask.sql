@@ -14,9 +14,9 @@ create table data_01555 (key Int) Engine=Null();
 --
 SELECT 'masked flush only';
 create table dist_01555 (key Int) Engine=Distributed(test_cluster_with_incorrect_pw, currentDatabase(), data_01555, key);
+system stop distributed sends dist_01555;
 
 insert into dist_01555 values (1)(2);
-system stop distributed sends dist_01555;
 -- since test_cluster_with_incorrect_pw contains incorrect password ignore error
 system flush distributed dist_01555; -- { serverError 516 }
 select length(splitByChar('*', data_path)), replaceRegexpOne(data_path, '^.*/([^/]*)/' , '\\1'), extract(last_exception, 'AUTHENTICATION_FAILED'), dateDiff('s', last_exception_time, now()) < 5 from system.distribution_queue where database = currentDatabase() and table = 'dist_01555' format CSV;
