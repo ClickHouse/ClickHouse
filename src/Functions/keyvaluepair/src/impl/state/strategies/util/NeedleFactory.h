@@ -19,4 +19,12 @@ public:
     static std::vector<char> getReadQuotedNeedles(const ExtractorConfiguration & extractor_configuration);
 };
 
+class EscapingNeedleFactory
+{
+public:
+    static std::vector<char> getWaitNeedles(const ExtractorConfiguration & extractor_configuration);
+    static std::vector<char> getReadNeedles(const ExtractorConfiguration & extractor_configuration);
+    static std::vector<char> getReadQuotedNeedles(const ExtractorConfiguration & extractor_configuration);
+};
+
 }

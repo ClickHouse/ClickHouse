@@ -13,7 +13,6 @@ std::vector<char> NeedleFactory::getWaitNeedles(const DB::ExtractorConfiguration
 
     needles.reserve(16u);
 
-    needles.push_back(EscapedCharacterReader::ESCAPE_CHARACTER);
     needles.push_back(key_value_delimiter);
 
     std::copy(pair_delimiters.begin(), pair_delimiters.end(), std::back_inserter(needles));
@@ -30,7 +29,6 @@ std::vector<char> NeedleFactory::getReadNeedles(const ExtractorConfiguration & e
 
     needles.reserve(16u);
 
-    needles.push_back(EscapedCharacterReader::ESCAPE_CHARACTER);
     needles.push_back(key_value_delimiter);
 
     std::copy(quoting_characters.begin(), quoting_characters.end(), std::back_inserter(needles));
@@ -47,9 +45,34 @@ std::vector<char> NeedleFactory::getReadQuotedNeedles(const ExtractorConfigurati
 
     needles.reserve(16u);
 
+    std::copy(quoting_characters.begin(), quoting_characters.end(), std::back_inserter(needles));
+
+    return needles;
+}
+
+std::vector<char> EscapingNeedleFactory::getWaitNeedles(const DB::ExtractorConfiguration & extractor_configuration)
+{
+    auto needles = NeedleFactory::getWaitNeedles(extractor_configuration);
+
     needles.push_back(EscapedCharacterReader::ESCAPE_CHARACTER);
 
-    std::copy(quoting_characters.begin(), quoting_characters.end(), std::back_inserter(needles));
+    return needles;
+}
+
+std::vector<char> EscapingNeedleFactory::getReadNeedles(const ExtractorConfiguration & extractor_configuration)
+{
+    auto needles = NeedleFactory::getReadNeedles(extractor_configuration);
+
+    needles.push_back(EscapedCharacterReader::ESCAPE_CHARACTER);
+
+    return needles;
+}
+
+std::vector<char> EscapingNeedleFactory::getReadQuotedNeedles(const ExtractorConfiguration & extractor_configuration)
+{
+    auto needles = NeedleFactory::getReadQuotedNeedles(extractor_configuration);
+
+    needles.push_back(EscapedCharacterReader::ESCAPE_CHARACTER);
 
     return needles;
 }

@@ -9,9 +9,9 @@ namespace DB
 InlineEscapingKeyStateHandler::InlineEscapingKeyStateHandler(ExtractorConfiguration configuration_)
     : extractor_configuration(std::move(configuration_))
 {
-    wait_needles = NeedleFactory::getWaitNeedles(extractor_configuration);
-    read_needles = NeedleFactory::getReadNeedles(extractor_configuration);
-    read_quoted_needles = NeedleFactory::getReadQuotedNeedles(extractor_configuration);
+    wait_needles = EscapingNeedleFactory::getWaitNeedles(extractor_configuration);
+    read_needles = EscapingNeedleFactory::getReadNeedles(extractor_configuration);
+    read_quoted_needles = EscapingNeedleFactory::getReadQuotedNeedles(extractor_configuration);
 }
 
 NextState InlineEscapingKeyStateHandler::wait(std::string_view file, size_t pos) const
@@ -145,7 +145,7 @@ NextState InlineEscapingKeyStateHandler::readEnclosed(std::string_view file, siz
                 }
             }
         }
-        else if(std::find(quoting_characters.begin(), quoting_characters.end(), character) != quoting_characters.end())
+        else if (std::find(quoting_characters.begin(), quoting_characters.end(), character) != quoting_characters.end())
         {
             // todo try to optimize with resize and memcpy
             for (auto i = pos; i < character_position; i++)

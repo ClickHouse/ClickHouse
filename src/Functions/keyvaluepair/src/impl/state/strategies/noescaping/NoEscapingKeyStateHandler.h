@@ -24,7 +24,9 @@ public:
 private:
     ExtractorConfiguration extractor_configuration;
 
-    static bool isValidCharacter(char character);
+    std::vector<char> wait_needles;
+    std::vector<char> read_needles;
+    std::vector<char> read_quoted_needles;
 };
 
 }

@@ -12,7 +12,7 @@ class NoEscapingValueStateHandler : public StateHandler
 public:
     using ElementType = std::string_view;
 
-    NoEscapingValueStateHandler(ExtractorConfiguration extractor_configuration_);
+    explicit NoEscapingValueStateHandler(ExtractorConfiguration extractor_configuration_);
 
     [[nodiscard]] NextState wait(std::string_view file, size_t pos) const;
 
@@ -24,8 +24,8 @@ public:
 
 private:
     ExtractorConfiguration extractor_configuration;
-
-    bool isValidCharacter(char character) const;
+    std::vector<char> read_needles;
+    std::vector<char> read_quoted_needles;
 };
 
 }

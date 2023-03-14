@@ -9,8 +9,8 @@ namespace DB
 InlineEscapingValueStateHandler::InlineEscapingValueStateHandler(ExtractorConfiguration extractor_configuration_)
     : extractor_configuration(std::move(extractor_configuration_))
 {
-    read_needles = NeedleFactory::getReadNeedles(extractor_configuration);
-    read_quoted_needles = NeedleFactory::getReadQuotedNeedles(extractor_configuration);
+    read_needles = EscapingNeedleFactory::getReadNeedles(extractor_configuration);
+    read_quoted_needles = EscapingNeedleFactory::getReadQuotedNeedles(extractor_configuration);
 }
 
 NextState InlineEscapingValueStateHandler::wait(std::string_view file, size_t pos) const
