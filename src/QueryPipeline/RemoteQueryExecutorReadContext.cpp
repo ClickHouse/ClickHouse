@@ -44,7 +44,7 @@ struct RemoteQueryExecutorRoutine
         {
             while (true)
             {
-                read_context.packet = connections.receivePacketUnlocked(ReadCallback{read_context, sink}, false /* is_draining */);
+                read_context.packet = connections.receivePacketUnlocked(ReadCallback{read_context, sink});
                 sink = std::move(sink).resume();
             }
         }
@@ -147,7 +147,7 @@ bool RemoteQueryExecutorReadContext::checkTimeoutImpl(bool blocking)
 
     if (is_timer_alarmed && !is_socket_ready)
     {
-        /// Socket receive timeout. Drain it in case of error, or it may be hide by timeout exception.
+        /// Socket receive timeout. Drain it in case or error, or it may be hide by timeout exception.
         timer.drain();
         throw NetException(ErrorCodes::SOCKET_TIMEOUT, "Timeout exceeded");
     }
