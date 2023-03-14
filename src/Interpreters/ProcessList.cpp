@@ -576,10 +576,7 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
         res.peak_memory_usage = thread_group->memory_tracker.getPeak();
 
         if (get_thread_list)
-        {
-            std::lock_guard lock(thread_group->mutex);
-            res.thread_ids.assign(thread_group->thread_ids.begin(), thread_group->thread_ids.end());
-        }
+            res.thread_ids = thread_group->getInvolvedThreadIds();
 
         if (get_profile_events)
             res.profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());

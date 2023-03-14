@@ -71,23 +71,34 @@ static thread_local ThreadStack alt_stack;
 static thread_local bool has_alt_stack = false;
 #endif
 
+ContextWeakPtr ThreadGroupStatus::getQueryContextWeak() const
+{
+    return query_context;
+}
 
-std::vector<ThreadGroupStatus::ProfileEventsCountersAndMemory> ThreadGroupStatus::getProfileEventsCountersAndMemoryForThreads()
+ContextWeakPtr ThreadGroupStatus::getGlobalContextWeak() const
+{
+    return global_context;
+}
+
+ThreadGroupStatus::FatalErrorCallback ThreadGroupStatus::getFatalErrorCallback() const
+{
+    return fatal_error_callback;
+}
+
+void ThreadGroupStatus::link(ThreadStatusPtr thread)
+{
+    std::lock_guard lock(mutex);
+
+    /// NOTE: thread may be attached multiple times if it is reused from a thread pool.
+    thread_ids.insert(thread->thread_id);
+    threads.insert(thread);
+}
+
+void ThreadGroupStatus::unlink(ThreadStatusPtr thread)
 {
     std::lock_guard guard(mutex);
-
-    /// It is OK to move it, since it is enough to report statistics for the thread at least once.
-    auto stats = std::move(finished_threads_counters_memory);
-    for (auto * thread : threads)
-    {
-        stats.emplace_back(ProfileEventsCountersAndMemory{
-            thread->performance_counters.getPartiallyAtomicSnapshot(),
-            thread->memory_tracker.get(),
-            thread->thread_id,
-        });
-    }
-
-    return stats;
+    threads.erase(thread);
 }
 
 ThreadStatus::ThreadStatus()
@@ -157,24 +168,11 @@ ThreadStatus::~ThreadStatus()
 {
     flushUntrackedMemory();
 
-    if (thread_group)
-    {
-        ThreadGroupStatus::ProfileEventsCountersAndMemory counters
-        {
-            performance_counters.getPartiallyAtomicSnapshot(),
-            memory_tracker.get(),
-            thread_id
-        };
-
-        std::lock_guard guard(thread_group->mutex);
-        thread_group->finished_threads_counters_memory.emplace_back(std::move(counters));
-        thread_group->threads.erase(this);
-    }
-
     /// It may cause segfault if query_context was destroyed, but was not detached
     auto query_context_ptr = query_context.lock();
     assert((!query_context_ptr && query_id.empty()) || (query_context_ptr && query_id == query_context_ptr->getCurrentQueryId()));
 
+    /// detachGroup if it was attached
     if (deleter)
         deleter();
 
@@ -200,22 +198,22 @@ void ThreadStatus::updatePerformanceCounters()
 
 void ThreadStatus::assertState(ThreadState permitted_state, const char * description) const
 {
-    if (getCurrentState() == permitted_state)
+    auto curr_state = thread_state.load();
+
+    if (curr_state == permitted_state)
         return;
 
     if (description)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected thread state {}: {}", getCurrentState(), description);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected thread state {}: {}", curr_state, description);
     else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected thread state {}", getCurrentState());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected thread state {}", curr_state);
 }
 
 void ThreadStatus::attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue,
                                                LogsLevel client_logs_level)
 {
     logs_queue_ptr = logs_queue;
-
-    if (!thread_group)
-        return;
+    chassert(thread_group);
 
     std::lock_guard lock(thread_group->mutex);
     thread_group->logs_queue_ptr = logs_queue;
@@ -226,20 +224,10 @@ void ThreadStatus::attachInternalProfileEventsQueue(const InternalProfileEventsQ
 {
     profile_queue_ptr = profile_queue;
 
-    if (!thread_group)
-        return;
+    chassert(thread_group);
 
     std::lock_guard lock(thread_group->mutex);
     thread_group->profile_queue_ptr = profile_queue;
-}
-
-void ThreadStatus::setFatalErrorCallback(std::function<void()> callback)
-{
-    /// It does not make sense to set a callback for sending logs to a client if there's no thread group
-    chassert(thread_group);
-    std::lock_guard lock(thread_group->mutex);
-    fatal_error_callback = std::move(callback);
-    thread_group->fatal_error_callback = fatal_error_callback;
 }
 
 void ThreadStatus::onFatalError()

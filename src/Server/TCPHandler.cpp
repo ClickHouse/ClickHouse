@@ -501,6 +501,7 @@ void TCPHandler::runImpl()
             /// (i.e. deallocations from the Aggregator with two-level aggregation)
             state.reset();
             query_scope.reset();
+            last_sent_snapshots.clear();
             thread_trace_context.reset();
         }
         catch (const Exception & e)

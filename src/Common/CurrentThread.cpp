@@ -65,20 +65,10 @@ void CurrentThread::attachInternalTextLogsQueue(const std::shared_ptr<InternalTe
     current_thread->attachInternalTextLogsQueue(logs_queue, client_logs_level);
 }
 
-void CurrentThread::setFatalErrorCallback(std::function<void()> callback)
-{
-    /// It does not make sense to set a callback for sending logs to a client if there's no thread status
-    chassert(current_thread);
-    current_thread->setFatalErrorCallback(callback);
-}
-
 std::shared_ptr<InternalTextLogsQueue> CurrentThread::getInternalTextLogsQueue()
 {
     /// NOTE: this method could be called at early server startup stage
     if (unlikely(!current_thread))
-        return nullptr;
-
-    if (current_thread->getCurrentState() == ThreadStatus::ThreadState::Died)
         return nullptr;
 
     return current_thread->getInternalTextLogsQueue();
@@ -94,9 +84,6 @@ void CurrentThread::attachInternalProfileEventsQueue(const InternalProfileEvents
 InternalProfileEventsQueuePtr CurrentThread::getInternalProfileEventsQueue()
 {
     if (unlikely(!current_thread))
-        return nullptr;
-
-    if (current_thread->getCurrentState() == ThreadStatus::ThreadState::Died)
         return nullptr;
 
     return current_thread->getInternalProfileEventsQueue();
