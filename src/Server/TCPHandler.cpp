@@ -10,6 +10,8 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/LayeredConfiguration.h>
+#include <Poco/Net/SecureStreamSocket.h>
+#include <Poco/Net/SecureStreamSocketImpl.h>
 #include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>
 #include <Common/NetException.h>
@@ -1224,6 +1226,20 @@ void TCPHandler::receiveHello()
 
     session = makeSession();
     auto & client_info = session->getClientInfo();
+
+    /// Authentification with SSL user certificate
+    if (dynamic_cast<Poco::Net::SecureStreamSocketImpl*>(socket().impl()))
+    {
+        Poco::Net::SecureStreamSocket secure_socket(socket());
+        if (secure_socket.havePeerCertificate())
+        {
+            session->authenticate(
+                SSLCertificateCredentials{user, secure_socket.peerCertificate().commonName()},
+                getClientAddress(client_info));
+            return;
+        }
+    }
+
     session->authenticate(user, password, getClientAddress(client_info));
 }
 
