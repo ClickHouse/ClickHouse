@@ -117,6 +117,14 @@ DataTypePtr ExtractKeyValuePairs::getReturnTypeImpl(const DataTypes &) const
 
 ExtractKeyValuePairs::ParsedArguments ExtractKeyValuePairs::parseArguments(const ColumnsWithTypeAndName & arguments)
 {
+    /*
+     * TODO validate arguments:
+     *  1. Check if argument is one of the acceptable characters for that argument
+     *  2. Check if it's not empty
+     *  3. Cross check arguments? Not sure it is needed anymore
+     *  4. Use uint8_t column instead of string column for escaping lol
+     * */
+
     if (arguments.empty())
     {
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument", name);
