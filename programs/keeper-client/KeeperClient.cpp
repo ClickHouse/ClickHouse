@@ -254,7 +254,11 @@ void KeeperClient::runInteractive()
 
 int KeeperClient::main(const std::vector<String> & args)
 {
-    zk_args.hosts = {args[0]};
+    if (args.empty())
+        zk_args.hosts = {"localhost:2181"};
+    else
+        zk_args.hosts = {args[0]};
+
     zk_args.connection_timeout_ms = config().getInt("connection-timeout", 10) * 1000;
     zk_args.session_timeout_ms = config().getInt("session-timeout", 10) * 1000;
     zk_args.operation_timeout_ms = config().getInt("operation-timeout", 10) * 1000;
