@@ -88,12 +88,4 @@ WriteSettings IObjectStorage::patchSettings(const WriteSettings & write_settings
     return settings;
 }
 
-void IObjectStorage::writeObjectUsingNativeCopy(
-    const StoredObject &, WriteMode, const IParamsForNativeCopyToDisk &, std::optional<ObjectAttributes>, FinalizeCallback &&)
-{
-    throw Exception(
-        ErrorCodes::NOT_IMPLEMENTED,
-        "Method `writeObjectUsingNativeCopy()` is not implemented for disk: {}",
-        getDataSourceDescription().type);
-}
 }

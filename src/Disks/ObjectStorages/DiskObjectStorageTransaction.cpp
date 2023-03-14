@@ -670,8 +670,13 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
 }
 
 
-void DiskObjectStorageTransaction::writeFileUsingNativeCopy(const String & path, WriteMode mode, const IParamsForNativeCopyToDisk & params)
+void DiskObjectStorageTransaction::writeFileUsingCustomWriteObject(
+    const String & path,
+    WriteMode mode,
+    std::function<size_t(const StoredObject & object, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>
+        custom_write_object_function)
 {
+    /// This function is a simplified and adapted version of DiskObjectStorageTransaction::writeFile().
     auto blob_name = object_storage.generateBlobNameForPath(path);
     std::optional<ObjectAttributes> object_attributes;
 
@@ -688,25 +693,18 @@ void DiskObjectStorageTransaction::writeFileUsingNativeCopy(const String & path,
     auto object = StoredObject::create(object_storage, fs::path(metadata_storage.getObjectStorageRootPath()) / blob_name);
     auto write_operation = std::make_unique<WriteFileObjectStorageOperation>(object_storage, metadata_storage, object);
 
-    auto create_metadata_callback = [tx = shared_from_this(), mode, path, blob_name] (size_t count)
-    {
-        if (mode == WriteMode::Rewrite)
-            tx->metadata_transaction->createMetadataFile(path, blob_name, count);
-        else
-            tx->metadata_transaction->addBlobToMetadata(path, blob_name, count);
-
-        tx->metadata_transaction->commit();
-    };
-
     operations_to_execute.emplace_back(std::move(write_operation));
 
     /// We always use mode Rewrite because we simulate append using metadata and different files
-    return object_storage.writeObjectUsingNativeCopy(
-        object,
-        WriteMode::Rewrite,
-        params,
-        object_attributes,
-        std::move(create_metadata_callback));
+    size_t object_size = std::move(custom_write_object_function)(object, WriteMode::Rewrite, object_attributes);
+
+    /// Create metadata (see create_metadata_callback in DiskObjectStorageTransaction::writeFile()).
+    if (mode == WriteMode::Rewrite)
+        metadata_transaction->createMetadataFile(path, blob_name, object_size);
+    else
+        metadata_transaction->addBlobToMetadata(path, blob_name, object_size);
+
+    metadata_transaction->commit();
 }
 
 

@@ -577,11 +577,15 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
     return result;
 }
 
-void DiskObjectStorage::writeFileUsingNativeCopy(const String & path, WriteMode mode, const IParamsForNativeCopyToDisk & params)
+void DiskObjectStorage::writeFileUsingCustomWriteObject(
+    const String & path,
+    WriteMode mode,
+    std::function<size_t(const StoredObject & object, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>
+        custom_write_object_function)
 {
     LOG_TEST(log, "Write file: {}", path);
     auto transaction = createObjectStorageTransaction();
-    return transaction->writeFileUsingNativeCopy(path, mode, params);
+    return transaction->writeFileUsingCustomWriteObject(path, mode, std::move(custom_write_object_function));
 }
 
 void DiskObjectStorage::applyNewSettings(

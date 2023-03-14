@@ -17,13 +17,9 @@ public:
     virtual bool fileExists(const String & file_name) = 0;
     virtual UInt64 getFileSize(const String & file_name) = 0;
     virtual std::unique_ptr<SeekableReadBuffer> readFile(const String & file_name) = 0;
-    virtual void copyFileToDisk(const String & file_name, size_t size, DiskPtr destination_disk, const String & destination_path, WriteMode mode);
+    virtual void copyFileToDisk(const String & file_name, size_t size, DiskPtr destination_disk, const String & destination_path,
+                                WriteMode write_mode, const WriteSettings & write_settings);
     virtual DataSourceDescription getDataSourceDescription() const = 0;
-
-protected:
-    virtual bool supportNativeCopy(DataSourceDescription /* destination_data_source_description */, WriteMode /* mode */) const { return false; }
-    virtual void copyFileToDiskNative(const String & file_name, size_t size, DiskPtr destination_disk, const String & destination_path, WriteMode mode) = 0;
-    virtual Poco::Logger * getLogger() const = 0;
 };
 
 /// Represents operations of storing to disk or uploading for writing a backup.
