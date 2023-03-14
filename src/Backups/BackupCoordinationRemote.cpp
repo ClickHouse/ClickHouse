@@ -750,12 +750,9 @@ bool BackupCoordinationRemote::hasConcurrentBackups(const std::atomic<size_t> &)
             if (existing_backup_uuid == toString(backup_uuid))
                 continue;
 
-            String status;
-            if (zk->tryGet(root_zookeeper_path + "/" + existing_backup_path + "/stage", status))
-            {
-                if (status != Stage::COMPLETED)
-                    return true;
-            }
+            const auto status = zk->get(root_zookeeper_path + "/" + existing_backup_path + "/stage");
+            if (status != Stage::COMPLETED)
+                return true;
         }
 
         zk->createIfNotExists(backup_stage_path, "");
