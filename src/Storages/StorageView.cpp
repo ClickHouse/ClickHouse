@@ -268,7 +268,7 @@ String StorageView::replaceQueryParameterWithValue(const String & column_name, c
         {
             auto parameter_datatype_iterator = parameter_types.find(parameter.first);
             size_t parameter_end = pos + parameter.first.size();
-            if (parameter_datatype_iterator != parameter_types.end() && name.size() >= parameter_end && (name[parameter_end]==',' || name[parameter_end]==')'))
+            if (parameter_datatype_iterator != parameter_types.end() && name.size() >= parameter_end && (name[parameter_end] == ',' || name[parameter_end] == ')'))
             {
                 String parameter_name("_CAST(" + parameter.second + ", '" + parameter_datatype_iterator->second + "')");
                 name.replace(pos, parameter.first.size(), parameter_name);
