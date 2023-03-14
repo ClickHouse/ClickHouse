@@ -48,14 +48,14 @@ void copyS3FileToDisk(
 
     LOG_TRACE(&Poco::Logger::get("copyS3FileToDisk"), "Copying {} to disk {} using native copy", src_key, destination_disk->getName());
 
-    String destination_bucket = destination_disk->getObjectStorage()->getObjectsNamespace();
+    String dest_bucket = destination_disk->getObjectStorage()->getObjectsNamespace();
 
     auto custom_write_object = [&](const StoredObject & object_, WriteMode write_mode_, const std::optional<ObjectAttributes> & object_attributes_) -> size_t
     {
         /// Object storage always uses mode `Rewrite` because it simulates append using metadata and different files.
         chassert(write_mode_ == WriteMode::Rewrite);
 
-        copyS3File(s3_client, src_bucket, src_key, *src_offset, *src_size, destination_bucket, /* destination_key= */ object_.absolute_path,
+        copyS3File(s3_client, src_bucket, src_key, *src_offset, *src_size, dest_bucket, /* dest_key= */ object_.absolute_path,
                    request_settings, object_attributes_, scheduler, /* for_disk_s3= */ true);
 
         return *src_size;
