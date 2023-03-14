@@ -166,6 +166,8 @@
     \
     M(WaitMarksLoadMicroseconds, "Time spent loading marks") \
     M(BackgroundLoadingMarksTasks, "Number of background tasks for loading marks") \
+    M(LoadedMarksCount, "Number of marks loaded (total across columns).") \
+    M(LoadedMarksMemoryBytes, "Size of in-memory representations of loaded marks.") \
     \
     M(Merge, "Number of launched background merges.") \
     M(MergedRows, "Rows read for background merges. This is the number of rows before merge.") \

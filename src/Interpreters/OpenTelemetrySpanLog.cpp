@@ -8,9 +8,10 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <Interpreters/Context.h>
 
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Common/CurrentThread.h>
 #include <Core/Field.h>
 
@@ -20,11 +21,23 @@ namespace DB
 
 NamesAndTypesList OpenTelemetrySpanLogElement::getNamesAndTypes()
 {
+    auto span_kind_type = std::make_shared<DataTypeEnum8>(
+        DataTypeEnum8::Values
+        {
+            {"INTERNAL",    static_cast<Int8>(OpenTelemetry::INTERNAL)},
+            {"SERVER",      static_cast<Int8>(OpenTelemetry::SERVER)},
+            {"CLIENT",      static_cast<Int8>(OpenTelemetry::CLIENT)},
+            {"PRODUCER",    static_cast<Int8>(OpenTelemetry::PRODUCER)},
+            {"CONSUMER",    static_cast<Int8>(OpenTelemetry::CONSUMER)}
+        }
+    );
+
     return {
         {"trace_id", std::make_shared<DataTypeUUID>()},
         {"span_id", std::make_shared<DataTypeUInt64>()},
         {"parent_span_id", std::make_shared<DataTypeUInt64>()},
         {"operation_name", std::make_shared<DataTypeString>()},
+        {"kind", std::move(span_kind_type)},
         // DateTime64 is really unwieldy -- there is no "normal" way to convert
         // it to an UInt64 count of microseconds, except:
         // 1) reinterpretAsUInt64(reinterpretAsFixedString(date)), which just
@@ -59,6 +72,7 @@ void OpenTelemetrySpanLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(span_id);
     columns[i++]->insert(parent_span_id);
     columns[i++]->insert(operation_name);
+    columns[i++]->insert(kind);
     columns[i++]->insert(start_time_us);
     columns[i++]->insert(finish_time_us);
     columns[i++]->insert(DateLUT::instance().toDayNum(finish_time_us / 1000000).toUnderType());

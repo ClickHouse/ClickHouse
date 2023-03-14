@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <ranges>
 
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Common/Macros.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -2951,7 +2951,8 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
     }
 
     if (source_replica.empty())
-        throw Exception(ErrorCodes::ALL_REPLICAS_LOST, "All replicas are lost");
+        throw Exception(ErrorCodes::ALL_REPLICAS_LOST, "All replicas are lost. "
+                        "See SYSTEM DROP REPLICA and SYSTEM RESTORE REPLICA queries, they may help");
 
     if (is_new_replica)
         LOG_INFO(log, "Will mimic {}", source_replica);

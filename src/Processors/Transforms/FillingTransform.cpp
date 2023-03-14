@@ -169,17 +169,13 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
 }
 
 FillingTransform::FillingTransform(
-        const Block & header_, const SortDescription & sort_description_, InterpolateDescriptionPtr interpolate_description_, bool on_totals_)
+        const Block & header_, const SortDescription & sort_description_, InterpolateDescriptionPtr interpolate_description_)
         : ISimpleTransform(header_, transformHeader(header_, sort_description_), true)
         , sort_description(sort_description_)
         , interpolate_description(interpolate_description_)
-        , on_totals(on_totals_)
         , filling_row(sort_description_)
         , next_row(sort_description_)
 {
-    if (on_totals)
-        return;
-
     if (interpolate_description)
         interpolate_actions = std::make_shared<ExpressionActions>(interpolate_description->actions);
 
@@ -239,7 +235,7 @@ FillingTransform::FillingTransform(
 
 IProcessor::Status FillingTransform::prepare()
 {
-    if (!on_totals && input.isFinished() && !output.isFinished() && !has_input && !generate_suffix)
+    if (input.isFinished() && !output.isFinished() && !has_input && !generate_suffix)
     {
         should_insert_first = next_row < filling_row || first;
 
@@ -266,9 +262,6 @@ IProcessor::Status FillingTransform::prepare()
 
 void FillingTransform::transform(Chunk & chunk)
 {
-    if (on_totals)
-        return;
-
     if (!chunk.hasRows() && !generate_suffix)
         return;
 
