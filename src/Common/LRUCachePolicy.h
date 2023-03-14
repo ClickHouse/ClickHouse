@@ -25,12 +25,12 @@ public:
     using typename Base::KeyMapped;
     using typename Base::OnWeightLossFunction;
 
-    /** Initialize LRUCachePolicy with max_size_in_bytes and max_entries.
-      * max_entries == 0 means no elements size restrictions.
+    /** Initialize LRUCachePolicy with max_size_in_bytes and max_count.
+      * max_count == 0 means no elements size restrictions.
       */
-    LRUCachePolicy(size_t max_size_in_bytes_, size_t max_entries_, OnWeightLossFunction on_weight_loss_function_)
+    LRUCachePolicy(size_t max_size_in_bytes_, size_t max_count_, OnWeightLossFunction on_weight_loss_function_)
         : max_size_in_bytes(std::max(static_cast<size_t>(1), max_size_in_bytes_))
-        , max_entries(max_entries_)
+        , max_count(max_count_)
         , on_weight_loss_function(on_weight_loss_function_)
     {
     }
@@ -157,7 +157,7 @@ protected:
     /// Total weight of values.
     size_t current_size_in_bytes = 0;
     const size_t max_size_in_bytes;
-    const size_t max_entries;
+    const size_t max_count;
 
     WeightFunction weight_function;
     OnWeightLossFunction on_weight_loss_function;
@@ -167,7 +167,7 @@ protected:
         size_t current_weight_lost = 0;
         size_t queue_size = cells.size();
 
-        while ((current_size_in_bytes > max_size_in_bytes || (max_entries != 0 && queue_size > max_entries)) && (queue_size > 0))
+        while ((current_size_in_bytes > max_size_in_bytes || (max_count != 0 && queue_size > max_count)) && (queue_size > 0))
         {
             const Key & key = queue.front();
 

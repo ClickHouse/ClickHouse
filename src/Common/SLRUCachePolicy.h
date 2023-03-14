@@ -32,10 +32,10 @@ public:
       * max_protected_size == 0 means that the default protected size is equal to half of the total max size.
       */
     /// TODO: construct from special struct with cache policy parameters (also with max_protected_size).
-    SLRUCachePolicy(size_t max_size_in_bytes_, size_t max_entries_, double size_ratio, OnWeightLossFunction on_weight_loss_function_)
+    SLRUCachePolicy(size_t max_size_in_bytes_, size_t max_count_, double size_ratio, OnWeightLossFunction on_weight_loss_function_)
         : max_protected_size(static_cast<size_t>(max_size_in_bytes_ * std::min(1.0, size_ratio)))
         , max_size_in_bytes(max_size_in_bytes_)
-        , max_entries(max_entries_)
+        , max_count(max_count_)
         , on_weight_loss_function(on_weight_loss_function_)
     {
     }
@@ -197,7 +197,7 @@ protected:
     size_t current_size_in_bytes = 0;
     const size_t max_protected_size;
     const size_t max_size_in_bytes;
-    const size_t max_entries;
+    const size_t max_count;
 
     WeightFunction weight_function;
     OnWeightLossFunction on_weight_loss_function;
@@ -212,11 +212,11 @@ protected:
         {
             /// Check if after remove all elements from probationary part there will be no more than max elements
             /// in protected queue and weight of all protected elements will be less then max protected weight.
-            /// It's not possible to check only cells.size() > max_entries
+            /// It's not possible to check only cells.size() > max_count
             /// because protected elements move to probationary part and still remain in cache.
             need_remove = [&]()
             {
-                return ((max_entries != 0 && cells.size() - probationary_queue.size() > max_entries)
+                return ((max_count != 0 && cells.size() - probationary_queue.size() > max_count)
                 || (current_weight_size > max_weight_size)) && (queue_size > 0);
             };
         }
@@ -224,7 +224,7 @@ protected:
         {
             need_remove = [&]()
             {
-                return ((max_entries != 0 && cells.size() > max_entries)
+                return ((max_count != 0 && cells.size() > max_count)
                 || (current_weight_size > max_weight_size)) && (queue_size > 0);
             };
         }

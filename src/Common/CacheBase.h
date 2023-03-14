@@ -40,13 +40,13 @@ public:
     using KeyMapped = typename CachePolicy::KeyMapped;
 
     /// Use this ctor if you don't care about the internal cache policy.
-    explicit CacheBase(size_t max_size_in_bytes, size_t max_entries = 0, double size_ratio = 0.5)
-        : CacheBase("SLRU", max_size_in_bytes, max_entries, size_ratio)
+    explicit CacheBase(size_t max_size_in_bytes, size_t max_count = 0, double size_ratio = 0.5)
+        : CacheBase("SLRU", max_size_in_bytes, max_count, size_ratio)
     {
     }
 
     /// Use this ctor if you want the user to configure the cache policy via some setting. Supports only general-purpose policies LRU and SLRU.
-    explicit CacheBase(std::string_view cache_policy_name, size_t max_size_in_bytes, size_t max_entries = 0, double size_ratio = 0.5)
+    explicit CacheBase(std::string_view cache_policy_name, size_t max_size_in_bytes, size_t max_count = 0, double size_ratio = 0.5)
     {
         auto on_weight_loss_function = [&](size_t weight_loss) { onRemoveOverflowWeightLoss(weight_loss); };
 
@@ -58,12 +58,12 @@ public:
         if (cache_policy_name == "LRU")
         {
             using LRUPolicy = LRUCachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
-            cache_policy = std::make_unique<LRUPolicy>(max_size_in_bytes, max_entries, on_weight_loss_function);
+            cache_policy = std::make_unique<LRUPolicy>(max_size_in_bytes, max_count, on_weight_loss_function);
         }
         else if (cache_policy_name == "SLRU")
         {
             using SLRUPolicy = SLRUCachePolicy<TKey, TMapped, HashFunction, WeightFunction>;
-            cache_policy = std::make_unique<SLRUPolicy>(max_size_in_bytes, max_entries, size_ratio, on_weight_loss_function);
+            cache_policy = std::make_unique<SLRUPolicy>(max_size_in_bytes, max_count, size_ratio, on_weight_loss_function);
         }
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown cache policy name: {}", cache_policy_name);
