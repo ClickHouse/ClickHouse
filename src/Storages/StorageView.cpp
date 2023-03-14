@@ -267,7 +267,7 @@ String StorageView::replaceQueryParameterWithValue(const String & column_name, c
         if ((pos = name.find(parameter.first)) != std::string::npos)
         {
             auto parameter_datatype_iterator = parameter_types.find(parameter.first);
-            size_t parameter_end = pos+parameter.first.size();
+            size_t parameter_end = pos + parameter.first.size();
             if (parameter_datatype_iterator != parameter_types.end() && name.size() >= parameter_end && (name[parameter_end]==',' || name[parameter_end]==')'))
             {
                 String parameter_name("_CAST(" + parameter.second + ", '" + parameter_datatype_iterator->second + "')");
