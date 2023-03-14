@@ -81,6 +81,11 @@ def create_and_fill_table():
         ") ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}')"
         "ORDER BY tuple()"
     )
+    assert_eq_with_retry(
+        node0,
+        "SELECT count() from clusterAllReplicas('cluster', system.tables) where table='tbl' and database='default'",
+        TSV([num_nodes]),
+    )
     for i in range(num_nodes):
         nodes[i].query(f"INSERT INTO tbl VALUES ({i})")
 
