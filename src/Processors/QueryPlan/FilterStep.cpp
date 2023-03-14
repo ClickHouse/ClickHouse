@@ -82,27 +82,15 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
 
 void FilterStep::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, ' ');
+    String prefix(settings.offset, settings.indent_char);
     settings.out << prefix << "Filter column: " << filter_column_name;
 
     if (remove_filter_column)
         settings.out << " (removed)";
     settings.out << '\n';
 
-    bool first = true;
     auto expression = std::make_shared<ExpressionActions>(actions_dag);
-    for (const auto & action : expression->getActions())
-    {
-        settings.out << prefix << (first ? "Actions: "
-                                         : "         ");
-        first = false;
-        settings.out << action.toString() << '\n';
-    }
-
-    settings.out << prefix << "Positions:";
-    for (const auto & pos : expression->getResultPositions())
-        settings.out << ' ' << pos;
-    settings.out << '\n';
+    expression->describeActions(settings.out, prefix);
 }
 
 void FilterStep::describeActions(JSONBuilder::JSONMap & map) const
