@@ -111,7 +111,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int ALIAS_REQUIRED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_PREWHERE;
     extern const int UNKNOWN_TABLE;
 }
 
