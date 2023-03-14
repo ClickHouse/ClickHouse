@@ -1,85 +1,113 @@
 #include "NoEscapingKeyStateHandler.h"
+#include <Functions/keyvaluepair/src/impl/state/strategies/util/CharacterFinder.h>
+#include <Functions/keyvaluepair/src/impl/state/strategies/util/NeedleFactory.h>
 
 namespace DB
 {
 
 NoEscapingKeyStateHandler::NoEscapingKeyStateHandler(ExtractorConfiguration extractor_configuration_)
-    : StateHandler(), extractor_configuration(std::move(extractor_configuration_))
+: extractor_configuration(std::move(extractor_configuration_))
 {
+    wait_needles = NeedleFactory::getWaitNeedles(extractor_configuration);
+    read_needles = NeedleFactory::getReadNeedles(extractor_configuration);
+    read_quoted_needles = NeedleFactory::getReadQuotedNeedles(extractor_configuration);
 }
 
 NextState NoEscapingKeyStateHandler::wait(std::string_view file, size_t pos) const
 {
-    while (pos < file.size())
+    BoundsSafeCharacterFinder finder;
+
+    const auto & quoting_characters = extractor_configuration.quoting_characters;
+
+    while (auto character_position_opt = finder.find_first_not(file, pos, wait_needles))
     {
-        const auto current_character = file[pos];
+        auto character_position = *character_position_opt;
+        auto character = file[character_position];
 
-        if (isValidCharacter(current_character))
+        if (std::find(quoting_characters.begin(), quoting_characters.end(), character) != quoting_characters.end())
         {
-            return {pos, State::READING_KEY};
+            return {character_position + 1u, State::READING_ENCLOSED_KEY};
         }
-        else if (current_character == '"')
+        else
         {
-            return {pos + 1u, State::READING_ENCLOSED_KEY};
+            return {character_position, State::READING_KEY};
         }
-
-        pos++;
     }
 
-    return {pos, State::END};
+    return {file.size(), State::END};
 }
 
 NextState NoEscapingKeyStateHandler::read(std::string_view file, size_t pos, ElementType & key) const
 {
-    auto start_index = pos;
+    BoundsSafeCharacterFinder finder;
+
+    const auto & [key_value_delimiter, pair_delimiters, quoting_characters]
+        = extractor_configuration;
 
     key = {};
 
-    while (pos < file.size())
-    {
-        const auto current_character = file[pos++];
+    auto start_index = pos;
 
-        if (current_character == ',')
+    while (auto character_position_opt = finder.find_first(file, pos, read_needles))
+    {
+        auto character_position = *character_position_opt;
+        auto character = file[character_position];
+        auto next_pos = character_position + 1u;
+
+        if (character == key_value_delimiter)
         {
-            // not checking for empty key because with current waitKey implementation
-            // there is no way this piece of code will be reached for the very first key character
-            key = createElement(file, start_index, pos - 1);
-            return {pos, State::WAITING_VALUE};
+            key = createElement(file, start_index, character_position);
+
+            if (key.empty())
+            {
+                return {next_pos, State::WAITING_KEY};
+            }
+
+            return {next_pos, State::WAITING_VALUE};
         }
-        else if (!isValidCharacter(current_character))
+        else if (std::find(pair_delimiters.begin(), pair_delimiters.end(), character) != pair_delimiters.end())
         {
-            return {pos, State::WAITING_KEY};
+            return {next_pos, State::WAITING_KEY};
         }
+
+        pos = next_pos;
     }
 
-    return {pos, State::END};
+    return {file.size(), State::END};
 }
 
 NextState NoEscapingKeyStateHandler::readEnclosed(std::string_view file, size_t pos, ElementType & key) const
 {
-    auto start_index = pos;
+    BoundsSafeCharacterFinder finder;
+
+    const auto & quoting_characters = extractor_configuration.quoting_characters;
 
     key = {};
 
-    while (pos < file.size())
+    auto start_index = pos;
+
+    while (auto character_position_opt = finder.find_first(file, pos, read_quoted_needles))
     {
-        const auto current_character = file[pos++];
+        auto character_position = *character_position_opt;
+        auto character = file[character_position];
+        auto next_pos = character_position + 1u;
 
-        if ('"' == current_character)
+        if (std::find(quoting_characters.begin(), quoting_characters.end(), character) != quoting_characters.end())
         {
-            auto is_key_empty = start_index == pos;
+            key = createElement(file, start_index, character_position);
 
-            if (is_key_empty)
+            if (key.empty())
             {
-                return {pos, State::WAITING_KEY};
+                return {next_pos, State::WAITING_KEY};
             }
 
-            key = createElement(file, start_index, pos - 1);
-            return {pos, State::READING_KV_DELIMITER};
+            return {next_pos, State::READING_KV_DELIMITER};
         }
+
+        pos = next_pos;
     }
 
-    return {pos, State::END};
+    return {file.size(), State::END};
 }
 
 NextState NoEscapingKeyStateHandler::readKeyValueDelimiter(std::string_view file, size_t pos) const
@@ -91,13 +119,8 @@ NextState NoEscapingKeyStateHandler::readKeyValueDelimiter(std::string_view file
     else
     {
         const auto current_character = file[pos++];
-        return {pos, current_character == ':' ? State::WAITING_VALUE : State::WAITING_KEY};
+        return {pos, extractor_configuration.key_value_delimiter == current_character ? State::WAITING_VALUE : State::WAITING_KEY};
     }
-}
-
-bool NoEscapingKeyStateHandler::isValidCharacter(char character)
-{
-    return std::isalnum(character) || character == '_';
 }
 
 }

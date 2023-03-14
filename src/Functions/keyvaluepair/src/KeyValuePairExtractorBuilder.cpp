@@ -5,8 +5,6 @@
 #include "Functions/keyvaluepair/src/impl/state/strategies/noescaping/NoEscapingValueStateHandler.h"
 #include "impl/CHKeyValuePairExtractor.h"
 #include "impl/state/ExtractorConfiguration.h"
-#include "impl/state/MixedKeyStateHandler.h"
-#include "impl/state/MultiStrategyKeyStateHandler.h"
 
 namespace DB
 {
