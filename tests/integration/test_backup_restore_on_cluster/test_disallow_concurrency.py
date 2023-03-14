@@ -16,7 +16,7 @@ ddl_task_timeout = 640
 def generate_cluster_def():
     path = os.path.join(
         os.path.dirname(os.path.realpath(__file__)),
-        "./_gen/cluster_for_concurrency_test.xml",
+        "./_gen/cluster_for_disallow_concurrency_test.xml",
     )
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
