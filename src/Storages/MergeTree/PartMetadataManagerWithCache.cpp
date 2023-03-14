@@ -1,7 +1,7 @@
 #include "PartMetadataManagerWithCache.h"
 
 #if USE_ROCKSDB
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Common/ErrorCodes.h>
 #include <IO/HashingReadBuffer.h>
 #include <IO/ReadBufferFromString.h>

@@ -170,7 +170,6 @@ private:
     UInt64 interactive_delay = 100000;
     Poco::Timespan sleep_in_send_tables_status;
     UInt64 unknown_packet_in_send_data = 0;
-    Poco::Timespan sleep_in_receive_cancel;
     Poco::Timespan sleep_after_receiving_query;
 
     std::unique_ptr<Session> session;
@@ -273,6 +272,8 @@ private:
 
     /// This function is called from different threads.
     void updateProgress(const Progress & value);
+
+    Poco::Net::SocketAddress getClientAddress(const ClientInfo & client_info);
 };
 
 }

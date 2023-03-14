@@ -157,6 +157,12 @@ void Message::setText(const std::string& text)
 }
 
 
+void Message::appendText(const std::string & text)
+{
+    _text.append(text);
+}
+
+
 void Message::setPriority(Priority prio)
 {
 	_prio = prio;
