@@ -293,6 +293,10 @@ private:
                 return execute2<KeyType, UInt256>(row_count, args, res_type);
             case TypeIndex::Float64:
                 return execute2<KeyType, Float64>(row_count, args, res_type);
+            case TypeIndex::Decimal128:
+                return execute2<KeyType, Decimal128>(row_count, args, res_type);
+            case TypeIndex::Decimal256:
+                return execute2<KeyType, Decimal256>(row_count, args, res_type);
             default:
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column type {} for values in arguments of function {}",
                     res_value_type->getName(), getName());
