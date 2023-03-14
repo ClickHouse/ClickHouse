@@ -292,9 +292,20 @@ public:
         std::stringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         out << current_element.getElement();
         auto output_str = out.str();
+        auto cast_to_column_string = [&] (IColumn & col, bool & is_nullable_col) -> ColumnString &
+        {
+            if (is_nullable_col)
+            {
+                ColumnNullable & col_null = assert_cast<ColumnNullable &>(col);
+                return assert_cast<ColumnString &>(col_null.getNestedColumn());
+            }
+            else
+            {
+                return assert_cast<ColumnString &>(dest);
+            }
+        };
         bool is_nullable_col = typeid(dest) == typeid(ColumnNullable);
-        ColumnNullable & col_null = assert_cast<ColumnNullable &>(dest);
-        ColumnString & col_str = is_nullable_col ? assert_cast<ColumnString &>(col_null.getNestedColumn()) : assert_cast<ColumnString &>(dest);
+        ColumnString & col_str = cast_to_column_string(dest, is_nullable_col);
         ColumnString::Chars & data = col_str.getChars();
         ColumnString::Offsets & offsets = col_str.getOffsets();
 
@@ -311,6 +322,7 @@ public:
         }
         if (is_nullable_col)
         {
+            ColumnNullable & col_null = assert_cast<ColumnNullable &>(dest);
             col_null.getNullMapColumn().insertValue(0);
         }
         return true;
