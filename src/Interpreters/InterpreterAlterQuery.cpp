@@ -446,6 +446,7 @@ void InterpreterAlterQuery::extendQueryLogElemImpl(QueryLogElement & elem, const
 {
     const auto & alter = ast->as<const ASTAlterQuery &>();
 
+    elem.query_kind = "Alter";
     if (alter.command_list != nullptr && alter.alter_object != ASTAlterQuery::AlterObjectType::DATABASE)
     {
         // Alter queries already have their target table inserted into `elem`.

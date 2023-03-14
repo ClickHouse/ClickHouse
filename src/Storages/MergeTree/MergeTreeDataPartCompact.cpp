@@ -18,6 +18,16 @@ namespace ErrorCodes
     extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
 }
 
+
+MergeTreeDataPartCompact::MergeTreeDataPartCompact(
+       MergeTreeData & storage_,
+        const String & name_,
+        const MutableDataPartStoragePtr & data_part_storage_,
+        const IMergeTreeDataPart * parent_part_)
+    : IMergeTreeDataPart(storage_, name_, data_part_storage_, Type::Compact, parent_part_)
+{
+}
+
 MergeTreeDataPartCompact::MergeTreeDataPartCompact(
         const MergeTreeData & storage_,
         const String & name_,

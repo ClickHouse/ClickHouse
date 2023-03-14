@@ -35,8 +35,6 @@ struct PrewhereExprInfo
     std::vector<PrewhereExprStep> steps;
 
     std::string dump() const;
-
-    std::string dumpConditions() const;
 };
 
 class FilterWithCachedCount

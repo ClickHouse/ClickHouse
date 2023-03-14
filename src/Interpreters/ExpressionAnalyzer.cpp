@@ -1089,7 +1089,6 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
 
         if (MergeJoin::isSupported(analyzed_join))
             return std::make_shared<JoinSwitcher>(analyzed_join, right_sample_block);
-        return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
     }
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -1802,16 +1801,11 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool add_aliases, bool proje
         getActionsDAG(add_aliases, project_result), ExpressionActionsSettings::fromContext(getContext(), compile_expressions));
 }
 
-ActionsDAGPtr ExpressionAnalyzer::getConstActionsDAG(const ColumnsWithTypeAndName & constant_inputs)
-{
-    auto actions = std::make_shared<ActionsDAG>(constant_inputs);
-    getRootActions(query, true /* no_makeset_for_subqueries */, actions, true /* only_consts */);
-    return actions;
-}
-
 ExpressionActionsPtr ExpressionAnalyzer::getConstActions(const ColumnsWithTypeAndName & constant_inputs)
 {
-    auto actions = getConstActionsDAG(constant_inputs);
+    auto actions = std::make_shared<ActionsDAG>(constant_inputs);
+
+    getRootActions(query, true /* no_makeset_for_subqueries */, actions, true /* only_consts */);
     return std::make_shared<ExpressionActions>(actions, ExpressionActionsSettings::fromContext(getContext()));
 }
 

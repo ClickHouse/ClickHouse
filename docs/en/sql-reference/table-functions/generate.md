@@ -8,7 +8,7 @@ sidebar_label: generateRandom
 
 Generates random data with given schema.
 Allows to populate test tables with data.
-Not all types are supported.
+Supports all data types that can be stored in table except `LowCardinality` and `AggregateFunction`.
 
 ``` sql
 generateRandom('name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_string_length'[, 'max_array_length']]])
@@ -18,7 +18,7 @@ generateRandom('name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_stri
 
 -   `name` — Name of corresponding column.
 -   `TypeName` — Type of corresponding column.
--   `max_array_length` — Maximum elements for all generated arrays or maps. Defaults to `10`.
+-   `max_array_length` — Maximum array length for all generated arrays. Defaults to `10`.
 -   `max_string_length` — Maximum string length for all generated strings. Defaults to `10`.
 -   `random_seed` — Specify random seed manually to produce stable results. If NULL — seed is randomly generated.
 

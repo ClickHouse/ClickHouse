@@ -433,6 +433,7 @@ extern "C"
 }
 #endif
 
+
 /// This allows to implement assert to forbid initialization of a class in static constructors.
 /// Usage:
 ///

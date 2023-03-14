@@ -465,7 +465,7 @@ bool hasErrorsInMultiRequest(Coordination::ZooKeeperRequestPtr request)
     if (request == nullptr)
         return true;
 
-    for (const auto & subrequest : dynamic_cast<Coordination::ZooKeeperMultiRequest *>(request.get())->requests)
+    for (const auto & subrequest : dynamic_cast<Coordination::ZooKeeperMultiRequest *>(request.get())->requests) // -V522
         if (subrequest == nullptr)
             return true;
     return false;

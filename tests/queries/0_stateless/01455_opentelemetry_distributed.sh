@@ -12,7 +12,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 function check_log
 {
 ${CLICKHOUSE_CLIENT} --format=JSONEachRow -nq "
-set allow_experimental_analyzer = 1;
 system flush logs;
 
 -- Show queries sorted by start time.
@@ -56,7 +55,7 @@ select count(*) "'"'"initial query spans with proper parent"'"'"
     where
         trace_id = UUIDNumToString(toFixedString(unhex('$trace_id'), 16))
         and operation_name = 'query'
-        and parent_span_id in (
+        and parent_span_id in ( 
            select span_id from system.opentelemetry_span_log where trace_id = UUIDNumToString(toFixedString(unhex('$trace_id'), 16)) and parent_span_id = reinterpretAsUInt64(unhex('73'))
         )
     ;
@@ -77,7 +76,7 @@ select uniqExact(value) "'"'"unique non-empty tracestate values"'"'"
 
 # Generate some random trace id so that the prevous runs of the test do not interfere.
 echo "===http==="
-trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString(generateUUIDv4())))) settings allow_experimental_analyzer = 1")
+trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString(generateUUIDv4()))))")
 
 # Check that the HTTP traceparent is read, and then passed through `remote`
 # table function. We expect 4 queries -- one initial, one SELECT and two
@@ -87,7 +86,7 @@ ${CLICKHOUSE_CURL} \
     --header "traceparent: 00-$trace_id-0000000000000073-01" \
     --header "tracestate: some custom state" "$CLICKHOUSE_URL" \
     --get \
-    --data-urlencode "query=select 1 from remote('127.0.0.2', system, one) settings allow_experimental_analyzer = 1 format Null"
+    --data-urlencode "query=select 1 from remote('127.0.0.2', system, one) format Null"
 
 check_log
 
