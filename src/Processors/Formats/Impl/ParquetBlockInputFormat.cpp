@@ -45,38 +45,42 @@ Chunk ParquetBlockInputFormat::generate()
     block_missing_values.clear();
 
     if (!file_reader)
+    {
         prepareReader();
+        file_reader->set_batch_size(format_settings.parquet.max_block_size);
+        std::vector<int> row_group_indices;
+        for (int i = 0; i < row_group_total; ++i)
+        {
+            if (!skip_row_groups.contains(i))
+                row_group_indices.emplace_back(i);
+        }
+        auto read_status = file_reader->GetRecordBatchReader(row_group_indices, column_indices, &current_record_batch_reader);
+        if (!read_status.ok())
+            throw DB::ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading Parquet data: {}", read_status.ToString());
+    }
 
     if (is_stopped)
         return {};
 
-    while (row_group_current < row_group_total && skip_row_groups.contains(row_group_current))
-        ++row_group_current;
-
-    if (row_group_current >= row_group_total)
-        return res;
-
-    std::shared_ptr<arrow::Table> table;
-
-    std::unique_ptr<::arrow::RecordBatchReader> rbr;
-    std::vector<int> row_group_indices { row_group_current };
-    arrow::Status get_batch_reader_status = file_reader->GetRecordBatchReader(row_group_indices, column_indices, &rbr);
-
-    if (!get_batch_reader_status.ok())
+    auto batch = current_record_batch_reader->Next();
+    if (!batch.ok())
+    {
         throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading Parquet data: {}",
-                               get_batch_reader_status.ToString());
+                               batch.status().ToString());
+    }
+    if (*batch)
+    {
+        auto tmp_table = arrow::Table::FromRecordBatches({*batch});
+        /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
+        /// Otherwise fill the missing columns with zero values of its type.
+        BlockMissingValues * block_missing_values_ptr = format_settings.defaults_for_omitted_fields ? &block_missing_values : nullptr;
+        arrow_column_to_ch_column->arrowTableToCHChunk(res, *tmp_table, (*tmp_table)->num_rows(), block_missing_values_ptr);
+    }
+    else
+    {
+        return {};
+    }
 
-    arrow::Status read_status = rbr->ReadAll(&table);
-
-    if (!read_status.ok())
-        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading Parquet data: {}", read_status.ToString());
-
-    ++row_group_current;
-
-    /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
-    /// Otherwise fill the missing columns with zero values of its type.
-    BlockMissingValues * block_missing_values_ptr = format_settings.defaults_for_omitted_fields ? &block_missing_values : nullptr;
-    arrow_column_to_ch_column->arrowTableToCHChunk(res, table, table->num_rows(), block_missing_values_ptr);
     return res;
 }
 
@@ -85,6 +89,7 @@ void ParquetBlockInputFormat::resetParser()
     IInputFormat::resetParser();
 
     file_reader.reset();
+    current_record_batch_reader.reset();
     column_indices.clear();
     row_group_current = 0;
     block_missing_values.clear();
