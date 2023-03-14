@@ -109,7 +109,7 @@ QueryTreeNodePtr SortNode::cloneImpl() const
     return std::make_shared<SortNode>(nullptr /*expression*/, sort_direction, nulls_sort_direction, collator, with_fill);
 }
 
-ASTPtr SortNode::toASTImpl(ConvertToASTOptions options) const
+ASTPtr SortNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     auto result = std::make_shared<ASTOrderByElement>();
     result->direction = sort_direction == SortDirection::ASCENDING ? 1 : -1;

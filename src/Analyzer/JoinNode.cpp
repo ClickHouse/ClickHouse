@@ -99,7 +99,7 @@ QueryTreeNodePtr JoinNode::cloneImpl() const
     return std::make_shared<JoinNode>(getLeftTableExpression(), getRightTableExpression(), getJoinExpression(), locality, strictness, kind);
 }
 
-ASTPtr JoinNode::toASTImpl(ConvertToASTOptions /* options */) const
+ASTPtr JoinNode::toASTImpl(const ConvertToASTOptions & /* options */) const
 {
     ASTPtr tables_in_select_query_ast = std::make_shared<ASTTablesInSelectQuery>();
 

@@ -58,7 +58,7 @@ QueryTreeNodePtr IdentifierNode::cloneImpl() const
     return std::make_shared<IdentifierNode>(identifier);
 }
 
-ASTPtr IdentifierNode::toASTImpl(ConvertToASTOptions /* options */) const
+ASTPtr IdentifierNode::toASTImpl(const ConvertToASTOptions & /* options */) const
 {
     auto identifier_parts = identifier.getParts();
     return std::make_shared<ASTIdentifier>(std::move(identifier_parts));

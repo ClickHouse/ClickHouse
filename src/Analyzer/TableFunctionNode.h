@@ -156,7 +156,7 @@ protected:
 
     QueryTreeNodePtr cloneImpl() const override;
 
-    ASTPtr toASTImpl(ConvertToASTOptions options) const override;
+    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
     String table_function_name;

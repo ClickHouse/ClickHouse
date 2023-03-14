@@ -44,7 +44,7 @@ QueryTreeNodePtr InterpolateNode::cloneImpl() const
     return std::make_shared<InterpolateNode>(nullptr /*expression*/, nullptr /*interpolate_expression*/);
 }
 
-ASTPtr InterpolateNode::toASTImpl(ConvertToASTOptions options) const
+ASTPtr InterpolateNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     auto result = std::make_shared<ASTInterpolateElement>();
     result->column = getExpression()->toAST(options)->getColumnName();

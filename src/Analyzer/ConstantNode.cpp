@@ -75,7 +75,7 @@ QueryTreeNodePtr ConstantNode::cloneImpl() const
     return std::make_shared<ConstantNode>(constant_value, source_expression);
 }
 
-ASTPtr ConstantNode::toASTImpl(ConvertToASTOptions options) const
+ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     const auto & constant_value_literal = constant_value->getValue();
     auto constant_value_ast = std::make_shared<ASTLiteral>(constant_value_literal);

@@ -49,7 +49,7 @@ QueryTreeNodePtr ArrayJoinNode::cloneImpl() const
     return std::make_shared<ArrayJoinNode>(getTableExpression(), getJoinExpressionsNode(), is_left);
 }
 
-ASTPtr ArrayJoinNode::toASTImpl(ConvertToASTOptions options) const
+ASTPtr ArrayJoinNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     auto array_join_ast = std::make_shared<ASTArrayJoin>();
     array_join_ast->kind = is_left ? ASTArrayJoin::Kind::Left : ASTArrayJoin::Kind::Inner;

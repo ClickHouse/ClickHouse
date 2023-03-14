@@ -91,7 +91,7 @@ QueryTreeNodePtr ApplyColumnTransformerNode::cloneImpl() const
     return std::make_shared<ApplyColumnTransformerNode>(getExpressionNode());
 }
 
-ASTPtr ApplyColumnTransformerNode::toASTImpl(ConvertToASTOptions options) const
+ASTPtr ApplyColumnTransformerNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     auto ast_apply_transformer = std::make_shared<ASTColumnsApplyTransformer>();
     const auto & expression_node = getExpressionNode();
@@ -227,7 +227,7 @@ QueryTreeNodePtr ExceptColumnTransformerNode::cloneImpl() const
     return std::make_shared<ExceptColumnTransformerNode>(except_column_names, is_strict);
 }
 
-ASTPtr ExceptColumnTransformerNode::toASTImpl(ConvertToASTOptions /* options */) const
+ASTPtr ExceptColumnTransformerNode::toASTImpl(const ConvertToASTOptions & /* options */) const
 {
     auto ast_except_transformer = std::make_shared<ASTColumnsExceptTransformer>();
 
@@ -334,7 +334,7 @@ QueryTreeNodePtr ReplaceColumnTransformerNode::cloneImpl() const
     return result_replace_transformer;
 }
 
-ASTPtr ReplaceColumnTransformerNode::toASTImpl(ConvertToASTOptions options) const
+ASTPtr ReplaceColumnTransformerNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     auto ast_replace_transformer = std::make_shared<ASTColumnsReplaceTransformer>();
 
