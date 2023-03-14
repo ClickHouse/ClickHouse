@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
 
 
 namespace DB
@@ -367,7 +368,28 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
         }
     }
 
-    /// TODO: Decimals
+    /// Decimals
+    {
+        bool all_decimals = true;
+        UInt32 min_scale = std::numeric_limits<UInt32>::max();
+        UInt32 min_precision = std::numeric_limits<UInt32>::max();
+        for (const auto & type : types)
+        {
+            if (isDecimal(type))
+            {
+                min_scale = std::min(min_scale, getDecimalScale(*type));
+                min_precision = std::min(min_precision, getDecimalPrecision(*type));
+            }
+            else
+            {
+                all_decimals = false;
+                break;
+            }
+        }
+
+        if (all_decimals)
+            return createDecimal<DataTypeDecimal>(min_precision, min_scale);
+    }
 
     /// All other data types (UUID, AggregateFunction, Enum...) are compatible only if they are the same (checked in trivial cases).
     return get_nothing_or_throw("");
