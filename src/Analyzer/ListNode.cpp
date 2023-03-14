@@ -54,7 +54,7 @@ QueryTreeNodePtr ListNode::cloneImpl() const
     return std::make_shared<ListNode>();
 }
 
-ASTPtr ListNode::toASTImpl(ConvertToASTOptions options) const
+ASTPtr ListNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     auto expression_list_ast = std::make_shared<ASTExpressionList>();
 

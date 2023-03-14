@@ -91,7 +91,7 @@ QueryTreeNodePtr ColumnNode::cloneImpl() const
     return std::make_shared<ColumnNode>(column, getSourceWeakPointer());
 }
 
-ASTPtr ColumnNode::toASTImpl(ConvertToASTOptions options) const
+ASTPtr ColumnNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     std::vector<std::string> column_identifier_parts;
 

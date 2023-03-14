@@ -259,7 +259,7 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     return result_query_node;
 }
 
-ASTPtr QueryNode::toASTImpl(ConvertToASTOptions options) const
+ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     auto select_query = std::make_shared<ASTSelectQuery>();
     select_query->distinct = is_distinct;

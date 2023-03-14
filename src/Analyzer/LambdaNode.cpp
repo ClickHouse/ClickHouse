@@ -65,7 +65,7 @@ QueryTreeNodePtr LambdaNode::cloneImpl() const
     return std::make_shared<LambdaNode>(argument_names, getExpression());
 }
 
-ASTPtr LambdaNode::toASTImpl(ConvertToASTOptions options) const
+ASTPtr LambdaNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     auto lambda_function_arguments_ast = std::make_shared<ASTExpressionList>();
 

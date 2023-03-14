@@ -204,7 +204,7 @@ QueryTreeNodePtr MatcherNode::cloneImpl() const
     return matcher_node;
 }
 
-ASTPtr MatcherNode::toASTImpl(ConvertToASTOptions options) const
+ASTPtr MatcherNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     ASTPtr result;
     ASTPtr transformers;

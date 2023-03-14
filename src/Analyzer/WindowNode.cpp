@@ -107,7 +107,7 @@ QueryTreeNodePtr WindowNode::cloneImpl() const
     return window_node;
 }
 
-ASTPtr WindowNode::toASTImpl(ConvertToASTOptions options) const
+ASTPtr WindowNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     auto window_definition = std::make_shared<ASTWindowDefinition>();
 

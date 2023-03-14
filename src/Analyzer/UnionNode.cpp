@@ -140,7 +140,7 @@ QueryTreeNodePtr UnionNode::cloneImpl() const
     return result_union_node;
 }
 
-ASTPtr UnionNode::toASTImpl(ConvertToASTOptions options) const
+ASTPtr UnionNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
     select_with_union_query->union_mode = union_mode;

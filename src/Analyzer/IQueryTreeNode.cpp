@@ -331,7 +331,7 @@ QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const QueryTreeNodePtr & node_t
     return cloneAndReplace(replacement_map);
 }
 
-ASTPtr IQueryTreeNode::toAST(ConvertToASTOptions options) const
+ASTPtr IQueryTreeNode::toAST(const ConvertToASTOptions & options) const
 {
     auto converted_node = toASTImpl(options);
 

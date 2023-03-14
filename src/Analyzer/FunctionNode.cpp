@@ -197,7 +197,7 @@ QueryTreeNodePtr FunctionNode::cloneImpl() const
     return result_function;
 }
 
-ASTPtr FunctionNode::toASTImpl(ConvertToASTOptions options) const
+ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     auto function_ast = std::make_shared<ASTFunction>();
 
