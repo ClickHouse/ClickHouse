@@ -751,41 +751,11 @@ public:
 
 
 template <typename JSONParser>
-using JSONExtractInt8Impl = JSONExtractNumericImpl<JSONParser, Int8>;
-template <typename JSONParser>
-using JSONExtractUInt8Impl = JSONExtractNumericImpl<JSONParser, UInt8>;
-template <typename JSONParser>
-using JSONExtractInt16Impl = JSONExtractNumericImpl<JSONParser, Int16>;
-template <typename JSONParser>
-using JSONExtractUInt16Impl = JSONExtractNumericImpl<JSONParser, UInt16>;
-template <typename JSONParser>
-using JSONExtractInt32Impl = JSONExtractNumericImpl<JSONParser, Int32>;
-template <typename JSONParser>
-using JSONExtractUInt32Impl = JSONExtractNumericImpl<JSONParser, UInt32>;
-template <typename JSONParser>
 using JSONExtractInt64Impl = JSONExtractNumericImpl<JSONParser, Int64>;
 template <typename JSONParser>
 using JSONExtractUInt64Impl = JSONExtractNumericImpl<JSONParser, UInt64>;
 template <typename JSONParser>
-using JSONExtractInt128Impl = JSONExtractNumericImpl<JSONParser, Int128>;
-template <typename JSONParser>
-using JSONExtractUInt128Impl = JSONExtractNumericImpl<JSONParser, UInt128>;
-template <typename JSONParser>
-using JSONExtractInt256Impl = JSONExtractNumericImpl<JSONParser, Int256>;
-template <typename JSONParser>
-using JSONExtractUInt256Impl = JSONExtractNumericImpl<JSONParser, UInt256>;
-template <typename JSONParser>
-using JSONExtractFloat32Impl = JSONExtractNumericImpl<JSONParser, Float32>;
-template <typename JSONParser>
 using JSONExtractFloat64Impl = JSONExtractNumericImpl<JSONParser, Float64>;
-template <typename JSONParser>
-using JSONExtractDecimal32Impl = JSONExtractNumericImpl<JSONParser, Decimal32>;
-template <typename JSONParser>
-using JSONExtractDecimal64Impl = JSONExtractNumericImpl<JSONParser, Decimal64>;
-template <typename JSONParser>
-using JSONExtractDecimal128Impl = JSONExtractNumericImpl<JSONParser, Decimal128>;
-template <typename JSONParser>
-using JSONExtractDecimal256Impl = JSONExtractNumericImpl<JSONParser, Decimal256>;
 
 
 template <typename JSONParser>

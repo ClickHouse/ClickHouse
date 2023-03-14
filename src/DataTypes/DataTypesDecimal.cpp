@@ -40,8 +40,10 @@ bool DataTypeDecimal<T>::equals(const IDataType & rhs) const
 template <is_decimal T>
 DataTypePtr DataTypeDecimal<T>::promoteNumericType() const
 {
-    using PromotedType = DataTypeDecimal<Decimal128>;
-    return std::make_shared<PromotedType>(PromotedType::maxPrecision(), this->scale);
+    if (sizeof(T) <= sizeof(Decimal128))
+        return std::make_shared<DataTypeDecimal<Decimal128>>(DataTypeDecimal<Decimal128>::maxPrecision(), this->scale);
+    else
+        return std::make_shared<DataTypeDecimal<Decimal256>>(DataTypeDecimal<Decimal256>::maxPrecision(), this->scale);
 }
 
 template <is_decimal T>

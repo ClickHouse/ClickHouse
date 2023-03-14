@@ -23,12 +23,8 @@ AggregateFunctionPtr createAggregateFunctionStatisticsUnary(
     assertNoParameters(name, parameters);
     assertUnary(name, argument_types);
 
-    AggregateFunctionPtr res;
     const DataTypePtr & data_type = argument_types[0];
-    if (isDecimal(data_type))
-        res.reset(createWithDecimalType<FunctionTemplate>(*data_type, *data_type, argument_types));
-    else
-        res.reset(createWithNumericType<FunctionTemplate>(*data_type, argument_types));
+    AggregateFunctionPtr res{createWithNumericType<FunctionTemplate>(*data_type, argument_types)};
 
     if (!res)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}",
@@ -68,7 +64,7 @@ void registerAggregateFunctionsStatisticsSimple(AggregateFunctionFactory & facto
     factory.registerFunction("covarPop", createAggregateFunctionStatisticsBinary<AggregateFunctionCovarPopSimple>);
     factory.registerFunction("corr", createAggregateFunctionStatisticsBinary<AggregateFunctionCorrSimple>, AggregateFunctionFactory::CaseInsensitive);
 
-    /// Synonims for compatibility.
+    /// Synonyms for compatibility.
     factory.registerAlias("VAR_SAMP", "varSamp", AggregateFunctionFactory::CaseInsensitive);
     factory.registerAlias("VAR_POP", "varPop", AggregateFunctionFactory::CaseInsensitive);
     factory.registerAlias("STDDEV_SAMP", "stddevSamp", AggregateFunctionFactory::CaseInsensitive);
