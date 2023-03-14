@@ -1946,6 +1946,8 @@ def reportCoverage(args):
 
 
 def reportLogStats(args):
+    clickhouse_execute(args, "SYSTEM FLUSH LOGS")
+
     query = """
         WITH
             120 AS mins,
