@@ -20,6 +20,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_READ_MAP_FROM_TEXT;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 SerializationMap::SerializationMap(const SerializationPtr & key_, const SerializationPtr & value_, const SerializationPtr & nested_)
