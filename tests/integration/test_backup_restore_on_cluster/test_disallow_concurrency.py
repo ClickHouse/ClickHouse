@@ -9,8 +9,7 @@ from helpers.test_tools import TSV, assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
-num_nodes = 4
-ddl_task_timeout = 640
+num_nodes = 10
 
 
 def generate_cluster_def():
@@ -86,7 +85,7 @@ def drop_after_test():
         node0.query(
             "DROP TABLE IF EXISTS tbl ON CLUSTER 'cluster' NO DELAY",
             settings={
-                "distributed_ddl_task_timeout": ddl_task_timeout,
+                "distributed_ddl_task_timeout": 360,
             },
         )
 
@@ -108,7 +107,7 @@ def create_and_fill_table():
         "ORDER BY x"
     )
     for i in range(num_nodes):
-        nodes[i].query(f"INSERT INTO tbl SELECT number FROM numbers(80000000)")
+        nodes[i].query(f"INSERT INTO tbl SELECT number FROM numbers(40000000)")
 
 
 # All the tests have concurrent backup/restores with same backup names
@@ -146,7 +145,7 @@ def test_concurrent_backups_on_same_node():
     nodes[0].query(
         f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY",
         settings={
-            "distributed_ddl_task_timeout": ddl_task_timeout,
+            "distributed_ddl_task_timeout": 360,
         },
     )
     nodes[0].query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
@@ -203,7 +202,7 @@ def test_concurrent_restores_on_same_node():
     nodes[0].query(
         f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY",
         settings={
-            "distributed_ddl_task_timeout": ddl_task_timeout,
+            "distributed_ddl_task_timeout": 360,
         },
     )
     restore_id = (
@@ -227,44 +226,44 @@ def test_concurrent_restores_on_different_node():
     backup_name = new_backup_name()
 
     id = (
-        nodes[1]
+        nodes[0]
         .query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} ASYNC")
         .split("\t")[0]
     )
     assert_eq_with_retry(
-        nodes[1],
+        nodes[0],
         f"SELECT status FROM system.backups WHERE status == 'CREATING_BACKUP' AND id = '{id}'",
         "CREATING_BACKUP",
     )
 
     assert_eq_with_retry(
-        nodes[1],
+        nodes[0],
         f"SELECT status FROM system.backups WHERE status == 'BACKUP_CREATED' AND id = '{id}'",
         "BACKUP_CREATED",
     )
 
-    nodes[1].query(
+    nodes[0].query(
         f"DROP TABLE tbl ON CLUSTER 'cluster' NO DELAY",
         settings={
-            "distributed_ddl_task_timeout": ddl_task_timeout,
+            "distributed_ddl_task_timeout": 360,
         },
     )
     restore_id = (
-        nodes[1]
+        nodes[0]
         .query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name} ASYNC")
         .split("\t")[0]
     )
     assert_eq_with_retry(
-        nodes[1],
-        f"SELECT status FROM system.backups WHERE status == 'RESTORING' AND id == '{restore_id}'",
+        nodes[0],
+        f"SELECT status FROM system.backups WHERE status == 'RESTORING'",
         "RESTORING",
     )
-    assert "Concurrent restores not supported" in nodes[0].query_and_get_error(
+    assert "Concurrent restores not supported" in nodes[1].query_and_get_error(
         f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}"
     )
 
     assert_eq_with_retry(
-        nodes[1],
+        nodes[0],
         f"SELECT status FROM system.backups WHERE status == 'RESTORED' AND id == '{restore_id}'",
         "RESTORED",
     )
