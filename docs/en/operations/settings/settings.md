@@ -1425,6 +1425,28 @@ Possible values:
 
 Default value: `0`
 
+## query_cache_compress_entries {#query-cache-compress-entries}
+
+Compress entries in the [query cache](../query-cache.md). Lessens the memory consumption of the query cache at the cost of slower inserts into / reads from it.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+
+Default value: `1`
+
+## query_cache_squash_partial_results {#query-cache-squash-partial-results}
+
+Squash partial result blocks to blocks of size [max_block_size](#setting-max_block_size). Reduces performance of inserts into the [query cache](../query-cache.md) but improves the compressability of cache entries (see [query_cache_compress-entries](#query_cache_compress_entries)).
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+
+Default value: `1`
+
 ## query_cache_ttl {#query-cache-ttl}
 
 After this time in seconds entries in the [query cache](../query-cache.md) become stale.
