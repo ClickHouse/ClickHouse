@@ -795,9 +795,11 @@ ActionsDAGPtr ActionsDAG::foldActionsByProjection(const std::unordered_map<const
 
                     if (!node)
                     {
-                        node = &dag->addInput(new_input->result_name, new_input->result_type);
-                        if (!rename.empty() && new_input->result_name != rename)
-                            node = &dag->addAlias(*node, rename);
+                        bool should_rename = !rename.empty() && new_input->result_name != rename;
+                        const auto & input_name = should_rename ? rename : new_input->result_name;
+                        node = &dag->addInput(input_name, new_input->result_type);
+                        if (should_rename)
+                            node = &dag->addAlias(*node, new_input->result_name);
                     }
 
                     stack.pop_back();
