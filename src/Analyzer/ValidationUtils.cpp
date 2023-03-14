@@ -14,7 +14,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int NOT_AN_AGGREGATE;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
