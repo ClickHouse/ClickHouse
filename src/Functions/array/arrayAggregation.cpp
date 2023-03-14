@@ -38,7 +38,7 @@ enum class AggregateOperation
  * During array aggregation we derive result type from operation.
  * For array min or array max we use array element as result type.
  * For array average we use Float64.
- * For array sum for for big integers, we use same type representation, decimal numbers we use Decimal128,
+ * For array sum for big integers, we use same type representation, decimal numbers up to 128-bit will use Decimal128, then Decimal256.
  * for floating point numbers Float64, for numeric unsigned Int64, and for numeric signed UInt64.
  */
 
@@ -77,10 +77,13 @@ struct ArrayAggregateResultImpl<ArrayElement, AggregateOperation::sum>
         std::conditional_t<std::is_same_v<ArrayElement, UInt128>, UInt128,
         std::conditional_t<std::is_same_v<ArrayElement, Int256>, Int256,
         std::conditional_t<std::is_same_v<ArrayElement, UInt256>, UInt256,
-        std::conditional_t<is_decimal<ArrayElement>, Decimal128,
+        std::conditional_t<std::is_same_v<ArrayElement, Decimal32>, Decimal128,
+        std::conditional_t<std::is_same_v<ArrayElement, Decimal64>, Decimal128,
+        std::conditional_t<std::is_same_v<ArrayElement, Decimal128>, Decimal128,
+        std::conditional_t<std::is_same_v<ArrayElement, Decimal256>, Decimal256,
         std::conditional_t<std::is_floating_point_v<ArrayElement>, Float64,
         std::conditional_t<std::is_signed_v<ArrayElement>, Int64,
-            UInt64>>>>>>>;
+            UInt64>>>>>>>>>>;
 };
 
 template <typename ArrayElement, AggregateOperation operation>
@@ -364,8 +367,11 @@ struct ArrayAggregateImpl
             executeType<Float64>(mapped, offsets, res) ||
             executeType<Decimal32>(mapped, offsets, res) ||
             executeType<Decimal64>(mapped, offsets, res) ||
-            executeType<Decimal128>(mapped, offsets, res))
+            executeType<Decimal128>(mapped, offsets, res) ||
+            executeType<Decimal256>(mapped, offsets, res))
+        {
             return res;
+        }
         else
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column for arraySum: {}", mapped->getName());
     }
@@ -396,4 +402,3 @@ REGISTER_FUNCTION(ArrayAggregation)
 }
 
 }
-
