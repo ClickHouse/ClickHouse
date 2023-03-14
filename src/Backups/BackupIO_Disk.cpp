@@ -35,15 +35,18 @@ std::unique_ptr<SeekableReadBuffer> BackupReaderDisk::readFile(const String & fi
     return disk->readFile(path / file_name);
 }
 
-bool BackupReaderDisk::supportNativeCopy(DataSourceDescription destination_data_source_description, WriteMode mode) const
+void BackupReaderDisk::copyFileToDisk(const String & file_name, size_t size, DiskPtr destination_disk, const String & destination_path,
+                                      WriteMode write_mode, const WriteSettings & write_settings)
 {
-    return (destination_data_source_description == getDataSourceDescription()) && (mode == WriteMode::Rewrite);
-}
+    if (write_mode == WriteMode::Rewrite)
+    {
+        LOG_TRACE(log, "Copying {}/{} from disk {} to {} by the disk", path, file_name, disk->getName(), destination_disk->getName());
+        disk->copyFile(path / file_name, *destination_disk, destination_path, write_settings);
+        return;
+    }
 
-void BackupReaderDisk::copyFileToDiskNative(const String & file_name, size_t, DiskPtr destination_disk, const String & destination_path, WriteMode)
-{
-    auto src_path = path / file_name;
-    disk->copyFile(src_path, *destination_disk, destination_path);
+    LOG_TRACE(log, "Copying {}/{} from disk {} to {} through buffers", path, file_name, disk->getName(), destination_disk->getName());
+    IBackupReader::copyFileToDisk(file_name, size, destination_disk, destination_path, write_mode, write_settings);
 }
 
 

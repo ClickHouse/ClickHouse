@@ -25,7 +25,6 @@ namespace DB
 
 class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
-class IParamsForNativeCopyToDisk;
 
 using ObjectAttributes = std::map<std::string, std::string>;
 
@@ -40,6 +39,7 @@ struct RelativePathWithSize
         : relative_path(relative_path_), bytes_size(bytes_size_) {}
 };
 using RelativePathsWithSize = std::vector<RelativePathWithSize>;
+
 
 struct ObjectMetadata
 {
@@ -122,14 +122,6 @@ public:
         FinalizeCallback && finalize_callback = {},
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) = 0;
-
-    /// Write a file using native copy.
-    virtual void writeObjectUsingNativeCopy(
-        const StoredObject & object,
-        WriteMode mode,
-        const IParamsForNativeCopyToDisk & params,
-        std::optional<ObjectAttributes> attributes = {},
-        FinalizeCallback && finalize_callback = {});
 
     virtual bool isRemote() const = 0;
 

@@ -102,14 +102,6 @@ public:
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) override;
 
-    /// Write a file using native copy.
-    void writeObjectUsingNativeCopy(
-        const StoredObject & object,
-        WriteMode mode,
-        const IParamsForNativeCopyToDisk & params,
-        std::optional<ObjectAttributes> attributes = {},
-        FinalizeCallback && finalize_callback = {}) override;
-
     void findAllFiles(const std::string & path, RelativePathsWithSize & children, int max_keys) const override;
     void getDirectoryContents(const std::string & path,
         RelativePathsWithSize & files,

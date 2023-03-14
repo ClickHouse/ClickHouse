@@ -1,4 +1,5 @@
 #include <Backups/BackupIO_File.h>
+#include <Disks/IDisk.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/copyData.h>
@@ -32,16 +33,19 @@ std::unique_ptr<SeekableReadBuffer> BackupReaderFile::readFile(const String & fi
     return createReadBufferFromFileBase(path / file_name, {});
 }
 
-bool BackupReaderFile::supportNativeCopy(DataSourceDescription destination_data_source_description, WriteMode mode) const
+void BackupReaderFile::copyFileToDisk(const String & file_name, size_t size, DiskPtr destination_disk, const String & destination_path,
+                                      WriteMode write_mode, const WriteSettings & write_settings)
 {
-    return (destination_data_source_description == getDataSourceDescription()) && (mode == WriteMode::Rewrite);
-}
+    if (destination_disk->getDataSourceDescription() == getDataSourceDescription())
+    {
+        /// Use more optimal way.
+        LOG_TRACE(log, "Copying {}/{} to disk {} locally", path, file_name, destination_disk->getName());
+        fs::copy(path / file_name, fullPath(destination_disk, destination_path), fs::copy_options::overwrite_existing);
+        return;
+    }
 
-void BackupReaderFile::copyFileToDiskNative(const String & file_name, size_t, DiskPtr destination_disk, const String & destination_path, WriteMode)
-{
-    std::string abs_source_path = path / file_name;
-    std::string abs_destination_path = fullPath(destination_disk, destination_path);
-    fs::copy(abs_source_path, abs_destination_path, fs::copy_options::overwrite_existing);
+    LOG_TRACE(log, "Copying {}/{} to disk {} through buffers", path, file_name, destination_disk->getName());
+    IBackupReader::copyFileToDisk(path / file_name, size, destination_disk, destination_path, write_mode, write_settings);
 }
 
 

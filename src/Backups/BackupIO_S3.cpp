@@ -2,7 +2,7 @@
 
 #if USE_AWS_S3
 #include <Common/quoteString.h>
-#include <Disks/ObjectStorages/S3/S3ParamsForNativeCopyToDisk.h>
+#include <Disks/ObjectStorages/S3/copyS3FileToDisk.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
 #include <Interpreters/Context.h>
 #include <IO/BackupsIOThreadPool.h>
@@ -129,20 +129,25 @@ std::unique_ptr<SeekableReadBuffer> BackupReaderS3::readFile(const String & file
         client, s3_uri.bucket, fs::path(s3_uri.key) / file_name, s3_uri.version_id, request_settings, read_settings);
 }
 
-bool BackupReaderS3::supportNativeCopy(DataSourceDescription destination_data_source_description, WriteMode) const
+void BackupReaderS3::copyFileToDisk(const String & file_name, size_t size, DiskPtr destination_disk, const String & destination_path,
+                                    WriteMode write_mode, const WriteSettings & write_settings)
 {
-    return destination_data_source_description == getDataSourceDescription();
-}
+    LOG_TRACE(log, "Copying {} to disk {}", file_name, destination_disk->getName());
 
-void BackupReaderS3::copyFileToDiskNative(const String & file_name, size_t size, DiskPtr destination_disk, const String & destination_path, WriteMode mode)
-{
-    S3ParamsForNativeCopyToDisk params;
-    params.src_bucket = s3_uri.bucket;
-    params.src_key = fs::path(s3_uri.key) / file_name;
-    params.src_size = size;
-    params.request_settings = request_settings;
-    params.scheduler = threadPoolCallbackRunner<void>(BackupsIOThreadPool::get(), "BackupReaderS3");
-    destination_disk->writeFileUsingNativeCopy(destination_path, mode, params);
+    copyS3FileToDisk(
+        client,
+        s3_uri.bucket,
+        fs::path(s3_uri.key) / file_name,
+        s3_uri.version_id,
+        0,
+        size,
+        destination_disk,
+        destination_path,
+        write_mode,
+        read_settings,
+        write_settings,
+        request_settings,
+        threadPoolCallbackRunner<void>(BackupsIOThreadPool::get(), "BackupReaderS3"));
 }
 
 
