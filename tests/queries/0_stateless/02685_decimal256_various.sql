@@ -52,3 +52,7 @@ SELECT arraySort(arrayIntersect([1.1::Decimal256(1)], [1.12::Decimal256(2)])); -
 SELECT arraySort(arrayIntersect([1.1::Decimal256(2)], [1.12::Decimal256(2)]));
 SELECT arraySort(arrayIntersect([1.1::Decimal128(1)], [1.12::Decimal128(2)])); -- Note: this is correct but the semantics has to be clarified in the docs.
 SELECT arraySort(arrayIntersect([1.1::Decimal128(2)], [1.12::Decimal128(2)]));
+
+select coalesce(cast('123', 'Nullable(Decimal(20, 10))'), 0);
+select coalesce(cast('123', 'Nullable(Decimal(40, 10))'), 0);
+select coalesce(cast('123', 'Decimal(40, 10)'), 0);
