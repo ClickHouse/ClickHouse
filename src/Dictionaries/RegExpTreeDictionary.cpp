@@ -4,14 +4,16 @@
 
 #include <type_traits>
 #include <unordered_map>
+#include <hs_compile.h>
 #include <base/defines.h>
 
 #include <Poco/Logger.h>
 #include <Poco/RegularExpression.h>
 
-#include "Common/Exception.h"
 #include <Common/ArenaUtils.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Common/OptimizedRegularExpression.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -172,10 +174,6 @@ void RegExpTreeDictionary::initRegexNodes(Block & block)
     auto keys_column = block.getByName(kKeys).column;
     auto values_column = block.getByName(kValues).column;
 
-#ifdef USE_VECTORSCAN
-    SlowWithHyperscanChecker checker;
-#endif
-
     size_t size = block.rows();
     for (size_t i = 0; i < size; i++)
     {
@@ -219,11 +217,35 @@ void RegExpTreeDictionary::initRegexNodes(Block & block)
             }
         }
         regex_nodes.emplace(id, node);
-#if USE_VECTORSCAN
-        if (use_vectorscan && !checker.isSlow(regex))
+
+#ifdef USE_VECTORSCAN
+        String required_substring;
+        bool is_trivial, required_substring_is_prefix;
+        std::vector<std::string> alternatives;
+
+        if (use_vectorscan)
+            OptimizedRegularExpression::analyze(regex, required_substring, is_trivial, required_substring_is_prefix, alternatives);
+
+        for (auto & alter : alternatives)
         {
-            simple_regexps.push_back(regex);
+            if (alter.size() < 3)
+            {
+                alternatives.clear();
+                break;
+            }
+        }
+        if (!required_substring.empty())
+        {
+            simple_regexps.push_back(required_substring);
             regexp_ids.push_back(id);
+        }
+        else if (!alternatives.empty())
+        {
+            for (auto & alter : alternatives)
+            {
+                simple_regexps.push_back(alter);
+                regexp_ids.push_back(id);
+            }
         }
         else
 #endif
@@ -284,20 +306,52 @@ void RegExpTreeDictionary::loadData()
             use_vectorscan = false;
         if (!use_vectorscan)
             return;
-        #if USE_VECTORSCAN
-        try
+
+#ifdef USE_VECTORSCAN
+        std::vector<const char *> patterns;
+        std::vector<unsigned int> flags;
+        std::vector<size_t> lens;
+
+        for (const std::string & ref : simple_regexps)
         {
-            std::vector<std::string_view> regexps_views(simple_regexps.begin(), simple_regexps.end());
-            hyperscan_regex = MultiRegexps::getOrSet<true, false>(regexps_views, std::nullopt);
-            hyperscan_regex->get();
+            patterns.push_back(ref.data());
+            lens.push_back(ref.size());
+            flags.push_back(HS_FLAG_SINGLEMATCH);
         }
-        catch (Exception & e)
+
+        hs_database_t * db = nullptr;
+        hs_compile_error_t * compile_error;
+
+        std::unique_ptr<unsigned int[]> ids;
+        ids.reset(new unsigned int[patterns.size()]);
+        for (size_t i = 0; i < patterns.size(); i++)
+            ids[i] = static_cast<unsigned>(i+1);
+
+        hs_error_t err = hs_compile_lit_multi(patterns.data(), flags.data(), ids.get(), lens.data(), static_cast<unsigned>(patterns.size()), HS_MODE_BLOCK, nullptr, &db, &compile_error);
+        origin_db = (db);
+        if (err != HS_SUCCESS)
         {
-            /// Some compile errors will be thrown as LOGICAL ERROR and cause crash, e.g. empty expression or expressions are too large.
-            /// We catch the error here and rethrow again.
-            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Error occurs when compiling regular expressions, reason: {}", e.message());
+            /// CompilerError is a unique_ptr, so correct memory free after the exception is thrown.
+            MultiRegexps::CompilerErrorPtr error(compile_error);
+
+            if (error->expression < 0)
+                throw Exception::createRuntime(ErrorCodes::LOGICAL_ERROR, String(error->message));
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Pattern '{}' failed with error '{}'", patterns[error->expression], String(error->message));
         }
-        #endif
+
+        ProfileEvents::increment(ProfileEvents::RegexpCreated);
+
+        /// We allocate the scratch space only once, then copy it across multiple threads with hs_clone_scratch
+        /// function which is faster than allocating scratch space each time in each thread.
+        hs_scratch_t * scratch = nullptr;
+        err = hs_alloc_scratch(db, &scratch);
+        origin_scratch.reset(scratch);
+        /// If not HS_SUCCESS, it is guaranteed that the memory would not be allocated for scratch.
+        if (err != HS_SUCCESS)
+            throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not allocate scratch space for vectorscan");
+#endif
+
     }
     else
     {
@@ -396,47 +450,70 @@ bool RegExpTreeDictionary::setAttributes(
     return attributes_to_set.size() == attributes.size();
 }
 
-namespace
+/// a temp struct to store all the matched result.
+struct MatchContext
 {
-    struct MatchContext
+    std::set<UInt64> matched_idx_set;
+    std::vector<std::pair<UInt64, UInt64>> matched_idx_sorted_list;
+
+    const std::vector<UInt64> & regexp_ids ;
+    const std::unordered_map<UInt64, UInt64> & topology_order;
+    const char * data;
+    size_t length;
+    const std::map<UInt64, RegExpTreeDictionary::RegexTreeNodePtr> & regex_nodes;
+
+    size_t pre_match_counter = 0;
+    size_t match_counter = 0;
+
+    MatchContext(
+        const std::vector<UInt64> & regexp_ids_,
+        const std::unordered_map<UInt64, UInt64> & topology_order_,
+        const char * data_, size_t length_,
+        const std::map<UInt64, RegExpTreeDictionary::RegexTreeNodePtr> & regex_nodes_
+    )
+    : regexp_ids(regexp_ids_),
+        topology_order(topology_order_),
+        data(data_),
+        length(length_),
+        regex_nodes(regex_nodes_)
+    {}
+
+    [[maybe_unused]]
+    void insertIdx(unsigned int idx)
     {
-        std::set<UInt64> matched_idx_set;
-        std::vector<std::pair<UInt64, UInt64>> matched_idx_sorted_list;
-
-        const std::vector<UInt64> & regexp_ids ;
-        const std::unordered_map<UInt64, UInt64> & topology_order;
-
-        MatchContext(const std::vector<UInt64> & regexp_ids_, const std::unordered_map<UInt64, UInt64> & topology_order_)
-            : regexp_ids(regexp_ids_), topology_order(topology_order_) {}
-
-        [[maybe_unused]]
-        void insertIdx(unsigned int idx)
+        UInt64 node_id = regexp_ids[idx-1];
+        pre_match_counter++;
+        if (!regex_nodes.at(node_id)->match(data, length))
         {
-            UInt64 node_id = regexp_ids[idx-1];
-            UInt64 topological_order = topology_order.at(node_id);
-            matched_idx_set.emplace(node_id);
-            matched_idx_sorted_list.push_back(std::make_pair(topological_order, node_id));
+            return;
         }
+        match_counter++;
+        matched_idx_set.emplace(node_id);
 
-        void insertNodeID(UInt64 id)
-        {
-            UInt64 topological_order = topology_order.at(id);
-            matched_idx_set.emplace(id);
-            matched_idx_sorted_list.push_back(std::make_pair(topological_order, id));
-        }
+        UInt64 topological_order = topology_order.at(node_id);
+        matched_idx_sorted_list.push_back(std::make_pair(topological_order, node_id));
+    }
 
-        /// Sort by topological order, which indicates the matching priorities.
-        void sort()
-        {
-            std::sort(matched_idx_sorted_list.begin(), matched_idx_sorted_list.end());
-        }
+    [[maybe_unused]]
+    void insertNodeID(UInt64 id)
+    {
+        matched_idx_set.emplace(id);
 
-        bool contains(UInt64 idx) const
-        {
-            return matched_idx_set.contains(idx);
-        }
-    };
-}
+        UInt64 topological_order = topology_order.at(id);
+        matched_idx_sorted_list.push_back(std::make_pair(topological_order, id));
+    }
+
+    /// Sort by topological order, which indicates the matching priorities.
+    void sort()
+    {
+        std::sort(matched_idx_sorted_list.begin(), matched_idx_sorted_list.end());
+    }
+
+    bool contains(UInt64 idx) const
+    {
+        return matched_idx_set.contains(idx);
+    }
+};
 
 std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::match(
     const ColumnString::Chars & keys_data,
@@ -449,7 +526,7 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::match(
     hs_scratch_t * scratch = nullptr;
     if (use_vectorscan)
     {
-        hs_error_t err = hs_clone_scratch(hyperscan_regex->get()->getScratch(), &scratch);
+        hs_error_t err = hs_clone_scratch(origin_scratch.get(), &scratch);
 
         if (err != HS_SUCCESS)
         {
@@ -476,11 +553,14 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::match(
         auto key_offset = keys_offsets[key_idx];
         UInt64 length = key_offset - offset - 1;
 
-        MatchContext match_result(regexp_ids, topology_order);
+        const char * begin = reinterpret_cast<const char *>(keys_data.data()) + offset;
+
+        MatchContext match_result(regexp_ids, topology_order, begin, length, regex_nodes);
 
 #if USE_VECTORSCAN
         if (use_vectorscan)
         {
+            /// pre-select all the possible matches
             auto on_match = [](unsigned int id,
                             unsigned long long /* from */, // NOLINT
                             unsigned long long /* to */, // NOLINT
@@ -490,8 +570,9 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::match(
                 static_cast<MatchContext *>(context)->insertIdx(id);
                 return 0;
             };
+
             hs_error_t err = hs_scan(
-                hyperscan_regex->get()->getDB(),
+                origin_db,
                 reinterpret_cast<const char *>(keys_data.data()) + offset,
                 static_cast<unsigned>(length),
                 0,
@@ -501,6 +582,7 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::match(
 
             if (err != HS_SUCCESS)
                 throw Exception(ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT, "Failed to scan data with vectorscan");
+
         }
 #endif
 
