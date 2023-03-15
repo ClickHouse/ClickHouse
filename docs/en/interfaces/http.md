@@ -309,6 +309,7 @@ The HTTP interface allows passing external data (external temporary tables) for 
 ## Response Buffering {#response-buffering}
 
 You can enable response buffering on the server-side. The `buffer_size` and `wait_end_of_query` URL parameters are provided for this purpose.
+Also settings `http_response_buffer_size` and `http_wait_end_of_query` can be used.
 
 `buffer_size` determines the number of bytes in the result to buffer in the server memory. If a result body is larger than this threshold, the buffer is written to the HTTP channel, and the remaining data is sent directly to the HTTP channel.
 
