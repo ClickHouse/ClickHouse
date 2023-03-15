@@ -66,6 +66,8 @@ void ASTDictionaryAttributeDeclaration::formatImpl(const FormatSettings & settin
 
     if (is_object_id)
         settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "IS_OBJECT_ID";
+
+    settings.ostr << (settings.hilite ? hilite_none : "");
 }
 
 }
