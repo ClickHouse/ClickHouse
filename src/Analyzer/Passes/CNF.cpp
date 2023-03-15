@@ -2,6 +2,9 @@
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/ConstantNode.h>
+
+#include <Interpreters/TreeCNFConverter.h>
 
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -9,9 +12,17 @@
 #include <Functions/FunctionFactory.h>
 
 #include <Common/checkStackSize.h>
-#include "Interpreters/ActionsDAG.h"
 
-namespace DB::Analyzer
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int TOO_MANY_TEMPORARY_COLUMNS;
+    extern const int LOGICAL_ERROR;
+}
+
+namespace Analyzer
 {
 
 namespace
@@ -268,6 +279,22 @@ private:
     }
 };
 
+std::optional<CNF::AtomicFormula> tryInvertFunction(
+    const CNF::AtomicFormula & atom, const ContextPtr & context, const std::unordered_map<std::string, std::string> & inverse_relations)
+{
+    auto * function_node = atom.node_with_hash.node->as<FunctionNode>();
+    if (!function_node)
+        return std::nullopt;
+
+    if (auto it = inverse_relations.find(function_node->getFunctionName()); it != inverse_relations.end())
+    {
+        auto inverse_function_resolver = FunctionFactory::instance().get(it->second, context);
+        function_node->resolveAsFunction(inverse_function_resolver);
+        return CNF::AtomicFormula{!atom.negative, atom.node_with_hash.node};
+    }
+
+    return std::nullopt;
+}
 }
 
 bool CNF::AtomicFormula::operator==(const AtomicFormula & rhs) const
@@ -345,41 +372,121 @@ CNF & CNF::pushNotIntoFunctions(const ContextPtr & context)
 {
     transformAtoms([&](const AtomicFormula & atom)
     {
-		if (!atom.negative)
-		    return atom;
-
-		static const std::unordered_map<std::string, std::string> inverse_relations = {
-		    {"equals", "notEquals"},
-		    {"less", "greaterOrEquals"},
-		    {"lessOrEquals", "greater"},
-		    {"in", "notIn"},
-		    {"like", "notLike"},
-		    {"empty", "notEmpty"},
-		    {"notEquals", "equals"},
-		    {"greaterOrEquals", "less"},
-		    {"greater", "lessOrEquals"},
-		    {"notIn", "in"},
-		    {"notLike", "like"},
-		    {"notEmpty", "empty"},
-		};
-
-		auto * function_node = atom.node_with_hash.node->as<FunctionNode>();
-		if (!function_node)
-			return atom;
-
-		if (auto it = inverse_relations.find(function_node->getFunctionName()); it != inverse_relations.end())
-        {
-			auto inverse_function_resolver = FunctionFactory::instance().get(it->second, context);
-			function_node->resolveAsFunction(inverse_function_resolver);
-			return AtomicFormula{!atom.negative, atom.node_with_hash.node};
-		}
-
-		return atom;
+        return pushNotIntoFunction(atom, context);
     });
 
-    std::cout << "gorup: " << statements.size() << std::endl;
+    return *this;
+}
+
+CNF::AtomicFormula CNF::pushNotIntoFunction(const AtomicFormula & atom, const ContextPtr & context)
+{
+    if (!atom.negative)
+        return atom;
+
+    static const std::unordered_map<std::string, std::string> inverse_relations = {
+        {"equals", "notEquals"},
+        {"less", "greaterOrEquals"},
+        {"lessOrEquals", "greater"},
+        {"in", "notIn"},
+        {"like", "notLike"},
+        {"empty", "notEmpty"},
+        {"notEquals", "equals"},
+        {"greaterOrEquals", "less"},
+        {"greater", "lessOrEquals"},
+        {"notIn", "in"},
+        {"notLike", "like"},
+        {"notEmpty", "empty"},
+    };
+
+    if (auto inverted_atom = tryInvertFunction(atom, context, inverse_relations);
+        inverted_atom.has_value())
+        return std::move(*inverted_atom);
+
+    return atom;
+}
+
+CNF & CNF::pullNotOutFunctions(const ContextPtr & context)
+{
+    transformAtoms([&](const AtomicFormula & atom)
+    {
+        static const std::unordered_map<std::string, std::string> inverse_relations = {
+            {"notEquals", "equals"},
+            {"greaterOrEquals", "less"},
+            {"greater", "lessOrEquals"},
+            {"notIn", "in"},
+            {"notLike", "like"},
+            {"notEmpty", "empty"},
+        };
+
+        if (auto inverted_atom = tryInvertFunction(atom, context, inverse_relations);
+            inverted_atom.has_value())
+            return std::move(*inverted_atom);
+
+        return atom;
+    });
 
     return *this;
+}
+
+CNF & CNF::filterAlwaysTrueGroups(std::function<bool(const OrGroup &)> predicate)
+{
+    AndGroup filtered;
+    for (const auto & or_group : statements)
+    {
+        if (predicate(or_group))
+            filtered.insert(or_group);
+    }
+
+    statements = std::move(filtered);
+    return *this;
+}
+
+CNF & CNF::filterAlwaysFalseAtoms(std::function<bool(const AtomicFormula &)> predicate)
+{
+    AndGroup filtered;
+    for (const auto & or_group : statements)
+    {
+        OrGroup filtered_group;
+        for (const auto & atom : or_group)
+        {
+            if (predicate(atom))
+                filtered_group.insert(atom);
+        }
+
+        if (!filtered_group.empty())
+            filtered.insert(std::move(filtered_group));
+        else
+        {
+            filtered.clear();
+            filtered_group.insert(AtomicFormula{false, QueryTreeNodePtrWithHash{std::make_shared<ConstantNode>(static_cast<UInt8>(0))}});
+            filtered.insert(std::move(filtered_group));
+            break;
+        }
+    }
+
+    statements = std::move(filtered);
+    return *this;
+}
+
+CNF & CNF::reduce()
+{
+    while (true)
+    {
+        AndGroup new_statements = reduceOnceCNFStatements(statements);
+        if (statements == new_statements)
+        {
+            statements = filterCNFSubsets(statements);
+            return *this;
+        }
+        else
+            statements = new_statements;
+    }
+}
+
+void CNF::appendGroup(const AndGroup & and_group)
+{
+    for (const auto & or_group : and_group)
+        statements.emplace(or_group);
 }
 
 CNF::CNF(AndGroup statements_)
@@ -421,10 +528,21 @@ std::optional<CNF> CNF::tryBuildCNF(const QueryTreeNodePtr & node, ContextPtr co
     return CNF{std::move(collect_visitor.and_group)};
 }
 
+CNF CNF::toCNF(const QueryTreeNodePtr & node, ContextPtr context, size_t max_growth_multiplier)
+{
+    auto cnf = tryBuildCNF(node, context, max_growth_multiplier);
+    if (!cnf)
+        throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS,
+            "Cannot convert expression '{}' to CNF, because it produces to many clauses."
+            "Size of boolean formula in CNF can be exponential of size of source formula.");
+
+    return *cnf;
+}
+
 QueryTreeNodePtr CNF::toQueryTree(ContextPtr context) const
 {
-	if (statements.empty())
-		return nullptr;
+    if (statements.empty())
+        return nullptr;
 
     QueryTreeNodes and_arguments;
     and_arguments.reserve(statements.size());
@@ -473,6 +591,8 @@ QueryTreeNodePtr CNF::toQueryTree(ContextPtr context) const
     and_function->resolveAsFunction(and_resolver);
 
     return and_function;
+}
+
 }
 
 }

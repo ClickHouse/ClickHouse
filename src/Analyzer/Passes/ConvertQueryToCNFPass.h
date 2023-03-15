@@ -4,14 +4,14 @@
 
 namespace DB
 {
- 
-class ConvertQueryToCnfPass final : public IQueryTreePass
+
+class ConvertQueryToCNFPass final : public IQueryTreePass
 {
 public:
     String getName() override { return "ConvertQueryToCnfPass"; }
 
-    String getDescription() override { return "Convery query to CNF"; }
-    
+    String getDescription() override { return "Convert query to CNF"; }
+
     void run(QueryTreeNodePtr query_tree_node, ContextPtr context) override;
 };
 

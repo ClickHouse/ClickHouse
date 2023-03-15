@@ -235,7 +235,7 @@ void addQueryTreePasses(QueryTreePassManager & manager)
     manager.addPass(std::make_unique<QueryAnalysisPass>());
     manager.addPass(std::make_unique<FunctionToSubcolumnsPass>());
 
-    manager.addPass(std::make_unique<ConvertQueryToCnfPass>());
+    manager.addPass(std::make_unique<ConvertQueryToCNFPass>());
 
     manager.addPass(std::make_unique<CountDistinctPass>());
     manager.addPass(std::make_unique<RewriteAggregateFunctionWithIfPass>());
