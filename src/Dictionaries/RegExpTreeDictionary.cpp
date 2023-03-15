@@ -219,7 +219,7 @@ void RegExpTreeDictionary::initRegexNodes(Block & block)
         }
         regex_nodes.emplace(id, node);
 
-#ifdef USE_VECTORSCAN
+#if USE_VECTORSCAN
         String required_substring;
         bool is_trivial, required_substring_is_prefix;
         std::vector<std::string> alternatives;
@@ -308,7 +308,7 @@ void RegExpTreeDictionary::loadData()
         if (!use_vectorscan)
             return;
 
-#ifdef USE_VECTORSCAN
+#if USE_VECTORSCAN
         std::vector<const char *> patterns;
         std::vector<unsigned int> flags;
         std::vector<size_t> lens;
