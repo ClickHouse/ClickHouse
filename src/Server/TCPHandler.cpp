@@ -1337,7 +1337,6 @@ bool TCPHandler::receivePacket()
             return false;
 
         case Protocol::Client::Cancel:
-        {
             decreaseCancellationStatus("Received 'Cancel' packet from the client, canceling the query.");
             return false;
 
@@ -1356,10 +1355,12 @@ bool TCPHandler::receivePacket()
     }
 }
 
+
 void TCPHandler::receiveIgnoredPartUUIDs()
 {
     readVectorBinary(state.part_uuids_to_ignore.emplace(), *in);
 }
+
 
 void TCPHandler::receiveUnexpectedIgnoredPartUUIDs()
 {
@@ -1367,6 +1368,7 @@ void TCPHandler::receiveUnexpectedIgnoredPartUUIDs()
     readVectorBinary(skip_part_uuids, *in);
     throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet IgnoredPartUUIDs received from client");
 }
+
 
 String TCPHandler::receiveReadTaskResponseAssumeLocked()
 {
@@ -1415,6 +1417,7 @@ std::optional<ParallelReadResponse> TCPHandler::receivePartitionMergeTreeReadTas
     response.deserialize(*in);
     return response;
 }
+
 
 void TCPHandler::receiveClusterNameAndSalt()
 {
@@ -1671,6 +1674,7 @@ bool TCPHandler::receiveData(bool scalar)
     return true;
 }
 
+
 bool TCPHandler::receiveUnexpectedData(bool throw_exception)
 {
     String skip_external_table_name;
@@ -1693,6 +1697,7 @@ bool TCPHandler::receiveUnexpectedData(bool throw_exception)
 
     return read_ok;
 }
+
 
 void TCPHandler::initBlockInput()
 {
@@ -1763,6 +1768,7 @@ void TCPHandler::initLogsBlockOutput(const Block & block)
             !query_settings.low_cardinality_allow_in_native_format);
     }
 }
+
 
 void TCPHandler::initProfileEventsBlockOutput(const Block & block)
 {
@@ -1852,6 +1858,7 @@ QueryState::CancellationStatus TCPHandler::getQueryCancellationStatus()
     return state.cancellation_status;
 }
 
+
 void TCPHandler::sendData(const Block & block)
 {
     initBlockOutput(block);
@@ -1907,6 +1914,7 @@ void TCPHandler::sendData(const Block & block)
         throw;
     }
 }
+
 
 void TCPHandler::sendLogData(const Block & block)
 {
