@@ -1271,6 +1271,20 @@
         <ttl>event_date + INTERVAL 3 DAY</ttl>
     </asynchronous_insert_log>
 
+    <!-- Session log. Stores http requests issued from ClickHouse.
+    -->
+    <!-- <httpclient_log>
+        <engine>
+            engine MergeTree
+            partition by toYYYYMM(event_time)
+            order by (event_time, client, method, uri)
+            ttl event_date + INTERVAL 3 DAY
+        </engine>
+        <database>system</database>
+        <table>httpclient_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </httpclient_log> -->
+
     <!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
     <!-- Custom TLD lists.
          Format: <name>/path/to/file</name>
