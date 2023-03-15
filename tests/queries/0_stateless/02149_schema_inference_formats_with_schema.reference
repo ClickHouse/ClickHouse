@@ -72,7 +72,7 @@ uint8	Nullable(UInt8)
 int16	Nullable(Int16)					
 uint16	Nullable(UInt16)					
 int32	Nullable(Int32)					
-uint32	Nullable(Int64)					
+uint32	Nullable(UInt32)					
 int64	Nullable(Int64)					
 uint64	Nullable(UInt64)					
 0	0	0	0	0	0	0	0

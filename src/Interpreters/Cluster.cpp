@@ -15,6 +15,7 @@
 #include <base/sort.h>
 #include <boost/range/algorithm_ext/erase.hpp>
 
+#include <span>
 
 namespace DB
 {
@@ -509,7 +510,6 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
                     shard_local_addresses.push_back(replica);
                 shard_all_addresses.push_back(replica);
             }
-
             ConnectionPoolWithFailoverPtr shard_pool = std::make_shared<ConnectionPoolWithFailover>(
                         all_replicas_pools, settings.load_balancing,
                         settings.distributed_replica_error_half_life.totalSeconds(), settings.distributed_replica_error_cap);
@@ -653,9 +653,9 @@ void Cluster::initMisc()
     }
 }
 
-std::unique_ptr<Cluster> Cluster::getClusterWithReplicasAsShards(const Settings & settings) const
+std::unique_ptr<Cluster> Cluster::getClusterWithReplicasAsShards(const Settings & settings, size_t max_replicas_from_shard) const
 {
-    return std::unique_ptr<Cluster>{ new Cluster(ReplicasAsShardsTag{}, *this, settings)};
+    return std::unique_ptr<Cluster>{ new Cluster(ReplicasAsShardsTag{}, *this, settings, max_replicas_from_shard)};
 }
 
 std::unique_ptr<Cluster> Cluster::getClusterWithSingleShard(size_t index) const
@@ -668,7 +668,44 @@ std::unique_ptr<Cluster> Cluster::getClusterWithMultipleShards(const std::vector
     return std::unique_ptr<Cluster>{ new Cluster(SubclusterTag{}, *this, indices) };
 }
 
-Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Settings & settings)
+namespace
+{
+
+void shuffleReplicas(std::vector<Cluster::Address> & replicas, const Settings & settings, size_t replicas_needed)
+{
+    std::random_device rd;
+    std::mt19937 gen{rd()};
+
+    if (settings.prefer_localhost_replica)
+    {
+        // force for local replica to always be included
+        auto first_non_local_replica = std::partition(replicas.begin(), replicas.end(), [](const auto & replica) { return replica.is_local; });
+        size_t local_replicas_count = first_non_local_replica - replicas.begin();
+
+        if (local_replicas_count == replicas_needed)
+        {
+            /// we have exact amount of local replicas as needed, no need to do anything
+            return;
+        }
+
+        if (local_replicas_count > replicas_needed)
+        {
+            /// we can use only local replicas, shuffle them
+            std::shuffle(replicas.begin(), first_non_local_replica, gen);
+            return;
+        }
+
+        /// shuffle just non local replicas
+        std::shuffle(first_non_local_replica, replicas.end(), gen);
+        return;
+    }
+
+    std::shuffle(replicas.begin(), replicas.end(), gen);
+}
+
+}
+
+Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Settings & settings, size_t max_replicas_from_shard)
 {
     if (from.addresses_with_failover.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cluster is empty");
@@ -677,40 +714,55 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
     std::set<std::pair<String, int>> unique_hosts;
     for (size_t shard_index : collections::range(0, from.shards_info.size()))
     {
-        const auto & replicas = from.addresses_with_failover[shard_index];
-        for (const auto & address : replicas)
+        auto create_shards_from_replicas = [&](std::span<const Address> replicas)
         {
-            if (!unique_hosts.emplace(address.host_name, address.port).second)
-                continue;   /// Duplicate host, skip.
+            for (const auto & address : replicas)
+            {
+                if (!unique_hosts.emplace(address.host_name, address.port).second)
+                    continue;   /// Duplicate host, skip.
 
-            ShardInfo info;
-            info.shard_num = ++shard_num;
+                ShardInfo info;
+                info.shard_num = ++shard_num;
 
-            if (address.is_local)
-                info.local_addresses.push_back(address);
+                if (address.is_local)
+                    info.local_addresses.push_back(address);
 
-            info.all_addresses.push_back(address);
+                info.all_addresses.push_back(address);
 
-            auto pool = ConnectionPoolFactory::instance().get(
-                static_cast<unsigned>(settings.distributed_connections_pool_size),
-                address.host_name,
-                address.port,
-                address.default_database,
-                address.user,
-                address.password,
-                address.quota_key,
-                address.cluster,
-                address.cluster_secret,
-                "server",
-                address.compression,
-                address.secure,
-                address.priority);
+                auto pool = ConnectionPoolFactory::instance().get(
+                    static_cast<unsigned>(settings.distributed_connections_pool_size),
+                    address.host_name,
+                    address.port,
+                    address.default_database,
+                    address.user,
+                    address.password,
+                    address.quota_key,
+                    address.cluster,
+                    address.cluster_secret,
+                    "server",
+                    address.compression,
+                    address.secure,
+                    address.priority);
 
-            info.pool = std::make_shared<ConnectionPoolWithFailover>(ConnectionPoolPtrs{pool}, settings.load_balancing);
-            info.per_replica_pools = {std::move(pool)};
+                info.pool = std::make_shared<ConnectionPoolWithFailover>(ConnectionPoolPtrs{pool}, settings.load_balancing);
+                info.per_replica_pools = {std::move(pool)};
 
-            addresses_with_failover.emplace_back(Addresses{address});
-            shards_info.emplace_back(std::move(info));
+                addresses_with_failover.emplace_back(Addresses{address});
+                shards_info.emplace_back(std::move(info));
+            }
+        };
+
+        const auto & replicas = from.addresses_with_failover[shard_index];
+        if (!max_replicas_from_shard || replicas.size() <= max_replicas_from_shard)
+        {
+            create_shards_from_replicas(replicas);
+        }
+        else
+        {
+            auto shuffled_replicas = replicas;
+            // shuffle replicas so we don't always pick the same subset
+            shuffleReplicas(shuffled_replicas, settings, max_replicas_from_shard);
+            create_shards_from_replicas(std::span{shuffled_replicas.begin(), max_replicas_from_shard});
         }
     }
 
