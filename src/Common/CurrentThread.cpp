@@ -67,8 +67,8 @@ void CurrentThread::attachInternalTextLogsQueue(const std::shared_ptr<InternalTe
 
 void CurrentThread::setFatalErrorCallback(std::function<void()> callback)
 {
-    if (unlikely(!current_thread))
-        return;
+    /// It does not make sense to set a callback for sending logs to a client if there's no thread status
+    chassert(current_thread);
     current_thread->setFatalErrorCallback(callback);
 }
 
@@ -126,11 +126,7 @@ void CurrentThread::flushUntrackedMemory()
 {
     if (unlikely(!current_thread))
         return;
-    if (current_thread->untracked_memory == 0)
-        return;
-
-    current_thread->memory_tracker.adjustWithUntrackedMemory(current_thread->untracked_memory);
-    current_thread->untracked_memory = 0;
+    current_thread->flushUntrackedMemory();
 }
 
 }
