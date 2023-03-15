@@ -33,12 +33,6 @@ namespace CurrentMetrics
 namespace DB
 {
     class ZooKeeperLog;
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 }
 
 namespace zkutil
@@ -85,23 +79,13 @@ concept ZooKeeperResponse = std::derived_from<T, Coordination::Response>;
 template <ZooKeeperResponse ResponseType, bool try_multi>
 struct MultiReadResponses
 {
-    MultiReadResponses() = default;
-
     template <typename TResponses>
     explicit MultiReadResponses(TResponses responses_) : responses(std::move(responses_))
     {}
 
     size_t size() const
     {
-        return std::visit(
-            [&]<typename TResponses>(const TResponses & resp) -> size_t
-            {
-                if constexpr (std::same_as<TResponses, std::monostate>)
-                    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "No responses set for MultiRead");
-                else
-                    return resp.size();
-            },
-            responses);
+        return std::visit([](auto && resp) { return resp.size(); }, responses);
     }
 
     ResponseType & operator[](size_t index)
@@ -110,10 +94,8 @@ struct MultiReadResponses
             [&]<typename TResponses>(TResponses & resp) -> ResponseType &
             {
                 if constexpr (std::same_as<TResponses, RegularResponses>)
-                {
                     return dynamic_cast<ResponseType &>(*resp[index]);
-                }
-                else if constexpr (std::same_as<TResponses, ResponsesWithFutures>)
+                else
                 {
                     if constexpr (try_multi)
                     {
@@ -124,10 +106,6 @@ struct MultiReadResponses
                             throw KeeperException(error);
                     }
                     return resp[index];
-                }
-                else
-                {
-                    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "No responses set for MultiRead");
                 }
             },
             responses);
@@ -159,7 +137,7 @@ private:
         size_t size() const { return future_responses.size(); }
     };
 
-    std::variant<std::monostate, RegularResponses, ResponsesWithFutures> responses;
+    std::variant<RegularResponses, ResponsesWithFutures> responses;
 };
 
 /// ZooKeeper session. The interface is substantially different from the usual libzookeeper API.

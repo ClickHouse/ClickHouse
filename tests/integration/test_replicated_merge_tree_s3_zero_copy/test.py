@@ -194,12 +194,10 @@ def test_drop_table(cluster):
     )
     node.query_with_retry(
         "system sync replica test_drop_table",
-        settings={"receive_timeout": 5},
-        sleep_time=5,
-        retry_count=10,
+        settings={"receive_timeout": 10},
+        retry_count=5,
     )
-    node2.query("drop table test_drop_table sync")
+    node2.query("drop table test_drop_table")
     assert "1000\t499500\n" == node.query(
         "select count(n), sum(n) from test_drop_table"
     )
-    node.query("drop table test_drop_table sync")

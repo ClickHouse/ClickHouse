@@ -1,6 +1,6 @@
 #include "MergeTreeDataPartChecksum.h"
 #include <Common/SipHash.h>
-#include <base/hex.h>
+#include <Common/hex.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
@@ -74,10 +74,6 @@ void MergeTreeDataPartChecksums::checkEqual(const MergeTreeDataPartChecksums & r
     for (const auto & it : files)
     {
         const String & name = it.first;
-
-        /// Exclude files written by inverted index from check. No correct checksums are available for them currently.
-        if (name.ends_with(".gin_dict") || name.ends_with(".gin_post") || name.ends_with(".gin_seg") || name.ends_with(".gin_sid"))
-            continue;
 
         auto jt = rhs.files.find(name);
         if (jt == rhs.files.end())

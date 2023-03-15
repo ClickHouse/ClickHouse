@@ -142,10 +142,6 @@ y	Nullable(String)
 z	IPv4
 ```
 
-:::warning
-If the `schema_inference_hints` is not formated properly, or if there is a typo or a wrong datatype, etc... the whole schema_inference_hints will be ignored.
-:::
-
 ## schema_inference_make_columns_nullable {#schema_inference_make_columns_nullable}
 
 Controls making inferred types `Nullable` in schema inference for formats without information about nullability.
@@ -511,7 +507,7 @@ Enabled by default.
 
 Ignore unknown keys in json object for named tuples.
 
-Enabled by default.
+Disabled by default.
 
 ## input_format_json_defaults_for_missing_elements_in_named_tuple {#input_format_json_defaults_for_missing_elements_in_named_tuple}
 
@@ -1014,12 +1010,6 @@ Use Arrow FIXED_SIZE_BINARY type instead of Binary/String for FixedString column
 
 Enabled by default.
 
-### output_format_arrow_compression_method {#output_format_arrow_compression_method}
-
-Compression method used in output Arrow format. Supported codecs: `lz4_frame`, `zstd`, `none` (uncompressed)
-
-Default value: `none`.
-
 ## ORC format settings {#orc-format-settings}
 
 ### input_format_orc_import_nested {#input_format_orc_import_nested}
@@ -1062,12 +1052,6 @@ Disabled by default.
 Use ORC String type instead of Binary for String columns.
 
 Disabled by default.
-
-### output_format_orc_compression_method {#output_format_orc_compression_method}
-
-Compression method used in output ORC format. Supported codecs: `lz4`, `snappy`, `zlib`, `zstd`, `none` (uncompressed)
-
-Default value: `none`.
 
 ## Parquet format settings {#parquet-format-settings}
 
@@ -1117,18 +1101,6 @@ Disabled by default.
 Use Parquet FIXED_LENGTH_BYTE_ARRAY type instead of Binary/String for FixedString columns.
 
 Enabled by default.
-
-### output_format_parquet_version {#output_format_parquet_version}
-
-The version of Parquet format used in output format. Supported versions: `1.0`, `2.4`, `2.6` and `2.latest`.
-
-Default value: `2.latest`.
-
-### output_format_parquet_compression_method {#output_format_parquet_compression_method}
-
-Compression method used in output Parquet format. Supported codecs: `snappy`, `lz4`, `brotli`, `zstd`, `gzip`, `none` (uncompressed)
-
-Default value: `snappy`.
 
 ## Hive format settings {#hive-format-settings}
 
@@ -1492,7 +1464,7 @@ Default value: `65505`.
 
 The name of table that will be used in the output INSERT statement.
 
-Default value: `table`.
+Default value: `'table''`.
 
 ### output_format_sql_insert_include_column_names {#output_format_sql_insert_include_column_names}
 
@@ -1532,12 +1504,4 @@ Disabled by default.
 
 The maximum allowed size for String in RowBinary format. It prevents allocating large amount of memory in case of corrupted data. 0 means there is no limit.
 
-Default value: `1GiB`.
-
-## Native format settings {#native-format-settings}
-
-### input_format_native_allow_types_conversion {#input_format_native_allow_types_conversion}
-
-Allow types conversion in Native input format between columns from input data and requested columns. 
-
-Enabled by default.
+Default value: `1GiB`

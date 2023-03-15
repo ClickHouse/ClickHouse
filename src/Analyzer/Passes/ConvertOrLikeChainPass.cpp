@@ -4,13 +4,12 @@
 #include <unordered_map>
 #include <vector>
 
-#include <Common/likePatternToRegexp.h>
-
 #include <Core/Field.h>
 
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Functions/FunctionFactory.h>
+#include <Functions/likePatternToRegexp.h>
 
 #include <Interpreters/Context.h>
 

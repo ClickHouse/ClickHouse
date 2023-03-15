@@ -136,7 +136,7 @@ plus(id, id)	UInt64
 SELECT '--';
 --
 DESCRIBE (SELECT test_table.* REPLACE id + (id AS id_alias) AS id, id_alias FROM test_table);
-id	UInt64					
+plus(id, id_alias)	UInt64					
 value	String					
 id_alias	UInt64					
 SELECT 'Matcher';

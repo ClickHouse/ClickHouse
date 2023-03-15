@@ -207,8 +207,6 @@ struct SelectQueryInfo
     ///
     /// Configured in StorageDistributed::getQueryProcessingStage()
     ClusterPtr optimized_cluster;
-    /// should we use custom key with the cluster
-    bool use_custom_key = false;
 
     mutable ParallelReplicasReadingCoordinatorPtr coordinator;
 
@@ -219,8 +217,6 @@ struct SelectQueryInfo
 
     /// It is needed for PK analysis based on row_level_policy and additional_filters.
     ASTs filter_asts;
-
-    ASTPtr parallel_replica_custom_key_ast;
 
     /// Filter actions dag for current storage
     ActionsDAGPtr filter_actions_dag;
@@ -254,7 +250,6 @@ struct SelectQueryInfo
     MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr;
 
     bool is_parameterized_view = false;
-    NameToNameMap parameterized_view_values;
 
     // If limit is not 0, that means it's a trivial limit query.
     UInt64 limit = 0;

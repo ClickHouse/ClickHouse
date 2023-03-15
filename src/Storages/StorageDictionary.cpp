@@ -208,13 +208,13 @@ void StorageDictionary::removeDictionaryConfigurationFromRepository()
 
 Poco::Timestamp StorageDictionary::getUpdateTime() const
 {
-    std::lock_guard lock(dictionary_config_mutex);
+    std::lock_guard<std::mutex> lock(dictionary_config_mutex);
     return update_time;
 }
 
 LoadablesConfigurationPtr StorageDictionary::getConfiguration() const
 {
-    std::lock_guard lock(dictionary_config_mutex);
+    std::lock_guard<std::mutex> lock(dictionary_config_mutex);
     return configuration;
 }
 
@@ -234,7 +234,7 @@ void StorageDictionary::renameInMemory(const StorageID & new_table_id)
     assert(old_table_id.uuid == new_table_id.uuid || move_to_atomic || move_to_ordinary);
 
     {
-        std::lock_guard lock(dictionary_config_mutex);
+        std::lock_guard<std::mutex> lock(dictionary_config_mutex);
 
         configuration->setString("dictionary.database", new_table_id.database_name);
         configuration->setString("dictionary.name", new_table_id.table_name);
@@ -301,7 +301,7 @@ void StorageDictionary::alter(const AlterCommands & params, ContextPtr alter_con
         dictionary_non_const->setDictionaryComment(new_comment);
     }
 
-    std::lock_guard lock(dictionary_config_mutex);
+    std::lock_guard<std::mutex> lock(dictionary_config_mutex);
     configuration->setString("dictionary.comment", new_comment);
 }
 

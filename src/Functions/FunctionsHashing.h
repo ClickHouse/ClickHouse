@@ -174,11 +174,7 @@ struct HalfMD5Impl
         MD5_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
         MD5_Final(buf.char_data, &ctx);
 
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        return buf.uint64_data;        /// No need to flip bytes on big endian machines
-#else
         return Poco::ByteOrder::flipBytes(static_cast<Poco::UInt64>(buf.uint64_data));        /// Compatibility with existing code. Cast need for old poco AND macos where UInt64 != uint64_t
-#endif
     }
 
     static UInt64 combineHashes(UInt64 h1, UInt64 h2)
@@ -1030,9 +1026,21 @@ private:
                 if constexpr (Impl::use_int_hash_for_pods)
                 {
                     if constexpr (std::is_same_v<ToType, UInt64>)
-                        h = IntHash64Impl::apply(bit_cast<UInt64>(vec_from[i]));
+                    {
+                        UInt64 v = bit_cast<UInt64>(vec_from[i]);
+
+                        /// Consider using std::byteswap() once ClickHouse builds with C++23
+                        if constexpr (std::endian::native == std::endian::big)
+                            v = __builtin_bswap64(v);
+                        h = IntHash64Impl::apply(v);
+                    }
                     else
-                        h = IntHash32Impl::apply(bit_cast<UInt32>(vec_from[i]));
+                    {
+                        UInt32 v = bit_cast<UInt32>(vec_from[i]);
+                        if constexpr (std::endian::native == std::endian::big)
+                            v = __builtin_bswap32(v);
+                        h = IntHash32Impl::apply(v);
+                    }
                 }
                 else
                 {
@@ -1062,9 +1070,20 @@ private:
             auto value = col_from_const->template getValue<FromType>();
             ToType hash;
             if constexpr (std::is_same_v<ToType, UInt64>)
-                hash = IntHash64Impl::apply(bit_cast<UInt64>(value));
+            {
+                UInt64 v = bit_cast<UInt64>(value);
+                /// Consider using std::byteswap() once ClickHouse builds with C++23
+                if constexpr (std::endian::native == std::endian::big)
+                    v = __builtin_bswap64(v);
+                hash = IntHash64Impl::apply(v);
+            }
             else
-                hash = IntHash32Impl::apply(bit_cast<UInt32>(value));
+            {
+                UInt32 v = bit_cast<UInt32>(value);
+                if constexpr (std::endian::native == std::endian::big)
+                    v = __builtin_bswap32(v);
+                hash = IntHash32Impl::apply(v);
+            }
 
             size_t size = vec_to.size();
             if constexpr (first)

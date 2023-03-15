@@ -11,9 +11,9 @@ set uuid ""
 match_max 100000
 expect_after {
     # Do not ignore eof from read.
-    -i $any_spawn_id eof { exp_continue }
+    eof { exp_continue }
     # A default timeout action is to do nothing, change it to fail
-    -i $any_spawn_id timeout { exit 1 }
+    timeout { exit 1 }
 }
 
 spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --history_file=$history_file"
@@ -44,8 +44,9 @@ expect ":) "
 
 # Generate UIUD to avoid matching old database/tables/columns from previous test runs.
 send -- "select 'begin-' || replace(toString(generateUUIDv4()), '-', '') || '-end' format TSV\r"
-expect -re "TSV.*TSV.*begin-(.*)-end.*:\\) "
+expect -re TSV.*TSV.*begin-(.*)-end.*
 set uuid $expect_out(1,string)
+expect ":) "
 
 # CREATE DATABASE
 send -- "create database new_${uuid}_database\r"

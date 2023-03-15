@@ -552,16 +552,15 @@ void CurrentThread::detachQueryIfNotDetached()
 }
 
 
-CurrentThread::QueryScope::QueryScope(ContextMutablePtr query_context, std::function<void()> fatal_error_callback)
+CurrentThread::QueryScope::QueryScope(ContextMutablePtr query_context)
 {
     CurrentThread::initializeQuery();
     CurrentThread::attachQueryContext(query_context);
     if (!query_context->hasQueryContext())
         query_context->makeQueryContext();
-    setFatalErrorCallback(fatal_error_callback);
 }
 
-CurrentThread::QueryScope::QueryScope(ContextPtr query_context, std::function<void()> fatal_error_callback)
+CurrentThread::QueryScope::QueryScope(ContextPtr query_context)
 {
     if (!query_context->hasQueryContext())
         throw Exception(
@@ -569,7 +568,6 @@ CurrentThread::QueryScope::QueryScope(ContextPtr query_context, std::function<vo
 
     CurrentThread::initializeQuery();
     CurrentThread::attachQueryContext(query_context);
-    setFatalErrorCallback(fatal_error_callback);
 }
 
 void CurrentThread::QueryScope::logPeakMemoryUsage()
@@ -589,7 +587,6 @@ CurrentThread::QueryScope::~QueryScope()
         if (log_peak_memory_usage_in_destructor)
             logPeakMemoryUsage();
 
-        setFatalErrorCallback({});
         CurrentThread::detachQueryIfNotDetached();
     }
     catch (...)

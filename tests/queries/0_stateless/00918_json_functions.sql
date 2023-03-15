@@ -28,7 +28,6 @@ SELECT JSONKey('{"a": "hello", "b": [-100, 200.0, 300]}', -2);
 SELECT '--JSONType--';
 SELECT JSONType('{"a": "hello", "b": [-100, 200.0, 300]}');
 SELECT JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'b');
-SELECT JSONType('{"a": true}', 'a');
 
 SELECT '--JSONExtract<numeric>--';
 SELECT JSONExtractInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 1);
@@ -197,7 +196,6 @@ SELECT JSONKey('{"a": "hello", "b": [-100, 200.0, 300]}', -2);
 SELECT '--JSONType--';
 SELECT JSONType('{"a": "hello", "b": [-100, 200.0, 300]}');
 SELECT JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'b');
-SELECT JSONType('{"a": true}', 'a');
 
 SELECT '--JSONExtract<numeric>--';
 SELECT JSONExtractInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 1);

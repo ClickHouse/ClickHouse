@@ -11,9 +11,9 @@ match_max 100000
 
 expect_after {
     # Do not ignore eof from expect
-    -i $any_spawn_id eof { exp_continue }
+    eof { exp_continue }
     # A default timeout action is to do nothing, change it to fail
-    -i $any_spawn_id timeout { exit 1 }
+    timeout { exit 1 }
 }
 
 # useful debugging configuration

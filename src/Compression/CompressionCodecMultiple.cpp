@@ -8,7 +8,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <base/hex.h>
+#include <Common/hex.h>
 
 
 namespace DB

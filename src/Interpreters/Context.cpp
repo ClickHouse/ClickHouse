@@ -1289,7 +1289,7 @@ void Context::addQueryAccessInfo(
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
 
-    std::lock_guard lock(query_access_info.mutex);
+    std::lock_guard<std::mutex> lock(query_access_info.mutex);
     query_access_info.databases.emplace(quoted_database_name);
     query_access_info.tables.emplace(full_quoted_table_name);
     for (const auto & column_name : column_names)
@@ -4056,34 +4056,21 @@ std::shared_ptr<AsyncReadCounters> Context::getAsyncReadCounters() const
     return async_read_counters;
 }
 
-Context::ParallelReplicasMode Context::getParallelReplicasMode() const
-{
-    const auto & settings = getSettingsRef();
-
-    using enum Context::ParallelReplicasMode;
-    if (!settings.parallel_replicas_custom_key.value.empty())
-        return CUSTOM_KEY;
-
-    if (settings.allow_experimental_parallel_reading_from_replicas
-        && !settings.use_hedged_requests)
-        return READ_TASKS;
-
-    return SAMPLE_KEY;
-}
-
 bool Context::canUseParallelReplicasOnInitiator() const
 {
     const auto & settings = getSettingsRef();
-    return getParallelReplicasMode() == ParallelReplicasMode::READ_TASKS
+    return settings.allow_experimental_parallel_reading_from_replicas
         && settings.max_parallel_replicas > 1
+        && !settings.use_hedged_requests
         && !getClientInfo().collaborate_with_initiator;
 }
 
 bool Context::canUseParallelReplicasOnFollower() const
 {
     const auto & settings = getSettingsRef();
-    return getParallelReplicasMode() == ParallelReplicasMode::READ_TASKS
+    return settings.allow_experimental_parallel_reading_from_replicas
         && settings.max_parallel_replicas > 1
+        && !settings.use_hedged_requests
         && getClientInfo().collaborate_with_initiator;
 }
 
