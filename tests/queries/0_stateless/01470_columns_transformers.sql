@@ -1,5 +1,3 @@
-SET allow_experimental_analyzer = 1;
-
 DROP TABLE IF EXISTS columns_transformers;
 
 CREATE TABLE columns_transformers (i Int64, j Int16, k Int64) Engine=TinyLog;
@@ -19,15 +17,15 @@ SELECT a.* APPLY(toDate) EXCEPT(i, j) APPLY(any) from columns_transformers a;
 SELECT * EXCEPT STRICT i from columns_transformers;
 SELECT * EXCEPT STRICT (i, j) from columns_transformers;
 SELECT * EXCEPT STRICT i, j1 from columns_transformers; -- { serverError 47 }
-SELECT * EXCEPT STRICT(i, j1) from columns_transformers; -- { serverError 36 }
+SELECT * EXCEPT STRICT(i, j1) from columns_transformers; -- { serverError NO_SUCH_COLUMN_IN_TABLE , BAD_ARGUMENTS }
 SELECT * REPLACE STRICT i + 1 AS i from columns_transformers;
-SELECT * REPLACE STRICT(i + 1 AS col) from columns_transformers; -- { serverError 36 }
+SELECT * REPLACE STRICT(i + 1 AS col) from columns_transformers; -- { serverError NO_SUCH_COLUMN_IN_TABLE, BAD_ARGUMENTS }
 SELECT * REPLACE(i + 1 AS i) APPLY(sum) from columns_transformers;
 SELECT columns_transformers.* REPLACE(j + 2 AS j, i + 1 AS i) APPLY(avg) from columns_transformers;
 SELECT columns_transformers.* REPLACE(j + 1 AS j, j + 2 AS j) APPLY(avg) from columns_transformers; -- { serverError 43 }
 -- REPLACE after APPLY will not match anything
 SELECT a.* APPLY(toDate) REPLACE(i + 1 AS i) APPLY(any) from columns_transformers a;
-SELECT a.* APPLY(toDate) REPLACE STRICT(i + 1 AS i) APPLY(any) from columns_transformers a; -- { serverError 36 }
+SELECT a.* APPLY(toDate) REPLACE STRICT(i + 1 AS i) APPLY(any) from columns_transformers a; -- { serverError NO_SUCH_COLUMN_IN_TABLE, BAD_ARGUMENTS }
 
 EXPLAIN SYNTAX SELECT * APPLY(sum) from columns_transformers;
 EXPLAIN SYNTAX SELECT columns_transformers.* APPLY(avg) from columns_transformers;

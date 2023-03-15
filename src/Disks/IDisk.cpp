@@ -38,6 +38,15 @@ void IDisk::copyFile(const String & from_file_path, IDisk & to_disk, const Strin
     out->finalize();
 }
 
+void IDisk::writeFileUsingCustomWriteObject(
+    const String &, WriteMode, std::function<size_t(const StoredObject &, WriteMode, const std::optional<ObjectAttributes> &)>)
+{
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED,
+        "Method `writeFileUsingCustomWriteObject()` is not implemented for disk: {}",
+        getDataSourceDescription().type);
+}
+
 
 DiskTransactionPtr IDisk::createTransaction()
 {
