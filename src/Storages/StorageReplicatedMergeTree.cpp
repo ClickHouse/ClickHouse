@@ -3488,22 +3488,6 @@ void StorageReplicatedMergeTree::getRemovePartFromZooKeeperOps(const String & pa
     ops.emplace_back(zkutil::makeRemoveRequest(part_path, -1));
 }
 
-void StorageReplicatedMergeTree::removePartFromZooKeeper(const String & part_name)
-{
-    auto zookeeper = getZooKeeper();
-    String part_path = fs::path(replica_path) / "parts" / part_name;
-    Coordination::Stat stat;
-
-    /// Part doesn't exist, nothing to remove
-    if (!zookeeper->exists(part_path, &stat))
-        return;
-
-    Coordination::Requests ops;
-
-    getRemovePartFromZooKeeperOps(part_name, ops, stat.numChildren > 0);
-    zookeeper->multi(ops);
-}
-
 void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_name, bool storage_init)
 {
     auto zookeeper = getZooKeeper();
