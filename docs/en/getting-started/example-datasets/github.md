@@ -1,6 +1,6 @@
 ---
 slug: /en/getting-started/example-datasets/github
-sidebar_label: Writing Queries
+sidebar_label: Github Repo
 sidebar_position: 1
 description: Analyze the ClickHouse GitHub repo or any repository of your choosing
 ---
