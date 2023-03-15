@@ -37,7 +37,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 7, table_name: system.numbers
   LIMIT
-    CONSTANT id: 17, constant_value: UInt64_10, constant_value_type: UInt8
+    CONSTANT id: 17, constant_value: UInt64_10, constant_value_type: UInt64
 google
 google
 google
@@ -80,7 +80,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 9, table_name: system.numbers
   LIMIT
-    CONSTANT id: 19, constant_value: UInt64_10, constant_value_type: UInt8
+    CONSTANT id: 19, constant_value: UInt64_10, constant_value_type: UInt64
 other1
 other1
 google1
@@ -124,7 +124,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 9, table_name: system.numbers
   LIMIT
-    CONSTANT id: 20, constant_value: UInt64_10, constant_value_type: UInt8
+    CONSTANT id: 20, constant_value: UInt64_10, constant_value_type: UInt64
 google1
 google1
 google1
@@ -171,7 +171,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 11, table_name: system.numbers
   LIMIT
-    CONSTANT id: 22, constant_value: UInt64_10, constant_value_type: UInt8
+    CONSTANT id: 22, constant_value: UInt64_10, constant_value_type: UInt64
 google
 google
 google
@@ -225,7 +225,7 @@ QUERY id: 0
       JOIN TREE
         TABLE id: 12, table_name: system.numbers
       LIMIT
-        CONSTANT id: 22, constant_value: UInt64_10, constant_value_type: UInt8
+        CONSTANT id: 22, constant_value: UInt64_10, constant_value_type: UInt64
 other
 other
 google
@@ -276,7 +276,7 @@ QUERY id: 0
       JOIN TREE
         TABLE id: 10, table_name: system.numbers
       LIMIT
-        CONSTANT id: 20, constant_value: UInt64_10, constant_value_type: UInt8
+        CONSTANT id: 20, constant_value: UInt64_10, constant_value_type: UInt64
 google	google
 google	google
 google	google
@@ -343,7 +343,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 9, table_name: system.numbers
   LIMIT
-    CONSTANT id: 19, constant_value: UInt64_10, constant_value_type: UInt8
+    CONSTANT id: 19, constant_value: UInt64_10, constant_value_type: UInt64
 other	other
 other	other
 google	google
@@ -404,7 +404,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 7, table_name: system.numbers
   LIMIT
-    CONSTANT id: 17, constant_value: UInt64_10, constant_value_type: UInt8
+    CONSTANT id: 17, constant_value: UInt64_10, constant_value_type: UInt64
 \N
 \N
 \N
@@ -444,7 +444,7 @@ QUERY id: 0
       JOIN TREE
         TABLE id: 11, table_name: system.numbers
       LIMIT
-        CONSTANT id: 12, constant_value: UInt64_10, constant_value_type: UInt8
+        CONSTANT id: 12, constant_value: UInt64_10, constant_value_type: UInt64
 \N
 \N
 \N
@@ -473,7 +473,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 5, table_name: system.numbers
   LIMIT
-    CONSTANT id: 9, constant_value: UInt64_10, constant_value_type: UInt8
+    CONSTANT id: 9, constant_value: UInt64_10, constant_value_type: UInt64
 other
 other
 google
@@ -502,7 +502,7 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 5, table_name: system.numbers
   LIMIT
-    CONSTANT id: 9, constant_value: UInt64_10, constant_value_type: UInt8
+    CONSTANT id: 9, constant_value: UInt64_10, constant_value_type: UInt64
 google
 google
 google
@@ -534,4 +534,4 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 7, table_name: system.numbers
   LIMIT
-    CONSTANT id: 11, constant_value: UInt64_10, constant_value_type: UInt8
+    CONSTANT id: 11, constant_value: UInt64_10, constant_value_type: UInt64

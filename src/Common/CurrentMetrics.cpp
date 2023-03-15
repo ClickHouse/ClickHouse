@@ -84,10 +84,6 @@
     M(MMappedFileBytes, "Sum size of mmapped file regions.") \
     M(MMappedAllocs, "Total number of mmapped allocations") \
     M(MMappedAllocBytes, "Sum bytes of mmapped allocations") \
-    M(AsyncDrainedConnections, "Number of connections drained asynchronously.") \
-    M(ActiveAsyncDrainedConnections, "Number of active connections drained asynchronously.") \
-    M(SyncDrainedConnections, "Number of connections drained synchronously.") \
-    M(ActiveSyncDrainedConnections, "Number of active connections drained synchronously.") \
     M(AsynchronousReadWait, "Number of threads waiting for asynchronous read.") \
     M(PendingAsyncInsert, "Number of asynchronous inserts that are waiting for flush.") \
     M(KafkaConsumers, "Number of active Kafka consumers") \
