@@ -58,9 +58,9 @@ NamesAndTypesList HttpClientLogElement::getNamesAndTypes()
 
         {"duration_ms", std::make_shared<DataTypeUInt64>()},
 
-        {"http_method", std::move(http_method_type)},
-        {"uri", std::make_shared<DataTypeString>()},
-        {"status_code", std::make_shared<DataTypeInt32>()},
+        {"method", std::move(http_method_type)},
+        {"uri",    std::make_shared<DataTypeString>()},
+        {"status", std::make_shared<DataTypeInt32>()},
         {"request_size", std::make_shared<DataTypeUInt64>()},
         {"response_size", std::make_shared<DataTypeUInt64>()},
         
@@ -120,7 +120,6 @@ bool HttpClientLog::addLogEntry(
         }
 
         HttpClientLogElement elem;
-        elem.client = client;
 
         /// Log event_time as the start time of this request
         const auto time_now = std::chrono::system_clock::now();
@@ -130,6 +129,7 @@ bool HttpClientLog::addLogEntry(
         if (!query_id.empty())
             elem.query_id.insert(0, query_id.data(), query_id.size());
 
+        elem.client = client;
         elem.trace_id = OpenTelemetry::CurrentContext().trace_id;
         elem.span_id = OpenTelemetry::CurrentContext().span_id;
         elem.duration_ms = duration_ms;
