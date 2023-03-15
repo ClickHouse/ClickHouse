@@ -5,7 +5,6 @@ CREATE TABLE merge_table_standard_delete(id Int32, name String) ENGINE = MergeTr
 INSERT INTO merge_table_standard_delete select number, toString(number) from numbers(100);
 
 SET mutations_sync = 0;
-SET allow_experimental_lightweight_delete = 1;
 
 DELETE FROM merge_table_standard_delete WHERE id = 10;
 
@@ -108,3 +107,10 @@ DELETE FROM t_proj WHERE a < 100; -- { serverError BAD_ARGUMENTS }
 SELECT avg(a), avg(b), count() FROM t_proj;
 
 DROP TABLE t_proj;
+
+CREATE TABLE merge_table_standard_delete(id Int32, name String) ENGINE = MergeTree order by id settings min_bytes_for_wide_part=0;
+SET allow_experimental_lightweight_delete = false;
+DELETE FROM merge_table_standard_delete WHERE id = 10; -- allow_experimental_lightweight_delete=false is now ignored
+SET enable_lightweight_delete = false;
+DELETE FROM merge_table_standard_delete WHERE id = 10; -- { serverError SUPPORT_IS_DISABLED }
+DROP TABLE merge_table_standard_delete;

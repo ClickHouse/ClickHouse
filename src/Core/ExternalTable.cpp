@@ -34,7 +34,7 @@ ExternalTableDataPtr BaseExternalTable::getData(ContextPtr context)
 {
     initReadBuffer();
     initSampleBlock();
-    auto input = context->getInputFormat(format, *read_buffer, sample_block, DEFAULT_BLOCK_SIZE);
+    auto input = context->getInputFormat(format, *read_buffer, sample_block, context->getSettingsRef().get("max_block_size").get<UInt64>());
 
     auto data = std::make_unique<ExternalTableData>();
     data->pipe = std::make_unique<QueryPipelineBuilder>();
@@ -135,7 +135,9 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
     if (settings.http_max_multipart_form_data_size)
         read_buffer = std::make_unique<LimitReadBuffer>(
             stream, settings.http_max_multipart_form_data_size,
-            true, "the maximum size of multipart/form-data. This limit can be tuned by 'http_max_multipart_form_data_size' setting");
+            /* trow_exception */ true, /* exact_limit */ std::optional<size_t>(),
+            "the maximum size of multipart/form-data. "
+            "This limit can be tuned by 'http_max_multipart_form_data_size' setting");
     else
         read_buffer = wrapReadBufferReference(stream);
 

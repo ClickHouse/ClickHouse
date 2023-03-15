@@ -27,7 +27,7 @@ limitations under the License. */
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Common/SipHash.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 
 #include <Storages/LiveView/StorageLiveView.h>
 #include <Storages/LiveView/LiveViewSource.h>
@@ -241,7 +241,18 @@ StorageLiveView::StorageLiveView(
     blocks_metadata_ptr = std::make_shared<BlocksMetadataPtr>();
     active_ptr = std::make_shared<bool>(true);
 
-    periodic_refresh_task = getContext()->getSchedulePool().createTask("LiveViewPeriodicRefreshTask", [this]{ periodicRefreshTaskFunc(); });
+    periodic_refresh_task = getContext()->getSchedulePool().createTask("LiveViewPeriodicRefreshTask",
+        [this]
+        {
+            try
+            {
+                periodicRefreshTaskFunc();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Exception in LiveView periodic refresh task in BackgroundSchedulePool");
+            }
+        });
     periodic_refresh_task->deactivate();
 }
 
