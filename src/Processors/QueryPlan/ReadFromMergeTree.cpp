@@ -759,6 +759,13 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         return new_ranges;
     };
 
+    if (num_streams > 1)
+    {
+        /// Reduce the number of num_streams if the data is small.
+        if (info.sum_marks < num_streams * info.min_marks_for_concurrent_read)
+            num_streams = std::max<size_t>((info.sum_marks + info.min_marks_for_concurrent_read - 1) / info.min_marks_for_concurrent_read, 1);
+    }
+
     const size_t min_marks_per_stream = (info.sum_marks - 1) / num_streams + 1;
     bool need_preliminary_merge = (parts_with_ranges.size() > settings.read_in_order_two_level_merge_threshold);
 
@@ -1054,6 +1061,15 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
             if (new_parts.empty())
                 continue;
+
+
+            if (num_streams > 1 && metadata_for_reading->hasPrimaryKey())
+            {
+                 PartRangesReadInfo range_info(new_parts, settings, *data_settings);
+                /// Reduce the number of num_streams if the data is small.
+                if (range_info.sum_marks < num_streams * range_info.min_marks_for_concurrent_read)
+                    num_streams = std::max<size_t>((range_info.sum_marks + range_info.min_marks_for_concurrent_read - 1) / range_info.min_marks_for_concurrent_read, 1);
+            }
 
             if (num_streams > 1 && metadata_for_reading->hasPrimaryKey())
             {
