@@ -119,7 +119,9 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
         bool found_chain = false;
 
         auto * function = to_node->as<ASTFunction>();
-        if (function && function->name == "or" && function->children.size() == 1)
+        /// Optimization does not respect aliases properly, which can lead to MULTIPLE_EXPRESSION_FOR_ALIAS error.
+        /// Disable it if an expression has an alias. Proper implementation is done with the new analyzer.
+        if (function && function->alias.empty() && function->name == "or" && function->children.size() == 1)
         {
             const auto * expression_list = function->children[0]->as<ASTExpressionList>();
             if (expression_list)
@@ -128,14 +130,14 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
                 for (const auto & child : expression_list->children)
                 {
                     auto * equals = child->as<ASTFunction>();
-                    if (equals && equals->name == "equals" && equals->children.size() == 1)
+                    if (equals && equals->alias.empty() && equals->name == "equals" && equals->children.size() == 1)
                     {
                         const auto * equals_expression_list = equals->children[0]->as<ASTExpressionList>();
                         if (equals_expression_list && equals_expression_list->children.size() == 2)
                         {
                             /// Equality expr = xN.
                             const auto * literal = equals_expression_list->children[1]->as<ASTLiteral>();
-                            if (literal)
+                            if (literal && literal->alias.empty())
                             {
                                 auto expr_lhs = equals_expression_list->children[0]->getTreeHash();
                                 OrWithExpression or_with_expression{function, expr_lhs, function->tryGetAlias()};
@@ -229,6 +231,9 @@ bool LogicalExpressionsOptimizer::mayOptimizeDisjunctiveEqualityChain(const Disj
 {
     const auto & equalities = chain.second;
     const auto & equality_functions = equalities.functions;
+
+    if (settings.optimize_min_equality_disjunction_chain_length == 0)
+        return false;
 
     /// For LowCardinality column, the dict is usually smaller and the index is relatively large.
     /// In most cases, merging OR-chain as IN is better than converting each LowCardinality into full column individually.
