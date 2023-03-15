@@ -16,7 +16,7 @@ for STORAGE_POLICY in 's3_cache' 'local_cache'; do
                                    ORDER BY key
                                    SETTINGS storage_policy='$STORAGE_POLICY', min_bytes_for_wide_part = 10485760"
 
-    $CLICKHOUSE_CLIENT --query "SYSTEM STOP MERGES"
+    $CLICKHOUSE_CLIENT --query "SYSTEM STOP MERGES test_02286"
     $CLICKHOUSE_CLIENT --query "SYSTEM DROP FILESYSTEM CACHE"
 
     $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache"

@@ -2,6 +2,7 @@
 
 #if USE_AWS_S3
 #include <Common/quoteString.h>
+#include <Disks/ObjectStorages/S3/copyS3FileToDisk.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
 #include <Interpreters/Context.h>
 #include <IO/BackupsIOThreadPool.h>
@@ -96,6 +97,7 @@ BackupReaderS3::BackupReaderS3(
     , client(makeS3Client(s3_uri_, access_key_id_, secret_access_key_, context_))
     , read_settings(context_->getReadSettings())
     , request_settings(context_->getStorageS3Settings().getSettings(s3_uri.uri.toString()).request_settings)
+    , log(&Poco::Logger::get("BackupReaderS3"))
 {
     request_settings.max_single_read_retries = context_->getSettingsRef().s3_max_single_read_retries; // FIXME: Avoid taking value for endpoint
 }
@@ -125,6 +127,27 @@ std::unique_ptr<SeekableReadBuffer> BackupReaderS3::readFile(const String & file
 {
     return std::make_unique<ReadBufferFromS3>(
         client, s3_uri.bucket, fs::path(s3_uri.key) / file_name, s3_uri.version_id, request_settings, read_settings);
+}
+
+void BackupReaderS3::copyFileToDisk(const String & file_name, size_t size, DiskPtr destination_disk, const String & destination_path,
+                                    WriteMode write_mode, const WriteSettings & write_settings)
+{
+    LOG_TRACE(log, "Copying {} to disk {}", file_name, destination_disk->getName());
+
+    copyS3FileToDisk(
+        client,
+        s3_uri.bucket,
+        fs::path(s3_uri.key) / file_name,
+        s3_uri.version_id,
+        0,
+        size,
+        destination_disk,
+        destination_path,
+        write_mode,
+        read_settings,
+        write_settings,
+        request_settings,
+        threadPoolCallbackRunner<void>(BackupsIOThreadPool::get(), "BackupReaderS3"));
 }
 
 

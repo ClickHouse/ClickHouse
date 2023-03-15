@@ -168,6 +168,8 @@ void MergeTreeTransaction::addMutation(const StoragePtr & table, const String & 
 bool MergeTreeTransaction::isReadOnly() const
 {
     std::lock_guard lock{mutex};
+    if (finalized)
+        return is_read_only;
     chassert((creating_parts.empty() && removing_parts.empty() && mutations.empty()) == storages.empty());
     return storages.empty();
 }
@@ -318,6 +320,11 @@ bool MergeTreeTransaction::rollback() noexcept
 void MergeTreeTransaction::afterFinalize()
 {
     std::lock_guard lock{mutex};
+    chassert((creating_parts.empty() && removing_parts.empty() && mutations.empty()) == storages.empty());
+
+    /// Remember if it was read-only transaction before we clear storages
+    is_read_only = storages.empty();
+
     /// Release shared pointers just in case
     storages.clear();
     mutations.clear();
