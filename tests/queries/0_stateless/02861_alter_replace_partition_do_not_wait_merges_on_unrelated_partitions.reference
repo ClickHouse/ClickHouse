@@ -1,0 +1,49 @@
+-- { echo }
+
+DROP TABLE IF EXISTS t1;
+DROP TABLE IF EXISTS t2;
+CREATE TABLE t1
+(
+    `p` UInt8,
+    `i` UInt64
+)
+ENGINE = MergeTree
+PARTITION BY p
+ORDER BY tuple();
+INSERT INTO t1 VALUES (1, 1), (2, 2);
+SYSTEM STOP MERGES t1;
+-- Creating new parts
+insert into t1 (p, i) select 1, number from numbers(100);
+ALTER TABLE t1 ADD COLUMN make_merge_slower UInt8 DEFAULT sleepEachRow(0.03);
+CREATE TABLE t2 AS t1;
+INSERT INTO t2 VALUES (2, 2000, 1);
+-- expecting 2 parts for partition '1'
+SELECT partition, count(partition) FROM system.parts WHERE database==currentDatabase() AND table=='t1' AND active=='1' GROUP BY partition ORDER BY partition;
+1	2
+2	1
+SYSTEM START MERGES t1;
+starting merge on t1 partiton 1 by OPTIMIZE DEDUPLICATEing in background process
+Give server a moment to start merge
+-- { echo }
+-- assume merge started
+SELECT is_mutation, partition_id FROM system.merges WHERE database==currentDatabase() AND table=='t1';
+0	1
+-- Should complete right away since there are no merges on partition t2
+ALTER TABLE t1 REPLACE PARTITION id '2' FROM t2;
+SELECT * FROM t1 WHERE p=2;
+2	2000	1
+-- expect merge is still running
+SELECT is_mutation, partition_id FROM system.merges WHERE database==currentDatabase() AND table=='t1';
+0	1
+-- Expecting that merge hasn't finished yet (since ALTER TABLE .. REPLACE wasn't waiting for it),
+-- and there are lots of unduplicated rows
+SELECT count(*) FROM t1 WHERE p=1;
+101
+Merging done
+-- { echo }
+-- check that merge is finished
+SELECT is_mutation, partition_id FROM system.merges WHERE database==currentDatabase() AND table=='t1';
+-- Expecting that merge finished
+SELECT * FROM t1 ORDER BY p;
+1	1	0
+2	2000	1
