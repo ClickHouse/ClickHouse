@@ -4049,3 +4049,32 @@ Possible values:
 - 1 - enabled
 
 Default value: `0`.
+
+## stop_reading_on_first_cancel {#stop_reading_on_first_cancel}
+When set to true and the user wants to interrupt a query (for example using Ctrl+C on the client), then the query continues execution only on data that was already read from the table. Afterward, it will return a partial result of the query for the part of the table that was read. To fully stop the execution of a query without a partial result, the user should send 2 cancel requests.
+
+**Example without setting on Ctrl+C**
+```sql
+SELECT sum(number) FROM numbers(10000000000)
+
+Cancelling query.
+Ok.
+Query was cancelled.
+
+0 rows in set. Elapsed: 1.334 sec. Processed 52.65 million rows, 421.23 MB (39.48 million rows/s., 315.85 MB/s.)
+```
+
+**Example with setting on Ctrl+C**
+```sql
+SELECT sum(number) FROM numbers(10000000000) SETTINGS stop_reading_on_first_cancel=true
+
+┌──────sum(number)─┐
+│ 1355411451286266 │
+└──────────────────┘
+
+1 row in set. Elapsed: 1.331 sec. Processed 52.13 million rows, 417.05 MB (39.17 million rows/s., 313.33 MB/s.)
+```
+
+Possible values: `true`, `false`
+
+Default value: `false`

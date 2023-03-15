@@ -4084,3 +4084,32 @@ ALTER TABLE test FREEZE SETTINGS alter_partition_verbose_result = 1;
 Задает символ, который интерпретируется как суффикс после результирующего набора данных формата [CustomSeparated](../../interfaces/formats.md#format-customseparated).
 
 Значение по умолчанию: `''`.
+
+## stop_reading_on_first_cancel {#stop_reading_on_first_cancel}
+Если установлено значение `true` и пользователь хочет прервать запрос (например, с помощью `Ctrl+C` на клиенте), то запрос продолжает выполнение только для данных, которые уже были считаны из таблицы. После этого он вернет частичный результат запроса для той части таблицы, которая была прочитана. Чтобы полностью остановить выполнение запроса без частичного результата, пользователь должен отправить 2 запроса отмены.
+
+**Пример с выключенной настройкой при нажатии Ctrl+C**
+```sql
+SELECT sum(number) FROM numbers(10000000000)
+
+Cancelling query.
+Ok.
+Query was cancelled.
+
+0 rows in set. Elapsed: 1.334 sec. Processed 52.65 million rows, 421.23 MB (39.48 million rows/s., 315.85 MB/s.)
+```
+
+**Пример с включенной настройкой при нажатии Ctrl+C**
+```sql
+SELECT sum(number) FROM numbers(10000000000) SETTINGS stop_reading_on_first_cancel=true
+
+┌──────sum(number)─┐
+│ 1355411451286266 │
+└──────────────────┘
+
+1 row in set. Elapsed: 1.331 sec. Processed 52.13 million rows, 417.05 MB (39.17 million rows/s., 313.33 MB/s.)
+```
+
+Возможные значения:: `true`, `false`
+
+Значение по умолчанию: `false`
