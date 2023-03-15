@@ -173,13 +173,14 @@ static AvroDeserializer::DeserializeFn createDecimalDeserializeFn(const avro::No
 
     return [tmp = std::string(), target_type](IColumn & column, avro::Decoder & decoder) mutable
     {
+        static constexpr size_t field_type_size = sizeof(typename DecimalType::FieldType);
         decoder.decodeString(tmp);
-        if (tmp.size() != sizeof(typename DecimalType::FieldType))
+        if (tmp.size() != field_type_size)
             throw ParsingException(
                 ErrorCodes::CANNOT_PARSE_UUID,
                 "Cannot parse type {}, expected binary data with size {}, got {}",
                 target_type->getName(),
-                sizeof(typename DecimalType::FieldType),
+                field_type_size,
                 tmp.size());
 
         typename DecimalType::FieldType field;
@@ -1098,7 +1099,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node)
             auto logical_type = node->logicalType();
             if (logical_type.type() == avro::LogicalType::TIMESTAMP_MILLIS)
                 return {std::make_shared<DataTypeDateTime64>(3)};
-            else if (logical_type.type() == avro::LogicalType::TIMESTAMP_MICROS)
+            if (logical_type.type() == avro::LogicalType::TIMESTAMP_MICROS)
                 return {std::make_shared<DataTypeDateTime64>(6)};
 
             return std::make_shared<DataTypeInt64>();
