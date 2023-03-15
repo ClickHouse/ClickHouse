@@ -115,7 +115,7 @@ struct TemporaryFileStream::OutputWriter
         , out_compressed_buf(*out_buf)
         , out_writer(out_compressed_buf, DBMS_TCP_PROTOCOL_VERSION, header_)
     {
-        LOG_TEST(&Poco::Logger::get("TemporaryFileStream"), "Writing to {}", path);
+        LOG_TEST(&Poco::Logger::get("TemporaryFileStream"), "Writing to temporary file {}", path);
     }
 
     OutputWriter(std::unique_ptr<WriteBufferToFileSegment> out_buf_, const Block & header_)
@@ -124,7 +124,7 @@ struct TemporaryFileStream::OutputWriter
         , out_writer(out_compressed_buf, DBMS_TCP_PROTOCOL_VERSION, header_)
     {
         LOG_TEST(&Poco::Logger::get("TemporaryFileStream"),
-            "Writing to {}",
+            "Writing to temporary file {}",
             static_cast<const WriteBufferToFileSegment *>(out_buf.get())->getFileName());
     }
 

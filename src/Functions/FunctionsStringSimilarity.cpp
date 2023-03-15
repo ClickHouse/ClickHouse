@@ -285,9 +285,9 @@ struct NgramDistanceImpl
             size_t first_size = dispatchSearcher(calculateHaystackStatsAndMetric<false>, data.data(), data_size, common_stats.get(), distance, nullptr);
             /// For !symmetric version we should not use first_size.
             if constexpr (symmetric)
-                res = distance * 1.f / std::max(first_size + second_size, static_cast<size_t>(1));
+                res = distance * 1.f / std::max(first_size + second_size, 1uz);
             else
-                res = 1.f - distance * 1.f / std::max(second_size, static_cast<size_t>(1));
+                res = 1.f - distance * 1.f / std::max(second_size, 1uz);
         }
         else
         {
@@ -353,9 +353,9 @@ struct NgramDistanceImpl
 
                 /// For !symmetric version we should not use haystack_stats_size.
                 if constexpr (symmetric)
-                    res[i] = distance * 1.f / std::max(haystack_stats_size + needle_stats_size, static_cast<size_t>(1));
+                    res[i] = distance * 1.f / std::max(haystack_stats_size + needle_stats_size, 1uz);
                 else
-                    res[i] = 1.f - distance * 1.f / std::max(needle_stats_size, static_cast<size_t>(1));
+                    res[i] = 1.f - distance * 1.f / std::max(needle_stats_size, 1uz);
             }
             else
             {
@@ -424,7 +424,7 @@ struct NgramDistanceImpl
                     for (size_t j = 0; j < needle_stats_size; ++j)
                         --common_stats[needle_ngram_storage[j]];
 
-                    res[i] = 1.f - distance * 1.f / std::max(needle_stats_size, static_cast<size_t>(1));
+                    res[i] = 1.f - distance * 1.f / std::max(needle_stats_size, 1uz);
                 }
                 else
                 {
@@ -471,9 +471,9 @@ struct NgramDistanceImpl
                     ngram_storage.get());
                 /// For !symmetric version we should not use haystack_stats_size.
                 if constexpr (symmetric)
-                    res[i] = distance * 1.f / std::max(haystack_stats_size + needle_stats_size, static_cast<size_t>(1));
+                    res[i] = distance * 1.f / std::max(haystack_stats_size + needle_stats_size, 1uz);
                 else
-                    res[i] = 1.f - distance * 1.f / std::max(needle_stats_size, static_cast<size_t>(1));
+                    res[i] = 1.f - distance * 1.f / std::max(needle_stats_size, 1uz);
             }
             else
             {

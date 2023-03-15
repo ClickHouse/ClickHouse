@@ -765,7 +765,7 @@ Default value: `0`.
 
 ## concurrent_threads_soft_limit_ratio_to_cores {#concurrent_threads_soft_limit_ratio_to_cores}
 The maximum number of query processing threads as multiple of number of logical cores.
-More details: [concurrent_threads_soft_limit_num](#concurrent-threads-soft-limit-num).
+More details: [concurrent_threads_soft_limit_num](#concurrent_threads_soft_limit_num).
 
 Possible values:
 
