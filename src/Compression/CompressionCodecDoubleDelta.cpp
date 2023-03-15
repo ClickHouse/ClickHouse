@@ -31,7 +31,7 @@ namespace DB
 /** DoubleDelta column codec implementation.
  *
  * Based on Gorilla paper: http://www.vldb.org/pvldb/vol8/p1816-teller.pdf, which was extended
- * to support 64bit types. The drawback is 1 extra bit for 32-byte wide deltas: 5-bit prefix
+ * to support 64bit types. The drawback is 1 extra bit for 32-bit wide deltas: 5-bit prefix
  * instead of 4-bit prefix.
  *
  * This codec is best used against monotonic integer sequences with constant (or almost constant)

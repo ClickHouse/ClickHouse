@@ -33,6 +33,7 @@ public:
         Bit
     };
 
+    // type_idx_ is required for compression, but not for decompression.
     CompressionCodecT64(std::optional<TypeIndex> type_idx_, Variant variant_);
 
     uint8_t getMethodByte() const override;
@@ -715,7 +716,7 @@ CompressionCodecT64::CompressionCodecT64(std::optional<TypeIndex> type_idx_, Var
 void CompressionCodecT64::updateHash(SipHash & hash) const
 {
     getCodecDesc()->updateTreeHash(hash);
-    hash.update(type_idx ? *type_idx : TypeIndex::Nothing);
+    hash.update(type_idx.value_or(TypeIndex::Nothing));
     hash.update(variant);
 }
 
