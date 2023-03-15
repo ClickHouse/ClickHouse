@@ -2,6 +2,8 @@
 
 #include <gtest/gtest.h>
 #include <Parsers/IAST.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/ParserQuery.h>
 #include <Common/StackTrace.h>
 
 std::string hilite(const std::string & s, const char * hilite_type)
@@ -57,8 +59,8 @@ bool are_equal_with_hilites(const std::string_view & left, const std::string_vie
     while (true)
     {
         // Consume hilites.
-        bool changed_hilite = true;
-        while (changed_hilite)
+        bool changed_hilite = false;
+        do
         {
             changed_hilite = false;
             for (const char * hilite : hilites)
@@ -76,7 +78,7 @@ bool are_equal_with_hilites(const std::string_view & left, const std::string_vie
                     changed_hilite = true;
                 }
             }
-        }
+        } while (changed_hilite);
 
         if (left_it == left.end() && right_it == right.end())
             return true;
@@ -99,7 +101,7 @@ bool are_equal_with_hilites(const std::string_view & left, const std::string_vie
     }
 }
 
-TEST(HilitingTestSuit, TestTheTest)
+TEST(FormatHiliting, MetaTestAreEqualWithHilites)
 {
     ASSERT_PRED2(are_equal_with_hilites, "", "");
 
@@ -133,30 +135,27 @@ TEST(HilitingTestSuit, TestTheTest)
     }
 }
 
-TEST(HilitingTestSuit, HilitingTestName)
+void compare(const std::string & query, const std::stringstream & expected)
 {
     using namespace DB;
-    std::string query = "with alias as (select * from table) select * from table";
+    ParserQuery parser(query.data() + query.size());
+    ASTPtr ast = parseQuery(parser, query, 0, 0);
 
-    std::stringstream expected;
-    expected << IAST::hilite_keyword << "WITH " << IAST::hilite_alias << "alias " << IAST::hilite_keyword << "AS " << IAST::hilite_none
-             << "(" << IAST::hilite_keyword << "SELECT " << IAST::hilite_none << "* " << IAST::hilite_keyword << "FROM "
-             << IAST::hilite_identifier << "table" << IAST::hilite_none << ")"
-             << IAST::hilite_keyword << "SELECT " << IAST::hilite_none << "* " << IAST::hilite_keyword << "FROM "
-             << IAST::hilite_identifier << "table" << IAST::hilite_none;
-
-    expected << keyword("WTH ") << alias("alias ") << keyword("AS ") << "("
-             << keyword("SELECT ") << "* " << keyword("FROM ")
-             << identifier("table") << ")"
-             << keyword("SELECT ") << "* " << keyword("FROM ")
-             << identifier("table");
-
-    DB::IAST * ast = parseQuery(*parser, query.begin(), query.end(), 0, 0);
-
-    DB::WriteBufferFromOwnString write_buffer;
-    DB::IAST::FormatSettings settings{write_buffer, true};
+    WriteBufferFromOwnString write_buffer;
+    IAST::FormatSettings settings{write_buffer, true};
     settings.hilite = true;
     ast->format(settings);
 
     ASSERT_PRED2(are_equal_with_hilites, expected.str(), write_buffer.str());
+}
+
+TEST(FormatHiliting, SimpleSelect)
+{
+    std::string query = "select * from table";
+
+    std::stringstream expected;
+    expected << keyword("SELECT ") << "* " << keyword("FROM ")
+             << identifier("table");
+
+    compare(query, expected);
 }
