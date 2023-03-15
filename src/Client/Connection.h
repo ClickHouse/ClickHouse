@@ -167,7 +167,10 @@ private:
     /// For inter-server authorization
     String cluster;
     String cluster_secret;
+    /// For DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET
     String salt;
+    /// For DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2
+    std::optional<UInt64> nonce;
 
     /// Address is resolved during the first connection (or the following reconnects)
     /// Use it only for logging purposes
