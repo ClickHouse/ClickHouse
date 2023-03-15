@@ -173,7 +173,7 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
 
     auto & dst_column_host_name = typeid_cast<ColumnString &>(*mutable_columns[name_pos["host_name"]]);
     auto & dst_array_current_time = typeid_cast<ColumnUInt32 &>(*mutable_columns[name_pos["current_time"]]).getData();
-    auto & dst_array_type = typeid_cast<ColumnInt32 &>(*mutable_columns[name_pos["type"]]).getData();
+    auto & dst_array_type = typeid_cast<ColumnInt8 &>(*mutable_columns[name_pos["type"]]).getData();
     auto & dst_column_name = typeid_cast<ColumnString &>(*mutable_columns[name_pos["name"]]);
     auto & dst_array_value = typeid_cast<ColumnInt64 &>(*mutable_columns[name_pos["value"]]).getData();
 
@@ -888,7 +888,7 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
             if (send_external_tables)
                 sendExternalTables(parsed_query);
 
-            receiveResult(parsed_query, signals_before_stop);
+            receiveResult(parsed_query, signals_before_stop, settings.stop_reading_on_first_cancel);
 
             break;
         }
@@ -913,7 +913,7 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
 
 /// Receives and processes packets coming from server.
 /// Also checks if query execution should be cancelled.
-void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop)
+void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, bool stop_reading_on_first_cancel)
 {
     // TODO: get the poll_interval from commandline.
     const auto receive_timeout = connection_parameters.timeouts.receive_timeout;
@@ -937,9 +937,11 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop)
             /// to avoid losing sync.
             if (!cancelled)
             {
-                if (QueryInterruptHandler::cancelled_status() == signals_before_stop - 1)
+                if (stop_reading_on_first_cancel && QueryInterruptHandler::cancelled_status() == signals_before_stop - 1)
                 {
                     connection->sendCancel();
+                    /// First cancel reading request was sent. Next requests will only be with a full cancel
+                    stop_reading_on_first_cancel = false;
                 }
                 else if (QueryInterruptHandler::cancelled())
                 {
