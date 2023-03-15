@@ -277,7 +277,7 @@ public:
     static void stop() { return exit_after_signals.store(0); }
 
     /// Return true if the query was stopped.
-    /// Query was stoped if it received at least "signals_before_stop" interrupt signals.
+    /// Query was stopped if it received at least "signals_before_stop" interrupt signals.
     static bool try_stop() { return exit_after_signals.fetch_sub(1) <= 0; }
     static bool cancelled() { return exit_after_signals.load() <= 0; }
 
@@ -865,7 +865,7 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
 
     const auto & settings = global_context->getSettingsRef();
     const Int32 signals_before_stop = settings.stop_reading_on_first_cancel ? 2 : 1;
-    
+
     int retries_left = 10;
     while (retries_left)
     {

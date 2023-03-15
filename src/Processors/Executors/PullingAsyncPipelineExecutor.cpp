@@ -180,7 +180,7 @@ void PullingAsyncPipelineExecutor::cancel()
     {
         data->executor->cancel();
     });
-    
+
     /// The following code is needed to rethrow exception from PipelineExecutor.
     /// It could have been thrown from pull(), but we will not likely call it again.
 
