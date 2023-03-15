@@ -82,7 +82,7 @@
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
 #include <Core/Joins.h>
-#include <Interpreters/PartitionHashJoin.h>
+#include <Interpreters/ConcurrentHashJoin.h>
 
 namespace DB
 {
@@ -1097,8 +1097,8 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
         analyzed_join->isEnabledAlgorithm(JoinAlgorithm::PARALLEL_HASH))
     {
         tried_algorithms.push_back(toString(JoinAlgorithm::HASH));
-        if (analyzed_join->allowParallelHashJoin())
-            return std::make_shared<ConcurrentHashJoin>(context, analyzed_join, settings.max_threads, right_sample_block);
+        if (ConcurrentHashJoin::isSupported(analyzed_join))
+            return std::make_shared<ConcurrentHashJoin>(analyzed_join, right_sample_block);
         return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
     }
 
@@ -1107,15 +1107,6 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
         tried_algorithms.push_back(toString(JoinAlgorithm::FULL_SORTING_MERGE));
         if (FullSortingMergeJoin::isSupported(analyzed_join))
             return std::make_shared<FullSortingMergeJoin>(analyzed_join, right_sample_block);
-    }
-
-    if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::PARTITION_HASH))
-    {
-        tried_algorithms.push_back(toString(JoinAlgorithm::PARTITION_HASH));
-        if (PartitionHashJoin::isSupported(analyzed_join))
-        {
-            return std::make_shared<PartitionHashJoin>(analyzed_join, right_sample_block);
-        }
     }
 
     if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH))

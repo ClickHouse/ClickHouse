@@ -41,15 +41,31 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         return joined_pipeline;
     }
 
-    return QueryPipelineBuilder::joinPipelinesRightLeft(
-        std::move(pipelines[0]),
-        std::move(pipelines[1]),
-        join,
-        output_stream->header,
-        max_block_size,
-        max_streams,
-        keep_left_read_in_order,
-        &processors);
+    bool could_run_partition_join
+        = join->supportShuffle() && !pipelines[0]->hasTotals() && !pipelines[1]->hasTotals() && !keep_left_read_in_order;
+    if (could_run_partition_join)
+    {
+        return QueryPipelineBuilder::joinPipelinesRightLeftByShuffle(
+            std::move(pipelines[0]),
+            std::move(pipelines[1]),
+            join,
+            output_stream->header,
+            max_block_size,
+            max_streams,
+            &processors);
+    }
+    else
+    {
+        return QueryPipelineBuilder::joinPipelinesRightLeft(
+            std::move(pipelines[0]),
+            std::move(pipelines[1]),
+            join,
+            output_stream->header,
+            max_block_size,
+            max_streams,
+            keep_left_read_in_order,
+            &processors);
+    }
 }
 
 bool JoinStep::allowPushDownToRight() const

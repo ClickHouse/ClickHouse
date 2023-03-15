@@ -1,6 +1,5 @@
 #pragma once
 
-#include <memory>
 #include <Processors/IProcessor.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>

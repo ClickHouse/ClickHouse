@@ -9,7 +9,6 @@
 #include <Common/MultiVersion.h>
 #include <Common/SharedMutex.h>
 
-#include <memory>
 #include <mutex>
 
 namespace DB

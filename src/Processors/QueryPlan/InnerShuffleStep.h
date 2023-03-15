@@ -18,7 +18,7 @@ public:
     String getName() const override { return "InnerShuffle"; }
     // The shuffle buckets size is equal to pipeline's num_streams
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
-    
+
 private:
     std::vector<String> hash_columns; // columns' name to build the hash key
 

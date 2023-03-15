@@ -43,7 +43,7 @@ enum class JoinPipelineType
     YShaped,
 };
 
-class IJoin : public std::enable_shared_from_this<IJoin>
+class IJoin
 {
 public:
     virtual ~IJoin() = default;

@@ -1,5 +1,4 @@
 #include <Core/SettingsEnums.h>
-#include "Core/Joins.h"
 
 
 namespace DB
@@ -40,8 +39,7 @@ IMPLEMENT_SETTING_MULTI_ENUM(JoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
      {"parallel_hash",        JoinAlgorithm::PARALLEL_HASH},
      {"direct",               JoinAlgorithm::DIRECT},
      {"full_sorting_merge",   JoinAlgorithm::FULL_SORTING_MERGE},
-     {"grace_hash",           JoinAlgorithm::GRACE_HASH},
-     {"partition_hash",         JoinAlgorithm::PARTITION_HASH}})
+     {"grace_hash",           JoinAlgorithm::GRACE_HASH}})
 
 
 IMPLEMENT_SETTING_ENUM(TotalsMode, ErrorCodes::UNKNOWN_TOTALS_MODE,

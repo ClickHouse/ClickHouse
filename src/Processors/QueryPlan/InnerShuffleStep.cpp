@@ -13,13 +13,15 @@ static ITransformingStep::Traits getTraits(const DataStream& /*input_stream_*/)
 {
     return ITransformingStep::Traits
     {
-        .data_stream_traits = {
+        .data_stream_traits =
+        {
             .preserves_distinct_columns = true,
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
             .preserves_sorting = true,
         },
-        .transform_traits = {
+        .transform_traits =
+        {
             .preserves_number_of_rows = false,
         }
     };
@@ -44,7 +46,8 @@ void InnerShuffleStep::transformPipeline(QueryPipelineBuilder & pipeline, const 
 
     size_t num_streams = pipeline.getNumStreams();
     assert(num_streams > 1);
-    auto add_scatter_transform = [&](OutputPortRawPtrs outports){
+    auto add_scatter_transform = [&](OutputPortRawPtrs outports)
+    {
         Processors scatters;
         for (auto & outport : outports)
         {
@@ -56,7 +59,8 @@ void InnerShuffleStep::transformPipeline(QueryPipelineBuilder & pipeline, const 
     };
     pipeline.transform(add_scatter_transform);
 
-    auto add_gather_transform = [&](OutputPortRawPtrs outports){
+    auto add_gather_transform = [&](OutputPortRawPtrs outports)
+    {
         Processors gathers;
         assert(outports.size() == num_streams * num_streams);
         for (size_t i = 0; i < num_streams; ++i)

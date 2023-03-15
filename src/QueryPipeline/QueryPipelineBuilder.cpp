@@ -381,25 +381,6 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     bool keep_left_read_in_order,
     Processors * collected_processors)
 {
-    bool could_run_partition_join = join->supportShuffle() && !left->hasTotals() && !right->hasTotals() && !keep_left_read_in_order;
-    LOG_ERROR(
-        &Poco::Logger::get("QueryPipelineBuilder"),
-        "supportShuffle:{}, left->hasTotals:{}, right->hasTotals():{}, keep_left_read_in_order:{}",
-        join->supportShuffle(),
-        left->hasTotals(),
-        right->hasTotals(),
-        keep_left_read_in_order);
-    if (could_run_partition_join)
-    {
-        return joinPipelinesRightLeftByShuffle(
-            std::move(left),
-            std::move(right),
-            join,
-            output_header,
-            max_block_size,
-            max_streams,
-            collected_processors);
-    }
     left->checkInitializedAndNotCompleted();
     right->checkInitializedAndNotCompleted();
 
@@ -438,9 +419,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
 
     size_t num_streams = left->getNumStreams();
 
-    bool should_resize_right = join->supportParallelJoin()  && !right->hasTotals() && !left->hasTotals();
-
-    if (should_resize_right)
+    if (join->supportParallelJoin() && !right->hasTotals())
     {
         if (!keep_left_read_in_order)
         {
@@ -448,17 +427,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
             num_streams = max_streams;
         }
 
-        right->resize(num_streams);
-        
-        #if 0
-        if (join_properties.need_shuffle_partition_before)
-        {
-            DataStream right_datastream; // Not really use here
-            right_datastream.header = right->getHeader();
-            InnerShuffleStep right_shuffle_step(right_datastream, join->getTableJoin().getOnlyClause().key_names_right);
-            right_shuffle_step.transformPipeline(*right, BuildQueryPipelineSettings());
-        }
-        #endif
+        right->resize(max_streams);
         auto concurrent_right_filling_transform = [&](OutputPortRawPtrs outports)
         {
             Processors processors;
@@ -561,8 +530,8 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         // Process DelayedJoinedBlocksTransform after all JoiningTransforms.
         DelayedPortsProcessor::PortNumbers delayed_ports_numbers;
         delayed_ports_numbers.reserve(joined_output_ports.size() / 2);
-        for (size_t j = 1; j < joined_output_ports.size(); j += 2)
-            delayed_ports_numbers.push_back(j);
+        for (size_t i = 1; i < joined_output_ports.size(); i += 2)
+            delayed_ports_numbers.push_back(i);
 
         auto delayed_processor = std::make_shared<DelayedPortsProcessor>(joined_header, 2 * num_streams, delayed_ports_numbers);
         if (collected_processors)
@@ -635,30 +604,24 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         num_streams = max_streams;
     }
     right->resize(num_streams);
-    LOG_ERROR(&Poco::Logger::get("QueryPipelineBuilder"), "xxx num_streams:{}", num_streams);
 
+    // Clone joins for different streams.
     std::vector<JoinPtr> stream_joins;
     for (size_t i = 0; i < num_streams; ++i)
     {
         stream_joins.push_back(join->clone());
     }
 
-    // make shuffle for left and right, make sure that each stream handle rows wich have the same hash key
+    // make shuffle for left and right, make sure that each stream handle rows which have the same hash key
     // from both side.
     DataStream right_datestream;
     right_datestream.header = right->getHeader();
-    LOG_ERROR(&Poco::Logger::get("QueryPipelineBuilder"), "xxx right keys:{}", fmt::join(join->getTableJoin().getOnlyClause().key_names_right, ","));
     InnerShuffleStep right_shuffle_step(right_datestream, join->getTableJoin().getOnlyClause().key_names_right);
     right_shuffle_step.transformPipeline(*right, BuildQueryPipelineSettings());
-    LOG_ERROR(&Poco::Logger::get("QueryPipelineBuilder"), "xxx line:{}", __LINE__);
-    LOG_ERROR(&Poco::Logger::get("QueryPipelineBuilder"), "xxx line:{}, right header:{}", __LINE__, right->getHeader().dumpNames());
     DataStream left_datastream;
     left_datastream.header = left->getHeader();
-    LOG_ERROR(&Poco::Logger::get("QueryPipelineBuilder"), "xxx left keys:{}", fmt::join(join->getTableJoin().getOnlyClause().key_names_left, ","));
-    LOG_ERROR(&Poco::Logger::get("QueryPipelineBuilder"), "xxx left header:{}", left->getHeader().dumpNames());
     InnerShuffleStep left_shuffle_step(left_datastream, join->getTableJoin().getOnlyClause().key_names_left);
     left_shuffle_step.transformPipeline(*left, BuildQueryPipelineSettings());
-    LOG_ERROR(&Poco::Logger::get("QueryPipelineBuilder"), "xxx line:{}", __LINE__);
 
 
     auto right_filling_transform = [&](OutputPortRawPtrs outports)
@@ -675,7 +638,6 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         return processors;
     };
     right->transform(right_filling_transform);
-    LOG_ERROR(&Poco::Logger::get("QueryPipelineBuilder"), "xxx line:{}", __LINE__);
 
     auto collect_processor = [&](ProcessorPtr p)
     {
@@ -705,13 +667,11 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
             collect_processor(delayed_root);
         }
     }
-    LOG_ERROR(&Poco::Logger::get("QueryPipelineBuilder"), "xxx line:{}", __LINE__);
 
     auto lit = left->pipe.output_ports.begin();
     auto rit = right->pipe.output_ports.begin();
     auto left_header = left->getHeader();
     Block joined_header = JoiningTransform::transformHeader(left_header, join);
-    LOG_ERROR(&Poco::Logger::get("QueryPipelineBuilder"), "xxx line:{}. left header:{}. joined header:{}", __LINE__, left_header.dumpNames(), joined_header.dumpNames());
     Processors stream_delay_workers;
     Processors stream_joinings;
     for (size_t i = 0; i < num_streams; ++i)
@@ -742,11 +702,9 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         ++lit;
         ++rit;
     }
-    LOG_ERROR(&Poco::Logger::get("QueryPipelineBuilder"), "xxx line:{}", __LINE__);
 
     if (!stream_delay_workers.empty())
     {
-        LOG_ERROR(&Poco::Logger::get("QueryPipelineBuilder"), "xxx line:{}", __LINE__);
         Processors stream_delayed_processors;
         for (size_t i = 0; i < num_streams; ++i)
         {
@@ -773,20 +731,16 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         left->pipe.header = joined_header;
         left->resize(num_streams);
     }
-    LOG_ERROR(&Poco::Logger::get("QueryPipelineBuilder"), "xxx line:{}", __LINE__);
 
     Processors processors = collector.detachProcessors();
     if (step)
     {
         step->appendExtraProcessors(processors);
     }
-    LOG_ERROR(&Poco::Logger::get("QueryPipelineBuilder"), "xxx line:{}", __LINE__);
     left->pipe.processors->insert(left->pipe.processors->end(), right->pipe.processors->begin(), right->pipe.processors->end());
     left->resources = std::move(right->resources);
     left->pipe.header = left->pipe.output_ports.front()->getHeader();
     left->pipe.max_parallel_streams = std::max(left->pipe.max_parallel_streams, right->pipe.max_parallel_streams);
-    LOG_ERROR(&Poco::Logger::get("QueryPipelineBuilder"), "xxx line:{}", __LINE__);
-    LOG_ERROR(&Poco::Logger::get("QueryPipelineBuilder"), "xxx left header:{}", left->pipe.header.dumpNames()); 
     return left;
 }
 

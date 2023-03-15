@@ -8,6 +8,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 static InputPorts buildGatherInputports(size_t num_streams, const Block & header)
 {
     InputPorts ports;
@@ -74,7 +78,7 @@ IProcessor::Status InnerShuffleScatterTransform::prepare()
         auto chunk_it = output_chunks.begin();
         for (; output_it != outputs.end(); ++output_it)
         {
-            if(chunk_it->getNumRows())
+            if (chunk_it->getNumRows())
             {
                 if (output_it->isFinished())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Output port is finished, cannot push new chunks into it");
@@ -89,7 +93,7 @@ IProcessor::Status InnerShuffleScatterTransform::prepare()
 
     if (has_input)
         return Status::Ready;
-    
+
     auto & input = inputs.front();
     if (input.isFinished())
     {
