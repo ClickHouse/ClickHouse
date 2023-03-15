@@ -187,7 +187,7 @@ void PushingAsyncPipelineExecutor::push(Chunk chunk)
 
     if (!is_pushed)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Pipeline for PushingPipelineExecutor was finished before all data was inserted");
+                        "Pipeline for PushingAsyncPipelineExecutor was finished before all data was inserted");
 }
 
 void PushingAsyncPipelineExecutor::push(Block block)
