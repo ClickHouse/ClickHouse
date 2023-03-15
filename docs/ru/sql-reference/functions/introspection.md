@@ -372,3 +372,5 @@ SELECT logTrace('logTrace message');
 │                            0 │
 └──────────────────────────────┘
 ```
+
+[Original article](https://clickhouse.com/docs/en/query_language/functions/introspection/) <!--hide-->

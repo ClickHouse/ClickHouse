@@ -53,16 +53,7 @@ def test_create_keeper_map(started_cluster):
     zk_client = get_genuine_zk()
 
     def assert_children_size(path, expected_size):
-        children_size = 0
-        # 4 secs should be more than enough for replica to sync
-        for _ in range(10):
-            children_size = len(zk_client.get_children(path))
-            if children_size == expected_size:
-                return
-            sleep(0.4)
-        assert (
-            False
-        ), f"Invalid number of children for '{path}': actual {children_size}, expected {expected_size}"
+        assert len(zk_client.get_children(path)) == expected_size
 
     def assert_root_children_size(expected_size):
         assert_children_size("/test_keeper_map/test1", expected_size)
@@ -107,15 +98,13 @@ def create_drop_loop(index, stop_event):
         if stop_event.is_set():
             return
 
-        node.query_with_retry(
-            f"CREATE TABLE IF NOT EXISTS {table_name} (key UInt64, value UInt64) ENGINE = KeeperMap('/test') PRIMARY KEY(key);"
+        node.query(
+            f"CREATE TABLE {table_name} (key UInt64, value UInt64) ENGINE = KeeperMap('/test') PRIMARY KEY(key);"
         )
-        node.query_with_retry(f"INSERT INTO {table_name} VALUES ({index}, {i})")
-        result = node.query_with_retry(
-            f"SELECT value FROM {table_name} WHERE key = {index}"
-        )
+        node.query(f"INSERT INTO {table_name} VALUES ({index}, {i})")
+        result = node.query(f"SELECT value FROM {table_name} WHERE key = {index}")
         assert result.strip() == str(i)
-        node.query_with_retry(f"DROP TABLE IF EXISTS {table_name} SYNC")
+        node.query(f"DROP TABLE {table_name} SYNC")
 
 
 def test_create_drop_keeper_map_concurrent(started_cluster):
@@ -156,35 +145,35 @@ def test_keeper_map_without_zk(started_cluster):
             assert "Coordination::Exception" in error
 
     assert_keeper_exception_after_partition(
-        "CREATE TABLE test_keeper_map_without_zk (key UInt64, value UInt64) ENGINE = KeeperMap('/test_without_zk') PRIMARY KEY(key);"
+        "CREATE TABLE test_keeper_map (key UInt64, value UInt64) ENGINE = KeeperMap('/test1') PRIMARY KEY(key);"
     )
 
     node.query(
-        "CREATE TABLE test_keeper_map_without_zk (key UInt64, value UInt64) ENGINE = KeeperMap('/test_without_zk') PRIMARY KEY(key);"
+        "CREATE TABLE test_keeper_map (key UInt64, value UInt64) ENGINE = KeeperMap('/test1') PRIMARY KEY(key);"
     )
 
     assert_keeper_exception_after_partition(
-        "INSERT INTO test_keeper_map_without_zk VALUES (1, 11)"
+        "INSERT INTO test_keeper_map VALUES (1, 11)"
     )
-    node.query("INSERT INTO test_keeper_map_without_zk VALUES (1, 11)")
+    node.query("INSERT INTO test_keeper_map VALUES (1, 11)")
 
-    assert_keeper_exception_after_partition("SELECT * FROM test_keeper_map_without_zk")
-    node.query("SELECT * FROM test_keeper_map_without_zk")
+    assert_keeper_exception_after_partition("SELECT * FROM test_keeper_map")
+    node.query("SELECT * FROM test_keeper_map")
 
     with PartitionManager() as pm:
         pm.drop_instance_zk_connections(node)
         node.restart_clickhouse(60)
-        error = node.query_and_get_error("SELECT * FROM test_keeper_map_without_zk")
+        error = node.query_and_get_error("SELECT * FROM test_keeper_map")
         assert "Failed to activate table because of connection issues" in error
 
-    node.query("SELECT * FROM test_keeper_map_without_zk")
+    node.query("SELECT * FROM test_keeper_map")
 
     client = get_genuine_zk()
-    remove_children(client, "/test_keeper_map/test_without_zk")
+    remove_children(client, "/test_keeper_map/test1")
     node.restart_clickhouse(60)
-    error = node.query_and_get_error("SELECT * FROM test_keeper_map_without_zk")
+    error = node.query_and_get_error("SELECT * FROM test_keeper_map")
     assert "Failed to activate table because of invalid metadata in ZooKeeper" in error
 
-    node.query("DETACH TABLE test_keeper_map_without_zk")
+    node.query("DETACH TABLE test_keeper_map")
 
     client.stop()

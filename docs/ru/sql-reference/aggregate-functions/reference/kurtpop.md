@@ -24,3 +24,4 @@ kurtPop(expr)
 ``` sql
 SELECT kurtPop(value) FROM series_with_value_column;
 ```
+

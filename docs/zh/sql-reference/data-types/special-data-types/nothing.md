@@ -9,11 +9,11 @@ slug: /zh/sql-reference/data-types/special-data-types/nothing
 
 `Nothing` 类型也可以用来表示空数组：
 
-```sql
-SELECT toTypeName(array())
-```
+``` bash
+:) SELECT toTypeName(array())
 
-```response
+SELECT toTypeName([])
+
 ┌─toTypeName(array())─┐
 │ Array(Nothing)      │
 └─────────────────────┘

@@ -187,7 +187,7 @@ void PipelineExecutor::finalizeExecution()
     }
 
     if (!all_processors_finished)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline stuck. Current state:\n{}", dumpPipeline());
+        throw Exception("Pipeline stuck. Current state:\n" + dumpPipeline(), ErrorCodes::LOGICAL_ERROR);
 }
 
 void PipelineExecutor::executeSingleThread(size_t thread_num)
@@ -196,7 +196,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num)
 
 #ifndef NDEBUG
     auto & context = tasks.getThreadContext(thread_num);
-    LOG_TEST(log,
+    LOG_TRACE(log,
               "Thread finished. Total time: {} sec. Execution time: {} sec. Processing time: {} sec. Wait time: {} sec.",
               context.total_time_ns / 1e9,
               context.execution_time_ns / 1e9,

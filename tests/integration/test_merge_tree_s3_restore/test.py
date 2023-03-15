@@ -242,7 +242,8 @@ def test_full_restore(cluster, replicated, db_atomic):
     node.query("DETACH TABLE s3.test")
     drop_s3_metadata(node)
     create_restore_file(node)
-    node.restart_clickhouse()
+    node.query("SYSTEM RESTART DISK s3")
+    node.query("ATTACH TABLE s3.test")
 
     assert node.query("SELECT count(*) FROM s3.test FORMAT Values") == "({})".format(
         4096 * 4
@@ -282,7 +283,7 @@ def test_restore_another_bucket_path(cluster, db_atomic):
     node_another_bucket = cluster.instances["node_another_bucket"]
 
     create_restore_file(node_another_bucket, bucket="root")
-    node_another_bucket.restart_clickhouse()
+    node_another_bucket.query("SYSTEM RESTART DISK s3")
     create_table(
         node_another_bucket, "test", attach=True, db_atomic=db_atomic, uuid=uuid
     )
@@ -297,7 +298,7 @@ def test_restore_another_bucket_path(cluster, db_atomic):
     node_another_bucket_path = cluster.instances["node_another_bucket_path"]
 
     create_restore_file(node_another_bucket_path, bucket="root2", path="data")
-    node_another_bucket_path.restart_clickhouse()
+    node_another_bucket_path.query("SYSTEM RESTART DISK s3")
     create_table(
         node_another_bucket_path, "test", attach=True, db_atomic=db_atomic, uuid=uuid
     )
@@ -356,7 +357,7 @@ def test_restore_different_revisions(cluster, db_atomic):
 
     # Restore to revision 1 (2 parts).
     create_restore_file(node_another_bucket, revision=revision1, bucket="root")
-    node_another_bucket.restart_clickhouse()
+    node_another_bucket.query("SYSTEM RESTART DISK s3")
     create_table(
         node_another_bucket, "test", attach=True, db_atomic=db_atomic, uuid=uuid
     )
@@ -377,7 +378,8 @@ def test_restore_different_revisions(cluster, db_atomic):
     # Restore to revision 2 (4 parts).
     node_another_bucket.query("DETACH TABLE s3.test")
     create_restore_file(node_another_bucket, revision=revision2, bucket="root")
-    node_another_bucket.restart_clickhouse()
+    node_another_bucket.query("SYSTEM RESTART DISK s3")
+    node_another_bucket.query("ATTACH TABLE s3.test")
 
     assert node_another_bucket.query(
         "SELECT count(*) FROM s3.test FORMAT Values"
@@ -395,7 +397,8 @@ def test_restore_different_revisions(cluster, db_atomic):
     # Restore to revision 3 (4 parts + 1 merged).
     node_another_bucket.query("DETACH TABLE s3.test")
     create_restore_file(node_another_bucket, revision=revision3, bucket="root")
-    node_another_bucket.restart_clickhouse()
+    node_another_bucket.query("SYSTEM RESTART DISK s3")
+    node_another_bucket.query("ATTACH TABLE s3.test")
 
     assert node_another_bucket.query(
         "SELECT count(*) FROM s3.test FORMAT Values"
@@ -441,7 +444,7 @@ def test_restore_mutations(cluster, db_atomic):
     create_restore_file(
         node_another_bucket, revision=revision_before_mutation, bucket="root"
     )
-    node_another_bucket.restart_clickhouse()
+    node_another_bucket.query("SYSTEM RESTART DISK s3")
     create_table(
         node_another_bucket, "test", attach=True, db_atomic=db_atomic, uuid=uuid
     )
@@ -461,7 +464,8 @@ def test_restore_mutations(cluster, db_atomic):
     create_restore_file(
         node_another_bucket, revision=revision_after_mutation, bucket="root"
     )
-    node_another_bucket.restart_clickhouse()
+    node_another_bucket.query("SYSTEM RESTART DISK s3")
+    node_another_bucket.query("ATTACH TABLE s3.test")
 
     assert node_another_bucket.query(
         "SELECT count(*) FROM s3.test FORMAT Values"
@@ -481,7 +485,8 @@ def test_restore_mutations(cluster, db_atomic):
     node_another_bucket.query("DETACH TABLE s3.test")
     revision = (revision_before_mutation + revision_after_mutation) // 2
     create_restore_file(node_another_bucket, revision=revision, bucket="root")
-    node_another_bucket.restart_clickhouse()
+    node_another_bucket.query("SYSTEM RESTART DISK s3")
+    node_another_bucket.query("ATTACH TABLE s3.test")
 
     # Wait for unfinished mutation completion.
     time.sleep(3)
@@ -551,7 +556,7 @@ def test_migrate_to_restorable_schema(cluster):
     create_restore_file(
         node_another_bucket, revision=revision, bucket="root", path="another_data"
     )
-    node_another_bucket.restart_clickhouse()
+    node_another_bucket.query("SYSTEM RESTART DISK s3")
     create_table(
         node_another_bucket, "test", attach=True, db_atomic=db_atomic, uuid=uuid
     )
@@ -610,7 +615,7 @@ def test_restore_to_detached(cluster, replicated, db_atomic):
         path="data",
         detached=True,
     )
-    node_another_bucket.restart_clickhouse()
+    node_another_bucket.query("SYSTEM RESTART DISK s3")
     create_table(
         node_another_bucket,
         "test",
@@ -676,7 +681,7 @@ def test_restore_without_detached(cluster, replicated, db_atomic):
         path="data",
         detached=True,
     )
-    node_another_bucket.restart_clickhouse()
+    node_another_bucket.query("SYSTEM RESTART DISK s3")
     create_table(
         node_another_bucket,
         "test",

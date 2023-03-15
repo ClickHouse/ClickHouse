@@ -30,12 +30,6 @@ ProtobufListInputFormat::ProtobufListInputFormat(
 {
 }
 
-void ProtobufListInputFormat::setReadBuffer(ReadBuffer & in_)
-{
-    reader->setReadBuffer(in_);
-    IRowInputFormat::setReadBuffer(in_);
-}
-
 bool ProtobufListInputFormat::readRow(MutableColumns & columns, RowReadExtension & row_read_extension)
 {
     if (reader->eof())

@@ -479,7 +479,7 @@ CREATE TABLE example_table
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(d)
 ORDER BY d
-TTL d + INTERVAL 1 MONTH DELETE,
+TTL d + INTERVAL 1 MONTH [DELETE],
     d + INTERVAL 1 WEEK TO VOLUME 'aaa',
     d + INTERVAL 2 WEEK TO DISK 'bbb';
 ```
@@ -819,3 +819,4 @@ S3磁盘也可以设置冷热存储：
 -    `_partition_value` — `partition by` 表达式的值（元组）。
 -    `_sample_factor` - 采样因子（来自请求）。
 
+[原始文章](https://clickhouse.com/docs/en/operations/table_engines/mergetree/) <!--hide-->

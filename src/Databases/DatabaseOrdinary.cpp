@@ -4,7 +4,6 @@
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabasesCommon.h>
-#include <Databases/DDLDependencyVisitor.h>
 #include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Databases/TablesLoader.h>
 #include <IO/ReadBufferFromFile.h>
@@ -257,9 +256,6 @@ void DatabaseOrdinary::startupTables(ThreadPool & thread_pool, LoadingStrictness
 
     auto startup_one_table = [&](const StoragePtr & table)
     {
-        /// Since startup() method can use physical paths on disk we don't allow any exclusive actions (rename, drop so on)
-        /// until startup finished.
-        auto table_lock_holder = table->lockForShare(RWLockImpl::NO_QUERY, getContext()->getSettingsRef().lock_acquire_timeout);
         table->startup();
         logAboutProgress(log, ++tables_processed, total_tables, watch);
     };
@@ -313,10 +309,8 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
         out.close();
     }
 
-    /// The create query of the table has been just changed, we need to update dependencies too.
-    auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast);
-    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast);
-    DatabaseCatalog::instance().updateDependencies(table_id, ref_dependencies, loading_dependencies);
+    auto new_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast);
+    DatabaseCatalog::instance().updateDependencies(table_id, new_dependencies);
 
     commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path, statement, local_context);
 }

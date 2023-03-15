@@ -28,6 +28,7 @@ void JSONColumnsBlockOutputFormatBase::consume(Chunk chunk)
 
 void JSONColumnsBlockOutputFormatBase::writeSuffix()
 {
+
     writeChunk(mono_chunk);
     mono_chunk.clear();
 }
@@ -42,7 +43,6 @@ void JSONColumnsBlockOutputFormatBase::writeChunk(Chunk & chunk)
         writeColumn(*columns[i], *serializations[i]);
         writeColumnEnd(i == columns.size() - 1);
     }
-    written_rows += chunk.getNumRows();
     writeChunkEnd();
 }
 

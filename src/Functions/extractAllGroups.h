@@ -92,23 +92,24 @@ public:
         const auto needle = typeid_cast<const ColumnConst &>(*column_needle).getValue<String>();
 
         if (needle.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Length of 'needle' argument must be greater than 0.");
+            throw Exception("Length of 'needle' argument must be greater than 0.", ErrorCodes::BAD_ARGUMENTS);
 
         using StringPiece = typename Regexps::Regexp::StringPieceType;
         const Regexps::Regexp holder = Regexps::createRegexp<false, false, false>(needle);
         const auto & regexp = holder.getRE2();
 
         if (!regexp)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are no groups in regexp: {}", needle);
+            throw Exception("There are no groups in regexp: " + needle, ErrorCodes::BAD_ARGUMENTS);
 
         const size_t groups_count = regexp->NumberOfCapturingGroups();
 
         if (!groups_count)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are no groups in regexp: {}", needle);
+            throw Exception("There are no groups in regexp: " + needle, ErrorCodes::BAD_ARGUMENTS);
 
         if (groups_count > MAX_GROUPS_COUNT - 1)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Too many groups in regexp: {}, max: {}",
-                            groups_count, std::to_string(MAX_GROUPS_COUNT - 1));
+            throw Exception("Too many groups in regexp: " + std::to_string(groups_count)
+                            + ", max: " + std::to_string(MAX_GROUPS_COUNT - 1),
+                            ErrorCodes::BAD_ARGUMENTS);
 
         // Including 0-group, which is the whole regexp.
         PODArrayWithStackMemory<StringPiece, MAX_GROUPS_COUNT> matched_groups(groups_count + 1);

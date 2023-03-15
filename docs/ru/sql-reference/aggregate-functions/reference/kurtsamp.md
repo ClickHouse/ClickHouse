@@ -26,3 +26,4 @@ kurtSamp(expr)
 ``` sql
 SELECT kurtSamp(value) FROM series_with_value_column;
 ```
+

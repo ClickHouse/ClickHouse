@@ -4,7 +4,7 @@
 #include "config.h"
 
 #if USE_REPLXX
-#   include <Client/ReplxxLineReader.h>
+#   include <base/ReplxxLineReader.h>
 #endif
 
 

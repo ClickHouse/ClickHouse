@@ -264,8 +264,7 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
                 perror("mkstemp");
                 return 1;
             }
-            if (0 != close(fd))
-                perror("close");
+            close(fd);
             strncpy(decompressed_suffix, file_name + strlen(file_name) - 6, 6);
             *decompressed_umask = le64toh(file_info.umask);
             have_compressed_analoge = true;
@@ -364,7 +363,7 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
 
 #if !defined(OS_DARWIN) && !defined(OS_FREEBSD)
 
-uint64_t getInode(const char * self)
+uint32_t getInode(const char * self)
 {
     std::ifstream maps("/proc/self/maps");
     if (maps.fail())
@@ -381,7 +380,7 @@ uint64_t getInode(const char * self)
     {
         std::stringstream ss(line); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         std::string addr, mode, offset, id, path;
-        uint64_t inode = 0;
+        uint32_t inode = 0;
         if (ss >> addr >> mode >> offset >> id >> inode >> path && path == self)
             return inode;
     }
@@ -416,7 +415,7 @@ int main(int/* argc*/, char* argv[])
 
 #if !defined(OS_DARWIN) && !defined(OS_FREEBSD)
     /// get inode of this executable
-    uint64_t inode = getInode(self);
+    uint32_t inode = getInode(self);
     if (inode == 0)
     {
         std::cerr << "Unable to obtain inode." << std::endl;
@@ -447,11 +446,6 @@ int main(int/* argc*/, char* argv[])
         perror("stat");
         return 1;
     }
-
-    /// inconsistency in WSL1 Ubuntu - inode reported in /proc/self/maps is a 64bit to
-    /// 32bit conversion of input_info.st_ino
-    if (input_info.st_ino & 0xFFFFFFFF00000000 && !(inode & 0xFFFFFFFF00000000))
-        input_info.st_ino &= 0x00000000FFFFFFFF;
 
     /// if decompression was performed by another process since this copy was started
     /// then file referred by path "self" is already pointing to different inode
