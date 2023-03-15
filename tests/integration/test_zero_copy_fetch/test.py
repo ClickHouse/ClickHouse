@@ -5,6 +5,7 @@ import random
 import string
 import time
 
+from multiprocessing.dummy import Pool
 import pytest
 from helpers.cluster import ClickHouseCluster
 
@@ -102,3 +103,79 @@ SETTINGS index_granularity = 8192, storage_policy = 's3'"""
     assert part_to_disk["20230102_0_0_0"] == "s3"
     assert part_to_disk["20230109_0_0_0"] == "s3"
     assert part_to_disk["20230116_0_0_0"] == "default"
+
+
+def test_concurrent_move_to_s3(started_cluster):
+    node1 = cluster.instances["node1"]
+    node2 = cluster.instances["node2"]
+
+    node1.query(
+        """
+CREATE TABLE test_concurrent_move (EventDate Date, CounterID UInt32)
+ENGINE = ReplicatedMergeTree('/clickhouse-tables/test_concurrent_move', 'r1')
+PARTITION BY CounterID
+ORDER BY (CounterID, EventDate)
+SETTINGS index_granularity = 8192, storage_policy = 's3'"""
+    )
+
+    node2.query(
+        """
+CREATE TABLE test_concurrent_move (EventDate Date, CounterID UInt32)
+ENGINE = ReplicatedMergeTree('/clickhouse-tables/test_concurrent_move', 'r2')
+PARTITION BY CounterID
+ORDER BY (CounterID, EventDate)
+SETTINGS index_granularity = 8192, storage_policy = 's3'"""
+    )
+    partitions = range(10)
+
+    for i in partitions:
+        node1.query(
+            f"INSERT INTO test_concurrent_move SELECT toDate('2023-01-01') + toIntervalDay(number), {i} from system.numbers limit 20"
+        )
+        node1.query(
+            f"INSERT INTO test_concurrent_move SELECT toDate('2023-01-01') + toIntervalDay(number) + rand(), {i} from system.numbers limit 20"
+        )
+        node1.query(
+            f"INSERT INTO test_concurrent_move SELECT toDate('2023-01-01') + toIntervalDay(number) + rand(), {i} from system.numbers limit 20"
+        )
+        node1.query(
+            f"INSERT INTO test_concurrent_move SELECT toDate('2023-01-01') + toIntervalDay(number) + rand(), {i} from system.numbers limit 20"
+        )
+
+    node2.query("SYSTEM SYNC REPLICA test_concurrent_move")
+
+    # check that we can move parts concurrently without exceptions
+    p = Pool(3)
+    for i in partitions:
+
+        def move_partition_to_s3(node):
+            node.query(
+                f"ALTER TABLE test_concurrent_move MOVE PARTITION '{i}' TO DISK 's3'"
+            )
+
+        j1 = p.apply_async(move_partition_to_s3, (node1,))
+        j2 = p.apply_async(move_partition_to_s3, (node2,))
+        j1.get()
+        j2.get()
+
+    def get_part_to_disk(query_result):
+        part_to_disk = {}
+        for row in query_result.strip().split("\n"):
+            disk, part = row.split("\t")
+            part_to_disk[part] = disk
+        return part_to_disk
+
+    part_to_disk = get_part_to_disk(
+        node1.query(
+            "SELECT disk_name, name FROM system.parts where table = 'test_concurrent_move' and active"
+        )
+    )
+
+    assert all([value == "s3" for value in part_to_disk.values()])
+
+    part_to_disk = get_part_to_disk(
+        node2.query(
+            "SELECT disk_name, name FROM system.parts where table = 'test_concurrent_move' and active"
+        )
+    )
+    assert all([value == "s3" for value in part_to_disk.values()])
