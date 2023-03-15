@@ -48,7 +48,7 @@ void StorageSystemMarkedDroppedTables::fillData(MutableColumns & res_columns, Co
         column_database.insertData(table.database.data(), table.database.size());
         column_table.insertData(table.table.data(), table.table.size());
         column_uuid.push_back(table.uuid.toUnderType());
-        column_engine.insertData(table.database.data(), table.database.size());
+        column_engine.insertData(table.engine.data(), table.engine.size());
         column_metadata_dropped_path.insertData(table.metadata_dropped_path.data(), table.metadata_dropped_path.size());
         column_table_dropped_time.insertValue(static_cast<UInt32>(table.table_dropped_time));
     };
