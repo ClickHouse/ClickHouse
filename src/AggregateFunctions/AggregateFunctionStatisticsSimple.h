@@ -82,7 +82,11 @@ public:
 
     explicit AggregateFunctionVarianceSimple(const DataTypes & argument_types_)
         : IAggregateFunctionDataHelper<typename StatFunc::Data, AggregateFunctionVarianceSimple<StatFunc>>(argument_types_, {}, std::make_shared<DataTypeNumber<ResultType>>())
+        , src_scale(0)
     {
+        chassert(!argument_types_.empty());
+        if (isDecimal(argument_types_.front()))
+            src_scale = getDecimalScale(*argument_types_.front());
     }
 
     String getName() const override
@@ -124,8 +128,9 @@ public:
         {
             if constexpr (is_decimal<T1>)
             {
-                this->data(place).add(static_cast<ResultType>(
-                    static_cast<const ColVecT1 &>(*columns[0]).getData()[row_num].value));
+                this->data(place).add(
+                    convertFromDecimal<DataTypeDecimal<T1>, DataTypeFloat64>(
+                        static_cast<const ColVecT1 &>(*columns[0]).getData()[row_num], src_scale));
             }
             else
                 this->data(place).add(
@@ -204,6 +209,9 @@ public:
         if constexpr (StatFunc::kind == StatisticsFunctionKind::corr)
             dst.push_back(data.get());
     }
+
+private:
+    UInt32 src_scale;
 };
 
 
