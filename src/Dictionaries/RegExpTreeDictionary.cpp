@@ -4,7 +4,6 @@
 
 #include <type_traits>
 #include <unordered_map>
-#include <hs_compile.h>
 #include <base/defines.h>
 
 #include <Poco/Logger.h>
@@ -36,6 +35,7 @@
 
 #if USE_VECTORSCAN
 #    include <hs.h>
+#    include <hs_compile.h>
 #endif
 
 namespace DB
@@ -48,6 +48,7 @@ namespace ErrorCodes
     extern const int HYPERSCAN_CANNOT_SCAN_TEXT;
     extern const int UNSUPPORTED_METHOD;
     extern const int INCORRECT_DICTIONARY_DEFINITION;
+    extern const int LOGICAL_ERROR;
 }
 
 const std::string kRegExp = "regexp";
@@ -339,8 +340,6 @@ void RegExpTreeDictionary::loadData()
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Pattern '{}' failed with error '{}'", patterns[error->expression], String(error->message));
         }
-
-        ProfileEvents::increment(ProfileEvents::RegexpCreated);
 
         /// We allocate the scratch space only once, then copy it across multiple threads with hs_clone_scratch
         /// function which is faster than allocating scratch space each time in each thread.
