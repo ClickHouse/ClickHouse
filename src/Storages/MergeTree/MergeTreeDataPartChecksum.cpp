@@ -46,7 +46,7 @@ void MergeTreeDataPartChecksum::checkEqual(const MergeTreeDataPartChecksum & rhs
 
 void MergeTreeDataPartChecksum::checkSize(const IDataPartStorage & storage, const String & name) const
 {
-    /// Do not check inverted index files
+    /// Skip inverted index files, these have a default MergeTreeDataPartChecksum with file_size == 0
     if (name.ends_with(".gin_dict") || name.ends_with(".gin_post") || name.ends_with(".gin_seg") || name.ends_with(".gin_sid"))
         return;
 
