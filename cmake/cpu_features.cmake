@@ -60,23 +60,6 @@ elseif (ARCH_AARCH64)
         set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8.2-a+simd+crypto+dotprod+ssbs -Xclang=-target-feature -Xclang=+ldapr -Wno-unused-command-line-argument")
     endif ()
 
-    # Best-effort check: The build generates and executes intermediate binaries, e.g. protoc and llvm-tablegen. If we build on ARM for ARM
-    # and the build machine is too old, i.e. doesn't satisfy above modern profile, then these intermediate binaries will not run (dump
-    # SIGILL). Even if they could run, the build machine wouldn't be able to run the ClickHouse binary. In that case, suggest to run the
-    # build with the compat profile.
-    if (OS_LINUX AND CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "^(aarch64.*|AARCH64.*|arm64.*|ARM64.*)" AND NOT NO_ARMV81_OR_HIGHER)
-        # CPU features in /proc/cpuinfo and compiler flags don't align :( ... pick some obvious flags contained in the modern but not in the
-        # legacy profile (full Graviton 3 /proc/cpuinfo is "fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm
-        # jscvt fcma lrcpc dcpop sha3 sm3 sm4 asimddp sha512 sve asimdfhm dit uscat ilrcpc flagm ssbs paca pacg dcpodp svei8mm svebf16 i8mm
-        # bf16 dgh rng")
-        execute_process(
-            COMMAND grep -P "^(?=.*atomic)(?=.*ssbs)" /proc/cpuinfo
-            OUTPUT_VARIABLE FLAGS)
-        if (NOT FLAGS)
-            MESSAGE(FATAL_ERROR "The build machine does not satisfy the minimum CPU requirements, try to run cmake with -DNO_ARMV81_OR_HIGHER=1")
-        endif()
-    endif()
-
 elseif (ARCH_PPC64LE)
     # By Default, build for power8 and up, allow building for power9 and up
     # Note that gcc and clang have support for x86 SSE2 intrinsics when building for PowerPC
@@ -117,22 +100,6 @@ elseif (ARCH_AMD64)
         SET(ENABLE_BMI2 0)
         SET(ENABLE_AVX2_FOR_SPEC_OP 0)
         SET(ENABLE_AVX512_FOR_SPEC_OP 0)
-    endif()
-
-    # Same best-effort check for x86 as above for ARM.
-    if (OS_LINUX AND CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "amd64|x86_64" AND NOT NO_SSE3_OR_HIGHER)
-        # Test for flags in standard profile but not in NO_SSE3_OR_HIGHER profile.
-        # /proc/cpuid for Intel Xeon 8124: "fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse
-        # sse2 ss ht syscall nx pdpe1gb rdtscp lm constant_tsc arch_perfmon rep_good nopl xtopology nonstop_tsc cpuid aperfmperf
-        # tsc_known_freq pni pclmulqdq monitor ssse3 fma cx16 pcid sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c
-        # rdrand hypervisor lahf_lm abm 3dnowprefetch invpcid_single pti fsgsbase tsc_adjust bmi1 hle avx2 smep bmi2 erms invpcid rtm mpx
-        # avx512f avx512dq rdseed adx smap clflushopt clwb avx512cd avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves ida arat pku ospke""
-        execute_process(
-            COMMAND grep -P "^(?=.*ssse3)(?=.*sse4_1)(?=.*sse4_2)" /proc/cpuinfo
-            OUTPUT_VARIABLE FLAGS)
-        if (NOT FLAGS)
-            MESSAGE(FATAL_ERROR "The build machine does not satisfy the minimum CPU requirements, try to run cmake with -DNO_SSE3_OR_HIGHER=1")
-        endif()
     endif()
 
     # ClickHouse can be cross-compiled (e.g. on an ARM host for x86) but it is also possible to build ClickHouse on x86 w/o AVX for x86 w/

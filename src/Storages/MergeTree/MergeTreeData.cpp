@@ -4603,18 +4603,8 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
             throw Exception(ErrorCodes::UNKNOWN_DISK, "All parts of partition '{}' are already on disk '{}'", partition_id, disk->getName());
     }
 
-    MovePartsOutcome moves_outcome = movePartsToSpace(parts, std::static_pointer_cast<Space>(disk));
-    switch (moves_outcome)
-    {
-        case MovePartsOutcome::MovesAreCancelled:
-            throw Exception(ErrorCodes::ABORTED, "Cannot move parts because moves are manually disabled");
-        case MovePartsOutcome::NothingToMove:
-            throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No parts to move are found in partition {}", partition_id);
-        case MovePartsOutcome::MoveWasPostponedBecauseOfZeroCopy:
-            throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, "Move was not finished, because zero copy mode is enabled and someone other is moving the same parts right now");
-        case MovePartsOutcome::PartsMoved:
-            break;
-    }
+    if (!movePartsToSpace(parts, std::static_pointer_cast<Space>(disk)))
+        throw Exception(ErrorCodes::ABORTED, "Cannot move parts because moves are manually disabled");
 }
 
 
@@ -4666,18 +4656,8 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
             throw Exception(ErrorCodes::UNKNOWN_DISK, "All parts of partition '{}' are already on volume '{}'", partition_id, volume->getName());
     }
 
-    MovePartsOutcome moves_outcome = movePartsToSpace(parts, std::static_pointer_cast<Space>(volume));
-    switch (moves_outcome)
-    {
-        case MovePartsOutcome::MovesAreCancelled:
-            throw Exception(ErrorCodes::ABORTED, "Cannot move parts because moves are manually disabled");
-        case MovePartsOutcome::NothingToMove:
-            throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No parts to move are found in partition {}", partition_id);
-        case MovePartsOutcome::MoveWasPostponedBecauseOfZeroCopy:
-            throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, "Move was not finished, because zero copy mode is enabled and someone other is moving the same parts right now");
-        case MovePartsOutcome::PartsMoved:
-            break;
-    }
+    if (!movePartsToSpace(parts, std::static_pointer_cast<Space>(volume)))
+        throw Exception(ErrorCodes::ABORTED, "Cannot move parts because moves are manually disabled");
 }
 
 void MergeTreeData::movePartitionToShard(const ASTPtr & /*partition*/, bool /*move_part*/, const String & /*to*/, ContextPtr /*query_context*/)
@@ -7462,7 +7442,7 @@ bool MergeTreeData::scheduleDataMovingJob(BackgroundJobsAssignee & assignee)
     assignee.scheduleMoveTask(std::make_shared<ExecutableLambdaAdapter>(
         [this, moving_tagger] () mutable
         {
-            return moveParts(moving_tagger) == MovePartsOutcome::PartsMoved;
+            return moveParts(moving_tagger);
         }, moves_assignee_trigger, getStorageID()));
     return true;
 }
@@ -7477,14 +7457,14 @@ bool MergeTreeData::areBackgroundMovesNeeded() const
     return policy->getVolumes().size() == 1 && policy->getVolumes()[0]->getDisks().size() > 1;
 }
 
-MovePartsOutcome MergeTreeData::movePartsToSpace(const DataPartsVector & parts, SpacePtr space)
+bool MergeTreeData::movePartsToSpace(const DataPartsVector & parts, SpacePtr space)
 {
     if (parts_mover.moves_blocker.isCancelled())
-        return MovePartsOutcome::MovesAreCancelled;
+        return false;
 
     auto moving_tagger = checkPartsForMove(parts, space);
     if (moving_tagger->parts_to_move.empty())
-        return MovePartsOutcome::NothingToMove;
+        return false;
 
     return moveParts(moving_tagger);
 }
@@ -7541,13 +7521,13 @@ MergeTreeData::CurrentlyMovingPartsTaggerPtr MergeTreeData::checkPartsForMove(co
     return std::make_shared<CurrentlyMovingPartsTagger>(std::move(parts_to_move), *this);
 }
 
-MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagger)
+bool MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagger)
 {
     LOG_INFO(log, "Got {} parts to move.", moving_tagger->parts_to_move.size());
 
     const auto settings = getSettings();
 
-    MovePartsOutcome result{MovePartsOutcome::PartsMoved};
+    bool result = true;
     for (const auto & moving_part : moving_tagger->parts_to_move)
     {
         Stopwatch stopwatch;
@@ -7603,7 +7583,7 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
                 {
                     /// Move will be retried but with backoff.
                     LOG_DEBUG(log, "Move of part {} postponed, because zero copy mode enabled and someone other moving this part right now", moving_part.part->name);
-                    result = MovePartsOutcome::MoveWasPostponedBecauseOfZeroCopy;
+                    result = false;
                     continue;
                 }
             }

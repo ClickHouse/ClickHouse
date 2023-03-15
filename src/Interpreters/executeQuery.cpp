@@ -1276,12 +1276,6 @@ void executeQuery(
     std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, &istr);
     auto & pipeline = streams.pipeline;
 
-    QueryResultDetails result_details
-    {
-        .query_id = context->getClientInfo().current_query_id,
-        .timezone = DateLUT::instance().getTimeZone(),
-    };
-
     std::unique_ptr<WriteBuffer> compressed_buffer;
     try
     {
@@ -1340,8 +1334,9 @@ void executeQuery(
                 out->onProgress(progress);
             });
 
-            result_details.content_type = out->getContentType();
-            result_details.format = format_name;
+            if (set_result_details)
+                set_result_details(
+                    context->getClientInfo().current_query_id, out->getContentType(), format_name, DateLUT::instance().getTimeZone());
 
             pipeline.complete(std::move(out));
         }
@@ -1349,9 +1344,6 @@ void executeQuery(
         {
             pipeline.setProgressCallback(context->getProgressCallback());
         }
-
-        if (set_result_details)
-            set_result_details(result_details);
 
         if (pipeline.initialized())
         {

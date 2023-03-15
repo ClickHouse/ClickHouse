@@ -15,9 +15,6 @@ INSERT INTO tab VALUES (101, 'Alick a01'), (102, 'Blick a02'), (103, 'Click a03'
 -- check inverted index was created
 SELECT name, type FROM system.data_skipping_indices WHERE table =='tab' AND database = currentDatabase() LIMIT 1;
 
--- throw in a random consistency check
-CHECK TABLE tab;
-
 -- search inverted index with ==
 SELECT * FROM tab WHERE s == 'Alick a01';
 

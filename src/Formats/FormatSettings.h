@@ -175,14 +175,6 @@ struct FormatSettings
         String column_for_object_name;
     } json_object_each_row;
 
-    enum class ParquetVersion
-    {
-        V1_0,
-        V2_4,
-        V2_6,
-        V2_LATEST,
-    };
-
     struct
     {
         UInt64 row_group_size = 1000000;
@@ -194,7 +186,6 @@ struct FormatSettings
         bool output_string_as_string = false;
         bool output_fixed_string_as_fixed_byte_array = true;
         UInt64 max_block_size = 8192;
-        ParquetVersion output_version;
     } parquet;
 
     struct Pretty

@@ -117,21 +117,7 @@ public:
         const auto & value = this->data(place).value;
         size_t size = value.size();
         writeVarUInt(size, buf);
-
-        /// In this version, pairs were serialized with padding.
-        /// We must ensure that padding bytes are zero-filled.
-
-        static_assert(offsetof(typename MaxIntersectionsData<PointType>::Value, first) == 0);
-        static_assert(offsetof(typename MaxIntersectionsData<PointType>::Value, second) > 0);
-
-        char zero_padding[offsetof(typename MaxIntersectionsData<PointType>::Value, second) - sizeof(value[0].first)]{};
-
-        for (size_t i = 0; i < size; ++i)
-        {
-            writePODBinary(value[i].first, buf);
-            writePODBinary(zero_padding, buf);
-            writePODBinary(value[i].second, buf);
-        }
+        buf.write(reinterpret_cast<const char *>(value.data()), size * sizeof(value[0]));
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override

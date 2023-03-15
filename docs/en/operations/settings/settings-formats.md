@@ -142,10 +142,6 @@ y	Nullable(String)
 z	IPv4
 ```
 
-:::warning
-If the `schema_inference_hints` is not formated properly, or if there is a typo or a wrong datatype, etc... the whole schema_inference_hints will be ignored.
-:::
-
 ## schema_inference_make_columns_nullable {#schema_inference_make_columns_nullable}
 
 Controls making inferred types `Nullable` in schema inference for formats without information about nullability.
@@ -511,7 +507,7 @@ Enabled by default.
 
 Ignore unknown keys in json object for named tuples.
 
-Enabled by default.
+Disabled by default.
 
 ## input_format_json_defaults_for_missing_elements_in_named_tuple {#input_format_json_defaults_for_missing_elements_in_named_tuple}
 
@@ -1105,12 +1101,6 @@ Disabled by default.
 Use Parquet FIXED_LENGTH_BYTE_ARRAY type instead of Binary/String for FixedString columns.
 
 Enabled by default.
-
-### output_format_parquet_version {#output_format_parquet_version}
-
-The version of Parquet format used in output format. Supported versions: `1.0`, `2.4`, `2.6` and `2.latest`.
-
-Default value: `2.latest`.
 
 ## Hive format settings {#hive-format-settings}
 

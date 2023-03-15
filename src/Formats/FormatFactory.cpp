@@ -110,7 +110,6 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.null_as_default = settings.input_format_null_as_default;
     format_settings.decimal_trailing_zeros = settings.output_format_decimal_trailing_zeros;
     format_settings.parquet.row_group_size = settings.output_format_parquet_row_group_size;
-    format_settings.parquet.output_version = settings.output_format_parquet_version;
     format_settings.parquet.import_nested = settings.input_format_parquet_import_nested;
     format_settings.parquet.case_insensitive_column_matching = settings.input_format_parquet_case_insensitive_column_matching;
     format_settings.parquet.allow_missing_columns = settings.input_format_parquet_allow_missing_columns;
