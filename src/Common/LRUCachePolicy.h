@@ -29,7 +29,7 @@ public:
       * max_count == 0 means no elements size restrictions.
       */
     LRUCachePolicy(size_t max_size_in_bytes_, size_t max_count_, OnWeightLossFunction on_weight_loss_function_)
-        : max_size_in_bytes(std::max(static_cast<size_t>(1), max_size_in_bytes_))
+        : max_size_in_bytes(std::max(1uz, max_size_in_bytes_))
         , max_count(max_count_)
         , on_weight_loss_function(on_weight_loss_function_)
     {

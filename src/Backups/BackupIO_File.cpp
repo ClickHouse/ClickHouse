@@ -1,15 +1,18 @@
 #include <Backups/BackupIO_File.h>
+#include <Disks/IDisk.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/copyData.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/logger_useful.h>
+
 
 namespace fs = std::filesystem;
 
 
 namespace DB
 {
-BackupReaderFile::BackupReaderFile(const String & path_) : path(path_)
+BackupReaderFile::BackupReaderFile(const String & path_) : path(path_), log(&Poco::Logger::get("BackupReaderFile"))
 {
 }
 
@@ -29,6 +32,22 @@ std::unique_ptr<SeekableReadBuffer> BackupReaderFile::readFile(const String & fi
 {
     return createReadBufferFromFileBase(path / file_name, {});
 }
+
+void BackupReaderFile::copyFileToDisk(const String & file_name, size_t size, DiskPtr destination_disk, const String & destination_path,
+                                      WriteMode write_mode, const WriteSettings & write_settings)
+{
+    if (destination_disk->getDataSourceDescription() == getDataSourceDescription())
+    {
+        /// Use more optimal way.
+        LOG_TRACE(log, "Copying {}/{} to disk {} locally", path, file_name, destination_disk->getName());
+        fs::copy(path / file_name, fullPath(destination_disk, destination_path), fs::copy_options::overwrite_existing);
+        return;
+    }
+
+    LOG_TRACE(log, "Copying {}/{} to disk {} through buffers", path, file_name, destination_disk->getName());
+    IBackupReader::copyFileToDisk(path / file_name, size, destination_disk, destination_path, write_mode, write_settings);
+}
+
 
 BackupWriterFile::BackupWriterFile(const String & path_) : path(path_)
 {
