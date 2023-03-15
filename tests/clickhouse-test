@@ -437,7 +437,7 @@ class FailureReason(enum.Enum):
     SERVER_DIED = "server died"
     EXIT_CODE = "return code: "
     STDERR = "having stderror: "
-    EXCEPTION = "having having exception in stdout: "
+    EXCEPTION = "having exception in stdout: "
     RESULT_DIFF = "result differs with reference: "
     TOO_LONG = "Test runs too long (> 60s). Make it faster."
     INTERNAL_QUERY_FAIL = "Internal query (CREATE/DROP DATABASE) failed:"
