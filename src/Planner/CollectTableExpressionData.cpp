@@ -27,8 +27,9 @@ namespace
 class CollectSourceColumnsVisitor : public InDepthQueryTreeVisitor<CollectSourceColumnsVisitor>
 {
 public:
-    explicit CollectSourceColumnsVisitor(PlannerContext & planner_context_)
+    explicit CollectSourceColumnsVisitor(PlannerContext & planner_context_, QueryTreeNodePtr child_node_to_ignore_ = {})
         : planner_context(planner_context_)
+        , child_node_to_ignore(std::move(child_node_to_ignore_))
     {}
 
     void visitImpl(QueryTreeNodePtr & node)
@@ -78,14 +79,18 @@ public:
         table_expression_data.addColumn(column_node->getColumn(), column_identifier);
     }
 
-    static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node)
+    bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node)
     {
+        if (child_node == child_node_to_ignore)
+            return false;
+
         auto child_node_type = child_node->getNodeType();
         return !(child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION);
     }
 
 private:
     PlannerContext & planner_context;
+    QueryTreeNodePtr child_node_to_ignore;
 };
 
 class CollectPrewhereTableExpressionVisitor : public ConstInDepthQueryTreeVisitor<CollectPrewhereTableExpressionVisitor>
@@ -215,14 +220,8 @@ void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr
         }
     }
 
-    CollectSourceColumnsVisitor collect_source_columns_visitor(*planner_context);
-    for (auto & node : query_node_typed.getChildren())
-    {
-        if (!node || node == query_node_typed.getPrewhere())
-            continue;
-
-        collect_source_columns_visitor.visit(node);
-    }
+    CollectSourceColumnsVisitor collect_source_columns_visitor(*planner_context, query_node_typed.getPrewhere());
+    collect_source_columns_visitor.visit(query_node);
 
     if (query_node_typed.hasPrewhere())
     {

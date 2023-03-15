@@ -1,10 +1,16 @@
 #include <Planner/PlannerJoinTree.h>
 
+#include <Common/scope_guard_safe.h>
+
+#include <Columns/ColumnAggregateFunction.h>
+
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Functions/FunctionFactory.h>
+
+#include <AggregateFunctions/AggregateFunctionCount.h>
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
@@ -50,9 +56,6 @@
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
 
-#include <AggregateFunctions/AggregateFunctionCount.h>
-#include <Columns/ColumnAggregateFunction.h>
-#include <Common/scope_guard_safe.h>
 
 namespace DB
 {
@@ -67,6 +70,7 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int TOO_MANY_COLUMNS;
     extern const int UNSUPPORTED_METHOD;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -377,6 +381,51 @@ void updatePrewhereOutputsIfNeeded(SelectQueryInfo & table_expression_query_info
     prewhere_outputs.insert(prewhere_outputs.end(), required_output_nodes.begin(), required_output_nodes.end());
 }
 
+FilterDAGInfo buildRowPolicyFilterIfNeeded(const StoragePtr & storage,
+    SelectQueryInfo & table_expression_query_info,
+    PlannerContextPtr & planner_context)
+{
+    auto storage_id = storage->getStorageID();
+    const auto & query_context = planner_context->getQueryContext();
+
+    auto row_policy_filter = query_context->getRowPolicyFilter(storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+    if (!row_policy_filter)
+        return {};
+
+    auto row_policy_filter_query_tree = buildQueryTree(row_policy_filter->expression, query_context);
+
+    QueryAnalysisPass query_analysis_pass(table_expression_query_info.table_expression);
+    query_analysis_pass.run(row_policy_filter_query_tree, query_context);
+
+    auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression_query_info.table_expression);
+    const auto table_expression_names = table_expression_data.getColumnNames();
+    NameSet table_expression_required_names_without_row_policy(table_expression_names.begin(), table_expression_names.end());
+
+    collectSourceColumns(row_policy_filter_query_tree, planner_context);
+    collectSets(row_policy_filter_query_tree, *planner_context);
+
+    auto row_policy_actions_dag = std::make_shared<ActionsDAG>();
+
+    PlannerActionsVisitor actions_visitor(planner_context, false /*use_column_identifier_as_action_node_name*/);
+    auto expression_nodes = actions_visitor.visit(row_policy_actions_dag, row_policy_filter_query_tree);
+    if (expression_nodes.size() != 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Row policy filter actions must return single output node. Actual {}",
+            expression_nodes.size());
+
+    auto & row_policy_actions_outputs = row_policy_actions_dag->getOutputs();
+    row_policy_actions_outputs = std::move(expression_nodes);
+
+    std::string filter_node_name = row_policy_actions_outputs[0]->result_name;
+    bool remove_filter_column = true;
+
+    for (const auto & row_policy_input_node : row_policy_actions_dag->getInputs())
+        if (table_expression_required_names_without_row_policy.contains(row_policy_input_node->result_name))
+            row_policy_actions_outputs.push_back(row_policy_input_node);
+
+    return {std::move(row_policy_actions_dag), std::move(filter_node_name), remove_filter_column};
+}
+
 JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
     const SelectQueryInfo & select_query_info,
     const SelectQueryOptions & select_query_options,
@@ -547,9 +596,53 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                 updatePrewhereOutputsIfNeeded(table_expression_query_info, table_expression_data.getColumnNames(), storage_snapshot);
 
+                auto row_policy_filter_info = buildRowPolicyFilterIfNeeded(storage, table_expression_query_info, planner_context);
+                bool moved_row_policy_to_prewhere = false;
+
+                if (row_policy_filter_info.actions)
+                {
+                    bool is_final = table_expression_query_info.table_expression_modifiers &&
+                        table_expression_query_info.table_expression_modifiers->hasFinal();
+                    bool optimize_move_to_prewhere = settings.optimize_move_to_prewhere && (!is_final || settings.optimize_move_to_prewhere_if_final);
+
+                    if (storage->supportsPrewhere() && optimize_move_to_prewhere)
+                    {
+                        if (!table_expression_query_info.prewhere_info)
+                            table_expression_query_info.prewhere_info = std::make_shared<PrewhereInfo>();
+
+                        if (!table_expression_query_info.prewhere_info->prewhere_actions)
+                        {
+                            table_expression_query_info.prewhere_info->prewhere_actions = row_policy_filter_info.actions;
+                            table_expression_query_info.prewhere_info->prewhere_column_name = row_policy_filter_info.column_name;
+                            table_expression_query_info.prewhere_info->remove_prewhere_column = row_policy_filter_info.do_remove_column;
+                        }
+                        else
+                        {
+                            table_expression_query_info.prewhere_info->row_level_filter = row_policy_filter_info.actions;
+                            table_expression_query_info.prewhere_info->row_level_column_name = row_policy_filter_info.column_name;
+                        }
+
+                        table_expression_query_info.prewhere_info->need_filter = true;
+                        moved_row_policy_to_prewhere = true;
+                    }
+                }
+
                 const auto & columns_names = table_expression_data.getColumnNames();
                 from_stage = storage->getQueryProcessingStage(query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);
                 storage->read(query_plan, columns_names, storage_snapshot, table_expression_query_info, query_context, from_stage, max_block_size, max_streams);
+
+                if (query_plan.isInitialized() &&
+                    from_stage == QueryProcessingStage::FetchColumns &&
+                    row_policy_filter_info.actions &&
+                    !moved_row_policy_to_prewhere)
+                {
+                    auto row_level_filter_step = std::make_unique<FilterStep>(query_plan.getCurrentDataStream(),
+                        row_policy_filter_info.actions,
+                        row_policy_filter_info.column_name,
+                        row_policy_filter_info.do_remove_column);
+                    row_level_filter_step->setStepDescription("Row-level security filter");
+                    query_plan.addStep(std::move(row_level_filter_step));
+                }
 
                 if (query_context->hasQueryContext() && !select_query_options.is_internal)
                 {
