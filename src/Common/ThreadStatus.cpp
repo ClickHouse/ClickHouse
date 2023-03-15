@@ -1,6 +1,5 @@
 #include <Common/Exception.h>
 #include <Common/ThreadProfileEvents.h>
-#include <Common/ConcurrentBoundedQueue.h>
 #include <Common/QueryProfiler.h>
 #include <Common/ThreadStatus.h>
 #include <base/errnoToString.h>
@@ -11,13 +10,11 @@
 #include <base/getPageSize.h>
 
 #include <csignal>
-#include <mutex>
 #include <sys/mman.h>
 
 
 namespace DB
 {
-
 
 namespace ErrorCodes
 {
@@ -71,35 +68,9 @@ static thread_local ThreadStack alt_stack;
 static thread_local bool has_alt_stack = false;
 #endif
 
-ContextWeakPtr ThreadGroupStatus::getQueryContextWeak() const
-{
-    return query_context;
-}
-
-ContextWeakPtr ThreadGroupStatus::getGlobalContextWeak() const
-{
-    return global_context;
-}
-
-ThreadGroupStatus::FatalErrorCallback ThreadGroupStatus::getFatalErrorCallback() const
-{
-    return fatal_error_callback;
-}
-
-void ThreadGroupStatus::link(ThreadStatusPtr thread)
-{
-    std::lock_guard lock(mutex);
-
-    /// NOTE: thread may be attached multiple times if it is reused from a thread pool.
-    thread_ids.insert(thread->thread_id);
-    threads.insert(thread);
-}
-
-void ThreadGroupStatus::unlink(ThreadStatusPtr thread)
-{
-    std::lock_guard guard(mutex);
-    threads.erase(thread);
-}
+ThreadGroupStatus::ThreadGroupStatus()
+    : master_thread_id(CurrentThread::get().thread_id)
+{}
 
 ThreadStatus::ThreadStatus()
     : thread_id{getThreadId()}
@@ -155,6 +126,64 @@ ThreadStatus::ThreadStatus()
 #endif
 }
 
+ThreadGroupStatusPtr ThreadStatus::getThreadGroup() const
+{
+    return thread_group;
+}
+
+const String & ThreadStatus::getQueryId() const
+{
+    return query_id_from_query_context;
+}
+
+ContextPtr ThreadStatus::getQueryContext() const
+{
+    return query_context.lock();
+}
+
+ContextPtr ThreadStatus::getGlobalContext() const
+{
+    return global_context.lock();
+}
+
+void ThreadGroupStatus::attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue, LogsLevel logs_level)
+{
+    std::lock_guard lock(mutex);
+    shared_data.logs_queue_ptr = logs_queue;
+    shared_data.client_logs_level = logs_level;
+}
+
+void ThreadStatus::attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue,
+                                               LogsLevel logs_level)
+{
+    if (!thread_group)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No thread group attached to the thread {}", thread_id);
+
+    shared_data.logs_queue_ptr = logs_queue;
+    shared_data.client_logs_level = logs_level;
+    thread_group->attachInternalTextLogsQueue(logs_queue, logs_level);
+}
+
+InternalTextLogsQueuePtr ThreadStatus::getInternalTextLogsQueue() const
+{
+    return shared_data.logs_queue_ptr.lock();
+}
+
+InternalProfileEventsQueuePtr ThreadStatus::getInternalProfileEventsQueue() const
+{
+    return shared_data.profile_queue_ptr.lock();
+}
+
+const String & ThreadStatus::getQueryForLog() const
+{
+    return shared_data.query_for_logs;
+}
+
+LogsLevel ThreadStatus::getClientLogsLevel() const
+{
+    return shared_data.client_logs_level;
+}
+
 void ThreadStatus::flushUntrackedMemory()
 {
     if (untracked_memory == 0)
@@ -170,7 +199,7 @@ ThreadStatus::~ThreadStatus()
 
     /// It may cause segfault if query_context was destroyed, but was not detached
     auto query_context_ptr = query_context.lock();
-    assert((!query_context_ptr && query_id.empty()) || (query_context_ptr && query_id == query_context_ptr->getCurrentQueryId()));
+    assert((!query_context_ptr && getQueryId().empty()) || (query_context_ptr && getQueryId() == query_context_ptr->getCurrentQueryId()));
 
     /// detachGroup if it was attached
     if (deleter)
@@ -196,61 +225,25 @@ void ThreadStatus::updatePerformanceCounters()
     }
 }
 
-void ThreadStatus::assertState(ThreadState permitted_state, const char * description) const
-{
-    auto curr_state = thread_state.load();
-
-    if (curr_state == permitted_state)
-        return;
-
-    if (description)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected thread state {}: {}", curr_state, description);
-    else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected thread state {}", curr_state);
-}
-
-void ThreadStatus::attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue,
-                                               LogsLevel client_logs_level)
-{
-    logs_queue_ptr = logs_queue;
-    chassert(thread_group);
-
-    std::lock_guard lock(thread_group->mutex);
-    thread_group->logs_queue_ptr = logs_queue;
-    thread_group->client_logs_level = client_logs_level;
-}
-
-void ThreadStatus::attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & profile_queue)
-{
-    profile_queue_ptr = profile_queue;
-
-    chassert(thread_group);
-
-    std::lock_guard lock(thread_group->mutex);
-    thread_group->profile_queue_ptr = profile_queue;
-}
-
 void ThreadStatus::onFatalError()
 {
-    /// No thread group - no callback
-    if (!thread_group)
-        return;
-
-    std::lock_guard lock(thread_group->mutex);
     if (fatal_error_callback)
         fatal_error_callback();
 }
 
 ThreadStatus * MainThreadStatus::main_thread = nullptr;
+
 MainThreadStatus & MainThreadStatus::getInstance()
 {
     static MainThreadStatus thread_status;
     return thread_status;
 }
+
 MainThreadStatus::MainThreadStatus()
 {
     main_thread = current_thread;
 }
+
 MainThreadStatus::~MainThreadStatus()
 {
     main_thread = nullptr;

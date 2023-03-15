@@ -5,6 +5,7 @@
 
 #include <memory>
 #include <string>
+#include <string_view>
 
 
 namespace ProfileEvents
@@ -48,6 +49,8 @@ public:
     static void attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & queue);
     static InternalProfileEventsQueuePtr getInternalProfileEventsQueue();
 
+    static void attachQueryForLog(const String & query_);
+
     /// Makes system calls to update ProfileEvents that contain info from rusage and taskstats
     static void updatePerformanceCounters();
 
@@ -65,24 +68,18 @@ public:
 
     /// You must call one of these methods when create a query child thread:
     /// Add current thread to a group associated with the thread group
-    static void attachTo(const ThreadGroupStatusPtr & thread_group);
+    static void attachToGroup(const ThreadGroupStatusPtr & thread_group);
     /// Is useful for a ThreadPool tasks
-    static void attachToIfDetached(const ThreadGroupStatusPtr & thread_group);
+    static void attachToGroupIfDetached(const ThreadGroupStatusPtr & thread_group);
 
     /// Non-master threads call this method in destructor automatically
-    static void detachGroupIfNotDetached();
-    static void detachQueryIfNotDetached();
+    static void detachFromGroupIfNotDetached();
 
     /// Update ProfileEvents and dumps info to system.query_thread_log
     static void finalizePerformanceCounters();
 
     /// Returns a non-empty string if the thread is attached to a query
-    static std::string_view getQueryId()
-    {
-        if (unlikely(!current_thread))
-            return {};
-        return current_thread->getQueryId();
-    }
+    static std::string_view getQueryId();
 
     /// Initializes query with current thread as master thread in constructor, and detaches it in destructor
     struct QueryScope : private boost::noncopyable

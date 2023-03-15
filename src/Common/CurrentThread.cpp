@@ -57,14 +57,6 @@ void CurrentThread::updateProgressOut(const Progress & value)
     current_thread->progress_out.incrementPiecewiseAtomically(value);
 }
 
-void CurrentThread::attachInternalTextLogsQueue(const std::shared_ptr<InternalTextLogsQueue> & logs_queue,
-                                                LogsLevel client_logs_level)
-{
-    if (unlikely(!current_thread))
-        return;
-    current_thread->attachInternalTextLogsQueue(logs_queue, client_logs_level);
-}
-
 std::shared_ptr<InternalTextLogsQueue> CurrentThread::getInternalTextLogsQueue()
 {
     /// NOTE: this method could be called at early server startup stage
@@ -72,13 +64,6 @@ std::shared_ptr<InternalTextLogsQueue> CurrentThread::getInternalTextLogsQueue()
         return nullptr;
 
     return current_thread->getInternalTextLogsQueue();
-}
-
-void CurrentThread::attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & queue)
-{
-    if (unlikely(!current_thread))
-        return;
-    current_thread->attachInternalProfileEventsQueue(queue);
 }
 
 InternalProfileEventsQueuePtr CurrentThread::getInternalProfileEventsQueue()
@@ -89,12 +74,29 @@ InternalProfileEventsQueuePtr CurrentThread::getInternalProfileEventsQueue()
     return current_thread->getInternalProfileEventsQueue();
 }
 
+void CurrentThread::attachInternalTextLogsQueue(const std::shared_ptr<InternalTextLogsQueue> & logs_queue,
+                                                LogsLevel client_logs_level)
+{
+    if (unlikely(!current_thread))
+        return;
+    current_thread->attachInternalTextLogsQueue(logs_queue, client_logs_level);
+}
+
+
 ThreadGroupStatusPtr CurrentThread::getGroup()
 {
     if (unlikely(!current_thread))
         return nullptr;
 
     return current_thread->getThreadGroup();
+}
+
+std::string_view CurrentThread::getQueryId()
+{
+    if (unlikely(!current_thread))
+        return {};
+
+    return current_thread->getQueryId();
 }
 
 }

@@ -203,10 +203,10 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
         ProcessListForUser & user_process_list = user_process_list_it->second;
 
         /// Actualize thread group info
+        CurrentThread::attachQueryForLog(query_);
         auto thread_group = CurrentThread::getGroup();
         if (thread_group)
         {
-            std::lock_guard lock_thread_group(thread_group->mutex);
             thread_group->performance_counters.setParent(&user_process_list.user_performance_counters);
             thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
             if (user_process_list.user_temp_data_on_disk)
@@ -214,8 +214,6 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
                 query_context->setTempDataOnDisk(std::make_shared<TemporaryDataOnDiskScope>(
                     user_process_list.user_temp_data_on_disk, settings.max_temporary_data_on_disk_size_for_query));
             }
-            thread_group->query = query_;
-            thread_group->normalized_query_hash = normalizedQueryHash<false>(query_);
 
             /// Set query-level memory trackers
             thread_group->memory_tracker.setOrRaiseHardLimit(settings.max_memory_usage);

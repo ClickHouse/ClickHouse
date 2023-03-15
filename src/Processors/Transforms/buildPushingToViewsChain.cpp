@@ -286,7 +286,7 @@ Chain buildPushingToViewsChain(
         std::unique_ptr<ThreadStatus> view_thread_status_ptr = std::make_unique<ThreadStatus>();
         /// Copy of a ThreadStatus should be internal.
         view_thread_status_ptr->setInternalThread();
-        view_thread_status_ptr->attachTo(running_group);
+        view_thread_status_ptr->attachToGroup(running_group);
 
         auto * view_thread_status = view_thread_status_ptr.get();
         views_data->thread_status_holder->thread_statuses.push_front(std::move(view_thread_status_ptr));

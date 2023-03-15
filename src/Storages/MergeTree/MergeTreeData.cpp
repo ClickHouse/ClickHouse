@@ -1395,10 +1395,10 @@ std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
             {
                 SCOPE_EXIT_SAFE(
                     if (thread_group)
-                        CurrentThread::detachQueryIfNotDetached();
+                        CurrentThread::detachFromGroupIfNotDetached();
                 );
                 if (thread_group)
-                    CurrentThread::attachToIfDetached(thread_group);
+                    CurrentThread::attachToGroupIfDetached(thread_group);
 
                 while (true)
                 {
@@ -2314,10 +2314,10 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
             {
                 SCOPE_EXIT_SAFE(
                     if (thread_group)
-                        CurrentThread::detachQueryIfNotDetached();
+                        CurrentThread::detachFromGroupIfNotDetached();
                 );
                 if (thread_group)
-                    CurrentThread::attachToIfDetached(thread_group);
+                    CurrentThread::attachToGroupIfDetached(thread_group);
 
                 asMutableDeletingPart(part)->remove();
                 if (part_names_succeed)
@@ -2375,10 +2375,10 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts_t
         {
             SCOPE_EXIT_SAFE(
                 if (thread_group)
-                    CurrentThread::detachQueryIfNotDetached();
+                    CurrentThread::detachFromGroupIfNotDetached();
             );
             if (thread_group)
-                CurrentThread::attachToIfDetached(thread_group);
+                CurrentThread::attachToGroupIfDetached(thread_group);
 
             LOG_TRACE(log, "Removing {} parts in blocks range {}", batch.size(), range.getPartNameForLogs());
 
