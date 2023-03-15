@@ -2,13 +2,11 @@
 
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperSnapshotManager.h>
-#include <Coordination/KeeperSnapshotManagerS3.h>
-#include <Coordination/KeeperContext.h>
 #include <Coordination/KeeperStorage.h>
-
 #include <libnuraft/nuraft.hxx>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/logger_useful.h>
+#include <Coordination/KeeperContext.h>
 
 
 namespace DB
@@ -28,7 +26,6 @@ public:
         const std::string & snapshots_path_,
         const CoordinationSettingsPtr & coordination_settings_,
         const KeeperContextPtr & keeper_context_,
-        KeeperSnapshotManagerS3 * snapshot_manager_s3_,
         const std::string & superdigest_ = "");
 
     /// Read state from the latest snapshot
@@ -36,7 +33,7 @@ public:
 
     static KeeperStorage::RequestForSession parseRequest(nuraft::buffer & data);
 
-    bool preprocess(const KeeperStorage::RequestForSession & request_for_session);
+    void preprocess(const KeeperStorage::RequestForSession & request_for_session);
 
     nuraft::ptr<nuraft::buffer> pre_commit(uint64_t log_idx, nuraft::buffer & data) override;
 
@@ -103,7 +100,6 @@ public:
     uint64_t getKeyArenaSize() const;
     uint64_t getLatestSnapshotBufSize() const;
 
-    void recalculateStorageStats();
 private:
     /// In our state machine we always have a single snapshot which is stored
     /// in memory in compressed (serialized) format.
@@ -150,8 +146,6 @@ private:
     const std::string superdigest;
 
     KeeperContextPtr keeper_context;
-
-    KeeperSnapshotManagerS3 * snapshot_manager_s3;
 };
 
 }

@@ -1,19 +1,22 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/DateTimeTransforms.h>
+#include <Functions/FunctionDateOrDateTimeToSomething.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Functions/FunctionCustomWeekToSomething.h>
+
 
 namespace DB
 {
 
-using FunctionToDayOfWeek = FunctionCustomWeekToSomething<DataTypeUInt8, ToDayOfWeekImpl>;
+using FunctionToDayOfWeek = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToDayOfWeekImpl>;
 
 REGISTER_FUNCTION(ToDayOfWeek)
 {
     factory.registerFunction<FunctionToDayOfWeek>();
 
     /// MysQL compatibility alias.
-    factory.registerAlias("DAYOFWEEK", "toDayOfWeek", FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionToDayOfWeek>("DAYOFWEEK", FunctionFactory::CaseInsensitive);
 }
 
 }
+
+

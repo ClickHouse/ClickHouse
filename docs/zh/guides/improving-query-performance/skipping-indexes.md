@@ -1,6 +1,5 @@
 ---
-slug: /zh/guides/improving-query-performance/skipping-indexes
-sidebar_label: 跳数索引
+sidebar_label: Data Skipping Indexes
 sidebar_position: 2
 ---
 

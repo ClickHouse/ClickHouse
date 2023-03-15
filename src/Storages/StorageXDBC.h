@@ -26,14 +26,13 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        size_t num_streams) override;
+        unsigned num_streams) override;
 
     StorageXDBC(
         const StorageID & table_id_,
         const std::string & remote_database_name,
         const std::string & remote_table_name,
-        ColumnsDescription columns_,
-        ConstraintsDescription constraints_,
+        const ColumnsDescription & columns_,
         const String & comment,
         ContextPtr context_,
         BridgeHelperPtr bridge_helper_);

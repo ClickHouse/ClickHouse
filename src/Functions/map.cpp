@@ -26,8 +26,6 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
-    extern const int ILLEGAL_COLUMN;
 }
 
 namespace
@@ -149,84 +147,6 @@ public:
     }
 };
 
-/// mapFromArrays(keys, values) is a function that allows you to make key-value pair from a pair of arrays
-class FunctionMapFromArrays : public IFunction
-{
-public:
-    static constexpr auto name = "mapFromArrays";
-
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMapFromArrays>(); }
-    String getName() const override { return name; }
-
-    size_t getNumberOfArguments() const override { return 2; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (arguments.size() != 2)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} requires 2 arguments, but {} given",
-                getName(),
-                arguments.size());
-
-        const auto * keys_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
-        if (!keys_type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be an Array", getName());
-
-        const auto * values_type = checkAndGetDataType<DataTypeArray>(arguments[1].get());
-        if (!values_type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument for function {} must be an Array", getName());
-
-        DataTypes key_value_types{keys_type->getNestedType(), values_type->getNestedType()};
-        return std::make_shared<DataTypeMap>(key_value_types);
-    }
-
-    ColumnPtr executeImpl(
-        const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t /* input_rows_count */) const override
-    {
-        ColumnPtr holder_keys;
-        bool is_keys_const = isColumnConst(*arguments[0].column);
-        const ColumnArray * col_keys;
-        if (is_keys_const)
-        {
-            holder_keys = arguments[0].column->convertToFullColumnIfConst();
-            col_keys = checkAndGetColumn<ColumnArray>(holder_keys.get());
-        }
-        else
-        {
-            col_keys = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
-        }
-
-        ColumnPtr holder_values;
-        bool is_values_const = isColumnConst(*arguments[1].column);
-        const ColumnArray * col_values;
-        if (is_values_const)
-        {
-            holder_values = arguments[1].column->convertToFullColumnIfConst();
-            col_values = checkAndGetColumn<ColumnArray>(holder_values.get());
-        }
-        else
-        {
-            col_values = checkAndGetColumn<ColumnArray>(arguments[1].column.get());
-        }
-
-        if (!col_keys || !col_values)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Arguments of function {} must be array", getName());
-
-        if (!col_keys->hasEqualOffsets(*col_values))
-            throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Array arguments for function {} must have equal sizes", getName());
-
-        const auto & data_keys = col_keys->getDataPtr();
-        const auto & data_values = col_values->getDataPtr();
-        const auto & offsets = col_keys->getOffsetsPtr();
-        auto nested_column = ColumnArray::create(ColumnTuple::create(Columns{data_keys, data_values}), offsets);
-        return ColumnMap::create(nested_column);
-    }
-};
 
 struct NameMapContains { static constexpr auto name = "mapContains"; };
 
@@ -281,14 +201,15 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 1",
-                getName(), arguments.size());
+            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+                + toString(arguments.size()) + ", should be 1",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         const DataTypeMap * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].type.get());
 
         if (!map_type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a map", getName());
+            throw Exception{"First argument for function " + getName() + " must be a map",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         auto key_type = map_type->getKeyType();
 
@@ -329,14 +250,15 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 1",
-                getName(), arguments.size());
+            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+                + toString(arguments.size()) + ", should be 1",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         const DataTypeMap * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].type.get());
 
         if (!map_type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a map", getName());
+            throw Exception{"First argument for function " + getName() + " must be a map",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         auto value_type = map_type->getValueType();
 
@@ -373,7 +295,7 @@ public:
                                              : checkAndGetColumn<ColumnMap>(arguments[0].column.get());
         const DataTypeMap * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].type.get());
         if (!col_map || !map_type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a map", getName());
+            throw Exception{"First argument for function " + getName() + " must be a map", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         auto col_res = ColumnVector<UInt8>::create();
         typename ColumnVector<UInt8>::Container & vec_res = col_res->getData();
@@ -437,20 +359,23 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Number of arguments for function {} doesn't match: passed {}, should be 2",
-                            getName(), arguments.size());
+            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+                            + toString(arguments.size()) + ", should be 2",
+                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         const DataTypeMap * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].type.get());
         const DataTypeString * pattern_type = checkAndGetDataType<DataTypeString>(arguments[1].type.get());
 
         if (!map_type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a Map", getName());
+            throw Exception{"First argument for function " + getName() + " must be a Map",
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         if (!pattern_type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument for function {} must be String", getName());
+            throw Exception{"Second argument for function " + getName() + " must be String",
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         if (!isStringOrFixedString(map_type->getKeyType()))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Key type of map for function {} must be `String` or `FixedString`", getName());
+            throw Exception{"Key type of map for function " + getName() + " must be `String` or `FixedString`",
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         return std::make_shared<DataTypeUInt8>();
     }
@@ -478,15 +403,16 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 2",
-                getName(), arguments.size());
+            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+                + toString(arguments.size()) + ", should be 2",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
 
         const DataTypeMap * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].type.get());
 
         if (!map_type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a map", getName());
+            throw Exception{"First argument for function " + getName() + " must be a map",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
 
         auto key_type = map_type->getKeyType();
@@ -494,11 +420,12 @@ public:
         WhichDataType which(key_type);
 
         if (!which.isStringOrFixedString())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {}only support the map with String or FixedString key",
-                getName());
+            throw Exception{"Function " + getName() + "only support the map with String or FixedString key",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         if (!isStringOrFixedString(arguments[1].type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument passed to function {} must be String or FixedString", getName());
+            throw Exception{"Second argument passed to function " + getName() + " must be String or FixedString",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         return std::make_shared<DataTypeMap>(map_type->getKeyType(), map_type->getValueType());
     }
@@ -612,19 +539,19 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 2",
-                getName(), arguments.size());
+            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+                + toString(arguments.size()) + ", should be 2",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         const DataTypeMap * left = checkAndGetDataType<DataTypeMap>(arguments[0].type.get());
         const DataTypeMap * right = checkAndGetDataType<DataTypeMap>(arguments[1].type.get());
 
         if (!left || !right)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The two arguments for function {} must be both Map type",
-                getName());
+            throw Exception{"The two arguments for function " + getName() + " must be both Map type",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         if (!left->getKeyType()->equals(*right->getKeyType()) || !left->getValueType()->equals(*right->getValueType()))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The Key And Value type of Map for function {} must be the same",
-                getName());
+            throw Exception{"The Key And Value type of Map for function " + getName() + " must be the same",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         return std::make_shared<DataTypeMap>(left->getKeyType(), left->getValueType());
     }
@@ -729,9 +656,6 @@ REGISTER_FUNCTION(Map)
     factory.registerFunction<FunctionMapContainsKeyLike>();
     factory.registerFunction<FunctionExtractKeyLike>();
     factory.registerFunction<FunctionMapUpdate>();
-    factory.registerFunction<FunctionMapFromArrays>();
-    factory.registerAlias("MAP_FROM_ARRAYS", "mapFromArrays");
-
 }
 
 }

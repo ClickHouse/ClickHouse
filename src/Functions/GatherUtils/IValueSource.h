@@ -20,7 +20,7 @@ struct IValueSource
 
     virtual void accept(ValueSourceVisitor &)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Accept not implemented for {}", demangle(typeid(*this).name()));
+        throw Exception("Accept not implemented for " + demangle(typeid(*this).name()), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     virtual bool isConst() const { return false; }

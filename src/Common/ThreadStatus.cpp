@@ -1,9 +1,9 @@
 #include <Common/Exception.h>
 #include <Common/ThreadProfileEvents.h>
-#include <Common/ConcurrentBoundedQueue.h>
 #include <Common/QueryProfiler.h>
 #include <Common/ThreadStatus.h>
 #include <base/errnoToString.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/Context.h>
 
 #include <Poco/Logger.h>
@@ -120,7 +120,7 @@ ThreadStatus::ThreadStatus()
 
         if (0 != sigaltstack(&altstack_description, nullptr))
         {
-            LOG_WARNING(log, "Cannot set alternative signal stack for thread, {}", errnoToString());
+            LOG_WARNING(log, "Cannot set alternative signal stack for thread, {}", errnoToString(errno));
         }
         else
         {
@@ -128,7 +128,7 @@ ThreadStatus::ThreadStatus()
             struct sigaction action{};
             if (0 != sigaction(SIGSEGV, nullptr, &action))
             {
-                LOG_WARNING(log, "Cannot obtain previous signal action to set alternative signal stack for thread, {}", errnoToString());
+                LOG_WARNING(log, "Cannot obtain previous signal action to set alternative signal stack for thread, {}", errnoToString(errno));
             }
             else if (!(action.sa_flags & SA_ONSTACK))
             {
@@ -136,7 +136,7 @@ ThreadStatus::ThreadStatus()
 
                 if (0 != sigaction(SIGSEGV, &action, nullptr))
                 {
-                    LOG_WARNING(log, "Cannot set action with alternative signal stack for thread, {}", errnoToString());
+                    LOG_WARNING(log, "Cannot set action with alternative signal stack for thread, {}", errnoToString(errno));
                 }
             }
         }
@@ -144,18 +144,9 @@ ThreadStatus::ThreadStatus()
 #endif
 }
 
-void ThreadStatus::flushUntrackedMemory()
-{
-    if (untracked_memory == 0)
-        return;
-
-    memory_tracker.adjustWithUntrackedMemory(untracked_memory);
-    untracked_memory = 0;
-}
-
 ThreadStatus::~ThreadStatus()
 {
-    flushUntrackedMemory();
+    memory_tracker.adjustWithUntrackedMemory(untracked_memory);
 
     if (thread_group)
     {
@@ -198,10 +189,13 @@ void ThreadStatus::updatePerformanceCounters()
     }
 }
 
-void ThreadStatus::assertState(ThreadState permitted_state, const char * description) const
+void ThreadStatus::assertState(const std::initializer_list<int> & permitted_states, const char * description) const
 {
-    if (getCurrentState() == permitted_state)
-        return;
+    for (auto permitted_state : permitted_states)
+    {
+        if (getCurrentState() == permitted_state)
+            return;
+    }
 
     if (description)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected thread state {}: {}", getCurrentState(), description);
@@ -235,20 +229,17 @@ void ThreadStatus::attachInternalProfileEventsQueue(const InternalProfileEventsQ
 
 void ThreadStatus::setFatalErrorCallback(std::function<void()> callback)
 {
-    /// It does not make sense to set a callback for sending logs to a client if there's no thread group
-    chassert(thread_group);
-    std::lock_guard lock(thread_group->mutex);
     fatal_error_callback = std::move(callback);
+
+    if (!thread_group)
+        return;
+
+    std::lock_guard lock(thread_group->mutex);
     thread_group->fatal_error_callback = fatal_error_callback;
 }
 
 void ThreadStatus::onFatalError()
 {
-    /// No thread group - no callback
-    if (!thread_group)
-        return;
-
-    std::lock_guard lock(thread_group->mutex);
     if (fatal_error_callback)
         fatal_error_callback();
 }

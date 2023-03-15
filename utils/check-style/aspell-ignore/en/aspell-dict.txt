@@ -1,4 +1,4 @@
-personal_ws-1.1 en 543 
+personal_ws-1.1 en 484
 AArch
 ACLs
 AMQP
@@ -9,9 +9,6 @@ AddressSanitizer
 AppleClang
 ArrowStream
 AvroConfluent
-BSON
-BSONEachRow
-Bool
 CCTOOLS
 CLion
 CMake
@@ -24,10 +21,7 @@ CapnProto
 CentOS
 ClickHouse
 ClickHouse's
-CodeBlock
-CodeLLDB
 Config
-ConnectionDetails
 Contrib
 Ctrl
 CustomSeparated
@@ -35,7 +29,6 @@ CustomSeparatedWithNames
 CustomSeparatedWithNamesAndTypes
 DBMSs
 DateTime
-DateTimes
 DockerHub
 Doxygen
 Encodings
@@ -57,7 +50,6 @@ Hostname
 IPv
 IntN
 Integrations
-JSONAsObject
 JSONAsString
 JSONColumns
 JSONColumnsWithMetadata
@@ -72,7 +64,6 @@ JSONCompactStringsEachRowWithNames
 JSONCompactStringsEachRowWithNamesAndTypes
 JSONEachRow
 JSONEachRowWithProgress
-JSONObjectEachRow
 JSONStrings
 JSONStringsEachRow
 JSONStringsEachRowWithProgress
@@ -82,7 +73,6 @@ Jemalloc
 Jepsen
 KDevelop
 LGPL
-LLDB
 LOCALTIME
 LOCALTIMESTAMP
 LibFuzzer
@@ -103,13 +93,8 @@ MySQLDump
 NEKUDOTAYIM
 NULLIF
 NVME
-NYPD
 NuRaft
-OLAP
-OLTP
-ObjectId
 Ok
-OpenSSL
 OpenSUSE
 OpenStack
 OpenTelemetry
@@ -120,24 +105,20 @@ Precompiled
 PrettyCompact
 PrettyCompactMonoBlock
 PrettyCompactNoEscapes
+PrettyNoEscapes
+PrettySpace
+PrettySpaceNoEscapes
 PrettyCompactNoEscapesMonoBlock
 PrettyMonoBlock
-PrettyNoEscapes
 PrettyNoEscapesMonoBlock
-PrettySpace
 PrettySpaceMonoBlock
-PrettySpaceNoEscapes
 PrettySpaceNoEscapesMonoBlock
 Protobuf
 ProtobufSingle
-QEMU
 QTCreator
-QueryCacheHits
-QueryCacheMisses
 RBAC
 RawBLOB
 RedHat
-ReplicatedMergeTree
 RowBinary
 RowBinaryWithNames
 RowBinaryWithNamesAndTypes
@@ -150,13 +131,11 @@ SQLInsert
 SQLSTATE
 SSSE
 Schemas
-SelfManaged
 Stateful
 Submodules
 Subqueries
 TSVRaw
 TSan
-TabItem
 TabSeparated
 TabSeparatedRaw
 TabSeparatedRawWithNames
@@ -180,14 +159,12 @@ Valgrind
 Vectorized
 VirtualBox
 Werror
-WithNamesAndTypes
 Woboq
 WriteBuffer
 WriteBuffers
 XCode
 YAML
 YYYY
-Yasm
 Zipkin
 ZooKeeper
 ZooKeeper's
@@ -202,7 +179,6 @@ autostart
 avro
 avx
 aws
-backend
 backoff
 backticks
 benchmarking
@@ -212,8 +188,6 @@ boolean
 bools
 boringssl
 brotli
-bson
-bsoneachrow
 buildable
 camelCase
 capn
@@ -225,7 +199,6 @@ ccache
 cctz
 cfg
 changelog
-changelogs
 charset
 charsets
 checkouting
@@ -262,13 +235,11 @@ datafiles
 dataset
 datasets
 datetime
-datetimes
 dbms
 ddl
 deallocation
 debian
 decompressor
-denormalizing
 denormals
 deserialization
 deserialized
@@ -280,7 +251,6 @@ dragonbox
 durations
 endian
 enum
-exFAT
 fastops
 fcoverage
 filesystem
@@ -312,7 +282,6 @@ instantiation
 integrational
 integrations
 interserver
-invariants
 jdbc
 jemalloc
 json
@@ -330,14 +299,12 @@ jsoncompactstringseachrowwithnames
 jsoncompactstringseachrowwithnamesandtypes
 jsoneachrow
 jsoneachrowwithprogress
-jsonobjecteachrow
 jsonstrings
 jsonstringseachrow
 jsonstringseachrowwithprogress
 kafka
 kafkacat
 konsole
-laion
 latencies
 lexicographically
 libFuzzer
@@ -377,9 +344,7 @@ mutex
 mysql
 mysqldump
 mysqljs
-natively
 noop
-nullability
 nullable
 num
 obfuscator
@@ -411,13 +376,13 @@ prestable
 prettycompact
 prettycompactmonoblock
 prettycompactnoescapes
+prettynoescapes
+prettyspace
+prettyspacenoescapes
 prettycompactnoescapesmonoblock
 prettymonoblock
-prettynoescapes
 prettynoescapesmonoblock
-prettyspace
 prettyspacemonoblock
-prettyspacenoescapes
 prettyspacenoescapesmonoblock
 prlimit
 prometheus
@@ -440,9 +405,7 @@ representable
 requestor
 resultset
 rethrow
-retriable
 risc
-riscv
 ro
 rocksdb
 rowNumberInBlock
@@ -450,7 +413,6 @@ rowbinary
 rowbinarywithnames
 rowbinarywithnamesandtypes
 rsync
-runnable
 runningAccumulate
 runtime
 russian
@@ -484,7 +446,6 @@ subquery
 subseconds
 substring
 subtree
-subtype
 sudo
 symlink
 symlinks
@@ -503,16 +464,12 @@ th
 tmp
 tokenization
 toml
-toolchain
 toolset
-transactionally
 tskv
 tsv
 tui
 turbostat
 txt
-ubuntu
-uint
 unary
 unencrypted
 unixodbc
@@ -537,7 +494,6 @@ xcode
 xml
 xz
 zLib
-zLinux
 zkcopy
 zlib
 znodes

@@ -28,7 +28,6 @@ protected:
       *  (getpeername will return an error).
       */
     Poco::Net::SocketAddress peer_address;
-    Poco::Net::SocketAddress our_address;
 };
 
 }

@@ -13,10 +13,8 @@
 #include <filesystem>
 #include <memory>
 #include <Common/logger_useful.h>
-#include <Coordination/KeeperContext.h>
+#include "Coordination/KeeperContext.h"
 #include <Coordination/KeeperConstants.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
-
 
 namespace DB
 {
@@ -148,6 +146,33 @@ namespace
     }
 }
 
+namespace
+{
+
+enum class PathMatchResult
+{
+    NOT_MATCH,
+    EXACT,
+    IS_CHILD
+};
+
+PathMatchResult matchPath(const std::string_view path, const std::string_view match_to)
+{
+    using enum PathMatchResult;
+
+    auto [first_it, second_it] = std::mismatch(path.begin(), path.end(), match_to.begin(), match_to.end());
+
+    if (second_it != match_to.end())
+        return NOT_MATCH;
+
+    if (first_it == path.end())
+        return EXACT;
+
+    return *first_it == '/' ? IS_CHILD : NOT_MATCH;
+}
+
+}
+
 void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, WriteBuffer & out, KeeperContextPtr keeper_context)
 {
     writeBinary(static_cast<uint8_t>(snapshot.version), out);
@@ -192,11 +217,8 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
         const auto & path = it->key;
 
         // write only the root system path because of digest
-        if (Coordination::matchPath(path.toView(), keeper_system_path) == Coordination::PathMatchResult::IS_CHILD)
+        if (matchPath(path.toView(), keeper_system_path) == PathMatchResult::IS_CHILD)
         {
-            if (counter == snapshot.snapshot_container_size - 1)
-                break;
-
             ++it;
             continue;
         }
@@ -343,8 +365,8 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
         KeeperStorage::Node node{};
         readNode(node, in, current_version, storage.acl_map);
 
-        using enum Coordination::PathMatchResult;
-        auto match_result = Coordination::matchPath(path, keeper_system_path);
+        using enum PathMatchResult;
+        auto match_result = matchPath(path, keeper_system_path);
 
         const std::string error_msg = fmt::format("Cannot read node on path {} from a snapshot because it is used as a system node", path);
         if (match_result == IS_CHILD)
@@ -361,25 +383,19 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
                     "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true",
                     error_msg);
         }
-        else if (match_result == EXACT)
+        else if (match_result == EXACT && !is_node_empty(node))
         {
-            if (!is_node_empty(node))
+            if (keeper_context->ignore_system_path_on_startup || keeper_context->server_state != KeeperContext::Phase::INIT)
             {
-                if (keeper_context->ignore_system_path_on_startup || keeper_context->server_state != KeeperContext::Phase::INIT)
-                {
-                    LOG_ERROR(&Poco::Logger::get("KeeperSnapshotManager"), "{}. Ignoring it", error_msg);
-                    node = KeeperStorage::Node{};
-                }
-                else
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "{}. Ignoring it can lead to data loss. "
-                        "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true",
-                        error_msg);
+                LOG_ERROR(&Poco::Logger::get("KeeperSnapshotManager"), "{}. Ignoring it", error_msg);
+                node = KeeperStorage::Node{};
             }
-
-            // we always ignore the written size for this node
-            node.recalculateSize();
+            else
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "{}. Ignoring it can lead to data loss. "
+                    "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true",
+                    error_msg);
         }
 
         storage.container.insertOrReplace(path, node);
@@ -396,7 +412,7 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
         {
             auto parent_path = parentPath(itr.key);
             storage.container.updateValue(
-                parent_path, [version, path = itr.key](KeeperStorage::Node & value) { value.addChild(getBaseName(path), /*update_size*/ version < SnapshotVersion::V4); });
+                parent_path, [path = itr.key](KeeperStorage::Node & value) { value.addChild(getBaseName(path)); });
         }
     }
 
@@ -412,8 +428,7 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
                             " is different from actual children size {} for node {}", itr.value.stat.numChildren, itr.value.getChildren().size(), itr.key);
 #else
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Children counter in stat.numChildren {}"
-                                " is different from actual children size {} for node {}",
-                                itr.value.stat.numChildren, itr.value.getChildren().size(), itr.key);
+                            " is different from actual children size {} for node {}", itr.value.stat.numChildren, itr.value.getChildren().size(), itr.key);
 #endif
             }
         }

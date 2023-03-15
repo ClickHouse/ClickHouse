@@ -2,7 +2,6 @@
 # Tags: long, no-ordinary-database
 
 # shellcheck disable=SC2015
-# shellcheck disable=SC2119
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

@@ -22,7 +22,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
-    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace
@@ -116,7 +115,7 @@ bool isCompatible(IAST & node)
             return false;
 
         if (!function->arguments)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: function->arguments is not set");
+            throw Exception("Logical error: function->arguments is not set", ErrorCodes::LOGICAL_ERROR);
 
         String name = function->name;
 
@@ -252,11 +251,6 @@ String transformQueryForExternalDatabase(
     ContextPtr context)
 {
     auto clone_query = query_info.query->clone();
-
-    /// TODO: Analyzer syntax analyzer result
-    if (!query_info.syntax_analyzer_result)
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "transform query for external database is unsupported");
-
     const Names used_columns = query_info.syntax_analyzer_result->requiredSourceColumns();
     bool strict = context->getSettingsRef().external_table_strict_query;
 
@@ -288,7 +282,7 @@ String transformQueryForExternalDatabase(
         }
         else if (strict)
         {
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Query contains non-compatible expressions (and external_table_strict_query=true)");
+            throw Exception("Query contains non-compatible expressions (and external_table_strict_query=true)", ErrorCodes::INCORRECT_QUERY);
         }
         else if (const auto * function = original_where->as<ASTFunction>())
         {
@@ -309,7 +303,7 @@ String transformQueryForExternalDatabase(
     }
     else if (strict && original_where)
     {
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Query contains non-compatible expressions (and external_table_strict_query=true)");
+        throw Exception("Query contains non-compatible expressions (and external_table_strict_query=true)", ErrorCodes::INCORRECT_QUERY);
     }
 
     auto * literal_expr = typeid_cast<ASTLiteral *>(original_where.get());

@@ -1,6 +1,3 @@
----
-slug: /en/operations/system-tables/settings
----
 # settings
 
 Contains information about session settings for current user.
@@ -16,7 +13,6 @@ Columns:
 -   `readonly` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Shows whether the current user can change the setting:
     -   `0` — Current user can change the setting.
     -   `1` — Current user can’t change the setting.
--   `default` ([String](../../sql-reference/data-types/string.md)) — Setting default value.
 
 **Example**
 
@@ -53,3 +49,5 @@ SELECT * FROM system.settings WHERE changed AND name='load_balancing'
 -   [Permissions for Queries](../../operations/settings/permissions-for-queries.md#settings_readonly)
 -   [Constraints on Settings](../../operations/settings/constraints-on-settings.md)
 -   [SHOW SETTINGS](../../sql-reference/statements/show.md#show-settings) statement
+
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/settings) <!--hide-->

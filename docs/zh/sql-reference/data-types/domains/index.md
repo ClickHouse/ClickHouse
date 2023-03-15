@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/data-types/domains/
 sidebar_label: "域"
 sidebar_position: 56
 ---
@@ -28,3 +27,7 @@ Domain类型是特定实现的类型，它总是与某个现存的基础类型�
 -   无法通过`ALTER TABLE`将基础类型的索引转换为Domain类型的索引。
 -   当从其他列或表插入数据时，无法将string类型的值隐式地转换为Domain类型的值。
 -   无法对存储为Domain类型的值添加约束。
+
+[来源文章](https://clickhouse.com/docs/en/data_types/domains/overview) <!--hide-->
+
+
