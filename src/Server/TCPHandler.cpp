@@ -1824,7 +1824,7 @@ void TCPHandler::sendData(const Block & block)
         {
             --unknown_packet_in_send_data;
             if (unknown_packet_in_send_data == 0)
-                writeVarUInt(UInt64(-1), *out);
+                writeVarUInt(VAR_UINT_MAX, *out);
         }
 
         writeVarUInt(Protocol::Server::Data, *out);
