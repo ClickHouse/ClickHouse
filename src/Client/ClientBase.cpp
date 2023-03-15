@@ -1021,7 +1021,7 @@ bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_)
             return true;
 
         case Protocol::Server::TimezoneUpdate:
-            DateLUT::setDefaultTimezone(packet.server_timezone);
+            onTimezoneUpdate(packet.server_timezone);
             return true;
 
         default:
@@ -1044,6 +1044,11 @@ void ClientBase::onProgress(const Progress & value)
 
     if (need_render_progress && tty_buf)
         progress_indication.writeProgress(*tty_buf);
+}
+
+void ClientBase::onTimezoneUpdate(const String & tz)
+{
+    DateLUT::setDefaultTimezone(tz);
 }
 
 
@@ -1189,12 +1194,12 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
                 return receiveSampleBlock(out, columns_description, parsed_query);
 
             case Protocol::Server::TimezoneUpdate:
-                DateLUT::setDefaultTimezone(packet.server_timezone);
+                onTimezoneUpdate(packet.server_timezone);
                 break;
 
             default:
                 throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
-                    "Unexpected packet from server (expected Data, Exception or Log, got {})",
+                    "Unexpected packet from server (expected Data, Exception, Log or TimezoneUpdate, got {})",
                     String(Protocol::Server::toString(packet.type)));
         }
     }
@@ -1500,7 +1505,9 @@ void ClientBase::receiveLogsAndProfileEvents(ASTPtr parsed_query)
 {
     auto packet_type = connection->checkPacket(0);
 
-    while (packet_type && (*packet_type == Protocol::Server::Log || *packet_type == Protocol::Server::ProfileEvents))
+    while (packet_type && (*packet_type == Protocol::Server::Log           ||
+                           *packet_type == Protocol::Server::ProfileEvents ||
+                           *packet_type == Protocol::Server::TimezoneUpdate))
     {
         receiveAndProcessPacket(parsed_query, false);
         packet_type = connection->checkPacket(0);
@@ -1538,7 +1545,7 @@ bool ClientBase::receiveEndOfQuery()
                 break;
 
             case Protocol::Server::TimezoneUpdate:
-                DateLUT::setDefaultTimezone(packet.server_timezone);
+                onTimezoneUpdate(packet.server_timezone);
                 break;
 
             default:
