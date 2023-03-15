@@ -8,23 +8,23 @@ namespace DB
 /** Parses queries like
   * BACKUP { TABLE [db.]table_name [AS [db.]table_name_in_backup] [PARTITION[S] partition_expr [,...]] |
   *          DICTIONARY [db.]dictionary_name [AS [db.]dictionary_name_in_backup] |
-  *          DATABASE database_name [AS database_name_in_backup] [EXCEPT TABLES ...] |
-  *          TEMPORARY TABLE table_name [AS table_name_in_backup] |
-  *          ALL [EXCEPT {TABLES|DATABASES}...] } [,...]
-  *        [ON CLUSTER 'cluster_name']
+  *          DATABASE database_name [AS database_name_in_backup] |
+  *          ALL DATABASES |
+  *          TEMPORARY TABLE table_name [AS table_name_in_backup]
+  *          ALL TEMPORARY TABLES |
+  *          EVERYTHING } [,...]
   *        TO { File('path/') |
-  *             Disk('disk_name', 'path/') }
-  *        [SETTINGS ...]
+  *             Disk('disk_name', 'path/')
+  *        [SETTINGS base_backup = {FILE(...) | DISK(...)}]
   *
-  * RESTORE { TABLE [db.]table_name_in_backup [AS [db.]table_name] [PARTITION[S] partition_expr [,...]] |
-  *          DICTIONARY [db.]dictionary_name_in_backup [AS [db.]dictionary_name] |
-  *          DATABASE database_name_in_backup [AS database_name] [EXCEPT TABLES ...] |
-  *          TEMPORARY TABLE table_name_in_backup [AS table_name] |
-  *          ALL [EXCEPT {TABLES|DATABASES} ...] } [,...]
-  *         [ON CLUSTER 'cluster_name']
-  *         FROM { File('path/') |
-  *                Disk('disk_name', 'path/') }
-  *        [SETTINGS ...]
+  * RESTORE { TABLE [db.]table_name_in_backup [INTO [db.]table_name] [PARTITION[S] partition_expr [,...]] |
+  *           DICTIONARY [db.]dictionary_name_in_backup [INTO [db.]dictionary_name] |
+  *           DATABASE database_name_in_backup [INTO database_name] |
+  *           ALL DATABASES |
+  *           TEMPORARY TABLE table_name_in_backup [INTO table_name] |
+  *           ALL TEMPORARY TABLES |
+  *           EVERYTHING } [,...]
+  *         FROM {File(...) | Disk(...)}
   */
 class ParserBackupQuery : public IParserBase
 {

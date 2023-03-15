@@ -76,7 +76,7 @@ insert into data_01278 select
     reinterpretAsString(number), // s6
     reinterpretAsString(number), // s7
     reinterpretAsString(number)  // s8
-from numbers(100000); -- { serverError 241 }" > /dev/null 2>&1
+from numbers(100000); -- { serverError 241; }" > /dev/null 2>&1
     local ret_code=$?
     if [[ $ret_code -eq 0 ]];
     then
@@ -88,9 +88,9 @@ from numbers(100000); -- { serverError 241 }" > /dev/null 2>&1
 
 # fails
 echo "Should throw 1"
-execute_insert
+execute_insert --testmode
 echo "Should throw 2"
-execute_insert --min_insert_block_size_rows=1 --min_insert_block_size_rows_for_materialized_views=$((1<<20))
+execute_insert --testmode --min_insert_block_size_rows=1 --min_insert_block_size_rows_for_materialized_views=$((1<<20))
 
 # passes
 echo "Should pass 1"

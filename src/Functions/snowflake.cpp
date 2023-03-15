@@ -4,27 +4,27 @@
 namespace DB
 {
 
-REGISTER_FUNCTION(DateTimeToSnowflake)
+void registerDateTimeToSnowflake(FunctionFactory & factory)
 {
     factory.registerFunction("dateTimeToSnowflake",
         [](ContextPtr){ return std::make_unique<FunctionToOverloadResolverAdaptor>(
             std::make_shared<FunctionDateTimeToSnowflake>("dateTimeToSnowflake")); });
 }
 
-REGISTER_FUNCTION(DateTime64ToSnowflake)
+void registerDateTime64ToSnowflake(FunctionFactory & factory)
 {
     factory.registerFunction("dateTime64ToSnowflake",
         [](ContextPtr){ return std::make_unique<FunctionToOverloadResolverAdaptor>(
             std::make_shared<FunctionDateTime64ToSnowflake>("dateTime64ToSnowflake")); });
 }
 
-REGISTER_FUNCTION(SnowflakeToDateTime)
+void registerSnowflakeToDateTime(FunctionFactory & factory)
 {
     factory.registerFunction("snowflakeToDateTime",
         [](ContextPtr){ return std::make_unique<FunctionToOverloadResolverAdaptor>(
             std::make_shared<FunctionSnowflakeToDateTime>("snowflakeToDateTime")); });
 }
-REGISTER_FUNCTION(SnowflakeToDateTime64)
+void registerSnowflakeToDateTime64(FunctionFactory & factory)
 {
     factory.registerFunction("snowflakeToDateTime64",
         [](ContextPtr){ return std::make_unique<FunctionToOverloadResolverAdaptor>(

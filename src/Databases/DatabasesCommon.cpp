@@ -10,8 +10,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/escapeForFileName.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <Backups/BackupEntriesCollector.h>
-#include <Backups/RestorerFromBackup.h>
 
 
 namespace DB
@@ -25,7 +23,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
-    extern const int INCONSISTENT_METADATA_FOR_BACKUP;
 }
 
 void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata)
@@ -39,8 +36,7 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
                                                      " and doesn't have structure in metadata", backQuote(ast_create_query.getTable()));
 
     if (!has_structure && !ast_create_query.is_dictionary)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot alter table {} metadata doesn't have structure",
-                        backQuote(ast_create_query.getTable()));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot alter table {} metadata doesn't have structure", backQuote(ast_create_query.getTable()));
 
     if (!ast_create_query.is_dictionary)
     {
@@ -105,8 +101,7 @@ ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_
     if (metadata_ptr == nullptr)
     {
         if (throw_on_error)
-            throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "Cannot get metadata of {}.{}",
-                            backQuote(table_id.database_name), backQuote(table_id.table_name));
+            throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "Cannot get metadata of {}.{}", backQuote(table_id.database_name), backQuote(table_id.table_name));
         else
             return nullptr;
     }
@@ -143,8 +138,7 @@ ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_
                 if (!parser.parse(pos, ast_type, expected))
                 {
                     if (throw_on_error)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot parser metadata of {}.{}",
-                                        backQuote(table_id.database_name), backQuote(table_id.table_name));
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot parser metadata of {}.{}", backQuote(table_id.database_name), backQuote(table_id.table_name));
                     else
                         return nullptr;
                 }
@@ -157,26 +151,6 @@ ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_
         create_table_query->set(create_table_query->columns_list, ast_columns_list);
     }
     return create_table_query;
-}
-
-
-void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query)
-{
-    query.as_database.clear();
-    query.as_table.clear();
-    query.if_not_exists = false;
-    query.is_populate = false;
-    query.is_create_empty = false;
-    query.replace_view = false;
-    query.replace_table = false;
-    query.create_or_replace = false;
-
-    /// For views it is necessary to save the SELECT query itself, for the rest - on the contrary
-    if (!query.isView())
-        query.select = nullptr;
-
-    query.format = nullptr;
-    query.out_file = nullptr;
 }
 
 
@@ -222,11 +196,11 @@ bool DatabaseWithOwnTablesBase::empty() const
 
 StoragePtr DatabaseWithOwnTablesBase::detachTable(ContextPtr /* context_ */, const String & table_name)
 {
-    std::lock_guard lock(mutex);
-    return detachTableUnlocked(table_name);
+    std::unique_lock lock(mutex);
+    return detachTableUnlocked(table_name, lock);
 }
 
-StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_name)
+StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_name, std::unique_lock<std::mutex> &)
 {
     StoragePtr res;
 
@@ -236,7 +210,6 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
                         backQuote(database_name), backQuote(table_name));
     res = it->second;
     tables.erase(it);
-    res->is_detached = true;
 
     auto table_id = res->getStorageID();
     if (table_id.hasUUID())
@@ -250,11 +223,11 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
 
 void DatabaseWithOwnTablesBase::attachTable(ContextPtr /* context_ */, const String & table_name, const StoragePtr & table, const String &)
 {
-    std::lock_guard lock(mutex);
-    attachTableUnlocked(table_name, table);
+    std::unique_lock lock(mutex);
+    attachTableUnlocked(table_name, table, lock);
 }
 
-void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, const StoragePtr & table)
+void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, const StoragePtr & table, std::unique_lock<std::mutex> &)
 {
     auto table_id = table->getStorageID();
     if (table_id.database_name != database_name)
@@ -273,10 +246,6 @@ void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, c
             DatabaseCatalog::instance().removeUUIDMapping(table_id.uuid);
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {} already exists.", table_id.getFullTableName());
     }
-
-    /// It is important to reset is_detached here since in case of RENAME in
-    /// non-Atomic database the is_detached is set to true before RENAME.
-    table->is_detached = false;
 }
 
 void DatabaseWithOwnTablesBase::shutdown()
@@ -322,51 +291,13 @@ DatabaseWithOwnTablesBase::~DatabaseWithOwnTablesBase()
     }
 }
 
-StoragePtr DatabaseWithOwnTablesBase::getTableUnlocked(const String & table_name) const
+StoragePtr DatabaseWithOwnTablesBase::getTableUnlocked(const String & table_name, std::unique_lock<std::mutex> &) const
 {
     auto it = tables.find(table_name);
     if (it != tables.end())
         return it->second;
     throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} doesn't exist",
                     backQuote(database_name), backQuote(table_name));
-}
-
-std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseWithOwnTablesBase::getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context) const
-{
-    std::vector<std::pair<ASTPtr, StoragePtr>> res;
-
-    for (auto it = getTablesIterator(local_context, filter); it->isValid(); it->next())
-    {
-        auto storage = it->table();
-        if (!storage)
-            continue; /// Probably the table has been just dropped.
-
-        auto create_table_query = tryGetCreateTableQuery(it->name(), local_context);
-        if (!create_table_query)
-            throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP,
-                            "Couldn't get a create query for table {}.{}",
-                            backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(it->name()));
-
-        const auto & create = create_table_query->as<const ASTCreateQuery &>();
-        if (create.getTable() != it->name())
-            throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP,
-                            "Got a create query with unexpected name {} for table {}.{}",
-                            backQuoteIfNeed(create.getTable()),
-                            backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(it->name()));
-
-        storage->adjustCreateQueryForBackup(create_table_query);
-        res.emplace_back(create_table_query, storage);
-    }
-
-    return res;
-}
-
-void DatabaseWithOwnTablesBase::createTableRestoredFromBackup(const ASTPtr & create_table_query, ContextMutablePtr local_context, std::shared_ptr<IRestoreCoordination>, UInt64)
-{
-    /// Creates a table by executing a "CREATE TABLE" query.
-    InterpreterCreateQuery interpreter{create_table_query, local_context};
-    interpreter.setInternal(true);
-    interpreter.execute();
 }
 
 }

@@ -63,7 +63,7 @@
   * Very large size of memcpy typically indicates suboptimal (not cache friendly) algorithms in code or unrealistic scenarios,
   * so we don't pay attention to using non-temporary stores.
   *
-  * On recent Intel CPUs, the presence of "erms" makes "rep movsb" the most beneficial,
+  * On recent Intel CPUs, the presence of "erms" makes "rep movsb" the most benefitial,
   * even comparing to non-temporary aligned unrolled stores even with the most wide registers.
   *
   * memcpy can be written in asm, C or C++. The latter can also use inline asm.
@@ -214,3 +214,4 @@ tail:
 
     return ret;
 }
+

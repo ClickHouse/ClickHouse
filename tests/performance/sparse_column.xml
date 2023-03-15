@@ -53,8 +53,6 @@
 
     <query>SELECT sum(u64) FROM test_{serialization}_{ratio} GROUP BY id % 11 FORMAT Null</query>
     <query>SELECT uniq(str) FROM test_{serialization}_{ratio} GROUP BY id % 11 FORMAT Null</query>
-    <query>SELECT sum(u64) FROM test_{serialization}_{ratio} FORMAT Null</query>
-    <query>SELECT uniq(str) FROM test_{serialization}_{ratio} FORMAT Null</query>
 
     <query>SELECT count() FROM test_{serialization}_{ratio} WHERE u64 > 0</query>
     <query>SELECT count() FROM test_{serialization}_{ratio} WHERE notEmpty(str)</query>

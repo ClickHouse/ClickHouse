@@ -3,7 +3,6 @@
 #include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
 #include <Columns/IColumn.h>
-#include <QueryPipeline/QueryPlanResourceHolder.h>
 
 #include <list>
 #include <memory>
@@ -61,6 +60,11 @@ public:
         const QueryPlanOptimizationSettings & optimization_settings,
         const BuildQueryPipelineSettings & build_pipeline_settings);
 
+    /// If initialized, build pipeline and convert to pipe. Otherwise, return empty pipe.
+    Pipe convertToPipe(
+        const QueryPlanOptimizationSettings & optimization_settings,
+        const BuildQueryPipelineSettings & build_pipeline_settings);
+
     struct ExplainPlanOptions
     {
         /// Add output header to step.
@@ -71,8 +75,6 @@ public:
         bool actions = false;
         /// Add information about indexes actions.
         bool indexes = false;
-        /// Add information about sorting
-        bool sorting = false;
     };
 
     struct ExplainPipelineOptions
@@ -86,17 +88,12 @@ public:
     void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options);
     void explainEstimate(MutableColumns & columns);
 
-    /// Do not allow to change the table while the pipeline alive.
-    void addTableLock(TableLockHolder lock) { resources.table_locks.emplace_back(std::move(lock)); }
-    void addInterpreterContext(std::shared_ptr<const Context> context) { resources.interpreter_context.emplace_back(std::move(context)); }
-    void addStorageHolder(StoragePtr storage) { resources.storage_holders.emplace_back(std::move(storage)); }
-
-    void addResources(QueryPlanResourceHolder resources_) { resources = std::move(resources_); }
-
     /// Set upper limit for the recommend number of threads. Will be applied to the newly-created pipelines.
     /// TODO: make it in a better way.
     void setMaxThreads(size_t max_threads_) { max_threads = max_threads_; }
     size_t getMaxThreads() const { return max_threads; }
+
+    void addInterpreterContext(ContextPtr context);
 
     /// Tree node. Step and it's children.
     struct Node
@@ -105,12 +102,9 @@ public:
         std::vector<Node *> children = {};
     };
 
-    const Node * getRootNode() const { return root; }
-
     using Nodes = std::list<Node>;
 
 private:
-    QueryPlanResourceHolder resources;
     Nodes nodes;
     Node * root = nullptr;
 
@@ -119,6 +113,7 @@ private:
 
     /// Those fields are passed to QueryPipeline.
     size_t max_threads = 0;
+    std::vector<ContextPtr> interpreter_context;
 };
 
 std::string debugExplainStep(const IQueryPlanStep & step);

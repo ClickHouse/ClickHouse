@@ -19,8 +19,8 @@ namespace
     using FunctionMax2 = FunctionMathBinaryFloat64<BinaryFunctionVectorized<Max2Name, max>>;
 }
 
-REGISTER_FUNCTION(Max2)
+void registerFunctionMax2(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionMax2>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionMax2>(FunctionFactory::CaseInsensitive);
 }
 }

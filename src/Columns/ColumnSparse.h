@@ -37,8 +37,7 @@ public:
         return Base::create(values_->assumeMutable(), offsets_->assumeMutable(), size_);
     }
 
-    template <typename TColumnPtr>
-    requires IsMutableColumns<TColumnPtr>::value
+    template <typename TColumnPtr, typename = typename std::enable_if<IsMutableColumns<TColumnPtr>::value>::type>
     static MutablePtr create(TColumnPtr && values_, TColumnPtr && offsets_, size_t size_)
     {
         return Base::create(std::forward<TColumnPtr>(values_), std::forward<TColumnPtr>(offsets_), size_);
@@ -49,8 +48,7 @@ public:
         return Base::create(values_->assumeMutable());
     }
 
-    template <typename TColumnPtr>
-    requires IsMutableColumns<TColumnPtr>::value
+    template <typename TColumnPtr, typename = typename std::enable_if<IsMutableColumns<TColumnPtr>::value>::type>
     static MutablePtr create(TColumnPtr && values_)
     {
         return Base::create(std::forward<TColumnPtr>(values_));
@@ -132,7 +130,6 @@ public:
 
     void getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const override;
     double getRatioOfDefaultRows(double sample_ratio) const override;
-    UInt64 getNumberOfDefaultRows() const override;
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
 
@@ -140,8 +137,8 @@ public:
 
     ColumnPtr compress() const override;
 
-    void forEachSubcolumn(ColumnCallback callback) const override;
-    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
+    void forEachSubcolumn(ColumnCallback callback) override;
+    void forEachSubcolumnRecursively(ColumnCallback callback) override;
 
     bool structureEquals(const IColumn & rhs) const override;
 
@@ -151,6 +148,7 @@ public:
     size_t sizeOfValueIfFixed() const override { return values->sizeOfValueIfFixed() + values->sizeOfValueIfFixed(); }
     bool isCollationSupported() const override { return values->isCollationSupported(); }
 
+    size_t getNumberOfDefaults() const { return _size - offsets->size(); }
     size_t getNumberOfTrailingDefaults() const
     {
         return offsets->empty() ? _size : _size - getOffsetsData().back() - 1;
@@ -216,7 +214,6 @@ public:
 
     Iterator begin() const { return Iterator(getOffsetsData(), _size, 0, 0); }
     Iterator end() const { return Iterator(getOffsetsData(), _size, getOffsetsData().size(), _size); }
-    Iterator getIterator(size_t n) const;
 
 private:
     using Inserter = std::function<void(IColumn &)>;

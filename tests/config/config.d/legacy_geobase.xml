@@ -1,4 +1,0 @@
-<clickhouse>
-    <path_to_regions_hierarchy_file>/etc/clickhouse-server/config.d/regions_hierarchy.txt</path_to_regions_hierarchy_file>
-    <path_to_regions_names_files>/etc/clickhouse-server/config.d/</path_to_regions_names_files>
-</clickhouse>

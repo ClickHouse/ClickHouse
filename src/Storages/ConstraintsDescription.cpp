@@ -57,7 +57,7 @@ ASTs ConstraintsDescription::filterConstraints(ConstraintType selection) const
             case ASTConstraintDeclaration::Type::ASSUME:
                 return static_cast<UInt8>(ConstraintType::ASSUME);
         }
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown constraint type.");
+        throw Exception("Unknown constraint type.", ErrorCodes::LOGICAL_ERROR);
     };
 
     ASTs res;
@@ -107,14 +107,14 @@ std::unique_ptr<ComparisonGraph> ConstraintsDescription::buildGraph() const
 {
     static const NameSet relations = { "equals", "less", "lessOrEquals", "greaterOrEquals", "greater" };
 
-    ASTs constraints_for_graph;
+    std::vector<ASTPtr> constraints_for_graph;
     auto atomic_formulas = getAtomicConstraintData();
     for (const auto & atomic_formula : atomic_formulas)
     {
         CNFQuery::AtomicFormula atom{atomic_formula.negative, atomic_formula.ast->clone()};
         pushNotIn(atom);
         auto * func = atom.ast->as<ASTFunction>();
-        if (func && relations.contains(func->name))
+        if (func && relations.count(func->name))
         {
             assert(!atom.negative);
             constraints_for_graph.push_back(atom.ast);
@@ -153,7 +153,7 @@ const std::vector<std::vector<CNFQuery::AtomicFormula>> & ConstraintsDescription
     return cnf_constraints;
 }
 
-const ASTs & ConstraintsDescription::getConstraints() const
+const std::vector<ASTPtr> & ConstraintsDescription::getConstraints() const
 {
     return constraints;
 }
@@ -218,7 +218,7 @@ void ConstraintsDescription::update()
     {
         cnf_constraints.clear();
         ast_to_atom_ids.clear();
-        graph = std::make_unique<ComparisonGraph>(ASTs());
+        graph = std::make_unique<ComparisonGraph>(std::vector<ASTPtr>());
         return;
     }
 

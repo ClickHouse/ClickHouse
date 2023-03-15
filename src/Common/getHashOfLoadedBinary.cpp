@@ -1,10 +1,10 @@
 #include <Common/getHashOfLoadedBinary.h>
 
-#if defined(OS_LINUX)
+#if defined(__linux__)
 
 #include <link.h>
 #include <array>
-#include <base/hex.h>
+#include <Common/hex.h>
 
 
 static int callback(dl_phdr_info * info, size_t, void * data)

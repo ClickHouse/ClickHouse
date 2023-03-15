@@ -1,7 +1,6 @@
 ---
-slug: /ru/sql-reference/statements/set
-sidebar_position: 49
-sidebar_label: SET
+toc_priority: 49
+toc_title: SET
 ---
 
 # SET {#query-set}
@@ -19,3 +18,4 @@ SET profile = 'profile-name-from-the-settings-file'
 ```
 
 Подробности смотрите в разделе [Настройки](../../operations/settings/settings.md).
+

@@ -2,7 +2,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <base/hex.h>
+#include <Common/hex.h>
 #include <base/find_symbols.h>
 
 
@@ -56,7 +56,7 @@ namespace
 
         [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
         {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function decodeXMLComponent cannot work with FixedString argument");
+            throw Exception("Function decodeXMLComponent cannot work with FixedString argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
     private:
@@ -231,7 +231,7 @@ namespace
 
 }
 
-REGISTER_FUNCTION(DecodeXMLComponent)
+void registerFunctionDecodeXMLComponent(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionDecodeXMLComponent>();
 }

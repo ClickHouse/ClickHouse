@@ -4,14 +4,14 @@
 
 #if USE_CASSANDRA
 #include <Core/Block.h>
-#include <Processors/ISource.h>
+#include <Processors/Sources/SourceWithProgress.h>
 #include <Core/ExternalResultDescription.h>
 
 
 namespace DB
 {
 
-class CassandraSource final : public ISource
+class CassandraSource final : public SourceWithProgress
 {
 public:
     CassandraSource(

@@ -31,7 +31,8 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & args) const override
     {
         if (args.empty())
-            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} expects at least 1 arguments", getName());
+            throw Exception{"Function " + getName() + " expects at least 1 arguments",
+                ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION};
 
         /// See the comments in executeImpl() to understand why we actually have to
         /// get the return type of a transform function.
@@ -42,16 +43,14 @@ public:
         for (size_t i = 2; i < args.size() - 1; i += 2)
             dst_array_types.push_back(args[i]);
 
-        // Type of the ELSE branch
-        dst_array_types.push_back(args.back());
-
         return getLeastSupertype(dst_array_types);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         if (args.empty())
-            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} expects at least 1 argument", getName());
+            throw Exception{"Function " + getName() + " expects at least 1 argument",
+                ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION};
 
         /// In the following code, we turn the construction:
         /// CASE expr WHEN val[0] THEN branch[0] ... WHEN val[N-1] then branch[N-1] ELSE branchN
@@ -105,7 +104,7 @@ private:
 
 }
 
-REGISTER_FUNCTION(CaseWithExpression)
+void registerFunctionCaseWithExpression(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionCaseWithExpression>();
 

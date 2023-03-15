@@ -1,7 +1,6 @@
 ---
-slug: /zh/sql-reference/statements/exchange
-sidebar_position: 49
-sidebar_label: EXCHANGE
+toc_priority: 49
+toc_title: EXCHANGE
 ---
 
 # EXCHANGE语法 {#exchange}
@@ -9,9 +8,8 @@ sidebar_label: EXCHANGE
 以原子方式交换两个表或字典的名称。
 此任务也可以通过使用[RENAME](./rename.md)来完成，但在这种情况下操作不是原子的。
 
-:::note
+!!! note "注意"
 `EXCHANGE`仅支持[Atomic](../../engines/database-engines/atomic.md)数据库引擎.
-:::
 
 **语法**
 

@@ -1,6 +1,5 @@
 ---
-slug: /ru/sql-reference/statements/select/limit-by
-sidebar_label: LIMIT BY
+toc_title: LIMIT BY
 ---
 
 # Секция LIMIT BY {#limit-by-clause}

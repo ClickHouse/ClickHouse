@@ -1,10 +1,19 @@
 <test>
+    <tags>
+        <tag>search</tag>
+    </tags>
+
+    <preconditions>
+        <table_exists>hits_100m_single</table_exists>
+        <table_exists>hits_10m_single</table_exists>
+    </preconditions>
+
     <query><![CDATA[SELECT count() FROM hits_100m_single WHERE match(URL, ' *tranio\\.ru/spain/*/commercial/*') settings max_threads=5]]></query>
 
-    <query><![CDATA[select countIf(position(URL, 'yandex') > 0), count(position(URL, 'google')) FROM hits_100m_single]]></query>
-    <query><![CDATA[select sum(ignore(multiSearchAllPositions(URL, ['yandex', 'google']))) FROM hits_100m_single]]></query>
-    <query><![CDATA[select countIf(match(URL, 'yandex|google')) FROM hits_10m_single]]></query>
-    <query><![CDATA[select countIf(multiMatchAny(URL, ['yandex', 'google'])) FROM hits_100m_single]]></query>
+    <query><![CDATA[select count(position(URL, 'yandex')), count(position(URL, 'google')) FROM hits_100m_single]]></query>
+    <query><![CDATA[select count(multiSearchAllPositions(URL, ['yandex', 'google'])) FROM hits_100m_single]]></query>
+    <query><![CDATA[select count(match(URL, 'yandex|google')) FROM hits_10m_single]]></query>
+    <query><![CDATA[select count(multiMatchAny(URL, ['yandex', 'google'])) FROM hits_100m_single]]></query>
 
     <query><![CDATA[select sum(match(URL, 'yandex')), sum(match(URL, 'google')), sum(match(URL, 'yahoo')), sum(match(URL, 'pikabu')) FROM hits_100m_single]]></query>
     <query><![CDATA[select sum(multiSearchAny(URL, ['yandex', 'google', 'yahoo', 'pikabu'])) from hits_100m_single]]></query>
@@ -36,4 +45,8 @@
     <query><![CDATA[SELECT DISTINCT Title, multiFuzzyMatchAny(Title, 5, ['^metrika\\.ry$']) AS distance FROM hits_100m_single WHERE distance = 1]]></query>
     <query><![CDATA[SELECT sum(multiFuzzyMatchAny(Title, 3, ['hello$', 'world$', '^hello'])) FROM (SELECT * FROM hits_100m_single LIMIT 50000000) FORMAT Null]]></query>
     <query><![CDATA[SELECT count() FROM hits_10m_single WHERE multiFuzzyMatchAny(URL, 2, ['about/address', 'for_woman', '^https?://lm-company.ruy/$', 'ultimateguitar.com'])]]></query>
+
+
+
+
 </test>

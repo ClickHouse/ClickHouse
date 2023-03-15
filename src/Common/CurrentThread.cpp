@@ -1,7 +1,7 @@
 #include <memory>
 
 #include "CurrentThread.h"
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/ThreadStatus.h>
 #include <Common/TaskStatsInfoGetter.h>
 #include <Interpreters/ProcessList.h>
@@ -33,14 +33,21 @@ bool CurrentThread::isInitialized()
 ThreadStatus & CurrentThread::get()
 {
     if (unlikely(!current_thread))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Thread #{} status was not initialized", std::to_string(getThreadId()));
+        throw Exception("Thread #" + std::to_string(getThreadId()) + " status was not initialized", ErrorCodes::LOGICAL_ERROR);
 
     return *current_thread;
 }
 
 ProfileEvents::Counters & CurrentThread::getProfileEvents()
 {
-    return current_thread ? *current_thread->current_performance_counters : ProfileEvents::global_counters;
+    return current_thread ? current_thread->performance_counters : ProfileEvents::global_counters;
+}
+
+MemoryTracker * CurrentThread::getMemoryTracker()
+{
+    if (unlikely(!current_thread))
+        return nullptr;
+    return &current_thread->memory_tracker;
 }
 
 void CurrentThread::updateProgressIn(const Progress & value)
@@ -67,8 +74,8 @@ void CurrentThread::attachInternalTextLogsQueue(const std::shared_ptr<InternalTe
 
 void CurrentThread::setFatalErrorCallback(std::function<void()> callback)
 {
-    /// It does not make sense to set a callback for sending logs to a client if there's no thread status
-    chassert(current_thread);
+    if (unlikely(!current_thread))
+        return;
     current_thread->setFatalErrorCallback(callback);
 }
 

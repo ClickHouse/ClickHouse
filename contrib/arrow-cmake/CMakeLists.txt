@@ -20,7 +20,7 @@ endif()
 option (ENABLE_PARQUET "Enable parquet" ${ENABLE_PARQUET_DEFAULT})
 
 if (NOT ENABLE_PARQUET)
-    message(STATUS "Not using parquet")
+    message(STATUS "Building without Parquet support")
     return()
 endif()
 
@@ -78,14 +78,23 @@ set(FLATBUFFERS_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/flatbuffers")
 set(FLATBUFFERS_INCLUDE_DIR "${FLATBUFFERS_SRC_DIR}/include")
 
 # set flatbuffers CMake options
-set(FLATBUFFERS_BUILD_FLATLIB ON CACHE BOOL "Enable the build of the flatbuffers library")
-set(FLATBUFFERS_BUILD_SHAREDLIB OFF CACHE BOOL "Disable the build of the flatbuffers shared library")
+if (USE_STATIC_LIBRARIES)
+    set(FLATBUFFERS_BUILD_FLATLIB ON CACHE BOOL "Enable the build of the flatbuffers library")
+    set(FLATBUFFERS_BUILD_SHAREDLIB OFF CACHE BOOL "Disable the build of the flatbuffers shared library")
+else ()
+    set(FLATBUFFERS_BUILD_SHAREDLIB ON CACHE BOOL "Enable the build of the flatbuffers shared library")
+    set(FLATBUFFERS_BUILD_FLATLIB OFF CACHE BOOL "Disable the build of the flatbuffers library")
+endif ()
 set(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL "Skip flatbuffers tests")
 
 add_subdirectory(${FLATBUFFERS_SRC_DIR} "${FLATBUFFERS_BINARY_DIR}")
 
 add_library(_flatbuffers INTERFACE)
-target_link_libraries(_flatbuffers INTERFACE flatbuffers)
+if(USE_STATIC_LIBRARIES)
+    target_link_libraries(_flatbuffers INTERFACE flatbuffers)
+else()
+    target_link_libraries(_flatbuffers INTERFACE flatbuffers_shared)
+endif()
 target_include_directories(_flatbuffers INTERFACE ${FLATBUFFERS_INCLUDE_DIR})
 
 # ===  hdfs
@@ -115,13 +124,6 @@ configure_file("${ORC_SOURCE_SRC_DIR}/Adaptor.hh.in" "${ORC_BUILD_INCLUDE_DIR}/A
 
 # ARROW_ORC + adapters/orc/CMakefiles
 set(ORC_SRCS
-        "${CMAKE_CURRENT_BINARY_DIR}/orc_proto.pb.h"
-        "${ORC_SOURCE_SRC_DIR}/sargs/ExpressionTree.cc"
-        "${ORC_SOURCE_SRC_DIR}/sargs/Literal.cc"
-        "${ORC_SOURCE_SRC_DIR}/sargs/PredicateLeaf.cc"
-        "${ORC_SOURCE_SRC_DIR}/sargs/SargsApplier.cc"
-        "${ORC_SOURCE_SRC_DIR}/sargs/SearchArgument.cc"
-        "${ORC_SOURCE_SRC_DIR}/sargs/TruthValue.cc"
         "${ORC_SOURCE_SRC_DIR}/Exceptions.cc"
         "${ORC_SOURCE_SRC_DIR}/OrcFile.cc"
         "${ORC_SOURCE_SRC_DIR}/Reader.cc"
@@ -136,20 +138,13 @@ set(ORC_SRCS
         "${ORC_SOURCE_SRC_DIR}/MemoryPool.cc"
         "${ORC_SOURCE_SRC_DIR}/RLE.cc"
         "${ORC_SOURCE_SRC_DIR}/RLEv1.cc"
-        "${ORC_SOURCE_SRC_DIR}/RleDecoderV2.cc"
-        "${ORC_SOURCE_SRC_DIR}/RleEncoderV2.cc"
-        "${ORC_SOURCE_SRC_DIR}/RLEV2Util.cc"
+        "${ORC_SOURCE_SRC_DIR}/RLEv2.cc"
         "${ORC_SOURCE_SRC_DIR}/Statistics.cc"
         "${ORC_SOURCE_SRC_DIR}/StripeStream.cc"
         "${ORC_SOURCE_SRC_DIR}/Timezone.cc"
         "${ORC_SOURCE_SRC_DIR}/TypeImpl.cc"
         "${ORC_SOURCE_SRC_DIR}/Vector.cc"
         "${ORC_SOURCE_SRC_DIR}/Writer.cc"
-        "${ORC_SOURCE_SRC_DIR}/Adaptor.cc"
-        "${ORC_SOURCE_SRC_DIR}/BloomFilter.cc"
-        "${ORC_SOURCE_SRC_DIR}/Murmur3.cc"
-        "${ORC_SOURCE_SRC_DIR}/BlockBuffer.cc"
-        "${ORC_SOURCE_SRC_DIR}/wrap/orc-proto-wrapper.cc"
         "${ORC_SOURCE_SRC_DIR}/io/InputStream.cc"
         "${ORC_SOURCE_SRC_DIR}/io/OutputStream.cc"
         "${ORC_ADDITION_SOURCE_DIR}/orc_proto.pb.cc"
@@ -369,11 +364,10 @@ SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_snappy.cc" ${ARROW_SRCS})
 add_definitions(-DARROW_WITH_ZLIB)
 SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_zlib.cc" ${ARROW_SRCS})
 
-add_definitions(-DARROW_WITH_ZSTD)
-SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_zstd.cc" ${ARROW_SRCS})
-
-add_definitions(-DARROW_WITH_BROTLI)
-SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_brotli.cc" ${ARROW_SRCS})
+if (ARROW_WITH_ZSTD)
+    add_definitions(-DARROW_WITH_ZSTD)
+    SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_zstd.cc" ${ARROW_SRCS})
+endif ()
 
 
 add_library(_arrow ${ARROW_SRCS})
@@ -389,7 +383,7 @@ target_link_libraries(_arrow PRIVATE
     ch_contrib::snappy
     ch_contrib::zlib
     ch_contrib::zstd
-    ch_contrib::brotli
+    ch_contrib::zstd
 )
 target_link_libraries(_arrow PUBLIC _orc)
 
@@ -471,7 +465,5 @@ foreach (TOOL ${PARQUET_TOOLS})
 endforeach ()
 
 # The library is large - avoid bloat.
-if (OMIT_HEAVY_DEBUG_SYMBOLS)
-    target_compile_options (_arrow PRIVATE -g0)
-    target_compile_options (_parquet PRIVATE -g0)
-endif()
+target_compile_options (_arrow PRIVATE -g0)
+target_compile_options (_parquet PRIVATE -g0)

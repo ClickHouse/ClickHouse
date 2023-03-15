@@ -20,6 +20,8 @@ private:
 public:
     MergeTreeIndexGranularity() = default;
     explicit MergeTreeIndexGranularity(const std::vector<size_t> & marks_rows_partial_sums_);
+    MergeTreeIndexGranularity(size_t marks_count, size_t fixed_granularity);
+
 
     /// Return count of rows between marks
     size_t getRowsCountInRange(const MarkRange & range) const;
@@ -34,7 +36,7 @@ public:
     /// |-----|---------------------------|----|----|
     ///       ^------------------------^-----------^
     ////  from_mark  offset_in_rows    number_of_rows
-    size_t countMarksForRows(size_t from_mark, size_t number_of_rows, size_t offset_in_rows, size_t min_marks_to_read) const;
+    size_t countMarksForRows(size_t from_mark, size_t number_of_rows, size_t offset_in_rows=0) const;
 
     /// Total marks
     size_t getMarksCount() const;

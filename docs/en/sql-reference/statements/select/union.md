@@ -1,9 +1,8 @@
 ---
-slug: /en/sql-reference/statements/select/union
-sidebar_label: UNION
+toc_title: UNION
 ---
 
-# UNION Clause
+# UNION Clause {#union-clause}
 
 You can use `UNION` with explicitly specifying `UNION ALL` or `UNION DISTINCT`.
 

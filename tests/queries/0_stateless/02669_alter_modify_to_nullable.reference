@@ -1,8 +1,0 @@
-1_1_1_0	String	Default
-2_2_2_0	String	Sparse
-20000	10435	['','bar','foo']
-1_1_1_0_3	String	Default
-2_2_2_0_3	Nullable(String)	Default
-20000	10435	['','bar','foo']
-1_1_1_0_3	0
-2_2_2_0_3	10000

@@ -1,6 +1,3 @@
----
-slug: /zh/engines/table-engines/log-family/stripelog
----
 # StripeLog {#stripelog}
 
 该引擎属于日志引擎系列。请在[日志引擎系列](index.md)文章中查看引擎的共同属性和差异。
@@ -81,3 +78,5 @@ SELECT * FROM stripe_log_table ORDER BY timestamp
     │ 2019-01-18 14:27:32 │ REGULAR      │ The second regular message │
     │ 2019-01-18 14:34:53 │ WARNING      │ The first warning message  │
     └─────────────────────┴──────────────┴────────────────────────────┘
+
+[来源文章](https://clickhouse.com/docs/en/operations/table_engines/stripelog/) <!--hide-->

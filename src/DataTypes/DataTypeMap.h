@@ -23,7 +23,6 @@ private:
 public:
     static constexpr bool is_parametric = true;
 
-    explicit DataTypeMap(const DataTypePtr & nested_);
     explicit DataTypeMap(const DataTypes & elems);
     DataTypeMap(const DataTypePtr & key_type_, const DataTypePtr & value_type_);
 
@@ -41,7 +40,6 @@ public:
     bool isComparable() const override { return key_type->isComparable() && value_type->isComparable(); }
     bool isParametric() const override { return true; }
     bool haveSubtypes() const override { return true; }
-    bool hasDynamicSubcolumns() const override { return nested->hasDynamicSubcolumns(); }
 
     const DataTypePtr & getKeyType() const { return key_type; }
     const DataTypePtr & getValueType() const { return value_type; }
@@ -49,8 +47,6 @@ public:
     const DataTypePtr & getNestedType() const { return nested; }
 
     SerializationPtr doGetDefaultSerialization() const override;
-
-    static bool checkKeyType(DataTypePtr key_type);
 
 private:
     void assertKeyType() const;

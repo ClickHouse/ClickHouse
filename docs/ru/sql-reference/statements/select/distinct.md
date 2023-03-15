@@ -1,6 +1,5 @@
 ---
-slug: /ru/sql-reference/statements/select/distinct
-sidebar_label: DISTINCT
+toc_title: DISTINCT
 ---
 
 # Секция DISTINCT {#select-distinct}
@@ -101,3 +100,4 @@ ClickHouse поддерживает использование секций `DIS
 -   `DISTINCT` может применяться вместе с `GROUP BY`.
 -   Когда секция [ORDER BY](order-by.md) опущена, а секция [LIMIT](limit.md) присутствует, запрос прекращает выполнение сразу после считывания необходимого количества различных строк.
 -   Блоки данных выводятся по мере их обработки, не дожидаясь завершения выполнения всего запроса.
+

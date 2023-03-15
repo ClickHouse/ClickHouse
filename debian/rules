@@ -1,0 +1,132 @@
+#!/usr/bin/make -f
+# -*- makefile -*-
+
+# Uncomment this to turn on verbose mode.
+export DH_VERBOSE=1
+
+# -pie only for static mode
+export DEB_BUILD_MAINT_OPTIONS=hardening=-all
+
+# because copy_headers.sh have hardcoded path to build/include_directories.txt
+BUILDDIR = obj-$(DEB_HOST_GNU_TYPE)
+CURDIR = $(shell pwd)
+DESTDIR = $(CURDIR)/debian/tmp
+
+DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
+
+ifeq ($(CCACHE_PREFIX),distcc)
+    THREADS_COUNT=$(shell distcc -j)
+endif
+ifeq ($(THREADS_COUNT),)
+    THREADS_COUNT=$(shell nproc || grep -c ^processor /proc/cpuinfo || sysctl -n hw.ncpu || echo 4)
+endif
+DEB_BUILD_OPTIONS+=parallel=$(THREADS_COUNT)
+
+ifndef ENABLE_TESTS
+    CMAKE_FLAGS += -DENABLE_TESTS=0
+else
+# To export binaries and from deb build we do not strip them. No need to run tests in deb build as we run them in CI
+    DEB_BUILD_OPTIONS+= nocheck
+    DEB_BUILD_OPTIONS+= nostrip
+endif
+
+ifndef MAKE_TARGET
+    MAKE_TARGET = clickhouse-bundle
+endif
+
+CMAKE_FLAGS += -DENABLE_UTILS=0
+
+DEB_CC ?= $(shell which gcc-11 gcc-10 gcc-9 gcc | head -n1)
+DEB_CXX ?= $(shell which g++-11 g++-10 g++-9 g++ | head -n1)
+
+ifdef DEB_CXX
+    DEB_BUILD_GNU_TYPE := $(shell dpkg-architecture -qDEB_BUILD_GNU_TYPE)
+    DEB_HOST_GNU_TYPE  := $(shell dpkg-architecture -qDEB_HOST_GNU_TYPE)
+ifeq ($(DEB_BUILD_GNU_TYPE),$(DEB_HOST_GNU_TYPE))
+        CC := $(DEB_CC)
+        CXX := $(DEB_CXX)
+else ifeq (clang,$(findstring clang,$(DEB_CXX)))
+# If we crosscompile with clang, it knows what to do
+        CC := $(DEB_CC)
+        CXX := $(DEB_CXX)
+else
+        CC := $(DEB_HOST_GNU_TYPE)-$(DEB_CC)
+        CXX := $(DEB_HOST_GNU_TYPE)-$(DEB_CXX)
+endif
+endif
+
+ifdef CXX
+    CMAKE_FLAGS += -DCMAKE_CXX_COMPILER=`which $(CXX)`
+endif
+ifdef CC
+    CMAKE_FLAGS += -DCMAKE_C_COMPILER=`which $(CC)`
+endif
+
+ifndef DISABLE_NINJA
+    NINJA=$(shell which ninja)
+ifneq ($(NINJA),)
+        CMAKE_FLAGS += -GNinja
+        export MAKE=$(NINJA) $(NINJA_FLAGS)
+endif
+endif
+
+ifndef DH_VERBOSE
+    CMAKE_FLAGS += -DCMAKE_VERBOSE_MAKEFILE=0
+endif
+
+# Useful for bulding on low memory systems
+ifndef DISABLE_PARALLEL
+    DH_FLAGS += --parallel
+else
+    THREADS_COUNT = 1
+endif
+
+%:
+	dh $@ $(DH_FLAGS) --buildsystem=cmake
+
+override_dh_auto_configure:
+	dh_auto_configure -- $(CMAKE_FLAGS)
+
+override_dh_auto_build:
+	# Fix for ninja. Do not add -O.
+	$(MAKE) -j$(THREADS_COUNT) -C $(BUILDDIR) $(MAKE_TARGET)
+
+override_dh_auto_test:
+ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
+	cd $(BUILDDIR) && ctest -j$(THREADS_COUNT) -V
+endif
+
+# Disable config.guess and config.sub update
+override_dh_update_autotools_config:
+
+override_dh_clean:
+	rm -rf debian/copyright debian/clickhouse-client.docs debian/clickhouse-common-static.docs
+	dh_clean # -X contrib
+
+override_dh_strip:
+	#https://www.debian.org/doc/debian-policy/ch-source.html#debian-rules-and-deb-build-options
+ifeq (,$(filter nostrip,$(DEB_BUILD_OPTIONS)))
+	dh_strip -pclickhouse-common-static --dbg-package=clickhouse-common-static-dbg
+endif
+
+override_dh_install:
+	# Making docs
+	cp LICENSE debian/copyright
+
+	ln -sf clickhouse-server.docs debian/clickhouse-client.docs
+	ln -sf clickhouse-server.docs debian/clickhouse-common-static.docs
+
+	# systemd compatibility
+	mkdir -p $(DESTDIR)/etc/systemd/system/
+	cp debian/clickhouse-server.service $(DESTDIR)/etc/systemd/system/
+
+	dh_install --list-missing --sourcedir=$(DESTDIR)
+
+override_dh_auto_install:
+	env DESTDIR=$(DESTDIR) $(MAKE) -j$(THREADS_COUNT) -C $(BUILDDIR) install
+
+override_dh_shlibdeps:
+	true # We depend only on libc and dh_shlibdeps gives us wrong (too strict) dependency.
+
+override_dh_builddeb:
+	dh_builddeb -- -Z gzip # Older systems don't have "xz", so use "gzip" instead.

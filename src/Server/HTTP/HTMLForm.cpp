@@ -20,11 +20,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int CANNOT_READ_ALL_DATA;
-}
-
 namespace
 {
 
@@ -234,11 +229,6 @@ void HTMLForm::readMultipart(ReadBuffer & in_, PartHandler & handler)
         if (!in.skipToNextBoundary())
             break;
     }
-
-    /// It's important to check, because we could get "fake" EOF and incomplete request if a client suddenly died in the middle.
-    if (!in.isActualEOF())
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected EOF, "
-                        "did not find the last boundary while parsing a multipart HTTP request");
 }
 
 
@@ -254,8 +244,7 @@ bool HTMLForm::MultipartReadBuffer::skipToNextBoundary()
     if (in.eof())
         return false;
 
-    chassert(boundary_hit);
-    chassert(!found_last_boundary);
+    assert(boundary_hit);
 
     boundary_hit = false;
 
@@ -266,8 +255,7 @@ bool HTMLForm::MultipartReadBuffer::skipToNextBoundary()
         {
             set(in.position(), 0);
             next();  /// We need to restrict our buffer to size of next available line.
-            found_last_boundary = startsWith(line, boundary + "--");
-            return !found_last_boundary;
+            return !startsWith(line, boundary + "--");
         }
     }
 
