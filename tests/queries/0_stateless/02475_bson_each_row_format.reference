@@ -233,11 +233,11 @@ Schema inference
 x	Nullable(Int32)					
 x	Nullable(Int64)					
 x	Nullable(Int64)					
-OK
+FAIL
 x	Array(Nullable(Int32))					
 x	Array(Nullable(Int64))					
 x	Array(Nullable(Int64))					
-OK
+FAIL
 OK
 OK
 OK

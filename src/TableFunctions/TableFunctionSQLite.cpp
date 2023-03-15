@@ -62,12 +62,13 @@ void TableFunctionSQLite::parseArguments(const ASTPtr & ast_function, ContextPtr
     const auto & func_args = ast_function->as<ASTFunction &>();
 
     if (!func_args.arguments)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function 'sqlite' must have arguments.");
+        throw Exception("Table function 'sqlite' must have arguments.", ErrorCodes::BAD_ARGUMENTS);
 
     ASTs & args = func_args.arguments->children;
 
     if (args.size() != 2)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "SQLite database requires 2 arguments: database path, table name");
+        throw Exception("SQLite database requires 2 arguments: database path, table name",
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     for (auto & arg : args)
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);

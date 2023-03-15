@@ -13,7 +13,6 @@
 #include <Processors/QueryPlan/PartsSplitter.h>
 #include <Processors/Transforms/FilterSortedStreamByRange.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 using namespace DB;
 
@@ -78,7 +77,7 @@ std::pair<std::vector<Values>, std::vector<RangesInDataParts>> split(RangesInDat
             RangeEnd,
         };
 
-        [[ maybe_unused ]] bool operator<(const PartsRangesIterator & other) const { return std::tie(value, event) > std::tie(other.value, other.event); }
+        bool operator<(const PartsRangesIterator & other) const { return std::tie(value, event) > std::tie(other.value, other.event); }
 
         Values value;
         MarkRangeWithPartIdx range;

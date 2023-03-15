@@ -38,7 +38,7 @@ public:
     virtual void resetParser();
 
     virtual void setReadBuffer(ReadBuffer & in_);
-    ReadBuffer & getReadBuffer() const { return *in; }
+    const ReadBuffer & getReadBuffer() const { return *in; }
 
     virtual const BlockMissingValues & getMissingValues() const
     {

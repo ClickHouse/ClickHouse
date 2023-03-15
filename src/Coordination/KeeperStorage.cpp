@@ -11,7 +11,7 @@
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ZooKeeper/IKeeper.h>
-#include <base/hex.h>
+#include <Common/hex.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/LockMemoryExceptionInThread.h>
@@ -201,10 +201,9 @@ void KeeperStorage::Node::setData(String new_data)
     data = std::move(new_data);
 }
 
-void KeeperStorage::Node::addChild(StringRef child_path, bool update_size)
+void KeeperStorage::Node::addChild(StringRef child_path)
 {
-    if (update_size) [[likely]]
-        size_bytes += sizeof child_path;
+    size_bytes += sizeof child_path;
     children.insert(child_path);
 }
 
@@ -233,13 +232,6 @@ void KeeperStorage::Node::shallowCopy(const KeeperStorage::Node & other)
     seq_num = other.seq_num;
     setData(other.getData());
     cached_digest = other.cached_digest;
-}
-
-void KeeperStorage::Node::recalculateSize()
-{
-    size_bytes = sizeof(Node);
-    size_bytes += children.size() * sizeof(decltype(children)::value_type);
-    size_bytes += data.size();
 }
 
 KeeperStorage::KeeperStorage(
@@ -1370,7 +1362,7 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
         {
             auto path_prefix = request.path;
             if (path_prefix.empty())
-                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: path cannot be empty");
+                throw DB::Exception("Logical error: path cannot be empty", ErrorCodes::LOGICAL_ERROR);
 
             const auto & children = node_it->value.getChildren();
             response.names.reserve(children.size());
@@ -1712,9 +1704,7 @@ struct KeeperStorageMultiRequestProcessor final : public KeeperStorageRequestPro
                     break;
                 default:
                     throw DB::Exception(
-                                        ErrorCodes::BAD_ARGUMENTS,
-                                        "Illegal command as part of multi ZooKeeper request {}",
-                                        Coordination::toString(sub_zk_request->getOpNum()));
+                        ErrorCodes::BAD_ARGUMENTS, "Illegal command as part of multi ZooKeeper request {}", sub_zk_request->getOpNum());
             }
         }
 
@@ -1823,7 +1813,7 @@ struct KeeperStorageCloseRequestProcessor final : public KeeperStorageRequestPro
     using KeeperStorageRequestProcessor::KeeperStorageRequestProcessor;
     Coordination::ZooKeeperResponsePtr process(KeeperStorage &, int64_t) const override
     {
-        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Called process on close request");
+        throw DB::Exception("Called process on close request", ErrorCodes::LOGICAL_ERROR);
     }
 };
 
@@ -1871,7 +1861,7 @@ struct KeeperStorageAuthRequestProcessor final : public KeeperStorageRequestProc
 void KeeperStorage::finalize()
 {
     if (finalized)
-        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStorage already finalized");
+        throw DB::Exception("KeeperStorage already finalized", ErrorCodes::LOGICAL_ERROR);
 
     finalized = true;
 
@@ -1905,7 +1895,7 @@ public:
     {
         auto request_it = op_num_to_request.find(zk_request->getOpNum());
         if (request_it == op_num_to_request.end())
-            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Unknown operation type {}", toString(zk_request->getOpNum()));
+            throw DB::Exception("Unknown operation type " + toString(zk_request->getOpNum()), ErrorCodes::LOGICAL_ERROR);
 
         return request_it->second(zk_request);
     }
@@ -2030,9 +2020,7 @@ void KeeperStorage::preprocessRequest(
         // if we have no uncommitted transactions it means the last zxid is possibly loaded from snapshot
         if (last_zxid != old_snapshot_zxid && new_last_zxid <= last_zxid)
             throw Exception(
-                            ErrorCodes::LOGICAL_ERROR,
-                            "Got new ZXID ({}) smaller or equal to current ZXID ({}). It's a bug",
-                            new_last_zxid, last_zxid);
+                ErrorCodes::LOGICAL_ERROR, "Got new ZXID ({}) smaller or equal to current ZXID ({}). It's a bug", new_last_zxid, last_zxid);
     }
     else
     {
@@ -2042,9 +2030,7 @@ void KeeperStorage::preprocessRequest(
 
         if (new_last_zxid <= last_zxid)
             throw Exception(
-                            ErrorCodes::LOGICAL_ERROR,
-                            "Got new ZXID ({}) smaller or equal to current ZXID ({}). It's a bug",
-                            new_last_zxid, last_zxid);
+                ErrorCodes::LOGICAL_ERROR, "Got new ZXID ({}) smaller or equal to current ZXID ({}). It's a bug", new_last_zxid, last_zxid);
     }
 
     std::vector<Delta> new_deltas;
@@ -2413,11 +2399,6 @@ uint64_t KeeperStorage::getTotalEphemeralNodesCount() const
         ret += nodes.size();
 
     return ret;
-}
-
-void KeeperStorage::recalculateStats()
-{
-    container.recalculateDataSize();
 }
 
 

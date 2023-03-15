@@ -50,7 +50,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (!checkColumnConst<ColumnString>(arguments[0].column.get()))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of function {} must be constant string", getName());
+            throw Exception("Argument of function " + getName() + " must be constant string", ErrorCodes::BAD_ARGUMENTS);
 
         String variable_name = assert_cast<const ColumnConst &>(*arguments[0].column).getValue<String>();
         auto variable = global_variable_map.find(Poco::toLower(variable_name));

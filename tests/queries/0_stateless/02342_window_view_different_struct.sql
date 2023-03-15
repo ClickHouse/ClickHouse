@@ -1,4 +1,3 @@
-SET allow_experimental_analyzer = 0;
 SET allow_experimental_window_view = 1;
 
 DROP TABLE IF EXISTS data_02342;

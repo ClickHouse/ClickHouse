@@ -93,8 +93,8 @@ inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exp
                     else
                     {
                         if constexpr (_throw_on_error)
-                            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Too many digits ({} > {}) in decimal value",
-                                std::to_string(digits + places), std::to_string(max_digits));
+                            throw Exception("Too many digits (" + std::to_string(digits + places) + " > " + std::to_string(max_digits)
+                                + ") in decimal value", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
                         return false;
                     }
@@ -121,7 +121,7 @@ inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exp
                 if (!tryReadIntText(addition_exp, buf))
                 {
                     if constexpr (_throw_on_error)
-                        throw ParsingException(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot parse exponent while reading decimal");
+                        throw ParsingException("Cannot parse exponent while reading decimal", ErrorCodes::CANNOT_PARSE_NUMBER);
                     else
                         return false;
                 }
@@ -134,7 +134,7 @@ inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exp
                 if (digits_only)
                 {
                     if constexpr (_throw_on_error)
-                        throw ParsingException(ErrorCodes::CANNOT_PARSE_NUMBER, "Unexpected symbol while reading decimal");
+                        throw ParsingException("Unexpected symbol while reading decimal", ErrorCodes::CANNOT_PARSE_NUMBER);
                     return false;
                 }
                 stop = true;
@@ -163,13 +163,13 @@ inline ReturnType readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, u
     {
         if constexpr (throw_exception)
         {
-            static constexpr auto pattern = "Decimal value is too big: {} digits were read: {}e{}."
+            static constexpr const char * pattern = "Decimal value is too big: {} digits were read: {}e{}."
                                                     " Expected to read decimal with scale {} and precision {}";
 
             if constexpr (is_big_int_v<typename T::NativeType>)
-                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, pattern, digits, x.value, exponent, scale, precision);
+                throw Exception(fmt::format(pattern, digits, x.value, exponent, scale, precision), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
             else
-                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, pattern, digits, x, exponent, scale, precision);
+                throw Exception(fmt::format(pattern, digits, x, exponent, scale, precision), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
         }
         else
             return ReturnType(false);

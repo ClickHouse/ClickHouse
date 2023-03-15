@@ -232,7 +232,7 @@ StoragesInfo StoragesInfoStream::next()
 
         info.data = dynamic_cast<MergeTreeData *>(info.storage.get());
         if (!info.data)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown engine {}", info.engine);
+            throw Exception("Unknown engine " + info.engine, ErrorCodes::LOGICAL_ERROR);
 
         return info;
     }

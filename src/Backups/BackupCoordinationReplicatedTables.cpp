@@ -78,9 +78,9 @@ public:
                 throw Exception(
                     ErrorCodes::CANNOT_BACKUP_TABLE,
                     "Intersected parts detected: {} on replica {} and {} on replica {}",
-                    part.info.getPartNameForLogs(),
+                    part.info.getPartName(),
                     *part.replica_name,
-                    new_part_info.getPartNameForLogs(),
+                    new_part_info.getPartName(),
                     *replica_name);
             }
             ++last_it;

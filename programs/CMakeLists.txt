@@ -13,6 +13,12 @@ option (ENABLE_CLICKHOUSE_SERVER "Server mode (main mode)" ${ENABLE_CLICKHOUSE_A
 option (ENABLE_CLICKHOUSE_CLIENT "Client mode (interactive tui/shell that connects to the server)"
     ${ENABLE_CLICKHOUSE_ALL})
 
+# Don't create self-extracting clickhouse for split build
+if (ENABLE_CLICKHOUSE_SELF_EXTRACTING AND SPLIT_SHARED_LIBRARIES)
+    message (STATUS "Self-extracting on split build is not supported")
+    unset (ENABLE_CLICKHOUSE_SELF_EXTRACTING CACHE)
+endif ()
+
 # https://clickhouse.com/docs/en/operations/utilities/clickhouse-local/
 option (ENABLE_CLICKHOUSE_LOCAL "Local files fast processing mode" ${ENABLE_CLICKHOUSE_ALL})
 
@@ -169,6 +175,10 @@ else()
     message(STATUS "ClickHouse keeper-converter mode: OFF")
 endif()
 
+if(NOT (USE_STATIC_LIBRARIES OR SPLIT_SHARED_LIBRARIES))
+    set(CLICKHOUSE_ONE_SHARED ON)
+endif()
+
 if (ENABLE_CLICKHOUSE_DISKS)
     message(STATUS "Clickhouse disks mode: ON")
 else()
@@ -184,7 +194,11 @@ endif()
 configure_file (config_tools.h.in ${CONFIG_INCLUDE_PATH}/config_tools.h)
 
 macro(clickhouse_target_link_split_lib target name)
-    target_link_libraries(${target} PRIVATE clickhouse-${name}-lib)
+    if(NOT CLICKHOUSE_ONE_SHARED)
+        target_link_libraries(${target} PRIVATE clickhouse-${name}-lib)
+    else()
+        target_link_libraries(${target} PRIVATE clickhouse-lib)
+    endif()
 endmacro()
 
 macro(clickhouse_program_add_library name)
@@ -196,16 +210,18 @@ macro(clickhouse_program_add_library name)
     set(CLICKHOUSE_${name_uc}_LINK ${CLICKHOUSE_${name_uc}_LINK} PARENT_SCOPE)
     set(CLICKHOUSE_${name_uc}_INCLUDE ${CLICKHOUSE_${name_uc}_INCLUDE} PARENT_SCOPE)
 
-    add_library(clickhouse-${name}-lib ${CLICKHOUSE_${name_uc}_SOURCES})
+    if(NOT CLICKHOUSE_ONE_SHARED)
+        add_library(clickhouse-${name}-lib ${CLICKHOUSE_${name_uc}_SOURCES})
 
-    set(_link ${CLICKHOUSE_${name_uc}_LINK}) # can't use ${} in if()
-    if(_link)
-        target_link_libraries(clickhouse-${name}-lib ${CLICKHOUSE_${name_uc}_LINK})
-    endif()
+        set(_link ${CLICKHOUSE_${name_uc}_LINK}) # can't use ${} in if()
+        if(_link)
+            target_link_libraries(clickhouse-${name}-lib ${CLICKHOUSE_${name_uc}_LINK})
+        endif()
 
-    set(_include ${CLICKHOUSE_${name_uc}_INCLUDE}) # can't use ${} in if()
-    if (_include)
-        target_include_directories(clickhouse-${name}-lib ${CLICKHOUSE_${name_uc}_INCLUDE})
+        set(_include ${CLICKHOUSE_${name_uc}_INCLUDE}) # can't use ${} in if()
+        if (_include)
+            target_include_directories(clickhouse-${name}-lib ${CLICKHOUSE_${name_uc}_INCLUDE})
+        endif()
     endif()
 endmacro()
 
@@ -249,7 +265,67 @@ if (ENABLE_CLICKHOUSE_SELF_EXTRACTING)
     add_subdirectory (self-extracting)
 endif ()
 
+if (CLICKHOUSE_ONE_SHARED)
+  add_library(clickhouse-lib SHARED
+    ${CLICKHOUSE_SERVER_SOURCES}
+    ${CLICKHOUSE_CLIENT_SOURCES}
+    ${CLICKHOUSE_LOCAL_SOURCES}
+    ${CLICKHOUSE_BENCHMARK_SOURCES}
+    ${CLICKHOUSE_COPIER_SOURCES}
+    ${CLICKHOUSE_EXTRACT_FROM_CONFIG_SOURCES}
+    ${CLICKHOUSE_COMPRESSOR_SOURCES}
+    ${CLICKHOUSE_FORMAT_SOURCES}
+    ${CLICKHOUSE_OBFUSCATOR_SOURCES}
+    ${CLICKHOUSE_GIT_IMPORT_SOURCES}
+    ${CLICKHOUSE_ODBC_BRIDGE_SOURCES}
+    ${CLICKHOUSE_KEEPER_SOURCES}
+    ${CLICKHOUSE_KEEPER_CONVERTER_SOURCES}
+    ${CLICKHOUSE_STATIC_FILES_DISK_UPLOADER_SOURCES}
+    ${CLICKHOUSE_SU_SOURCES})
+
+    target_link_libraries(clickhouse-lib
+      ${CLICKHOUSE_SERVER_LINK}
+      ${CLICKHOUSE_CLIENT_LINK}
+      ${CLICKHOUSE_LOCAL_LINK}
+      ${CLICKHOUSE_BENCHMARK_LINK}
+      ${CLICKHOUSE_COPIER_LINK}
+      ${CLICKHOUSE_EXTRACT_FROM_CONFIG_LINK}
+      ${CLICKHOUSE_COMPRESSOR_LINK}
+      ${CLICKHOUSE_FORMAT_LINK}
+      ${CLICKHOUSE_OBFUSCATOR_LINK}
+      ${CLICKHOUSE_GIT_IMPORT_LINK}
+      ${CLICKHOUSE_ODBC_BRIDGE_LINK}
+      ${CLICKHOUSE_KEEPER_LINK}
+      ${CLICKHOUSE_KEEPER_CONVERTER_LINK}
+      ${CLICKHOUSE_STATIC_FILES_DISK_UPLOADER_LINK}
+      ${CLICKHOUSE_SU_LINK})
+
+    target_include_directories(clickhouse-lib
+      ${CLICKHOUSE_SERVER_INCLUDE}
+      ${CLICKHOUSE_CLIENT_INCLUDE}
+      ${CLICKHOUSE_LOCAL_INCLUDE}
+      ${CLICKHOUSE_BENCHMARK_INCLUDE}
+      ${CLICKHOUSE_COPIER_INCLUDE}
+      ${CLICKHOUSE_EXTRACT_FROM_CONFIG_INCLUDE}
+      ${CLICKHOUSE_COMPRESSOR_INCLUDE}
+      ${CLICKHOUSE_FORMAT_INCLUDE}
+      ${CLICKHOUSE_OBFUSCATOR_INCLUDE}
+      ${CLICKHOUSE_GIT_IMPORT_INCLUDE}
+      ${CLICKHOUSE_ODBC_BRIDGE_INCLUDE}
+      ${CLICKHOUSE_KEEPER_INCLUDE}
+      ${CLICKHOUSE_KEEPER_CONVERTER_INCLUDE})
+
+    set_target_properties(clickhouse-lib PROPERTIES SOVERSION ${VERSION_MAJOR}.${VERSION_MINOR} VERSION ${VERSION_SO} OUTPUT_NAME clickhouse DEBUG_POSTFIX "")
+    install (TARGETS clickhouse-lib LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT clickhouse)
+endif()
+
 clickhouse_add_executable (clickhouse main.cpp)
+
+if (NOT USE_STATIC_LIBRARIES AND SPLIT_SHARED_LIBRARIES)
+    # Shared split (dev) build: In CI, the server is run with custom LD_LIBRARY_PATH. This makes the harmful env check re-execute the
+    # process in a clean environment but as in CI the containing directory is not included in DT_RUNPATH/DT_RPATH, the server won't come up.
+    target_compile_definitions(clickhouse PRIVATE DISABLE_HARMFUL_ENV_VAR_CHECK)
+endif ()
 
 # A library that prevent usage of several functions from libc.
 if (ARCH_AMD64 AND OS_LINUX AND NOT OS_ANDROID)

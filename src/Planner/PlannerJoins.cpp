@@ -17,8 +17,9 @@
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionsConversion.h>
+#include <Functions/CastOverloadResolver.h>
 
-#include <Analyzer/Utils.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/TableNode.h>
@@ -38,7 +39,6 @@
 
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerContext.h>
-#include <Planner/Utils.h>
 
 namespace DB
 {
@@ -62,8 +62,6 @@ void JoinClause::dump(WriteBuffer & buffer) const
             for (const auto & dag_node : dag_nodes)
             {
                 dag_nodes_dump += dag_node->result_name;
-                dag_nodes_dump += " ";
-                dag_nodes_dump += dag_node->result_type->getName();
                 dag_nodes_dump += ", ";
             }
 
@@ -467,11 +465,40 @@ JoinClausesAndActions buildJoinClausesAndActions(const ColumnsWithTypeAndName & 
                     throw;
                 }
 
+                auto cast_type_name = common_type->getName();
+                Field cast_type_constant_value(cast_type_name);
+
+                ColumnWithTypeAndName cast_column;
+                cast_column.name = calculateConstantActionNodeName(cast_type_constant_value);
+                cast_column.column = DataTypeString().createColumnConst(0, cast_type_constant_value);
+                cast_column.type = std::make_shared<DataTypeString>();
+
+                const ActionsDAG::Node * cast_type_constant_node = nullptr;
+
                 if (!left_key_node->result_type->equals(*common_type))
-                    left_key_node = &join_expression_actions->addCast(*left_key_node, common_type, {});
+                {
+                    cast_type_constant_node = &join_expression_actions->addColumn(cast_column);
+
+                    FunctionCastBase::Diagnostic diagnostic = {left_key_node->result_name, left_key_node->result_name};
+                    FunctionOverloadResolverPtr func_builder_cast
+                        = CastInternalOverloadResolver<CastType::nonAccurate>::createImpl(diagnostic);
+
+                    ActionsDAG::NodeRawConstPtrs children = {left_key_node, cast_type_constant_node};
+                    left_key_node = &join_expression_actions->addFunction(func_builder_cast, std::move(children), {});
+                }
 
                 if (!right_key_node->result_type->equals(*common_type))
-                    right_key_node = &join_expression_actions->addCast(*right_key_node, common_type, {});
+                {
+                    if (!cast_type_constant_node)
+                        cast_type_constant_node = &join_expression_actions->addColumn(cast_column);
+
+                    FunctionCastBase::Diagnostic diagnostic = {right_key_node->result_name, right_key_node->result_name};
+                    FunctionOverloadResolverPtr func_builder_cast
+                        = CastInternalOverloadResolver<CastType::nonAccurate>::createImpl(std::move(diagnostic));
+
+                    ActionsDAG::NodeRawConstPtrs children = {right_key_node, cast_type_constant_node};
+                    right_key_node = &join_expression_actions->addFunction(func_builder_cast, std::move(children), {});
+                }
             }
 
             join_expression_actions->addOrReplaceInOutputs(*left_key_node);
@@ -517,7 +544,23 @@ std::optional<bool> tryExtractConstantFromJoinNode(const QueryTreeNodePtr & join
     if (!join_node_typed.getJoinExpression())
         return {};
 
-    return tryExtractConstantFromConditionNode(join_node_typed.getJoinExpression());
+    const auto * constant_node = join_node_typed.getJoinExpression()->as<ConstantNode>();
+    if (!constant_node)
+        return {};
+
+    const auto & value = constant_node->getValue();
+    auto constant_type = constant_node->getResultType();
+    constant_type = removeNullable(removeLowCardinality(constant_type));
+
+    auto which_constant_type = WhichDataType(constant_type);
+    if (!which_constant_type.isUInt8() && !which_constant_type.isNothing())
+        return {};
+
+    if (value.isNull())
+        return false;
+
+    UInt8 predicate_value = value.safeGet<UInt8>();
+    return predicate_value > 0;
 }
 
 namespace
@@ -658,7 +701,7 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
         return std::make_shared<HashJoin>(table_join, right_table_expression_header);
     }
 
-    if (!table_join->oneDisjunct() && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH) && !table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
+    if (!table_join->oneDisjunct() && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `hash` join supports multiple ORs for keys in JOIN ON section");
 
     /// Direct JOIN with special storages that support key value access. For example JOIN with Dictionary
@@ -711,14 +754,9 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> & table_jo
     }
 
     if (table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
-    {
-        if (MergeJoin::isSupported(table_join))
-            return std::make_shared<JoinSwitcher>(table_join, right_table_expression_header);
-        return std::make_shared<HashJoin>(table_join, right_table_expression_header);
-    }
+        return std::make_shared<JoinSwitcher>(table_join, right_table_expression_header);
 
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                    "Can't execute any of specified algorithms for specified strictness/kind and right storage type");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Can't execute any of specified algorithms for specified strictness/kind and right storage type");
 }
 
 }

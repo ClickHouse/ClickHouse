@@ -2,7 +2,12 @@
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/typeid_cast.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/getCurrentProcessFDCount.h>
+#include <Common/getMaxFileDescriptorCount.h>
+#include <Interpreters/Cache/FileCache.h>
+#include <Server/ProtocolServerAdapter.h>
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
 #include <IO/ReadHelpers.h>
@@ -65,9 +70,6 @@ AsynchronousMetrics::AsynchronousMetrics(
     openFileIfExists("/proc/sys/fs/file-nr", file_nr);
     openFileIfExists("/proc/uptime", uptime);
     openFileIfExists("/proc/net/dev", net_dev);
-
-    openFileIfExists("/sys/fs/cgroup/memory/memory.limit_in_bytes", cgroupmem_limit_in_bytes);
-    openFileIfExists("/sys/fs/cgroup/memory/memory.usage_in_bytes", cgroupmem_usage_in_bytes);
 
     openSensors();
     openBlockDevices();
@@ -216,18 +218,18 @@ void AsynchronousMetrics::openSensorsChips()
             if (!file)
                 continue;
 
-            String sensor_name{};
+            String sensor_name;
+            if (sensor_name_file_exists)
+            {
+                ReadBufferFromFilePRead sensor_name_in(sensor_name_file, small_buffer_size);
+                readText(sensor_name, sensor_name_in);
+                std::replace(sensor_name.begin(), sensor_name.end(), ' ', '_');
+            }
+
+            file->rewind();
+            Int64 temperature = 0;
             try
             {
-                if (sensor_name_file_exists)
-                {
-                    ReadBufferFromFilePRead sensor_name_in(sensor_name_file, small_buffer_size);
-                    readText(sensor_name, sensor_name_in);
-                    std::replace(sensor_name.begin(), sensor_name.end(), ' ', '_');
-                }
-
-                file->rewind();
-                Int64 temperature = 0;
                 readText(temperature, *file);
             }
             catch (const ErrnoException & e)
@@ -236,7 +238,7 @@ void AsynchronousMetrics::openSensorsChips()
                     &Poco::Logger::get("AsynchronousMetrics"),
                     "Hardware monitor '{}', sensor '{}' exists but could not be read: {}.",
                     hwmon_name,
-                    sensor_index,
+                    sensor_name,
                     errnoToString(e.getErrno()));
                 continue;
             }
@@ -533,15 +535,8 @@ void AsynchronousMetrics::update(TimePoint update_time)
     AsynchronousMetricValues new_values;
 
     auto current_time = std::chrono::system_clock::now();
-    auto time_after_previous_update = current_time - previous_update_time;
+    auto time_after_previous_update [[maybe_unused]] = current_time - previous_update_time;
     previous_update_time = update_time;
-
-    double update_interval = 0.;
-    if (first_run)
-        update_interval = update_period.count();
-    else
-        update_interval = std::chrono::duration_cast<std::chrono::microseconds>(time_after_previous_update).count() / 1e6;
-    new_values["AsynchronousMetricsUpdateInterval"] = { update_interval, "Metrics update interval" };
 
     /// This is also a good indicator of system responsiveness.
     new_values["Jitter"] = { std::chrono::duration_cast<std::chrono::nanoseconds>(current_time - update_time).count() / 1e9,
@@ -882,35 +877,6 @@ void AsynchronousMetrics::update(TimePoint update_time)
             }
 
             proc_stat_values_other = current_other_values;
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
-
-    if (cgroupmem_limit_in_bytes && cgroupmem_usage_in_bytes)
-    {
-        try {
-            cgroupmem_limit_in_bytes->rewind();
-            cgroupmem_usage_in_bytes->rewind();
-
-            uint64_t cgroup_mem_limit_in_bytes = 0;
-            uint64_t cgroup_mem_usage_in_bytes = 0;
-
-            readText(cgroup_mem_limit_in_bytes, *cgroupmem_limit_in_bytes);
-            readText(cgroup_mem_usage_in_bytes, *cgroupmem_usage_in_bytes);
-
-            if (cgroup_mem_limit_in_bytes && cgroup_mem_usage_in_bytes)
-            {
-                new_values["CgroupMemoryTotal"] = { cgroup_mem_limit_in_bytes, "The total amount of memory in cgroup, in bytes." };
-                new_values["CgroupMemoryUsed"] = { cgroup_mem_usage_in_bytes, "The amount of memory used in cgroup, in bytes." };
-            }
-            else
-            {
-                LOG_DEBUG(log, "Cannot read statistics about the cgroup memory total and used. Total got '{}', Used got '{}'.",
-                    cgroup_mem_limit_in_bytes, cgroup_mem_usage_in_bytes);
-            }
         }
         catch (...)
         {

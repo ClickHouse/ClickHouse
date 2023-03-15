@@ -60,11 +60,11 @@ void ReplicatedMergeTreeAttachThread::run()
 
         if (needs_retry)
         {
-            LOG_ERROR(log, "Initialization failed. Error: {}", getCurrentExceptionMessage(/* with_stacktrace */ true));
+            LOG_ERROR(log, "Initialization failed. Error: {}", e.message());
         }
         else
         {
-            LOG_ERROR(log, "Initialization failed, table will remain readonly. Error: {}", getCurrentExceptionMessage(/* with_stacktrace */ true));
+            LOG_ERROR(log, "Initialization failed, table will remain readonly. Error: {}", e.message());
             storage.initialization_done = true;
         }
     }
@@ -191,7 +191,7 @@ void ReplicatedMergeTreeAttachThread::runImpl()
 
 void ReplicatedMergeTreeAttachThread::finalizeInitialization() TSA_NO_THREAD_SAFETY_ANALYSIS
 {
-    storage.startupImpl(/* from_attach_thread */ true);
+    storage.startupImpl();
     storage.initialization_done = true;
     LOG_INFO(log, "Table is initialized");
 }

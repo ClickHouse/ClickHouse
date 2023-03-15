@@ -32,16 +32,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-std::pair<String, String> splitCapnProtoFieldName(const String & name)
-{
-    const auto * begin = name.data();
-    const auto * end = name.data() + name.size();
-    const auto * it = find_first_symbols<'_', '.'>(begin, end);
-    String first = String(begin, it);
-    String second = it == end ? "" : String(it + 1, end);
-    return {first, second};
-}
-
 capnp::StructSchema CapnProtoSchemaParser::getMessageSchema(const FormatSchemaInfo & schema_info)
 {
     capnp::ParsedSchema schema;
@@ -63,16 +53,13 @@ capnp::StructSchema CapnProtoSchemaParser::getMessageSchema(const FormatSchemaIn
         if (description.find("Parse error") != String::npos)
             throw Exception(ErrorCodes::CANNOT_PARSE_CAPN_PROTO_SCHEMA, "Cannot parse CapnProto schema {}:{}", schema_info.schemaPath(), e.getLine());
 
-        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
-                        "Unknown exception while parsing CapnProto schema: {}, schema dir and file: {}, {}",
-                        description, schema_info.schemaDirectory(), schema_info.schemaPath());
+        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception while parsing CapnProto schema: {}, schema dir and file: {}, {}", description, schema_info.schemaDirectory(), schema_info.schemaPath());
     }
 
     auto message_maybe = schema.findNested(schema_info.messageName());
     auto * message_schema = kj::_::readMaybe(message_maybe);
     if (!message_schema)
-        throw Exception(ErrorCodes::CANNOT_PARSE_CAPN_PROTO_SCHEMA,
-                        "CapnProto schema doesn't contain message with name {}", schema_info.messageName());
+        throw Exception(ErrorCodes::CANNOT_PARSE_CAPN_PROTO_SCHEMA, "CapnProto schema doesn't contain message with name {}", schema_info.messageName());
     return message_schema->asStruct();
 }
 
@@ -214,9 +201,9 @@ static bool checkEnums(const capnp::Type & capnp_type, const DataTypePtr column_
     return result;
 }
 
-static bool checkCapnProtoType(const capnp::Type & capnp_type, const DataTypePtr & data_type, FormatSettings::EnumComparingMode mode, String & error_message, const String & column_name);
+static bool checkCapnProtoType(const capnp::Type & capnp_type, const DataTypePtr & data_type, FormatSettings::EnumComparingMode mode, String & error_message);
 
-static bool checkNullableType(const capnp::Type & capnp_type, const DataTypePtr & data_type, FormatSettings::EnumComparingMode mode, String & error_message, const String & column_name)
+static bool checkNullableType(const capnp::Type & capnp_type, const DataTypePtr & data_type, FormatSettings::EnumComparingMode mode, String & error_message)
 {
     if (!capnp_type.isStruct())
         return false;
@@ -235,9 +222,9 @@ static bool checkNullableType(const capnp::Type & capnp_type, const DataTypePtr 
 
     auto nested_type = assert_cast<const DataTypeNullable *>(data_type.get())->getNestedType();
     if (first.getType().isVoid())
-        return checkCapnProtoType(second.getType(), nested_type, mode, error_message, column_name);
+        return checkCapnProtoType(second.getType(), nested_type, mode, error_message);
     if (second.getType().isVoid())
-        return checkCapnProtoType(first.getType(), nested_type, mode, error_message, column_name);
+        return checkCapnProtoType(first.getType(), nested_type, mode, error_message);
     return false;
 }
 
@@ -273,7 +260,7 @@ static bool checkTupleType(const capnp::Type & capnp_type, const DataTypePtr & d
     {
         KJ_IF_MAYBE(field, struct_schema.findFieldByName(name))
         {
-            if (!checkCapnProtoType(field->getType(), nested_types[tuple_data_type->getPositionByName(name)], mode, error_message, name))
+            if (!checkCapnProtoType(field->getType(), nested_types[tuple_data_type->getPositionByName(name)], mode, error_message))
                 return false;
         }
         else
@@ -286,28 +273,16 @@ static bool checkTupleType(const capnp::Type & capnp_type, const DataTypePtr & d
     return true;
 }
 
-static bool checkArrayType(const capnp::Type & capnp_type, const DataTypePtr & data_type, FormatSettings::EnumComparingMode mode, String & error_message, const String & column_name)
+static bool checkArrayType(const capnp::Type & capnp_type, const DataTypePtr & data_type, FormatSettings::EnumComparingMode mode, String & error_message)
 {
     if (!capnp_type.isList())
         return false;
     auto list_schema = capnp_type.asList();
     auto nested_type = assert_cast<const DataTypeArray *>(data_type.get())->getNestedType();
-
-    auto [field_name, nested_name] = splitCapnProtoFieldName(column_name);
-    if (!nested_name.empty() && list_schema.getElementType().isStruct())
-    {
-        auto struct_schema = list_schema.getElementType().asStruct();
-        KJ_IF_MAYBE(field, struct_schema.findFieldByName(nested_name))
-            return checkCapnProtoType(field->getType(), nested_type, mode, error_message, nested_name);
-
-        error_message += "Element type of List {} doesn't contain field with name " + nested_name;
-        return false;
-    }
-
-    return checkCapnProtoType(list_schema.getElementType(), nested_type, mode, error_message, column_name);
+    return checkCapnProtoType(list_schema.getElementType(), nested_type, mode, error_message);
 }
 
-static bool checkCapnProtoType(const capnp::Type & capnp_type, const DataTypePtr & data_type, FormatSettings::EnumComparingMode mode, String & error_message, const String & column_name)
+static bool checkCapnProtoType(const capnp::Type & capnp_type, const DataTypePtr & data_type, FormatSettings::EnumComparingMode mode, String & error_message)
 {
     switch (data_type->getTypeId())
     {
@@ -317,7 +292,6 @@ static bool checkCapnProtoType(const capnp::Type & capnp_type, const DataTypePtr
         case TypeIndex::UInt16:
             return capnp_type.isUInt16();
         case TypeIndex::DateTime: [[fallthrough]];
-        case TypeIndex::IPv4: [[fallthrough]];
         case TypeIndex::UInt32:
             return capnp_type.isUInt32();
         case TypeIndex::UInt64:
@@ -327,11 +301,9 @@ static bool checkCapnProtoType(const capnp::Type & capnp_type, const DataTypePtr
         case TypeIndex::Int16:
             return capnp_type.isInt16();
         case TypeIndex::Date32: [[fallthrough]];
-        case TypeIndex::Decimal32: [[fallthrough]];
         case TypeIndex::Int32:
             return capnp_type.isInt32();
         case TypeIndex::DateTime64: [[fallthrough]];
-        case TypeIndex::Decimal64: [[fallthrough]];
         case TypeIndex::Int64:
             return capnp_type.isInt64();
         case TypeIndex::Float32:
@@ -346,17 +318,16 @@ static bool checkCapnProtoType(const capnp::Type & capnp_type, const DataTypePtr
             return checkTupleType(capnp_type, data_type, mode, error_message);
         case TypeIndex::Nullable:
         {
-            auto result = checkNullableType(capnp_type, data_type, mode, error_message, column_name);
+            auto result = checkNullableType(capnp_type, data_type, mode, error_message);
             if (!result)
                 error_message += "Nullable can be represented only as a named union of type Void and nested type";
             return result;
         }
         case TypeIndex::Array:
-            return checkArrayType(capnp_type, data_type, mode, error_message, column_name);
+            return checkArrayType(capnp_type, data_type, mode, error_message);
         case TypeIndex::LowCardinality:
-            return checkCapnProtoType(capnp_type, assert_cast<const DataTypeLowCardinality *>(data_type.get())->getDictionaryType(), mode, error_message, column_name);
+            return checkCapnProtoType(capnp_type, assert_cast<const DataTypeLowCardinality *>(data_type.get())->getDictionaryType(), mode, error_message);
         case TypeIndex::FixedString: [[fallthrough]];
-        case TypeIndex::IPv6: [[fallthrough]];
         case TypeIndex::String:
             return capnp_type.isText() || capnp_type.isData();
         default:
@@ -364,9 +335,19 @@ static bool checkCapnProtoType(const capnp::Type & capnp_type, const DataTypePtr
     }
 }
 
+static std::pair<String, String> splitFieldName(const String & name)
+{
+    const auto * begin = name.data();
+    const auto * end = name.data() + name.size();
+    const auto * it = find_first_symbols<'_', '.'>(begin, end);
+    String first = String(begin, it);
+    String second = it == end ? "" : String(it + 1, end);
+    return {first, second};
+}
+
 capnp::DynamicValue::Reader getReaderByColumnName(const capnp::DynamicStruct::Reader & struct_reader, const String & name)
 {
-    auto [field_name, nested_name] = splitCapnProtoFieldName(name);
+    auto [field_name, nested_name] = splitFieldName(name);
     KJ_IF_MAYBE(field, struct_reader.getSchema().findFieldByName(field_name))
     {
         capnp::DynamicValue::Reader field_reader;
@@ -376,27 +357,11 @@ capnp::DynamicValue::Reader getReaderByColumnName(const capnp::DynamicStruct::Re
         }
         catch (const kj::Exception & e)
         {
-            throw Exception(ErrorCodes::INCORRECT_DATA,
-                            "Cannot extract field value from struct by provided schema, error: "
-                            "{} Perhaps the data was generated by another schema", String(e.getDescription().cStr()));
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot extract field value from struct by provided schema, error: {} Perhaps the data was generated by another schema", String(e.getDescription().cStr()));
         }
 
         if (nested_name.empty())
             return field_reader;
-
-        /// Support reading Nested as List of Structs.
-        if (field_reader.getType() == capnp::DynamicValue::LIST)
-        {
-            auto list_schema = field->getType().asList();
-            if (!list_schema.getElementType().isStruct())
-                throw Exception(ErrorCodes::CAPN_PROTO_BAD_CAST, "Element type of List {} is not a struct", field_name);
-
-            auto struct_schema = list_schema.getElementType().asStruct();
-            KJ_IF_MAYBE(nested_field, struct_schema.findFieldByName(nested_name))
-                return field_reader;
-
-            throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Element type of List {} doesn't contain field with name \"{}\"", field_name, nested_name);
-        }
 
         if (field_reader.getType() != capnp::DynamicValue::STRUCT)
             throw Exception(ErrorCodes::CAPN_PROTO_BAD_CAST, "Field {} is not a struct", field_name);
@@ -409,28 +374,13 @@ capnp::DynamicValue::Reader getReaderByColumnName(const capnp::DynamicStruct::Re
 
 std::pair<capnp::DynamicStruct::Builder, capnp::StructSchema::Field> getStructBuilderAndFieldByColumnName(capnp::DynamicStruct::Builder struct_builder, const String & name)
 {
-    auto [field_name, nested_name] = splitCapnProtoFieldName(name);
+    auto [field_name, nested_name] = splitFieldName(name);
     KJ_IF_MAYBE(field, struct_builder.getSchema().findFieldByName(field_name))
     {
         if (nested_name.empty())
             return {struct_builder, *field};
 
         auto field_builder = struct_builder.get(*field);
-
-        /// Support reading Nested as List of Structs.
-        if (field_builder.getType() == capnp::DynamicValue::LIST)
-        {
-            auto list_schema = field->getType().asList();
-            if (!list_schema.getElementType().isStruct())
-                throw Exception(ErrorCodes::CAPN_PROTO_BAD_CAST, "Element type of List {} is not a struct", field_name);
-
-            auto struct_schema = list_schema.getElementType().asStruct();
-            KJ_IF_MAYBE(nested_field, struct_schema.findFieldByName(nested_name))
-                return {struct_builder, *field};
-
-            throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Element type of List {} doesn't contain field with name \"{}\"", field_name, nested_name);
-        }
-
         if (field_builder.getType() != capnp::DynamicValue::STRUCT)
             throw Exception(ErrorCodes::CAPN_PROTO_BAD_CAST, "Field {} is not a struct", field_name);
 
@@ -440,27 +390,13 @@ std::pair<capnp::DynamicStruct::Builder, capnp::StructSchema::Field> getStructBu
     throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Capnproto struct doesn't contain field with name {}", field_name);
 }
 
-static std::pair<capnp::StructSchema::Field, String> getFieldByName(const capnp::StructSchema & schema, const String & name)
+static capnp::StructSchema::Field getFieldByName(const capnp::StructSchema & schema, const String & name)
 {
-    auto [field_name, nested_name] = splitCapnProtoFieldName(name);
+    auto [field_name, nested_name] = splitFieldName(name);
     KJ_IF_MAYBE(field, schema.findFieldByName(field_name))
     {
         if (nested_name.empty())
-            return {*field, name};
-
-        /// Support reading Nested as List of Structs.
-        if (field->getType().isList())
-        {
-            auto list_schema = field->getType().asList();
-            if (!list_schema.getElementType().isStruct())
-                throw Exception(ErrorCodes::CAPN_PROTO_BAD_CAST, "Element type of List {} is not a struct", field_name);
-
-            auto struct_schema = list_schema.getElementType().asStruct();
-            KJ_IF_MAYBE(nested_field, struct_schema.findFieldByName(nested_name))
-                return {*field, name};
-
-            throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Element type of List {} doesn't contain field with name \"{}\"", field_name, nested_name);
-        }
+            return *field;
 
         if (!field->getType().isStruct())
             throw Exception(ErrorCodes::CAPN_PROTO_BAD_CAST, "Field {} is not a struct", field_name);
@@ -480,8 +416,8 @@ void checkCapnProtoSchemaStructure(const capnp::StructSchema & schema, const Blo
     String additional_error_message;
     for (auto & [name, type] : names_and_types)
     {
-        auto [field, field_name] = getFieldByName(schema, name);
-        if (!checkCapnProtoType(field.getType(), type, mode, additional_error_message, field_name))
+        auto field = getFieldByName(schema, name);
+        if (!checkCapnProtoType(field.getType(), type, mode, additional_error_message))
         {
             auto e = Exception(
                 ErrorCodes::CAPN_PROTO_BAD_CAST,
@@ -630,8 +566,7 @@ NamesAndTypesList capnProtoSchemaToCHSchema(const capnp::StructSchema & schema, 
             names_and_types.emplace_back(name, type);
     }
     if (names_and_types.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Cannot convert CapnProto schema to ClickHouse table schema, all fields have unsupported types");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot convert CapnProto schema to ClickHouse table schema, all fields have unsupported types");
 
     return names_and_types;
 }
