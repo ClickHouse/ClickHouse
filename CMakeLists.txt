@@ -301,7 +301,7 @@ if (ENABLE_BUILD_PROFILING)
      endif ()
 endif ()
 
-set (CMAKE_CXX_STANDARD 20)
+set (CMAKE_CXX_STANDARD 23)
 set (CMAKE_CXX_EXTENSIONS ON) # Same as gnu++2a (ON) vs c++2a (OFF): https://cmake.org/cmake/help/latest/prop_tgt/CXX_EXTENSIONS.html
 set (CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -391,10 +391,12 @@ if (COMPILER_CLANG)
 
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fstrict-vtable-pointers")
 
-    # Set new experimental pass manager, it's a performance, build time and binary size win.
-    # Can be removed after https://reviews.llvm.org/D66490 merged and released to at least two versions of clang.
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexperimental-new-pass-manager")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fexperimental-new-pass-manager")
+    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 16)
+        # Set new experimental pass manager, it's a performance, build time and binary size win.
+        # Can be removed after https://reviews.llvm.org/D66490 merged and released to at least two versions of clang.
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexperimental-new-pass-manager")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fexperimental-new-pass-manager")
+    endif ()
 
     # We cannot afford to use LTO when compiling unit tests, and it's not enough
     # to only supply -fno-lto at the final linking stage. So we disable it
