@@ -1,5 +1,3 @@
-SET allow_experimental_analyzer = 1;
-
 DROP TABLE IF EXISTS part;
 DROP TABLE IF EXISTS supplier;
 DROP TABLE IF EXISTS partsupp;
@@ -182,7 +180,7 @@ order by
     n_name,
     s_name,
     p_partkey
-limit 100; -- { serverError 1 }
+limit 100; -- { serverError 1, 47 }
 
 select 3;
 select
@@ -600,7 +598,7 @@ where
             lineitem
         where
             l_partkey = p_partkey
-    ); -- { serverError 1 }
+    ); -- { serverError 1, 47 }
 
 select 18;
 select
@@ -711,7 +709,7 @@ where
     and s_nationkey = n_nationkey
     and n_name = 'CANADA'
 order by
-    s_name; -- { serverError 1 }
+    s_name; -- { serverError 1, 47 }
 
 select 21, 'fail: exists, not exists'; -- TODO
 -- select
