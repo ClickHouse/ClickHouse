@@ -1511,6 +1511,7 @@ private:
     /// Create zero-copy exclusive lock for part and disk. Useful for coordination of
     /// distributed operations which can lead to data duplication. Implemented only in ReplicatedMergeTree.
     virtual std::optional<ZeroCopyLock> tryCreateZeroCopyExclusiveLock(const String &, const DiskPtr &) { return std::nullopt; }
+    virtual bool waitZeroCopyLockToDisappear(const ZeroCopyLock &, size_t) { return false; }
 
     /// Remove parts from disk calling part->remove(). Can do it in parallel in case of big set of parts and enabled settings.
     /// If we fail to remove some part and throw_on_error equal to `true` will throw an exception on the first failed part.
