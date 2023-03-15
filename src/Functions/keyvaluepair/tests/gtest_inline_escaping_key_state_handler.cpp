@@ -48,9 +48,8 @@ void test_read_enclosed(const InlineEscapingKeyStateHandler & handler, std::stri
 TEST(InlineEscapingKeyStateHandler, Wait)
 {
     auto pair_delimiters = std::vector<char>{',', ' '};
-    auto quoting_characters = std::vector<char>{'"'};
 
-    ExtractorConfiguration configuration(':', pair_delimiters, quoting_characters);
+    ExtractorConfiguration configuration(':', '"', pair_delimiters);
     InlineEscapingKeyStateHandler handler(configuration);
 
     test_wait(handler, "name", 0u, READING_KEY);
@@ -63,12 +62,9 @@ TEST(InlineEscapingKeyStateHandler, Wait)
 
 TEST(InlineEscapingKeyStateHandler, Read)
 {
-    auto enclosing_character = '"';
-
     auto pair_delimiters = std::vector<char>{',', ' '};
-    auto quoting_characters = std::vector<char>{enclosing_character};
 
-    ExtractorConfiguration configuration(':', pair_delimiters, quoting_characters);
+    ExtractorConfiguration configuration(':', '"', pair_delimiters);
 
     InlineEscapingKeyStateHandler handler(configuration);
 
@@ -92,9 +88,8 @@ TEST(InlineEscapingKeyStateHandler, Read)
 TEST(InlineEscapingKeyStateHandler, ReadEnclosed)
 {
     auto pair_delimiters = std::vector<char>{',', ' '};
-    auto quoting_characters = std::vector<char>{'"'};
 
-    ExtractorConfiguration configuration(':', pair_delimiters, quoting_characters);
+    ExtractorConfiguration configuration(':', '"', pair_delimiters);
     InlineEscapingKeyStateHandler handler(configuration);
 
     std::string regular_key = "name";

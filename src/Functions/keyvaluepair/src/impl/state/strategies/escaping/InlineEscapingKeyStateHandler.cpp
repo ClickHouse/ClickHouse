@@ -18,14 +18,14 @@ NextState InlineEscapingKeyStateHandler::wait(std::string_view file, size_t pos)
 {
     BoundsSafeCharacterFinder finder;
 
-    const auto & quoting_characters = extractor_configuration.quoting_characters;
+    const auto quoting_character = extractor_configuration.quoting_character;
 
     while (auto character_position_opt = finder.find_first_not(file, pos, wait_needles))
     {
         auto character_position = *character_position_opt;
         auto character = file[character_position];
 
-        if (std::find(quoting_characters.begin(), quoting_characters.end(), character) != quoting_characters.end())
+        if (quoting_character == character)
         {
             return {character_position + 1u, State::READING_ENCLOSED_KEY};
         }
@@ -48,7 +48,7 @@ NextState InlineEscapingKeyStateHandler::read(std::string_view file, size_t pos,
 {
     BoundsSafeCharacterFinder finder;
 
-    const auto & [key_value_delimiter, pair_delimiters, quoting_characters]
+    const auto & [key_value_delimiter, quoting_character, pair_delimiters]
         = extractor_configuration;
 
     key.clear();
@@ -113,7 +113,7 @@ NextState InlineEscapingKeyStateHandler::readEnclosed(std::string_view file, siz
 {
     BoundsSafeCharacterFinder finder;
 
-    const auto & quoting_characters = extractor_configuration.quoting_characters;
+    const auto quoting_character = extractor_configuration.quoting_character;
 
     key.clear();
 
@@ -145,7 +145,7 @@ NextState InlineEscapingKeyStateHandler::readEnclosed(std::string_view file, siz
                 }
             }
         }
-        else if (std::find(quoting_characters.begin(), quoting_characters.end(), character) != quoting_characters.end())
+        else if (quoting_character == character)
         {
             // todo try to optimize with resize and memcpy
             for (auto i = pos; i < character_position; i++)

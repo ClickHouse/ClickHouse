@@ -10,14 +10,13 @@ struct ExtractorConfiguration
 {
     ExtractorConfiguration(
         char key_value_delimiter_,
-        std::vector<char> pair_delimiters_,
-        std::vector<char> quoting_characters_
-        ) : key_value_delimiter(key_value_delimiter_), pair_delimiters(std::move(pair_delimiters_)), quoting_characters(std::move(quoting_characters_))
-    {}
+        char quoting_character_,
+        std::vector<char> pair_delimiters_
+    ) : key_value_delimiter(key_value_delimiter_), quoting_character(quoting_character_), pair_delimiters(std::move(pair_delimiters_)) {}
 
     const char key_value_delimiter;
+    const char quoting_character;
     const std::vector<char> pair_delimiters;
-    const std::vector<char> quoting_characters;
 };
 
 }

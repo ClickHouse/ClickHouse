@@ -15,14 +15,14 @@ InlineEscapingValueStateHandler::InlineEscapingValueStateHandler(ExtractorConfig
 
 NextState InlineEscapingValueStateHandler::wait(std::string_view file, size_t pos) const
 {
-    const auto & [key_value_delimiter, pair_delimiters, quoting_characters]
+    const auto & [key_value_delimiter, quoting_character, pair_delimiters]
         = extractor_configuration;
 
     if (pos < file.size())
     {
         const auto current_character = file[pos];
 
-        if (std::find(quoting_characters.begin(), quoting_characters.end(), current_character) != quoting_characters.end())
+        if (quoting_character == current_character)
         {
             return {pos + 1u, State::READING_ENCLOSED_VALUE};
         }
@@ -47,7 +47,7 @@ NextState InlineEscapingValueStateHandler::read(std::string_view file, size_t po
 {
     BoundsSafeCharacterFinder finder;
 
-    const auto & [key_value_delimiter, pair_delimiters, quoting_characters]
+    const auto & [key_value_delimiter, quoting_character, pair_delimiters]
         = extractor_configuration;
 
     value.clear();
@@ -115,7 +115,7 @@ NextState InlineEscapingValueStateHandler::readEnclosed(std::string_view file, s
 {
     BoundsSafeCharacterFinder finder;
 
-    const auto & quoting_characters = extractor_configuration.quoting_characters;
+    const auto quoting_character = extractor_configuration.quoting_character;
 
     value.clear();
 
@@ -147,7 +147,7 @@ NextState InlineEscapingValueStateHandler::readEnclosed(std::string_view file, s
                 }
             }
         }
-        else if(std::find(quoting_characters.begin(), quoting_characters.end(), character) != quoting_characters.end())
+        else if(quoting_character == character)
         {
             // todo try to optimize with resize and memcpy
             for (auto i = pos; i < character_position; i++)
