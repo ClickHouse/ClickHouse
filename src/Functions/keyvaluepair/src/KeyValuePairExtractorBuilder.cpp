@@ -21,9 +21,9 @@ KeyValuePairExtractorBuilder & KeyValuePairExtractorBuilder::withItemDelimiter(s
     return *this;
 }
 
-KeyValuePairExtractorBuilder & KeyValuePairExtractorBuilder::withQuotingCharacters(std::vector<char> quoting_characters_)
+KeyValuePairExtractorBuilder & KeyValuePairExtractorBuilder::withQuotingCharacter(char quoting_character_)
 {
-    quoting_characters = std::move(quoting_characters_);
+    quoting_character = quoting_character_;
     return *this;
 }
 
@@ -47,8 +47,8 @@ std::shared_ptr<KeyValuePairExtractor> KeyValuePairExtractorBuilder::buildWithou
 {
     ExtractorConfiguration configuration(
         key_value_pair_delimiter,
-        item_delimiters,
-        quoting_characters
+        quoting_character,
+        item_delimiters
     );
 
     CKeyStateHandler auto key_state_handler = NoEscapingKeyStateHandler(
@@ -66,8 +66,8 @@ std::shared_ptr<KeyValuePairExtractor> KeyValuePairExtractorBuilder::buildWithEs
 {
     ExtractorConfiguration configuration(
         key_value_pair_delimiter,
-        item_delimiters,
-        quoting_characters
+        quoting_character,
+        item_delimiters
     );
 
     CKeyStateHandler auto key_state_handler = InlineEscapingKeyStateHandler(configuration);

@@ -78,9 +78,9 @@ auto ExtractKeyValuePairs::getExtractor(const ParsedArguments & parsed_arguments
         builder.withItemDelimiter({parsed_arguments.pair_delimiters.begin(), parsed_arguments.pair_delimiters.end()});
     }
 
-    if (!parsed_arguments.quoting_characters.empty())
+    if (parsed_arguments.quoting_character)
     {
-        builder.withQuotingCharacters({parsed_arguments.quoting_characters.begin(), parsed_arguments.quoting_characters.end()});
+        builder.withQuotingCharacter(parsed_arguments.quoting_character.value());
     }
 
     return builder.build();
@@ -123,6 +123,7 @@ ExtractKeyValuePairs::ParsedArguments ExtractKeyValuePairs::parseArguments(const
      *  2. Check if it's not empty
      *  3. Cross check arguments? Not sure it is needed anymore
      *  4. Use uint8_t column instead of string column for escaping lol
+     *  5. maybe a builder will clean things up here
      * */
 
     if (arguments.empty())
@@ -157,11 +158,7 @@ ExtractKeyValuePairs::ParsedArguments ExtractKeyValuePairs::parseArguments(const
         };
     }
 
-    auto quoting_characters_str = arguments[3].column->getDataAt(0).toView();
-
-    SetArgument quoting_characters;
-
-    quoting_characters.insert(quoting_characters_str.begin(), quoting_characters_str.end());
+    auto quoting_character = extractControlCharacter(arguments[3].column);
 
     if (arguments.size() == 4u)
     {
@@ -169,7 +166,7 @@ ExtractKeyValuePairs::ParsedArguments ExtractKeyValuePairs::parseArguments(const
             data_column,
             key_value_pair_delimiter,
             pair_delimiters,
-            quoting_characters,
+            quoting_character,
         };
     }
 
@@ -178,7 +175,7 @@ ExtractKeyValuePairs::ParsedArguments ExtractKeyValuePairs::parseArguments(const
     bool with_escaping = with_escaping_character && with_escaping_character == '1';
 
     return ParsedArguments{
-        data_column, key_value_pair_delimiter, pair_delimiters, quoting_characters, with_escaping
+        data_column, key_value_pair_delimiter, pair_delimiters, quoting_character, with_escaping
     };
 }
 

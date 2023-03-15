@@ -15,9 +15,8 @@ void test_wait(const auto & handler, std::string_view input, std::size_t expecte
 TEST(InlineEscapingValueStateHandler, Wait)
 {
     auto pair_delimiters = std::vector<char> {','};
-    auto quoting_characters = std::vector<char> {'"'};
 
-    ExtractorConfiguration configuration(':', pair_delimiters, quoting_characters);
+    ExtractorConfiguration configuration(':', '"', pair_delimiters);
     InlineEscapingValueStateHandler handler(configuration);
 
     test_wait(handler, " los$ yours3lf", 0u, READING_VALUE);

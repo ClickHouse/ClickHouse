@@ -23,7 +23,7 @@ public:
         ColumnPtr data_column;
         CharArgument key_value_pair_delimiter = {};
         SetArgument pair_delimiters = {};
-        SetArgument quoting_characters = {};
+        CharArgument quoting_character = {};
         BoolArgument with_escaping = {};
     };
 

@@ -6,7 +6,7 @@ namespace DB
 
 std::vector<char> NeedleFactory::getWaitNeedles(const DB::ExtractorConfiguration & extractor_configuration)
 {
-    const auto & [key_value_delimiter, pair_delimiters, quoting_characters]
+    const auto & [key_value_delimiter, quoting_character, pair_delimiters]
         = extractor_configuration;
 
     std::vector<char> needles;
@@ -22,7 +22,7 @@ std::vector<char> NeedleFactory::getWaitNeedles(const DB::ExtractorConfiguration
 
 std::vector<char> NeedleFactory::getReadNeedles(const ExtractorConfiguration & extractor_configuration)
 {
-    const auto & [key_value_delimiter, pair_delimiters, quoting_characters]
+    const auto & [key_value_delimiter, quoting_character, pair_delimiters]
         = extractor_configuration;
 
     std::vector<char> needles;
@@ -30,8 +30,8 @@ std::vector<char> NeedleFactory::getReadNeedles(const ExtractorConfiguration & e
     needles.reserve(16u);
 
     needles.push_back(key_value_delimiter);
+    needles.push_back(quoting_character);
 
-    std::copy(quoting_characters.begin(), quoting_characters.end(), std::back_inserter(needles));
     std::copy(pair_delimiters.begin(), pair_delimiters.end(), std::back_inserter(needles));
 
     return needles;
@@ -39,13 +39,13 @@ std::vector<char> NeedleFactory::getReadNeedles(const ExtractorConfiguration & e
 
 std::vector<char> NeedleFactory::getReadQuotedNeedles(const ExtractorConfiguration & extractor_configuration)
 {
-    const auto & quoting_characters = extractor_configuration.quoting_characters;
+    const auto quoting_character = extractor_configuration.quoting_character;
 
     std::vector<char> needles;
 
     needles.reserve(16u);
 
-    std::copy(quoting_characters.begin(), quoting_characters.end(), std::back_inserter(needles));
+    needles.push_back(quoting_character);
 
     return needles;
 }

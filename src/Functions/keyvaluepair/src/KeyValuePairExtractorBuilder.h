@@ -16,7 +16,7 @@ public:
 
     KeyValuePairExtractorBuilder & withItemDelimiter(std::vector<char> item_delimiters_);
 
-    KeyValuePairExtractorBuilder & withQuotingCharacters(std::vector<char> quoting_characters_);
+    KeyValuePairExtractorBuilder & withQuotingCharacter(char quoting_character_);
 
     KeyValuePairExtractorBuilder & withEscaping();
 
@@ -25,8 +25,8 @@ public:
 private:
     bool with_escaping = false;
     char key_value_pair_delimiter = ':';
+    char quoting_character = '"';
     std::vector<char> item_delimiters = {' ', ',', ';'};
-    std::vector<char> quoting_characters = {'"'};
 
     std::shared_ptr<KeyValuePairExtractor> buildWithEscaping();
 

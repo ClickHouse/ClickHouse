@@ -14,14 +14,14 @@ NoEscapingValueStateHandler::NoEscapingValueStateHandler(ExtractorConfiguration 
 
 NextState NoEscapingValueStateHandler::wait(std::string_view file, size_t pos) const
 {
-    const auto & [key_value_delimiter, pair_delimiters, quoting_characters]
+    const auto & [key_value_delimiter, quoting_character, pair_delimiters]
         = extractor_configuration;
 
     if (pos < file.size())
     {
         const auto current_character = file[pos];
 
-        if (std::find(quoting_characters.begin(), quoting_characters.end(), current_character) != quoting_characters.end())
+        if (quoting_character == current_character)
         {
             return {pos + 1u, State::READING_ENCLOSED_VALUE};
         }
@@ -50,7 +50,7 @@ NextState NoEscapingValueStateHandler::read(std::string_view file, size_t pos, E
 
     BoundsSafeCharacterFinder finder;
 
-    const auto & [key_value_delimiter, pair_delimiters, quoting_characters]
+    const auto & [key_value_delimiter, quoting_character, pair_delimiters]
         = extractor_configuration;
 
     while (auto character_position_opt = finder.find_first(file, pos, read_needles))
@@ -83,9 +83,10 @@ NextState NoEscapingValueStateHandler::readEnclosed(std::string_view file, size_
     auto start_index = pos;
 
     value = {};
+
     BoundsSafeCharacterFinder finder;
 
-    const auto & quoting_characters = extractor_configuration.quoting_characters;
+    const auto quoting_character = extractor_configuration.quoting_character;
 
     while (auto character_position_opt = finder.find_first(file, pos, read_quoted_needles))
     {
@@ -93,7 +94,7 @@ NextState NoEscapingValueStateHandler::readEnclosed(std::string_view file, size_
         auto character = file[character_position];
         auto next_pos = character_position + 1u;
 
-        if (std::find(quoting_characters.begin(), quoting_characters.end(), character) != quoting_characters.end())
+        if (quoting_character == character)
         {
             value = createElement(file, start_index, character_position);
 

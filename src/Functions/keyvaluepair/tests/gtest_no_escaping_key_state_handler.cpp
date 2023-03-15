@@ -48,9 +48,8 @@ void test_read_enclosed(const auto & handler, std::string_view input, std::strin
 TEST(NoEscapingKeyStateHandler, Wait)
 {
     auto pair_delimiters = std::vector<char>{',', ' ', '$'};
-    auto quoting_characters = std::vector<char>{'"'};
 
-    ExtractorConfiguration configuration(':', pair_delimiters, quoting_characters);
+    ExtractorConfiguration configuration(':', '"', pair_delimiters);
     NoEscapingKeyStateHandler handler(configuration);
 
     test_wait(handler, "name", 0u, READING_KEY);
@@ -66,12 +65,9 @@ TEST(NoEscapingKeyStateHandler, Wait)
 
 TEST(NoEscapingKeyStateHandler, Read)
 {
-    auto enclosing_character = '"';
-
     auto pair_delimiters = std::vector<char>{',', ' '};
-    auto quoting_characters = std::vector<char>{enclosing_character};
 
-    ExtractorConfiguration configuration(':', pair_delimiters, quoting_characters);
+    ExtractorConfiguration configuration(':', '"', pair_delimiters);
 
     NoEscapingKeyStateHandler handler(configuration);
 
