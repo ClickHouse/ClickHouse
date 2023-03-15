@@ -36,6 +36,7 @@ namespace DB
 static const uint32_t QUEUE_SIZE = 100000;
 static const auto MAX_FAILED_READ_ATTEMPTS = 10;
 static const auto RESCHEDULE_MS = 500;
+static const auto BACKOFF_TRESHOLD = 32000;
 static const auto MAX_THREAD_WORK_DURATION_MS = 60000;
 
 namespace ErrorCodes
@@ -89,7 +90,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         , semaphore(0, static_cast<int>(num_consumers))
         , unique_strbase(getRandomName())
         , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
-        , milliseconds_to_wait(rabbitmq_settings->rabbitmq_empty_queue_backoff_start_ms)
+        , milliseconds_to_wait(RESCHEDULE_MS)
         , is_attach(is_attach_)
 {
     const auto & config = getContext()->getConfigRef();
@@ -716,12 +717,6 @@ void StorageRabbitMQ::read(
         auto rabbit_source = std::make_shared<RabbitMQSource>(
             *this, storage_snapshot, modified_context, column_names, 1, rabbitmq_settings->rabbitmq_commit_on_select);
 
-        uint64_t max_execution_time_ms = rabbitmq_settings->rabbitmq_flush_interval_ms.changed
-                                          ? rabbitmq_settings->rabbitmq_flush_interval_ms
-                                          : (static_cast<UInt64>(getContext()->getSettingsRef().stream_flush_interval_ms) * 1000);
-
-        rabbit_source->setTimeLimit(max_execution_time_ms);
-
         auto converting_dag = ActionsDAG::makeConvertingActions(
             rabbit_source->getPort().getHeader().getColumnsWithTypeAndName(),
             sample_block.getColumnsWithTypeAndName(),
@@ -1020,14 +1015,14 @@ void StorageRabbitMQ::streamingToViewsFunc()
                     if (streamToViews())
                     {
                         /// Reschedule with backoff.
-                        if (milliseconds_to_wait < rabbitmq_settings->rabbitmq_empty_queue_backoff_end_ms)
-                            milliseconds_to_wait += rabbitmq_settings->rabbitmq_empty_queue_backoff_step_ms;
+                        if (milliseconds_to_wait < BACKOFF_TRESHOLD)
+                            milliseconds_to_wait *= 2;
                         stopLoopIfNoReaders();
                         break;
                     }
                     else
                     {
-                        milliseconds_to_wait = rabbitmq_settings->rabbitmq_empty_queue_backoff_start_ms;
+                        milliseconds_to_wait = RESCHEDULE_MS;
                     }
 
                     auto end_time = std::chrono::steady_clock::now();
@@ -1090,15 +1085,14 @@ bool StorageRabbitMQ::streamToViews()
     {
         auto source = std::make_shared<RabbitMQSource>(
             *this, storage_snapshot, rabbitmq_context, column_names, block_size, false);
-
-        uint64_t max_execution_time_ms = rabbitmq_settings->rabbitmq_flush_interval_ms.changed
-                                          ? rabbitmq_settings->rabbitmq_flush_interval_ms
-                                          : (static_cast<UInt64>(getContext()->getSettingsRef().stream_flush_interval_ms) * 1000);
-
-        source->setTimeLimit(max_execution_time_ms);
-
         sources.emplace_back(source);
         pipes.emplace_back(source);
+
+        Poco::Timespan max_execution_time = rabbitmq_settings->rabbitmq_flush_interval_ms.changed
+                                          ? rabbitmq_settings->rabbitmq_flush_interval_ms
+                                          : getContext()->getSettingsRef().stream_flush_interval_ms;
+
+        source->setTimeLimit(max_execution_time);
     }
 
     block_io.pipeline.complete(Pipe::unitePipes(std::move(pipes)));

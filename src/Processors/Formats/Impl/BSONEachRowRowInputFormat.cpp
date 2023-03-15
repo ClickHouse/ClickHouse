@@ -458,7 +458,7 @@ bool BSONEachRowRowInputFormat::readField(IColumn & column, const DataTypePtr & 
         if (!format_settings.null_as_default)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                             "Cannot insert BSON Null value into non-nullable column with type {}",
-                            data_type->getName());
+                            getBSONTypeName(bson_type), data_type->getName());
 
         column.insertDefault();
         return false;

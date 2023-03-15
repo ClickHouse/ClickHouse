@@ -133,11 +133,16 @@ void MultiplexedConnections::sendQuery(
             modified_settings.group_by_two_level_threshold_bytes = 0;
         }
 
-        if (replica_info)
+        bool parallel_reading_from_replicas = settings.max_parallel_replicas > 1
+            && settings.allow_experimental_parallel_reading_from_replicas
+            /// To avoid trying to coordinate with clickhouse-benchmark,
+            /// since it uses the same code.
+            && client_info.query_kind != ClientInfo::QueryKind::INITIAL_QUERY;
+        if (parallel_reading_from_replicas)
         {
             client_info.collaborate_with_initiator = true;
-            client_info.count_participating_replicas = replica_info->all_replicas_count;
-            client_info.number_of_current_replica = replica_info->number_of_current_replica;
+            client_info.count_participating_replicas = replica_info.all_replicas_count;
+            client_info.number_of_current_replica = replica_info.number_of_current_replica;
         }
     }
 
@@ -194,7 +199,7 @@ void MultiplexedConnections::sendReadTaskResponse(const String & response)
 }
 
 
-void MultiplexedConnections::sendMergeTreeReadTaskResponse(const ParallelReadResponse & response)
+void MultiplexedConnections::sendMergeTreeReadTaskResponse(PartitionReadResponse response)
 {
     std::lock_guard lock(cancel_mutex);
     if (cancelled)
@@ -258,7 +263,6 @@ Packet MultiplexedConnections::drain()
 
         switch (packet.type)
         {
-            case Protocol::Server::MergeTreeAllRangesAnnounecement:
             case Protocol::Server::MergeTreeReadTaskRequest:
             case Protocol::Server::ReadTaskRequest:
             case Protocol::Server::PartUUIDs:
@@ -339,7 +343,6 @@ Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callbac
 
     switch (packet.type)
     {
-        case Protocol::Server::MergeTreeAllRangesAnnounecement:
         case Protocol::Server::MergeTreeReadTaskRequest:
         case Protocol::Server::ReadTaskRequest:
         case Protocol::Server::PartUUIDs:

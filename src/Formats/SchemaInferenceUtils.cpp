@@ -444,19 +444,7 @@ namespace
 
     bool tryInferDate(std::string_view field)
     {
-        if (field.empty())
-            return false;
-
         ReadBufferFromString buf(field);
-        Float64 tmp_float;
-        /// Check if it's just a number, and if so, don't try to infer Date from it,
-        /// because we can interpret this number as a Date (for example 20000101 will be 2000-01-01)
-        /// and it will lead to inferring Date instead of simple Int64/UInt64 in some cases.
-        if (tryReadFloatText(tmp_float, buf) && buf.eof())
-            return false;
-
-        buf.seek(0, SEEK_SET); /// Return position to the beginning
-
         DayNum tmp;
         return tryReadDateText(tmp, buf) && buf.eof();
     }
@@ -1084,7 +1072,7 @@ DataTypePtr makeNullableRecursively(DataTypePtr type)
         return key_type && value_type ? std::make_shared<DataTypeMap>(removeNullable(key_type), value_type) : nullptr;
     }
 
-    if (which.isLowCardinality())
+    if (which.isLowCarnality())
     {
         const auto * lc_type = assert_cast<const DataTypeLowCardinality *>(type.get());
         auto nested_type = makeNullableRecursively(lc_type->getDictionaryType());

@@ -58,7 +58,7 @@ UInt64 Throttler::add(size_t amount)
     }
 
     if (limit && count_value > limit)
-        throw Exception::createDeprecated(limit_exceeded_exception_message + std::string(" Maximum: ") + toString(limit), ErrorCodes::LIMIT_EXCEEDED);
+        throw Exception(limit_exceeded_exception_message + std::string(" Maximum: ") + toString(limit), ErrorCodes::LIMIT_EXCEEDED);
 
     /// Wait unless there is positive amount of tokens - throttling
     Int64 sleep_time = 0;

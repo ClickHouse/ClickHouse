@@ -212,7 +212,7 @@ public:
     MutationCommands getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters=false) const;
 
     /// Check if commands have any inverted index
-    static bool hasInvertedIndex(const StorageInMemoryMetadata & metadata);
+    static bool hasInvertedIndex(const StorageInMemoryMetadata & metadata, ContextPtr context);
 };
 
 }

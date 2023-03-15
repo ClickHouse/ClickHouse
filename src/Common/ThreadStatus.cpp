@@ -237,7 +237,6 @@ void ThreadStatus::setFatalErrorCallback(std::function<void()> callback)
 
 void ThreadStatus::onFatalError()
 {
-    std::lock_guard lock(thread_group->mutex);
     if (fatal_error_callback)
         fatal_error_callback();
 }

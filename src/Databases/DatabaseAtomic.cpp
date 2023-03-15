@@ -106,7 +106,7 @@ StoragePtr DatabaseAtomic::detachTable(ContextPtr /* context */, const String & 
     auto table = DatabaseOrdinary::detachTableUnlocked(name);
     table_name_to_path.erase(name);
     detached_tables.emplace(table->getStorageID().uuid, table);
-    not_in_use = cleanupDetachedTables();
+    not_in_use = cleanupDetachedTables(); //-V1001
     return table;
 }
 
@@ -522,13 +522,11 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
 {
     /// CREATE, ATTACH, DROP, DETACH and RENAME DATABASE must hold DDLGuard
 
-    bool check_ref_deps = query_context->getSettingsRef().check_referential_table_dependencies;
-    bool check_loading_deps = !check_ref_deps && query_context->getSettingsRef().check_table_dependencies;
-    if (check_ref_deps || check_loading_deps)
+    if (query_context->getSettingsRef().check_table_dependencies)
     {
         std::lock_guard lock(mutex);
         for (auto & table : tables)
-            DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed({database_name, table.first}, check_ref_deps, check_loading_deps);
+            DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed({database_name, table.first});
     }
 
     try

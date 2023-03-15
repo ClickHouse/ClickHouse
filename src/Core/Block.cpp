@@ -29,13 +29,11 @@ namespace ErrorCodes
     extern const int AMBIGUOUS_COLUMN_NAME;
 }
 
-template <typename ReturnType, typename... FmtArgs>
-static ReturnType onError(int code [[maybe_unused]],
-                          FormatStringHelper<FmtArgs...> fmt_string [[maybe_unused]],
-                          FmtArgs && ...fmt_args [[maybe_unused]])
+template <typename ReturnType>
+static ReturnType onError(const std::string & message [[maybe_unused]], int code [[maybe_unused]])
 {
     if constexpr (std::is_same_v<ReturnType, void>)
-        throw Exception(code, std::move(fmt_string), std::forward<FmtArgs>(fmt_args)...);
+        throw Exception(message, code);
     else
         return false;
 }
@@ -46,13 +44,13 @@ static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, con
     std::string_view context_description, bool allow_materialize, int code)
 {
     if (actual.name != expected.name)
-        return onError<ReturnType>(code, "Block structure mismatch in {} stream: different names of columns:\n{}\n{}",
-                                   context_description, actual.dumpStructure(), expected.dumpStructure());
+        return onError<ReturnType>("Block structure mismatch in " + std::string(context_description) + " stream: different names of columns:\n"
+            + actual.dumpStructure() + "\n" + expected.dumpStructure(), code);
 
     if ((actual.type && !expected.type) || (!actual.type && expected.type)
         || (actual.type && expected.type && !actual.type->equals(*expected.type)))
-        return onError<ReturnType>(code, "Block structure mismatch in {} stream: different types:\n{}\n{}",
-                                   context_description, actual.dumpStructure(), expected.dumpStructure());
+        return onError<ReturnType>("Block structure mismatch in " + std::string(context_description) + " stream: different types:\n"
+            + actual.dumpStructure() + "\n" + expected.dumpStructure(), code);
 
     if (!actual.column || !expected.column)
         return ReturnType(true);
@@ -76,18 +74,22 @@ static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, con
     if (actual_column_maybe_agg && expected_column_maybe_agg)
     {
         if (!actual_column_maybe_agg->getAggregateFunction()->haveSameStateRepresentation(*expected_column_maybe_agg->getAggregateFunction()))
-            return onError<ReturnType>(code,
+            return onError<ReturnType>(
+                fmt::format(
                     "Block structure mismatch in {} stream: different columns:\n{}\n{}",
                     context_description,
                     actual.dumpStructure(),
-                    expected.dumpStructure());
+                    expected.dumpStructure()),
+                code);
     }
     else if (actual_column->getName() != expected.column->getName())
-        return onError<ReturnType>(code,
+        return onError<ReturnType>(
+            fmt::format(
                 "Block structure mismatch in {} stream: different columns:\n{}\n{}",
                 context_description,
                 actual.dumpStructure(),
-                expected.dumpStructure());
+                expected.dumpStructure()),
+            code);
 
     if (isColumnConst(*actual.column) && isColumnConst(*expected.column)
         && !actual.column->empty() && !expected.column->empty()) /// don't check values in empty columns
@@ -96,12 +98,14 @@ static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, con
         Field expected_value = assert_cast<const ColumnConst &>(*expected.column).getField();
 
         if (actual_value != expected_value)
-            return onError<ReturnType>(code,
+            return onError<ReturnType>(
+                fmt::format(
                     "Block structure mismatch in {} stream: different values of constants in column '{}': actual: {}, expected: {}",
                     context_description,
                     actual.name,
                     applyVisitor(FieldVisitorToString(), actual_value),
-                    applyVisitor(FieldVisitorToString(), expected_value));
+                    applyVisitor(FieldVisitorToString(), expected_value)),
+                code);
     }
 
     return ReturnType(true);
@@ -113,8 +117,8 @@ static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, std:
 {
     size_t columns = rhs.columns();
     if (lhs.columns() != columns)
-        return onError<ReturnType>(ErrorCodes::LOGICAL_ERROR, "Block structure mismatch in {} stream: different number of columns:\n{}\n{}",
-                                   context_description, lhs.dumpStructure(), rhs.dumpStructure());
+        return onError<ReturnType>("Block structure mismatch in " + std::string(context_description) + " stream: different number of columns:\n"
+            + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::LOGICAL_ERROR);
 
     for (size_t i = 0; i < columns; ++i)
     {
