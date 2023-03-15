@@ -157,6 +157,8 @@ private:
     size_t max_entry_size_in_rows TSA_GUARDED_BY(mutex) = 0;
 
     size_t cache_size_in_bytes TSA_GUARDED_BY(mutex) = 0; /// Updated in each cache insert/delete
+
+    friend class StorageSystemQueryCache;
 };
 
 using QueryCachePtr = std::shared_ptr<QueryCache>;
