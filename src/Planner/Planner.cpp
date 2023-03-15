@@ -395,7 +395,11 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
       * but it can work more slowly.
       */
 
-    Aggregator::Params params(aggregation_analysis_result.aggregation_keys,
+    auto keys = aggregation_analysis_result.aggregation_keys;
+    if (!aggregation_analysis_result.grouping_sets_parameters_list.empty())
+        keys.insert(keys.begin(), "__grouping_set");
+
+    Aggregator::Params params(keys,
         aggregation_analysis_result.aggregate_descriptions,
         query_analysis_result.aggregate_overflow_row,
         settings.max_threads,
