@@ -403,6 +403,40 @@ If `http_port` is specified, the OpenSSL configuration is ignored even if it is 
 <https_port>9999</https_port>
 ```
 
+## httpclient_log {#server_configuration_parameters-httpclient-log}
+
+Logging events that are associated HTTP requests issued from ClickHouse.
+
+Events are logged in the [system.httpclient_log](../../operations/system-tables/httpclient_log.md) table, not in a separate file. You can configure the name of this table in the `table` parameter (see below).
+
+Use the following parameters to configure logging:
+
+-   `database` – Name of the database.
+-   `table` – Name of the system table.
+-   `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
+-   `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
+-   `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
+-   `storage_policy` – Name of storage policy to use for the table (optional)
+
+**Example**
+
+```xml
+<httpclient_log>
+    <database>system</database>
+    <table>httpclient_log</table>
+    <!-- Can't be used if <engine> is defined
+    <partition_by>toMonday(event_date)</partition_by>
+    -->
+    <engine>
+        Engine = MergeTree 
+        PARTITION BY toMonday(event_date) 
+        ORDER BY (toStartOfHour(event_time), client, method, uri)
+        TTL event_date + INTERVAL 30 day
+    </engine>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+</httpclient_log>
+```
+
 ## http_server_default_response {#server_configuration_parameters-http_server_default_response}
 
 The page that is shown by default when you access the ClickHouse HTTP(s) server.

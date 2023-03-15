@@ -3,7 +3,7 @@ slug: /en/operations/system-tables/httpclient_log
 ---
 # httpclient_log
 
-The `system.httpclient_log` table is created only if the [httpclient_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-part-log) server setting is specified.
+The `system.httpclient_log` table is created only if the [httpclient_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-httpclient-log) server setting is specified.
 
 This table contains information about events that HTTP requests are issued from ClickHouse.
 
