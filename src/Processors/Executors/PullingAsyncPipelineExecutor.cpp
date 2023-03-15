@@ -175,14 +175,41 @@ bool PullingAsyncPipelineExecutor::pull(Block & block, uint64_t milliseconds)
 
 void PullingAsyncPipelineExecutor::cancel()
 {
+    /// Cancel execution if it wasn't finished.
+    cancelWithExceptionHandling([&]()
+    {
+        data->executor->cancel();
+    });
+    
+    /// The following code is needed to rethrow exception from PipelineExecutor.
+    /// It could have been thrown from pull(), but we will not likely call it again.
+
+    /// Join thread here to wait for possible exception.
+    if (data->thread.joinable())
+        data->thread.join();
+
+    /// Rethrow exception to not swallow it in destructor.
+    data->rethrowExceptionIfHas();
+}
+
+void PullingAsyncPipelineExecutor::cancelReading()
+{
+    /// Stop reading from source if pipeline wasn't finished.
+    cancelWithExceptionHandling([&]()
+    {
+        data->executor->cancelReading();
+    });
+}
+
+void PullingAsyncPipelineExecutor::cancelWithExceptionHandling(CancelFunc && cancel_func)
+{
     if (!data)
         return;
 
-    /// Cancel execution if it wasn't finished.
     try
     {
         if (!data->is_finished && data->executor)
-            data->executor->cancel(/*hard_cancel*/ true);
+            cancel_func();
     }
     catch (...)
     {
@@ -194,16 +221,6 @@ void PullingAsyncPipelineExecutor::cancel()
             data->has_exception = true;
         }
     }
-
-    /// The following code is needed to rethrow exception from PipelineExecutor.
-    /// It could have been thrown from pull(), but we will not likely call it again.
-
-    /// Join thread here to wait for possible exception.
-    if (data->thread.joinable())
-        data->thread.join();
-
-    /// Rethrow exception to not swallow it in destructor.
-    data->rethrowExceptionIfHas();
 }
 
 Chunk PullingAsyncPipelineExecutor::getTotals()

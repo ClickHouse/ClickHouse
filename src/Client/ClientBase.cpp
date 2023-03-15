@@ -173,7 +173,7 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
 
     auto & dst_column_host_name = typeid_cast<ColumnString &>(*mutable_columns[name_pos["host_name"]]);
     auto & dst_array_current_time = typeid_cast<ColumnUInt32 &>(*mutable_columns[name_pos["current_time"]]).getData();
-    auto & dst_array_type = typeid_cast<ColumnInt8 &>(*mutable_columns[name_pos["type"]]).getData();
+    auto & dst_array_type = typeid_cast<ColumnInt32 &>(*mutable_columns[name_pos["type"]]).getData();
     auto & dst_column_name = typeid_cast<ColumnString &>(*mutable_columns[name_pos["name"]]);
     auto & dst_array_value = typeid_cast<ColumnInt64 &>(*mutable_columns[name_pos["value"]]).getData();
 
@@ -264,21 +264,31 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
 }
 
 
-std::atomic_flag exit_on_signal;
+std::atomic<Int32> exit_after_signals = 0;
 
 class QueryInterruptHandler : private boost::noncopyable
 {
 public:
-    static void start() { exit_on_signal.clear(); }
+    /// Store how much interrupt signals can be before stopping the query
+    /// by default stop after the first interrupt signal.
+    static void start(Int32 signals_before_stop = 1) { exit_after_signals.store(signals_before_stop); }
+
+    /// Set value not greater then 0 to mark the query as stopped.
+    static void stop() { return exit_after_signals.store(0); }
+
     /// Return true if the query was stopped.
-    static bool stop() { return exit_on_signal.test_and_set(); }
-    static bool cancelled() { return exit_on_signal.test(); }
+    /// Query was stoped if it received at least "signals_before_stop" interrupt signals.
+    static bool try_stop() { return exit_after_signals.fetch_sub(1) <= 0; }
+    static bool cancelled() { return exit_after_signals.load() <= 0; }
+
+    /// Return how much interrupt signals remain before stop.
+    static Int32 cancelled_status() { return exit_after_signals.load(); }
 };
 
 /// This signal handler is set only for SIGINT.
 void interruptSignalHandler(int signum)
 {
-    if (QueryInterruptHandler::stop())
+    if (QueryInterruptHandler::try_stop())
         safeExit(128 + signum);
 }
 
@@ -853,12 +863,15 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
         }
     }
 
+    const auto & settings = global_context->getSettingsRef();
+    const Int32 signals_before_stop = settings.stop_reading_on_first_cancel ? 2 : 1;
+    
     int retries_left = 10;
     while (retries_left)
     {
         try
         {
-            QueryInterruptHandler::start();
+            QueryInterruptHandler::start(signals_before_stop);
             SCOPE_EXIT({ QueryInterruptHandler::stop(); });
 
             connection->sendQuery(
@@ -875,7 +888,7 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
             if (send_external_tables)
                 sendExternalTables(parsed_query);
 
-            receiveResult(parsed_query);
+            receiveResult(parsed_query, signals_before_stop);
 
             break;
         }
@@ -900,7 +913,7 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
 
 /// Receives and processes packets coming from server.
 /// Also checks if query execution should be cancelled.
-void ClientBase::receiveResult(ASTPtr parsed_query)
+void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop)
 {
     // TODO: get the poll_interval from commandline.
     const auto receive_timeout = connection_parameters.timeouts.receive_timeout;
@@ -924,7 +937,11 @@ void ClientBase::receiveResult(ASTPtr parsed_query)
             /// to avoid losing sync.
             if (!cancelled)
             {
-                if (QueryInterruptHandler::cancelled())
+                if (QueryInterruptHandler::cancelled_status() == signals_before_stop - 1)
+                {
+                    connection->sendCancel();
+                }
+                else if (QueryInterruptHandler::cancelled())
                 {
                     cancelQuery();
                 }

@@ -402,7 +402,7 @@ bool ExecutingGraph::updateNode(uint64_t pid, Queue & queue, Queue & async_queue
     return true;
 }
 
-void ExecutingGraph::cancel(bool hard_cancel)
+void ExecutingGraph::cancel(bool cancel_all_processors)
 {
     std::exception_ptr exception_ptr;
 
@@ -413,7 +413,10 @@ void ExecutingGraph::cancel(bool hard_cancel)
         {
             try
             {
-                if (hard_cancel || source_processors.at(proc))
+                /// Stop all processors in the general case, but in a specific case 
+                /// where the pipeline needs to return a result on a partially read table, 
+                /// stop only the processors that read from the source
+                if (cancel_all_processors || source_processors.at(proc))
                 {
                     IProcessor * processor = processors->at(proc).get();
                     processor->cancel();
@@ -432,7 +435,8 @@ void ExecutingGraph::cancel(bool hard_cancel)
                 tryLogCurrentException("ExecutingGraph");
             }
         }
-        cancelled = true;
+        if (cancel_all_processors)
+            cancelled = true;
     }
 
     if (exception_ptr)
