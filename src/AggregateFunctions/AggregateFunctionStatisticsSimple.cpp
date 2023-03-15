@@ -23,8 +23,12 @@ AggregateFunctionPtr createAggregateFunctionStatisticsUnary(
     assertNoParameters(name, parameters);
     assertUnary(name, argument_types);
 
+    AggregateFunctionPtr res;
     const DataTypePtr & data_type = argument_types[0];
-    AggregateFunctionPtr res{createWithNumericType<FunctionTemplate>(*data_type, argument_types)};
+    if (isDecimal(data_type))
+        res.reset(createWithDecimalType<FunctionTemplate>(*data_type, argument_types));
+    else
+        res.reset(createWithNumericType<FunctionTemplate>(*data_type, argument_types));
 
     if (!res)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}",
