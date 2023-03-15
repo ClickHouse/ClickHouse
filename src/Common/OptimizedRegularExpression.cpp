@@ -1,6 +1,3 @@
-#include <set>
-#include <string>
-
 #include <Common/Exception.h>
 #include <Common/PODArray.h>
 #include <Common/OptimizedRegularExpression.h>
@@ -88,18 +85,17 @@ const char * analyzeImpl(
 
         if (global_alters.empty())
         {
-            global_alters = std::move(cur_alters);
+            global_alters = cur_alters;
+            cur_alters.clear();
             return;
         }
-        if (shortest_alter_length(global_alters) > shortest_alter_length(cur_alters))
-        {
-            cur_alters.clear();
-        }
-        else
+        /// that means current alternatives have better quality.
+        if (shortest_alter_length(global_alters) < shortest_alter_length(cur_alters))
         {
             global_alters.clear();
-            global_alters = std::move(cur_alters);
+            global_alters = cur_alters;
         }
+        cur_alters.clear();
     };
 
     auto finish_non_trivial_char = [&](bool create_new_substr = true)
@@ -140,7 +136,7 @@ const char * analyzeImpl(
         else
         {
             finish_non_trivial_char();
-            last_substring->first = std::move(group_required_string).literal;
+            last_substring->first = group_required_string.literal;
         }
         /// if we can still append, no need to finish it. e.g. abc(de)fg should capture abcdefg
         if (!last_substring->first.empty() && !group_required_string.suffix)
