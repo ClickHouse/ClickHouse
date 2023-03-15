@@ -1,5 +1,4 @@
 ---
-slug: /zh/operations/system-tables/zookeeper
 machine_translated: true
 machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
 ---
@@ -78,3 +77,4 @@ numChildren:    7
 pzxid:          987021252247
 path:           /clickhouse/tables/01-08/visits/replicas
 ```
+[原文](https://clickhouse.com/docs/zh/operations/system-tables/zookeeper) <!--hide-->

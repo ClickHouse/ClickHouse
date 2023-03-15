@@ -9,12 +9,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
-
 static GraphiteRollupSortedAlgorithm::ColumnsDefinition defineColumns(
     const Block & header, const Graphite::Params & params)
 {
@@ -31,9 +25,6 @@ static GraphiteRollupSortedAlgorithm::ColumnsDefinition defineColumns(
     for (size_t i = 0; i < num_columns; ++i)
         if (i != def.time_column_num && i != def.value_column_num && i != def.version_column_num)
             def.unmodified_column_numbers.push_back(i);
-
-    if (!WhichDataType(header.getByPosition(def.value_column_num).type).isFloat64())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only `Float64` data type is allowed for the value column of GraphiteMergeTree");
 
     return def;
 }

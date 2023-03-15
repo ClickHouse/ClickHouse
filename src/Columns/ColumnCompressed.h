@@ -128,7 +128,7 @@ protected:
 private:
     [[noreturn]] static void throwMustBeDecompressed()
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnCompressed must be decompressed before use");
+        throw Exception("ColumnCompressed must be decompressed before use", ErrorCodes::LOGICAL_ERROR);
     }
 };
 

@@ -44,7 +44,7 @@ namespace
                 boost::to_upper(uppercased_keyword);
                 it = keyword_to_flags_map.find(uppercased_keyword);
                 if (it == keyword_to_flags_map.end())
-                    throw Exception(ErrorCodes::UNKNOWN_ACCESS_TYPE, "Unknown access type: {}", String(keyword));
+                    throw Exception("Unknown access type: " + String(keyword), ErrorCodes::UNKNOWN_ACCESS_TYPE);
             }
             return it->second;
         }
@@ -179,7 +179,7 @@ namespace
             else
             {
                 if (nodes.contains(keyword))
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "{} declared twice", keyword);
+                    throw Exception(keyword + " declared twice", ErrorCodes::LOGICAL_ERROR);
                 node = std::make_unique<Node>(keyword, node_type);
                 nodes[node->keyword] = node.get();
             }
@@ -225,9 +225,9 @@ namespace
 #           undef MAKE_ACCESS_FLAGS_NODE
 
             if (!owned_nodes.contains("NONE"))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "'NONE' not declared");
+                throw Exception("'NONE' not declared", ErrorCodes::LOGICAL_ERROR);
             if (!owned_nodes.contains("ALL"))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "'ALL' not declared");
+                throw Exception("'ALL' not declared", ErrorCodes::LOGICAL_ERROR);
 
             all_node = std::move(owned_nodes["ALL"]);
             none_node = std::move(owned_nodes["NONE"]);
@@ -238,9 +238,9 @@ namespace
             {
                 const auto & unused_node = *(owned_nodes.begin()->second);
                 if (unused_node.node_type == UNKNOWN)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Parent group '{}' not found", unused_node.keyword);
+                    throw Exception("Parent group '" + unused_node.keyword + "' not found", ErrorCodes::LOGICAL_ERROR);
                 else
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Access type '{}' should have parent group", unused_node.keyword);
+                    throw Exception("Access type '" + unused_node.keyword + "' should have parent group", ErrorCodes::LOGICAL_ERROR);
             }
         }
 

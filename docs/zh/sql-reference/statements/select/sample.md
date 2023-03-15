@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/statements/select/sample
 sidebar_label: SAMPLE
 ---
 

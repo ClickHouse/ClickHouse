@@ -108,16 +108,13 @@ public:
 
     virtual std::optional<FileInfo> getFileInfo(const String & file_name) const = 0;
     virtual std::optional<FileInfo> getFileInfo(const SizeAndChecksum & size_and_checksum) const = 0;
+    virtual std::optional<SizeAndChecksum> getFileSizeAndChecksum(const String & file_name) const = 0;
 
     /// Generates a new archive suffix, e.g. "001", "002", "003", ...
     virtual String getNextArchiveSuffix() = 0;
 
     /// Returns the list of all the archive suffixes which were generated.
     virtual Strings getAllArchiveSuffixes() const = 0;
-
-    /// This function is used to check if concurrent backups are running
-    /// other than the backup passed to the function
-    virtual bool hasConcurrentBackups(const std::atomic<size_t> & num_active_backups) const = 0;
 };
 
 }

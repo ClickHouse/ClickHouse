@@ -53,11 +53,11 @@ void LDAPAccessStorage::setConfiguration(const Poco::Util::AbstractConfiguration
     const bool has_role_mapping = config.has(prefix_str + "role_mapping");
 
     if (!has_server)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'server' field for LDAP user directory");
+        throw Exception("Missing 'server' field for LDAP user directory", ErrorCodes::BAD_ARGUMENTS);
 
     const auto ldap_server_name_cfg = config.getString(prefix_str + "server");
     if (ldap_server_name_cfg.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'server' field for LDAP user directory");
+        throw Exception("Empty 'server' field for LDAP user directory", ErrorCodes::BAD_ARGUMENTS);
 
     std::set<String> common_roles_cfg;
     if (has_roles)
@@ -321,7 +321,7 @@ std::set<String> LDAPAccessStorage::mapExternalRolesNoLock(const LDAPClient::Sea
     std::set<String> role_names;
 
     if (external_roles.size() != role_search_params.size())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unable to map external roles");
+        throw Exception("Unable to map external roles", ErrorCodes::BAD_ARGUMENTS);
 
     for (std::size_t i = 0; i < external_roles.size(); ++i)
     {

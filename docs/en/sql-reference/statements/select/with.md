@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/statements/select/with
 sidebar_label: WITH
 ---
 
@@ -67,3 +66,5 @@ LIMIT 10;
 WITH test1 AS (SELECT i + 1, j + 1 FROM test1)
 SELECT * FROM test1;
 ```
+
+[Original article](https://clickhouse.com/docs/en/sql-reference/statements/select/with/) <!--hide-->

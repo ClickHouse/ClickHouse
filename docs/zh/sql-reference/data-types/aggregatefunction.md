@@ -1,6 +1,3 @@
----
-slug: /zh/sql-reference/data-types/aggregatefunction
----
 # AggregateFunction(name, types_of_arguments…) {#data-type-aggregatefunction}
 
 聚合函数的中间状态，可以通过聚合函数名称加`-State`后缀的形式得到它。与此同时，当您需要访问该类型的最终状态数据时，您需要以相同的聚合函数名加`-Merge`后缀的形式来得到最终状态数据。
@@ -62,3 +59,5 @@ SELECT uniqMerge(state) FROM (SELECT uniqState(UserID) AS state FROM table GROUP
 ## 使用示例 {#shi-yong-shi-li}
 
 请参阅 [AggregatingMergeTree](../../sql-reference/data-types/aggregatefunction.md) 的说明
+
+[来源文章](https://clickhouse.com/docs/en/data_types/nested_data_structures/aggregatefunction/) <!--hide-->

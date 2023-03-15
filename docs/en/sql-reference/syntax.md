@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/syntax
 sidebar_position: 2
 sidebar_label: Syntax
 ---
@@ -14,7 +13,7 @@ The `INSERT` query uses both parsers:
 INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 ```
 
-The `INSERT INTO t VALUES` fragment is parsed by the full parser, and the data `(1, 'Hello, world'), (2, 'abc'), (3, 'def')` is parsed by the fast stream parser. You can also turn on the full parser for the data by using the [input_format_values_interpret_expressions](../operations/settings/settings-formats.md#settings-input_format_values_interpret_expressions) setting. When `input_format_values_interpret_expressions = 1`, ClickHouse first tries to parse values with the fast stream parser. If it fails, ClickHouse tries to use the full parser for the data, treating it like an SQL [expression](#syntax-expressions).
+The `INSERT INTO t VALUES` fragment is parsed by the full parser, and the data `(1, 'Hello, world'), (2, 'abc'), (3, 'def')` is parsed by the fast stream parser. You can also turn on the full parser for the data by using the [input_format_values_interpret_expressions](../operations/settings/settings.md#settings-input_format_values_interpret_expressions) setting. When `input_format_values_interpret_expressions = 1`, ClickHouse first tries to parse values with the fast stream parser. If it fails, ClickHouse tries to use the full parser for the data, treating it like an SQL [expression](#syntax-expressions).
 
 Data can have any format. When a query is received, the server calculates no more than [max_query_size](../operations/settings/settings.md#settings-max_query_size) bytes of the request in RAM (by default, 1 MB), and the rest is stream parsed.
 It allows for avoiding issues with large `INSERT` queries.
@@ -77,19 +76,14 @@ Numeric literal tries to be parsed:
 
 Literal value has the smallest type that the value fits in.
 For example, 1 is parsed as `UInt8`, but 256 is parsed as `UInt16`. For more information, see [Data types](../sql-reference/data-types/index.md).
-Underscores `_` inside numeric literals are ignored and can be used for better readability.
 
-Examples: `1`, `10_000_000`, `0xffff_ffff`, `18446744073709551615`, `0xDEADBEEF`, `01`, `0.1`, `1e100`, `-1e-100`, `inf`, `nan`.
+Examples: `1`, `18446744073709551615`, `0xDEADBEEF`, `01`, `0.1`, `1e100`, `-1e-100`, `inf`, `nan`.
 
 ### String
 
-String literals must be enclosed in single quotes, double quotes are not supported.
-Escaping works either
+Only string literals in single quotes are supported. The enclosed characters can be backslash-escaped. The following escape sequences have a corresponding special value: `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\a`, `\v`, `\xHH`. In all other cases, escape sequences in the format `\c`, where `c` is any character, are converted to `c`. It means that you can use the sequences `\'`and`\\`. The value will have the [String](../sql-reference/data-types/string.md) type.
 
--   using a preceding single quote where the single-quote character `'` (and only this character) can be escaped as `''`, or
--   using a preceding backslash with the following supported escape sequences: `\\`, `\'`, `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\a`, `\v`, `\xHH`. The backslash loses its special meaning, i.e. will be interpreted literally, if it precedes characters different than the listed ones.
-
-In string literals, you need to escape at least `'` and `\` using escape codes `\'` (or: `''`) and `\\`.
+In string literals, you need to escape at least `'` and `\`. Single quotes can be escaped with the single quote, literals `'It\'s'` and `'It''s'` are equal.
 
 ### Compound
 
@@ -131,61 +125,6 @@ Result:
 │ SHOW CREATE VIEW my_view   │
 └────────────────────────────┘
 ```
-
-## Defining and Using Query Parameters
-
-Query parameters allow you to write generic queries that contain abstract placeholders instead of concrete identifiers. When a query with query parameters is executed, all placeholders are resolved and replaced by the actual query parameter values.
-
-There are two way to define a query parameter:
-
-- use the `SET param_<name>=<value>` command
-- use `--param_<name>='<value>'` as an argument to `clickhouse-client` on the command line. `<name>` is the name of the query parameter and `<value>` is its value
-
-A query parameter can be referenced in a query using `{<name>: <datatype>}`, where `<name>` is the query parameter name and `<datatype>` is the datatype it is converted to.
-
-For example, the following SQL defines parameters named `a`, `b`, `c` and `d` - each with a different data type:
-
-```sql
-SET param_a = 13;
-SET param_b = 'str';
-SET param_c = '2022-08-04 18:30:53';
-SET param_d = {'10': [11, 12], '13': [14, 15]}';
-
-SELECT
-   {a: UInt32},
-   {b: String},
-   {c: DateTime},
-   {d: Map(String, Array(UInt8))};
-```
-
-Result:
-
-```response
-13	str	2022-08-04 18:30:53	{'10':[11,12],'13':[14,15]}
-```
-
-If you are using `clickhouse-client`, the parameters are specified as `--param_name=value`. For example, the following parameter has the name `message` and it is retrieved as a `String`:
-
-```sql
-clickhouse-client --param_message='hello' --query="SELECT {message: String}"
-```
-
-Result:
-
-```response
-hello
-```
-
-If the query parameter represents the name of a database, table, function or other identifier, use `Identifier` for its type. For example, the following query returns rows from a table named `uk_price_paid`:
-
-```sql
-SET param_mytablename = "uk_price_paid";
-SELECT * FROM {mytablename:Identifier};
-```
-
-:::note
-Query parameters are not general text substitutions which can be used in arbitrary places in arbitrary SQL queries. They are primarily designed to work in `SELECT` statements in place of identifiers or literals.
-:::
 
 ## Functions
 
@@ -265,3 +204,5 @@ In a `SELECT` query, an asterisk can replace the expression. For more informatio
 An expression is a function, identifier, literal, application of an operator, expression in brackets, subquery, or asterisk. It can also contain an alias.
 A list of expressions is one or more expressions separated by commas.
 Functions and operators, in turn, can have expressions as arguments.
+
+[Original article](https://clickhouse.com/docs/en/sql_reference/syntax/) <!--hide-->
