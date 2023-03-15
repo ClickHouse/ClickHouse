@@ -10,8 +10,6 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/LayeredConfiguration.h>
-#include <Poco/Net/SecureStreamSocket.h>
-#include <Poco/Net/SecureStreamSocketImpl.h>
 #include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>
 #include <Common/NetException.h>
@@ -50,6 +48,11 @@
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
+
+#if USE_SSL
+#   include <Poco/Net/SecureStreamSocket.h>
+#   include <Poco/Net/SecureStreamSocketImpl.h>
+#endif
 
 #include "Core/Protocol.h"
 #include "Storages/MergeTree/RequestResponse.h"
@@ -1227,6 +1230,7 @@ void TCPHandler::receiveHello()
     session = makeSession();
     auto & client_info = session->getClientInfo();
 
+#if USE_SSL
     /// Authentication with SSL user certificate
     if (dynamic_cast<Poco::Net::SecureStreamSocketImpl*>(socket().impl()))
     {
@@ -1239,6 +1243,7 @@ void TCPHandler::receiveHello()
             return;
         }
     }
+#endif
 
     session->authenticate(user, password, getClientAddress(client_info));
 }
