@@ -256,6 +256,11 @@ protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
     bool isOneCommandTypeOnly(const ASTAlterCommand::Type & type) const;
+
+    void forEachPointerToChild(std::function<void(void**)> f) override
+    {
+        f(reinterpret_cast<void **>(&command_list));
+    }
 };
 
 }
