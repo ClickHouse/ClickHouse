@@ -29,12 +29,20 @@ ORDER BY query_start_time DESC;
 echo "CREATE"
 $CLICKHOUSE_CLIENT --print-profile-events --profile-events-delay-ms=-1  -nq "
 DROP TABLE IF EXISTS times;
-CREATE TABLE times (t DateTime) ENGINE MergeTree ORDER BY t;
+CREATE TABLE times (t DateTime) ENGINE MergeTree ORDER BY t
+  SETTINGS
+    storage_policy='default',
+    min_rows_for_compact_part = 0,
+    min_bytes_for_compact_part = 0,
+    min_rows_for_wide_part = 1000000,
+    min_bytes_for_wide_part = 1000000,
+    in_memory_parts_enable_wal = 0,
+    ratio_of_defaults_for_sparse_serialization=1.0;
 " 2>&1 | grep -o -e '\ \[\ .*\ \]\ FileOpen:\ .*\ '
 
 echo "INSERT"
 $CLICKHOUSE_CLIENT --print-profile-events --profile-events-delay-ms=-1  -nq "
-INSERT INTO times SELECT now() + INTERVAL 1 day;
+INSERT INTO times SELECT now() + INTERVAL 1 day SETTINGS optimize_on_insert = 0;
 " 2>&1 | grep -o -e '\ \[\ .*\ \]\ FileOpen:\ .*\ '
 
 echo "READ"
@@ -44,13 +52,13 @@ SELECT '1', min(t) FROM times;
 
 echo "INSERT and READ INSERT"
 $CLICKHOUSE_CLIENT --print-profile-events --profile-events-delay-ms=-1  -nq "
-INSERT INTO times SELECT now() + INTERVAL 2 day;
+INSERT INTO times SELECT now() + INTERVAL 2 day SETTINGS optimize_on_insert = 0;
 SELECT '2', min(t) FROM times;
-INSERT INTO times SELECT now() + INTERVAL 3 day;
+INSERT INTO times SELECT now() + INTERVAL 3 day SETTINGS optimize_on_insert = 0;
 " 2>&1 | grep -o -e '\ \[\ .*\ \]\ FileOpen:\ .*\ '
 
 echo "DROP"
-$CLICKHOUSE_CLIENT --print-profile-events --profile-events-delay-ms=-1  -nq "
+$CLICKHOUSE_CLIENT -nq "
 DROP TABLE times;
 "
 
@@ -62,7 +70,7 @@ SELECT type,
        'FileOpen', ProfileEvents['FileOpen']
 FROM system.query_log
 WHERE current_database = currentDatabase()
-AND ( query LIKE '%SELECT % FROM times%' OR query LIKE '%INSERT INTO times%')
+AND ( query LIKE '%SELECT % FROM times%' OR query LIKE '%INSERT INTO times%' )
 AND type = 'QueryFinish'
 ORDER BY query_start_time_microseconds ASC, query DESC;
 "

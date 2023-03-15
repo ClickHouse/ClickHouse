@@ -203,7 +203,12 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
 
     for (size_t src_row = 0; src_row < src.rows(); ++src_row)
     {
-        /// Filter out threads stats, use thead group stats
+        /// Filter out threads stats, use stats from thread group
+        /// Exactly stats from thread group is stored to the table system.query_log
+        /// The stats from threads are less useful.
+        /// They take more records, they need to be combined,
+        /// there even could be several records from one thread.
+        /// Server doesn't send it any more to the clients, so this code left for compatible
         auto thread_id = src_array_thread_id[src_row];
         if (thread_id != THREAD_GROUP_ID)
             continue;
