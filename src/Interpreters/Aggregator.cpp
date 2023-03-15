@@ -1442,7 +1442,8 @@ void Aggregator::prepareAggregateInstructions(
             aggregate_columns[i][j] = materialized_columns.back().get();
 
             /// Sparse columns without defaults may be handled incorrectly.
-            if (aggregate_columns[i][j]->getNumberOfDefaultRows() == 0)
+            if (aggregate_columns[i][j]->isSparse()
+                && aggregate_columns[i][j]->getNumberOfDefaultRows() == 0)
                 allow_sparse_arguments = false;
 
             auto full_column = allow_sparse_arguments
