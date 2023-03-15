@@ -413,8 +413,8 @@ void ExecutingGraph::cancel(bool cancel_all_processors)
         {
             try
             {
-                /// Stop all processors in the general case, but in a specific case 
-                /// where the pipeline needs to return a result on a partially read table, 
+                /// Stop all processors in the general case, but in a specific case
+                /// where the pipeline needs to return a result on a partially read table,
                 /// stop only the processors that read from the source
                 if (cancel_all_processors || source_processors.at(proc))
                 {

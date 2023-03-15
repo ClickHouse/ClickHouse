@@ -1337,14 +1337,8 @@ bool TCPHandler::receivePacket()
             return false;
 
         case Protocol::Client::Cancel:
-<<<<<<< HEAD
         {
             decreaseCancellationStatus("Received 'Cancel' packet from the client, canceling the query.");
-
-=======
-            LOG_INFO(log, "Received 'Cancel' packet from the client, canceling the query");
-            state.is_cancelled = true;
->>>>>>> 00c05f7f8b8f11bcb9c11e54c9bec6b77932933f
             return false;
 
         case Protocol::Client::Hello:
@@ -1802,7 +1796,7 @@ void TCPHandler::decreaseCancellationStatus(const std::string& log_message)
         const auto & settings = query_context->getSettingsRef();
         stop_reading_on_first_cancel = settings.stop_reading_on_first_cancel;
     }
-    
+
     if (stop_reading_on_first_cancel && state.cancellation_status == CancellationStatus::NOT_CANCELLED)
     {
         state.cancellation_status = CancellationStatus::READ_CANCELLED;
