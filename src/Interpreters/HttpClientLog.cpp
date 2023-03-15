@@ -27,12 +27,12 @@ NamesAndTypesList HttpClientLogElement::getNamesAndTypes()
     auto http_method_type = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
         {
-            {"GET",         static_cast<Int8>(HttpMethod::HTTP_GET)},
-            {"POST",        static_cast<Int8>(HttpMethod::HTTP_POST)},
-            {"DELETE",      static_cast<Int8>(HttpMethod::HTTP_DELETE)},
-            {"PUT",         static_cast<Int8>(HttpMethod::HTTP_PUT)},
-            {"HEAD",        static_cast<Int8>(HttpMethod::HTTP_HEAD)},
-            {"PATCH",       static_cast<Int8>(HttpMethod::HTTP_PATCH)},
+            {"GET",         static_cast<Int8>(HttpMethod::GET)},
+            {"POST",        static_cast<Int8>(HttpMethod::POST)},
+            {"DELETE",      static_cast<Int8>(HttpMethod::DELETE)},
+            {"PUT",         static_cast<Int8>(HttpMethod::PUT)},
+            {"HEAD",        static_cast<Int8>(HttpMethod::HEAD)},
+            {"PATCH",       static_cast<Int8>(HttpMethod::PATCH)},
         }
     );
 

@@ -11,12 +11,12 @@ struct HttpClientLogElement
 {
     enum class HttpMethod
     {
-        HTTP_GET,
-        HTTP_POST,
-        HTTP_DELETE,
-        HTTP_PUT,
-        HTTP_HEAD,
-        HTTP_PATCH
+        GET,
+        POST,
+        DELETE,
+        PUT,
+        HEAD,
+        PATCH
     };
 
     enum class HttpClient
