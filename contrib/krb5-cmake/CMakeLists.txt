@@ -160,6 +160,8 @@ set(ALL_SRCS
 
     # "${KRB5_SOURCE_DIR}/lib/gssapi/spnego/negoex_trace.c"
 
+    "${KRB5_SOURCE_DIR}/lib/crypto/builtin/kdf.c"
+    "${KRB5_SOURCE_DIR}/lib/crypto/builtin/cmac.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/prng.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/enc_dk_cmac.c"
     # "${KRB5_SOURCE_DIR}/lib/crypto/krb/crc32.c"
@@ -183,7 +185,6 @@ set(ALL_SRCS
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/block_size.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/string_to_key.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/verify_checksum.c"
-    "${KRB5_SOURCE_DIR}/lib/crypto/krb/crypto_libinit.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/derive.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/random_to_key.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/verify_checksum_iov.c"
@@ -217,9 +218,7 @@ set(ALL_SRCS
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/s2k_rc4.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/valid_cksumtype.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/nfold.c"
-    "${KRB5_SOURCE_DIR}/lib/crypto/krb/prng_fortuna.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/encrypt_length.c"
-    "${KRB5_SOURCE_DIR}/lib/crypto/krb/cmac.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/keyblocks.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/prf_rc4.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/s2k_pbkdf2.c"
@@ -228,11 +227,11 @@ set(ALL_SRCS
     "${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/rc4.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/des3.c"
     #"${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/camellia.c"
+    "${KRB5_SOURCE_DIR}/lib/crypto/openssl/cmac.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/openssl/sha256.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/openssl/hmac.c"
+    "${KRB5_SOURCE_DIR}/lib/crypto/openssl/kdf.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/openssl/pbkdf2.c"
-    "${KRB5_SOURCE_DIR}/lib/crypto/openssl/init.c"
-    "${KRB5_SOURCE_DIR}/lib/crypto/openssl/stubs.c"
     # "${KRB5_SOURCE_DIR}/lib/crypto/openssl/hash_provider/hash_crc32.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/openssl/hash_provider/hash_evp.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/openssl/des/des_keys.c"
@@ -312,7 +311,6 @@ set(ALL_SRCS
     "${KRB5_SOURCE_DIR}/lib/krb5/krb/allow_weak.c"
     "${KRB5_SOURCE_DIR}/lib/krb5/krb/mk_rep.c"
     "${KRB5_SOURCE_DIR}/lib/krb5/krb/mk_priv.c"
-    "${KRB5_SOURCE_DIR}/lib/krb5/krb/s4u_authdata.c"
     "${KRB5_SOURCE_DIR}/lib/krb5/krb/preauth_otp.c"
     "${KRB5_SOURCE_DIR}/lib/krb5/krb/init_keyblock.c"
     "${KRB5_SOURCE_DIR}/lib/krb5/krb/ser_addr.c"
@@ -688,6 +686,7 @@ target_include_directories(_krb5 PRIVATE
 
 target_compile_definitions(_krb5 PRIVATE
     KRB5_PRIVATE
+    CRYPTO_OPENSSL
     _GSS_STATIC_LINK=1
     KRB5_DEPRECATED=1
     LOCALEDIR="/usr/local/share/locale"
