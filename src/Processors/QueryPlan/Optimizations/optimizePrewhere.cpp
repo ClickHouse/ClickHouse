@@ -269,7 +269,7 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes & nodes)
 
     read_from_merge_tree->updatePrewhereInfo(prewhere_info);
 
-    QueryPlan::Node * replace_old_filter_node = frame.node;
+    QueryPlan::Node * replace_old_filter_node = nullptr;
     bool remove_filter_node = false;
 
     if (filter_actions)
