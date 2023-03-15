@@ -76,8 +76,9 @@ def trim_for_log(s):
     if not s:
         return s
     lines = s.splitlines()
-    if len(lines) > 100:
-        return "\n".join(lines[:50] + ["#" * 100] + lines[-50:])
+    if len(lines) > 10000:
+        separator = "-" * 40 + str(len(lines) - 10000) + " lines are hidden" +  "-" * 40
+        return "\n".join(lines[:5000] + [] + [separator] + [] + lines[-5000:])
     else:
         return "\n".join(lines)
 
@@ -94,7 +95,7 @@ class HTTPError(Exception):
 
 # Helpers to execute queries via HTTP interface.
 def clickhouse_execute_http(
-    base_args, query, timeout=30, settings=None, default_format=None, max_http_retries=5
+    base_args, query, timeout=30, settings=None, default_format=None, max_http_retries=5, retry_error_codes=False
 ):
     if args.secure:
         client = http.client.HTTPSConnection(
@@ -117,6 +118,7 @@ def clickhouse_execute_http(
         "http_connection_timeout": timeout,
         "http_receive_timeout": timeout,
         "http_send_timeout": timeout,
+        "output_format_parallel_formatting": 0,
     }
     if settings is not None:
         params.update(settings)
@@ -131,7 +133,8 @@ def clickhouse_execute_http(
             )
             res = client.getresponse()
             data = res.read()
-            break
+            if res.status == 200 or (not retry_error_codes):
+                break
         except Exception as ex:
             if i == max_http_retries - 1:
                 raise ex
@@ -143,8 +146,8 @@ def clickhouse_execute_http(
 
     return data
 
-def clickhouse_execute(base_args, query, timeout=30, settings=None, max_http_retries=5):
-    return clickhouse_execute_http(base_args, query, timeout, settings, max_http_retries=max_http_retries).strip()
+def clickhouse_execute(base_args, query, timeout=30, settings=None, max_http_retries=5, retry_error_codes=False):
+    return clickhouse_execute_http(base_args, query, timeout, settings, max_http_retries=max_http_retries, retry_error_codes=retry_error_codes).strip()
 
 
 def clickhouse_execute_json(base_args, query, timeout=60, settings=None, max_http_retries=5):
@@ -252,7 +255,7 @@ def get_processlist_with_stacktraces(args):
             -- NOTE: view() here to do JOIN on shards, instead of initiator
             FROM clusterAllReplicas('test_cluster_database_replicated', view(
                 SELECT
-                    groupArray((s.thread_id, arrayStringConcat(arrayMap(
+                    arrayStringConcat(groupArray('Thread ID ' || toString(s.thread_id) || '\n' || arrayStringConcat(arrayMap(
                         x -> concat(addressToLine(x), '::', demangle(addressToSymbol(x))),
                         s.trace), '\n') AS stacktrace
                     )) AS stacktraces,
@@ -273,7 +276,7 @@ def get_processlist_with_stacktraces(args):
                 args,
                 """
             SELECT
-                groupArray((s.thread_id, arrayStringConcat(arrayMap(
+                arrayStringConcat(groupArray('Thread ID ' || toString(s.thread_id) || '\n' || arrayStringConcat(arrayMap(
                     x -> concat(addressToLine(x), '::', demangle(addressToSymbol(x))),
                     s.trace), '\n') AS stacktrace
                 )) AS stacktraces,
@@ -520,7 +523,9 @@ class SettingsRandomizer:
         "merge_tree_coarse_index_granularity": lambda: random.randint(2, 32),
         "optimize_distinct_in_order": lambda: random.randint(0, 1),
         "optimize_sorting_by_input_stream_properties": lambda: random.randint(0, 1),
-        "enable_memory_bound_merging_of_aggregation_results": lambda: random.randint(0, 1),
+        "enable_memory_bound_merging_of_aggregation_results": lambda: random.randint(
+            0, 1
+        ),
     }
 
     @staticmethod
@@ -533,10 +538,9 @@ class SettingsRandomizer:
 
 class MergeTreeSettingsRandomizer:
     settings = {
-        # Temporary disable due to large number of failures. TODO: fix.
-        # "ratio_of_defaults_for_sparse_serialization": threshold_generator(
-        #     0.1, 0.6, 0.0, 1.0
-        # ),
+        "ratio_of_defaults_for_sparse_serialization": threshold_generator(
+            0.3, 0.5, 0.0, 1.0
+        ),
         "prefer_fetch_merged_part_size_threshold": threshold_generator(
             0.2, 0.5, 1, 10 * 1024 * 1024 * 1024
         ),
@@ -1045,7 +1049,7 @@ class TestCase:
     @staticmethod
     def send_test_name_failed(suite: str, case: str):
         pid = os.getpid()
-        clickhouse_execute(args, f"SELECT 'Running test {suite}/{case} from pid={pid}'")
+        clickhouse_execute(args, f"SELECT 'Running test {suite}/{case} from pid={pid}'", retry_error_codes=True)
 
     def run_single_test(
         self, server_logs_level, client_options
@@ -1202,7 +1206,7 @@ class TestCase:
             )
             result.check_if_need_retry(args, stdout, stderr, self.runs_count)
             # to avoid breaking CSV parser
-            result.description = result.description.replace('\0', '')
+            result.description = result.description.replace("\0", "")
 
             if result.status == TestStatus.FAIL:
                 result.description = self.add_info_about_settings(result.description)
@@ -1658,7 +1662,12 @@ def check_server_started(args):
             print("\nConnection timeout, will not retry")
             break
         except Exception as e:
-            print("\nUexpected exception, will not retry: ", type(e).__name__, ": ", str(e))
+            print(
+                "\nUexpected exception, will not retry: ",
+                type(e).__name__,
+                ": ",
+                str(e),
+            )
             break
 
     print("\nAll connection tries failed")
@@ -1934,6 +1943,7 @@ def reportCoverage(args):
         """,
         )
     )
+
 
 def reportLogStats(args):
     query = """
