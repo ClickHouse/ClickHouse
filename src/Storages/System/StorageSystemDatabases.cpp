@@ -32,7 +32,7 @@ NamesAndAliases StorageSystemDatabases::getNamesAndAliases()
     };
 }
 
-static String getEngineFull(const ContextPtr& ctx, const DatabasePtr & database)
+static String getEngineFull(const ContextPtr & ctx, const DatabasePtr & database)
 {
     DDLGuardPtr guard;
     while (true)
