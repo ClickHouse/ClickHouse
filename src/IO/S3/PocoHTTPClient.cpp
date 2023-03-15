@@ -299,7 +299,7 @@ void PocoHTTPClient::makeRequestInternal(
 
     for (unsigned int attempt = 0; attempt <= s3_max_redirects; ++attempt)
     {
-        if (attemptRequest(attempt, request, uri, response, log))
+        if (tryMakeOneRequest(attempt, request, uri, response, log))
             return;
     }
 
@@ -311,7 +311,7 @@ void PocoHTTPClient::makeRequestInternal(
     LOG_ERROR(log, "{}", e.displayText());
 }
 
-bool PocoHTTPClient::attemptRequest(
+bool PocoHTTPClient::tryMakeOneRequest(
     unsigned int /*attempt*/,
     Aws::Http::HttpRequest & request,
     Aws::String & uri,
@@ -319,13 +319,13 @@ bool PocoHTTPClient::attemptRequest(
     Poco::Logger * log) const
 {
     int status_code = -1;
-    bool need_retry = false;
+    bool success;
     ExecutionStatus execution_status;
     Stopwatch watch;
 
     try
     {
-        need_retry = attemptRequestImpl(request, uri, response, log);
+        success = tryMakeOneRequestImpl(request, uri, response, log);
 
         status_code = static_cast<int>(response->GetResponseCode());
     }
@@ -341,6 +341,9 @@ bool PocoHTTPClient::attemptRequest(
         /// Probably this is socket timeout or something more or less related to DNS
         /// Let's just remove this host from DNS cache to be more safe
         DNSResolver::instance().removeHostFromCache(Poco::URI(uri).getHost());
+
+        /// Still mark as success because we don't need to retry
+        success = true;
     }
     watch.stop();
 
@@ -348,39 +351,39 @@ bool PocoHTTPClient::attemptRequest(
     switch (request.GetMethod())
     {
         case Aws::Http::HttpMethod::HTTP_GET:
-            http_method = HttpClientLogElement::HttpMethod::HTTP_GET;
+            http_method = HttpClientLogElement::HttpMethod::GET;
             break;
         case Aws::Http::HttpMethod::HTTP_POST:
-            http_method = HttpClientLogElement::HttpMethod::HTTP_POST;
+            http_method = HttpClientLogElement::HttpMethod::POST;
             break;
         case Aws::Http::HttpMethod::HTTP_DELETE:
-            http_method = HttpClientLogElement::HttpMethod::HTTP_DELETE;
+            http_method = HttpClientLogElement::HttpMethod::DELETE;
             break;
         case Aws::Http::HttpMethod::HTTP_PUT:
-            http_method = HttpClientLogElement::HttpMethod::HTTP_PUT;
+            http_method = HttpClientLogElement::HttpMethod::PUT;
             break;
         case Aws::Http::HttpMethod::HTTP_HEAD:
-            http_method = HttpClientLogElement::HttpMethod::HTTP_HEAD;
+            http_method = HttpClientLogElement::HttpMethod::HEAD;
             break;
         case Aws::Http::HttpMethod::HTTP_PATCH:
-            http_method = HttpClientLogElement::HttpMethod::HTTP_PATCH;
+            http_method = HttpClientLogElement::HttpMethod::PATCH;
             break;
     }
 
     int request_size = request.HasContentLength() ? Poco::NumberParser::parse(request.GetContentLength()) : 0;
-    HttpClientLog::addLogEntry(HttpClientLogElement::HttpClient::AWS, 
-        http_method, 
-        uri, 
-        watch.elapsedMilliseconds(), 
-        status_code, 
-        request_size, 
-        response->GetContentLength(), 
+    HttpClientLog::addLogEntry(HttpClientLogElement::HttpClient::AWS,
+        http_method,
+        uri,
+        watch.elapsedMilliseconds(),
+        status_code,
+        request_size,
+        response->GetContentLength(),
         execution_status);
 
-    return need_retry;
+    return success;
 }
 
-bool PocoHTTPClient::attemptRequestImpl(
+bool PocoHTTPClient::tryMakeOneRequestImpl(
     Aws::Http::HttpRequest & request,
     Aws::String & uri,
     std::shared_ptr<PocoHTTPResponse> & response,

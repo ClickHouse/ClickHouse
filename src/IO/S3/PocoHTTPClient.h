@@ -141,15 +141,18 @@ private:
         Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
         Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const;
 
-    bool attemptRequest(
+    /// A wrap function that makes one HTTP request and records logs and profile envets
+    /// Return true means success otherwise false if retry is needed
+    bool tryMakeOneRequest(
         unsigned int attempt,
         Aws::Http::HttpRequest & request,
         Aws::String & uri,
         std::shared_ptr<PocoHTTPResponse> & response,
         Poco::Logger * log) const;
 
-    /// Return true means success otherwise false if retry is needed
-    bool attemptRequestImpl(
+    /// Return true means success otherwise false if retry is needed.
+    /// If retry is needed, the parameter uri contains the new uri that should be used for next iteration
+    bool tryMakeOneRequestImpl(
         Aws::Http::HttpRequest & request,
         Aws::String & uri,
         std::shared_ptr<PocoHTTPResponse> & response,
