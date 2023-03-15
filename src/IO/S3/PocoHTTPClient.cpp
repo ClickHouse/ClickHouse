@@ -528,6 +528,7 @@ bool PocoHTTPClient::attemptRequestImpl(
         return false;
     }
 
+    response->SetContentLength(poco_response.getContentLength64());
     response->SetResponseCode(static_cast<Aws::Http::HttpResponseCode>(status_code));
     response->SetContentType(poco_response.getContentType());
 
