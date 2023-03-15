@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <Processors/IProcessor.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
@@ -122,6 +123,15 @@ public:
         size_t max_block_size,
         size_t max_streams,
         bool keep_left_read_in_order,
+        Processors * collected_processors = nullptr);
+
+    static std::unique_ptr<QueryPipelineBuilder> joinPipelinesRightLeftByShuffle(
+        std::unique_ptr<QueryPipelineBuilder> left,
+        std::unique_ptr<QueryPipelineBuilder> right,
+        JoinPtr join,
+        const Block & output_header,
+        size_t max_block_size,
+        size_t max_streams,
         Processors * collected_processors = nullptr);
 
     /// Join two independent pipelines, processing them simultaneously.

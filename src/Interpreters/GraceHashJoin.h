@@ -77,7 +77,6 @@ public:
     bool alwaysReturnsEmptySet() const override;
 
     bool supportParallelJoin() const override { return true; }
-    JoinProperty getJoinProperty() const override { return JoinProperty{.is_thread_safe=true}; }
     bool supportTotals() const override { return false; }
 
     IBlocksStreamPtr

@@ -46,7 +46,6 @@ public:
     size_t getTotalByteCount() const override;
     bool alwaysReturnsEmptySet() const override;
     bool supportParallelJoin() const override { return true; }
-    JoinProperty getJoinProperty() const override { return JoinProperty{.is_thread_safe=true,}; }
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 

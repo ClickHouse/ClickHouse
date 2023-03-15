@@ -230,7 +230,6 @@ public:
     }
 
     bool allowParallelHashJoin() const;
-    bool allowShuffleHashJoin() const;
 
     bool joinUseNulls() const { return join_use_nulls; }
     bool forceNullableRight() const { return join_use_nulls && isLeftOrFull(kind()); }

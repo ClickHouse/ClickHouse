@@ -1109,15 +1109,12 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
             return std::make_shared<FullSortingMergeJoin>(analyzed_join, right_sample_block);
     }
 
-    if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::SHUFFLE_HASH))
+    if (analyzed_join->isEnabledAlgorithm(JoinAlgorithm::PARTITION_HASH))
     {
-        tried_algorithms.push_back(toString(JoinAlgorithm::SHUFFLE_HASH));
-        if (analyzed_join->allowShuffleHashJoin())
+        tried_algorithms.push_back(toString(JoinAlgorithm::PARTITION_HASH));
+        if (PartitionHashJoin::isSupported(analyzed_join))
         {
-            auto inner_join_getter = [analyzed_join, right_sample_block](){
-                return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
-            };
-            return std::make_shared<PartitionHashJoin>(context, analyzed_join, inner_join_getter);
+            return std::make_shared<PartitionHashJoin>(analyzed_join, right_sample_block);
         }
     }
 

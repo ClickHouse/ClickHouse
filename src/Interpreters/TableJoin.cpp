@@ -764,17 +764,4 @@ bool TableJoin::allowParallelHashJoin() const
     return true;
 }
 
-bool TableJoin::allowShuffleHashJoin() const
-{
-    if (!right_storage_name.empty() || !join_algorithm.isSet(JoinAlgorithm::SHUFFLE_HASH))
-        return false;
-    if (table_join.kind != JoinKind::Left && table_join.kind != JoinKind::Inner)
-        return false;
-    if (table_join.strictness == JoinStrictness::Asof)
-        return false;
-    if (isSpecialStorage() || !oneDisjunct())
-        return false;
-    return true;
-}
-
 }

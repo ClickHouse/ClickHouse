@@ -105,7 +105,7 @@ enum class JoinAlgorithm
     GRACE_HASH,
     DIRECT,
     FULL_SORTING_MERGE,
-    SHUFFLE_HASH,
+    PARTITION_HASH,
 };
 
 const char * toString(JoinAlgorithm join_algorithm);

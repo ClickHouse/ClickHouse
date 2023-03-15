@@ -43,14 +43,6 @@ enum class JoinPipelineType
     YShaped,
 };
 
-// It is bit flags, describe what properties the IJoin has.
-struct JoinProperty
-{
-    bool is_thread_safe = false; // is it thread safe to call addJoinedBlock
-    bool need_shuffle_partition_before = false; // the data stream from upstream should have been shuffle partition.
-    bool has_inner_join = false;
-};
-
 class IJoin : public std::enable_shared_from_this<IJoin>
 {
 public:
@@ -94,14 +86,12 @@ public:
 
     // That can run FillingRightJoinSideTransform parallelly
     virtual bool supportParallelJoin() const { return false; }
-    virtual JoinProperty getJoinProperty() const { return JoinProperty(); }
-    virtual void setupInnerJoins(size_t)
-    {
-    }
-    virtual JoinPtr getInnerJoin(size_t /*n*/)
-    {
-        return shared_from_this();
-    }
+    // Shuffle data into partitions, eache processor will handle only one partition.
+    // In ConcurrentHashJoin, the lock cmpetition is fierce which proctects the inner HashJoins.
+    // Make a inner shuffle will remove the lock.
+    virtual bool supportShuffle() const { return false; }
+    // If supportShuffle = true, this method should be implemented.
+    virtual JoinPtr clone() const { return nullptr; }
 
     virtual bool supportTotals() const { return true; }
 
