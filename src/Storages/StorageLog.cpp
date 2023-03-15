@@ -1027,11 +1027,7 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
             if (!backup->fileExists(file_path_in_backup))
                 throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", file_path_in_backup);
 
-            auto backup_entry = backup->readFile(file_path_in_backup);
-            auto in = backup_entry->getReadBuffer();
-            auto out = disk->writeFile(data_file.path, max_compress_block_size, WriteMode::Append);
-            copyData(*in, *out);
-            out->finalize();
+            backup->copyFileToDisk(file_path_in_backup, disk, data_file.path, WriteMode::Append);
         }
 
         if (use_marks_file)
@@ -1062,8 +1058,7 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
                 old_num_rows[i] = num_marks ? data_files[i].marks[num_marks - 1].rows : 0;
             }
 
-            auto backup_entry = backup->readFile(file_path_in_backup);
-            auto marks_rb = backup_entry->getReadBuffer();
+            auto marks_rb = backup->readFile(file_path_in_backup);
 
             for (size_t i = 0; i != num_extra_marks; ++i)
             {
