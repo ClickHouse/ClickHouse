@@ -1,0 +1,1 @@
+select * from format(BSONEachRow, x'130000001078002a0000001078002a00000000'); -- {serverError INCORRECT_DATA}
