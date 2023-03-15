@@ -1,9 +1,9 @@
 #include <unordered_set>
 
-#include <gtest/gtest.h>
 #include <Parsers/IAST.h>
-#include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
+#include <Parsers/parseQuery.h>
+#include <gtest/gtest.h>
 #include <Common/StackTrace.h>
 
 std::string hilite(const std::string & s, const char * hilite_type)
@@ -52,9 +52,14 @@ bool are_equal_with_hilites(const std::string_view & left, const std::string_vie
     const char * right_it = right.begin();
     const char * left_hilite = DB::IAST::hilite_none;
     const char * right_hilite = DB::IAST::hilite_none;
-    std::unordered_set<const char *> hilites = {DB::IAST::hilite_keyword, DB::IAST::hilite_identifier, DB::IAST::hilite_alias,
-                                                DB::IAST::hilite_function, DB::IAST::hilite_operator, DB::IAST::hilite_substitution,
-                                                DB::IAST::hilite_none};
+    std::unordered_set<const char *> hilites
+        = {DB::IAST::hilite_keyword,
+           DB::IAST::hilite_identifier,
+           DB::IAST::hilite_alias,
+           DB::IAST::hilite_function,
+           DB::IAST::hilite_operator,
+           DB::IAST::hilite_substitution,
+           DB::IAST::hilite_none};
 
     while (true)
     {
@@ -105,9 +110,14 @@ TEST(FormatHiliting, MetaTestAreEqualWithHilites)
 {
     ASSERT_PRED2(are_equal_with_hilites, "", "");
 
-    std::unordered_set<const char *> hilites = {DB::IAST::hilite_keyword, DB::IAST::hilite_identifier, DB::IAST::hilite_alias,
-                                                DB::IAST::hilite_function, DB::IAST::hilite_operator, DB::IAST::hilite_substitution,
-                                                DB::IAST::hilite_none};
+    std::unordered_set<const char *> hilites
+        = {DB::IAST::hilite_keyword,
+           DB::IAST::hilite_identifier,
+           DB::IAST::hilite_alias,
+           DB::IAST::hilite_function,
+           DB::IAST::hilite_operator,
+           DB::IAST::hilite_substitution,
+           DB::IAST::hilite_none};
     for (const char * hilite : hilites)
     {
         ASSERT_PRED2(are_equal_with_hilites, "", std::string_view(hilite));
@@ -154,8 +164,83 @@ TEST(FormatHiliting, SimpleSelect)
     std::string query = "select * from table";
 
     std::stringstream expected;
+    expected << keyword("SELECT ") << "* " << keyword("FROM ") << identifier("table");
+
+    compare(query, expected);
+}
+
+TEST(FormatHiliting, ASTWithElement)
+{
+    std::string query = "with alias as (select * from table) select * from table";
+
+    std::stringstream expected;
+    expected << keyword("WITH ") << alias("alias ") << keyword("AS ")
+             << "(" << keyword("SELECT ") << "* " << keyword("FROM ") << identifier("table") << ") "
+             << keyword("SELECT ") << "* " << keyword("FROM ") << identifier("table");
+
+    compare(query, expected);
+}
+
+TEST(FormatHiliting, ASTWithAlias)
+{
+    std::string query = "select a + 1 as b, b";
+
+    std::stringstream expected;
+    expected << keyword("SELECT ") << identifier("a ") << op("+ ") << "1 " << keyword("AS ") << alias("b") << ", "
+             << identifier("b");
+
+    compare(query, expected);
+}
+
+TEST(FormatHiliting, ASTFunction)
+{
+    std::string query = "select * from view(select * from table)";
+
+    std::stringstream expected;
     expected << keyword("SELECT ") << "* " << keyword("FROM ")
-             << identifier("table");
+             << function("view") << "(" << keyword("SELECT ") << "* " << keyword("FROM ") << identifier("table") << ")";
+
+    compare(query, expected);
+}
+
+TEST(FormatHiliting, ASTDictionaryAttributeDeclaration)
+{
+    std::string query = "CREATE DICTIONARY name (`Name` ClickHouseDataType DEFAULT '' EXPRESSION rand64() IS_OBJECT_ID)";
+
+    std::stringstream expected;
+    expected << keyword("CREATE DICTIONARY ") << "name "
+             << "(`Name` " << function("ClickHouseDataType ")
+             << keyword("DEFAULT ") << "'' "
+             << keyword("EXPRESSION ") << function("rand64() ")
+             << keyword("IS_OBJECT_ID") << ")";
+
+    compare(query, expected);
+}
+
+TEST(FormatHiliting, ASTDictionary_Source)
+{
+    std::string query = "CREATE DICTIONARY name (`Name` ClickHouseDataType DEFAULT '' EXPRESSION rand64() IS_OBJECT_ID) "
+                        "SOURCE(FILE(PATH 'path'))";
+
+    std::stringstream expected;
+    expected << keyword("CREATE DICTIONARY ") << "name "
+             << "(`Name` " << function("ClickHouseDataType ")
+             << keyword("DEFAULT ") << "'' "
+             << keyword("EXPRESSION ") << function("rand64() ")
+             << keyword("IS_OBJECT_ID") << ") "
+             << keyword("SOURCE") << "(" << keyword("FILE") << "(" << keyword("PATH ") << "'path'))";
+
+    compare(query, expected);
+}
+
+TEST(FormatHiliting, ASTKillQueryQuery)
+{
+    std::string query = "KILL QUERY ON CLUSTER clustername WHERE user = 'username' SYNC";
+
+    std::stringstream expected;
+    expected << keyword("KILL QUERY ON CLUSTER ") << "clustername "
+             << keyword("WHERE ") << identifier("user ") << op("= ") << "'username' "
+             << keyword("SYNC");
 
     compare(query, expected);
 }
