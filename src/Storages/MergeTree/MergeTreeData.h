@@ -1456,7 +1456,7 @@ private:
     using CurrentlyMovingPartsTaggerPtr = std::shared_ptr<CurrentlyMovingPartsTagger>;
 
     /// Move selected parts to corresponding disks
-    MovePartsOutcome moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagger);
+    MovePartsOutcome moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagger, bool wait_for_move_if_zero_copy=false);
 
     /// Select parts for move and disks for them. Used in background moving processes.
     CurrentlyMovingPartsTaggerPtr selectPartsForMove();
