@@ -442,6 +442,9 @@ void TCPHandler::runImpl()
                             if (isQueryCancelled())
                                 return true;
 
+                            if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_TIMEZONE_UPDATES
+                                && client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE)
+                                sendTimezone();
                             sendProgress();
                             sendSelectProfileEvents();
                             sendLogs();
@@ -483,10 +486,10 @@ void TCPHandler::runImpl()
 
             {
                 std::lock_guard lock(task_callback_mutex);
-                sendLogs();
                 if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_TIMEZONE_UPDATES
                     && client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE)
                     sendTimezone();
+                sendLogs();
                 sendEndOfStream();
             }
 
@@ -1041,9 +1044,15 @@ void TCPHandler::sendInsertProfileEvents()
 
 void TCPHandler::sendTimezone()
 {
-    writeVarUInt(Protocol::Server::TimezoneUpdate, *out);
-    writeStringBinary(DateLUT::instance().getTimeZone(), *out);
-    out->next();
+//    const String & tz = CurrentThread::get().getQueryContext()->getSettingsRef().timezone.toString();
+    const String & tz = query_context->getSettingsRef().timezone.toString();
+    if (!tz.empty())
+    {
+        LOG_DEBUG(log, "Sent timezone: {}", tz);
+        writeVarUInt(Protocol::Server::TimezoneUpdate, *out);
+        writeStringBinary(tz, *out);
+        out->next();
+    }
 }
 
 
