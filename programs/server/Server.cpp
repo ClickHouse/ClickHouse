@@ -67,7 +67,6 @@
 #include <TableFunctions/registerTableFunctions.h>
 #include <Formats/registerFormats.h>
 #include <Storages/registerStorages.h>
-#include <QueryPipeline/ConnectionCollector.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <IO/Resource/registerSchedulerNodes.h>
@@ -815,8 +814,6 @@ try
             return metrics;
         }
     );
-
-    ConnectionCollector::init(global_context, server_settings.max_threads_for_connection_collector);
 
     bool has_zookeeper = config().has("zookeeper");
 
