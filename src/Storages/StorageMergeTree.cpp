@@ -1569,6 +1569,68 @@ bool StorageMergeTree::optimize(
     return true;
 }
 
+namespace
+{
+
+size_t countOccurrences(const StorageMergeTree::DataParts & haystack, const DataPartsVector & needle)
+{
+    size_t total = 0;
+    for (const auto & n : needle)
+        total += haystack.count(n);
+
+    return total;
+}
+
+}
+
+// Same as stopMergesAndWait, but waits only for merges on parts belonging to a certain partition.
+ActionLock StorageMergeTree::stopMergesAndWaitForPartition(String partition_id)
+{
+    LOG_DEBUG(log, "StorageMergeTree::stopMergesAndWaitForPartition partition_id: \"{}\"", partition_id);
+    /// Stop all merges and prevent new from starting, BUT unlike stopMergesAndWait(), only wait for the merges on small set of parts to finish.
+
+    LOG_DEBUG(log, "StorageMergeTree::stopMergesAndWaitForPartition before lock: currently_processing_in_background_mutex");
+    std::unique_lock lock(currently_processing_in_background_mutex);
+    LOG_DEBUG(log, "StorageMergeTree::stopMergesAndWaitForPartition after  lock: currently_processing_in_background_mutex");
+
+    /// Asks to complete merges and does not allow them to start.
+    /// This protects against "revival" of data for a removed partition after completion of merge.
+    LOG_DEBUG(log, "StorageMergeTree::stopMergesAndWaitForPartition before canceling merges with merger_mutator.merges_blocker");
+    auto merge_blocker = merger_mutator.merges_blocker.cancel();
+    LOG_DEBUG(log, "StorageMergeTree::stopMergesAndWaitForPartition after  canceling merges with merger_mutator.merges_blocker");
+
+    const DataPartsVector parts_to_wait = getDataPartsVectorInPartitionForInternalUsage(MergeTreeDataPartState::Active, partition_id);
+    LOG_DEBUG(log, "StorageMergeTree::stopMergesAndWaitForPartition parts to wait: {}",
+        fmt::join(std::views::transform(parts_to_wait, [](const auto & p)
+    {
+        return p->getNameWithState();
+    }), ", "));
+
+    // TODO allow to stop merges in specific partition only (like it's done in ReplicatedMergeTree)
+
+    while (size_t still_merging = countOccurrences(currently_merging_mutating_parts, parts_to_wait))
+    {
+        LOG_DEBUG(log, "StorageMergeTree::stopMergesAndWaitForPartition Waiting for currently running merges ({} {} parts are merging right now)",
+            fmt::join(std::views::transform(currently_merging_mutating_parts, [](const auto & p)
+        {
+            return p->getNameWithState();
+        }), ", "), still_merging);
+
+        if (std::cv_status::timeout == currently_processing_in_background_condition.wait_for(
+            lock, std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC)))
+        {
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout while waiting for already running merges");
+        }
+    }
+
+    LOG_DEBUG(log, "StorageMergeTree::stopMergesAndWaitForPartition done waiting, still merging {}",
+              fmt::join(std::views::transform(currently_merging_mutating_parts, [](const auto & p)
+          {
+              return p->getNameWithState();
+          }), ", "));
+    return merge_blocker;
+}
+
 ActionLock StorageMergeTree::stopMergesAndWait()
 {
     /// TODO allow to stop merges in specific partition only (like it's done in ReplicatedMergeTree)
@@ -2003,9 +2065,18 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
 
 void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr local_context)
 {
+    LOG_DEBUG(log, "StorageMergeTree::replacePartitionFrom\tsource_table: {}, replace: {}", source_table->getStorageID().getShortName(), replace);
+
+    LOG_DEBUG(log, "StorageMergeTree::replacePartitionFrom before lock1");
     auto lock1 = lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
+    LOG_DEBUG(log, "StorageMergeTree::replacePartitionFrom after lock1");
+    LOG_DEBUG(log, "StorageMergeTree::replacePartitionFrom before lock2");
     auto lock2 = source_table->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
-    auto merges_blocker = stopMergesAndWait();
+    LOG_DEBUG(log, "StorageMergeTree::replacePartitionFrom after lock2");
+
+    const String partition_id = getPartitionIDFromQuery(partition, local_context);
+    auto merges_blocker = stopMergesAndWaitForPartition(partition_id);
+
     auto source_metadata_snapshot = source_table->getInMemoryMetadataPtr();
     auto my_metadata_snapshot = getInMemoryMetadataPtr();
 
@@ -2013,9 +2084,9 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     ProfileEventsScope profile_events_scope;
 
     MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, my_metadata_snapshot);
-    String partition_id = getPartitionIDFromQuery(partition, local_context);
 
     DataPartsVector src_parts = src_data.getVisibleDataPartsVectorInPartition(local_context, partition_id);
+
     MutableDataPartsVector dst_parts;
     std::vector<scope_guard> dst_parts_locks;
 
