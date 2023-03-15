@@ -246,16 +246,86 @@ bool applyTrivialCountIfPossible(
     return true;
 }
 
-JoinTreeQueryPlan buildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expression,
-    const SelectQueryInfo & select_query_info,
-    const SelectQueryOptions & select_query_options,
-    PlannerContextPtr & planner_context,
-    bool is_single_table_expression)
+void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expression, PlannerContextPtr & planner_context)
 {
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
 
+    auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);
+    auto columns_names = table_expression_data.getColumnNames();
+
+    auto * table_node = table_expression->as<TableNode>();
+    auto * table_function_node = table_expression->as<TableFunctionNode>();
+    auto * query_node = table_expression->as<QueryNode>();
+    auto * union_node = table_expression->as<UnionNode>();
+
+    /** The current user must have the SELECT privilege.
+      * We do not check access rights for table functions because they have been already checked in ITableFunction::execute().
+      */
+    if (table_node)
+    {
+        auto column_names_with_aliases = columns_names;
+        const auto & alias_columns_names = table_expression_data.getAliasColumnsNames();
+        column_names_with_aliases.insert(column_names_with_aliases.end(), alias_columns_names.begin(), alias_columns_names.end());
+        checkAccessRights(*table_node, column_names_with_aliases, query_context);
+    }
+
+    if (columns_names.empty())
+    {
+        NameAndTypePair additional_column_to_read;
+
+        if (table_node || table_function_node)
+        {
+            const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
+            const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
+            additional_column_to_read = chooseSmallestColumnToReadFromStorage(storage, storage_snapshot);
+
+        }
+        else if (query_node || union_node)
+        {
+            const auto & projection_columns = query_node ? query_node->getProjectionColumns() : union_node->computeProjectionColumns();
+            NamesAndTypesList projection_columns_list(projection_columns.begin(), projection_columns.end());
+            additional_column_to_read = ExpressionActions::getSmallestColumn(projection_columns_list);
+        }
+        else
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected table, table function, query or union. Actual {}",
+                            table_expression->formatASTForErrorMessage());
+        }
+
+        auto & global_planner_context = planner_context->getGlobalPlannerContext();
+        const auto & column_identifier = global_planner_context->createColumnIdentifier(additional_column_to_read, table_expression);
+        columns_names.push_back(additional_column_to_read.name);
+        table_expression_data.addColumn(additional_column_to_read, column_identifier);
+    }
+
+    /// Limitation on the number of columns to read
+    if (settings.max_columns_to_read && columns_names.size() > settings.max_columns_to_read)
+        throw Exception(ErrorCodes::TOO_MANY_COLUMNS,
+            "Limit for number of columns to read exceeded. Requested: {}, maximum: {}",
+            columns_names.size(),
+            settings.max_columns_to_read);
+}
+
+JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
+    const SelectQueryInfo & select_query_info,
+    const SelectQueryOptions & select_query_options,
+    PlannerContextPtr & planner_context,
+    bool is_single_table_expression,
+    bool wrap_read_columns_in_subquery)
+{
+    const auto & query_context = planner_context->getQueryContext();
+    const auto & settings = query_context->getSettingsRef();
+
+    auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);
+
     QueryProcessingStage::Enum from_stage = QueryProcessingStage::Enum::FetchColumns;
+
+    if (wrap_read_columns_in_subquery)
+    {
+        auto columns = table_expression_data.getColumns();
+        table_expression = buildSubqueryToReadColumnsFromTableExpression(columns, table_expression, query_context);
+    }
 
     auto * table_node = table_expression->as<TableNode>();
     auto * table_function_node = table_expression->as<TableFunctionNode>();
@@ -263,8 +333,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(const QueryTreeNodePtr & tabl
     auto * union_node = table_expression->as<UnionNode>();
 
     QueryPlan query_plan;
-
-    auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);
 
     if (table_node || table_function_node)
     {
@@ -362,32 +430,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(const QueryTreeNodePtr & tabl
 
         auto columns_names = table_expression_data.getColumnNames();
 
-        /** The current user must have the SELECT privilege.
-          * We do not check access rights for table functions because they have been already checked in ITableFunction::execute().
-          */
-        if (table_node)
-        {
-            auto column_names_with_aliases = columns_names;
-            const auto & alias_columns_names = table_expression_data.getAliasColumnsNames();
-            column_names_with_aliases.insert(column_names_with_aliases.end(), alias_columns_names.begin(), alias_columns_names.end());
-            checkAccessRights(*table_node, column_names_with_aliases, planner_context->getQueryContext());
-        }
-
-        /// Limitation on the number of columns to read
-        if (settings.max_columns_to_read && columns_names.size() > settings.max_columns_to_read)
-            throw Exception(ErrorCodes::TOO_MANY_COLUMNS,
-                "Limit for number of columns to read exceeded. Requested: {}, maximum: {}",
-                columns_names.size(),
-                settings.max_columns_to_read);
-
-        if (columns_names.empty())
-        {
-            auto additional_column_to_read = chooseSmallestColumnToReadFromStorage(storage, storage_snapshot);
-            const auto & column_identifier = planner_context->getGlobalPlannerContext()->createColumnIdentifier(additional_column_to_read, table_expression);
-            columns_names.push_back(additional_column_to_read.name);
-            table_expression_data.addColumn(additional_column_to_read, column_identifier);
-        }
-
         bool need_rewrite_query_with_final = storage->needRewriteQueryWithFinal(columns_names);
         if (need_rewrite_query_with_final)
         {
@@ -423,6 +465,17 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(const QueryTreeNodePtr & tabl
             {
                 from_stage = storage->getQueryProcessingStage(query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);
                 storage->read(query_plan, columns_names, storage_snapshot, table_expression_query_info, query_context, from_stage, max_block_size, max_streams);
+
+                if (query_context->hasQueryContext() && !select_query_options.is_internal)
+                {
+                    auto local_storage_id = storage->getStorageID();
+                    query_context->getQueryContext()->addQueryAccessInfo(
+                        backQuoteIfNeed(local_storage_id.getDatabaseName()),
+                        local_storage_id.getFullTableName(),
+                        columns_names,
+                        {},
+                        {});
+                }
             }
 
             if (query_plan.isInitialized())
@@ -464,16 +517,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(const QueryTreeNodePtr & tabl
         }
         else
         {
-            if (table_expression_data.getColumnNames().empty())
-            {
-                const auto & projection_columns = query_node ? query_node->getProjectionColumns() : union_node->computeProjectionColumns();
-                NamesAndTypesList projection_columns_list(projection_columns.begin(), projection_columns.end());
-                auto additional_column_to_read = ExpressionActions::getSmallestColumn(projection_columns_list);
-
-                const auto & column_identifier = planner_context->getGlobalPlannerContext()->createColumnIdentifier(additional_column_to_read, table_expression);
-                table_expression_data.addColumn(additional_column_to_read, column_identifier);
-            }
-
             auto subquery_options = select_query_options.subquery();
             Planner subquery_planner(table_expression, subquery_options, planner_context->getGlobalPlannerContext());
             /// Propagate storage limits to subquery
@@ -516,10 +559,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(const QueryTreeNodePtr & tabl
         planner.buildQueryPlanIfNeeded();
 
         auto expected_header = planner.getQueryPlan().getCurrentDataStream().header;
-        materializeBlockInplace(expected_header);
 
         if (!blocksHaveEqualStructure(query_plan.getCurrentDataStream().header, expected_header))
         {
+            materializeBlockInplace(expected_header);
+
             auto rename_actions_dag = ActionsDAG::makeConvertingActions(
                 query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
                 expected_header.getColumnsWithTypeAndName(),
@@ -1059,13 +1103,39 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     const ColumnIdentifierSet & outer_scope_columns,
     PlannerContextPtr & planner_context)
 {
-    const auto & query_node_typed = query_node->as<QueryNode &>();
-    auto table_expressions_stack = buildTableExpressionsStack(query_node_typed.getJoinTree());
+    auto table_expressions_stack = buildTableExpressionsStack(query_node->as<QueryNode &>().getJoinTree());
     size_t table_expressions_stack_size = table_expressions_stack.size();
     bool is_single_table_expression = table_expressions_stack_size == 1;
 
     std::vector<ColumnIdentifierSet> table_expressions_outer_scope_columns(table_expressions_stack_size);
     ColumnIdentifierSet current_outer_scope_columns = outer_scope_columns;
+
+    /// For each table, table function, query, union table expressions prepare before query plan build
+    for (size_t i = 0; i < table_expressions_stack_size; ++i)
+    {
+        const auto & table_expression = table_expressions_stack[i];
+        auto table_expression_type = table_expression->getNodeType();
+        if (table_expression_type == QueryTreeNodeType::JOIN ||
+            table_expression_type == QueryTreeNodeType::ARRAY_JOIN)
+            continue;
+
+        prepareBuildQueryPlanForTableExpression(table_expression, planner_context);
+    }
+
+    /** If left most table expression query plan is planned to stage that is not equal to fetch columns,
+      * then left most table expression is responsible for providing valid JOIN TREE part of final query plan.
+      *
+      * Examples: Distributed, LiveView, Merge storages.
+      */
+    auto left_table_expression = table_expressions_stack.front();
+    auto left_table_expression_query_plan = buildQueryPlanForTableExpression(left_table_expression,
+        select_query_info,
+        select_query_options,
+        planner_context,
+        is_single_table_expression,
+        false /*wrap_read_columns_in_subquery*/);
+    if (left_table_expression_query_plan.from_stage != QueryProcessingStage::FetchColumns)
+        return left_table_expression_query_plan;
 
     for (Int64 i = static_cast<Int64>(table_expressions_stack_size) - 1; i >= 0; --i)
     {
@@ -1120,19 +1190,23 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
         }
         else
         {
-            const auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);
-            if (table_expression_data.isRemote() && i != 0)
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                    "JOIN with multiple remote storages is unsupported");
+            if (table_expression == left_table_expression)
+            {
+                query_plans_stack.push_back(std::move(left_table_expression_query_plan)); /// NOLINT
+                left_table_expression = {};
+                continue;
+            }
 
+            /** If table expression is remote and it is not left most table expression, we wrap read columns from such
+              * table expression in subquery.
+              */
+            bool is_remote = planner_context->getTableExpressionDataOrThrow(table_expression).isRemote();
             query_plans_stack.push_back(buildQueryPlanForTableExpression(table_expression,
                 select_query_info,
                 select_query_options,
                 planner_context,
-                is_single_table_expression));
-
-            if (query_plans_stack.back().from_stage != QueryProcessingStage::FetchColumns)
-                break;
+                is_single_table_expression,
+                is_remote /*wrap_read_columns_in_subquery*/));
         }
     }
 
