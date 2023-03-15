@@ -576,7 +576,7 @@ def test_python_client(started_cluster):
         client.query("select name from tables")
 
     resp = exc_info.value.args[1]
-    assert fnmatch.fnmatch(resp, "*DB::Exception:*system.part_log*UNKNOWN_TABLE*"), resp
+    assert fnmatch.fnmatch(resp, "*DB::Exception:*tables*UNKNOWN_TABLE*"), resp
 
     cursor = client.cursor(pymysql.cursors.DictCursor)
     cursor.execute("select 1 as a, 'тест' as b")
@@ -609,7 +609,7 @@ def test_python_client(started_cluster):
         client.query("select name from tables")
 
     resp = exc_info.value.args[1]
-    assert fnmatch.fnmatch(resp, "*DB::Exception:*system.part_log*UNKNOWN_TABLE*"), resp
+    assert fnmatch.fnmatch(resp, "*DB::Exception:*tables*UNKNOWN_TABLE*"), resp
 
     cursor = client.cursor(pymysql.cursors.DictCursor)
     cursor.execute("select 1 as a, 'тест' as b")

@@ -34,7 +34,7 @@ public:
     using Base = InDepthQueryTreeVisitor<PrepareForExternalDatabaseVisitor>;
     using Base::Base;
 
-    void visitImpl(QueryTreeNodePtr & node)
+    static void visitImpl(QueryTreeNodePtr & node)
     {
         auto * constant_node = node->as<ConstantNode>();
         if (constant_node)
