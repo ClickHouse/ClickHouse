@@ -1356,12 +1356,10 @@ bool TCPHandler::receivePacket()
     }
 }
 
-
 void TCPHandler::receiveIgnoredPartUUIDs()
 {
     readVectorBinary(state.part_uuids_to_ignore.emplace(), *in);
 }
-
 
 void TCPHandler::receiveUnexpectedIgnoredPartUUIDs()
 {
@@ -1369,7 +1367,6 @@ void TCPHandler::receiveUnexpectedIgnoredPartUUIDs()
     readVectorBinary(skip_part_uuids, *in);
     throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet IgnoredPartUUIDs received from client");
 }
-
 
 String TCPHandler::receiveReadTaskResponseAssumeLocked()
 {
@@ -1397,7 +1394,6 @@ String TCPHandler::receiveReadTaskResponseAssumeLocked()
     return response;
 }
 
-
 std::optional<ParallelReadResponse> TCPHandler::receivePartitionMergeTreeReadTaskResponseAssumeLocked()
 {
     UInt64 packet_type = 0;
@@ -1419,7 +1415,6 @@ std::optional<ParallelReadResponse> TCPHandler::receivePartitionMergeTreeReadTas
     response.deserialize(*in);
     return response;
 }
-
 
 void TCPHandler::receiveClusterNameAndSalt()
 {
@@ -1676,7 +1671,6 @@ bool TCPHandler::receiveData(bool scalar)
     return true;
 }
 
-
 bool TCPHandler::receiveUnexpectedData(bool throw_exception)
 {
     String skip_external_table_name;
@@ -1725,7 +1719,6 @@ void TCPHandler::initBlockInput()
     }
 }
 
-
 void TCPHandler::initBlockOutput(const Block & block)
 {
     if (!state.block_out)
@@ -1771,7 +1764,6 @@ void TCPHandler::initLogsBlockOutput(const Block & block)
     }
 }
 
-
 void TCPHandler::initProfileEventsBlockOutput(const Block & block)
 {
     if (!state.profile_events_block_out)
@@ -1784,7 +1776,6 @@ void TCPHandler::initProfileEventsBlockOutput(const Block & block)
             !query_settings.low_cardinality_allow_in_native_format);
     }
 }
-
 
 void TCPHandler::decreaseCancellationStatus(const std::string& log_message)
 {
@@ -1818,7 +1809,6 @@ void TCPHandler::decreaseCancellationStatus(const std::string& log_message)
         }
     }
 }
-
 
 QueryState::CancellationStatus TCPHandler::getQueryCancellationStatus()
 {
@@ -1861,7 +1851,6 @@ QueryState::CancellationStatus TCPHandler::getQueryCancellationStatus()
 
     return state.cancellation_status;
 }
-
 
 void TCPHandler::sendData(const Block & block)
 {
@@ -1918,7 +1907,6 @@ void TCPHandler::sendData(const Block & block)
         throw;
     }
 }
-
 
 void TCPHandler::sendLogData(const Block & block)
 {
