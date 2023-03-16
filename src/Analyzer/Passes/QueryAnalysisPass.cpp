@@ -1,4 +1,3 @@
-#include "Analyzer/Identifier.h"
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 
 #include <Common/checkStackSize.h>
@@ -3666,8 +3665,15 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
     {
         auto result_type = expression_query_tree_node->getResultType();
 
-        while (const auto * array_type = typeid_cast<const DataTypeArray *>(result_type.get()))
-            result_type = array_type->getNestedType();
+        while (true)
+        {
+            if (const auto * array_type = typeid_cast<const DataTypeArray *>(result_type.get()))
+                result_type = array_type->getNestedType();
+            else if (const auto * map_type = typeid_cast<const DataTypeMap *>(result_type.get()))
+                result_type = map_type->getNestedType();
+            else
+                break;
+        }
 
         const auto * tuple_data_type = typeid_cast<const DataTypeTuple *>(result_type.get());
         if (!tuple_data_type)
@@ -3687,11 +3693,11 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
             if (!matcher_node_typed.isMatchingColumn(element_name))
                 continue;
 
-            auto tuple_element_function = std::make_shared<FunctionNode>("tupleElement");
-            tuple_element_function->getArguments().getNodes().push_back(expression_query_tree_node);
-            tuple_element_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(element_name));
+            auto get_subcolumn_function = std::make_shared<FunctionNode>("getSubcolumn");
+            get_subcolumn_function->getArguments().getNodes().push_back(expression_query_tree_node);
+            get_subcolumn_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(element_name));
 
-            QueryTreeNodePtr function_query_node = tuple_element_function;
+            QueryTreeNodePtr function_query_node = get_subcolumn_function;
             resolveFunction(function_query_node, scope);
 
             qualified_matcher_element_identifier.push_back(element_name);

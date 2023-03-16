@@ -23,6 +23,7 @@ WITH materialize([[1, 2], [], [3]]) AS arr SELECT arr.size0, arr.size1;
 
 WITH map('foo', 1, 'bar', 2) AS m SELECT m.keys, m.values;
 WITH materialize(map('foo', 1, 'bar', 2)) AS m SELECT m.keys, m.values;
+WITH map('foo', 1, 'bar', 2) AS m SELECT m.*;
 
 WITH map('foo', (1, 2), 'bar', (3, 4))::Map(String, Tuple(a UInt64, b UInt64)) AS m
 SELECT m.keys, m.values, m.values.a, m.values.b;
@@ -37,7 +38,6 @@ WITH materialize(map('foo', (1, 2), 'bar', (3, 4))::Map(String, Tuple(a UInt64, 
 SELECT m.keys, m.values, m.values.*;
 
 WITH [1, 2, 3] AS arr SELECT arr.*; -- { serverError UNSUPPORTED_METHOD }
-WITH map('foo', 1, 'bar', 2) AS m SELECT m.*; -- { serverError UNSUPPORTED_METHOD }
 
 SELECT getSubcolumn([1, 2, 3], 'size0');
 SELECT getSubcolumn([1, 2, 3], materialize('size0')); -- { serverError ILLEGAL_COLUMN }
