@@ -8,6 +8,8 @@ DROP ROW POLICY IF EXISTS 02131_filter_3 ON 02131_rptable;
 DROP ROW POLICY IF EXISTS 02131_filter_4 ON 02131_rptable;
 DROP ROW POLICY IF EXISTS 02131_filter_5 ON 02131_rptable;
 
+-- the test assumes users_without_row_policies_can_read_rows is true
+
 SELECT 'None';
 SELECT * FROM 02131_rptable;
 
@@ -52,3 +54,9 @@ SELECT 'None';
 SELECT * FROM 02131_rptable;
 
 DROP TABLE 02131_rptable;
+
+DROP ROW POLICY IF EXISTS 02131_filter_1 ON 02131_rptable;
+DROP ROW POLICY IF EXISTS 02131_filter_2 ON 02131_rptable;
+DROP ROW POLICY IF EXISTS 02131_filter_3 ON 02131_rptable;
+DROP ROW POLICY IF EXISTS 02131_filter_4 ON 02131_rptable;
+DROP ROW POLICY IF EXISTS 02131_filter_5 ON 02131_rptable;

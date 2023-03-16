@@ -1,0 +1,22 @@
+-- database level policies
+  -- SHOW CREATE POLICY db1_25341 ON db1_25341.*
+CREATE ROW POLICY db1_25341 ON db1_25341.`*` FOR SELECT USING 1 TO ALL
+  -- SHOW CREATE POLICY ON db1_25341.*
+CREATE ROW POLICY `25341_filter_11` ON db1_25341.`25341_rqtable` FOR SELECT USING x = 2 TO ALL
+CREATE ROW POLICY db1_25341 ON db1_25341.`*` FOR SELECT USING 1 TO ALL
+CREATE ROW POLICY tbl1_25341 ON db1_25341.table FOR SELECT USING 1 TO ALL
+  -- SHOW CREATE POLICY ON db1_25341.`*`
+CREATE ROW POLICY db1_25341 ON db1_25341.`*` FOR SELECT USING 1 TO ALL
+R1, R2: (x == 1) OR (x == 2)
+1
+2
+Check system.query_log
+SELECT \'-- database level policies\';	[]
+SELECT \'  -- SHOW CREATE POLICY db1_25341 ON db1_25341.*\';	[]
+SELECT \'  -- SHOW CREATE POLICY ON db1_25341.*\';	[]
+SELECT \'  -- SHOW CREATE POLICY ON db1_25341.`*`\';	[]
+SELECT \'R1, R2: (x == 1) OR (x == 2)\';	[]
+SELECT * FROM 25341_rqtable_default;	['`25341_filter_11_db` ON default.`*`','`25341_filter_11` ON default.`25341_rqtable_default`']
+SELECT \'Check system.query_log\';	[]
+  -- CREATE DATABSE-LEVEL POLICY ON IN CURRENT DATABASE
+CREATE ROW POLICY db2_25341 ON db1_25341.`*` TO u1_25341
