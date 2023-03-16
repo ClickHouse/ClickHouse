@@ -1,5 +1,7 @@
 #include <Client/PacketReceiver.h>
 
+#if defined(OS_LINUX)
+
 namespace DB
 {
 
@@ -68,3 +70,5 @@ void PacketReceiver::Task::run(AsyncCallback async_callback, ResumeCallback susp
 }
 
 }
+
+#endif
