@@ -676,6 +676,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     Processors stream_joinings;
     for (size_t i = 0; i < num_streams; ++i)
     {
+        // Each stream has it own finish_counter, so we let the count to be 1
         auto finish_counter = std::make_shared<JoiningTransform::FinishCounter>(1);
         auto joining
             = std::make_shared<JoiningTransform>(left_header, output_header, stream_joins[i], max_block_size, false, false, finish_counter);

@@ -9,6 +9,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 static ITransformingStep::Traits getTraits(const DataStream& /*input_stream_*/)
 {
     return ITransformingStep::Traits
@@ -44,11 +48,20 @@ void InnerShuffleStep::transformPipeline(QueryPipelineBuilder & pipeline, const 
     }
     OutputPortRawPtrs current_outports;
 
+    // Split one block into n blocks by hash function, n is equal to num_streams.
+    // One input port will have n output ports.
+    // The result blocks are mark by hash id (0 <= id < num_streams), and are delivered into
+    // different output ports.
     size_t num_streams = pipeline.getNumStreams();
     assert(num_streams > 1);
     auto add_scatter_transform = [&](OutputPortRawPtrs outports)
     {
         Processors scatters;
+        if (outports.size() != num_streams)
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "The output ports size is expected to be {}, but got {}", num_streams, outports.size());
+        }
         for (auto & outport : outports)
         {
             auto scatter = std::make_shared<InnerShuffleScatterTransform>(num_streams, header, keys);
@@ -59,6 +72,7 @@ void InnerShuffleStep::transformPipeline(QueryPipelineBuilder & pipeline, const 
     };
     pipeline.transform(add_scatter_transform);
 
+    // Gather the blocks from the upstream output porst marked with the same id.
     auto add_gather_transform = [&](OutputPortRawPtrs outports)
     {
         Processors gathers;
