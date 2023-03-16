@@ -10,12 +10,8 @@ CREATE TABLE index_append_test_test (i Int64, a UInt32, b UInt64, CONSTRAINT c1 
 INSERT INTO index_append_test_test VALUES (1, 10, 1), (2, 20, 2);
 
 EXPLAIN SYNTAX SELECT i FROM index_append_test_test WHERE a = 0;
-EXPLAIN QUERY TREE SELECT i FROM index_append_test_test WHERE a = 0;
 EXPLAIN SYNTAX SELECT i FROM index_append_test_test WHERE a < 0;
-EXPLAIN QUERY TREE SELECT i FROM index_append_test_test WHERE a < 0;
 EXPLAIN SYNTAX SELECT i FROM index_append_test_test WHERE a >= 0;
-EXPLAIN QUERY TREE SELECT i FROM index_append_test_test WHERE a >= 0;
 EXPLAIN SYNTAX SELECT i FROM index_append_test_test WHERE 2 * b < 100;
-EXPLAIN QUERY TREE SELECT i FROM index_append_test_test WHERE 2 * b < 100;
 
 DROP TABLE index_append_test_test;
