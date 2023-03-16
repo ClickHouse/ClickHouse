@@ -1,18 +1,26 @@
 import socket
 import time
-from helper.client import CommandRequest
+
+
+def get_keeper_socket(cluster, node, port=9181):
+    hosts = cluster.get_instance_ip(node.name)
+    client = socket.socket()
+    client.settimeout(10)
+    client.connect((hosts, port))
+    return client
 
 
 def send_4lw_cmd(cluster, node, cmd="ruok", port=9181):
-    return CommandRequest(
-        [
-            "cluster.server_bin_path",
-            "keeper-client",
-            f"{cluster.get_instance_ip(node.name)}:{port}",
-            "-q",
-            cmd,
-        ]
-    ).get_answer()
+    client = None
+    try:
+        client = get_keeper_socket(cluster, node, port)
+        client.send(cmd.encode())
+        data = client.recv(100_000)
+        data = data.decode()
+        return data
+    finally:
+        if client is not None:
+            client.close()
 
 
 NOT_SERVING_REQUESTS_ERROR_MSG = "This instance is not currently serving requests"
