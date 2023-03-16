@@ -269,6 +269,6 @@ select sipHash64Keyed(toUInt64(0), '1'); -- { serverError 48 }
 select sipHash128Keyed(toUInt64(0), '1'); -- { serverError 48 }
 
 select hex(sipHash64());
-select hex(sipHash128());
+SELECT hex(sipHash128()) = hex(reverse(unhex('1CE422FEE7BD8DE20000000000000000'))) or hex(sipHash128()) = '1CE422FEE7BD8DE20000000000000000';
 select hex(sipHash64Keyed());
-select hex(sipHash128Keyed());
+SELECT hex(sipHash128Keyed()) = hex(reverse(unhex('1CE422FEE7BD8DE20000000000000000'))) or hex(sipHash128Keyed()) = '1CE422FEE7BD8DE20000000000000000';
