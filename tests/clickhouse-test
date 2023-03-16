@@ -118,6 +118,7 @@ def clickhouse_execute_http(
         "http_connection_timeout": timeout,
         "http_receive_timeout": timeout,
         "http_send_timeout": timeout,
+        "output_format_parallel_formatting": 0,
     }
     if settings is not None:
         params.update(settings)
@@ -436,7 +437,7 @@ class FailureReason(enum.Enum):
     SERVER_DIED = "server died"
     EXIT_CODE = "return code: "
     STDERR = "having stderror: "
-    EXCEPTION = "having having exception in stdout: "
+    EXCEPTION = "having exception in stdout: "
     RESULT_DIFF = "result differs with reference: "
     TOO_LONG = "Test runs too long (> 60s). Make it faster."
     INTERNAL_QUERY_FAIL = "Internal query (CREATE/DROP DATABASE) failed:"
@@ -522,7 +523,11 @@ class SettingsRandomizer:
         "merge_tree_coarse_index_granularity": lambda: random.randint(2, 32),
         "optimize_distinct_in_order": lambda: random.randint(0, 1),
         "optimize_sorting_by_input_stream_properties": lambda: random.randint(0, 1),
-        "enable_memory_bound_merging_of_aggregation_results": lambda: random.randint(0, 1),
+        "http_response_buffer_size": lambda: random.randint(0, 10 * 1048576),
+        "http_wait_end_of_query": lambda: random.random() > 0.5,
+        "enable_memory_bound_merging_of_aggregation_results": lambda: random.randint(
+            0, 1
+        ),
     }
 
     @staticmethod
@@ -535,10 +540,9 @@ class SettingsRandomizer:
 
 class MergeTreeSettingsRandomizer:
     settings = {
-        # Temporary disable due to large number of failures. TODO: fix.
-        # "ratio_of_defaults_for_sparse_serialization": threshold_generator(
-        #     0.1, 0.6, 0.0, 1.0
-        # ),
+        "ratio_of_defaults_for_sparse_serialization": threshold_generator(
+            0.3, 0.5, 0.0, 1.0
+        ),
         "prefer_fetch_merged_part_size_threshold": threshold_generator(
             0.2, 0.5, 1, 10 * 1024 * 1024 * 1024
         ),
@@ -1204,7 +1208,7 @@ class TestCase:
             )
             result.check_if_need_retry(args, stdout, stderr, self.runs_count)
             # to avoid breaking CSV parser
-            result.description = result.description.replace('\0', '')
+            result.description = result.description.replace("\0", "")
 
             if result.status == TestStatus.FAIL:
                 result.description = self.add_info_about_settings(result.description)
@@ -1660,7 +1664,12 @@ def check_server_started(args):
             print("\nConnection timeout, will not retry")
             break
         except Exception as e:
-            print("\nUexpected exception, will not retry: ", type(e).__name__, ": ", str(e))
+            print(
+                "\nUexpected exception, will not retry: ",
+                type(e).__name__,
+                ": ",
+                str(e),
+            )
             break
 
     print("\nAll connection tries failed")
@@ -1937,7 +1946,10 @@ def reportCoverage(args):
         )
     )
 
+
 def reportLogStats(args):
+    clickhouse_execute(args, "SYSTEM FLUSH LOGS")
+
     query = """
         WITH
             120 AS mins,
@@ -2006,7 +2018,13 @@ def reportLogStats(args):
               'Cyclic aliases', 'Detaching {}', 'Executing {}', 'Fire events: {}', 'Found part {}', 'Loaded queue',
               'No sharding key', 'No tables', 'Query: {}', 'Removed', 'Removed part {}', 'Removing parts.',
               'Request URI: {}', 'Sending part {}', 'Sent handshake', 'Starting {}', 'Will mimic {}', 'Writing to {}',
-              'dropIfEmpty', 'loadAll {}', '{} ({}:{})', '{} -> {}', '{} {}', '{}: {}'
+              'dropIfEmpty', 'loadAll {}', '{} ({}:{})', '{} -> {}', '{} {}', '{}: {}', 'Query was cancelled',
+              'Table {} already exists', '{}%', 'Cancelled merging parts', 'All replicas are lost',
+              'Cancelled mutating parts', 'Read object: {}', 'New segment: {}', 'Unknown geometry type {}',
+              'Table {} is not replicated', '{} {}.{} already exists', 'Attempt to read after eof',
+              'Replica {} already exists', 'Convert overflow', 'key must be a tuple', 'Division by zero',
+              'No part {} in committed state', 'Files set to {}', 'Bytes set to {}', 'Sharding key {} is not used',
+              'Cannot parse datetime', 'Bad get: has {}, requested {}', 'There is no {} in {}', 'Numeric overflow'
         ) AS known_short_messages
         SELECT count() AS c, message_format_string, substr(any(message), 1, 120)
         FROM system.text_log
@@ -2230,7 +2248,8 @@ def parse_args():
     parser.add_argument(
         "-b",
         "--binary",
-        default=find_binary("clickhouse"),
+        default="clickhouse",
+        type=find_binary,
         help="Path to clickhouse binary or name of binary in PATH",
     )
     parser.add_argument(
