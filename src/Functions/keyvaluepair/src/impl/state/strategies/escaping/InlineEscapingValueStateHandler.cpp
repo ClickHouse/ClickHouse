@@ -57,7 +57,7 @@ NextState InlineEscapingValueStateHandler::read(std::string_view file, size_t po
      * It might help updating current pos?
      * */
 
-    while (auto character_position_opt = finder.find_first(file, pos, read_needles))
+    while (auto character_position_opt = finder.findFirst(file, pos, read_needles))
     {
         auto character_position = *character_position_opt;
         auto character = file[character_position];
@@ -119,7 +119,7 @@ NextState InlineEscapingValueStateHandler::readEnclosed(std::string_view file, s
 
     value.clear();
 
-    while (auto character_position_opt = finder.find_first(file, pos, read_quoted_needles))
+    while (auto character_position_opt = finder.findFirst(file, pos, read_quoted_needles))
     {
         auto character_position = *character_position_opt;
         auto character = file[character_position];

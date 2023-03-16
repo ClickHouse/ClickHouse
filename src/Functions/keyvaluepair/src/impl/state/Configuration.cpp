@@ -43,6 +43,18 @@ void ConfigurationFactory::validate(char key_value_delimiter, char quoting_chara
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid arguments, key_value_delimiter and quoting_character can not be the same");
     }
 
+    if (pair_delimiters.size() > MAX_NUMBER_OF_PAIR_DELIMITERS)
+    {
+        // SSE optimizations require needles to contain up to 16 characters. Needles can be a concatenation of multiple parameters, including
+        // quoting_character, key_value_delimiter and pair delimiters. Limiting to 8 to be on the safe side.
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid arguments, pair delimiters can contain at most {} characters", MAX_NUMBER_OF_PAIR_DELIMITERS);
+    }
+
+    if (pair_delimiters.empty())
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid arguments, pair delimiters list is empty");
+    }
+
     bool is_key_value_delimiter_in_pair_delimiters
         = std::find(pair_delimiters.begin(), pair_delimiters.end(), key_value_delimiter) != pair_delimiters.end();
 
