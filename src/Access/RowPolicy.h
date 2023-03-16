@@ -14,6 +14,8 @@ namespace DB
   */
 struct RowPolicy : public IAccessEntity
 {
+    static constexpr char ANY_TABLE_MARK[] = "*";
+
     void setShortName(const String & short_name);
     void setDatabase(const String & database);
     void setTableName(const String & table_name);
@@ -34,7 +36,7 @@ struct RowPolicy : public IAccessEntity
     /// in addition to all the restrictive policies.
     void setPermissive(bool permissive_ = true) { setRestrictive(!permissive_); }
     bool isPermissive() const { return !isRestrictive(); }
-    bool isDatabase() const { return full_name.table_name == "*"; }
+    bool isDatabase() const { return full_name.table_name == ANY_TABLE_MARK; }
 
     /// Sets that the policy is restrictive.
     /// A row is only accessible if at least one of the permissive policies passes,

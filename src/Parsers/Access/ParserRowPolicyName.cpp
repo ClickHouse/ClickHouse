@@ -7,8 +7,6 @@
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <base/insertAtEnd.h>
 
-#include <Common/logger_useful.h>
-
 
 namespace DB
 {
@@ -28,19 +26,18 @@ namespace
         return IParserBase::wrapParseImpl(pos, [&]
         {
             String res_database, res_table_name;
-            // if (!parseDatabaseAndTableName(pos, expected, res_database, res_table_name))
-            bool any_database = false;
-            bool any_table = true;
+            bool is_any_database = false;
+            bool is_any_table = false;
 
-            if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, res_database, any_database, res_table_name, any_table))
+            if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, res_database, is_any_database, res_table_name, is_any_table)
+                || is_any_database)
             {
-                // poco_assert("parseDatabaseAndTableName failed" == nullptr);
-                LOG_TRACE((&Poco::Logger::get("ParserRowPolicyName")), "parseDatabaseAndTableName failed");
                 return false;
             }
-            if (any_table)
-                res_table_name = "*";
-
+            else if (is_any_table)
+            {
+                res_table_name = "*"; // RowPolicy::ANY_TABLE_MARK
+            }
 
             /// If table is specified without DB it cannot be followed by "ON"
             /// (but can be followed by "ON CLUSTER").
@@ -64,10 +61,8 @@ namespace
     }
 
 
-
     bool parseOnDBAndTableName(IParser::Pos & pos, Expected & expected, String & database, String & table_name)
     {
-        // poco_assert("parseOnDBAndTableNames" == nullptr);
         return IParserBase::wrapParseImpl(pos, [&]
         {
             return ParserKeyword{"ON"}.ignore(pos, expected) && parseDBAndTableName(pos, expected, database, table_name);
@@ -77,9 +72,6 @@ namespace
 
     bool parseOnDBAndTableNames(IParser::Pos & pos, Expected & expected, std::vector<std::pair<String, String>> & database_and_table_names)
     {
-        // poco_assert("parseOnDBAndTableNames" == nullptr);
-
-
         return IParserBase::wrapParseImpl(pos, [&]
         {
             if (!ParserKeyword{"ON"}.ignore(pos, expected))
@@ -164,7 +156,6 @@ namespace
 
 bool ParserRowPolicyName::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    // poco_assert("ParserRowPolicyName::parseImpl" == nullptr);
     std::vector<RowPolicyName> full_names;
     String cluster;
     if (!parseRowPolicyNamesAroundON(pos, expected, false, false, allow_on_cluster, full_names, cluster))
@@ -181,7 +172,6 @@ bool ParserRowPolicyName::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
 
 bool ParserRowPolicyNames::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    // poco_assert("ParserRowPolicyName::parseImpl" == nullptr);
     std::vector<RowPolicyName> full_names;
     size_t num_added_names_last_time = 0;
     String cluster;

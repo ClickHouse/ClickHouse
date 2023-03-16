@@ -1,0 +1,53 @@
+-- Tags: no-parallel
+
+DROP DATABASE IF EXISTS db1_25341;
+DROP USER IF EXISTS u1_25341;
+CREATE USER u1_25341;
+
+CREATE DATABASE db1_25341;
+
+CREATE TABLE db1_25341.25341_rqtable (x UInt8) ENGINE = MergeTree ORDER BY x;
+INSERT INTO db1_25341.25341_rqtable VALUES (1), (2), (3), (4);
+
+
+SELECT '-- database level policies';
+CREATE ROW POLICY db1_25341 ON db1_25341.* USING 1 AS PERMISSIVE TO ALL;
+CREATE ROW POLICY tbl1_25341 ON db1_25341.table USING 1 AS PERMISSIVE TO ALL;
+SELECT '  -- SHOW CREATE POLICY db1_25341 ON db1_25341.*';
+SHOW CREATE POLICY db1_25341 ON db1_25341.*;
+SELECT '  -- SHOW CREATE POLICY ON db1_25341.*';
+SHOW CREATE POLICY ON db1_25341.*;
+SELECT '  -- SHOW CREATE POLICY ON db1_25341.`*`';
+SHOW CREATE POLICY ON db1_25341.`*`;
+DROP POLICY db1_25341 ON db1_25341.*;
+DROP POLICY tbl1_25341 ON db1_25341.table;
+
+CREATE ROW POLICY any_25341 ON *.some_table USING 1 AS PERMISSIVE TO ALL; -- { clientError 62 }
+
+CREATE TABLE 25341_rqtable_default (x UInt8) ENGINE = MergeTree ORDER BY x;
+
+CREATE ROW POLICY 25341_filter_11_db ON * USING x=1 AS permissive TO ALL;
+CREATE ROW POLICY 25341_filter_11 ON 25341_rqtable_default USING x=2 AS permissive TO ALL;
+
+INSERT INTO 25341_rqtable_default VALUES (1), (2), (3), (4);
+
+SELECT 'R1, R2: (x == 1) OR (x == 2)';
+SELECT * FROM 25341_rqtable_default;
+
+DROP TABLE 25341_rqtable_default;
+
+SELECT 'Check system.query_log';
+SYSTEM FLUSH LOGS;
+SELECT query, used_row_policies FROM system.query_log WHERE current_database == currentDatabase() AND type == 'QueryStart' AND query_kind == 'Select' ORDER BY event_time_microseconds;
+
+DROP ROW POLICY 25341_filter_11_db ON *;
+DROP ROW POLICY 25341_filter_11 ON 25341_rqtable_default;
+
+USE db1_25341;
+SELECT '  -- CREATE DATABSE-LEVEL POLICY ON IN CURRENT DATABASE';
+CREATE ROW POLICY db2_25341 ON * TO u1_25341;
+SHOW CREATE POLICY db2_25341 ON *;
+
+DROP ROW POLICY db2_25341 ON *;
+
+DROP USER u1_25341;

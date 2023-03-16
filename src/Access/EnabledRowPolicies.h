@@ -72,14 +72,6 @@ private:
         auto toTuple() const { return std::tie(database, table_name, filter_type); }
         friend bool operator==(const MixedFiltersKey & left, const MixedFiltersKey & right) { return left.toTuple() == right.toTuple(); }
         friend bool operator!=(const MixedFiltersKey & left, const MixedFiltersKey & right) { return left.toTuple() != right.toTuple(); }
-        // friend bool operator==(const MixedFiltersKey & left, const MixedFiltersKey & right)
-        // {
-        //     return left.database == right.database && left.filter_type == right.filter_type;
-        // }
-        // friend bool operator!=(const MixedFiltersKey & left, const MixedFiltersKey & right)
-        // {
-        //     return left.database != right.database || left.filter_type != right.filter_type;
-        // }
     };
 
     struct Hash
