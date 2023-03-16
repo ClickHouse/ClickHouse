@@ -80,9 +80,7 @@
 #include <Parsers/QueryParameterVisitor.h>
 
 #include <Poco/Logger.h>
-#include <Common/logger_useful.h>
 #include <Core/Joins.h>
-#include <Interpreters/ConcurrentHashJoin.h>
 
 namespace DB
 {

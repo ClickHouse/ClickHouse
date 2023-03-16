@@ -63,7 +63,7 @@ public:
     virtual void checkTypesOfKeys(const Block & block) const = 0;
 
     /// Join the block with data from left hand of JOIN to the right hand data (that was previously built by calls to addJoinedBlock).
-    /// Could be called from different threads in parallel.
+    /// Could be called from different threads in parallel.p
     virtual void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed) = 0;
 
     /** Set/Get totals for right table
@@ -87,7 +87,7 @@ public:
     // That can run FillingRightJoinSideTransform parallelly
     virtual bool supportParallelJoin() const { return false; }
     // Shuffle data into partitions, eache processor will handle only one partition.
-    // In ConcurrentHashJoin, the lock cmpetition is fierce which proctects the inner HashJoins.
+    // In ConcurrentHashJoin, the lock cmpetition is fierce which protects the inner HashJoins.
     // Make a inner shuffle will remove the lock.
     virtual bool supportShuffle() const { return false; }
     // If supportShuffle = true, this method should be implemented.
