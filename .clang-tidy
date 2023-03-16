@@ -163,7 +163,7 @@ Checks: '*,
 WarningsAsErrors: '*'
 
 CheckOptions:
-  readability-identifier-naming.ClassCase: 'CamelCase'
+  readability-identifier-naming.ClassCase: CamelCase
   readability-identifier-naming.EnumCase: CamelCase
   readability-identifier-naming.LocalVariableCase: lower_case
   readability-identifier-naming.StaticConstantCase: aNy_CasE
