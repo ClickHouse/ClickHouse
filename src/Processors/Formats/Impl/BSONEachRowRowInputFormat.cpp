@@ -1009,7 +1009,7 @@ fileSegmentationEngineBSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t
 
         size_t old_size = memory.size();
         memory.resize(old_size + document_size);
-        memcpy(memory.data() + old_size, reinterpret_cast<char *>(&document_size), sizeof(document_size));
+        unalignedStore<BSONSizeT>(memory.data() + old_size, document_size);
         in.readStrict(memory.data() + old_size + sizeof(document_size), document_size - sizeof(document_size));
         ++number_of_rows;
     }
