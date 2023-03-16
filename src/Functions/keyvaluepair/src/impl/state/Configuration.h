@@ -26,12 +26,12 @@ public:
 struct ConfigurationFactory
 {
 public:
-    static Configuration create(char key_value_delimiter, char quoting_character, std::vector<char> pair_delimiters);
+    static Configuration createWithoutEscaping(char key_value_delimiter, char quoting_character, std::vector<char> pair_delimiters);
+
+    static Configuration createWithEscaping(char key_value_delimiter, char quoting_character, std::vector<char> pair_delimiters);
 
 private:
-    static void validateKeyValueDelimiter(char key_value_delimiter);
-    static void validateQuotingCharacter(char quoting_character);
-    static void validatePairDelimiters(const std::vector<char> & pair_delimiters);
+    static void validate(char key_value_delimiter, char quoting_character, std::vector<char> pair_delimiters);
 };
 
 }

@@ -45,7 +45,7 @@ std::shared_ptr<KeyValuePairExtractor> KeyValuePairExtractorBuilder::build()
 
 std::shared_ptr<KeyValuePairExtractor> KeyValuePairExtractorBuilder::buildWithoutEscaping()
 {
-    auto configuration = ConfigurationFactory::create(key_value_pair_delimiter, quoting_character, item_delimiters);
+    auto configuration = ConfigurationFactory::createWithoutEscaping(key_value_pair_delimiter, quoting_character, item_delimiters);
 
     CKeyStateHandler auto key_state_handler = NoEscapingKeyStateHandler(
         configuration
@@ -60,7 +60,7 @@ std::shared_ptr<KeyValuePairExtractor> KeyValuePairExtractorBuilder::buildWithou
 
 std::shared_ptr<KeyValuePairExtractor> KeyValuePairExtractorBuilder::buildWithEscaping()
 {
-    auto configuration = ConfigurationFactory::create(key_value_pair_delimiter, quoting_character, item_delimiters);
+    auto configuration = ConfigurationFactory::createWithEscaping(key_value_pair_delimiter, quoting_character, item_delimiters);
 
     CKeyStateHandler auto key_state_handler = InlineEscapingKeyStateHandler(configuration);
 
