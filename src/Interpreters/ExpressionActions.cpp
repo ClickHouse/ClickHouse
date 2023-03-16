@@ -848,6 +848,23 @@ std::string ExpressionActions::dumpActions() const
     return ss.str();
 }
 
+void ExpressionActions::describeActions(WriteBuffer & out, std::string_view prefix) const
+{
+    bool first = true;
+
+    for (const auto & action : actions)
+    {
+        out << prefix << (first ? "Actions: " : "         ");
+        out << action.toString() << '\n';
+        first = false;
+    }
+
+    out << prefix << "Positions:";
+    for (const auto & pos : result_positions)
+        out << ' ' << pos;
+    out << '\n';
+}
+
 JSONBuilder::ItemPtr ExpressionActions::toTree() const
 {
     auto inputs_array = std::make_unique<JSONBuilder::JSONArray>();
