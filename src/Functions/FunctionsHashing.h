@@ -30,7 +30,7 @@
 #    include <openssl/sha.h>
 #endif
 
-#include <Poco/ByteOrder.h>
+#include <bit>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeString.h>
@@ -184,15 +184,15 @@ struct HalfMD5Impl
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
         return buf.uint64_data;        /// No need to flip bytes on big endian machines
 #else
-        return Poco::ByteOrder::flipBytes(static_cast<Poco::UInt64>(buf.uint64_data));        /// Compatibility with existing code. Cast need for old poco AND macos where UInt64 != uint64_t
+        return std::byteswap(buf.uint64_data);    /// Compatibility with existing code. Cast need for old poco AND macos where UInt64 != uint64_t
 #endif
     }
 
     static UInt64 combineHashes(UInt64 h1, UInt64 h2)
     {
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        h1 = Poco::ByteOrder::flipBytes(static_cast<Poco::UInt64>(h1));
-        h2 = Poco::ByteOrder::flipBytes(static_cast<Poco::UInt64>(h2));
+        h1 = std::byteswap(h1);
+        h2 = std::byteswap(h2);
 #endif
         UInt64 hashes[] = {h1, h2};
         return apply(reinterpret_cast<const char *>(hashes), 16);
@@ -334,8 +334,8 @@ struct SipHash64KeyedImpl
     static UInt64 combineHashesKeyed(const Key & key, UInt64 h1, UInt64 h2)
     {
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        h1 = Poco::ByteOrder::flipBytes(static_cast<Poco::UInt64>(h1));
-        h2 = Poco::ByteOrder::flipBytes(static_cast<Poco::UInt64>(h2));
+        h1 = std::byteswap(h1);
+        h2 = std::byteswap(h2);
 #endif
         UInt64 hashes[] = {h1, h2};
         return applyKeyed(key, reinterpret_cast<const char *>(hashes), 2 * sizeof(UInt64));
