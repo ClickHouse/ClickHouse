@@ -1,3 +1,5 @@
+-- Tags: no-random-merge-tree-settings
+
 set max_threads = 16;
 
 create table t(a UInt32) engine=MergeTree order by tuple() partition by a % 16;
