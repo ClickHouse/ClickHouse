@@ -221,6 +221,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             if (!zero_copy_lock)
             {
                 LOG_DEBUG(log, "Merge of part {} started by some other replica, will wait it and fetch merged part", entry.new_part_name);
+                storage.addZeroCopyLock(entry.new_part_name, disk);
                 /// Don't check for missing part -- it's missing because other replica still not
                 /// finished merge.
                 return PrepareResult{

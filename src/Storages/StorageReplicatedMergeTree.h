@@ -482,6 +482,16 @@ private:
     std::mutex last_broken_disks_mutex;
     std::set<String> last_broken_disks;
 
+    std::mutex existing_zero_copy_locks_mutex;
+
+    struct ZeroCopyLockDescription
+    {
+        std::string replica;
+        std::shared_ptr<std::atomic_flag> exists;
+    };
+
+    std::unordered_map<String, ZeroCopyLockDescription> existing_zero_copy_locks;
+
     static std::optional<QueryPipeline> distributedWriteFromClusterStorage(const std::shared_ptr<IStorageCluster> & src_storage_cluster, const ASTInsertQuery & query, ContextPtr context);
 
     template <class Func>
@@ -862,6 +872,7 @@ private:
     void createTableSharedID() const;
 
     bool checkZeroCopyLockExists(const String & part_name, const DiskPtr & disk, String & lock_replica);
+    void addZeroCopyLock(const String & part_name, const DiskPtr & disk);
 
     std::optional<String> getZeroCopyPartPath(const String & part_name, const DiskPtr & disk);
 
