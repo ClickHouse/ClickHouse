@@ -3,135 +3,21 @@ SELECT
     (b AS b) + 3 AS `plus(b, 3)`
 FROM column_swap_test_test
 WHERE b = 1
-QUERY id: 0
-  PROJECTION COLUMNS
-    plus(cityHash64(a), 10) UInt64
-    plus(b, 3) UInt64
-  PROJECTION
-    LIST id: 1, nodes: 2
-      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: UInt64
-        ARGUMENTS
-          LIST id: 3, nodes: 2
-            FUNCTION id: 4, function_name: cityHash64, function_type: ordinary, result_type: UInt64
-              ARGUMENTS
-                LIST id: 5, nodes: 1
-                  COLUMN id: 6, column_name: a, result_type: String, source_id: 7
-            CONSTANT id: 8, constant_value: UInt64_10, constant_value_type: UInt8
-      FUNCTION id: 9, function_name: plus, function_type: ordinary, result_type: UInt64
-        ARGUMENTS
-          LIST id: 10, nodes: 2
-            COLUMN id: 11, column_name: b, result_type: UInt64, source_id: 7
-            CONSTANT id: 12, constant_value: UInt64_3, constant_value_type: UInt8
-  JOIN TREE
-    TABLE id: 7, table_name: default.column_swap_test_test
-  WHERE
-    FUNCTION id: 13, function_name: equals, function_type: ordinary, result_type: UInt8
-      ARGUMENTS
-        LIST id: 14, nodes: 2
-          FUNCTION id: 15, function_name: cityHash64, function_type: ordinary, result_type: UInt64
-            ARGUMENTS
-              LIST id: 16, nodes: 1
-                COLUMN id: 6, column_name: a, result_type: String, source_id: 7
-          CONSTANT id: 17, constant_value: UInt64_1, constant_value_type: UInt8
 SELECT
     (b AS `cityHash64(a)`) + 10 AS `plus(cityHash64(a), 10)`,
     (b AS b) + 3 AS `plus(b, 3)`
 FROM column_swap_test_test
 WHERE b = 0
-QUERY id: 0
-  PROJECTION COLUMNS
-    plus(cityHash64(a), 10) UInt64
-    plus(b, 3) UInt64
-  PROJECTION
-    LIST id: 1, nodes: 2
-      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: UInt64
-        ARGUMENTS
-          LIST id: 3, nodes: 2
-            FUNCTION id: 4, function_name: cityHash64, function_type: ordinary, result_type: UInt64
-              ARGUMENTS
-                LIST id: 5, nodes: 1
-                  COLUMN id: 6, column_name: a, result_type: String, source_id: 7
-            CONSTANT id: 8, constant_value: UInt64_10, constant_value_type: UInt8
-      FUNCTION id: 9, function_name: plus, function_type: ordinary, result_type: UInt64
-        ARGUMENTS
-          LIST id: 10, nodes: 2
-            COLUMN id: 11, column_name: b, result_type: UInt64, source_id: 7
-            CONSTANT id: 12, constant_value: UInt64_3, constant_value_type: UInt8
-  JOIN TREE
-    TABLE id: 7, table_name: default.column_swap_test_test
-  WHERE
-    FUNCTION id: 13, function_name: equals, function_type: ordinary, result_type: UInt8
-      ARGUMENTS
-        LIST id: 14, nodes: 2
-          FUNCTION id: 15, function_name: cityHash64, function_type: ordinary, result_type: UInt64
-            ARGUMENTS
-              LIST id: 16, nodes: 1
-                COLUMN id: 6, column_name: a, result_type: String, source_id: 7
-          CONSTANT id: 17, constant_value: UInt64_0, constant_value_type: UInt8
 SELECT
     (b AS `cityHash64(a)`) + 10 AS `plus(cityHash64(a), 10)`,
     (b AS b) + 3 AS `plus(b, 3)`
 FROM column_swap_test_test
 WHERE b = 0
-QUERY id: 0
-  PROJECTION COLUMNS
-    plus(cityHash64(a), 10) UInt64
-    plus(b, 3) UInt64
-  PROJECTION
-    LIST id: 1, nodes: 2
-      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: UInt64
-        ARGUMENTS
-          LIST id: 3, nodes: 2
-            FUNCTION id: 4, function_name: cityHash64, function_type: ordinary, result_type: UInt64
-              ARGUMENTS
-                LIST id: 5, nodes: 1
-                  COLUMN id: 6, column_name: a, result_type: String, source_id: 7
-            CONSTANT id: 8, constant_value: UInt64_10, constant_value_type: UInt8
-      FUNCTION id: 9, function_name: plus, function_type: ordinary, result_type: UInt64
-        ARGUMENTS
-          LIST id: 10, nodes: 2
-            COLUMN id: 11, column_name: b, result_type: UInt64, source_id: 7
-            CONSTANT id: 12, constant_value: UInt64_3, constant_value_type: UInt8
-  JOIN TREE
-    TABLE id: 7, table_name: default.column_swap_test_test
-  WHERE
-    FUNCTION id: 13, function_name: equals, function_type: ordinary, result_type: UInt8
-      ARGUMENTS
-        LIST id: 14, nodes: 2
-          COLUMN id: 11, column_name: b, result_type: UInt64, source_id: 7
-          CONSTANT id: 15, constant_value: UInt64_0, constant_value_type: UInt8
 SELECT
     (b AS `cityHash64(a)`) + 10 AS `plus(cityHash64(a), 10)`,
     (b AS b) + 3 AS `plus(b, 3)`
 FROM column_swap_test_test
 WHERE b = 1
-QUERY id: 0
-  PROJECTION COLUMNS
-    plus(cityHash64(a), 10) UInt64
-    plus(b, 3) UInt64
-  PROJECTION
-    LIST id: 1, nodes: 2
-      FUNCTION id: 2, function_name: plus, function_type: ordinary, result_type: UInt64
-        ARGUMENTS
-          LIST id: 3, nodes: 2
-            FUNCTION id: 4, function_name: cityHash64, function_type: ordinary, result_type: UInt64
-              ARGUMENTS
-                LIST id: 5, nodes: 1
-                  COLUMN id: 6, column_name: a, result_type: String, source_id: 7
-            CONSTANT id: 8, constant_value: UInt64_10, constant_value_type: UInt8
-      FUNCTION id: 9, function_name: plus, function_type: ordinary, result_type: UInt64
-        ARGUMENTS
-          LIST id: 10, nodes: 2
-            COLUMN id: 11, column_name: b, result_type: UInt64, source_id: 7
-            CONSTANT id: 12, constant_value: UInt64_3, constant_value_type: UInt8
-  JOIN TREE
-    TABLE id: 7, table_name: default.column_swap_test_test
-  WHERE
-    FUNCTION id: 13, function_name: equals, function_type: ordinary, result_type: UInt8
-      ARGUMENTS
-        LIST id: 14, nodes: 2
-          COLUMN id: 11, column_name: b, result_type: UInt64, source_id: 7
-          CONSTANT id: 15, constant_value: UInt64_1, constant_value_type: UInt8
 SELECT (b AS `cityHash64(a)`) + 10 AS `plus(cityHash64(a), 10)`
 FROM column_swap_test_test
 WHERE b = 0
