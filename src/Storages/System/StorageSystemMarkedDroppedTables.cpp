@@ -48,17 +48,17 @@ void StorageSystemMarkedDroppedTables::fillData(MutableColumns & res_columns, Co
         column_database.insertData(table_mark_dropped.table_id.getDatabaseName().data(), table_mark_dropped.table_id.getDatabaseName().size());
         column_table.insertData(table_mark_dropped.table_id.getTableName().data(), table_mark_dropped.table_id.getTableName().size());
         column_uuid.push_back(table_mark_dropped.table_id.uuid.toUnderType());
-        column_engine.insertData(table_mark_dropped.table->getName().data(), table_mark_dropped.table->getName().size());
+        if (table_mark_dropped.table)
+            column_engine.insertData(table_mark_dropped.table->getName().data(), table_mark_dropped.table->getName().size());
+        else
+            column_engine.insertData({}, 0);
         column_metadata_dropped_path.insertData(table_mark_dropped.metadata_path.data(), table_mark_dropped.metadata_path.size());
         column_table_dropped_time.insertValue(static_cast<UInt32>(table_mark_dropped.drop_time));
     };
 
     UInt32 idx = 0;
     for (const auto & table_mark_dropped : tables_mark_dropped)
-    {
-        if (table_mark_dropped.table)
-            add_row(idx++, table_mark_dropped);
-    }
+        add_row(idx++, table_mark_dropped);
 }
 
 }
