@@ -13,12 +13,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int BAD_ARGUMENTS;
-}
-
 ExtractKeyValuePairs::ExtractKeyValuePairs()
     : return_type(std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()))
 {
@@ -59,7 +53,7 @@ static ColumnPtr extract(ColumnPtr data_column, std::shared_ptr<KeyValuePairExtr
     return ColumnMap::create(keys_ptr, std::move(values), std::move(offsets));
 }
 
-auto ExtractKeyValuePairs::getExtractor(const ParsedArguments & parsed_arguments)
+auto ExtractKeyValuePairs::getExtractor(const ArgumentExtractor::ParsedArguments & parsed_arguments)
 {
     auto builder = KeyValuePairExtractorBuilder();
 
@@ -75,7 +69,7 @@ auto ExtractKeyValuePairs::getExtractor(const ParsedArguments & parsed_arguments
 
     if (!parsed_arguments.pair_delimiters.empty())
     {
-        builder.withItemDelimiter({parsed_arguments.pair_delimiters.begin(), parsed_arguments.pair_delimiters.end()});
+        builder.withItemDelimiters(parsed_arguments.pair_delimiters);
     }
 
     if (parsed_arguments.quoting_character)
@@ -88,7 +82,7 @@ auto ExtractKeyValuePairs::getExtractor(const ParsedArguments & parsed_arguments
 
 ColumnPtr ExtractKeyValuePairs::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const
 {
-    auto parsed_arguments = parseArguments(arguments);
+    auto parsed_arguments = ArgumentExtractor::extract(arguments);
 
     auto extractor_without_escaping = getExtractor(parsed_arguments);
 
@@ -113,86 +107,6 @@ std::size_t ExtractKeyValuePairs::getNumberOfArguments() const
 DataTypePtr ExtractKeyValuePairs::getReturnTypeImpl(const DataTypes &) const
 {
     return return_type;
-}
-
-ExtractKeyValuePairs::ParsedArguments ExtractKeyValuePairs::parseArguments(const ColumnsWithTypeAndName & arguments)
-{
-    /*
-     * TODO validate arguments:
-     *  1. Check if argument is one of the acceptable characters for that argument
-     *  2. Check if it's not empty
-     *  3. Cross check arguments? Not sure it is needed anymore
-     *  4. Use uint8_t column instead of string column for escaping lol
-     *  5. maybe a builder will clean things up here
-     * */
-
-    if (arguments.empty())
-    {
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument", name);
-    }
-
-    auto data_column = arguments[0].column;
-
-    if (arguments.size() == 1u)
-    {
-        return ParsedArguments{data_column};
-    }
-
-    auto key_value_pair_delimiter = extractControlCharacter(arguments[1].column);
-
-    if (arguments.size() == 2u)
-    {
-        return ParsedArguments{data_column, key_value_pair_delimiter};
-    }
-
-    auto pair_delimiters_characters = arguments[2].column->getDataAt(0).toView();
-
-    SetArgument pair_delimiters;
-
-    pair_delimiters.insert(pair_delimiters_characters.begin(), pair_delimiters_characters.end());
-
-    if (arguments.size() == 3u)
-    {
-        return ParsedArguments{
-            data_column, key_value_pair_delimiter, pair_delimiters
-        };
-    }
-
-    auto quoting_character = extractControlCharacter(arguments[3].column);
-
-    if (arguments.size() == 4u)
-    {
-        return ParsedArguments{
-            data_column,
-            key_value_pair_delimiter,
-            pair_delimiters,
-            quoting_character,
-        };
-    }
-
-    auto with_escaping_character = extractControlCharacter(arguments[4].column);
-
-    bool with_escaping = with_escaping_character && with_escaping_character == '1';
-
-    return ParsedArguments{
-        data_column, key_value_pair_delimiter, pair_delimiters, quoting_character, with_escaping
-    };
-}
-
-ExtractKeyValuePairs::CharArgument ExtractKeyValuePairs::extractControlCharacter(ColumnPtr column)
-{
-    auto view = column->getDataAt(0).toView();
-
-    if (view.empty())
-    {
-        return {};
-    }
-    else if (view.size() == 1u)
-    {
-        return view.front();
-    }
-
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Control character argument must either be empty or contain exactly 1 character");
 }
 
 ColumnNumbers ExtractKeyValuePairs::getArgumentsThatAreAlwaysConstant() const

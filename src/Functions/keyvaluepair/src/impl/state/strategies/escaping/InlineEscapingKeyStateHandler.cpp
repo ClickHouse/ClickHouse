@@ -6,7 +6,7 @@
 namespace DB
 {
 
-InlineEscapingKeyStateHandler::InlineEscapingKeyStateHandler(ExtractorConfiguration configuration_)
+InlineEscapingKeyStateHandler::InlineEscapingKeyStateHandler(Configuration configuration_)
     : extractor_configuration(std::move(configuration_))
 {
     wait_needles = EscapingNeedleFactory::getWaitNeedles(extractor_configuration);

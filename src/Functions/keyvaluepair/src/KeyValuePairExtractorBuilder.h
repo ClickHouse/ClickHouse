@@ -14,7 +14,7 @@ public:
 
     KeyValuePairExtractorBuilder & withKeyValuePairDelimiter(char key_value_pair_delimiter_);
 
-    KeyValuePairExtractorBuilder & withItemDelimiter(std::vector<char> item_delimiters_);
+    KeyValuePairExtractorBuilder & withItemDelimiters(std::vector<char> item_delimiters_);
 
     KeyValuePairExtractorBuilder & withQuotingCharacter(char quoting_character_);
 
