@@ -28,10 +28,8 @@ protected:
     void transform(Chunk & Chunk) override;
 
 private:
-    void setResultColumns(Chunk & chunk, MutableColumns & fill_columns, MutableColumns & interpolate_columns, MutableColumns & other_columns) const;
-    void saveLastRow(const MutableColumns & fill_columns, const MutableColumns & interpolate_columns, const MutableColumns & other_columns);
-    void initFillingRow(const Columns & input_columns);
-    void interpolate(const std::vector<const IColumn *> & result_columns, Block & interpolate_block);
+    void saveLastRow(const MutableColumns & result_columns);
+    void interpolate(const MutableColumns& result_columns, Block & interpolate_block);
 
     const SortDescription sort_description; /// Contains only columns with WITH FILL.
     const InterpolateDescriptionPtr interpolate_description; /// Contains INTERPOLATE columns
