@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Tags: no-parallel
+# Tags: no-parallel, no-fasttest
 
 import os
 import sys
