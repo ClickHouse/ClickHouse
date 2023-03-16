@@ -19,7 +19,6 @@ static ITransformingStep::Traits getTraits(const DataStream& /*input_stream_*/)
     {
         .data_stream_traits =
         {
-            .preserves_distinct_columns = true,
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
             .preserves_sorting = true,
