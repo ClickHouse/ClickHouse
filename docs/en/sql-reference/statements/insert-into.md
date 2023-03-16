@@ -91,6 +91,13 @@ INSERT INTO t FORMAT TabSeparated
 
 You can insert data separately from the query by using the command-line client or the HTTP interface. For more information, see the section “[Interfaces](../../interfaces)”.
 
+:::note
+If you want to specify `SETTINGS` for `INSERT` query then you have to do it _before_ `FORMAT` clause since everything after `FORMAT format_name` is treated as data. For example:
+```sql
+INSERT INTO table SETTINGS ... FORMAT format_name data_set
+```
+:::
+
 ## Constraints
 
 If table has [constraints](../../sql-reference/statements/create/table.md#constraints), their expressions will be checked for each row of inserted data. If any of those constraints is not satisfied — server will raise an exception containing constraint name and expression, the query will be stopped.
