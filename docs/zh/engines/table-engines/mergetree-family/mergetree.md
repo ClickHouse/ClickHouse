@@ -192,7 +192,7 @@ ClickHouse 会为每个数据片段创建一个索引文件来存储这些标记
 
 ClickHouse 不要求主键唯一，所以您可以插入多条具有相同主键的行。
 
-您可以在`PRIMARY KEY`与`ORDER BY`条件中使用`可为空的`类型的表达式，但强烈建议不要这么做。为了启用这项功能，请打开[allow_nullable_key](../../../operations/settings/#allow-nullable-key)，[NULLS_LAST](../../../sql-reference/statements/select/order-by.md/#sorting-of-special-values)规则也适用于`ORDER BY`条件中有NULL值的情况下。
+您可以在`PRIMARY KEY`与`ORDER BY`条件中使用`可为空的`类型的表达式，但强烈建议不要这么做。为了启用这项功能，请打开[allow_nullable_key](../../../operations/settings/index.md#allow-nullable-key)，[NULLS_LAST](../../../sql-reference/statements/select/order-by.md#sorting-of-special-values)规则也适用于`ORDER BY`条件中有NULL值的情况下。
 
 ### 主键的选择 {#zhu-jian-de-xuan-ze}
 
