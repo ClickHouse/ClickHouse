@@ -3,13 +3,13 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableNode.h>
-#include <Analyzer/IdentifierNode.h>
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/Passes/CNF.h>
 #include <Analyzer/Utils.h>
 
 #include <Functions/FunctionFactory.h>
-#include "Analyzer/HashUtils.h"
 
 namespace DB
 {
@@ -17,19 +17,8 @@ namespace DB
 namespace
 {
 
-bool isLogicalFunction(const FunctionNode & function_node)
-{
-    const std::string_view name = function_node.getFunctionName();
-    return name == "and" || name == "or" || name == "not";
-}
-
 std::optional<Analyzer::CNF> tryConvertQueryToCNF(const QueryTreeNodePtr & node, const ContextPtr & context)
 {
-    auto * function_node = node->as<FunctionNode>();
-
-    if (!function_node || !isLogicalFunction(*function_node))
-        return std::nullopt;
-
     auto cnf_form = Analyzer::CNF::tryBuildCNF(node, context);
     if (!cnf_form)
         return std::nullopt;
@@ -54,25 +43,24 @@ MatchState match(const Analyzer::CNF::AtomicFormula & a, const Analyzer::CNF::At
     return a.negative == b.negative ? FULL_MATCH : PARTIAL_MATCH;
 }
 
-bool checkIfGroupAlwaysTrueFullMatch(const Analyzer::CNF::OrGroup & group, const ConstraintsDescription & constraints_description, const ContextPtr & context)
+bool checkIfGroupAlwaysTrueFullMatch(const Analyzer::CNF::OrGroup & group, const ConstraintsDescription::QueryTreeData & query_tree_constraints)
 {
     /// We have constraints in CNF.
     /// CNF is always true => Each OR group in CNF is always true.
     /// So, we try to check whether we have al least one OR group from CNF as subset in our group.
     /// If we've found one then our group is always true too.
 
-    const auto & query_tree_constraint = constraints_description.getQueryTreeData(context);
-    const auto & constraints_data = query_tree_constraint.getConstraintData();
+    const auto & constraints_data = query_tree_constraints.getConstraintData();
     std::vector<size_t> found(constraints_data.size());
     for (size_t i = 0; i < constraints_data.size(); ++i)
         found[i] = constraints_data[i].size();
 
     for (const auto & atom : group)
     {
-        const auto constraint_atom_ids = query_tree_constraint.getAtomIds(atom.node_with_hash);
+        const auto constraint_atom_ids = query_tree_constraints.getAtomIds(atom.node_with_hash);
         if (constraint_atom_ids)
         {
-            const auto constraint_atoms = query_tree_constraint.getAtomsById(*constraint_atom_ids);
+            const auto constraint_atoms = query_tree_constraints.getAtomsById(*constraint_atom_ids);
             for (size_t i = 0; i < constraint_atoms.size(); ++i)
             {
                 if (match(constraint_atoms[i], atom) == MatchState::FULL_MATCH)
@@ -107,13 +95,12 @@ bool checkIfGroupAlwaysTrueGraph(const Analyzer::CNF::OrGroup & group, const Com
     return false;
 }
 
-bool checkIfAtomAlwaysFalseFullMatch(const Analyzer::CNF::AtomicFormula & atom, const ConstraintsDescription & constraints_description, const ContextPtr & context)
+bool checkIfAtomAlwaysFalseFullMatch(const Analyzer::CNF::AtomicFormula & atom, const ConstraintsDescription::QueryTreeData & query_tree_constraints)
 {
-    const auto & query_tree_constraint = constraints_description.getQueryTreeData(context);
-    const auto constraint_atom_ids = query_tree_constraint.getAtomIds(atom.node_with_hash);
+    const auto constraint_atom_ids = query_tree_constraints.getAtomIds(atom.node_with_hash);
     if (constraint_atom_ids)
     {
-        for (const auto & constraint_atom : query_tree_constraint.getAtomsById(*constraint_atom_ids))
+        for (const auto & constraint_atom : query_tree_constraints.getAtomsById(*constraint_atom_ids))
         {
             const auto match_result = match(constraint_atom, atom);
             if (match_result == MatchState::PARTIAL_MATCH)
@@ -149,7 +136,10 @@ void replaceToConstants(QueryTreeNodePtr & term, const ComparisonGraph<QueryTree
     }
 
     for (auto & child : term->getChildren())
-        replaceToConstants(child, graph);
+    {
+        if (child)
+            replaceToConstants(child, graph);
+    }
 }
 
 Analyzer::CNF::AtomicFormula replaceTermsToConstants(const Analyzer::CNF::AtomicFormula & atom, const ComparisonGraph<QueryTreeNodePtr> & graph)
@@ -159,31 +149,28 @@ Analyzer::CNF::AtomicFormula replaceTermsToConstants(const Analyzer::CNF::Atomic
     return {atom.negative, std::move(node)};
 }
 
-StorageMetadataPtr getStorageMetadata(const QueryTreeNodePtr & node)
+StorageSnapshotPtr getStorageSnapshot(const QueryTreeNodePtr & node)
 {
     StorageSnapshotPtr storage_snapshot{nullptr};
     if (auto * table_node = node->as<TableNode>())
-        storage_snapshot = table_node->getStorageSnapshot();
+        return table_node->getStorageSnapshot();
     else if (auto * table_function_node = node->as<TableFunctionNode>())
-        storage_snapshot = table_function_node->getStorageSnapshot();
+        return table_function_node->getStorageSnapshot();
 
-    if (!storage_snapshot)
-        return nullptr;
-
-    return storage_snapshot->metadata;
+    return nullptr;
 }
 
 bool onlyIndexColumns(const QueryTreeNodePtr & node, const std::unordered_set<std::string_view> & primary_key_set)
 {
-    const auto * identifier_node = node->as<IdentifierNode>();
+    const auto * column_node = node->as<ColumnNode>();
     /// TODO: verify that full name is correct here
-    if (identifier_node && !primary_key_set.contains(identifier_node->getIdentifier().getFullName()))
+    if (column_node && !primary_key_set.contains(column_node->getColumnName()))
         return false;
 
     for (const auto & child : node->getChildren())
     {
-        if (!onlyIndexColumns(child, primary_key_set))
-                return false;
+        if (child && !onlyIndexColumns(child, primary_key_set))
+            return false;
     }
 
     return true;
@@ -191,16 +178,8 @@ bool onlyIndexColumns(const QueryTreeNodePtr & node, const std::unordered_set<st
 
 bool onlyConstants(const QueryTreeNodePtr & node)
 {
-    if (node->as<IdentifierNode>() != nullptr)
-        return false;
-
-    for (const auto & child : node->getChildren())
-    {
-        if (!onlyConstants(child))
-            return false;
-    }
-
-    return true;
+    /// if it's only constant it will be already calculated
+    return node->as<ConstantNode>() != nullptr;
 }
 
 const std::unordered_map<std::string_view, ComparisonGraphCompareResult> & getRelationMap()
@@ -322,13 +301,13 @@ void addIndexConstraint(Analyzer::CNF & cnf, const QueryTreeNodes & table_expres
 {
     for (const auto & table_expression : table_expressions)
     {
-        auto metadata = getStorageMetadata(table_expression);
-        if (!metadata)
+        auto snapshot = getStorageSnapshot(table_expression);
+        if (!snapshot || !snapshot->metadata)
             continue;
 
-        const auto primary_key = metadata->getColumnsRequiredForPrimaryKey();
+        const auto primary_key = snapshot->metadata->getColumnsRequiredForPrimaryKey();
         const std::unordered_set<std::string_view> primary_key_set(primary_key.begin(), primary_key.end());
-        const auto & query_tree_constraint = metadata->getConstraints().getQueryTreeData(context);
+        const auto & query_tree_constraint = snapshot->metadata->getConstraints().getQueryTreeData(context, table_expression);
         const auto & graph = query_tree_constraint.getGraph();
 
         QueryTreeNodes primary_key_only_nodes;
@@ -369,22 +348,22 @@ void optimizeWithConstraints(Analyzer::CNF & cnf, const QueryTreeNodes & table_e
 
     for (const auto & table_expression : table_expressions)
     {
-        auto metadata = getStorageMetadata(table_expression);
-        if (!metadata)
+        auto snapshot = getStorageSnapshot(table_expression);
+        if (!snapshot || !snapshot->metadata)
             continue;
 
-        const auto & constraints = metadata->getConstraints();
-        const auto & query_tree_constraint = constraints.getQueryTreeData(context);
-        const auto & compare_graph = query_tree_constraint.getGraph();
+        const auto & constraints = snapshot->metadata->getConstraints();
+        const auto & query_tree_constraints = constraints.getQueryTreeData(context, table_expression);
+        const auto & compare_graph = query_tree_constraints.getGraph();
         cnf.filterAlwaysTrueGroups([&](const auto & group)
            {
                /// remove always true groups from CNF
-               return !checkIfGroupAlwaysTrueFullMatch(group, constraints, context) && !checkIfGroupAlwaysTrueGraph(group, compare_graph);
+               return !checkIfGroupAlwaysTrueFullMatch(group, query_tree_constraints) && !checkIfGroupAlwaysTrueGraph(group, compare_graph);
            })
            .filterAlwaysFalseAtoms([&](const Analyzer::CNF::AtomicFormula & atom)
            {
                /// remove always false atoms from CNF
-               return !checkIfAtomAlwaysFalseFullMatch(atom, constraints, context) && !checkIfAtomAlwaysFalseGraph(atom, compare_graph);
+               return !checkIfAtomAlwaysFalseFullMatch(atom, query_tree_constraints) && !checkIfAtomAlwaysFalseGraph(atom, compare_graph);
            })
            .transformAtoms([&](const auto & atom)
            {
