@@ -140,25 +140,6 @@ StoragePtr TemporaryTableHolder::getTable() const
     return table;
 }
 
-DatabaseCatalog::TablesMarkedDroppedForSystemTable DatabaseCatalog::getTablesMarkedDropped()
-{
-    std::lock_guard lock(tables_marked_dropped_mutex);
-    UInt32 index = 0;
-    TablesMarkedDroppedForSystemTable tables;
-    for (const auto & table : tables_marked_dropped)
-    {
-        tables.emplace_back(DatabaseCatalog::TableMarkedDroppedForSystemTable{
-            index++,
-            table.table_id.getDatabaseName(),
-            table.table_id.getTableName(),
-            table.table_id.uuid,
-            table.table->getName(),
-            table.metadata_path,
-            table.drop_time});
-    }
-    return tables;
-}
-
 void DatabaseCatalog::initializeAndLoadTemporaryDatabase()
 {
     drop_delay_sec = getContext()->getConfigRef().getInt("database_atomic_delay_before_drop_table_sec", default_drop_delay_sec);

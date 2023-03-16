@@ -30,7 +30,7 @@ NamesAndTypesList StorageSystemMarkedDroppedTables::getNamesAndTypes()
 
 void StorageSystemMarkedDroppedTables::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
 {
-    auto tables = DatabaseCatalog::instance().getTablesMarkedDropped();
+    auto tables_mark_dropped = DatabaseCatalog::instance().getTablesMarkedDropped();
 
     size_t index = 0;
 
@@ -42,19 +42,23 @@ void StorageSystemMarkedDroppedTables::fillData(MutableColumns & res_columns, Co
     auto & column_metadata_dropped_path = assert_cast<ColumnString &>(*res_columns[index++]);
     auto & column_table_dropped_time = assert_cast<ColumnUInt32 &>(*res_columns[index++]);
 
-    auto add_row = [&](const DatabaseCatalog::TableMarkedDroppedForSystemTable & table)
+    auto add_row = [&](UInt32 idx, const DatabaseCatalog::TableMarkedAsDropped & table_mark_dropped)
     {
-        column_index.insertValue(table.index);
-        column_database.insertData(table.database.data(), table.database.size());
-        column_table.insertData(table.table.data(), table.table.size());
-        column_uuid.push_back(table.uuid.toUnderType());
-        column_engine.insertData(table.engine.data(), table.engine.size());
-        column_metadata_dropped_path.insertData(table.metadata_dropped_path.data(), table.metadata_dropped_path.size());
-        column_table_dropped_time.insertValue(static_cast<UInt32>(table.table_dropped_time));
+        column_index.insertValue(idx);
+        column_database.insertData(table_mark_dropped.table_id.getDatabaseName().data(), table_mark_dropped.table_id.getDatabaseName().size());
+        column_table.insertData(table_mark_dropped.table_id.getTableName().data(), table_mark_dropped.table_id.getTableName().size());
+        column_uuid.push_back(table_mark_dropped.table_id.uuid.toUnderType());
+        column_engine.insertData(table_mark_dropped.table->getName().data(), table_mark_dropped.table->getName().size());
+        column_metadata_dropped_path.insertData(table_mark_dropped.metadata_path.data(), table_mark_dropped.metadata_path.size());
+        column_table_dropped_time.insertValue(static_cast<UInt32>(table_mark_dropped.drop_time));
     };
 
-    for (const auto & table : tables)
-        add_row(table);
+    UInt32 idx = 0;
+    for (const auto & table_mark_dropped : tables_mark_dropped)
+    {
+        if (table_mark_dropped.table)
+            add_row(idx++, table_mark_dropped);
+    }
 }
 
 }
