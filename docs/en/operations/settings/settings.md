@@ -4051,7 +4051,7 @@ Possible values:
 Default value: `0`.
 
 ## stop_reading_on_first_cancel {#stop_reading_on_first_cancel}
-When set to true and the user wants to interrupt a query (for example using Ctrl+C on the client), then the query continues execution only on data that was already read from the table. Afterward, it will return a partial result of the query for the part of the table that was read. To fully stop the execution of a query without a partial result, the user should send 2 cancel requests.
+When set to `true` and the user wants to interrupt a query (for example using `Ctrl+C` on the client), then the query continues execution only on data that was already read from the table. Afterward, it will return a partial result of the query for the part of the table that was read. To fully stop the execution of a query without a partial result, the user should send 2 cancel requests.
 
 **Example without setting on Ctrl+C**
 ```sql
