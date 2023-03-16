@@ -1409,6 +1409,7 @@ String TCPHandler::receiveReadTaskResponseAssumeLocked()
     return response;
 }
 
+
 std::optional<ParallelReadResponse> TCPHandler::receivePartitionMergeTreeReadTaskResponseAssumeLocked()
 {
     UInt64 packet_type = 0;
@@ -1721,7 +1722,6 @@ bool TCPHandler::receiveUnexpectedData(bool throw_exception)
     return read_ok;
 }
 
-
 void TCPHandler::initBlockInput()
 {
     if (!state.block_in)
@@ -1746,6 +1746,7 @@ void TCPHandler::initBlockInput()
             client_tcp_protocol_version);
     }
 }
+
 
 void TCPHandler::initBlockOutput(const Block & block)
 {
