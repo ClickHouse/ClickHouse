@@ -80,8 +80,6 @@ void ExpressionStep::updateOutputStream()
         return;
 
     const ActionsDAGPtr & actions = actions_dag;
-    LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "ActionsDAG dump:\n{}", actions->dumpDAG());
-
     const auto & input_sort_description = getInputStreams().front().sort_description;
     for (size_t i = 0, s = input_sort_description.size(); i < s; ++i)
     {
