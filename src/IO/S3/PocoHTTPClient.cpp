@@ -329,7 +329,7 @@ bool PocoHTTPClient::tryMakeOneRequest(
 
         status_code = static_cast<int>(response->GetResponseCode());
     }
-    catch(...)
+    catch (...)
     {
         execution_status = ExecutionStatus::fromCurrentException();
         tryLogCurrentException(log, fmt::format("Failed to make request to: {}", uri));

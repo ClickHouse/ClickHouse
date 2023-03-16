@@ -119,7 +119,7 @@ public:
 
 private:
     Aws::Utils::Stream::ResponseStream body_stream;
-    Int64 content_length = 0; 
+    Int64 content_length = 0;
 };
 
 class PocoHTTPClient : public Aws::Http::HttpClient

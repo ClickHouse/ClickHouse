@@ -39,9 +39,7 @@ NamesAndTypesList HttpClientLogElement::getNamesAndTypes()
     return {
         {"event_date", std::make_shared<DataTypeDate>()},
         {"event_time", std::make_shared<DataTypeDateTime64>(6)},
-
         {"client", std::move(http_client_type)},
-
         {"query_id", std::make_shared<DataTypeString>()},
 
         /// In the system table opentelemetry_log, trace id is designed as type of UUID.
@@ -52,18 +50,14 @@ NamesAndTypesList HttpClientLogElement::getNamesAndTypes()
         ///
         /// So we define the trace id as String in storage to make it consistent with OpenTelemetry standard, which will simply the SELECT sql.
         /// This requires extra 16 bytes compared to saving it as UUID, and it's affordable.
-        ///
         {"trace_id", std::make_shared<DataTypeString>()},
         {"span_id",  std::make_shared<DataTypeUInt64>()},
-
         {"duration_ms", std::make_shared<DataTypeUInt64>()},
-
         {"method", std::move(http_method_type)},
         {"uri",    std::make_shared<DataTypeString>()},
         {"status", std::make_shared<DataTypeInt32>()},
         {"request_size", std::make_shared<DataTypeUInt64>()},
         {"response_size", std::make_shared<DataTypeUInt64>()},
-        
         {"exception_code", std::make_shared<DataTypeInt32>()},
         {"exception", std::make_shared<DataTypeString>()}
     };
