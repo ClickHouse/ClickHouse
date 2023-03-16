@@ -1,3 +1,4 @@
+#include "Analyzer/Identifier.h"
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 
 #include <Common/checkStackSize.h>
@@ -1577,41 +1578,20 @@ void QueryAnalyzer::collectCompoundExpressionValidIdentifiersForTypoCorrection(
     const Identifier & valid_identifier_prefix,
     std::unordered_set<Identifier> & valid_identifiers_result)
 {
-    std::vector<std::pair<Identifier, const IDataType *>> identifiers_with_types_to_process;
-    identifiers_with_types_to_process.emplace_back(valid_identifier_prefix, compound_expression_type.get());
-
-    while (!identifiers_with_types_to_process.empty())
+    IDataType::forEachSubcolumn([&](const auto &, const auto & name, const auto &)
     {
-        auto [identifier, type] = identifiers_with_types_to_process.back();
-        identifiers_with_types_to_process.pop_back();
+        Identifier subcolumn_indentifier(name);
+        size_t new_identifier_size = valid_identifier_prefix.getPartsSize() + subcolumn_indentifier.getPartsSize();
 
-        if (identifier.getPartsSize() + 1 > unresolved_identifier.getPartsSize())
-            continue;
-
-        while (const DataTypeArray * array = checkAndGetDataType<DataTypeArray>(type))
-            type = array->getNestedType().get();
-
-        const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(type);
-
-        if (!tuple)
-            continue;
-
-        const auto & tuple_element_names = tuple->getElementNames();
-        size_t tuple_element_names_size = tuple_element_names.size();
-
-        for (size_t i = 0; i < tuple_element_names_size; ++i)
+        if (new_identifier_size == unresolved_identifier.getPartsSize())
         {
-            const auto & element_name = tuple_element_names[i];
-            const auto & element_type = tuple->getElements()[i];
+            auto new_identifier = valid_identifier_prefix;
+            for (auto && part : subcolumn_indentifier)
+                new_identifier.emplace_back(std::move(part));
 
-            identifier.push_back(element_name);
-
-            valid_identifiers_result.insert(identifier);
-            identifiers_with_types_to_process.emplace_back(identifier, element_type.get());
-
-            identifier.pop_back();
+            valid_identifiers_result.insert(std::move(new_identifier));
         }
-    }
+    }, ISerialization::SubstreamData(compound_expression_type->getDefaultSerialization()));
 }
 
 /// Get valid identifiers for typo correction from table expression
