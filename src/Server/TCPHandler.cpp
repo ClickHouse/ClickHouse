@@ -41,6 +41,7 @@
 #include <Compression/CompressionFactory.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/thread_local_rng.h>
 #include <fmt/format.h>
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
@@ -643,7 +644,6 @@ void TCPHandler::extractConnectionSettingsFromContext(const ContextPtr & context
     interactive_delay = settings.interactive_delay;
     sleep_in_send_tables_status = settings.sleep_in_send_tables_status_ms;
     unknown_packet_in_send_data = settings.unknown_packet_in_send_data;
-    sleep_in_receive_cancel = settings.sleep_in_receive_cancel_ms;
     sleep_after_receiving_query = settings.sleep_after_receiving_query_ms;
 }
 
@@ -1280,6 +1280,18 @@ void TCPHandler::sendHello()
             writeStringBinary(exception_message, *out);
         }
     }
+    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2)
+    {
+        chassert(!nonce.has_value());
+        /// Contains lots of stuff (including time), so this should be enough for NONCE.
+        nonce.emplace(thread_local_rng());
+        writeIntBinary(nonce.value(), *out);
+    }
+    else
+    {
+        LOG_WARNING(LogFrequencyLimiter(log, 10),
+            "Using deprecated interserver protocol because the client is too old. Consider upgrading all nodes in cluster.");
+    }
     out->next();
 }
 
@@ -1318,19 +1330,9 @@ bool TCPHandler::receivePacket()
             return false;
 
         case Protocol::Client::Cancel:
-        {
-            /// For testing connection collector.
-            if (unlikely(sleep_in_receive_cancel.totalMilliseconds()))
-            {
-                std::chrono::milliseconds ms(sleep_in_receive_cancel.totalMilliseconds());
-                std::this_thread::sleep_for(ms);
-            }
-
             LOG_INFO(log, "Received 'Cancel' packet from the client, canceling the query");
             state.is_cancelled = true;
-
             return false;
-        }
 
         case Protocol::Client::Hello:
             receiveUnexpectedHello();
@@ -1372,12 +1374,6 @@ String TCPHandler::receiveReadTaskResponseAssumeLocked()
         {
             LOG_INFO(log, "Received 'Cancel' packet from the client, canceling the read task");
             state.is_cancelled = true;
-            /// For testing connection collector.
-            if (unlikely(sleep_in_receive_cancel.totalMilliseconds()))
-            {
-                std::chrono::milliseconds ms(sleep_in_receive_cancel.totalMilliseconds());
-                std::this_thread::sleep_for(ms);
-            }
             return {};
         }
         else
@@ -1406,12 +1402,6 @@ std::optional<ParallelReadResponse> TCPHandler::receivePartitionMergeTreeReadTas
         {
             LOG_INFO(log, "Received 'Cancel' packet from the client, canceling the MergeTree read task");
             state.is_cancelled = true;
-            /// For testing connection collector.
-            if (unlikely(sleep_in_receive_cancel.totalMilliseconds()))
-            {
-                std::chrono::milliseconds ms(sleep_in_receive_cancel.totalMilliseconds());
-                std::this_thread::sleep_for(ms);
-            }
             return std::nullopt;
         }
         else
@@ -1482,20 +1472,30 @@ void TCPHandler::receiveQuery()
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
         passed_params.read(*in, settings_format);
 
-    /// TODO Unify interserver authentication (and make sure that it's secure enough)
     if (is_interserver_mode)
     {
         client_info.interface = ClientInfo::Interface::TCP_INTERSERVER;
 #if USE_SSL
         String cluster_secret = server.context()->getCluster(cluster)->getSecret();
+
         if (salt.empty() || cluster_secret.empty())
         {
-            auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Interserver authentication failed");
-            session->onAuthenticationFailure(/* user_name */ std::nullopt, socket().peerAddress(), exception);
+            auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Interserver authentication failed (no salt/cluster secret)");
+            session->onAuthenticationFailure(/* user_name= */ std::nullopt, socket().peerAddress(), exception);
+            throw exception; /// NOLINT
+        }
+
+        if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2 && !nonce.has_value())
+        {
+            auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Interserver authentication failed (no nonce)");
+            session->onAuthenticationFailure(/* user_name= */ std::nullopt, socket().peerAddress(), exception);
             throw exception; /// NOLINT
         }
 
         std::string data(salt);
+        // For backward compatibility
+        if (nonce.has_value())
+            data += std::to_string(nonce.value());
         data += cluster_secret;
         data += state.query;
         data += state.query_id;
@@ -1822,15 +1822,6 @@ bool TCPHandler::isQueryCancelled()
                     throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet Cancel received from client");
                 LOG_INFO(log, "Query was cancelled.");
                 state.is_cancelled = true;
-                /// For testing connection collector.
-                {
-                    if (unlikely(sleep_in_receive_cancel.totalMilliseconds()))
-                    {
-                        std::chrono::milliseconds ms(sleep_in_receive_cancel.totalMilliseconds());
-                        std::this_thread::sleep_for(ms);
-                    }
-                }
-
                 return true;
 
             default:
