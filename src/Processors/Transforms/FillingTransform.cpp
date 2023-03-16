@@ -309,13 +309,9 @@ static void insertFromFillingRow(const MutableColumnRawPtrs & filling_columns, c
     for (size_t i = 0, size = filling_columns.size(); i < size; ++i)
     {
         if (filling_row[i].isNull())
-        {
             filling_columns[i]->insertDefault();
-        }
         else
-        {
             filling_columns[i]->insert(filling_row[i]);
-        }
     }
 
     if (size_t size = interpolate_block.columns())
@@ -338,6 +334,21 @@ static void copyRowFromColumns(const MutableColumnRawPtrs & dest, const Columns 
         dest[i]->insertFrom(*source[i], row_num);
 }
 
+static void init_columns_by_positions(
+    const Columns & input_columns,
+    Columns & input_columns_by_positions,
+    const MutableColumns & output_columns,
+    MutableColumnRawPtrs & output_columns_by_position,
+    const std::vector<size_t> & positions)
+{
+    for (size_t pos : positions)
+    {
+        auto old_column = input_columns[pos]->convertToFullColumnIfConst();
+        input_columns_by_positions.push_back(old_column);
+        output_columns_by_position.push_back(output_columns[pos].get());
+    }
+}
+
 void FillingTransform::transform(Chunk & chunk)
 {
     LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "Input columns={} rows={}", chunk.getNumColumns(), chunk.getNumRows());
@@ -353,23 +364,7 @@ void FillingTransform::transform(Chunk & chunk)
     MutableColumnRawPtrs res_other_columns;
     MutableColumns result_columns;
 
-    auto init_columns_by_positions = [](const Columns & old_columns, Columns & new_columns,
-        const MutableColumns& output_columns, MutableColumnRawPtrs & new_mutable_columns, const Positions & positions)
-    {
-        for (size_t pos : positions)
-        {
-            auto old_column = old_columns[pos]->convertToFullColumnIfConst();
-            new_columns.push_back(old_column);
-            new_mutable_columns.push_back(output_columns[pos].get());
-        }
-    };
-
     Block interpolate_block;
-
-    auto interpolate = [&]()
-    {
-        this->interpolate(result_columns, interpolate_block);
-    };
 
     if (generate_suffix)
     {
@@ -387,15 +382,15 @@ void FillingTransform::transform(Chunk & chunk)
 
         if (should_insert_first && filling_row < next_row)
         {
-            interpolate();
+            interpolate(result_columns, interpolate_block);
             insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
         }
 
-        interpolate();
+        interpolate(result_columns, interpolate_block);
         while (filling_row.next(next_row))
         {
             insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
-            interpolate();
+            interpolate(result_columns, interpolate_block);
         }
 
         size_t num_output_rows = result_columns[0]->size();
@@ -426,7 +421,7 @@ void FillingTransform::transform(Chunk & chunk)
                 filling_row.initFromDefaults(i);
                 if (less(fill_from, current_value, filling_row.getDirection(i)))
                 {
-                    interpolate();
+                    interpolate(result_columns, interpolate_block);
                     insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
                 }
                 break;
@@ -455,15 +450,15 @@ void FillingTransform::transform(Chunk & chunk)
         ///  and probably we need to insert it to block.
         if (should_insert_first && filling_row < next_row)
         {
-            interpolate();
+            interpolate(result_columns, interpolate_block);
             insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
         }
 
-        interpolate();
+        interpolate(result_columns, interpolate_block);
         while (filling_row.next(next_row))
         {
             insertFromFillingRow(res_fill_columns, res_interpolate_columns, res_other_columns, filling_row, interpolate_block);
-            interpolate();
+            interpolate(result_columns, interpolate_block);
         }
 
         copyRowFromColumns(res_fill_columns, old_fill_columns, row_ind);
