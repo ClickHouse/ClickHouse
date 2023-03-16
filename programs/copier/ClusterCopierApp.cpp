@@ -164,7 +164,7 @@ void ClusterCopierApp::mainImpl()
     registerFormats();
 
     static const std::string default_database = "_local";
-    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database, context));
+    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database, UUIDHelpers::generateV4(), context));
     context->setCurrentDatabase(default_database);
 
     /// Disable queries logging, since:

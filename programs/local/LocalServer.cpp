@@ -139,7 +139,7 @@ static DatabasePtr createMemoryDatabaseIfNotExists(ContextPtr context, const Str
     if (!system_database)
     {
         /// TODO: add attachTableDelayed into DatabaseMemory to speedup loading
-        system_database = std::make_shared<DatabaseMemory>(database_name, context);
+        system_database = std::make_shared<DatabaseMemory>(database_name, UUIDHelpers::generateV4(), context);
         DatabaseCatalog::instance().attachDatabase(database_name, system_database);
     }
     return system_database;
@@ -629,7 +629,7 @@ void LocalServer::processConfig()
       *  if such tables will not be dropped, clickhouse-server will not be able to load them due to security reasons.
       */
     std::string default_database = config().getString("default_database", "_local");
-    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database, global_context));
+    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database, UUIDHelpers::generateV4(), global_context));
     global_context->setCurrentDatabase(default_database);
     applyCmdOptions(global_context);
 

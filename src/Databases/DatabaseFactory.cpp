@@ -171,7 +171,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     if (engine_name == "Atomic")
         return std::make_shared<DatabaseAtomic>(database_name, metadata_path, uuid, context);
     else if (engine_name == "Memory")
-        return std::make_shared<DatabaseMemory>(database_name, context);
+        return std::make_shared<DatabaseMemory>(database_name, uuid, context);
     else if (engine_name == "Dictionary")
         return std::make_shared<DatabaseDictionary>(database_name, context);
 
