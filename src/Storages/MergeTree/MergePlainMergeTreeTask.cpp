@@ -10,6 +10,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int MERGE_ABORT;
 }
 
 
@@ -116,9 +117,95 @@ void MergePlainMergeTreeTask::finish()
 {
     new_part = merge_task->getFuture().get();
 
-    MergeTreeData::Transaction transaction(storage, txn.get());
-    storage.merger_mutator.renameMergedTemporaryPart(new_part, future_part->parts, txn, transaction);
-    transaction.commit();
+    if (storage.merging_params.mode == MergeTreeData::MergingParams::Mode::Unique)
+    {
+        auto write_state = merge_task->getWriteState();
+
+        std::lock_guard<std::mutex> write_merge_lock(storage.write_merge_lock);
+
+        /// such that we can reduce the time of lockParts()
+        std::unordered_set<UInt32> deleted_rows_set;
+        {
+            std::unordered_set<String> deleted_keys;
+            /// Here we hold the write_merge_lock, and finish the merge task, in this period write will stop
+            for (const auto & merged_part : future_part->parts)
+            {
+                if (auto it = storage.delete_buffer->find(merged_part->info); it != storage.delete_buffer->end())
+                {
+                    deleted_keys.insert(it->second.begin(), it->second.end());
+                    storage.delete_buffer->erase(it);
+                }
+            }
+            auto settings = storage.getSettings();
+            if (deleted_keys.size() >= settings->unique_merge_tree_mininum_delete_buffer_size_to_abort_merge)
+            {
+                throw Exception(
+                    ErrorCodes::MERGE_ABORT,
+                    "Too much deletes written during merge, abort the merge, deleted keys number during merge: {}",
+                    deleted_keys.size());
+            }
+            auto part_info = new_part->info;
+            std::vector<UInt32> deleted_rows;
+            for (size_t row_id = 0; row_id < new_part->rows_count; ++row_id)
+            {
+                auto deleted_key = write_state.key_column->getDataAt(row_id).toString();
+                if (deleted_keys.contains(deleted_key))
+                    deleted_rows.emplace_back(row_id);
+            }
+
+            auto new_delete_bitmap = std::make_shared<DeleteBitmap>();
+
+            auto new_version = storage.table_version->get()->version + 1;
+            new_delete_bitmap->setVersion(new_version);
+            new_delete_bitmap->addDels(deleted_rows);
+
+            new_delete_bitmap->serialize(new_part->getDataPartStoragePtr());
+            auto & delete_bitmap_cache = storage.delete_bitmap_cache;
+            delete_bitmap_cache->set({part_info, new_version}, new_delete_bitmap);
+            deleted_rows_set.insert(deleted_rows.begin(), deleted_rows.end());
+        }
+        auto partition_id = new_part->info.partition_id;
+        auto primary_index = storage.primary_index_cache->getOrCreate(partition_id, new_part->partition);
+        /// Do not update primary index cache if the merged block is larger than cache size,
+        /// just set the cache to be UPDATED.
+        bool has_update = false;
+        if (new_part->rows_count >= 0.3 * storage.getSettings()->unique_merge_tree_max_primary_index_cache_size)
+        {
+            /// In this case, after the merge confirmed, new insert must be construct primary index, since
+            /// cache becoma invalid
+            primary_index->setState(PrimaryIndex::State::UPDATED);
+        }
+        else
+        {
+            has_update = primary_index->update(new_part->info.min_block, write_state.key_column, deleted_rows_set);
+            if (has_update)
+                primary_index->setState(PrimaryIndex::State::UPDATED);
+        }
+
+        auto new_table_version = std::make_unique<TableVersion>(*storage.table_version->get());
+        new_table_version->version++;
+
+        if (!new_table_version->part_versions.insert({new_part->info, new_table_version->version}).second)
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Insert new inserted part version into table version failed, this is a bug, new part name: {}",
+                new_part->info.getPartNameForLogs());
+        }
+        MergeTreeData::Transaction transaction(storage, txn.get());
+        storage.merger_mutator.renameMergedTemporaryPart(new_part, future_part->parts, txn, transaction, std::move(new_table_version));
+        transaction.commit();
+
+        if (has_update)
+            primary_index->setState(PrimaryIndex::State::UPDATED);
+    }
+
+    else
+    {
+        MergeTreeData::Transaction transaction(storage, txn.get());
+        storage.merger_mutator.renameMergedTemporaryPart(new_part, future_part->parts, txn, transaction);
+        transaction.commit();
+    }
 
     write_part_log({});
     storage.incrementMergedPartsProfileEvent(new_part->getType());

@@ -12,7 +12,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
-#include <Storages/MergeTree/Unique/UniqueMergeTreeWriteState.h>
+#include <Storages/MergeTree/Unique/WriteState.h>
 #include <Common/filesystemHelpers.h>
 
 #include <memory>

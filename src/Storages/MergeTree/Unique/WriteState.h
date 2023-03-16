@@ -7,7 +7,7 @@
 namespace DB
 {
 // Need to keep the min max value of unique key column
-struct UniqueMergeTreeWriteState
+struct WriteState
 {
     MergeTreePartition partition;
 
@@ -20,4 +20,6 @@ struct UniqueMergeTreeWriteState
     std::vector<Field> max_key_values;
     std::vector<Field> min_key_values;
 };
+
+using WriteStatePtr = std::shared_ptr<WriteState>;
 }

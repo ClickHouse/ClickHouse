@@ -29,7 +29,6 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
 #include <Storages/MergeTree/Unique/PrimaryKeysEncoder.h>
-#include <Storages/MergeTree/Unique/UniqueMergeTreeWriteState.h>
 
 namespace ProfileEvents
 {
@@ -344,7 +343,7 @@ Block MergeTreeDataWriter::mergeBlock(
 
 
 MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
-    BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, UniqueMergeTreeWriteState * write_state)
+    BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, WriteStatePtr write_state)
 {
     return writeTempPartImpl(block, metadata_snapshot, context, data.insert_increment.get(), /*need_tmp_prefix = */ true, write_state);
 }
@@ -355,7 +354,12 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartWithoutPref
 }
 
 MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
-    BlockWithPartition & block_with_partition, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, int64_t block_number, bool need_tmp_prefix)
+    BlockWithPartition & block_with_partition,
+    const StorageMetadataPtr & metadata_snapshot,
+    ContextPtr context,
+    int64_t block_number,
+    bool need_tmp_prefix,
+    WriteStatePtr write_state)
 {
     TemporaryPart temp_part;
     Block & block = block_with_partition.block;
@@ -468,15 +472,15 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
         for (const auto & col : unique_columns)
         {
             col->getExtremes(min_value, max_value);
-            write_state.min_key_values.emplace_back(min_value);
-            write_state.max_key_values.emplace_back(max_value);
-		}
+            write_state->min_key_values.emplace_back(min_value);
+            write_state->max_key_values.emplace_back(max_value);
+        }
 
-        write_state.key_column = PrimaryKeysEncoder::encode(key_columns, block.rows(), unique_keys.size());
+        write_state->key_column = PrimaryKeysEncoder::encode(unique_columns, block.rows(), unique_keys.size());
 
         if (!data.merging_params.version_column.empty())
 		{
-            write_state.version_column = block.getByName(data.merging_params.version_column).column;
+            write_state->version_column = block.getByName(data.merging_params.version_column).column;
         }
 
         /// Now, we should sort data by sorting key

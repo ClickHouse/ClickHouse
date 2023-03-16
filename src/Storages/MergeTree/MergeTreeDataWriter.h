@@ -14,11 +14,10 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 
+#include <Storages/MergeTree/Unique/WriteState.h>
 
 namespace DB
 {
-
-struct UniqueMergeTreeWriteState;
 
 struct BlockWithPartition
 {
@@ -86,10 +85,7 @@ public:
       */
 
     TemporaryPart writeTempPart(
-        BlockWithPartition & block,
-        const StorageMetadataPtr & metadata_snapshot,
-        ContextPtr context,
-        UniqueMergeTreeWriteState * write_state = nullptr);
+        BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, WriteStatePtr write_state = nullptr);
 
     TemporaryPart writeTempPartWithoutPrefix(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, int64_t block_number, ContextPtr context);
 
@@ -124,7 +120,7 @@ private:
         ContextPtr context,
         int64_t block_number,
         bool need_tmp_prefix,
-        UniqueMergeTreeWriteState * write_state);
+        WriteStatePtr write_state = nullptr);
 
     static TemporaryPart writeProjectionPartImpl(
         const String & part_name,

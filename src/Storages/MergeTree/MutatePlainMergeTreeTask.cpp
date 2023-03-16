@@ -81,14 +81,50 @@ bool MutatePlainMergeTreeTask::executeStep()
                     return true;
 
                 new_part = mutate_task->getFuture().get();
+
                 auto & data_part_storage = new_part->getDataPartStorage();
                 if (data_part_storage.hasActiveTransaction())
                     data_part_storage.precommitTransaction();
 
-                MergeTreeData::Transaction transaction(storage, merge_mutate_entry->txn.get());
-                /// FIXME Transactions: it's too optimistic, better to lock parts before starting transaction
-                storage.renameTempPartAndReplace(new_part, transaction);
-                transaction.commit();
+
+                if (storage.merging_params.mode == MergeTreeData::MergingParams::Mode::Unique)
+                {
+                    std::lock_guard<std::mutex> lock(storage.write_merge_lock);
+                    /// Here we should not increment the version of table version, because we do not modify delete bitmap
+                    auto new_table_version = std::make_unique<TableVersion>(*storage.table_version->get());
+                    auto old_part_info = merge_mutate_entry->future_part->parts[0]->info;
+                    auto new_part_version = new_table_version->part_versions.at(old_part_info);
+
+                    if (storage.delete_buffer->contains(merge_mutate_entry->future_part->parts[0]->info)
+                        || !new_part->getDataPartStoragePtr()->exists("deletes" + toString(new_part_version) + ".bitmap"))
+                    {
+                        auto bitmap = storage.delete_bitmap_cache->getOrCreate(merge_mutate_entry->future_part->parts[0], new_part_version);
+                        bitmap->serialize(new_part->getDataPartStoragePtr());
+
+                        if (storage.delete_buffer->contains(merge_mutate_entry->future_part->parts[0]->info))
+                            storage.delete_buffer->erase(merge_mutate_entry->future_part->parts[0]->info);
+                    }
+
+                    if (!new_table_version->part_versions.insert({new_part->info, new_part_version}).second)
+                    {
+                        throw Exception(
+                            ErrorCodes::LOGICAL_ERROR,
+                            "Insert new inserted part version into table version failed, this is a bug, new part name: {}",
+                            new_part->info.getPartNameForLogs());
+                    }
+
+                    MergeTreeData::Transaction transaction(storage, merge_mutate_entry->txn.get());
+                    storage.renameTempPartAndReplace(new_part, transaction, std::move(new_table_version));
+                    transaction.commit();
+                }
+
+                else
+                {
+                    MergeTreeData::Transaction transaction(storage, merge_mutate_entry->txn.get());
+                    /// FIXME Transactions: it's too optimistic, better to lock parts before starting transaction
+                    storage.renameTempPartAndReplace(new_part, transaction);
+                    transaction.commit();
+                }
 
                 storage.updateMutationEntriesErrors(future_part, true, "");
                 write_part_log({});
@@ -122,6 +158,5 @@ bool MutatePlainMergeTreeTask::executeStep()
 
     return false;
 }
-
 
 }

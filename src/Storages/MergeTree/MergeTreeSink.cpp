@@ -4,13 +4,105 @@
 #include <Interpreters/PartLog.h>
 #include <DataTypes/ObjectUtils.h>
 
+#include <Storages/MergeTree/Unique/WriteState.h>
+
 namespace ProfileEvents
 {
     extern const Event DuplicatedInsertedBlocks;
 }
 
+
 namespace DB
 {
+
+TableVersionPtr MergeTreeSink::updateDeleteBitmapAndTableVersion(
+    MutableDataPartPtr & part,
+    const MergeTreePartInfo & part_info,
+    PrimaryIndex::DeletesMap & deletes_map,
+    const PrimaryIndex::DeletesKeys & deletes_keys)
+{
+    /// Note: delete bitmap located in the directory of data part(in same disk),
+    /// but table version always located in the first disk
+    auto current_version = storage.table_version->get();
+    auto new_table_version = std::make_unique<TableVersion>(*current_version);
+    new_table_version->version++;
+
+    if (!new_table_version->part_versions.insert({part_info, new_table_version->version}).second)
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Insert new inserted part version into table version failed, this is a bug, new part name: {}",
+            part_info.getPartNameForLogs());
+    }
+
+    /// Generate delete bitmap for new part
+    auto new_delete_bitmap = std::make_shared<DeleteBitmap>(new_table_version->version);
+    if (auto it = deletes_map.find(part_info.min_block); it != deletes_map.end())
+    {
+        LOG_INFO(storage.log, "{} rows deleted for new inserted part {}", it->second.size(), part_info.getPartNameForLogs());
+        new_delete_bitmap->addDels(it->second);
+        deletes_map.erase(it);
+    }
+    new_delete_bitmap->serialize(part->getDataPartStoragePtr());
+    auto & delete_bitmap_cache = storage.delete_bitmap_cache;
+    delete_bitmap_cache->set({part_info, new_table_version->version}, new_delete_bitmap);
+
+    /// Update delete bitmap
+    /// Here find part info by min_block
+    for (const auto & [min_block, row_numbers] : deletes_map)
+    {
+        auto info = storage.findPartInfoByMinBlock(min_block);
+        auto update_part = storage.findPartByInfo(info);
+        if (!update_part)
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Can not find part in data_parts_by_info, this is a bug, part name: {}",
+                info.getPartNameForLogs());
+        }
+        /// The part is do merging, add its deleted keys to delete buffer
+        if (storage.currently_merging_mutating_parts.find(update_part) != storage.currently_merging_mutating_parts.end())
+        {
+            storage.delete_buffer->insertKeysByInfo(info, deletes_keys.at(min_block));
+            /// Here even if the part is merging, we still should update its delete bitmap,
+            /// such that even if the merge failed or abort due to too much deletes, the data
+            /// still consistent.
+            // continue;
+        }
+        const auto & part_version = current_version->part_versions.find(info);
+        if (part_version == current_version->part_versions.end())
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not find part versions in table version");
+        }
+
+        LOG_INFO(
+            storage.log,
+            "{} rows deleted for part {} when insert into part {}",
+            row_numbers.size(),
+            info.getPartNameForLogs(),
+            part_info.getPartNameForLogs());
+
+        IMergeTreeDataPart * mutable_part = const_cast<IMergeTreeDataPart *>(update_part.get());
+
+        auto bitmap = delete_bitmap_cache->getOrCreate(update_part, part_version->second);
+        auto new_bitmap = bitmap->addDelsAsNewVersion(new_table_version->version, row_numbers);
+        new_bitmap->serialize(mutable_part->getDataPartStoragePtr());
+
+        if (auto it = new_table_version->part_versions.find(info); it != new_table_version->part_versions.end())
+        {
+            it->second = new_table_version->version;
+        }
+        else
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Can not find old part version in table version, this is a bug, part name: {}",
+                info.getPartNameForLogs());
+        }
+        delete_bitmap_cache->set({info, new_table_version->version}, new_bitmap);
+    }
+    return new_table_version;
+}
 
 MergeTreeSink::~MergeTreeSink() = default;
 
@@ -45,6 +137,7 @@ struct MergeTreeSink::DelayedChunk
     struct Partition
     {
         MergeTreeDataWriter::TemporaryPart temp_part;
+        WriteStatePtr write_state;
         UInt64 elapsed_ns;
         String block_dedup_token;
     };
@@ -73,7 +166,14 @@ void MergeTreeSink::consume(Chunk chunk)
         Stopwatch watch;
         String block_dedup_token;
 
-        auto temp_part = storage.writer.writeTempPart(current_block, metadata_snapshot, context);
+        WriteStatePtr write_state = nullptr;
+
+        if (storage.merging_params.mode == MergeTreeData::MergingParams::Mode::Unique)
+        {
+            write_state = std::make_shared<WriteState>();
+        }
+
+        auto temp_part = storage.writer.writeTempPart(current_block, metadata_snapshot, context, write_state);
 
         UInt64 elapsed_ns = watch.elapsed();
 
@@ -115,12 +215,11 @@ void MergeTreeSink::consume(Chunk chunk)
             partitions = DelayedPartitions{};
         }
 
-        partitions.emplace_back(MergeTreeSink::DelayedChunk::Partition
-        {
+        partitions.emplace_back(MergeTreeSink::DelayedChunk::Partition{
             .temp_part = std::move(temp_part),
+            .write_state = write_state,
             .elapsed_ns = elapsed_ns,
-            .block_dedup_token = std::move(block_dedup_token)
-        });
+            .block_dedup_token = std::move(block_dedup_token)});
     }
 
     finishDelayedChunk();
@@ -145,24 +244,103 @@ void MergeTreeSink::finishDelayedChunk()
         /// otherwise it can lock parts in destructor and deadlock is possible.
         MergeTreeData::Transaction transaction(storage, context->getCurrentTransaction().get());
         {
-            auto lock = storage.lockParts();
-            storage.fillNewPartName(part, lock);
-
-            auto * deduplication_log = storage.getDeduplicationLog();
-            if (deduplication_log)
+            if (storage.merging_params.mode == MergeTreeData::MergingParams::Mode::Unique)
             {
-                const String block_id = part->getZeroLevelPartBlockID(partition.block_dedup_token);
-                auto res = deduplication_log->addPart(block_id, part->info);
-                if (!res.second)
+                std::lock_guard<std::mutex> write_merge_lock(storage.write_merge_lock);
+
+                auto tmp_lock = std::unique_lock<std::mutex>();
+                /// The lock is useless, since the operation is atomic
+                storage.fillNewPartName(part, tmp_lock);
+
+                auto partition_id = part->info.partition_id;
+                auto primary_index = storage.primary_index_cache->getOrCreate(partition_id, part->partition);
+
+                const auto & write_state = partition.write_state;
+                PrimaryIndex::DeletesMap deletes_map;
+                PrimaryIndex::DeletesKeys deletes_keys;
+
+                /// We should fist set it to UPDATE, then updating. Otherwise, if
+                /// query cancel or exception happend in update, the state become inconsistant
+                primary_index->setState(PrimaryIndex::State::UPDATED);
+                if (!storage.merging_params.version_column.empty())
                 {
-                    ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks);
-                    LOG_INFO(storage.log, "Block with ID {} already exists as part {}; ignoring it", block_id, res.first.getPartNameForLogs());
-                    continue;
+                    primary_index->update(
+                        part->info.min_block,
+                        write_state->key_column,
+                        write_state->version_column,
+                        write_state->delete_key_column,
+                        write_state->min_key_values,
+                        write_state->max_key_values,
+                        deletes_map,
+                        deletes_keys,
+                        context);
                 }
+                else
+                {
+                    primary_index->update(
+                        part->info.min_block,
+                        write_state->key_column,
+                        write_state->delete_key_column,
+                        write_state->min_key_values,
+                        write_state->max_key_values,
+                        deletes_map,
+                        deletes_keys,
+                        context);
+                }
+
+                /// Should lock after update PrimaryIndex, otherwise, dead lock will happen in
+                /// StorageUniqueMergeTree::getFirstAlterMutationCommandsForPart
+                std::lock_guard<std::mutex> background_lock(storage.currently_processing_in_background_mutex);
+                auto new_table_version = updateDeleteBitmapAndTableVersion(storage, part, part->info, deletes_map, deletes_keys);
+
+                auto lock = storage.lockParts();
+
+                auto * deduplication_log = storage.getDeduplicationLog();
+                if (deduplication_log)
+                {
+                    const String block_id = part->getZeroLevelPartBlockID(partition.block_dedup_token);
+                    auto res = deduplication_log->addPart(block_id, part->info);
+                    if (!res.second)
+                    {
+                        ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks);
+                        LOG_INFO(storage.log, "Block with ID {} already exists as part {}; ignoring it", block_id, res.first.getPartName());
+                        continue;
+                    }
+                }
+
+                added = storage.renameTempPartAndAdd(part, transaction, lock, std::move(new_table_version));
+                transaction.commit(&lock);
+
+                /// If add part failed, the primary_index can become INVALID
+                if (added)
+                    primary_index->setState(PrimaryIndex::State::VALID);
             }
 
-            added = storage.renameTempPartAndAdd(part, transaction, lock);
-            transaction.commit(&lock);
+            else
+            {
+                auto lock = storage.lockParts();
+                storage.fillNewPartName(part, lock);
+
+                auto * deduplication_log = storage.getDeduplicationLog();
+                if (deduplication_log)
+                {
+                    const String block_id = part->getZeroLevelPartBlockID(partition.block_dedup_token);
+                    auto res = deduplication_log->addPart(block_id, part->info);
+                    if (!res.second)
+                    {
+                        ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks);
+                        LOG_INFO(
+                            storage.log,
+                            "Block with ID {} already exists as part {}; ignoring it",
+                            block_id,
+                            res.first.getPartNameForLogs());
+                        continue;
+                    }
+                }
+
+                added = storage.renameTempPartAndAdd(part, transaction, lock);
+                transaction.commit(&lock);
+            }
         }
 
         /// Part can be deduplicated, so increment counters and add to part log only if it's really added
