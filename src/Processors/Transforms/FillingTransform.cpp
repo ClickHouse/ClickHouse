@@ -277,8 +277,6 @@ void FillingTransform::interpolate(const MutableColumns & result_columns, Block 
             {
                 MutableColumnPtr column = name_type.type->createColumn();
                 const auto * res_column = result_columns[col_pos].get();
-                // auto [res_columns, pos] = res_map[col_pos];
-                // size_t size = (*res_columns)[pos]->size();
                 size_t size = res_column->size();
                 if (size == 0) /// this is the first row in current chunk
                 {
@@ -483,18 +481,16 @@ void FillingTransform::transform(Chunk & chunk)
 void FillingTransform::saveLastRow(const MutableColumns & result_columns)
 {
     last_row.clear();
-    last_row.resize(result_columns.size());
 
-    size_t num_rows = result_columns[0]->size();
+    const size_t num_rows = result_columns[0]->size();
     if (num_rows == 0)
         return;
 
-    for (size_t i = 0, size = result_columns.size(); i < size; ++i)
+    for (const auto & result_column : result_columns)
     {
-        auto column = result_columns[i]->cloneEmpty();
-        column->insertFrom(*result_columns[i], num_rows - 1);
-        last_row[i] = std::move(column);
+        auto column = result_column->cloneEmpty();
+        column->insertFrom(*result_column, num_rows - 1);
+        last_row.push_back(std::move(column));
     }
 }
-
 }
