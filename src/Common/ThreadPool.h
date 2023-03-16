@@ -95,6 +95,7 @@ private:
     mutable std::mutex mutex;
     std::condition_variable job_finished;
     std::condition_variable new_job_or_shutdown;
+    std::condition_variable thread_finished;
 
     size_t max_threads;
     size_t max_free_threads;
@@ -128,6 +129,9 @@ private:
     ReturnType scheduleImpl(Job job, ssize_t priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context = true);
 
     void worker(typename std::list<Thread>::iterator thread_it);
+
+    /// Tries to start new threads if there are scheduled jobs and the limit `max_threads` is not reached. Must be called with `mutex` locked.
+    void startNewThreadsNoLock();
 
     void finalize();
     void onDestroy();
@@ -258,6 +262,11 @@ public:
         if (state->thread_id == std::this_thread::get_id())
             return false;
         return true;
+    }
+
+    std::thread::id get_id() const
+    {
+        return state ? state->thread_id.load() : std::thread::id{};
     }
 
 protected:
