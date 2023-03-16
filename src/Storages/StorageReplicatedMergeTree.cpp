@@ -8550,7 +8550,6 @@ String StorageReplicatedMergeTree::getSharedDataReplica(
     return best_replica;
 }
 
-
 Strings StorageReplicatedMergeTree::getZeroCopyPartPath(
     const MergeTreeSettings & settings, const std::string & disk_type, const String & table_uuid,
     const String & part_name, const String & zookeeper_path_old)
@@ -8570,16 +8569,59 @@ Strings StorageReplicatedMergeTree::getZeroCopyPartPath(
     return res;
 }
 
+void StorageReplicatedMergeTree::addZeroCopyLock(const String & part_name, const DiskPtr & disk)
+{
+    auto path = getZeroCopyPartPath(part_name, disk);
+    if (path)
+    {
+
+        auto zookeeper = getZooKeeper();
+        auto lock_path = fs::path(*path) / "part_exclusive_lock";
+        std::shared_ptr<std::atomic<bool>> flag = std::make_shared<std::atomic<bool>>(true);
+        {
+            std::lock_guard lock(existing_zero_copy_locks_mutex);
+            existing_zero_copy_locks.emplace(lock_path, {"", flag});
+        }
+
+        std::string replica;
+        bool exists = zookeeper->tryGet(lock_path, replica, [flag] (const WatchResponse &)
+        {
+            *flag = false;
+        });
+
+        if (exists)
+        {
+            std::lock_guard lock(existing_zero_copy_locks_mutex);
+            existing_zero_copy_locks[lock_path].replica = replica;
+        }
+    }
+}
+
 bool StorageReplicatedMergeTree::checkZeroCopyLockExists(const String & part_name, const DiskPtr & disk, String & lock_replica)
 {
     auto path = getZeroCopyPartPath(part_name, disk);
     if (path)
     {
-        /// FIXME
         auto lock_path = fs::path(*path) / "part_exclusive_lock";
-        if (getZooKeeper()->tryGet(lock_path, lock_replica))
+
+        std::lock_guard lock(existing_zero_copy_locks_mutex);
+        if (auto it = existing_zero_copy_locks.find(lock_path); it != existing_zero_copy_locks.end())
         {
-            return true;
+            lock_replica = it->second;
+            if (*it->second.exists)
+                return true;
+        }
+    }
+
+    {
+        std::lock_guard lock(existing_zero_copy_locks_mutex);
+        /// cleanup
+        for (auto it = existing_zero_copy_locks.begin(); it != existing_zero_copy_locks.end())
+        {
+            if (*it->second.exists)
+                ++it;
+            else
+                it = existing_zero_copy_locks.erase(it);
         }
     }
 
