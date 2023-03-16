@@ -509,7 +509,7 @@ BlockIO InterpreterSystemQuery::execute()
             dropDatabaseReplica(query);
             break;
         case Type::SYNC_REPLICA:
-            syncReplica();
+            syncReplica(query);
             break;
         case Type::SYNC_DATABASE_REPLICA:
             syncReplicatedDatabase(query);
@@ -879,7 +879,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid query");
 }
 
-void InterpreterSystemQuery::syncReplica()
+void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
 {
     getContext()->checkAccess(AccessType::SYSTEM_SYNC_REPLICA, table_id);
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
@@ -887,7 +887,8 @@ void InterpreterSystemQuery::syncReplica()
     if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
     {
         LOG_TRACE(log, "Synchronizing entries in replica's queue with table's log and waiting for current last entry to be processed");
-        if (!storage_replicated->waitForProcessingQueue(getContext()->getSettingsRef().receive_timeout.totalMilliseconds()))
+        auto sync_timeout = getContext()->getSettingsRef().receive_timeout.totalMilliseconds();
+        if (!storage_replicated->waitForProcessingQueue(sync_timeout, query.strict_sync))
         {
             LOG_ERROR(log, "SYNC REPLICA {}: Timed out!", table_id.getNameForLogs());
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "SYNC REPLICA {}: command timed out. " \

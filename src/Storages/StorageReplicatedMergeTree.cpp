@@ -7581,7 +7581,7 @@ void StorageReplicatedMergeTree::onActionLockRemove(StorageActionBlockType actio
         background_moves_assignee.trigger();
 }
 
-bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_milliseconds)
+bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_milliseconds, bool strict)
 {
     Stopwatch watch;
 
@@ -7595,8 +7595,17 @@ bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_millisec
     bool set_ids_to_wait = true;
 
     Poco::Event target_entry_event;
-    auto callback = [&target_entry_event, &wait_for_ids, &set_ids_to_wait](size_t new_queue_size, std::unordered_set<String> log_entry_ids, std::optional<String> removed_log_entry_id)
+    auto callback = [&target_entry_event, &wait_for_ids, &set_ids_to_wait, strict]
+        (size_t new_queue_size, std::unordered_set<String> log_entry_ids, std::optional<String> removed_log_entry_id)
     {
+        if (strict)
+        {
+            /// In strict mode we wait for queue to become empty
+            if (new_queue_size == 0)
+                target_entry_event.set();
+            return;
+        }
+
         if (set_ids_to_wait)
         {
             wait_for_ids = log_entry_ids;

@@ -259,6 +259,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table))
                 return false;
+            if (res->type == Type::SYNC_REPLICA && ParserKeyword{"STRICT"}.ignore(pos, expected))
+                res->strict_sync = true;
             break;
         }
 
