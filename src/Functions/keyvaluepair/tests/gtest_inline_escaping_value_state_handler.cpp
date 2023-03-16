@@ -16,7 +16,7 @@ TEST(InlineEscapingValueStateHandler, Wait)
 {
     auto pair_delimiters = std::vector<char> {','};
 
-    ExtractorConfiguration configuration(':', '"', pair_delimiters);
+    Configuration configuration(':', '"', pair_delimiters);
     InlineEscapingValueStateHandler handler(configuration);
 
     test_wait(handler, " los$ yours3lf", 0u, READING_VALUE);

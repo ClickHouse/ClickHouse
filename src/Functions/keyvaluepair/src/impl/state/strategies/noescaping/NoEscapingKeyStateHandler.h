@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Functions/keyvaluepair/src/impl/state/ExtractorConfiguration.h"
+#include "Functions/keyvaluepair/src/impl/state/Configuration.h"
 #include "Functions/keyvaluepair/src/impl/state/StateHandler.h"
 
 namespace DB
@@ -11,7 +11,7 @@ class NoEscapingKeyStateHandler : public StateHandler
 public:
     using ElementType = std::string_view;
 
-    explicit NoEscapingKeyStateHandler(ExtractorConfiguration extractor_configuration_);
+    explicit NoEscapingKeyStateHandler(Configuration extractor_configuration_);
 
     [[nodiscard]] NextState wait(std::string_view file, size_t pos) const;
 
@@ -22,7 +22,7 @@ public:
     [[nodiscard]] NextState readKeyValueDelimiter(std::string_view file, size_t pos) const;
 
 private:
-    ExtractorConfiguration extractor_configuration;
+    Configuration extractor_configuration;
 
     std::vector<char> wait_needles;
     std::vector<char> read_needles;

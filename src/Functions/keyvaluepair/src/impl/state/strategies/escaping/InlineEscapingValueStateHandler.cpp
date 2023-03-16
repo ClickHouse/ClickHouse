@@ -6,7 +6,7 @@
 namespace DB
 {
 
-InlineEscapingValueStateHandler::InlineEscapingValueStateHandler(ExtractorConfiguration extractor_configuration_)
+InlineEscapingValueStateHandler::InlineEscapingValueStateHandler(Configuration extractor_configuration_)
     : extractor_configuration(std::move(extractor_configuration_))
 {
     read_needles = EscapingNeedleFactory::getReadNeedles(extractor_configuration);

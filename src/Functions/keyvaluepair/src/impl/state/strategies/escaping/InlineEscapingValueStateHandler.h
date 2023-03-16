@@ -2,7 +2,7 @@
 
 #include <string>
 #include <unordered_set>
-#include "Functions/keyvaluepair/src/impl/state/ExtractorConfiguration.h"
+#include "Functions/keyvaluepair/src/impl/state/Configuration.h"
 #include "Functions/keyvaluepair/src/impl/state/State.h"
 #include "Functions/keyvaluepair/src/impl/state/StateHandler.h"
 
@@ -14,7 +14,7 @@ class InlineEscapingValueStateHandler : public StateHandler
 public:
     using ElementType = std::string;
 
-    explicit InlineEscapingValueStateHandler(ExtractorConfiguration extractor_configuration_);
+    explicit InlineEscapingValueStateHandler(Configuration extractor_configuration_);
 
     [[nodiscard]] NextState wait(std::string_view file, size_t pos) const;
 
@@ -25,7 +25,7 @@ public:
     [[nodiscard]] static NextState readEmpty(std::string_view, size_t pos, ElementType & value);
 
 private:
-    ExtractorConfiguration extractor_configuration;
+    Configuration extractor_configuration;
     std::vector<char> read_needles;
     std::vector<char> read_quoted_needles;
 };

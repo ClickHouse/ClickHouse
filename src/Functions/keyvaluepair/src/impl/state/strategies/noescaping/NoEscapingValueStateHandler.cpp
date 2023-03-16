@@ -5,7 +5,7 @@
 namespace DB
 {
 
-NoEscapingValueStateHandler::NoEscapingValueStateHandler(ExtractorConfiguration extractor_configuration_)
+NoEscapingValueStateHandler::NoEscapingValueStateHandler(Configuration extractor_configuration_)
     : extractor_configuration(std::move(extractor_configuration_))
 {
     read_needles = NeedleFactory::getReadNeedles(extractor_configuration);

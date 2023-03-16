@@ -5,7 +5,7 @@
 namespace DB
 {
 
-NoEscapingKeyStateHandler::NoEscapingKeyStateHandler(ExtractorConfiguration extractor_configuration_)
+NoEscapingKeyStateHandler::NoEscapingKeyStateHandler(Configuration extractor_configuration_)
 : extractor_configuration(std::move(extractor_configuration_))
 {
     wait_needles = NeedleFactory::getWaitNeedles(extractor_configuration);

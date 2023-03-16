@@ -7,6 +7,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Functions/keyvaluepair/src/KeyValuePairExtractor.h>
+#include "ArgumentExtractor.h"
 
 namespace DB
 {
@@ -14,19 +15,6 @@ namespace DB
 class ExtractKeyValuePairs : public IFunction
 {
 public:
-    using CharArgument = std::optional<char>;
-    using SetArgument = std::unordered_set<char>;
-    using BoolArgument = std::optional<bool>;
-
-    struct ParsedArguments
-    {
-        ColumnPtr data_column;
-        CharArgument key_value_pair_delimiter = {};
-        SetArgument pair_delimiters = {};
-        CharArgument quoting_character = {};
-        BoolArgument with_escaping = {};
-    };
-
     ExtractKeyValuePairs();
 
     static constexpr auto name = "extractKeyValuePairs";
@@ -48,11 +36,7 @@ public:
 private:
     DataTypePtr return_type;
 
-    static ParsedArguments parseArguments(const ColumnsWithTypeAndName & arguments);
-
-    static CharArgument extractControlCharacter(ColumnPtr column);
-
-    static auto getExtractor(const ParsedArguments & parsed_arguments);
+    static auto getExtractor(const ArgumentExtractor::ParsedArguments & parsed_arguments);
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override;
 };

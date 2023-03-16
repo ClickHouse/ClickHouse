@@ -49,7 +49,7 @@ TEST(NoEscapingKeyStateHandler, Wait)
 {
     auto pair_delimiters = std::vector<char>{',', ' ', '$'};
 
-    ExtractorConfiguration configuration(':', '"', pair_delimiters);
+    Configuration configuration(':', '"', pair_delimiters);
     NoEscapingKeyStateHandler handler(configuration);
 
     test_wait(handler, "name", 0u, READING_KEY);
@@ -67,7 +67,7 @@ TEST(NoEscapingKeyStateHandler, Read)
 {
     auto pair_delimiters = std::vector<char>{',', ' '};
 
-    ExtractorConfiguration configuration(':', '"', pair_delimiters);
+    Configuration configuration(':', '"', pair_delimiters);
 
     NoEscapingKeyStateHandler handler(configuration);
 
