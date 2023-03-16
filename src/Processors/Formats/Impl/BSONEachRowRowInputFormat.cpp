@@ -282,6 +282,8 @@ static void readAndInsertString(ReadBuffer & in, IColumn & column, BSONType bson
     if (bson_type == BSONType::STRING || bson_type == BSONType::SYMBOL || bson_type == BSONType::JAVA_SCRIPT_CODE)
     {
         auto size = readBSONSize(in);
+        if (size == 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect size of a string (zero) in BSON");
         readAndInsertStringImpl<is_fixed_string>(in, column, size - 1);
         assertChar(0, in);
     }
