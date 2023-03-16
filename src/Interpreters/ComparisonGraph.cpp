@@ -550,9 +550,18 @@ std::optional<Node> ComparisonGraph<Node>::getEqualConst(const Node & node) cons
         return std::nullopt;
 
     const size_t index = hash_it->second;
-    return graph.vertices[index].hasConstant()
-        ? std::optional<Node>{graph.vertices[index].getConstant()}
-        : std::nullopt;
+
+    if (!graph.vertices[index].hasConstant())
+        return std::nullopt;
+
+    if constexpr (with_ast)
+        return graph.vertices[index].getConstant();
+    else
+    {
+        const auto & constant = getConstantValue(graph.vertices[index].getConstant());
+        auto constant_node = std::make_shared<ConstantNode>(constant, node->getResultType());
+        return constant_node;
+    }
 }
 
 template <ComparisonGraphNodeType Node>

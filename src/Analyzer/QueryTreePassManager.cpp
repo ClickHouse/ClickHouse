@@ -148,8 +148,6 @@ private:
 
 /** ClickHouse query tree pass manager.
   *
-  * TODO: Support setting convert_query_to_cnf.
-  * TODO: Support setting optimize_using_constraints.
   * TODO: Support setting optimize_substitute_columns.
   * TODO: Support GROUP BY injective function elimination.
   * TODO: Support setting optimize_move_functions_out_of_any.

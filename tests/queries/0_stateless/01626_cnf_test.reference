@@ -1,18 +1,768 @@
 SELECT i
 FROM cnf_test
 WHERE (i <= 2) AND (i <= 1)
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: i, result_type: Int64, source_id: 3
+  JOIN TREE
+    TABLE id: 3, table_name: default.cnf_test
+  WHERE
+    FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 2
+          FUNCTION id: 6, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 7, nodes: 2
+                COLUMN id: 8, column_name: i, result_type: Int64, source_id: 3
+                CONSTANT id: 9, constant_value: UInt64_1, constant_value_type: UInt8
+          FUNCTION id: 10, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 11, nodes: 2
+                COLUMN id: 12, column_name: i, result_type: Int64, source_id: 3
+                CONSTANT id: 13, constant_value: UInt64_2, constant_value_type: UInt8
 SELECT i
 FROM cnf_test
 WHERE (i <= 2) OR (i <= 1)
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: i, result_type: Int64, source_id: 3
+  JOIN TREE
+    TABLE id: 3, table_name: default.cnf_test
+  WHERE
+    FUNCTION id: 4, function_name: or, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 2
+          FUNCTION id: 6, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 7, nodes: 2
+                COLUMN id: 8, column_name: i, result_type: Int64, source_id: 3
+                CONSTANT id: 9, constant_value: UInt64_1, constant_value_type: UInt8
+          FUNCTION id: 10, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 11, nodes: 2
+                COLUMN id: 12, column_name: i, result_type: Int64, source_id: 3
+                CONSTANT id: 13, constant_value: UInt64_2, constant_value_type: UInt8
 SELECT i
 FROM cnf_test
 WHERE ((i > 2) OR (i > 5) OR (i > 3)) AND ((i > 2) OR (i > 5) OR (i > 4)) AND ((i > 2) OR (i > 6) OR (i > 3)) AND ((i > 2) OR (i > 6) OR (i > 4)) AND ((i > 1) OR (i > 5) OR (i > 3)) AND ((i > 1) OR (i > 5) OR (i > 4)) AND ((i > 1) OR (i > 6) OR (i > 3)) AND ((i > 1) OR (i > 6) OR (i > 4))
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: i, result_type: Int64, source_id: 3
+  JOIN TREE
+    TABLE id: 3, table_name: default.cnf_test
+  WHERE
+    FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 8
+          FUNCTION id: 6, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 7, nodes: 3
+                FUNCTION id: 8, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 9, nodes: 2
+                      COLUMN id: 10, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 11, constant_value: UInt64_3, constant_value_type: UInt8
+                FUNCTION id: 12, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 13, nodes: 2
+                      COLUMN id: 14, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 15, constant_value: UInt64_1, constant_value_type: UInt8
+                FUNCTION id: 16, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 17, nodes: 2
+                      COLUMN id: 18, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 19, constant_value: UInt64_5, constant_value_type: UInt8
+          FUNCTION id: 20, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 21, nodes: 3
+                FUNCTION id: 22, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 23, nodes: 2
+                      COLUMN id: 24, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 25, constant_value: UInt64_1, constant_value_type: UInt8
+                FUNCTION id: 26, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 27, nodes: 2
+                      COLUMN id: 28, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 29, constant_value: UInt64_5, constant_value_type: UInt8
+                FUNCTION id: 30, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 31, nodes: 2
+                      COLUMN id: 32, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 33, constant_value: UInt64_4, constant_value_type: UInt8
+          FUNCTION id: 34, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 35, nodes: 3
+                FUNCTION id: 36, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 37, nodes: 2
+                      COLUMN id: 38, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 39, constant_value: UInt64_3, constant_value_type: UInt8
+                FUNCTION id: 40, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 41, nodes: 2
+                      COLUMN id: 42, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 43, constant_value: UInt64_1, constant_value_type: UInt8
+                FUNCTION id: 44, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 45, nodes: 2
+                      COLUMN id: 46, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 47, constant_value: UInt64_6, constant_value_type: UInt8
+          FUNCTION id: 48, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 49, nodes: 3
+                FUNCTION id: 50, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 51, nodes: 2
+                      COLUMN id: 52, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 53, constant_value: UInt64_3, constant_value_type: UInt8
+                FUNCTION id: 54, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 55, nodes: 2
+                      COLUMN id: 56, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 57, constant_value: UInt64_2, constant_value_type: UInt8
+                FUNCTION id: 58, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 59, nodes: 2
+                      COLUMN id: 60, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 61, constant_value: UInt64_5, constant_value_type: UInt8
+          FUNCTION id: 62, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 63, nodes: 3
+                FUNCTION id: 64, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 65, nodes: 2
+                      COLUMN id: 66, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 67, constant_value: UInt64_2, constant_value_type: UInt8
+                FUNCTION id: 68, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 69, nodes: 2
+                      COLUMN id: 70, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 71, constant_value: UInt64_5, constant_value_type: UInt8
+                FUNCTION id: 72, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 73, nodes: 2
+                      COLUMN id: 74, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 75, constant_value: UInt64_4, constant_value_type: UInt8
+          FUNCTION id: 76, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 77, nodes: 3
+                FUNCTION id: 78, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 79, nodes: 2
+                      COLUMN id: 80, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 81, constant_value: UInt64_1, constant_value_type: UInt8
+                FUNCTION id: 82, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 83, nodes: 2
+                      COLUMN id: 84, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 85, constant_value: UInt64_6, constant_value_type: UInt8
+                FUNCTION id: 86, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 87, nodes: 2
+                      COLUMN id: 88, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 89, constant_value: UInt64_4, constant_value_type: UInt8
+          FUNCTION id: 90, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 91, nodes: 3
+                FUNCTION id: 92, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 93, nodes: 2
+                      COLUMN id: 94, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 95, constant_value: UInt64_3, constant_value_type: UInt8
+                FUNCTION id: 96, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 97, nodes: 2
+                      COLUMN id: 98, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 99, constant_value: UInt64_2, constant_value_type: UInt8
+                FUNCTION id: 100, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 101, nodes: 2
+                      COLUMN id: 102, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 103, constant_value: UInt64_6, constant_value_type: UInt8
+          FUNCTION id: 104, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 105, nodes: 3
+                FUNCTION id: 106, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 107, nodes: 2
+                      COLUMN id: 108, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 109, constant_value: UInt64_2, constant_value_type: UInt8
+                FUNCTION id: 110, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 111, nodes: 2
+                      COLUMN id: 112, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 113, constant_value: UInt64_6, constant_value_type: UInt8
+                FUNCTION id: 114, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 115, nodes: 2
+                      COLUMN id: 116, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 117, constant_value: UInt64_4, constant_value_type: UInt8
 SELECT i
 FROM cnf_test
 WHERE ((i <= 3) OR (i <= 2) OR (i <= 5)) AND ((i <= 3) OR (i <= 2) OR (i <= 6)) AND ((i <= 3) OR (i <= 5) OR (i <= 1)) AND ((i <= 3) OR (i <= 6) OR (i <= 1)) AND ((i <= 2) OR (i <= 5) OR (i <= 4)) AND ((i <= 2) OR (i <= 6) OR (i <= 4)) AND ((i <= 5) OR (i <= 1) OR (i <= 4)) AND ((i <= 6) OR (i <= 1) OR (i <= 4))
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: i, result_type: Int64, source_id: 3
+  JOIN TREE
+    TABLE id: 3, table_name: default.cnf_test
+  WHERE
+    FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 8
+          FUNCTION id: 6, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 7, nodes: 3
+                FUNCTION id: 8, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 9, nodes: 2
+                      COLUMN id: 10, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 11, constant_value: UInt64_1, constant_value_type: UInt8
+                FUNCTION id: 12, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 13, nodes: 2
+                      COLUMN id: 14, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 15, constant_value: UInt64_5, constant_value_type: UInt8
+                FUNCTION id: 16, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 17, nodes: 2
+                      COLUMN id: 18, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 19, constant_value: UInt64_3, constant_value_type: UInt8
+          FUNCTION id: 20, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 21, nodes: 3
+                FUNCTION id: 22, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 23, nodes: 2
+                      COLUMN id: 24, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 25, constant_value: UInt64_1, constant_value_type: UInt8
+                FUNCTION id: 26, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 27, nodes: 2
+                      COLUMN id: 28, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 29, constant_value: UInt64_3, constant_value_type: UInt8
+                FUNCTION id: 30, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 31, nodes: 2
+                      COLUMN id: 32, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 33, constant_value: UInt64_6, constant_value_type: UInt8
+          FUNCTION id: 34, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 35, nodes: 3
+                FUNCTION id: 36, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 37, nodes: 2
+                      COLUMN id: 38, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 39, constant_value: UInt64_4, constant_value_type: UInt8
+                FUNCTION id: 40, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 41, nodes: 2
+                      COLUMN id: 42, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 43, constant_value: UInt64_1, constant_value_type: UInt8
+                FUNCTION id: 44, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 45, nodes: 2
+                      COLUMN id: 46, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 47, constant_value: UInt64_5, constant_value_type: UInt8
+          FUNCTION id: 48, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 49, nodes: 3
+                FUNCTION id: 50, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 51, nodes: 2
+                      COLUMN id: 52, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 53, constant_value: UInt64_5, constant_value_type: UInt8
+                FUNCTION id: 54, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 55, nodes: 2
+                      COLUMN id: 56, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 57, constant_value: UInt64_2, constant_value_type: UInt8
+                FUNCTION id: 58, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 59, nodes: 2
+                      COLUMN id: 60, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 61, constant_value: UInt64_3, constant_value_type: UInt8
+          FUNCTION id: 62, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 63, nodes: 3
+                FUNCTION id: 64, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 65, nodes: 2
+                      COLUMN id: 66, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 67, constant_value: UInt64_4, constant_value_type: UInt8
+                FUNCTION id: 68, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 69, nodes: 2
+                      COLUMN id: 70, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 71, constant_value: UInt64_5, constant_value_type: UInt8
+                FUNCTION id: 72, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 73, nodes: 2
+                      COLUMN id: 74, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 75, constant_value: UInt64_2, constant_value_type: UInt8
+          FUNCTION id: 76, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 77, nodes: 3
+                FUNCTION id: 78, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 79, nodes: 2
+                      COLUMN id: 80, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 81, constant_value: UInt64_2, constant_value_type: UInt8
+                FUNCTION id: 82, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 83, nodes: 2
+                      COLUMN id: 84, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 85, constant_value: UInt64_3, constant_value_type: UInt8
+                FUNCTION id: 86, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 87, nodes: 2
+                      COLUMN id: 88, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 89, constant_value: UInt64_6, constant_value_type: UInt8
+          FUNCTION id: 90, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 91, nodes: 3
+                FUNCTION id: 92, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 93, nodes: 2
+                      COLUMN id: 94, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 95, constant_value: UInt64_4, constant_value_type: UInt8
+                FUNCTION id: 96, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 97, nodes: 2
+                      COLUMN id: 98, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 99, constant_value: UInt64_1, constant_value_type: UInt8
+                FUNCTION id: 100, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 101, nodes: 2
+                      COLUMN id: 102, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 103, constant_value: UInt64_6, constant_value_type: UInt8
+          FUNCTION id: 104, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 105, nodes: 3
+                FUNCTION id: 106, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 107, nodes: 2
+                      COLUMN id: 108, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 109, constant_value: UInt64_4, constant_value_type: UInt8
+                FUNCTION id: 110, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 111, nodes: 2
+                      COLUMN id: 112, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 113, constant_value: UInt64_2, constant_value_type: UInt8
+                FUNCTION id: 114, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 115, nodes: 2
+                      COLUMN id: 116, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 117, constant_value: UInt64_6, constant_value_type: UInt8
 SELECT i
 FROM cnf_test
 WHERE ((i > 2) OR (i > 5) OR (i > 3)) AND ((i > 2) OR (i > 5) OR (i > 4)) AND ((i > 2) OR (i > 5) OR (i > 8)) AND ((i > 2) OR (i > 6) OR (i > 3)) AND ((i > 2) OR (i > 6) OR (i > 4)) AND ((i > 2) OR (i > 6) OR (i > 8)) AND ((i > 1) OR (i > 5) OR (i > 3)) AND ((i > 1) OR (i > 5) OR (i > 4)) AND ((i > 1) OR (i > 5) OR (i > 8)) AND ((i > 1) OR (i > 6) OR (i > 3)) AND ((i > 1) OR (i > 6) OR (i > 4)) AND ((i > 1) OR (i > 6) OR (i > 8)) AND ((i > 5) OR (i > 3) OR (i > 7)) AND ((i > 5) OR (i > 4) OR (i > 7)) AND ((i > 5) OR (i > 8) OR (i > 7)) AND ((i > 6) OR (i > 3) OR (i > 7)) AND ((i > 6) OR (i > 4) OR (i > 7)) AND ((i > 6) OR (i > 8) OR (i > 7))
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: i, result_type: Int64, source_id: 3
+  JOIN TREE
+    TABLE id: 3, table_name: default.cnf_test
+  WHERE
+    FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 18
+          FUNCTION id: 6, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 7, nodes: 3
+                FUNCTION id: 8, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 9, nodes: 2
+                      COLUMN id: 10, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 11, constant_value: UInt64_3, constant_value_type: UInt8
+                FUNCTION id: 12, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 13, nodes: 2
+                      COLUMN id: 14, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 15, constant_value: UInt64_1, constant_value_type: UInt8
+                FUNCTION id: 16, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 17, nodes: 2
+                      COLUMN id: 18, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 19, constant_value: UInt64_5, constant_value_type: UInt8
+          FUNCTION id: 20, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 21, nodes: 3
+                FUNCTION id: 22, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 23, nodes: 2
+                      COLUMN id: 24, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 25, constant_value: UInt64_6, constant_value_type: UInt8
+                FUNCTION id: 26, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 27, nodes: 2
+                      COLUMN id: 28, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 29, constant_value: UInt64_7, constant_value_type: UInt8
+                FUNCTION id: 30, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 31, nodes: 2
+                      COLUMN id: 32, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 33, constant_value: UInt64_8, constant_value_type: UInt8
+          FUNCTION id: 34, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 35, nodes: 3
+                FUNCTION id: 36, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 37, nodes: 2
+                      COLUMN id: 38, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 39, constant_value: UInt64_7, constant_value_type: UInt8
+                FUNCTION id: 40, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 41, nodes: 2
+                      COLUMN id: 42, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 43, constant_value: UInt64_5, constant_value_type: UInt8
+                FUNCTION id: 44, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 45, nodes: 2
+                      COLUMN id: 46, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 47, constant_value: UInt64_4, constant_value_type: UInt8
+          FUNCTION id: 48, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 49, nodes: 3
+                FUNCTION id: 50, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 51, nodes: 2
+                      COLUMN id: 52, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 53, constant_value: UInt64_3, constant_value_type: UInt8
+                FUNCTION id: 54, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 55, nodes: 2
+                      COLUMN id: 56, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 57, constant_value: UInt64_6, constant_value_type: UInt8
+                FUNCTION id: 58, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 59, nodes: 2
+                      COLUMN id: 60, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 61, constant_value: UInt64_7, constant_value_type: UInt8
+          FUNCTION id: 62, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 63, nodes: 3
+                FUNCTION id: 64, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 65, nodes: 2
+                      COLUMN id: 66, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 67, constant_value: UInt64_2, constant_value_type: UInt8
+                FUNCTION id: 68, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 69, nodes: 2
+                      COLUMN id: 70, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 71, constant_value: UInt64_5, constant_value_type: UInt8
+                FUNCTION id: 72, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 73, nodes: 2
+                      COLUMN id: 74, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 75, constant_value: UInt64_8, constant_value_type: UInt8
+          FUNCTION id: 76, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 77, nodes: 3
+                FUNCTION id: 78, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 79, nodes: 2
+                      COLUMN id: 80, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 81, constant_value: UInt64_3, constant_value_type: UInt8
+                FUNCTION id: 82, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 83, nodes: 2
+                      COLUMN id: 84, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 85, constant_value: UInt64_2, constant_value_type: UInt8
+                FUNCTION id: 86, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 87, nodes: 2
+                      COLUMN id: 88, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 89, constant_value: UInt64_5, constant_value_type: UInt8
+          FUNCTION id: 90, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 91, nodes: 3
+                FUNCTION id: 92, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 93, nodes: 2
+                      COLUMN id: 94, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 95, constant_value: UInt64_3, constant_value_type: UInt8
+                FUNCTION id: 96, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 97, nodes: 2
+                      COLUMN id: 98, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 99, constant_value: UInt64_1, constant_value_type: UInt8
+                FUNCTION id: 100, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 101, nodes: 2
+                      COLUMN id: 102, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 103, constant_value: UInt64_6, constant_value_type: UInt8
+          FUNCTION id: 104, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 105, nodes: 3
+                FUNCTION id: 106, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 107, nodes: 2
+                      COLUMN id: 108, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 109, constant_value: UInt64_3, constant_value_type: UInt8
+                FUNCTION id: 110, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 111, nodes: 2
+                      COLUMN id: 112, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 113, constant_value: UInt64_7, constant_value_type: UInt8
+                FUNCTION id: 114, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 115, nodes: 2
+                      COLUMN id: 116, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 117, constant_value: UInt64_5, constant_value_type: UInt8
+          FUNCTION id: 118, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 119, nodes: 3
+                FUNCTION id: 120, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 121, nodes: 2
+                      COLUMN id: 122, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 123, constant_value: UInt64_1, constant_value_type: UInt8
+                FUNCTION id: 124, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 125, nodes: 2
+                      COLUMN id: 126, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 127, constant_value: UInt64_6, constant_value_type: UInt8
+                FUNCTION id: 128, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 129, nodes: 2
+                      COLUMN id: 130, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 131, constant_value: UInt64_8, constant_value_type: UInt8
+          FUNCTION id: 132, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 133, nodes: 3
+                FUNCTION id: 134, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 135, nodes: 2
+                      COLUMN id: 136, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 137, constant_value: UInt64_1, constant_value_type: UInt8
+                FUNCTION id: 138, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 139, nodes: 2
+                      COLUMN id: 140, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 141, constant_value: UInt64_5, constant_value_type: UInt8
+                FUNCTION id: 142, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 143, nodes: 2
+                      COLUMN id: 144, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 145, constant_value: UInt64_4, constant_value_type: UInt8
+          FUNCTION id: 146, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 147, nodes: 3
+                FUNCTION id: 148, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 149, nodes: 2
+                      COLUMN id: 150, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 151, constant_value: UInt64_2, constant_value_type: UInt8
+                FUNCTION id: 152, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 153, nodes: 2
+                      COLUMN id: 154, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 155, constant_value: UInt64_6, constant_value_type: UInt8
+                FUNCTION id: 156, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 157, nodes: 2
+                      COLUMN id: 158, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 159, constant_value: UInt64_8, constant_value_type: UInt8
+          FUNCTION id: 160, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 161, nodes: 3
+                FUNCTION id: 162, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 163, nodes: 2
+                      COLUMN id: 164, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 165, constant_value: UInt64_1, constant_value_type: UInt8
+                FUNCTION id: 166, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 167, nodes: 2
+                      COLUMN id: 168, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 169, constant_value: UInt64_5, constant_value_type: UInt8
+                FUNCTION id: 170, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 171, nodes: 2
+                      COLUMN id: 172, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 173, constant_value: UInt64_8, constant_value_type: UInt8
+          FUNCTION id: 174, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 175, nodes: 3
+                FUNCTION id: 176, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 177, nodes: 2
+                      COLUMN id: 178, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 179, constant_value: UInt64_6, constant_value_type: UInt8
+                FUNCTION id: 180, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 181, nodes: 2
+                      COLUMN id: 182, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 183, constant_value: UInt64_7, constant_value_type: UInt8
+                FUNCTION id: 184, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 185, nodes: 2
+                      COLUMN id: 186, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 187, constant_value: UInt64_4, constant_value_type: UInt8
+          FUNCTION id: 188, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 189, nodes: 3
+                FUNCTION id: 190, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 191, nodes: 2
+                      COLUMN id: 192, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 193, constant_value: UInt64_7, constant_value_type: UInt8
+                FUNCTION id: 194, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 195, nodes: 2
+                      COLUMN id: 196, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 197, constant_value: UInt64_5, constant_value_type: UInt8
+                FUNCTION id: 198, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 199, nodes: 2
+                      COLUMN id: 200, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 201, constant_value: UInt64_8, constant_value_type: UInt8
+          FUNCTION id: 202, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 203, nodes: 3
+                FUNCTION id: 204, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 205, nodes: 2
+                      COLUMN id: 206, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 207, constant_value: UInt64_2, constant_value_type: UInt8
+                FUNCTION id: 208, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 209, nodes: 2
+                      COLUMN id: 210, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 211, constant_value: UInt64_6, constant_value_type: UInt8
+                FUNCTION id: 212, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 213, nodes: 2
+                      COLUMN id: 214, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 215, constant_value: UInt64_4, constant_value_type: UInt8
+          FUNCTION id: 216, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 217, nodes: 3
+                FUNCTION id: 218, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 219, nodes: 2
+                      COLUMN id: 220, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 221, constant_value: UInt64_3, constant_value_type: UInt8
+                FUNCTION id: 222, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 223, nodes: 2
+                      COLUMN id: 224, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 225, constant_value: UInt64_2, constant_value_type: UInt8
+                FUNCTION id: 226, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 227, nodes: 2
+                      COLUMN id: 228, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 229, constant_value: UInt64_6, constant_value_type: UInt8
+          FUNCTION id: 230, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 231, nodes: 3
+                FUNCTION id: 232, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 233, nodes: 2
+                      COLUMN id: 234, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 235, constant_value: UInt64_2, constant_value_type: UInt8
+                FUNCTION id: 236, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 237, nodes: 2
+                      COLUMN id: 238, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 239, constant_value: UInt64_5, constant_value_type: UInt8
+                FUNCTION id: 240, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 241, nodes: 2
+                      COLUMN id: 242, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 243, constant_value: UInt64_4, constant_value_type: UInt8
+          FUNCTION id: 244, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 245, nodes: 3
+                FUNCTION id: 246, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 247, nodes: 2
+                      COLUMN id: 248, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 249, constant_value: UInt64_1, constant_value_type: UInt8
+                FUNCTION id: 250, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 251, nodes: 2
+                      COLUMN id: 252, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 253, constant_value: UInt64_6, constant_value_type: UInt8
+                FUNCTION id: 254, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 255, nodes: 2
+                      COLUMN id: 256, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 257, constant_value: UInt64_4, constant_value_type: UInt8
 SELECT i
 FROM cnf_test
 WHERE ((i > 2) OR (i > 1) OR (i > 7)) AND (i <= 5) AND (i <= 6) AND ((i > 3) OR (i > 4) OR (i > 8))
+QUERY id: 0
+  PROJECTION COLUMNS
+    i Int64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: i, result_type: Int64, source_id: 3
+  JOIN TREE
+    TABLE id: 3, table_name: default.cnf_test
+  WHERE
+    FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 4
+          FUNCTION id: 6, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 7, nodes: 3
+                FUNCTION id: 8, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 9, nodes: 2
+                      COLUMN id: 10, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 11, constant_value: UInt64_2, constant_value_type: UInt8
+                FUNCTION id: 12, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 13, nodes: 2
+                      COLUMN id: 14, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 15, constant_value: UInt64_1, constant_value_type: UInt8
+                FUNCTION id: 16, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 17, nodes: 2
+                      COLUMN id: 18, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 19, constant_value: UInt64_7, constant_value_type: UInt8
+          FUNCTION id: 20, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 21, nodes: 3
+                FUNCTION id: 22, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 23, nodes: 2
+                      COLUMN id: 24, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 25, constant_value: UInt64_3, constant_value_type: UInt8
+                FUNCTION id: 26, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 27, nodes: 2
+                      COLUMN id: 28, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 29, constant_value: UInt64_4, constant_value_type: UInt8
+                FUNCTION id: 30, function_name: greater, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 31, nodes: 2
+                      COLUMN id: 32, column_name: i, result_type: Int64, source_id: 3
+                      CONSTANT id: 33, constant_value: UInt64_8, constant_value_type: UInt8
+          FUNCTION id: 34, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 35, nodes: 2
+                COLUMN id: 36, column_name: i, result_type: Int64, source_id: 3
+                CONSTANT id: 37, constant_value: UInt64_5, constant_value_type: UInt8
+          FUNCTION id: 38, function_name: lessOrEquals, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 39, nodes: 2
+                COLUMN id: 40, column_name: i, result_type: Int64, source_id: 3
+                CONSTANT id: 41, constant_value: UInt64_6, constant_value_type: UInt8
