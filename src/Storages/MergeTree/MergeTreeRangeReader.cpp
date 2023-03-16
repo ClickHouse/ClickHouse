@@ -802,6 +802,7 @@ size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8 * begin, con
 
 MergeTreeRangeReader::MergeTreeRangeReader(
     const MergeTreeData & storage_,
+    const StorageSnapshotPtr & storage_snapshot_,
     IMergeTreeReader * merge_tree_reader_,
     MergeTreeRangeReader * prev_reader_,
     const PrewhereExprStep * prewhere_info_,
@@ -813,8 +814,8 @@ MergeTreeRangeReader::MergeTreeRangeReader(
     , prewhere_info(prewhere_info_)
     , last_reader_in_chain(last_reader_in_chain_)
     , is_initialized(true)
-    , storage(storage_)
-    , table_version(merge_tree_reader->getStorageSnapshot()->table_version)
+    , storage(&storage_)
+    , table_version(storage_snapshot_->table_version)
 {
     if (prev_reader)
         result_sample_block = prev_reader->getSampleBlock();
@@ -1125,7 +1126,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     if (read_sample_block.has("_part_offset"))
         fillPartOffsetColumn(result, leading_begin_part_offset, leading_end_part_offset);
 
-    if (storage.merging_params.mode == MergeTreeData::MergingParams::Mode::Unique && !prev_reader)
+    if (storage->merging_params.mode == MergeTreeData::MergingParams::Mode::Unique && !prev_reader)
     {
         auto row_ids = getPartOffsets(result, leading_begin_part_offset, leading_end_part_offset);
         setBitmapFilter(row_ids);
@@ -1198,7 +1199,8 @@ void MergeTreeRangeReader::setBitmapFilter(const PaddedPODArray<UInt64> & rows_i
     auto part_version = table_version->getPartVersion(merge_tree_reader->data_part_info_for_read->getDataPartInfo());
 
     /// Get delete bitmap of the part
-    auto part_bitmap = storage.delete_bitmap_cache.getOrCreate(merge_tree_reader->data_part_info_for_read->getDataPartPtr(), part_version);
+    auto part_bitmap
+        = storage->delete_bitmap_cache->getOrCreate(merge_tree_reader->data_part_info_for_read->getDataPartPtr(), part_version);
 
     size_t start_row = rows_id[0];
     size_t end_row = rows_id[rows_id.size() - 1];

@@ -1077,6 +1077,9 @@ public:
     std::shared_ptr<DeleteBuffer> delete_buffer = nullptr;
     std::mutex write_merge_lock;
 
+    ASTPtr getFetchIndexQuery(
+        const MergeTreePartition & partition, const std::vector<Field> & min_key_values, const std::vector<Field> & max_key_values);
+
 protected:
     friend class IMergeTreeDataPart;
     friend class MergeTreeDataMergerMutator;

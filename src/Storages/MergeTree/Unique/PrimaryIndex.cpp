@@ -5,11 +5,14 @@
 #include <IO/WriteHelpers.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/Unique/PrimaryIndex.h>
 #include <Storages/MergeTree/Unique/PrimaryKeysEncoder.h>
-#include <Storages/MergeTreeData.h>
 #include <Common/PODArray.h>
 #include <Common/filesystemHelpers.h>
+
+#include <Interpreters/InterpreterSelectQuery.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 
 namespace DB
 {

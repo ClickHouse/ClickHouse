@@ -181,7 +181,7 @@ private:
         scope_guard temporary_directory_lock;
 
         std::shared_ptr<const TableVersion> table_version;
-        UniqueMergeTreeWriteState write_state;
+        WriteState write_state;
         MutableColumnPtr col_encode = nullptr;
         Names unique_keys;
         bool column_initialized = false;

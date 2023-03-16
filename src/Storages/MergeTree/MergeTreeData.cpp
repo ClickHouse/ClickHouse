@@ -8197,5 +8197,201 @@ MergeTreePartInfo MergeTreeData::findPartInfoByMinBlock(Int64 min_block) const
             ErrorCodes::LOGICAL_ERROR, "Can not find part info in part_info_by_block_number, this is a bug, min_block: {}", min_block);
 }
 
+ASTPtr MergeTreeData::getFetchIndexQuery(
+    const MergeTreePartition & partition, const std::vector<Field> & min_key_values, const std::vector<Field> & max_key_values)
+{
+    auto metadata = getInMemoryMetadataPtr();
+    auto res_query = std::make_shared<ASTSelectQuery>();
+
+    auto select = std::make_shared<ASTExpressionList>();
+    for (const auto & unique_expr : metadata->unique_key.expression_list_ast->children)
+    {
+        select->children.push_back(unique_expr);
+    }
+    select->children.push_back(std::make_shared<ASTIdentifier>("_part_min_block"));
+    select->children.push_back(std::make_shared<ASTIdentifier>("_part_offset"));
+    if (!merging_params.version_column.empty())
+        select->children.push_back(std::make_shared<ASTIdentifier>(merging_params.version_column));
+    res_query->setExpression(ASTSelectQuery::Expression::SELECT, select);
+
+    res_query->setExpression(ASTSelectQuery::Expression::TABLES, std::make_shared<ASTTablesInSelectQuery>());
+    auto tables_elem = std::make_shared<ASTTablesInSelectQueryElement>();
+    auto table_expr = std::make_shared<ASTTableExpression>();
+    res_query->tables()->children.push_back(tables_elem);
+    tables_elem->table_expression = table_expr;
+    tables_elem->children.push_back(table_expr);
+    table_expr->database_and_table_name = std::make_shared<ASTTableIdentifier>(getStorageID());
+    table_expr->children.push_back(table_expr->database_and_table_name);
+
+    /// Now, we should set the PREWHERE expression
+
+    auto func_and = makeASTFunction("and");
+    if (partition.getID(*this) != "all")
+    {
+        const auto & partition_by = metadata->getPartitionKey();
+        const auto & partition_by_expr_list = partition_by.expression_list_ast;
+        size_t key_size = partition.value.size();
+        for (size_t i = 0; i < key_size; ++i)
+        {
+            if (WhichDataType{partition_by.data_types[i]}.isNativeUInt())
+            {
+                func_and->arguments->children.push_back(makeASTFunction(
+                    "equals",
+                    partition_by_expr_list->children[i]->clone(),
+                    std::make_shared<ASTLiteral>(partition.value[i].get<UInt64>())));
+            }
+            else if (WhichDataType{partition_by.data_types[i]}.isNativeInt())
+            {
+                func_and->arguments->children.push_back(makeASTFunction(
+                    "equals", partition_by_expr_list->children[i]->clone(), std::make_shared<ASTLiteral>(partition.value[i].get<Int64>())));
+            }
+            else if (WhichDataType{partition_by.data_types[i]}.isFloat32())
+            {
+                func_and->arguments->children.push_back(makeASTFunction(
+                    "equals",
+                    partition_by_expr_list->children[i]->clone(),
+                    std::make_shared<ASTLiteral>(partition.value[i].get<Float32>())));
+            }
+            else if (WhichDataType{partition_by.data_types[i]}.isFloat64())
+            {
+                func_and->arguments->children.push_back(makeASTFunction(
+                    "equals",
+                    partition_by_expr_list->children[i]->clone(),
+                    std::make_shared<ASTLiteral>(partition.value[i].get<Float64>())));
+            }
+            else if (isDate(partition_by.data_types[i]))
+            {
+                auto func_to_date = makeASTFunction("toDate", std::make_shared<ASTLiteral>(partition.value[i].get<UInt64>()));
+                func_and->arguments->children.push_back(
+                    makeASTFunction("equals", partition_by_expr_list->children[i]->clone(), func_to_date));
+            }
+            else if (isDate32(partition_by.data_types[i]))
+            {
+                auto func_to_date32 = makeASTFunction("toDate32", std::make_shared<ASTLiteral>(partition.value[i].get<UInt64>()));
+                func_and->arguments->children.push_back(
+                    makeASTFunction("equals", partition_by_expr_list->children[i]->clone(), func_to_date32));
+            }
+            else if (isDateTime(partition_by.data_types[i]))
+            {
+                auto func_to_datetime = makeASTFunction("toDateTime", std::make_shared<ASTLiteral>(partition.value[i].get<UInt64>()));
+                func_and->arguments->children.push_back(
+                    makeASTFunction("equals", partition_by_expr_list->children[i]->clone(), func_to_datetime));
+            }
+            else if (isStringOrFixedString(partition_by.data_types[i]))
+            {
+                func_and->arguments->children.push_back(makeASTFunction(
+                    "equals",
+                    partition_by_expr_list->children[i]->clone(),
+                    std::make_shared<ASTLiteral>(partition.value[i].get<String>())));
+            }
+            else
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Unsupported {} data type of partition by key of StorageUniqueMergeTree",
+                    partition_by.data_types[i]->getName());
+            }
+        }
+    }
+
+    const auto & unique_key = metadata->getUniqueKey();
+    const auto & unique_key_expr_list = unique_key.expression_list_ast;
+    for (size_t i = 0; i < min_key_values.size(); ++i)
+    {
+        if (WhichDataType{unique_key.data_types[i]}.isNativeUInt())
+        {
+            func_and->arguments->children.push_back(makeASTFunction(
+                "greaterOrEquals",
+                unique_key_expr_list->children[i]->clone(),
+                std::make_shared<ASTLiteral>(min_key_values[i].get<UInt64>())));
+            func_and->arguments->children.push_back(makeASTFunction(
+                "lessOrEquals", unique_key_expr_list->children[i]->clone(), std::make_shared<ASTLiteral>(max_key_values[i].get<UInt64>())));
+        }
+        else if (WhichDataType{unique_key.data_types[i]}.isNativeInt())
+        {
+            func_and->arguments->children.push_back(makeASTFunction(
+                "greaterOrEquals",
+                unique_key_expr_list->children[i]->clone(),
+                std::make_shared<ASTLiteral>(min_key_values[i].get<Int64>())));
+            func_and->arguments->children.push_back(makeASTFunction(
+                "lessOrEquals", unique_key_expr_list->children[i]->clone(), std::make_shared<ASTLiteral>(max_key_values[i].get<Int64>())));
+        }
+        else if (WhichDataType{unique_key.data_types[i]}.isFloat32())
+        {
+            func_and->arguments->children.push_back(makeASTFunction(
+                "greaterOrEquals",
+                unique_key_expr_list->children[i]->clone(),
+                std::make_shared<ASTLiteral>(min_key_values[i].get<Float32>())));
+            func_and->arguments->children.push_back(makeASTFunction(
+                "lessOrEquals",
+                unique_key_expr_list->children[i]->clone(),
+                std::make_shared<ASTLiteral>(max_key_values[i].get<Float32>())));
+        }
+        else if (WhichDataType{unique_key.data_types[i]}.isFloat64())
+        {
+            func_and->arguments->children.push_back(makeASTFunction(
+                "greaterOrEquals",
+                unique_key_expr_list->children[i]->clone(),
+                std::make_shared<ASTLiteral>(min_key_values[i].get<Float64>())));
+            func_and->arguments->children.push_back(makeASTFunction(
+                "lessOrEquals",
+                unique_key_expr_list->children[i]->clone(),
+                std::make_shared<ASTLiteral>(max_key_values[i].get<Float64>())));
+        }
+        else if (isDate(unique_key.data_types[i]))
+        {
+            auto func_to_min_date = makeASTFunction("toDate", std::make_shared<ASTLiteral>(min_key_values[i].get<UInt64>()));
+            func_and->arguments->children.push_back(
+                makeASTFunction("greaterOrEquals", unique_key_expr_list->children[i]->clone(), func_to_min_date));
+            auto func_to_max_date = makeASTFunction("toDate", std::make_shared<ASTLiteral>(max_key_values[i].get<UInt64>()));
+            func_and->arguments->children.push_back(
+                makeASTFunction("lessOrEquals", unique_key_expr_list->children[i]->clone(), func_to_max_date));
+        }
+        else if (isDate32(unique_key.data_types[i]))
+        {
+            auto func_to_min_date32 = makeASTFunction("toDate32", std::make_shared<ASTLiteral>(min_key_values[i].get<UInt64>()));
+            func_and->arguments->children.push_back(
+                makeASTFunction("greaterOrEquals", unique_key_expr_list->children[i]->clone(), func_to_min_date32));
+            auto func_to_max_date32 = makeASTFunction("toDate32", std::make_shared<ASTLiteral>(max_key_values[i].get<UInt64>()));
+            func_and->arguments->children.push_back(
+                makeASTFunction("lessOrEquals", unique_key_expr_list->children[i]->clone(), func_to_max_date32));
+        }
+        else if (isDateTime(unique_key.data_types[i]))
+        {
+            auto func_to_min_datetime = makeASTFunction("toDateTime", std::make_shared<ASTLiteral>(min_key_values[i].get<UInt64>()));
+            func_and->arguments->children.push_back(
+                makeASTFunction("greaterOrEquals", unique_key_expr_list->children[i]->clone(), func_to_min_datetime));
+            auto func_to_max_datetime = makeASTFunction("toDateTime", std::make_shared<ASTLiteral>(max_key_values[i].get<UInt64>()));
+            func_and->arguments->children.push_back(
+                makeASTFunction("lessOrEquals", unique_key_expr_list->children[i]->clone(), func_to_max_datetime));
+        }
+        else if (isStringOrFixedString(unique_key.data_types[i]))
+        {
+            func_and->arguments->children.push_back(makeASTFunction(
+                "greaterOrEquals",
+                unique_key_expr_list->children[i]->clone(),
+                std::make_shared<ASTLiteral>(min_key_values[i].get<String>())));
+            func_and->arguments->children.push_back(makeASTFunction(
+                "lessOrEquals", unique_key_expr_list->children[i]->clone(), std::make_shared<ASTLiteral>(max_key_values[i].get<String>())));
+        }
+        else
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Unsupported {} data type of Unique key of StorageUniqueMergeTree",
+                unique_key.data_types[i]->getName());
+        }
+    }
+
+    res_query->setExpression(ASTSelectQuery::Expression::PREWHERE, func_and);
+
+    auto set_query = std::make_shared<ASTSetQuery>();
+    SettingsChanges settings;
+    settings.push_back({"force_primary_key", 1});
+    set_query->changes = std::move(settings);
+    res_query->setExpression(ASTSelectQuery::Expression::SETTINGS, set_query);
+
+    return res_query;
+}
 
 }

@@ -55,6 +55,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_POLICY;
     extern const int NO_SUCH_DATA_PART;
     extern const int ABORTED;
+    extern const int NOT_ENOUGH_SPACE;
 }
 
 namespace ActionLocks

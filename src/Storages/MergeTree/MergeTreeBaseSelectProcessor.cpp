@@ -300,7 +300,8 @@ void IMergeTreeSelectAlgorithm::initializeRangeReadersImpl(
     if (reader_settings_.apply_deleted_mask && has_lightweight_delete)
     {
         MergeTreeRangeReader pre_range_reader(
-            data,
+            storage,
+            storage_snapshot,
             pre_reader_for_step_[0].get(),
             prev_reader,
             &lightweight_delete_filter_step_,
@@ -326,7 +327,8 @@ void IMergeTreeSelectAlgorithm::initializeRangeReadersImpl(
             last_reader = reader_->getColumns().empty() && (i + 1 == prewhere_actions->steps.size());
 
             MergeTreeRangeReader current_reader(
-                data,
+                storage,
+                storage_snapshot,
                 pre_reader_for_step_[i + pre_readers_shift].get(),
                 prev_reader,
                 &prewhere_actions_->steps[i],
@@ -340,7 +342,8 @@ void IMergeTreeSelectAlgorithm::initializeRangeReadersImpl(
 
     if (!last_reader)
     {
-        range_reader = MergeTreeRangeReader(data, reader_, prev_reader, nullptr, true, non_const_virtual_column_names_);
+        range_reader
+            = MergeTreeRangeReader(storage, storage_snapshot, reader_, prev_reader, nullptr, true, non_const_virtual_column_names_);
     }
     else
     {

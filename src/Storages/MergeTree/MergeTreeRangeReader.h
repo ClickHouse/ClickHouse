@@ -6,6 +6,8 @@
 #include <Columns/FilterDescription.h>
 #include <Storages/MergeTree/MarkRange.h>
 
+#include <Storages/StorageSnapshot.h>
+
 namespace DB
 {
 
@@ -86,14 +88,15 @@ class MergeTreeRangeReader
 {
 public:
     MergeTreeRangeReader(
-        const MergeTreeData & data_,
+        const MergeTreeData & storage_,
+        const StorageSnapshotPtr & storage_snapshot_,
         IMergeTreeReader * merge_tree_reader_,
         MergeTreeRangeReader * prev_reader_,
         const PrewhereExprStep * prewhere_info_,
         bool last_reader_in_chain_,
         const Names & non_const_virtual_column_names);
 
-    MergeTreeRangeReader() = default;
+    // MergeTreeRangeReader() = default;
 
     bool isReadingFinished() const;
 
@@ -317,7 +320,7 @@ private:
     bool is_initialized = false;
     Names non_const_virtual_column_names;
 
-    const MergeTreeData & storage;
+    const MergeTreeData * storage = nullptr;
     std::shared_ptr<const TableVersion> table_version = nullptr;
 
     ColumnPtr bitmap_filter = nullptr;
