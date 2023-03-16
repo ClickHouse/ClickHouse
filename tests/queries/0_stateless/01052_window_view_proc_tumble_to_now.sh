@@ -4,7 +4,11 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT --multiquery <<EOF
+opts=(
+    "--allow_experimental_analyzer=0"
+)
+
+$CLICKHOUSE_CLIENT "${opts[@]}" --multiquery <<EOF
 SET allow_experimental_window_view = 1;
 DROP TABLE IF EXISTS mt;
 DROP TABLE IF EXISTS dst;
@@ -17,11 +21,12 @@ CREATE WINDOW VIEW wv TO dst AS SELECT count(a) AS count FROM mt GROUP BY tumble
 INSERT INTO mt VALUES (1);
 EOF
 
-while true; do
-	$CLICKHOUSE_CLIENT --query="SELECT count(*) FROM dst" | grep -q "1" && break || sleep .5 ||:
+for _ in {1..100}; do
+	$CLICKHOUSE_CLIENT "${opts[@]}" --query="SELECT count(*) FROM dst" | grep -q "1" && echo 'OK' && break
+	sleep .5
 done
 
-$CLICKHOUSE_CLIENT --query="SELECT count FROM dst"
-$CLICKHOUSE_CLIENT --query="DROP TABLE wv"
-$CLICKHOUSE_CLIENT --query="DROP TABLE mt"
-$CLICKHOUSE_CLIENT --query="DROP TABLE dst"
+$CLICKHOUSE_CLIENT "${opts[@]}" --query="SELECT count FROM dst"
+$CLICKHOUSE_CLIENT "${opts[@]}" --query="DROP TABLE wv"
+$CLICKHOUSE_CLIENT "${opts[@]}" --query="DROP TABLE mt"
+$CLICKHOUSE_CLIENT "${opts[@]}" --query="DROP TABLE dst"

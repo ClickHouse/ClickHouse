@@ -488,6 +488,23 @@ Possible values:
 
 Default value: 0.
 
+## group_by_use_nulls {#group_by_use_nulls}
+
+Changes the way the [GROUP BY clause](/docs/en/sql-reference/statements/select/group-by.md) treats the types of aggregation keys.
+When the `ROLLUP`, `CUBE`, or `GROUPING SETS` specifiers are used, some aggregation keys may not be used to produce some result rows.
+Columns for these keys are filled with either default value or `NULL` in corresponding rows depending on this setting.
+
+Possible values:
+
+-   0 — The default value for the aggregation key type is used to produce missing values.
+-   1 — ClickHouse executes `GROUP BY` the same way as the SQL standard says. The types of aggregation keys are converted to [Nullable](/docs/en/sql-reference/data-types/nullable.md/#data_type-nullable). Columns for corresponding aggregation keys are filled with [NULL](/docs/en/sql-reference/syntax.md) for rows that didn't use it.
+
+Default value: 0.
+
+See also:
+
+-   [GROUP BY clause](/docs/en/sql-reference/statements/select/group-by.md)
+
 ## partial_merge_join_optimizations {#partial_merge_join_optimizations}
 
 Disables optimizations in partial merge join algorithm for [JOIN](../../sql-reference/statements/select/join.md) queries.
@@ -834,6 +851,15 @@ Result:
 └─────────────┴───────────┘
 ```
 
+## log_processors_profiles {#settings-log_processors_profiles}
+
+Write time that processor spent during execution/waiting for data to `system.processors_profile_log` table.
+
+See also:
+
+-   [`system.processors_profile_log`](../../operations/system-tables/processors_profile_log.md#system-processors_profile_log)
+-   [`EXPLAIN PIPELINE`](../../sql-reference/statements/explain.md#explain-pipeline)
+
 ## max_insert_block_size {#settings-max_insert_block_size}
 
 The size of blocks (in a count of rows) to form for insertion into a table.
@@ -940,10 +966,10 @@ This is an expert-level setting, and you shouldn't change it if you're just gett
 
 ## max_query_size {#settings-max_query_size}
 
-The maximum part of a query that can be taken to RAM for parsing with the SQL parser.
-The INSERT query also contains data for INSERT that is processed by a separate stream parser (that consumes O(1) RAM), which is not included in this restriction.
+The maximum number of bytes of a query string parsed by the SQL parser.
+Data in the VALUES clause of INSERT queries is processed by a separate stream parser (that consumes O(1) RAM) and not affected by this restriction.
 
-Default value: 256 KiB.
+Default value: 262144 (= 256 KiB).
 
 ## max_parser_depth {#max_parser_depth}
 
@@ -1222,7 +1248,9 @@ Possible values:
 Default value: 1.
 
 :::warning
-Disable this setting if you use [max_parallel_replicas](#settings-max_parallel_replicas).
+Disable this setting if you use [max_parallel_replicas](#settings-max_parallel_replicas) without [parallel_replicas_custom_key](#settings-parallel_replicas_custom_key).
+If [parallel_replicas_custom_key](#settings-parallel_replicas_custom_key) is set, disable this setting only if it's used on a cluster with multiple shards containing multiple replicas.
+If it's used on a cluster with a single shard and multiple replicas, disabling this setting will have negative effects.
 :::
 
 ## totals_mode {#totals-mode}
@@ -1247,16 +1275,47 @@ Default value: `1`.
 
 **Additional Info**
 
-This setting is useful for replicated tables with a sampling key. A query may be processed faster if it is executed on several servers in parallel. But the query performance may degrade in the following cases:
+This options will produce different results depending on the settings used.
+
+:::warning
+This setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain requirements. See [Distributed Subqueries and max_parallel_replicas](../../sql-reference/operators/in.md/#max_parallel_replica-subqueries) for more details.
+:::
+
+### Parallel processing using `SAMPLE` key
+
+A query may be processed faster if it is executed on several servers in parallel. But the query performance may degrade in the following cases:
 
 - The position of the sampling key in the partitioning key does not allow efficient range scans.
 - Adding a sampling key to the table makes filtering by other columns less efficient.
 - The sampling key is an expression that is expensive to calculate.
 - The cluster latency distribution has a long tail, so that querying more servers increases the query overall latency.
 
-:::warning
-This setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain requirements. See [Distributed Subqueries and max_parallel_replicas](../../sql-reference/operators/in.md/#max_parallel_replica-subqueries) for more details.
-:::
+### Parallel processing using [parallel_replicas_custom_key](#settings-parallel_replicas_custom_key)
+
+This setting is useful for any replicated table.
+
+## parallel_replicas_custom_key {#settings-parallel_replicas_custom_key}
+
+An arbitrary integer expression that can be used to split work between replicas for a specific table.
+The value can be any integer expression.
+A query may be processed faster if it is executed on several servers in parallel but it depends on the used [parallel_replicas_custom_key](#settings-parallel_replicas_custom_key)
+and [parallel_replicas_custom_key_filter_type](#settings-parallel_replicas_custom_key_filter_type).
+
+Simple expressions using primary keys are preferred.
+
+If the setting is used on a cluster that consists of a single shard with multiple replicas, those replicas will be converted into virtual shards.
+Otherwise, it will behave same as for `SAMPLE` key, it will use multiple replicas of each shard.
+
+## parallel_replicas_custom_key_filter_type {#settings-parallel_replicas_custom_key_filter_type}
+
+How to use `parallel_replicas_custom_key` expression for splitting work between replicas.
+
+Possible values:
+
+-   `default` — Use the default implementation using modulo operation on the `parallel_replicas_custom_key`.
+-   `range` — Split the entire value space of the expression in the ranges. This type of filtering is useful if values of `parallel_replicas_custom_key` are uniformly spread across the entire integer space, e.g. hash values.
+
+Default value: `default`.
 
 ## compile_expressions {#compile-expressions}
 
@@ -1489,7 +1548,7 @@ Enables or disables asynchronous inserts. This makes sense only for insertion ov
 
 If enabled, the data is combined into batches before the insertion into tables, so it is possible to do small and frequent insertions into ClickHouse (up to 15000 queries per second) without buffer tables.
 
-The data is inserted either after the [async_insert_max_data_size](#async-insert-max-data-size) is exceeded or after [async_insert_busy_timeout_ms](#async-insert-busy-timeout-ms) milliseconds since the first `INSERT` query. If the [async_insert_stale_timeout_ms](#async-insert-stale-timeout-ms) is set to a non-zero value, the data is inserted after `async_insert_stale_timeout_ms` milliseconds since the last query.
+The data is inserted either after the [async_insert_max_data_size](#async-insert-max-data-size) is exceeded or after [async_insert_busy_timeout_ms](#async-insert-busy-timeout-ms) milliseconds since the first `INSERT` query. If the [async_insert_stale_timeout_ms](#async-insert-stale-timeout-ms) is set to a non-zero value, the data is inserted after `async_insert_stale_timeout_ms` milliseconds since the last query. Also the buffer will be flushed to disk if at least [async_insert_max_query_number](#async-insert-max-query-number) async insert queries per block were received. This last setting takes effect only if [async_insert_deduplicate](#async-insert-deduplicate) is enabled.
 
 If [wait_for_async_insert](#wait-for-async-insert) is enabled, every client will wait for the data to be processed and flushed to the table. Otherwise, the query would be processed almost instantly, even if the data is not inserted.
 
@@ -1543,6 +1602,17 @@ Possible values:
 -   0 — Asynchronous insertions are disabled.
 
 Default value: `100000`.
+
+### async_insert_max_query_number {#async-insert-max-query-number}
+
+The maximum number of insert queries per block before being inserted. This setting takes effect only if [async_insert_deduplicate](#settings-async-insert-deduplicate) is enabled.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Asynchronous insertions are disabled.
+
+Default value: `450`.
 
 ### async_insert_busy_timeout_ms {#async-insert-busy-timeout-ms}
 
@@ -3911,3 +3981,71 @@ Default value: `0`.
 :::note
 Use this setting only for backward compatibility if your use cases depend on old syntax.
 :::
+
+## final {#final}
+
+Automatically applies [FINAL](../../sql-reference/statements/select/from/#final-modifier) modifier to all tables in a query, to tables where [FINAL](../../sql-reference/statements/select/from/#final-modifier) is applicable, including joined tables and tables in sub-queries, and 
+distributed tables.
+
+Possible values:
+
+- 0 - disabled
+- 1 - enabled
+
+Default value: `0`.
+
+Example:
+
+```sql
+CREATE TABLE test
+(
+    key Int64,
+    some String
+)
+ENGINE = ReplacingMergeTree
+ORDER BY key;
+
+INSERT INTO test FORMAT Values (1, 'first');
+INSERT INTO test FORMAT Values (1, 'second');
+
+SELECT * FROM test;
+┌─key─┬─some───┐
+│   1 │ second │
+└─────┴────────┘
+┌─key─┬─some──┐
+│   1 │ first │
+└─────┴───────┘
+
+SELECT * FROM test SETTINGS final = 1;
+┌─key─┬─some───┐
+│   1 │ second │
+└─────┴────────┘
+
+SET final = 1;
+SELECT * FROM test;
+┌─key─┬─some───┐
+│   1 │ second │
+└─────┴────────┘
+```
+
+## asterisk_include_materialized_columns {#asterisk_include_materialized_columns}
+
+Include [MATERIALIZED](../../sql-reference/statements/create/table/#materialized) columns for wildcard query (`SELECT *`).
+
+Possible values:
+
+- 0 - disabled
+- 1 - enabled
+
+Default value: `0`.
+
+## asterisk_include_alias_columns {#asterisk_include_alias_columns}
+
+Include [ALIAS](../../sql-reference/statements/create/table/#alias) columns for wildcard query (`SELECT *`).
+
+Possible values:
+
+- 0 - disabled
+- 1 - enabled
+
+Default value: `0`.

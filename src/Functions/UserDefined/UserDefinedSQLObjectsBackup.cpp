@@ -71,8 +71,7 @@ restoreUserDefinedSQLObjects(RestorerFromBackup & restorer, const String & data_
         String function_name = unescapeForFileName(escaped_function_name);
 
         String filepath = data_path_in_backup_fs / filename;
-        auto backup_entry = backup->readFile(filepath);
-        auto in = backup_entry->getReadBuffer();
+        auto in = backup->readFile(filepath);
         String statement_def;
         readStringUntilEOF(statement_def, *in);
 

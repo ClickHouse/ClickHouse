@@ -24,6 +24,10 @@ namespace ErrorCodes
     extern const int BAD_QUERY_PARAMETER;
 }
 
+/// It is important to keep in mind that in the case of ASTIdentifier, we are changing the shared object itself,
+/// and all shared_ptr's that pointed to the original object will now point to the new replaced value.
+/// However, with ASTQueryParameter, we are only assigning a new value to the passed shared_ptr, while
+/// all other shared_ptr's still point to the old ASTQueryParameter.
 
 void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
 {
@@ -46,7 +50,16 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
 void ReplaceQueryParameterVisitor::visitChildren(ASTPtr & ast)
 {
     for (auto & child : ast->children)
+    {
+        void * old_ptr = child.get();
         visit(child);
+        void * new_ptr = child.get();
+
+        /// Some AST classes have naked pointers to children elements as members.
+        /// We have to replace them if the child was replaced.
+        if (new_ptr != old_ptr)
+            ast->updatePointerToChild(old_ptr, new_ptr);
+    }
 }
 
 const String & ReplaceQueryParameterVisitor::getParamValue(const String & name)
@@ -70,7 +83,10 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
     IColumn & temp_column = *temp_column_ptr;
     ReadBufferFromString read_buffer{value};
     FormatSettings format_settings;
-    data_type->getDefaultSerialization()->deserializeTextEscaped(temp_column, read_buffer, format_settings);
+    if (ast_param.name == "_request_body")
+        data_type->getDefaultSerialization()->deserializeWholeText(temp_column, read_buffer, format_settings);
+    else
+        data_type->getDefaultSerialization()->deserializeTextEscaped(temp_column, read_buffer, format_settings);
 
     if (!read_buffer.eof())
         throw Exception(ErrorCodes::BAD_QUERY_PARAMETER,
@@ -85,6 +101,7 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
         literal = value;
     else
         literal = temp_column[0];
+
     ast = addTypeConversionToAST(std::make_shared<ASTLiteral>(literal), type_name);
 
     /// Keep the original alias.

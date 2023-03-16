@@ -18,6 +18,11 @@
 #include <Common/SipHash.h>
 #include <Common/hex.h>
 #include <Common/typeid_cast.h>
+#include <Common/FieldVisitorToString.h>
+#include <Common/FieldVisitorHash.h>
+#include <Common/typeid_cast.h>
+#include <base/hex.h>
+#include <Core/Block.h>
 
 
 namespace DB

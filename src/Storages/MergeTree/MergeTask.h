@@ -58,6 +58,7 @@ public:
         ReservationSharedPtr space_reservation_,
         bool deduplicate_,
         Names deduplicate_by_columns_,
+        bool cleanup_,
         MergeTreeData::MergingParams merging_params_,
         bool need_prefix,
         IMergeTreeDataPart * parent_part_,
@@ -67,36 +68,37 @@ public:
         MergeTreeDataMergerMutator * mutator_,
         ActionBlocker * merges_blocker_,
         ActionBlocker * ttl_merges_blocker_)
-    {
-        global_ctx = std::make_shared<GlobalRuntimeContext>();
+        {
+            global_ctx = std::make_shared<GlobalRuntimeContext>();
 
-        global_ctx->future_part = std::move(future_part_);
-        global_ctx->metadata_snapshot = std::move(metadata_snapshot_);
-        global_ctx->merge_entry = std::move(merge_entry_);
-        global_ctx->projection_merge_list_element = std::move(projection_merge_list_element_);
-        global_ctx->merge_list_element_ptr = global_ctx->projection_merge_list_element ? global_ctx->projection_merge_list_element.get()
-                                                                                       : (*global_ctx->merge_entry)->ptr();
-        global_ctx->time_of_merge = std::move(time_of_merge_);
-        global_ctx->context = std::move(context_);
-        global_ctx->space_reservation = std::move(space_reservation_);
-        global_ctx->deduplicate = std::move(deduplicate_);
-        global_ctx->deduplicate_by_columns = std::move(deduplicate_by_columns_);
-        global_ctx->parent_part = std::move(parent_part_);
-        global_ctx->data = std::move(data_);
-        global_ctx->mutator = std::move(mutator_);
-        global_ctx->merges_blocker = std::move(merges_blocker_);
-        global_ctx->ttl_merges_blocker = std::move(ttl_merges_blocker_);
-        global_ctx->txn = std::move(txn);
-        global_ctx->need_prefix = need_prefix;
-        global_ctx->table_version = global_ctx->future_part->table_version;
+            global_ctx->future_part = std::move(future_part_);
+            global_ctx->metadata_snapshot = std::move(metadata_snapshot_);
+            global_ctx->merge_entry = std::move(merge_entry_);
+            global_ctx->projection_merge_list_element = std::move(projection_merge_list_element_);
+            global_ctx->merge_list_element_ptr
+                = global_ctx->projection_merge_list_element ? global_ctx->projection_merge_list_element.get() : (*global_ctx->merge_entry)->ptr();
+            global_ctx->time_of_merge = std::move(time_of_merge_);
+            global_ctx->context = std::move(context_);
+            global_ctx->space_reservation = std::move(space_reservation_);
+            global_ctx->deduplicate = std::move(deduplicate_);
+            global_ctx->deduplicate_by_columns = std::move(deduplicate_by_columns_);
+            global_ctx->cleanup = std::move(cleanup_);
+            global_ctx->parent_part = std::move(parent_part_);
+            global_ctx->data = std::move(data_);
+            global_ctx->mutator = std::move(mutator_);
+            global_ctx->merges_blocker = std::move(merges_blocker_);
+            global_ctx->ttl_merges_blocker = std::move(ttl_merges_blocker_);
+            global_ctx->txn = std::move(txn);
+            global_ctx->need_prefix = need_prefix;
+            global_ctx->table_version = global_ctx->future_part->table_version;
 
-        auto prepare_stage_ctx = std::make_shared<ExecuteAndFinalizeHorizontalPartRuntimeContext>();
+            auto prepare_stage_ctx = std::make_shared<ExecuteAndFinalizeHorizontalPartRuntimeContext>();
 
-        prepare_stage_ctx->suffix = std::move(suffix_);
-        prepare_stage_ctx->merging_params = std::move(merging_params_);
+            prepare_stage_ctx->suffix = std::move(suffix_);
+            prepare_stage_ctx->merging_params = std::move(merging_params_);
 
-        (*stages.begin())->setRuntimeContext(std::move(prepare_stage_ctx), global_ctx);
-    }
+            (*stages.begin())->setRuntimeContext(std::move(prepare_stage_ctx), global_ctx);
+        }
 
     std::future<MergeTreeData::MutableDataPartPtr> getFuture()
     {
@@ -125,7 +127,7 @@ private:
     /// By default this context is uninitialed, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
-    struct GlobalRuntimeContext : public IStageRuntimeContext //-V730
+    struct GlobalRuntimeContext : public IStageRuntimeContext
     {
         MergeList::Entry * merge_entry{nullptr};
         /// If not null, use this instead of the global MergeList::Entry. This is for merging projections.
@@ -145,6 +147,7 @@ private:
         ReservationSharedPtr space_reservation{nullptr};
         bool deduplicate{false};
         Names deduplicate_by_columns{};
+        bool cleanup{false};
 
         NamesAndTypesList gathering_columns{};
         NamesAndTypesList merging_columns{};
@@ -192,7 +195,7 @@ private:
     /// By default this context is uninitialed, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
-    struct ExecuteAndFinalizeHorizontalPartRuntimeContext : public IStageRuntimeContext //-V730
+    struct ExecuteAndFinalizeHorizontalPartRuntimeContext : public IStageRuntimeContext
     {
         /// Dependencies
         String suffix;
@@ -265,7 +268,7 @@ private:
     /// By default this context is uninitialed, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
-    struct VerticalMergeRuntimeContext : public IStageRuntimeContext //-V730
+    struct VerticalMergeRuntimeContext : public IStageRuntimeContext
     {
         /// Begin dependencies from previous stage
         std::unique_ptr<PocoTemporaryFile> rows_sources_file;
@@ -337,7 +340,7 @@ private:
     /// By default this context is uninitialed, but some variables has to be set after construction,
     /// some variables are used in a process of execution
     /// Proper initialization is responsibility of the author
-    struct MergeProjectionsRuntimeContext : public IStageRuntimeContext //-V730
+    struct MergeProjectionsRuntimeContext : public IStageRuntimeContext
     {
         /// Only one dependency
         bool need_sync{false};
