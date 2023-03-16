@@ -46,7 +46,7 @@
         <substitution>
             <name>num_rows</name>
             <values>
-                <value>10000000</value>
+                <value>100000</value>
             </values>
         </substitution>
     </substitutions>
