@@ -367,14 +367,12 @@ public:
         formatImpl(FormattingBuffer(ostr, settings));
     }
 
-protected:
     // Keeping the state.
     virtual void formatImpl(const FormattingBuffer & /*out*/) const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown element in AST: {}", getID());
     }
 
-public:
     // A simple way to add some user-readable context to an error message.
     String formatWithSecretsHidden(size_t max_length = 0, bool one_line = true) const;
     String formatForLogging(size_t max_length = 0) const { return formatWithSecretsHidden(max_length, true); }
