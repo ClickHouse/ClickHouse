@@ -123,9 +123,8 @@ Client::Client(
 {
     auto * endpoint_provider = dynamic_cast<Aws::S3::Endpoint::S3DefaultEpProviderBase *>(accessEndpointProvider().get());
     endpoint_provider->GetBuiltInParameters().GetParameter("Region").GetString(explicit_region);
-    std::string endpoint;
-    endpoint_provider->GetBuiltInParameters().GetParameter("Endpoint").GetString(endpoint);
-    detect_region = explicit_region == Aws::Region::AWS_GLOBAL && endpoint.find(".amazonaws.com") != std::string::npos;
+    endpoint_provider->GetBuiltInParameters().GetParameter("Endpoint").GetString(initial_endpoint);
+    detect_region = explicit_region == Aws::Region::AWS_GLOBAL && initial_endpoint.find(".amazonaws.com") != std::string::npos;
 
     cache = std::make_shared<ClientCache>();
     ClientCacheRegistry::instance().registerClient(cache);
@@ -133,6 +132,7 @@ Client::Client(
 
 Client::Client(const Client & other)
     : Aws::S3::S3Client(other)
+    , initial_endpoint(other.initial_endpoint)
     , explicit_region(other.explicit_region)
     , detect_region(other.detect_region)
     , max_redirects(other.max_redirects)
