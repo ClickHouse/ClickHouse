@@ -13,8 +13,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 
-#include <Storages/StorageUniqueMergeTree.h>
-
 #include <city.h>
 
 namespace ProfileEvents

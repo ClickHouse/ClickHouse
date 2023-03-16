@@ -302,7 +302,7 @@ Block MergeTreeDataWriter::mergeBlock(
                     block, 1, sort_description, block_size + 1, merging_params.graphite_params, time(nullptr));
             case MergeTreeData::MergingParams::Unique:
                 return std::make_shared<UpsertingSortedAlgorithm>(
-                    block, 1, sort_description, merging_params.version_column, block_size + 1);
+                    block, 1, sort_description, merging_params.is_deleted_column, merging_params.version_column, block_size + 1);
         }
 
         UNREACHABLE();

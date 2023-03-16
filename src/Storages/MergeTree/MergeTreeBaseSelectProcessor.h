@@ -109,7 +109,7 @@ protected:
     injectVirtualColumns(Block & block, size_t row_count, MergeTreeReadTask * task, const DataTypePtr & partition_value_type, const Names & virtual_columns);
 
 protected:
-    static void initializeRangeReadersImpl(
+    void initializeRangeReadersImpl(
         MergeTreeRangeReader & range_reader,
         std::deque<MergeTreeRangeReader> & pre_range_readers,
         PrewhereInfoPtr prewhere_info_,

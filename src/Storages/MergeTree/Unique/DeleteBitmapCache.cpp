@@ -1,5 +1,4 @@
 #include <Storages/MergeTree/Unique/DeleteBitmapCache.h>
-#include <Storages/StorageUniqueMergeTree.h>
 
 namespace DB
 {

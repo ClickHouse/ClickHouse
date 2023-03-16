@@ -24,8 +24,6 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/evaluateConstantExpression.h>
 
-#include <Storages/StorageUniqueMergeTree.h>
-
 namespace DB
 {
 namespace ErrorCodes
@@ -526,9 +524,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (arg_cnt && !engine_args[arg_cnt - 1]->as<ASTLiteral>())
         {
             if (!tryGetIdentifierNameInto(engine_args[arg_cnt - 1], merging_params.version_column))
-                throw Exception(
-                    "Version column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
-                    ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Version column name must be an unquoted string{}", verbose_help_message);
             --arg_cnt;
         }
     }
@@ -723,7 +719,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     if (merging_params.mode == MergeTreeData::MergingParams::Unique)
     {
         if (metadata.unique_key.column_names.empty())
-            throw Exception("The Unique Key column list for StorageUniqueMergeTree can not be empty", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The Unique Key column list for StorageUniqueMergeTree can not be empty");
         checkDataTypes(metadata.unique_key.data_types);
         checkDataTypes(metadata.partition_key.data_types);
     }

@@ -301,7 +301,7 @@ void MergeTreeSink::finishDelayedChunk()
                 }
 
                 /// Should lock after update PrimaryIndex, otherwise, dead lock will happen in
-                /// StorageUniqueMergeTree::getFirstAlterMutationCommandsForPart
+                /// StorageMergeTree::getFirstAlterMutationCommandsForPart
                 std::lock_guard<std::mutex> background_lock(storage.currently_processing_in_background_mutex);
                 auto new_table_version = updateDeleteBitmapAndTableVersion(part, part->info, deletes_map, deletes_keys);
 

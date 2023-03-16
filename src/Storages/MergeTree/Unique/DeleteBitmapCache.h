@@ -10,8 +10,6 @@
 namespace DB
 {
 
-class StorageUniqueMergeTree;
-
 struct BitmapCacheKey
 {
     BitmapCacheKey(const MergeTreePartInfo & part_info_, UInt64 version_) : part_info(part_info_), version(version_) { }

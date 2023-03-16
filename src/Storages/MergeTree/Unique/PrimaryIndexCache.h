@@ -6,12 +6,13 @@
 
 namespace DB
 {
-class StorageUniqueMergeTree;
+
+class MergeTreeData;
 
 class PrimaryIndexCache : public CacheBase<String, PrimaryIndex>
 {
 public:
-    PrimaryIndexCache(StorageUniqueMergeTree & storage_, size_t max_cache_size) : CacheBase(max_cache_size), storage(storage_) { }
+    PrimaryIndexCache(MergeTreeData & storage_, size_t max_cache_size) : CacheBase(max_cache_size), storage(storage_) { }
     PrimaryIndexPtr getOrCreate(const String & partition_id, const MergeTreePartition & partition);
 
 private:

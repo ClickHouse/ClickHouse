@@ -458,9 +458,10 @@ ProcessorPtr ReadFromMergeTree::createSource(
         prewhere_info,
         actions_settings,
         reader_settings,
+        pool,
         virt_column_names,
         part.part_index_in_query,
-        has_limit_below_one_block, );
+        has_limit_below_one_block);
 
     auto source = std::make_shared<MergeTreeSource>(std::move(algorithm));
 

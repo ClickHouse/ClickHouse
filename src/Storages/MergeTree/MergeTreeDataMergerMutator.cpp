@@ -37,7 +37,6 @@
 #include <Parsers/queryToString.h>
 
 #include <Storages/MergeTree/Unique/TableVersion.h>
-#include <Storages/StorageUniqueMergeTree.h>
 
 #include <cmath>
 #include <ctime>
@@ -289,7 +288,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
         size_t deleted_rows = 0;
         if (table_version)
         {
-            deleted_rows = data.delete_bitmap_cache.getOrCreate(part, table_version->getPartVersion(part->info))->cardinality();
+            deleted_rows = data.delete_bitmap_cache->getOrCreate(part, table_version->getPartVersion(part->info))->cardinality();
         }
 
         IMergeSelector::Part part_info;

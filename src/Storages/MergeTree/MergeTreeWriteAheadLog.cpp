@@ -3,7 +3,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
-#include <Storages/MergeTree/DataPartStorageOnDisk.h>
+#include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergeTreeDataPartState.h>
@@ -14,8 +14,6 @@
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
-#include "Storages/MergeTree/DataPartStorageOnDiskFull.h"
-#include <sys/time.h>
 
 namespace DB
 {

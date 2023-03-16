@@ -421,7 +421,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::execute()
 
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl()
 {
-    if (global_ctx->data.merging_params.mode == MergeTreeData::MergingParams::Mode::Unique && !global_ctx->column_initialized)
+    if (global_ctx->data->merging_params.mode == MergeTreeData::MergingParams::Mode::Unique && !global_ctx->column_initialized)
     {
         global_ctx->unique_keys = global_ctx->metadata_snapshot->getUniqueKey().column_names;
         global_ctx->col_encode = DataTypeString{}.createColumn();
@@ -431,10 +431,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl()
     Block block;
     if (!ctx->is_cancelled() && (global_ctx->merging_executor->pull(block)))
     {
-        if (glocal_ctx->data.merging_params.mode == MergeTreeData::MergingParams::Mode::Unique)
+        if (global_ctx->data->merging_params.mode == MergeTreeData::MergingParams::Mode::Unique)
         {
             ColumnRawPtrs key_columns;
-            global_ctx->unique_mergetree->getUniqueKeyExpression(global_ctx->metadata_snapshot)->execute(block);
+            global_ctx->data->getUniqueKeyExpression(global_ctx->metadata_snapshot)->execute(block);
             for (const auto & name : global_ctx->unique_keys)
             {
                 key_columns.emplace_back(block.getByName(name).column.get());
@@ -482,7 +482,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl()
     const size_t sum_compressed_bytes_upper_bound = global_ctx->merge_list_element_ptr->total_size_bytes_compressed;
     ctx->need_sync = needSyncPart(ctx->sum_input_rows_upper_bound, sum_compressed_bytes_upper_bound, *data_settings);
 
-    if (glocal_ctx->data.merging_params.mode == MergeTreeData::MergingParams::Mode::Unique)
+    if (global_ctx->data->merging_params.mode == MergeTreeData::MergingParams::Mode::Unique)
     {
         global_ctx->write_state.key_column = std::move(global_ctx->col_encode);
     }
@@ -907,11 +907,11 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
     {
         // leefeng pass unique mergetree into it, filter data by delete bitmap
         DeleteBitmapPtr delete_bitmap = nullptr;
-        if (global_ctx->data.merging_params.mode == MergeTreeData::MergingParams::Mode::Unique && global_ctx->table_version)
+        if (global_ctx->data->merging_params.mode == MergeTreeData::MergingParams::Mode::Unique && global_ctx->table_version)
         {
             auto part_version = global_ctx->table_version->getPartVersion(part->info);
 
-            auto & bitmap_cache = global_ctx->data.delete_bitmap_cache;
+            auto & bitmap_cache = global_ctx->data->delete_bitmap_cache;
             delete_bitmap = bitmap_cache->getOrCreate(part, part_version);
         }
         Pipe pipe = createMergeTreeSequentialSource(

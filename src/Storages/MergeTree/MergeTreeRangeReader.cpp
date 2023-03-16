@@ -2,14 +2,15 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/FilterDescription.h>
-#include <DataTypes/DataTypeNothing.h>
-#include <Common/TargetSpecific.h>
 #include <Core/UUID.h>
+#include <DataTypes/DataTypeNothing.h>
+#include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <base/range.h>
 #include <boost/algorithm/string/replace.hpp>
+#include <Common/TargetSpecific.h>
 
 #ifdef __SSE2__
 #include <emmintrin.h>

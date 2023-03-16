@@ -94,7 +94,7 @@ String TableVersion::dump() const
     writeChar('\n', s);
     for (auto [part_info, part_version] : part_versions)
     {
-        writeString(part_info.getPartName(), s);
+        writeString(part_info.getPartNameForLogs(), s);
         writeChar(':', s);
         writeIntText(part_version, s);
         writeChar('\n', s);
@@ -110,7 +110,7 @@ UInt64 TableVersion::getPartVersion(MergeTreePartInfo part_info) const
     throw Exception(
         ErrorCodes::LOGICAL_ERROR,
         "Can not find version for part with part name {}, Table versions dump:\n{}",
-        part_info.getPartName(),
+        part_info.getPartNameForLogs(),
         dump());
 }
 }
