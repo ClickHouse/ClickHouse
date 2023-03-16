@@ -91,7 +91,7 @@ public:
     // Make a inner shuffle will remove the lock.
     virtual bool supportShuffle() const { return false; }
     // If supportShuffle = true, this method should be implemented.
-    virtual JoinPtr clone() const { return nullptr; }
+    virtual JoinPtr clone() { return nullptr; }
 
     virtual bool supportTotals() const { return true; }
 

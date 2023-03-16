@@ -9,10 +9,18 @@ namespace DB
 // If could not running shuffle  mode, this join behaviors as HashJoin.
 // Not support parallel mode.
 // Could support right join now, still no asof strictness.
-class ConcurrentHashJoin : public IJoin
+class ConcurrentHashJoin : public IJoin, public boost::noncopyable
 {
 public:
+    struct CloneJoins
+    {
+        std::mutex mutex;
+        std::vector<std::shared_ptr<HashJoin>> clones;
+    };
     explicit ConcurrentHashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_);
+
+    // should only be called in clone()
+    explicit ConcurrentHashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_, std::shared_ptr<CloneJoins> clones_);
     const TableJoin & getTableJoin() const override { return *table_join; }
     bool addJoinedBlock(const Block & block, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
@@ -23,16 +31,17 @@ public:
     size_t getTotalByteCount() const override;
     bool alwaysReturnsEmptySet() const override;
     bool supportShuffle() const override { return true; }
-    JoinPtr clone() const override;
+    JoinPtr clone() override;
     bool supportTotals() const override { return false; }
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
     static bool isSupported(const std::shared_ptr<TableJoin> & table_join);
-
 private:
+
     std::shared_ptr<TableJoin> table_join;
     Block right_sample_block;
-    std::unique_ptr<HashJoin> inner_join;
+    std::shared_ptr<HashJoin> inner_join;
+    std::shared_ptr<CloneJoins> clone_joins;
 };
 }
