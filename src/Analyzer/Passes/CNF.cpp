@@ -19,7 +19,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TOO_MANY_TEMPORARY_COLUMNS;
-    extern const int LOGICAL_ERROR;
 }
 
 namespace Analyzer

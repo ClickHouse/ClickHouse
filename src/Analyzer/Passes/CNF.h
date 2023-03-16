@@ -24,27 +24,9 @@ public:
         bool operator<(const AtomicFormula & rhs) const;
     };
 
-    struct SetAtomicFormulaHash
-    {
-        size_t operator()(const std::set<AtomicFormula> & or_group) const
-        {
-            SipHash hash;
-            for (const auto & atomic_formula : or_group)
-            {
-                SipHash atomic_formula_hash;
-                atomic_formula_hash.update(atomic_formula.negative);
-                atomic_formula_hash.update(atomic_formula.node_with_hash.hash);
-
-                hash.update(atomic_formula_hash.get64());
-            }
-
-            return hash.get64();
-        }
-    };
-
     // Different hash is generated for different order, so we use std::set
     using OrGroup = std::set<AtomicFormula>;
-    using AndGroup = std::unordered_set<OrGroup, SetAtomicFormulaHash>;
+    using AndGroup = std::set<OrGroup>;
 
     std::string dump() const;
 

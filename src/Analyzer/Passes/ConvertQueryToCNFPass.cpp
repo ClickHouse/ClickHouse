@@ -37,7 +37,7 @@ enum class MatchState : uint8_t
 MatchState match(const Analyzer::CNF::AtomicFormula & a, const Analyzer::CNF::AtomicFormula & b)
 {
     using enum MatchState;
-    if (a.node_with_hash.hash != b.node_with_hash.hash)
+    if (a.node_with_hash != b.node_with_hash)
         return NONE;
 
     return a.negative == b.negative ? FULL_MATCH : PARTIAL_MATCH;
@@ -401,11 +401,6 @@ class ConvertQueryToCNFVisitor : public InDepthQueryTreeVisitorWithContext<Conve
 public:
     using Base = InDepthQueryTreeVisitorWithContext<ConvertQueryToCNFVisitor>;
     using Base::Base;
-
-    static bool needChildVisit(VisitQueryTreeNodeType & parent, VisitQueryTreeNodeType &)
-    {
-        return parent->as<QueryNode>() == nullptr;
-    }
 
     void visitImpl(QueryTreeNodePtr & node)
     {
