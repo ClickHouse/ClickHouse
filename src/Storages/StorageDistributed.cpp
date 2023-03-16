@@ -1295,8 +1295,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     String new_query_str;
     {
         WriteBufferFromOwnString buf;
-        IAST::FormatSettings ast_format_settings(buf, /*one_line*/ true, true);
-        new_query->IAST::format(ast_format_settings);
+        IAST::FormatSettings ast_format_settings(true, true);
+        new_query->IAST::format(buf, ast_format_settings);
         new_query_str = buf.str();
     }
 

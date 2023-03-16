@@ -6,9 +6,8 @@ namespace DB
 
 void formatAST(const IAST & ast, WriteBuffer & buf, bool hilite, bool one_line)
 {
-    IAST::FormatSettings settings(buf, one_line, false,
-                                  IdentifierQuotingStyle::Backticks, hilite);
-    ast.format(settings);
+    IAST::FormatSettings settings(one_line, false, IdentifierQuotingStyle::Backticks, hilite);
+    ast.format(buf, settings);
 }
 
 String serializeAST(const IAST & ast, bool one_line)

@@ -87,8 +87,8 @@ static String formattedAST(const ASTPtr & ast)
         return {};
 
     WriteBufferFromOwnString buf;
-    IAST::FormatSettings ast_format_settings(buf, /*one_line*/ true, true);
-    ast->format(ast_format_settings);
+    IAST::FormatSettings ast_format_settings(true, true);
+    ast->format(buf, ast_format_settings);
     return buf.str();
 }
 

@@ -361,18 +361,20 @@ public:
         void writeSecret(const String & secret = "") const;
     };
 
-    // with new a blank state
-    void format(const FormattingBuffer & out) const
+    // With new a blank internal state.
+    void format(WriteBuffer & ostr, const FormatSettings & settings) const
     {
-        formatImpl(out);
+        formatImpl(FormattingBuffer(ostr, settings));
     }
 
-    // keeping the state
+protected:
+    // Keeping the state.
     virtual void formatImpl(const FormattingBuffer & /*out*/) const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown element in AST: {}", getID());
     }
 
+public:
     // A simple way to add some user-readable context to an error message.
     String formatWithSecretsHidden(size_t max_length = 0, bool one_line = true) const;
     String formatForLogging(size_t max_length = 0) const { return formatWithSecretsHidden(max_length, true); }

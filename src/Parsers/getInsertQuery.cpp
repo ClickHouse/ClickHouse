@@ -19,8 +19,8 @@ std::string getInsertQuery(const std::string & db_name, const std::string & tabl
         query.columns->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
 
     WriteBufferFromOwnString buf;
-    IAST::FormatSettings settings(buf, true, true, quoting);
-    query.IAST::format(settings);
+    IAST::FormatSettings settings(true, true, quoting);
+    query.IAST::format(buf, settings);
     return buf.str();
 }
 }
