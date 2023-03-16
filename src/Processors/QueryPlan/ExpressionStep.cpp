@@ -63,22 +63,9 @@ void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
 
 void ExpressionStep::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, ' ');
-    bool first = true;
-
+    String prefix(settings.offset, settings.indent_char);
     auto expression = std::make_shared<ExpressionActions>(actions_dag);
-    for (const auto & action : expression->getActions())
-    {
-        settings.out << prefix << (first ? "Actions: "
-                                         : "         ");
-        first = false;
-        settings.out << action.toString() << '\n';
-    }
-
-    settings.out << prefix << "Positions:";
-    for (const auto & pos : expression->getResultPositions())
-        settings.out << ' ' << pos;
-    settings.out << '\n';
+    expression->describeActions(settings.out, prefix);
 }
 
 void ExpressionStep::describeActions(JSONBuilder::JSONMap & map) const
