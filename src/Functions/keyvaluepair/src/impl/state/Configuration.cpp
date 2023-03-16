@@ -1,6 +1,7 @@
 #include "Configuration.h"
-#include <unordered_set>
 #include <Common/Exception.h>
+
+#include <Functions/keyvaluepair/src/impl/state/strategies/util/EscapedCharacterReader.h>
 
 namespace DB
 {
@@ -11,56 +12,52 @@ namespace ErrorCodes
 }
 
 Configuration::Configuration(char key_value_delimiter_, char quoting_character_, std::vector<char> pair_delimiters_)
-    : key_value_delimiter(key_value_delimiter_), quoting_character(quoting_character_), pair_delimiters(std::move(pair_delimiters_)) {}
-
-
-Configuration ConfigurationFactory::create(char key_value_delimiter, char quoting_character, std::vector<char> pair_delimiters)
+    : key_value_delimiter(key_value_delimiter_), quoting_character(quoting_character_), pair_delimiters(std::move(pair_delimiters_))
 {
-    validateKeyValueDelimiter(key_value_delimiter);
-    validateQuotingCharacter(quoting_character);
-    validatePairDelimiters(pair_delimiters);
+}
+
+Configuration ConfigurationFactory::createWithoutEscaping(char key_value_delimiter, char quoting_character, std::vector<char> pair_delimiters)
+{
+    validate(key_value_delimiter, quoting_character, pair_delimiters);
 
     return Configuration(key_value_delimiter, quoting_character, pair_delimiters);
 }
 
-void ConfigurationFactory::validateKeyValueDelimiter(char key_value_delimiter)
+Configuration ConfigurationFactory::createWithEscaping(char key_value_delimiter, char quoting_character, std::vector<char> pair_delimiters)
 {
-    static const std::unordered_set<char> VALID_KV_DELIMITERS = {'=', ':'};
-
-    if (!VALID_KV_DELIMITERS.contains(key_value_delimiter))
+    if (key_value_delimiter == EscapedCharacterReader::ESCAPE_CHARACTER || quoting_character == EscapedCharacterReader::ESCAPE_CHARACTER)
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Invalid key value delimiter '{}'. It must be one of: '{}'", key_value_delimiter, fmt::join(VALID_KV_DELIMITERS, ", "));
+            "Invalid arguments, {} is reserved for the escaping character",
+            EscapedCharacterReader::ESCAPE_CHARACTER);
     }
+
+    return createWithoutEscaping(key_value_delimiter, quoting_character, pair_delimiters);
 }
 
-void ConfigurationFactory::validateQuotingCharacter(char quoting_character)
+void ConfigurationFactory::validate(char key_value_delimiter, char quoting_character, std::vector<char> pair_delimiters)
 {
-    static const std::unordered_set<char> VALID_QUOTING_CHARACTERS = {'"', '\''};
-
-    if (!VALID_QUOTING_CHARACTERS.contains(quoting_character))
+    if (key_value_delimiter == quoting_character)
     {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Invalid quoting character '{}'. It must be one of: '{}'", quoting_character, fmt::join(VALID_QUOTING_CHARACTERS, ", "));
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid arguments, key_value_delimiter and quoting_character can not be the same");
+    }
+
+    bool is_key_value_delimiter_in_pair_delimiters
+        = std::find(pair_delimiters.begin(), pair_delimiters.end(), key_value_delimiter) != pair_delimiters.end();
+
+    if (is_key_value_delimiter_in_pair_delimiters)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid arguments, key_value_delimiter conflicts with pair delimiters");
+    }
+
+    bool is_quoting_character_in_pair_delimiters
+        = std::find(pair_delimiters.begin(), pair_delimiters.end(), quoting_character) != pair_delimiters.end();
+
+    if (is_quoting_character_in_pair_delimiters)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid arguments, quoting_character conflicts with pair delimiters");
     }
 }
 
-void ConfigurationFactory::validatePairDelimiters(const std::vector<char> & pair_delimiters)
-{
-    static const std::unordered_set<char> VALID_PAIR_DELIMITERS_CHARACTERS = {' ', ',', ';', 0x1};
-
-    for (auto delimiter : pair_delimiters)
-    {
-        if (!VALID_PAIR_DELIMITERS_CHARACTERS.contains(delimiter))
-        {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Invalid pair delimiter '{}'. It must be one of: '{}'", delimiter, fmt::join(VALID_PAIR_DELIMITERS_CHARACTERS, ", "));
-        }
-    }
 }
-
-}
-
