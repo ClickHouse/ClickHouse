@@ -6,7 +6,6 @@
 #include <Core/Types.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Functions/FunctionDateOrDateTimeAddInterval.h>
-#include "Common/logger_useful.h"
 #include <Common/FieldVisitorSum.h>
 #include <Common/FieldVisitorToString.h>
 
@@ -177,8 +176,6 @@ FillingTransform::FillingTransform(
         , filling_row(sort_description_)
         , next_row(sort_description_)
 {
-    LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "Sort description:\n{}", dumpSortDescription(sort_description_));
-
     if (interpolate_description)
         interpolate_actions = std::make_shared<ExpressionActions>(interpolate_description->actions);
 
@@ -253,8 +250,6 @@ IProcessor::Status FillingTransform::prepare()
                 output.pushData(std::move(output_data));
                 has_output = false;
             }
-
-            LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "set generate_suffix to true");
 
             generate_suffix = true;
             return Status::Ready;
@@ -334,7 +329,7 @@ static void copyRowFromColumns(const MutableColumnRawPtrs & dest, const Columns 
         dest[i]->insertFrom(*source[i], row_num);
 }
 
-static void init_columns_by_positions(
+static void initColumnsByPositions(
     const Columns & input_columns,
     Columns & input_columns_by_positions,
     const MutableColumns & output_columns,
@@ -343,16 +338,38 @@ static void init_columns_by_positions(
 {
     for (size_t pos : positions)
     {
-        auto old_column = input_columns[pos]->convertToFullColumnIfConst();
-        input_columns_by_positions.push_back(old_column);
+        input_columns_by_positions.push_back(input_columns[pos]);
         output_columns_by_position.push_back(output_columns[pos].get());
     }
 }
 
+void FillingTransform::initColumns(
+    const Columns & input_columns,
+    Columns & input_fill_columns,
+    Columns & input_interpolate_columns,
+    Columns & input_other_columns,
+    MutableColumns & output_columns,
+    MutableColumnRawPtrs & output_fill_columns,
+    MutableColumnRawPtrs & output_interpolate_columns,
+    MutableColumnRawPtrs & output_other_columns)
+{
+    Columns non_const_columns;
+    non_const_columns.reserve(input_columns.size());
+
+    for (const auto & column : input_columns)
+        non_const_columns.push_back(column->convertToFullColumnIfConst());
+
+    for (const auto & column : non_const_columns)
+        output_columns.push_back(column->cloneEmpty()->assumeMutable());
+
+    initColumnsByPositions(non_const_columns, input_fill_columns, output_columns, output_fill_columns, fill_column_positions);
+    initColumnsByPositions(
+        non_const_columns, input_interpolate_columns, output_columns, output_interpolate_columns, interpolate_column_positions);
+    initColumnsByPositions(non_const_columns, input_other_columns, output_columns, output_other_columns, other_column_positions);
+}
+
 void FillingTransform::transform(Chunk & chunk)
 {
-    LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "Input columns={} rows={}", chunk.getNumColumns(), chunk.getNumRows());
-
     if (!chunk.hasRows() && !generate_suffix)
         return;
 
@@ -369,13 +386,15 @@ void FillingTransform::transform(Chunk & chunk)
     if (generate_suffix)
     {
         const auto & empty_columns = input.getHeader().getColumns();
-        for (const auto & column : empty_columns)
-            result_columns.push_back(column->convertToFullColumnIfConst()->cloneEmpty()->assumeMutable());
-        LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "Result columns size: {}", result_columns.size());
-
-        init_columns_by_positions(empty_columns, old_fill_columns, result_columns, res_fill_columns, fill_column_positions);
-        init_columns_by_positions(empty_columns, old_interpolate_columns, result_columns, res_interpolate_columns, interpolate_column_positions);
-        init_columns_by_positions(empty_columns, old_other_columns, result_columns, res_other_columns, other_column_positions);
+        initColumns(
+            empty_columns,
+            old_fill_columns,
+            old_interpolate_columns,
+            old_other_columns,
+            result_columns,
+            res_fill_columns,
+            res_interpolate_columns,
+            res_other_columns);
 
         if (first)
             filling_row.initFromDefaults();
@@ -395,19 +414,20 @@ void FillingTransform::transform(Chunk & chunk)
 
         size_t num_output_rows = result_columns[0]->size();
         chunk.setColumns(std::move(result_columns), num_output_rows);
-        LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "Rows: filling={}", res_fill_columns[0]->size());
-        LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "Output(suffix) columns={} rows={}", chunk.getNumColumns(), chunk.getNumRows());
         return;
     }
 
     const size_t num_rows = chunk.getNumRows();
     auto old_columns = chunk.detachColumns();
-    for (const auto & column : old_columns)
-        result_columns.push_back(column->convertToFullColumnIfConst()->cloneEmpty()->assumeMutable());
-
-    init_columns_by_positions(old_columns, old_fill_columns, result_columns, res_fill_columns, fill_column_positions);
-    init_columns_by_positions(old_columns, old_interpolate_columns, result_columns, res_interpolate_columns, interpolate_column_positions);
-    init_columns_by_positions(old_columns, old_other_columns, result_columns, res_other_columns, other_column_positions);
+    initColumns(
+        old_columns,
+        old_fill_columns,
+        old_interpolate_columns,
+        old_other_columns,
+        result_columns,
+        res_fill_columns,
+        res_interpolate_columns,
+        res_other_columns);
 
     if (first)
     {
@@ -469,8 +489,6 @@ void FillingTransform::transform(Chunk & chunk)
     saveLastRow(result_columns);
     size_t num_output_rows = result_columns[0]->size();
     chunk.setColumns(std::move(result_columns), num_output_rows);
-    LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "Rows: filling={}", res_fill_columns[0]->size());
-    LOG_DEBUG(&Poco::Logger::get(__PRETTY_FUNCTION__), "Output columns={} rows={}", chunk.getNumColumns(), chunk.getNumRows());
 }
 
 void FillingTransform::saveLastRow(const MutableColumns & result_columns)

@@ -31,6 +31,17 @@ private:
     void saveLastRow(const MutableColumns & result_columns);
     void interpolate(const MutableColumns& result_columns, Block & interpolate_block);
 
+    using MutableColumnRawPtrs = std::vector<IColumn *>;
+    void initColumns(
+        const Columns & input_columns,
+        Columns & input_fill_columns,
+        Columns & input_interpolate_columns,
+        Columns & input_other_columns,
+        MutableColumns & output_columns,
+        MutableColumnRawPtrs & output_fill_columns,
+        MutableColumnRawPtrs & output_interpolate_columns,
+        MutableColumnRawPtrs & output_other_columns);
+
     const SortDescription sort_description; /// Contains only columns with WITH FILL.
     const InterpolateDescriptionPtr interpolate_description; /// Contains INTERPOLATE columns
 
