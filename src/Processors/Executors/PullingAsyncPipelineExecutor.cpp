@@ -175,6 +175,9 @@ bool PullingAsyncPipelineExecutor::pull(Block & block, uint64_t milliseconds)
 
 void PullingAsyncPipelineExecutor::cancel()
 {
+    if (!data)
+        return;
+
     /// Cancel execution if it wasn't finished.
     cancelWithExceptionHandling([&]()
     {
@@ -194,6 +197,9 @@ void PullingAsyncPipelineExecutor::cancel()
 
 void PullingAsyncPipelineExecutor::cancelReading()
 {
+    if (!data)
+        return;
+
     /// Stop reading from source if pipeline wasn't finished.
     cancelWithExceptionHandling([&]()
     {
@@ -203,9 +209,6 @@ void PullingAsyncPipelineExecutor::cancelReading()
 
 void PullingAsyncPipelineExecutor::cancelWithExceptionHandling(CancelFunc && cancel_func)
 {
-    if (!data)
-        return;
-
     try
     {
         if (!data->is_finished && data->executor)
