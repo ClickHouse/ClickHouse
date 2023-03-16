@@ -255,10 +255,10 @@ Analyzer::CNF::OrGroup createIndexHintGroup(
     for (const auto & atom : group)
     {
         const auto * function_node = atom.node_with_hash.node->as<FunctionNode>();
-        if (!function_node || getRelationMap().contains(function_node->getFunctionName()))
+        if (!function_node || !getRelationMap().contains(function_node->getFunctionName()))
             continue;
 
-        const auto & arguments =  function_node->getArguments().getNodes();
+        const auto & arguments = function_node->getArguments().getNodes();
         if (arguments.size() != 2)
             continue;
 
@@ -279,6 +279,7 @@ Analyzer::CNF::OrGroup createIndexHintGroup(
                 {
                     auto helper_node = function_node->clone();
                     auto & helper_function_node = helper_node->as<FunctionNode &>();
+                    helper_function_node.getArguments().getNodes()[index] = primary_key_node->clone();
                     auto reverse_function_name = getReverseRelationMap().at(mostStrict(expected_result, actual_result));
                     helper_function_node.resolveAsFunction(FunctionFactory::instance().get(reverse_function_name, context));
                     result.insert(Analyzer::CNF::AtomicFormula{atom.negative, std::move(helper_node)});
@@ -307,6 +308,7 @@ void addIndexConstraint(Analyzer::CNF & cnf, const QueryTreeNodes & table_expres
 
         const auto primary_key = snapshot->metadata->getColumnsRequiredForPrimaryKey();
         const std::unordered_set<std::string_view> primary_key_set(primary_key.begin(), primary_key.end());
+
         const auto & query_tree_constraint = snapshot->metadata->getConstraints().getQueryTreeData(context, table_expression);
         const auto & graph = query_tree_constraint.getGraph();
 
@@ -391,9 +393,6 @@ void optimizeNode(QueryTreeNodePtr & node, const QueryTreeNodes & table_expressi
         optimizeWithConstraints(*cnf, table_expressions, context);
 
     auto new_node = cnf->toQueryTree(context);
-    if (!new_node)
-        return;
-
     node = std::move(new_node);
 }
 
