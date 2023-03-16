@@ -13,6 +13,7 @@
 #include <Common/formatReadable.h>
 #include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
+#include <Common/ThreadFuzzer.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 
 #include <Disks/ObjectStorages/IMetadataStorage.h>
@@ -3508,6 +3509,8 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
         part->makeCloneInDetached("covered-by-broken", getInMemoryMetadataPtr());
     }
 
+    ThreadFuzzer::maybeInjectSleep();
+
     /// It's possible that queue contains entries covered by part_name.
     /// For example, we had GET_PART all_1_42_5 and MUTATE_PART all_1_42_5_63,
     /// then all_1_42_5_63 was executed by fetching, but part was written to disk incorrectly.
@@ -3519,6 +3522,8 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
     ///    2. If all_1_42_5_63 is lost, then replication may stuck waiting for all_1_42_5_63 to appear,
     ///       because we may have some covered parts (more precisely, parts with the same min and max blocks)
     queue.removePartProducingOpsInRange(zookeeper, broken_part_info, /* covering_entry= */ {});
+
+    ThreadFuzzer::maybeInjectSleep();
 
     String part_path = fs::path(replica_path) / "parts" / part_name;
 
@@ -6513,10 +6518,12 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
 
     for (const auto & part : parts)
     {
-        if (!part->is_duplicate)
-            parts_to_delete_completely.emplace_back(part);
-        else
+        /// Broken part can be removed from zk by removePartAndEnqueueFetch(...) only.
+        /// Removal without enqueueing a fetch leads to intersecting parts.
+        if (part->is_duplicate || part->outdated_because_broken)
             parts_to_delete_only_from_filesystem.emplace_back(part);
+        else
+            parts_to_delete_completely.emplace_back(part);
     }
     parts.clear();
 
