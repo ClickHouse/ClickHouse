@@ -109,6 +109,9 @@ public:
         }
     }
 
+    /// Returns the initial endpoint.
+    const String & getInitialEndpoint() const { return initial_endpoint; }
+
     /// Decorator for RetryStrategy needed for this client to work correctly.
     /// We want to manually handle permanent moves (status code 301) because:
     /// - redirect location is written in XML format inside the response body something that doesn't exist for HEAD
@@ -197,6 +200,8 @@ private:
 
     bool checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3::S3Error & error, std::string & region) const;
     void insertRegionOverride(const std::string & bucket, const std::string & region) const;
+
+    String initial_endpoint;
 
     std::string explicit_region;
     mutable bool detect_region = true;
