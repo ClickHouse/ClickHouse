@@ -1828,15 +1828,6 @@ void TCPHandler::decreaseCancellationStatus(const std::string& log_message)
 
     auto current_status = QueryState::cancellationStatusToName(state.cancellation_status);
     LOG_INFO(log, "Change cancellation status from {} to {}. Log message: {}", prev_status, current_status, log_message);
-
-    /// For testing connection collector.
-    {
-        if (unlikely(sleep_in_receive_cancel.totalMilliseconds()))
-        {
-            std::chrono::milliseconds ms(sleep_in_receive_cancel.totalMilliseconds());
-            std::this_thread::sleep_for(ms);
-        }
-    }
 }
 
 QueryState::CancellationStatus TCPHandler::getQueryCancellationStatus()
