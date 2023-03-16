@@ -196,7 +196,7 @@ public:
         IdentifierQuotingStyle identifier_quoting_style = IdentifierQuotingStyle::Backticks;
         bool show_secrets = true; /// Show secret parts of the AST (e.g. passwords, encryption keys).
 
-        FormatSettings(bool one_line_, bool always_quote_identifiers_ = false,
+        explicit FormatSettings(bool one_line_, bool always_quote_identifiers_ = false,
                        IdentifierQuotingStyle identifier_quoting_style_ = IdentifierQuotingStyle::Backticks, bool hilite_ = false,
                        bool show_secrets_ = true)
             : hilite(hilite_), one_line(one_line_), always_quote_identifiers(always_quote_identifiers_),
