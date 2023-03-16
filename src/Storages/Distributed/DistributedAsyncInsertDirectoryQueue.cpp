@@ -220,10 +220,7 @@ void DistributedAsyncInsertDirectoryQueue::run()
             }
             catch (...)
             {
-                std::lock_guard status_lock(status_mutex);
-
-                do_sleep = true;
-                ++status.error_count;
+                tryLogCurrentException(getLoggerName().data());
 
                 UInt64 q = doubleToUInt64(std::exp2(status.error_count));
                 std::chrono::milliseconds new_sleep_time(default_sleep_time.count() * q);
@@ -232,9 +229,7 @@ void DistributedAsyncInsertDirectoryQueue::run()
                 else
                     sleep_time = std::min(new_sleep_time, max_sleep_time);
 
-                tryLogCurrentException(getLoggerName().data());
-                status.last_exception = std::current_exception();
-                status.last_exception_time = std::chrono::system_clock::now();
+                do_sleep = true;
             }
         }
         else
@@ -402,6 +397,7 @@ void DistributedAsyncInsertDirectoryQueue::initializeFilesFromDisk()
     }
 }
 void DistributedAsyncInsertDirectoryQueue::processFiles()
+try
 {
     if (should_batch_inserts)
         processFilesWithBatching();
@@ -414,6 +410,19 @@ void DistributedAsyncInsertDirectoryQueue::processFiles()
         while (pending_files.tryPop(current_file))
             processFile(current_file);
     }
+
+    std::lock_guard status_lock(status_mutex);
+    status.last_exception = std::exception_ptr{};
+}
+catch (...)
+{
+    std::lock_guard status_lock(status_mutex);
+
+    ++status.error_count;
+    status.last_exception = std::current_exception();
+    status.last_exception_time = std::chrono::system_clock::now();
+
+    throw;
 }
 
 void DistributedAsyncInsertDirectoryQueue::processFile(const std::string & file_path)
