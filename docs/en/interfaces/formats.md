@@ -1,7 +1,7 @@
 ---
 slug: /en/interfaces/formats
 sidebar_position: 21
-sidebar_label: All Input and Output Formats
+sidebar_label: View all formats...
 title: Formats for Input and Output Data
 ---
 
