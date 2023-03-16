@@ -38,7 +38,6 @@ static ITransformingStep::Traits getTraits(bool should_produce_results_in_order_
     return ITransformingStep::Traits
     {
         {
-            .preserves_distinct_columns = false, /// Actually, we may check that distinct names are in aggregation keys
             .returns_single_stream = should_produce_results_in_order_of_bucket_number,
             .preserves_number_of_streams = false,
             .preserves_sorting = false,
