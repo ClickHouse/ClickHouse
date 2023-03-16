@@ -1,4 +1,4 @@
--- Tags: no-random-settings, no-parallel, no-storage-s3
+-- Tags: no-random-settings, no-parallel, no-s3-storage
 
 DROP TABLE IF EXISTS t_sharded_map_2;
 
@@ -10,7 +10,10 @@ INSERT INTO t_sharded_map_2 SELECT number, (arrayMap(x -> 'c_' || x::String, ran
 
 SET allow_experimental_analyzer = 1;
 SYSTEM DROP MARK CACHE;
+SELECT m['c_5'] AS v, count() FROM t_sharded_map_2 GROUP BY v;
 
+SET allow_experimental_analyzer = 0;
+SYSTEM DROP MARK CACHE;
 SELECT m['c_5'] AS v, count() FROM t_sharded_map_2 GROUP BY v;
 
 SYSTEM FLUSH LOGS;

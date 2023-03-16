@@ -467,7 +467,7 @@ void SerializationMap::SubcolumnCreator::create(SubstreamData & data, const Stri
             data.serialization = std::make_shared<SerializationNamed>(data.serialization, shard_name, false);
         else if (name.starts_with("size"))
             data.serialization = std::make_shared<SerializationMapSize>(num_shards, name);
-        else if (name == "keys" || name == "values")
+        else if (name.starts_with("keys") || name.starts_with("values"))
             data.serialization = std::make_shared<SerializationMapKeysValues>(data.serialization, num_shards);
         // else
         //     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected subcolumn {} in type Map", name);
