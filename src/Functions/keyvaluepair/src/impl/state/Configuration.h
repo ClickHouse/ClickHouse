@@ -32,6 +32,8 @@ public:
 
 private:
     static void validate(char key_value_delimiter, char quoting_character, std::vector<char> pair_delimiters);
+
+    static constexpr auto MAX_NUMBER_OF_PAIR_DELIMITERS = 8u;
 };
 
 }

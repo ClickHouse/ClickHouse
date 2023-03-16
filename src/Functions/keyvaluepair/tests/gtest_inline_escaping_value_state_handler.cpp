@@ -16,7 +16,7 @@ TEST(InlineEscapingValueStateHandler, Wait)
 {
     auto pair_delimiters = std::vector<char> {','};
 
-    Configuration configuration(':', '"', pair_delimiters);
+    auto configuration = ConfigurationFactory::createWithEscaping(':', '"', pair_delimiters);
     InlineEscapingValueStateHandler handler(configuration);
 
     test_wait(handler, " los$ yours3lf", 0u, READING_VALUE);

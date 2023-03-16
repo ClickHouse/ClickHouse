@@ -1,6 +1,5 @@
 #include <gtest/gtest.h>
 #include <Functions/keyvaluepair/src/impl/state/strategies/util/CharacterFinder.h>
-#include "base/find_symbols.h"
 
 
 namespace DB
@@ -9,7 +8,7 @@ void test_find_first(
     const CharacterFinder& finder, const std::string_view& haystack,
     const std::vector<char>& needles, const std::optional<std::pair<char, CharacterFinder::Position>>& expected_result)
 {
-    auto pos = finder.find_first(haystack, needles);
+    auto pos = finder.findFirst(haystack, needles);
 
     ASSERT_EQ(pos.has_value(), expected_result.has_value());
 
@@ -24,7 +23,7 @@ void test_find_first(
 
 void test_find_first_not(const CharacterFinder& finder, const std::string_view& haystack, const std::vector<char>& needles, const std::optional<std::pair<char, CharacterFinder::Position>>& expected_result)
 {
-    auto pos = finder.find_first_not(haystack, needles);
+    auto pos = finder.findFirstNot(haystack, needles);
 
     ASSERT_EQ(pos.has_value(), expected_result.has_value());
 

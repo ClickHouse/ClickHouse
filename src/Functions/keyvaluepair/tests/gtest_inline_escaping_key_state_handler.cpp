@@ -49,7 +49,8 @@ TEST(InlineEscapingKeyStateHandler, Wait)
 {
     auto pair_delimiters = std::vector<char>{',', ' '};
 
-    Configuration configuration(':', '"', pair_delimiters);
+    auto configuration = ConfigurationFactory::createWithEscaping(':', '"', pair_delimiters);
+
     InlineEscapingKeyStateHandler handler(configuration);
 
     test_wait(handler, "name", 0u, READING_KEY);
@@ -64,7 +65,7 @@ TEST(InlineEscapingKeyStateHandler, Read)
 {
     auto pair_delimiters = std::vector<char>{',', ' '};
 
-    Configuration configuration(':', '"', pair_delimiters);
+    auto configuration = ConfigurationFactory::createWithEscaping(':', '"', pair_delimiters);
 
     InlineEscapingKeyStateHandler handler(configuration);
 
@@ -89,7 +90,8 @@ TEST(InlineEscapingKeyStateHandler, ReadEnclosed)
 {
     auto pair_delimiters = std::vector<char>{',', ' '};
 
-    Configuration configuration(':', '"', pair_delimiters);
+    auto configuration = ConfigurationFactory::createWithEscaping(':', '"', pair_delimiters);
+
     InlineEscapingKeyStateHandler handler(configuration);
 
     std::string regular_key = "name";

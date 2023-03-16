@@ -13,12 +13,8 @@ ArgumentExtractor::ParsedArguments ArgumentExtractor::extract(const ColumnsWithT
 {
     /*
      * TODO validate arguments:
-     *  1. Check if argument is one of the acceptable characters for that argument
      *  2. Check if it's not empty
-     *  3. Cross check arguments? Not sure it is needed anymore
      *  4. Use uint8_t column instead of string column for escaping lol
-     *  5. maybe a builder will clean things up here
-     *  6. Refactor exceptions so it's re-thrown on API side
      * */
 
     if (arguments.empty())

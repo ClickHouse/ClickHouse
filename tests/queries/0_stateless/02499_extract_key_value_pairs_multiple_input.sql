@@ -242,7 +242,70 @@ SELECT
 -- single quote as quoting character
 -- expected output: {'age':'31','last_key':'last_value','name':'neymar','nationality':'brazil','team':'psg'}
 WITH
-    extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'', '"', '0') AS s_map,
+    extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'', '0') AS s_map,
+    CAST(
+            arrayMap(
+                    (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+                ),
+            'Map(String,String)'
+        ) AS x
+SELECT
+    x;
+
+-- { echoOff }
+
+-- cross parameter validation tests
+-- should fail because key value delimiter conflicts with pair delimiters
+WITH
+    extractKeyValuePairs('not_important', ':', ',:', '\'', '0') AS s_map,
+    CAST(
+            arrayMap(
+                    (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+                ),
+            'Map(String,String)'
+        ) AS x
+SELECT
+    x; -- {serverError BAD_ARGUMENTS}
+
+-- should fail because key value delimiter conflicts with quoting characters
+WITH
+    extractKeyValuePairs('not_important', ':', ',', '\':', '0') AS s_map,
+    CAST(
+            arrayMap(
+                    (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+                ),
+            'Map(String,String)'
+        ) AS x
+SELECT
+    x; -- {serverError BAD_ARGUMENTS}
+
+-- should fail because pair delimiters conflicts with quoting characters
+WITH
+    extractKeyValuePairs('not_important', ':', ',', ',', '0') AS s_map,
+    CAST(
+            arrayMap(
+                    (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+                ),
+            'Map(String,String)'
+        ) AS x
+SELECT
+    x; -- {serverError BAD_ARGUMENTS}
+
+-- should fail because pair delimiters can contain at most 8 characters
+WITH
+    extractKeyValuePairs('not_important', ':', '123456789', '\'', '0') AS s_map,
+    CAST(
+            arrayMap(
+                    (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+                ),
+            'Map(String,String)'
+        ) AS x
+SELECT
+    x; -- {serverError BAD_ARGUMENTS}
+
+-- should not fail because pair delimiters contains 8 characters, which is within the limit
+WITH
+    extractKeyValuePairs('not_important', ':', '12345678', '\'', '0') AS s_map,
     CAST(
             arrayMap(
                     (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))

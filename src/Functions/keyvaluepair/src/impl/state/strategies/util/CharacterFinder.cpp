@@ -6,15 +6,6 @@ namespace DB
 {
 
 template <bool positive>
-constexpr uint16_t maybe_negate(uint16_t x)
-{
-    if constexpr (positive)
-        return x;
-    else
-        return ~x;
-}
-
-template <bool positive>
 constexpr bool maybe_negate(bool x)
 {
     return positive == x;
@@ -76,19 +67,22 @@ auto find_first_symbols_sse42(std::string_view haystack, std::string_view needle
     return find_first_symbols_sse42<positive>(haystack.begin(), haystack.end(), needle.begin(), needle.size());
 }
 
-std::optional<CharacterFinder::Position> CharacterFinder::find_first(std::string_view haystack, const std::vector<char> & needles)
+std::optional<CharacterFinder::Position> CharacterFinder::findFirst(std::string_view haystack, const std::vector<char> & needles)
 {
-    if (const auto * ptr = find_first_symbols_sse42(haystack, {needles.begin(), needles.end()}))
+    if (!needles.empty())
     {
-        return ptr - haystack.begin();
+        if (const auto * ptr = find_first_symbols_sse42(haystack, {needles.begin(), needles.end()}))
+        {
+            return ptr - haystack.begin();
+        }
     }
 
     return std::nullopt;
 }
 
-std::optional<CharacterFinder::Position> CharacterFinder::find_first(std::string_view haystack, std::size_t offset, const std::vector<char> & needles)
+std::optional<CharacterFinder::Position> CharacterFinder::findFirst(std::string_view haystack, std::size_t offset, const std::vector<char> & needles)
 {
-    if (auto position = find_first({haystack.begin() + offset, haystack.end()}, needles))
+    if (auto position = findFirst({haystack.begin() + offset, haystack.end()}, needles))
     {
         return offset + *position;
     }
@@ -96,8 +90,13 @@ std::optional<CharacterFinder::Position> CharacterFinder::find_first(std::string
     return std::nullopt;
 }
 
-std::optional<CharacterFinder::Position> CharacterFinder::find_first_not(std::string_view haystack, const std::vector<char> & needles)
+std::optional<CharacterFinder::Position> CharacterFinder::findFirstNot(std::string_view haystack, const std::vector<char> & needles)
 {
+    if (needles.empty())
+    {
+        return 0u;
+    }
+
     if (const auto * ptr = find_first_symbols_sse42<false>(haystack, {needles.begin(), needles.end()}))
     {
         return ptr - haystack.begin();
@@ -106,9 +105,9 @@ std::optional<CharacterFinder::Position> CharacterFinder::find_first_not(std::st
     return std::nullopt;
 }
 
-std::optional<CharacterFinder::Position> CharacterFinder::find_first_not(std::string_view haystack, std::size_t offset, const std::vector<char> & needles)
+std::optional<CharacterFinder::Position> CharacterFinder::findFirstNot(std::string_view haystack, std::size_t offset, const std::vector<char> & needles)
 {
-    if (auto position = find_first_not({haystack.begin() + offset, haystack.end()}, needles))
+    if (auto position = findFirstNot({haystack.begin() + offset, haystack.end()}, needles))
     {
         return offset + *position;
     }
@@ -116,25 +115,25 @@ std::optional<CharacterFinder::Position> CharacterFinder::find_first_not(std::st
     return std::nullopt;
 }
 
-std::optional<BoundsSafeCharacterFinder::Position> BoundsSafeCharacterFinder::find_first(
+std::optional<BoundsSafeCharacterFinder::Position> BoundsSafeCharacterFinder::findFirst(
     std::string_view haystack, std::size_t offset, const std::vector<char> & needles
 ) const
 {
     if (haystack.size() > offset)
     {
-        return CharacterFinder::find_first(haystack, offset, needles);
+        return CharacterFinder::findFirst(haystack, offset, needles);
     }
 
     return std::nullopt;
 }
 
-std::optional<BoundsSafeCharacterFinder::Position> BoundsSafeCharacterFinder::find_first_not(
+std::optional<BoundsSafeCharacterFinder::Position> BoundsSafeCharacterFinder::findFirstNot(
     std::string_view haystack, std::size_t offset, const std::vector<char> & needles
 ) const
 {
     if (haystack.size() > offset)
     {
-        return CharacterFinder::find_first_not(haystack, offset, needles);
+        return CharacterFinder::findFirstNot(haystack, offset, needles);
     }
 
     return std::nullopt;

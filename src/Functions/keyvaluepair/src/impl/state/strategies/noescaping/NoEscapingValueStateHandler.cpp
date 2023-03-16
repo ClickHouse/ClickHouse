@@ -53,7 +53,7 @@ NextState NoEscapingValueStateHandler::read(std::string_view file, size_t pos, E
     const auto & [key_value_delimiter, quoting_character, pair_delimiters]
         = extractor_configuration;
 
-    while (auto character_position_opt = finder.find_first(file, pos, read_needles))
+    while (auto character_position_opt = finder.findFirst(file, pos, read_needles))
     {
         auto character_position = *character_position_opt;
         auto character = file[character_position];
@@ -88,7 +88,7 @@ NextState NoEscapingValueStateHandler::readEnclosed(std::string_view file, size_
 
     const auto quoting_character = extractor_configuration.quoting_character;
 
-    while (auto character_position_opt = finder.find_first(file, pos, read_quoted_needles))
+    while (auto character_position_opt = finder.findFirst(file, pos, read_quoted_needles))
     {
         auto character_position = *character_position_opt;
         auto character = file[character_position];
