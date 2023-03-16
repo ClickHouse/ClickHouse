@@ -57,6 +57,9 @@ QueryTreeNodePtr normalizeAtom(const QueryTreeNodePtr & atom, const ContextPtr &
             auto inverted_node = function_node->clone();
             auto * inverted_function_node = inverted_node->as<FunctionNode>();
             auto function_resolver = FunctionFactory::instance().get(it->second, context);
+            auto & arguments = inverted_function_node->getArguments().getNodes();
+            assert(arguments.size() == 2);
+            std::swap(arguments[0], arguments[1]);
             inverted_function_node->resolveAsFunction(function_resolver);
             return inverted_node;
         }
@@ -215,7 +218,7 @@ ComparisonGraph<Node>::ComparisonGraph(const NodeContainer & atomic_formulas, Co
                                 return constraint_node->getTreeHash() == node->getTreeHash()
                                     && constraint_node->getColumnName() == node->getColumnName();
                             else
-                                return constraint_node->getTreeHash() == node->getTreeHash();
+                                return constraint_node->isEqual(*node);
                         }))
                 {
                     return {};
@@ -278,7 +281,6 @@ ComparisonGraph<Node>::ComparisonGraph(const NodeContainer & atomic_formulas, Co
         const auto * function_node = tryGetFunctionNode(atom);
         if (function_node && not_equals_functions.contains(functionName(atom)))
         {
-
             const auto & arguments = getArguments(function_node);
             if (arguments.size() == 2)
             {
@@ -782,7 +784,7 @@ std::pair<std::vector<ssize_t>, std::vector<ssize_t>> ComparisonGraph<Node>::bui
         }
     }
 
-    return {lower, upper};
+    return {std::move(lower), std::move(upper)};
 }
 
 template class ComparisonGraph<ASTPtr>;

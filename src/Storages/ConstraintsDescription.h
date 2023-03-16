@@ -75,7 +75,7 @@ public:
         friend ConstraintsDescription;
     };
 
-    const QueryTreeData & getQueryTreeData(const ContextPtr & context) const;
+    QueryTreeData getQueryTreeData(const ContextPtr & context, const QueryTreeNodePtr & table_node) const;
 
 private:
     std::vector<std::vector<CNFQuery::AtomicFormula>> buildConstraintData() const;
@@ -86,8 +86,6 @@ private:
 
     std::vector<std::vector<CNFQuery::AtomicFormula>> cnf_constraints;
     std::map<IAST::Hash, AtomIds> ast_to_atom_ids;
-
-    mutable std::optional<QueryTreeData> query_tree_data;
 
     std::unique_ptr<ComparisonGraph<>> graph;
 };

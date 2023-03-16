@@ -495,11 +495,6 @@ CNF::CNF(AndGroup statements_)
 
 std::optional<CNF> CNF::tryBuildCNF(const QueryTreeNodePtr & node, ContextPtr context, size_t max_growth_multiplier)
 {
-    auto * function_node = node->as<FunctionNode>();
-
-    if (!function_node || !isLogicalFunction(*function_node))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot convert nodes that are not logical functions to CNF");
-
     auto node_cloned = node->clone();
 
     size_t atom_count = countAtoms(node_cloned);
