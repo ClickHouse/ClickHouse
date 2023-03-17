@@ -27,6 +27,19 @@ WITH
 SELECT
     x;
 {'$nationality':'@brazil','1name':'neymar','4ge':'31','_team':'_psg'}
+-- only special characters
+-- expected output: {'#':'#','$':'$','@':'@','_':'_'}
+WITH
+    extractKeyValuePairs('_:_, @:@ #:#,$:$') AS s_map,
+    CAST(
+            arrayMap(
+                    (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+                ),
+            'Map(String,String)'
+        ) AS x
+SELECT
+    x;
+{'#':'#','$':'$','@':'@','_':'_'}
 -- special (not control) characters in the middle of elements
 -- expected output: {'age':'3!','name':'ney!mar','nationality':'br4z!l','t&am':'@psg'}
 WITH
@@ -53,6 +66,19 @@ WITH
 SELECT
     x;
 {'amount\\z':'$5\\h','currency':'\\$USD'}
+-- invalid escape sequence, should be discarded
+-- expected output: {'valid_key':'valid_value'}
+WITH
+    extractKeyValuePairs('valid_key:valid_value key:invalid_val\\') AS s_map,
+    CAST(
+            arrayMap(
+                    (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+                ),
+            'Map(String,String)'
+        ) AS x
+SELECT
+    x;
+{'valid_key':'valid_value'}
 -- standard escape sequences are covered by unit tests
 
 -- simple quoting
