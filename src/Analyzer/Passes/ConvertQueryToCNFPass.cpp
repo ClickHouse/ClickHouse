@@ -415,18 +415,18 @@ class ColumnNameCollectorVisitor : public ConstInDepthQueryTreeVisitor<ColumnNam
 public:
     ColumnNameCollectorVisitor(
         std::unordered_set<std::string> & column_names_,
-        const QueryTreeNodePtrWithHashMap<UInt64> & query_node_to_component_)
+        const QueryTreeNodePtrWithHashMap<UInt64> * query_node_to_component_)
         : column_names(column_names_), query_node_to_component(query_node_to_component_)
     {}
 
     bool needChildVisit(const VisitQueryTreeNodeType & parent, const VisitQueryTreeNodeType &)
     {
-        return !query_node_to_component.contains(parent);
+        return !query_node_to_component || !query_node_to_component->contains(parent);
     }
 
     void visitImpl(const QueryTreeNodePtr & node)
     {
-        if (query_node_to_component.contains(node))
+        if (query_node_to_component && query_node_to_component->contains(node))
             return;
 
         if (const auto * column_node = node->as<ColumnNode>())
@@ -435,7 +435,7 @@ public:
 
 private:
     std::unordered_set<std::string> & column_names;
-    const QueryTreeNodePtrWithHashMap<UInt64> & query_node_to_component;
+    const QueryTreeNodePtrWithHashMap<UInt64> * query_node_to_component;
 };
 
 class SubstituteColumnVisitor : public InDepthQueryTreeVisitor<SubstituteColumnVisitor>
@@ -511,7 +511,7 @@ void bruteForce(
     for (const auto & node : graph.getComponent(components[current_component]))
     {
         std::unordered_set<std::string> column_names;
-        ColumnNameCollectorVisitor column_name_collector{column_names, {}};
+        ColumnNameCollectorVisitor column_name_collector{column_names, nullptr};
         column_name_collector.visit(node);
 
         ColumnPrice expression_price = calculatePrice(column_prices, column_names);
@@ -577,7 +577,7 @@ void substituteColumns(QueryNode & query_node, const QueryTreeNodes & table_expr
         {
             ComponentCollectorVisitor component_collector{components, query_node_to_component, graph};
             component_collector.visit(node);
-            ColumnNameCollectorVisitor column_name_collector{column_names, query_node_to_component};
+            ColumnNameCollectorVisitor column_name_collector{column_names, &query_node_to_component};
             column_name_collector.visit(node);
         });
 
