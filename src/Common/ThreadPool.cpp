@@ -46,8 +46,8 @@ ThreadPoolImpl<Thread>::ThreadPoolImpl(size_t max_threads_)
 template <typename Thread>
 ThreadPoolImpl<Thread>::ThreadPoolImpl(size_t max_threads_, size_t max_free_threads_, size_t queue_size_, bool shutdown_on_exception_)
     : max_threads(max_threads_)
-    , max_free_threads(max_free_threads_)
-    , queue_size(queue_size_)
+    , max_free_threads(std::min(max_free_threads_, max_threads))
+    , queue_size(queue_size_ ? std::max(queue_size_, max_threads) : 0 /* zero means the queue is unlimited */)
     , shutdown_on_exception(shutdown_on_exception_)
 {
 }
@@ -63,13 +63,19 @@ void ThreadPoolImpl<Thread>::setMaxThreads(size_t value)
     max_free_threads = std::min(max_free_threads, max_threads);
 
     /// We have to also adjust queue size, because it limits the number of scheduled and already running jobs in total.
-    queue_size = std::max(queue_size, max_threads);
+    queue_size = queue_size ? std::max(queue_size, max_threads) : 0;
     jobs.reserve(queue_size);
 
     if (need_start_threads)
+    {
+        /// Start new threads while there are more scheduled jobs in the queue and the limit `max_threads` is not reached.
         startNewThreadsNoLock();
+    }
     else if (need_finish_free_threads)
+    {
+        /// Wake up free threads so they can finish themselves.
         new_job_or_shutdown.notify_all();
+    }
 }
 
 template <typename Thread>
@@ -85,17 +91,20 @@ void ThreadPoolImpl<Thread>::setMaxFreeThreads(size_t value)
     std::lock_guard lock(mutex);
     bool need_finish_free_threads = (value < max_free_threads);
 
-    max_free_threads = value;
+    max_free_threads = std::min(value, max_threads);
 
     if (need_finish_free_threads)
+    {
+        /// Wake up free threads so they can finish themselves.
         new_job_or_shutdown.notify_all();
+    }
 }
 
 template <typename Thread>
 void ThreadPoolImpl<Thread>::setQueueSize(size_t value)
 {
     std::lock_guard lock(mutex);
-    queue_size = value;
+    queue_size = value ? std::max(value, max_threads) : 0;
     /// Reserve memory to get rid of allocations
     jobs.reserve(queue_size);
 }
@@ -182,21 +191,16 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, ssize_t priority, std::
 template <typename Thread>
 void ThreadPoolImpl<Thread>::startNewThreadsNoLock()
 {
-    auto try_start_new_thread = [this]
+    /// Start new threads while there are more scheduled jobs in the queue and the limit `max_threads` is not reached.
+    while (threads.size() < std::min(scheduled_jobs, max_threads))
     {
-        if (threads.size() >= scheduled_jobs)
-            return false; /// not necessary to start more threads, already have a thread per each scheduled job
-
-        if (threads.size() >= max_threads)
-            return false; /// not allowed to start more threads
-
         try
         {
             threads.emplace_front();
         }
         catch (...)
         {
-            return false; /// failed to start more threads
+            break; /// failed to start more threads
         }
 
         try
@@ -206,13 +210,9 @@ void ThreadPoolImpl<Thread>::startNewThreadsNoLock()
         catch (...)
         {
             threads.pop_front();
-            return false; /// failed to start more threads
+            break; /// failed to start more threads
         }
-
-        return true;
-    };
-
-    while (try_start_new_thread());
+    }
 }
 
 template <typename Thread>
@@ -314,7 +314,8 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
     CurrentMetrics::Increment metric_all_threads(
         std::is_same_v<Thread, std::thread> ? CurrentMetrics::GlobalThread : CurrentMetrics::LocalThread);
 
-    /// Run jobs until there are scheduled jobs.
+    /// Run jobs while there are scheduled jobs and until some special event occurs (e.g. shutdown, or decreasing the number of max_threads).
+    /// And if `max_free_threads > 0` we keep this number of threads even when there are no jobs for them currently.
     while (true)
     {
         /// This is inside the loop to also reset previous thread names set inside the jobs.
@@ -328,9 +329,9 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 
         {
             std::unique_lock lock(mutex);
-            new_job_or_shutdown.wait(lock, [this] { return !jobs.empty() || shutdown || (threads.size() > scheduled_jobs + max_free_threads); });
+            new_job_or_shutdown.wait(lock, [this] { return !jobs.empty() || shutdown || (threads.size() > std::min(max_threads, scheduled_jobs + max_free_threads)); });
 
-            if (shutdown || (threads.size() > scheduled_jobs + max_free_threads))
+            if (shutdown || (threads.size() > std::min(max_threads, scheduled_jobs + max_free_threads)))
             {
                 thread_it->detach();
                 threads.erase(thread_it);
