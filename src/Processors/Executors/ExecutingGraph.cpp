@@ -124,7 +124,7 @@ bool ExecutingGraph::expandPipeline(std::stack<uint64_t> & stack, uint64_t pid)
 
         source_processors.reserve(source_processors.size() + new_processors.size());
 
-        for (auto& proc: new_processors)
+        for (auto & proc: new_processors)
         {
             bool is_source = proc->getInputs().empty();
             source_processors.emplace_back(is_source);

@@ -113,21 +113,6 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED;
 }
 
-std::string QueryState::cancellationStatusToName(CancellationStatus status)
-{
-    switch (status)
-    {
-        case CancellationStatus::FULLY_CANCELLED:
-            return "FULLY_CANCELLED";
-        case CancellationStatus::READ_CANCELLED:
-            return "READ_CANCELLED";
-        case CancellationStatus::NOT_CANCELLED:
-            return "NOT_CANCELLED";
-    }
-
-    UNREACHABLE();
-}
-
 TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
@@ -1807,9 +1792,9 @@ void TCPHandler::initProfileEventsBlockOutput(const Block & block)
     }
 }
 
-void TCPHandler::decreaseCancellationStatus(const std::string& log_message)
+void TCPHandler::decreaseCancellationStatus(const std::string & log_message)
 {
-    auto prev_status = QueryState::cancellationStatusToName(state.cancellation_status);
+    auto prev_status = magic_enum::enum_name(state.cancellation_status);
 
     bool stop_reading_on_first_cancel = false;
     if (query_context)
@@ -1827,7 +1812,7 @@ void TCPHandler::decreaseCancellationStatus(const std::string& log_message)
         state.cancellation_status = CancellationStatus::FULLY_CANCELLED;
     }
 
-    auto current_status = QueryState::cancellationStatusToName(state.cancellation_status);
+    auto current_status = magic_enum::enum_name(state.cancellation_status);
     LOG_INFO(log, "Change cancellation status from {} to {}. Log message: {}", prev_status, current_status, log_message);
 }
 

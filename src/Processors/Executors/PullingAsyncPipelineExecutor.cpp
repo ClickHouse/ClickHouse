@@ -181,7 +181,8 @@ void PullingAsyncPipelineExecutor::cancel()
     /// Cancel execution if it wasn't finished.
     cancelWithExceptionHandling([&]()
     {
-        data->executor->cancel();
+        if (!data->is_finished && data->executor)
+            data->executor->cancel();
     });
 
     /// The following code is needed to rethrow exception from PipelineExecutor.
@@ -203,7 +204,8 @@ void PullingAsyncPipelineExecutor::cancelReading()
     /// Stop reading from source if pipeline wasn't finished.
     cancelWithExceptionHandling([&]()
     {
-        data->executor->cancelReading();
+        if (!data->is_finished && data->executor)
+            data->executor->cancelReading();
     });
 }
 
@@ -211,8 +213,7 @@ void PullingAsyncPipelineExecutor::cancelWithExceptionHandling(CancelFunc && can
 {
     try
     {
-        if (!data->is_finished && data->executor)
-            cancel_func();
+        cancel_func();
     }
     catch (...)
     {
