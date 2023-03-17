@@ -999,9 +999,6 @@ fileSegmentationEngineBSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t
                 "the value setting 'min_chunk_bytes_for_parallel_parsing' or check your data manually, most likely BSON is malformed",
                 min_bytes, document_size);
 
-        if (document_size < sizeof(document_size))
-            throw ParsingException(ErrorCodes::INCORRECT_DATA, "Size of BSON document is invalid");
-
         size_t old_size = memory.size();
         memory.resize(old_size + document_size);
         memcpy(memory.data() + old_size, reinterpret_cast<char *>(&document_size), sizeof(document_size));
