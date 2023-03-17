@@ -3,7 +3,7 @@ slug: /en/operations/system-tables/users
 ---
 # users
 
-Contains a list of [user accounts](../../guides/sre/user-management/index.md#user-account-management) configured at the server.
+Contains a list of [user accounts](../../operations/access-rights.md#user-account-management) configured at the server.
 
 Columns:
 -    `name` ([String](../../sql-reference/data-types/string.md)) — User name.

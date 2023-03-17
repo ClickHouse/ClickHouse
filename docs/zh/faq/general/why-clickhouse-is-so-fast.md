@@ -9,7 +9,7 @@ sidebar_position: 8
 
 It was designed to be fast. Query execution performance has always been a top priority during the development process, but other important characteristics like user-friendliness, scalability, and security were also considered so ClickHouse could become a real production system.
 
-ClickHouse was initially built as a prototype to do just a single task well: to filter and aggregate data as fast as possible. That’s what needs to be done to build a typical analytical report and that’s what a typical [GROUP BY](../../sql-reference/statements/select/group-by.md) query does. ClickHouse team has made several high-level decisions that combined made achieving this task possible:
+ClickHouse was initially built as a prototype to do just a single task well: to filter and aggregate data as fast as possible. That’s what needs to be done to build a typical analytical report and that’s what a typical [GROUP BY](../../sql-reference/statements/select/group-by/) query does. ClickHouse team has made several high-level decisions that combined made achieving this task possible:
 
 Column-oriented storage
 :   Source data often contain hundreds or even thousands of columns, while a report can use just a few of them. The system needs to avoid reading unnecessary columns, or most expensive disk read operations would be wasted.
