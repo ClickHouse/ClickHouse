@@ -25,14 +25,14 @@ void ZooKeeperCachingGetter::resetCache()
 }
 
 
-std::pair<zkutil::ZooKeeperPtr, bool> ZooKeeperCachingGetter::getZooKeeper()
+std::pair<zkutil::ZooKeeperPtr, ZooKeeperCachingGetter::SessionStatus> ZooKeeperCachingGetter::getZooKeeper()
 {
     std::lock_guard lock{cached_zookeeper_ptr_mutex};
     return getZooKeeperNoLock();
 }
 
 
-std::pair<zkutil::ZooKeeperPtr, bool> ZooKeeperCachingGetter::getZooKeeperNoLock()
+std::pair<zkutil::ZooKeeperPtr, ZooKeeperCachingGetter::SessionStatus> ZooKeeperCachingGetter::getZooKeeperNoLock()
 {
     if (!cached_zookeeper_ptr || cached_zookeeper_ptr->expired())
     {
@@ -41,9 +41,9 @@ std::pair<zkutil::ZooKeeperPtr, bool> ZooKeeperCachingGetter::getZooKeeperNoLock
             throw DB::Exception(DB::ErrorCodes::NO_ZOOKEEPER, "Can't get ZooKeeper session");
 
         cached_zookeeper_ptr = zookeeper;
-        return {zookeeper, true};
+        return {zookeeper, ZooKeeperCachingGetter::SessionStatus::New};
     }
-    return {cached_zookeeper_ptr, false};
+    return {cached_zookeeper_ptr, ZooKeeperCachingGetter::SessionStatus::Cached};
 }
 
 }
