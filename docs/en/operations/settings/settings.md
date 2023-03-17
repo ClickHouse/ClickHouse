@@ -966,10 +966,10 @@ This is an expert-level setting, and you shouldn't change it if you're just gett
 
 ## max_query_size {#settings-max_query_size}
 
-The maximum part of a query that can be taken to RAM for parsing with the SQL parser.
-The INSERT query also contains data for INSERT that is processed by a separate stream parser (that consumes O(1) RAM), which is not included in this restriction.
+The maximum number of bytes of a query string parsed by the SQL parser.
+Data in the VALUES clause of INSERT queries is processed by a separate stream parser (that consumes O(1) RAM) and not affected by this restriction.
 
-Default value: 256 KiB.
+Default value: 262144 (= 256 KiB).
 
 ## max_parser_depth {#max_parser_depth}
 
