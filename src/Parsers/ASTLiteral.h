@@ -47,6 +47,7 @@ protected:
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 
     void appendColumnNameImpl(WriteBuffer & ostr) const override;
+    bool hasColumnName() const override { return true; }
 
 private:
     /// Legacy version of 'appendColumnNameImpl'. It differs only with tuple literals.

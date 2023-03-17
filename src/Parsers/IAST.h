@@ -56,6 +56,9 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get name of not a column: {}", getID());
     }
 
+    /* This method should be overridden with appendColumnName */
+    virtual bool hasColumnName() const { return false; }
+
     /** Get the alias, if any, or the canonical name of the column, if it is not. */
     virtual String getAliasOrColumnName() const { return getColumnName(); }
 
