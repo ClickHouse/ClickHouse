@@ -487,7 +487,7 @@ private:
     struct ZeroCopyLockDescription
     {
         std::string replica;
-        std::shared_ptr<std::atomic_flag> exists;
+        std::shared_ptr<std::atomic<bool>> exists;
     };
 
     std::unordered_map<String, ZeroCopyLockDescription> existing_zero_copy_locks;

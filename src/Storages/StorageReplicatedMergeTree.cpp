@@ -8579,17 +8579,14 @@ void StorageReplicatedMergeTree::addZeroCopyLock(const String & part_name, const
     auto path = getZeroCopyPartPath(part_name, disk);
     if (path)
     {
-
         auto zookeeper = getZooKeeper();
         auto lock_path = fs::path(*path) / "part_exclusive_lock";
+        LOG_TEST(log, "Adding zero-copy lock on {}", lock_path);
+        /// Looks ugly, but we cannot touch any storage fields inside Watch callback
+        /// because it could lead to use-after-free (storage dropped and watch triggered)
         std::shared_ptr<std::atomic<bool>> flag = std::make_shared<std::atomic<bool>>(true);
-        {
-            std::lock_guard lock(existing_zero_copy_locks_mutex);
-            existing_zero_copy_locks.emplace(lock_path, {"", flag});
-        }
-
         std::string replica;
-        bool exists = zookeeper->tryGet(lock_path, replica, [flag] (const WatchResponse &)
+        bool exists = zookeeper->tryGetWatch(lock_path, replica, nullptr, [flag] (const Coordination::WatchResponse &)
         {
             *flag = false;
         });
@@ -8597,7 +8594,7 @@ void StorageReplicatedMergeTree::addZeroCopyLock(const String & part_name, const
         if (exists)
         {
             std::lock_guard lock(existing_zero_copy_locks_mutex);
-            existing_zero_copy_locks[lock_path].replica = replica;
+            existing_zero_copy_locks[lock_path] = ZeroCopyLockDescription{replica, flag};
         }
     }
 }
@@ -8605,29 +8602,36 @@ void StorageReplicatedMergeTree::addZeroCopyLock(const String & part_name, const
 bool StorageReplicatedMergeTree::checkZeroCopyLockExists(const String & part_name, const DiskPtr & disk, String & lock_replica)
 {
     auto path = getZeroCopyPartPath(part_name, disk);
-    if (path)
-    {
-        auto lock_path = fs::path(*path) / "part_exclusive_lock";
 
-        std::lock_guard lock(existing_zero_copy_locks_mutex);
-        if (auto it = existing_zero_copy_locks.find(lock_path); it != existing_zero_copy_locks.end())
+    std::lock_guard lock(existing_zero_copy_locks_mutex);
+    /// Cleanup abandoned locks during each check. The set of locks is small and this is quite fast loop.
+    /// Also it's hard to properly remove locks because we can execute replication queue
+    /// in arbitrary order and some parts can be replaced by covering parts without merges.
+    for (auto it = existing_zero_copy_locks.begin(); it != existing_zero_copy_locks.end();)
+    {
+        if (*it->second.exists)
+            ++it;
+        else
         {
-            lock_replica = it->second;
-            if (*it->second.exists)
-                return true;
+            LOG_TEST(log, "Removing zero-copy lock on {}", it->first);
+            it = existing_zero_copy_locks.erase(it);
         }
     }
 
+    if (path)
     {
-        std::lock_guard lock(existing_zero_copy_locks_mutex);
-        /// cleanup
-        for (auto it = existing_zero_copy_locks.begin(); it != existing_zero_copy_locks.end())
+        auto lock_path = fs::path(*path) / "part_exclusive_lock";
+        if (auto it = existing_zero_copy_locks.find(lock_path); it != existing_zero_copy_locks.end())
         {
+            lock_replica = it->second.replica;
             if (*it->second.exists)
-                ++it;
-            else
-                it = existing_zero_copy_locks.erase(it);
+            {
+                LOG_TEST(log, "Zero-copy lock on path {} exists", it->first);
+                return true;
+            }
         }
+
+        LOG_TEST(log, "Zero-copy lock on path {} doesn't exist", lock_path);
     }
 
     return false;
