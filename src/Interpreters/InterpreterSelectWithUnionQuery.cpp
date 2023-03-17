@@ -2,22 +2,23 @@
 
 #include <Columns/getLeastSuperColumn.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/InterpreterSelectIntersectExceptQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
-#include <Interpreters/InterpreterSelectIntersectExceptQuery.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/queryToString.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/UnionStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/typeid_cast.h>
 
@@ -106,32 +107,35 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
             const ASTPtr limit_offset_ast = select_query->limitOffset();
             if (limit_offset_ast)
             {
-                limit_offset = limit_offset_ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+                limit_offset = evaluateConstantExpressionAsLiteral(limit_offset_ast, context)->as<ASTLiteral &>().value.safeGet<UInt64>();
                 UInt64 new_limit_offset = settings.offset + limit_offset;
-                limit_offset_ast->as<ASTLiteral &>().value = Field(new_limit_offset);
+                ASTPtr new_limit_offset_ast = std::make_shared<ASTLiteral>(new_limit_offset);
+                select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, std::move(new_limit_offset_ast));
             }
             else if (settings.offset)
             {
-                ASTPtr new_limit_offset_ast = std::make_shared<ASTLiteral>(Field(static_cast<UInt64>(settings.offset)));
+                ASTPtr new_limit_offset_ast = std::make_shared<ASTLiteral>(settings.offset.value);
                 select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, std::move(new_limit_offset_ast));
             }
 
             const ASTPtr limit_length_ast = select_query->limitLength();
             if (limit_length_ast)
             {
-                limit_length = limit_length_ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+                limit_length = evaluateConstantExpressionAsLiteral(limit_length_ast, context)->as<ASTLiteral &>().value.safeGet<UInt64>();
 
                 UInt64 new_limit_length = 0;
                 if (settings.offset == 0)
-                    new_limit_length = std::min(limit_length, static_cast<UInt64>(settings.limit));
+                    new_limit_length = std::min(limit_length, settings.limit.value);
                 else if (settings.offset < limit_length)
-                    new_limit_length =  settings.limit ? std::min(static_cast<UInt64>(settings.limit), limit_length - settings.offset) : (limit_length - settings.offset);
+                    new_limit_length = settings.limit ? std::min(settings.limit.value, limit_length - settings.offset.value)
+                                                      : (limit_length - settings.offset.value);
 
-                limit_length_ast->as<ASTLiteral &>().value = Field(new_limit_length);
+                ASTPtr new_limit_length_ast = std::make_shared<ASTLiteral>(new_limit_length);
+                select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(new_limit_length_ast));
             }
             else if (settings.limit)
             {
-                ASTPtr new_limit_length_ast = std::make_shared<ASTLiteral>(Field(static_cast<UInt64>(settings.limit)));
+                ASTPtr new_limit_length_ast = std::make_shared<ASTLiteral>(settings.limit.value);
                 select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(new_limit_length_ast));
             }
 
