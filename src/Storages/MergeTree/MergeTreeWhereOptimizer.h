@@ -115,9 +115,9 @@ private:
 
     void optimizeArbitrary(ASTSelectQuery & select) const;
 
-    UInt64 getIdentifiersColumnSize(const NameSet & identifiers) const;
+    UInt64 getColumnsSize(const NameSet & columns) const;
 
-    bool identifiersSupportsPrewhere(const NameSet & identifiers) const;
+    bool columnsSupportPrewhere(const NameSet & columns) const;
 
     bool isExpressionOverSortingKey(const RPNBuilderTreeNode & node) const;
 
@@ -125,7 +125,7 @@ private:
 
     bool isConstant(const ASTPtr & expr) const;
 
-    bool isSubsetOfTableColumns(const NameSet & identifiers) const;
+    bool isSubsetOfTableColumns(const NameSet & columns) const;
 
     /** ARRAY JOIN'ed columns as well as arrayJoin() result cannot be used in PREWHERE, therefore expressions
       *    containing said columns should not be moved to PREWHERE at all.

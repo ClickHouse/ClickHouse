@@ -654,9 +654,9 @@ Block IMergeTreeSelectAlgorithm::applyPrewhereActions(Block block, const Prewher
                 WhichDataType which(removeNullable(recursiveRemoveLowCardinality(prewhere_column.type)));
 
                 if (which.isNativeInt() || which.isNativeUInt())
-                    prewhere_column.column = prewhere_column.type->createColumnConst(block.rows(), 1u);
+                    prewhere_column.column = prewhere_column.type->createColumnConst(block.rows(), 1u)->convertToFullColumnIfConst();
                 else if (which.isFloat())
-                    prewhere_column.column = prewhere_column.type->createColumnConst(block.rows(), 1.0f);
+                    prewhere_column.column = prewhere_column.type->createColumnConst(block.rows(), 1.0f)->convertToFullColumnIfConst();
                 else
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
                         "Illegal type {} of column for filter",
