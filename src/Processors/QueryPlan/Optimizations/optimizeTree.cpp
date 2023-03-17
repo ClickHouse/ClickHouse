@@ -124,7 +124,7 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
                 optimizeReadInOrder(*frame.node, nodes);
 
             if (optimization_settings.optimize_projection)
-                num_applied_projection += optimizeUseAggProjections(*frame.node, nodes);
+                num_applied_projection += optimizeUseAggregateProjections(*frame.node, nodes);
 
             if (optimization_settings.aggregation_in_order)
                 optimizeAggregationInOrder(*frame.node, nodes);
@@ -144,18 +144,20 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
         if (optimization_settings.optimize_projection)
         {
-            bool applied = optimizeUseNormalProjections(stack, nodes);
-            /// This is actually some internal knowledge
-            bool stack_was_updated = !stack.back().node->children.empty();
-            num_applied_projection += applied;
+            if (optimizeUseNormalProjections(stack, nodes))
+            {
+                ++num_applied_projection;
 
-            if (max_optimizations_to_apply && max_optimizations_to_apply < num_applied_projection)
-                throw Exception(ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
-                                "Too many projection optimizations applied to query plan. Current limit {}",
-                                max_optimizations_to_apply);
+                if (max_optimizations_to_apply && max_optimizations_to_apply < num_applied_projection)
+                    throw Exception(ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
+                                    "Too many projection optimizations applied to query plan. Current limit {}",
+                                    max_optimizations_to_apply);
 
-            if (applied && stack_was_updated)
+                /// Stack is updated after this optimization and frame is not valid anymore.
+                /// Try to apply optimizations again to newly added plan steps.
+                --stack.back().next_child;
                 continue;
+            }
         }
 
         optimizePrimaryKeyCondition(stack);

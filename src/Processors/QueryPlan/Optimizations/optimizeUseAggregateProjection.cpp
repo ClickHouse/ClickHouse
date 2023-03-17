@@ -1,217 +1,24 @@
-#include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
-#include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Interpreters/InterpreterSelectQuery.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
+
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/Sources/NullSource.h>
+
+#include <AggregateFunctions/AggregateFunctionCount.h>
+#include <Common/logger_useful.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionsLogical.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
-#include <Storages/StorageReplicatedMergeTree.h>
-#include <Common/logger_useful.h>
-#include <Processors/QueryPlan/UnionStep.h>
-#include <AggregateFunctions/AggregateFunctionCount.h>
-#include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Processors/Sources/NullSource.h>
-#include <Parsers/queryToString.h>
-#include <stack>
+#include <Storages/ProjectionsDescription.h>
 
 namespace DB::QueryPlanOptimizations
 {
-
-/// This is a common DAG which is a merge of DAGs from Filter and Expression steps chain.
-/// Additionally, for all the Filter steps, we collect filter conditions into filter_nodes.
-/// Flag remove_last_filter_node is set in case if the last step is a Filter step and it should remove filter column.
-struct QueryDAG
-{
-    ActionsDAGPtr dag;
-    ActionsDAG::NodeRawConstPtrs filter_nodes;
-    bool remove_last_filter_node = false;
-
-    bool build(QueryPlan::Node & node);
-
-private:
-    void appendExpression(const ActionsDAGPtr & expression)
-    {
-        if (dag)
-            dag->mergeInplace(std::move(*expression->clone()));
-        else
-            dag = expression->clone();
-    }
-};
-
-bool QueryDAG::build(QueryPlan::Node & node)
-{
-    IQueryPlanStep * step = node.step.get();
-    if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
-    {
-        if (const auto * prewhere_info = reading->getPrewhereInfo())
-        {
-            if (prewhere_info->row_level_filter)
-            {
-                remove_last_filter_node = false;
-                appendExpression(prewhere_info->row_level_filter);
-                if (const auto * filter_node = dag->tryFindInOutputs(prewhere_info->row_level_column_name))
-                    filter_nodes.push_back(filter_node);
-                else
-                    return false;
-            }
-
-            if (prewhere_info->prewhere_actions)
-            {
-                remove_last_filter_node = prewhere_info->remove_prewhere_column;
-                appendExpression(prewhere_info->prewhere_actions);
-                if (const auto * filter_node = dag->tryFindInOutputs(prewhere_info->prewhere_column_name))
-                    filter_nodes.push_back(filter_node);
-                else
-                    return false;
-            }
-        }
-        return true;
-    }
-
-    if (node.children.size() != 1)
-        return false;
-
-    if (!build(*node.children.front()))
-        return false;
-
-    if (auto * expression = typeid_cast<ExpressionStep *>(step))
-    {
-        const auto & actions = expression->getExpression();
-        if (actions->hasArrayJoin())
-            return false;
-
-        appendExpression(actions);
-        remove_last_filter_node = false;
-        return true;
-    }
-
-    if (auto * filter = typeid_cast<FilterStep *>(step))
-    {
-        const auto & actions = filter->getExpression();
-        if (actions->hasArrayJoin())
-            return false;
-
-        appendExpression(actions);
-        remove_last_filter_node = filter->removesFilterColumn();
-        const auto * filter_expression = dag->tryFindInOutputs(filter->getFilterColumnName());
-        if (!filter_expression)
-            return false;
-
-        filter_nodes.push_back(filter_expression);
-        return true;
-    }
-
-    return false;
-}
-
-struct AggregateQueryDAG
-{
-    ActionsDAGPtr dag;
-    const ActionsDAG::Node * filter_node = nullptr;
-
-    bool build(QueryPlan::Node & node)
-    {
-        QueryDAG query;
-        if (!query.build(node))
-            return false;
-
-        dag = std::move(query.dag);
-        auto filter_nodes = std::move(query.filter_nodes);
-
-        if (!filter_nodes.empty())
-        {
-            filter_node = filter_nodes.front();
-            if (filter_nodes.size() > 1)
-            {
-                FunctionOverloadResolverPtr func_builder_and =
-                    std::make_unique<FunctionToOverloadResolverAdaptor>(
-                        std::make_shared<FunctionAnd>());
-
-                filter_node = &dag->addFunction(func_builder_and, std::move(filter_nodes), {});
-            }
-
-            dag->getOutputs().push_back(filter_node);
-        }
-
-        return true;
-    }
-};
-
-struct NormalQueryDAG
-{
-    ActionsDAGPtr dag;
-    bool need_remove_column = false;
-    const ActionsDAG::Node * filter_node = nullptr;
-
-    bool build(QueryPlan::Node & node)
-    {
-        QueryDAG query;
-        if (!query.build(node))
-            return false;
-
-        dag = std::move(query.dag);
-        auto filter_nodes = std::move(query.filter_nodes);
-        need_remove_column = query.remove_last_filter_node;
-
-        if (!filter_nodes.empty())
-        {
-            auto & outputs = dag->getOutputs();
-            filter_node = filter_nodes.back();
-
-            if (filter_nodes.size() > 1)
-            {
-                /// Add a conjunction of all the filters.
-                if (need_remove_column)
-                {
-                    /// Last filter column is not needed; remove it right here
-                    size_t pos = 0;
-                    while (pos < outputs.size() && outputs[pos] != filter_node)
-                        ++pos;
-
-                    if (pos < outputs.size())
-                        outputs.erase(outputs.begin() + pos);
-                }
-                else
-                {
-                    /// Last filter is needed; we must replace it to constant 1,
-                    /// As well as FilterStep does to make a compatible header.
-                    for (auto & output : outputs)
-                    {
-                        if (output == filter_node)
-                        {
-                            ColumnWithTypeAndName col;
-                            col.name = filter_node->result_name;
-                            col.type = filter_node->result_type;
-                            col.column = col.type->createColumnConst(1, 1);
-                            output = &dag->addColumn(std::move(col));
-                        }
-                    }
-                }
-
-                FunctionOverloadResolverPtr func_builder_and =
-                    std::make_unique<FunctionToOverloadResolverAdaptor>(
-                        std::make_shared<FunctionAnd>());
-
-                filter_node = &dag->addFunction(func_builder_and, std::move(filter_nodes), {});
-                outputs.insert(outputs.begin(), filter_node);
-                need_remove_column = true;
-            }
-        }
-
-        if (dag)
-        {
-            dag->removeUnusedActions();
-            // LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Header {}, Query DAG: {}", header.dumpStructure(), dag->dumpDAG());
-        }
-
-        return true;
-    }
-};
 
 /// Required analysis info from aggregate projection.
 struct AggregateProjectionInfo
@@ -223,38 +30,6 @@ struct AggregateProjectionInfo
     /// A context copy from interpreter which was used for analysis.
     /// Just in case it is used by some function.
     ContextPtr context;
-};
-
-struct ProjectionCandidate
-{
-    const ProjectionDescription * projection;
-
-    /// The number of marks we are going to read
-    size_t sum_marks = 0;
-
-    /// Analysis result, separate for parts with and without projection.
-    /// Analysis is done in order to estimate the number of marks we are going to read.
-    /// For chosen projection, it is reused for reading step.
-    MergeTreeDataSelectAnalysisResultPtr merge_tree_projection_select_result_ptr;
-    MergeTreeDataSelectAnalysisResultPtr merge_tree_normal_select_result_ptr;
-};
-
-/// Aggregate projection analysis result in case it can be applied.
-struct AggregateProjectionCandidate : public ProjectionCandidate
-{
-    AggregateProjectionInfo info;
-
-    /// Actions which need to be applied to columns from projection
-    /// in order to get all the columns required for aggregation.
-    ActionsDAGPtr dag;
-};
-
-/// Normal projection analysis result in case it can be applied.
-/// For now, it is empty.
-/// Normal projection can be used only if it contains all required source columns.
-/// It would not be hard to support pre-computed expressions and filtration.
-struct NormalProjectionCandidate : public ProjectionCandidate
-{
 };
 
 /// Get required info from aggregate projection.
@@ -297,6 +72,41 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
     return info;
 }
 
+struct AggregateQueryDAG
+{
+    ActionsDAGPtr dag;
+    const ActionsDAG::Node * filter_node = nullptr;
+
+    bool build(QueryPlan::Node & node);
+};
+
+bool AggregateQueryDAG::build(QueryPlan::Node & node)
+{
+    QueryDAG query;
+    if (!query.build(node))
+        return false;
+
+    dag = std::move(query.dag);
+    auto filter_nodes = std::move(query.filter_nodes);
+
+    if (!filter_nodes.empty())
+    {
+        filter_node = filter_nodes.front();
+        if (filter_nodes.size() > 1)
+        {
+            FunctionOverloadResolverPtr func_builder_and =
+                std::make_unique<FunctionToOverloadResolverAdaptor>(
+                    std::make_shared<FunctionAnd>());
+
+            filter_node = &dag->addFunction(func_builder_and, std::move(filter_nodes), {});
+        }
+
+        dag->getOutputs().push_back(filter_node);
+    }
+
+    return true;
+}
+
 using DAGIndex = std::unordered_map<std::string_view, const ActionsDAG::Node *>;
 static DAGIndex buildDAGIndex(const ActionsDAG & dag)
 {
@@ -318,6 +128,7 @@ static bool hasNullableOrMissingColumn(const DAGIndex & index, const Names & nam
 
     return false;
 }
+
 
 /// Here we try to match aggregate functions from the query to
 /// aggregate functions from projection.
@@ -574,6 +385,17 @@ ActionsDAGPtr analyzeAggregateProjection(
     return proj_dag;
 }
 
+
+/// Aggregate projection analysis result in case it can be applied.
+struct AggregateProjectionCandidate : public ProjectionCandidate
+{
+    AggregateProjectionInfo info;
+
+    /// Actions which need to be applied to columns from projection
+    /// in order to get all the columns required for aggregation.
+    ActionsDAGPtr dag;
+};
+
 struct MinMaxProjectionCandidate
 {
     AggregateProjectionCandidate candidate;
@@ -684,81 +506,6 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
     return candidates;
 }
 
-static std::shared_ptr<PartitionIdToMaxBlock> getMaxAddedBlocks(ReadFromMergeTree * reading)
-{
-    ContextPtr context = reading->getContext();
-
-    if (context->getSettingsRef().select_sequential_consistency)
-    {
-        if (const auto * replicated = dynamic_cast<const StorageReplicatedMergeTree *>(&reading->getMergeTreeData()))
-            return std::make_shared<PartitionIdToMaxBlock>(replicated->getMaxAddedBlocks());
-    }
-
-    return {};
-}
-
-static bool analyzeProjectionCandidate(
-    ProjectionCandidate & candidate,
-    const ReadFromMergeTree & reading,
-    const MergeTreeDataSelectExecutor & reader,
-    const Names & required_column_names,
-    const MergeTreeData::DataPartsVector & parts,
-    const StorageMetadataPtr & metadata,
-    const SelectQueryInfo & query_info,
-    const ContextPtr & context,
-    const std::shared_ptr<PartitionIdToMaxBlock> & max_added_blocks,
-    const ActionDAGNodes & added_filter_nodes)
-{
-    MergeTreeData::DataPartsVector projection_parts;
-    MergeTreeData::DataPartsVector normal_parts;
-    for (const auto & part : parts)
-    {
-        const auto & created_projections = part->getProjectionParts();
-        auto it = created_projections.find(candidate.projection->name);
-        if (it != created_projections.end())
-            projection_parts.push_back(it->second);
-        else
-            normal_parts.push_back(part);
-    }
-
-    if (projection_parts.empty())
-        return false;
-
-    auto projection_result_ptr = reader.estimateNumMarksToRead(
-        std::move(projection_parts),
-        nullptr,
-        required_column_names,
-        metadata,
-        candidate.projection->metadata,
-        query_info, /// How it is actually used? I hope that for index we need only added_filter_nodes
-        added_filter_nodes,
-        context,
-        context->getSettingsRef().max_threads,
-        max_added_blocks);
-
-    if (projection_result_ptr->error())
-        return false;
-
-    candidate.merge_tree_projection_select_result_ptr = std::move(projection_result_ptr);
-    candidate.sum_marks += candidate.merge_tree_projection_select_result_ptr->marks();
-
-    if (!normal_parts.empty())
-    {
-        auto normal_result_ptr = reading.selectRangesToRead(std::move(normal_parts));
-
-        if (normal_result_ptr->error())
-            return false;
-
-        if (normal_result_ptr->marks() != 0)
-        {
-            candidate.sum_marks += normal_result_ptr->marks();
-            candidate.merge_tree_normal_select_result_ptr = std::move(normal_result_ptr);
-        }
-    }
-
-    return true;
-}
-
 static QueryPlan::Node * findReadingStep(QueryPlan::Node & node)
 {
     IQueryPlanStep * step = node.step.get();
@@ -774,29 +521,7 @@ static QueryPlan::Node * findReadingStep(QueryPlan::Node & node)
     return nullptr;
 }
 
-static bool canUseProjectionForReadingStep(ReadFromMergeTree * reading)
-{
-    /// Probably some projection already was applied.
-    if (reading->hasAnalyzedResult())
-        return false;
-
-    if (reading->isQueryWithFinal())
-        return false;
-
-    if (reading->isQueryWithSampling())
-        return false;
-
-    if (reading->isParallelReadingEnabled())
-        return false;
-
-    // Currently projection don't support deduplication when moving parts between shards.
-    if (reading->getContext()->getSettingsRef().allow_experimental_query_deduplication)
-        return false;
-
-    return true;
-}
-
-bool optimizeUseAggProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
+bool optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
 {
     if (node.children.size() != 1)
         return false;
@@ -940,250 +665,6 @@ bool optimizeUseAggProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     {
         node.step = aggregating->convertToAggregatingProjection(expr_or_filter_node.step->getOutputStream());
         node.children.push_back(&expr_or_filter_node);
-    }
-
-    return true;
-}
-
-
-static ActionsDAGPtr makeMaterializingDAG(const Block & proj_header, const Block main_header)
-{
-    /// Materialize constants in case we don't have it in output header.
-    /// This may happen e.g. if we have PREWHERE.
-
-    size_t num_columns = main_header.columns();
-    /// This is a error; will have block structure mismatch later.
-    if (proj_header.columns() != num_columns)
-        return nullptr;
-
-    std::vector<size_t> const_positions;
-    for (size_t i = 0; i < num_columns; ++i)
-    {
-        auto col_proj = proj_header.getByPosition(i).column;
-        auto col_main = main_header.getByPosition(i).column;
-        bool is_proj_const = col_proj && isColumnConst(*col_proj);
-        bool is_main_proj = col_main && isColumnConst(*col_main);
-        if (is_proj_const && !is_main_proj)
-            const_positions.push_back(i);
-    }
-
-    if (const_positions.empty())
-        return nullptr;
-
-    ActionsDAGPtr dag = std::make_unique<ActionsDAG>();
-    auto & outputs = dag->getOutputs();
-    for (const auto & col : proj_header.getColumnsWithTypeAndName())
-        outputs.push_back(&dag->addInput(col));
-
-    for (auto pos : const_positions)
-    {
-        auto & output = outputs[pos];
-        output = &dag->materializeNode(*output);
-    }
-
-    return dag;
-}
-
-static bool hasAllRequiredColumns(const ProjectionDescription * projection, const Names & required_columns)
-{
-    for (const auto & col : required_columns)
-    {
-        if (!projection->sample_block.has(col))
-            return false;
-    }
-
-    return true;
-}
-
-bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
-{
-    const auto & frame = stack.back();
-
-    auto * reading = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
-    if (!reading)
-        return false;
-
-    if (!canUseProjectionForReadingStep(reading))
-        return false;
-
-    auto iter = stack.rbegin();
-    while (iter != stack.rend())
-    {
-        auto next = std::next(iter);
-        if (next == stack.rend())
-            break;
-
-        if (!typeid_cast<FilterStep *>(next->node->step.get()) &&
-            !typeid_cast<ExpressionStep *>(next->node->step.get()))
-            break;
-
-        iter = next;
-    }
-
-    if (iter == stack.rbegin())
-        return false;
-
-    const auto metadata = reading->getStorageMetadata();
-    const auto & projections = metadata->projections;
-
-    std::vector<const ProjectionDescription *> normal_projections;
-    for (const auto & projection : projections)
-        if (projection.type == ProjectionDescription::Type::Normal)
-            normal_projections.push_back(&projection);
-
-    if (normal_projections.empty())
-        return false;
-
-    NormalQueryDAG query;
-    {
-        if (!query.build(*iter->node->children.front()))
-            return false;
-    }
-
-    std::list<NormalProjectionCandidate> candidates;
-    NormalProjectionCandidate * best_candidate = nullptr;
-
-    const Names & required_columns = reading->getRealColumnNames();
-    const auto & parts = reading->getParts();
-    const auto & query_info = reading->getQueryInfo();
-    ContextPtr context = reading->getContext();
-    MergeTreeDataSelectExecutor reader(reading->getMergeTreeData());
-
-    auto ordinary_reading_select_result = reading->selectRangesToRead(parts);
-    size_t ordinary_reading_marks = ordinary_reading_select_result->marks();
-
-    // LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"),
-    //           "Marks for ordinary reading {}", ordinary_reading_marks);
-
-    std::shared_ptr<PartitionIdToMaxBlock> max_added_blocks = getMaxAddedBlocks(reading);
-
-    for (const auto * projection : normal_projections)
-    {
-        if (!hasAllRequiredColumns(projection, required_columns))
-            continue;
-
-        auto & candidate = candidates.emplace_back();
-        candidate.projection = projection;
-
-        ActionDAGNodes added_filter_nodes;
-        if (query.filter_node)
-            added_filter_nodes.nodes.push_back(query.filter_node);
-
-        bool analyzed = analyzeProjectionCandidate(
-            candidate, *reading, reader, required_columns, parts,
-            metadata, query_info, context, max_added_blocks, added_filter_nodes);
-
-        if (!analyzed)
-            continue;
-
-        // LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"),
-        //           "Marks for projection {} {}", projection->name ,candidate.sum_marks);
-
-        if (candidate.sum_marks >= ordinary_reading_marks)
-            continue;
-
-        if (best_candidate == nullptr || candidate.sum_marks < best_candidate->sum_marks)
-            best_candidate = &candidate;
-    }
-
-    if (!best_candidate)
-    {
-        reading->setAnalyzedResult(std::move(ordinary_reading_select_result));
-        return false;
-    }
-
-    auto storage_snapshot = reading->getStorageSnapshot();
-    auto proj_snapshot = std::make_shared<StorageSnapshot>(
-        storage_snapshot->storage, storage_snapshot->metadata, storage_snapshot->object_columns); //, storage_snapshot->data);
-    proj_snapshot->addProjection(best_candidate->projection);
-
-    // LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Proj snapshot {}",
-    //           proj_snapshot->getColumns(GetColumnsOptions::Kind::All).toString());
-
-    auto query_info_copy = query_info;
-    query_info_copy.prewhere_info = nullptr;
-
-    auto projection_reading = reader.readFromParts(
-        {},
-        required_columns,
-        proj_snapshot,
-        query_info_copy,
-        context,
-        reading->getMaxBlockSize(),
-        reading->getNumStreams(),
-        max_added_blocks,
-        best_candidate->merge_tree_projection_select_result_ptr,
-        reading->isParallelReadingEnabled());
-
-    if (!projection_reading)
-    {
-        Pipe pipe(std::make_shared<NullSource>(proj_snapshot->getSampleBlockForColumns(required_columns)));
-        projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
-    }
-
-    bool has_nornal_parts = best_candidate->merge_tree_normal_select_result_ptr != nullptr;
-    if (has_nornal_parts)
-        reading->setAnalyzedResult(std::move(best_candidate->merge_tree_normal_select_result_ptr));
-
-    // LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Projection reading header {}",
-    //           projection_reading->getOutputStream().header.dumpStructure());
-
-    projection_reading->setStepDescription(best_candidate->projection->name);
-
-    auto & projection_reading_node = nodes.emplace_back(QueryPlan::Node{.step = std::move(projection_reading)});
-    auto * next_node = &projection_reading_node;
-
-    if (query.dag)
-    {
-        auto & expr_or_filter_node = nodes.emplace_back();
-
-        if (query.filter_node)
-        {
-            expr_or_filter_node.step = std::make_unique<FilterStep>(
-                projection_reading_node.step->getOutputStream(),
-                query.dag,
-                query.filter_node->result_name,
-                query.need_remove_column);
-        }
-        else
-            expr_or_filter_node.step = std::make_unique<ExpressionStep>(
-                projection_reading_node.step->getOutputStream(),
-                query.dag);
-
-        expr_or_filter_node.children.push_back(&projection_reading_node);
-        next_node = &expr_or_filter_node;
-    }
-
-    if (!has_nornal_parts)
-    {
-        /// All parts are taken from projection
-        iter->node->children.front() = next_node;
-    }
-    else
-    {
-        const auto & main_stream = iter->node->children.front()->step->getOutputStream();
-        const auto * proj_stream = &next_node->step->getOutputStream();
-
-        if (auto materializing = makeMaterializingDAG(proj_stream->header, main_stream.header))
-        {
-            auto converting = std::make_unique<ExpressionStep>(*proj_stream, materializing);
-            proj_stream = &converting->getOutputStream();
-            auto & expr_node = nodes.emplace_back();
-            expr_node.step = std::move(converting);
-            expr_node.children.push_back(next_node);
-            next_node = &expr_node;
-        }
-
-        auto & union_node = nodes.emplace_back();
-        DataStreams input_streams = {main_stream, *proj_stream};
-        union_node.step = std::make_unique<UnionStep>(std::move(input_streams));
-        union_node.children = {iter->node->children.front(), next_node};
-        iter->node->children.front() = &union_node;
-
-        /// Here we remove last steps from stack to be able to optimize again.
-        /// In theory, read-in-order can be applied to projection.
-        iter->next_child = 0;
-        stack.resize(iter.base() - stack.begin() + 1);
     }
 
     return true;
