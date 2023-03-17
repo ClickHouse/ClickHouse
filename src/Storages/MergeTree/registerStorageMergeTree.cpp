@@ -113,20 +113,6 @@ static ColumnsDescription getColumnsDescriptionFromZookeeper(const String & raw_
     return ColumnsDescription::parse(zookeeper->get(fs::path(zookeeper_path) / "columns", &columns_stat));
 }
 
-static void checkDataTypes(const DataTypes data_types)
-{
-    for (const auto & data_type : data_types)
-    {
-        if (!isNativeInteger(*data_type) && !isFloat(*data_type) && !isDateOrDate32(*data_type) && !isDateTime(*data_type)
-            && !isStringOrFixedString(*data_type))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of Partition key or Unique key for UniqueMergeTree, only support Native Integer, Float, Date, Date32, "
-                "DateTime, String or FixedString",
-                data_type->getName());
-    }
-}
-
 static StoragePtr create(const StorageFactory::Arguments & args)
 {
     /** [Replicated][|Summing|VersionedCollapsing|Collapsing|Aggregating|Replacing|Graphite]MergeTree (2 * 7 combinations) engines
@@ -714,14 +700,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         if (args.storage_def->ttl_table && !args.attach)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table TTL is not allowed for MergeTree in old syntax");
-    }
-
-    if (merging_params.mode == MergeTreeData::MergingParams::Unique)
-    {
-        if (metadata.unique_key.column_names.empty())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The Unique Key column list for StorageUniqueMergeTree can not be empty");
-        checkDataTypes(metadata.unique_key.data_types);
-        checkDataTypes(metadata.partition_key.data_types);
     }
 
     DataTypes data_types = metadata.partition_key.data_types;
