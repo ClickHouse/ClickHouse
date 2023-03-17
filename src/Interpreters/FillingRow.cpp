@@ -107,39 +107,4 @@ void FillingRow::initFromDefaults(size_t from_pos)
         row[i] = getFillDescription(i).fill_from;
 }
 
-void insertFromFillingRow(MutableColumns & filling_columns, MutableColumns & interpolate_columns, MutableColumns & other_columns,
-    const FillingRow & filling_row, const Block & interpolate_block)
-{
-    for (size_t i = 0, size = filling_columns.size(); i < size; ++i)
-    {
-        if (filling_row[i].isNull())
-        {
-            filling_columns[i]->insertDefault();
-        }
-        else
-        {
-            filling_columns[i]->insert(filling_row[i]);
-        }
-    }
-
-    if (size_t size = interpolate_block.columns())
-    {
-        Columns columns = interpolate_block.getColumns();
-        for (size_t i = 0; i < size; ++i)
-            interpolate_columns[i]->insertFrom(*columns[i]->convertToFullColumnIfConst(), 0);
-    }
-    else
-        for (const auto & interpolate_column : interpolate_columns)
-            interpolate_column->insertDefault();
-
-    for (const auto & other_column : other_columns)
-        other_column->insertDefault();
-}
-
-void copyRowFromColumns(MutableColumns & dest, const Columns & source, size_t row_num)
-{
-    for (size_t i = 0, size = source.size(); i < size; ++i)
-        dest[i]->insertFrom(*source[i], row_num);
-}
-
 }
