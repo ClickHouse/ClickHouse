@@ -495,7 +495,7 @@ size_t HashJoin::getTotalByteCount() const
     if (!data)
         return 0;
 
-#ifdef NDEBUG
+#ifndef NDEBUG
     size_t debug_blocks_allocated_size = 0;
     for (const auto & block : data->blocks)
         debug_blocks_allocated_size += block.allocatedBytes();
