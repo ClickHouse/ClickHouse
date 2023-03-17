@@ -48,6 +48,8 @@ public:
     }
     void transform(ASTs & nodes) const override;
     void appendColumnName(WriteBuffer & ostr) const override;
+    bool hasColumnName() const override { return true; }
+
     void updateTreeHashImpl(SipHash & hash_state) const override;
 
     // Case 1  APPLY (quantile(0.9))
@@ -80,6 +82,7 @@ public:
     const std::shared_ptr<re2::RE2> & getMatcher() const;
     bool isColumnMatching(const String & column_name) const;
     void appendColumnName(WriteBuffer & ostr) const override;
+    bool hasColumnName() const override { return true; }
     void updateTreeHashImpl(SipHash & hash_state) const override;
 
 protected:
@@ -103,6 +106,8 @@ public:
         }
 
         void appendColumnName(WriteBuffer & ostr) const override;
+        bool hasColumnName() const override { return true; }
+
         void updateTreeHashImpl(SipHash & hash_state) const override;
 
         String name;
@@ -121,6 +126,8 @@ public:
     }
     void transform(ASTs & nodes) const override;
     void appendColumnName(WriteBuffer & ostr) const override;
+    bool hasColumnName() const override { return true; }
+
     void updateTreeHashImpl(SipHash & hash_state) const override;
 
 protected:

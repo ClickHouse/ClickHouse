@@ -79,6 +79,8 @@ public:
 protected:
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
     void appendColumnNameImpl(WriteBuffer & ostr) const override;
+    bool hasColumnName() const override;
+
 private:
     void finishFormatWithWindow(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
 };

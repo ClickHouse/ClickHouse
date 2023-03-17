@@ -58,6 +58,7 @@ protected:
 
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
     void appendColumnNameImpl(WriteBuffer & ostr) const override;
+    bool hasColumnName() const override { return true; }
 
 private:
     using ASTWithAlias::children; /// ASTIdentifier is child free
