@@ -23,7 +23,7 @@ tuple(x, y, …)
 
 A function that allows getting a column from a tuple.
 
-If the second argument is a number `n`, it is the column index, starting from 1. And `n` must be a constant. If the second argument is a string `s`, it represents the name of the element. Besides, we can provide the third optional argument, such that when index out of bounds or element for such name does not exist, the default value returned instead of throw exception. There is no cost to execute the function.
+If the second argument is a number `n`, it is the column index, starting from 1. If the second argument is a string `s`, it represents the name of the element. Besides, we can provide the third optional argument, such that when index out of bounds or element for such name does not exist, the default value returned instead of throw exception. The second and third arguments if provided are always must be constant. There is no cost to execute the function.
 
 The function implements the operator `x.n` and `x.s`.
 
