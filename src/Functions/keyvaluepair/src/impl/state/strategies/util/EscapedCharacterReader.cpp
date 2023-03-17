@@ -102,11 +102,11 @@ std::optional<uint8_t> EscapedCharacterReader::readEscapedSequence(std::string_v
 
         auto number_of_bytes_to_read = std::min<std::size_t>(max_number_of_bytes_to_read, str.size());
 
-        auto cut = std::string_view {str.begin(), str.begin() + number_of_bytes_to_read};
+        auto view_containing_the_bytes_to_be_read = std::string_view {str.begin(), str.begin() + number_of_bytes_to_read};
 
-        auto read_character = toInt(cut, base);
+        auto read_character = toInt(view_containing_the_bytes_to_be_read, base);
 
-        str = {cut.begin(), str.end()};
+        str = {view_containing_the_bytes_to_be_read.begin(), str.end()};
 
         return read_character;
     }

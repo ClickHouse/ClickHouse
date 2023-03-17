@@ -9,6 +9,9 @@ namespace DB
 
 /*
  * Did not spend much time here, running against the clock :)
+ *
+ * Takes in the Configuration and outputs the characters of interest for each state.
+ * Those characters will be later used in string look-ups like `find_first` and `find_first_not`
  * */
 class NeedleFactory
 {

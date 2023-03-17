@@ -11,7 +11,7 @@ std::vector<char> NeedleFactory::getWaitNeedles(const DB::Configuration & extrac
 
     std::vector<char> needles;
 
-    needles.reserve(16u);
+    needles.reserve(NEEDLE_SIZE);
 
     needles.push_back(key_value_delimiter);
 
@@ -27,7 +27,7 @@ std::vector<char> NeedleFactory::getReadNeedles(const Configuration & extractor_
 
     std::vector<char> needles;
 
-    needles.reserve(16u);
+    needles.reserve(NEEDLE_SIZE);
 
     needles.push_back(key_value_delimiter);
     needles.push_back(quoting_character);
@@ -43,7 +43,7 @@ std::vector<char> NeedleFactory::getReadQuotedNeedles(const Configuration & extr
 
     std::vector<char> needles;
 
-    needles.reserve(16u);
+    needles.reserve(NEEDLE_SIZE);
 
     needles.push_back(quoting_character);
 
