@@ -23,7 +23,7 @@ NextState NoEscapingValueStateHandler::wait(std::string_view file, size_t pos) c
 
         if (quoting_character == current_character)
         {
-            return {pos + 1u, State::READING_ENCLOSED_VALUE};
+            return {pos + 1u, State::READING_QUOTED_VALUE};
         }
         else if (std::find(pair_delimiters.begin(), pair_delimiters.end(), current_character) != pair_delimiters.end())
         {
@@ -78,7 +78,7 @@ NextState NoEscapingValueStateHandler::read(std::string_view file, size_t pos, E
     return {file.size(), State::FLUSH_PAIR};
 }
 
-NextState NoEscapingValueStateHandler::readEnclosed(std::string_view file, size_t pos, ElementType & value) const
+NextState NoEscapingValueStateHandler::readQuoted(std::string_view file, size_t pos, ElementType & value) const
 {
     auto start_index = pos;
 

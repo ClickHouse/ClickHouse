@@ -20,14 +20,6 @@ TEST(InlineEscapingValueStateHandler, Wait)
     InlineEscapingValueStateHandler handler(configuration);
 
     test_wait(handler, " los$ yours3lf", 0u, READING_VALUE);
-
-//
-//    test_wait(handler, "name", 0u, READING_KEY);
-//    test_wait(handler, "\\:name", 2u, READING_KEY);
-//    test_wait(handler, R"(\\"name)", 3u, READING_ENCLOSED_KEY);
-//
-//    test_wait(handler, "", 0u, END);
-//    test_wait(handler, "\\\\", 2u, END);
 }
 
 }

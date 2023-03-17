@@ -27,7 +27,7 @@ NextState InlineEscapingKeyStateHandler::wait(std::string_view file, size_t pos)
 
         if (quoting_character == character)
         {
-            return {character_position + 1u, State::READING_ENCLOSED_KEY};
+            return {character_position + 1u, State::READING_QUOTED_KEY};
         }
         else
         {
@@ -109,7 +109,7 @@ NextState InlineEscapingKeyStateHandler::read(std::string_view file, size_t pos,
     return {file.size(), State::END};
 }
 
-NextState InlineEscapingKeyStateHandler::readEnclosed(std::string_view file, size_t pos, ElementType & key) const
+NextState InlineEscapingKeyStateHandler::readQuoted(std::string_view file, size_t pos, ElementType & key) const
 {
     BoundsSafeCharacterFinder finder;
 

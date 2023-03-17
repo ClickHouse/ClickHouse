@@ -12,16 +12,16 @@ void test_wait(const InlineEscapingKeyStateHandler & handler, std::string_view i
     ASSERT_EQ(next_state.state, expected_state);
 }
 
-template <bool enclosed>
+template <bool quoted>
 void test_read(const InlineEscapingKeyStateHandler & handler, std::string_view input, std::string_view expected_element,
                std::size_t expected_pos, State expected_state)
 {
     NextState next_state;
     std::string element;
 
-    if constexpr (enclosed)
+    if constexpr (quoted)
     {
-        next_state = handler.readEnclosed(input, 0u, element);
+        next_state = handler.readQuoted(input, 0u, element);
     }
     else
     {
@@ -39,7 +39,7 @@ void test_read(const InlineEscapingKeyStateHandler & handler, std::string_view i
     test_read<false>(handler, input, expected_element, expected_pos, expected_state);
 }
 
-void test_read_enclosed(const InlineEscapingKeyStateHandler & handler, std::string_view input, std::string_view expected_element,
+void test_read_quoted(const InlineEscapingKeyStateHandler & handler, std::string_view input, std::string_view expected_element,
                std::size_t expected_pos, State expected_state)
 {
     test_read<true>(handler, input, expected_element, expected_pos, expected_state);
@@ -55,7 +55,7 @@ TEST(InlineEscapingKeyStateHandler, Wait)
 
     test_wait(handler, "name", 0u, READING_KEY);
     test_wait(handler, "\\:name", 2u, READING_KEY);
-    test_wait(handler, R"(\\"name)", 3u, READING_ENCLOSED_KEY);
+    test_wait(handler, R"(\\"name)", 3u, READING_QUOTED_KEY);
 
     test_wait(handler, "", 0u, END);
     test_wait(handler, "\\\\", 2u, END);
@@ -101,10 +101,10 @@ TEST(InlineEscapingKeyStateHandler, ReadEnclosed)
 
     std::string key_with_escape_character = regular_key + R"(\n\x4E")";
 
-    test_read_enclosed(handler, regular_key, "", regular_key.size(), END);
-    test_read_enclosed(handler, regular_key_with_end_quote, regular_key, regular_key_with_end_quote.size(), READING_KV_DELIMITER);
-    test_read_enclosed(handler, key_with_special_characters_with_end_quote, key_with_special_characters, key_with_special_characters_with_end_quote.size(), READING_KV_DELIMITER);
-    test_read_enclosed(handler, key_with_escape_character, regular_key + "\nN", key_with_escape_character.size(), READING_KV_DELIMITER);
+    test_read_quoted(handler, regular_key, "", regular_key.size(), END);
+    test_read_quoted(handler, regular_key_with_end_quote, regular_key, regular_key_with_end_quote.size(), READING_KV_DELIMITER);
+    test_read_quoted(handler, key_with_special_characters_with_end_quote, key_with_special_characters, key_with_special_characters_with_end_quote.size(), READING_KV_DELIMITER);
+    test_read_quoted(handler, key_with_escape_character, regular_key + "\nN", key_with_escape_character.size(), READING_KV_DELIMITER);
 }
 
 }

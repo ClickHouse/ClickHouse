@@ -19,7 +19,7 @@ public:
 
     [[nodiscard]] NextState read(std::string_view file, size_t pos, ElementType & key) const;
 
-    [[nodiscard]] NextState readEnclosed(std::string_view file, size_t pos, ElementType & key) const;
+    [[nodiscard]] NextState readQuoted(std::string_view file, size_t pos, ElementType & key) const;
 
     [[nodiscard]] NextState readKeyValueDelimiter(std::string_view file, size_t pos) const;
 
