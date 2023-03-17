@@ -1,6 +1,4 @@
-#ifdef HAS_RESERVED_IDENTIFIER
 #pragma clang diagnostic ignored "-Wreserved-identifier"
-#endif
 
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/SentryWriter.h>
