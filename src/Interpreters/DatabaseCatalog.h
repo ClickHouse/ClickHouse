@@ -235,6 +235,21 @@ public:
 
     void checkTableCanBeRemovedOrRenamed(const StorageID & table_id, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database = false) const;
 
+
+    struct TableMarkedAsDropped
+    {
+        StorageID table_id = StorageID::createEmpty();
+        StoragePtr table;
+        String metadata_path;
+        time_t drop_time{};
+    };
+    using TablesMarkedAsDropped = std::list<TableMarkedAsDropped>;
+
+    TablesMarkedAsDropped getTablesMarkedDropped()
+    {
+        std::lock_guard lock(tables_marked_dropped_mutex);
+        return tables_marked_dropped;
+    }
 private:
     // The global instance of database catalog. unique_ptr is to allow
     // deferred initialization. Thought I'd use std::optional, but I can't
@@ -262,15 +277,6 @@ private:
     {
         return uuid.toUnderType().items[0] >> (64 - bits_for_first_level);
     }
-
-    struct TableMarkedAsDropped
-    {
-        StorageID table_id = StorageID::createEmpty();
-        StoragePtr table;
-        String metadata_path;
-        time_t drop_time{};
-    };
-    using TablesMarkedAsDropped = std::list<TableMarkedAsDropped>;
 
     void dropTableDataTask();
     void dropTableFinally(const TableMarkedAsDropped & table);
