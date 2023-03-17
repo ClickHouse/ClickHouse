@@ -33,6 +33,8 @@
 
 #include <Storages/StorageSet.h>
 
+#include <TableFunctions/TableFunctionFactory.h>
+
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -67,6 +69,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_IDENTIFIER;
     extern const int NOT_AN_AGGREGATE;
     extern const int UNEXPECTED_EXPRESSION;
+    extern const int UNKNOWN_FUNCTION;
     extern const int TYPE_MISMATCH;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int INCORRECT_ELEMENT_OF_SET;
@@ -880,12 +883,15 @@ void ActionsMatcher::visit(const ASTIdentifier & identifier, const ASTPtr &, Dat
 
 void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & data)
 {
-    auto column_name = ast->getColumnName();
-    if (data.hasColumn(column_name))
-        return;
+    if (TableFunctionFactory::instance().isTableFunctionName(node.name))
+        throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unexpected table function '{}'", node.name);
 
     if (node.name == "lambda")
         throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "Unexpected lambda expression");
+
+    auto column_name = ast->getColumnName();
+    if (data.hasColumn(column_name))
+        return;
 
     /// Function arrayJoin.
     if (node.name == "arrayJoin")
