@@ -330,7 +330,7 @@ SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 
     支持的数据类型：`Int*`, `UInt*`, `Float*`, `Enum`, `Date`, `DateTime`, `String`, `FixedString`, `Array`, `LowCardinality`, `Nullable`。
 
-    以下函数会用到这个索引： [equals](../../../sql-reference/functions/comparison-functions.md), [notEquals](../../../sql-reference/functions/comparison-functions.md), [in](../../../sql-reference/functions/in-functions), [notIn](../../../sql-reference/functions/in-functions), [has](../../../sql-reference/functions/array-functions)
+    以下函数会用到这个索引： [equals](../../../sql-reference/functions/comparison-functions.md), [notEquals](../../../sql-reference/functions/comparison-functions.md), [in](../../../sql-reference/functions/in-functions.md), [notIn](../../../sql-reference/functions/in-functions.md), [has](../../../sql-reference/functions/array-functions.md)
 
 ``` sql
 INDEX sample_index (u64 * length(s)) TYPE minmax GRANULARITY 4
@@ -353,14 +353,14 @@ WHERE 子句中的条件可以包含对某列数据进行运算的函数表达�
 | [startsWith](../../../sql-reference/functions/string-functions.md#startswith) | ✔           | ✔      | ✔          | ✔          | ✗            |
 | [endsWith](../../../sql-reference/functions/string-functions.md#endswith) | ✗           | ✗      | ✔          | ✔          | ✗            |
 | [multiSearchAny](../../../sql-reference/functions/string-search-functions.md#function-multisearchany) | ✗           | ✗      | ✔          | ✗          | ✗            |
-| [in](../../../sql-reference/functions/in-functions#in-functions) | ✔           | ✔      | ✔          | ✔          | ✔            |
-| [notIn](../../../sql-reference/functions/in-functions#in-functions) | ✔           | ✔      | ✔          | ✔          | ✔            |
+| [in](../../../sql-reference/functions/in-functions.md#in-functions) | ✔           | ✔      | ✔          | ✔          | ✔            |
+| [notIn](../../../sql-reference/functions/in-functions.md#in-functions) | ✔           | ✔      | ✔          | ✔          | ✔            |
 | [less (\<)](../../../sql-reference/functions/comparison-functions.md#function-less) | ✔           | ✔      | ✗          | ✗          | ✗            |
 | [greater (\>)](../../../sql-reference/functions/comparison-functions.md#function-greater) | ✔           | ✔      | ✗          | ✗          | ✗            |
 | [lessOrEquals (\<=)](../../../sql-reference/functions/comparison-functions.md#function-lessorequals) | ✔           | ✔      | ✗          | ✗          | ✗            |
 | [greaterOrEquals (\>=)](../../../sql-reference/functions/comparison-functions.md#function-greaterorequals) | ✔           | ✔      | ✗          | ✗          | ✗            |
-| [empty](../../../sql-reference/functions/array-functions#function-empty) | ✔           | ✔      | ✗          | ✗          | ✗            |
-| [notEmpty](../../../sql-reference/functions/array-functions#function-notempty) | ✔           | ✔      | ✗          | ✗          | ✗            |
+| [empty](../../../sql-reference/functions/array-functions.md#function-empty) | ✔           | ✔      | ✗          | ✗          | ✗            |
+| [notEmpty](../../../sql-reference/functions/array-functions.md#function-notempty) | ✔           | ✔      | ✗          | ✗          | ✗            |
 | hasToken                                                     | ✗           | ✗      | ✗          | ✔          | ✗            |
 
 常量参数小于 ngram 大小的函数不能使用 `ngrambf_v1` 进行查询优化。

@@ -361,8 +361,8 @@ INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE set(100) GRANULARIT
 | [startsWith](../../../sql-reference/functions/string-functions.md#startswith)                              | ✔           | ✔      | ✔           | ✔           | ✗             |
 | [endsWith](../../../sql-reference/functions/string-functions.md#endswith)                                  | ✗           | ✗      | ✔           | ✔           | ✗             |
 | [multiSearchAny](../../../sql-reference/functions/string-search-functions.md#function-multisearchany)      | ✗           | ✗      | ✔           | ✗           | ✗             |
-| [in](../../../sql-reference/functions/in-functions#in-functions)                                        | ✔           | ✔      | ✔           | ✔           | ✔             |
-| [notIn](../../../sql-reference/functions/in-functions#in-functions)                                     | ✔           | ✔      | ✔           | ✔           | ✔             |
+| [in](../../../sql-reference/functions/in-functions.md#in-functions)                                        | ✔           | ✔      | ✔           | ✔           | ✔             |
+| [notIn](../../../sql-reference/functions/in-functions.md#in-functions)                                     | ✔           | ✔      | ✔           | ✔           | ✔             |
 | [less (\<)](../../../sql-reference/functions/comparison-functions.md#function-less)                        | ✔           | ✔      | ✗           | ✗           | ✗             |
 | [greater (\>)](../../../sql-reference/functions/comparison-functions.md#function-greater)                  | ✔           | ✔      | ✗           | ✗           | ✗             |
 | [lessOrEquals (\<=)](../../../sql-reference/functions/comparison-functions.md#function-lessorequals)       | ✔           | ✔      | ✗           | ✗           | ✗             |
