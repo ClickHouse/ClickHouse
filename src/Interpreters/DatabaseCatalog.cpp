@@ -121,9 +121,16 @@ TemporaryTableHolder::~TemporaryTableHolder()
 {
     if (id != UUIDHelpers::Nil)
     {
-        auto table = getTable();
-        table->flushAndShutdown();
-        temporary_tables->dropTable(getContext(), "_tmp_" + toString(id));
+        try
+        {
+            auto table = getTable();
+            table->flushAndShutdown();
+            temporary_tables->dropTable(getContext(), "_tmp_" + toString(id));
+        }
+        catch (...)
+        {
+            tryLogCurrentException("TemporaryTableHolder");
+        }
     }
 }
 
@@ -139,7 +146,6 @@ StoragePtr TemporaryTableHolder::getTable() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary table {} not found", getGlobalTableID().getNameForLogs());
     return table;
 }
-
 
 void DatabaseCatalog::initializeAndLoadTemporaryDatabase()
 {

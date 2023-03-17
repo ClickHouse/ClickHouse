@@ -15,10 +15,13 @@ public:
     bool fileExists(const String & file_name) override;
     UInt64 getFileSize(const String & file_name) override;
     std::unique_ptr<SeekableReadBuffer> readFile(const String & file_name) override;
+    void copyFileToDisk(const String & file_name, size_t size, DiskPtr destination_disk, const String & destination_path,
+                        WriteMode write_mode, const WriteSettings & write_settings) override;
     DataSourceDescription getDataSourceDescription() const override;
 
 private:
     std::filesystem::path path;
+    Poco::Logger * log;
 };
 
 class BackupWriterFile : public IBackupWriter

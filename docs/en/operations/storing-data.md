@@ -80,7 +80,7 @@ Required parameters:
 
 -   `type` — `encrypted`. Otherwise the encrypted disk is not created.
 -   `disk` — Type of disk for data storage.
--   `key` — The key for encryption and decryption. Type: [Uint64](/docs/en/sql-reference/data-types/int-uint.md). You can use `key_hex` parameter to encrypt in hexadecimal form.
+-   `key` — The key for encryption and decryption. Type: [Uint64](/docs/en/sql-reference/data-types/int-uint.md). You can use `key_hex` parameter to encode the key in hexadecimal form.
     You can specify multiple keys using the `id` attribute (see example above).
 
 Optional parameters:
