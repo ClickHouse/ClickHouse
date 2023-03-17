@@ -122,7 +122,6 @@ void CurrentThread::attachQueryForLog(const String & query_)
     current_thread->attachQueryForLog(query_);
 }
 
-
 void ThreadStatus::applyQuerySettings()
 {
     auto query_context_ptr = query_context.lock();
