@@ -42,6 +42,27 @@ def get_spark_for_delta():
     return configure_spark_with_delta_pip(builder).master("local").getOrCreate()
 
 
+def get_spark_for_hudi():
+    builder = (
+        pyspark.sql.SparkSession.builder.appName("spark_test")
+        .config(
+            "spark.jars.packages",
+            "org.apache.hudi:hudi-spark3.3-bundle_2.12:0.13.0",
+        )
+        .config(
+            "org.apache.spark.sql.hudi.catalog.HoodieCatalog",
+        )
+        .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+        .config(
+            "spark.sql.catalog.local", "org.apache.spark.sql.hudi.catalog.HoodieCatalog"
+        )
+        .config("spark.driver.memory", "20g") \
+        # .config('spark.sql.extensions", "org.apache.spark.sql.hudi.HoodieSparkSessionExtension')
+        .master("local")
+    )
+    return builder.master("local").getOrCreate()
+
+
 def main():
     data_lake_name = str(sys.argv[1]).strip()
     file_path = sys.argv[2]
@@ -58,18 +79,35 @@ def main():
     spark = None
     if data_lake_name == "iceberg":
         spark = get_spark_for_iceberg(result_path)
+        spark.conf.set("spark.sql.debug.maxToStringFields", 100000)
+        spark.read.load(f"file://{file_path}").writeTo("iceberg_table").using(
+            "iceberg"
+        ).create()
     elif data_lake_name == "delta":
-        spark = get_spark_for_delta(result_path)
+        spark = get_spark_for_delta()
+        spark.conf.set("spark.sql.debug.maxToStringFields", 100000)
+        spark.read.load(f"file://{file_path}").write.mode("overwrite").option(
+            "compression", "none"
+        ).format("delta").option("delta.columnMapping.mode", "name").save(result_path)
+    elif data_lake_name == "hudi":
+        spark = get_spark_for_hudi()
+        spark.conf.set("spark.sql.debug.maxToStringFields", 100000)
+        spark.read.load(f"file://{file_path}").write.mode("overwrite").option(
+            "compression", "none"
+        ).format("hudi").option("hoodie.table.name", "hudi").option(
+            "hoodie.datasource.write.partitionpath.field", "partitionpath"
+        ).option(
+            "hoodie.datasource.write.table.name", "hudi"
+        ).option(
+            "hoodie.datasource.write.operation", "insert_overwrite"
+        ).save(
+            result_path
+        )
     else:
         print(
             f"Unknown data lake name {data_lake_name}. Support only: 'iceberg', 'delta'"
         )
         exit(1)
-
-    spark.conf.set("spark.sql.debug.maxToStringFields", 100000)
-    spark.read.load(f"file://{file_path}").writeTo("iceberg_table").using(
-        "iceberg"
-    ).create()
 
 
 if __name__ == "__main__":

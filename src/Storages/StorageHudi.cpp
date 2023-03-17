@@ -73,21 +73,27 @@ String HudiMetadataParser<Configuration, MetadataReadHelper>::generateQueryFromK
 
     std::string list_of_keys;
 
+    LOG_TEST(&Poco::Logger::get("kssenii"), "files: {}", latest_parts.size());
     for (const auto & [directory, file_info] : latest_parts)
     {
         if (!list_of_keys.empty())
             list_of_keys += ",";
 
-        list_of_keys += std::filesystem::path(directory) / file_info.filename;
+        LOG_TEST(&Poco::Logger::get("kssenii"), "Directory: {}, file: {}", directory, file_info.filename);
+        list_of_keys += file_info.filename;
     }
 
+    if (latest_parts.size() == 1)
+        return list_of_keys;
     return "{" + list_of_keys + "}";
 }
 
 template <typename Configuration, typename MetadataReadHelper>
 std::vector<std::string> HudiMetadataParser<Configuration, MetadataReadHelper>::getFiles() const
 {
-    return MetadataReadHelper::listFiles(configuration);
+    auto result = MetadataReadHelper::listFiles(configuration);
+    LOG_TEST(&Poco::Logger::get("kssenii"), "result files: {}", result.size());
+    return result;
 }
 
 template HudiMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::HudiMetadataParser(
