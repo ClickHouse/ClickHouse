@@ -30,12 +30,6 @@ SET allow_experimental_lightweight_delete = true;
 
 :::
 
-An [alternative way to delete rows](./alter/delete.md) in ClickHouse is `ALTER TABLE ... DELETE`, which might be more efficient if you do bulk deletes only occasionally and don't need the operation to be applied instantly. In most use cases the new lightweight `DELETE FROM` behavior will be considerably faster.
-
-:::warning
-Even though deletes are becoming more lightweight in ClickHouse, they should still not be used as aggressively as on an OLTP system. Lightweight deletes are currently efficient for wide parts, but for compact parts, they can be a heavyweight operation, and it may be better to use `ALTER TABLE` for some scenarios.
-:::
-
 :::note
 `DELETE FROM` requires the `ALTER DELETE` privilege:
 ```sql
@@ -51,7 +45,7 @@ The idea behind Lightweight Delete is that when a `DELETE FROM table ...` query 
 The mask is implemented as a hidden `_row_exists` system column that stores True for all visible rows and False for deleted ones. This column is only present in a part if some rows in this part were deleted. In other words, the column is not persisted when it has all values equal to True.
 
 ## SELECT query
-When the column is present `SELECT ... FROM table WHERE condition` query internally is extended by an additional predicate on `_row_exists` and becomes similar to 
+When the column is present `SELECT ... FROM table WHERE condition` query internally is extended by an additional predicate on `_row_exists` and becomes similar to
 ```sql
     SELECT ... FROM table PREWHERE _row_exists WHERE condition
 ```

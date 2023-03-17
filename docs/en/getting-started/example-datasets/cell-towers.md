@@ -1,9 +1,10 @@
 ---
 slug: /en/getting-started/example-datasets/cell-towers
-sidebar_label: Cell Towers
+sidebar_label: Geo Data
 sidebar_position: 3
-title: "Cell Towers"
+title: "Geo Data using the Cell Tower Dataset"
 ---
+
 import ConnectionDetails from '@site/docs/en/_snippets/_gather_your_details_http.mdx';
 
 import Tabs from '@theme/Tabs';
@@ -163,7 +164,7 @@ SELECT mcc, count() FROM cell_towers GROUP BY mcc ORDER BY count() DESC LIMIT 10
 
 Based on the above query and the [MCC list](https://en.wikipedia.org/wiki/Mobile_country_code), the countries with the most cell towers are: the USA, Germany, and Russia.
 
-You may want to create a [Dictionary](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) in ClickHouse to decode these values.
+You may want to create a [Dictionary](../../sql-reference/dictionaries/index.md) in ClickHouse to decode these values.
 
 ## Use case: Incorporate geo data {#use-case}
 
