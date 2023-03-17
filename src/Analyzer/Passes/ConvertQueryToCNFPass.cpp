@@ -9,7 +9,13 @@
 #include <Analyzer/Passes/CNF.h>
 #include <Analyzer/Utils.h>
 
+#include <Storages/IStorage.h>
+
 #include <Functions/FunctionFactory.h>
+#include "Analyzer/HashUtils.h"
+#include "Analyzer/IQueryTreeNode.h"
+#include "Interpreters/ComparisonGraph.h"
+#include "base/types.h"
 
 namespace DB
 {
@@ -344,6 +350,286 @@ void addIndexConstraint(Analyzer::CNF & cnf, const QueryTreeNodes & table_expres
     }
 }
 
+struct ColumnPrice
+{
+    Int64 compressed_size{0};
+    Int64 uncompressed_size{0};
+
+    ColumnPrice(const Int64 compressed_size_, const Int64 uncompressed_size_)
+        : compressed_size(compressed_size_)
+        , uncompressed_size(uncompressed_size_)
+    {
+    }
+
+    bool operator<(const ColumnPrice & that) const
+    {
+        return std::tie(compressed_size, uncompressed_size) < std::tie(that.compressed_size, that.uncompressed_size);
+    }
+
+    ColumnPrice & operator+=(const ColumnPrice & that)
+    {
+        compressed_size += that.compressed_size;
+        uncompressed_size += that.uncompressed_size;
+        return *this;
+    }
+
+    ColumnPrice & operator-=(const ColumnPrice & that)
+    {
+        compressed_size -= that.compressed_size;
+        uncompressed_size -= that.uncompressed_size;
+        return *this;
+    }
+};
+
+using ColumnPriceByName = std::unordered_map<String, ColumnPrice>;
+using ColumnPriceByQueryNode = QueryTreeNodePtrWithHashMap<ColumnPrice>;
+
+class ComponentCollectorVisitor : public ConstInDepthQueryTreeVisitor<ComponentCollectorVisitor>
+{
+public:
+    ComponentCollectorVisitor(
+        std::set<UInt64> & components_,
+        QueryTreeNodePtrWithHashMap<UInt64> & query_node_to_component_,
+        const ComparisonGraph<QueryTreeNodePtr> & graph_)
+        : components(components_), query_node_to_component(query_node_to_component_), graph(graph_)
+    {}
+
+    void visitImpl(const QueryTreeNodePtr & node)
+    {
+        if (auto id = graph.getComponentId(node))
+        {
+            query_node_to_component.emplace(node, *id);
+            components.insert(*id);
+        }
+    }
+
+private:
+    std::set<UInt64> & components;
+    QueryTreeNodePtrWithHashMap<UInt64> & query_node_to_component;
+
+    const ComparisonGraph<QueryTreeNodePtr> & graph;
+};
+
+class ColumnNameCollectorVisitor : public ConstInDepthQueryTreeVisitor<ColumnNameCollectorVisitor>
+{
+public:
+    ColumnNameCollectorVisitor(
+        std::unordered_set<std::string> & column_names_,
+        const QueryTreeNodePtrWithHashMap<UInt64> & query_node_to_component_)
+        : column_names(column_names_), query_node_to_component(query_node_to_component_)
+    {}
+
+    bool needChildVisit(const VisitQueryTreeNodeType & parent, const VisitQueryTreeNodeType &)
+    {
+        return !query_node_to_component.contains(parent);
+    }
+
+    void visitImpl(const QueryTreeNodePtr & node)
+    {
+        if (query_node_to_component.contains(node))
+            return;
+
+        if (const auto * column_node = node->as<ColumnNode>())
+            column_names.insert(column_node->getColumnName());
+    }
+
+private:
+    std::unordered_set<std::string> & column_names;
+    const QueryTreeNodePtrWithHashMap<UInt64> & query_node_to_component;
+};
+
+class SubstituteColumnVisitor : public InDepthQueryTreeVisitor<SubstituteColumnVisitor>
+{
+public:
+    SubstituteColumnVisitor(
+        const QueryTreeNodePtrWithHashMap<UInt64> & query_node_to_component_,
+        const std::unordered_map<UInt64, QueryTreeNodePtr> & id_to_query_node_map_,
+        ContextPtr context_)
+        : query_node_to_component(query_node_to_component_), id_to_query_node_map(id_to_query_node_map_), context(std::move(context_))
+    {}
+
+    void visitImpl(QueryTreeNodePtr & node)
+    {
+        auto component_id_it = query_node_to_component.find(node);
+        if (component_id_it == query_node_to_component.end())
+            return;
+
+        const auto component_id = component_id_it->second;
+        auto new_node = id_to_query_node_map.at(component_id)->clone();
+
+        if (!node->getResultType()->equals(*new_node->getResultType()))
+        {
+            node = buildCastFunction(new_node, node->getResultType(), context);
+            return;
+        }
+
+        node = std::move(new_node);
+    }
+
+private:
+    const QueryTreeNodePtrWithHashMap<UInt64> & query_node_to_component;
+    const std::unordered_map<UInt64, QueryTreeNodePtr> & id_to_query_node_map;
+    ContextPtr context;
+};
+
+ColumnPrice calculatePrice(
+        const ColumnPriceByName & column_prices,
+        const std::unordered_set<std::string> & column_names)
+{
+    ColumnPrice result(0, 0);
+
+    for (const auto & column : column_names)
+    {
+        if (auto it = column_prices.find(column); it != column_prices.end())
+            result += it->second;
+    }
+
+    return result;
+}
+
+
+void bruteForce(
+        const ComparisonGraph<QueryTreeNodePtr> & graph,
+        const std::vector<UInt64> & components,
+        size_t current_component,
+        const ColumnPriceByName & column_prices,
+        ColumnPrice current_price,
+        std::vector<QueryTreeNodePtr> & expressions_stack,
+        ColumnPrice & min_price,
+        std::vector<QueryTreeNodePtr> & min_expressions)
+{
+    if (current_component == components.size())
+    {
+        if (current_price < min_price)
+        {
+            min_price = current_price;
+            min_expressions = expressions_stack;
+        }
+        return;
+    }
+
+    for (const auto & node : graph.getComponent(components[current_component]))
+    {
+        std::unordered_set<std::string> column_names;
+        ColumnNameCollectorVisitor column_name_collector{column_names, {}};
+        column_name_collector.visit(node);
+
+        ColumnPrice expression_price = calculatePrice(column_prices, column_names);
+
+        expressions_stack.push_back(node);
+        current_price += expression_price;
+
+        ColumnPriceByName new_prices(column_prices);
+        for (const auto & column : column_names)
+            new_prices.insert_or_assign(column, ColumnPrice(0, 0));
+
+        bruteForce(graph,
+                   components,
+                   current_component + 1,
+                   new_prices,
+                   current_price,
+                   expressions_stack,
+                   min_price,
+                   min_expressions);
+
+        current_price -= expression_price;
+        expressions_stack.pop_back();
+    }
+}
+
+void substituteColumns(QueryNode & query_node, const QueryTreeNodes & table_expressions, const ContextPtr & context)
+{
+    static constexpr UInt64 COLUMN_PENALTY = 10 * 1024 * 1024;
+    static constexpr Int64 INDEX_PRICE = -1'000'000'000'000'000'000;
+
+    for (const auto & table_expression : table_expressions)
+    {
+        auto snapshot = getStorageSnapshot(table_expression);
+        if (!snapshot || !snapshot->metadata)
+            continue;
+
+        const auto column_sizes = snapshot->storage.getColumnSizes();
+        if (column_sizes.empty())
+            return;
+
+        auto query_tree_constraint = snapshot->metadata->getConstraints().getQueryTreeData(context, table_expression);
+        const auto & graph = query_tree_constraint.getGraph();
+
+        auto run_for_all = [&](const auto function)
+        {
+            function(query_node.getProjectionNode());
+
+            if (query_node.hasWhere())
+                function(query_node.getWhere());
+
+            if (query_node.hasPrewhere())
+                function(query_node.getPrewhere());
+
+            if (query_node.hasHaving())
+                function(query_node.getHaving());
+        };
+
+        std::set<UInt64> components;
+        QueryTreeNodePtrWithHashMap<UInt64> query_node_to_component;
+        std::unordered_set<std::string> column_names;
+
+        run_for_all([&](QueryTreeNodePtr & node)
+        {
+            ComponentCollectorVisitor component_collector{components, query_node_to_component, graph};
+            component_collector.visit(node);
+            ColumnNameCollectorVisitor column_name_collector{column_names, query_node_to_component};
+            column_name_collector.visit(node);
+        });
+
+        ColumnPriceByName column_prices;
+        const auto primary_key = snapshot->metadata->getColumnsRequiredForPrimaryKey();
+
+        for (const auto & [column_name, column_size] : column_sizes)
+            column_prices.insert_or_assign(column_name, ColumnPrice(column_size.data_compressed + COLUMN_PENALTY, column_size.data_uncompressed));
+
+        for (const auto & column_name : primary_key)
+            column_prices.insert_or_assign(column_name, ColumnPrice(INDEX_PRICE, INDEX_PRICE));
+
+        for (const auto & column_name : column_names)
+            column_prices.insert_or_assign(column_name, ColumnPrice(0, 0));
+
+        std::unordered_map<UInt64, QueryTreeNodePtr> id_to_query_node_map;
+        std::vector<UInt64> components_list;
+
+        for (const auto component_id : components)
+        {
+            auto component = graph.getComponent(component_id);
+            if (component.size() == 1)
+                id_to_query_node_map[component_id] = component.front();
+            else
+                components_list.push_back(component_id);
+        }
+
+        std::vector<QueryTreeNodePtr> expressions_stack;
+        ColumnPrice min_price(std::numeric_limits<Int64>::max(), std::numeric_limits<Int64>::max());
+        std::vector<QueryTreeNodePtr> min_expressions;
+
+        bruteForce(graph,
+                   components_list,
+                   0,
+                   column_prices,
+                   ColumnPrice(0, 0),
+                   expressions_stack,
+                   min_price,
+                   min_expressions);
+
+        for (size_t i = 0; i < components_list.size(); ++i)
+            id_to_query_node_map[components_list[i]] = min_expressions[i];
+
+        SubstituteColumnVisitor substitute_column{query_node_to_component, id_to_query_node_map, context};
+
+        run_for_all([&](QueryTreeNodePtr & node)
+        {
+            substitute_column.visit(node);
+        });
+    }
+}
+
 void optimizeWithConstraints(Analyzer::CNF & cnf, const QueryTreeNodes & table_expressions, const ContextPtr & context)
 {
     cnf.pullNotOutFunctions(context);
@@ -410,11 +696,24 @@ public:
 
         auto table_expressions = extractTableExpressions(query_node->getJoinTree());
 
-        if (query_node->hasWhere())
-            optimizeNode(query_node->getWhere(), table_expressions, getContext());
+        const auto & context = getContext();
+        const auto & settings = context->getSettingsRef();
 
-        if (query_node->hasPrewhere())
-            optimizeNode(query_node->getPrewhere(), table_expressions, getContext());
+        bool has_filter = false;
+        const auto optimize_filter = [&](QueryTreeNodePtr & filter_node)
+        {
+            if (filter_node == nullptr)
+                return;
+
+            optimizeNode(query_node->getWhere(), table_expressions, context);
+            has_filter = true;
+        };
+
+        optimize_filter(query_node->getWhere());
+        optimize_filter(query_node->getPrewhere());
+
+        if (has_filter && settings.optimize_substitute_columns)
+            substituteColumns(*query_node, table_expressions, context);
     }
 };
 
