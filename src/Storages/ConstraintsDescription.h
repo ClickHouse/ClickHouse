@@ -43,7 +43,7 @@ public:
     const std::vector<std::vector<CNFQuery::AtomicFormula>> & getConstraintData() const;
     std::vector<CNFQuery::AtomicFormula> getAtomicConstraintData() const;
 
-    const ComparisonGraph<> & getGraph() const;
+    const ComparisonGraph<ASTPtr> & getGraph() const;
 
     ConstraintsExpressions getExpressions(ContextPtr context, const NamesAndTypesList & source_columns_) const;
 
@@ -79,7 +79,7 @@ public:
 
 private:
     std::vector<std::vector<CNFQuery::AtomicFormula>> buildConstraintData() const;
-    std::unique_ptr<ComparisonGraph<>> buildGraph() const;
+    std::unique_ptr<ComparisonGraph<ASTPtr>> buildGraph() const;
     void update();
 
     ASTs constraints;
@@ -87,7 +87,7 @@ private:
     std::vector<std::vector<CNFQuery::AtomicFormula>> cnf_constraints;
     std::map<IAST::Hash, AtomIds> ast_to_atom_ids;
 
-    std::unique_ptr<ComparisonGraph<>> graph;
+    std::unique_ptr<ComparisonGraph<ASTPtr>> graph;
 };
 
 }

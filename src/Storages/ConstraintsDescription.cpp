@@ -110,7 +110,7 @@ std::vector<CNFQuery::AtomicFormula> ConstraintsDescription::getAtomicConstraint
     return constraint_data;
 }
 
-std::unique_ptr<ComparisonGraph<>> ConstraintsDescription::buildGraph() const
+std::unique_ptr<ComparisonGraph<ASTPtr>> ConstraintsDescription::buildGraph() const
 {
     static const NameSet relations = { "equals", "less", "lessOrEquals", "greaterOrEquals", "greater" };
 
@@ -128,7 +128,7 @@ std::unique_ptr<ComparisonGraph<>> ConstraintsDescription::buildGraph() const
         }
     }
 
-    return std::make_unique<ComparisonGraph<>>(constraints_for_graph);
+    return std::make_unique<ComparisonGraph<ASTPtr>>(constraints_for_graph);
 }
 
 ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextPtr context,
@@ -150,7 +150,7 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextP
     return res;
 }
 
-const ComparisonGraph<> & ConstraintsDescription::getGraph() const
+const ComparisonGraph<ASTPtr> & ConstraintsDescription::getGraph() const
 {
     return *graph;
 }
@@ -313,7 +313,7 @@ void ConstraintsDescription::update()
     {
         cnf_constraints.clear();
         ast_to_atom_ids.clear();
-        graph = std::make_unique<ComparisonGraph<>>(ASTs());
+        graph = std::make_unique<ComparisonGraph<ASTPtr>>(ASTs());
         return;
     }
 

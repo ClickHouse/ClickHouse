@@ -9,11 +9,11 @@
 
 using namespace DB;
 
-static ComparisonGraph<> getGraph(const String & query)
+static ComparisonGraph<ASTPtr> getGraph(const String & query)
 {
     ParserExpressionList parser(false);
     ASTPtr ast = parseQuery(parser, query, 0, 0);
-    return ComparisonGraph<>(ast->children);
+    return ComparisonGraph<ASTPtr>(ast->children);
 }
 
 TEST(ComparisonGraph, Bounds)

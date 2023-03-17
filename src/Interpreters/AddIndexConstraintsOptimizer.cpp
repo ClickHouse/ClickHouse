@@ -104,7 +104,7 @@ namespace
     /// we can add to expression 'indexHint(I < A)' condition.
     CNFQuery::OrGroup createIndexHintGroup(
         const CNFQuery::OrGroup & group,
-        const ComparisonGraph<> & graph,
+        const ComparisonGraph<ASTPtr> & graph,
         const ASTs & primary_key_only_asts)
     {
         CNFQuery::OrGroup result;

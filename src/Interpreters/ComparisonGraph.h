@@ -33,7 +33,7 @@ concept ComparisonGraphNodeType = std::same_as<T, ASTPtr> || std::same_as<T, Que
  * Graph of relations between terms in constraints.
  * Allows to compare terms and get equal terms.
  */
-template <ComparisonGraphNodeType Node = ASTPtr>
+template <ComparisonGraphNodeType Node>
 class ComparisonGraph
 {
 public:
