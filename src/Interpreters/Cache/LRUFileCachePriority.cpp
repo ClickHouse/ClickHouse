@@ -74,7 +74,7 @@ LRUFileCachePriority::LRUQueueIterator LRUFileCachePriority::remove(LRUQueueIter
     CurrentMetrics::sub(CurrentMetrics::FilesystemCacheSize, it->size);
     CurrentMetrics::sub(CurrentMetrics::FilesystemCacheElements);
 
-    LOG_TRACE(log, "Removed entry from LRU queue, key: {}, offset: {}", it->key.toString(), it->offset);
+    LOG_TEST(log, "Removed entry from LRU queue, key: {}, offset: {}", it->key.toString(), it->offset);
     return queue.erase(it);
 }
 

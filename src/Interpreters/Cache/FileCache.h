@@ -110,8 +110,6 @@ public:
 
     bool isInitialized() const { return is_initialized; }
 
-    void assertCacheCorrectness();
-
     CacheGuard::Lock cacheLock() { return cache_guard.lock(); }
 
     LockedKeyPtr createLockedKey(const Key & key, KeyMetadataPtr key_metadata) const;
@@ -238,12 +236,17 @@ private:
     };
 
     using IterateAndCollectLocksFunc = std::function<IterateAndLockResult(const IFileCachePriority::Entry &, LockedKey &)>;
-    void iterateAndCollectKeyLocks(
+    void iterateCacheAndCollectKeyLocks(
         LockedCachePriority & priority,
         IterateAndCollectLocksFunc && func,
         LockedKeysMap & locked_map) const;
 
+    void iterateCacheMetadata(const CacheMetadataGuard::Lock &, std::function<void(KeyMetadata &)> && func);
+
     void performDelayedRemovalOfDeletedKeysFromMetadata(const CacheMetadataGuard::Lock &);
+
+    void assertCacheCorrectness();
+    void assertCacheCorrectness(const CacheMetadataGuard::Lock &, const CacheGuard::Lock &);
 };
 
 }

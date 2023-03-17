@@ -107,20 +107,17 @@ void LockedKey::reduceSizeToDownloaded(
             file_segment->getInfoForLogUnlocked(segment_lock));
     }
 
-    [[maybe_unused]] const auto & entry = *LockedCachePriorityIterator(cache_lock, file_segment_metadata->queue_iterator);
+    auto & entry = *LockedCachePriorityIterator(cache_lock, file_segment_metadata->queue_iterator);
     assert(file_segment->downloaded_size <= file_segment->reserved_size);
     assert(entry.size == file_segment->reserved_size);
     assert(entry.size >= file_segment->downloaded_size);
 
-    if (file_segment->reserved_size > file_segment->downloaded_size)
-    {
-        int64_t extra_size = static_cast<ssize_t>(file_segment_metadata->file_segment->reserved_size) - static_cast<ssize_t>(file_segment->downloaded_size);
-        LockedCachePriorityIterator(cache_lock, file_segment_metadata->queue_iterator).incrementSize(-extra_size);
-    }
-
     CreateFileSegmentSettings create_settings(file_segment->getKind());
     file_segment_metadata->file_segment = std::make_shared<FileSegment>(
         offset, downloaded_size, key, getKeyMetadata(), file_segment->cache, FileSegment::State::DOWNLOADED, create_settings);
+
+    if (file_segment->reserved_size > file_segment->downloaded_size)
+        entry.size = downloaded_size;
 
     assert(file_segment->reserved_size == downloaded_size);
     assert(file_segment_metadata->size() == entry.size);

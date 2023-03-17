@@ -1,6 +1,6 @@
 #include "FileCacheKey.h"
 
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Common/SipHash.h>
 #include <Core/UUID.h>
 

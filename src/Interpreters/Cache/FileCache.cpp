@@ -9,7 +9,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <pcg-random/pcg_random.hpp>
-#include <Common/hex.h>
+#include <base/hex.h>
 
 namespace DB
 {
@@ -356,6 +356,9 @@ void FileCache::fillHolesWithEmptyFileSegments(
 FileSegmentsHolderPtr FileCache::set(const Key & key, size_t offset, size_t size, const CreateFileSegmentSettings & settings)
 {
     assertInitialized();
+#ifndef NDEBUG
+    assertCacheCorrectness();
+#endif
 
     auto locked_key = createLockedKey(key, KeyNotFoundPolicy::CREATE_EMPTY);
     FileSegment::Range range(offset, offset + size - 1);
@@ -383,6 +386,9 @@ FileSegmentsHolderPtr FileCache::getOrSet(
     const CreateFileSegmentSettings & settings)
 {
     assertInitialized();
+#ifndef NDEBUG
+    assertCacheCorrectness();
+#endif
 
     FileSegment::Range range(offset, offset + size - 1);
 
@@ -408,6 +414,9 @@ FileSegmentsHolderPtr FileCache::getOrSet(
 FileSegmentsHolderPtr FileCache::get(const Key & key, size_t offset, size_t size)
 {
     assertInitialized();
+#ifndef NDEBUG
+    assertCacheCorrectness();
+#endif
 
     auto locked_key = createLockedKey(key, KeyNotFoundPolicy::RETURN_NULL);
     if (locked_key)
@@ -546,7 +555,7 @@ bool FileCache::tryReserveUnlocked(
     return reserved;
 }
 
-void FileCache::iterateAndCollectKeyLocks(
+void FileCache::iterateCacheAndCollectKeyLocks(
     LockedCachePriority & priority,
     IterateAndCollectLocksFunc && func,
     LockedKeysMap & locked_map) const
@@ -617,7 +626,7 @@ bool FileCache::tryReserveImpl(
     using QueueEntry = IFileCachePriority::Entry;
     using IterationResult = IFileCachePriority::IterationResult;
 
-    iterateAndCollectKeyLocks(
+    iterateCacheAndCollectKeyLocks(
         locked_priority_queue,
         [&](const QueueEntry & entry, LockedKey & current_locked_key) -> IterateAndLockResult
     {
@@ -762,6 +771,9 @@ void FileCache::removeKeyIfExists(const Key & key)
 void FileCache::removeAllReleasable()
 {
     assertInitialized();
+#ifndef NDEBUG
+    assertCacheCorrectness();
+#endif
 
     using QueueEntry = IFileCachePriority::Entry;
     using IterationResult = IFileCachePriority::IterationResult;
@@ -950,7 +962,6 @@ void FileCache::performDelayedRemovalOfDeletedKeysFromMetadata(const CacheMetada
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
-    /// TODO: add assertCacheCorrectness().
 }
 
 LockedKeyPtr FileCache::createLockedKey(const Key & key, KeyNotFoundPolicy key_not_found_policy)
@@ -1014,11 +1025,8 @@ LockedKeyPtr FileCache::createLockedKey(const Key & key, KeyMetadataPtr key_meta
     return std::make_unique<LockedKey>(key, key_metadata, std::move(key_lock), cleanup_keys_metadata_queue, this);
 }
 
-FileSegmentsHolderPtr FileCache::getSnapshot()
+void FileCache::iterateCacheMetadata(const CacheMetadataGuard::Lock & lock, std::function<void(KeyMetadata &)> && func)
 {
-    assertInitialized();
-
-    auto lock = metadata.lock();
     performDelayedRemovalOfDeletedKeysFromMetadata(lock);
 
     FileSegments file_segments;
@@ -1036,11 +1044,25 @@ FileSegmentsHolderPtr FileCache::getSnapshot()
             continue;
         }
 
-        for (const auto & [_, file_segment_metadata] : *key_metadata)
-            file_segments.push_back(FileSegment::getSnapshot(file_segment_metadata.file_segment));
+        func(*key_metadata);
 
         ++it;
     }
+}
+
+FileSegmentsHolderPtr FileCache::getSnapshot()
+{
+    assertInitialized();
+#ifndef NDEBUG
+    assertCacheCorrectness();
+#endif
+
+    FileSegments file_segments;
+    iterateCacheMetadata(metadata.lock(), [&](KeyMetadata & key_metadata)
+    {
+        for (const auto & [_, file_segment_metadata] : key_metadata)
+            file_segments.push_back(FileSegment::getSnapshot(file_segment_metadata.file_segment));
+    });
     return std::make_unique<FileSegmentsHolder>(std::move(file_segments));
 }
 
@@ -1102,27 +1124,26 @@ size_t FileCache::getFileSegmentsNum() const
 
 void FileCache::assertCacheCorrectness()
 {
-    for (const auto & [key, key_metadata] : metadata)
-    {
-        for (const auto & [_, file_segment_metadata] : *key_metadata)
-        {
-            const auto & file_segment = file_segment_metadata.file_segment;
-            file_segment->assertCorrectness();
+    return assertCacheCorrectness(metadata.lock(), cache_guard.lock());
+}
 
-            if (file_segment->reserved_size != 0)
-            {
-                assert(file_segment_metadata.queue_iterator);
-                // assert(main_priority->contains(file_segment->key(), file_segment->offset()));
-            }
+void FileCache::assertCacheCorrectness(const CacheMetadataGuard::Lock & metadata_lock, const CacheGuard::Lock & cache_lock)
+{
+    iterateCacheMetadata(metadata_lock, [&](KeyMetadata & key_metadata)
+    {
+        for (auto & [offset, file_segment_metadata] : key_metadata)
+        {
+            file_segment_metadata.file_segment->assertCorrectness();
+            if (file_segment_metadata.size())
+                chassert(file_segment_metadata.queue_iterator);
         }
-    }
+    });
+
+    LockedCachePriority queue(cache_lock, *main_priority);
+    [[maybe_unused]] size_t total_size = 0;
 
     using QueueEntry = IFileCachePriority::Entry;
     using IterationResult = IFileCachePriority::IterationResult;
-
-    auto lock = cache_guard.lock();
-    LockedCachePriority queue(lock, *main_priority);
-    [[maybe_unused]] size_t total_size = 0;
 
     queue.iterate([&](const QueueEntry & entry) -> IterationResult
     {
