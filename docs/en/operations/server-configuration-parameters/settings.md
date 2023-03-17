@@ -2,7 +2,6 @@
 slug: /en/operations/server-configuration-parameters/settings
 sidebar_position: 57
 sidebar_label: Server Settings
-description: This section contains descriptions of server settings that cannot be changed at the session or query level.
 ---
 
 # Server Settings
@@ -276,7 +275,7 @@ Path:
 -   Specify the absolute path or the path relative to the server config file.
 -   The path can contain wildcards \* and ?.
 
-See also “[Dictionaries](../../sql-reference/dictionaries/index.md)”.
+See also “[Dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md)”.
 
 **Example**
 
@@ -1026,7 +1025,7 @@ If the number of **idle** threads in the Backups IO Thread pool exceeds `max_bac
 Possible values:
 
 -   Positive integer.
--   Zero.
+-   Zero. 
 
 Default value: `0`.
 
@@ -1918,7 +1917,7 @@ Default value: `/var/lib/clickhouse/access/`.
 
 **See also**
 
-- [Access Control and Account Management](../../guides/sre/user-management/index.md#access-control)
+- [Access Control and Account Management](../../operations/access-rights.md#access-control)
 
 ## user_directories {#user_directories}
 

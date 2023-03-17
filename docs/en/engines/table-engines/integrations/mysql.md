@@ -180,4 +180,4 @@ Default value: `300`.
 ## See Also {#see-also}
 
 -   [The mysql table function](../../../sql-reference/table-functions/mysql.md)
--   [Using MySQL as a dictionary source](../../../sql-reference/dictionaries/index.md#dictionary-sources#dicts-external_dicts_dict_sources-mysql)
+-   [Using MySQL as a dictionary source](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-mysql)
