@@ -1,5 +1,6 @@
 ---
 slug: /en/operations/backup
+description: In order to effectively mitigate possible human errors, you should carefully prepare a strategy for backing up and restoring your data.
 ---
 
 # Backup and Restore
@@ -213,7 +214,7 @@ To write backups to an S3 bucket you need three pieces of information:
   for example `Abc+123`
 
 :::note
-Creating an S3 bucket is covered in [Use S3 Object Storage as a ClickHouse disk](/docs/en/integrations/data-ingestion/s3/configuring-s3-for-clickhouse-use.md), just come back to this doc after saving the policy, there is no need to configure ClickHouse to use the S3 bucket.
+Creating an S3 bucket is covered in [Use S3 Object Storage as a ClickHouse disk](/docs/en/integrations/data-ingestion/s3/index.md#configuring-s3-for-clickhouse-use), just come back to this doc after saving the policy, there is no need to configure ClickHouse to use the S3 bucket.
 :::
 
 The destination for a backup will be specified like this:
