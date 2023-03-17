@@ -148,7 +148,7 @@ ReadFromMergeTree::ReadFromMergeTree(
     Poco::Logger * log_,
     MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr_,
     bool enable_parallel_reading)
-    : ISourceStep(DataStream{.header = IMergeTreeSelectAlgorithm::transformHeader(
+    : SourceStepWithFilter(DataStream{.header = IMergeTreeSelectAlgorithm::transformHeader(
         storage_snapshot_->getSampleBlockForColumns(real_column_names_),
         getPrewhereInfoFromQueryInfo(query_info_),
         data_.getPartitionValueType(),
@@ -196,7 +196,10 @@ ReadFromMergeTree::ReadFromMergeTree(
             /// When async reading is enabled, allow to read using more streams.
             /// Will add resize to output_streams_limit to reduce memory usage.
             output_streams_limit = std::min<size_t>(requested_num_streams, settings.max_streams_for_merge_tree_reading);
-            requested_num_streams = std::max<size_t>(requested_num_streams, settings.max_streams_for_merge_tree_reading);
+            /// We intentionally set `max_streams` to 1 in InterpreterSelectQuery in case of small limit.
+            /// Changing it here to `max_streams_for_merge_tree_reading` proven itself as a threat for performance.
+            if (requested_num_streams != 1)
+                requested_num_streams = std::max<size_t>(requested_num_streams, settings.max_streams_for_merge_tree_reading);
         }
         else
             /// Just limit requested_num_streams otherwise.
@@ -337,57 +340,55 @@ Pipe ReadFromMergeTree::readFromPool(
             / max_block_size * max_block_size / fixed_index_granularity;
     }
 
-     bool all_parts_are_remote = true;
-     bool all_parts_are_local = true;
-     for (const auto & part : parts_with_range)
-     {
-         const bool is_remote = part.data_part->isStoredOnRemoteDisk();
-         all_parts_are_local &= !is_remote;
-         all_parts_are_remote &= is_remote;
-     }
+    bool all_parts_are_remote = true;
+    bool all_parts_are_local = true;
+    for (const auto & part : parts_with_range)
+    {
+        const bool is_remote = part.data_part->isStoredOnRemoteDisk();
+        all_parts_are_local &= !is_remote;
+        all_parts_are_remote &= is_remote;
+    }
 
-     MergeTreeReadPoolPtr pool;
+    MergeTreeReadPoolPtr pool;
 
-     if ((all_parts_are_remote
-          && settings.allow_prefetched_read_pool_for_remote_filesystem
-          && MergeTreePrefetchedReadPool::checkReadMethodAllowed(reader_settings.read_settings.remote_fs_method))
-         || (all_parts_are_local
-             && settings.allow_prefetched_read_pool_for_local_filesystem
-             && MergeTreePrefetchedReadPool::checkReadMethodAllowed(reader_settings.read_settings.local_fs_method)))
-     {
-         pool = std::make_shared<MergeTreePrefetchedReadPool>(
-             max_streams,
-             sum_marks,
-             min_marks_for_concurrent_read,
-             std::move(parts_with_range),
-             storage_snapshot,
-             prewhere_info,
-             actions_settings,
-             required_columns,
-             virt_column_names,
-             settings.preferred_block_size_bytes,
-             reader_settings,
-             context,
-             use_uncompressed_cache,
-             all_parts_are_remote,
-             *data.getSettings());
-     }
-     else
-     {
-         pool = std::make_shared<MergeTreeReadPool>(
-             max_streams,
-             sum_marks,
-             min_marks_for_concurrent_read,
-             std::move(parts_with_range),
-             storage_snapshot,
-             prewhere_info,
-             actions_settings,
-             reader_settings,
-             required_columns,
-             virt_column_names,
-             context,
-             false);
-     }
+    if ((all_parts_are_remote && settings.allow_prefetched_read_pool_for_remote_filesystem
+         && MergeTreePrefetchedReadPool::checkReadMethodAllowed(reader_settings.read_settings.remote_fs_method))
+        || (all_parts_are_local && settings.allow_prefetched_read_pool_for_local_filesystem
+            && MergeTreePrefetchedReadPool::checkReadMethodAllowed(reader_settings.read_settings.local_fs_method)))
+    {
+        pool = std::make_shared<MergeTreePrefetchedReadPool>(
+            max_streams,
+            sum_marks,
+            min_marks_for_concurrent_read,
+            std::move(parts_with_range),
+            storage_snapshot,
+            prewhere_info,
+            actions_settings,
+            required_columns,
+            virt_column_names,
+            settings.preferred_block_size_bytes,
+            reader_settings,
+            context,
+            use_uncompressed_cache,
+            all_parts_are_remote,
+            *data.getSettings());
+    }
+    else
+    {
+        pool = std::make_shared<MergeTreeReadPool>(
+            max_streams,
+            sum_marks,
+            min_marks_for_concurrent_read,
+            std::move(parts_with_range),
+            storage_snapshot,
+            prewhere_info,
+            actions_settings,
+            reader_settings,
+            required_columns,
+            virt_column_names,
+            context,
+            false);
+    }
 
     auto * logger = &Poco::Logger::get(data.getLogName() + " (SelectExecutor)");
     LOG_DEBUG(logger, "Reading approx. {} rows with {} streams", total_rows, max_streams);
@@ -1095,7 +1096,7 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(Merge
     return selectRangesToRead(
         std::move(parts),
         prewhere_info,
-        added_filter_nodes,
+        filter_nodes,
         storage_snapshot->metadata,
         storage_snapshot->getMetadataForQuery(),
         query_info,
@@ -1729,6 +1730,36 @@ void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
         format_settings.out << prefix << "Parts: " << result.index_stats.back().num_parts_after << '\n';
         format_settings.out << prefix << "Granules: " << result.index_stats.back().num_granules_after << '\n';
     }
+
+    if (prewhere_info)
+    {
+        format_settings.out << prefix << "Prewhere info" << '\n';
+        format_settings.out << prefix << "Need filter: " << prewhere_info->need_filter << '\n';
+
+        prefix.push_back(format_settings.indent_char);
+        prefix.push_back(format_settings.indent_char);
+
+        if (prewhere_info->prewhere_actions)
+        {
+            format_settings.out << prefix << "Prewhere filter" << '\n';
+            format_settings.out << prefix << "Prewhere filter column: " << prewhere_info->prewhere_column_name;
+            if (prewhere_info->remove_prewhere_column)
+               format_settings.out << " (removed)";
+            format_settings.out << '\n';
+
+            auto expression = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions);
+            expression->describeActions(format_settings.out, prefix);
+        }
+
+        if (prewhere_info->row_level_filter)
+        {
+            format_settings.out << prefix << "Row level filter" << '\n';
+            format_settings.out << prefix << "Row level filter column: " << prewhere_info->row_level_column_name << '\n';
+
+            auto expression = std::make_shared<ExpressionActions>(prewhere_info->row_level_filter);
+            expression->describeActions(format_settings.out, prefix);
+        }
+    }
 }
 
 void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
@@ -1739,6 +1770,35 @@ void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
     {
         map.add("Parts", result.index_stats.back().num_parts_after);
         map.add("Granules", result.index_stats.back().num_granules_after);
+    }
+
+    if (prewhere_info)
+    {
+        std::unique_ptr<JSONBuilder::JSONMap> prewhere_info_map = std::make_unique<JSONBuilder::JSONMap>();
+        prewhere_info_map->add("Need filter", prewhere_info->need_filter);
+
+        if (prewhere_info->prewhere_actions)
+        {
+            std::unique_ptr<JSONBuilder::JSONMap> prewhere_filter_map = std::make_unique<JSONBuilder::JSONMap>();
+            prewhere_filter_map->add("Prewhere filter column", prewhere_info->prewhere_column_name);
+            prewhere_filter_map->add("Prewhere filter remove filter column", prewhere_info->remove_prewhere_column);
+            auto expression = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions);
+            prewhere_filter_map->add("Prewhere filter expression", expression->toTree());
+
+            prewhere_info_map->add("Prewhere filter", std::move(prewhere_filter_map));
+        }
+
+        if (prewhere_info->row_level_filter)
+        {
+            std::unique_ptr<JSONBuilder::JSONMap> row_level_filter_map = std::make_unique<JSONBuilder::JSONMap>();
+            row_level_filter_map->add("Row level filter column", prewhere_info->row_level_column_name);
+            auto expression = std::make_shared<ExpressionActions>(prewhere_info->row_level_filter);
+            row_level_filter_map->add("Row level filter expression", expression->toTree());
+
+            prewhere_info_map->add("Row level filter", std::move(row_level_filter_map));
+        }
+
+        map.add("Prewhere info", std::move(prewhere_info_map));
     }
 }
 

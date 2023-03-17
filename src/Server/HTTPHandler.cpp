@@ -24,6 +24,7 @@
 #include <Common/logger_useful.h>
 #include <Common/SettingsChanges.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTSetQuery.h>
@@ -45,6 +46,9 @@
 
 #include <chrono>
 #include <sstream>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 #if USE_SSL
 #include <Poco/Net/X509Certificate.h>
@@ -585,11 +589,12 @@ void HTTPHandler::processQuery(
 
     /// At least, we should postpone sending of first buffer_size result bytes
     size_t buffer_size_total = std::max(
-        params.getParsed<size_t>("buffer_size", DBMS_DEFAULT_BUFFER_SIZE), static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE));
+        params.getParsed<size_t>("buffer_size", context->getSettingsRef().http_response_buffer_size),
+        static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE));
 
     /// If it is specified, the whole result will be buffered.
     ///  First ~buffer_size bytes will be buffered in memory, the remaining bytes will be stored in temporary file.
-    bool buffer_until_eof = params.getParsed<bool>("wait_end_of_query", false);
+    bool buffer_until_eof = params.getParsed<bool>("wait_end_of_query", context->getSettingsRef().http_wait_end_of_query);
 
     size_t buffer_size_http = DBMS_DEFAULT_BUFFER_SIZE;
     size_t buffer_size_memory = (buffer_size_total > buffer_size_http) ? buffer_size_total : 0;
@@ -619,7 +624,7 @@ void HTTPHandler::processQuery(
         if (buffer_until_eof)
         {
             const std::string tmp_path(server.context()->getTemporaryVolume()->getDisk()->getPath());
-            const std::string tmp_path_template(tmp_path + "http_buffers/");
+            const std::string tmp_path_template(fs::path(tmp_path) / "http_buffers/");
 
             auto create_tmp_disk_buffer = [tmp_path_template] (const WriteBufferPtr &)
             {
@@ -675,7 +680,7 @@ void HTTPHandler::processQuery(
     std::unique_ptr<ReadBuffer> in;
 
     static const NameSet reserved_param_names{"compress", "decompress", "user", "password", "quota_key", "query_id", "stacktrace",
-        "buffer_size", "wait_end_of_query", "session_id", "session_timeout", "session_check", "client_protocol_version"};
+        "buffer_size", "wait_end_of_query", "session_id", "session_timeout", "session_check", "client_protocol_version", "close_session"};
 
     Names reserved_param_suffixes;
 
@@ -778,7 +783,6 @@ void HTTPHandler::processQuery(
     /// they will be applied in ProcessList::insert() from executeQuery() itself.
     const auto & query = getQuery(request, params, context);
     std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query);
-    in = has_external_data ? std::move(in_param) : std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
 
     /// HTTP response compression is turned on only if the client signalled that they support it
     /// (using Accept-Encoding header) and 'enable_http_compression' setting is turned on.
@@ -828,7 +832,8 @@ void HTTPHandler::processQuery(
         });
     }
 
-    customizeContext(request, context);
+    customizeContext(request, context, *in_post_maybe_compressed);
+    in = has_external_data ? std::move(in_param) : std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
 
     executeQuery(*in, *used_output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, context,
         [&response, this] (const QueryResultDetails & details)
@@ -954,6 +959,14 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
     /// In case of exception, send stack trace to client.
     bool with_stacktrace = false;
+    /// Close http session (if any) after processing the request
+    bool close_session = false;
+    String session_id;
+
+    SCOPE_EXIT_SAFE({
+        if (close_session && !session_id.empty())
+            session->closeSession(session_id);
+    });
 
     OpenTelemetry::TracingContextHolderPtr thread_trace_context;
     SCOPE_EXIT({
@@ -989,6 +1002,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             client_info.client_trace_context,
             context->getSettingsRef(),
             context->getOpenTelemetrySpanLog());
+        thread_trace_context->root_span.kind = OpenTelemetry::SERVER;
         thread_trace_context->root_span.addAttribute("clickhouse.uri", request.getURI());
 
         response.setContentType("text/plain; charset=UTF-8");
@@ -1003,6 +1017,9 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
         HTMLForm params(default_settings, request);
         with_stacktrace = params.getParsed<bool>("stacktrace", false);
+        close_session = params.getParsed<bool>("close_session", false);
+        if (close_session)
+            session_id = params.get("session_id");
 
         /// FIXME: maybe this check is already unnecessary.
         /// Workaround. Poco does not detect 411 Length Required case.
@@ -1136,7 +1153,7 @@ bool PredefinedQueryHandler::customizeQueryParam(ContextMutablePtr context, cons
     return false;
 }
 
-void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, ContextMutablePtr context)
+void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, ContextMutablePtr context, ReadBuffer & body)
 {
     /// If in the configuration file, the handler's header is regex and contains named capture group
     /// We will extract regex named capture groups as query parameters
@@ -1169,6 +1186,15 @@ void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, Conte
     {
         const auto & header_value = request.get(header_name);
         set_query_params(header_value.data(), header_value.data() + header_value.size(), regex);
+    }
+
+    if (unlikely(receive_params.contains("_request_body") && !context->getQueryParameters().contains("_request_body")))
+    {
+        WriteBufferFromOwnString value;
+        const auto & settings = context->getSettingsRef();
+
+        copyDataMaxBytes(body, value, settings.http_max_request_param_data_size);
+        context->setQueryParameter("_request_body", value.str());
     }
 }
 
