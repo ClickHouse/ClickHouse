@@ -557,7 +557,7 @@ CurrentThread::QueryScope::QueryScope(ContextMutablePtr query_context, std::func
         query_context->makeQueryContext();
 
     auto group = ThreadGroupStatus::createForQuery(query_context, std::move(fatal_error_callback));
-    CurrentThread::attachToGroup(std::move(group));
+    CurrentThread::attachToGroup(group);
 }
 
 CurrentThread::QueryScope::QueryScope(ContextPtr query_context, std::function<void()> fatal_error_callback)
@@ -567,7 +567,7 @@ CurrentThread::QueryScope::QueryScope(ContextPtr query_context, std::function<vo
             ErrorCodes::LOGICAL_ERROR, "Cannot initialize query scope without query context");
 
     auto group = ThreadGroupStatus::createForQuery(query_context, std::move(fatal_error_callback));
-    CurrentThread::attachToGroup(std::move(group));
+    CurrentThread::attachToGroup(group);
 }
 
 void CurrentThread::QueryScope::logPeakMemoryUsage()

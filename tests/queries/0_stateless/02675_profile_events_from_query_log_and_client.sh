@@ -27,7 +27,7 @@ ORDER BY query_start_time DESC;
 "
 
 echo "CREATE"
-$CLICKHOUSE_CLIENT --print-profile-events --profile-events-delay-ms=-1  -nq "
+$CLICKHOUSE_CLIENT -nq "
 DROP TABLE IF EXISTS times;
 CREATE TABLE times (t DateTime) ENGINE MergeTree ORDER BY t
   SETTINGS
@@ -38,7 +38,7 @@ CREATE TABLE times (t DateTime) ENGINE MergeTree ORDER BY t
     min_bytes_for_wide_part = 1000000,
     in_memory_parts_enable_wal = 0,
     ratio_of_defaults_for_sparse_serialization=1.0;
-" 2>&1 | grep -o -e '\ \[\ .*\ \]\ FileOpen:\ .*\ '
+"
 
 echo "INSERT"
 $CLICKHOUSE_CLIENT --print-profile-events --profile-events-delay-ms=-1  -nq "
