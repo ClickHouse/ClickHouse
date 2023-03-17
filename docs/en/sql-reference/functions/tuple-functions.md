@@ -22,15 +22,15 @@ tuple(x, y, …)
 ## tupleElement
 
 A function that allows getting a column from a tuple.
-‘N’ is the column index, starting from 1. ‘N’ must be a constant. ‘N’ must be a strict postive integer no greater than the size of the tuple.
-There is no cost to execute the function.
 
-The function implements the operator `x.N`.
+If the second argument is a number `n`, it is the column index, starting from 1. If the second argument is a string `s`, it represents the name of the element. Besides, we can provide the third optional argument, such that when index out of bounds or element for such name does not exist, the default value returned instead of throw exception. The second and third arguments if provided are always must be constant. There is no cost to execute the function.
+
+The function implements the operator `x.n` and `x.s`.
 
 **Syntax**
 
 ``` sql
-tupleElement(tuple, n)
+tupleElement(tuple, n/s [, default_value])
 ```
 
 ## untuple

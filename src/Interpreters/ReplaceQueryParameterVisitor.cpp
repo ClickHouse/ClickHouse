@@ -83,7 +83,10 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
     IColumn & temp_column = *temp_column_ptr;
     ReadBufferFromString read_buffer{value};
     FormatSettings format_settings;
-    data_type->getDefaultSerialization()->deserializeTextEscaped(temp_column, read_buffer, format_settings);
+    if (ast_param.name == "_request_body")
+        data_type->getDefaultSerialization()->deserializeWholeText(temp_column, read_buffer, format_settings);
+    else
+        data_type->getDefaultSerialization()->deserializeTextEscaped(temp_column, read_buffer, format_settings);
 
     if (!read_buffer.eof())
         throw Exception(ErrorCodes::BAD_QUERY_PARAMETER,
