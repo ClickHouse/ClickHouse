@@ -212,7 +212,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
         bool has_invalid_column = false;
         collectColumns(node, table_columns, cond.table_columns, has_invalid_column);
 
-        cond.columns_size = getIdentifiersColumnSize(cond.table_columns);
+        cond.columns_size = getColumnsSize(cond.table_columns);
 
         cond.viable =
             !has_invalid_column &&
@@ -223,7 +223,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             /// need to use all sorting keys, it will cause correctness issues if we filter other columns before final merge.
             && (!where_optimizer_context.is_final || isExpressionOverSortingKey(node))
             /// Some identifiers can unable to support PREWHERE (usually because of different types in Merge engine)
-            && identifiersSupportsPrewhere(cond.table_columns)
+            && columnsSupportPrewhere(cond.table_columns)
             /// Do not move conditions involving all queried columns.
             && cond.table_columns.size() < queried_columns.size();
 
@@ -347,24 +347,24 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
 }
 
 
-UInt64 MergeTreeWhereOptimizer::getIdentifiersColumnSize(const NameSet & identifiers) const
+UInt64 MergeTreeWhereOptimizer::getColumnsSize(const NameSet & columns) const
 {
     UInt64 size = 0;
 
-    for (const auto & identifier : identifiers)
-        if (column_sizes.contains(identifier))
-            size += column_sizes.at(identifier);
+    for (const auto & column : columns)
+        if (column_sizes.contains(column))
+            size += column_sizes.at(column);
 
     return size;
 }
 
-bool MergeTreeWhereOptimizer::identifiersSupportsPrewhere(const NameSet & identifiers) const
+bool MergeTreeWhereOptimizer::columnsSupportPrewhere(const NameSet & columns) const
 {
     if (!supported_columns.has_value())
         return true;
 
-    for (const auto & identifier : identifiers)
-        if (!supported_columns->contains(identifier))
+    for (const auto & column : columns)
+        if (!supported_columns->contains(column))
             return false;
 
     return true;
@@ -400,10 +400,10 @@ bool MergeTreeWhereOptimizer::isSortingKey(const String & column_name) const
     return sorting_key_names.contains(column_name);
 }
 
-bool MergeTreeWhereOptimizer::isSubsetOfTableColumns(const NameSet & identifiers) const
+bool MergeTreeWhereOptimizer::isSubsetOfTableColumns(const NameSet & columns) const
 {
-    for (const auto & identifier : identifiers)
-        if (!table_columns.contains(identifier))
+    for (const auto & column : columns)
+        if (!table_columns.contains(column))
             return false;
 
     return true;
@@ -444,7 +444,7 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const RPNBuilderTreeNode & node, con
         /// disallow moving result of ARRAY JOIN to PREWHERE
         if (where_optimizer_context.array_joined_names.contains(column_name) ||
             where_optimizer_context.array_joined_names.contains(Nested::extractTableName(column_name)) ||
-            (where_optimizer_context.is_final && !isSortingKey(column_name)))
+            (table_columns.contains(column_name) && where_optimizer_context.is_final && !isSortingKey(column_name)))
             return true;
     }
 

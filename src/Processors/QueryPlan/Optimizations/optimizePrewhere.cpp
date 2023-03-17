@@ -18,7 +18,7 @@ namespace ErrorCodes
 namespace
 {
 
-void matchDAGOutputNodesWithHeader(ActionsDAGPtr & actions_dag, const Block & expected_header)
+void matchDAGOutputNodesOrderWithHeader(ActionsDAGPtr & actions_dag, const Block & expected_header)
 {
     std::unordered_map<std::string, const ActionsDAG::Node *> output_name_to_node;
     for (const auto * output_node : actions_dag->getOutputs())
@@ -97,38 +97,22 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes & nodes)
 
     for (const auto * output_node : filter_step->getExpression()->getOutputs())
     {
-        if (output_node->type == ActionsDAG::ActionType::INPUT)
-        {
-            output_nodes_mapped_to_input.insert(output_node->result_name);
+        const auto * node_without_alias = output_node;
+        while (node_without_alias->type == ActionsDAG::ActionType::ALIAS)
+            node_without_alias = node_without_alias->children[0];
 
-            auto output_names_it = input_node_to_output_names.find(output_node->result_name);
+        if (node_without_alias->type == ActionsDAG::ActionType::INPUT)
+        {
+            output_nodes_mapped_to_input.emplace(output_node->result_name);
+
+            auto output_names_it = input_node_to_output_names.find(node_without_alias->result_name);
             if (output_names_it == input_node_to_output_names.end())
             {
-                auto [insert_it, _] = input_node_to_output_names.emplace(output_node->result_name, std::vector<std::string>());
+                auto [insert_it, _] = input_node_to_output_names.emplace(node_without_alias->result_name, std::vector<std::string>());
                 output_names_it = insert_it;
             }
 
             output_names_it->second.push_back(output_node->result_name);
-        }
-        else if (output_node->type == ActionsDAG::ActionType::ALIAS)
-        {
-            const auto * node_without_alias = output_node;
-            while (node_without_alias->type == ActionsDAG::ActionType::ALIAS)
-                node_without_alias = node_without_alias->children[0];
-
-            if (node_without_alias->type == ActionsDAG::ActionType::INPUT)
-            {
-                output_nodes_mapped_to_input.emplace(output_node->result_name);
-
-                auto output_names_it = input_node_to_output_names.find(node_without_alias->result_name);
-                if (output_names_it == input_node_to_output_names.end())
-                {
-                    auto [insert_it, _] = input_node_to_output_names.emplace(node_without_alias->result_name, std::vector<std::string>());
-                    output_names_it = insert_it;
-                }
-
-                output_names_it->second.push_back(output_node->result_name);
-            }
         }
 
         if (output_node->result_name == filter_step->getFilterColumnName() && filter_step->removesFilterColumn())
@@ -173,7 +157,7 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes & nodes)
         filter_step->getFilterColumnName(),
         read_from_merge_tree->getContext(),
         is_final);
-    if (!optimize_result)
+    if (!optimize_result.has_value())
         return;
 
     PrewhereInfoPtr prewhere_info;
@@ -201,10 +185,10 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes & nodes)
       * enough to produce required filter output columns.
       *
       * Example: SELECT (a AND b) AS cond FROM test_table WHERE cond AND c;
-      * In this example conditions a, b, c can move to PREWHERE, but PREWHERE will not contain expression and(a, b).
-      * It will contain only a, b, c, and(a, b, c) expressions.
+      * In this example condition expressions `a`, `b`, `c` can move to PREWHERE, but PREWHERE will not contain expression `and(a, b)`.
+      * It will contain only `a`, `b`, `c`, `and(a, b, c)` expressions.
       *
-      * In such scenario we need to create additional filter expressions after PREWHERE.
+      * In such scenario we need to create additional step to calculate `and(a, b)` expression after PREWHERE.
       */
     bool need_additional_filter_after_prewhere = false;
 
@@ -277,7 +261,7 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes & nodes)
         filter_actions->projectInput(false);
 
         /// Match dag output nodes with old filter step header
-        matchDAGOutputNodesWithHeader(filter_actions, filter_step->getOutputStream().header);
+        matchDAGOutputNodesOrderWithHeader(filter_actions, filter_step->getOutputStream().header);
 
         auto & filter_actions_chain_node = actions_chain[1];
         bool remove_filter_column = !filter_actions_chain_node->getChildRequiredOutputColumnsNames().contains(filter_step->getFilterColumnName());
@@ -332,7 +316,7 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes & nodes)
         if (!blocksHaveEqualStructure(read_from_merge_tree->getOutputStream().header, filter_step->getOutputStream().header))
         {
             apply_match_step = true;
-            matchDAGOutputNodesWithHeader(rename_actions_dag, filter_step->getOutputStream().header);
+            matchDAGOutputNodesOrderWithHeader(rename_actions_dag, filter_step->getOutputStream().header);
         }
 
         if (apply_rename_step || apply_match_step)

@@ -84,6 +84,8 @@ namespace ErrorCodes
 /** ClickHouse query planner.
   *
   * TODO: Support projections.
+  * TODO: Support trivial count using partition predicates.
+  * TODO: Support trivial count for table functions.
   * TODO: Support indexes for IN function.
   */
 
