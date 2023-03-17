@@ -38,7 +38,7 @@ public:
     }
 
 private:
-    std::string_view getSubcolumnName(const ColumnsWithTypeAndName & arguments) const
+    static std::string_view getSubcolumnName(const ColumnsWithTypeAndName & arguments)
     {
         const auto * column = arguments[1].column.get();
         if (!isString(arguments[1].type) || !column || !checkAndGetColumnConstStringOrFixedString(column))
