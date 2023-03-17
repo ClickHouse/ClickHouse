@@ -95,7 +95,6 @@ private:
     mutable std::mutex mutex;
     std::condition_variable job_finished;
     std::condition_variable new_job_or_shutdown;
-    std::condition_variable thread_finished;
 
     size_t max_threads;
     size_t max_free_threads;
@@ -103,6 +102,7 @@ private:
 
     size_t scheduled_jobs = 0;
     bool shutdown = false;
+    bool threads_remove_themselves = true;
     const bool shutdown_on_exception = true;
 
     struct JobWithPriority
