@@ -19,8 +19,15 @@ $CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0 -q "insert into
 $CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0 -q "insert into rmt1 values (2);"
 
 $CLICKHOUSE_CLIENT --receive_timeout=3 -q "system sync replica rmt1;" 2>/dev/null 1>/dev/null
+
+# There's a stupid effect from "zero copy replication":
+# MERGE_PARTS all_1_2_1 can be executed by rmt2 even if it was assigned by rmt1
+# After that, rmt2 will not be able to execute that merge and will only try to fetch the part from rmt2
+# But sends are stopped on rmt2...
+
+(sleep 5 && $CLICKHOUSE_CLIENT -q "system start replicated sends rmt2") &
+
 $CLICKHOUSE_CLIENT --optimize_throw_if_noop=1 -q "optimize table rmt1;"
-$CLICKHOUSE_CLIENT -q "system start replicated sends rmt2"
 $CLICKHOUSE_CLIENT -q "system sync replica rmt1;"
 
 $CLICKHOUSE_CLIENT -q "select 1, *, _part from rmt1 order by n;"
