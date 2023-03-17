@@ -44,9 +44,6 @@ static std::pair<Field, std::shared_ptr<const IDataType>> getFieldAndDataTypeFro
 
 std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(const ASTPtr & node, const ContextPtr & context)
 {
-    if (!node->hasColumnName())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression '{}' is not a constant expression", node->formatForErrorMessage());
-
     if (ASTLiteral * literal = node->as<ASTLiteral>())
         return getFieldAndDataTypeFromLiteral(literal);
 

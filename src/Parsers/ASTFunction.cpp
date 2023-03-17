@@ -468,27 +468,6 @@ namespace
     };
 }
 
-bool ASTFunction::hasColumnName() const
-{
-    if (parameters)
-    {
-        for (const auto & child : parameters->children)
-        {
-            if (!child->hasColumnName())
-                return false;
-        }
-    }
-
-    if (arguments)
-    {
-        for (const auto & child : arguments->children)
-        {
-            if (!child->hasColumnName())
-                return false;
-        }
-    }
-    return true;
-}
 
 void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
 {
