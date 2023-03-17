@@ -20,6 +20,8 @@ QueryPlanOptimizationSettings QueryPlanOptimizationSettings::fromSettings(const 
     settings.optimize_projection = from.optimize_use_projections && from.query_plan_optimize_projection;
     settings.force_use_projection = settings.optimize_projection && from.force_optimize_projection;
     settings.optimize_use_implicit_projections = settings.optimize_projection && from.optimize_use_implicit_projections;
+    settings.optimize_dynamic_max_threads = from.optimize_dynamic_max_threads;
+
     return settings;
 }
 

@@ -43,6 +43,8 @@ struct QueryPlanOptimizationSettings
     bool force_use_projection = false;
     bool optimize_use_implicit_projections = false;
 
+    bool optimize_dynamic_max_threads = false;
+
     static QueryPlanOptimizationSettings fromSettings(const Settings & from);
     static QueryPlanOptimizationSettings fromContext(ContextPtr from);
 };

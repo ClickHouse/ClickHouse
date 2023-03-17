@@ -1,6 +1,9 @@
 #include <stack>
 
+#include <Poco/Logger.h>
+
 #include <Common/JSONBuilder.h>
+#include <Common/logger_useful.h>
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ArrayJoinAction.h>
@@ -160,13 +163,19 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     checkInitialized();
     optimize(optimization_settings);
 
+    bool dynamic_max_threads = optimization_settings.optimize_dynamic_max_threads && max_threads;
+
+
+    auto * logger = &Poco::Logger::get("(QueryPlan)");
     struct Frame
     {
         Node * node = {};
         QueryPipelineBuilders pipelines = {};
+        size_t requested_threads = 0;
     };
 
     QueryPipelineBuilderPtr last_pipeline;
+    size_t last_max_threads = 0;
 
 
     std::stack<Frame> stack;
@@ -176,20 +185,41 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     {
         auto & frame = stack.top();
 
+
         if (last_pipeline)
         {
             frame.pipelines.emplace_back(std::move(last_pipeline));
+            frame.requested_threads = last_max_threads + frame.requested_threads;
+            LOG_TRACE(logger, "Reducing streams {}", frame.requested_threads);
+            last_max_threads = 0;
             last_pipeline = nullptr;
         }
 
         size_t next_child = frame.pipelines.size();
         if (next_child == frame.node->children.size())
         {
+
             bool limit_max_threads = frame.pipelines.empty();
+
             last_pipeline = frame.node->step->updatePipeline(std::move(frame.pipelines), build_pipeline_settings);
+            if (dynamic_max_threads)
+            {
+                if (const auto * step = dynamic_cast<ReadFromMergeTree*>(frame.node->step.get()))
+                {
+                    frame.requested_threads = last_pipeline->getNumStreams();
+                    LOG_DEBUG(logger, "Planning with {} streams", frame.requested_threads);
+                }
+            }
+            last_max_threads = frame.requested_threads;
 
             if (limit_max_threads && max_threads)
                 last_pipeline->limitMaxThreads(max_threads);
+
+            if (dynamic_max_threads && last_max_threads)
+            {
+                last_pipeline->limitMaxThreads(last_max_threads);
+                LOG_TRACE(logger, "Limit max_streams for node {}", last_max_threads);
+            }
 
             stack.pop();
         }
