@@ -61,7 +61,7 @@ namespace
         }
 
         auto value = literal_value->as<ASTLiteral>()->value;
-        return std::pair{key, value};
+        return std::pair{key, Field(value)};
     }
 }
 
@@ -85,7 +85,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
 
     for (auto * it = std::next(asts.begin()); it != asts.end(); ++it)
     {
-        auto value_override = getKeyValueFromAST(*it, complex_args != nullptr, context);
+        auto value_override = getKeyValueFromAST(*it, /* fallback_to_ast_value */complex_args != nullptr, context);
 
         if (!value_override && !(*it)->as<ASTFunction>())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value argument or function");

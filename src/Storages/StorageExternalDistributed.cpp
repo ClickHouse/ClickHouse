@@ -102,8 +102,8 @@ void registerStorageExternalDistributed(StorageFactory & factory)
                             "engine_name, named_collection and/or description");
 
         auto context = args.getLocalContext();
-        [[maybe_unused]] const auto & settings = context->getSettingsRef();
-        size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
+        const auto & settings = context->getSettingsRef();
+        size_t max_addresses = settings.glob_expansion_max_elements;
         auto get_addresses = [&](const std::string addresses_expr)
         {
             return parseRemoteDescription(addresses_expr, 0, addresses_expr.size(), ',', max_addresses);
