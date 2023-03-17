@@ -116,7 +116,7 @@ size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, co
 {
     size_t size = 1; // Field type
     size += name.size() + 1; // Field name and \0
-    switch (column.getDataType())
+    switch (data_type->getTypeId())
     {
         case TypeIndex::Int8: [[fallthrough]];
         case TypeIndex::Int16: [[fallthrough]];
@@ -263,7 +263,7 @@ size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, co
 
 void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const DataTypePtr & data_type, size_t row_num, const String & name)
 {
-    switch (column.getDataType())
+    switch (data_type->getTypeId())
     {
         case TypeIndex::Float32:
         {
