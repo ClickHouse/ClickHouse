@@ -14,6 +14,32 @@ WITH
 SELECT
     x;
 
+-- keys and values starting with number, underscore and other special characters
+-- expected output: {'$nationality':'@brazil','1name':'neymar','4ge':'31','_team':'_psg'}
+WITH
+    extractKeyValuePairs('1name:neymar, 4ge:31 _team:_psg,$nationality:@brazil') AS s_map,
+    CAST(
+            arrayMap(
+                    (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+                ),
+            'Map(String,String)'
+        ) AS x
+SELECT
+    x;
+
+-- only special characters
+-- expected output: {'#':'#','$':'$','@':'@','_':'_'}
+WITH
+    extractKeyValuePairs('_:_, @:@ #:#,$:$') AS s_map,
+    CAST(
+            arrayMap(
+                    (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+                ),
+            'Map(String,String)'
+        ) AS x
+SELECT
+    x;
+
 -- special (not control) characters in the middle of elements
 -- expected output: {'age':'3!','name':'ney!mar','nationality':'br4z!l','t&am':'@psg'}
 WITH
@@ -31,6 +57,19 @@ SELECT
 -- expected output: {'amount\\z':'$5\\h','currency':'\\$USD'}
 WITH
     extractKeyValuePairs('currency:\$USD, amount\z:$5\h') AS s_map,
+    CAST(
+            arrayMap(
+                    (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
+                ),
+            'Map(String,String)'
+        ) AS x
+SELECT
+    x;
+
+-- invalid escape sequence, should be discarded
+-- expected output: {'valid_key':'valid_value'}
+WITH
+    extractKeyValuePairs('valid_key:valid_value key:invalid_val\\') AS s_map,
     CAST(
             arrayMap(
                     (x) -> (x, s_map[x]), arraySort(mapKeys(s_map))
