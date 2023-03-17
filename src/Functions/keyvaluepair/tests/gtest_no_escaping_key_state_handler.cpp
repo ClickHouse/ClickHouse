@@ -12,16 +12,16 @@ void test_wait(const auto & handler, std::string_view input, std::size_t expecte
     ASSERT_EQ(next_state.state, expected_state);
 }
 
-template <bool enclosed>
+template <bool quoted>
 void test_read(const auto & handler, std::string_view input, std::string_view expected_element,
                std::size_t expected_pos, State expected_state)
 {
     NextState next_state;
     std::string_view element;
 
-    if constexpr (enclosed)
+    if constexpr (quoted)
     {
-        next_state = handler.readEnclosed(input, 0u, element);
+        next_state = handler.readQuoted(input, 0u, element);
     }
     else
     {
@@ -39,7 +39,7 @@ void test_read(const auto & handler, std::string_view input, std::string_view ex
     test_read<false>(handler, input, expected_element, expected_pos, expected_state);
 }
 
-void test_read_enclosed(const auto & handler, std::string_view input, std::string_view expected_element,
+void test_read_quoted(const auto & handler, std::string_view input, std::string_view expected_element,
                         std::size_t expected_pos, State expected_state)
 {
     test_read<true>(handler, input, expected_element, expected_pos, expected_state);
@@ -56,10 +56,10 @@ TEST(NoEscapingKeyStateHandler, Wait)
     test_wait(handler, "name", 0u, READING_KEY);
     test_wait(handler, "\\:name", 0u, READING_KEY);
     // quoted expected pos is + 1 because as of now it is skipped, maybe I should change it
-    test_wait(handler, "\"name", 1u, READING_ENCLOSED_KEY);
+    test_wait(handler, "\"name", 1u, READING_QUOTED_KEY);
 
     test_wait(handler, ", $name", 3u, READING_KEY);
-    test_wait(handler, ", $\"name", 4u, READING_ENCLOSED_KEY);
+    test_wait(handler, ", $\"name", 4u, READING_QUOTED_KEY);
 
     test_wait(handler, "", 0u, END);
 }

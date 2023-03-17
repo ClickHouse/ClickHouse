@@ -13,7 +13,7 @@ concept CInlineEscapingKeyStateHandler = requires(KeyStateHandler handler)
 {
     { handler.wait(std::string_view {}, std::size_t {}) } -> std::same_as<NextState>;
     { handler.read(std::string_view {}, std::size_t {}, std::declval<std::string &>()) } -> std::same_as<NextState>;
-    { handler.readEnclosed(std::string_view {}, std::size_t {}, std::declval<std::string &>()) } -> std::same_as<NextState>;
+    { handler.readQuoted(std::string_view {}, std::size_t {}, std::declval<std::string &>()) } -> std::same_as<NextState>;
     { handler.readKeyValueDelimiter(std::string_view {}, std::size_t {}) } -> std::same_as<NextState>;
 };
 
@@ -22,7 +22,7 @@ concept CNoEscapingKeyStateHandler = requires(KeyStateHandler handler)
 {
     { handler.wait(std::string_view {}, std::size_t {}) } -> std::same_as<NextState>;
     { handler.read(std::string_view {}, std::size_t {}, std::declval<std::string_view &>()) } -> std::same_as<NextState>;
-    { handler.readEnclosed(std::string_view {}, std::size_t {}, std::declval<std::string_view &>()) } -> std::same_as<NextState>;
+    { handler.readQuoted(std::string_view {}, std::size_t {}, std::declval<std::string_view &>()) } -> std::same_as<NextState>;
     { handler.readKeyValueDelimiter(std::string_view {}, std::size_t {}) } -> std::same_as<NextState>;
 };
 
@@ -34,7 +34,7 @@ concept CInlineEscapingValueStateHandler = requires(ValueStateHandler handler)
 {
     { handler.wait(std::string_view {}, std::size_t {}) } -> std::same_as<NextState>;
     { handler.read(std::string_view {}, std::size_t {}, std::declval<std::string &>()) } -> std::same_as<NextState>;
-    { handler.readEnclosed(std::string_view {}, std::size_t {}, std::declval<std::string &>()) } -> std::same_as<NextState>;
+    { handler.readQuoted(std::string_view {}, std::size_t {}, std::declval<std::string &>()) } -> std::same_as<NextState>;
     { handler.readEmpty(std::string_view {}, std::size_t {}, std::declval<std::string &>()) } -> std::same_as<NextState>;
 };
 
@@ -43,7 +43,7 @@ concept CNoEscapingValueStateHandler = requires(ValueStateHandler handler)
 {
     { handler.wait(std::string_view {}, std::size_t {}) } -> std::same_as<NextState>;
     { handler.read(std::string_view {}, std::size_t {}, std::declval<std::string_view &>()) } -> std::same_as<NextState>;
-    { handler.readEnclosed(std::string_view {}, std::size_t {}, std::declval<std::string_view &>()) } -> std::same_as<NextState>;
+    { handler.readQuoted(std::string_view {}, std::size_t {}, std::declval<std::string_view &>()) } -> std::same_as<NextState>;
     { handler.readEmpty(std::string_view {}, std::size_t {}, std::declval<std::string_view &>()) } -> std::same_as<NextState>;
 };
 

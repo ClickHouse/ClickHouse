@@ -60,16 +60,16 @@ private:
                 return key_state_handler.wait(file, pos);
             case State::READING_KEY:
                 return key_state_handler.read(file, pos, key);
-            case State::READING_ENCLOSED_KEY:
-                return key_state_handler.readEnclosed(file, pos, key);
+            case State::READING_QUOTED_KEY:
+                return key_state_handler.readQuoted(file, pos, key);
             case State::READING_KV_DELIMITER:
                 return key_state_handler.readKeyValueDelimiter(file, pos);
             case State::WAITING_VALUE:
                 return value_state_handler.wait(file, pos);
             case State::READING_VALUE:
                 return value_state_handler.read(file, pos, value);
-            case State::READING_ENCLOSED_VALUE:
-                return value_state_handler.readEnclosed(file, pos, value);
+            case State::READING_QUOTED_VALUE:
+                return value_state_handler.readQuoted(file, pos, value);
             case State::READING_EMPTY_VALUE:
                 return value_state_handler.readEmpty(file, pos, value);
             case State::FLUSH_PAIR:

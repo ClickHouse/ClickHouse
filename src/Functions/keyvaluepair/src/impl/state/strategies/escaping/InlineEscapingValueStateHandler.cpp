@@ -24,7 +24,7 @@ NextState InlineEscapingValueStateHandler::wait(std::string_view file, size_t po
 
         if (quoting_character == current_character)
         {
-            return {pos + 1u, State::READING_ENCLOSED_VALUE};
+            return {pos + 1u, State::READING_QUOTED_VALUE};
         }
         else if (std::find(pair_delimiters.begin(), pair_delimiters.end(), current_character) != pair_delimiters.end())
         {
@@ -111,7 +111,7 @@ NextState InlineEscapingValueStateHandler::read(std::string_view file, size_t po
     return {pos, State::FLUSH_PAIR};
 }
 
-NextState InlineEscapingValueStateHandler::readEnclosed(std::string_view file, size_t pos, ElementType & value) const
+NextState InlineEscapingValueStateHandler::readQuoted(std::string_view file, size_t pos, ElementType & value) const
 {
     BoundsSafeCharacterFinder finder;
 
