@@ -74,9 +74,8 @@ class SortedLookupVector : public SortedLookupVectorBase
 
 
 public:
-    using Keys = std::vector<TKey>;
-    using Entries = std::vector<Entry>;
-    using RowRefs = std::vector<RowRef>;
+    using Entries = PODArrayWithStackMemory<Entry, sizeof(Entry)>;
+    using RowRefs = PODArrayWithStackMemory<RowRef, sizeof(RowRef)>;
 
     static constexpr bool is_descending = (inequality == ASOFJoinInequality::Greater || inequality == ASOFJoinInequality::GreaterOrEquals);
     static constexpr bool is_strict = (inequality == ASOFJoinInequality::Less) || (inequality == ASOFJoinInequality::Greater);
