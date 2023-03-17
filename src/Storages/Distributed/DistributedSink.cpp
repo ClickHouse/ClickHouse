@@ -1,5 +1,5 @@
 #include <Storages/Distributed/DistributedSink.h>
-#include <Storages/Distributed/DirectoryMonitor.h>
+#include <Storages/Distributed/DistributedAsyncInsertDirectoryQueue.h>
 #include <Storages/Distributed/Defines.h>
 #include <Storages/StorageDistributed.h>
 #include <Disks/StoragePolicy.h>
@@ -340,9 +340,9 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
         size_t rows = shard_block.rows();
 
         span.addAttribute("clickhouse.shard_num", shard_info.shard_num);
-        span.addAttribute("clickhouse.cluster", this->storage.cluster_name);
-        span.addAttribute("clickhouse.distributed", this->storage.getStorageID().getFullNameNotQuoted());
-        span.addAttribute("clickhouse.remote", [this]() { return storage.remote_database + "." + storage.remote_table; });
+        span.addAttribute("clickhouse.cluster", storage.cluster_name);
+        span.addAttribute("clickhouse.distributed", storage.getStorageID().getFullNameNotQuoted());
+        span.addAttribute("clickhouse.remote", [this]() { return storage.getRemoteDatabaseName() + "." + storage.getRemoteTableName(); });
         span.addAttribute("clickhouse.rows", rows);
         span.addAttribute("clickhouse.bytes", [&shard_block]() { return toString(shard_block.bytes()); });
 
@@ -476,7 +476,7 @@ void DistributedSink::writeSync(const Block & block)
 
     span.addAttribute("clickhouse.start_shard", start);
     span.addAttribute("clickhouse.end_shard", end);
-    span.addAttribute("db.statement", this->query_string);
+    span.addAttribute("db.statement", query_string);
 
     if (num_shards > 1)
     {
@@ -679,9 +679,9 @@ void DistributedSink::writeToLocal(const Cluster::ShardInfo & shard_info, const 
 {
     OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
     span.addAttribute("clickhouse.shard_num", shard_info.shard_num);
-    span.addAttribute("clickhouse.cluster", this->storage.cluster_name);
-    span.addAttribute("clickhouse.distributed", this->storage.getStorageID().getFullNameNotQuoted());
-    span.addAttribute("clickhouse.remote", [this]() { return storage.remote_database + "." + storage.remote_table; });
+    span.addAttribute("clickhouse.cluster", storage.cluster_name);
+    span.addAttribute("clickhouse.distributed", storage.getStorageID().getFullNameNotQuoted());
+    span.addAttribute("clickhouse.remote", [this]() { return storage.getRemoteDatabaseName() + "." + storage.getRemoteTableName(); });
     span.addAttribute("clickhouse.rows", [&block]() { return toString(block.rows()); });
     span.addAttribute("clickhouse.bytes", [&block]() { return toString(block.bytes()); });
 
@@ -725,7 +725,7 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
     CompressionCodecPtr compression_codec = CompressionCodecFactory::instance().get(compression_method, compression_level);
 
     /// tmp directory is used to ensure atomicity of transactions
-    /// and keep monitor thread out from reading incomplete data
+    /// and keep directory queue thread out from reading incomplete data
     std::string first_file_tmp_path;
 
     auto reservation = storage.getStoragePolicy()->reserveAndCheck(block.bytes());
@@ -743,6 +743,9 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
         }
         return guard;
     };
+
+    auto sleep_ms = context->getSettingsRef().distributed_directory_monitor_sleep_time_ms.totalMilliseconds();
+    size_t file_size;
 
     auto it = dir_names.begin();
     /// on first iteration write block to a temporary directory for subsequent
@@ -799,9 +802,9 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
             }
 
             writeVarUInt(shard_info.shard_num, header_buf);
-            writeStringBinary(this->storage.cluster_name, header_buf);
-            writeStringBinary(this->storage.getStorageID().getFullNameNotQuoted(), header_buf);
-            writeStringBinary(this->storage.remote_database + "." + this->storage.remote_table, header_buf);
+            writeStringBinary(storage.cluster_name, header_buf);
+            writeStringBinary(storage.getStorageID().getFullNameNotQuoted(), header_buf);
+            writeStringBinary(storage.getRemoteDatabaseName() + "." + storage.getRemoteTableName(), header_buf);
 
             /// Add new fields here, for example:
             /// writeVarUInt(my_new_data, header_buf);
@@ -821,10 +824,16 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
                 out.sync();
         }
 
+        file_size = fs::file_size(first_file_tmp_path);
+
         // Create hardlink here to reuse increment number
-        const std::string block_file_path(fs::path(path) / file_name);
-        createHardLink(first_file_tmp_path, block_file_path);
-        auto dir_sync_guard = make_directory_sync_guard(*it);
+        auto bin_file = (fs::path(path) / file_name).string();
+        auto & directory_queue = storage.getDirectoryQueue(disk, *it);
+        {
+            createHardLink(first_file_tmp_path, bin_file);
+            auto dir_sync_guard = make_directory_sync_guard(*it);
+        }
+        directory_queue.addFileAndSchedule(bin_file, file_size, sleep_ms);
     }
     ++it;
 
@@ -834,23 +843,18 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
         const std::string path(fs::path(disk_path) / (data_path + *it));
         fs::create_directory(path);
 
-        const std::string block_file_path(fs::path(path) / (toString(storage.file_names_increment.get()) + ".bin"));
-        createHardLink(first_file_tmp_path, block_file_path);
-        auto dir_sync_guard = make_directory_sync_guard(*it);
+        auto bin_file = (fs::path(path) / (toString(storage.file_names_increment.get()) + ".bin")).string();
+        auto & directory_queue = storage.getDirectoryQueue(disk, *it);
+        {
+            createHardLink(first_file_tmp_path, bin_file);
+            auto dir_sync_guard = make_directory_sync_guard(*it);
+        }
+        directory_queue.addFileAndSchedule(bin_file, file_size, sleep_ms);
     }
 
-    auto file_size = fs::file_size(first_file_tmp_path);
     /// remove the temporary file, enabling the OS to reclaim inode after all threads
     /// have removed their corresponding files
     fs::remove(first_file_tmp_path);
-
-    /// Notify
-    auto sleep_ms = context->getSettingsRef().distributed_directory_monitor_sleep_time_ms;
-    for (const auto & dir_name : dir_names)
-    {
-        auto & directory_monitor = storage.requireDirectoryMonitor(disk, dir_name);
-        directory_monitor.addAndSchedule(file_size, sleep_ms.totalMilliseconds());
-    }
 }
 
 }
