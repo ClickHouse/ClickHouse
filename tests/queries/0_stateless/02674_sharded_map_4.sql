@@ -42,5 +42,6 @@ INSERT INTO t_sharded_map_4 VALUES (3, [map('k4', 4), map()]);
 SELECT arraySort(m.keys), arraySort(m.values) FROM t_sharded_map_4 ORDER BY id;
 SELECT m.size0 FROM t_sharded_map_4 ORDER BY id;
 SELECT m.size1 FROM t_sharded_map_4 ORDER BY id;
+SELECT m.values, m.shard1 FROM t_sharded_map_4 ORDER BY id;
 
 DROP TABLE t_sharded_map_4;

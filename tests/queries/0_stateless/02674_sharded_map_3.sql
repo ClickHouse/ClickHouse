@@ -32,8 +32,9 @@ SYSTEM FLUSH LOGS;
 
 SELECT column FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_sharded_map_3' AND active ORDER BY column;
 SELECT arraySort(m::Array(Tuple(LowCardinality(String), UInt64)))::Map(LowCardinality(String), UInt64) AS m FROM t_sharded_map_3 ORDER BY id;
+SELECT arraySort(m::Array(Tuple(LowCardinality(String), UInt64)))::Map(LowCardinality(String), UInt64) AS m, m.shard0 FROM t_sharded_map_3 ORDER BY id;
 
-WITH (SELECT uuid::LowCardinality(String) FROM system.tables WHERE database = currentDatabase() AND name = 't_sharded_map_3') AS uuid
+WITH (SELECT uuid::String FROM system.tables WHERE database = currentDatabase() AND name = 't_sharded_map_3') AS uuid
 SELECT count() > 0 FROM system.text_log WHERE query_id LIKE uuid || '%' AND message LIKE 'Reading%marks from part%column m.shard%';
 
 DROP TABLE t_sharded_map_3;

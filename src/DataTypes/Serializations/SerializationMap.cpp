@@ -670,7 +670,8 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
     applyForShards(num_shards, settings, [&](size_t i)
     {
         ColumnPtr shard_column = column_nested.cloneEmpty();
-        nested->deserializeBinaryBulkWithMultipleStreams(shard_column, limit, settings, map_state->states[i], cache);
+        /// TODO: add comment.
+        nested->deserializeBinaryBulkWithMultipleStreams(shard_column, limit, settings, map_state->states[i], nullptr);
 
         const auto & shard_array = assert_cast<const ColumnArray &>(*shard_column);
         const auto & shard_tuple = assert_cast<const ColumnTuple &>(shard_array.getData());
@@ -716,7 +717,7 @@ static void assertSettingsNotPositionIndependent(const ISerialization::Serialize
 }
 
 SerializationMapSubcolumn::SerializationMapSubcolumn(SerializationPtr nested_, size_t num_shards_)
-    : SerializationWrapper(std::move(nested_)), num_shards(num_shards_)
+    : SerializationWrapper(nested_), num_shards(num_shards_)
 {
 }
 
@@ -725,10 +726,13 @@ void SerializationMapSubcolumn::enumerateStreams(
     const StreamCallback & callback,
     const SubstreamData & data) const
 {
-    applyForShards(num_shards, settings, [&](size_t)
+    if (settings.type_map_enumerate_shards)
     {
-         nested_serialization->enumerateStreams(settings, callback, data);
-    });
+        applyForShards(num_shards, settings, [&](size_t)
+        {
+            nested_serialization->enumerateStreams(settings, callback, data);
+        });
+    }
 }
 
 void SerializationMapSubcolumn::serializeBinaryBulkStatePrefix(
@@ -778,6 +782,9 @@ void SerializationMapSubcolumn::deserializeBinaryBulkStatePrefix(
 SerializationMapKeysValues::SerializationMapKeysValues(SerializationPtr nested_, size_t num_shards_)
     : SerializationMapSubcolumn(nested_, num_shards_)
 {
+    if (num_shards <= 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Custom serialization for subcolumns are supported for type Map with number of shard more than 1");
 }
 
 void SerializationMapKeysValues::deserializeBinaryBulkWithMultipleStreams(
