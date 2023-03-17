@@ -71,7 +71,9 @@ public:
 
         Configuration new_configuration(configuration);
 
-        new_configuration.appendToPath(MetadataParser::generateQueryFromKeys(keys, configuration.format));
+        auto files = MetadataParser::generateQueryFromKeys(keys, configuration.format);
+        LOG_TEST(log, "FILES: {}, ", fmt::join(files, ", "));
+        new_configuration.appendToPath(files);
 
         LOG_DEBUG(log, "Table path: {}, new uri: {}", configuration.url.key, new_configuration.getPath());
 
