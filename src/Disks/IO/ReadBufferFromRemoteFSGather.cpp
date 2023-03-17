@@ -6,7 +6,7 @@
 #include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
 #include <Common/logger_useful.h>
 #include <iostream>
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/Context.h>
 

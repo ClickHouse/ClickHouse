@@ -16,6 +16,7 @@ Columns:
 -   `readonly` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Shows whether the current user can change the setting:
     -   `0` — Current user can change the setting.
     -   `1` — Current user can’t change the setting.
+-   `default` ([String](../../sql-reference/data-types/string.md)) — Setting default value.
 
 **Example**
 

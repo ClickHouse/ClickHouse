@@ -46,7 +46,7 @@ IFileCachePriority::Iterator LRUFileCachePriority::add(
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheSize, size);
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheElements);
 
-    LOG_TRACE(log, "Added entry into LRU queue, key: {}, offset: {}", key.toString(), offset);
+    LOG_TEST(log, "Added entry into LRU queue, key: {}, offset: {}", key.toString(), offset);
 
     return std::make_shared<LRUFileCacheIterator>(this, iter);
 }
@@ -56,7 +56,7 @@ void LRUFileCachePriority::removeAll()
     CurrentMetrics::sub(CurrentMetrics::FilesystemCacheSize, current_size);
     CurrentMetrics::sub(CurrentMetrics::FilesystemCacheElements, queue.size());
 
-    LOG_TRACE(log, "Removed all entries from LRU queue");
+    LOG_TEST(log, "Removed all entries from LRU queue");
 
     queue.clear();
     current_size = 0;
