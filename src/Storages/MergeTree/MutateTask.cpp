@@ -19,6 +19,7 @@
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
+#include <Storages/MergeTree/MergeTreeIndexInverted.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <Common/ProfileEventsScope.h>
@@ -551,6 +552,15 @@ static NameSet collectFilesToSkip(
         /// Since MinMax index has .idx2 extension, we need to add correct extension.
         files_to_skip.insert(index->getFileName() + index->getSerializedFileExtension());
         files_to_skip.insert(index->getFileName() + mrk_extension);
+
+        // skip all inverted index files, for they will be re-built
+        if (dynamic_cast<const MergeTreeIndexInverted *>(&*index) != nullptr)
+        {
+            files_to_skip.insert(index->getFileName() + ".gin_dict");
+            files_to_skip.insert(index->getFileName() + ".gin_post");
+            files_to_skip.insert(index->getFileName() + ".gin_sed");
+            files_to_skip.insert(index->getFileName() + ".gin_sid");
+        }
     }
 
     for (const auto & projection : projections_to_recalc)
