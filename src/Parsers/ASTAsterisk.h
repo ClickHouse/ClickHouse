@@ -15,7 +15,6 @@ public:
     String getID(char) const override { return "Asterisk"; }
     ASTPtr clone() const override;
     void appendColumnName(WriteBuffer & ostr) const override;
-    bool hasColumnName() const override { return true; }
 
     ASTPtr expression;
     ASTPtr transformers;

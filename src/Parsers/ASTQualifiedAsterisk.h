@@ -31,7 +31,6 @@ public:
         return clone;
     }
     void appendColumnName(WriteBuffer & ostr) const override;
-    bool hasColumnName() const override { return true; }
 
     ASTPtr qualifier;
     ASTPtr transformers;

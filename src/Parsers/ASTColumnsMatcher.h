@@ -23,8 +23,6 @@ public:
     ASTPtr clone() const override;
 
     void appendColumnName(WriteBuffer & ostr) const override;
-    bool hasColumnName() const override { return true; }
-
     void setPattern(String pattern);
     const String & getPattern() const;
     const std::shared_ptr<re2::RE2> & getMatcher() const;
@@ -48,7 +46,6 @@ public:
     String getID(char) const override { return "ColumnsListMatcher"; }
     ASTPtr clone() const override;
     void appendColumnName(WriteBuffer & ostr) const override;
-    bool hasColumnName() const override { return true; }
 
     ASTPtr expression;
     ASTPtr column_list;
@@ -65,8 +62,6 @@ public:
     ASTPtr clone() const override;
 
     void appendColumnName(WriteBuffer & ostr) const override;
-    bool hasColumnName() const override { return true; }
-
     const std::shared_ptr<re2::RE2> & getMatcher() const;
     void setPattern(String pattern, bool set_matcher = true);
     void setMatcher(std::shared_ptr<re2::RE2> matcher);
@@ -89,7 +84,6 @@ public:
     String getID(char) const override { return "QualifiedColumnsListMatcher"; }
     ASTPtr clone() const override;
     void appendColumnName(WriteBuffer & ostr) const override;
-    bool hasColumnName() const override { return true; }
 
     ASTPtr qualifier;
     ASTPtr column_list;
