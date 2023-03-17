@@ -24,6 +24,7 @@ CapnProto
 CentOS
 ClickHouse
 ClickHouse's
+ClickableSquare
 CodeBlock
 CodeLLDB
 Config
@@ -54,6 +55,7 @@ Heredoc
 Homebrew
 Homebrew's
 Hostname
+HorizontalDivide
 IPv
 IntN
 Integrations
@@ -87,6 +89,7 @@ LOCALTIME
 LOCALTIMESTAMP
 LibFuzzer
 LineAsString
+LinksDeployment
 LowCardinality
 MEMTABLE
 MSan
@@ -169,6 +172,7 @@ Testflows
 Tgz
 Toolset
 Tradeoff
+TwoColumnList
 UBSan
 UInt
 UIntN
@@ -179,6 +183,8 @@ Util
 Valgrind
 Vectorized
 VirtualBox
+VideoContainer
+ViewAllLink
 Werror
 WithNamesAndTypes
 Woboq
