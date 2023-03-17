@@ -22,8 +22,7 @@ public:
 
     void visitImpl(QueryTreeNodePtr & node)
     {
-        const auto & context = getContext();
-        if (!context->getSettingsRef().final)
+        if (!getSettings().final)
             return;
 
         const auto * query_node = node->as<QueryNode>();
@@ -43,7 +42,7 @@ private:
             return;
 
         const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
-        bool is_final_supported = storage && storage->supportsFinal() && !storage->isRemote();
+        bool is_final_supported = storage && storage->supportsFinal();
         if (!is_final_supported)
             return;
 
