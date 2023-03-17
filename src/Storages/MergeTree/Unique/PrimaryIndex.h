@@ -67,14 +67,6 @@ public:
 
     bool update(Int64 min_block, const ColumnPtr & key_column, const std::unordered_set<UInt32> & deleted_rows_set);
 
-    void deleteKeys(
-        const ColumnPtr & delete_key_column,
-        const std::vector<Field> & delete_min_values,
-        const std::vector<Field> & delete_max_values,
-        DeletesMap & deletes_map,
-        DeletesKeys & deletes_keys,
-        ContextPtr context);
-
     void processOneBlock(
         Block & block,
         DeletesMap & deletes_map,

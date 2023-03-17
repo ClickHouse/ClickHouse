@@ -45,7 +45,6 @@ void PrimaryIndex::update(
     DeletesKeys & deletes_keys,
     ContextPtr context)
 {
-    assert(state == State::VALID);
     bool insert_not_found = false;
     bool delete_not_found = false;
 
@@ -149,7 +148,6 @@ void PrimaryIndex::update(
     DeletesKeys & deletes_keys,
     ContextPtr context)
 {
-    assert(state == State::VALID);
     bool insert_not_found = false;
     bool delete_not_found = false;
 
@@ -241,58 +239,6 @@ bool PrimaryIndex::update(Int64 min_block, const ColumnPtr & key_column, const s
     return has_update;
 }
 
-void PrimaryIndex::deleteKeys(
-    const ColumnPtr & delete_key_column,
-    const std::vector<Field> & delete_min_values,
-    const std::vector<Field> & delete_max_values,
-    DeletesMap & deletes_map,
-    DeletesKeys & deletes_keys,
-    ContextPtr context)
-{
-    assert(state == State::VALID);
-
-    bool delete_not_found = false;
-    std::unordered_set<String> not_found_deleted_keys_in_cache;
-    for (size_t i = 0; i < delete_key_column->size(); ++i)
-    {
-        auto delete_key = delete_key_column->getDataAt(i).toString();
-        if (auto [value, found] = removeWithReturn(delete_key); found)
-        {
-            deletes_map[value->min_block].push_back(value->row_id);
-            deletes_keys[value->min_block].push_back(delete_key);
-        }
-        else
-        {
-            delete_not_found = true;
-            not_found_deleted_keys_in_cache.emplace(delete_key);
-        }
-    }
-
-    /// All cache hits
-    if (!delete_not_found)
-    {
-        LOG_INFO(log, "All unique key hits in cache");
-        return;
-    }
-
-    LOG_INFO(log, "Starting fetch and construct primary index");
-
-    auto query = storage.getFetchIndexQuery(partition, delete_min_values, delete_max_values);
-    InterpreterSelectQuery fetch_index(query, context, SelectQueryOptions(QueryProcessingStage::Complete));
-
-    auto builder = fetch_index.buildQueryPipeline();
-    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
-    PullingPipelineExecutor executor(pipeline);
-
-    std::unordered_map<String, RecordPositionPtr> not_found_record_in_cache;
-    Block block;
-    while (executor.pull(block))
-    {
-        if (block.rows() == 0)
-            continue;
-        processOneBlock(block, deletes_map, deletes_keys, not_found_record_in_cache, not_found_deleted_keys_in_cache, false);
-    }
-}
 void PrimaryIndex::processOneBlock(
     Block & block,
     DeletesMap & deletes_map,
