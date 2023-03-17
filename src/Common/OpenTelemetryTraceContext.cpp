@@ -68,7 +68,8 @@ bool Span::addAttribute(const Exception & e) noexcept
     if (!this->isTraceEnabled())
         return false;
 
-    return addAttributeImpl("clickhouse.exception", getExceptionMessage(e, false));
+    return addAttributeImpl("clickhouse.exception", getExceptionMessage(e, false))
+        && addAttributeImpl("clickhouse.exception_code", toString(e.code()));
 }
 
 bool Span::addAttribute(std::exception_ptr e) noexcept
@@ -77,6 +78,15 @@ bool Span::addAttribute(std::exception_ptr e) noexcept
         return false;
 
     return addAttributeImpl("clickhouse.exception", getExceptionMessage(e, false));
+}
+
+bool Span::addAttribute(const ExecutionStatus & e) noexcept
+{
+    if (!this->isTraceEnabled())
+        return false;
+
+    return addAttributeImpl("clickhouse.exception", e.message)
+        && addAttributeImpl("clickhouse.exception_code", toString(e.code));
 }
 
 bool Span::addAttributeImpl(std::string_view name, std::string_view value) noexcept
