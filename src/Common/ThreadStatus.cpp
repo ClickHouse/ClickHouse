@@ -159,29 +159,29 @@ void ThreadStatus::attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & 
     if (!thread_group)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No thread group attached to the thread {}", thread_id);
 
-    shared_data.logs_queue_ptr = logs_queue;
-    shared_data.client_logs_level = logs_level;
+    local_data.logs_queue_ptr = logs_queue;
+    local_data.client_logs_level = logs_level;
     thread_group->attachInternalTextLogsQueue(logs_queue, logs_level);
 }
 
 InternalTextLogsQueuePtr ThreadStatus::getInternalTextLogsQueue() const
 {
-    return shared_data.logs_queue_ptr.lock();
+    return local_data.logs_queue_ptr.lock();
 }
 
 InternalProfileEventsQueuePtr ThreadStatus::getInternalProfileEventsQueue() const
 {
-    return shared_data.profile_queue_ptr.lock();
+    return local_data.profile_queue_ptr.lock();
 }
 
 const String & ThreadStatus::getQueryForLog() const
 {
-    return shared_data.query_for_logs;
+    return local_data.query_for_logs;
 }
 
 LogsLevel ThreadStatus::getClientLogsLevel() const
 {
-    return shared_data.client_logs_level;
+    return local_data.client_logs_level;
 }
 
 void ThreadStatus::flushUntrackedMemory()
