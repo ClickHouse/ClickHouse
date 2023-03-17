@@ -35,8 +35,8 @@
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
-#include "Interpreters/ProcessorsProfileLog.h"
-#include "QueryPipeline/Pipe.h"
+#include <Interpreters/ProcessorsProfileLog.h>
+#include <QueryPipeline/Pipe.h>
 
 namespace DB
 {
@@ -607,7 +607,8 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
 
     // Clone joins for different streams.
     std::vector<JoinPtr> stream_joins;
-    for (size_t i = 0; i < num_streams; ++i)
+    stream_joins.push_back(join);
+    for (size_t i = 1; i < num_streams; ++i)
     {
         stream_joins.push_back(join->clone());
     }

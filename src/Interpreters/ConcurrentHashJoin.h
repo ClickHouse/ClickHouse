@@ -3,6 +3,7 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/HashJoin.h>
+#include "Context.h"
 namespace DB
 {
 
@@ -12,15 +13,16 @@ namespace DB
 class ConcurrentHashJoin : public IJoin, public boost::noncopyable
 {
 public:
-    struct CloneJoins
+    struct SharedContext
     {
-        std::mutex mutex;
-        std::vector<std::shared_ptr<HashJoin>> clones;
+        size_t clone_count;
+        SizeLimits original_size_limit;
+        SizeLimits size_limit_per_clone;
     };
+    using SharedContextPtr = std::shared_ptr<SharedContext>;
     explicit ConcurrentHashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_);
+    explicit ConcurrentHashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_, SharedContextPtr shared_context_);
 
-    // should only be called in clone()
-    explicit ConcurrentHashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_, std::shared_ptr<CloneJoins> clones_);
     const TableJoin & getTableJoin() const override { return *table_join; }
     bool addJoinedBlock(const Block & block, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
@@ -32,7 +34,7 @@ public:
     bool alwaysReturnsEmptySet() const override;
     bool supportShuffle() const override { return true; }
     JoinPtr clone() override;
-    bool supportTotals() const override { return false; }
+    bool supportTotals() const override { return true; }
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
@@ -41,7 +43,7 @@ private:
 
     std::shared_ptr<TableJoin> table_join;
     Block right_sample_block;
-    std::shared_ptr<HashJoin> inner_join;
-    std::shared_ptr<CloneJoins> clone_joins;
+    std::unique_ptr<HashJoin> inner_join;
+    SharedContextPtr shared_context;
 };
 }

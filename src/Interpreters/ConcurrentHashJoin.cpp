@@ -7,6 +7,9 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
 
+#include <Poco/Logger.h>
+#include <Common/logger_useful.h>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -18,25 +21,27 @@ ConcurrentHashJoin::ConcurrentHashJoin(std::shared_ptr<TableJoin> table_join_, c
     : table_join(table_join_)
     , right_sample_block(right_sample_block_)
 {
-    inner_join = std::make_shared<HashJoin>(table_join, right_sample_block);
-    clone_joins = std::make_shared<CloneJoins>();
-    clone_joins->clones.push_back(inner_join);
+    inner_join = std::make_unique<HashJoin>(table_join, right_sample_block);
+    shared_context = std::make_shared<SharedContext>();
+    shared_context->original_size_limit = table_join->sizeLimits();
+    shared_context->size_limit_per_clone = table_join->sizeLimits();
+    shared_context->clone_count = 1;
 }
 
-ConcurrentHashJoin::ConcurrentHashJoin(
-    std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_, std::shared_ptr<CloneJoins> clones_)
-    : table_join(table_join_), right_sample_block(right_sample_block_), clone_joins(clones_)
+ConcurrentHashJoin::ConcurrentHashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_, SharedContextPtr shared_context_)
+    : table_join(table_join_)
+    , right_sample_block(right_sample_block_)
 {
     inner_join = std::make_unique<HashJoin>(table_join, right_sample_block);
+    shared_context = shared_context_;
 }
-
 
 bool ConcurrentHashJoin::addJoinedBlock(const Block & block, bool check_limits)
 {
-    if (!inner_join->addJoinedBlock(block, check_limits))
+    if (!inner_join->addJoinedBlock(block, false))
         return false;
     if (check_limits)
-        return table_join->sizeLimits().check(getTotalRowCount(), getTotalByteCount(), "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+        return shared_context->size_limit_per_clone.check(getTotalRowCount(), getTotalByteCount(), "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
     return true;
 }
 
@@ -56,29 +61,18 @@ void ConcurrentHashJoin::setTotals(const Block & block)
 }
 const Block & ConcurrentHashJoin::getTotals() const
 {
-    return inner_join->getTotals();
+    const auto & res = inner_join->getTotals();
+    return res;
 }
 
 size_t ConcurrentHashJoin::getTotalRowCount() const
 {
-    std::lock_guard lock(clone_joins->mutex);
-    size_t res = 0;
-    for (const auto & join : clone_joins->clones)
-    {
-        res += join->getTotalRowCount();
-    }
-    return res;
+    return inner_join->getTotalByteCount();
 }
 
 size_t ConcurrentHashJoin::getTotalByteCount() const
 {
-    std::lock_guard lock(clone_joins->mutex);
-    size_t res = 0;
-    for (const auto & join : clone_joins->clones)
-    {
-        res += join->getTotalByteCount();
-    }
-    return res;
+    return inner_join->getTotalByteCount();
 }
 
 bool ConcurrentHashJoin::alwaysReturnsEmptySet() const
@@ -95,9 +89,10 @@ ConcurrentHashJoin::getNonJoinedBlocks(const Block & left_sample_block, const Bl
 
 JoinPtr ConcurrentHashJoin::clone()
 {
-    auto res = std::make_shared<ConcurrentHashJoin>(table_join, right_sample_block, clone_joins);
-    std::lock_guard lock(clone_joins->mutex);
-    clone_joins->clones.push_back(res->inner_join);
+    auto res = std::make_shared<ConcurrentHashJoin>(table_join, right_sample_block, shared_context);
+    shared_context->clone_count += 1;
+    shared_context->size_limit_per_clone.max_bytes = shared_context->original_size_limit.max_bytes / shared_context->clone_count;
+    shared_context->size_limit_per_clone.max_rows = shared_context->original_size_limit.max_rows / shared_context->clone_count;
     return res;
 }
 
@@ -106,7 +101,9 @@ bool ConcurrentHashJoin::isSupported(const std::shared_ptr<TableJoin> & table_jo
     if (table_join->strictness() == JoinStrictness::Asof)
         return false;
     if (!isInnerOrLeft(table_join->kind()) && !isRight(table_join->kind()))
+    {
         return false;
+    }
     if (table_join->isSpecialStorage() || !table_join->oneDisjunct())
         return false;
     return true;

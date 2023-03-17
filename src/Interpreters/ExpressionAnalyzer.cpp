@@ -1096,7 +1096,9 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
     {
         tried_algorithms.push_back(toString(JoinAlgorithm::HASH));
         if (ConcurrentHashJoin::isSupported(analyzed_join))
+        {
             return std::make_shared<ConcurrentHashJoin>(analyzed_join, right_sample_block);
+        }
         return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
     }
 

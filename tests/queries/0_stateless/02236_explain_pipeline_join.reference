@@ -1,17 +1,23 @@
 (Expression)
-ExpressionTransform
+ExpressionTransform × 16
   (Join)
-  JoiningTransform 2 → 1
-    (Expression)
-    ExpressionTransform
-      (Limit)
-      Limit
-        (ReadFromStorage)
-        Numbers 0 → 1
-    (Expression)
-    FillingRightJoinSide
-      ExpressionTransform
-        (Limit)
-        Limit
-          (ReadFromStorage)
-          Numbers 0 → 1
+  JoiningTransform × 16 2 → 1
+    InnerShuffleGatherTransform × 16 16 → 1
+      InnerShuffleScatterTransform × 16 1 → 16
+        Resize 1 → 16
+          (Expression)
+          ExpressionTransform
+            (Limit)
+            Limit
+              (ReadFromStorage)
+              Numbers 0 → 1
+          (Expression)
+          FillingRightJoinSide × 16
+            InnerShuffleGatherTransform × 16 16 → 1
+              InnerShuffleScatterTransform × 16 1 → 16
+                Resize 1 → 16
+                  ExpressionTransform
+                    (Limit)
+                    Limit
+                      (ReadFromStorage)
+                      Numbers 0 → 1
