@@ -16,11 +16,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 thread_local ThreadStatus constinit * current_thread = nullptr;
 
 #if !defined(SANITIZER)
@@ -156,12 +151,11 @@ void ThreadGroupStatus::attachInternalTextLogsQueue(const InternalTextLogsQueueP
 void ThreadStatus::attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue,
                                                LogsLevel logs_level)
 {
-    if (!thread_group)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No thread group attached to the thread {}", thread_id);
-
     local_data.logs_queue_ptr = logs_queue;
     local_data.client_logs_level = logs_level;
-    thread_group->attachInternalTextLogsQueue(logs_queue, logs_level);
+
+    if (thread_group)
+        thread_group->attachInternalTextLogsQueue(logs_queue, logs_level);
 }
 
 InternalTextLogsQueuePtr ThreadStatus::getInternalTextLogsQueue() const
