@@ -86,7 +86,9 @@ struct ColumnToPointsConverter
     }
 };
 
-
+/**
+ * Class which converts Column with type Array(Tuple(Float64, Float64)) to a vector of boost ring type.
+*/
 template <typename Point>
 struct ColumnToRingsConverter
 {
@@ -106,7 +108,9 @@ struct ColumnToRingsConverter
     }
 };
 
-
+/**
+ * Class which converts Column with type Array(Array(Tuple(Float64, Float64))) to a vector of boost polygon type.
+*/
 template <typename Point>
 struct ColumnToPolygonsConverter
 {
@@ -115,6 +119,9 @@ struct ColumnToPolygonsConverter
         const IColumn::Offsets & offsets = typeid_cast<const ColumnArray &>(*col).getOffsets();
         std::vector<Polygon<Point>> answer(offsets.size());
         auto all_rings = ColumnToRingsConverter<Point>::convert(typeid_cast<const ColumnArray &>(*col).getDataPtr());
+
+        if (all_rings.empty())
+            return answer;
 
         size_t prev_offset = 0;
         for (size_t iter = 0; iter < offsets.size(); ++iter)
@@ -131,7 +138,9 @@ struct ColumnToPolygonsConverter
     }
 };
 
-
+/**
+ * Class which converts Column with type Array(Array(Array(Tuple(Float64, Float64)))) to a vector of boost multi_polygon type.
+*/
 template <typename Point>
 struct ColumnToMultiPolygonsConverter
 {
@@ -142,6 +151,9 @@ struct ColumnToMultiPolygonsConverter
         std::vector<MultiPolygon<Point>> answer(offsets.size());
 
         auto all_polygons = ColumnToPolygonsConverter<Point>::convert(typeid_cast<const ColumnArray &>(*col).getDataPtr());
+
+        if (all_polygons.empty())
+            return answer;
 
         for (size_t iter = 0; iter < offsets.size(); ++iter)
         {
