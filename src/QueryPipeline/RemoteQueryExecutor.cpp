@@ -153,7 +153,7 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
       * all connections, then read and skip the remaining packets to make sure
       * these connections did not remain hanging in the out-of-sync state.
       */
-    if (established || isQueryPending())
+    if (established || (isQueryPending() && connections))
         connections->disconnect();
 }
 
@@ -218,6 +218,13 @@ void RemoteQueryExecutor::sendQuery(ClientInfo::QueryKind query_kind, AsyncCallb
     if (needToSkipUnavailableShard())
         return;
 
+    /// Query could be cancelled during creating connections and this code can be executed
+    /// inside read_context->cancel() under was_cancelled_mutex, it can happen only when
+    /// was_cancelled = true (because it's set to true before calling read_context->cancel())
+    /// To avoid deadlock, we should check was_cancelled before locking was_cancelled_mutex.
+    if (was_cancelled)
+        return;
+
     /// Query cannot be canceled in the middle of the send query,
     /// since there are multiple packets:
     /// - Query
@@ -252,6 +259,26 @@ void RemoteQueryExecutor::sendQuery(ClientInfo::QueryKind query_kind, AsyncCallb
     sendExternalTables();
 }
 
+int RemoteQueryExecutor::sendQueryAsync()
+{
+    if (!read_context)
+    {
+        std::lock_guard lock(was_cancelled_mutex);
+        read_context = std::make_unique<ReadContext>(*this, /*suspend_when_query_sent*/ true);
+    }
+
+    /// If query already sent, do nothing. Note that we cannot use sent_query flag here,
+    /// because we can still be in process of sending scalars or external tables.
+    if (read_context->isQuerySent())
+        return -1;
+
+    read_context->resume();
+
+    if (!read_context->isQuerySent())
+        return read_context->getFileDescriptor();
+
+    return -1;
+}
 
 Block RemoteQueryExecutor::readBlock()
 {
@@ -292,7 +319,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
     }
 }
 
-RemoteQueryExecutor::ReadResult RemoteQueryExecutor::asyncRead()
+RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
 {
 #if defined(OS_LINUX)
     if (!read_context || (resent_query && recreate_read_context))
@@ -356,7 +383,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::restartQueryWithoutDuplicat
         if (!read_context)
             return read();
         else
-            return asyncRead();
+            return readAsync();
     }
     throw Exception(ErrorCodes::DUPLICATED_PART_UUIDS, "Found duplicate uuids while processing query");
 }
@@ -517,6 +544,10 @@ void RemoteQueryExecutor::finish()
     /// Send the request to abort the execution of the request, if not already sent.
     tryCancel("Cancelling query because enough data has been read");
 
+    /// If connections weren't created yet, nothing to do.
+    if (!connections)
+        return;
+
     /// Get the remaining packets so that there is no out of sync in the connections to the replicas.
     Packet packet = connections->drain();
     switch (packet.type)
@@ -647,15 +678,19 @@ void RemoteQueryExecutor::tryCancel(const char * reason)
     if (read_context)
         read_context->cancel();
 
-    connections->sendCancel();
-
-    if (log)
-        LOG_TRACE(log, "({}) {}", connections->dumpAddresses(), reason);
+    /// Query could be cancelled during connection creation, we should check
+    /// if connections were already created.
+    if (connections && sent_query)
+    {
+        connections->sendCancel();
+        if (log)
+            LOG_TRACE(log, "({}) {}", connections->dumpAddresses(), reason);
+    }
 }
 
 bool RemoteQueryExecutor::isQueryPending() const
 {
-    return sent_query && !finished;
+    return read_context && !finished;
 }
 
 bool RemoteQueryExecutor::hasThrownException() const

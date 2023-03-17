@@ -25,7 +25,7 @@ class PacketReceiver : public AsyncTaskExecutor
 public:
     explicit PacketReceiver(Connection * connection_);
 
-    bool isPacketReady() const { return !is_read_in_process && !is_timeout_expired; }
+    bool isPacketReady() const { return !is_read_in_process && !is_timeout_expired && !exception; }
     Packet getPacket() { return std::move(packet); }
 
     bool hasException() const { return exception.operator bool(); }
@@ -48,6 +48,8 @@ private:
 
     void processAsyncEvent(int fd, Poco::Timespan socket_timeout, AsyncEventTimeoutType, const std::string &, uint32_t) override;
     void clearAsyncEvent() override;
+
+    void processException(std::exception_ptr e) override { exception = e; }
 
     struct Task : public AsyncTask
     {
