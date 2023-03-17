@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-fasttest
 -- no-parallel: it checks the number of threads, which can be lowered in presence of other queries
 
 set log_queries = 1;
