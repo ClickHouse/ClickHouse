@@ -92,6 +92,7 @@ public:
 
     SharedData getSharedData()
     {
+        /// Critical section for making the copy of shared_data
         std::lock_guard lock(mutex);
         return shared_data;
     }
@@ -170,7 +171,7 @@ private:
     using FatalErrorCallback = std::function<void()>;
     FatalErrorCallback fatal_error_callback;
 
-    ThreadGroupStatus::SharedData shared_data;
+    ThreadGroupStatus::SharedData local_data;
 
     bool performance_counters_finalized = false;
 

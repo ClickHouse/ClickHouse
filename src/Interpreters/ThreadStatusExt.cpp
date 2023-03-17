@@ -84,13 +84,13 @@ void ThreadGroupStatus::attachQueryForLog(const String & query_, UInt64 normaliz
 
 void ThreadStatus::attachQueryForLog(const String & query_)
 {
-    shared_data.query_for_logs = query_;
-    shared_data.normalized_query_hash = normalizedQueryHash<false>(query_);
+    local_data.query_for_logs = query_;
+    local_data.normalized_query_hash = normalizedQueryHash<false>(query_);
 
     if (!thread_group)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No thread group attached to the thread {}", thread_id);
 
-    thread_group->attachQueryForLog(shared_data.query_for_logs, shared_data.normalized_query_hash);
+    thread_group->attachQueryForLog(local_data.query_for_logs, local_data.normalized_query_hash);
 }
 
 void ThreadGroupStatus::attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & profile_queue)
@@ -104,7 +104,7 @@ void ThreadStatus::attachInternalProfileEventsQueue(const InternalProfileEventsQ
     if (!thread_group)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No thread group attached to the thread {}", thread_id);
 
-    shared_data.profile_queue_ptr = profile_queue;
+    local_data.profile_queue_ptr = profile_queue;
     thread_group->attachInternalProfileEventsQueue(profile_queue);
 }
 
@@ -167,7 +167,7 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupStatusPtr & thread_group_)
 
     fatal_error_callback = thread_group->fatal_error_callback;
 
-    shared_data = thread_group->getSharedData();
+    local_data = thread_group->getSharedData();
 
     applyQuerySettings();
     initPerformanceCounters();
@@ -196,7 +196,7 @@ void ThreadStatus::detachFromGroup()
     query_id_from_query_context.clear();
     query_context.reset();
 
-    shared_data = {};
+    local_data = {};
 
     fatal_error_callback = {};
 
@@ -447,8 +447,8 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log, const String
     if (thread_group)
     {
         elem.master_thread_id = thread_group->master_thread_id;
-        elem.query = shared_data.query_for_logs;
-        elem.normalized_query_hash = shared_data.normalized_query_hash;
+        elem.query = local_data.query_for_logs;
+        elem.normalized_query_hash = local_data.normalized_query_hash;
     }
 
     auto query_context_ptr = query_context.lock();
