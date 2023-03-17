@@ -184,26 +184,12 @@ if (OS_DARWIN)
     set (ENABLE_CURL_BUILD OFF)
 endif ()
 
-# Ignored if `lld` is used
-option(ADD_GDB_INDEX_FOR_GOLD "Add .gdb-index to resulting binaries for gold linker.")
-
 if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
     # Can be lld or ld-lld or lld-13 or /path/to/lld.
     if (LINKER_NAME MATCHES "lld" AND OS_LINUX)
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--gdb-index")
         set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--gdb-index")
         message (STATUS "Adding .gdb-index via --gdb-index linker option.")
-    # we use another tool for gdb-index, because gold linker removes section .debug_aranges, which used inside clickhouse stacktraces
-    # http://sourceware-org.1504.n7.nabble.com/gold-No-debug-aranges-section-when-linking-with-gdb-index-td540965.html#a556932
-    elseif (LINKER_NAME MATCHES "gold$" AND ADD_GDB_INDEX_FOR_GOLD)
-        find_program (GDB_ADD_INDEX_EXE NAMES "gdb-add-index" DOC "Path to gdb-add-index executable")
-        if (NOT GDB_ADD_INDEX_EXE)
-            set (USE_GDB_ADD_INDEX 0)
-            message (WARNING "Cannot add gdb index to binaries, because gold linker is used, but gdb-add-index executable not found.")
-        else()
-            set (USE_GDB_ADD_INDEX 1)
-            message (STATUS "gdb-add-index found: ${GDB_ADD_INDEX_EXE}")
-        endif()
     endif ()
 endif()
 
@@ -301,12 +287,12 @@ if (ENABLE_BUILD_PROFILING)
      endif ()
 endif ()
 
-set (CMAKE_CXX_STANDARD 20)
-set (CMAKE_CXX_EXTENSIONS ON) # Same as gnu++2a (ON) vs c++2a (OFF): https://cmake.org/cmake/help/latest/prop_tgt/CXX_EXTENSIONS.html
+set (CMAKE_CXX_STANDARD 23)
+set (CMAKE_CXX_EXTENSIONS OFF)
 set (CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set (CMAKE_C_STANDARD 11)
-set (CMAKE_C_EXTENSIONS ON)
+set (CMAKE_C_EXTENSIONS ON) # required by most contribs written in C
 set (CMAKE_C_STANDARD_REQUIRED ON)
 
 if (COMPILER_GCC OR COMPILER_CLANG)

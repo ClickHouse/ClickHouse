@@ -41,6 +41,7 @@
 #include <Compression/CompressionFactory.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/thread_local_rng.h>
 #include <fmt/format.h>
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
@@ -48,6 +49,11 @@
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
+
+#if USE_SSL
+#   include <Poco/Net/SecureStreamSocket.h>
+#   include <Poco/Net/SecureStreamSocketImpl.h>
+#endif
 
 #include "Core/Protocol.h"
 #include "Storages/MergeTree/RequestResponse.h"
@@ -1224,6 +1230,22 @@ void TCPHandler::receiveHello()
 
     session = makeSession();
     auto & client_info = session->getClientInfo();
+
+#if USE_SSL
+    /// Authentication with SSL user certificate
+    if (dynamic_cast<Poco::Net::SecureStreamSocketImpl*>(socket().impl()))
+    {
+        Poco::Net::SecureStreamSocket secure_socket(socket());
+        if (secure_socket.havePeerCertificate())
+        {
+            session->authenticate(
+                SSLCertificateCredentials{user, secure_socket.peerCertificate().commonName()},
+                getClientAddress(client_info));
+            return;
+        }
+    }
+#endif
+
     session->authenticate(user, password, getClientAddress(client_info));
 }
 
@@ -1278,6 +1300,18 @@ void TCPHandler::sendHello()
             writeStringBinary(original_pattern, *out);
             writeStringBinary(exception_message, *out);
         }
+    }
+    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2)
+    {
+        chassert(!nonce.has_value());
+        /// Contains lots of stuff (including time), so this should be enough for NONCE.
+        nonce.emplace(thread_local_rng());
+        writeIntBinary(nonce.value(), *out);
+    }
+    else
+    {
+        LOG_WARNING(LogFrequencyLimiter(log, 10),
+            "Using deprecated interserver protocol because the client is too old. Consider upgrading all nodes in cluster.");
     }
     out->next();
 }
@@ -1459,20 +1493,30 @@ void TCPHandler::receiveQuery()
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
         passed_params.read(*in, settings_format);
 
-    /// TODO Unify interserver authentication (and make sure that it's secure enough)
     if (is_interserver_mode)
     {
         client_info.interface = ClientInfo::Interface::TCP_INTERSERVER;
 #if USE_SSL
         String cluster_secret = server.context()->getCluster(cluster)->getSecret();
+
         if (salt.empty() || cluster_secret.empty())
         {
-            auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Interserver authentication failed");
-            session->onAuthenticationFailure(/* user_name */ std::nullopt, socket().peerAddress(), exception);
+            auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Interserver authentication failed (no salt/cluster secret)");
+            session->onAuthenticationFailure(/* user_name= */ std::nullopt, socket().peerAddress(), exception);
+            throw exception; /// NOLINT
+        }
+
+        if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2 && !nonce.has_value())
+        {
+            auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Interserver authentication failed (no nonce)");
+            session->onAuthenticationFailure(/* user_name= */ std::nullopt, socket().peerAddress(), exception);
             throw exception; /// NOLINT
         }
 
         std::string data(salt);
+        // For backward compatibility
+        if (nonce.has_value())
+            data += std::to_string(nonce.value());
         data += cluster_secret;
         data += state.query;
         data += state.query_id;

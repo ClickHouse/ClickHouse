@@ -5082,12 +5082,8 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
         if (filename.ends_with(IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME))
             continue;
 
-        auto backup_entry = backup->readFile(part_path_in_backup_fs / filename);
-        auto read_buffer = backup_entry->getReadBuffer();
-        auto write_buffer = disk->writeFile(temp_part_dir / filename);
-        copyData(*read_buffer, *write_buffer);
-        write_buffer->finalize();
-        reservation->update(reservation->getSize() - backup_entry->getSize());
+        size_t file_size = backup->copyFileToDisk(part_path_in_backup_fs / filename, disk, temp_part_dir / filename);
+        reservation->update(reservation->getSize() - file_size);
     }
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
@@ -7488,7 +7484,7 @@ MovePartsOutcome MergeTreeData::movePartsToSpace(const DataPartsVector & parts, 
     if (moving_tagger->parts_to_move.empty())
         return MovePartsOutcome::NothingToMove;
 
-    return moveParts(moving_tagger);
+    return moveParts(moving_tagger, true);
 }
 
 MergeTreeData::CurrentlyMovingPartsTaggerPtr MergeTreeData::selectPartsForMove()
@@ -7543,7 +7539,7 @@ MergeTreeData::CurrentlyMovingPartsTaggerPtr MergeTreeData::checkPartsForMove(co
     return std::make_shared<CurrentlyMovingPartsTagger>(std::move(parts_to_move), *this);
 }
 
-MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagger)
+MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagger, bool wait_for_move_if_zero_copy)
 {
     LOG_INFO(log, "Got {} parts to move.", moving_tagger->parts_to_move.size());
 
@@ -7592,21 +7588,41 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
             auto disk = moving_part.reserved_space->getDisk();
             if (supportsReplication() && disk->supportZeroCopyReplication() && settings->allow_remote_fs_zero_copy_replication)
             {
-                /// If we acquired lock than let's try to move. After one
-                /// replica will actually move the part from disk to some
-                /// zero-copy storage other replicas will just fetch
-                /// metainformation.
-                if (auto lock = tryCreateZeroCopyExclusiveLock(moving_part.part->name, disk); lock)
+                /// This loop is not endless, if shutdown called/connection failed/replica became readonly
+                /// we will return true from waitZeroCopyLock and createZeroCopyLock will return nullopt.
+                while (true)
                 {
-                    cloned_part = parts_mover.clonePart(moving_part);
-                    parts_mover.swapClonedPart(cloned_part);
-                }
-                else
-                {
-                    /// Move will be retried but with backoff.
-                    LOG_DEBUG(log, "Move of part {} postponed, because zero copy mode enabled and someone other moving this part right now", moving_part.part->name);
-                    result = MovePartsOutcome::MoveWasPostponedBecauseOfZeroCopy;
-                    continue;
+                    /// If we acquired lock than let's try to move. After one
+                    /// replica will actually move the part from disk to some
+                    /// zero-copy storage other replicas will just fetch
+                    /// metainformation.
+                    if (auto lock = tryCreateZeroCopyExclusiveLock(moving_part.part->name, disk); lock)
+                    {
+                        if (lock->isLocked())
+                        {
+                            cloned_part = parts_mover.clonePart(moving_part);
+                            parts_mover.swapClonedPart(cloned_part);
+                            break;
+                        }
+                        else if (wait_for_move_if_zero_copy)
+                        {
+                            LOG_DEBUG(log, "Other replica is working on move of {}, will wait until lock disappear", moving_part.part->name);
+                            /// Wait and checks not only for timeout but also for shutdown and so on.
+                            while (!waitZeroCopyLockToDisappear(*lock, 3000))
+                            {
+                                LOG_DEBUG(log, "Waiting until some replica will move {} and zero copy lock disappear", moving_part.part->name);
+                            }
+                        }
+                        else
+                            break;
+                    }
+                    else
+                    {
+                        /// Move will be retried but with backoff.
+                        LOG_DEBUG(log, "Move of part {} postponed, because zero copy mode enabled and someone other moving this part right now", moving_part.part->name);
+                        result = MovePartsOutcome::MoveWasPostponedBecauseOfZeroCopy;
+                        break;
+                    }
                 }
             }
             else /// Ordinary move as it should be
