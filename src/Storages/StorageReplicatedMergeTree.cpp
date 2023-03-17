@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <ranges>
 
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Common/Macros.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -796,7 +796,7 @@ bool StorageReplicatedMergeTree::createTableIfNotExists(const StorageMetadataPtr
         auto code = zookeeper->tryMulti(ops, responses);
         if (code == Coordination::Error::ZNODEEXISTS)
         {
-            LOG_WARNING(log, "It looks like the table {} was created by another server at the same moment, will retry", zookeeper_path);
+            LOG_INFO(log, "It looks like the table {} was created by another server at the same moment, will retry", zookeeper_path);
             continue;
         }
         else if (code != Coordination::Error::ZOK)
@@ -876,7 +876,7 @@ void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metada
             case Coordination::Error::ZNODEEXISTS:
                 throw Exception(ErrorCodes::REPLICA_ALREADY_EXISTS, "Replica {} already exists", replica_path);
             case Coordination::Error::ZBADVERSION:
-                LOG_ERROR(log, "Retrying createReplica(), because some other replicas were created at the same time");
+                LOG_INFO(log, "Retrying createReplica(), because some other replicas were created at the same time");
                 break;
             case Coordination::Error::ZNONODE:
                 throw Exception(ErrorCodes::ALL_REPLICAS_LOST, "Table {} was suddenly removed", zookeeper_path);
@@ -2951,7 +2951,8 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
     }
 
     if (source_replica.empty())
-        throw Exception(ErrorCodes::ALL_REPLICAS_LOST, "All replicas are lost");
+        throw Exception(ErrorCodes::ALL_REPLICAS_LOST, "All replicas are lost. "
+                        "See SYSTEM DROP REPLICA and SYSTEM RESTORE REPLICA queries, they may help");
 
     if (is_new_replica)
         LOG_INFO(log, "Will mimic {}", source_replica);
@@ -8434,7 +8435,11 @@ std::pair<bool, NameSet> StorageReplicatedMergeTree::unlockSharedDataByID(
             }
             else if (error_code == Coordination::Error::ZNONODE)
             {
-                LOG_TRACE(logger, "Node with parent zookeeper lock {} for part {} doesn't exist (part was unlocked before)", zookeeper_part_uniq_node, part_name);
+                /// We don't know what to do, because this part can be mutation part
+                /// with hardlinked columns. Since we don't have this information (about blobs not to remove)
+                /// we refuse to remove blobs.
+                LOG_WARNING(logger, "Node with parent zookeeper lock {} for part {} doesn't exist (part was unlocked before), refuse to remove blobs", zookeeper_part_uniq_node, part_name);
+                return {false, {}};
             }
             else
             {
@@ -8594,9 +8599,35 @@ std::optional<String> StorageReplicatedMergeTree::getZeroCopyPartPath(const Stri
     return getZeroCopyPartPath(*getSettings(), toString(disk->getDataSourceDescription().type), getTableSharedID(), part_name, zookeeper_path)[0];
 }
 
+bool StorageReplicatedMergeTree::waitZeroCopyLockToDisappear(const ZeroCopyLock & lock, size_t milliseconds_to_wait)
+{
+    if (lock.isLocked())
+        return true;
+
+    if (partial_shutdown_called.load(std::memory_order_relaxed))
+        return true;
+
+    auto lock_path = lock.lock->getLockPath();
+    zkutil::ZooKeeperPtr zookeeper = tryGetZooKeeper();
+    if (!zookeeper)
+        return true;
+
+    Stopwatch time_waiting;
+    const auto & stop_waiting = [&]()
+    {
+        bool timeout_exceeded = milliseconds_to_wait < time_waiting.elapsedMilliseconds();
+        return partial_shutdown_called.load(std::memory_order_relaxed) || is_readonly.load(std::memory_order_relaxed) || timeout_exceeded;
+    };
+
+    return zookeeper->waitForDisappear(lock_path, stop_waiting);
+}
+
 std::optional<ZeroCopyLock> StorageReplicatedMergeTree::tryCreateZeroCopyExclusiveLock(const String & part_name, const DiskPtr & disk)
 {
     if (!disk || !disk->supportZeroCopyReplication())
+        return std::nullopt;
+
+    if (partial_shutdown_called.load(std::memory_order_relaxed) || is_readonly.load(std::memory_order_relaxed))
         return std::nullopt;
 
     zkutil::ZooKeeperPtr zookeeper = tryGetZooKeeper();
@@ -8611,10 +8642,8 @@ std::optional<ZeroCopyLock> StorageReplicatedMergeTree::tryCreateZeroCopyExclusi
 
     /// Create actual lock
     ZeroCopyLock lock(zookeeper, zc_zookeeper_path, replica_name);
-    if (lock.lock->tryLock())
-        return lock;
-    else
-        return std::nullopt;
+    lock.lock->tryLock();
+    return lock;
 }
 
 String StorageReplicatedMergeTree::findReplicaHavingPart(

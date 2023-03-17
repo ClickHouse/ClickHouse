@@ -44,6 +44,8 @@ if [ "$is_tsan_build" -eq "0" ]; then
 fi
 
 export ZOOKEEPER_FAULT_INJECTION=1
+# Initial run without S3 to create system.*_log on local file system to make it
+# available for dump via clickhouse-local
 configure
 
 azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &

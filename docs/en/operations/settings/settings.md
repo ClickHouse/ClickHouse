@@ -966,10 +966,10 @@ This is an expert-level setting, and you shouldn't change it if you're just gett
 
 ## max_query_size {#settings-max_query_size}
 
-The maximum part of a query that can be taken to RAM for parsing with the SQL parser.
-The INSERT query also contains data for INSERT that is processed by a separate stream parser (that consumes O(1) RAM), which is not included in this restriction.
+The maximum number of bytes of a query string parsed by the SQL parser.
+Data in the VALUES clause of INSERT queries is processed by a separate stream parser (that consumes O(1) RAM) and not affected by this restriction.
 
-Default value: 256 KiB.
+Default value: 262144 (= 256 KiB).
 
 ## max_parser_depth {#max_parser_depth}
 
@@ -1248,7 +1248,9 @@ Possible values:
 Default value: 1.
 
 :::warning
-Disable this setting if you use [max_parallel_replicas](#settings-max_parallel_replicas).
+Disable this setting if you use [max_parallel_replicas](#settings-max_parallel_replicas) without [parallel_replicas_custom_key](#settings-parallel_replicas_custom_key).
+If [parallel_replicas_custom_key](#settings-parallel_replicas_custom_key) is set, disable this setting only if it's used on a cluster with multiple shards containing multiple replicas.
+If it's used on a cluster with a single shard and multiple replicas, disabling this setting will have negative effects.
 :::
 
 ## totals_mode {#totals-mode}
@@ -1273,16 +1275,47 @@ Default value: `1`.
 
 **Additional Info**
 
-This setting is useful for replicated tables with a sampling key. A query may be processed faster if it is executed on several servers in parallel. But the query performance may degrade in the following cases:
+This options will produce different results depending on the settings used.
+
+:::warning
+This setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain requirements. See [Distributed Subqueries and max_parallel_replicas](../../sql-reference/operators/in.md/#max_parallel_replica-subqueries) for more details.
+:::
+
+### Parallel processing using `SAMPLE` key
+
+A query may be processed faster if it is executed on several servers in parallel. But the query performance may degrade in the following cases:
 
 - The position of the sampling key in the partitioning key does not allow efficient range scans.
 - Adding a sampling key to the table makes filtering by other columns less efficient.
 - The sampling key is an expression that is expensive to calculate.
 - The cluster latency distribution has a long tail, so that querying more servers increases the query overall latency.
 
-:::warning
-This setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain requirements. See [Distributed Subqueries and max_parallel_replicas](../../sql-reference/operators/in.md/#max_parallel_replica-subqueries) for more details.
-:::
+### Parallel processing using [parallel_replicas_custom_key](#settings-parallel_replicas_custom_key)
+
+This setting is useful for any replicated table.
+
+## parallel_replicas_custom_key {#settings-parallel_replicas_custom_key}
+
+An arbitrary integer expression that can be used to split work between replicas for a specific table.
+The value can be any integer expression.
+A query may be processed faster if it is executed on several servers in parallel but it depends on the used [parallel_replicas_custom_key](#settings-parallel_replicas_custom_key)
+and [parallel_replicas_custom_key_filter_type](#settings-parallel_replicas_custom_key_filter_type).
+
+Simple expressions using primary keys are preferred.
+
+If the setting is used on a cluster that consists of a single shard with multiple replicas, those replicas will be converted into virtual shards.
+Otherwise, it will behave same as for `SAMPLE` key, it will use multiple replicas of each shard.
+
+## parallel_replicas_custom_key_filter_type {#settings-parallel_replicas_custom_key_filter_type}
+
+How to use `parallel_replicas_custom_key` expression for splitting work between replicas.
+
+Possible values:
+
+-   `default` — Use the default implementation using modulo operation on the `parallel_replicas_custom_key`.
+-   `range` — Split the entire value space of the expression in the ranges. This type of filtering is useful if values of `parallel_replicas_custom_key` are uniformly spread across the entire integer space, e.g. hash values.
+
+Default value: `default`.
 
 ## compile_expressions {#compile-expressions}
 
@@ -1515,7 +1548,7 @@ Enables or disables asynchronous inserts. This makes sense only for insertion ov
 
 If enabled, the data is combined into batches before the insertion into tables, so it is possible to do small and frequent insertions into ClickHouse (up to 15000 queries per second) without buffer tables.
 
-The data is inserted either after the [async_insert_max_data_size](#async-insert-max-data-size) is exceeded or after [async_insert_busy_timeout_ms](#async-insert-busy-timeout-ms) milliseconds since the first `INSERT` query. If the [async_insert_stale_timeout_ms](#async-insert-stale-timeout-ms) is set to a non-zero value, the data is inserted after `async_insert_stale_timeout_ms` milliseconds since the last query.
+The data is inserted either after the [async_insert_max_data_size](#async-insert-max-data-size) is exceeded or after [async_insert_busy_timeout_ms](#async-insert-busy-timeout-ms) milliseconds since the first `INSERT` query. If the [async_insert_stale_timeout_ms](#async-insert-stale-timeout-ms) is set to a non-zero value, the data is inserted after `async_insert_stale_timeout_ms` milliseconds since the last query. Also the buffer will be flushed to disk if at least [async_insert_max_query_number](#async-insert-max-query-number) async insert queries per block were received. This last setting takes effect only if [async_insert_deduplicate](#async-insert-deduplicate) is enabled.
 
 If [wait_for_async_insert](#wait-for-async-insert) is enabled, every client will wait for the data to be processed and flushed to the table. Otherwise, the query would be processed almost instantly, even if the data is not inserted.
 
