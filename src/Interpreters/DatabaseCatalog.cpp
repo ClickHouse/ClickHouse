@@ -121,9 +121,16 @@ TemporaryTableHolder::~TemporaryTableHolder()
 {
     if (id != UUIDHelpers::Nil)
     {
-        auto table = getTable();
-        table->flushAndShutdown();
-        temporary_tables->dropTable(getContext(), "_tmp_" + toString(id));
+        try
+        {
+            auto table = getTable();
+            table->flushAndShutdown();
+            temporary_tables->dropTable(getContext(), "_tmp_" + toString(id));
+        }
+        catch (...)
+        {
+            tryLogCurrentException("TemporaryTableHolder");
+        }
     }
 }
 
