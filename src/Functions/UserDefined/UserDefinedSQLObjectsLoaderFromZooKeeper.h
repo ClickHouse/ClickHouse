@@ -71,7 +71,9 @@ private:
 
     ThreadFromGlobalPool watching_thread;
     std::atomic<bool> watching_flag = false;
-    std::shared_ptr<ConcurrentBoundedQueue<std::pair<UserDefinedSQLObjectType, String>>> watch_queue;
+
+    using UserDefinedSQLObjectTypeAndName = std::pair<UserDefinedSQLObjectType, String>;
+    std::shared_ptr<ConcurrentBoundedQueue<UserDefinedSQLObjectTypeAndName>> watch_queue;
 
     Poco::Logger * log;
 };

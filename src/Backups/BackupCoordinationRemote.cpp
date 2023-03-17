@@ -497,15 +497,14 @@ void BackupCoordinationRemote::prepareReplicatedSQLObjects() const
     for (const String & escaped_loader_zk_path : zk->getChildren(path))
     {
         String loader_zk_path = unescapeForFileName(escaped_loader_zk_path);
-        String path2 = path + "/" + escaped_loader_zk_path;
+        String objects_path = path + "/" + escaped_loader_zk_path;
 
-        if (zk->exists(path2 + "/functions"))
+        if (String functions_path = objects_path + "/functions"; zk->exists(functions_path))
         {
-            String path3 = path2 + "/functions";
             UserDefinedSQLObjectType object_type = UserDefinedSQLObjectType::Function;
-            for (const String & host_id : zk->getChildren(path3))
+            for (const String & host_id : zk->getChildren(functions_path))
             {
-                String dir = zk->get(path3 + "/" + host_id);
+                String dir = zk->get(functions_path + "/" + host_id);
                 replicated_sql_objects->addDirectory(loader_zk_path, object_type, host_id, dir);
             }
         }

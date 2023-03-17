@@ -91,9 +91,9 @@ void UserDefinedSQLObjectsLoaderFromZooKeeper::stopWatchingThread()
 
 zkutil::ZooKeeperPtr UserDefinedSQLObjectsLoaderFromZooKeeper::getZooKeeper()
 {
-    auto [zookeeper, is_new_session] = zookeeper_getter.getZooKeeper();
+    auto [zookeeper, session_status] = zookeeper_getter.getZooKeeper();
 
-    if (is_new_session)
+    if (session_status == zkutil::ZooKeeperCachingGetter::SessionStatus::New)
     {
         /// It's possible that we connected to different [Zoo]Keeper instance
         /// so we may read a bit stale state.
@@ -135,7 +135,7 @@ void UserDefinedSQLObjectsLoaderFromZooKeeper::processWatchQueue()
     {
         try
         {
-            std::pair<UserDefinedSQLObjectType, String> watched_object;
+            UserDefinedSQLObjectTypeAndName watched_object;
 
             /// Re-initialize ZooKeeper session if expired and refresh objects
             initZooKeeperIfNeeded();
@@ -276,8 +276,11 @@ bool UserDefinedSQLObjectsLoaderFromZooKeeper::getObjectDataAndSetWatch(
 {
     const auto object_watcher = [watch_queue = watch_queue, object_type, object_name](const Coordination::WatchResponse & response)
     {
-        if (response.type == Coordination::Event::CHANGED) [[maybe_unused]]
-            bool push_result = watch_queue->emplace(object_type, object_name);
+        if (response.type == Coordination::Event::CHANGED)
+        {
+            [[maybe_unused]] bool inserted = watch_queue->emplace(object_type, object_name);
+            chassert(inserted);
+        }
         /// NOTE: Event::DELETED is processed as child event by getChildren watch
     };
 
@@ -335,7 +338,10 @@ Strings UserDefinedSQLObjectsLoaderFromZooKeeper::getObjectNamesAndSetWatch(
     const zkutil::ZooKeeperPtr & zookeeper, UserDefinedSQLObjectType object_type)
 {
     auto object_list_watcher = [watch_queue = watch_queue, object_type](const Coordination::WatchResponse &)
-    { [[maybe_unused]] bool push_result = watch_queue->emplace(object_type, ""); };
+    {
+        [[maybe_unused]] bool inserted = watch_queue->emplace(object_type, "");
+        chassert(inserted);
+    };
 
     Coordination::Stat stat;
     const auto path = getRootNodePath(zookeeper_path, object_type);
@@ -365,7 +371,7 @@ void UserDefinedSQLObjectsLoaderFromZooKeeper::refreshAllObjects(const zkutil::Z
 
 void UserDefinedSQLObjectsLoaderFromZooKeeper::refreshObjects(const zkutil::ZooKeeperPtr & zookeeper, UserDefinedSQLObjectType object_type)
 {
-    LOG_DEBUG(log, "Refreshing all user-defined {} objects", toString(object_type));
+    LOG_DEBUG(log, "Refreshing all user-defined {} objects", object_type);
     Strings object_names = getObjectNamesAndSetWatch(zookeeper, object_type);
 
     /// Read & parse all SQL objects from ZooKeeper
@@ -378,12 +384,12 @@ void UserDefinedSQLObjectsLoaderFromZooKeeper::refreshObjects(const zkutil::ZooK
 
     UserDefinedSQLFunctionFactory::instance().setAllFunctions(function_names_and_asts);
 
-    LOG_DEBUG(log, "All user-defined {} objects refreshed", toString(object_type));
+    LOG_DEBUG(log, "All user-defined {} objects refreshed", object_type);
 }
 
 void UserDefinedSQLObjectsLoaderFromZooKeeper::syncObjects(const zkutil::ZooKeeperPtr & zookeeper, UserDefinedSQLObjectType object_type)
 {
-    LOG_DEBUG(log, "Syncing user-defined {} objects", toString(object_type));
+    LOG_DEBUG(log, "Syncing user-defined {} objects", object_type);
     Strings object_names = getObjectNamesAndSetWatch(zookeeper, object_type);
 
     auto & factory = UserDefinedSQLFunctionFactory::instance();
@@ -398,7 +404,7 @@ void UserDefinedSQLObjectsLoaderFromZooKeeper::syncObjects(const zkutil::ZooKeep
             refreshObject(zookeeper, UserDefinedSQLObjectType::Function, function_name);
     }
 
-    LOG_DEBUG(log, "User-defined {} objects synced", toString(object_type));
+    LOG_DEBUG(log, "User-defined {} objects synced", object_type);
 }
 
 void UserDefinedSQLObjectsLoaderFromZooKeeper::refreshObject(
