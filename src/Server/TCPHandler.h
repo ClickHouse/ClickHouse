@@ -281,9 +281,9 @@ private:
     void initLogsBlockOutput(const Block & block);
     void initProfileEventsBlockOutput(const Block & block);
 
-    using CancellationStatus = typename QueryState::CancellationStatus;
+    using CancellationStatus = QueryState::CancellationStatus;
 
-    void decreaseCancellationStatus(const std::string& log_message);
+    void decreaseCancellationStatus(const std::string & log_message);
     CancellationStatus getQueryCancellationStatus();
 
     /// This function is called from different threads.
