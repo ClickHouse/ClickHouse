@@ -27,13 +27,15 @@ class RemoteQueryExecutor;
 class RemoteQueryExecutorReadContext : public AsyncTaskExecutor
 {
 public:
-    explicit RemoteQueryExecutorReadContext(RemoteQueryExecutor & executor_);
+    explicit RemoteQueryExecutorReadContext(RemoteQueryExecutor & executor_, bool suspend_when_query_sent_ = false);
 
     ~RemoteQueryExecutorReadContext() override;
 
     bool isInProgress() const { return is_in_progress.load(std::memory_order_relaxed); }
 
     bool isCancelled() const { return AsyncTaskExecutor::isCancelled() || is_pipe_alarmed; }
+
+    bool isQuerySent() const { return is_query_sent;  }
 
     int getFileDescriptor() const { return epoll.getFileDescriptor(); }
 
@@ -80,6 +82,8 @@ private:
     Epoll epoll;
 
     std::string connection_fd_description;
+    bool suspend_when_query_sent = false;
+    bool is_query_sent = false;
 };
 
 }

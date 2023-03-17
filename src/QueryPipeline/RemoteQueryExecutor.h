@@ -90,6 +90,8 @@ public:
     ///                     and it should pass INITIAL_QUERY.
     void sendQuery(ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::SECONDARY_QUERY, AsyncCallback async_callback = {});
 
+    int sendQueryAsync();
+
     /// Query is resent to a replica, the query itself can be modified.
     std::atomic<bool> resent_query { false };
     std::atomic<bool> recreate_read_context { false };
@@ -146,7 +148,7 @@ public:
     ReadResult read();
 
     /// Async variant of read. Returns ready block or file descriptor which may be used for polling.
-    ReadResult asyncRead();
+    ReadResult readAsync();
 
     /// Receive all remain packets and finish query.
     /// It should be cancelled after read returned empty block.

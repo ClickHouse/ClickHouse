@@ -18,8 +18,8 @@ namespace ErrorCodes
     extern const int SOCKET_TIMEOUT;
 }
 
-RemoteQueryExecutorReadContext::RemoteQueryExecutorReadContext(RemoteQueryExecutor & executor_)
-    : AsyncTaskExecutor(std::make_unique<Task>(*this)), executor(executor_)
+RemoteQueryExecutorReadContext::RemoteQueryExecutorReadContext(RemoteQueryExecutor & executor_, bool suspend_when_query_sent_)
+    : AsyncTaskExecutor(std::make_unique<Task>(*this)), executor(executor_), suspend_when_query_sent(suspend_when_query_sent_)
 {
     if (-1 == pipe2(pipe_fd, O_NONBLOCK))
         throwFromErrno("Cannot create pipe", ErrorCodes::CANNOT_OPEN_FILE);
@@ -37,6 +37,10 @@ bool RemoteQueryExecutorReadContext::checkBeforeTaskResume()
 void RemoteQueryExecutorReadContext::Task::run(AsyncCallback async_callback, ResumeCallback suspend_callback)
 {
     read_context.executor.sendQuery(ClientInfo::QueryKind::SECONDARY_QUERY, async_callback);
+    read_context.is_query_sent = true;
+
+    if (read_context.suspend_when_query_sent)
+        suspend_callback();
 
     if (read_context.executor.needToSkipUnavailableShard())
         return;
@@ -108,6 +112,10 @@ void RemoteQueryExecutorReadContext::cancelImpl()
     /// (disconnected), so it will not left in an unsynchronised state.
     if (!is_timer_alarmed)
     {
+        /// If query wasn't sent, just complete sending it.
+        if (!is_query_sent)
+            suspend_when_query_sent = true;
+
         /// Wait for current pending packet, to avoid leaving connection in unsynchronised state.
         while (is_in_progress.load(std::memory_order_relaxed))
         {

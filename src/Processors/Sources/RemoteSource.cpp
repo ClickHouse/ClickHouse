@@ -110,7 +110,22 @@ std::optional<Chunk> RemoteSource::tryGenerate()
                 rows_before_limit->set(info.getRowsBeforeLimit());
         });
 
-        query_executor->sendQuery();
+        if (async_read)
+        {
+            int fd_ = query_executor->sendQueryAsync();
+            if (fd_ >= 0)
+            {
+                fd = fd_;
+                is_async_state = true;
+                return Chunk();
+            }
+
+            is_async_state = false;
+        }
+        else
+        {
+            query_executor->sendQuery();
+        }
 
         was_query_sent = true;
     }
@@ -119,7 +134,7 @@ std::optional<Chunk> RemoteSource::tryGenerate()
 
     if (async_read)
     {
-        auto res = query_executor->asyncRead();
+        auto res = query_executor->readAsync();
 
         if (res.getType() == RemoteQueryExecutor::ReadResult::Type::Nothing)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Got an empty packet from the RemoteQueryExecutor. This is a bug");
