@@ -1369,7 +1369,8 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             if (!disks.empty() && only_s3_storage && storage.checkZeroCopyLockExists(entry.new_part_name, disks[0], replica_to_execute_merge))
             {
                 constexpr auto fmt_string = "Not executing merge/mutation for the part {}, waiting for {} to execute it and will fetch after.";
-                LOG_TEST(LogToStr(out_postpone_reason, log), fmt_string, entry.new_part_name, replica_to_execute_merge);
+                out_postpone_reason = fmt::format(fmt_string, entry.new_part_name, replica_to_execute_merge);
+                LOG_TEST(log, fmt_string, entry.new_part_name, replica_to_execute_merge);
                 return false;
             }
         }

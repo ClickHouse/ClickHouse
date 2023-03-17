@@ -8574,7 +8574,7 @@ Strings StorageReplicatedMergeTree::getZeroCopyPartPath(
     return res;
 }
 
-void StorageReplicatedMergeTree::addZeroCopyLock(const String & part_name, const DiskPtr & disk)
+void StorageReplicatedMergeTree::watchZeroCopyLock(const String & part_name, const DiskPtr & disk)
 {
     auto path = getZeroCopyPartPath(part_name, disk);
     if (path)
