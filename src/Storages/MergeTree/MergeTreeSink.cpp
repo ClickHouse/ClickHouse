@@ -16,6 +16,11 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 TableVersionPtr MergeTreeSink::updateDeleteBitmapAndTableVersion(
     MutableDataPartPtr & part,
     const MergeTreePartInfo & part_info,
@@ -272,7 +277,7 @@ void MergeTreeSink::finishDelayedChunk()
                 PrimaryIndex::DeletesKeys deletes_keys;
 
                 /// We should fist set it to UPDATE, then updating. Otherwise, if
-                /// query cancel or exception happend in update, the state become inconsistant
+                /// query cancel or exception happened in update, the state become inconsistent
                 primary_index->setState(PrimaryIndex::State::UPDATED);
                 if (!storage.merging_params.version_column.empty())
                 {

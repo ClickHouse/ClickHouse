@@ -1,10 +1,9 @@
 #pragma once
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/Context.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/ColumnsDescription.h>
-#include <Core/NamesAndTypes.h>
 
 namespace DB
 {

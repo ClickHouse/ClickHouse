@@ -378,7 +378,10 @@ MergeTreeData::MergeTreeData(
         else
             background_moves_assignee.trigger();
     };
+}
 
+void MergeTreeData::initializeForUniqueTable(bool attach)
+{
     if (merging_params.mode == MergingParams::Mode::Unique)
     {
         delete_buffer = std::make_shared<DeleteBuffer>();
@@ -387,6 +390,16 @@ MergeTreeData::MergeTreeData(
         table_version = std::make_unique<MultiVersion<TableVersion>>();
 
         loadTableVersion(attach);
+    }
+}
+
+void MergeTreeData::initializePartsInfoByBlockId()
+{
+    if (merging_params.mode == MergingParams::Mode::Unique)
+    {
+        auto active_parts = getDataPartsVectorForInternalUsage();
+        for (const auto & part : active_parts)
+            part_info_by_min_block.emplace(part->info.min_block, part->info);
     }
 }
 
@@ -1710,6 +1723,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, const std::shared_ptr
                 if (!is_static_storage)
                     res.part->remove();
             }
+            /// For UniqueMergeTree, we load parts contained in table version
             else if (table_version_ && !table_version_->part_versions.contains(res.part->info))
             {
                 if (!is_static_storage)
@@ -3662,6 +3676,44 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
 
     if (part->hasLightweightDelete())
         has_lightweight_delete_parts.store(true);
+
+    if (merging_params.mode == MergeTreeData::MergingParams::Mode::Unique && new_table_version)
+    {
+        try
+        {
+            for (DataPartPtr & covered_part : hierarchy.covered_parts)
+            {
+                part_info_by_min_block.erase(covered_part->info.min_block);
+                new_table_version->part_versions.erase(covered_part->info);
+            }
+
+            if (!part_info_by_min_block.insert({part->info.min_block, part->info}).second)
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Can not insert part info into part_info_by_min_block when insert new part, this maybe is a bug, part "
+                    "name: "
+                    "{}",
+                    part->info.getPartNameForLogs());
+            }
+
+            /// Serialize table version to tmp file
+            auto table_version_path = getRelativeDataPath() + TABLE_VERSION_NAME;
+            auto tmp_table_version_path = table_version_path + ".tmp";
+
+            auto disk = getStoragePolicy()->getDisks()[0];
+            new_table_version->serialize(tmp_table_version_path, disk);
+        }
+        catch (...)
+        {
+            part_info_by_min_block.erase(part->info.min_block);
+
+            for (auto & covered_part : hierarchy.covered_parts)
+                part_info_by_min_block.insert({covered_part->info.min_block, covered_part->info});
+
+            return false;
+        }
+    }
 
     /// All checks are passed. Now we can rename the part on disk.
     /// So, we maintain invariant: if a non-temporary part in filesystem then it is in data_parts
@@ -6086,12 +6138,6 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
                         if (settings->in_memory_parts_enable_wal)
                             if (isInMemoryPart(covered_part))
                                 get_inited_wal()->dropPart(covered_part->name);
-
-                        if (table_version)
-                        {
-                            table_version->part_versions.erase(covered_part->info);
-                            data.part_info_by_min_block.erase(covered_part->info.min_block);
-                        }
                     }
 
                     reduce_parts += covered_parts.size();
@@ -6102,16 +6148,6 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
 
                     data.modifyPartState(part, DataPartState::Active);
                     data.addPartContributionToColumnAndSecondaryIndexSizes(part);
-                    if (table_version)
-                    {
-                        if (!data.part_info_by_min_block.insert({part->info.min_block, part->info}).second)
-                        {
-                            throw Exception(
-                                ErrorCodes::LOGICAL_ERROR,
-                                "Can not insert part info into part_info_by_min_block when insert new part, this is a bug, part name: {}",
-                                part->info.getPartNameV1());
-                        }
-                    }
                 }
             }
 
@@ -6128,12 +6164,13 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
             ssize_t diff_parts  = add_parts - reduce_parts;
             data.increaseDataVolume(diff_bytes, diff_rows, diff_parts);
 
-            if (table_version)
+            if (data.merging_params.mode == MergeTreeData::MergingParams::Mode::Unique && table_version)
             {
-                auto table_version_path = data.getRelativeDataPath() + "/table_version.dat";
-                auto disk = data.getStoragePolicy()->getDisks()[0];
-                table_version->serialize(table_version_path, disk);
+                auto table_version_path = data.getRelativeDataPath() + MergeTreeData::TABLE_VERSION_NAME;
+                auto tmp_table_version_path = table_version_path + ".tmp";
 
+                auto disk = data.getStoragePolicy()->getDisks()[0];
+                disk->replaceFile(tmp_table_version_path, table_version_path);
                 data.table_version->set(std::move(table_version));
             }
         });

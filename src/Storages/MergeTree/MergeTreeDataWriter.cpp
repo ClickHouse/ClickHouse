@@ -50,7 +50,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_PARTS;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -410,7 +409,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
 
     temp_part.temporary_directory_lock = data.getTemporaryPartDirectoryHolder(part_dir);
 
-    /// For Unique Key model, we need fisrt sorting data by Unique Key and mergeBlock,
+    /// For Unique Key model, we need first sorting data by Unique Key and mergeBlock,
     /// then sorting data by Sortint Key.
     if (metadata_snapshot->hasUniqueKey())
         data.getUniqueKeyExpression(metadata_snapshot)->execute(block);
@@ -464,7 +463,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
 
         ColumnRawPtrs unique_columns;
         for (const auto & name : unique_keys)
-		{
+        {
             unique_columns.emplace_back(block.getByName(name).column.get());
         }
         Field min_value, max_value;
@@ -478,7 +477,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
         write_state->key_column = PrimaryKeysEncoder::encode(unique_columns, block.rows(), unique_keys.size());
 
         if (!data.merging_params.version_column.empty())
-		{
+        {
             write_state->version_column = block.getByName(data.merging_params.version_column).column;
         }
 

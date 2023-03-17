@@ -98,7 +98,7 @@ public:
         bool last_reader_in_chain_,
         const Names & non_const_virtual_column_names);
 
-	MergeTreeRangeReader() = default;
+    MergeTreeRangeReader() = default;
 
     bool isReadingFinished() const;
 

@@ -109,7 +109,13 @@ StorageMergeTree::StorageMergeTree(
 {
     initializeDirectoriesAndFormatVersion(relative_data_path_, attach, date_column_name);
 
-    loadDataParts(has_force_restore_data_flag, table_version->get());
+    /// Must initialize after set relative_data_path
+    initializeForUniqueTable(attach);
+
+    loadDataParts(has_force_restore_data_flag, table_version ? table_version->get() : nullptr);
+
+    /// Must call after loadDataParts
+    initializePartsInfoByBlockId();
 
     if (!attach && !getDataPartsForInternalUsage().empty())
         throw Exception(ErrorCodes::INCORRECT_DATA,
