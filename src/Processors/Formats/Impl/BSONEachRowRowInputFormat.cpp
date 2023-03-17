@@ -789,7 +789,7 @@ bool BSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
         else
         {
             if (seen_columns[index])
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing BSONNEachRow format: {}", name);
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing BSONEachRow format: {}", name);
 
             seen_columns[index] = true;
             read_columns[index] = readField(*columns[index], types[index], BSONType(type));
@@ -997,15 +997,16 @@ fileSegmentationEngineBSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t
     {
         BSONSizeT document_size;
         readBinary(document_size, in);
+
+        if (document_size < sizeof(document_size))
+            throw ParsingException(ErrorCodes::INCORRECT_DATA, "Size of BSON document is invalid");
+
         if (min_bytes != 0 && document_size > 10 * min_bytes)
             throw ParsingException(
                 ErrorCodes::INCORRECT_DATA,
                 "Size of BSON document is extremely large. Expected not greater than {} bytes, but current is {} bytes per row. Increase "
                 "the value setting 'min_chunk_bytes_for_parallel_parsing' or check your data manually, most likely BSON is malformed",
                 min_bytes, document_size);
-
-        if (document_size < sizeof(document_size))
-            throw ParsingException(ErrorCodes::INCORRECT_DATA, "Size of BSON document is invalid");
 
         size_t old_size = memory.size();
         memory.resize(old_size + document_size);
