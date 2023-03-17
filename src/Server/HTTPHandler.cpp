@@ -1057,13 +1057,11 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         /** If exception is received from remote server, then stack trace is embedded in message.
           * If exception is thrown on local server, then stack trace is in separate field.
           */
-        std::string exception_message = getCurrentExceptionMessage(with_stacktrace, true);
-        int exception_code = getCurrentExceptionCode();
-
-        trySendExceptionToClient(exception_message, exception_code, request, response, used_output);
+        ExecutionStatus status = ExecutionStatus::fromCurrentException("", with_stacktrace);
+        trySendExceptionToClient(status.message, status.code, request, response, used_output);
 
         if (thread_trace_context)
-            thread_trace_context->root_span.addAttribute("clickhouse.exception_code", exception_code);
+            thread_trace_context->root_span.addAttribute(status);
     }
 
     used_output.finalize();
