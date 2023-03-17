@@ -180,6 +180,7 @@ SETTINGS index_granularity = 8192, storage_policy = 's3'"""
     )
     assert all([value == "s3" for value in part_to_disk.values()])
 
+
 def test_zero_copy_mutation(started_cluster):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
@@ -200,17 +201,24 @@ ORDER BY (CounterID, EventDate)
 SETTINGS index_granularity = 8192, storage_policy = 's3_only'"""
     )
 
-    node1.query("INSERT INTO test_zero_copy_mutation SELECT toDate('2023-01-01') + toIntervalDay(number) + rand(), number * number from system.numbers limit 10")
+    node1.query(
+        "INSERT INTO test_zero_copy_mutation SELECT toDate('2023-01-01') + toIntervalDay(number) + rand(), number * number from system.numbers limit 10"
+    )
 
     node2.query("SYSTEM STOP REPLICATION QUEUES test_zero_copy_mutation")
     p = Pool(3)
-    def run_long_mutation(node):
-        node1.query("ALTER TABLE test_zero_copy_mutation DELETE WHERE sleepEachRow(1) == 1")
 
-    job = p.apply_async(run_long_mutation, (node1, ))
+    def run_long_mutation(node):
+        node1.query(
+            "ALTER TABLE test_zero_copy_mutation DELETE WHERE sleepEachRow(1) == 1"
+        )
+
+    job = p.apply_async(run_long_mutation, (node1,))
 
     for i in range(30):
-        count = node1.query("SELECT count() FROM system.replication_queue WHERE type = 'MUTATE_PART'").strip()
+        count = node1.query(
+            "SELECT count() FROM system.replication_queue WHERE type = 'MUTATE_PART'"
+        ).strip()
         if int(count) > 0:
             break
         else:
