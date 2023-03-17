@@ -995,6 +995,10 @@ fileSegmentationEngineBSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t
     {
         BSONSizeT document_size;
         readBinary(document_size, in);
+        
+        if (document_size < sizeof(document_size))
+            throw ParsingException(ErrorCodes::INCORRECT_DATA, "Size of BSON document is invalid");
+
         if (min_bytes != 0 && document_size > 10 * min_bytes)
             throw ParsingException(
                 ErrorCodes::INCORRECT_DATA,
