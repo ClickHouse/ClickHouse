@@ -1,4 +1,5 @@
 #include <Backups/BackupIO_Disk.h>
+#include <Common/logger_useful.h>
 #include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
@@ -12,7 +13,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-BackupReaderDisk::BackupReaderDisk(const DiskPtr & disk_, const String & path_) : disk(disk_), path(path_)
+BackupReaderDisk::BackupReaderDisk(const DiskPtr & disk_, const String & path_)
+    : disk(disk_), path(path_), log(&Poco::Logger::get("BackupReaderDisk"))
 {
 }
 
@@ -32,6 +34,21 @@ std::unique_ptr<SeekableReadBuffer> BackupReaderDisk::readFile(const String & fi
 {
     return disk->readFile(path / file_name);
 }
+
+void BackupReaderDisk::copyFileToDisk(const String & file_name, size_t size, DiskPtr destination_disk, const String & destination_path,
+                                      WriteMode write_mode, const WriteSettings & write_settings)
+{
+    if (write_mode == WriteMode::Rewrite)
+    {
+        LOG_TRACE(log, "Copying {}/{} from disk {} to {} by the disk", path, file_name, disk->getName(), destination_disk->getName());
+        disk->copyFile(path / file_name, *destination_disk, destination_path, write_settings);
+        return;
+    }
+
+    LOG_TRACE(log, "Copying {}/{} from disk {} to {} through buffers", path, file_name, disk->getName(), destination_disk->getName());
+    IBackupReader::copyFileToDisk(file_name, size, destination_disk, destination_path, write_mode, write_settings);
+}
+
 
 BackupWriterDisk::BackupWriterDisk(const DiskPtr & disk_, const String & path_) : disk(disk_), path(path_)
 {

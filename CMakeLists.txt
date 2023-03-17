@@ -301,12 +301,12 @@ if (ENABLE_BUILD_PROFILING)
      endif ()
 endif ()
 
-set (CMAKE_CXX_STANDARD 20)
-set (CMAKE_CXX_EXTENSIONS ON) # Same as gnu++2a (ON) vs c++2a (OFF): https://cmake.org/cmake/help/latest/prop_tgt/CXX_EXTENSIONS.html
+set (CMAKE_CXX_STANDARD 23)
+set (CMAKE_CXX_EXTENSIONS OFF)
 set (CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set (CMAKE_C_STANDARD 11)
-set (CMAKE_C_EXTENSIONS ON)
+set (CMAKE_C_EXTENSIONS ON) # required by most contribs written in C
 set (CMAKE_C_STANDARD_REQUIRED ON)
 
 if (COMPILER_GCC OR COMPILER_CLANG)
