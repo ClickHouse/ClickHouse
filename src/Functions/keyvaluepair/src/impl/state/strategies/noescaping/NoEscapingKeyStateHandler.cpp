@@ -17,7 +17,7 @@ NextState NoEscapingKeyStateHandler::wait(std::string_view file, size_t pos) con
 {
     BoundsSafeCharacterFinder finder;
 
-    const auto & quoting_character = extractor_configuration.quoting_character;
+    const auto quoting_character = extractor_configuration.quoting_character;
 
     while (auto character_position_opt = finder.findFirstNot(file, pos, wait_needles))
     {
