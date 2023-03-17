@@ -39,8 +39,4 @@ private:
     SortDescription sort_description;
 };
 
-void insertFromFillingRow(MutableColumns & filling_columns, MutableColumns & interpolate_columns, MutableColumns & other_columns,
-    const FillingRow & filling_row, const Block & interpolate_block);
-void copyRowFromColumns(MutableColumns & dest, const Columns & source, size_t row_num);
-
 }
