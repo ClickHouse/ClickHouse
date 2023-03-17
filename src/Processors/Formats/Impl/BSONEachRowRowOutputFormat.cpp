@@ -463,7 +463,7 @@ void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const Da
             writeBSONSize(document_size, out);
 
             for (size_t i = 0; i < nested_columns.size(); ++i)
-                serializeField(*nested_columns[i], nested_types[i], row_num, toValidUTF8String(nested_names[i]));
+                serializeField(*nested_columns[i], nested_types[i], row_num, have_explicit_names ? toValidUTF8String(nested_names[i]) : std::to_string(i));
 
             writeChar(BSON_DOCUMENT_END, out);
             break;
