@@ -6,7 +6,7 @@ sidebar_label: Dictionary
 
 # Dictionary Table Engine
 
-The `Dictionary` engine displays the [dictionary](../../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) data as a ClickHouse table.
+The `Dictionary` engine displays the [dictionary](../../../sql-reference/dictionaries/index.md) data as a ClickHouse table.
 
 ## Example {#example}
 

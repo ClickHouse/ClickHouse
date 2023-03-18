@@ -9,7 +9,7 @@ sidebar_label: User Settings
 The `users` section of the `user.xml` configuration file contains user settings.
 
 :::note
-ClickHouse also supports [SQL-driven workflow](../../operations/access-rights.md#access-control) for managing users. We recommend using it.
+ClickHouse also supports [SQL-driven workflow](../../guides/sre/user-management/index.md#access-control) for managing users. We recommend using it.
 :::
 
 Structure of the `users` section:
@@ -77,7 +77,7 @@ Password can be specified in plaintext or in SHA256 (hex format).
 
 ### access_management {#access_management-user-setting}
 
-This setting enables or disables using of SQL-driven [access control and account management](../../operations/access-rights.md#access-control) for the user.
+This setting enables or disables using of SQL-driven [access control and account management](../../guides/sre/user-management/index.md#access-control) for the user.
 
 Possible values:
 

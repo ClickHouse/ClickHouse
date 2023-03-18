@@ -85,7 +85,7 @@ The response looks like:
 
 ## Passing Query Results to a Script
 
-Be sure to check out the example in the `Executable` table engine on [how to pass query results to a script](../../engines/table-engines/special/executable#passing-query-results-to-a-script). Here is how you execute the same script in that example using the `executable` table function:
+Be sure to check out the example in the `Executable` table engine on [how to pass query results to a script](../../engines/table-engines/special/executable.md#passing-query-results-to-a-script). Here is how you execute the same script in that example using the `executable` table function:
 
 ```sql
 SELECT * FROM executable(
