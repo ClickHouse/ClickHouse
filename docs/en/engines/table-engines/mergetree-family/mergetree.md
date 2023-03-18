@@ -901,7 +901,7 @@ User can assign new big parts to different disks of a [JBOD](https://en.wikipedi
 ## Using S3 for Data Storage {#table_engine-mergetree-s3}
 
 :::note
-Google Cloud Storage (GCS) is also supported using the type `s3`. See [GCS backed MergeTree](/docs/en/integrations/data-ingestion/s3/gcs-merge-tree.md).
+Google Cloud Storage (GCS) is also supported using the type `s3`. See [GCS backed MergeTree](/docs/en/integrations/gcs).
 :::
 
 `MergeTree` family table engines can store data to [S3](https://aws.amazon.com/s3/) using a disk with type `s3`.
