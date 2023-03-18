@@ -45,8 +45,8 @@ For other Linux distribution - check the availability of the [prebuild packages]
 #### Use the latest clang for Builds
 
 ``` bash
-export CC=clang-15
-export CXX=clang++-15
+export CC=clang-16
+export CXX=clang++-16
 ```
 
 In this example we use version 15 that is the latest as of Sept 2022.
@@ -159,4 +159,3 @@ The CI checks build the binaries on each commit to [ClickHouse](https://github.c
 1. Find the type of package for your operating system that you need and download the files.
 
 ![build artifact check](images/find-build-artifact.png)
-
