@@ -34,7 +34,7 @@ bool MergePlainMergeTreeTask::executeStep()
     /// Make out memory tracker a parent of current thread memory tracker
     std::optional<ThreadGroupSwitcher> switcher;
     if (merge_list_entry)
-        switcher = ThreadGroupSwitcher(merge_list_entry.get());
+        switcher = ThreadGroupSwitcher((*merge_list_entry)->thread_group);
 
     switch (state)
     {

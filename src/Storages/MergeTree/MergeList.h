@@ -69,15 +69,23 @@ struct Settings;
 class ThreadGroupSwitcher : private boost::noncopyable
 {
 public:
-    explicit ThreadGroupSwitcher(MergeListEntry * merge_list_entry_);
-    ThreadGroupSwitcher(ThreadGroupSwitcher && other) noexcept;
-    ThreadGroupSwitcher& operator=(ThreadGroupSwitcher && other) noexcept;
-    ~ThreadGroupSwitcher();
-private:
     ThreadGroupSwitcher() noexcept = default;
-    void swap(ThreadGroupSwitcher & other) noexcept;
+    explicit ThreadGroupSwitcher(ThreadGroupStatusPtr thread_group);
+    ThreadGroupSwitcher(ThreadGroupSwitcher && other) noexcept
+        : prev_thread_group(std::move(other.prev_thread_group))
+    {
+        other.prev_thread_group = nullptr;
+    }
+    ThreadGroupSwitcher & operator=(ThreadGroupSwitcher && other) noexcept
+    {
+        chassert(this != &other);
+        prev_thread_group = std::move(other.prev_thread_group);
+        other.prev_thread_group = nullptr;
+        return *this;
+    }
+    ~ThreadGroupSwitcher();
 
-    MergeListEntry * merge_list_entry = nullptr;
+private:
     ThreadGroupStatusPtr prev_thread_group;
 };
 
