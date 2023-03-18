@@ -1,4 +1,4 @@
-personal_ws-1.1 en 543 
+personal_ws-1.1 en 543
 AArch
 ACLs
 AMQP
@@ -22,6 +22,7 @@ CSVWithNamesAndTypes
 CamelCase
 CapnProto
 CentOS
+ClickableSquare
 ClickHouse
 ClickHouse's
 CodeBlock
@@ -53,6 +54,7 @@ HDDs
 Heredoc
 Homebrew
 Homebrew's
+HorizontalDivide
 Hostname
 IPv
 IntN
@@ -87,6 +89,7 @@ LOCALTIME
 LOCALTIMESTAMP
 LibFuzzer
 LineAsString
+LinksDeployment
 LowCardinality
 MEMTABLE
 MSan
@@ -169,6 +172,7 @@ Testflows
 Tgz
 Toolset
 Tradeoff
+TwoColumnList
 UBSan
 UInt
 UIntN
@@ -178,6 +182,8 @@ Updatable
 Util
 Valgrind
 Vectorized
+VideoContainer
+ViewAllLink
 VirtualBox
 Werror
 WithNamesAndTypes
