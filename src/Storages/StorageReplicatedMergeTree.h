@@ -482,6 +482,16 @@ private:
     std::mutex last_broken_disks_mutex;
     std::set<String> last_broken_disks;
 
+    std::mutex existing_zero_copy_locks_mutex;
+
+    struct ZeroCopyLockDescription
+    {
+        std::string replica;
+        std::shared_ptr<std::atomic<bool>> exists;
+    };
+
+    std::unordered_map<String, ZeroCopyLockDescription> existing_zero_copy_locks;
+
     static std::optional<QueryPipeline> distributedWriteFromClusterStorage(const std::shared_ptr<IStorageCluster> & src_storage_cluster, const ASTInsertQuery & query, ContextPtr context);
 
     template <class Func>
@@ -862,12 +872,18 @@ private:
     void createTableSharedID() const;
 
     bool checkZeroCopyLockExists(const String & part_name, const DiskPtr & disk, String & lock_replica);
+    void watchZeroCopyLock(const String & part_name, const DiskPtr & disk);
 
     std::optional<String> getZeroCopyPartPath(const String & part_name, const DiskPtr & disk);
 
     /// Create ephemeral lock in zookeeper for part and disk which support zero copy replication.
-    /// If somebody already holding the lock -- return std::nullopt.
+    /// If no connection to zookeeper, shutdown, readonly -- return std::nullopt.
+    /// If somebody already holding the lock -- return unlocked ZeroCopyLock object (not std::nullopt).
     std::optional<ZeroCopyLock> tryCreateZeroCopyExclusiveLock(const String & part_name, const DiskPtr & disk) override;
+
+    /// Wait for ephemral lock to disappear. Return true if table shutdown/readonly/timeout exceeded, etc.
+    /// Or if node actually disappeared.
+    bool waitZeroCopyLockToDisappear(const ZeroCopyLock & lock, size_t milliseconds_to_wait) override;
 
     void startupImpl(bool from_attach_thread);
 };
