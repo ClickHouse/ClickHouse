@@ -313,7 +313,7 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
         {
             arg.is_const = true;
             argument_column = argument_column_const->getDataColumnPtr().get();
-            initial_column = typeid_cast<const ColumnConst *>(initial_column)->getDataColumnPtr().get();
+            initial_column = &typeid_cast<const ColumnConst &>(*initial_column).getDataColumn();
         }
 
         if (const auto * argument_column_array = typeid_cast<const ColumnArray *>(argument_column))
@@ -324,13 +324,13 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
             arg.offsets = &argument_column_array->getOffsets();
             arg.nested_column = &argument_column_array->getData();
 
-            initial_column = &typeid_cast<const ColumnArray *>(initial_column)->getData();
+            initial_column = &typeid_cast<const ColumnArray &>(*initial_column).getData();
 
             if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(arg.nested_column))
             {
                 arg.null_map = &column_nullable->getNullMapData();
                 arg.nested_column = &column_nullable->getNestedColumn();
-                initial_column = &typeid_cast<const ColumnNullable *>(initial_column)->getNestedColumn();
+                initial_column = &typeid_cast<const ColumnNullable &>(*initial_column).getNestedColumn();
             }
 
             /// In case column was casted need to create overflow mask for integer types.
