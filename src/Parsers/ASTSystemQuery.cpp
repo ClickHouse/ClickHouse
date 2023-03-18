@@ -181,6 +181,9 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
             print_identifier(target_function);
         else if (!disk.empty())
             print_identifier(disk);
+
+        if (strict_sync)
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " STRICT" << (settings.hilite ? hilite_none : "");
     }
     else if (type == Type::SYNC_DATABASE_REPLICA)
     {

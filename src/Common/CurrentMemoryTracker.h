@@ -14,6 +14,9 @@ struct CurrentMemoryTracker
     static void free(Int64 size);
     static void check();
 
+    /// Throws MEMORY_LIMIT_EXCEEDED (if it's allowed to throw exceptions)
+    static void injectFault();
+
 private:
     static void allocImpl(Int64 size, bool throw_if_memory_exceeded);
 };
