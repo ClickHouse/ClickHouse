@@ -5,7 +5,7 @@ sidebar_label: USER
 title: "CREATE USER"
 ---
 
-Creates [user accounts](../../../operations/access-rights.md#user-account-management).
+Creates [user accounts](../../../guides/sre/user-management/index.md#user-account-management).
 
 Syntax:
 
