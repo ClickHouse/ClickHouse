@@ -5,6 +5,4 @@ sidebar_label: Polygon Dictionaries With Grids
 title: "Polygon dictionaries"
 ---
 
-import Content from '@site/docs/en/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-polygon.md';
-
-<Content />
+View the [english Dictionaries doc page for details](../../../../en/sql-reference/dictionaries/index.md).
