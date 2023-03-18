@@ -21,7 +21,7 @@ curl https://clickhouse.com/ | sh
 * [Contacts](https://clickhouse.com/company/contact) can help to get your questions answered if there are any.
 
 ## Upcoming Events
-* [**ClickHouse Meetup in Austin**](https://www.meetup.com/clickhouse-austin-user-group/events/291486654/) - Mar 16 - The first ClickHouse Meetup in Austin is happening soon! Interested in speaking, let us know!
+* [**ClickHouse Meetup in Austin**](https://www.meetup.com/clickhouse-austin-user-group/events/291486654/) - Mar 30 - The first ClickHouse Meetup in Austin is happening soon! Interested in speaking, let us know!
 * [**v23.3 Release Webinar**](https://clickhouse.com/company/events/v23-3-release-webinar?utm_source=github&utm_medium=social&utm_campaign=release-webinar-2023-02) - Mar 30 - 23.3 is rapidly approaching. Original creator, co-founder, and CTO of ClickHouse Alexey Milovidov will walk us through the highlights of the release.
 
 ## Recent Recordings
