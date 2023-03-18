@@ -1473,6 +1473,7 @@ In Avro format ClickHouse reads its schema from the data and converts it to Clic
 |------------------------------------|--------------------------------------------------------------------------------|
 | `boolean`                          | [Bool](../sql-reference/data-types/boolean.md)                                 |
 | `int`                              | [Int32](../sql-reference/data-types/int-uint.md)                               |
+| `int (date)` \*                    | [Date32](../sql-reference/data-types/date32.md)                                |
 | `long`                             | [Int64](../sql-reference/data-types/int-uint.md)                               |
 | `float`                            | [Float32](../sql-reference/data-types/float.md)                                |
 | `double`                           | [Float64](../sql-reference/data-types/float.md)                                |
@@ -1482,6 +1483,10 @@ In Avro format ClickHouse reads its schema from the data and converts it to Clic
 | `array(T)`                         | [Array(T)](../sql-reference/data-types/array.md)                               |
 | `union(null, T)`, `union(T, null)` | [Nullable(T)](../sql-reference/data-types/date.md)                             |
 | `null`                             | [Nullable(Nothing)](../sql-reference/data-types/special-data-types/nothing.md) |
+| `string (uuid)` \*                 | [UUID](../sql-reference/data-types/uuid.md)                                    |
+| `binary (decimal)` \*              | [Decimal(P, S)](../sql-reference/data-types/decimal.md)                         |
+
+\* [Avro logical types](https://avro.apache.org/docs/current/spec.html#Logical+Types)
 
 Other Avro types are not supported.
 
