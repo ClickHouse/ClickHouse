@@ -48,8 +48,16 @@ void LimitStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQu
 void LimitStep::describeActions(FormatSettings & settings) const
 {
     String prefix(settings.offset, ' ');
-    settings.out << prefix << "Limit " << limit << '\n';
-    settings.out << prefix << "Offset " << offset << '\n';
+    if (is_negative)
+    {
+        settings.out << prefix << "Limit " << "-" << limit << '\n';
+        settings.out << prefix << "Offset " << "-" << offset << '\n';
+    }
+    else
+    {
+        settings.out << prefix << "Limit " << limit << '\n';
+        settings.out << prefix << "Offset " << offset << '\n';
+    }
 
     if (with_ties || always_read_till_end)
     {

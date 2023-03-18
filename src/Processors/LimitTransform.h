@@ -18,8 +18,8 @@ namespace DB
 class LimitTransform final : public IProcessor
 {
 private:
-    UInt64 limit;
-    UInt64 offset;
+    const UInt64 limit;
+    const UInt64 offset;
 
     bool always_read_till_end;
 
@@ -53,8 +53,8 @@ private:
     size_t num_finished_input_port = 0; /// used when limit and offset are negative
     size_t num_finished_output_port = 0; /// used when limit and offset are negative
 
-    bool limit_is_unreachable;
-    bool is_negative;
+    const bool limit_is_unreachable;
+    const bool is_negative;
 
     struct QueueElement
     {
@@ -74,10 +74,10 @@ private:
     ColumnRawPtrs extractSortColumns(const Columns & columns) const;
     bool sortColumnsEqualAt(const ColumnRawPtrs & current_chunk_sort_columns, UInt64 current_chunk_row_num) const;
 
-    bool canPopWithoutCut();
-    QueueElement queuePop();
-    void queuePush(QueueElement & data);
-    void skipFinishedPorts();
+    void queuePushBack(QueueElement & data);
+    QueueElement queuePopFront();
+    QueueElement popAndCutIfNeeded();
+    void skipChunksForFinishedOutputPorts();
     Status loopPop();
 
     Status prepareNonNegative(const PortNumbers & /*updated_input_ports*/, const PortNumbers & /*updated_output_ports*/);

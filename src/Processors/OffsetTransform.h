@@ -13,7 +13,7 @@ namespace DB
 class OffsetTransform final : public IProcessor
 {
 private:
-    UInt64 offset;
+    const UInt64 offset;
     UInt64 rows_read = 0; /// including the last read block
 
     RowsBeforeLimitCounterPtr rows_before_limit_at_least;
@@ -45,14 +45,14 @@ private:
         size_t port;
     };
 
-    bool is_negative;
+    const bool is_negative;
     std::list<QueueElement> queue; /// used when offset is negative, storing at least offset rows
     UInt64 rows_in_queue = 0;
 
-    QueueElement queuePop();
-    void queuePush(QueueElement & data);
-    void skipFinishedPorts();
-    bool canPopWithoutCut();
+    QueueElement popAndCutIfNeeded();
+    void queuePushBack(QueueElement & data);
+    QueueElement queuePopFront();
+    void skipChunksForFinishedOutputPorts();
     Status loopPop();
 
     Status prepareNonNegative(const PortNumbers & /*updated_input_ports*/, const PortNumbers & /*updated_output_ports*/);

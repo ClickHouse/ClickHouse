@@ -39,7 +39,10 @@ void OffsetStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
 
 void OffsetStep::describeActions(FormatSettings & settings) const
 {
-    settings.out << String(settings.offset, ' ') << "Offset " << offset << '\n';
+    if (is_negative)
+        settings.out << String(settings.offset, ' ') << "Offset " << "-" << offset << '\n';
+    else
+        settings.out << String(settings.offset, ' ') << "Offset " << offset << '\n';
 }
 
 void OffsetStep::describeActions(JSONBuilder::JSONMap & map) const

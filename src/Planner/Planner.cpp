@@ -215,30 +215,24 @@ public:
         if (query_node.hasLimit())
         {
             /// Constness of limit is validated during query analysis stage
-            Field converted_limit = convertFieldToType(query_node.getLimit()->as<ConstantNode &>().getValue(), DataTypeInt128());
-            Int128 limit_val = converted_limit.safeGet<Int128>();
+            Int128 limit_val = query_node.getLimit()->as<ConstantNode &>().getValue().safeGet<Int128>();
             is_limit_negative = limit_val < 0;
-            limit_val = is_limit_negative ? (0 - limit_val) : limit_val;
-            limit_length = UInt64(limit_val);
+            limit_length = UInt64(is_limit_negative ? (0 - limit_val) : limit_val);
 
             if (query_node.hasOffset() && limit_length)
             {
                 /// Constness of offset is validated during query analysis stage
-                Field converted_offset = convertFieldToType(query_node.getOffset()->as<ConstantNode &>().getValue(), DataTypeInt128());
-                Int128 offset_val = converted_offset.safeGet<Int128>();
+                Int128 offset_val = query_node.getOffset()->as<ConstantNode &>().getValue().safeGet<Int128>();
                 /// If a query passed analysis stage successfully, the sign of its limit and offset must be the same.
-                offset_val = is_limit_negative ? (0 - offset_val) : offset_val;
-                limit_offset = UInt64(offset_val);
+                limit_offset = UInt64(is_limit_negative ? (0 - offset_val) : offset_val);
             }
         }
         else if (query_node.hasOffset())
         {
             /// Constness of offset is validated during query analysis stage
-            Field converted = convertFieldToType(query_node.getOffset()->as<ConstantNode &>().getValue(), DataTypeInt128());
-            Int128 val = converted.safeGet<Int128>();
-            is_limit_negative = val < 0;
-            val = is_limit_negative ? (0 - val) : val;
-            limit_offset = UInt64(val);
+            Int128 offset_val = query_node.getOffset()->as<ConstantNode &>().getValue().safeGet<Int128>();
+            is_limit_negative = offset_val < 0;
+            limit_offset = UInt64(is_limit_negative ? (0 - offset_val) : offset_val);
         }
 
         /// Partial sort can be done if there is LIMIT, but no DISTINCT, LIMIT WITH TIES, LIMIT BY, ARRAY JOIN
