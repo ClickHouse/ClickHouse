@@ -78,6 +78,12 @@ public:
     /// Construct RPNBuilderTreeNode with non null ast node and tree context
     explicit RPNBuilderTreeNode(const IAST * ast_node_, RPNBuilderTreeContext & tree_context_);
 
+    /// Get AST node
+    const IAST * getASTNode() const { return ast_node; }
+
+    /// Get DAG node
+    const ActionsDAG::Node * getDAGNode() const { return dag_node; }
+
     /// Get column name
     std::string getColumnName() const;
 
