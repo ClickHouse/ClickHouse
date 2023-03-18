@@ -11,15 +11,16 @@ namespace DB
 {
 
 
-ThreadGroupSwitcher::ThreadGroupSwitcher(MergeListEntry * merge_list_entry_)
-    : merge_list_entry(merge_list_entry_)
+ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupStatusPtr thread_group)
 {
+    chassert(thread_group);
+
     prev_thread_group = CurrentThread::getGroup();
     if (!prev_thread_group)
         return;
 
-    CurrentThread::detachGroup();
-    CurrentThread::attachToGroup(merge_list_entry_->thread_group);
+    CurrentThread::detachFromGroupIfNotDetached();
+    CurrentThread::attachToGroup(thread_group);
 }
 
 ThreadGroupSwitcher::~ThreadGroupSwitcher()
@@ -27,36 +28,9 @@ ThreadGroupSwitcher::~ThreadGroupSwitcher()
     if (!prev_thread_group)
         return;
 
-    if (!merge_list_entry)
-        return;
-
-    CurrentThread::detachGroup();
+    CurrentThread::detachFromGroupIfNotDetached();
     CurrentThread::attachToGroup(prev_thread_group);
 }
-
-ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupSwitcher && other) noexcept
-{
-    this->swap(other);
-}
-
-ThreadGroupSwitcher& ThreadGroupSwitcher::operator=(ThreadGroupSwitcher && other) noexcept
-{
-    if (this != &other)
-    {
-        auto tmp = ThreadGroupSwitcher();
-        tmp.swap(other);
-        this->swap(tmp);
-    }
-    return *this;
-}
-
-void ThreadGroupSwitcher::swap(ThreadGroupSwitcher & other) noexcept
-{
-    std::swap(merge_list_entry, other.merge_list_entry);
-    std::swap(prev_thread_group, other.prev_thread_group);
-    std::swap(prev_query_id, other.prev_query_id);
-}
-
 
 MergeListElement::MergeListElement(
     const StorageID & table_id_,
@@ -90,17 +64,12 @@ MergeListElement::MergeListElement(
         is_mutation = (result_part_info.getDataVersion() != source_data_version);
     }
 
-    thread_group = std::make_shared<ThreadGroupStatus>();
-
-    thread_group->query_context = CurrentThread::get().getQueryContext();
-    thread_group->global_context = CurrentThread::get().getGlobalContext();
+    thread_group = ThreadGroupStatus::createForQuery(CurrentThread::get().getQueryContext(), {});
 
     auto * p_counters = CurrentThread::get().current_performance_counters;
     while (p_counters && p_counters->level != VariableContext::Process)
         p_counters = p_counters->getParent();
     thread_group->performance_counters.setParent(p_counters);
-
-    thread_group->master_thread_id = CurrentThread::get().thread_id;
 
     auto & memory_tracker = thread_group->memory_tracker;
 
