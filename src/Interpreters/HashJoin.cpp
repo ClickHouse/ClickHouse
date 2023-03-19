@@ -1022,7 +1022,6 @@ private:
 
     void addColumn(const ColumnWithTypeAndName & src_column, const std::string & qualified_name)
     {
-
         columns.push_back(src_column.column->cloneEmpty());
         columns.back()->reserve(src_column.column->size());
         type_name.emplace_back(src_column.type, src_column.name, qualified_name);
