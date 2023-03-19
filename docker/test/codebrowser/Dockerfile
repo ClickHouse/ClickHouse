@@ -31,7 +31,7 @@ RUN arch=${TARGETARCH:-amd64} \
         arm64) rarch=aarch64 ;; \
         *) exit 1 ;; \
     esac \
-    && ln -rsf /usr/lib/$rarch-linux-gnu/libclang-15.so.15 /usr/lib/$rarch-linux-gnu/libclang-15.so.1
+    && ln -rsf /usr/lib/$rarch-linux-gnu/libclang-16.so.15 /usr/lib/$rarch-linux-gnu/libclang-16.so.1
 
 # repo versions doesn't work correctly with C++17
 # also we push reports to s3, so we add index.html to subfolder urls
