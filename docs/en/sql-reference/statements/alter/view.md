@@ -50,7 +50,7 @@ ALTER TABLE events
   ADD COLUMN browser String,
   ADD COLUMN cost Float64;
 
--- Column does not have to match in the materialized view and TO
+-- Column do not have to match in a materialized view and TO
 -- (destination table), so the next alter does not break insertion.
 
 ALTER TABLE events_by_day 
