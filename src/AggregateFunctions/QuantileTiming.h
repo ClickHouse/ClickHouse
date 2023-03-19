@@ -172,7 +172,7 @@ namespace detail
         {
             size_t size = 0;
             readBinary(size, buf);
-            if (size > sizeof(10'000))
+            if (size > 10'000)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "The number of elements {} for the 'medium' kind of quantileTiming is too large", size);
 
             elems.resize(size);
