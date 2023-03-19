@@ -36,7 +36,7 @@ try
         context->makeGlobalContext();
         context->setApplicationType(Context::ApplicationType::LOCAL);
 
-        ThreadStatus thread_status;
+        MainThreadStatus::getInstance();
         total_memory_tracker.setHardLimit(1_GiB);
 
         registerAggregateFunctions();
@@ -47,6 +47,8 @@ try
 
     static bool initialized = initialize();
     (void) initialized;
+
+    total_memory_tracker.resetCounters();
 
     /// The input format is as follows:
     /// - format name on the first line,
