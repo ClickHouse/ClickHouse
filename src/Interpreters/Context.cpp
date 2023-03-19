@@ -129,13 +129,21 @@ namespace CurrentMetrics
 {
     extern const Metric ContextLockWait;
     extern const Metric BackgroundMovePoolTask;
+    extern const Metric BackgroundMovePoolSize;
     extern const Metric BackgroundSchedulePoolTask;
+    extern const Metric BackgroundSchedulePoolSize;
     extern const Metric BackgroundBufferFlushSchedulePoolTask;
+    extern const Metric BackgroundBufferFlushSchedulePoolSize;
     extern const Metric BackgroundDistributedSchedulePoolTask;
+    extern const Metric BackgroundDistributedSchedulePoolSize;
     extern const Metric BackgroundMessageBrokerSchedulePoolTask;
+    extern const Metric BackgroundMessageBrokerSchedulePoolSize;
     extern const Metric BackgroundMergesAndMutationsPoolTask;
+    extern const Metric BackgroundMergesAndMutationsPoolSize;
     extern const Metric BackgroundFetchesPoolTask;
+    extern const Metric BackgroundFetchesPoolSize;
     extern const Metric BackgroundCommonPoolTask;
+    extern const Metric BackgroundCommonPoolSize;
 }
 
 namespace DB
@@ -2175,6 +2183,7 @@ BackgroundSchedulePool & Context::getBufferFlushSchedulePool() const
         shared->buffer_flush_schedule_pool = std::make_unique<BackgroundSchedulePool>(
             background_buffer_flush_schedule_pool_size,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolTask,
+            CurrentMetrics::BackgroundBufferFlushSchedulePoolSize,
             "BgBufSchPool");
     }
 
@@ -2226,6 +2235,7 @@ BackgroundSchedulePool & Context::getSchedulePool() const
         shared->schedule_pool = std::make_unique<BackgroundSchedulePool>(
             background_schedule_pool_size,
             CurrentMetrics::BackgroundSchedulePoolTask,
+            CurrentMetrics::BackgroundSchedulePoolSize,
             "BgSchPool");
     }
 
@@ -2246,6 +2256,7 @@ BackgroundSchedulePool & Context::getDistributedSchedulePool() const
         shared->distributed_schedule_pool = std::make_unique<BackgroundSchedulePool>(
             background_distributed_schedule_pool_size,
             CurrentMetrics::BackgroundDistributedSchedulePoolTask,
+            CurrentMetrics::BackgroundDistributedSchedulePoolSize,
             "BgDistSchPool");
     }
 
@@ -2266,6 +2277,7 @@ BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
         shared->message_broker_schedule_pool = std::make_unique<BackgroundSchedulePool>(
             background_message_broker_schedule_pool_size,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolTask,
+            CurrentMetrics::BackgroundMessageBrokerSchedulePoolSize,
             "BgMBSchPool");
     }
 
@@ -3826,6 +3838,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
         /*max_threads_count*/background_pool_size,
         /*max_tasks_count*/background_pool_size * background_merges_mutations_concurrency_ratio,
         CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
+        CurrentMetrics::BackgroundMergesAndMutationsPoolSize,
         background_merges_mutations_scheduling_policy
     );
     LOG_INFO(shared->log, "Initialized background executor for merges and mutations with num_threads={}, num_tasks={}, scheduling_policy={}",
@@ -3836,7 +3849,8 @@ void Context::initializeBackgroundExecutorsIfNeeded()
         "Move",
         background_move_pool_size,
         background_move_pool_size,
-        CurrentMetrics::BackgroundMovePoolTask
+        CurrentMetrics::BackgroundMovePoolTask,
+        CurrentMetrics::BackgroundMovePoolSize
     );
     LOG_INFO(shared->log, "Initialized background executor for move operations with num_threads={}, num_tasks={}", background_move_pool_size, background_move_pool_size);
 
@@ -3845,7 +3859,8 @@ void Context::initializeBackgroundExecutorsIfNeeded()
         "Fetch",
         background_fetches_pool_size,
         background_fetches_pool_size,
-        CurrentMetrics::BackgroundFetchesPoolTask
+        CurrentMetrics::BackgroundFetchesPoolTask,
+        CurrentMetrics::BackgroundFetchesPoolSize
     );
     LOG_INFO(shared->log, "Initialized background executor for fetches with num_threads={}, num_tasks={}", background_fetches_pool_size, background_fetches_pool_size);
 
@@ -3854,7 +3869,8 @@ void Context::initializeBackgroundExecutorsIfNeeded()
         "Common",
         background_common_pool_size,
         background_common_pool_size,
-        CurrentMetrics::BackgroundCommonPoolTask
+        CurrentMetrics::BackgroundCommonPoolTask,
+        CurrentMetrics::BackgroundCommonPoolSize
     );
     LOG_INFO(shared->log, "Initialized background executor for common operations (e.g. clearing old parts) with num_threads={}, num_tasks={}", background_common_pool_size, background_common_pool_size);
 

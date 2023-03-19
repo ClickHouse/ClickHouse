@@ -89,13 +89,13 @@ void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries
                 if (!--num_active_jobs)
                     event.notify_all();
                 if (async)
-                    CurrentThread::detachQueryIfNotDetached();
+                    CurrentThread::detachFromGroupIfNotDetached();
             );
 
             try
             {
                 if (async && thread_group)
-                    CurrentThread::attachTo(thread_group);
+                    CurrentThread::attachToGroup(thread_group);
 
                 if (async)
                     setThreadName("BackupWorker");
@@ -154,13 +154,13 @@ void restoreTablesData(DataRestoreTasks && tasks, ThreadPool & thread_pool)
                 if (!--num_active_jobs)
                     event.notify_all();
                 if (async)
-                    CurrentThread::detachQueryIfNotDetached();
+                    CurrentThread::detachFromGroupIfNotDetached();
             );
 
             try
             {
                 if (async && thread_group)
-                    CurrentThread::attachTo(thread_group);
+                    CurrentThread::attachToGroup(thread_group);
 
                 if (async)
                     setThreadName("RestoreWorker");
