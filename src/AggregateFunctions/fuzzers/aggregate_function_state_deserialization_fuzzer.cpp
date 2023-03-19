@@ -6,6 +6,8 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 
+#include <Common/MemoryTracker.h>
+
 #include <Interpreters/Context.h>
 
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -25,6 +27,8 @@ try
         context = Context::createGlobal(shared_context.get());
         context->makeGlobalContext();
         context->setApplicationType(Context::ApplicationType::LOCAL);
+
+        total_memory_tracker.setHardLimit(1_GiB);
 
         registerAggregateFunctions();
         return true;
