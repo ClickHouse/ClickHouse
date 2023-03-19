@@ -636,14 +636,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 Names queried_columns = syntax_analyzer_result->requiredSourceColumns();
                 const auto & supported_prewhere_columns = storage->supportedPrewhereColumns();
 
-                MergeTreeWhereOptimizer where_optimizer{
+                MergeTreeWhereOptimizer{
+                    current_info,
+                    context,
                     std::move(column_compressed_sizes),
                     metadata_snapshot,
                     queried_columns,
                     supported_prewhere_columns,
                     log};
-
-                where_optimizer.optimize(current_info, context);
             }
         }
 

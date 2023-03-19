@@ -121,11 +121,7 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeIndexes(JSONBuilder::JSONMap & map) const override;
 
-    const Names & getRealColumnNames() const { return real_column_names; }
-    const Names & getVirtualColumnNames() const { return virt_column_names; }
-
     StorageID getStorageID() const { return data.getStorageID(); }
-    const StorageSnapshotPtr & getStorageSnapshot() const { return storage_snapshot; }
     UInt64 getSelectedParts() const { return selected_parts; }
     UInt64 getSelectedRows() const { return selected_rows; }
     UInt64 getSelectedMarks() const { return selected_marks; }
@@ -148,12 +144,10 @@ public:
     ContextPtr getContext() const { return context; }
     const SelectQueryInfo & getQueryInfo() const { return query_info; }
     StorageMetadataPtr getStorageMetadata() const { return metadata_for_reading; }
-    const PrewhereInfoPtr & getPrewhereInfo() const { return prewhere_info; }
+    const PrewhereInfo * getPrewhereInfo() const { return prewhere_info.get(); }
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
-
-    void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value);
 
     static bool isFinal(const SelectQueryInfo & query_info);
 
