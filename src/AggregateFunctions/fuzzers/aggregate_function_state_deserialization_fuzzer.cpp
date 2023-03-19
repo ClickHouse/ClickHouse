@@ -29,7 +29,7 @@ try
         context->makeGlobalContext();
         context->setApplicationType(Context::ApplicationType::LOCAL);
 
-        ThreadStatus thread_status;
+        MainThreadStatus::getInstance();
         total_memory_tracker.setHardLimit(1_GiB);
 
         registerAggregateFunctions();
@@ -38,6 +38,8 @@ try
 
     static bool initialized = initialize();
     (void) initialized;
+
+    total_memory_tracker.resetCounters();
 
     /// The input format is as follows:
     /// - the aggregate function name on the first line, possible with parameters, then data types of the arguments,
