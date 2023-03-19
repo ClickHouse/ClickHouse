@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 
 #include <Common/MemoryTracker.h>
+#include <Common/CurrentThread.h>
 
 #include <Interpreters/Context.h>
 
@@ -28,6 +29,7 @@ try
         context->makeGlobalContext();
         context->setApplicationType(Context::ApplicationType::LOCAL);
 
+        ThreadStatus thread_status;
         total_memory_tracker.setHardLimit(1_GiB);
 
         registerAggregateFunctions();
