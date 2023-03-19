@@ -37,7 +37,6 @@ try
         context->setApplicationType(Context::ApplicationType::LOCAL);
 
         MainThreadStatus::getInstance();
-        total_memory_tracker.setHardLimit(1_GiB);
 
         registerAggregateFunctions();
         registerFormats();
@@ -49,6 +48,9 @@ try
     (void) initialized;
 
     total_memory_tracker.resetCounters();
+    total_memory_tracker.setHardLimit(1_GiB);
+    CurrentThread::get().memory_tracker.resetCounters();
+    CurrentThread::get().memory_tracker.setHardLimit(1_GiB);
 
     /// The input format is as follows:
     /// - format name on the first line,
