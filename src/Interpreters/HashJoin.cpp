@@ -1048,7 +1048,6 @@ struct JoinFeatures
     static constexpr bool add_missing = (left || full) && !is_semi_join;
 
     static constexpr bool need_flags = MapGetter<KIND, STRICTNESS>::flagged;
-
 };
 
 template <bool multiple_disjuncts>
