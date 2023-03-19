@@ -67,7 +67,9 @@ public:
             if (small.find(value) == small.end())
             {
                 if (!small.full())
+                {
                     small.insert(value);
+                }
                 else
                 {
                     toLarge();
@@ -109,6 +111,7 @@ public:
     {
         UInt8 kind;
         readBinary(kind, in);
+
         if (BitmapKind::Small == kind)
         {
             small.read(in);
@@ -117,19 +120,24 @@ public:
         {
             size_t size;
             readVarUInt(size, in);
+
             static constexpr size_t max_size = 1_GiB;
             if (size > max_size)
                 throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size in groupBitmap.");
+
             std::unique_ptr<char[]> buf(new char[size]);
             in.readStrict(buf.get(), size);
             roaring_bitmap = std::make_shared<RoaringBitmap>(RoaringBitmap::read(buf.get()));
         }
+        else
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown type of roaring bitmap");
     }
 
     void write(DB::WriteBuffer & out) const
     {
         UInt8 kind = isLarge() ? BitmapKind::Bitmap : BitmapKind::Small;
         writeBinary(kind, out);
+
         if (BitmapKind::Small == kind)
         {
             small.write(out);
@@ -202,7 +210,10 @@ public:
     /**
      * Computes the union between two bitmaps.
      */
-    void rb_or(const RoaringBitmapWithSmallSet & r1) { merge(r1); } /// NOLINT
+    void rb_or(const RoaringBitmapWithSmallSet & r1)
+    {
+        merge(r1); /// NOLINT
+    }
 
     /**
      * Computes the symmetric difference (xor) between two bitmaps.
@@ -436,45 +447,6 @@ public:
             return small.find(static_cast<T>(x)) != small.end();
         else
             return roaring_bitmap->contains(static_cast<Value>(x));
-    }
-
-    /**
-     * Remove value
-     */
-    void rb_remove(UInt64 x) /// NOLINT
-    {
-        if (!std::is_same_v<T, UInt64> && x > rb_max())
-            return;
-
-        if (isSmall())
-            toLarge();
-
-        roaring_bitmap->remove(x);
-    }
-
-    /**
-     * compute (in place) the negation of the roaring bitmap within a specified
-     * interval: [range_start, range_end). The number of negated values is
-     * range_end - range_start.
-     * Areas outside the range are passed through unchanged.
-     */
-    void rb_flip(UInt64 begin, UInt64 end) /// NOLINT
-    {
-        if (isSmall())
-            toLarge();
-
-        roaring_bitmap->flip(begin, end);
-    }
-
-    /**
-     * returns the number of integers that are smaller or equal to offsetid.
-     */
-    UInt64 rb_rank(UInt64 x) /// NOLINT
-    {
-        if (isSmall())
-            toLarge();
-
-        return roaring_bitmap->rank(x);
     }
 
     /**
