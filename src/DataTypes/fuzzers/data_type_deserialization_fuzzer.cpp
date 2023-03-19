@@ -5,8 +5,6 @@
 
 #include <DataTypes/DataTypeFactory.h>
 
-#include <Formats/EscapingRuleUtils.h>
-
 #include <Interpreters/Context.h>
 
 #include <AggregateFunctions/registerAggregateFunctions.h>
