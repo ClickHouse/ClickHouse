@@ -96,7 +96,7 @@ ECT 1
 , expected One of: SHOW TABLES, SHOW DATABASES, SELECT, INSERT, CREATE, ATTACH, RENAME, DROP, DETACH, USE, SET, OPTIMIZE., e.what() = DB::Exception
 ```
 
-默认情况下，返回的数据是`TabSeparated`格式的，更多信息，见[Formats](../interfaces/formats/)部分。
+默认情况下，返回的数据是`TabSeparated`格式的，更多信息，见[Formats](../interfaces/formats.md)部分。
 
 您可以使用查询的FORMAT子句来设置其他格式。
 

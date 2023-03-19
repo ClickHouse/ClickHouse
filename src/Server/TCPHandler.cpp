@@ -50,6 +50,11 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
 
+#if USE_SSL
+#   include <Poco/Net/SecureStreamSocket.h>
+#   include <Poco/Net/SecureStreamSocketImpl.h>
+#endif
+
 #include "Core/Protocol.h"
 #include "Storages/MergeTree/RequestResponse.h"
 #include "TCPHandler.h"
@@ -501,6 +506,7 @@ void TCPHandler::runImpl()
             /// (i.e. deallocations from the Aggregator with two-level aggregation)
             state.reset();
             query_scope.reset();
+            last_sent_snapshots.clear();
             thread_trace_context.reset();
         }
         catch (const Exception & e)
@@ -1225,6 +1231,22 @@ void TCPHandler::receiveHello()
 
     session = makeSession();
     auto & client_info = session->getClientInfo();
+
+#if USE_SSL
+    /// Authentication with SSL user certificate
+    if (dynamic_cast<Poco::Net::SecureStreamSocketImpl*>(socket().impl()))
+    {
+        Poco::Net::SecureStreamSocket secure_socket(socket());
+        if (secure_socket.havePeerCertificate())
+        {
+            session->authenticate(
+                SSLCertificateCredentials{user, secure_socket.peerCertificate().commonName()},
+                getClientAddress(client_info));
+            return;
+        }
+    }
+#endif
+
     session->authenticate(user, password, getClientAddress(client_info));
 }
 

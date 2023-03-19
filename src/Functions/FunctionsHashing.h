@@ -1216,7 +1216,7 @@ private:
     template <bool first>
     void executeArray(const KeyType & key, const IDataType * type, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
     {
-        const IDataType * nested_type = typeid_cast<const DataTypeArray *>(type)->getNestedType().get();
+        const IDataType * nested_type = typeid_cast<const DataTypeArray &>(*type).getNestedType().get();
 
         if (const ColumnArray * col_from = checkAndGetColumn<ColumnArray>(column))
         {

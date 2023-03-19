@@ -111,7 +111,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int ALIAS_REQUIRED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_PREWHERE;
     extern const int UNKNOWN_TABLE;
 }
 
@@ -6865,13 +6864,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     if (query_node_typed.isGroupByAll())
         expandGroupByAll(query_node_typed);
 
-    if (query_node_typed.hasPrewhere())
-        assertNoFunctionNodes(query_node_typed.getPrewhere(),
-            "arrayJoin",
-            ErrorCodes::ILLEGAL_PREWHERE,
-            "ARRAY JOIN",
-            "in PREWHERE");
-
+    validateFilters(query_node);
     validateAggregates(query_node, { .group_by_use_nulls = scope.group_by_use_nulls });
 
     for (const auto & column : projection_columns)

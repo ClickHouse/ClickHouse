@@ -8,7 +8,7 @@ sidebar_label: SYSTEM
 
 ## RELOAD EMBEDDED DICTIONARIES
 
-Reload all [Internal dictionaries](../../sql-reference/dictionaries/internal-dicts.md).
+Reload all [Internal dictionaries](../../sql-reference/dictionaries/index.md).
 By default, internal dictionaries are disabled.
 Always returns `Ok.` regardless of the result of the internal dictionary update.
 
@@ -280,13 +280,13 @@ SYSTEM START REPLICATION QUEUES [[db.]replicated_merge_tree_family_table_name]
 
 ### SYNC REPLICA
 
-Wait until a `ReplicatedMergeTree` table will be synced with other replicas in a cluster. Will run until `receive_timeout` if fetches currently disabled for the table.
+Wait until a `ReplicatedMergeTree` table will be synced with other replicas in a cluster, but no more than `receive_timeout` seconds.
 
 ``` sql
-SYSTEM SYNC REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_family_table_name
+SYSTEM SYNC REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_family_table_name [STRICT]
 ```
 
-After running this statement the `[db.]replicated_merge_tree_family_table_name` fetches commands from the common replicated log into its own replication queue, and then the query waits till the replica processes all of the fetched commands.
+After running this statement the `[db.]replicated_merge_tree_family_table_name` fetches commands from the common replicated log into its own replication queue, and then the query waits till the replica processes all of the fetched commands. If a `STRICT` modifier was specified then the query waits for the replication queue to become empty. The `STRICT` version may never succeed if new entries constantly appear in the replication queue.
 
 ### RESTART REPLICA
 
@@ -369,7 +369,7 @@ SYSTEM DROP FILESYSTEM CACHE
 It's too heavy and has potential for misuse.
 :::
 
-Will do sync syscall. 
+Will do sync syscall.
 
 ```sql
 SYSTEM SYNC FILE CACHE
