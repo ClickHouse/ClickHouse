@@ -211,7 +211,7 @@ private:
                 = *reinterpret_cast<AggregateFunctionGroupBitmapData<T> *>(col_to->getData()[i]);
             for (; pos < offsets[i]; ++pos)
             {
-                bitmap_data.rbs.add(input_data[pos]);
+                bitmap_data.roaring_bitmap_with_small_set.add(input_data[pos]);
             }
         }
         return col_to;
@@ -303,7 +303,7 @@ private:
         {
             const AggregateFunctionGroupBitmapData<T> & bitmap_data_1
                 = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T> *>(column->getData()[i]);
-            UInt64 count = bitmap_data_1.rbs.rb_to_array(res_data);
+            UInt64 count = bitmap_data_1.roaring_bitmap_with_small_set.rb_to_array(res_data);
             res_offset += count;
             res_offsets.emplace_back(res_offset);
         }
@@ -449,7 +449,7 @@ public:
         UInt64 range_end,
         AggregateFunctionGroupBitmapData<T> & bitmap_data_2)
     {
-        bitmap_data_0.rbs.rb_range(range_start, range_end, bitmap_data_2.rbs);
+        bitmap_data_0.roaring_bitmap_with_small_set.rb_range(range_start, range_end, bitmap_data_2.roaring_bitmap_with_small_set);
     }
 };
 
@@ -464,7 +464,7 @@ public:
         UInt64 range_end,
         AggregateFunctionGroupBitmapData<T> & bitmap_data_2)
     {
-        bitmap_data_0.rbs.rb_limit(range_start, range_end, bitmap_data_2.rbs);
+        bitmap_data_0.roaring_bitmap_with_small_set.rb_limit(range_start, range_end, bitmap_data_2.roaring_bitmap_with_small_set);
     }
 };
 
@@ -479,7 +479,7 @@ public:
         UInt64 range_end,
         AggregateFunctionGroupBitmapData<T> & bitmap_data_2)
         {
-        bitmap_data_0.rbs.rb_offset_limit(range_start, range_end, bitmap_data_2.rbs);
+        bitmap_data_0.roaring_bitmap_with_small_set.rb_offset_limit(range_start, range_end, bitmap_data_2.roaring_bitmap_with_small_set);
         }
 };
 
@@ -649,8 +649,8 @@ private:
             col_to->insertDefault();
             AggregateFunctionGroupBitmapData<T> & bitmap_data_2
                 = *reinterpret_cast<AggregateFunctionGroupBitmapData<T> *>(col_to->getData()[i]);
-            bitmap_data_2.rbs.merge(bitmap_data_0.rbs);
-            bitmap_data_2.rbs.rb_replace(&from_container[from_start], &to_container[to_start], from_end - from_start);
+            bitmap_data_2.roaring_bitmap_with_small_set.merge(bitmap_data_0.roaring_bitmap_with_small_set);
+            bitmap_data_2.roaring_bitmap_with_small_set.rb_replace(&from_container[from_start], &to_container[to_start], from_end - from_start);
         }
         return col_to;
     }
@@ -740,7 +740,7 @@ public:
     template <typename T>
     static UInt64 apply(const AggregateFunctionGroupBitmapData<T> & bitmap_data)
     {
-        return bitmap_data.rbs.size();
+        return bitmap_data.roaring_bitmap_with_small_set.size();
     }
 };
 
@@ -751,7 +751,7 @@ public:
     template <typename T>
     static UInt64 apply(const AggregateFunctionGroupBitmapData<T> & bitmap_data)
     {
-        return bitmap_data.rbs.rb_min();
+        return bitmap_data.roaring_bitmap_with_small_set.rb_min();
     }
 };
 
@@ -762,7 +762,7 @@ public:
     template <typename T>
     static UInt64 apply(const AggregateFunctionGroupBitmapData<T> & bitmap_data)
     {
-        return bitmap_data.rbs.rb_max();
+        return bitmap_data.roaring_bitmap_with_small_set.rb_max();
     }
 };
 
@@ -773,7 +773,7 @@ struct BitmapAndCardinalityImpl
     static UInt64 apply(const AggregateFunctionGroupBitmapData<T> & bitmap_data_1, const AggregateFunctionGroupBitmapData<T> & bitmap_data_2)
     {
         // roaring_bitmap_and_cardinality( rb1, rb2 );
-        return bitmap_data_1.rbs.rb_and_cardinality(bitmap_data_2.rbs);
+        return bitmap_data_1.roaring_bitmap_with_small_set.rb_and_cardinality(bitmap_data_2.roaring_bitmap_with_small_set);
     }
 };
 
@@ -785,7 +785,7 @@ struct BitmapOrCardinalityImpl
     static UInt64 apply(const AggregateFunctionGroupBitmapData<T> & bitmap_data_1, const AggregateFunctionGroupBitmapData<T> & bitmap_data_2)
     {
         // return roaring_bitmap_or_cardinality( rb1, rb2 );
-        return bitmap_data_1.rbs.rb_or_cardinality(bitmap_data_2.rbs);
+        return bitmap_data_1.roaring_bitmap_with_small_set.rb_or_cardinality(bitmap_data_2.roaring_bitmap_with_small_set);
     }
 };
 
@@ -796,7 +796,7 @@ struct BitmapXorCardinalityImpl
     static UInt64 apply(const AggregateFunctionGroupBitmapData<T> & bitmap_data_1, const AggregateFunctionGroupBitmapData<T> & bitmap_data_2)
     {
         // return roaring_bitmap_xor_cardinality( rb1, rb2 );
-        return bitmap_data_1.rbs.rb_xor_cardinality(bitmap_data_2.rbs);
+        return bitmap_data_1.roaring_bitmap_with_small_set.rb_xor_cardinality(bitmap_data_2.roaring_bitmap_with_small_set);
     }
 };
 
@@ -807,7 +807,7 @@ struct BitmapAndnotCardinalityImpl
     static UInt64 apply(const AggregateFunctionGroupBitmapData<T> & bitmap_data_1, const AggregateFunctionGroupBitmapData<T> & bitmap_data_2)
     {
         // roaring_bitmap_andnot_cardinality( rb1, rb2 );
-        return bitmap_data_1.rbs.rb_andnot_cardinality(bitmap_data_2.rbs);
+        return bitmap_data_1.roaring_bitmap_with_small_set.rb_andnot_cardinality(bitmap_data_2.roaring_bitmap_with_small_set);
     }
 };
 
@@ -817,7 +817,7 @@ struct BitmapHasAllImpl
     using ReturnType = UInt8;
     static UInt8 apply(const AggregateFunctionGroupBitmapData<T> & bitmap_data_1, const AggregateFunctionGroupBitmapData<T> & bitmap_data_2)
     {
-        return bitmap_data_1.rbs.rb_is_subset(bitmap_data_2.rbs);
+        return bitmap_data_1.roaring_bitmap_with_small_set.rb_is_subset(bitmap_data_2.roaring_bitmap_with_small_set);
     }
 };
 
@@ -827,7 +827,7 @@ struct BitmapHasAnyImpl
     using ReturnType = UInt8;
     static UInt8 apply(const AggregateFunctionGroupBitmapData<T> & bitmap_data_1, const AggregateFunctionGroupBitmapData<T> & bitmap_data_2)
     {
-        return bitmap_data_1.rbs.rb_intersect(bitmap_data_2.rbs);
+        return bitmap_data_1.roaring_bitmap_with_small_set.rb_intersect(bitmap_data_2.roaring_bitmap_with_small_set);
     }
 };
 
@@ -931,7 +931,7 @@ private:
             const UInt64 data1 = is_column_const[1] ? (*container1)[0] : (*container1)[i];
             const AggregateFunctionGroupBitmapData<T> & bitmap_data_0
                 = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T> *>(data_ptr_0);
-            vec_to[i] = bitmap_data_0.rbs.rb_contains(data1);
+            vec_to[i] = bitmap_data_0.roaring_bitmap_with_small_set.rb_contains(data1);
         }
     }
 };
@@ -1050,7 +1050,7 @@ struct BitmapAndImpl
 {
     static void apply(AggregateFunctionGroupBitmapData<T> & bitmap_data_1, const AggregateFunctionGroupBitmapData<T> & bitmap_data_2)
     {
-        bitmap_data_1.rbs.rb_and(bitmap_data_2.rbs);
+        bitmap_data_1.roaring_bitmap_with_small_set.rb_and(bitmap_data_2.roaring_bitmap_with_small_set);
     }
 };
 
@@ -1059,7 +1059,7 @@ struct BitmapOrImpl
 {
     static void apply(AggregateFunctionGroupBitmapData<T> & bitmap_data_1, const AggregateFunctionGroupBitmapData<T> & bitmap_data_2)
     {
-        bitmap_data_1.rbs.rb_or(bitmap_data_2.rbs);
+        bitmap_data_1.roaring_bitmap_with_small_set.rb_or(bitmap_data_2.roaring_bitmap_with_small_set);
     }
 };
 
@@ -1068,7 +1068,7 @@ struct BitmapXorImpl
 {
     static void apply(AggregateFunctionGroupBitmapData<T> & bitmap_data_1, const AggregateFunctionGroupBitmapData<T> & bitmap_data_2)
     {
-        bitmap_data_1.rbs.rb_xor(bitmap_data_2.rbs);
+        bitmap_data_1.roaring_bitmap_with_small_set.rb_xor(bitmap_data_2.roaring_bitmap_with_small_set);
     }
 };
 
@@ -1077,7 +1077,7 @@ struct BitmapAndnotImpl
 {
     static void apply(AggregateFunctionGroupBitmapData<T> & bitmap_data_1, const AggregateFunctionGroupBitmapData<T> & bitmap_data_2)
     {
-        bitmap_data_1.rbs.rb_andnot(bitmap_data_2.rbs);
+        bitmap_data_1.roaring_bitmap_with_small_set.rb_andnot(bitmap_data_2.roaring_bitmap_with_small_set);
     }
 };
 
@@ -1190,7 +1190,7 @@ private:
             auto * bm_2 = reinterpret_cast<AggregateFunctionGroupBitmapData<T> *>(data_ptr_1);
 
             // check the name of operation (bitmapAnd) and check if it is the situation mentioned above
-            auto need_exchange = (name == NameBitmapAnd::name) && bm_1->rbs.isLarge() && bm_2->rbs.isSmall();
+            auto need_exchange = (name == NameBitmapAnd::name) && bm_1->roaring_bitmap_with_small_set.isLarge() && bm_2->roaring_bitmap_with_small_set.isSmall();
             col_to->insertFrom(need_exchange ? data_ptr_1 : data_ptr_0);
             AggregateFunctionGroupBitmapData<T> & bitmap_data_1 = *reinterpret_cast<AggregateFunctionGroupBitmapData<T> *>(col_to->getData()[i]);
             const AggregateFunctionGroupBitmapData<T> & bitmap_data_2
