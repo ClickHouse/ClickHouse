@@ -65,7 +65,7 @@ SELECT Date '2020-01-02' + interval number * 900 second,
        10/(number+1)%33
 FROM numbers(100);
 
--- New columns browser and cost are empty because we did not change Materialized View yet.
+-- New columns `browser` and `cost` are empty because we did not change Materialized View yet.
 
 SELECT ts, event_type, browser, sum(events_cnt) events_cnt, round(sum(cost),2) cost
 FROM events_by_day
