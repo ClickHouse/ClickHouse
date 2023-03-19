@@ -40,7 +40,7 @@ RWLockImpl::LockHolder IStorage::tryLockTimed(
     {
         const String type_str = type == RWLockImpl::Type::Read ? "READ" : "WRITE";
         throw Exception(ErrorCodes::DEADLOCK_AVOIDED,
-            "{} locking attempt on \"{}\" has timed out! ({}ms) Possible deadlock avoided. Client should retry.",
+            "{} locking attempt on \"{}\" has timed out! ({}ms) Possible deadlock avoided. Client should retry",
             type_str, getStorageID(), acquire_timeout.count());
     }
     return lock_holder;

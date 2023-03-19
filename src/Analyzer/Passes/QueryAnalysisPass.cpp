@@ -111,7 +111,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int ALIAS_REQUIRED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_PREWHERE;
     extern const int UNKNOWN_TABLE;
 }
 
@@ -5760,8 +5759,27 @@ void QueryAnalyzer::resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpo
     {
         auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
 
+        auto * column_to_interpolate = interpolate_node_typed.getExpression()->as<IdentifierNode>();
+        if (!column_to_interpolate)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "INTERPOLATE can work only for indentifiers, but {} is found",
+                interpolate_node_typed.getExpression()->formatASTForErrorMessage());
+        auto column_to_interpolate_name = column_to_interpolate->getIdentifier().getFullName();
+
         resolveExpressionNode(interpolate_node_typed.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-        resolveExpressionNode(interpolate_node_typed.getInterpolateExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+        bool is_column_constant = interpolate_node_typed.getExpression()->getNodeType() == QueryTreeNodeType::CONSTANT;
+
+        auto & interpolation_to_resolve = interpolate_node_typed.getInterpolateExpression();
+        IdentifierResolveScope interpolate_scope(interpolation_to_resolve, &scope /*parent_scope*/);
+
+        auto fake_column_node = std::make_shared<ColumnNode>(NameAndTypePair(column_to_interpolate_name, interpolate_node_typed.getExpression()->getResultType()), interpolate_node_typed.getExpression());
+        if (is_column_constant)
+            interpolate_scope.expression_argument_name_to_node.emplace(column_to_interpolate_name, fake_column_node);
+
+        resolveExpressionNode(interpolation_to_resolve, interpolate_scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+        if (is_column_constant)
+            interpolation_to_resolve = interpolation_to_resolve->cloneAndReplace(fake_column_node, interpolate_node_typed.getExpression());
     }
 }
 
@@ -6892,13 +6910,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     if (query_node_typed.isGroupByAll())
         expandGroupByAll(query_node_typed);
 
-    if (query_node_typed.hasPrewhere())
-        assertNoFunctionNodes(query_node_typed.getPrewhere(),
-            "arrayJoin",
-            ErrorCodes::ILLEGAL_PREWHERE,
-            "ARRAY JOIN",
-            "in PREWHERE");
-
+    validateFilters(query_node);
     validateAggregates(query_node, { .group_by_use_nulls = scope.group_by_use_nulls });
 
     for (const auto & column : projection_columns)

@@ -27,7 +27,6 @@ public:
     const avro::ValidSchema & getSchema() const { return valid_schema; }
     void serializeRow(const Columns & columns, size_t row_num, avro::Encoder & encoder);
 
-private:
     using SerializeFn = std::function<void(const IColumn & column, size_t row_num, avro::Encoder & encoder)>;
     struct SchemaWithSerializeFn
     {
@@ -35,8 +34,9 @@ private:
         SerializeFn serialize;
     };
 
+private:
     /// Type names for different complex types (e.g. enums, fixed strings) must be unique. We use simple incremental number to give them different names.
-    SchemaWithSerializeFn createSchemaWithSerializeFn(DataTypePtr data_type, size_t & type_name_increment, const String & column_name);
+    SchemaWithSerializeFn createSchemaWithSerializeFn(const DataTypePtr & data_type, size_t & type_name_increment, const String & column_name);
 
     std::vector<SerializeFn> serialize_fns;
     avro::ValidSchema valid_schema;
