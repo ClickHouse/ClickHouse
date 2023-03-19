@@ -61,6 +61,7 @@ try
     Arena arena;
     char * place = arena.alignedAlloc(func->sizeOfData(), func->alignOfData());
     func->create(place);
+    SCOPE_EXIT(func->destroy(place));
     func->deserialize(place, in, {}, &arena);
 
     return 0;
