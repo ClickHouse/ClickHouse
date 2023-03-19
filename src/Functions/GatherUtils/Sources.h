@@ -141,12 +141,8 @@ struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
 
 /// The methods can be virtual or not depending on the template parameter. See IStringSource.
 #pragma GCC diagnostic push
-#ifdef HAS_SUGGEST_OVERRIDE
-#   pragma GCC diagnostic ignored "-Wsuggest-override"
-#endif
-#ifdef HAS_SUGGEST_DESTRUCTOR_OVERRIDE
-#   pragma GCC diagnostic ignored "-Wsuggest-destructor-override"
-#endif
+#pragma GCC diagnostic ignored "-Wsuggest-override"
+#pragma GCC diagnostic ignored "-Wsuggest-destructor-override"
 
 template <typename Base>
 struct ConstSource : public Base
