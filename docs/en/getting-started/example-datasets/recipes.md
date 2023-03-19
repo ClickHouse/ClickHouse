@@ -80,7 +80,7 @@ Result:
 
 ### Top Components by the Number of Recipes:
 
-In this example we learn how to use [arrayJoin](../../sql-reference/functions/array-join/) function to expand an array into a set of rows.
+In this example we learn how to use [arrayJoin](../../sql-reference/functions/array-join.md) function to expand an array into a set of rows.
 
 Query:
 
@@ -185,7 +185,7 @@ Result:
 10 rows in set. Elapsed: 0.215 sec. Processed 2.23 million rows, 1.48 GB (10.35 million rows/s., 6.86 GB/s.)
 ```
 
-In this example, we involve [has](../../sql-reference/functions/array-functions/#hasarr-elem) function to filter by array elements and sort by the number of directions.
+In this example, we involve [has](../../sql-reference/functions/array-functions.md#hasarr-elem) function to filter by array elements and sort by the number of directions.
 
 There is a wedding cake that requires the whole 126 steps to produce! Show that directions:
 

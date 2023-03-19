@@ -404,19 +404,19 @@ private:
         }
 
         if (is_column_const[0])
-            col_agg_func = typeid_cast<const ColumnAggregateFunction*>(typeid_cast<const ColumnConst*>(column_ptrs[0])->getDataColumnPtr().get());
+            col_agg_func = &typeid_cast<const ColumnAggregateFunction &>(*typeid_cast<const ColumnConst &>(*column_ptrs[0]).getDataColumnPtr());
         else
-            col_agg_func = typeid_cast<const ColumnAggregateFunction*>(column_ptrs[0]);
+            col_agg_func = &typeid_cast<const ColumnAggregateFunction &>(*column_ptrs[0]);
 
         container0 = &col_agg_func->getData();
         if (is_column_const[1])
-            container1 = &typeid_cast<const ColumnUInt64*>(typeid_cast<const ColumnConst*>(column_ptrs[1])->getDataColumnPtr().get())->getData();
+            container1 = &typeid_cast<const ColumnUInt64 &>(typeid_cast<const ColumnConst &>(*column_ptrs[1]).getDataColumn()).getData();
         else
-            container1 = &typeid_cast<const ColumnUInt64*>(column_ptrs[1])->getData();
+            container1 = &typeid_cast<const ColumnUInt64 &>(*column_ptrs[1]).getData();
         if (is_column_const[2])
-            container2 = &typeid_cast<const ColumnUInt64*>(typeid_cast<const ColumnConst*>(column_ptrs[2])->getDataColumnPtr().get())->getData();
+            container2 = &typeid_cast<const ColumnUInt64 &>(typeid_cast<const ColumnConst &>(*column_ptrs[2]).getDataColumn()).getData();
         else
-            container2 = &typeid_cast<const ColumnUInt64*>(column_ptrs[2])->getData();
+            container2 = &typeid_cast<const ColumnUInt64 &>(*column_ptrs[2]).getData();
 
         auto col_to = ColumnAggregateFunction::create(col_agg_func->getAggregateFunction());
         col_to->reserve(input_rows_count);
@@ -587,29 +587,29 @@ private:
 
         if (is_column_const[0])
         {
-            col_agg_func = typeid_cast<const ColumnAggregateFunction*>(typeid_cast<const ColumnConst*>(column_ptrs[0])->getDataColumnPtr().get());
+            col_agg_func = &typeid_cast<const ColumnAggregateFunction &>(*typeid_cast<const ColumnConst &>(*column_ptrs[0]).getDataColumnPtr());
         }
         else
         {
-            col_agg_func = typeid_cast<const ColumnAggregateFunction*>(column_ptrs[0]);
+            col_agg_func = &typeid_cast<const ColumnAggregateFunction &>(*column_ptrs[0]);
         }
         container0 = &col_agg_func->getData();
 
         if (is_column_const[1])
-            array1 = typeid_cast<const ColumnArray*>(typeid_cast<const ColumnConst*>(column_ptrs[1])->getDataColumnPtr().get());
+            array1 = &typeid_cast<const ColumnArray &>(*typeid_cast<const ColumnConst &>(*column_ptrs[1]).getDataColumnPtr());
         else
-            array1 = typeid_cast<const ColumnArray *>(column_ptrs[1]);
+            array1 = &typeid_cast<const ColumnArray &>(*column_ptrs[1]);
 
         const ColumnArray::Offsets & from_offsets = array1->getOffsets();
-        const ColumnVector<UInt64>::Container & from_container = typeid_cast<const ColumnVector<UInt64> *>(&array1->getData())->getData();
+        const ColumnVector<UInt64>::Container & from_container = typeid_cast<const ColumnVector<UInt64> &>(array1->getData()).getData();
 
         if (is_column_const[2])
-            array2 = typeid_cast<const ColumnArray*>(typeid_cast<const ColumnConst*>(column_ptrs[2])->getDataColumnPtr().get());
+            array2 = &typeid_cast<const ColumnArray &>(*typeid_cast<const ColumnConst &>(*column_ptrs[2]).getDataColumnPtr());
         else
-            array2 = typeid_cast<const ColumnArray *>(column_ptrs[2]);
+            array2 = &typeid_cast<const ColumnArray &>(*column_ptrs[2]);
 
         const ColumnArray::Offsets & to_offsets = array2->getOffsets();
-        const ColumnVector<UInt64>::Container & to_container = typeid_cast<const ColumnVector<UInt64> *>(&array2->getData())->getData();
+        const ColumnVector<UInt64>::Container & to_container = typeid_cast<const ColumnVector<UInt64> &>(array2->getData()).getData();
         auto col_to = ColumnAggregateFunction::create(col_agg_func->getAggregateFunction());
         col_to->reserve(input_rows_count);
 
@@ -911,9 +911,9 @@ private:
         is_column_const[0] = isColumnConst(*column_ptrs[0]);
 
         if (is_column_const[0])
-            container0 = &typeid_cast<const ColumnAggregateFunction*>(typeid_cast<const ColumnConst*>(column_ptrs[0])->getDataColumnPtr().get())->getData();
+            container0 = &typeid_cast<const ColumnAggregateFunction &>(typeid_cast<const ColumnConst &>(*column_ptrs[0]).getDataColumn()).getData();
         else
-            container0 = &typeid_cast<const ColumnAggregateFunction*>(column_ptrs[0])->getData();
+            container0 = &typeid_cast<const ColumnAggregateFunction &>(*column_ptrs[0]).getData();
 
         // we can always cast the second column to ColumnUInt64
         auto uint64_column = castColumn(arguments[1], std::make_shared<DataTypeUInt64>());
@@ -921,9 +921,9 @@ private:
         is_column_const[1] = isColumnConst(*column_ptrs[1]);
 
         if (is_column_const[1])
-            container1 = &typeid_cast<const ColumnUInt64*>(typeid_cast<const ColumnConst*>(column_ptrs[1])->getDataColumnPtr().get())->getData();
+            container1 = &typeid_cast<const ColumnUInt64 &>(typeid_cast<const ColumnConst &>(*column_ptrs[1]).getDataColumn()).getData();
         else
-            container1 = &typeid_cast<const ColumnUInt64*>(column_ptrs[1])->getData();
+            container1 = &typeid_cast<const ColumnUInt64 &>(*column_ptrs[1]).getData();
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {

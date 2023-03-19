@@ -131,6 +131,7 @@ TEST_F(FileCacheTest, get)
     auto query_context = DB::Context::createCopy(getContext().context);
     query_context->makeQueryContext();
     query_context->setCurrentQueryId(query_id);
+    chassert(&DB::CurrentThread::get() == &thread_status);
     DB::CurrentThread::QueryScope query_scope_holder(query_context);
 
     DB::FileCacheSettings settings;
@@ -398,8 +399,8 @@ TEST_F(FileCacheTest, get)
                 auto query_context_1 = DB::Context::createCopy(getContext().context);
                 query_context_1->makeQueryContext();
                 query_context_1->setCurrentQueryId("query_id_1");
+                chassert(&DB::CurrentThread::get() == &thread_status_1);
                 DB::CurrentThread::QueryScope query_scope_holder_1(query_context_1);
-                thread_status_1.attachQueryContext(query_context_1);
 
                 auto holder_2 = cache.getOrSet(key, 25, 5, {}); /// Get [25, 29] once again.
                 auto segments_2 = fromHolder(holder_2);
@@ -467,8 +468,8 @@ TEST_F(FileCacheTest, get)
                 auto query_context_1 = DB::Context::createCopy(getContext().context);
                 query_context_1->makeQueryContext();
                 query_context_1->setCurrentQueryId("query_id_1");
+                chassert(&DB::CurrentThread::get() == &thread_status_1);
                 DB::CurrentThread::QueryScope query_scope_holder_1(query_context_1);
-                thread_status_1.attachQueryContext(query_context_1);
 
                 auto holder_2 = cache.getOrSet(key, 3, 23, {}); /// Get [3, 25] once again
                 auto segments_2 = fromHolder(*holder);

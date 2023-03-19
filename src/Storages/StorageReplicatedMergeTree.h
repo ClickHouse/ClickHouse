@@ -181,7 +181,7 @@ public:
 
     /// Wait till replication queue's current last entry is processed or till size becomes 0
     /// If timeout is exceeded returns false
-    bool waitForProcessingQueue(UInt64 max_wait_milliseconds = 0);
+    bool waitForProcessingQueue(UInt64 max_wait_milliseconds, bool strict);
 
     /// Get the status of the table. If with_zk_fields = false - do not fill in the fields that require queries to ZK.
     void getStatus(ReplicatedTableStatus & res, bool with_zk_fields = true);
@@ -482,6 +482,16 @@ private:
     std::mutex last_broken_disks_mutex;
     std::set<String> last_broken_disks;
 
+    std::mutex existing_zero_copy_locks_mutex;
+
+    struct ZeroCopyLockDescription
+    {
+        std::string replica;
+        std::shared_ptr<std::atomic<bool>> exists;
+    };
+
+    std::unordered_map<String, ZeroCopyLockDescription> existing_zero_copy_locks;
+
     static std::optional<QueryPipeline> distributedWriteFromClusterStorage(const std::shared_ptr<IStorageCluster> & src_storage_cluster, const ASTInsertQuery & query, ContextPtr context);
 
     template <class Func>
@@ -542,9 +552,6 @@ private:
     /// Adds actions to `ops` that remove a part from ZooKeeper.
     /// Set has_children to true for "old-style" parts (those with /columns and /checksums child znodes).
     void getRemovePartFromZooKeeperOps(const String & part_name, Coordination::Requests & ops, bool has_children);
-
-    /// Just removes part from ZooKeeper using previous method
-    void removePartFromZooKeeper(const String & part_name);
 
     /// Quickly removes big set of parts from ZooKeeper (using async multi queries)
     void removePartsFromZooKeeper(zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names,
@@ -862,6 +869,7 @@ private:
     void createTableSharedID() const;
 
     bool checkZeroCopyLockExists(const String & part_name, const DiskPtr & disk, String & lock_replica);
+    void watchZeroCopyLock(const String & part_name, const DiskPtr & disk);
 
     std::optional<String> getZeroCopyPartPath(const String & part_name, const DiskPtr & disk);
 

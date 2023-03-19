@@ -5,7 +5,10 @@
 namespace DB
 {
 
-struct ValidationParams
+/// Validate PREWHERE, WHERE, HAVING in query node
+void validateFilters(const QueryTreeNodePtr & query_node);
+
+struct AggregatesValidationParams
 {
     bool group_by_use_nulls = false;
 };
@@ -20,7 +23,7 @@ struct ValidationParams
   * PROJECTION.
   * 5. Throws exception if there is GROUPING SETS or ROLLUP or CUBE or WITH TOTALS without aggregation.
   */
-void validateAggregates(const QueryTreeNodePtr & query_node, ValidationParams params);
+void validateAggregates(const QueryTreeNodePtr & query_node, AggregatesValidationParams params);
 
 /** Assert that there are no function nodes with specified function name in node children.
   * Do not visit subqueries.
