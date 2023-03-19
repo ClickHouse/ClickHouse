@@ -122,12 +122,17 @@ public:
             readVarUInt(size, in);
 
             static constexpr size_t max_size = 1_GiB;
+
+            if (size == 0)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect size (0) in groupBitmap.");
             if (size > max_size)
                 throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size in groupBitmap.");
 
+            /// TODO: this is unnecessary copying - it will be better to read and deserialize in one pass.
             std::unique_ptr<char[]> buf(new char[size]);
             in.readStrict(buf.get(), size);
-            roaring_bitmap = std::make_shared<RoaringBitmap>(RoaringBitmap::read(buf.get()));
+
+            roaring_bitmap = std::make_shared<RoaringBitmap>(RoaringBitmap::readSafe(buf.get(), size));
         }
         else
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown type of roaring bitmap");
