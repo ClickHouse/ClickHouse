@@ -100,6 +100,9 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
 
                     for (auto & expression_dag_node : expression_dag_nodes)
                     {
+                        if (expression_dag_node->column && isColumnConst(*expression_dag_node->column))
+                            continue;
+
                         grouping_sets_parameters.used_keys.push_back(expression_dag_node->result_name);
                         if (before_aggregation_actions_output_node_names.contains(expression_dag_node->result_name))
                             continue;
@@ -146,6 +149,9 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
 
             for (auto & expression_dag_node : expression_dag_nodes)
             {
+                if (expression_dag_node->column && isColumnConst(*expression_dag_node->column))
+                    continue;
+
                 if (before_aggregation_actions_output_node_names.contains(expression_dag_node->result_name))
                     continue;
 
