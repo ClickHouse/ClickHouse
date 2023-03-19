@@ -9,27 +9,25 @@ opts=(
     "--allow_experimental_analyzer=0"
 )
 
-RAND_ID=$(shuf --input-range 10000000-99999999 --head-count=1)
-
 $CLICKHOUSE_CLIENT "${opts[@]}" --multiquery <<EOF
 SET allow_experimental_window_view = 1;
-DROP TABLE IF EXISTS mt_$RAND_ID;
-DROP TABLE IF EXISTS dst_$RAND_ID;
-DROP TABLE IF EXISTS wv_$RAND_ID;
+DROP TABLE IF EXISTS mt;
+DROP TABLE IF EXISTS dst;
+DROP TABLE IF EXISTS wv;
 
-CREATE TABLE dst_$RAND_ID(time DateTime, colA String, colB String) Engine=MergeTree ORDER BY tuple();
-CREATE TABLE mt_$RAND_ID(colA String, colB String) ENGINE=MergeTree ORDER BY tuple();
-CREATE WINDOW VIEW wv_$RAND_ID TO dst_$RAND_ID AS SELECT tumbleStart(w_id) AS time, colA, colB FROM mt_$RAND_ID GROUP BY tumble(now(), INTERVAL '10' SECOND, 'US/Samoa') AS w_id, colA, colB;
+CREATE TABLE dst(time DateTime, colA String, colB String) Engine=MergeTree ORDER BY tuple();
+CREATE TABLE mt(colA String, colB String) ENGINE=MergeTree ORDER BY tuple();
+CREATE WINDOW VIEW wv TO dst AS SELECT tumbleStart(w_id) AS time, colA, colB FROM mt GROUP BY tumble(now(), INTERVAL '10' SECOND, 'US/Samoa') AS w_id, colA, colB;
 
-INSERT INTO mt_$RAND_ID VALUES ('test1', 'test2');
+INSERT INTO mt VALUES ('test1', 'test2');
 EOF
 
 for _ in {1..100}; do
-	$CLICKHOUSE_CLIENT "${opts[@]}" --query="SELECT count(*) FROM dst_$RAND_ID" | grep -q "1" && echo 'OK' && break
-	# sleep .5
+	$CLICKHOUSE_CLIENT "${opts[@]}" --query="SELECT count(*) FROM dst" | grep -q "1" && echo 'OK' && break
+	sleep .5
 done
 
-$CLICKHOUSE_CLIENT "${opts[@]}" --query="SELECT colA, colB FROM dst_$RAND_ID"
-$CLICKHOUSE_CLIENT "${opts[@]}" --query="DROP TABLE wv_$RAND_ID"
-$CLICKHOUSE_CLIENT "${opts[@]}" --query="DROP TABLE mt_$RAND_ID"
-$CLICKHOUSE_CLIENT "${opts[@]}" --query="DROP TABLE dst_$RAND_ID"
+$CLICKHOUSE_CLIENT "${opts[@]}" --query="SELECT colA, colB FROM dst"
+$CLICKHOUSE_CLIENT "${opts[@]}" --query="DROP TABLE wv"
+$CLICKHOUSE_CLIENT "${opts[@]}" --query="DROP TABLE mt"
+$CLICKHOUSE_CLIENT "${opts[@]}" --query="DROP TABLE dst"
