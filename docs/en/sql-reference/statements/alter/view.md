@@ -165,7 +165,7 @@ GROUP BY
 
 **Example without TO table**
 
-The application is very limited because it only possible to change SELECT section without adding new columns.
+The application is very limited because you can only change the `SELECT` section without adding new columns.
 
 ```sql
 CREATE TABLE src_table (`a` UInt32) ENGINE = MergeTree ORDER BY a;
