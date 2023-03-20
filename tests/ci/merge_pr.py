@@ -57,7 +57,8 @@ class Reviews:
                 self.reviews[user] = r
                 continue
 
-            if r.submitted_at < self.reviews[user].submitted_at:
+            # Keep the latest review per user
+            if self.reviews[user].submitted_at < r.submitted_at:
                 self.reviews[user] = r
 
     def is_approved(self, team: List[NamedUser]) -> bool:
