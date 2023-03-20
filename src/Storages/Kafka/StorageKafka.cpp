@@ -848,8 +848,6 @@ void registerStorageKafka(StorageFactory & factory)
             }
             collection_name = assert_cast<const ASTIdentifier *>(args.engine_args[0].get())->name();
         }
-        else if (!has_settings)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Kafka engine must have settings");
 
         if (has_settings)
         {
