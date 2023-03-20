@@ -199,12 +199,21 @@ def test_granular_access_show_query(cluster):
     assert 0 == int(
         node.query("SELECT count() FROM system.named_collections", user="koko")
     )
+    assert "GRANT SELECT ON *.* TO koko" == node.query("SHOW GRANTS FOR koko;").strip()
     node.query("GRANT show named collections ON * TO koko")
+    assert (
+        "GRANT SELECT ON *.* TO koko\nGRANT SHOW NAMED COLLECTIONS ON * TO koko"
+        == node.query("SHOW GRANTS FOR koko;").strip()
+    )
     assert (
         "collection1\ncollection2"
         == node.query("select name from system.named_collections", user="koko").strip()
     )
     node.restart_clickhouse()
+    assert (
+        "GRANT SELECT ON *.* TO koko\nGRANT SHOW NAMED COLLECTIONS ON * TO koko"
+        == node.query("SHOW GRANTS FOR koko;").strip()
+    )
     assert (
         "collection1\ncollection2"
         == node.query("select name from system.named_collections", user="koko").strip()
@@ -212,10 +221,18 @@ def test_granular_access_show_query(cluster):
 
     node.query("REVOKE show named collections ON collection1 FROM koko;")
     assert (
+        "GRANT SELECT ON *.* TO koko\nGRANT SHOW NAMED COLLECTIONS ON * TO koko\nREVOKE SHOW NAMED COLLECTIONS ON collection1 FROM koko"
+        == node.query("SHOW GRANTS FOR koko;").strip()
+    )
+    assert (
         "collection2"
         == node.query("select name from system.named_collections", user="koko").strip()
     )
     node.restart_clickhouse()
+    assert (
+        "GRANT SELECT ON *.* TO koko\nGRANT SHOW NAMED COLLECTIONS ON * TO koko\nREVOKE SHOW NAMED COLLECTIONS ON collection1 FROM koko"
+        == node.query("SHOW GRANTS FOR koko;").strip()
+    )
     assert (
         "collection2"
         == node.query("select name from system.named_collections", user="koko").strip()
@@ -224,6 +241,10 @@ def test_granular_access_show_query(cluster):
     assert (
         "" == node.query("select * from system.named_collections", user="koko").strip()
     )
+    assert (
+        "GRANT SELECT ON *.* TO koko\nGRANT SHOW NAMED COLLECTIONS ON * TO koko\nREVOKE SHOW NAMED COLLECTIONS ON collection1 FROM koko\nREVOKE SHOW NAMED COLLECTIONS ON collection2 FROM koko"
+        == node.query("SHOW GRANTS FOR koko;").strip()
+    )
 
     # check:
     # GRANT show named collections ON collection
@@ -231,10 +252,15 @@ def test_granular_access_show_query(cluster):
 
     node.query("GRANT show named collections ON collection2 TO koko")
     assert (
+        "GRANT SELECT ON *.* TO koko\nGRANT SHOW NAMED COLLECTIONS ON * TO koko\nREVOKE SHOW NAMED COLLECTIONS ON collection1 FROM koko"
+        == node.query("SHOW GRANTS FOR koko;").strip()
+    )
+    assert (
         "collection2"
         == node.query("select name from system.named_collections", user="koko").strip()
     )
     node.query("REVOKE show named collections ON * FROM koko;")
+    assert "GRANT SELECT ON *.* TO koko" == node.query("SHOW GRANTS FOR koko;").strip()
     assert (
         "" == node.query("select * from system.named_collections", user="koko").strip()
     )
@@ -250,7 +276,7 @@ def test_show_grants(cluster):
     node.query("GRANT select ON name1.* TO koko")
     assert (
         "GRANT SELECT ON name1.* TO koko\nGRANT CREATE NAMED COLLECTION ON name1 TO koko"
-        in node.query("SHOW GRANTS FOR koko;").strip()
+        == node.query("SHOW GRANTS FOR koko;").strip()
     )
 
     node.query("DROP USER IF EXISTS koko")
@@ -259,7 +285,7 @@ def test_show_grants(cluster):
     node.query("GRANT select ON name1 TO koko")
     assert (
         "GRANT SELECT ON default.name1 TO koko\nGRANT CREATE NAMED COLLECTION ON name1 TO koko"
-        in node.query("SHOW GRANTS FOR koko;").strip()
+        == node.query("SHOW GRANTS FOR koko;").strip()
     )
 
     node.query("DROP USER IF EXISTS koko")
@@ -268,7 +294,7 @@ def test_show_grants(cluster):
     node.query("GRANT CREATE NAMED COLLECTION ON name1 TO koko")
     assert (
         "GRANT SELECT ON default.name1 TO koko\nGRANT CREATE NAMED COLLECTION ON name1 TO koko"
-        in node.query("SHOW GRANTS FOR koko;").strip()
+        == node.query("SHOW GRANTS FOR koko;").strip()
     )
 
     node.query("DROP USER IF EXISTS koko")
@@ -277,7 +303,7 @@ def test_show_grants(cluster):
     node.query("GRANT CREATE NAMED COLLECTION ON * TO koko")
     assert (
         "GRANT SELECT ON *.* TO koko\nGRANT CREATE NAMED COLLECTION ON * TO koko"
-        in node.query("SHOW GRANTS FOR koko;").strip()
+        == node.query("SHOW GRANTS FOR koko;").strip()
     )
 
     node.query("DROP USER IF EXISTS koko")
@@ -286,7 +312,7 @@ def test_show_grants(cluster):
     node.query("GRANT select ON *.* TO koko")
     assert (
         "GRANT SELECT ON *.* TO koko\nGRANT CREATE NAMED COLLECTION ON * TO koko"
-        in node.query("SHOW GRANTS FOR koko;").strip()
+        == node.query("SHOW GRANTS FOR koko;").strip()
     )
 
     node.query("DROP USER IF EXISTS koko")
@@ -295,7 +321,7 @@ def test_show_grants(cluster):
     node.query("GRANT select ON * TO koko")
     assert (
         "GRANT CREATE NAMED COLLECTION ON * TO koko\nGRANT SELECT ON default.* TO koko"
-        in node.query("SHOW GRANTS FOR koko;").strip()
+        == node.query("SHOW GRANTS FOR koko;").strip()
     )
 
     node.query("DROP USER IF EXISTS koko")
@@ -304,7 +330,7 @@ def test_show_grants(cluster):
     node.query("GRANT CREATE NAMED COLLECTION ON * TO koko")
     assert (
         "GRANT CREATE NAMED COLLECTION ON * TO koko\nGRANT SELECT ON default.* TO koko"
-        in node.query("SHOW GRANTS FOR koko;").strip()
+        == node.query("SHOW GRANTS FOR koko;").strip()
     )
 
 
