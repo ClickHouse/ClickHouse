@@ -181,7 +181,7 @@ public:
 
     /// Wait till replication queue's current last entry is processed or till size becomes 0
     /// If timeout is exceeded returns false
-    bool waitForProcessingQueue(UInt64 max_wait_milliseconds = 0);
+    bool waitForProcessingQueue(UInt64 max_wait_milliseconds, bool strict);
 
     /// Get the status of the table. If with_zk_fields = false - do not fill in the fields that require queries to ZK.
     void getStatus(ReplicatedTableStatus & res, bool with_zk_fields = true);
@@ -552,9 +552,6 @@ private:
     /// Adds actions to `ops` that remove a part from ZooKeeper.
     /// Set has_children to true for "old-style" parts (those with /columns and /checksums child znodes).
     void getRemovePartFromZooKeeperOps(const String & part_name, Coordination::Requests & ops, bool has_children);
-
-    /// Just removes part from ZooKeeper using previous method
-    void removePartFromZooKeeper(const String & part_name);
 
     /// Quickly removes big set of parts from ZooKeeper (using async multi queries)
     void removePartsFromZooKeeper(zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names,
