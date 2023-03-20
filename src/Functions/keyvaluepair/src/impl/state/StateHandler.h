@@ -35,7 +35,6 @@ concept CInlineEscapingValueStateHandler = requires(ValueStateHandler handler)
     { handler.wait(std::string_view {}, std::size_t {}) } -> std::same_as<NextState>;
     { handler.read(std::string_view {}, std::size_t {}, std::declval<std::string &>()) } -> std::same_as<NextState>;
     { handler.readQuoted(std::string_view {}, std::size_t {}, std::declval<std::string &>()) } -> std::same_as<NextState>;
-    { handler.readEmpty(std::string_view {}, std::size_t {}, std::declval<std::string &>()) } -> std::same_as<NextState>;
 };
 
 template <typename ValueStateHandler>
@@ -44,7 +43,6 @@ concept CNoEscapingValueStateHandler = requires(ValueStateHandler handler)
     { handler.wait(std::string_view {}, std::size_t {}) } -> std::same_as<NextState>;
     { handler.read(std::string_view {}, std::size_t {}, std::declval<std::string_view &>()) } -> std::same_as<NextState>;
     { handler.readQuoted(std::string_view {}, std::size_t {}, std::declval<std::string_view &>()) } -> std::same_as<NextState>;
-    { handler.readEmpty(std::string_view {}, std::size_t {}, std::declval<std::string_view &>()) } -> std::same_as<NextState>;
 };
 
 template <typename T>

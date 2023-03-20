@@ -70,8 +70,6 @@ private:
                 return value_state_handler.read(file, pos, value);
             case State::READING_QUOTED_VALUE:
                 return value_state_handler.readQuoted(file, pos, value);
-            case State::READING_EMPTY_VALUE:
-                return value_state_handler.readEmpty(file, pos, value);
             case State::FLUSH_PAIR:
                 return flushPair(file, pos, key, value, keys, values, row_offset);
             case END:
