@@ -47,26 +47,29 @@ struct ReplicatedMergeTreeSinkImpl<async_insert>::DelayedChunk
     {
         Poco::Logger * log;
         MergeTreeDataWriter::TemporaryPart temp_part;
-        WriteState write_state;
         UInt64 elapsed_ns;
         BlockIDsType block_id;
         BlockWithPartition block_with_partition;
         std::unordered_map<String, std::vector<size_t>> block_id_to_offset_idx;
         ProfileEvents::Counters part_counters;
+        WriteStatePtr write_state;
 
         Partition() = default;
-        Partition(Poco::Logger * log_,
-                  MergeTreeDataWriter::TemporaryPart && temp_part_,
-                  UInt64 elapsed_ns_,
-                  BlockIDsType && block_id_,
-                  BlockWithPartition && block_,
-                  ProfileEvents::Counters && part_counters_)
-            : log(log_),
-              temp_part(std::move(temp_part_)),
-              elapsed_ns(elapsed_ns_),
-              block_id(std::move(block_id_)),
-              block_with_partition(std::move(block_)),
-              part_counters(std::move(part_counters_))
+        Partition(
+            Poco::Logger * log_,
+            MergeTreeDataWriter::TemporaryPart && temp_part_,
+            UInt64 elapsed_ns_,
+            BlockIDsType && block_id_,
+            BlockWithPartition && block_,
+            ProfileEvents::Counters && part_counters_,
+            WriteStatePtr && write_state_)
+            : log(log_)
+            , temp_part(std::move(temp_part_))
+            , elapsed_ns(elapsed_ns_)
+            , block_id(std::move(block_id_))
+            , block_with_partition(std::move(block_))
+            , part_counters(std::move(part_counters_))
+            , write_state(std::move(write_state_))
         {
                 initBlockIDMap();
         }
@@ -199,7 +202,13 @@ std::vector<Int64> testSelfDeduplicate(std::vector<Int64> data, std::vector<size
     BlockWithPartition block1(std::move(block), Row(), std::move(offsets));
     ProfileEvents::Counters profile_counters;
     ReplicatedMergeTreeSinkImpl<true>::DelayedChunk::Partition part(
-        &Poco::Logger::get("testSelfDeduplicate"), MergeTreeDataWriter::TemporaryPart(), 0, std::move(hashes), std::move(block1), std::move(profile_counters));
+        &Poco::Logger::get("testSelfDeduplicate"),
+        MergeTreeDataWriter::TemporaryPart(),
+        0,
+        std::move(hashes),
+        std::move(block1),
+        std::move(profile_counters),
+        nullptr);
 
     part.filterSelfDuplicate();
 
@@ -428,7 +437,13 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
 
         /// Write part to the filesystem under temporary name. Calculate a checksum.
 
-        auto temp_part = storage.writer.writeTempPart(current_block, metadata_snapshot, context);
+        WriteStatePtr write_state = nullptr;
+        if (storage.merging_params.mode == MergeTreeData::MergingParams::Mode::Unique)
+        {
+            write_state = std::make_shared<WriteState>();
+        }
+
+        auto temp_part = storage.writer.writeTempPart(current_block, metadata_snapshot, context, write_state);
 
         /// If optimize_on_insert setting is true, current_block could become empty after merge
         /// and we didn't create part.
@@ -495,8 +510,8 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
             elapsed_ns,
             std::move(block_id),
             std::move(current_block),
-            std::move(part_counters) /// profile_events_scope must be reset here.
-        ));
+            std::move(part_counters), /// profile_events_scope must be reset here.
+            std::move(write_state)));
     }
 
     finishDelayedChunk(zookeeper);
