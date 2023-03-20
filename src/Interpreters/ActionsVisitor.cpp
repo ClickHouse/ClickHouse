@@ -33,8 +33,6 @@
 
 #include <Storages/StorageSet.h>
 
-#include <TableFunctions/TableFunctionFactory.h>
-
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -69,7 +67,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_IDENTIFIER;
     extern const int NOT_AN_AGGREGATE;
     extern const int UNEXPECTED_EXPRESSION;
-    extern const int UNKNOWN_FUNCTION;
     extern const int TYPE_MISMATCH;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int INCORRECT_ELEMENT_OF_SET;
@@ -883,21 +880,12 @@ void ActionsMatcher::visit(const ASTIdentifier & identifier, const ASTPtr &, Dat
 
 void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & data)
 {
-    if (node.name == "lambda")
-        throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "Unexpected lambda expression");
-
-    bool is_valid_function = node.name == "arrayJoin" || node.name == "grouping" || node.name == "indexHint" ||
-        AggregateUtils::isAggregateFunction(node) ||
-        node.is_window_function ||
-        FunctionFactory::instance().has(node.name) ||
-        UserDefinedExecutableFunctionFactory::instance().has(node.name, data.getContext());
-
-    if (!is_valid_function)
-        throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "Unexpected function '{}'", node.name);
-
     auto column_name = ast->getColumnName();
     if (data.hasColumn(column_name))
         return;
+
+    if (node.name == "lambda")
+        throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "Unexpected lambda expression");
 
     /// Function arrayJoin.
     if (node.name == "arrayJoin")
