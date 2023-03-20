@@ -47,6 +47,16 @@ class Reviews:
                 self.reviews[user] = r
                 continue
 
+            # Do not process other statuses than STATES for existing user keys
+            if r.state not in self.STATES:
+                continue
+
+            # If the user has a status other than STATES, we overwrite it by a
+            # review w/ a proper state w/o checking the date
+            if self.reviews[user].state not in self.STATES:
+                self.reviews[user] = r
+                continue
+
             if r.submitted_at < self.reviews[user].submitted_at:
                 self.reviews[user] = r
 
