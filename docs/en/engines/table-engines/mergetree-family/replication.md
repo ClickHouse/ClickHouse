@@ -39,7 +39,7 @@ Compressed data for `INSERT` and `ALTER` queries is replicated (for more informa
 -   The `DROP TABLE` query deletes the replica located on the server where the query is run.
 -   The `RENAME` query renames the table on one of the replicas. In other words, replicated tables can have different names on different replicas.
 
-ClickHouse uses [ClickHouse Keeper](/docs/en/guides/sre/keeper/clickhouse-keeper.md) for storing replicas meta information. It is possible to use ZooKeeper version 3.4.5 or newer, but ClickHouse Keeper is recommended.
+ClickHouse uses [ClickHouse Keeper](/docs/en/guides/sre/keeper/index.md) for storing replicas meta information. It is possible to use ZooKeeper version 3.4.5 or newer, but ClickHouse Keeper is recommended.
 
 To use replication, set parameters in the [zookeeper](/docs/en/operations/server-configuration-parameters/settings.md/#server-settings_zookeeper) server configuration section.
 
@@ -144,7 +144,7 @@ ENGINE = ReplicatedReplacingMergeTree
 The `Replicated` prefix is added to the table engine name. For example:`ReplicatedMergeTree`.
 
 :::tip
-Adding `Replicated` is optional in ClickHouse Cloud, as all of the tables are replicated.  
+Adding `Replicated` is optional in ClickHouse Cloud, as all of the tables are replicated.
 :::
 
 ### Replicated\*MergeTree parameters

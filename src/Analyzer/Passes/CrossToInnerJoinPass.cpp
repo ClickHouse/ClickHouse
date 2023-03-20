@@ -1,5 +1,7 @@
 #include <Analyzer/Passes/CrossToInnerJoinPass.h>
 
+#include <DataTypes/getLeastSupertype.h>
+
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 
 #include <Analyzer/JoinNode.h>
@@ -152,25 +154,34 @@ public:
         QueryTreeNodes other_conditions;
         exctractJoinConditions(where_condition, equi_conditions, other_conditions);
         bool can_convert_cross_to_inner = false;
-        for (auto & cond : equi_conditions)
+        for (auto & condition : equi_conditions)
         {
-            auto left_src = getExpressionSource(getEquiArgument(cond, 0));
-            auto right_src = getExpressionSource(getEquiArgument(cond, 1));
-            if (left_src.second && right_src.second && left_src.first && right_src.first)
-            {
-                bool can_join_on = (findInTableExpression(left_src.first, left_table) && findInTableExpression(right_src.first, right_table))
-                    || (findInTableExpression(left_src.first, right_table) && findInTableExpression(right_src.first, left_table));
+            const auto & lhs_equi_argument = getEquiArgument(condition, 0);
+            const auto & rhs_equi_argument = getEquiArgument(condition, 1);
 
-                if (can_join_on)
+            DataTypes key_types = {lhs_equi_argument->getResultType(), rhs_equi_argument->getResultType()};
+            DataTypePtr common_key_type = tryGetLeastSupertype(key_types);
+
+            /// If there is common key type, we can join on this condition
+            if (common_key_type)
+            {
+                auto left_src = getExpressionSource(lhs_equi_argument);
+                auto right_src = getExpressionSource(rhs_equi_argument);
+
+                if (left_src.second && right_src.second && left_src.first && right_src.first)
                 {
-                    can_convert_cross_to_inner = true;
-                    continue;
+                    if ((findInTableExpression(left_src.first, left_table) && findInTableExpression(right_src.first, right_table)) ||
+                        (findInTableExpression(left_src.first, right_table) && findInTableExpression(right_src.first, left_table)))
+                    {
+                        can_convert_cross_to_inner = true;
+                        continue;
+                    }
                 }
             }
 
             /// Can't join on this condition, move it to other conditions
-            other_conditions.push_back(cond);
-            cond = nullptr;
+            other_conditions.push_back(condition);
+            condition = nullptr;
         }
 
         if (!can_convert_cross_to_inner)

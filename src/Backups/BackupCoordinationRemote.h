@@ -4,6 +4,7 @@
 #include <Backups/BackupCoordinationReplicatedAccess.h>
 #include <Backups/BackupCoordinationReplicatedTables.h>
 #include <Backups/BackupCoordinationStageSync.h>
+#include <Storages/MergeTree/ZooKeeperRetries.h>
 
 
 namespace DB
@@ -16,7 +17,20 @@ constexpr size_t MAX_ZOOKEEPER_ATTEMPTS = 10;
 class BackupCoordinationRemote : public IBackupCoordination
 {
 public:
-    BackupCoordinationRemote(const String & root_zookeeper_path_, const String & backup_uuid_, zkutil::GetZooKeeper get_zookeeper_, bool is_internal_);
+    struct BackupKeeperSettings
+    {
+        UInt64 keeper_max_retries;
+        UInt64 keeper_retry_initial_backoff_ms;
+        UInt64 keeper_retry_max_backoff_ms;
+        UInt64 batch_size_for_keeper_multiread;
+    };
+
+    BackupCoordinationRemote(
+        const BackupKeeperSettings & keeper_settings_,
+        const String & root_zookeeper_path_,
+        const String & backup_uuid_,
+        zkutil::GetZooKeeper get_zookeeper_,
+        bool is_internal_);
     ~BackupCoordinationRemote() override;
 
     void setStage(const String & current_host, const String & new_stage, const String & message) override;
@@ -68,12 +82,14 @@ private:
     void prepareReplicatedTables() const;
     void prepareReplicatedAccess() const;
 
+    const BackupKeeperSettings keeper_settings;
     const String root_zookeeper_path;
     const String zookeeper_path;
     const String backup_uuid;
     const zkutil::GetZooKeeper get_zookeeper;
     const bool is_internal;
 
+    mutable ZooKeeperRetriesInfo zookeeper_retries_info;
     std::optional<BackupCoordinationStageSync> stage_sync;
 
     mutable std::mutex mutex;

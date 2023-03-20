@@ -348,10 +348,6 @@
     <background_distributed_schedule_pool_size>16</background_distributed_schedule_pool_size>
     -->
 
-    <!-- Number of workers to recycle connections in background (see also drain_timeout).
-         If the pool is full, connection will be drained synchronously. -->
-    <!-- <max_threads_for_connection_collector>10</max_threads_for_connection_collector> -->
-
     <!-- On memory constrained environments you may have to set this to value larger than 1.
       -->
     <max_server_memory_usage_to_ram_ratio>0.9</max_server_memory_usage_to_ram_ratio>

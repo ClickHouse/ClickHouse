@@ -117,6 +117,11 @@ namespace ProfileEvents
     extern const Event SystemTimeMicroseconds;
 }
 
+namespace
+{
+constexpr UInt64 THREAD_GROUP_ID = 0;
+}
+
 namespace DB
 {
 
@@ -195,23 +200,24 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
         }
     };
     std::map<Id, UInt64> rows_by_name;
+
     for (size_t src_row = 0; src_row < src.rows(); ++src_row)
     {
+        /// Filter out threads stats, use stats from thread group
+        /// Exactly stats from thread group is stored to the table system.query_log
+        /// The stats from threads are less useful.
+        /// They take more records, they need to be combined,
+        /// there even could be several records from one thread.
+        /// Server doesn't send it any more to the clients, so this code left for compatible
+        auto thread_id = src_array_thread_id[src_row];
+        if (thread_id != THREAD_GROUP_ID)
+            continue;
+
         Id id{
             src_column_name.getDataAt(src_row),
             src_column_host_name.getDataAt(src_row),
         };
         rows_by_name[id] = src_row;
-    }
-
-    /// Filter out snapshots
-    std::set<size_t> thread_id_filter_mask;
-    for (size_t i = 0; i < src_array_thread_id.size(); ++i)
-    {
-        if (src_array_thread_id[i] != 0)
-        {
-            thread_id_filter_mask.emplace(i);
-        }
     }
 
     /// Merge src into dst.
@@ -225,10 +231,6 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
         if (auto it = rows_by_name.find(id); it != rows_by_name.end())
         {
             size_t src_row = it->second;
-            if (thread_id_filter_mask.contains(src_row))
-            {
-                continue;
-            }
 
             dst_array_current_time[dst_row] = src_array_current_time[src_row];
 
@@ -249,11 +251,6 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
     /// Copy rows from src that dst does not contains.
     for (const auto & [id, pos] : rows_by_name)
     {
-        if (thread_id_filter_mask.contains(pos))
-        {
-            continue;
-        }
-
         for (size_t col = 0; col < src.columns(); ++col)
         {
             mutable_columns[col]->insert((*src.getByPosition(col).column)[pos]);
@@ -1080,13 +1077,18 @@ void ClientBase::onProfileEvents(Block & block)
         const auto * user_time_name = ProfileEvents::getName(ProfileEvents::UserTimeMicroseconds);
         const auto * system_time_name = ProfileEvents::getName(ProfileEvents::SystemTimeMicroseconds);
 
-        HostToThreadTimesMap thread_times;
+        HostToTimesMap thread_times;
         for (size_t i = 0; i < rows; ++i)
         {
             auto thread_id = array_thread_id[i];
             auto host_name = host_names.getDataAt(i).toString();
-            if (thread_id != 0)
-                progress_indication.addThreadIdToList(host_name, thread_id);
+
+            /// In ProfileEvents packets thread id 0 specifies common profiling information
+            /// for all threads executing current query on specific host. So instead of summing per thread
+            /// consumption it's enough to look for data with thread id 0.
+            if (thread_id != THREAD_GROUP_ID)
+                continue;
+
             auto event_name = names.getDataAt(i);
             auto value = array_values[i];
 
@@ -1095,11 +1097,11 @@ void ClientBase::onProfileEvents(Block & block)
                 continue;
 
             if (event_name == user_time_name)
-                thread_times[host_name][thread_id].user_ms = value;
+                thread_times[host_name].user_ms = value;
             else if (event_name == system_time_name)
-                thread_times[host_name][thread_id].system_ms = value;
+                thread_times[host_name].system_ms = value;
             else if (event_name == MemoryTracker::USAGE_EVENT_NAME)
-                thread_times[host_name][thread_id].memory_usage = value;
+                thread_times[host_name].memory_usage = value;
         }
         progress_indication.updateThreadEventData(thread_times);
 
@@ -1360,7 +1362,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             throw;
         }
 
-        if (have_data_in_stdin)
+        if (have_data_in_stdin && !cancelled)
             sendDataFromStdin(sample, columns_description_for_query, parsed_query);
     }
     else if (parsed_insert_query->data)
@@ -1370,7 +1372,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         try
         {
             sendDataFrom(data_in, sample, columns_description_for_query, parsed_query, have_data_in_stdin);
-            if (have_data_in_stdin)
+            if (have_data_in_stdin && !cancelled)
                 sendDataFromStdin(sample, columns_description_for_query, parsed_query);
         }
         catch (Exception & e)
@@ -1834,7 +1836,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
     {
         /// disable logs if expects errors
         TestHint test_hint(all_queries_text);
-        if (test_hint.clientError() || test_hint.serverError())
+        if (test_hint.hasClientErrors() || test_hint.hasServerErrors())
             processTextAsSingleQuery("SET send_logs_level = 'fatal'");
     }
 
@@ -1876,17 +1878,17 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 // the query ends because we failed to parse it, so we consume
                 // the entire line.
                 TestHint hint(String(this_query_begin, this_query_end - this_query_begin));
-                if (hint.serverError())
+                if (hint.hasServerErrors())
                 {
                     // Syntax errors are considered as client errors
-                    current_exception->addMessage("\nExpected server error '{}'.", hint.serverError());
+                    current_exception->addMessage("\nExpected server error: {}.", hint.serverErrors());
                     current_exception->rethrow();
                 }
 
-                if (hint.clientError() != current_exception->code())
+                if (!hint.hasExpectedClientError(current_exception->code()))
                 {
-                    if (hint.clientError())
-                        current_exception->addMessage("\nExpected client error: " + std::to_string(hint.clientError()));
+                    if (hint.hasClientErrors())
+                        current_exception->addMessage("\nExpected client error: {}.", hint.clientErrors());
 
                     current_exception->rethrow();
                 }
@@ -1935,37 +1937,37 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 bool error_matches_hint = true;
                 if (have_error)
                 {
-                    if (test_hint.serverError())
+                    if (test_hint.hasServerErrors())
                     {
                         if (!server_exception)
                         {
                             error_matches_hint = false;
                             fmt::print(stderr, "Expected server error code '{}' but got no server error (query: {}).\n",
-                                       test_hint.serverError(), full_query);
+                                       test_hint.serverErrors(), full_query);
                         }
-                        else if (server_exception->code() != test_hint.serverError())
+                        else if (!test_hint.hasExpectedServerError(server_exception->code()))
                         {
                             error_matches_hint = false;
                             fmt::print(stderr, "Expected server error code: {} but got: {} (query: {}).\n",
-                                       test_hint.serverError(), server_exception->code(), full_query);
+                                       test_hint.serverErrors(), server_exception->code(), full_query);
                         }
                     }
-                    if (test_hint.clientError())
+                    if (test_hint.hasClientErrors())
                     {
                         if (!client_exception)
                         {
                             error_matches_hint = false;
                             fmt::print(stderr, "Expected client error code '{}' but got no client error (query: {}).\n",
-                                       test_hint.clientError(), full_query);
+                                       test_hint.clientErrors(), full_query);
                         }
-                        else if (client_exception->code() != test_hint.clientError())
+                        else if (!test_hint.hasExpectedClientError(client_exception->code()))
                         {
                             error_matches_hint = false;
                             fmt::print(stderr, "Expected client error code '{}' but got '{}' (query: {}).\n",
-                                       test_hint.clientError(), client_exception->code(), full_query);
+                                       test_hint.clientErrors(), client_exception->code(), full_query);
                         }
                     }
-                    if (!test_hint.clientError() && !test_hint.serverError())
+                    if (!test_hint.hasClientErrors() && !test_hint.hasServerErrors())
                     {
                         // No error was expected but it still occurred. This is the
                         // default case without test hint, doesn't need additional
@@ -1975,19 +1977,19 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 }
                 else
                 {
-                    if (test_hint.clientError())
+                    if (test_hint.hasClientErrors())
                     {
                         error_matches_hint = false;
                         fmt::print(stderr,
                                    "The query succeeded but the client error '{}' was expected (query: {}).\n",
-                                   test_hint.clientError(), full_query);
+                                   test_hint.clientErrors(), full_query);
                     }
-                    if (test_hint.serverError())
+                    if (test_hint.hasServerErrors())
                     {
                         error_matches_hint = false;
                         fmt::print(stderr,
                                    "The query succeeded but the server error '{}' was expected (query: {}).\n",
-                                   test_hint.serverError(), full_query);
+                                   test_hint.serverErrors(), full_query);
                     }
                 }
 

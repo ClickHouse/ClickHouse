@@ -54,6 +54,8 @@ public:
     void onFinish() override;
 
 private:
+    void onCancel() override;
+
     IColumn::Selector createSelector(const Block & source_block) const;
 
     void writeAsync(const Block & block);
