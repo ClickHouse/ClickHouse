@@ -221,45 +221,131 @@ InputFormatPtr FormatFactory::getInput(
     const Block & sample,
     ContextPtr context,
     UInt64 max_block_size,
-    const std::optional<FormatSettings> & _format_settings) const
+    const std::optional<FormatSettings> & format_settings,
+    std::optional<size_t> max_parsing_threads) const
 {
-    auto format_settings = _format_settings
-        ? *_format_settings : getFormatSettings(context);
+    return getInputImpl(
+        name,
+        nullptr,
+        &buf,
+        sample,
+        context,
+        max_block_size,
+        /* is_remote_fs */ false,
+        CompressionMethod::None,
+        /* io_schedule */ nullptr,
+        format_settings,
+        /* max_download_threads */ 1,
+        max_parsing_threads);
+}
 
-    if (!getCreators(name).input_creator)
+InputFormatPtr FormatFactory::getInputMultistream(
+    const String & name,
+    ParallelReadBuffer::ReadBufferFactoryPtr buf_factory,
+    const Block & sample,
+    ContextPtr context,
+    UInt64 max_block_size,
+    bool is_remote_fs,
+    CompressionMethod compression,
+    ThreadPoolCallbackRunner<void> io_schedule,
+    const std::optional<FormatSettings> & format_settings,
+    std::optional<size_t> max_download_threads,
+    std::optional<size_t> max_parsing_threads) const
+{
+    return getInputImpl(
+        name,
+        std::move(buf_factory),
+        nullptr,
+        sample,
+        context,
+        max_block_size,
+        is_remote_fs,
+        compression,
+        io_schedule,
+        format_settings,
+        max_download_threads,
+        max_parsing_threads);
+}
+
+InputFormatPtr FormatFactory::getInputImpl(
+    const String & name,
+    // exactly one of the following two is nullptr
+    ParallelReadBuffer::ReadBufferFactoryPtr buf_factory,
+    ReadBuffer * _buf,
+    const Block & sample,
+    ContextPtr context,
+    UInt64 max_block_size,
+    bool is_remote_fs,
+    CompressionMethod compression,
+    ThreadPoolCallbackRunner<void> io_schedule,
+    const std::optional<FormatSettings> & _format_settings,
+    std::optional<size_t> _max_download_threads,
+    std::optional<size_t> _max_parsing_threads) const
+{
+    chassert((!_buf) != (!buf_factory));
+    auto& creators = getCreators(name);
+    if (!creators.input_creator)
         throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT, "Format {} is not suitable for input", name);
 
+    auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
     const Settings & settings = context->getSettingsRef();
-    const auto & file_segmentation_engine = getCreators(name).file_segmentation_engine;
+    const auto & file_segmentation_engine = creators.file_segmentation_engine;
+    size_t max_parsing_threads = _max_parsing_threads.value_or(settings.max_threads);
+    size_t max_download_threads = _max_download_threads.value_or(settings.max_download_threads);
+    std::unique_ptr<ReadBuffer> owned_buf;
 
-    // Doesn't make sense to use parallel parsing with less than four threads
-    // (segmentator + two parsers + reader).
-    bool parallel_parsing = settings.input_format_parallel_parsing && file_segmentation_engine && settings.max_threads >= 4;
+    if (context->hasQueryContext() && settings.log_queries)
+        context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Format, name);
 
-    if (settings.max_memory_usage && settings.min_chunk_bytes_for_parallel_parsing * settings.max_threads * 2 > settings.max_memory_usage)
+    // Prepare a read buffer.
+
+    bool parallel_read = max_download_threads > 1 && buf_factory && format_settings.seekable_read
+        && (!creators.multistream_input_creator || compression != CompressionMethod::None);
+    if (parallel_read)
+        owned_buf = std::make_unique<ParallelReadBuffer>(
+            std::move(buf_factory),
+            std::move(io_schedule),
+            max_download_threads,
+            settings.max_download_buffer_size);
+
+    if (compression != CompressionMethod::None)
+    {
+        chassert(buf_factory);
+        if (!owned_buf)
+            owned_buf = buf_factory->getReader();
+        owned_buf = wrapReadBufferWithCompressionMethod(std::move(owned_buf), compression, static_cast<int>(settings.zstd_window_log_max));
+    }
+
+    if (!creators.multistream_input_creator && buf_factory && !owned_buf)
+        owned_buf = buf_factory->getReader();
+
+    auto buf = owned_buf ? owned_buf.get() : _buf;
+
+    // Return parallel parser if needed.
+
+    bool parallel_parsing = max_parsing_threads > 1 && settings.input_format_parallel_parsing && creators.file_segmentation_engine;
+    if (settings.max_memory_usage && settings.min_chunk_bytes_for_parallel_parsing * max_parsing_threads * 2 > settings.max_memory_usage)
         parallel_parsing = false;
-
-    if (settings.max_memory_usage_for_user && settings.min_chunk_bytes_for_parallel_parsing * settings.max_threads * 2 > settings.max_memory_usage_for_user)
+    if (settings.max_memory_usage_for_user && settings.min_chunk_bytes_for_parallel_parsing * max_parsing_threads * 2 > settings.max_memory_usage_for_user)
         parallel_parsing = false;
-
     if (parallel_parsing)
     {
         const auto & non_trivial_prefix_and_suffix_checker = getCreators(name).non_trivial_prefix_and_suffix_checker;
         /// Disable parallel parsing for input formats with non-trivial readPrefix() and readSuffix().
-        if (non_trivial_prefix_and_suffix_checker && non_trivial_prefix_and_suffix_checker(buf))
+        if (non_trivial_prefix_and_suffix_checker && non_trivial_prefix_and_suffix_checker(*buf))
             parallel_parsing = false;
     }
 
+    RowInputFormatParams row_input_format_params;
+    row_input_format_params.max_block_size = max_block_size;
+    row_input_format_params.allow_errors_num = format_settings.input_allow_errors_num;
+    row_input_format_params.allow_errors_ratio = format_settings.input_allow_errors_ratio;
+    row_input_format_params.max_execution_time = settings.max_execution_time;
+    row_input_format_params.timeout_overflow_mode = settings.timeout_overflow_mode;
+
     if (parallel_parsing)
     {
-        const auto & input_getter = getCreators(name).input_creator;
-
-        RowInputFormatParams row_input_format_params;
-        row_input_format_params.max_block_size = max_block_size;
-        row_input_format_params.allow_errors_num = format_settings.input_allow_errors_num;
-        row_input_format_params.allow_errors_ratio = format_settings.input_allow_errors_ratio;
-        row_input_format_params.max_execution_time = settings.max_execution_time;
-        row_input_format_params.timeout_overflow_mode = settings.timeout_overflow_mode;
+        const auto & input_getter = creators.input_creator;
 
         /// Const reference is copied to lambda.
         auto parser_creator = [input_getter, sample, row_input_format_params, format_settings]
@@ -267,51 +353,53 @@ InputFormatPtr FormatFactory::getInput(
             { return input_getter(input, sample, row_input_format_params, format_settings); };
 
         ParallelParsingInputFormat::Params params{
-            buf, sample, parser_creator, file_segmentation_engine, name, settings.max_threads,
+            *buf, sample, parser_creator, file_segmentation_engine, name, max_parsing_threads,
             settings.min_chunk_bytes_for_parallel_parsing, max_block_size, context->getApplicationType() == Context::ApplicationType::SERVER};
 
         auto format = std::make_shared<ParallelParsingInputFormat>(params);
+
+        if (owned_buf)
+            format->addBuffer(std::move(owned_buf));
         if (!settings.input_format_record_errors_file_path.toString().empty())
             format->setErrorsLogger(std::make_shared<ParallelInputFormatErrorsLogger>(context));
+
         return format;
     }
-    else
+
+    // Return multistream parser if needed.
+
+    if (creators.multistream_input_creator && !buf)
     {
-        auto format = getInputFormat(name, buf, sample, context, max_block_size, format_settings);
+        auto format = creators.multistream_input_creator(
+            std::move(buf_factory),
+            sample,
+            format_settings,
+            context->getReadSettings(),
+            is_remote_fs,
+            io_schedule,
+            max_download_threads,
+            max_parsing_threads);
+
         if (!settings.input_format_record_errors_file_path.toString().empty())
-             format->setErrorsLogger(std::make_shared<InputFormatErrorsLogger>(context));
+            format->setErrorsLogger(std::make_shared<ParallelInputFormatErrorsLogger>(context));
+
         return format;
     }
-}
 
-InputFormatPtr FormatFactory::getInputFormat(
-    const String & name,
-    ReadBuffer & buf,
-    const Block & sample,
-    ContextPtr context,
-    UInt64 max_block_size,
-    const std::optional<FormatSettings> & _format_settings) const
-{
-    const auto & input_getter = getCreators(name).input_creator;
-    if (!input_getter)
-        throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT, "Format {} is not suitable for input", name);
+    // TODO: What about the case `creators.multistream_input_creator && buf`? Currently it'll be parsed in one thread. Lame. Need to change the interface to allow making it parallel.
+    //       Maybe the read parallelization should be taken out of the format and into a new interface RangeSetReader (or whatever), which would support both a single buffer and a factory. The logic from asArrowFile() would move there. Check if this works for ORC and Arrow formats.
 
-    const Settings & settings = context->getSettingsRef();
+    // Basic parser from one ReadBuffer.
 
-    if (context->hasQueryContext() && settings.log_queries)
-        context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Format, name);
+    auto format = creators.input_creator(*buf, sample, row_input_format_params, format_settings);
 
-    auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
-
-    RowInputFormatParams params;
-    params.max_block_size = max_block_size;
-    params.allow_errors_num = format_settings.input_allow_errors_num;
-    params.allow_errors_ratio = format_settings.input_allow_errors_ratio;
-    params.max_execution_time = settings.max_execution_time;
-    params.timeout_overflow_mode = settings.timeout_overflow_mode;
-    auto format = input_getter(buf, sample, params, format_settings);
+    if (owned_buf)
+        format->addBuffer(std::move(owned_buf));
+    if (!settings.input_format_record_errors_file_path.toString().empty())
+        format->setErrorsLogger(std::make_shared<ParallelInputFormatErrorsLogger>(context));
 
     /// It's a kludge. Because I cannot remove context from values format.
+    /// (This is not needed in the parallel_parsing and multistream cases above because VALUES format doesn't support them.)
     if (auto * values = typeid_cast<ValuesBlockInputFormat *>(format.get()))
         values->setContext(context);
 

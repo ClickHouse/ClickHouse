@@ -82,15 +82,19 @@ private:
     // control over reading. The format is responsible for parallelizing reading+parsing.
     // The motivating use case is ParquetBlockInputFormat, see comment there.
     //
-    // Formats implementing this must implement InputCreator too, for non-seekable read buffers like
-    // stdin.
+    // Formats implementing this must implement InputCreator too, for cases when there's only one
+    // read buffer available (e.g. stdin or incoming HTTP request).
+    //
+    // When created this way, the IInputFormat doesn't support resetParser() and setReadBuffer().
+    // Incompatible with FileSegmentationEngine.
     //
     // In future we may also want to pass some information about WHERE conditions (SelectQueryInfo?)
     // and get some information about projections (min/max/count per column per row group).
+    //
+    // TODO: This doesn't seem good. Rethink.
     using MultistreamInputCreator = std::function<InputFormatPtr(
             ParallelReadBuffer::ReadBufferFactoryPtr,
             const Block & header,
-            const RowInputFormatParams & params,
             const FormatSettings & settings,
             const ReadSettings& read_settings,
             bool is_remote_fs,
@@ -144,21 +148,33 @@ private:
 public:
     static FormatFactory & instance();
 
+    // Format parser from a single ReadBuffer.
+    // Parallelizes parsing (when possible) but not reading.
     InputFormatPtr getInput(
         const String & name,
         ReadBuffer & buf,
         const Block & sample,
         ContextPtr context,
         UInt64 max_block_size,
-        const std::optional<FormatSettings> & format_settings = std::nullopt) const;
+        const std::optional<FormatSettings> & format_settings = std::nullopt,
+        std::optional<size_t> max_parsing_threads = std::nullopt) const;
 
-    InputFormatPtr getInputFormat(
+    // Format parser from a random-access source (factory of seekable read buffers).
+    // Parallelizes both parsing and reading when possible.
+    // Prefer this over getInput() when reading from random-access source like file or HTTP.
+    InputFormatPtr getInputMultistream(
         const String & name,
-        ReadBuffer & buf,
+        ParallelReadBuffer::ReadBufferFactoryPtr buf_factory,
         const Block & sample,
         ContextPtr context,
         UInt64 max_block_size,
-        const std::optional<FormatSettings> & format_settings = std::nullopt) const;
+        bool is_remote_fs,
+        CompressionMethod compression,
+        ThreadPoolCallbackRunner<void> io_schedule,
+        // if nullopt, getFormatSettings(context) is used
+        const std::optional<FormatSettings> & format_settings = std::nullopt,
+        std::optional<size_t> max_download_threads = std::nullopt,
+        std::optional<size_t> max_parsing_threads = std::nullopt) const;
 
     /// Checks all preconditions. Returns ordinary format if parallel formatting cannot be done.
     OutputFormatPtr getOutputFormatParallelIfPossible(
@@ -247,6 +263,20 @@ private:
 
     const Creators & getCreators(const String & name) const;
 
+    InputFormatPtr getInputImpl(
+        const String & name,
+        // exactly one of the following two is nullptr
+        ParallelReadBuffer::ReadBufferFactoryPtr buf_factory,
+        ReadBuffer * buf,
+        const Block & sample,
+        ContextPtr context,
+        UInt64 max_block_size,
+        bool is_remote_fs,
+        CompressionMethod compression,
+        ThreadPoolCallbackRunner<void> io_schedule,
+        const std::optional<FormatSettings> & format_settings,
+        std::optional<size_t> max_download_threads,
+        std::optional<size_t> max_parsing_threads) const;
 };
 
 }

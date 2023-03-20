@@ -37,7 +37,7 @@ public:
         // We usually call setReadUntilPosition() and seek() on the returned buffer before reading.
         // So it's recommended that the returned implementation be lazy, i.e. don't start reading
         // before the first call to nextImpl().
-        virtual SeekableReadBufferPtr getReader() = 0;
+        virtual std::unique_ptr<SeekableReadBuffer> getReader() = 0;
     };
 
     using ReadBufferFactoryPtr = std::unique_ptr<ReadBufferFactory>;

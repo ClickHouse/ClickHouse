@@ -16,7 +16,7 @@ namespace ErrorCodes
 // A subrange of the input, read by one SeekableReadBuffer.
 struct ParallelReadBuffer::ReadWorker
 {
-    ReadWorker(SeekableReadBufferPtr reader_, size_t offset_, size_t size)
+    ReadWorker(std::unique_ptr<SeekableReadBuffer> reader_, size_t offset_, size_t size)
         : reader(std::move(reader_)), offset(offset_), bytes_left(size), range_end(offset + bytes_left)
     {
         assert(bytes_left);
@@ -33,7 +33,7 @@ struct ParallelReadBuffer::ReadWorker
         return next_segment;
     }
 
-    SeekableReadBufferPtr reader;
+    std::unique_ptr<SeekableReadBuffer> reader;
     // Reader thread produces segments, nextImpl() consumes them.
     std::vector<Memory<>> segments; // segments that were produced
     size_t current_segment_index = 0; // first segment that's not consumed

@@ -866,9 +866,9 @@ public:
     {
     }
 
-    SeekableReadBufferPtr getReader() override
+    std::unique_ptr<SeekableReadBuffer> getReader() override
     {
-        return std::make_shared<ReadWriteBufferFromHTTP>(
+        return std::make_unique<ReadWriteBufferFromHTTP>(
             uri,
             method,
             out_stream_callback,

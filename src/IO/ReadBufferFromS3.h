@@ -115,7 +115,7 @@ public:
         assert(range_step < object_size);
     }
 
-    SeekableReadBufferPtr getReader() override;
+    std::unique_ptr<SeekableReadBuffer> getReader() override;
 
     size_t getFileSize() override;
 

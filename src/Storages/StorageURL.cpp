@@ -205,7 +205,7 @@ namespace
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty url list");
 
                 auto first_option = uri_options.begin();
-                read_buf = getFirstAvailableURLReadBuffer(
+                auto buf_info = getFirstAvailableURLReadBuffer(
                     first_option,
                     uri_options.end(),
                     context,
@@ -219,18 +219,45 @@ namespace
                     glob_url,
                     uri_options.size() == 1,
                     download_threads);
+                InputFormatPtr input_format;
 
-                try
+                auto format_settings_to_use = format_settings ? *format_settings : getFormatSettings(context);
+                format_settings_to_use.seekable_read &= buf_info.seekable_read;
+
+                if (buf_info.buf_factory)
                 {
-                    total_size += getFileSizeFromReadBuffer(*read_buf);
+                    read_buf.reset();
+                    total_size += buf_info.buf_factory->getFileSize();
+                    // TODO: Pass max_download_threads adjusted for num_streams.
+                    input_format = FormatFactory::instance().getInputMultistream(
+                        format,
+                        std::move(buf_info.buf_factory),
+                        sample_block,
+                        context,
+                        max_block_size,
+                        /* is_remote_fs */ true,
+                        compression_method,
+                        threadPoolCallbackRunner<void>(IOThreadPool::get(), "URLParallelRead"),
+                        format_settings_to_use);
                 }
-                catch (...)
+                else
                 {
-                    // we simply continue without total_size
+                    read_buf = std::move(buf_info.buf);
+
+                    try
+                    {
+                        total_size += getFileSizeFromReadBuffer(*read_buf);
+                    }
+                    catch (...)
+                    {
+                        // we simply continue without total_size
+                    }
+
+                    // TODO: Pass max_download_threads adjusted for num_streams.
+                    input_format = FormatFactory::instance().getInput(
+                        format, *read_buf, sample_block, context, max_block_size, format_settings_to_use);
                 }
 
-                auto input_format
-                    = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size, format_settings);
                 QueryPipelineBuilder builder;
                 builder.init(Pipe(input_format));
 
@@ -284,7 +311,18 @@ namespace
             return {};
         }
 
-        static std::unique_ptr<ReadBuffer> getFirstAvailableURLReadBuffer(
+        struct ReadBufferInfo {
+            // Exactly one of these two is nullptr.
+            std::unique_ptr<ReadBuffer> buf;
+            ParallelReadBuffer::ReadBufferFactoryPtr buf_factory;
+
+            // TODO: This is currently not always used and not always assigned. Rethink.
+            //       Something like this is required to make Parquet format work when the HTTP
+            //       server doesn't support ranges; otherwise it does a seek, and the buffer throws.
+            bool seekable_read = true;
+        };
+
+        static ReadBufferInfo getFirstAvailableURLReadBuffer(
             std::vector<String>::const_iterator & option,
             const std::vector<String>::const_iterator & end,
             ContextPtr context,
@@ -315,6 +353,7 @@ namespace
 
                 const auto settings = context->getSettings();
                 int zstd_window_log_max = static_cast<int>(settings.zstd_window_log_max);
+                ReadBufferInfo buf_info;
                 try
                 {
                     if (download_threads > 1)
@@ -362,17 +401,23 @@ namespace
                                 }
                             }
 
-                            // to check if Range header is supported, we need to send a request with it set
-                            const bool supports_ranges = (res.has("Accept-Ranges") && res.get("Accept-Ranges") == "bytes")
+                            // To check if Range header is supported, we need to send a request with it set.
+                            // TODO: This is not quite enough. Some servers (e.g. althttpd) support ranges
+                            //       but don't send "Accept-Ranges" and don't include "Content-Range" if
+                            //       the requested range is a trivial "Range: bytes=0-".
+                            //       We should probably request "Range: bytes=1-", then add 1 to the
+                            //       returned content length (and have trouble if the file is empty).
+                            // TODO: We only do this when download_threads <= 1, so parquet will be
+                            //       broken with non-seekable http sources and download_threads = 1.
+                            buf_info.seekable_read = (res.has("Accept-Ranges") && res.get("Accept-Ranges") == "bytes")
                                 || (res.has("Content-Range") && res.get("Content-Range").starts_with("bytes"));
 
-                            if (supports_ranges)
+                            if (buf_info.seekable_read)
                                 LOG_TRACE(&Poco::Logger::get("StorageURLSource"), "HTTP Range is supported");
                             else
                                 LOG_TRACE(&Poco::Logger::get("StorageURLSource"), "HTTP Range is not supported");
 
-
-                            if (supports_ranges && res.getStatus() == Poco::Net::HTTPResponse::HTTP_PARTIAL_CONTENT
+                            if (buf_info.seekable_read && res.getStatus() == Poco::Net::HTTPResponse::HTTP_PARTIAL_CONTENT
                                 && res.hasContentLength())
                             {
                                 LOG_TRACE(
@@ -381,7 +426,7 @@ namespace
                                     download_threads,
                                     settings.max_download_buffer_size);
 
-                                auto read_buffer_factory = std::make_unique<RangedReadWriteBufferFromHTTPFactory>(
+                                buf_info.buf_factory = std::make_unique<RangedReadWriteBufferFromHTTPFactory>(
                                     res.getContentLength(),
                                     request_uri,
                                     http_method,
@@ -396,15 +441,7 @@ namespace
                                     delay_initialization,
                                     /* use_external_buffer */ false,
                                     /* skip_url_not_found_error */ skip_url_not_found_error);
-
-                                return wrapReadBufferWithCompressionMethod(
-                                    std::make_unique<ParallelReadBuffer>(
-                                        std::move(read_buffer_factory),
-                                        threadPoolCallbackRunner<void>(IOThreadPool::get(), "URLParallelRead"),
-                                        download_threads,
-                                        settings.max_download_buffer_size),
-                                    compression_method,
-                                    zstd_window_log_max);
+                                return buf_info;
                             }
                         }
                         catch (const Poco::Exception & e)
@@ -419,7 +456,7 @@ namespace
 
                     LOG_TRACE(&Poco::Logger::get("StorageURLSource"), "Using single-threaded read buffer");
 
-                    return wrapReadBufferWithCompressionMethod(
+                    buf_info.buf = wrapReadBufferWithCompressionMethod(
                         std::make_unique<ReadWriteBufferFromHTTP>(
                             request_uri,
                             http_method,
@@ -434,8 +471,9 @@ namespace
                             delay_initialization,
                             /* use_external_buffer */ false,
                             /* skip_url_not_found_error */ skip_url_not_found_error),
-                            compression_method,
+                        compression_method,
                         zstd_window_log_max);
+                    return buf_info;
                 }
                 catch (...)
                 {
@@ -654,7 +692,7 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
         if (it == urls_to_check.cend())
             return nullptr;
 
-        auto buf = StorageURLSource::getFirstAvailableURLReadBuffer(
+        auto buf_info = StorageURLSource::getFirstAvailableURLReadBuffer(
             it,
             urls_to_check.cend(),
             context,
@@ -667,9 +705,11 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
             headers,
             false,
             false,
-            context->getSettingsRef().max_download_threads);\
+            // this ensures buf_info.buf will be set
+            /* max_download_threads */ 1);
+        chassert(buf_info.buf);
         ++it;
-        return buf;
+        return std::move(buf_info.buf);
     };
 
     ColumnsDescription columns;
