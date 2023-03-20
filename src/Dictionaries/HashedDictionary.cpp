@@ -75,7 +75,7 @@ public:
             pool.scheduleOrThrowOnError([this, shard, thread_group = CurrentThread::getGroup()]
             {
                 if (thread_group)
-                    CurrentThread::attachToIfDetached(thread_group);
+                    CurrentThread::attachToGroupIfDetached(thread_group);
                 setThreadName("HashedDictLoad");
 
                 threadWorker(shard);
@@ -224,7 +224,7 @@ HashedDictionary<dictionary_key_type, sparse, sharded>::~HashedDictionary()
         pool.trySchedule([&container, thread_group = CurrentThread::getGroup()]
         {
             if (thread_group)
-                CurrentThread::attachToIfDetached(thread_group);
+                CurrentThread::attachToGroupIfDetached(thread_group);
             setThreadName("HashedDictDtor");
 
             if constexpr (sparse)

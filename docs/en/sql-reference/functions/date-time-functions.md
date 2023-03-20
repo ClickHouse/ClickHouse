@@ -283,7 +283,7 @@ Result:
 ```
 
 :::note
-The return type of `toStartOf*`, `toLastDayOfMonth`, `toMonday`, `timeSlot` functions described below is determined by the configuration parameter [enable_extended_results_for_datetime_functions](../../operations/settings/settings#enable-extended-results-for-datetime-functions) which is `0` by default.
+The return type of `toStartOf*`, `toLastDayOfMonth`, `toMonday`, `timeSlot` functions described below is determined by the configuration parameter [enable_extended_results_for_datetime_functions](../../operations/settings/settings.md#enable-extended-results-for-datetime-functions) which is `0` by default.
 
 Behavior for
 * `enable_extended_results_for_datetime_functions = 0`: Functions `toStartOfYear`, `toStartOfISOYear`, `toStartOfQuarter`, `toStartOfMonth`, `toStartOfWeek`, `toLastDayOfMonth`, `toMonday` return `Date` or `DateTime`. Functions `toStartOfDay`, `toStartOfHour`, `toStartOfFifteenMinutes`, `toStartOfTenMinutes`, `toStartOfFiveMinutes`, `toStartOfMinute`, `timeSlot` return `DateTime`. Though these functions can take values of the extended types `Date32` and `DateTime64` as an argument, passing them a time outside the normal range (year 1970 to 2149 for `Date` / 2106 for `DateTime`) will produce wrong results.
@@ -1135,7 +1135,7 @@ SELECT
 ```
 ```response
 ┌─toYYYYMM(now(), 'US/Eastern')─┐
-│                        202303 │ 
+│                        202303 │
 └───────────────────────────────┘
 ```
 
@@ -1335,7 +1335,7 @@ Similar to formatDateTime, except that it formats datetime in Joda style instead
 
 **Replacement fields**
 
-Using replacement fields, you can define a pattern for the resulting string. 
+Using replacement fields, you can define a pattern for the resulting string.
 
 
 | Placeholder | Description                              | Presentation  | Examples                           |
