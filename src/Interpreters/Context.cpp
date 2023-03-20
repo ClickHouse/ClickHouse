@@ -1954,14 +1954,14 @@ QueryStatusPtr Context::getProcessListElement() const
 }
 
 
-void Context::setUncompressedCache(size_t max_size_in_bytes, const String & uncompressed_cache_policy)
+void Context::setUncompressedCache(const String & uncompressed_cache_policy, size_t max_size_in_bytes)
 {
     auto lock = getLock();
 
     if (shared->uncompressed_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Uncompressed cache has been already created.");
 
-    shared->uncompressed_cache = std::make_shared<UncompressedCache>(max_size_in_bytes, uncompressed_cache_policy);
+    shared->uncompressed_cache = std::make_shared<UncompressedCache>(uncompressed_cache_policy, max_size_in_bytes);
 }
 
 
@@ -1980,14 +1980,14 @@ void Context::dropUncompressedCache() const
 }
 
 
-void Context::setMarkCache(size_t cache_size_in_bytes, const String & mark_cache_policy)
+void Context::setMarkCache(const String & mark_cache_policy, size_t cache_size_in_bytes)
 {
     auto lock = getLock();
 
     if (shared->mark_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mark cache has been already created.");
 
-    shared->mark_cache = std::make_shared<MarkCache>(cache_size_in_bytes, mark_cache_policy);
+    shared->mark_cache = std::make_shared<MarkCache>(mark_cache_policy, cache_size_in_bytes);
 }
 
 MarkCachePtr Context::getMarkCache() const
