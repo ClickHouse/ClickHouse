@@ -30,7 +30,7 @@ namespace CurrentMetrics
     extern const Metric LocalThreadActive;
 }
 
-static constexpr auto DEFAULT_THRAED_NAME = "ThreadPool";
+static constexpr auto DEFAULT_THREAD_NAME = "ThreadPool";
 
 template <typename Thread>
 ThreadPoolImpl<Thread>::ThreadPoolImpl()
@@ -273,7 +273,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
     while (true)
     {
         /// This is inside the loop to also reset previous thread names set inside the jobs.
-        setThreadName(DEFAULT_THRAED_NAME);
+        setThreadName(DEFAULT_THREAD_NAME);
 
         Job job;
         bool need_shutdown = false;
@@ -321,7 +321,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
                     /// Use the thread name as operation name so that the tracing log will be more clear.
                     /// The thread name is usually set in jobs, we can only get the name after the job finishes
                     std::string thread_name = getThreadName();
-                    if (!thread_name.empty() && thread_name != DEFAULT_THRAED_NAME)
+                    if (!thread_name.empty() && thread_name != DEFAULT_THREAD_NAME)
                     {
                         thread_trace_context.root_span.operation_name = thread_name;
                     }
