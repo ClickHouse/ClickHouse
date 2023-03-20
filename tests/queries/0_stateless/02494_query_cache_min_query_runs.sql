@@ -1,5 +1,6 @@
--- Tags: no-parallel
--- Tag no-parallel: Messes with internal cache
+-- Tags: no-parallel, no-random-settings
+-- Tag no-parallel: The test messes with internal cache
+-- Tag no-random-settings: The test assumes default settings for the query cache.
 
 SET allow_experimental_query_cache = true;
 

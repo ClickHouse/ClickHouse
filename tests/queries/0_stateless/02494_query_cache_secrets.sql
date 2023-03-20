@@ -1,6 +1,7 @@
--- Tags: no-parallel, no-fasttest
+-- Tags: no-parallel, no-fasttest, no-random-settings
 -- Tag no-fasttest: Depends on OpenSSL
 -- Tag no-parallel: Messes with internal cache
+-- Tag no-random-settings: Assumes default settings for the query cache.
 
 SET allow_experimental_query_cache = true;
 
