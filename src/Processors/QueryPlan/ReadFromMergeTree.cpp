@@ -1397,17 +1397,6 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     return true;
 }
 
-void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
-{
-    query_info.prewhere_info = prewhere_info_value;
-    prewhere_info = prewhere_info_value;
-    output_stream = DataStream{.header = IMergeTreeSelectAlgorithm::transformHeader(
-        storage_snapshot->getSampleBlockForColumns(real_column_names),
-        prewhere_info_value,
-        data.getPartitionValueType(),
-        virt_column_names)};
-}
-
 bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
 {
     if (isQueryWithFinal())
