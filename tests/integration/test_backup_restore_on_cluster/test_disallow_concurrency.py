@@ -101,7 +101,7 @@ def new_backup_name():
 
 
 def create_and_fill_table():
-    node0.query("SET mutations_sync=2");
+    node0.query("SET mutations_sync=2")
     node0.query(
         "CREATE TABLE tbl ON CLUSTER 'cluster' ("
         "x UInt64"
@@ -110,7 +110,9 @@ def create_and_fill_table():
     )
     for i in range(num_nodes):
         nodes[i].query(f"INSERT INTO tbl SELECT number FROM numbers(100000000)")
-        nodes[i].query(f"INSERT INTO tbl SELECT number+100000000  FROM numbers(100000000)")
+        nodes[i].query(
+            f"INSERT INTO tbl SELECT number+100000000  FROM numbers(100000000)"
+        )
 
 
 # All the tests have concurrent backup/restores with same backup names
