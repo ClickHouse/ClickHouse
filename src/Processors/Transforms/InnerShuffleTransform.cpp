@@ -64,10 +64,6 @@ IProcessor::Status InnerShuffleScatterTransform::prepare()
     {
         if (!output.canPush())
         {
-            for (auto & input : inputs)
-            {
-                input.setNotNeeded();
-            }
             return Status::PortFull;
         }
     }
@@ -78,12 +74,10 @@ IProcessor::Status InnerShuffleScatterTransform::prepare()
         auto chunk_it = output_chunks.begin();
         for (; output_it != outputs.end(); ++output_it)
         {
-            if (chunk_it->getNumRows())
-            {
-                if (output_it->isFinished())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Output port is finished, cannot push new chunks into it");
-                output_it->push(std::move(*chunk_it));
-            }
+            if (output_it->isFinished())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Output port is finished, cannot push new chunks into it");
+            output_it->push(std::move(*chunk_it));
+
             chunk_it++;
         }
         output_chunks.clear();
@@ -182,13 +176,6 @@ IProcessor::Status InnerShuffleGatherTransform::prepare()
 
     if (!output.canPush())
     {
-        for (auto * input : running_inputs)
-        {
-            if (!input->isFinished())
-            {
-                input->setNotNeeded();
-            }
-        }
         return Status::PortFull;
     }
 
@@ -220,26 +207,13 @@ IProcessor::Status InnerShuffleGatherTransform::prepare()
         {
             continue;
         }
-        input_chunks.emplace_back(input->pull(true));
+        input_chunks.emplace_back(input->pull(false));
         pending_rows += input_chunks.back().getNumRows();
-        if (pending_rows >= DEFAULT_BLOCK_SIZE)
-        {
-            break;
-        }
     }
+
     if (pending_rows >= DEFAULT_BLOCK_SIZE)
     {
         has_input = true;
-        output_chunk = generateOneChunk();
-    }
-    else if (!all_inputs_closed)
-    {
-        for (auto * port : running_inputs)
-        {
-            if (!port->isFinished())
-                port->setNeeded();
-        }
-        return Status::NeedData;
     }
 
     if (all_inputs_closed) [[unlikely]]
@@ -247,17 +221,19 @@ IProcessor::Status InnerShuffleGatherTransform::prepare()
         if (pending_rows)
         {
             has_input = true;
-            output_chunk = generateOneChunk();
             return Status::Ready;
         }
-        for (auto & port : outputs)
+        else
         {
-            if (!port.isFinished())
+            for (auto & port : outputs)
             {
-                port.finish();
+                if (!port.isFinished())
+                {
+                    port.finish();
+                }
             }
+            return Status::Finished;
         }
-        return Status::Finished;
     }
 
     if (!has_input)
@@ -265,31 +241,37 @@ IProcessor::Status InnerShuffleGatherTransform::prepare()
     return Status::Ready;
 }
 
+void InnerShuffleGatherTransform::work()
+{
+    if (has_input)
+    {
+        has_input = false;
+        output_chunk = generateOneChunk();
+        has_output = true;
+    }
+}
+
 Chunk InnerShuffleGatherTransform::generateOneChunk()
 {
-    auto mutable_cols = input_chunks[0].mutateColumns();
-    for (size_t col_index = 0, n = mutable_cols.size(); col_index < n; ++col_index)
+    auto mutable_cols = input_chunks.front().mutateColumns();
+    while (!input_chunks.empty())
     {
-        mutable_cols[col_index]->reserve(pending_rows);
-        for (size_t chunk_it = 1, m = input_chunks.size(); chunk_it < m; ++chunk_it)
+        if (!input_chunks.front().hasRows()) [[unlikely]]
         {
-            const auto & src_cols = input_chunks[chunk_it].getColumns();
-            mutable_cols[col_index]->insertRangeFrom(*src_cols[col_index], 0, input_chunks[chunk_it].getNumRows());
+            input_chunks.pop_front();
+            continue;
         }
+        const auto & cols = input_chunks.front().getColumns();
+        auto rows = input_chunks.front().getNumRows();
+        for (size_t i = 0, n = mutable_cols.size(); i < n; ++i)
+        {
+            mutable_cols[i]->insertRangeFrom(*cols[i], 0, rows);
+        }
+        input_chunks.pop_front();
     }
     auto chunk = Chunk(std::move(mutable_cols), pending_rows);
     input_chunks.clear();
     pending_rows = 0;
     return chunk;
 }
-
-void InnerShuffleGatherTransform::work()
-{
-    if (has_input)
-    {
-        has_input = false;
-        has_output = true;
-    }
-}
-
 }

@@ -32,11 +32,10 @@ public:
 private:
     bool has_input = false;
     bool has_output = false;
-    Chunk output_chunk;
-    std::vector<Chunk> input_chunks;
+    std::list<Chunk> input_chunks;
     size_t pending_rows = 0;
+    Chunk output_chunk;
     std::list<InputPort *> running_inputs;
-
     Chunk generateOneChunk();
 };
 }
