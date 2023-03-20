@@ -350,7 +350,15 @@ set (CMAKE_ASM_FLAGS_DEBUG               "${CMAKE_ASM_FLAGS_DEBUG} -O0 ${DEBUG_I
 if (COMPILER_CLANG)
     if (OS_DARWIN)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
+
         set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-U,_inside_main")
+
+        # The LLVM MachO linker (ld64.lld) generates by default unwind info in 'compact' format which the internal unwinder doesn't support
+        # and the server will not come up ('invalid compact unwind encoding'). Disable it.
+        # You will see warning during the build "ld64.lld: warning: Option `-no_compact_unwind' is undocumented. Should lld implement it?".
+        # Yes, ld64.lld does not document the option, likely for compat with Apple's system ld after which ld64.lld is modeled after and
+        # which also does not document it.
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-no_compact_unwind")
     endif()
 
     # Display absolute paths in error messages. Otherwise KDevelop fails to navigate to correct file and opens a new file instead.

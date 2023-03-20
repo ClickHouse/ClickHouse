@@ -34,7 +34,7 @@ namespace
 {                                                                                 \
     auto _logger = ::getLogger(logger);                                           \
     const bool _is_clients_log = (DB::CurrentThread::getGroup() != nullptr) &&    \
-        (DB::CurrentThread::getGroup()->client_logs_level >= (priority));         \
+        (DB::CurrentThread::get().getClientLogsLevel() >= (priority));         \
     if (_is_clients_log || _logger->is((PRIORITY)))                               \
     {                                                                             \
         std::string formatted_message = numArgs(__VA_ARGS__) > 1 ? fmt::format(__VA_ARGS__) : firstArg(__VA_ARGS__); \
