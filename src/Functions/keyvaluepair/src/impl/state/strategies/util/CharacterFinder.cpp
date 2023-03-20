@@ -32,9 +32,6 @@ inline const char * find_first_symbols_sse42(const char * const begin, const cha
 #if defined(__SSE4_2__)
     constexpr int mode = _SIDD_UBYTE_OPS | _SIDD_CMP_EQUAL_ANY | _SIDD_LEAST_SIGNIFICANT;
 
-    if (num_chars > 16)
-        throw std::runtime_error("Needle is too big");
-
     const __m128i set = _mm_loadu_si128(reinterpret_cast<const __m128i *>(needle));
 
     for (; pos + 15 < end; pos += 16)
