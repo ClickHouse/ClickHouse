@@ -1585,8 +1585,8 @@ void QueryAnalyzer::collectCompoundExpressionValidIdentifiersForTypoCorrection(
         if (new_identifier_size == unresolved_identifier.getPartsSize())
         {
             auto new_identifier = valid_identifier_prefix;
-            for (auto && part : subcolumn_indentifier)
-                new_identifier.emplace_back(std::move(part));
+            for (const auto & part : subcolumn_indentifier)
+                new_identifier.push_back(part);
 
             valid_identifiers_result.insert(std::move(new_identifier));
         }
