@@ -611,9 +611,9 @@ Result:
 └────┴─────────┴──────┘
 ```
 
-**See Also**
+## notILike(haystack, pattern), haystack NOT ILIKE pattern operator
 
-
+The same thing as ‘ilike’, but negative.
 
 ## ngramDistance(haystack, needle)
 
