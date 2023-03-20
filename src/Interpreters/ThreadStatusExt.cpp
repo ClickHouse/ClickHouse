@@ -158,6 +158,10 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupStatusPtr & thread_group_)
     thread_group = thread_group_;
     thread_group->linkThread(thread_id);
 
+    // Current thread is considered as cancelable part of thread group
+    chassert(CancelToken::local().thread_id == thread_id); // should be only called for current thread
+    thread_group->cancel_tokens.enterGroup();
+
     performance_counters.setParent(&thread_group->performance_counters);
     memory_tracker.setParent(&thread_group->memory_tracker);
 
@@ -182,10 +186,6 @@ void ThreadStatus::detachFromGroup()
     /// flash untracked memory before resetting memory_tracker parent
     flushUntrackedMemory();
 
-    // Current thread is considered as cancelable part of thread group
-    chassert(CancelToken::local().thread_id == thread_id); // should be only called for current thread
-    thread_group->cancel_tokens.enterGroup();
-
     finalizeQueryProfiler();
     finalizePerformanceCounters();
 
@@ -193,6 +193,10 @@ void ThreadStatus::detachFromGroup()
 
     memory_tracker.reset();
     memory_tracker.setParent(thread_group->memory_tracker.getParent());
+
+    // Current thread is not considered as cancelable part of this thread group any longer
+    chassert(CancelToken::local().thread_id == thread_id); // should be only called for current thread
+    thread_group->cancel_tokens.exitGroup();
 
     thread_group.reset();
 
