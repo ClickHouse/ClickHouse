@@ -21,7 +21,6 @@
 #include <Client/MultiplexedConnections.h>
 #include <Client/HedgedConnections.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
-#include <Storages/StorageMemory.h>
 
 
 namespace ProfileEvents
@@ -545,8 +544,8 @@ void RemoteQueryExecutor::finish()
     /// Send the request to abort the execution of the request, if not already sent.
     tryCancel("Cancelling query because enough data has been read");
 
-    /// If connections weren't created yet, nothing to do.
-    if (!connections)
+    /// If connections weren't created yet or query wasn't sent, nothing to do.
+    if (!connections || !sent_query)
         return;
 
     /// Get the remaining packets so that there is no out of sync in the connections to the replicas.
@@ -627,9 +626,6 @@ void RemoteQueryExecutor::sendExternalTables()
             for (const auto & table : external_tables)
             {
                 StoragePtr cur = table.second;
-                /// Send only temporary tables with StorageMemory
-                if (!std::dynamic_pointer_cast<StorageMemory>(cur))
-                    continue;
 
                 auto data = std::make_unique<ExternalTableData>();
                 data->table_name = table.first;
