@@ -5,8 +5,10 @@
 #include <IO/Operators.h>
 
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTExpressionList.h>
 
 #include <Analyzer/Utils.h>
+#include <Analyzer/ColumnNode.h>
 
 namespace DB
 {
@@ -52,8 +54,24 @@ ASTPtr ArrayJoinNode::toASTImpl() const
     auto array_join_ast = std::make_shared<ASTArrayJoin>();
     array_join_ast->kind = is_left ? ASTArrayJoin::Kind::Left : ASTArrayJoin::Kind::Inner;
 
-    const auto & join_expression_list_node = getJoinExpressionsNode();
-    array_join_ast->children.push_back(join_expression_list_node->toAST());
+    auto array_join_expressions_ast = std::make_shared<ASTExpressionList>();
+    const auto & array_join_expressions = getJoinExpressions().getNodes();
+
+    for (const auto & array_join_expression : array_join_expressions)
+    {
+        ASTPtr array_join_expression_ast;
+
+        auto * column_node = array_join_expression->as<ColumnNode>();
+        if (column_node && column_node->getExpression())
+            array_join_expression_ast = column_node->getExpression()->toAST();
+        else
+            array_join_expression_ast = array_join_expression->toAST();
+
+        array_join_expression_ast->setAlias(array_join_expression->getAlias());
+        array_join_expressions_ast->children.push_back(std::move(array_join_expression_ast));
+    }
+
+    array_join_ast->children.push_back(std::move(array_join_expressions_ast));
     array_join_ast->expression_list = array_join_ast->children.back();
 
     ASTPtr tables_in_select_query_ast = std::make_shared<ASTTablesInSelectQuery>();

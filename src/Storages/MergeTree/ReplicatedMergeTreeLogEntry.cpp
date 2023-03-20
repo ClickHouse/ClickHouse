@@ -96,6 +96,9 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
                 }
             }
 
+            if (cleanup)
+                out << "\ncleanup: " << cleanup;
+
             break;
 
         case DROP_RANGE:
@@ -269,10 +272,13 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in, MergeTreeDataFor
 
                     deduplicate_by_columns = std::move(new_deduplicate_by_columns);
                 }
+                else if (checkString("cleanup: ", in))
+                    in >> cleanup;
                 else
                     trailing_newline_found = true;
             }
         }
+
     }
     else if (type_str == "drop" || type_str == "detach")
     {

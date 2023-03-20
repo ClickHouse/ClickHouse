@@ -22,9 +22,6 @@
 #include <math.h>
 #include <fp.h>
 #include <fp_class.h>
-#if defined(__VMS)
-#include <starlet.h>
-#endif
 #include "Poco/FPEnvironment_DEC.h"
 
 
@@ -33,16 +30,7 @@ namespace Poco {
 
 FPEnvironmentImpl::FPEnvironmentImpl()
 {
-#if defined(__VMS)
-	#pragma pointer_size save
-	#pragma pointer_size 32
-	struct _ieee env;
-	sys$ieee_set_fp_control(0, 0, &env);
-	#pragma pointer_size restore
-	_env = env;
-#else
 	_env = ieee_get_fp_control();
-#endif
 }
 
 
@@ -54,17 +42,7 @@ FPEnvironmentImpl::FPEnvironmentImpl(const FPEnvironmentImpl& env)
 
 FPEnvironmentImpl::~FPEnvironmentImpl()
 {
-#if defined(__VMS)
-	#pragma pointer_size save
-	#pragma pointer_size 32
-	struct _ieee mask;
-	mask.ieee$q_flags = 0xFFFFFFFFFFFFFFFF;
-	struct _ieee env = _env;
-	sys$ieee_set_fp_control(&mask, &env, 0);
-	#pragma pointer_size restore
-#else
 	ieee_set_fp_control(_env);
-#endif
 }
 
 
@@ -134,48 +112,19 @@ long double FPEnvironmentImpl::copySignImpl(long double target, long double sour
 
 void FPEnvironmentImpl::keepCurrentImpl()
 {
-#if defined(__VMS)
-	#pragma pointer_size save
-	#pragma pointer_size 32
-	struct _ieee env;
-	sys$ieee_set_fp_control(0, 0, &env);
-	#pragma pointer_size restore
-	_env = env;
-#else
 	ieee_set_fp_control(_env);
-#endif
 }
 
 
 void FPEnvironmentImpl::clearFlagsImpl()
 {
-#if defined(__VMS)
-	#pragma pointer_size save
-	#pragma pointer_size 32
-	struct _ieee mask;
-	mask.ieee$q_flags = 0xFFFFFFFFFFFFFFFF;
-	struct _ieee clr;
-	clr.ieee$q_flags  = 0;
-	sys$ieee_set_fp_control(&mask, &clr, 0);
-	#pragma pointer_size restore
-#else
 	ieee_set_fp_control(0);
-#endif
 }
 
 
 bool FPEnvironmentImpl::isFlagImpl(FlagImpl flag)
 {
-#if defined(__VMS)
-	#pragma pointer_size save
-	#pragma pointer_size 32
-	struct _ieee flags;
-	sys$ieee_set_fp_control(0, 0, &flags);
-	return (flags.ieee$q_flags & flag) != 0;
-	#pragma pointer_size restore
-#else
 	return (ieee_get_fp_control() & flag) != 0;
-#endif
 }
 
 

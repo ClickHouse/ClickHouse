@@ -392,7 +392,7 @@ struct WhichDataType
     constexpr bool isAggregateFunction() const { return idx == TypeIndex::AggregateFunction; }
     constexpr bool isSimple() const  { return isInt() || isUInt() || isFloat() || isString(); }
 
-    constexpr bool isLowCarnality() const { return idx == TypeIndex::LowCardinality; }
+    constexpr bool isLowCardinality() const { return idx == TypeIndex::LowCardinality; }
 };
 
 /// IDataType helpers (alternative for IDataType virtual methods with single point of truth)
@@ -548,6 +548,11 @@ inline bool isAggregateFunction(const DataTypePtr & data_type)
     return which.isAggregateFunction();
 }
 
+inline bool isNullableOrLowCardinalityNullable(const DataTypePtr & data_type)
+{
+    return data_type->isNullable() || data_type->isLowCardinalityNullable();
+}
+
 template <typename DataType> constexpr bool IsDataTypeDecimal = false;
 template <typename DataType> constexpr bool IsDataTypeNumber = false;
 template <typename DataType> constexpr bool IsDataTypeDateOrDateTime = false;
@@ -621,7 +626,7 @@ struct fmt::formatter<DB::DataTypePtr>
 
         /// Only support {}.
         if (it != end && *it != '}')
-            throw format_error("invalid format");
+            throw fmt::format_error("invalid format");
 
         return it;
     }
@@ -629,6 +634,6 @@ struct fmt::formatter<DB::DataTypePtr>
     template <typename FormatContext>
     auto format(const DB::DataTypePtr & type, FormatContext & ctx)
     {
-        return format_to(ctx.out(), "{}", type->getName());
+        return fmt::format_to(ctx.out(), "{}", type->getName());
     }
 };

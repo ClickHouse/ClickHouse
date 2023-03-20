@@ -61,16 +61,7 @@
 #  define _GNU_SOURCE 1 /* syscall prototype */
 #endif
 
-#ifdef _WIN32
-/* force stdlib to define rand_s() */
-#  if ! defined(_CRT_RAND_S)
-#    define _CRT_RAND_S
-#  endif
-#endif
 
-#if defined(_MSC_VER) && !defined(_CRT_SECURE_NO_WARNINGS)
-#define _CRT_SECURE_NO_WARNINGS
-#endif
 
 #include <stddef.h>
 #include <string.h> /* memset(), memcpy() */
@@ -86,8 +77,6 @@
 #if defined(EXPAT_POCO)
 #  include "Poco/RandomStream.h"
 #  include "Poco/BinaryReader.h"
-#elif defined(_WIN32)
-#  define getpid GetCurrentProcessId
 #else
 #  include <sys/time.h>  /* gettimeofday() */
 #  include <sys/types.h> /* getpid() */
@@ -125,9 +114,6 @@
 #  include <bsd/stdlib.h>
 #endif
 
-#if defined(_WIN32) && ! defined(LOAD_LIBRARY_SEARCH_SYSTEM32)
-#  define LOAD_LIBRARY_SEARCH_SYSTEM32 0x00000800
-#endif
 
 #if ! defined(HAVE_GETRANDOM) && ! defined(HAVE_SYSCALL_GETRANDOM)             \
     && ! defined(HAVE_ARC4RANDOM_BUF) && ! defined(HAVE_ARC4RANDOM)            \
@@ -836,52 +822,11 @@ writeRandomBytes_arc4random(void *target, size_t count) {
 
 #endif /* defined(HAVE_ARC4RANDOM) && ! defined(HAVE_ARC4RANDOM_BUF) */
 
-#ifdef _WIN32
-
-/* Provide declaration of rand_s() for MinGW-32 (not 64, which has it),
-   as it didn't declare it in its header prior to version 5.3.0 of its
-   runtime package (mingwrt, containing stdlib.h).  The upstream fix
-   was introduced at https://osdn.net/projects/mingw/ticket/39658 . */
-#  if defined(__MINGW32__) && defined(__MINGW32_VERSION)                       \
-      && __MINGW32_VERSION < 5003000L && ! defined(__MINGW64_VERSION_MAJOR)
-__declspec(dllimport) int rand_s(unsigned int *);
-#  endif
-
-/* Obtain entropy on Windows using the rand_s() function which
- * generates cryptographically secure random numbers.  Internally it
- * uses RtlGenRandom API which is present in Windows XP and later.
- */
-static int
-writeRandomBytes_rand_s(void *target, size_t count) {
-  size_t bytesWrittenTotal = 0;
-
-  while (bytesWrittenTotal < count) {
-    unsigned int random32 = 0;
-    size_t i = 0;
-
-    if (rand_s(&random32))
-      return 0; /* failure */
-
-    for (; (i < sizeof(random32)) && (bytesWrittenTotal < count);
-         i++, bytesWrittenTotal++) {
-      const uint8_t random8 = (uint8_t)(random32 >> (i * 8));
-      ((uint8_t *)target)[bytesWrittenTotal] = random8;
-    }
-  }
-  return 1; /* success */
-}
-
-#endif /* _WIN32 */
 
 #if ! defined(HAVE_ARC4RANDOM_BUF) && ! defined(HAVE_ARC4RANDOM)
 
 static unsigned long
 gather_time_entropy(void) {
-#  ifdef _WIN32
-  FILETIME ft;
-  GetSystemTimeAsFileTime(&ft); /* never fails */
-  return ft.dwHighDateTime ^ ft.dwLowDateTime;
-#  else
   struct timeval tv;
   int gettimeofday_res;
 
@@ -895,7 +840,6 @@ gather_time_entropy(void) {
 
   /* Microseconds time is <20 bits entropy */
   return tv.tv_usec;
-#  endif
 }
 
 #endif /* ! defined(HAVE_ARC4RANDOM_BUF) && ! defined(HAVE_ARC4RANDOM) */
@@ -930,11 +874,7 @@ generate_hash_secret_salt(XML_Parser parser) {
   return ENTROPY_DEBUG("arc4random", entropy);
 #else
   /* Try high quality providers first .. */
-#  ifdef _WIN32
-  if (writeRandomBytes_rand_s((void *)&entropy, sizeof(entropy))) {
-    return ENTROPY_DEBUG("rand_s", entropy);
-  }
-#  elif defined(HAVE_GETRANDOM) || defined(HAVE_SYSCALL_GETRANDOM)
+#  if   defined(HAVE_GETRANDOM) || defined(HAVE_SYSCALL_GETRANDOM)
   if (writeRandomBytes_getrandom_nonblock((void *)&entropy, sizeof(entropy))) {
     return ENTROPY_DEBUG("getrandom", entropy);
   }

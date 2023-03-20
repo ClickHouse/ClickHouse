@@ -140,6 +140,23 @@ public:
         scheduleCloseSession(session, lock);
     }
 
+    void closeSession(const UUID & user_id, const String & session_id)
+    {
+        std::unique_lock lock(mutex);
+        Key key{user_id, session_id};
+        auto it = sessions.find(key);
+        if (it == sessions.end())
+        {
+            LOG_INFO(log, "Session {} not found for user {}, probably it's already closed", session_id, user_id);
+            return;
+        }
+
+        if (!it->second.unique())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot close session {} with refcount {}", session_id, it->second.use_count());
+
+        sessions.erase(it);
+    }
+
 private:
     class SessionKeyHash
     {
@@ -408,7 +425,7 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
     std::shared_ptr<NamedSessionData> new_named_session;
     bool new_named_session_created = false;
     std::tie(new_named_session, new_named_session_created)
-        = NamedSessionsStorage::instance().acquireSession(global_context, user_id.value_or(UUID{}), session_name_, timeout_, session_check_);
+        = NamedSessionsStorage::instance().acquireSession(global_context, *user_id, session_name_, timeout_, session_check_);
 
     auto new_session_context = new_named_session->context;
     new_session_context->makeSessionContext();
@@ -453,7 +470,7 @@ std::shared_ptr<SessionLog> Session::getSessionLog() const
 ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_to_copy, ClientInfo * client_info_to_move) const
 {
     if (!user_id && getClientInfo().interface != ClientInfo::Interface::TCP_INTERSERVER)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session context must be created after authentication");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query context must be created after authentication");
 
     /// We can create a query context either from a session context or from a global context.
     bool from_session_context = static_cast<bool>(session_context);
@@ -531,6 +548,19 @@ void Session::releaseSessionID()
         return;
     named_session->release();
     named_session = nullptr;
+}
+
+void Session::closeSession(const String & session_id)
+{
+    if (!user_id)   /// User was not authenticated
+        return;
+
+    /// named_session may be not set due to an early exception
+    if (!named_session)
+        return;
+
+    releaseSessionID();
+    NamedSessionsStorage::instance().closeSession(*user_id, session_id);
 }
 
 }

@@ -5,6 +5,7 @@
             <profile>default</profile>
             <quota>default</quota>
             <show_named_collections>1</show_named_collections>
+            <show_named_collections_secrets>1</show_named_collections_secrets>
         </default>
     </users>
 </clickhouse>

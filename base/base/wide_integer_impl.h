@@ -360,7 +360,7 @@ struct integer<Bits, Signed>::_impl
         constexpr const unsigned to_copy = min_bits / base_bits;
 
         for (unsigned i = 0; i < to_copy; ++i)
-            self.items[little(i)] = rhs.items[little(i)];
+            self.items[little(i)] = rhs.items[integer<Bits2, Signed2>::_impl::little(i)];
 
         if constexpr (Bits > Bits2)
         {

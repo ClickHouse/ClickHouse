@@ -533,8 +533,15 @@ void AsynchronousMetrics::update(TimePoint update_time)
     AsynchronousMetricValues new_values;
 
     auto current_time = std::chrono::system_clock::now();
-    auto time_after_previous_update [[maybe_unused]] = current_time - previous_update_time;
+    auto time_after_previous_update = current_time - previous_update_time;
     previous_update_time = update_time;
+
+    double update_interval = 0.;
+    if (first_run)
+        update_interval = update_period.count();
+    else
+        update_interval = std::chrono::duration_cast<std::chrono::microseconds>(time_after_previous_update).count() / 1e6;
+    new_values["AsynchronousMetricsUpdateInterval"] = { update_interval, "Metrics update interval" };
 
     /// This is also a good indicator of system responsiveness.
     new_values["Jitter"] = { std::chrono::duration_cast<std::chrono::nanoseconds>(current_time - update_time).count() / 1e9,

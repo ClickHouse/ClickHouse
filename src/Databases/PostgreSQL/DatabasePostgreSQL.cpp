@@ -76,7 +76,7 @@ String DatabasePostgreSQL::formatTableName(const String & table_name, bool quote
 
 bool DatabasePostgreSQL::empty() const
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     auto connection_holder = pool->get();
     auto tables_list = fetchPostgreSQLTablesList(connection_holder->get(), configuration.schema);
@@ -91,7 +91,7 @@ bool DatabasePostgreSQL::empty() const
 
 DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & /* filter_by_table_name */) const
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     Tables tables;
 
     /// Do not allow to throw here, because this might be, for example, a query to system.tables.
@@ -154,7 +154,7 @@ bool DatabasePostgreSQL::checkPostgresTable(const String & table_name) const
 
 bool DatabasePostgreSQL::isTableExist(const String & table_name, ContextPtr /* context */) const
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     if (detached_or_dropped.contains(table_name))
         return false;
@@ -165,7 +165,7 @@ bool DatabasePostgreSQL::isTableExist(const String & table_name, ContextPtr /* c
 
 StoragePtr DatabasePostgreSQL::tryGetTable(const String & table_name, ContextPtr local_context) const
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     if (!detached_or_dropped.contains(table_name))
         return fetchTable(table_name, local_context, false);
@@ -210,7 +210,7 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr,
 
 void DatabasePostgreSQL::attachTable(ContextPtr /* context_ */, const String & table_name, const StoragePtr & storage, const String &)
 {
-    std::lock_guard<std::mutex> lock{mutex};
+    std::lock_guard lock{mutex};
 
     if (!checkPostgresTable(table_name))
         throw Exception(ErrorCodes::UNKNOWN_TABLE,
@@ -235,7 +235,7 @@ void DatabasePostgreSQL::attachTable(ContextPtr /* context_ */, const String & t
 
 StoragePtr DatabasePostgreSQL::detachTable(ContextPtr /* context_ */, const String & table_name)
 {
-    std::lock_guard<std::mutex> lock{mutex};
+    std::lock_guard lock{mutex};
 
     if (detached_or_dropped.contains(table_name))
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Cannot detach table {}. It is already dropped/detached", getTableNameForLogs(table_name));
@@ -266,7 +266,7 @@ void DatabasePostgreSQL::createTable(ContextPtr local_context, const String & ta
 
 void DatabasePostgreSQL::dropTable(ContextPtr, const String & table_name, bool /* sync */)
 {
-    std::lock_guard<std::mutex> lock{mutex};
+    std::lock_guard lock{mutex};
 
     if (!checkPostgresTable(table_name))
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot drop table {} because it does not exist", getTableNameForLogs(table_name));
@@ -293,7 +293,7 @@ void DatabasePostgreSQL::drop(ContextPtr /*context*/)
 void DatabasePostgreSQL::loadStoredObjects(ContextMutablePtr /* context */, LoadingStrictnessLevel /*mode*/, bool /* skip_startup_tables */)
 {
     {
-        std::lock_guard<std::mutex> lock{mutex};
+        std::lock_guard lock{mutex};
         fs::directory_iterator iter(getMetadataPath());
 
         /// Check for previously dropped tables
@@ -314,7 +314,7 @@ void DatabasePostgreSQL::loadStoredObjects(ContextMutablePtr /* context */, Load
 
 void DatabasePostgreSQL::removeOutdatedTables()
 {
-    std::lock_guard<std::mutex> lock{mutex};
+    std::lock_guard lock{mutex};
     auto connection_holder = pool->get();
     auto actual_tables = fetchPostgreSQLTablesList(connection_holder->get(), configuration.schema);
 

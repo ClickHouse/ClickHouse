@@ -116,6 +116,12 @@ public:
         return table_expression_modifiers;
     }
 
+    /// Get table expression modifiers
+    std::optional<TableExpressionModifiers> & getTableExpressionModifiers()
+    {
+        return table_expression_modifiers;
+    }
+
     /// Set table expression modifiers
     void setTableExpressionModifiers(TableExpressionModifiers table_expression_modifiers_value)
     {

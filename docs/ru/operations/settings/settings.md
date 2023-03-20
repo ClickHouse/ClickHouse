@@ -1315,6 +1315,12 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 Чем меньше значение, тем чаще данные сбрасываются в таблицу. Установка слишком низкого значения приводит к снижению производительности.
 
+## stream_poll_timeout_ms {#stream_poll_timeout_ms}
+
+Таймаут для poll стримнга данных.
+
+Значение по умолчанию: 500.
+
 ## load_balancing {#settings-load_balancing}
 
 Задает алгоритм выбора реплик, используемый при обработке распределенных запросов.

@@ -275,7 +275,7 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, Co
 
             assert(tuple || func);
 
-            size_t tuple_size = tuple ? tuple->size() : func->arguments->children.size(); //-V1004
+            size_t tuple_size = tuple ? tuple->size() : func->arguments->children.size();
             if (tuple_size != num_columns)
                 throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET, "Incorrect size of tuple in set: {} instead of {}",
                     tuple_size, num_columns);
@@ -957,7 +957,8 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         /// Let's find the type of the first argument (then getActionsImpl will be called again and will not affect anything).
         visit(node.arguments->children.at(0), data);
 
-        if (!data.no_makeset && (prepared_set = makeSet(node, data, data.no_subqueries)))
+        if (!data.no_makeset && !(data.is_create_parameterized_view && !analyzeReceiveQueryParams(ast).empty())
+            && (prepared_set = makeSet(node, data, data.no_subqueries)))
         {
             /// Transform tuple or subquery into a set.
         }

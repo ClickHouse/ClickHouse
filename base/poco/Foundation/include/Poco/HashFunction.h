@@ -22,32 +22,33 @@
 #include "Poco/Hash.h"
 
 
-namespace Poco {
+namespace Poco
+{
 
 
 //@ deprecated
 template <class T>
 struct HashFunction
-	/// A generic hash function.
+/// A generic hash function.
 {
-	UInt32 operator () (T key, UInt32 maxValue) const
-		/// Returns the hash value for the given key.
-	{
-		return static_cast<UInt32>(Poco::hash(key)) % maxValue;
-	}
+    UInt32 operator()(T key, UInt32 maxValue) const
+    /// Returns the hash value for the given key.
+    {
+        return static_cast<UInt32>(Poco::hash(key)) % maxValue;
+    }
 };
 
 
 //@ deprecated
 template <>
 struct HashFunction<std::string>
-	/// A generic hash function.
+/// A generic hash function.
 {
-	UInt32 operator () (const std::string& key, UInt32 maxValue) const
-		/// Returns the hash value for the given key.
-	{
-		return static_cast<UInt32>(Poco::hash(key)) % maxValue;
-	}
+    UInt32 operator()(const std::string & key, UInt32 maxValue) const
+    /// Returns the hash value for the given key.
+    {
+        return static_cast<UInt32>(Poco::hash(key)) % maxValue;
+    }
 };
 
 

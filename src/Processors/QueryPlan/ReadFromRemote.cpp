@@ -1,4 +1,6 @@
 #include <Processors/QueryPlan/ReadFromRemote.h>
+
+#include <DataTypes/DataTypesNumber.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
@@ -11,7 +13,6 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/ReadFromMergeTreeDependencyTransform.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include "Common/logger_useful.h"
 #include <Common/checkStackSize.h>
 #include <Core/QueryProcessingStage.h>
@@ -201,7 +202,7 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
             scalars["_shard_num"]
                 = Block{{DataTypeUInt32().createColumnConst(1, shard.shard_info.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                shard.shard_info.pool, std::move(connections), query_string, header, context, throttler, scalars, external_tables, stage);
+                std::move(connections), query_string, header, context, throttler, scalars, external_tables, stage);
 
             auto pipe = createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read);
             QueryPipelineBuilder builder;

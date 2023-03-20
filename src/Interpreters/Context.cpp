@@ -129,13 +129,21 @@ namespace CurrentMetrics
 {
     extern const Metric ContextLockWait;
     extern const Metric BackgroundMovePoolTask;
+    extern const Metric BackgroundMovePoolSize;
     extern const Metric BackgroundSchedulePoolTask;
+    extern const Metric BackgroundSchedulePoolSize;
     extern const Metric BackgroundBufferFlushSchedulePoolTask;
+    extern const Metric BackgroundBufferFlushSchedulePoolSize;
     extern const Metric BackgroundDistributedSchedulePoolTask;
+    extern const Metric BackgroundDistributedSchedulePoolSize;
     extern const Metric BackgroundMessageBrokerSchedulePoolTask;
+    extern const Metric BackgroundMessageBrokerSchedulePoolSize;
     extern const Metric BackgroundMergesAndMutationsPoolTask;
+    extern const Metric BackgroundMergesAndMutationsPoolSize;
     extern const Metric BackgroundFetchesPoolTask;
+    extern const Metric BackgroundFetchesPoolSize;
     extern const Metric BackgroundCommonPoolTask;
+    extern const Metric BackgroundCommonPoolSize;
 }
 
 namespace DB
@@ -1289,7 +1297,7 @@ void Context::addQueryAccessInfo(
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
 
-    std::lock_guard<std::mutex> lock(query_access_info.mutex);
+    std::lock_guard lock(query_access_info.mutex);
     query_access_info.databases.emplace(quoted_database_name);
     query_access_info.tables.emplace(full_quoted_table_name);
     for (const auto & column_name : column_names)
@@ -1650,8 +1658,8 @@ void Context::setCurrentQueryId(const String & query_id)
         UUID uuid{};
     } random;
 
-    random.words.a = thread_local_rng(); //-V656
-    random.words.b = thread_local_rng(); //-V656
+    random.words.a = thread_local_rng();
+    random.words.b = thread_local_rng();
 
 
     String query_id_to_set = query_id;
@@ -2175,6 +2183,7 @@ BackgroundSchedulePool & Context::getBufferFlushSchedulePool() const
         shared->buffer_flush_schedule_pool = std::make_unique<BackgroundSchedulePool>(
             background_buffer_flush_schedule_pool_size,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolTask,
+            CurrentMetrics::BackgroundBufferFlushSchedulePoolSize,
             "BgBufSchPool");
     }
 
@@ -2226,6 +2235,7 @@ BackgroundSchedulePool & Context::getSchedulePool() const
         shared->schedule_pool = std::make_unique<BackgroundSchedulePool>(
             background_schedule_pool_size,
             CurrentMetrics::BackgroundSchedulePoolTask,
+            CurrentMetrics::BackgroundSchedulePoolSize,
             "BgSchPool");
     }
 
@@ -2246,6 +2256,7 @@ BackgroundSchedulePool & Context::getDistributedSchedulePool() const
         shared->distributed_schedule_pool = std::make_unique<BackgroundSchedulePool>(
             background_distributed_schedule_pool_size,
             CurrentMetrics::BackgroundDistributedSchedulePoolTask,
+            CurrentMetrics::BackgroundDistributedSchedulePoolSize,
             "BgDistSchPool");
     }
 
@@ -2266,6 +2277,7 @@ BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
         shared->message_broker_schedule_pool = std::make_unique<BackgroundSchedulePool>(
             background_message_broker_schedule_pool_size,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolTask,
+            CurrentMetrics::BackgroundMessageBrokerSchedulePoolSize,
             "BgMBSchPool");
     }
 
@@ -3795,6 +3807,12 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     else if (config.has("profiles.default.background_merges_mutations_concurrency_ratio"))
         background_merges_mutations_concurrency_ratio = config.getUInt64("profiles.default.background_merges_mutations_concurrency_ratio");
 
+    String background_merges_mutations_scheduling_policy = "round_robin";
+    if (config.has("background_merges_mutations_scheduling_policy"))
+        background_merges_mutations_scheduling_policy = config.getString("background_merges_mutations_scheduling_policy");
+    else if (config.has("profiles.default.background_merges_mutations_scheduling_policy"))
+        background_merges_mutations_scheduling_policy = config.getString("profiles.default.background_merges_mutations_scheduling_policy");
+
     size_t background_move_pool_size = 8;
     if (config.has("background_move_pool_size"))
         background_move_pool_size = config.getUInt64("background_move_pool_size");
@@ -3819,17 +3837,20 @@ void Context::initializeBackgroundExecutorsIfNeeded()
         "MergeMutate",
         /*max_threads_count*/background_pool_size,
         /*max_tasks_count*/background_pool_size * background_merges_mutations_concurrency_ratio,
-        CurrentMetrics::BackgroundMergesAndMutationsPoolTask
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
+        CurrentMetrics::BackgroundMergesAndMutationsPoolSize,
+        background_merges_mutations_scheduling_policy
     );
-    LOG_INFO(shared->log, "Initialized background executor for merges and mutations with num_threads={}, num_tasks={}",
-        background_pool_size, background_pool_size * background_merges_mutations_concurrency_ratio);
+    LOG_INFO(shared->log, "Initialized background executor for merges and mutations with num_threads={}, num_tasks={}, scheduling_policy={}",
+        background_pool_size, background_pool_size * background_merges_mutations_concurrency_ratio, background_merges_mutations_scheduling_policy);
 
     shared->moves_executor = std::make_shared<OrdinaryBackgroundExecutor>
     (
         "Move",
         background_move_pool_size,
         background_move_pool_size,
-        CurrentMetrics::BackgroundMovePoolTask
+        CurrentMetrics::BackgroundMovePoolTask,
+        CurrentMetrics::BackgroundMovePoolSize
     );
     LOG_INFO(shared->log, "Initialized background executor for move operations with num_threads={}, num_tasks={}", background_move_pool_size, background_move_pool_size);
 
@@ -3838,7 +3859,8 @@ void Context::initializeBackgroundExecutorsIfNeeded()
         "Fetch",
         background_fetches_pool_size,
         background_fetches_pool_size,
-        CurrentMetrics::BackgroundFetchesPoolTask
+        CurrentMetrics::BackgroundFetchesPoolTask,
+        CurrentMetrics::BackgroundFetchesPoolSize
     );
     LOG_INFO(shared->log, "Initialized background executor for fetches with num_threads={}, num_tasks={}", background_fetches_pool_size, background_fetches_pool_size);
 
@@ -3847,7 +3869,8 @@ void Context::initializeBackgroundExecutorsIfNeeded()
         "Common",
         background_common_pool_size,
         background_common_pool_size,
-        CurrentMetrics::BackgroundCommonPoolTask
+        CurrentMetrics::BackgroundCommonPoolTask,
+        CurrentMetrics::BackgroundCommonPoolSize
     );
     LOG_INFO(shared->log, "Initialized background executor for common operations (e.g. clearing old parts) with num_threads={}, num_tasks={}", background_common_pool_size, background_common_pool_size);
 
@@ -4049,22 +4072,45 @@ std::shared_ptr<AsyncReadCounters> Context::getAsyncReadCounters() const
     return async_read_counters;
 }
 
+Context::ParallelReplicasMode Context::getParallelReplicasMode() const
+{
+    const auto & settings = getSettingsRef();
+
+    using enum Context::ParallelReplicasMode;
+    if (!settings.parallel_replicas_custom_key.value.empty())
+        return CUSTOM_KEY;
+
+    if (settings.allow_experimental_parallel_reading_from_replicas
+        && !settings.use_hedged_requests)
+        return READ_TASKS;
+
+    return SAMPLE_KEY;
+}
+
 bool Context::canUseParallelReplicasOnInitiator() const
 {
     const auto & settings = getSettingsRef();
-    return settings.allow_experimental_parallel_reading_from_replicas
+    return getParallelReplicasMode() == ParallelReplicasMode::READ_TASKS
         && settings.max_parallel_replicas > 1
-        && !settings.use_hedged_requests
         && !getClientInfo().collaborate_with_initiator;
 }
 
 bool Context::canUseParallelReplicasOnFollower() const
 {
     const auto & settings = getSettingsRef();
-    return settings.allow_experimental_parallel_reading_from_replicas
+    return getParallelReplicasMode() == ParallelReplicasMode::READ_TASKS
         && settings.max_parallel_replicas > 1
-        && !settings.use_hedged_requests
         && getClientInfo().collaborate_with_initiator;
+}
+
+UInt64 Context::getClientProtocolVersion() const
+{
+    return client_protocol_version;
+}
+
+void Context::setClientProtocolVersion(UInt64 version)
+{
+    client_protocol_version = version;
 }
 
 }

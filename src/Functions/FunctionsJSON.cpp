@@ -647,11 +647,12 @@ public:
             case ElementType::OBJECT:
                 type = '{';
                 break;
+            case ElementType::BOOL:
+                type = 'b';
+                break;
             case ElementType::NULL_VALUE:
                 type = 0;
                 break;
-            default:
-                return false;
         }
 
         ColumnVector<Int8> & col_vec = assert_cast<ColumnVector<Int8> &>(dest);

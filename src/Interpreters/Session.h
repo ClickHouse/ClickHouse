@@ -77,6 +77,9 @@ public:
     /// Releases the currently used session ID so it becomes available for reuse by another session.
     void releaseSessionID();
 
+    /// Closes and removes session
+    void closeSession(const String & session_id);
+
 private:
     std::shared_ptr<SessionLog> getSessionLog() const;
     ContextMutablePtr makeQueryContextImpl(const ClientInfo * client_info_to_copy, ClientInfo * client_info_to_move) const;

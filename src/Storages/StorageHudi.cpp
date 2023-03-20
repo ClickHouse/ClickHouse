@@ -6,12 +6,7 @@
 #include <Common/logger_useful.h>
 
 #include <Formats/FormatFactory.h>
-#include <IO/S3Common.h>
-#include <IO/S3/Requests.h>
-#include <IO/ReadHelpers.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/checkAndGetLiteralArgument.h>
-#include <aws/core/auth/AWSCredentials.h>
 
 #include <QueryPipeline/Pipe.h>
 
@@ -22,20 +17,23 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int S3_ERROR;
     extern const int LOGICAL_ERROR;
 }
 
-namespace
+template <typename Configuration, typename MetadataReadHelper>
+HudiMetadataParser<Configuration, MetadataReadHelper>::HudiMetadataParser(const Configuration & configuration_, ContextPtr context_)
+    : configuration(configuration_), context(context_), log(&Poco::Logger::get("StorageHudi"))
 {
+}
 
 /// Apache Hudi store parts of data in different files.
 /// Every part file has timestamp in it.
 /// Every partition(directory) in Apache Hudi has different versions of part.
 /// To find needed parts we need to find out latest part file for every partition.
 /// Part format is usually parquet, but can differ.
-String generateQueryFromKeys(const std::vector<std::string> & keys, const String & format)
+template <typename Configuration, typename MetadataReadHelper>
+String HudiMetadataParser<Configuration, MetadataReadHelper>::generateQueryFromKeys(const std::vector<std::string> & keys, const String & format)
 {
     /// For each partition path take only latest file.
     struct FileInfo
@@ -86,125 +84,19 @@ String generateQueryFromKeys(const std::vector<std::string> & keys, const String
     return "{" + list_of_keys + "}";
 }
 
-std::vector<std::string> getKeysFromS3(const StorageS3::Configuration & configuration, Poco::Logger * log)
+template <typename Configuration, typename MetadataReadHelper>
+std::vector<std::string> HudiMetadataParser<Configuration, MetadataReadHelper>::getFiles() const
 {
-    const auto & client = configuration.client;
-    const auto & table_path = configuration.url.key;
-    const auto & bucket = configuration.url.bucket;
-
-    std::vector<std::string> keys;
-    S3::ListObjectsV2Request request;
-    Aws::S3::Model::ListObjectsV2Outcome outcome;
-
-    bool is_finished{false};
-
-    request.SetBucket(bucket);
-    request.SetPrefix(table_path);
-
-    while (!is_finished)
-    {
-        outcome = client->ListObjectsV2(request);
-        if (!outcome.IsSuccess())
-            throw Exception(
-                ErrorCodes::S3_ERROR,
-                "Could not list objects in bucket {} with key {}, S3 exception: {}, message: {}",
-                quoteString(bucket),
-                quoteString(table_path),
-                backQuote(outcome.GetError().GetExceptionName()),
-                quoteString(outcome.GetError().GetMessage()));
-
-        const auto & result_batch = outcome.GetResult().GetContents();
-        for (const auto & obj : result_batch)
-        {
-            const auto & filename = obj.GetKey().substr(table_path.size()); /// Object name without tablepath prefix.
-            keys.push_back(filename);
-            LOG_DEBUG(log, "Found file: {}", filename);
-        }
-
-        request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
-        is_finished = !outcome.GetResult().GetIsTruncated();
-    }
-
-    return keys;
+    return MetadataReadHelper::listFiles(configuration);
 }
 
+template HudiMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::HudiMetadataParser(
+    const StorageS3::Configuration & configuration_, ContextPtr context_);
 
-StorageS3::Configuration getAdjustedS3Configuration(const StorageS3::Configuration & configuration, Poco::Logger * log)
-{
-    const auto keys = getKeysFromS3(configuration, log);
-    const auto new_uri = configuration.url.uri.toString() + generateQueryFromKeys(keys, configuration.format);
+template std::vector<String> HudiMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::getFiles() const;
 
-    StorageS3::Configuration new_configuration(configuration);
-    new_configuration.url = S3::URI(new_uri);
-
-    LOG_DEBUG(log, "Table path: {}, new uri: {}", configuration.url.key, new_uri);
-    return new_configuration;
-}
-
-}
-
-StorageHudi::StorageHudi(
-    const StorageS3::Configuration & configuration_,
-    const StorageID & table_id_,
-    ColumnsDescription columns_,
-    const ConstraintsDescription & constraints_,
-    const String & comment,
-    ContextPtr context_,
-    std::optional<FormatSettings> format_settings_)
-    : IStorage(table_id_)
-    , base_configuration{configuration_}
-    , log(&Poco::Logger::get("StorageHudi (" + table_id_.table_name + ")"))
-{
-    StorageInMemoryMetadata storage_metadata;
-    StorageS3::updateS3Configuration(context_, base_configuration);
-
-    auto new_configuration = getAdjustedS3Configuration(base_configuration, log);
-
-    if (columns_.empty())
-    {
-        columns_ = StorageS3::getTableStructureFromData(
-            new_configuration, /*distributed processing*/ false, format_settings_, context_, nullptr);
-        storage_metadata.setColumns(columns_);
-    }
-    else
-        storage_metadata.setColumns(columns_);
-
-    storage_metadata.setConstraints(constraints_);
-    storage_metadata.setComment(comment);
-    setInMemoryMetadata(storage_metadata);
-
-    s3engine = std::make_shared<StorageS3>(
-        new_configuration,
-        table_id_,
-        columns_,
-        constraints_,
-        comment,
-        context_,
-        format_settings_,
-        /* distributed_processing_ */ false,
-        nullptr);
-}
-
-Pipe StorageHudi::read(
-    const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & query_info,
-    ContextPtr context,
-    QueryProcessingStage::Enum processed_stage,
-    size_t max_block_size,
-    size_t num_streams)
-{
-    StorageS3::updateS3Configuration(context, base_configuration);
-    return s3engine->read(column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-}
-
-ColumnsDescription StorageHudi::getTableStructureFromData(
-    StorageS3::Configuration & configuration, const std::optional<FormatSettings> & format_settings, ContextPtr ctx)
-{
-    StorageS3::updateS3Configuration(ctx, configuration);
-    auto new_configuration = getAdjustedS3Configuration(configuration, &Poco::Logger::get("StorageDeltaLake"));
-    return StorageS3::getTableStructureFromData(new_configuration, /*distributed processing*/ false, format_settings, ctx, /*object_infos*/ nullptr);
-}
+template String HudiMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::generateQueryFromKeys(
+    const std::vector<String> & keys, const String & format);
 
 void registerStorageHudi(StorageFactory & factory)
 {
@@ -212,25 +104,7 @@ void registerStorageHudi(StorageFactory & factory)
         "Hudi",
         [](const StorageFactory::Arguments & args)
         {
-            auto & engine_args = args.engine_args;
-            if (engine_args.empty() || engine_args.size() < 3)
-                throw Exception(
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                    "Storage Hudi requires 3 to 4 arguments: table_url, access_key, secret_access_key, [format]");
-
-            StorageS3::Configuration configuration;
-
-            configuration.url = S3::URI(checkAndGetLiteralArgument<String>(engine_args[0], "url"));
-            configuration.auth_settings.access_key_id = checkAndGetLiteralArgument<String>(engine_args[1], "access_key_id");
-            configuration.auth_settings.secret_access_key = checkAndGetLiteralArgument<String>(engine_args[2], "secret_access_key");
-
-            if (engine_args.size() == 4)
-                configuration.format = checkAndGetLiteralArgument<String>(engine_args[3], "format");
-            else
-            {
-                // Apache Hudi uses Parquet by default
-                configuration.format = "Parquet";
-            }
+            StorageS3::Configuration configuration = StorageHudi::getConfiguration(args.engine_args, args.getLocalContext());
 
             auto format_settings = getFormatSettings(args.getContext());
 
@@ -238,7 +112,7 @@ void registerStorageHudi(StorageFactory & factory)
                 configuration, args.table_id, args.columns, args.constraints, args.comment, args.getContext(), format_settings);
         },
         {
-            .supports_settings = true,
+            .supports_settings = false,
             .supports_schema_inference = true,
             .source_access_type = AccessType::S3,
         });

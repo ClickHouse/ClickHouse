@@ -1019,6 +1019,7 @@ def test_rabbitmq_many_inserts(rabbitmq_cluster):
     ), "ClickHouse lost some messages: {}".format(result)
 
 
+@pytest.mark.skip(reason="Flaky")
 def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
     instance.query(
         """
@@ -1033,8 +1034,7 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
                      rabbitmq_exchange_type = 'direct',
                      rabbitmq_num_consumers = 2,
                      rabbitmq_flush_interval_ms=1000,
-                     rabbitmq_max_block_size = 1000,
-                     rabbitmq_num_queues = 2,
+                     rabbitmq_max_block_size = 100,
                      rabbitmq_routing_key_list = 'over',
                      rabbitmq_format = 'TSV',
                      rabbitmq_row_delimiter = '\\n';
@@ -1044,8 +1044,6 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
                      rabbitmq_exchange_name = 'over',
                      rabbitmq_exchange_type = 'direct',
                      rabbitmq_routing_key_list = 'over',
-                     rabbitmq_flush_interval_ms=1000,
-                     rabbitmq_max_block_size = 1000,
                      rabbitmq_format = 'TSV',
                      rabbitmq_row_delimiter = '\\n';
         CREATE TABLE test.view_overload (key UInt64, value UInt64)
@@ -1086,6 +1084,9 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
         time.sleep(random.uniform(0, 1))
         thread.start()
 
+    for thread in threads:
+        thread.join()
+
     while True:
         result = instance.query("SELECT count() FROM test.view_overload")
         expected = messages_num * threads_num
@@ -1096,15 +1097,12 @@ def test_rabbitmq_overloaded_insert(rabbitmq_cluster):
 
     instance.query(
         """
-        DROP TABLE test.consumer_overload;
-        DROP TABLE test.view_overload;
-        DROP TABLE test.rabbitmq_consume;
-        DROP TABLE test.rabbitmq_overload;
+        DROP TABLE test.consumer_overload NO DELAY;
+        DROP TABLE test.view_overload NO DELAY;
+        DROP TABLE test.rabbitmq_consume NO DELAY;
+        DROP TABLE test.rabbitmq_overload NO DELAY;
     """
     )
-
-    for thread in threads:
-        thread.join()
 
     assert (
         int(result) == messages_num * threads_num

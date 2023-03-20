@@ -15,7 +15,7 @@ execute_process(COMMAND ${CMAKE_CXX_COMPILER} --version OUTPUT_VARIABLE COMPILER
 message (STATUS "Using compiler:\n${COMPILER_SELF_IDENTIFICATION}")
 
 # Require minimum compiler versions
-set (CLANG_MINIMUM_VERSION 12)
+set (CLANG_MINIMUM_VERSION 15)
 set (XCODE_MINIMUM_VERSION 12.0)
 set (APPLE_CLANG_MINIMUM_VERSION 12.0.0)
 set (GCC_MINIMUM_VERSION 11)
@@ -50,58 +50,47 @@ endif ()
 string (REGEX MATCHALL "[0-9]+" COMPILER_VERSION_LIST ${CMAKE_CXX_COMPILER_VERSION})
 list (GET COMPILER_VERSION_LIST 0 COMPILER_VERSION_MAJOR)
 
-# Example values: `lld-10`, `gold`.
+# Example values: `lld-10`
 option (LINKER_NAME "Linker name or full path")
+
+if (LINKER_NAME MATCHES "gold")
+    message (FATAL_ERROR "Linking with gold is unsupported. Please use lld.")
+endif ()
 
 if (NOT LINKER_NAME)
     if (COMPILER_GCC)
         find_program (LLD_PATH NAMES "ld.lld")
-        find_program (GOLD_PATH NAMES "ld.gold")
     elseif (COMPILER_CLANG)
         # llvm lld is a generic driver.
         # Invoke ld.lld (Unix), ld64.lld (macOS), lld-link (Windows), wasm-ld (WebAssembly) instead
         if (OS_LINUX)
-            find_program (LLD_PATH NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "ld.lld")
+            if (NOT ARCH_S390X) # s390x doesnt support lld
+                find_program (LLD_PATH NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "ld.lld")
+            endif ()
         elseif (OS_DARWIN)
             find_program (LLD_PATH NAMES "ld64.lld-${COMPILER_VERSION_MAJOR}" "ld64.lld")
         endif ()
-        find_program (GOLD_PATH NAMES "ld.gold" "gold")
     endif ()
-endif()
-
-if ((OS_LINUX OR OS_DARWIN) AND NOT LINKER_NAME)
-    # prefer lld linker over gold or ld on linux and macos
-    if (LLD_PATH)
-        if (COMPILER_GCC)
-            # GCC driver requires one of supported linker names like "lld".
-            set (LINKER_NAME "lld")
-        else ()
-            # Clang driver simply allows full linker path.
-            set (LINKER_NAME ${LLD_PATH})
-        endif ()
-    endif ()
-
-    if (NOT LINKER_NAME)
-        if (GOLD_PATH)
-            message (FATAL_ERROR "Linking with gold is unsupported. Please use lld.")
+    if (OS_LINUX OR OS_DARWIN)
+        if (LLD_PATH)
             if (COMPILER_GCC)
-                set (LINKER_NAME "gold")
+                # GCC driver requires one of supported linker names like "lld".
+                set (LINKER_NAME "lld")
             else ()
-                set (LINKER_NAME ${GOLD_PATH})
+                # Clang driver simply allows full linker path.
+                set (LINKER_NAME ${LLD_PATH})
             endif ()
         endif ()
-    endif ()
-endif ()
-# TODO: allow different linker on != OS_LINUX
+    endif()
+endif()
 
 if (LINKER_NAME)
+    find_program (LLD_PATH NAMES ${LINKER_NAME})
+    if (NOT LLD_PATH)
+        message (FATAL_ERROR "Using linker ${LINKER_NAME} but can't find its path.")
+    endif ()
     if (COMPILER_CLANG)
-        find_program (LLD_PATH NAMES ${LINKER_NAME})
-        if (NOT LLD_PATH)
-            message (FATAL_ERROR "Using linker ${LINKER_NAME} but can't find its path.")
-        endif ()
-
-        # This a temporary quirk to emit .debug_aranges with ThinLTO
+        # This a temporary quirk to emit .debug_aranges with ThinLTO, can be removed after upgrade to clang-16
         set (LLD_WRAPPER "${CMAKE_CURRENT_BINARY_DIR}/ld.lld")
         configure_file ("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ld.lld.in" "${LLD_WRAPPER}" @ONLY)
 

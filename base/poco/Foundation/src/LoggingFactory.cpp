@@ -24,10 +24,6 @@
 #if defined(POCO_OS_FAMILY_UNIX) && !defined(POCO_NO_SYSLOGCHANNEL)
 #include "Poco/SyslogChannel.h"
 #endif
-#if defined(POCO_OS_FAMILY_WINDOWS) && !defined(_WIN32_WCE)
-#include "Poco/EventLogChannel.h"
-#include "Poco/WindowsConsoleChannel.h"
-#endif
 #include "Poco/PatternFormatter.h"
 
 
@@ -84,13 +80,8 @@ LoggingFactory& LoggingFactory::defaultFactory()
 void LoggingFactory::registerBuiltins()
 {
 	_channelFactory.registerClass("AsyncChannel", new Instantiator<AsyncChannel, Channel>);
-#if defined(POCO_OS_FAMILY_WINDOWS) && !defined(_WIN32_WCE)
-	_channelFactory.registerClass("ConsoleChannel", new Instantiator<WindowsConsoleChannel, Channel>);
-	_channelFactory.registerClass("ColorConsoleChannel", new Instantiator<WindowsColorConsoleChannel, Channel>);
-#else
 	_channelFactory.registerClass("ConsoleChannel", new Instantiator<ConsoleChannel, Channel>);
 	_channelFactory.registerClass("ColorConsoleChannel", new Instantiator<ColorConsoleChannel, Channel>);
-#endif
 #ifndef POCO_NO_FILECHANNEL
 	_channelFactory.registerClass("FileChannel", new Instantiator<FileChannel, Channel>);
 #endif
@@ -105,9 +96,6 @@ void LoggingFactory::registerBuiltins()
 #ifndef POCO_NO_SYSLOGCHANNEL
 	_channelFactory.registerClass("SyslogChannel", new Instantiator<SyslogChannel, Channel>);
 #endif
-#endif
-#if defined(POCO_OS_FAMILY_WINDOWS) && !defined(_WIN32_WCE)
-	_channelFactory.registerClass("EventLogChannel", new Instantiator<EventLogChannel, Channel>);
 #endif
 
 	_formatterFactory.registerClass("PatternFormatter", new Instantiator<PatternFormatter, Formatter>);

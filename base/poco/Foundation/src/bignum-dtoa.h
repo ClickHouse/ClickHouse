@@ -30,21 +30,23 @@
 
 #include "utils.h"
 
-namespace double_conversion {
+namespace double_conversion
+{
 
-enum BignumDtoaMode {
-  // Return the shortest correct representation.
-  // For example the output of 0.299999999999999988897 is (the less accurate but
-  // correct) 0.3.
-  BIGNUM_DTOA_SHORTEST,
-  // Same as BIGNUM_DTOA_SHORTEST but for single-precision floats.
-  BIGNUM_DTOA_SHORTEST_SINGLE,
-  // Return a fixed number of digits after the decimal point.
-  // For instance fixed(0.1, 4) becomes 0.1000
-  // If the input number is big, the output will be big.
-  BIGNUM_DTOA_FIXED,
-  // Return a fixed number of digits, no matter what the exponent is.
-  BIGNUM_DTOA_PRECISION
+enum BignumDtoaMode
+{
+    // Return the shortest correct representation.
+    // For example the output of 0.299999999999999988897 is (the less accurate but
+    // correct) 0.3.
+    BIGNUM_DTOA_SHORTEST,
+    // Same as BIGNUM_DTOA_SHORTEST but for single-precision floats.
+    BIGNUM_DTOA_SHORTEST_SINGLE,
+    // Return a fixed number of digits after the decimal point.
+    // For instance fixed(0.1, 4) becomes 0.1000
+    // If the input number is big, the output will be big.
+    BIGNUM_DTOA_FIXED,
+    // Return a fixed number of digits, no matter what the exponent is.
+    BIGNUM_DTOA_PRECISION
 };
 
 // Converts the given double 'v' to ascii.
@@ -76,9 +78,8 @@ enum BignumDtoaMode {
 //   Halfway cases are again rounded up.
 // 'BignumDtoa' expects the given buffer to be big enough to hold all digits
 // and a terminating null-character.
-void BignumDtoa(double v, BignumDtoaMode mode, int requested_digits,
-                Vector<char> buffer, int* length, int* point);
+void BignumDtoa(double v, BignumDtoaMode mode, int requested_digits, Vector<char> buffer, int * length, int * point);
 
-}  // namespace double_conversion
+} // namespace double_conversion
 
-#endif  // DOUBLE_CONVERSION_BIGNUM_DTOA_H_
+#endif // DOUBLE_CONVERSION_BIGNUM_DTOA_H_

@@ -206,10 +206,10 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
         ProcessListForUser & user_process_list = user_process_list_it->second;
 
         /// Actualize thread group info
+        CurrentThread::attachQueryForLog(query_);
         auto thread_group = CurrentThread::getGroup();
         if (thread_group)
         {
-            std::lock_guard lock_thread_group(thread_group->mutex);
             thread_group->performance_counters.setParent(&user_process_list.user_performance_counters);
             thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
             if (user_process_list.user_temp_data_on_disk)
@@ -217,8 +217,6 @@ ProcessList::insert(const String & query_, const IAST * ast, ContextMutablePtr q
                 query_context->setTempDataOnDisk(std::make_shared<TemporaryDataOnDiskScope>(
                     user_process_list.user_temp_data_on_disk, settings.max_temporary_data_on_disk_size_for_query));
             }
-            thread_group->query = query_;
-            thread_group->normalized_query_hash = normalizedQueryHash<false>(query_);
 
             /// Set query-level memory trackers
             thread_group->memory_tracker.setOrRaiseHardLimit(settings.max_memory_usage);
@@ -365,7 +363,11 @@ QueryStatus::QueryStatus(
 
 QueryStatus::~QueryStatus()
 {
-    assert(executors.empty());
+#if !defined(NDEBUG)
+    /// Check that all executors were invalidated.
+    for (const auto & e : executors)
+        assert(!e->executor);
+#endif
 
     if (auto * memory_tracker = getMemoryTracker())
     {
@@ -374,6 +376,19 @@ QueryStatus::~QueryStatus()
         if (global_overcommit_tracker)
             global_overcommit_tracker->onQueryStop(memory_tracker);
     }
+}
+
+void QueryStatus::ExecutorHolder::cancel()
+{
+    std::lock_guard lock(mutex);
+    if (executor)
+        executor->cancel();
+}
+
+void QueryStatus::ExecutorHolder::remove()
+{
+    std::lock_guard lock(mutex);
+    executor = nullptr;
 }
 
 CancellationCode QueryStatus::cancelQuery(int code, const String & msg)
@@ -389,8 +404,25 @@ CancellationCode QueryStatus::cancelQuery(int code, const String & msg)
     // Note that deadlocks are possible in the first place due to non-deterministic locking order when OvercommitTracker tries to cancel query.
     thread_group->cancel_tokens.cancelGroup(code, msg);
 
-    std::lock_guard lock(executors_mutex);
-    for (auto * e : executors)
+    std::vector<ExecutorHolderPtr> executors_snapshot;
+
+    {
+        /// Create a snapshot of executors under a mutex.
+        std::lock_guard lock(executors_mutex);
+        executors_snapshot = executors;
+    }
+
+    /// We should call cancel() for each executor with unlocked executors_mutex, because
+    /// cancel() can try to lock some internal mutex that is already locked by query executing
+    /// thread, and query executing thread can call removePipelineExecutor and lock executors_mutex,
+    /// which will lead to deadlock.
+    /// Note that the size and the content of executors cannot be changed while
+    /// executors_mutex is unlocked, because:
+    /// 1) We don't allow adding new executors while cancelling query in addPipelineExecutor
+    /// 2) We don't actually remove executor holder from executors in removePipelineExecutor,
+    /// just mark that executor is invalid.
+    /// So, it's ok to use a snapshot created above under a mutex, it won't be any differ from actual executors.
+    for (const auto & e : executors_snapshot)
         e->cancel();
 
     return CancellationCode::CancelSent;
@@ -405,15 +437,17 @@ void QueryStatus::addPipelineExecutor(PipelineExecutor * e)
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 
     std::lock_guard lock(executors_mutex);
-    assert(std::find(executors.begin(), executors.end(), e) == executors.end());
-    executors.push_back(e);
+    assert(std::find_if(executors.begin(), executors.end(), [e](const ExecutorHolderPtr & x){ return x->executor == e; }) == executors.end());
+    executors.push_back(std::make_shared<ExecutorHolder>(e));
 }
 
 void QueryStatus::removePipelineExecutor(PipelineExecutor * e)
 {
     std::lock_guard lock(executors_mutex);
-    assert(std::find(executors.begin(), executors.end(), e) != executors.end());
-    std::erase_if(executors, [e](PipelineExecutor * x) { return x == e; });
+    auto it = std::find_if(executors.begin(), executors.end(), [e](const ExecutorHolderPtr & x){ return x->executor == e; });
+    assert(it != executors.end());
+    /// Invalidate executor pointer inside holder, but don't remove holder from the executors (to avoid race with cancelQuery)
+    (*it)->remove();
 }
 
 bool QueryStatus::checkTimeLimit()
@@ -550,10 +584,7 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
         res.peak_memory_usage = thread_group->memory_tracker.getPeak();
 
         if (get_thread_list)
-        {
-            std::lock_guard lock(thread_group->mutex);
-            res.thread_ids.assign(thread_group->thread_ids.begin(), thread_group->thread_ids.end());
-        }
+            res.thread_ids = thread_group->getInvolvedThreadIds();
 
         if (get_profile_events)
             res.profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
