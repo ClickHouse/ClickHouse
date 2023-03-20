@@ -12,6 +12,8 @@
 #include <IO/Operators.h>
 #include <fmt/core.h>
 
+#include <Storages/MergeTree/Unique/WriteState.h>
+
 namespace ProfileEvents
 {
     extern const Event DuplicatedInsertedBlocks;
@@ -45,6 +47,7 @@ struct ReplicatedMergeTreeSinkImpl<async_insert>::DelayedChunk
     {
         Poco::Logger * log;
         MergeTreeDataWriter::TemporaryPart temp_part;
+        WriteState write_state;
         UInt64 elapsed_ns;
         BlockIDsType block_id;
         BlockWithPartition block_with_partition;

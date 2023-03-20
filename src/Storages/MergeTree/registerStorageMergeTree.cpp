@@ -776,6 +776,7 @@ void registerStorageMergeTree(StorageFactory & factory)
     factory.registerStorage("ReplicatedSummingMergeTree", create, features);
     factory.registerStorage("ReplicatedGraphiteMergeTree", create, features);
     factory.registerStorage("ReplicatedVersionedCollapsingMergeTree", create, features);
+    factory.registerStorage("ReplicatedUniqueMergeTree", create, features);
 }
 
 }

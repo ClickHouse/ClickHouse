@@ -301,6 +301,10 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , replicated_sends_throttler(std::make_shared<Throttler>(getSettings()->max_replicated_sends_network_bandwidth, getContext()->getReplicatedSendsThrottler()))
 {
     initializeDirectoriesAndFormatVersion(relative_data_path_, attach, date_column_name);
+
+    /// Must initialize after set relative_data_path
+    initializeForUniqueTable(attach);
+
     /// We create and deactivate all tasks for consistency.
     /// They all will be scheduled and activated by the restarting thread.
     queue_updating_task = getContext()->getSchedulePool().createTask(
@@ -407,6 +411,9 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     }
 
     loadDataParts(skip_sanity_checks);
+
+    /// Must call after loadDataParts
+    initializePartsInfoByBlockId();
 
     if (!current_zookeeper)
     {
