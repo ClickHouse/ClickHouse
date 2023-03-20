@@ -450,29 +450,32 @@ INDEX sample_index3 (lower(str), str) TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 
 
 Conditions in the `WHERE` clause contains calls of the functions that operate with columns. If the column is a part of an index, ClickHouse tries to use this index when performing the functions. ClickHouse supports different subsets of functions for using indexes.
 
-The `set` index can be used with all functions. Function subsets for other indexes are shown in the table below.
+Indexes of type `set` can be utilized by all functions. The other index types are supported as follows:
 
 | Function (operator) / Index                                                                                | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter |
-|------------------------------------------------------------------------------------------------------------|-------------|--------|-------------|-------------|---------------|
-| [equals (=, ==)](/docs/en/sql-reference/functions/comparison-functions.md/#function-equals)                 | ✔           | ✔      | ✔           | ✔           | ✔             |
-| [notEquals(!=, &lt;&gt;)](/docs/en/sql-reference/functions/comparison-functions.md/#function-notequals)         | ✔           | ✔      | ✔           | ✔           | ✔             |
-| [like](/docs/en/sql-reference/functions/string-search-functions.md/#function-like)                          | ✔           | ✔      | ✔           | ✔           | ✗             |
-| [notLike](/docs/en/sql-reference/functions/string-search-functions.md/#function-notlike)                    | ✔           | ✔      | ✔           | ✔           | ✗             |
-| [startsWith](/docs/en/sql-reference/functions/string-functions.md/#startswith)                              | ✔           | ✔      | ✔           | ✔           | ✗             |
-| [endsWith](/docs/en/sql-reference/functions/string-functions.md/#endswith)                                  | ✗           | ✗      | ✔           | ✔           | ✗             |
-| [multiSearchAny](/docs/en/sql-reference/functions/string-search-functions.md/#function-multisearchany)      | ✗           | ✗      | ✔           | ✗           | ✗             |
-| [in](/docs/en/sql-reference/functions/in-functions#in-functions)                                        | ✔           | ✔      | ✔           | ✔           | ✔             |
-| [notIn](/docs/en/sql-reference/functions/in-functions#in-functions)                                     | ✔           | ✔      | ✔           | ✔           | ✔             |
-| [less (<)](/docs/en/sql-reference/functions/comparison-functions.md/#function-less)                        | ✔           | ✔      | ✗           | ✗           | ✗             |
-| [greater (>)](/docs/en/sql-reference/functions/comparison-functions.md/#function-greater)                  | ✔           | ✔      | ✗           | ✗           | ✗             |
-| [lessOrEquals (<=)](/docs/en/sql-reference/functions/comparison-functions.md/#function-lessorequals)       | ✔           | ✔      | ✗           | ✗           | ✗             |
-| [greaterOrEquals (>=)](/docs/en/sql-reference/functions/comparison-functions.md/#function-greaterorequals) | ✔           | ✔      | ✗           | ✗           | ✗             |
-| [empty](/docs/en/sql-reference/functions/array-functions#function-empty)                                | ✔           | ✔      | ✗           | ✗           | ✗             |
-| [notEmpty](/docs/en/sql-reference/functions/array-functions#function-notempty)                          | ✔           | ✔      | ✗           | ✗           | ✗             |
-| hasToken                                                                                                   | ✗           | ✗      | ✗           | ✔           | ✗             |
-| hasTokenOrNull                                                                                                   | ✗           | ✗      | ✗           | ✔           | ✗             |
-| hasTokenCaseInsensitive                                                                                                   | ✗           | ✗      | ✗           | ✔           | ✗             |
-| hasTokenCaseInsensitiveOrNull                                                                                                   | ✗           | ✗      | ✗           | ✔           | ✗             |
+|------------------------------------------------------------------------------------------------------------|-------------|--------|------------|------------|--------------|
+| [equals (=, ==)](/docs/en/sql-reference/functions/comparison-functions.md/#function-equals)                | ✔           | ✔      | ✔          | ✔          | ✔            |
+| [notEquals(!=, &lt;&gt;)](/docs/en/sql-reference/functions/comparison-functions.md/#function-notequals)    | ✔           | ✔      | ✔          | ✔          | ✔            |
+| [like](/docs/en/sql-reference/functions/string-search-functions.md/#function-like)                         | ✔           | ✔      | ✔          | ✔          | ✗            |
+| [notLike](/docs/en/sql-reference/functions/string-search-functions.md/#function-notlike)                   | ✔           | ✔      | ✔          | ✔          | ✗            |
+| [startsWith](/docs/en/sql-reference/functions/string-functions.md/#startswith)                             | ✔           | ✔      | ✔          | ✔          | ✗            |
+| [endsWith](/docs/en/sql-reference/functions/string-functions.md/#endswith)                                 | ✗           | ✗      | ✔          | ✔          | ✗            |
+| [multiSearchAny](/docs/en/sql-reference/functions/string-search-functions.md/#function-multisearchany)     | ✗           | ✗      | ✔          | ✗          | ✗            |
+| [in](/docs/en/sql-reference/functions/in-functions#in-functions)                                           | ✔           | ✔      | ✔          | ✔          | ✔            |
+| [notIn](/docs/en/sql-reference/functions/in-functions#in-functions)                                        | ✔           | ✔      | ✔          | ✔          | ✔            |
+| [less (<)](/docs/en/sql-reference/functions/comparison-functions.md/#function-less)                        | ✔           | ✔      | ✗          | ✗          | ✗            |
+| [greater (>)](/docs/en/sql-reference/functions/comparison-functions.md/#function-greater)                  | ✔           | ✔      | ✗          | ✗          | ✗            |
+| [lessOrEquals (<=)](/docs/en/sql-reference/functions/comparison-functions.md/#function-lessorequals)       | ✔           | ✔      | ✗          | ✗          | ✗            |
+| [greaterOrEquals (>=)](/docs/en/sql-reference/functions/comparison-functions.md/#function-greaterorequals) | ✔           | ✔      | ✗          | ✗          | ✗            |
+| [empty](/docs/en/sql-reference/functions/array-functions#function-empty)                                   | ✔           | ✔      | ✗          | ✗          | ✗            |
+| [notEmpty](/docs/en/sql-reference/functions/array-functions#function-notempty)                             | ✔           | ✔      | ✗          | ✗          | ✗            |
+| [has](/docs/en/sql-reference/functions/array-functions#function-has)                                       | ✗           | ✗      | ✔          | ✔          | ✔            |
+| [hasAny](/docs/en/sql-reference/functions/array-functions#function-hasAny)                                 | ✗           | ✗      | ✗          | ✗          | ✔            |
+| [hasAll](/docs/en/sql-reference/functions/array-functions#function-hasAll)                                 | ✗           | ✗      | ✗          | ✗          | ✔            |
+| hasToken                                                                                                   | ✗           | ✗      | ✗          | ✔          | ✗            |
+| hasTokenOrNull                                                                                             | ✗           | ✗      | ✗          | ✔          | ✗            |
+| hasTokenCaseInsensitive                                                                                    | ✗           | ✗      | ✗          | ✔          | ✗            |
+| hasTokenCaseInsensitiveOrNull                                                                              | ✗           | ✗      | ✗          | ✔          | ✗            |
 
 Functions with a constant argument that is less than ngram size can’t be used by `ngrambf_v1` for query optimization.
 
@@ -898,7 +901,7 @@ User can assign new big parts to different disks of a [JBOD](https://en.wikipedi
 ## Using S3 for Data Storage {#table_engine-mergetree-s3}
 
 :::note
-Google Cloud Storage (GCS) is also supported using the type `s3`. See [GCS backed MergeTree](/docs/en/integrations/data-ingestion/s3/gcs-merge-tree.md).
+Google Cloud Storage (GCS) is also supported using the type `s3`. See [GCS backed MergeTree](/docs/en/integrations/gcs).
 :::
 
 `MergeTree` family table engines can store data to [S3](https://aws.amazon.com/s3/) using a disk with type `s3`.
@@ -957,6 +960,7 @@ Optional parameters:
 -   `support_batch_delete` — This controls the check to see if batch deletes are supported. Set this to `false` when using Google Cloud Storage (GCS) as GCS does not support batch deletes and preventing the checks will prevent error messages in the logs.
 -   `use_environment_credentials` — Reads AWS credentials from the Environment variables AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and AWS_SESSION_TOKEN if they exist. Default value is `false`.
 -   `use_insecure_imds_request` — If set to `true`, S3 client will use insecure IMDS request while obtaining credentials from Amazon EC2 metadata. Default value is `false`.
+-   `expiration_window_seconds` — Grace period for checking if expiration-based credentials have expired. Optional, default value is `120`.
 -   `proxy` — Proxy configuration for S3 endpoint. Each `uri` element inside `proxy` block should contain a proxy URL.
 -   `connect_timeout_ms` — Socket connect timeout in milliseconds. Default value is `10 seconds`.
 -   `request_timeout_ms` — Request timeout in milliseconds. Default value is `5 seconds`.

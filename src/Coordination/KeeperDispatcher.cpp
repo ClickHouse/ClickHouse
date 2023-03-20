@@ -4,12 +4,12 @@
 #include <Poco/Path.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Common/setThreadName.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/checkStackSize.h>
 #include <Common/CurrentMetrics.h>
-
+#include <Common/ProfileEvents.h>
 
 #include <future>
 #include <chrono>
@@ -17,10 +17,24 @@
 #include <iterator>
 #include <limits>
 
+#if USE_JEMALLOC
+#    include <jemalloc/jemalloc.h>
+
+#define STRINGIFY_HELPER(x) #x
+#define STRINGIFY(x) STRINGIFY_HELPER(x)
+
+#endif
+
 namespace CurrentMetrics
 {
     extern const Metric KeeperAliveConnections;
     extern const Metric KeeperOutstandingRequets;
+}
+
+namespace ProfileEvents
+{
+    extern const Event MemoryAllocatorPurge;
+    extern const Event MemoryAllocatorPurgeTimeMicroseconds;
 }
 
 namespace fs = std::filesystem;
@@ -751,6 +765,17 @@ Keeper4LWInfo KeeperDispatcher::getKeeper4LWInfo() const
         result.alive_connections_count = session_to_response_callback.size();
     }
     return result;
+}
+
+void KeeperDispatcher::cleanResources()
+{
+#if USE_JEMALLOC
+    LOG_TRACE(&Poco::Logger::get("KeeperDispatcher"), "Purging unused memory");
+    Stopwatch watch;
+    mallctl("arena." STRINGIFY(MALLCTL_ARENAS_ALL) ".purge", nullptr, nullptr, nullptr, 0);
+    ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurge);
+    ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurgeTimeMicroseconds, watch.elapsedMicroseconds());
+#endif
 }
 
 }

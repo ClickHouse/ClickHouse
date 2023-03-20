@@ -31,7 +31,7 @@ public:
       * max_elements_size == 0 means no elements size restrictions.
       */
     explicit LRUCachePolicy(size_t max_size_, size_t max_elements_size_ = 0, OnWeightLossFunction on_weight_loss_function_ = {})
-        : max_size(std::max(static_cast<size_t>(1), max_size_)), max_elements_size(max_elements_size_)
+        : max_size(std::max(1uz, max_size_)), max_elements_size(max_elements_size_)
     {
         Base::on_weight_loss_function = on_weight_loss_function_;
     }
