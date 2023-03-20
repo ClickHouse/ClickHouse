@@ -138,7 +138,7 @@ namespace fmt
         template <typename FormatContext>
         auto format(const DB::StorageID & storage_id, FormatContext & ctx)
         {
-            return format_to(ctx.out(), "{}", storage_id.getNameForLogs());
+            return fmt::format_to(ctx.out(), "{}", storage_id.getNameForLogs());
         }
     };
 }
