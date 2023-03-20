@@ -335,7 +335,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
                 /// job should be reset before decrementing scheduled_jobs to
                 /// ensure that the Job destroyed before wait() returns.
                 job = {};
-                
+
                 parent_thead_trace_context.reset();
             }
             catch (...)
