@@ -57,44 +57,40 @@ if (LINKER_NAME MATCHES "gold")
     message (FATAL_ERROR "Linking with gold is unsupported. Please use lld.")
 endif ()
 
-# s390x doesnt support lld
-if (NOT ARCH_S390X)
-    if (NOT LINKER_NAME)
-        if (COMPILER_GCC)
-            find_program (LLD_PATH NAMES "ld.lld")
-        elseif (COMPILER_CLANG)
-            # llvm lld is a generic driver.
-            # Invoke ld.lld (Unix), ld64.lld (macOS), lld-link (Windows), wasm-ld (WebAssembly) instead
-            if (OS_LINUX)
+if (NOT LINKER_NAME)
+    if (COMPILER_GCC)
+        find_program (LLD_PATH NAMES "ld.lld")
+    elseif (COMPILER_CLANG)
+        # llvm lld is a generic driver.
+        # Invoke ld.lld (Unix), ld64.lld (macOS), lld-link (Windows), wasm-ld (WebAssembly) instead
+        if (OS_LINUX)
+            if (NOT ARCH_S390X) # s390x doesnt support lld
                 find_program (LLD_PATH NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "ld.lld")
-            elseif (OS_DARWIN)
-                find_program (LLD_PATH NAMES "ld64.lld-${COMPILER_VERSION_MAJOR}" "ld64.lld")
+            endif ()
+        elseif (OS_DARWIN)
+            find_program (LLD_PATH NAMES "ld64.lld-${COMPILER_VERSION_MAJOR}" "ld64.lld")
+        endif ()
+    endif ()
+    if (OS_LINUX OR OS_DARWIN)
+        if (LLD_PATH)
+            if (COMPILER_GCC)
+                # GCC driver requires one of supported linker names like "lld".
+                set (LINKER_NAME "lld")
+            else ()
+                # Clang driver simply allows full linker path.
+                set (LINKER_NAME ${LLD_PATH})
             endif ()
         endif ()
     endif()
 endif()
 
-if ((OS_LINUX OR OS_DARWIN) AND NOT LINKER_NAME)
-    if (LLD_PATH)
-        if (COMPILER_GCC)
-            # GCC driver requires one of supported linker names like "lld".
-            set (LINKER_NAME "lld")
-        else ()
-            # Clang driver simply allows full linker path.
-            set (LINKER_NAME ${LLD_PATH})
-        endif ()
-    endif ()
-endif ()
-# TODO: allow different linker on != OS_LINUX
-
 if (LINKER_NAME)
+    find_program (LLD_PATH NAMES ${LINKER_NAME})
+    if (NOT LLD_PATH)
+        message (FATAL_ERROR "Using linker ${LINKER_NAME} but can't find its path.")
+    endif ()
     if (COMPILER_CLANG)
-        find_program (LLD_PATH NAMES ${LINKER_NAME})
-        if (NOT LLD_PATH)
-            message (FATAL_ERROR "Using linker ${LINKER_NAME} but can't find its path.")
-        endif ()
-
-        # This a temporary quirk to emit .debug_aranges with ThinLTO
+        # This a temporary quirk to emit .debug_aranges with ThinLTO, can be removed after upgrade to clang-16
         set (LLD_WRAPPER "${CMAKE_CURRENT_BINARY_DIR}/ld.lld")
         configure_file ("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ld.lld.in" "${LLD_WRAPPER}" @ONLY)
 
