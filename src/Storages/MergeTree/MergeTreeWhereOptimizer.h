@@ -39,6 +39,7 @@ public:
         std::unordered_map<std::string, UInt64> column_sizes_,
         const StorageMetadataPtr & metadata_snapshot,
         const Names & queried_columns_,
+        const std::optional<NameSet> & supported_columns_,
         Poco::Logger * log_);
 
 private:
@@ -82,6 +83,7 @@ private:
     void optimizeArbitrary(ASTSelectQuery & select) const;
 
     UInt64 getIdentifiersColumnSize(const NameSet & identifiers) const;
+    bool identifiersSupportsPrewhere(const NameSet & identifiers) const;
 
     bool isExpressionOverSortingKey(const ASTPtr & ast) const;
 
@@ -105,6 +107,7 @@ private:
 
     const StringSet table_columns;
     const Names queried_columns;
+    const std::optional<NameSet> supported_columns;
     const NameSet sorting_key_names;
     const Block block_with_constants;
     Poco::Logger * log;

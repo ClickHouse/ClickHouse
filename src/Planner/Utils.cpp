@@ -4,6 +4,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 
@@ -13,12 +14,18 @@
 
 #include <Functions/FunctionFactory.h>
 
+#include <Storages/StorageDummy.h>
+
 #include <Interpreters/Context.h>
 
+#include <Analyzer/Utils.h>
 #include <Analyzer/ConstantNode.h>
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
+#include <Analyzer/TableNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/JoinNode.h>
 
@@ -336,25 +343,65 @@ QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, con
     return function_node;
 }
 
-std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr & condition_node)
+QueryTreeNodePtr replaceTablesAndTableFunctionsWithDummyTables(const QueryTreeNodePtr & query_node,
+    const ContextPtr & context,
+    ResultReplacementMap * result_replacement_map)
 {
-    const auto * constant_node = condition_node->as<ConstantNode>();
-    if (!constant_node)
-        return {};
+    auto & query_node_typed = query_node->as<QueryNode &>();
+    auto table_expressions = extractTableExpressions(query_node_typed.getJoinTree());
+    std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> replacement_map;
 
-    const auto & value = constant_node->getValue();
-    auto constant_type = constant_node->getResultType();
-    constant_type = removeNullable(removeLowCardinality(constant_type));
+    for (auto & table_expression : table_expressions)
+    {
+        auto * table_node = table_expression->as<TableNode>();
+        auto * table_function_node = table_expression->as<TableFunctionNode>();
+        if (!table_node && !table_function_node)
+            continue;
 
-    auto which_constant_type = WhichDataType(constant_type);
-    if (!which_constant_type.isUInt8() && !which_constant_type.isNothing())
-        return {};
+        const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
+        auto storage_dummy = std::make_shared<StorageDummy>(storage_snapshot->storage.getStorageID(),
+            storage_snapshot->metadata->getColumns());
+        auto dummy_table_node = std::make_shared<TableNode>(std::move(storage_dummy), context);
 
-    if (value.isNull())
-        return false;
+        if (result_replacement_map)
+            result_replacement_map->emplace(table_expression, dummy_table_node);
 
-    UInt8 predicate_value = value.safeGet<UInt8>();
-    return predicate_value > 0;
+        replacement_map.emplace(table_expression.get(), std::move(dummy_table_node));
+    }
+
+    return query_node->cloneAndReplace(replacement_map);
+}
+
+QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
+    const QueryTreeNodePtr & table_expression,
+    const ContextPtr & context)
+{
+    auto projection_columns = columns;
+
+    QueryTreeNodes subquery_projection_nodes;
+    subquery_projection_nodes.reserve(projection_columns.size());
+
+    for (const auto & column : projection_columns)
+        subquery_projection_nodes.push_back(std::make_shared<ColumnNode>(column, table_expression));
+
+    if (subquery_projection_nodes.empty())
+    {
+        auto constant_data_type = std::make_shared<DataTypeUInt64>();
+        subquery_projection_nodes.push_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
+        projection_columns.push_back({"1", std::move(constant_data_type)});
+    }
+
+    auto context_copy = Context::createCopy(context);
+    updateContextForSubqueryExecution(context_copy);
+
+    auto query_node = std::make_shared<QueryNode>(std::move(context_copy));
+
+    query_node->resolveProjectionColumns(projection_columns);
+    query_node->getProjection().getNodes() = std::move(subquery_projection_nodes);
+    query_node->getJoinTree() = table_expression;
+    query_node->setIsSubquery(true);
+
+    return query_node;
 }
 
 }

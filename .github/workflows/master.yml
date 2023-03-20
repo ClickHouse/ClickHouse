@@ -110,7 +110,7 @@ jobs:
           docker ps --quiet | xargs --no-run-if-empty docker kill ||:
           docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
           sudo rm -fr "$TEMP_PATH"
-  CompatibilityCheck:
+  CompatibilityCheckX86:
     needs: [BuilderDebRelease]
     runs-on: [self-hosted, style-checker]
     steps:
@@ -129,12 +129,43 @@ jobs:
         uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: CompatibilityCheck
+      - name: CompatibilityCheckX86
         run: |
           sudo rm -fr "$TEMP_PATH"
           mkdir -p "$TEMP_PATH"
           cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
-          cd "$REPO_COPY/tests/ci" && python3 compatibility_check.py
+          cd "$REPO_COPY/tests/ci" && python3 compatibility_check.py --check-name "Compatibility check (amd64)" --check-glibc --check-distributions
+      - name: Cleanup
+        if: always()
+        run: |
+          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
+          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
+          sudo rm -fr "$TEMP_PATH"
+  CompatibilityCheckAarch64:
+    needs: [BuilderDebAarch64]
+    runs-on: [self-hosted, style-checker]
+    steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/compatibility_check
+          REPO_COPY=${{runner.temp}}/compatibility_check/ClickHouse
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          EOF
+      - name: Check out repository code
+        uses: ClickHouse/checkout@v1
+        with:
+          clear-repository: true
+      - name: Download json reports
+        uses: actions/download-artifact@v3
+        with:
+          path: ${{ env.REPORTS_PATH }}
+      - name: CompatibilityCheckAarch64
+        run: |
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci" && python3 compatibility_check.py --check-name "Compatibility check (aarch64)" --check-glibc
       - name: Cleanup
         if: always()
         run: |
@@ -829,7 +860,8 @@ jobs:
       - name: Check docker clickhouse/clickhouse-server building
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 docker_server.py --release-type head
+          python3 docker_server.py --release-type head \
+            --image-repo clickhouse/clickhouse-server --image-path docker/server
           python3 docker_server.py --release-type head --no-ubuntu \
             --image-repo clickhouse/clickhouse-keeper --image-path docker/keeper
       - name: Cleanup
@@ -3124,7 +3156,8 @@ jobs:
       - PerformanceComparisonX86-1
       - PerformanceComparisonX86-2
       - PerformanceComparisonX86-3
-      - CompatibilityCheck
+      - CompatibilityCheckX86
+      - CompatibilityCheckAarch64
       - ASTFuzzerTestDebug
       - ASTFuzzerTestAsan
       - ASTFuzzerTestTsan

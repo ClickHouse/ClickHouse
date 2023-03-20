@@ -999,3 +999,25 @@ def test_restart_server(started_cluster):
             clickhouse_node.restart_clickhouse()
             clickhouse_node.query_and_get_error("SHOW TABLES FROM test_restart")
         assert "test_table" in clickhouse_node.query("SHOW TABLES FROM test_restart")
+
+
+def test_memory_leak(started_cluster):
+    with contextlib.closing(
+        MySQLNodeInstance(
+            "root", "clickhouse", started_cluster.mysql_ip, started_cluster.mysql_port
+        )
+    ) as mysql_node:
+        mysql_node.query("DROP DATABASE IF EXISTS test_database")
+        mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
+        mysql_node.query(
+            "CREATE TABLE `test_database`.`test_table` ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;"
+        )
+
+        clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
+        clickhouse_node.query(
+            "CREATE DATABASE test_database ENGINE = MySQL('mysql57:3306', 'test_database', 'root', 'clickhouse') SETTINGS connection_auto_close = 1"
+        )
+        clickhouse_node.query("SELECT count() FROM `test_database`.`test_table`")
+
+        clickhouse_node.query("DROP DATABASE test_database")
+        clickhouse_node.restart_clickhouse()
