@@ -9213,30 +9213,4 @@ template std::optional<EphemeralLockInZooKeeper> StorageReplicatedMergeTree::all
     const std::vector<String> & zookeeper_block_id_path,
     const String & zookeeper_path_prefix) const;
 
-#if 0
-PartsTemporaryRename renamed_parts(*this, "detached/");
-MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(partition, attach_part, query_context, renamed_parts);
-
-/// TODO Allow to use quorum here.
-ReplicatedMergeTreeSink output(*this, metadata_snapshot, 0, 0, 0, false, false, query_context,
-    /*is_attach*/true);
-
-for (size_t i = 0; i < loaded_parts.size(); ++i)
-{
-    const String old_name = loaded_parts[i]->name;
-
-    output.writeExistingPart(loaded_parts[i]);
-
-    renamed_parts.old_and_new_names[i].old_name.clear();
-
-    LOG_DEBUG(log, "Attached part {} as {}", old_name, loaded_parts[i]->name);
-
-    results.push_back(PartitionCommandResultInfo{
-        .partition_id = loaded_parts[i]->info.partition_id,
-        .part_name = loaded_parts[i]->name,
-        .old_part_name = old_name,
-    });
-}
-#endif
-
 }

@@ -95,6 +95,13 @@ def should_run_checks_for_pr(pr_info: PRInfo) -> Tuple[bool, str, str]:
         print(f"Label '{DO_NOT_TEST_LABEL}' set, skipping remaining checks")
         return False, f"Labeled '{DO_NOT_TEST_LABEL}'", "success"
 
+    if OK_SKIP_LABELS.intersection(pr_info.labels):
+        return (
+            True,
+            "Don't try new checks for release/backports/cherry-picks",
+            "success",
+        )
+
     if CAN_BE_TESTED_LABEL not in pr_info.labels and not pr_is_by_trusted_user(
         pr_info.user_login, pr_info.user_orgs
     ):
@@ -102,13 +109,6 @@ def should_run_checks_for_pr(pr_info: PRInfo) -> Tuple[bool, str, str]:
             f"PRs by untrusted users need the '{CAN_BE_TESTED_LABEL}' label - please contact a member of the core team"
         )
         return False, "Needs 'can be tested' label", "failure"
-
-    if OK_SKIP_LABELS.intersection(pr_info.labels):
-        return (
-            False,
-            "Don't try new checks for release/backports/cherry-picks",
-            "success",
-        )
 
     return True, "No special conditions apply", "pending"
 
@@ -199,7 +199,17 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
     pr_info = PRInfo(need_orgs=True, pr_event_from_api=True, need_changed_files=True)
+    # The case for special branches like backports and releases without created
+    # PRs, like merged backport branches that are reset immediately after merge
+    if pr_info.number == 0:
+        print("::notice ::Cannot run, no PR exists for the commit")
+        sys.exit(1)
+
     can_run, description, labels_state = should_run_checks_for_pr(pr_info)
+    if can_run and OK_SKIP_LABELS.intersection(pr_info.labels):
+        print("::notice :: Early finish the check, running in a special PR")
+        sys.exit(0)
+
     description = format_description(description)
     gh = Github(get_best_robot_token(), per_page=100)
     commit = get_commit(gh, pr_info.sha)
