@@ -62,8 +62,25 @@ std::vector<UInt64> ThreadGroupStatus::getInvolvedThreadIds() const
 
 void ThreadGroupStatus::linkThread(UInt64 thread_it)
 {
-    std::lock_guard lock(mutex);
-    thread_ids.insert(thread_it);
+    {
+        std::lock_guard lock(mutex);
+        thread_ids.insert(thread_it);
+    }
+}
+
+void ThreadGroupStatus::enterGroup()
+{
+    cancel_tokens.enterGroup();
+}
+
+void ThreadGroupStatus::exitGroup()
+{
+    cancel_tokens.exitGroup();
+}
+
+void ThreadGroupStatus::cancelGroup(int code, const String & msg)
+{
+    cancel_tokens.cancelGroup(code, msg);
 }
 
 ThreadGroupStatusPtr ThreadGroupStatus::createForQuery(ContextPtr query_context_, std::function<void()> fatal_error_callback_)
@@ -154,13 +171,13 @@ void ThreadStatus::applyQuerySettings()
 
 void ThreadStatus::attachToGroupImpl(const ThreadGroupStatusPtr & thread_group_)
 {
+    // Current thread is now considered as cancelable part of thread group
+    chassert(CancelToken::local().thread_id == thread_id); // should be only called for current thread
+    thread_group->enterGroup();
+
     /// Attach or init current thread to thread group and copy useful information from it
     thread_group = thread_group_;
     thread_group->linkThread(thread_id);
-
-    // Current thread is considered as cancelable part of thread group
-    chassert(CancelToken::local().thread_id == thread_id); // should be only called for current thread
-    thread_group->cancel_tokens.enterGroup();
 
     performance_counters.setParent(&thread_group->performance_counters);
     memory_tracker.setParent(&thread_group->memory_tracker);
@@ -196,7 +213,7 @@ void ThreadStatus::detachFromGroup()
 
     // Current thread is not considered as cancelable part of this thread group any longer
     chassert(CancelToken::local().thread_id == thread_id); // should be only called for current thread
-    thread_group->cancel_tokens.exitGroup();
+    thread_group->exitGroup();
 
     thread_group.reset();
 

@@ -402,7 +402,7 @@ CancellationCode QueryStatus::cancelQuery(int code, const String & msg)
     // Every cancelable wait will finish and throw an exception. Any further attempt to wait on any cancelable primitive will also result in exception
     // (unless waiting is done inside `NonCancellable` scope).
     // Note that deadlocks are possible in the first place due to non-deterministic locking order when OvercommitTracker tries to cancel query.
-    thread_group->cancel_tokens.cancelGroup(code, msg);
+    thread_group->cancelGroup(code, msg);
 
     std::vector<ExecutorHolderPtr> executors_snapshot;
 

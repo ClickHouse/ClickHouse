@@ -106,8 +106,14 @@ public:
     /// When new query starts, new thread group is created for it, current thread becomes master thread of the query
     static ThreadGroupStatusPtr createForQuery(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
 
+    /// Involved threads tracking (including, not currently active)
     std::vector<UInt64> getInvolvedThreadIds() const;
     void linkThread(UInt64 thread_it);
+
+    // Active threads management
+    void enterGroup(); // current thread enters this group
+    void exitGroup(); // current thread exits this group
+    void cancelGroup(int code, const String & msg);
 
 private:
     mutable std::mutex mutex;
