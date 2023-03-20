@@ -215,11 +215,11 @@ if __name__ == "__main__":
         print("::notice ::Cannot run, no PR exists for the commit")
         sys.exit(1)
 
+    can_run, description, labels_state = should_run_checks_for_pr(pr_info)
     if can_run and OK_SKIP_LABELS.intersection(pr_info.labels):
         print("::notice :: Early finish the check, running in a special PR")
         sys.exit(0)
 
-    can_run, description, labels_state = should_run_checks_for_pr(pr_info)
     gh = Github(get_best_robot_token(), per_page=100)
     commit = get_commit(gh, pr_info.sha)
 
