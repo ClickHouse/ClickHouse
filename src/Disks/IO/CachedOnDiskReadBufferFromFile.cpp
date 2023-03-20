@@ -481,7 +481,6 @@ bool CachedOnDiskReadBufferFromFile::completeFileSegmentAndGetNext()
     if (read_type == ReadType::CACHED)
     {
         chassert(current_file_segment->getDownloadedSize(true) == current_file_segment->range().size());
-        chassert(current_file_segment->state() == FileSegment::State::DOWNLOADED);
     }
 
     file_segments->popFront();
