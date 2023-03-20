@@ -113,7 +113,7 @@ namespace
         bool is_clock_hour = false; /// Whether the hour is clockhour
         bool is_hour_of_half_day = false; /// Whether the hour is of half day
 
-        bool has_time_zone_offset = false; /// If true, time zone offset if explicitly specified.
+        bool has_time_zone_offset = false; /// If true, time zone offset is explicitly specified.
         Int64 time_zone_offset = 0; /// Offset in seconds between current timezone to UTC.
 
         void reset()
@@ -384,7 +384,7 @@ namespace
             }
         }
 
-        static ALWAYS_INLINE Int32 daysSinceEpochFromWeekDate(int32_t week_year_, int32_t week_of_year_, int32_t day_of_week_)
+        static Int32 daysSinceEpochFromWeekDate(int32_t week_year_, int32_t week_of_year_, int32_t day_of_week_)
         {
             /// The range of week_of_year[1, 53], day_of_week[1, 7] already checked before
             if (week_year_ < minYear || week_year_ > maxYear)
@@ -395,7 +395,7 @@ namespace
             return days_since_epoch_of_jan_fourth - (first_day_of_week_year - 1) + 7 * (week_of_year_ - 1) + day_of_week_ - 1;
         }
 
-        static ALWAYS_INLINE Int32 daysSinceEpochFromDayOfYear(Int32 year_, Int32 day_of_year_)
+        static Int32 daysSinceEpochFromDayOfYear(Int32 year_, Int32 day_of_year_)
         {
             if (!isDayOfYearValid(year_, day_of_year_))
                 throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid day of year, year:{} day of year:{}", year_, day_of_year_);
@@ -405,7 +405,7 @@ namespace
             return res;
         }
 
-        static ALWAYS_INLINE Int32 daysSinceEpochFromDate(Int32 year_, Int32 month_, Int32 day_)
+        static Int32 daysSinceEpochFromDate(Int32 year_, Int32 month_, Int32 day_)
         {
             if (!isDateValid(year_, month_, day_))
                 throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid date, year:{} month:{} day:{}", year_, month_, day_);
@@ -416,7 +416,7 @@ namespace
             return res;
         }
 
-        Int64 checkAndGetDateTime(const DateLUTImpl & time_zone)
+        Int64 buildDateTime(const DateLUTImpl & time_zone)
         {
             if (is_hour_of_half_day && !is_am)
                 hour += 12;
@@ -516,7 +516,7 @@ namespace
 
             auto col_res = ColumnDateTime::create();
             col_res->reserve(input_rows_count);
-            auto & data_res = col_res->getData();
+            auto & res_data = col_res->getData();
 
             /// Make datetime fit in a cache line.
             alignas(64) DateTime datetime;
@@ -540,8 +540,8 @@ namespace
                         str_ref.toView(),
                         std::string_view(cur, end - cur));
 
-                Int64 time = datetime.checkAndGetDateTime(time_zone);
-                data_res.push_back(static_cast<UInt32>(time));
+                Int64 time = datetime.buildDateTime(time_zone);
+                res_data.push_back(static_cast<UInt32>(time));
             }
 
             return col_res;
@@ -562,41 +562,42 @@ namespace
                 parse_syntax == ParseSyntax::MySQL,
                 Pos (*)(Pos, Pos, const String &, DateTime &),
                 std::function<Pos(Pos, Pos, const String &, DateTime &)>>;
-            Func func{};
-            std::string func_name;
-            std::string literal; /// Only used when current instruction parses literal
-            std::string flag; /// Parsed flags in MySQL or Joda format string
+            const Func func{};
+            const String func_name;
+            const String literal; /// Only used when current instruction parses literal
+            const String fragment; /// Parsed fragments in MySQL or Joda format string
 
         public:
-            explicit Instruction(Func && func_, const char * func_name_, const std::string_view & flag_)
-                : func(std::move(func_)), func_name(func_name_), flag(flag_)
+            explicit Instruction(Func && func_, const char * func_name_, const std::string_view & fragment_)
+                : func(std::move(func_)), func_name(func_name_), fragment(fragment_)
             {
             }
 
-            explicit Instruction(const String & literal_) : literal(literal_), flag("LITERAL") { }
-            explicit Instruction(String && literal_) : literal(std::move(literal_)), flag("LITERAL") { }
+            explicit Instruction(const String & literal_) : literal(literal_), fragment("LITERAL") { }
+            explicit Instruction(String && literal_) : literal(std::move(literal_)), fragment("LITERAL") { }
 
             /// For debug
             [[maybe_unused]] String toString() const
             {
                 if (func)
-                    return "func:" + func_name + ",flag:" + flag;
+                    return "func:" + func_name + ",fragment:" + fragment;
                 else
-                    return "literal:" + literal + ",flag:" + flag;
+                    return "literal:" + literal + ",fragment:" + fragment;
             }
 
             Pos perform(Pos cur, Pos end, DateTime & date) const
             {
                 if (func)
-                    return func(cur, end, flag, date);
+                    return func(cur, end, fragment, date);
                 else
                 {
-                    checkSpace(cur, end, literal.size(), "required literal size not matched", flag);
+                    /// literal:
+                    checkSpace(cur, end, literal.size(), "insufficient space to parse literal", fragment);
                     if (std::string_view(cur, literal.size()) != literal)
                         throw Exception(
                             ErrorCodes::CANNOT_PARSE_DATETIME,
-                            "Unable to parse flag {} from {} because literal {} is expected but {} provided",
-                            flag,
+                            "Unable to parse fragment {} from {} because literal {} is expected but {} provided",
+                            fragment,
                             std::string_view(cur, end - cur),
                             literal,
                             std::string_view(cur, literal.size()));
@@ -606,10 +607,10 @@ namespace
             }
 
             template <typename T, NeedCheckSpace need_check_space>
-            static Pos readNumber2(Pos cur, Pos end, [[maybe_unused]] const String & flag, T & res)
+            static Pos readNumber2(Pos cur, Pos end, [[maybe_unused]] const String & fragment, T & res)
             {
                 if constexpr (need_check_space == NeedCheckSpace::Yes)
-                    checkSpace(cur, end, 2, "readNumber2 requires size >= 2", flag);
+                    checkSpace(cur, end, 2, "readNumber2 requires size >= 2", fragment);
 
                 res = (*cur - '0');
                 ++cur;
@@ -619,10 +620,10 @@ namespace
             }
 
             template <typename T, NeedCheckSpace need_check_space>
-            static Pos readNumber3(Pos cur, Pos end, [[maybe_unused]] const String & flag, T & res)
+            static Pos readNumber3(Pos cur, Pos end, [[maybe_unused]] const String & fragment, T & res)
             {
                 if constexpr (need_check_space == NeedCheckSpace::Yes)
-                    checkSpace(cur, end, 3, "readNumber4 requires size >= 3", flag);
+                    checkSpace(cur, end, 3, "readNumber4 requires size >= 3", fragment);
 
                 res = (*cur - '0');
                 ++cur;
@@ -634,10 +635,10 @@ namespace
             }
 
             template <typename T, NeedCheckSpace need_check_space>
-            static Pos readNumber4(Pos cur, Pos end, [[maybe_unused]] const String & flag, T & res)
+            static Pos readNumber4(Pos cur, Pos end, [[maybe_unused]] const String & fragment, T & res)
             {
                 if constexpr (need_check_space == NeedCheckSpace::Yes)
-                    checkSpace(cur, end, 4, "readNumber4 requires size >= 4", flag);
+                    checkSpace(cur, end, 4, "readNumber4 requires size >= 4", fragment);
 
                 res = (*cur - '0');
                 ++cur;
@@ -650,28 +651,28 @@ namespace
                 return cur;
             }
 
-            static void checkSpace(Pos cur, Pos end, size_t len, const String & msg, const String & flag)
+            static void checkSpace(Pos cur, Pos end, size_t len, const String & msg, const String & fragment)
             {
                 if (cur > end || cur + len > end) [[unlikely]]
                     throw Exception(
                         ErrorCodes::NOT_ENOUGH_SPACE,
-                        "Unable to parse flag {} from {} because {}",
-                        flag,
+                        "Unable to parse fragment {} from {} because {}",
+                        fragment,
                         std::string_view(cur, end - cur),
                         msg);
             }
 
             template <NeedCheckSpace need_check_space>
-            static Pos assertChar(Pos cur, Pos end, char expected, const String & flag)
+            static Pos assertChar(Pos cur, Pos end, char expected, const String & fragment)
             {
                 if constexpr (need_check_space == NeedCheckSpace::Yes)
-                    checkSpace(cur, end, 1, "assertChar requires size >= 1", flag);
+                    checkSpace(cur, end, 1, "assertChar requires size >= 1", fragment);
 
                 if (*cur != expected)
                     throw Exception(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
-                        "Unable to parse flag {} from {} because char {} is expected but {} provided",
-                        flag,
+                        "Unable to parse fragment {} from {} because char {} is expected but {} provided",
+                        fragment,
                         std::string_view(cur, end - cur),
                         String(expected, 1),
                         String(*cur, 1));
@@ -680,9 +681,9 @@ namespace
                 return cur;
             }
 
-            static Pos mysqlDayOfWeekTextShort(Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos mysqlDayOfWeekTextShort(Pos cur, Pos end, const String & fragment, DateTime & date)
             {
-                checkSpace(cur, end, 3, "mysqlDayOfWeekTextShort requires size >= 3", flag);
+                checkSpace(cur, end, 3, "mysqlDayOfWeekTextShort requires size >= 3", fragment);
 
                 String text(cur, 3);
                 boost::to_lower(text);
@@ -690,8 +691,8 @@ namespace
                 if (it == dayOfWeekMap.end())
                     throw Exception(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
-                        "Unable to parse flag {} from {} because of unknown day of week short text {} ",
-                        flag,
+                        "Unable to parse fragment {} from {} because of unknown day of week short text {} ",
+                        fragment,
                         std::string_view(cur, end - cur),
                         text);
                 date.setDayOfWeek(it->second.second);
@@ -699,9 +700,9 @@ namespace
                 return cur;
             }
 
-            static Pos mysqlMonthOfYearTextShort(Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos mysqlMonthOfYearTextShort(Pos cur, Pos end, const String & fragment, DateTime & date)
             {
-                checkSpace(cur, end, 3, "mysqlMonthOfYearTextShort requires size >= 3", flag);
+                checkSpace(cur, end, 3, "mysqlMonthOfYearTextShort requires size >= 3", fragment);
 
                 String text(cur, 3);
                 boost::to_lower(text);
@@ -709,8 +710,8 @@ namespace
                 if (it == monthMap.end())
                     throw Exception(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
-                        "Unable to parse flag {} from {} because of unknown month of year short text {}",
-                        flag,
+                        "Unable to parse fragment {} from {} because of unknown month of year short text {}",
+                        fragment,
                         std::string_view(cur, end - cur),
                         text);
 
@@ -719,53 +720,53 @@ namespace
                 return cur;
             }
 
-            static Pos mysqlMonth(Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos mysqlMonth(Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 month;
-                cur = readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, flag, month);
+                cur = readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, month);
                 date.setMonth(month);
                 return cur;
             }
 
-            static Pos mysqlCentury(Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos mysqlCentury(Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 century;
-                cur = readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, flag, century);
+                cur = readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, century);
                 date.setCentury(century);
                 return cur;
             }
 
-            static Pos mysqlDayOfMonth(Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos mysqlDayOfMonth(Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 day_of_month;
-                cur = readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, flag, day_of_month);
+                cur = readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, day_of_month);
                 date.setDayOfMonth(day_of_month);
                 return cur;
             }
 
-            static Pos mysqlAmericanDate(Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos mysqlAmericanDate(Pos cur, Pos end, const String & fragment, DateTime & date)
             {
-                checkSpace(cur, end, 8, "mysqlAmericanDate requires size >= 8", flag);
+                checkSpace(cur, end, 8, "mysqlAmericanDate requires size >= 8", fragment);
 
                 Int32 month;
-                cur = readNumber2<Int32, NeedCheckSpace::No>(cur, end, flag, month);
-                cur = assertChar<NeedCheckSpace::No>(cur, end, '/', flag);
+                cur = readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, month);
+                cur = assertChar<NeedCheckSpace::No>(cur, end, '/', fragment);
                 date.setMonth(month);
 
                 Int32 day;
-                cur = readNumber2<Int32, NeedCheckSpace::No>(cur, end, flag, day);
-                cur = assertChar<NeedCheckSpace::No>(cur, end, '/', flag);
+                cur = readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, day);
+                cur = assertChar<NeedCheckSpace::No>(cur, end, '/', fragment);
                 date.setDayOfMonth(day);
 
                 Int32 year;
-                cur = readNumber2<Int32, NeedCheckSpace::No>(cur, end, flag, year);
+                cur = readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, year);
                 date.setYear(year);
                 return cur;
             }
 
-            static Pos mysqlDayOfMonthSpacePadded(Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos mysqlDayOfMonthSpacePadded(Pos cur, Pos end, const String & fragment, DateTime & date)
             {
-                checkSpace(cur, end, 2, "mysqlDayOfMonthSpacePadded requires size >= 2", flag);
+                checkSpace(cur, end, 2, "mysqlDayOfMonthSpacePadded requires size >= 2", fragment);
 
                 Int32 day_of_month = *cur == ' ' ? 0 : (*cur - '0');
                 ++cur;
@@ -777,18 +778,18 @@ namespace
                 return cur;
             }
 
-            static Pos mysqlISO8601Date(Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos mysqlISO8601Date(Pos cur, Pos end, const String & fragment, DateTime & date)
             {
-                checkSpace(cur, end, 10, "mysqlISO8601Date requires size >= 10", flag);
+                checkSpace(cur, end, 10, "mysqlISO8601Date requires size >= 10", fragment);
 
                 Int32 year;
                 Int32 month;
                 Int32 day;
-                cur = readNumber4<Int32, NeedCheckSpace::No>(cur, end, flag, year);
-                cur = assertChar<NeedCheckSpace::No>(cur, end, '-', flag);
-                cur = readNumber2<Int32, NeedCheckSpace::No>(cur, end, flag, month);
-                cur = assertChar<NeedCheckSpace::No>(cur, end, '-', flag);
-                cur = readNumber2<Int32, NeedCheckSpace::No>(cur, end, flag, day);
+                cur = readNumber4<Int32, NeedCheckSpace::No>(cur, end, fragment, year);
+                cur = assertChar<NeedCheckSpace::No>(cur, end, '-', fragment);
+                cur = readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, month);
+                cur = assertChar<NeedCheckSpace::No>(cur, end, '-', fragment);
+                cur = readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, day);
 
                 date.setYear(year);
                 date.setMonth(month);
@@ -796,49 +797,49 @@ namespace
                 return cur;
             }
 
-            static Pos mysqlISO8601Year2(Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos mysqlISO8601Year2(Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 year2;
-                cur = readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, flag, year2);
+                cur = readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year2);
                 date.setYear2(year2);
                 return cur;
             }
 
-            static Pos mysqlISO8601Year4(Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos mysqlISO8601Year4(Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 year;
-                cur = readNumber4<Int32, NeedCheckSpace::Yes>(cur, end, flag, year);
+                cur = readNumber4<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year);
                 date.setYear(year);
                 return cur;
             }
 
-            static Pos mysqlDayOfYear(Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos mysqlDayOfYear(Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 day_of_year;
-                cur = readNumber3<Int32, NeedCheckSpace::Yes>(cur, end, flag, day_of_year);
+                cur = readNumber3<Int32, NeedCheckSpace::Yes>(cur, end, fragment, day_of_year);
                 date.setDayOfYear(day_of_year);
                 return cur;
             }
 
-            static Pos mysqlDayOfWeek(Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos mysqlDayOfWeek(Pos cur, Pos end, const String & fragment, DateTime & date)
             {
-                checkSpace(cur, end, 1, "mysqlDayOfWeek requires size >= 1", flag);
+                checkSpace(cur, end, 1, "mysqlDayOfWeek requires size >= 1", fragment);
                 date.setDayOfWeek(*cur - '0');
                 ++cur;
                 return cur;
             }
 
-            static Pos mysqlISO8601Week(Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos mysqlISO8601Week(Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 week;
-                cur = readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, flag, week);
+                cur = readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, week);
                 date.setWeek(week);
                 return cur;
             }
 
-            static Pos mysqlDayOfWeek0To6(Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos mysqlDayOfWeek0To6(Pos cur, Pos end, const String & fragment, DateTime & date)
             {
-                checkSpace(cur, end, 1, "mysqlDayOfWeek requires size >= 1", flag);
+                checkSpace(cur, end, 1, "mysqlDayOfWeek requires size >= 1", fragment);
 
                 Int32 day_of_week = *cur - '0';
                 if (day_of_week == 0)
@@ -849,30 +850,30 @@ namespace
                 return cur;
             }
 
-            static Pos mysqlDayOfWeekTextLong(Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos mysqlDayOfWeekTextLong(Pos cur, Pos end, const String & fragment, DateTime & date)
             {
-                checkSpace(cur, end, 6, "jodaDayOfWeekText requires size >= 6", flag);
+                checkSpace(cur, end, 6, "jodaDayOfWeekText requires size >= 6", fragment);
                 String text1(cur, 3);
                 boost::to_lower(text1);
                 auto it = dayOfWeekMap.find(text1);
                 if (it == dayOfWeekMap.end())
                     throw Exception(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
-                        "Unable to parse first part of flag {} from {} because of unknown day of week text: {}",
-                        flag,
+                        "Unable to parse first part of fragment {} from {} because of unknown day of week text: {}",
+                        fragment,
                         std::string_view(cur, end - cur),
                         text1);
                 cur += 3;
 
                 size_t expected_remaining_size = it->second.first.size();
-                checkSpace(cur, end, expected_remaining_size, "jodaDayOfWeekText requires the second parg size >= " + std::to_string(expected_remaining_size), flag);
+                checkSpace(cur, end, expected_remaining_size, "jodaDayOfWeekText requires the second parg size >= " + std::to_string(expected_remaining_size), fragment);
                 String text2(cur, expected_remaining_size);
                 boost::to_lower(text2);
                 if (text2 != it->second.first)
                     throw Exception(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
-                        "Unable to parse second part of flag {} from {} because of unknown day of week text: {}",
-                        flag,
+                        "Unable to parse second part of fragment {} from {} because of unknown day of week text: {}",
+                        fragment,
                         std::string_view(cur, end - cur),
                         text1 + text2);
                 cur += expected_remaining_size;
@@ -881,25 +882,25 @@ namespace
                 return cur;
             }
 
-            static Pos mysqlYear2(Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos mysqlYear2(Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 year2;
-                cur = readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, flag, year2);
+                cur = readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year2);
                 date.setYear2(year2);
                 return cur;
             }
 
-            static Pos mysqlYear4(Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos mysqlYear4(Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 year;
-                cur = readNumber4<Int32, NeedCheckSpace::Yes>(cur, end, flag, year);
+                cur = readNumber4<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year);
                 date.setYear(year);
                 return cur;
             }
 
-            static Pos mysqlTimezoneOffset(Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos mysqlTimezoneOffset(Pos cur, Pos end, const String & fragment, DateTime & date)
             {
-                checkSpace(cur, end, 5, "mysqlTimezoneOffset requires size >= 5", flag);
+                checkSpace(cur, end, 5, "mysqlTimezoneOffset requires size >= 5", fragment);
 
                 Int32 sign;
                 if (*cur == '-')
@@ -909,34 +910,34 @@ namespace
                 else
                     throw Exception(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
-                        "Unable to parse flag {} from {} because of unknown sign time zone offset: {}",
-                        flag,
+                        "Unable to parse fragment {} from {} because of unknown sign time zone offset: {}",
+                        fragment,
                         std::string_view(cur, end - cur),
                         std::string_view(cur, 1));
                 ++cur;
 
                 Int32 hour;
-                cur = readNumber2<Int32, NeedCheckSpace::No>(cur, end, flag, hour);
+                cur = readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, hour);
 
                 Int32 minute;
-                cur = readNumber2<Int32, NeedCheckSpace::No>(cur, end, flag, minute);
+                cur = readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, minute);
 
                 date.has_time_zone_offset = true;
                 date.time_zone_offset = sign * (hour * 3600 + minute * 60);
                 return cur;
             }
 
-            static Pos mysqlMinute(Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos mysqlMinute(Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 minute;
-                cur = readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, flag, minute);
+                cur = readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, minute);
                 date.setMinute(minute);
                 return cur;
             }
 
-            static Pos mysqlAMPM(Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos mysqlAMPM(Pos cur, Pos end, const String & fragment, DateTime & date)
             {
-                checkSpace(cur, end, 2, "mysqlAMPM requires size >= 2", flag);
+                checkSpace(cur, end, 2, "mysqlAMPM requires size >= 2", fragment);
 
                 String text(cur, 2);
                 boost::to_lower(text);
@@ -945,59 +946,59 @@ namespace
                 return cur;
             }
 
-            static Pos mysqlHHMM12(Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos mysqlHHMM12(Pos cur, Pos end, const String & fragment, DateTime & date)
             {
-                checkSpace(cur, end, 8, "mysqlHHMM12 requires size >= 8", flag);
+                checkSpace(cur, end, 8, "mysqlHHMM12 requires size >= 8", fragment);
 
                 Int32 hour;
-                cur = readNumber2<Int32, NeedCheckSpace::No>(cur, end, flag, hour);
-                cur = assertChar<NeedCheckSpace::No>(cur, end, ':', flag);
+                cur = readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, hour);
+                cur = assertChar<NeedCheckSpace::No>(cur, end, ':', fragment);
                 date.setHour(hour, true, true);
 
                 Int32 minute;
-                cur = readNumber2<Int32, NeedCheckSpace::No>(cur, end, flag, minute);
-                cur = assertChar<NeedCheckSpace::No>(cur, end, ' ', flag);
+                cur = readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, minute);
+                cur = assertChar<NeedCheckSpace::No>(cur, end, ' ', fragment);
                 date.setMinute(minute);
 
-                cur = mysqlAMPM(cur, end, flag, date);
+                cur = mysqlAMPM(cur, end, fragment, date);
                 return cur;
             }
 
-            static Pos mysqlHHMM24(Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos mysqlHHMM24(Pos cur, Pos end, const String & fragment, DateTime & date)
             {
-                checkSpace(cur, end, 5, "mysqlHHMM24 requires size >= 5", flag);
+                checkSpace(cur, end, 5, "mysqlHHMM24 requires size >= 5", fragment);
 
                 Int32 hour;
-                cur = readNumber2<Int32, NeedCheckSpace::No>(cur, end, flag, hour);
-                cur = assertChar<NeedCheckSpace::No>(cur, end, ':', flag);
+                cur = readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, hour);
+                cur = assertChar<NeedCheckSpace::No>(cur, end, ':', fragment);
                 date.setHour(hour, false, false);
 
                 Int32 minute;
-                cur = readNumber2<Int32, NeedCheckSpace::No>(cur, end, flag, minute);
+                cur = readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, minute);
                 date.setMinute(minute);
                 return cur;
             }
 
-            static Pos mysqlSecond(Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos mysqlSecond(Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 second;
-                cur = readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, flag, second);
+                cur = readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, second);
                 date.setSecond(second);
                 return cur;
             }
 
-            static Pos mysqlISO8601Time(Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos mysqlISO8601Time(Pos cur, Pos end, const String & fragment, DateTime & date)
             {
-                checkSpace(cur, end, 8, "mysqlISO8601Time requires size >= 8", flag);
+                checkSpace(cur, end, 8, "mysqlISO8601Time requires size >= 8", fragment);
 
                 Int32 hour;
                 Int32 minute;
                 Int32 second;
-                cur = readNumber2<Int32, NeedCheckSpace::No>(cur, end, flag, hour);
-                cur = assertChar<NeedCheckSpace::No>(cur, end, ':', flag);
-                cur = readNumber2<Int32, NeedCheckSpace::No>(cur, end, flag, minute);
-                cur = assertChar<NeedCheckSpace::No>(cur, end, ':', flag);
-                cur = readNumber2<Int32, NeedCheckSpace::No>(cur, end, flag, second);
+                cur = readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, hour);
+                cur = assertChar<NeedCheckSpace::No>(cur, end, ':', fragment);
+                cur = readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, minute);
+                cur = assertChar<NeedCheckSpace::No>(cur, end, ':', fragment);
+                cur = readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, second);
 
                 date.setHour(hour, false, false);
                 date.setMinute(minute);
@@ -1005,18 +1006,18 @@ namespace
                 return cur;
             }
 
-            static Pos mysqlHour12(Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos mysqlHour12(Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 hour;
-                cur = readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, flag, hour);
+                cur = readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, hour);
                 date.setHour(hour, true, true);
                 return cur;
             }
 
-            static Pos mysqlHour24(Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos mysqlHour24(Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 hour;
-                cur = readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, flag, hour);
+                cur = readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, hour);
                 date.setHour(hour, false, false);
                 return cur;
             }
@@ -1029,7 +1030,7 @@ namespace
                 bool is_year,
                 int repetitions,
                 int max_digits_to_read,
-                const String & flag,
+                const String & fragment,
                 Int32 & number)
             {
                 bool negative = false;
@@ -1090,8 +1091,8 @@ namespace
                 if (cur == start)
                     throw Exception(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
-                        "Unable to parse flag {} from {} because read number failed",
-                        flag,
+                        "Unable to parse fragment {} from {} because read number failed",
+                        fragment,
                         std::string_view(cur, end - cur));
 
                 if (negative)
@@ -1100,9 +1101,9 @@ namespace
                 return cur;
             }
 
-            static Pos jodaEra(int, Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos jodaEra(int, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
-                checkSpace(cur, end, 2, "jodaEra requires size >= 2", flag);
+                checkSpace(cur, end, 2, "jodaEra requires size >= 2", fragment);
 
                 String era(cur, 2);
                 boost::to_lower(era);
@@ -1111,50 +1112,50 @@ namespace
                 return cur;
             }
 
-            static Pos jodaCenturyOfEra(int repetitions, Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos jodaCenturyOfEra(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 century;
-                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, repetitions, flag, century);
+                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, repetitions, fragment, century);
                 date.setCentury(century);
                 return cur;
             }
 
-            static Pos jodaYearOfEra(int repetitions, Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos jodaYearOfEra(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 year_of_era;
-                cur = readNumberWithVariableLength(cur, end, false, false, true, repetitions, repetitions, flag, year_of_era);
+                cur = readNumberWithVariableLength(cur, end, false, false, true, repetitions, repetitions, fragment, year_of_era);
                 date.setYear(year_of_era, true);
                 return cur;
             }
 
-            static Pos jodaWeekYear(int repetitions, Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos jodaWeekYear(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 week_year;
-                cur = readNumberWithVariableLength(cur, end, true, true, true, repetitions, repetitions, flag, week_year);
+                cur = readNumberWithVariableLength(cur, end, true, true, true, repetitions, repetitions, fragment, week_year);
                 date.setYear(week_year, false, true);
                 return cur;
             }
 
-            static Pos jodaWeekOfWeekYear(int repetitions, Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos jodaWeekOfWeekYear(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 week;
-                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), flag, week);
+                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), fragment, week);
                 date.setWeek(week);
                 return cur;
             }
 
-            static Pos jodaDayOfWeek1Based(int repetitions, Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos jodaDayOfWeek1Based(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 day_of_week;
-                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, repetitions, flag, day_of_week);
+                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, repetitions, fragment, day_of_week);
                 date.setDayOfWeek(day_of_week);
                 return cur;
             }
 
             static Pos
-            jodaDayOfWeekText(size_t /*min_represent_digits*/, Pos cur, Pos end, const String & flag, DateTime & date)
+            jodaDayOfWeekText(size_t /*min_represent_digits*/, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
-                checkSpace(cur, end, 3, "jodaDayOfWeekText requires size >= 3", flag);
+                checkSpace(cur, end, 3, "jodaDayOfWeekText requires size >= 3", fragment);
 
                 String text1(cur, 3);
                 boost::to_lower(text1);
@@ -1162,8 +1163,8 @@ namespace
                 if (it == dayOfWeekMap.end())
                     throw Exception(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
-                        "Unable to parse flag {} from {} because of unknown day of week text: {}",
-                        flag,
+                        "Unable to parse fragment {} from {} because of unknown day of week text: {}",
+                        fragment,
                         std::string_view(cur, end - cur),
                         text1);
                 cur += 3;
@@ -1183,41 +1184,41 @@ namespace
                 return cur;
             }
 
-            static Pos jodaYear(int repetitions, Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos jodaYear(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 year;
-                cur = readNumberWithVariableLength(cur, end, true, true, true, repetitions, repetitions, flag, year);
+                cur = readNumberWithVariableLength(cur, end, true, true, true, repetitions, repetitions, fragment, year);
                 date.setYear(year);
                 return cur;
             }
 
-            static Pos jodaDayOfYear(int repetitions, Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos jodaDayOfYear(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 day_of_year;
-                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 3), flag, day_of_year);
+                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 3), fragment, day_of_year);
                 date.setDayOfYear(day_of_year);
                 return cur;
             }
 
-            static Pos jodaMonthOfYear(int repetitions, Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos jodaMonthOfYear(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 month;
-                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, 2, flag, month);
+                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, 2, fragment, month);
                 date.setMonth(month);
                 return cur;
             }
 
-            static Pos jodaMonthOfYearText(int, Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos jodaMonthOfYearText(int, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
-                checkSpace(cur, end, 3, "jodaMonthOfYearText requires size >= 3", flag);
+                checkSpace(cur, end, 3, "jodaMonthOfYearText requires size >= 3", fragment);
                 String text1(cur, 3);
                 boost::to_lower(text1);
                 auto it = monthMap.find(text1);
                 if (it == monthMap.end())
                     throw Exception(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
-                        "Unable to parse flag {} from {} because of unknown month of year text: {}",
-                        flag,
+                        "Unable to parse fragment {} from {} because of unknown month of year text: {}",
+                        fragment,
                         std::string_view(cur, end - cur),
                         text1);
                 cur += 3;
@@ -1237,18 +1238,18 @@ namespace
                 return cur;
             }
 
-            static Pos jodaDayOfMonth(int repetitions, Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos jodaDayOfMonth(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 day_of_month;
                 cur = readNumberWithVariableLength(
-                    cur, end, false, false, false, repetitions, std::max(repetitions, 2), flag, day_of_month);
+                    cur, end, false, false, false, repetitions, std::max(repetitions, 2), fragment, day_of_month);
                 date.setDayOfMonth(day_of_month);
                 return cur;
             }
 
-            static Pos jodaHalfDayOfDay(int, Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos jodaHalfDayOfDay(int, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
-                checkSpace(cur, end, 2, "jodaHalfDayOfDay requires size >= 2", flag);
+                checkSpace(cur, end, 2, "jodaHalfDayOfDay requires size >= 2", fragment);
 
                 String text(cur, 2);
                 boost::to_lower(text);
@@ -1257,50 +1258,50 @@ namespace
                 return cur;
             }
 
-            static Pos jodaHourOfHalfDay(int repetitions, Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos jodaHourOfHalfDay(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 hour;
-                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), flag, hour);
+                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), fragment, hour);
                 date.setHour(hour, true, false);
                 return cur;
             }
 
-            static Pos jodaClockHourOfHalfDay(int repetitions, Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos jodaClockHourOfHalfDay(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 hour;
-                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), flag, hour);
+                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), fragment, hour);
                 date.setHour(hour, true, true);
                 return cur;
             }
 
-            static Pos jodaHourOfDay(int repetitions, Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos jodaHourOfDay(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 hour;
-                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), flag, hour);
+                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), fragment, hour);
                 date.setHour(hour, false, false);
                 return cur;
             }
 
-            static Pos jodaClockHourOfDay(int repetitions, Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos jodaClockHourOfDay(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 hour;
-                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), flag, hour);
+                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), fragment, hour);
                 date.setHour(hour, false, true);
                 return cur;
             }
 
-            static Pos jodaMinuteOfHour(int repetitions, Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos jodaMinuteOfHour(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 minute;
-                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), flag, minute);
+                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), fragment, minute);
                 date.setMinute(minute);
                 return cur;
             }
 
-            static Pos jodaSecondOfMinute(int repetitions, Pos cur, Pos end, const String & flag, DateTime & date)
+            static Pos jodaSecondOfMinute(int repetitions, Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 second;
-                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), flag, second);
+                cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), fragment, second);
                 date.setSecond(second);
                 return cur;
             }
@@ -1442,8 +1443,6 @@ namespace
                         case 'z':
                             instructions.emplace_back(ACTION_ARGS(Instruction::mysqlTimezoneOffset));
                             break;
-
-                        /// Time components. If the argument is Date, not a DateTime, then this components will have default value.
 
                         // Minute (00-59)
                         case 'M':
