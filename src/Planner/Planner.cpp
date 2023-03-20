@@ -33,7 +33,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Interpreters/Context.h>
-#include <Interpreters/convertFieldToType.h>
 
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/IStorage.h>
