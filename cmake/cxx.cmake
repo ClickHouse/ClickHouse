@@ -1,4 +1,4 @@
-set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -D_LIBCPP_DEBUG=0") # More checks in debug build.
+set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -D_LIBCPP_ENABLE_DEBUG_MODE=0") # More checks in debug build.
 
 add_subdirectory(contrib/libcxxabi-cmake)
 add_subdirectory(contrib/libcxx-cmake)
