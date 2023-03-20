@@ -1238,6 +1238,8 @@ Formats a Time according to the given Format string. Format is a constant expres
 
 formatDateTime uses MySQL datetime format style, refer to https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format.
 
+The opposite operation of this function is [formatDateTime](/docs/en/sql-reference/functions/type-conversion-functions.md#formatdatetime).
+
 Alias: `DATE_FORMAT`.
 
 **Syntax**
@@ -1257,7 +1259,7 @@ Using replacement fields, you can define a pattern for the resulting string. “
 |----------|---------------------------------------------------------|------------|
 | %a       | abbreviated weekday name (Mon-Sun)                      | Mon        |
 | %b       | abbreviated month name (Jan-Dec)                        | Jan        |
-| %c       | month as a decimal number (01-12)                       | 01         |
+| %c       | month as an integer number (01-12)                      | 01         |
 | %C       | year divided by 100 and truncated to integer (00-99)    | 20         |
 | %d       | day of the month, zero-padded (01-31)                   | 02         |
 | %D       | Short MM/DD/YY date, equivalent to %m/%d/%y             | 01/02/18   |
@@ -1273,7 +1275,7 @@ Using replacement fields, you can define a pattern for the resulting string. “
 | %j       | day of the year (001-366)                               | 002        |
 | %k       | hour in 24h format (00-23)                              | 22         |
 | %l       | hour in 12h format (01-12)                              | 09         |
-| %m       | month as a decimal number (01-12)                       | 01         |
+| %m       | month as an integer number (01-12)                      | 01         |
 | %M       | minute (00-59)                                          | 33         |
 | %n       | new-line character (‘’)                                 |            |
 | %p       | AM or PM designation                                    | PM         |
@@ -1332,6 +1334,7 @@ Result:
 
 Similar to formatDateTime, except that it formats datetime in Joda style instead of MySQL style. Refer to https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html.
 
+The opposite operation of this function is [formatDateTimeInJodaSyntax](/docs/en/sql-reference/functions/type-conversion-functions.md#formatdatetimeinjodasyntax).
 
 **Replacement fields**
 

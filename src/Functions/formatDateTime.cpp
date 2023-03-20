@@ -926,7 +926,7 @@ public:
                         out_template += "Jan";
                         break;
 
-                    // Month as a decimal number (01-12)
+                    // Month as a integer number (01-12)
                     case 'c':
                         instructions.emplace_back(&Instruction<T>::mysqlMonth);
                         out_template += "00";
@@ -989,7 +989,7 @@ public:
                         out_template += "000";
                         break;
 
-                    // Month as a decimal number (01-12)
+                    // Month as a integer number (01-12)
                     case 'm':
                         instructions.emplace_back(&Instruction<T>::mysqlMonth);
                         out_template += "00";
