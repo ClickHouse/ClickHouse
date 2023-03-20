@@ -81,6 +81,11 @@ namespace
             if ((level == 0) && (max_flags_with_children & create_table))
                 res |= create_temporary_table;
 
+            /// CREATE TABLE (on any database/table) => CREATE_ARBITRARY_TEMPORARY_TABLE (global)
+            static const AccessFlags create_arbitrary_temporary_table = AccessType::CREATE_ARBITRARY_TEMPORARY_TABLE;
+            if ((level == 0) && (max_flags_with_children & create_table))
+                res |= create_arbitrary_temporary_table;
+
             /// ALTER_TTL => ALTER_MATERIALIZE_TTL
             static const AccessFlags alter_ttl = AccessType::ALTER_TTL;
             static const AccessFlags alter_materialize_ttl = AccessType::ALTER_MATERIALIZE_TTL;
