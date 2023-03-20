@@ -425,7 +425,7 @@ Processed 8.19 thousand rows,
 740.18 KB (1.53 million rows/s., 138.59 MB/s.)
 ```
 
-ClickHouse客户端的输出显示，没有进行全表扫描，只有8.19万行流到ClickHouse。
+ClickHouse客户端的输出显示，没有进行全表扫描，只有8.19千行流到ClickHouse。
 
 
 如果<a href="https://clickhouse.com/docs/en/operations/server-configuration-parameters/settings/#server_configuration_parameters-logger" target="_blank">trace logging</a>打开了，那ClickHouse服务端日志会显示ClickHouse正在对1083个UserID索引标记执行<a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">二分查找</a>以便识别可能包含UserID列值为749927693的行的颗粒。这需要19个步骤，平均时间复杂度为<font face = "monospace">O(log2 n)</font>：
