@@ -649,8 +649,11 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
         {
             /// stop retries if in shutdown
             if (storage.shutdown_called)
+            {
+                retries_ctl.stopRetries();
                 throw Exception(
                     ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to shutdown: replica_path={}", storage.replica_path);
+            }
 
             /// When we attach existing parts it's okay to be in read-only mode
             /// For example during RESTORE REPLICA.
@@ -1086,8 +1089,11 @@ std::vector<String> ReplicatedMergeTreeSinkImpl<async_insert>::commitPart(
             {
                 /// stop retries if in shutdown
                 if (storage.shutdown_called)
+                {
+                    quorum_retries_ctl.stopRetries();
                     throw Exception(
                         ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to shutdown: replica_path={}", storage.replica_path);
+                }
 
                 quorum_retries_ctl.setUserError(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode: replica_path={}", storage.replica_path);
                 return;
