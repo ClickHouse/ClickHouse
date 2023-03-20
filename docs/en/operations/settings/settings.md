@@ -966,10 +966,10 @@ This is an expert-level setting, and you shouldn't change it if you're just gett
 
 ## max_query_size {#settings-max_query_size}
 
-The maximum part of a query that can be taken to RAM for parsing with the SQL parser.
-The INSERT query also contains data for INSERT that is processed by a separate stream parser (that consumes O(1) RAM), which is not included in this restriction.
+The maximum number of bytes of a query string parsed by the SQL parser.
+Data in the VALUES clause of INSERT queries is processed by a separate stream parser (that consumes O(1) RAM) and not affected by this restriction.
 
-Default value: 256 KiB.
+Default value: 262144 (= 256 KiB).
 
 ## max_parser_depth {#max_parser_depth}
 
@@ -2999,7 +2999,7 @@ It can be useful when merges are CPU bounded not IO bounded (performing heavy da
 
 ## max_final_threads {#max-final-threads}
 
-Sets the maximum number of parallel threads for the `SELECT` query data read phase with the [FINAL](../../sql-reference/statements/select/from.md/#select-from-final) modifier.
+Sets the maximum number of parallel threads for the `SELECT` query data read phase with the [FINAL](../../sql-reference/statements/select/from.md#select-from-final) modifier.
 
 Possible values:
 
@@ -3094,19 +3094,9 @@ Possible values:
 
 Default value: `0`.
 
-## s3_truncate_on_insert 
+## s3_truncate_on_insert
 
-Enables or disables truncate before inserts in s3 engine tables. If disabled, an exception will be thrown on insert attempts if an S3 object already exists. 
-
-Possible values:
-- 0 — `INSERT` query appends new data to the end of the file.
-- 1 — `INSERT` query replaces existing content of the file with the new data.
-
-Default value: `0`.
-
-## hdfs_truncate_on_insert 
-
-Enables or disables truncation before an insert in hdfs engine tables. If disabled, an exception will be thrown on an attempt to insert if a file in HDFS already exists. 
+Enables or disables truncate before inserts in s3 engine tables. If disabled, an exception will be thrown on insert attempts if an S3 object already exists.
 
 Possible values:
 - 0 — `INSERT` query appends new data to the end of the file.
@@ -3114,11 +3104,21 @@ Possible values:
 
 Default value: `0`.
 
-## engine_file_allow_create_multiple_files 
+## hdfs_truncate_on_insert
+
+Enables or disables truncation before an insert in hdfs engine tables. If disabled, an exception will be thrown on an attempt to insert if a file in HDFS already exists.
+
+Possible values:
+- 0 — `INSERT` query appends new data to the end of the file.
+- 1 — `INSERT` query replaces existing content of the file with the new data.
+
+Default value: `0`.
+
+## engine_file_allow_create_multiple_files
 
 Enables or disables creating a new file on each insert in file engine tables if the format has the suffix (`JSON`, `ORC`, `Parquet`, etc.). If enabled, on each insert a new file will be created with a name following this pattern:
 
-`data.Parquet` -> `data.1.Parquet` -> `data.2.Parquet`, etc. 
+`data.Parquet` -> `data.1.Parquet` -> `data.2.Parquet`, etc.
 
 Possible values:
 - 0 — `INSERT` query appends new data to the end of the file.
@@ -3126,11 +3126,11 @@ Possible values:
 
 Default value: `0`.
 
-## s3_create_new_file_on_insert 
+## s3_create_new_file_on_insert
 
 Enables or disables creating a new file on each insert in s3 engine tables. If enabled, on each insert a new S3 object will be created with the key, similar to this pattern:
 
-initial: `data.Parquet.gz` -> `data.1.Parquet.gz` -> `data.2.Parquet.gz`, etc. 
+initial: `data.Parquet.gz` -> `data.1.Parquet.gz` -> `data.2.Parquet.gz`, etc.
 
 Possible values:
 - 0 — `INSERT` query appends new data to the end of the file.
@@ -3142,7 +3142,7 @@ Default value: `0`.
 
 Enables or disables creating a new file on each insert in HDFS engine tables. If enabled, on each insert a new HDFS file will be created with the name, similar to this pattern:
 
-initial: `data.Parquet.gz` -> `data.1.Parquet.gz` -> `data.2.Parquet.gz`, etc. 
+initial: `data.Parquet.gz` -> `data.1.Parquet.gz` -> `data.2.Parquet.gz`, etc.
 
 Possible values:
 - 0 — `INSERT` query appends new data to the end of the file.
@@ -3753,7 +3753,7 @@ Default value: `1`.
 
 ## optimize_move_to_prewhere_if_final {#optimize_move_to_prewhere_if_final}
 
-Enables or disables automatic [PREWHERE](../../sql-reference/statements/select/prewhere.md) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries with [FINAL](../../sql-reference/statements/select/from.md/#select-from-final) modifier.
+Enables or disables automatic [PREWHERE](../../sql-reference/statements/select/prewhere.md) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries with [FINAL](../../sql-reference/statements/select/from.md#select-from-final) modifier.
 
 Works only for [*MergeTree](../../engines/table-engines/mergetree-family/index.md) tables.
 
@@ -3770,7 +3770,7 @@ Default value: `0`.
 
 ## optimize_using_constraints
 
-Use [constraints](../../sql-reference/statements/create/table#constraints) for query optimization. The default is `false`.
+Use [constraints](../../sql-reference/statements/create/table.md#constraints) for query optimization. The default is `false`.
 
 Possible values:
 
@@ -3778,7 +3778,7 @@ Possible values:
 
 ## optimize_append_index
 
-Use [constraints](../../sql-reference/statements/create/table#constraints) in order to append index condition. The default is `false`.
+Use [constraints](../../sql-reference/statements/create/table.md#constraints) in order to append index condition. The default is `false`.
 
 Possible values:
 
@@ -3786,7 +3786,7 @@ Possible values:
 
 ## optimize_substitute_columns
 
-Use [constraints](../../sql-reference/statements/create/table#constraints) for column substitution. The default is `false`.
+Use [constraints](../../sql-reference/statements/create/table.md#constraints) for column substitution. The default is `false`.
 
 Possible values:
 
@@ -3984,7 +3984,7 @@ Use this setting only for backward compatibility if your use cases depend on old
 
 ## final {#final}
 
-Automatically applies [FINAL](../../sql-reference/statements/select/from/#final-modifier) modifier to all tables in a query, to tables where [FINAL](../../sql-reference/statements/select/from/#final-modifier) is applicable, including joined tables and tables in sub-queries, and 
+Automatically applies [FINAL](../../sql-reference/statements/select/from.md#final-modifier) modifier to all tables in a query, to tables where [FINAL](../../sql-reference/statements/select/from.md#final-modifier) is applicable, including joined tables and tables in sub-queries, and
 distributed tables.
 
 Possible values:
@@ -4030,7 +4030,7 @@ SELECT * FROM test;
 
 ## asterisk_include_materialized_columns {#asterisk_include_materialized_columns}
 
-Include [MATERIALIZED](../../sql-reference/statements/create/table/#materialized) columns for wildcard query (`SELECT *`).
+Include [MATERIALIZED](../../sql-reference/statements/create/table.md#materialized) columns for wildcard query (`SELECT *`).
 
 Possible values:
 
@@ -4041,7 +4041,7 @@ Default value: `0`.
 
 ## asterisk_include_alias_columns {#asterisk_include_alias_columns}
 
-Include [ALIAS](../../sql-reference/statements/create/table/#alias) columns for wildcard query (`SELECT *`).
+Include [ALIAS](../../sql-reference/statements/create/table.md#alias) columns for wildcard query (`SELECT *`).
 
 Possible values:
 

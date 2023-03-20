@@ -901,7 +901,7 @@ User can assign new big parts to different disks of a [JBOD](https://en.wikipedi
 ## Using S3 for Data Storage {#table_engine-mergetree-s3}
 
 :::note
-Google Cloud Storage (GCS) is also supported using the type `s3`. See [GCS backed MergeTree](/docs/en/integrations/data-ingestion/s3/gcs-merge-tree.md).
+Google Cloud Storage (GCS) is also supported using the type `s3`. See [GCS backed MergeTree](/docs/en/integrations/gcs).
 :::
 
 `MergeTree` family table engines can store data to [S3](https://aws.amazon.com/s3/) using a disk with type `s3`.
@@ -960,6 +960,7 @@ Optional parameters:
 -   `support_batch_delete` — This controls the check to see if batch deletes are supported. Set this to `false` when using Google Cloud Storage (GCS) as GCS does not support batch deletes and preventing the checks will prevent error messages in the logs.
 -   `use_environment_credentials` — Reads AWS credentials from the Environment variables AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and AWS_SESSION_TOKEN if they exist. Default value is `false`.
 -   `use_insecure_imds_request` — If set to `true`, S3 client will use insecure IMDS request while obtaining credentials from Amazon EC2 metadata. Default value is `false`.
+-   `expiration_window_seconds` — Grace period for checking if expiration-based credentials have expired. Optional, default value is `120`.
 -   `proxy` — Proxy configuration for S3 endpoint. Each `uri` element inside `proxy` block should contain a proxy URL.
 -   `connect_timeout_ms` — Socket connect timeout in milliseconds. Default value is `10 seconds`.
 -   `request_timeout_ms` — Request timeout in milliseconds. Default value is `5 seconds`.
