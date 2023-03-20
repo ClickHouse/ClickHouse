@@ -63,8 +63,9 @@ The check results does not matter at this step - you can safely ignore them.
 
 ### Note
 
-This pull-request will be merged automatically as it reaches the mergeable state, \
-**do not merge it manually**.
+This pull-request will be merged automatically as it reaches the mergeable state.
+
+# Do NOT merge it manually
 
 ### If the PR was closed and then reopened
 
