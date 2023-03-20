@@ -313,14 +313,6 @@ Pipe && QueryCache::Reader::getPipe()
     return std::move(pipe);
 }
 
-QueryCache::QueryCache(size_t max_cache_size_in_bytes_, size_t max_cache_entries_, size_t max_cache_entry_size_in_bytes_, size_t max_cache_entry_size_in_rows_)
-    : max_cache_size_in_bytes(max_cache_size_in_bytes_)
-    , max_cache_entries(max_cache_entries_)
-    , max_cache_entry_size_in_bytes(max_cache_entry_size_in_bytes_)
-    , max_cache_entry_size_in_rows(max_cache_entry_size_in_rows_)
-{
-}
-
 QueryCache::Reader QueryCache::createReader(const Key & key)
 {
     std::lock_guard lock(mutex);
@@ -343,14 +335,22 @@ void QueryCache::reset()
 
 size_t QueryCache::recordQueryRun(const Key & key)
 {
-    static constexpr size_t TIMES_EXECUTED_MAX_SIZE = 10'000;
-
-    std::lock_guard times_executed_lock(mutex);
+    std::lock_guard lock(mutex);
     size_t times = ++times_executed[key];
     // Regularly drop times_executed to avoid DOS-by-unlimited-growth.
+    static constexpr size_t TIMES_EXECUTED_MAX_SIZE = 10'000;
     if (times_executed.size() > TIMES_EXECUTED_MAX_SIZE)
         times_executed.clear();
     return times;
+}
+
+void QueryCache::updateConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    std::lock_guard lock(mutex);
+    max_cache_size_in_bytes = config.getUInt64("query_cache.size", 1_GiB);
+    max_cache_entries = config.getUInt64("query_cache.max_entries", 1024);
+    max_cache_entry_size_in_bytes = config.getUInt64("query_cache.max_entry_size", 1_MiB);
+    max_cache_entry_size_in_rows = config.getUInt64("query_cache.max_entry_rows", 30'000'000);
 }
 
 }

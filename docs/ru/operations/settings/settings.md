@@ -1315,6 +1315,12 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 Чем меньше значение, тем чаще данные сбрасываются в таблицу. Установка слишком низкого значения приводит к снижению производительности.
 
+## stream_poll_timeout_ms {#stream_poll_timeout_ms}
+
+Таймаут для poll стримнга данных.
+
+Значение по умолчанию: 500.
+
 ## load_balancing {#settings-load_balancing}
 
 Задает алгоритм выбора реплик, используемый при обработке распределенных запросов.
@@ -3643,7 +3649,7 @@ SETTINGS index_granularity = 8192 │
 
 Значение по умолчанию: `0`.
 
-## replication_alter_partitions_sync {#replication-alter-partitions-sync}
+## alter_sync {#alter-sync}
 
 Позволяет настроить ожидание выполнения действий на репликах запросами [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) или [TRUNCATE](../../sql-reference/statements/truncate.md).
 

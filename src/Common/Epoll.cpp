@@ -2,6 +2,7 @@
 
 #include "Epoll.h"
 #include <Common/Exception.h>
+#include <base/defines.h>
 #include <unistd.h>
 
 namespace DB
@@ -78,7 +79,10 @@ size_t Epoll::getManyReady(int max_events, epoll_event * events_out, bool blocki
 Epoll::~Epoll()
 {
     if (epoll_fd != -1)
-        close(epoll_fd);
+    {
+        int err = close(epoll_fd);
+        chassert(!err || errno == EINTR);
+    }
 }
 
 }

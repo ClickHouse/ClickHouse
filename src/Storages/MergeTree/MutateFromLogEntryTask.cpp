@@ -127,9 +127,11 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
             zero_copy_lock = storage.tryCreateZeroCopyExclusiveLock(entry.new_part_name, disk);
 
-            if (!zero_copy_lock)
+            if (!zero_copy_lock || !zero_copy_lock->isLocked())
             {
+                storage.watchZeroCopyLock(entry.new_part_name, disk);
                 LOG_DEBUG(log, "Mutation of part {} started by some other replica, will wait it and mutated merged part", entry.new_part_name);
+
                 return PrepareResult{
                     .prepared_successfully = false,
                     .need_to_check_missing_part_in_fetch = false,
@@ -184,9 +186,10 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
     return {true, true, [this] (const ExecutionStatus & execution_status)
     {
+        auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
         storage.writePartLog(
             PartLogElement::MUTATE_PART, execution_status, stopwatch_ptr->elapsed(),
-            entry.new_part_name, new_part, future_mutated_part->parts, merge_mutate_entry.get());
+            entry.new_part_name, new_part, future_mutated_part->parts, merge_mutate_entry.get(), std::move(profile_counters_snapshot));
     }};
 }
 

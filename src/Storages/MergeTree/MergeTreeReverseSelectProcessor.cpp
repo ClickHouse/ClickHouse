@@ -49,8 +49,7 @@ bool MergeTreeReverseSelectAlgorithm::getNewTaskOrdinaryReading()
 
     task = std::make_unique<MergeTreeReadTask>(
         data_part, mark_ranges_for_task, part_index_in_query, column_name_set,
-        task_columns, prewhere_info && prewhere_info->remove_prewhere_column,
-        std::move(size_predictor));
+        task_columns, std::move(size_predictor));
 
     return true;
 
@@ -88,8 +87,7 @@ bool MergeTreeReverseSelectAlgorithm::getNewTaskParallelReplicas()
 
     task = std::make_unique<MergeTreeReadTask>(
         data_part, mark_ranges_for_task, part_index_in_query, column_name_set,
-        task_columns, prewhere_info && prewhere_info->remove_prewhere_column,
-        std::move(size_predictor));
+        task_columns, std::move(size_predictor));
 
     return true;
 }

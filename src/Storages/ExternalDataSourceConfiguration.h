@@ -9,7 +9,7 @@
 namespace DB
 {
 
-#define EMPTY_SETTINGS(M)
+#define EMPTY_SETTINGS(M, ALIAS)
 DECLARE_SETTINGS_TRAITS(EmptySettingsTraits, EMPTY_SETTINGS)
 
 struct EmptySettings : public BaseSettings<EmptySettingsTraits> {};
@@ -107,18 +107,6 @@ struct URLBasedDataSourceConfiguration
     String http_method;
 
     void set(const URLBasedDataSourceConfiguration & conf);
-};
-
-struct StorageS3Configuration : URLBasedDataSourceConfiguration
-{
-    S3::AuthSettings auth_settings;
-    S3Settings::RequestSettings request_settings;
-};
-
-
-struct StorageS3ClusterConfiguration : StorageS3Configuration
-{
-    String cluster_name;
 };
 
 struct URLBasedDataSourceConfig

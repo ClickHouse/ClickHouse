@@ -239,6 +239,12 @@ namespace
             user->access.revoke(AccessType::SHOW_NAMED_COLLECTIONS);
         }
 
+        bool show_named_collections_secrets = config.getBool(user_config + ".show_named_collections_secrets", false);
+        if (!show_named_collections_secrets)
+        {
+            user->access.revoke(AccessType::SHOW_NAMED_COLLECTIONS_SECRETS);
+        }
+
         String default_database = config.getString(user_config + ".default_database", "");
         user->default_database = default_database;
 

@@ -27,8 +27,6 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Interpreters/applyTableOverride.h>
-#include <Interpreters/executeQuery.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 
 #include <Storages/StorageFactory.h>

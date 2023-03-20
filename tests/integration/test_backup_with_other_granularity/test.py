@@ -54,7 +54,8 @@ def test_backup_from_old_version(started_cluster):
 
     node1.query("ALTER TABLE source_table FREEZE PARTITION tuple();")
 
-    node1.restart_with_latest_version(fix_metadata=True)
+    # We don't want to wait old outdated version to finish properly, just terminate it
+    node1.restart_with_latest_version(fix_metadata=True, signal=9)
 
     node1.query(
         "CREATE TABLE dest_table (A Int64,  B String,  Y String) ENGINE = ReplicatedMergeTree('/test/dest_table1', '1')  ORDER BY tuple()"
@@ -107,7 +108,8 @@ def test_backup_from_old_version_setting(started_cluster):
 
     node2.query("ALTER TABLE source_table FREEZE PARTITION tuple();")
 
-    node2.restart_with_latest_version(fix_metadata=True)
+    # We don't want to wait old outdated version to finish properly, just terminate it
+    node2.restart_with_latest_version(fix_metadata=True, signal=9)
 
     node2.query(
         "CREATE TABLE dest_table (A Int64,  B String,  Y String) ENGINE = ReplicatedMergeTree('/test/dest_table2', '1')  ORDER BY tuple() SETTINGS enable_mixed_granularity_parts = 1"
@@ -163,7 +165,10 @@ def test_backup_from_old_version_config(started_cluster):
             "<clickhouse><merge_tree><enable_mixed_granularity_parts>1</enable_mixed_granularity_parts></merge_tree></clickhouse>",
         )
 
-    node3.restart_with_latest_version(callback_onstop=callback, fix_metadata=True)
+    # We don't want to wait old outdated version to finish properly, just terminate it
+    node3.restart_with_latest_version(
+        callback_onstop=callback, fix_metadata=True, signal=9
+    )
 
     node3.query(
         "CREATE TABLE dest_table (A Int64,  B String,  Y String) ENGINE = ReplicatedMergeTree('/test/dest_table3', '1')  ORDER BY tuple() SETTINGS enable_mixed_granularity_parts = 1"

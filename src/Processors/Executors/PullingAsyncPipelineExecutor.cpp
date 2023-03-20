@@ -71,14 +71,14 @@ static void threadFunction(PullingAsyncPipelineExecutor::Data & data, ThreadGrou
 {
     SCOPE_EXIT_SAFE(
         if (thread_group)
-            CurrentThread::detachQueryIfNotDetached();
+            CurrentThread::detachFromGroupIfNotDetached();
     );
     setThreadName("QueryPullPipeEx");
 
     try
     {
         if (thread_group)
-            CurrentThread::attachTo(thread_group);
+            CurrentThread::attachToGroup(thread_group);
 
         data.executor->execute(num_threads);
     }
@@ -117,7 +117,7 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
     data->rethrowExceptionIfHas();
 
     bool is_execution_finished
-        = !data->executor->checkTimeLimitSoft() || lazy_format ? lazy_format->isFinished() : data->is_finished.load();
+        = !data->executor->checkTimeLimitSoft() || (lazy_format ? lazy_format->isFinished() : data->is_finished.load());
 
     if (is_execution_finished)
     {

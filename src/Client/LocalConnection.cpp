@@ -34,14 +34,7 @@ LocalConnection::LocalConnection(ContextPtr context_, bool send_progress_, bool 
 
 LocalConnection::~LocalConnection()
 {
-    try
-    {
-        state.reset();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    state.reset();
 }
 
 bool LocalConnection::hasReadPendingData() const

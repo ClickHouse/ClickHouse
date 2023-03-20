@@ -125,6 +125,12 @@ SELECT sipHash64Keyed((506097522914230528, 1084818905618843912), array('e','x','
 
 Like [sipHash64](#hash_functions-siphash64) but produces a 128-bit hash value, i.e. the final xor-folding state is done up to 128 bits.
 
+:::warning
+This 128-bit variant differs from the reference implementation and it's weaker.
+This version exists because, when it was written, there was no official 128-bit extension for SipHash.
+New projects should probably use [sipHash128Reference](#hash_functions-siphash128reference).
+:::
+
 **Syntax**
 
 ```sql
@@ -159,6 +165,12 @@ Result:
 
 Same as [sipHash128](#hash_functions-siphash128) but additionally takes an explicit key argument instead of using a fixed key.
 
+:::warning
+This 128-bit variant differs from the reference implementation and it's weaker.
+This version exists because, when it was written, there was no official 128-bit extension for SipHash.
+New projects should probably use [sipHash128ReferenceKeyed](#hash_functions-siphash128referencekeyed).
+:::
+
 **Syntax**
 
 ```sql
@@ -171,7 +183,7 @@ Same as [sipHash128](#hash_functions-siphash128), but the first argument is a tu
 
 **Returned value**
 
-A [UInt64](/docs/en/sql-reference/data-types/int-uint.md) data type hash value.
+A 128-bit `SipHash` hash value of type [FixedString(16)](/docs/en/sql-reference/data-types/fixedstring.md).
 
 **Example**
 
@@ -187,6 +199,74 @@ Result:
 ┌─hex(sipHash128Keyed((506097522914230528, 1084818905618843912), 'foo', '', 3))─┐
 │ B8467F65C8B4CFD9A5F8BD733917D9BF                                              │
 └───────────────────────────────────────────────────────────────────────────────┘
+```
+
+## sipHash128Reference
+
+Like [sipHash128](#hash_functions-siphash128) but implements the 128-bit algorithm from the original authors of SipHash.
+
+**Syntax**
+
+```sql
+sipHash128Reference(par1,...)
+```
+
+**Arguments**
+
+Same as for [sipHash128](#hash_functions-siphash128).
+
+**Returned value**
+
+A 128-bit `SipHash` hash value of type [FixedString(16)](/docs/en/sql-reference/data-types/fixedstring.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT hex(sipHash128Reference('foo', '\x01', 3));
+```
+
+Result:
+
+```response
+┌─hex(sipHash128Reference('foo', '', 3))─┐
+│ 4D1BE1A22D7F5933C0873E1698426260       │
+└────────────────────────────────────────┘
+```
+
+## sipHash128ReferenceKeyed
+
+Same as [sipHash128Reference](#hash_functions-siphash128reference) but additionally takes an explicit key argument instead of using a fixed key.
+
+**Syntax**
+
+```sql
+sipHash128ReferenceKeyed((k0, k1), par1,...)
+```
+
+**Arguments**
+
+Same as [sipHash128Reference](#hash_functions-siphash128reference), but the first argument is a tuple of two UInt64 values representing the key.
+
+**Returned value**
+
+A 128-bit `SipHash` hash value of type [FixedString(16)](/docs/en/sql-reference/data-types/fixedstring.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT hex(sipHash128ReferenceKeyed((506097522914230528, 1084818905618843912),'foo', '\x01', 3));
+```
+
+Result:
+
+```response
+┌─hex(sipHash128ReferenceKeyed((506097522914230528, 1084818905618843912), 'foo', '', 3))─┐
+│ 630133C9722DC08646156B8130C4CDC8                                                       │
+└────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## cityHash64

@@ -11,13 +11,21 @@
     M(ReplicatedSend, "Number of data parts being sent to replicas") \
     M(ReplicatedChecks, "Number of data parts checking for consistency") \
     M(BackgroundMergesAndMutationsPoolTask, "Number of active merges and mutations in an associated background pool") \
+    M(BackgroundMergesAndMutationsPoolSize, "Limit on number of active merges and mutations in an associated background pool") \
     M(BackgroundFetchesPoolTask, "Number of active fetches in an associated background pool") \
+    M(BackgroundFetchesPoolSize, "Limit on number of simultaneous fetches in an associated background pool") \
     M(BackgroundCommonPoolTask, "Number of active tasks in an associated background pool") \
+    M(BackgroundCommonPoolSize, "Limit on number of tasks in an associated background pool") \
     M(BackgroundMovePoolTask, "Number of active tasks in BackgroundProcessingPool for moves") \
+    M(BackgroundMovePoolSize, "Limit on number of tasks in BackgroundProcessingPool for moves") \
     M(BackgroundSchedulePoolTask, "Number of active tasks in BackgroundSchedulePool. This pool is used for periodic ReplicatedMergeTree tasks, like cleaning old data parts, altering data parts, replica re-initialization, etc.") \
+    M(BackgroundSchedulePoolSize, "Limit on number of tasks in BackgroundSchedulePool. This pool is used for periodic ReplicatedMergeTree tasks, like cleaning old data parts, altering data parts, replica re-initialization, etc.") \
     M(BackgroundBufferFlushSchedulePoolTask, "Number of active tasks in BackgroundBufferFlushSchedulePool. This pool is used for periodic Buffer flushes") \
+    M(BackgroundBufferFlushSchedulePoolSize, "Limit on number of tasks in BackgroundBufferFlushSchedulePool") \
     M(BackgroundDistributedSchedulePoolTask, "Number of active tasks in BackgroundDistributedSchedulePool. This pool is used for distributed sends that is done in background.") \
+    M(BackgroundDistributedSchedulePoolSize, "Limit on number of tasks in BackgroundDistributedSchedulePool") \
     M(BackgroundMessageBrokerSchedulePoolTask, "Number of active tasks in BackgroundProcessingPool for message streaming") \
+    M(BackgroundMessageBrokerSchedulePoolSize, "Limit on number of tasks in BackgroundProcessingPool for message streaming") \
     M(CacheDictionaryUpdateQueueBatches, "Number of 'batches' (a set of keys) in update queue in CacheDictionaries.") \
     M(CacheDictionaryUpdateQueueKeys, "Exact number of keys in update queue in CacheDictionaries.") \
     M(DiskSpaceReservedForMerge, "Disk space reserved for currently running background merges. It is slightly more than the total size of currently merging parts.") \
@@ -82,10 +90,8 @@
     M(PartsInMemory, "In-memory parts.") \
     M(MMappedFiles, "Total number of mmapped files.") \
     M(MMappedFileBytes, "Sum size of mmapped file regions.") \
-    M(AsyncDrainedConnections, "Number of connections drained asynchronously.") \
-    M(ActiveAsyncDrainedConnections, "Number of active connections drained asynchronously.") \
-    M(SyncDrainedConnections, "Number of connections drained synchronously.") \
-    M(ActiveSyncDrainedConnections, "Number of active connections drained synchronously.") \
+    M(MMappedAllocs, "Total number of mmapped allocations") \
+    M(MMappedAllocBytes, "Sum bytes of mmapped allocations") \
     M(AsynchronousReadWait, "Number of threads waiting for asynchronous read.") \
     M(PendingAsyncInsert, "Number of asynchronous inserts that are waiting for flush.") \
     M(KafkaConsumers, "Number of active Kafka consumers") \
@@ -108,6 +114,9 @@
     M(ThreadsInOvercommitTracker, "Number of waiting threads inside of OvercommitTracker") \
     M(IOUringPendingEvents, "Number of io_uring SQEs waiting to be submitted") \
     M(IOUringInFlightEvents, "Number of io_uring SQEs in flight") \
+    M(ReadTaskRequestsSent, "The current number of callback requests in flight from the remote server back to the initiator server to choose the read task (for s3Cluster table function and similar). Measured on the remote server side.") \
+    M(MergeTreeReadTaskRequestsSent, "The current number of callback requests in flight from the remote server back to the initiator server to choose the read task (for MergeTree tables). Measured on the remote server side.") \
+    M(MergeTreeAllRangesAnnouncementsSent, "The current number of announcement being sent in flight from the remote server to the initiator server about the set of data parts (for MergeTree tables). Measured on the remote server side.")
 
 namespace CurrentMetrics
 {

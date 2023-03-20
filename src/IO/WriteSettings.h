@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/Throttler_fwd.h>
+#include <IO/ResourceLink.h>
 
 namespace DB
 {
@@ -10,6 +11,9 @@ struct WriteSettings
 {
     /// Bandwidth throttler to use during writing
     ThrottlerPtr remote_throttler;
+
+    // Resource to be used during reading
+    ResourceLink resource_link;
 
     /// Filesystem cache settings
     bool enable_filesystem_cache_on_write_operations = false;

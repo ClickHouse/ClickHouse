@@ -21,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int EMPTY_DATA_PASSED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 template <LeastSupertypeOnError on_error>
@@ -189,6 +190,12 @@ DataTypePtr FieldToDataType<on_error>::operator() (const AggregateFunctionStateD
 {
     const auto & name = static_cast<const AggregateFunctionStateData &>(x).name;
     return DataTypeFactory::instance().get(name);
+}
+
+template <LeastSupertypeOnError on_error>
+DataTypePtr FieldToDataType<on_error>::operator() (const CustomType &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }
 
 template <LeastSupertypeOnError on_error>

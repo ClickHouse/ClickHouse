@@ -42,7 +42,7 @@ StoredObject StoredObject::create(
     bool object_bypasses_cache)
 {
     if (object_bypasses_cache)
-        return StoredObject(object_path, object_size, {});
+        return StoredObject(object_path, object_size, mapped_path, {});
 
     PathKeyForCacheCreator path_key_for_cache_creator = [&object_storage](const std::string & path) -> std::string
     {

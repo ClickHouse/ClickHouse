@@ -1,12 +1,13 @@
 #include "config.h"
-#include <Common/ProfileEvents.h>
 
 #if USE_AWS_S3
 
 #include <Common/logger_useful.h>
+#include <Common/ProfileEvents.h>
 #include <Common/Throttler.h>
 #include <Interpreters/Cache/FileCache.h>
 
+#include <IO/ResourceGuard.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
 #include <IO/S3Common.h>
@@ -342,7 +343,10 @@ void WriteBufferFromS3::processUploadRequest(UploadPartTask & task)
     if (write_settings.for_object_storage)
         ProfileEvents::increment(ProfileEvents::DiskS3UploadPart);
 
+    ResourceCost cost = task.req.GetContentLength();
+    ResourceGuard rlock(write_settings.resource_link, cost);
     auto outcome = client_ptr->UploadPart(task.req);
+    rlock.unlock(); // Avoid acquiring other locks under resource lock
 
     if (outcome.IsSuccess())
     {
@@ -351,7 +355,10 @@ void WriteBufferFromS3::processUploadRequest(UploadPartTask & task)
         LOG_TRACE(log, "Writing part finished. Bucket: {}, Key: {}, Upload_id: {}, Etag: {}, Parts: {}", bucket, key, multipart_upload_id, task.tag, part_tags.size());
     }
     else
+    {
+        write_settings.resource_link.accumulate(cost); // We assume no resource was used in case of failure
         throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
+    }
 }
 
 void WriteBufferFromS3::completeMultipartUpload()
@@ -491,7 +498,12 @@ void WriteBufferFromS3::processPutRequest(const PutObjectTask & task)
         ProfileEvents::increment(ProfileEvents::S3PutObject);
         if (write_settings.for_object_storage)
             ProfileEvents::increment(ProfileEvents::DiskS3PutObject);
+
+        ResourceCost cost = task.req.GetContentLength();
+        ResourceGuard rlock(write_settings.resource_link, cost);
         auto outcome = client_ptr->PutObject(task.req);
+        rlock.unlock();
+
         bool with_pool = static_cast<bool>(schedule);
         if (outcome.IsSuccess())
         {
@@ -500,14 +512,18 @@ void WriteBufferFromS3::processPutRequest(const PutObjectTask & task)
         }
         else if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
         {
+            write_settings.resource_link.accumulate(cost); // We assume no resource was used in case of failure
             /// For unknown reason, at least MinIO can respond with NO_SUCH_KEY for put requests
             LOG_INFO(log, "Single part upload failed with NO_SUCH_KEY error for Bucket: {}, Key: {}, Object size: {}, WithPool: {}, will retry", bucket, key, task.req.GetContentLength(), with_pool);
         }
         else
+        {
+            write_settings.resource_link.accumulate(cost); // We assume no resource was used in case of failure
             throw S3Exception(
                 outcome.GetError().GetErrorType(),
                 "Message: {}, Key: {}, Bucket: {}, Object size: {}, WithPool: {}",
                 outcome.GetError().GetMessage(), key, bucket, task.req.GetContentLength(), with_pool);
+        }
     }
 }
 

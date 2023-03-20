@@ -52,6 +52,8 @@ public:
 
     bool supportsTransactions() const override { return true; }
 
+    void addBuffer(std::unique_ptr<ReadBuffer> buffer) { owned_buffers.push_back(std::move(buffer)); }
+
 private:
     Block getSampleBlock(const Names & names, const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot) const;
 
@@ -60,6 +62,8 @@ private:
     const bool no_squash;
     const bool no_destination;
     const bool async_insert;
+
+    std::vector<std::unique_ptr<ReadBuffer>> owned_buffers;
 
     Chain buildChainImpl(
         const StoragePtr & table,

@@ -6,7 +6,6 @@
 #include <Columns/ColumnMap.h>
 #include <Common/typeid_cast.h>
 #include <cstring>
-#include <boost/program_options/options_description.hpp>
 
 namespace DB
 {
@@ -80,38 +79,6 @@ void Settings::dumpToMapColumn(IColumn * column, bool changed_only)
     }
 
     offsets.push_back(offsets.back() + size);
-}
-
-void Settings::addProgramOptions(boost::program_options::options_description & options)
-{
-    for (const auto & field : all())
-    {
-        addProgramOption(options, field);
-    }
-}
-
-void Settings::addProgramOptionsAsMultitokens(boost::program_options::options_description & options)
-{
-    for (const auto & field : all())
-    {
-        addProgramOptionAsMultitoken(options, field);
-    }
-}
-
-void Settings::addProgramOption(boost::program_options::options_description & options, const SettingFieldRef & field)
-{
-    const std::string_view name = field.getName();
-    auto on_program_option = boost::function1<void, const std::string &>([this, name](const std::string & value) { set(name, value); });
-    options.add(boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
-        name.data(), boost::program_options::value<std::string>()->composing()->notifier(on_program_option), field.getDescription())));
-}
-
-void Settings::addProgramOptionAsMultitoken(boost::program_options::options_description & options, const SettingFieldRef & field)
-{
-    const std::string_view name = field.getName();
-    auto on_program_option = boost::function1<void, const Strings &>([this, name](const Strings & values) { set(name, values.back()); });
-    options.add(boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
-        name.data(), boost::program_options::value<Strings>()->multitoken()->composing()->notifier(on_program_option), field.getDescription())));
 }
 
 void Settings::checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path)

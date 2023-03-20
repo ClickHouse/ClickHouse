@@ -1019,7 +1019,8 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
         if (!written && arguments->children.size() >= 2 && name == "tuple"sv)
         {
-            settings.ostr << (settings.hilite ? hilite_operator : "") << '(' << (settings.hilite ? hilite_none : "");
+            settings.ostr << (settings.hilite ? hilite_operator : "") << ((frame.need_parens && !alias.empty()) ? "tuple" : "") << '('
+                          << (settings.hilite ? hilite_none : "");
             for (size_t i = 0; i < arguments->children.size(); ++i)
             {
                 if (i != 0)

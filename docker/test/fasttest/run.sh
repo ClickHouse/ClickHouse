@@ -110,7 +110,6 @@ function clone_submodules
             contrib/boost
             contrib/zlib-ng
             contrib/libxml2
-            contrib/poco
             contrib/libunwind
             contrib/fmtlib
             contrib/base64
@@ -231,6 +230,7 @@ function run_tests
         --hung-check
         --fast-tests-only
         --no-random-settings
+        --no-random-merge-tree-settings
         --no-long
         --testname
         --shard

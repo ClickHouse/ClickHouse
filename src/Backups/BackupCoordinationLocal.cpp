@@ -83,6 +83,19 @@ Strings BackupCoordinationLocal::getReplicatedAccessFilePaths(const String & acc
 }
 
 
+void BackupCoordinationLocal::addReplicatedSQLObjectsDir(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & host_id, const String & dir_path)
+{
+    std::lock_guard lock{mutex};
+    replicated_sql_objects.addDirectory(loader_zk_path, object_type, host_id, dir_path);
+}
+
+Strings BackupCoordinationLocal::getReplicatedSQLObjectsDirs(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & host_id) const
+{
+    std::lock_guard lock{mutex};
+    return replicated_sql_objects.getDirectories(loader_zk_path, object_type, host_id);
+}
+
+
 void BackupCoordinationLocal::addFileInfo(const FileInfo & file_info, bool & is_data_file_required)
 {
     std::lock_guard lock{mutex};
@@ -200,6 +213,11 @@ Strings BackupCoordinationLocal::getAllArchiveSuffixes() const
 {
     std::lock_guard lock{mutex};
     return archive_suffixes;
+}
+
+bool BackupCoordinationLocal::hasConcurrentBackups(const std::atomic<size_t> & num_active_backups) const
+{
+    return (num_active_backups > 1);
 }
 
 }

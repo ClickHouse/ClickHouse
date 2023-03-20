@@ -59,6 +59,7 @@ void MergeTreeBackgroundExecutor<Queue>::increaseThreadsAndMaxTasksCount(size_t 
     for (size_t number = threads_count; number < new_threads_count; ++number)
         pool.scheduleOrThrowOnError([this] { threadFunction(); });
 
+    max_tasks_metric.changeTo(2 * new_max_tasks_count); // pending + active
     max_tasks_count.store(new_max_tasks_count, std::memory_order_relaxed);
     threads_count = new_threads_count;
 }
@@ -268,7 +269,8 @@ void MergeTreeBackgroundExecutor<Queue>::threadFunction()
 }
 
 
-template class MergeTreeBackgroundExecutor<MergeMutateRuntimeQueue>;
-template class MergeTreeBackgroundExecutor<OrdinaryRuntimeQueue>;
+template class MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>;
+template class MergeTreeBackgroundExecutor<PriorityRuntimeQueue>;
+template class MergeTreeBackgroundExecutor<DynamicRuntimeQueue>;
 
 }

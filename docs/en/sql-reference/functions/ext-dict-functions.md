@@ -6,11 +6,11 @@ sidebar_label: Dictionaries
 
 # Functions for Working with Dictionaries
 
-:::note    
+:::note
 For dictionaries created with [DDL queries](../../sql-reference/statements/create/dictionary.md), the `dict_name` parameter must be fully specified, like `<database>.<dict_name>`. Otherwise, the current database is used.
 :::
 
-For information on connecting and configuring dictionaries, see [Dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
+For information on connecting and configuring dictionaries, see [Dictionaries](../../sql-reference/dictionaries/index.md).
 
 ## dictGet, dictGetOrDefault, dictGetOrNull
 
@@ -31,7 +31,7 @@ dictGetOrNull('dict_name', attr_name, id_expr)
 
 **Returned value**
 
--   If ClickHouse parses the attribute successfully in the [attribute’s data type](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md#ext_dict_structure-attributes), functions return the value of the dictionary attribute that corresponds to `id_expr`.
+-   If ClickHouse parses the attribute successfully in the [attribute’s data type](../../sql-reference/dictionaries/index.md#dictionary-key-and-fields#ext_dict_structure-attributes), functions return the value of the dictionary attribute that corresponds to `id_expr`.
 
 -   If there is no the key, corresponding to `id_expr`, in the dictionary, then:
 
@@ -226,7 +226,7 @@ Result:
 
 **See Also**
 
--   [Dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md)
+-   [Dictionaries](../../sql-reference/dictionaries/index.md)
 
 ## dictHas
 
@@ -250,7 +250,7 @@ Type: `UInt8`.
 
 ## dictGetHierarchy
 
-Creates an array, containing all the parents of a key in the [hierarchical dictionary](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-hierarchical.md).
+Creates an array, containing all the parents of a key in the [hierarchical dictionary](../../sql-reference/dictionaries/index.md#hierarchical-dictionaries).
 
 **Syntax**
 
@@ -436,7 +436,7 @@ dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 
 **Returned value**
 
--   If ClickHouse parses the attribute successfully in the [attribute’s data type](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md#ext_dict_structure-attributes), functions return the value of the dictionary attribute that corresponds to `id_expr`.
+-   If ClickHouse parses the attribute successfully in the [attribute’s data type](../../sql-reference/dictionaries/index.md#dictionary-key-and-fields#ext_dict_structure-attributes), functions return the value of the dictionary attribute that corresponds to `id_expr`.
 
 -   If there is no requested `id_expr` in the dictionary then:
 

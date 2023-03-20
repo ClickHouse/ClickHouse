@@ -27,17 +27,20 @@ A table with the specified structure for reading or writing data in the specifie
 
 **Examples**
 
-Select the data from all files in the cluster `cluster_simple`:
+Select the data from all the files in the `/root/data/clickhouse` and `/root/data/database/` folders, using all the nodes in the `cluster_simple` cluster:
 
 ``` sql
-SELECT * FROM s3Cluster('cluster_simple', 'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') ORDER BY (name, value, polygon);
+SELECT * FROM s3Cluster(
+    'cluster_simple', 
+    'http://minio1:9001/root/data/{clickhouse,database}/*', 
+    'minio', 
+    'minio123', 
+    'CSV', 
+    'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))'
+) ORDER BY (name, value, polygon);
 ```
 
 Count the total amount of rows in all files in the cluster `cluster_simple`:
-
-``` sql
-SELECT count(*) FROM s3Cluster('cluster_simple', 'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))');
-```
 
 :::warning    
 If your listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.

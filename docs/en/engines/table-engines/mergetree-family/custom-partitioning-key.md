@@ -7,7 +7,7 @@ sidebar_label: Custom Partitioning Key
 # Custom Partitioning Key
 
 :::warning
-In most cases you do not need a partition key, and in most other cases you do not need a partition key more granular than by months. Partitioning does not speed up queries (in contrast to the ORDER BY expression).
+In most cases you do not need a partition key, and in most other cases you do not need a partition key more granular than by months.
 
 You should never use too granular of partitioning. Don't partition your data by client identifiers or names. Instead, make a client identifier or name the first column in the ORDER BY expression.
 :::
@@ -133,3 +133,48 @@ The `detached` directory contains parts that were detached from the table using 
 Note that on the operating server, you cannot manually change the set of parts or their data on the file system, since the server will not know about it. For non-replicated tables, you can do this when the server is stopped, but it isn’t recommended. For replicated tables, the set of parts cannot be changed in any case.
 
 ClickHouse allows you to perform operations with the partitions: delete them, copy from one table to another, or create a backup. See the list of all operations in the section [Manipulations With Partitions and Parts](../../../sql-reference/statements/alter/partition.md#alter_manipulations-with-partitions).
+
+## Group By optimisation using partition key
+
+For some combinations of table's partition key and query's group by key it might be possible to execute aggregation for each partition independently.
+Then we'll not have to merge partially aggregated data from all execution threads at the end,
+because we provided with the guarantee that each group by key value cannot appear in working sets of two different threads.
+
+The typical example is:
+
+``` sql
+CREATE TABLE session_log
+(
+    UserID UInt64,
+    SessionID UUID
+)
+ENGINE = MergeTree
+PARTITION BY sipHash64(UserID) % 16
+ORDER BY tuple();
+
+SELECT
+    UserID,
+    COUNT()
+FROM session_log
+GROUP BY UserID;
+```
+
+:::warning
+Performance of such a query heavily depends on the table layout. Because of that the optimisation is not enabled by default.
+:::
+
+The key factors for a good performance:
+
+-   number of partitions involved in the query should be sufficiently large (more than `max_threads / 2`), otherwise query will underutilize the machine
+-   partitions shouldn't be too small, so batch processing won't degenerate into row-by-row processing
+-   partitions should be comparable in size, so all threads will do roughly the same amount of work
+
+:::info
+It's recommended to apply some hash function to columns in `partition by` clause in order to distribute data evenly between partitions.
+:::
+
+Relevant settings are:
+
+-   `allow_aggregate_partitions_independently` - controls if the use of optimisation is enabled
+-   `force_aggregate_partitions_independently` - forces its use when it's applicable from the correctness standpoint, but getting disabled by internal logic that estimates its expediency
+-   `max_number_of_partitions_for_independent_aggregation` - hard limit on the maximal number of partitions table could have

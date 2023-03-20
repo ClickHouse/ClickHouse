@@ -137,6 +137,8 @@ public:
     KeeperLogInfo getKeeperLogInfo();
 
     bool requestLeader();
+
+    void recalculateStorageStats();
 };
 
 }

@@ -13,13 +13,21 @@
   * (~ 700 MB/sec, 15 million strings per second)
   */
 
-#include <base/types.h>
-#include <base/unaligned.h>
 #include <string>
 #include <type_traits>
 #include <Core/Defines.h>
 #include <base/extended_types.h>
+#include <base/types.h>
+#include <base/unaligned.h>
+#include <Common/Exception.h>
 
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+}
 
 #define ROTL(x, b) static_cast<UInt64>(((x) << (b)) | ((x) >> (64 - (b))))
 
@@ -52,6 +60,9 @@ private:
     /// How many bytes have been processed.
     UInt64 cnt;
 
+    /// Whether it should use the reference algo for 128-bit or CH's version
+    bool is_reference_128;
+
     /// The current 8 bytes of input data.
     union
     {
@@ -69,7 +80,10 @@ private:
         SIPROUND;
         v0 ^= current_word;
 
-        v2 ^= 0xff;
+        if (is_reference_128)
+            v2 ^= 0xee;
+        else
+            v2 ^= 0xff;
         SIPROUND;
         SIPROUND;
         SIPROUND;
@@ -78,13 +92,17 @@ private:
 
 public:
     /// Arguments - seed.
-    SipHash(UInt64 key0 = 0, UInt64 key1 = 0) /// NOLINT
+    SipHash(UInt64 key0 = 0, UInt64 key1 = 0, bool is_reference_128_ = false) /// NOLINT
     {
         /// Initialize the state with some random bytes and seed.
         v0 = 0x736f6d6570736575ULL ^ key0;
         v1 = 0x646f72616e646f6dULL ^ key1;
         v2 = 0x6c7967656e657261ULL ^ key0;
         v3 = 0x7465646279746573ULL ^ key1;
+        is_reference_128 = is_reference_128_;
+
+        if (is_reference_128)
+            v1 ^= 0xee;
 
         cnt = 0;
         current_word = 0;
@@ -201,6 +219,33 @@ public:
         get128(res);
         return res;
     }
+
+    UInt128 get128Reference()
+    {
+        if (!is_reference_128)
+            throw DB::Exception(
+                DB::ErrorCodes::LOGICAL_ERROR, "Logical error: can't call get128Reference when is_reference_128 is not set");
+        finalize();
+        auto lo = v0 ^ v1 ^ v2 ^ v3;
+        v1 ^= 0xdd;
+        SIPROUND;
+        SIPROUND;
+        SIPROUND;
+        SIPROUND;
+        auto hi = v0 ^ v1 ^ v2 ^ v3;
+        if constexpr (std::endian::native == std::endian::big)
+        {
+            lo = __builtin_bswap64(lo);
+            hi = __builtin_bswap64(hi);
+            auto tmp = hi;
+            hi = lo;
+            lo = tmp;
+        }
+        UInt128 res = hi;
+        res <<= 64;
+        res |= lo;
+        return res;
+    }
 };
 
 
@@ -226,6 +271,18 @@ inline UInt128 sipHash128Keyed(UInt64 key0, UInt64 key1, const char * data, cons
 inline UInt128 sipHash128(const char * data, const size_t size)
 {
     return sipHash128Keyed(0, 0, data, size);
+}
+
+inline UInt128 sipHash128ReferenceKeyed(UInt64 key0, UInt64 key1, const char * data, const size_t size)
+{
+    SipHash hash(key0, key1, true);
+    hash.update(data, size);
+    return hash.get128Reference();
+}
+
+inline UInt128 sipHash128Reference(const char * data, const size_t size)
+{
+    return sipHash128ReferenceKeyed(0, 0, data, size);
 }
 
 inline UInt64 sipHash64Keyed(UInt64 key0, UInt64 key1, const char * data, const size_t size)

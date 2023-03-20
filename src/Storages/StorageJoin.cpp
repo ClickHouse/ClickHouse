@@ -21,21 +21,24 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Poco/String.h> /// toLower
+#include <Poco/String.h>
+#include <filesystem>
 
+namespace fs = std::filesystem;
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
-    extern const int UNSUPPORTED_JOIN_KEYS;
-    extern const int NO_SUCH_COLUMN_IN_TABLE;
-    extern const int INCOMPATIBLE_TYPE_OF_JOIN;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int DEADLOCK_AVOIDED;
+    extern const int INCOMPATIBLE_TYPE_OF_JOIN;
+    extern const int LOGICAL_ERROR;
+    extern const int NO_SUCH_COLUMN_IN_TABLE;
+    extern const int NOT_IMPLEMENTED;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int UNSUPPORTED_JOIN_KEYS;
 }
 
 StorageJoin::StorageJoin(
@@ -78,6 +81,14 @@ RWLockImpl::LockHolder StorageJoin::tryLockTimedWithContext(const RWLock & lock,
     return tryLockTimed(lock, type, query_id, acquire_timeout);
 }
 
+RWLockImpl::LockHolder StorageJoin::tryLockForCurrentQueryTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context)
+{
+    const String query_id = context ? context->getInitialQueryId() : RWLockImpl::NO_QUERY;
+    const std::chrono::milliseconds acquire_timeout
+        = context ? context->getSettingsRef().lock_acquire_timeout : std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC);
+    return lock->getLock(type, query_id, acquire_timeout, false);
+}
+
 SinkToStoragePtr StorageJoin::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
     std::lock_guard mutate_lock(mutate_mutex);
@@ -95,7 +106,7 @@ void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPt
         LOG_INFO(&Poco::Logger::get("StorageJoin"), "Path {} is already removed from disk {}", path, disk->getName());
 
     disk->createDirectories(path);
-    disk->createDirectories(path + "tmp/");
+    disk->createDirectories(fs::path(path) / "tmp/");
 
     increment = 0;
     join = std::make_shared<HashJoin>(table_join, getRightSampleBlock(), overwrite);
@@ -238,8 +249,12 @@ void StorageJoin::insertBlock(const Block & block, ContextPtr context)
 {
     Block block_to_insert = block;
     convertRightBlock(block_to_insert);
+    TableLockHolder holder = tryLockForCurrentQueryTimedWithContext(rwlock, RWLockImpl::Write, context);
 
-    TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, context);
+    /// Protection from `INSERT INTO test_table_join SELECT * FROM test_table_join`
+    if (!holder)
+        throw Exception(ErrorCodes::DEADLOCK_AVOIDED, "StorageJoin: cannot insert data because current query tries to read from this storage");
+
     join->addJoinedBlock(block_to_insert, true);
 }
 
@@ -552,7 +567,7 @@ private:
 
         if (!position)
             position = decltype(position)(
-                static_cast<void *>(new typename Map::const_iterator(map.begin())), //-V572
+                static_cast<void *>(new typename Map::const_iterator(map.begin())),
                 [](void * ptr) { delete reinterpret_cast<typename Map::const_iterator *>(ptr); });
 
         auto & it = *reinterpret_cast<typename Map::const_iterator *>(position.get());
