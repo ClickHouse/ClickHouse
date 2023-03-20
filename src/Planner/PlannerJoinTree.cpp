@@ -1,16 +1,10 @@
 #include <Planner/PlannerJoinTree.h>
 
-#include <Common/scope_guard_safe.h>
-
-#include <Columns/ColumnAggregateFunction.h>
-
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Functions/FunctionFactory.h>
-
-#include <AggregateFunctions/AggregateFunctionCount.h>
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
@@ -20,7 +14,6 @@
 
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
-#include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/QueryNode.h>
@@ -29,15 +22,13 @@
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/Utils.h>
 #include <Analyzer/AggregationUtils.h>
-#include <Analyzer/Passes/QueryAnalysisPass.h>
-#include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/FunctionNode.h>
 
 #include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -53,9 +44,10 @@
 #include <Planner/PlannerJoins.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/Utils.h>
-#include <Planner/CollectSets.h>
-#include <Planner/CollectTableExpressionData.h>
 
+#include <AggregateFunctions/AggregateFunctionCount.h>
+#include <Columns/ColumnAggregateFunction.h>
+#include <Common/scope_guard_safe.h>
 
 namespace DB
 {
@@ -70,7 +62,6 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int TOO_MANY_COLUMNS;
     extern const int UNSUPPORTED_METHOD;
-    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -172,39 +163,19 @@ bool applyTrivialCountIfPossible(
     if (!settings.optimize_trivial_count_query)
         return false;
 
-    const auto & storage = table_node.getStorage();
-    auto storage_id = storage->getStorageID();
-    auto row_policy_filter = query_context->getRowPolicyFilter(storage_id.getDatabaseName(),
-        storage_id.getTableName(),
-        RowPolicyFilterType::SELECT_FILTER);
-    if (row_policy_filter)
-        return {};
-
-    /** Transaction check here is necessary because
-      * MergeTree maintains total count for all parts in Active state and it simply returns that number for trivial select count() from table query.
-      * But if we have current transaction, then we should return number of rows in current snapshot (that may include parts in Outdated state),
-      * so we have to use totalRowsByPartitionPredicate() instead of totalRows even for trivial query
-      * See https://github.com/ClickHouse/ClickHouse/pull/24258/files#r828182031
-      */
-    if (query_context->getCurrentTransaction())
-        return false;
-
     /// can't apply if FINAL
-    if (table_node.getTableExpressionModifiers().has_value() &&
-        (table_node.getTableExpressionModifiers()->hasFinal() || table_node.getTableExpressionModifiers()->hasSampleSizeRatio() ||
-            table_node.getTableExpressionModifiers()->hasSampleOffsetRatio()))
+    if (table_node.getTableExpressionModifiers().has_value() && table_node.getTableExpressionModifiers()->hasFinal())
         return false;
 
-    // TODO: It's possible to optimize count() given only partition predicates
     auto & main_query_node = query_tree->as<QueryNode &>();
-    if (main_query_node.hasGroupBy() || main_query_node.hasPrewhere() || main_query_node.hasWhere())
+    if (main_query_node.hasGroupBy())
         return false;
 
-    if (storage->hasLightweightDeletedMask())
+    const auto & storage = table_node.getStorage();
+    if (!storage || storage->hasLightweightDeletedMask())
         return false;
 
-    if (settings.max_parallel_replicas > 1 ||
-        settings.allow_experimental_query_deduplication
+    if (settings.max_parallel_replicas > 1 || settings.allow_experimental_query_deduplication
         || settings.empty_result_for_aggregation_by_empty_set)
         return false;
 
@@ -218,12 +189,31 @@ bool applyTrivialCountIfPossible(
     if (!count_func)
         return false;
 
-    /// Get number of rows
-    std::optional<UInt64> num_rows = storage->totalRows(settings);
+    /// get number of rows
+    std::optional<UInt64> num_rows{};
+    /// Transaction check here is necessary because
+    /// MergeTree maintains total count for all parts in Active state and it simply returns that number for trivial select count() from table query.
+    /// But if we have current transaction, then we should return number of rows in current snapshot (that may include parts in Outdated state),
+    /// so we have to use totalRowsByPartitionPredicate() instead of totalRows even for trivial query
+    /// See https://github.com/ClickHouse/ClickHouse/pull/24258/files#r828182031
+    if (!main_query_node.hasPrewhere() && !main_query_node.hasWhere() && !query_context->getCurrentTransaction())
+    {
+        num_rows = storage->totalRows(settings);
+    }
+    // TODO:
+    // else // It's possible to optimize count() given only partition predicates
+    // {
+    //     SelectQueryInfo temp_query_info;
+    //     temp_query_info.query = query_ptr;
+    //     temp_query_info.syntax_analyzer_result = syntax_analyzer_result;
+    //     temp_query_info.prepared_sets = query_analyzer->getPreparedSets();
+    //     num_rows = storage->totalRowsByPartitionPredicate(temp_query_info, context);
+    // }
+
     if (!num_rows)
         return false;
 
-    /// Set aggregation state
+    /// set aggregation state
     const AggregateFunctionCount & agg_count = *count_func;
     std::vector<char> state(agg_count.sizeOfData());
     AggregateDataPtr place = state.data();
@@ -315,115 +305,6 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
             "Limit for number of columns to read exceeded. Requested: {}, maximum: {}",
             columns_names.size(),
             settings.max_columns_to_read);
-}
-
-void updatePrewhereOutputsIfNeeded(SelectQueryInfo & table_expression_query_info,
-    const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot)
-{
-    if (!table_expression_query_info.prewhere_info)
-        return;
-
-    auto & prewhere_actions = table_expression_query_info.prewhere_info->prewhere_actions;
-
-    NameSet required_columns;
-    if (column_names.size() == 1)
-        required_columns.insert(column_names[0]);
-
-    auto & table_expression_modifiers = table_expression_query_info.table_expression_modifiers;
-    if (table_expression_modifiers)
-    {
-        if (table_expression_modifiers->hasSampleSizeRatio() ||
-            table_expression_query_info.planner_context->getQueryContext()->getSettingsRef().parallel_replicas_count > 1)
-        {
-            /// We evaluate sampling for Merge lazily so we need to get all the columns
-            if (storage_snapshot->storage.getName() == "Merge")
-            {
-                const auto columns = storage_snapshot->getMetadataForQuery()->getColumns().getAll();
-                for (const auto & column : columns)
-                    required_columns.insert(column.name);
-            }
-            else
-            {
-                auto columns_required_for_sampling = storage_snapshot->getMetadataForQuery()->getColumnsRequiredForSampling();
-                required_columns.insert(columns_required_for_sampling.begin(), columns_required_for_sampling.end());
-            }
-        }
-
-        if (table_expression_modifiers->hasFinal())
-        {
-            auto columns_required_for_final = storage_snapshot->getMetadataForQuery()->getColumnsRequiredForFinal();
-            required_columns.insert(columns_required_for_final.begin(), columns_required_for_final.end());
-        }
-    }
-
-    std::unordered_set<const ActionsDAG::Node *> required_output_nodes;
-
-    for (const auto * input : prewhere_actions->getInputs())
-    {
-        if (required_columns.contains(input->result_name))
-            required_output_nodes.insert(input);
-    }
-
-    if (required_output_nodes.empty())
-        return;
-
-    auto & prewhere_outputs = prewhere_actions->getOutputs();
-    for (const auto & output : prewhere_outputs)
-    {
-        auto required_output_node_it = required_output_nodes.find(output);
-        if (required_output_node_it == required_output_nodes.end())
-            continue;
-
-        required_output_nodes.erase(required_output_node_it);
-    }
-
-    prewhere_outputs.insert(prewhere_outputs.end(), required_output_nodes.begin(), required_output_nodes.end());
-}
-
-FilterDAGInfo buildRowPolicyFilterIfNeeded(const StoragePtr & storage,
-    SelectQueryInfo & table_expression_query_info,
-    PlannerContextPtr & planner_context)
-{
-    auto storage_id = storage->getStorageID();
-    const auto & query_context = planner_context->getQueryContext();
-
-    auto row_policy_filter = query_context->getRowPolicyFilter(storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-    if (!row_policy_filter)
-        return {};
-
-    auto row_policy_filter_query_tree = buildQueryTree(row_policy_filter->expression, query_context);
-
-    QueryAnalysisPass query_analysis_pass(table_expression_query_info.table_expression);
-    query_analysis_pass.run(row_policy_filter_query_tree, query_context);
-
-    auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression_query_info.table_expression);
-    const auto table_expression_names = table_expression_data.getColumnNames();
-    NameSet table_expression_required_names_without_row_policy(table_expression_names.begin(), table_expression_names.end());
-
-    collectSourceColumns(row_policy_filter_query_tree, planner_context);
-    collectSets(row_policy_filter_query_tree, *planner_context);
-
-    auto row_policy_actions_dag = std::make_shared<ActionsDAG>();
-
-    PlannerActionsVisitor actions_visitor(planner_context, false /*use_column_identifier_as_action_node_name*/);
-    auto expression_nodes = actions_visitor.visit(row_policy_actions_dag, row_policy_filter_query_tree);
-    if (expression_nodes.size() != 1)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Row policy filter actions must return single output node. Actual {}",
-            expression_nodes.size());
-
-    auto & row_policy_actions_outputs = row_policy_actions_dag->getOutputs();
-    row_policy_actions_outputs = std::move(expression_nodes);
-
-    std::string filter_node_name = row_policy_actions_outputs[0]->result_name;
-    bool remove_filter_column = true;
-
-    for (const auto & row_policy_input_node : row_policy_actions_dag->getInputs())
-        if (table_expression_required_names_without_row_policy.contains(row_policy_input_node->result_name))
-            row_policy_actions_outputs.push_back(row_policy_input_node);
-
-    return {std::move(row_policy_actions_dag), std::move(filter_node_name), remove_filter_column};
 }
 
 JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
@@ -547,7 +428,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         else
             table_expression_query_info.table_expression_modifiers = table_function_node->getTableExpressionModifiers();
 
-        bool need_rewrite_query_with_final = storage->needRewriteQueryWithFinal(table_expression_data.getColumnNames());
+        auto columns_names = table_expression_data.getColumnNames();
+
+        bool need_rewrite_query_with_final = storage->needRewriteQueryWithFinal(columns_names);
         if (need_rewrite_query_with_final)
         {
             if (table_expression_query_info.table_expression_modifiers)
@@ -569,11 +452,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         }
 
         /// Apply trivial_count optimization if possible
-        bool is_trivial_count_applied = !select_query_options.only_analyze &&
-            is_single_table_expression &&
-            table_node &&
-            select_query_info.has_aggregates &&
-            applyTrivialCountIfPossible(query_plan, *table_node, select_query_info.query_tree, planner_context->getQueryContext(), table_expression_data.getColumnNames());
+        bool is_trivial_count_applied = !select_query_options.only_analyze && is_single_table_expression && table_node && select_query_info.has_aggregates
+            && applyTrivialCountIfPossible(query_plan, *table_node, select_query_info.query_tree, planner_context->getQueryContext(), columns_names);
 
         if (is_trivial_count_applied)
         {
@@ -583,66 +463,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         {
             if (!select_query_options.only_analyze)
             {
-                const auto & prewhere_actions = table_expression_data.getPrewhereFilterActions();
-
-                if (prewhere_actions)
-                {
-                    table_expression_query_info.prewhere_info = std::make_shared<PrewhereInfo>();
-                    table_expression_query_info.prewhere_info->prewhere_actions = prewhere_actions;
-                    table_expression_query_info.prewhere_info->prewhere_column_name = prewhere_actions->getOutputs().at(0)->result_name;
-                    table_expression_query_info.prewhere_info->remove_prewhere_column = true;
-                    table_expression_query_info.prewhere_info->need_filter = true;
-                }
-
-                updatePrewhereOutputsIfNeeded(table_expression_query_info, table_expression_data.getColumnNames(), storage_snapshot);
-
-                auto row_policy_filter_info = buildRowPolicyFilterIfNeeded(storage, table_expression_query_info, planner_context);
-                bool moved_row_policy_to_prewhere = false;
-
-                if (row_policy_filter_info.actions)
-                {
-                    bool is_final = table_expression_query_info.table_expression_modifiers &&
-                        table_expression_query_info.table_expression_modifiers->hasFinal();
-                    bool optimize_move_to_prewhere = settings.optimize_move_to_prewhere && (!is_final || settings.optimize_move_to_prewhere_if_final);
-
-                    if (storage->supportsPrewhere() && optimize_move_to_prewhere)
-                    {
-                        if (!table_expression_query_info.prewhere_info)
-                            table_expression_query_info.prewhere_info = std::make_shared<PrewhereInfo>();
-
-                        if (!table_expression_query_info.prewhere_info->prewhere_actions)
-                        {
-                            table_expression_query_info.prewhere_info->prewhere_actions = row_policy_filter_info.actions;
-                            table_expression_query_info.prewhere_info->prewhere_column_name = row_policy_filter_info.column_name;
-                            table_expression_query_info.prewhere_info->remove_prewhere_column = row_policy_filter_info.do_remove_column;
-                        }
-                        else
-                        {
-                            table_expression_query_info.prewhere_info->row_level_filter = row_policy_filter_info.actions;
-                            table_expression_query_info.prewhere_info->row_level_column_name = row_policy_filter_info.column_name;
-                        }
-
-                        table_expression_query_info.prewhere_info->need_filter = true;
-                        moved_row_policy_to_prewhere = true;
-                    }
-                }
-
-                const auto & columns_names = table_expression_data.getColumnNames();
                 from_stage = storage->getQueryProcessingStage(query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);
                 storage->read(query_plan, columns_names, storage_snapshot, table_expression_query_info, query_context, from_stage, max_block_size, max_streams);
-
-                if (query_plan.isInitialized() &&
-                    from_stage == QueryProcessingStage::FetchColumns &&
-                    row_policy_filter_info.actions &&
-                    !moved_row_policy_to_prewhere)
-                {
-                    auto row_level_filter_step = std::make_unique<FilterStep>(query_plan.getCurrentDataStream(),
-                        row_policy_filter_info.actions,
-                        row_policy_filter_info.column_name,
-                        row_policy_filter_info.do_remove_column);
-                    row_level_filter_step->setStepDescription("Row-level security filter");
-                    query_plan.addStep(std::move(row_level_filter_step));
-                }
 
                 if (query_context->hasQueryContext() && !select_query_options.is_internal)
                 {
@@ -671,7 +493,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             else
             {
                 /// Create step which reads from empty source if storage has no data.
-                auto source_header = storage_snapshot->getSampleBlockForColumns(table_expression_data.getColumnNames());
+                auto source_header = storage_snapshot->getSampleBlockForColumns(columns_names);
                 Pipe pipe(std::make_shared<NullSource>(source_header));
                 auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
                 read_from_pipe->setStepDescription("Read from NullSource");
