@@ -518,7 +518,16 @@ bool FileCache::tryReserve(const Key & key, size_t offset, size_t size, KeyMetad
     assertInitialized();
     auto lock = cache_guard.lock();
     auto locked_key = createLockedKey(key, key_metadata);
-    return tryReserveUnlocked(key, offset, size, locked_key, lock);
+
+    LOG_TEST(log, "Reserving {} bytes for key {} at offset {}", size, key.toString(), offset);
+    const bool reserved = tryReserveUnlocked(key, offset, size, locked_key, lock);
+
+    if (reserved)
+        LOG_TEST(log, "Successfully reserved {} bytes for key {} at offset {}", size, key.toString(), offset);
+    else
+        LOG_TEST(log, "Failed to reserve {} bytes for key {} at offset {}", size, key.toString(), offset);
+
+    return reserved;
 }
 
 bool FileCache::tryReserveUnlocked(
@@ -586,7 +595,7 @@ bool FileCache::tryReserveImpl(
     size_t size,
     LockedKeyPtr locked_key,
     FileCacheQueryLimit::LockedQueryContext * query_context,
-    const CacheGuard::Lock & priority_lock)
+    const CacheGuard::Lock & cache_lock)
 {
     /// Iterate cache entries in the priority of `priority_queue`.
     /// If some entry is in `priority_queue` it must be guaranteed to have a
@@ -599,8 +608,8 @@ bool FileCache::tryReserveImpl(
 
     LOG_TEST(log, "Reserving space {} for {}:{}", size, key.toString(), offset);
 
-    LockedCachePriority locked_priority_queue(priority_lock, priority_queue);
-    LockedCachePriority locked_main_priority(priority_lock, *main_priority);
+    LockedCachePriority locked_priority_queue(cache_lock, priority_queue);
+    LockedCachePriority locked_main_priority(cache_lock, *main_priority);
 
     size_t queue_size = locked_priority_queue.getElementsCount();
     chassert(queue_size <= locked_priority_queue.getElementsLimit());
@@ -669,7 +678,7 @@ bool FileCache::tryReserveImpl(
                 {
                     remove_current_it = true;
                     file_segment_metadata->queue_iterator = {};
-                    current_locked_key.remove(file_segment, priority_lock);
+                    current_locked_key.remove(file_segment, cache_lock);
                     break;
                 }
             }
@@ -693,7 +702,7 @@ bool FileCache::tryReserveImpl(
         for (const auto & offset_to_delete : current_locked_key->delete_offsets)
         {
             auto * file_segment_metadata = current_locked_key->getKeyMetadata()->getByOffset(offset_to_delete);
-            current_locked_key->remove(file_segment_metadata->file_segment, priority_lock);
+            current_locked_key->remove(file_segment_metadata->file_segment, cache_lock);
             if (query_context)
                 query_context->remove(key, offset);
         }
@@ -708,7 +717,7 @@ bool FileCache::tryReserveImpl(
         /// acquires queue iterator on first successful space reservation attempt.
         /// If queue iterator already exists, we need to update the size after each space reservation.
         if (file_segment_for_reserve->queue_iterator)
-            LockedCachePriorityIterator(priority_lock, file_segment_for_reserve->queue_iterator).incrementSize(size);
+            LockedCachePriorityIterator(cache_lock, file_segment_for_reserve->queue_iterator).incrementSize(size);
         else
         {
             /// Space reservation is incremental, so file_segment_metadata is created first (with state empty),
@@ -722,11 +731,11 @@ bool FileCache::tryReserveImpl(
         auto queue_iterator = query_context->tryGet(key, offset);
         if (queue_iterator)
         {
-            LockedCachePriorityIterator(priority_lock, queue_iterator).incrementSize(size);
+            LockedCachePriorityIterator(cache_lock, queue_iterator).incrementSize(size);
         }
         else
         {
-            auto it = LockedCachePriority(priority_lock, query_context->getPriority()).add(key, offset, size, locked_key->getKeyMetadata());
+            auto it = LockedCachePriority(cache_lock, query_context->getPriority()).add(key, offset, size, locked_key->getKeyMetadata());
             query_context->add(key, offset, it);
         }
     }
@@ -1124,10 +1133,10 @@ size_t FileCache::getFileSegmentsNum() const
 
 void FileCache::assertCacheCorrectness()
 {
-    return assertCacheCorrectness(metadata.lock(), cache_guard.lock());
+    return assertCacheCorrectness(cache_guard.lock(), metadata.lock());
 }
 
-void FileCache::assertCacheCorrectness(const CacheMetadataGuard::Lock & metadata_lock, const CacheGuard::Lock & cache_lock)
+void FileCache::assertCacheCorrectness(const CacheGuard::Lock & cache_lock, const CacheMetadataGuard::Lock & metadata_lock)
 {
     iterateCacheMetadata(metadata_lock, [&](KeyMetadata & key_metadata)
     {

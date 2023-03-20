@@ -48,7 +48,7 @@ namespace DB
 /**
  * Cache priority queue guard.
  */
-struct CacheGuard
+struct CacheGuard : private boost::noncopyable
 {
     struct Lock : public std::unique_lock<std::mutex>
     {
@@ -62,7 +62,7 @@ struct CacheGuard
 /**
  * Guard for cache metadata.
  */
-struct CacheMetadataGuard
+struct CacheMetadataGuard : private boost::noncopyable
 {
     struct Lock : public std::unique_lock<std::mutex>
     {
@@ -77,7 +77,7 @@ struct CacheMetadataGuard
  * Guard for a set of keys.
  * One guard per key prefix (first three digits of the path hash).
  */
-struct KeyGuard
+struct KeyGuard : private boost::noncopyable
 {
     struct Lock : public std::unique_lock<std::mutex>
     {
@@ -92,7 +92,7 @@ using KeyGuardPtr = std::shared_ptr<KeyGuard>;
 /**
  * Guard for a file segment.
  */
-struct FileSegmentGuard
+struct FileSegmentGuard : private boost::noncopyable
 {
     struct Lock : public std::unique_lock<std::mutex>
     {
