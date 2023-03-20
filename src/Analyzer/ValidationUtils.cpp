@@ -56,7 +56,7 @@ public:
                 }
 
                 if (!found_argument_in_group_by_keys)
-                    throw Exception(ErrorCodes::NOT_AN_AGGREGATE,
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "GROUPING function argument {} is not in GROUP BY keys. In query {}",
                         grouping_function_arguments_node->formatASTForErrorMessage(),
                         query_node->formatASTForErrorMessage());

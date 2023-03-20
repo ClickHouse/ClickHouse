@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Common/ThreadFuzzer.h>
 #include <Interpreters/Context.h>
 
 
@@ -263,6 +264,8 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPartAndFetchIfPossible(
             }
         }
 
+        ThreadFuzzer::maybeInjectSleep();
+
         if (storage.createEmptyPartInsteadOfLost(zookeeper, part_name))
         {
             /** This situation is possible if on all the replicas where the part was, it deteriorated.
@@ -383,6 +386,9 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
                 /// Delete part locally.
                 storage.outdateBrokenPartAndCloneToDetached(part, "broken");
 
+                ThreadFuzzer::maybeInjectMemoryLimitException();
+                ThreadFuzzer::maybeInjectSleep();
+
                 /// Part is broken, let's try to find it and fetch.
                 searchForMissingPartAndFetchIfPossible(part_name, exists_in_zookeeper);
 
@@ -399,6 +405,7 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
             String message = fmt::format(fmt_string, part_name);
             LOG_ERROR(log, fmt_string, part_name);
             storage.outdateBrokenPartAndCloneToDetached(part, "unexpected");
+            ThreadFuzzer::maybeInjectSleep();
             return {part_name, false, message};
         }
         else
