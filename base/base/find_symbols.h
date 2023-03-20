@@ -38,6 +38,19 @@ namespace detail
 {
 template <char ...chars> constexpr bool is_in(char x) { return ((x == chars) || ...); }
 
+static bool is_in(char c, const char * symbols, size_t num_chars)
+{
+    for (auto i = 0u; i < num_chars; i++)
+    {
+        if (c == symbols[i])
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 #if defined(__SSE2__)
 template <char s0>
 inline __m128i mm_is_in(__m128i bytes)
@@ -194,6 +207,46 @@ inline const char * find_first_symbols_dispatch(const char * begin, const char *
         return find_first_symbols_sse2<positive, return_mode, symbols...>(begin, end);
 }
 
+template <bool positive, ReturnMode return_mode>
+inline const char * find_first_symbols_sse42(const char * const begin, const char * const end, const char * symbols, size_t num_chars)
+{
+    const char * pos = begin;
+
+#if defined(__SSE4_2__)
+    constexpr int mode = _SIDD_UBYTE_OPS | _SIDD_CMP_EQUAL_ANY | _SIDD_LEAST_SIGNIFICANT;
+
+    const __m128i set = _mm_loadu_si128(reinterpret_cast<const __m128i *>(symbols));
+
+    for (; pos + 15 < end; pos += 16)
+    {
+        __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos));
+
+        if constexpr (positive)
+        {
+            if (_mm_cmpestrc(set, num_chars, bytes, 16, mode))
+                return pos + _mm_cmpestri(set, num_chars, bytes, 16, mode);
+        }
+        else
+        {
+            if (_mm_cmpestrc(set, num_chars, bytes, 16, mode | _SIDD_NEGATIVE_POLARITY))
+                return pos + _mm_cmpestri(set, num_chars, bytes, 16, mode | _SIDD_NEGATIVE_POLARITY);
+        }
+    }
+#endif
+
+    for (; pos < end; ++pos)
+        if (maybe_negate<positive>(is_in(*pos, symbols, num_chars)))
+            return pos;
+
+    return return_mode == ReturnMode::End ? end : nullptr;
+}
+
+template <bool positive, ReturnMode return_mode>
+auto find_first_symbols_sse42(std::string_view haystack, std::string_view symbols)
+{
+    return find_first_symbols_sse42<positive, return_mode>(haystack.begin(), haystack.end(), symbols.begin(), symbols.size());
+}
+
 }
 
 
@@ -211,6 +264,11 @@ inline char * find_first_symbols(char * begin, char * end)
     return const_cast<char *>(detail::find_first_symbols_dispatch<true, detail::ReturnMode::End, symbols...>(begin, end));
 }
 
+inline const char * find_first_symbols(std::string_view haystack, std::string_view symbols)
+{
+    return detail::find_first_symbols_sse42<true, detail::ReturnMode::End>(haystack, symbols);
+}
+
 template <char... symbols>
 inline const char * find_first_not_symbols(const char * begin, const char * end)
 {
@@ -221,6 +279,11 @@ template <char... symbols>
 inline char * find_first_not_symbols(char * begin, char * end)
 {
     return const_cast<char *>(detail::find_first_symbols_dispatch<false, detail::ReturnMode::End, symbols...>(begin, end));
+}
+
+inline const char * find_first_not_symbols(std::string_view haystack, std::string_view symbols)
+{
+    return detail::find_first_symbols_sse42<false, detail::ReturnMode::End>(haystack, symbols);
 }
 
 template <char... symbols>
@@ -235,6 +298,11 @@ inline char * find_first_symbols_or_null(char * begin, char * end)
     return const_cast<char *>(detail::find_first_symbols_dispatch<true, detail::ReturnMode::Nullptr, symbols...>(begin, end));
 }
 
+inline const char * find_first_symbols_or_null(std::string_view haystack, std::string_view symbols)
+{
+    return detail::find_first_symbols_sse42<true, detail::ReturnMode::Nullptr>(haystack, symbols);
+}
+
 template <char... symbols>
 inline const char * find_first_not_symbols_or_null(const char * begin, const char * end)
 {
@@ -247,6 +315,10 @@ inline char * find_first_not_symbols_or_null(char * begin, char * end)
     return const_cast<char *>(detail::find_first_symbols_dispatch<false, detail::ReturnMode::Nullptr, symbols...>(begin, end));
 }
 
+inline const char * find_first_not_symbols_or_null(std::string_view haystack, std::string_view symbols)
+{
+    return detail::find_first_symbols_sse42<false, detail::ReturnMode::Nullptr>(haystack, symbols);
+}
 
 template <char... symbols>
 inline const char * find_last_symbols_or_null(const char * begin, const char * end)
