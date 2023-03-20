@@ -18,6 +18,7 @@ private:
     std::vector<size_t> hash_columns;
     bool has_output = false;
     std::list<Chunk> output_chunks;
+    std::vector<std::list<Chunk>> pending_output_chunks;
     bool has_input = false;
     Chunk input_chunk;
 };

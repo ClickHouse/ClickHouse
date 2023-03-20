@@ -8,10 +8,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 static InputPorts buildGatherInputports(size_t num_streams, const Block & header)
 {
     InputPorts ports;
@@ -40,18 +36,41 @@ InnerShuffleScatterTransform::InnerShuffleScatterTransform(size_t num_streams_, 
     , header(header_)
     , hash_columns(hash_columns_)
 {
+    for (size_t i = 0; i < num_streams; ++i)
+    {
+        pending_output_chunks.emplace_back(std::list<Chunk>());
+    }
 }
 
 IProcessor::Status InnerShuffleScatterTransform::prepare()
 {
     bool all_output_finished = true;
-    for (auto & output : outputs)
+    bool has_port_full = false;
+    auto outport_it = outputs.begin();
+    auto outchunk_it = pending_output_chunks.begin();
+    for (; outchunk_it != pending_output_chunks.end();)
     {
-        if (!output.isFinished())
+        auto & outport = *outport_it;
+        auto & part_chunks = *outchunk_it;
+        if (outport.isFinished())
+        {
+            part_chunks.clear();
+        }
+        else
         {
             all_output_finished = false;
-            break;
+            if (!part_chunks.empty())
+            {
+               has_port_full = true;
+               if (outport.canPush())
+               {
+                    outport.push(std::move(part_chunks.front()));
+                    part_chunks.pop_front();
+               }
+            }
         }
+        outport_it++;
+        outchunk_it++;
     }
     if (all_output_finished)
     {
@@ -59,38 +78,33 @@ IProcessor::Status InnerShuffleScatterTransform::prepare()
             input.close();
         return Status::Finished;
     }
-
-    for (auto & output : outputs)
+    if (has_port_full)
     {
-        if (!output.canPush())
-        {
-            return Status::PortFull;
-        }
-    }
-
-    if (has_output)
-    {
-        auto output_it = outputs.begin();
-        auto chunk_it = output_chunks.begin();
-        for (; output_it != outputs.end(); ++output_it)
-        {
-            if (output_it->isFinished())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Output port is finished, cannot push new chunks into it");
-            output_it->push(std::move(*chunk_it));
-
-            chunk_it++;
-        }
-        output_chunks.clear();
-        has_output = false;
         return Status::PortFull;
     }
 
     if (has_input)
+    {
         return Status::Ready;
+    }
 
     auto & input = inputs.front();
     if (input.isFinished())
     {
+        bool has_pending_chunks = false;
+        for (const auto & chunks : pending_output_chunks)
+        {
+            if (!chunks.empty())
+            {
+                has_pending_chunks = true;
+                break;
+            }
+        }
+        if (has_pending_chunks)
+        {
+            return Status::Ready;
+        }
+
         for (auto & output : outputs)
         {
             output.finish();
@@ -143,9 +157,9 @@ void InnerShuffleScatterTransform::work()
             result_blocks[block_index].getByPosition(i).column = std::move(shuffled_columms[block_index]);
         }
     }
-    for (auto & result_block : result_blocks)
+    for (size_t i = 0; i < result_blocks.size(); ++i)
     {
-        output_chunks.emplace_back(Chunk(result_block.getColumns(), result_block.rows()));
+        pending_output_chunks[i].emplace_back(result_blocks[i].getColumns(), result_blocks[i].rows());
     }
 
     has_output = true;
@@ -207,14 +221,13 @@ IProcessor::Status InnerShuffleGatherTransform::prepare()
         {
             continue;
         }
-        input_chunks.emplace_back(input->pull(false));
+        input_chunks.emplace_back(input->pull(true));
         pending_rows += input_chunks.back().getNumRows();
-    }
-
-    if (pending_rows >= DEFAULT_BLOCK_SIZE)
-    {
         has_input = true;
     }
+
+    if (has_input)
+        return Status::Ready;
 
     if (all_inputs_closed) [[unlikely]]
     {
@@ -246,8 +259,11 @@ void InnerShuffleGatherTransform::work()
     if (has_input)
     {
         has_input = false;
-        output_chunk = generateOneChunk();
-        has_output = true;
+        if (pending_rows >= DEFAULT_BLOCK_SIZE || running_inputs.empty())
+        {
+            output_chunk = generateOneChunk();
+            has_output = true;
+        }
     }
 }
 
@@ -265,7 +281,8 @@ Chunk InnerShuffleGatherTransform::generateOneChunk()
         auto rows = input_chunks.front().getNumRows();
         for (size_t i = 0, n = mutable_cols.size(); i < n; ++i)
         {
-            mutable_cols[i]->insertRangeFrom(*cols[i], 0, rows);
+            auto src_col = recursiveRemoveSparse(cols[i]);
+            mutable_cols[i]->insertRangeFrom(*src_col, 0, rows);
         }
         input_chunks.pop_front();
     }

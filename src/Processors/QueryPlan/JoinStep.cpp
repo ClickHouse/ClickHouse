@@ -42,7 +42,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     }
 
     bool could_run_partition_join
-        = join->supportShuffle() && !pipelines[0]->hasTotals() && !pipelines[1]->hasTotals() && !keep_left_read_in_order;
+        = join->supportShuffle() && !pipelines[0]->hasTotals() && !pipelines[1]->hasTotals() && !keep_left_read_in_order && max_streams > 1;
     if (could_run_partition_join)
     {
         return QueryPipelineBuilder::joinPipelinesRightLeftByShuffle(
