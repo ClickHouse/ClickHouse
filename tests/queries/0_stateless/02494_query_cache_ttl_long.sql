@@ -1,7 +1,8 @@
--- Tags: no-fasttest, no-parallel, long
+-- Tags: no-fasttest, no-parallel, long, no-random-settings
 -- Tag no-fasttest: Test runtime is > 6 sec
 -- Tag long: Test runtime is > 6 sec
 -- Tag no-parallel: Messes with internal cache
+-- Tag no-random-settings: Assumes default settings for the query cache.
 
 SET allow_experimental_query_cache = true;
 
