@@ -491,16 +491,6 @@ class FailureReason(enum.Enum):
     INTERNAL_ERROR = "Test internal error: "
 
 
-def default_generator_for_bytes_setting():
-    return (
-        lambda: 0
-        if random.random() < 0.5
-        else 1
-        if random.random() < 0.2
-        else random.randint(1, 10 * 1024 * 1024 * 1024)
-    )
-
-
 def threshold_generator(always_on_prob, always_off_prob, min_val, max_val):
     def gen():
         tmp = random.random()
