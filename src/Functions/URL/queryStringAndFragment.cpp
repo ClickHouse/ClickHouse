@@ -8,7 +8,7 @@ namespace DB
 struct NameQueryStringAndFragment { static constexpr auto name = "queryStringAndFragment"; };
 using FunctionQueryStringAndFragment = FunctionStringToString<ExtractSubstringImpl<ExtractQueryStringAndFragment<true>>, NameQueryStringAndFragment>;
 
-REGISTER_FUNCTION(QueryStringAndFragment)
+void registerFunctionQueryStringAndFragment(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionQueryStringAndFragment>();
 }

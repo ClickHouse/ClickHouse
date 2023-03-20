@@ -1,6 +1,3 @@
----
-slug: /ru/operations/system-tables/distribution_queue
----
 # system.distribution_queue {#system_tables-distribution_queue}
 
 Содержит информацию о локальных файлах, которые находятся в очереди для отправки на шарды. Эти локальные файлы содержат новые куски, которые создаются путем вставки новых данных в Distributed таблицу в асинхронном режиме.
@@ -45,3 +42,4 @@ last_exception:
 **Смотрите также**
 
 -   [Движок таблиц Distributed](../../engines/table-engines/special/distributed.md)
+

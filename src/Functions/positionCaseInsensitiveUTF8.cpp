@@ -18,7 +18,7 @@ using FunctionPositionCaseInsensitiveUTF8
 
 }
 
-REGISTER_FUNCTION(PositionCaseInsensitiveUTF8)
+void registerFunctionPositionCaseInsensitiveUTF8(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionPositionCaseInsensitiveUTF8>();
 }

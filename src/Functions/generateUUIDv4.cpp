@@ -5,11 +5,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-}
-
 #define DECLARE_SEVERAL_IMPLEMENTATIONS(...) \
 DECLARE_DEFAULT_CODE      (__VA_ARGS__) \
 DECLARE_AVX2_SPECIFIC_CODE(__VA_ARGS__)
@@ -28,18 +23,10 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    bool isDeterministicInScopeOfQuery() const override { return false; }
-    bool useDefaultImplementationForNulls() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    bool isVariadic() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
-        if (arguments.size() > 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 0 or 1.",
-                getName(), arguments.size());
-
         return std::make_shared<DataTypeUUID>();
     }
 
@@ -100,7 +87,7 @@ private:
     ImplementationSelector<IFunction> selector;
 };
 
-REGISTER_FUNCTION(GenerateUUIDv4)
+void registerFunctionGenerateUUIDv4(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionGenerateUUIDv4>();
 }

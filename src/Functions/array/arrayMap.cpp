@@ -34,7 +34,7 @@ struct ArrayMapImpl
 struct NameArrayMap { static constexpr auto name = "arrayMap"; };
 using FunctionArrayMap = FunctionArrayMapped<ArrayMapImpl, NameArrayMap>;
 
-REGISTER_FUNCTION(ArrayMap)
+void registerFunctionArrayMap(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArrayMap>();
 }

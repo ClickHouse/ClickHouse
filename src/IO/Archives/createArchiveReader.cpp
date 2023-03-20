@@ -26,9 +26,9 @@ std::shared_ptr<IArchiveReader> createArchiveReader(
     if (path_to_archive.ends_with(".zip") || path_to_archive.ends_with(".zipx"))
     {
 #if USE_MINIZIP
-        return std::make_shared<ZipArchiveReader>(path_to_archive, archive_read_function, archive_size);
+        return ZipArchiveReader::create(path_to_archive, archive_read_function, archive_size);
 #else
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "minizip library is disabled");
+        throw Exception("minizip library is disabled", ErrorCodes::SUPPORT_IS_DISABLED);
 #endif
     }
     else

@@ -79,24 +79,24 @@ TEST(MemoryResizeTest, SmallInitAndSmallResize)
 
         memory.resize(1);
         ASSERT_TRUE(memory.m_data);
-        ASSERT_EQ(memory.m_capacity, PADDING_FOR_SIMD);
+        ASSERT_EQ(memory.m_capacity, 16);
         ASSERT_EQ(memory.m_size, 1);
     }
 
     {
         auto memory = Memory<DummyAllocator>(1);
         ASSERT_TRUE(memory.m_data);
-        ASSERT_EQ(memory.m_capacity, PADDING_FOR_SIMD);
+        ASSERT_EQ(memory.m_capacity, 16);
         ASSERT_EQ(memory.m_size, 1);
 
         memory.resize(0);
         ASSERT_TRUE(memory.m_data);
-        ASSERT_EQ(memory.m_capacity, PADDING_FOR_SIMD);
+        ASSERT_EQ(memory.m_capacity, 16);
         ASSERT_EQ(memory.m_size, 0);
 
         memory.resize(1);
         ASSERT_TRUE(memory.m_data);
-        ASSERT_EQ(memory.m_capacity, PADDING_FOR_SIMD);
+        ASSERT_EQ(memory.m_capacity, 16);
         ASSERT_EQ(memory.m_size, 1);
     }
 }
@@ -116,52 +116,52 @@ TEST(MemoryResizeTest, SmallInitAndBigResizeOverflowWhenPadding)
 
         memory.resize(1);
         ASSERT_TRUE(memory.m_data);
-        ASSERT_EQ(memory.m_capacity, PADDING_FOR_SIMD);
+        ASSERT_EQ(memory.m_capacity, 16);
         ASSERT_EQ(memory.m_size, 1);
 
         memory.resize(2);
         ASSERT_TRUE(memory.m_data);
-        ASSERT_EQ(memory.m_capacity, PADDING_FOR_SIMD + 1);
+        ASSERT_EQ(memory.m_capacity, 17);
         ASSERT_EQ(memory.m_size, 2);
 
         EXPECT_THROW_ERROR_CODE(memory.resize(std::numeric_limits<size_t>::max()), Exception, ErrorCodes::ARGUMENT_OUT_OF_BOUND);
         ASSERT_TRUE(memory.m_data); // state is intact after exception
-        ASSERT_EQ(memory.m_capacity, PADDING_FOR_SIMD + 1);
+        ASSERT_EQ(memory.m_capacity, 17);
         ASSERT_EQ(memory.m_size, 2);
 
-        memory.resize(0x8000000000000000ULL - PADDING_FOR_SIMD);
+        memory.resize(0x8000000000000000ULL-16);
         ASSERT_TRUE(memory.m_data);
         ASSERT_EQ(memory.m_capacity, 0x8000000000000000ULL - 1);
-        ASSERT_EQ(memory.m_size, 0x8000000000000000ULL - PADDING_FOR_SIMD);
+        ASSERT_EQ(memory.m_size, 0x8000000000000000ULL - 16);
 
 #ifndef ABORT_ON_LOGICAL_ERROR
-        EXPECT_THROW_ERROR_CODE(memory.resize(0x8000000000000000ULL - (PADDING_FOR_SIMD - 1)), Exception, ErrorCodes::LOGICAL_ERROR);
+        EXPECT_THROW_ERROR_CODE(memory.resize(0x8000000000000000ULL-15), Exception, ErrorCodes::LOGICAL_ERROR);
         ASSERT_TRUE(memory.m_data);  // state is intact after exception
         ASSERT_EQ(memory.m_capacity, 0x8000000000000000ULL - 1);
-        ASSERT_EQ(memory.m_size, 0x8000000000000000ULL - PADDING_FOR_SIMD);
+        ASSERT_EQ(memory.m_size, 0x8000000000000000ULL - 16);
 #endif
     }
 
     {
         auto memory = Memory<DummyAllocator>(1);
         ASSERT_TRUE(memory.m_data);
-        ASSERT_EQ(memory.m_capacity, PADDING_FOR_SIMD);
+        ASSERT_EQ(memory.m_capacity, 16);
         ASSERT_EQ(memory.m_size, 1);
 
         EXPECT_THROW_ERROR_CODE(memory.resize(std::numeric_limits<size_t>::max()), Exception, ErrorCodes::ARGUMENT_OUT_OF_BOUND);
         ASSERT_TRUE(memory.m_data); // state is intact after exception
-        ASSERT_EQ(memory.m_capacity, PADDING_FOR_SIMD);
+        ASSERT_EQ(memory.m_capacity, 16);
         ASSERT_EQ(memory.m_size, 1);
 
         memory.resize(1);
         ASSERT_TRUE(memory.m_data);
-        ASSERT_EQ(memory.m_capacity, PADDING_FOR_SIMD);
+        ASSERT_EQ(memory.m_capacity, 16);
         ASSERT_EQ(memory.m_size, 1);
 
 #ifndef ABORT_ON_LOGICAL_ERROR
-        EXPECT_THROW_ERROR_CODE(memory.resize(0x8000000000000000ULL - (PADDING_FOR_SIMD - 1)), Exception, ErrorCodes::LOGICAL_ERROR);
+        EXPECT_THROW_ERROR_CODE(memory.resize(0x8000000000000000ULL-15), Exception, ErrorCodes::LOGICAL_ERROR);
         ASSERT_TRUE(memory.m_data); // state is intact after exception
-        ASSERT_EQ(memory.m_capacity, PADDING_FOR_SIMD);
+        ASSERT_EQ(memory.m_capacity, 16);
         ASSERT_EQ(memory.m_size, 1);
 #endif
     }
@@ -201,7 +201,7 @@ TEST(MemoryResizeTest, BigInitAndSmallResizeOverflowWhenPadding)
     {
         EXPECT_THROW_ERROR_CODE(
         {
-            auto memory = Memory<DummyAllocator>(std::numeric_limits<size_t>::max() - (PADDING_FOR_SIMD - 1));
+            auto memory = Memory<DummyAllocator>(std::numeric_limits<size_t>::max() - 15);
         }
         , Exception
         , ErrorCodes::LOGICAL_ERROR);
@@ -210,7 +210,7 @@ TEST(MemoryResizeTest, BigInitAndSmallResizeOverflowWhenPadding)
     {
         EXPECT_THROW_ERROR_CODE(
         {
-            auto memory = Memory<DummyAllocator>(0x8000000000000000ULL - (PADDING_FOR_SIMD - 1));
+            auto memory = Memory<DummyAllocator>(0x8000000000000000ULL - 15);
         }
         , Exception
         , ErrorCodes::LOGICAL_ERROR);
@@ -218,10 +218,10 @@ TEST(MemoryResizeTest, BigInitAndSmallResizeOverflowWhenPadding)
 #endif
 
     {
-        auto memory = Memory<DummyAllocator>(0x8000000000000000ULL - PADDING_FOR_SIMD);
-        ASSERT_TRUE(memory.m_data);
-        ASSERT_EQ(memory.m_capacity, 0x8000000000000000ULL - 1);
-        ASSERT_EQ(memory.m_size, 0x8000000000000000ULL - PADDING_FOR_SIMD);
+       auto memory = Memory<DummyAllocator>(0x8000000000000000ULL - 16);
+       ASSERT_TRUE(memory.m_data);
+       ASSERT_EQ(memory.m_capacity, 0x8000000000000000ULL - 1);
+       ASSERT_EQ(memory.m_size, 0x8000000000000000ULL - 16);
 
         memory.resize(1);
         ASSERT_TRUE(memory.m_data);
@@ -240,32 +240,32 @@ TEST(MemoryResizeTest, AlignmentWithRealAllocator)
 
         memory.resize(1);
         ASSERT_TRUE(memory.m_data);
-        ASSERT_EQ(memory.m_capacity, PADDING_FOR_SIMD);
+        ASSERT_EQ(memory.m_capacity, 16);
         ASSERT_EQ(memory.m_size, 1);
 
         memory.resize(2);
         ASSERT_TRUE(memory.m_data);
-        ASSERT_EQ(memory.m_capacity, PADDING_FOR_SIMD + 1);
+        ASSERT_EQ(memory.m_capacity, 17);
         ASSERT_EQ(memory.m_size, 2);
 
         memory.resize(3);
         ASSERT_TRUE(memory.m_data);
-        ASSERT_EQ(memory.m_capacity, PADDING_FOR_SIMD + 2);
+        ASSERT_EQ(memory.m_capacity, 18);
         ASSERT_EQ(memory.m_size, 3);
 
         memory.resize(4);
         ASSERT_TRUE(memory.m_data);
-        ASSERT_EQ(memory.m_capacity, PADDING_FOR_SIMD + 3);
+        ASSERT_EQ(memory.m_capacity, 19);
         ASSERT_EQ(memory.m_size, 4);
 
         memory.resize(0);
         ASSERT_TRUE(memory.m_data);
-        ASSERT_EQ(memory.m_capacity, PADDING_FOR_SIMD + 3);
+        ASSERT_EQ(memory.m_capacity, 19);
         ASSERT_EQ(memory.m_size, 0);
 
         memory.resize(1);
         ASSERT_TRUE(memory.m_data);
-        ASSERT_EQ(memory.m_capacity, PADDING_FOR_SIMD + 3);
+        ASSERT_EQ(memory.m_capacity, 19);
         ASSERT_EQ(memory.m_size, 1);
     }
 
@@ -291,12 +291,12 @@ TEST(MemoryResizeTest, AlignmentWithRealAllocator)
 
         memory.resize(1);
         ASSERT_TRUE(memory.m_data);
-        ASSERT_EQ(memory.m_capacity, PADDING_FOR_SIMD);
+        ASSERT_EQ(memory.m_capacity, 16);
         ASSERT_EQ(memory.m_size, 1);
 
         memory.resize(32);
         ASSERT_TRUE(memory.m_data);
-        ASSERT_EQ(memory.m_capacity, PADDING_FOR_SIMD + 31);
+        ASSERT_EQ(memory.m_capacity, 47);
         ASSERT_EQ(memory.m_size, 32);
     }
 }
@@ -316,12 +316,13 @@ TEST(MemoryResizeTest, SomeAlignmentOverflowWhenAlignment)
 
         memory.resize(1);
         ASSERT_TRUE(memory.m_data);
-        ASSERT_EQ(memory.m_capacity, PADDING_FOR_SIMD);
+        ASSERT_EQ(memory.m_capacity, 16);
         ASSERT_EQ(memory.m_size, 1);
 
         EXPECT_THROW_ERROR_CODE(memory.resize(std::numeric_limits<size_t>::max()), Exception, ErrorCodes::ARGUMENT_OUT_OF_BOUND);
         ASSERT_TRUE(memory.m_data); // state is intact after exception
-        ASSERT_EQ(memory.m_capacity, PADDING_FOR_SIMD);
+        ASSERT_EQ(memory.m_capacity, 16);
         ASSERT_EQ(memory.m_size, 1);
     }
+
 }

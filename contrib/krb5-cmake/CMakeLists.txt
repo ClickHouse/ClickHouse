@@ -1,4 +1,4 @@
-set (ENABLE_KRB5_DEFAULT ${ENABLE_LIBRARIES})
+set (ENABLE_KRB5_DEFAULT 1)
 if (NOT CMAKE_SYSTEM_NAME MATCHES "Linux" AND NOT (CMAKE_SYSTEM_NAME MATCHES "Darwin" AND NOT CMAKE_CROSSCOMPILING))
     message (WARNING "krb5 disabled in non-Linux and non-native-Darwin environments")
     set (ENABLE_KRB5_DEFAULT 0)
@@ -15,12 +15,7 @@ if(NOT AWK_PROGRAM)
     message(FATAL_ERROR "You need the awk program to build ClickHouse with krb5 enabled.")
 endif()
 
-if (NOT (ENABLE_OPENSSL OR ENABLE_OPENSSL_DYNAMIC))
-    add_compile_definitions(USE_BORINGSSL=1)
-endif ()
-
 set(KRB5_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/krb5/src")
-set(KRB5_ET_BIN_DIR "${CMAKE_CURRENT_BINARY_DIR}/include_private")
 
 set(ALL_SRCS
     "${KRB5_SOURCE_DIR}/util/et/et_name.c"
@@ -95,6 +90,7 @@ set(ALL_SRCS
     "${KRB5_SOURCE_DIR}/lib/gssapi/krb5/get_tkt_flags.c"
     "${KRB5_SOURCE_DIR}/lib/gssapi/krb5/set_allowable_enctypes.c"
     "${KRB5_SOURCE_DIR}/lib/gssapi/krb5/k5sealiov.c"
+    "${KRB5_SOURCE_DIR}/lib/gssapi/krb5/gssapi_err_krb5.c"
     "${KRB5_SOURCE_DIR}/lib/gssapi/krb5/canon_name.c"
     "${KRB5_SOURCE_DIR}/lib/gssapi/krb5/inq_cred.c"
     "${KRB5_SOURCE_DIR}/lib/gssapi/krb5/export_sec_context.c"
@@ -147,12 +143,11 @@ set(ALL_SRCS
     "${KRB5_SOURCE_DIR}/lib/gssapi/generic/util_buffer_set.c"
     "${KRB5_SOURCE_DIR}/lib/gssapi/generic/util_set.c"
     "${KRB5_SOURCE_DIR}/lib/gssapi/generic/util_token.c"
+    "${KRB5_SOURCE_DIR}/lib/gssapi/generic/gssapi_err_generic.c"
     "${KRB5_SOURCE_DIR}/lib/gssapi/generic/disp_major_status.c"
     "${KRB5_SOURCE_DIR}/lib/gssapi/generic/util_seqstate.c"
     "${KRB5_SOURCE_DIR}/lib/gssapi/generic/util_errmap.c"
     "${KRB5_SOURCE_DIR}/lib/gssapi/generic/rel_buffer.c"
-    "${KRB5_ET_BIN_DIR}/lib/gssapi/krb5/gssapi_err_krb5.c"
-    "${KRB5_ET_BIN_DIR}/lib/gssapi/generic/gssapi_err_generic.c"
 
     "${KRB5_SOURCE_DIR}/lib/gssapi/spnego/spnego_mech.c"
     "${KRB5_SOURCE_DIR}/lib/gssapi/spnego/negoex_util.c"
@@ -160,8 +155,6 @@ set(ALL_SRCS
 
     # "${KRB5_SOURCE_DIR}/lib/gssapi/spnego/negoex_trace.c"
 
-    "${KRB5_SOURCE_DIR}/lib/crypto/builtin/kdf.c"
-    "${KRB5_SOURCE_DIR}/lib/crypto/builtin/cmac.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/prng.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/enc_dk_cmac.c"
     # "${KRB5_SOURCE_DIR}/lib/crypto/krb/crc32.c"
@@ -185,6 +178,7 @@ set(ALL_SRCS
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/block_size.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/string_to_key.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/verify_checksum.c"
+    "${KRB5_SOURCE_DIR}/lib/crypto/krb/crypto_libinit.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/derive.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/random_to_key.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/verify_checksum_iov.c"
@@ -218,7 +212,9 @@ set(ALL_SRCS
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/s2k_rc4.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/valid_cksumtype.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/nfold.c"
+    "${KRB5_SOURCE_DIR}/lib/crypto/krb/prng_fortuna.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/encrypt_length.c"
+    "${KRB5_SOURCE_DIR}/lib/crypto/krb/cmac.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/keyblocks.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/prf_rc4.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/s2k_pbkdf2.c"
@@ -227,11 +223,11 @@ set(ALL_SRCS
     "${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/rc4.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/des3.c"
     #"${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/camellia.c"
-    "${KRB5_SOURCE_DIR}/lib/crypto/openssl/cmac.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/openssl/sha256.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/openssl/hmac.c"
-    "${KRB5_SOURCE_DIR}/lib/crypto/openssl/kdf.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/openssl/pbkdf2.c"
+    "${KRB5_SOURCE_DIR}/lib/crypto/openssl/init.c"
+    "${KRB5_SOURCE_DIR}/lib/crypto/openssl/stubs.c"
     # "${KRB5_SOURCE_DIR}/lib/crypto/openssl/hash_provider/hash_crc32.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/openssl/hash_provider/hash_evp.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/openssl/des/des_keys.c"
@@ -260,8 +256,8 @@ set(ALL_SRCS
     "${KRB5_SOURCE_DIR}/util/profile/prof_parse.c"
     "${KRB5_SOURCE_DIR}/util/profile/prof_get.c"
     "${KRB5_SOURCE_DIR}/util/profile/prof_set.c"
+    "${KRB5_SOURCE_DIR}/util/profile/prof_err.c"
     "${KRB5_SOURCE_DIR}/util/profile/prof_init.c"
-    "${KRB5_ET_BIN_DIR}/util/profile/prof_err.c"
     "${KRB5_SOURCE_DIR}/lib/krb5/krb/fwd_tgt.c"
     "${KRB5_SOURCE_DIR}/lib/krb5/krb/conv_creds.c"
     "${KRB5_SOURCE_DIR}/lib/krb5/krb/fast.c"
@@ -311,6 +307,7 @@ set(ALL_SRCS
     "${KRB5_SOURCE_DIR}/lib/krb5/krb/allow_weak.c"
     "${KRB5_SOURCE_DIR}/lib/krb5/krb/mk_rep.c"
     "${KRB5_SOURCE_DIR}/lib/krb5/krb/mk_priv.c"
+    "${KRB5_SOURCE_DIR}/lib/krb5/krb/s4u_authdata.c"
     "${KRB5_SOURCE_DIR}/lib/krb5/krb/preauth_otp.c"
     "${KRB5_SOURCE_DIR}/lib/krb5/krb/init_keyblock.c"
     "${KRB5_SOURCE_DIR}/lib/krb5/krb/ser_addr.c"
@@ -453,12 +450,13 @@ set(ALL_SRCS
 
 
 
-    "${KRB5_ET_BIN_DIR}/lib/krb5/error_tables/k5e1_err.c"
-    "${KRB5_ET_BIN_DIR}/lib/krb5/error_tables/kdb5_err.c"
-    "${KRB5_ET_BIN_DIR}/lib/krb5/error_tables/asn1_err.c"
-    "${KRB5_ET_BIN_DIR}/lib/krb5/error_tables/krb5_err.c"
-    "${KRB5_ET_BIN_DIR}/lib/krb5/error_tables/krb524_err.c"
-    "${KRB5_ET_BIN_DIR}/lib/krb5/error_tables/kv5m_err.c"
+    "${KRB5_SOURCE_DIR}/lib/krb5/error_tables/k5e1_err.c"
+    "${KRB5_SOURCE_DIR}/lib/krb5/error_tables/kdb5_err.c"
+    "${KRB5_SOURCE_DIR}/lib/krb5/error_tables/asn1_err.c"
+    "${KRB5_SOURCE_DIR}/lib/krb5/error_tables/krb5_err.c"
+    "${KRB5_SOURCE_DIR}/lib/krb5/error_tables/krb524_err.c"
+    "${KRB5_SOURCE_DIR}/lib/krb5/error_tables/kv5m_err.c"
+
 
 
     "${KRB5_SOURCE_DIR}/lib/krb5/rcache/rc_base.c"
@@ -475,7 +473,7 @@ set(ALL_SRCS
 )
 
 add_custom_command(
-    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/compile_et"
+    OUTPUT "${KRB5_SOURCE_DIR}/util/et/compile_et"
     COMMAND /bin/sh
     ./config_script
     ./compile_et.sh
@@ -483,17 +481,50 @@ add_custom_command(
     ${AWK_PROGRAM}
     sed
     >
-    ${CMAKE_CURRENT_BINARY_DIR}/compile_et
+    compile_et
     DEPENDS "${KRB5_SOURCE_DIR}/util/et/compile_et.sh" "${KRB5_SOURCE_DIR}/util/et/config_script"
     WORKING_DIRECTORY "${KRB5_SOURCE_DIR}/util/et"
 )
 
+file(GLOB_RECURSE ET_FILES
+    "${KRB5_SOURCE_DIR}/*.et"
+)
+
+function(preprocess_et out_var)
+  set(result)
+  foreach(in_f ${ARGN})
+    string(REPLACE
+        .et
+        .c
+        F_C
+        ${in_f}
+    )
+    string(REPLACE
+        .et
+        .h
+        F_H
+        ${in_f}
+    )
+
+    get_filename_component(ET_PATH ${in_f} DIRECTORY)
+
+    add_custom_command(OUTPUT ${F_C} ${F_H}
+      COMMAND perl "${KRB5_SOURCE_DIR}/util/et/compile_et" -d "${KRB5_SOURCE_DIR}/util/et" ${in_f}
+      DEPENDS ${in_f} "${KRB5_SOURCE_DIR}/util/et/compile_et"
+      WORKING_DIRECTORY ${ET_PATH}
+      VERBATIM
+      )
+    list(APPEND result ${F_C})
+  endforeach()
+  set(${out_var} "${result}" PARENT_SCOPE)
+endfunction()
+
 add_custom_command(
-    OUTPUT "${KRB5_ET_BIN_DIR}/error_map.h"
+    OUTPUT "${KRB5_SOURCE_DIR}/lib/gssapi/krb5/error_map.h"
     COMMAND perl
     -I../../../util
     ../../../util/gen-map.pl
-    -o${KRB5_ET_BIN_DIR}/error_map.h
+    -oerror_map.h
     NAME=gsserrmap
     KEY=OM_uint32
     VALUE=char*
@@ -505,21 +536,22 @@ add_custom_command(
 
 add_custom_target(
     ERROR_MAP_H
-    DEPENDS "${KRB5_ET_BIN_DIR}/error_map.h"
+    DEPENDS "${KRB5_SOURCE_DIR}/lib/gssapi/krb5/error_map.h"
     VERBATIM
 )
 
 add_custom_command(
-    OUTPUT "${KRB5_ET_BIN_DIR}/errmap.h"
-    COMMAND perl -w -I../../../util  ../../../util/gen.pl bimap ${KRB5_ET_BIN_DIR}/errmap.h NAME=mecherrmap LEFT=OM_uint32 RIGHT=struct\ mecherror LEFTPRINT=print_OM_uint32 RIGHTPRINT=mecherror_print LEFTCMP=cmp_OM_uint32 RIGHTCMP=mecherror_cmp
+    OUTPUT "${KRB5_SOURCE_DIR}/lib/gssapi/generic/errmap.h"
+    COMMAND perl -w -I../../../util  ../../../util/gen.pl bimap errmap.h NAME=mecherrmap LEFT=OM_uint32 RIGHT=struct\ mecherror LEFTPRINT=print_OM_uint32 RIGHTPRINT=mecherror_print LEFTCMP=cmp_OM_uint32 RIGHTCMP=mecherror_cmp
     WORKING_DIRECTORY "${KRB5_SOURCE_DIR}/lib/gssapi/generic"
 )
 
 add_custom_target(
     ERRMAP_H
-    DEPENDS "${KRB5_ET_BIN_DIR}/errmap.h"
+    DEPENDS "${KRB5_SOURCE_DIR}/lib/gssapi/generic/errmap.h"
     VERBATIM
 )
+
 add_custom_target(
     KRB_5_H
     DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/include/krb5/krb5.h"
@@ -535,40 +567,7 @@ add_dependencies(
     KRB_5_H
 )
 
-#
-# Generate error tables
-#
-function(preprocess_et et_path)
-    string(REPLACE .et .c F_C ${et_path})
-    string(REPLACE .et .h F_H ${et_path})
-    get_filename_component(et_dir ${et_path} DIRECTORY)
-    get_filename_component(et_name ${et_path} NAME_WLE)
-
-    add_custom_command(OUTPUT ${F_C} ${F_H} ${KRB5_ET_BIN_DIR}/${et_name}.h
-        COMMAND perl "${CMAKE_CURRENT_BINARY_DIR}/compile_et" -d "${KRB5_SOURCE_DIR}/util/et" ${et_path}
-        # for #include w/o path (via -iquote)
-        COMMAND ${CMAKE_COMMAND} -E create_symlink ${F_H} ${KRB5_ET_BIN_DIR}/${et_name}.h
-        DEPENDS ${et_path} "${CMAKE_CURRENT_BINARY_DIR}/compile_et"
-        WORKING_DIRECTORY ${et_dir}
-        VERBATIM
-    )
-endfunction()
-
-function(generate_error_tables)
-    file(GLOB_RECURSE ET_FILES "${KRB5_SOURCE_DIR}/*.et")
-    foreach(et_path ${ET_FILES})
-        string(REPLACE ${KRB5_SOURCE_DIR} ${KRB5_ET_BIN_DIR} et_bin_path ${et_path})
-        string(REPLACE / _ et_target_name ${et_path})
-        get_filename_component(et_bin_dir ${et_bin_path} DIRECTORY)
-        add_custom_command(OUTPUT ${et_bin_path}
-            COMMAND ${CMAKE_COMMAND} -E make_directory ${et_bin_dir}
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${et_path} ${et_bin_path}
-            VERBATIM
-        )
-        preprocess_et(${et_bin_path})
-    endforeach()
-endfunction()
-generate_error_tables()
+preprocess_et(processed_et_files ${ET_FILES})
 
 if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
     add_custom_command(
@@ -635,12 +634,12 @@ file(MAKE_DIRECTORY
 
 SET(KRBHDEP
     "${KRB5_SOURCE_DIR}/include/krb5/krb5.hin"
-    "${KRB5_ET_BIN_DIR}/lib/krb5/error_tables/krb5_err.h"
-    "${KRB5_ET_BIN_DIR}/lib/krb5/error_tables/k5e1_err.h"
-    "${KRB5_ET_BIN_DIR}/lib/krb5/error_tables/kdb5_err.h"
-    "${KRB5_ET_BIN_DIR}/lib/krb5/error_tables/kv5m_err.h"
-    "${KRB5_ET_BIN_DIR}/lib/krb5/error_tables/krb524_err.h"
-    "${KRB5_ET_BIN_DIR}/lib/krb5/error_tables/asn1_err.h"
+    "${KRB5_SOURCE_DIR}/lib/krb5/error_tables/krb5_err.h"
+    "${KRB5_SOURCE_DIR}/lib/krb5/error_tables/k5e1_err.h"
+    "${KRB5_SOURCE_DIR}/lib/krb5/error_tables/kdb5_err.h"
+    "${KRB5_SOURCE_DIR}/lib/krb5/error_tables/kv5m_err.h"
+    "${KRB5_SOURCE_DIR}/lib/krb5/error_tables/krb524_err.h"
+    "${KRB5_SOURCE_DIR}/lib/krb5/error_tables/asn1_err.h"
 )
 
 # cmake < 3.18 does not have 'cat' command
@@ -655,11 +654,6 @@ add_custom_command(
 target_include_directories(_krb5 SYSTEM BEFORE PUBLIC
     "${KRB5_SOURCE_DIR}/include"
     "${CMAKE_CURRENT_BINARY_DIR}/include"
-)
-
-target_compile_options(_krb5 PRIVATE
-    # For '#include "file.h"'
-    -iquote "${CMAKE_CURRENT_BINARY_DIR}/include_private"
 )
 
 target_include_directories(_krb5 PRIVATE
@@ -686,7 +680,6 @@ target_include_directories(_krb5 PRIVATE
 
 target_compile_definitions(_krb5 PRIVATE
     KRB5_PRIVATE
-    CRYPTO_OPENSSL
     _GSS_STATIC_LINK=1
     KRB5_DEPRECATED=1
     LOCALEDIR="/usr/local/share/locale"

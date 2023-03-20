@@ -1,13 +1,9 @@
 ---
-slug: /en/operations/optimizing-performance/sampling-query-profiler
-sidebar_position: 54
-sidebar_label: Query Profiling
+toc_priority: 54
+toc_title: Query Profiling
 ---
-import SelfManaged from '@site/docs/en/_snippets/_self_managed_only_no_roadmap.md';
 
-# Sampling Query Profiler
-
-<SelfManaged />
+# Sampling Query Profiler {#sampling-query-profiler}
 
 ClickHouse runs sampling profiler that allows analyzing query execution. Using profiler you can find source code routines that used the most frequently during query execution. You can trace CPU time and wall-clock time spent including idle time.
 
@@ -33,7 +29,7 @@ To analyze the `trace_log` system table:
 
 -   Use the `addressToLine`, `addressToLineWithInlines`, `addressToSymbol` and `demangle` [introspection functions](../../sql-reference/functions/introspection.md) to get function names and their positions in ClickHouse code. To get a profile for some query, you need to aggregate data from the `trace_log` table. You can aggregate data by individual functions or by the whole stack traces.
 
-If you need to visualize `trace_log` info, try [flamegraph](../../interfaces/third-party/gui.md#clickhouse-flamegraph-clickhouse-flamegraph) and [speedscope](https://github.com/laplab/clickhouse-speedscope).
+If you need to visualize `trace_log` info, try [flamegraph](../../interfaces/third-party/gui/#clickhouse-flamegraph) and [speedscope](https://github.com/laplab/clickhouse-speedscope).
 
 ## Example {#example}
 
@@ -59,4 +55,8 @@ WHERE (query_id = 'ebca3574-ad0a-400a-9cbc-dca382f5998c') AND (event_date = toda
 GROUP BY trace
 ORDER BY count() DESC
 LIMIT 10
+```
+
+``` text
+{% include "examples/sampling_query_profiler_result.txt" %}
 ```

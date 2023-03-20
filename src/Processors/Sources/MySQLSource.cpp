@@ -1,4 +1,4 @@
-#include "config.h"
+#include "config_core.h"
 
 #if USE_MYSQL
 #include <vector>
@@ -17,7 +17,7 @@
 #include <IO/Operators.h>
 #include <Common/assert_cast.h>
 #include <base/range.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Processors/Sources/MySQLSource.h>
 #include <boost/algorithm/string.hpp>
 
@@ -55,8 +55,8 @@ MySQLSource::MySQLSource(
     const std::string & query_str,
     const Block & sample_block,
     const StreamSettings & settings_)
-    : ISource(sample_block.cloneEmpty())
-    , log(&Poco::Logger::get("MySQLSource"))
+    : SourceWithProgress(sample_block.cloneEmpty())
+    , log(&Poco::Logger::get("MySQLBlockInputStream"))
     , connection{std::make_unique<Connection>(entry, query_str)}
     , settings{std::make_unique<StreamSettings>(settings_)}
 {
@@ -64,10 +64,10 @@ MySQLSource::MySQLSource(
     initPositionMappingFromQueryResultStructure();
 }
 
-/// For descendant MySQLWithFailoverSource
+/// For descendant MySQLWithFailoverBlockInputStream
 MySQLSource::MySQLSource(const Block &sample_block_, const StreamSettings & settings_)
-    : ISource(sample_block_.cloneEmpty())
-    , log(&Poco::Logger::get("MySQLSource"))
+    : SourceWithProgress(sample_block_.cloneEmpty())
+    , log(&Poco::Logger::get("MySQLBlockInputStream"))
     , settings(std::make_unique<StreamSettings>(settings_))
 {
     description.init(sample_block_);
@@ -141,7 +141,7 @@ namespace
                 read_bytes_size += 2;
                 break;
             case ValueType::vtUInt32:
-                assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(value.getUInt()));
+                assert_cast<ColumnUInt32 &>(column).insertValue(value.getUInt());
                 read_bytes_size += 4;
                 break;
             case ValueType::vtUInt64:
@@ -171,7 +171,7 @@ namespace
                 read_bytes_size += 2;
                 break;
             case ValueType::vtInt32:
-                assert_cast<ColumnInt32 &>(column).insertValue(static_cast<Int32>(value.getInt()));
+                assert_cast<ColumnInt32 &>(column).insertValue(value.getInt());
                 read_bytes_size += 4;
                 break;
             case ValueType::vtInt64:
@@ -184,12 +184,12 @@ namespace
                     std::vector<String> hhmmss;
                     boost::split(hhmmss, time_str, [](char c) { return c == ':'; });
                     Int64 v = 0;
-
                     if (hhmmss.size() == 3)
-                        v = static_cast<Int64>((std::stoi(hhmmss[0]) * 3600 + std::stoi(hhmmss[1]) * 60 + std::stold(hhmmss[2])) * 1000000);
+                    {
+                        v = (std::stoi(hhmmss[0]) * 3600 + std::stoi(hhmmss[1]) * 60 + std::stold(hhmmss[2])) * 1000000;
+                    }
                     else
-                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported value format");
-
+                        throw Exception("Unsupported value format", ErrorCodes::NOT_IMPLEMENTED);
                     if (negative) v = -v;
                     assert_cast<ColumnInt64 &>(column).insertValue(v);
                     read_bytes_size += value.size();
@@ -202,7 +202,7 @@ namespace
                 break;
             }
             case ValueType::vtFloat32:
-                assert_cast<ColumnFloat32 &>(column).insertValue(static_cast<Float32>(value.getDouble()));
+                assert_cast<ColumnFloat32 &>(column).insertValue(value.getDouble());
                 read_bytes_size += 4;
                 break;
             case ValueType::vtFloat64:
@@ -236,7 +236,7 @@ namespace
                 readDateTimeText(time, in, assert_cast<const DataTypeDateTime &>(data_type).getTimeZone());
                 if (time < 0)
                     time = 0;
-                assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(time));
+                assert_cast<ColumnUInt32 &>(column).insertValue(time);
                 read_bytes_size += 4;
                 break;
             }
@@ -260,7 +260,7 @@ namespace
                 read_bytes_size += column.sizeOfValueIfFixed();
                 break;
             default:
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported value type");
+                throw Exception("Unsupported value type", ErrorCodes::NOT_IMPLEMENTED);
         }
     }
 
@@ -337,11 +337,8 @@ void MySQLSource::initPositionMappingFromQueryResultStructure()
     if (!settings->fetch_by_name)
     {
         if (description.sample_block.columns() != connection->result.getNumFields())
-            throw Exception(
-                ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH,
-                "mysqlxx::UseQueryResult contains {} columns while {} expected",
-                connection->result.getNumFields(),
-                description.sample_block.columns());
+            throw Exception{"mysqlxx::UseQueryResult contains " + toString(connection->result.getNumFields()) + " columns while "
+                + toString(description.sample_block.columns()) + " expected", ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH};
 
         for (const auto idx : collections::range(0, connection->result.getNumFields()))
             position_mapping[idx] = idx;
@@ -365,10 +362,18 @@ void MySQLSource::initPositionMappingFromQueryResultStructure()
         }
 
         if (!missing_names.empty())
-            throw Exception(
-                ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH,
-                "mysqlxx::UseQueryResult must contain columns: {}",
-                fmt::join(missing_names, ", "));
+        {
+            WriteBufferFromOwnString exception_message;
+            for (auto iter = missing_names.begin(); iter != missing_names.end(); ++iter)
+            {
+                if (iter != missing_names.begin())
+                    exception_message << ", ";
+                exception_message << *iter;
+            }
+
+            throw Exception("mysqlxx::UseQueryResult must be contain the" + exception_message.str() + " columns.",
+                ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
+        }
     }
 }
 

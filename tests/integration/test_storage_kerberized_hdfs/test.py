@@ -113,7 +113,7 @@ def test_read_table_expired(started_cluster):
         )
         assert False, "Exception have to be thrown"
     except Exception as ex:
-        assert "DB::Exception: KerberosInit failure:" in str(ex)
+        assert "DB::Exception: kinit failure:" in str(ex)
 
     started_cluster.unpause_container("hdfskerberos")
 

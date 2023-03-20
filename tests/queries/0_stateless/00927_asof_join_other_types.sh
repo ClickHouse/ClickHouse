@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-for typename in "UInt32" "UInt64" "Float64" "Float32" "DateTime('Asia/Istanbul')" "Decimal32(5)" "Decimal64(5)" "Decimal128(5)" "DateTime64(3, 'Asia/Istanbul')"
+for typename in "UInt32" "UInt64" "Float64" "Float32" "DateTime('Europe/Moscow')" "Decimal32(5)" "Decimal64(5)" "Decimal128(5)" "DateTime64(3, 'Europe/Moscow')"
 do
     $CLICKHOUSE_CLIENT -mn <<EOF
 DROP TABLE IF EXISTS A;

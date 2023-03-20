@@ -6,7 +6,6 @@
 -- Refer: tests/integration/test_asynchronous_metric_log_table.
 
 SET log_queries = 1;
-SET log_query_threads = 1;
 SET query_profiler_real_time_period_ns = 100000000;
 -- a long enough query to trigger the query profiler and to record trace log
 SELECT sleep(2) FORMAT Null;

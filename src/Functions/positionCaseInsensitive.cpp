@@ -17,9 +17,8 @@ using FunctionPositionCaseInsensitive = FunctionsStringSearch<PositionImpl<NameP
 
 }
 
-REGISTER_FUNCTION(PositionCaseInsensitive)
+void registerFunctionPositionCaseInsensitive(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionPositionCaseInsensitive>();
-    factory.registerAlias("instr", NamePositionCaseInsensitive::name, FunctionFactory::CaseInsensitive);
 }
 }

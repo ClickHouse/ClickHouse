@@ -41,16 +41,6 @@ ZooKeeperLock::~ZooKeeperLock()
     }
 }
 
-bool ZooKeeperLock::isLocked() const
-{
-    return locked;
-}
-
-const std::string & ZooKeeperLock::getLockPath() const
-{
-    return lock_path;
-}
-
 void ZooKeeperLock::unlock()
 {
     if (!locked)

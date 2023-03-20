@@ -1,13 +1,7 @@
 #include <Storages/MergeTree/TemporaryParts.h>
-#include <Common/Exception.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 bool TemporaryParts::contains(const std::string & basename) const
 {
@@ -15,20 +9,16 @@ bool TemporaryParts::contains(const std::string & basename) const
     return parts.contains(basename);
 }
 
-void TemporaryParts::add(const std::string & basename)
+void TemporaryParts::add(std::string basename)
 {
     std::lock_guard lock(mutex);
-    bool inserted = parts.emplace(basename).second;
-    if (!inserted)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary part {} already added", basename);
+    parts.emplace(std::move(basename));
 }
 
 void TemporaryParts::remove(const std::string & basename)
 {
     std::lock_guard lock(mutex);
-    bool removed = parts.erase(basename);
-    if (!removed)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary part {} does not exist", basename);
+    parts.erase(basename);
 }
 
 }

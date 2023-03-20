@@ -5,6 +5,8 @@
 #include <Disks/tests/gtest_disk.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromOStream.h>
+#include <Interpreters/Context.h>
 #include <Storages/StorageLog.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Common/typeid_cast.h>
@@ -16,11 +18,13 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <QueryPipeline/Chain.h>
 #include <QueryPipeline/QueryPipeline.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+
+#if !defined(__clang__)
+#    pragma GCC diagnostic push
+#    pragma GCC diagnostic ignored "-Wsuggest-override"
+#endif
 
 
 DB::StoragePtr createStorage(DB::DiskPtr & disk)
@@ -30,29 +34,30 @@ DB::StoragePtr createStorage(DB::DiskPtr & disk)
     NamesAndTypesList names_and_types;
     names_and_types.emplace_back("a", std::make_shared<DataTypeUInt64>());
 
-    StoragePtr table = std::make_shared<StorageLog>(
+    StoragePtr table = StorageLog::create(
         "Log", disk, "table/", StorageID("test", "test"), ColumnsDescription{names_and_types},
-        ConstraintsDescription{}, String{}, false, getContext().context);
+        ConstraintsDescription{}, String{}, false, 1048576);
 
     table->startup();
 
     return table;
 }
 
+template <typename T>
 class StorageLogTest : public testing::Test
 {
 public:
 
     void SetUp() override
     {
-        disk = createDisk();
+        disk = createDisk<T>();
         table = createStorage(disk);
     }
 
     void TearDown() override
     {
         table->flushAndShutdown();
-        destroyDisk(disk);
+        destroyDisk<T>(disk);
     }
 
     const DB::DiskPtr & getDisk() { return disk; }
@@ -63,6 +68,9 @@ private:
     DB::StoragePtr table;
 };
 
+
+using DiskImplementations = testing::Types<DB::DiskMemory, DB::DiskLocal>;
+TYPED_TEST_SUITE(StorageLogTest, DiskImplementations);
 
 // Returns data written to table in Values format.
 std::string writeData(int rows, DB::StoragePtr & table, const DB::ContextPtr context)
@@ -109,7 +117,7 @@ std::string readData(DB::StoragePtr & table, const DB::ContextPtr context)
 {
     using namespace DB;
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
-    auto storage_snapshot = table->getStorageSnapshot(metadata_snapshot, context);
+    auto storage_snapshot = table->getStorageSnapshot(metadata_snapshot);
 
     Names column_names;
     column_names.push_back("a");
@@ -118,12 +126,7 @@ std::string readData(DB::StoragePtr & table, const DB::ContextPtr context)
     QueryProcessingStage::Enum stage = table->getQueryProcessingStage(
         context, QueryProcessingStage::Complete, storage_snapshot, query_info);
 
-    QueryPlan plan;
-    table->read(plan, column_names, storage_snapshot, query_info, context, stage, 8192, 1);
-
-    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*plan.buildQueryPipeline(
-        QueryPlanOptimizationSettings::fromContext(context),
-        BuildQueryPipelineSettings::fromContext(context))));
+    QueryPipeline pipeline(table->read(column_names, storage_snapshot, query_info, context, stage, 8192, 1));
 
     Block sample;
     {
@@ -149,7 +152,7 @@ std::string readData(DB::StoragePtr & table, const DB::ContextPtr context)
     return out_buf.str();
 }
 
-TEST_F(StorageLogTest, testReadWrite)
+TYPED_TEST(StorageLogTest, testReadWrite)
 {
     using namespace DB;
     const auto & context_holder = getContext();

@@ -16,22 +16,10 @@
 #include <base/range.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <base/insertAtEnd.h>
-#include "config.h"
-#include <base/hex.h>
-#if USE_SSL
-#     include <openssl/crypto.h>
-#     include <openssl/rand.h>
-#     include <openssl/err.h>
-#endif
+
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int OPENSSL_ERROR;
-}
-
 namespace
 {
     bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, std::optional<String> & new_name)
@@ -51,7 +39,7 @@ namespace
     }
 
 
-    bool parseAuthenticationData(IParserBase::Pos & pos, Expected & expected, AuthenticationData & auth_data, std::optional<String> & temporary_password_for_checks)
+    bool parseAuthenticationData(IParserBase::Pos & pos, Expected & expected, AuthenticationData & auth_data)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -116,22 +104,14 @@ namespace
             }
 
             String value;
-            String parsed_salt;
             boost::container::flat_set<String> common_names;
             if (expect_password || expect_hash)
             {
                 ASTPtr ast;
                 if (!ParserKeyword{"BY"}.ignore(pos, expected) || !ParserStringLiteral{}.parse(pos, ast, expected))
                     return false;
-                value = ast->as<const ASTLiteral &>().value.safeGet<String>();
 
-                if (expect_hash && type == AuthenticationType::SHA256_PASSWORD)
-                {
-                    if (ParserKeyword{"SALT"}.ignore(pos, expected) && ParserStringLiteral{}.parse(pos, ast, expected))
-                    {
-                        parsed_salt = ast->as<const ASTLiteral &>().value.safeGet<String>();
-                    }
-                }
+                value = ast->as<const ASTLiteral &>().value.safeGet<String>();
             }
             else if (expect_ldap_server_name)
             {
@@ -165,45 +145,7 @@ namespace
                     common_names.insert(ast_child->as<const ASTLiteral &>().value.safeGet<String>());
             }
 
-            /// Save password separately for future complexity rules check
-            if (expect_password)
-                temporary_password_for_checks = value;
-
             auth_data = AuthenticationData{*type};
-            if (auth_data.getType() == AuthenticationType::SHA256_PASSWORD)
-            {
-                if (!parsed_salt.empty())
-                {
-                    auth_data.setSalt(parsed_salt);
-                }
-                else if (expect_password)
-                {
-#if USE_SSL
-                    ///generate and add salt here
-                    ///random generator FIPS complaint
-                    uint8_t key[32];
-                    if (RAND_bytes(key, sizeof(key)) != 1)
-                    {
-                        char buf[512] = {0};
-                        ERR_error_string_n(ERR_get_error(), buf, sizeof(buf));
-                        throw Exception(ErrorCodes::OPENSSL_ERROR, "Cannot generate salt for password. OpenSSL {}", buf);
-                    }
-
-                    String salt;
-                    salt.resize(sizeof(key) * 2);
-                    char * buf_pos = salt.data();
-                    for (uint8_t k : key)
-                    {
-                        writeHexByteUppercase(k, buf_pos);
-                        buf_pos += 2;
-                    }
-                    value.append(salt);
-                    auth_data.setSalt(salt);
-#else
-                    ///if USE_SSL is not defined, Exception thrown later
-#endif
-                }
-            }
             if (expect_password)
                 auth_data.setPassword(value);
             else if (expect_hash)
@@ -299,11 +241,11 @@ namespace
     }
 
 
-    bool parseHosts(IParserBase::Pos & pos, Expected & expected, std::string_view prefix, AllowedClientHosts & hosts)
+    bool parseHosts(IParserBase::Pos & pos, Expected & expected, const String & prefix, AllowedClientHosts & hosts)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!prefix.empty() && !ParserKeyword{prefix}.ignore(pos, expected))
+            if (!prefix.empty() && !ParserKeyword{prefix.c_str()}.ignore(pos, expected))
                 return false;
 
             if (!ParserKeyword{"HOST"}.ignore(pos, expected))
@@ -442,7 +384,6 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     std::optional<String> new_name;
     std::optional<AuthenticationData> auth_data;
-    std::optional<String> temporary_password_for_checks;
     std::optional<AllowedClientHosts> hosts;
     std::optional<AllowedClientHosts> add_hosts;
     std::optional<AllowedClientHosts> remove_hosts;
@@ -457,11 +398,9 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (!auth_data)
         {
             AuthenticationData new_auth_data;
-            std::optional<String> new_temporary_password_for_checks;
-            if (parseAuthenticationData(pos, expected, new_auth_data, new_temporary_password_for_checks))
+            if (parseAuthenticationData(pos, expected, new_auth_data))
             {
                 auth_data = std::move(new_auth_data);
-                temporary_password_for_checks = std::move(new_temporary_password_for_checks);
                 continue;
             }
         }
@@ -546,7 +485,6 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->names = std::move(names);
     query->new_name = std::move(new_name);
     query->auth_data = std::move(auth_data);
-    query->temporary_password_for_checks = std::move(temporary_password_for_checks);
     query->hosts = std::move(hosts);
     query->add_hosts = std::move(add_hosts);
     query->remove_hosts = std::move(remove_hosts);

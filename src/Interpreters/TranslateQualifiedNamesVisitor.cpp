@@ -1,4 +1,3 @@
-#include <cstring>
 #include <Poco/String.h>
 
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
@@ -7,7 +6,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Core/Names.h>
-#include <DataTypes/DataTypeTuple.h>
 
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTAsterisk.h>
@@ -20,7 +18,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTColumnsTransformers.h>
-#include <Storages/StorageView.h>
 
 
 namespace DB
@@ -32,56 +29,38 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_JOIN_KEYS;
     extern const int LOGICAL_ERROR;
 }
-bool TranslateQualifiedNamesMatcher::Data::matchColumnName(std::string_view name, const String & column_name, DataTypePtr column_type)
-{
-    if (name.size() < column_name.size())
-        return false;
 
-    if (!name.starts_with(column_name))
-        return false;
-
-    if (name.size() == column_name.size())
-        return true;
-
-    /// In case the type is named tuple, check the name recursively.
-    if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(column_type.get()))
-    {
-        if (type_tuple->haveExplicitNames() && name.at(column_name.size()) == '.')
-        {
-            const Strings & names = type_tuple->getElementNames();
-            const DataTypes & element_types = type_tuple->getElements();
-            std::string_view sub_name = name.substr(column_name.size() + 1);
-            for (size_t i = 0; i < names.size(); ++i)
-            {
-                if (matchColumnName(sub_name, names[i], element_types[i]))
-                {
-                    return true;
-                }
-            }
-        }
-    }
-
-    return false;
-}
 bool TranslateQualifiedNamesMatcher::Data::unknownColumn(size_t table_pos, const ASTIdentifier & identifier) const
 {
     const auto & table = tables[table_pos].table;
+    auto nested1 = IdentifierSemantic::extractNestedName(identifier, table.table);
+    auto nested2 = IdentifierSemantic::extractNestedName(identifier, table.alias);
+
+    const String & short_name = identifier.shortName();
     const auto & columns = tables[table_pos].columns;
-
-    // Remove database and table name from the identifier'name
-    auto full_name = IdentifierSemantic::extractNestedName(identifier, table);
-
     for (const auto & column : columns)
     {
-        if (matchColumnName(full_name, column.name, column.type))
+        const String & known_name = column.name;
+        if (short_name == known_name)
+            return false;
+        if (nested1 && *nested1 == known_name)
+            return false;
+        if (nested2 && *nested2 == known_name)
             return false;
     }
+
     const auto & hidden_columns = tables[table_pos].hidden_columns;
     for (const auto & column : hidden_columns)
     {
-        if (matchColumnName(full_name, column.name, column.type))
+        const String & known_name = column.name;
+        if (short_name == known_name)
+            return false;
+        if (nested1 && *nested1 == known_name)
+            return false;
+        if (nested2 && *nested2 == known_name)
             return false;
     }
+
     return !columns.empty();
 }
 
@@ -118,14 +97,15 @@ void TranslateQualifiedNamesMatcher::visit(ASTIdentifier & identifier, ASTPtr &,
     if (IdentifierSemantic::getColumnName(identifier))
     {
         String short_name = identifier.shortName();
-        bool allow_ambiguous = data.join_using_columns.contains(short_name);
+        bool allow_ambiguous = data.join_using_columns.count(short_name);
         if (auto best_pos = IdentifierSemantic::chooseTable(identifier, data.tables, allow_ambiguous))
         {
             size_t table_pos = *best_pos;
             if (data.unknownColumn(table_pos, identifier))
             {
                 String table_name = data.tables[table_pos].table.getQualifiedNamePrefix(false);
-                throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "There's no column '{}' in table '{}'", identifier.name(), table_name);
+                throw Exception("There's no column '" + identifier.name() + "' in table '" + table_name + "'",
+                                ErrorCodes::UNKNOWN_IDENTIFIER);
             }
 
             IdentifierSemantic::setMembership(identifier, table_pos);
@@ -149,25 +129,27 @@ void TranslateQualifiedNamesMatcher::visit(ASTFunction & node, const ASTPtr &, D
     if (!func_arguments) return;
 
     String func_name_lowercase = Poco::toLower(node.name);
-    if ((func_name_lowercase == "count" || func_name_lowercase == "countstate") &&
+    if (func_name_lowercase == "count" &&
         func_arguments->children.size() == 1 &&
         func_arguments->children[0]->as<ASTAsterisk>())
         func_arguments->children.clear();
 }
 
-void TranslateQualifiedNamesMatcher::visit(const ASTQualifiedAsterisk & node, const ASTPtr &, Data & data)
+void TranslateQualifiedNamesMatcher::visit(const ASTQualifiedAsterisk &, const ASTPtr & ast, Data & data)
 {
-    if (!node.qualifier)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: qualified asterisk must have a qualifier");
+    if (ast->children.empty())
+        throw Exception("Logical error: qualified asterisk must have children", ErrorCodes::LOGICAL_ERROR);
+
+    auto & ident = ast->children[0];
 
     /// @note it could contain table alias as table name.
-    DatabaseAndTableWithAlias db_and_table(node.qualifier);
+    DatabaseAndTableWithAlias db_and_table(ident);
 
     for (const auto & known_table : data.tables)
         if (db_and_table.satisfies(known_table.table, true))
             return;
 
-    throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown qualified identifier: {}", node.qualifier->getAliasOrColumnName());
+    throw Exception("Unknown qualified identifier: " + ident->getAliasOrColumnName(), ErrorCodes::UNKNOWN_IDENTIFIER);
 }
 
 void TranslateQualifiedNamesMatcher::visit(ASTTableJoin & join, const ASTPtr & , Data & data)
@@ -214,10 +196,10 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
         bool has_asterisk = false;
         for (const auto & child : node.children)
         {
-            if (child->as<ASTAsterisk>() || child->as<ASTColumnsListMatcher>() || child->as<ASTColumnsRegexpMatcher>())
+            if (child->as<ASTAsterisk>() || child->as<ASTColumnsMatcher>())
             {
                 if (tables_with_columns.empty())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "An asterisk cannot be replaced with empty columns.");
+                    throw Exception("An asterisk cannot be replaced with empty columns.", ErrorCodes::LOGICAL_ERROR);
                 has_asterisk = true;
             }
             else if (const auto * qa = child->as<ASTQualifiedAsterisk>())
@@ -246,79 +228,68 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
                 {
                     for (const auto & column : *cols)
                     {
-                        if (first_table || !data.join_using_columns.contains(column.name))
+                        if (first_table || !data.join_using_columns.count(column.name))
                         {
-                            std::string column_name = column.name;
-
-                            /// replaceQueryParameterWithValue is used for parameterized view (which are created using query parameters
-                            /// and SELECT is used with substitution of these query parameters )
-                            if (!data.parameter_values.empty())
-                                column_name
-                                    = StorageView::replaceQueryParameterWithValue(column_name, data.parameter_values, data.parameter_types);
-
-                            addIdentifier(columns, table.table, column_name);
+                            addIdentifier(columns, table.table, column.name);
                         }
                     }
                 }
+
                 first_table = false;
             }
-
-            if (asterisk->transformers)
+            for (const auto & transformer : asterisk->children)
             {
-                for (const auto & transformer : asterisk->transformers->children)
-                    IASTColumnsTransformer::transform(transformer, columns);
+                IASTColumnsTransformer::transform(transformer, columns);
             }
         }
-        else if (auto * asterisk_column_list = child->as<ASTColumnsListMatcher>())
+        else if (const auto * asterisk_pattern = child->as<ASTColumnsMatcher>())
         {
-            for (const auto & ident : asterisk_column_list->column_list->children)
-                columns.emplace_back(ident->clone());
-
-            if (asterisk_column_list->transformers)
+            if (asterisk_pattern->column_list)
             {
-                for (const auto & transformer : asterisk_column_list->transformers->children)
-                    IASTColumnsTransformer::transform(transformer, columns);
+                for (const auto & ident : asterisk_pattern->column_list->children)
+                    columns.emplace_back(ident->clone());
             }
-        }
-        else if (const auto * asterisk_regexp_pattern = child->as<ASTColumnsRegexpMatcher>())
-        {
-            bool first_table = true;
-            for (const auto & table : tables_with_columns)
+            else
             {
-                for (const auto & column : table.columns)
+                bool first_table = true;
+                for (const auto & table : tables_with_columns)
                 {
-                    if (asterisk_regexp_pattern->isColumnMatching(column.name) && (first_table || !data.join_using_columns.contains(column.name)))
+                    for (const auto & column : table.columns)
                     {
-                        addIdentifier(columns, table.table, column.name);
+                        if (asterisk_pattern->isColumnMatching(column.name) && (first_table || !data.join_using_columns.count(column.name)))
+                        {
+                            addIdentifier(columns, table.table, column.name);
+                        }
                     }
-                }
-                first_table = false;
-            }
 
-            if (asterisk_regexp_pattern->transformers)
+                    first_table = false;
+                }
+            }
+            // ColumnsMatcher's transformers start to appear at child 1
+            for (auto it = asterisk_pattern->children.begin() + 1; it != asterisk_pattern->children.end(); ++it)
             {
-                for (const auto & transformer : asterisk_regexp_pattern->transformers->children)
-                    IASTColumnsTransformer::transform(transformer, columns);
+                IASTColumnsTransformer::transform(*it, columns);
             }
         }
         else if (const auto * qualified_asterisk = child->as<ASTQualifiedAsterisk>())
         {
-            DatabaseAndTableWithAlias ident_db_and_name(qualified_asterisk->qualifier);
+            DatabaseAndTableWithAlias ident_db_and_name(qualified_asterisk->children[0]);
 
             for (const auto & table : tables_with_columns)
             {
                 if (ident_db_and_name.satisfies(table.table, true))
                 {
                     for (const auto & column : table.columns)
+                    {
                         addIdentifier(columns, table.table, column.name);
+                    }
                     break;
                 }
             }
-
-            if (qualified_asterisk->transformers)
+            // QualifiedAsterisk's transformers start to appear at child 1
+            for (auto it = qualified_asterisk->children.begin() + 1; it != qualified_asterisk->children.end(); ++it)
             {
-                for (const auto & transformer : qualified_asterisk->transformers->children)
-                    IASTColumnsTransformer::transform(transformer, columns);
+                IASTColumnsTransformer::transform(*it, columns);
             }
         }
         else
@@ -348,8 +319,8 @@ void TranslateQualifiedNamesMatcher::extractJoinUsingColumns(ASTPtr ast, Data & 
             {
                 String alias = key->tryGetAlias();
                 if (alias.empty())
-                    throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Wrong key in USING. Expected identifier or alias, got: {}",
-                                    key->getID());
+                    throw Exception("Wrong key in USING. Expected identifier or alias, got: " + key->getID(),
+                                    ErrorCodes::UNSUPPORTED_JOIN_KEYS);
                 data.join_using_columns.insert(alias);
             }
     }

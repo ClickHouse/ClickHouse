@@ -1,6 +1,5 @@
 ---
-slug: /ru/sql-reference/aggregate-functions/reference/deltasumtimestamp
-sidebar_position: 141
+toc_priority: 141
 ---
 
 # deltaSumTimestamp {#agg_functions-deltasumtimestamp}

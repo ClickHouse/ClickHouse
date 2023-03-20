@@ -1,0 +1,7 @@
+usr/bin/clickhouse-client
+usr/bin/clickhouse-local
+usr/bin/clickhouse-compressor
+usr/bin/clickhouse-benchmark
+usr/bin/clickhouse-format
+usr/bin/clickhouse-obfuscator
+etc/clickhouse-client/config.xml

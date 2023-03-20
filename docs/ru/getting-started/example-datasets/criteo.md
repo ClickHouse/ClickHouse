@@ -1,7 +1,6 @@
 ---
-slug: /ru/getting-started/example-datasets/criteo
-sidebar_position: 18
-sidebar_label: "Терабайт логов кликов от Criteo"
+toc_priority: 18
+toc_title: "Терабайт логов кликов от Criteo"
 ---
 
 # Терабайт логов кликов от Criteo {#terabait-logov-klikov-ot-criteo}
@@ -76,3 +75,4 @@ INSERT INTO criteo SELECT date, clicked, int1, int2, int3, int4, int5, int6, int
 
 DROP TABLE criteo_log;
 ```
+

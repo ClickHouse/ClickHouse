@@ -1,7 +1,6 @@
 ---
-slug: /zh/engines/database-engines/materialize-mysql
-sidebar_position: 29
-sidebar_label: "[experimental] MaterializedMySQL"
+toc_priority: 29
+toc_title: "[experimental] MaterializedMySQL"
 ---
 
 # [experimental] MaterializedMySQL {#materialized-mysql}
@@ -38,8 +37,8 @@ ENGINE = MaterializeMySQL('host:port', ['database' | database], 'user', 'passwor
 -   `max_wait_time_when_mysql_unavailable` — 当MySQL不可用时重试间隔(毫秒)。负值禁止重试。默认值: `1000`.
 -   `allows_query_when_mysql_lost` — 当mysql丢失时，允许查询物化表。默认值: `0` (`false`).
 ```
-CREATE DATABASE mysql ENGINE = MaterializeMySQL('localhost:3306', 'db', 'user', '***')
-     SETTINGS
+CREATE DATABASE mysql ENGINE = MaterializeMySQL('localhost:3306', 'db', 'user', '***') 
+     SETTINGS 
         allows_query_when_mysql_lost=true,
         max_wait_time_when_mysql_unavailable=10000;
 ```
@@ -148,9 +147,9 @@ mysql> SELECT * FROM test;
 ```
 
 ```text
-+---+------+------+
++---+------+------+ 
 | a |    b |    c |
-+---+------+------+
++---+------+------+ 
 | 2 |  222 | Wow! |
 +---+------+------+
 ```
@@ -177,9 +176,9 @@ SELECT * FROM mysql.test;
 ```
 
 ``` text
-┌─a─┬──b─┐
-│ 1 │ 11 │
-│ 2 │ 22 │
+┌─a─┬──b─┐ 
+│ 1 │ 11 │ 
+│ 2 │ 22 │ 
 └───┴────┘
 ```
 
@@ -190,7 +189,9 @@ SELECT * FROM mysql.test;
 ```
 
 ``` text
-┌─a─┬───b─┬─c────┐
-│ 2 │ 222 │ Wow! │
+┌─a─┬───b─┬─c────┐ 
+│ 2 │ 222 │ Wow! │ 
 └───┴─────┴──────┘
 ```
+
+[来源文章](https://clickhouse.com/docs/en/engines/database-engines/materialize-mysql/) <!--hide-->

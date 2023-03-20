@@ -1,10 +1,9 @@
 ---
-slug: /en/sql-reference/statements/alter/comment
-sidebar_position: 51
-sidebar_label: COMMENT
+toc_priority: 51
+toc_title: COMMENT
 ---
 
-# ALTER TABLE … MODIFY COMMENT
+# ALTER TABLE … MODIFY COMMENT {#alter-modify-comment}
 
 Adds, modifies, or removes comment to the table, regardless if it was set before or not. Comment change is reflected in both [system.tables](../../../operations/system-tables/tables.md) and `SHOW CREATE TABLE` query.
 
@@ -16,7 +15,7 @@ ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
 
 **Examples**
 
-Creating a table with comment (for more information, see the [COMMENT](../../../sql-reference/statements/create/table.md#comment-table) clause):
+Creating a table with comment (for more information, see the [COMMENT] clause(../../../sql-reference/statements/create/table.md#comment-table)):
 
 ``` sql
 CREATE TABLE table_with_comment

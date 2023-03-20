@@ -8,7 +8,6 @@ CREATE TABLE test
 ENGINE = MergeTree()
 ORDER BY tuple();
 
-SET enable_positional_arguments=0;
 SET optimize_move_functions_out_of_any = 1;
 
 SELECT any(arrayFilter((c, d) -> (4 = d), `Source.C1`, `Source.C2`)[1]) AS x

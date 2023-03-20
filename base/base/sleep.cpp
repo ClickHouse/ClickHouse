@@ -1,7 +1,7 @@
 #include <base/sleep.h>
 
-#include <ctime>
-#include <cerrno>
+#include <time.h>
+#include <errno.h>
 
 #if defined(OS_DARWIN)
 #include <mach/mach.h>

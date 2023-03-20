@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config.h"
+#include "config_core.h"
 
 #if USE_LIBPQXX
 
@@ -32,10 +32,7 @@ struct ConnectionInfo
 class Connection : private boost::noncopyable
 {
 public:
-    explicit Connection(
-        const ConnectionInfo & connection_info_,
-        bool replication_ = false,
-        size_t num_tries = 3);
+    Connection(const ConnectionInfo & connection_info_, bool replication_ = false, size_t num_tries = 3);
 
     void execWithRetry(const std::function<void(pqxx::nontransaction &)> & exec);
 

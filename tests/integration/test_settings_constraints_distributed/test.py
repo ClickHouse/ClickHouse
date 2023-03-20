@@ -8,26 +8,17 @@ cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
     main_configs=["configs/config.d/remote_servers.xml"],
-    user_configs=[
-        "configs/users.d/allow_introspection_functions.xml",
-        "configs/users.d/users.xml",
-    ],
+    user_configs=["configs/users.d/allow_introspection_functions.xml"],
 )
 node2 = cluster.add_instance(
     "node2",
     main_configs=["configs/config.d/remote_servers.xml"],
-    user_configs=[
-        "configs/users.d/allow_introspection_functions.xml",
-        "configs/users.d/users.xml",
-    ],
+    user_configs=["configs/users.d/allow_introspection_functions.xml"],
 )
 distributed = cluster.add_instance(
     "distributed",
     main_configs=["configs/config.d/remote_servers.xml"],
-    user_configs=[
-        "configs/users.d/allow_introspection_functions.xml",
-        "configs/users.d/users.xml",
-    ],
+    user_configs=["configs/users.d/allow_introspection_functions.xml"],
     stay_alive=True,
 )
 
@@ -109,29 +100,29 @@ def test_select_clamps_settings():
     # Check that shards clamp passed settings.
     query = "SELECT hostName() as host, name, value FROM shard_settings WHERE name = 'max_memory_usage' OR name = 'readonly' ORDER BY host, name, value"
     assert (
-        distributed.query(query) == "node1\tmax_memory_usage\t50000000\n"
+        distributed.query(query) == "node1\tmax_memory_usage\t99999999\n"
         "node1\treadonly\t0\n"
-        "node2\tmax_memory_usage\t0\n"
+        "node2\tmax_memory_usage\t10000000000\n"
         "node2\treadonly\t1\n"
     )
     assert (
         distributed.query(query, user="normal") == "node1\tmax_memory_usage\t80000000\n"
         "node1\treadonly\t0\n"
-        "node2\tmax_memory_usage\t0\n"
+        "node2\tmax_memory_usage\t10000000000\n"
         "node2\treadonly\t1\n"
     )
     assert (
         distributed.query(query, user="wasteful")
         == "node1\tmax_memory_usage\t99999999\n"
         "node1\treadonly\t0\n"
-        "node2\tmax_memory_usage\t0\n"
+        "node2\tmax_memory_usage\t10000000000\n"
         "node2\treadonly\t1\n"
     )
     assert (
         distributed.query(query, user="readonly")
-        == "node1\tmax_memory_usage\t50000000\n"
+        == "node1\tmax_memory_usage\t99999999\n"
         "node1\treadonly\t1\n"
-        "node2\tmax_memory_usage\t0\n"
+        "node2\tmax_memory_usage\t10000000000\n"
         "node2\treadonly\t1\n"
     )
 
@@ -139,14 +130,14 @@ def test_select_clamps_settings():
         distributed.query(query, settings={"max_memory_usage": 1})
         == "node1\tmax_memory_usage\t11111111\n"
         "node1\treadonly\t0\n"
-        "node2\tmax_memory_usage\t0\n"
+        "node2\tmax_memory_usage\t10000000000\n"
         "node2\treadonly\t1\n"
     )
     assert (
         distributed.query(query, settings={"max_memory_usage": 40000000, "readonly": 2})
         == "node1\tmax_memory_usage\t40000000\n"
         "node1\treadonly\t2\n"
-        "node2\tmax_memory_usage\t0\n"
+        "node2\tmax_memory_usage\t10000000000\n"
         "node2\treadonly\t1\n"
     )
     assert (
@@ -155,7 +146,7 @@ def test_select_clamps_settings():
         )
         == "node1\tmax_memory_usage\t99999999\n"
         "node1\treadonly\t2\n"
-        "node2\tmax_memory_usage\t0\n"
+        "node2\tmax_memory_usage\t10000000000\n"
         "node2\treadonly\t1\n"
     )
 

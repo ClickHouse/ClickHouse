@@ -1,9 +1,9 @@
 #pragma once
 
-#include "config.h"
+#include "config_core.h"
 
 #if USE_EMBEDDED_COMPILER
-#    include <Common/CacheBase.h>
+#    include <Common/LRUCache.h>
 #    include <Common/HashTable/Hash.h>
 #    include <Interpreters/JIT/CHJIT.h>
 
@@ -35,10 +35,10 @@ struct CompiledFunctionWeightFunction
     }
 };
 
-class CompiledExpressionCache : public CacheBase<UInt128, CompiledExpressionCacheEntry, UInt128Hash, CompiledFunctionWeightFunction>
+class CompiledExpressionCache : public LRUCache<UInt128, CompiledExpressionCacheEntry, UInt128Hash, CompiledFunctionWeightFunction>
 {
 public:
-    using Base = CacheBase<UInt128, CompiledExpressionCacheEntry, UInt128Hash, CompiledFunctionWeightFunction>;
+    using Base = LRUCache<UInt128, CompiledExpressionCacheEntry, UInt128Hash, CompiledFunctionWeightFunction>;
     using Base::Base;
 };
 

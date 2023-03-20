@@ -12,28 +12,18 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 
-def make_instance(name, cfg, *args, **kwargs):
+def make_instance(name, cfg):
     return cluster.add_instance(
         name,
         with_zookeeper=True,
         main_configs=["configs/remote_servers.xml", cfg],
         user_configs=["configs/users.xml"],
-        *args,
-        **kwargs,
     )
 
 
 # _n1/_n2 contains cluster with different <secret> -- should fail
 n1 = make_instance("n1", "configs/remote_servers_n1.xml")
 n2 = make_instance("n2", "configs/remote_servers_n2.xml")
-backward = make_instance(
-    "backward",
-    "configs/remote_servers_backward.xml",
-    image="clickhouse/clickhouse-server",
-    # version without DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2
-    tag="23.2.3",
-    with_installed_binary=True,
-)
 
 users = pytest.mark.parametrize(
     "user,password",
@@ -62,12 +52,6 @@ def bootstrap():
             """
         CREATE TABLE dist_secure AS data
         Engine=Distributed(secure, currentDatabase(), data, key)
-        """
-        )
-        n.query(
-            """
-        CREATE TABLE dist_secure_backward AS data
-        Engine=Distributed(secure_backward, currentDatabase(), data, key)
         """
         )
         n.query(
@@ -217,7 +201,7 @@ def test_secure_insert_sync():
     n1.query("TRUNCATE TABLE data ON CLUSTER secure")
 
 
-# INSERT without initial_user
+# INSERT w/o initial_user
 #
 # Buffer() flush happens with global context, that does not have user
 # And so Context::user/ClientInfo::current_user/ClientInfo::initial_user will be empty
@@ -307,26 +291,20 @@ def test_secure_insert_buffer_async():
 
 
 def test_secure_disagree():
-    with pytest.raises(
-        QueryRuntimeException, match=".*Interserver authentication failed.*"
-    ):
+    with pytest.raises(QueryRuntimeException, match=".*Hash mismatch.*"):
         n1.query("SELECT * FROM dist_secure_disagree")
 
 
 def test_secure_disagree_insert():
     n1.query("TRUNCATE TABLE data")
     n1.query("INSERT INTO dist_secure_disagree SELECT * FROM numbers(2)")
-    with pytest.raises(
-        QueryRuntimeException, match=".*Interserver authentication failed.*"
-    ):
+    with pytest.raises(QueryRuntimeException, match=".*Hash mismatch.*"):
         n1.query(
             "SYSTEM FLUSH DISTRIBUTED ON CLUSTER secure_disagree dist_secure_disagree"
         )
     # check the the connection will be re-established
     # IOW that we will not get "Unknown BlockInfo field"
-    with pytest.raises(
-        QueryRuntimeException, match=".*Interserver authentication failed.*"
-    ):
+    with pytest.raises(QueryRuntimeException, match=".*Hash mismatch.*"):
         assert int(n1.query("SELECT count() FROM dist_secure_disagree")) == 0
 
 
@@ -424,32 +402,4 @@ def test_per_user_protocol_settings_secure_cluster(user, password):
     )
     assert int(get_query_setting_on_shard(n1, id_, "max_memory_usage_for_user")) == int(
         1e9
-    )
-
-
-@users
-def test_user_secure_cluster_with_backward(user, password):
-    id_ = "with-backward-query-dist_secure-" + user
-    query_with_id(
-        n1, id_, "SELECT * FROM dist_secure_backward", user=user, password=password
-    )
-    assert get_query_user_info(n1, id_) == [user, user]
-    assert get_query_user_info(backward, id_) == [user, user]
-
-
-@users
-def test_user_secure_cluster_from_backward(user, password):
-    id_ = "from-backward-query-dist_secure-" + user
-    query_with_id(
-        backward,
-        id_,
-        "SELECT * FROM dist_secure_backward",
-        user=user,
-        password=password,
-    )
-    assert get_query_user_info(n1, id_) == [user, user]
-    assert get_query_user_info(backward, id_) == [user, user]
-
-    assert n1.contains_in_log(
-        "Using deprecated interserver protocol because the client is too old. Consider upgrading all nodes in cluster."
     )

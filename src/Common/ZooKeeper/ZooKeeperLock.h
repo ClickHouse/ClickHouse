@@ -3,7 +3,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <memory>
 #include <string>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 namespace zkutil
 {
@@ -37,8 +37,6 @@ public:
 
     void unlock();
     bool tryLock();
-    bool isLocked() const;
-    const std::string & getLockPath() const;
 
 private:
     zkutil::ZooKeeperPtr zookeeper;

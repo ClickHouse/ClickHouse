@@ -11,7 +11,7 @@ namespace DB
 struct NamePath { static constexpr auto name = "path"; };
 using FunctionPath = FunctionStringToString<ExtractSubstringImpl<ExtractPath<false>>, NamePath>;
 
-REGISTER_FUNCTION(Path)
+void registerFunctionPath(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionPath>();
 }

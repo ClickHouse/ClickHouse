@@ -2,6 +2,3 @@ CREATE TABLE default.rmt\n(\n    `n` UInt64,\n    `s` String\n)\nENGINE = Replic
 CREATE TABLE default.rmt1\n(\n    `n` UInt64,\n    `s` String\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/test_01148/{shard}/default/rmt\', \'{replica}\')\nORDER BY n\nSETTINGS index_granularity = 8192
 CREATE TABLE default.rmt\n(\n    `n` UInt64,\n    `s` String\n)\nENGINE = ReplicatedMergeTree(\'{default_path_test}test_01148\', \'{default_name_test}\')\nORDER BY n\nSETTINGS index_granularity = 8192
 CREATE TABLE default.rmt\n(\n    `n` UInt64,\n    `s` String\n)\nENGINE = ReplicatedMergeTree(\'{default_path_test}test_01148\', \'{default_name_test}\')\nORDER BY n\nSETTINGS index_granularity = 8192
-CREATE TABLE test_01148_atomic.rmt2\n(\n    `n` Int32\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/tables/{uuid}/{shard}\', \'{replica}\')\nPRIMARY KEY n\nORDER BY n\nSETTINGS index_granularity = 8192
-CREATE TABLE test_01148_atomic.rmt3\n(\n    `n` Int32\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/tables/{uuid}/{shard}\', \'{replica}\')\nPRIMARY KEY n\nORDER BY n\nSETTINGS index_granularity = 8192
-CREATE TABLE imdb_01148.anything\n(\n    `director_id` UInt64,\n    `movie_id` UInt64\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/tables/{uuid}/{shard}\', \'{replica}\')\nORDER BY (director_id, movie_id)\nSETTINGS index_granularity = 8192
