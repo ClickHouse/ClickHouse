@@ -374,9 +374,9 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
     }
 }
 
-SeekableReadBufferPtr ReadBufferS3Factory::getReader()
+std::unique_ptr<SeekableReadBuffer> ReadBufferS3Factory::getReader()
 {
-    return std::make_shared<ReadBufferFromS3>(
+    return std::make_unique<ReadBufferFromS3>(
         client_ptr,
         bucket,
         key,
