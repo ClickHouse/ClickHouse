@@ -1,4 +1,5 @@
 #include <Backups/RestoreCoordinationRemote.h>
+#include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/escapeForFileName.h>
 #include <Backups/BackupCoordinationStage.h>
@@ -58,6 +59,7 @@ void RestoreCoordinationRemote::createRootNodes()
     zk->createIfNotExists(zookeeper_path + "/repl_databases_tables_acquired", "");
     zk->createIfNotExists(zookeeper_path + "/repl_tables_data_acquired", "");
     zk->createIfNotExists(zookeeper_path + "/repl_access_storages_acquired", "");
+    zk->createIfNotExists(zookeeper_path + "/repl_sql_objects_acquired", "");
 }
 
 
@@ -114,6 +116,28 @@ bool RestoreCoordinationRemote::acquireReplicatedAccessStorage(const String & ac
     auto zk = getZooKeeper();
 
     String path = zookeeper_path + "/repl_access_storages_acquired/" + escapeForFileName(access_storage_zk_path);
+    auto code = zk->tryCreate(path, "", zkutil::CreateMode::Persistent);
+    if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
+        throw zkutil::KeeperException(code, path);
+
+    return (code == Coordination::Error::ZOK);
+}
+
+bool RestoreCoordinationRemote::acquireReplicatedSQLObjects(const String & loader_zk_path, UserDefinedSQLObjectType object_type)
+{
+    auto zk = getZooKeeper();
+
+    String path = zookeeper_path + "/repl_sql_objects_acquired/" + escapeForFileName(loader_zk_path);
+    zk->createIfNotExists(path, "");
+
+    path += "/";
+    switch (object_type)
+    {
+        case UserDefinedSQLObjectType::Function:
+            path += "functions";
+            break;
+    }
+
     auto code = zk->tryCreate(path, "", zkutil::CreateMode::Persistent);
     if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
         throw zkutil::KeeperException(code, path);

@@ -73,8 +73,12 @@ public:
     UInt64 getFileSize(const String & file_name) const override;
     UInt128 getFileChecksum(const String & file_name) const override;
     SizeAndChecksum getFileSizeAndChecksum(const String & file_name) const override;
-    BackupEntryPtr readFile(const String & file_name) const override;
-    BackupEntryPtr readFile(const SizeAndChecksum & size_and_checksum) const override;
+    std::unique_ptr<SeekableReadBuffer> readFile(const String & file_name) const override;
+    std::unique_ptr<SeekableReadBuffer> readFile(const SizeAndChecksum & size_and_checksum) const override;
+    size_t copyFileToDisk(const String & file_name, DiskPtr destination_disk, const String & destination_path,
+                          WriteMode write_mode, const WriteSettings & write_settings) const override;
+    size_t copyFileToDisk(const SizeAndChecksum & size_and_checksum, DiskPtr destination_disk, const String & destination_path,
+                          WriteMode write_mode, const WriteSettings & write_settings) const override;
     void writeFile(const String & file_name, BackupEntryPtr entry) override;
     void finalizeWriting() override;
     bool supportsWritingInMultipleThreads() const override { return !use_archives; }
