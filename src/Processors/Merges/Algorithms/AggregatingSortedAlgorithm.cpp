@@ -117,7 +117,7 @@ static void postprocessChunk(Chunk & chunk, const AggregatingSortedAlgorithm::Co
         {
             const auto & from_type = desc.nested_type;
             const auto & to_type = desc.real_type;
-            columns[desc.column_number] = recursiveTypeConversion(columns[desc.column_number], from_type, to_type);
+            columns[desc.column_number] = recursiveLowCardinalityTypeConversion(columns[desc.column_number], from_type, to_type);
         }
     }
 
