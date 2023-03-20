@@ -11,11 +11,13 @@
 
 namespace DB
 {
+
 struct Settings;
 
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -63,6 +65,11 @@ struct VarMoments
         readPODBinary(*this, buf);
     }
 
+    T get() const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Variation moments should be obtained by either 'getSample' or 'getPopulation' method");
+    }
+
     T getPopulation() const
     {
         if (m[0] == 0)
@@ -83,34 +90,48 @@ struct VarMoments
 
     T getMoment3() const
     {
-        if (m[0] == 0)
-            return std::numeric_limits<T>::quiet_NaN();
-        // to avoid accuracy problem
-        if (m[0] == 1)
-            return 0;
-        /// \[ \frac{1}{m_0} (m_3 - (3 * m_2 - \frac{2 * {m_1}^2}{m_0}) * \frac{m_1}{m_0});\]
-        return (m[3]
-            - (3 * m[2]
-                - 2 * m[1] * m[1] / m[0]
-            ) * m[1] / m[0]
-        ) / m[0];
+        if constexpr (_level < 3)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Variation moments should be obtained by either 'getSample' or 'getPopulation' method");
+        }
+        else
+        {
+            if (m[0] == 0)
+                return std::numeric_limits<T>::quiet_NaN();
+            // to avoid accuracy problem
+            if (m[0] == 1)
+                return 0;
+            /// \[ \frac{1}{m_0} (m_3 - (3 * m_2 - \frac{2 * {m_1}^2}{m_0}) * \frac{m_1}{m_0});\]
+            return (m[3]
+                - (3 * m[2]
+                    - 2 * m[1] * m[1] / m[0]
+                ) * m[1] / m[0]
+            ) / m[0];
+        }
     }
 
     T getMoment4() const
     {
-        if (m[0] == 0)
-            return std::numeric_limits<T>::quiet_NaN();
-        // to avoid accuracy problem
-        if (m[0] == 1)
-            return 0;
-        /// \[ \frac{1}{m_0}(m_4 - (4 * m_3 - (6 * m_2 - \frac{3 * m_1^2}{m_0} ) \frac{m_1}{m_0})\frac{m_1}{m_0})\]
-        return (m[4]
-            - (4 * m[3]
-                - (6 * m[2]
-                    - 3 * m[1] * m[1] / m[0]
+        if constexpr (_level < 4)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Variation moments should be obtained by either 'getSample' or 'getPopulation' method");
+        }
+        else
+        {
+            if (m[0] == 0)
+                return std::numeric_limits<T>::quiet_NaN();
+            // to avoid accuracy problem
+            if (m[0] == 1)
+                return 0;
+            /// \[ \frac{1}{m_0}(m_4 - (4 * m_3 - (6 * m_2 - \frac{3 * m_1^2}{m_0} ) \frac{m_1}{m_0})\frac{m_1}{m_0})\]
+            return (m[4]
+                - (4 * m[3]
+                    - (6 * m[2]
+                        - 3 * m[1] * m[1] / m[0]
+                    ) * m[1] / m[0]
                 ) * m[1] / m[0]
-            ) * m[1] / m[0]
-        ) / m[0];
+            ) / m[0];
+        }
     }
 };
 
@@ -154,6 +175,21 @@ struct CovarMoments
     void read(ReadBuffer & buf)
     {
         readPODBinary(*this, buf);
+    }
+
+    T get() const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Covariation moments should be obtained by either 'getSample' or 'getPopulation' method");
+    }
+
+    T getMoment3() const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Covariation moments should be obtained by either 'getSample' or 'getPopulation' method");
+    }
+
+    T getMoment4() const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Covariation moments should be obtained by either 'getSample' or 'getPopulation' method");
     }
 
     T NO_SANITIZE_UNDEFINED getPopulation() const
@@ -212,6 +248,26 @@ struct CorrMoments
     T NO_SANITIZE_UNDEFINED get() const
     {
         return (m0 * xy - x1 * y1) / sqrt((m0 * x2 - x1 * x1) * (m0 * y2 - y1 * y1));
+    }
+
+    T getSample() const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Correlation moments should be obtained by the 'get' method");
+    }
+
+    T getPopulation() const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Correlation moments should be obtained by the 'get' method");
+    }
+
+    T getMoment3() const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Correlation moments should be obtained by either 'getSample' or 'getPopulation' method");
+    }
+
+    T getMoment4() const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Correlation moments should be obtained by either 'getSample' or 'getPopulation' method");
     }
 };
 
