@@ -144,9 +144,9 @@ namespace
             time_zone_offset = 0;
         }
 
-        void setEra(String & text) // NOLINT
+        /// Input text is expected to be lowered by caller
+        void setEra(const String & text) // NOLINT
         {
-            boost::to_lower(text);
             if (text == "bc")
                 throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Era BC exceeds the range of DateTime");
             else if (text != "ad")
@@ -177,7 +177,7 @@ namespace
             }
         }
 
-        void setYear2(Int32 year_, bool is_year_of_era_ = false, bool is_week_year = false)
+        void setYear2(Int32 year_)
         {
             if (year_ >= 70 && year_ < 100)
                 year_ += 1900;
@@ -186,7 +186,7 @@ namespace
             else
                 throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for year2 must be in the range [0, 99]", year_);
 
-            setYear(year_, is_year_of_era_, is_week_year);
+            setYear(year_, false, false);
         }
 
         void setMonth(Int32 month_)
@@ -264,9 +264,9 @@ namespace
             }
         }
 
-        void setAMPM(String & text)
+        /// Input text is expected to be lowered by caller
+        void setAMPM(const String & text)
         {
-            boost::to_lower(text);
             if (text == "am")
                 is_am = true;
             else if (text == "pm")
@@ -446,18 +446,14 @@ namespace
         }
     };
 
-    struct ParseDateTimeTraits
+    enum class ParseSyntax
     {
-        enum class ParseSyntax
-        {
-            MySQL,
-            Joda
-        };
+        MySQL,
+        Joda
     };
 
-
     /// _FUNC_(str[, format, timezone])
-    template <typename Name, ParseDateTimeTraits::ParseSyntax parse_syntax>
+    template <typename Name, ParseSyntax parse_syntax>
     class FunctionParseDateTimeImpl : public IFunction
     {
     public:
@@ -485,21 +481,21 @@ namespace
             if (!isString(arguments[0].type))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of first argument of function {} when arguments size is 1. Should be String",
+                    "Illegal type {} of first argument of function {}. Should be String",
                     arguments[0].type->getName(),
                     getName());
 
             if (arguments.size() > 1 && !isString(arguments[1].type))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of second argument of function {} when arguments size is 1. Should be String",
+                    "Illegal type {} of second argument of function {}. Should be String",
                     arguments[0].type->getName(),
                     getName());
 
             if (arguments.size() > 2 && !isString(arguments[2].type))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of third argument of function {} when arguments size is 1. Should be String",
+                    "Illegal type {} of third argument of function {}. Should be String",
                     arguments[0].type->getName(),
                     getName());
 
@@ -511,12 +507,8 @@ namespace
         executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
         {
             const auto * col_str = checkAndGetColumn<ColumnString>(arguments[0].column.get());
-            if (!col_str)
-                throw Exception(
-                    ErrorCodes::ILLEGAL_COLUMN,
-                    "Illegal column {} of first ('str') argument of function {}. Must be string.",
-                    arguments[0].column->getName(),
-                    getName());
+            /// It was checked before in getReturnTypeImpl
+            assert(!col_str);
 
             String format = getFormat(arguments);
             const auto & time_zone = getTimeZone(arguments);
@@ -567,7 +559,7 @@ namespace
             };
 
             using Func = std::conditional_t<
-                parse_syntax == ParseDateTimeTraits::ParseSyntax::MySQL,
+                parse_syntax == ParseSyntax::MySQL,
                 Pos (*)(Pos, Pos, const String &, DateTime &),
                 std::function<Pos(Pos, Pos, const String &, DateTime &)>>;
             Func func{};
@@ -947,6 +939,7 @@ namespace
                 checkSpace(cur, end, 2, "mysqlAMPM requires size >= 2", flag);
 
                 String text(cur, 2);
+                boost::to_lower(text);
                 date.setAMPM(text);
                 cur += 2;
                 return cur;
@@ -1112,6 +1105,7 @@ namespace
                 checkSpace(cur, end, 2, "jodaEra requires size >= 2", flag);
 
                 String era(cur, 2);
+                boost::to_lower(era);
                 date.setEra(era);
                 cur += 2;
                 return cur;
@@ -1257,6 +1251,7 @@ namespace
                 checkSpace(cur, end, 2, "jodaHalfDayOfDay requires size >= 2", flag);
 
                 String text(cur, 2);
+                boost::to_lower(text);
                 date.setAMPM(text);
                 cur += 2;
                 return cur;
@@ -1314,10 +1309,10 @@ namespace
         std::vector<Instruction> parseFormat(const String & format) const
         {
             static_assert(
-                parse_syntax == ParseDateTimeTraits::ParseSyntax::MySQL || parse_syntax == ParseDateTimeTraits::ParseSyntax::Joda,
+                parse_syntax == ParseSyntax::MySQL || parse_syntax == ParseSyntax::Joda,
                 "parse syntax must be one of MySQL or Joda");
 
-            if constexpr (parse_syntax == ParseDateTimeTraits::ParseSyntax::MySQL)
+            if constexpr (parse_syntax == ParseSyntax::MySQL)
                 return parseMysqlFormat(format);
             else
                 return parseJodaFormat(format);
@@ -1342,7 +1337,8 @@ namespace
 
                     pos = next_percent_pos + 1;
                     if (pos >= end)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sign '%' is the last in format, if you need it, use '%%'");
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS, "'%' must not be the last character in the format string, use '%%' instead");
 
                     switch (*pos)
                     {
@@ -1417,7 +1413,7 @@ namespace
                             instructions.emplace_back(ACTION_ARGS(Instruction::mysqlISO8601Week));
                             break;
 
-                        // Weekday as a decimal number with Sunday as 0 (0-6)  4
+                        // Weekday as a integer number with Sunday as 0 (0-6)  4
                         case 'w':
                             instructions.emplace_back(ACTION_ARGS(Instruction::mysqlDayOfWeek0To6));
                             break;
@@ -1553,6 +1549,7 @@ namespace
                 }
                 else
                 {
+                    /// Handle characters after last %
                     if (pos < end)
                         instructions.emplace_back(String(pos, end - pos));
                     break;
@@ -1694,19 +1691,15 @@ namespace
         {
             if (arguments.size() < 2)
             {
-                if constexpr (parse_syntax == ParseDateTimeTraits::ParseSyntax::Joda)
+                if constexpr (parse_syntax == ParseSyntax::Joda)
                     return "yyyy-MM-dd HH:mm:ss";
                 else
                     return "%Y-%m-%d %H:%M:%S";
             }
 
             const auto * format_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
-            if (!format_column)
-                throw Exception(
-                    ErrorCodes::ILLEGAL_COLUMN,
-                    "Illegal column {} of second ('format') argument of function {}. Must be constant string.",
-                    arguments[1].column->getName(),
-                    getName());
+            /// It was checked before in getReturnTypeImpl
+            assert(!format_column);
             return format_column->getValue<String>();
         }
 
@@ -1719,13 +1712,11 @@ namespace
             if (!col)
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
-                    "Illegal column {} of third ('timezone') argument of function {}. Must be constant string.",
+                    "Illegal column {} of third ('timezone') argument of function {}. Must be constant String.",
                     arguments[2].column->getName(),
                     getName());
 
             String time_zone = col->getValue<String>();
-            if (time_zone.empty())
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Provided time zone must be non-empty and be a valid time zone");
             return DateLUT::instance(time_zone);
         }
     };
@@ -1741,15 +1732,15 @@ namespace
     };
 
 
-    using FunctionParseDateTime = FunctionParseDateTimeImpl<NameParseDateTime, ParseDateTimeTraits::ParseSyntax::MySQL>;
+    using FunctionParseDateTime = FunctionParseDateTimeImpl<NameParseDateTime, ParseSyntax::MySQL>;
     using FunctionParseDateTimeInJodaSyntax
-        = FunctionParseDateTimeImpl<NameParseDateTimeInJodaSyntax, ParseDateTimeTraits::ParseSyntax::Joda>;
+        = FunctionParseDateTimeImpl<NameParseDateTimeInJodaSyntax, ParseSyntax::Joda>;
 }
 
 REGISTER_FUNCTION(ParseDateTime)
 {
     factory.registerFunction<FunctionParseDateTime>();
-    factory.registerAlias("TO_UNIX_TIMESTAMP", "parseDateTime");
+    factory.registerAlias("TO_UNIXTIME", FunctionParseDateTime::name);
 
     factory.registerFunction<FunctionParseDateTimeInJodaSyntax>();
 }

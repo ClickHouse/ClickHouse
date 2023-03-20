@@ -1286,7 +1286,7 @@ Using replacement fields, you can define a pattern for the resulting string. “
 | %T       | ISO 8601 time format (HH:MM:SS), equivalent to %H:%M:%S | 22:33:44   |
 | %u       | ISO 8601 weekday as number with Monday as 1 (1-7)       | 2          |
 | %V       | ISO 8601 week number (01-53)                            | 01         |
-| %w       | weekday as a decimal number with Sunday as 0 (0-6)      | 2          |
+| %w       | weekday as a integer number with Sunday as 0 (0-6)      | 2          |
 | %W       | full weekday name (Monday-Sunday)                       | Monday     |
 | %y       | Year, last two digits (00-99)                           | 18         |
 | %Y       | Year                                                    | 2018       |

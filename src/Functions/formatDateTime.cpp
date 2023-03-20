@@ -1007,7 +1007,7 @@ public:
                         out_template += "00";
                         break;
 
-                    // Weekday as a decimal number with Sunday as 0 (0-6)  4
+                    // Weekday as a integer number with Sunday as 0 (0-6)  4
                     case 'w':
                         instructions.emplace_back(&Instruction<T>::mysqlDayOfWeek0To6);
                         out_template += "0";

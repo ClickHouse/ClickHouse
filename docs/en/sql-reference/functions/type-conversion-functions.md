@@ -1354,7 +1354,7 @@ Same as for [parseDateTime64BestEffort](#parsedatetime64besteffort), except that
 ## parseDateTime
 Parse [DateTime](/docs/en/sql-reference/data-types/datetime.md) from string according to a specified MySQL format string, refer to https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format. It is nearly an opposite operation of function [formatDateTime](/docs/en/sql-reference/functions/date-time-functions.md#date_time_functions-formatDateTime).
 
-Alias: `TO_UNIX_TIMESTAMP`.
+Alias: `TO_TIMESTAMP`.
 
 
 **Syntax**
