@@ -26,10 +26,6 @@ NextState InlineEscapingValueStateHandler::wait(std::string_view file, size_t po
         {
             return {pos + 1u, State::READING_QUOTED_VALUE};
         }
-        else if (std::find(pair_delimiters.begin(), pair_delimiters.end(), current_character) != pair_delimiters.end())
-        {
-            return {pos, State::READING_EMPTY_VALUE};
-        }
         else if (key_value_delimiter == current_character)
         {
             return {pos, State::WAITING_KEY};
@@ -40,7 +36,7 @@ NextState InlineEscapingValueStateHandler::wait(std::string_view file, size_t po
         }
     }
 
-    return {pos, State::READING_EMPTY_VALUE};
+    return {pos, State::READING_VALUE};
 }
 
 NextState InlineEscapingValueStateHandler::read(std::string_view file, size_t pos, ElementType & value) const
@@ -162,12 +158,6 @@ NextState InlineEscapingValueStateHandler::readQuoted(std::string_view file, siz
     }
 
     return {pos, State::END};
-}
-
-NextState InlineEscapingValueStateHandler::readEmpty(std::string_view, size_t pos, ElementType & value)
-{
-    value.clear();
-    return {pos + 1, State::FLUSH_PAIR};
 }
 
 }

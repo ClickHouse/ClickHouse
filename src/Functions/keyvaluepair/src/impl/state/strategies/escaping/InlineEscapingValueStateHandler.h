@@ -22,8 +22,6 @@ public:
 
     [[nodiscard]] NextState readQuoted(std::string_view file, size_t pos, ElementType & value) const;
 
-    [[nodiscard]] static NextState readEmpty(std::string_view, size_t pos, ElementType & value);
-
 private:
     Configuration extractor_configuration;
     std::vector<char> read_needles;
