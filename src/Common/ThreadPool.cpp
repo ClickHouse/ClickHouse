@@ -430,14 +430,14 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
                 /// This thread is excessive. The worker will stop.
                 detach_thread();
                 job_finished.notify_all();
-                if (exception_from_job)
-                    new_job_or_shutdown.notify_all(); /// `shutdown` could be just set, wake up other threads so they can finish themselves.
+                if (shutdown)
+                    new_job_or_shutdown.notify_all(); /// `shutdown` was set, wake up other threads so they can finish themselves.
                 return;
             }
 
             job_finished.notify_all();
-            if (exception_from_job)
-                new_job_or_shutdown.notify_all(); /// `shutdown` could be just set, wake up other threads so they can finish themselves.
+            if (shutdown)
+                new_job_or_shutdown.notify_all(); /// `shutdown` was set, wake up other threads so they can finish themselves.
         }
     }
 }
