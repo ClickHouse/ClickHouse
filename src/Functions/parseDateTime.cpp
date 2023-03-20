@@ -98,8 +98,6 @@ namespace
         Int32 day_of_year = 1; /// day of year, range [1, 366]
         bool day_of_year_format = false; /// If true, date is composed of year(reuse year), day of year(use day_of_year)
 
-        bool century_format = false; /// If true, year is calculated from century, range [19, 21]
-
         bool is_year_of_era = false; /// If true, year is calculated from era and year of era, the latter cannot be zero or negative.
         bool has_year = false; /// Whether year was explicitly specified.
 
@@ -111,7 +109,7 @@ namespace
         Int32 minute = 0; /// range [0, 59]
         Int32 second = 0; /// range [0, 59]
 
-        bool is_am = true; /// AM -> true, PM -> false
+        bool is_am = true; /// If is_hour_of_half_day = true and is_am = false (i.e. pm) then add 12 hours to the result DateTime
         bool is_clock_hour = false; /// Whether the hour is clockhour
         bool is_hour_of_half_day = false; /// Whether the hour is of half day
 
@@ -131,8 +129,6 @@ namespace
             day_of_year = 1;
             day_of_year_format = false;
 
-            century_format = false;
-
             is_year_of_era = false;
             has_year = false;
 
@@ -148,29 +144,49 @@ namespace
             time_zone_offset = 0;
         }
 
+        void setEra(String & text) // NOLINT
+        {
+            boost::to_lower(text);
+            if (text == "bc")
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Era BC exceeds the range of DateTime");
+            else if (text != "ad")
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Unknown era {}", text);
+        }
+
         void setCentury(Int32 century)
         {
             if (century < 19 || century > 21)
                 throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for century must be in the range [19, 21]", century);
 
-            century_format = true;
             year = 100 * century;
             has_year = true;
         }
 
-        void setDayOfWeek(Int32 day_of_week_)
+        void setYear(Int32 year_, bool is_year_of_era_ = false, bool is_week_year = false)
         {
-            if (day_of_week_ < 1 || day_of_week_ > 7)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for day of week must be in the range [1, 7]", day_of_week_);
+            if (year_ < minYear || year_ > maxYear)
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for year must be in the range [{}, {}]", year_, minYear, maxYear);
 
-            day_of_week = day_of_week_;
-            week_date_format = true;
-            day_of_year_format = false;
-            if (!has_year)
+            year = year_;
+            has_year = true;
+            is_year_of_era = is_year_of_era_;
+            if (is_week_year)
             {
-                has_year = true;
-                year = 2000;
+                week_date_format = true;
+                day_of_year_format = false;
             }
+        }
+
+        void setYear2(Int32 year_, bool is_year_of_era_ = false, bool is_week_year = false)
+        {
+            if (year_ >= 70 && year_ < 100)
+                year_ += 1900;
+            else if (year_ >= 0 && year_ < 70)
+                year_ += 2000;
+            else
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for year2 must be in the range [0, 99]", year_);
+
+            setYear(year_, is_year_of_era_, is_week_year);
         }
 
         void setMonth(Int32 month_)
@@ -181,6 +197,36 @@ namespace
             month = month_;
             week_date_format = false;
             day_of_year_format = false;
+            if (!has_year)
+            {
+                has_year = true;
+                year = 2000;
+            }
+        }
+
+        void setWeek(Int32 week_)
+        {
+            if (week_ < 1 || week_ > 53)
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for week of week year must be in the range [1, 53]", week_);
+
+            week = week_;
+            week_date_format = true;
+            day_of_year_format = false;
+            if (!has_year)
+            {
+                has_year = true;
+                year = 2000;
+            }
+        }
+
+        void setDayOfYear(Int32 day_of_year_)
+        {
+            if (day_of_year_ < 1 || day_of_year_ > 366)
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for day of year must be in the range [1, 366]", day_of_year_);
+
+            day_of_year = day_of_year_;
+            day_of_year_format = true;
+            week_date_format = false;
             if (!has_year)
             {
                 has_year = true;
@@ -203,55 +249,12 @@ namespace
             }
         }
 
-        ALWAYS_INLINE void setDayOfYear(Int32 day_of_year_)
+        void setDayOfWeek(Int32 day_of_week_)
         {
-            if (day_of_year_ < 1 || day_of_year_ > 366)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for day of year must be in the range [1, 366]", day_of_year_);
+            if (day_of_week_ < 1 || day_of_week_ > 7)
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for day of week must be in the range [1, 7]", day_of_week_);
 
-            day_of_year = day_of_year_;
-            day_of_year_format = true;
-            week_date_format = false;
-            if (!has_year)
-            {
-                has_year = true;
-                year = 2000;
-            }
-        }
-
-        void setYear2(Int32 year_, bool is_year_of_era_ = false, bool is_week_year = false)
-        {
-            if (year_ >= 70 && year_ < 100)
-                year_ += 1900;
-            else if (year_ >= 0 && year_ < 70)
-                year_ += 2000;
-            else
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for year2 must be in the range [0, 99]", year_);
-
-            setYear(year_, is_year_of_era_, is_week_year);
-        }
-
-        void setYear(Int32 year_, bool is_year_of_era_ = false, bool is_week_year = false)
-        {
-            if (year_ < minYear || year_ > maxYear)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for year must be in the range [{}, {}]", year_, minYear, maxYear);
-
-            year = year_;
-            century_format = false;
-            has_year = true;
-            is_year_of_era = is_year_of_era_;
-            if (is_week_year)
-            {
-                week_date_format = true;
-                day_of_year_format = false;
-            }
-        }
-
-        void setWeek(Int32 week_)
-        {
-            if (week_ < 1 || week_ > 53)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for week of week year must be in the range [1, 53]", week_);
-
-            week = week_;
+            day_of_week = day_of_week_;
             week_date_format = true;
             day_of_year_format = false;
             if (!has_year)
@@ -261,32 +264,7 @@ namespace
             }
         }
 
-        void setMinute(Int32 minute_)
-        {
-            if (minute_ < 0 || minute_ > 59)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for minute must be in the range [0, 59]", minute_);
-
-            minute = minute_;
-        }
-
-        void setSecond(Int32 second_)
-        {
-            if (second_ < 0 || second_ > 59)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for second must be in the range [0, 59]", second_);
-
-            second = second_;
-        }
-
-        void setEra(String & text) // NOLINT
-        {
-            boost::to_lower(text);
-            if (text == "bc")
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Era BC exceeds the range of DateTime");
-            else if (text != "ad")
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Unknown era {}", text);
-        }
-
-        ALWAYS_INLINE void setAMPM(String & text)
+        void setAMPM(String & text)
         {
             boost::to_lower(text);
             if (text == "am")
@@ -297,7 +275,7 @@ namespace
                 throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Unknown half day of day: {}", text);
         }
 
-        ALWAYS_INLINE void setHour(Int32 hour_, bool is_hour_of_half_day_ = false, bool is_clock_hour_ = false)
+        void setHour(Int32 hour_, bool is_hour_of_half_day_ = false, bool is_clock_hour_ = false)
         {
             Int32 max_hour;
             Int32 min_hour;
@@ -338,6 +316,22 @@ namespace
             hour = new_hour;
             is_hour_of_half_day = is_hour_of_half_day_;
             is_clock_hour = is_clock_hour_;
+        }
+
+        void setMinute(Int32 minute_)
+        {
+            if (minute_ < 0 || minute_ > 59)
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for minute must be in the range [0, 59]", minute_);
+
+            minute = minute_;
+        }
+
+        void setSecond(Int32 second_)
+        {
+            if (second_ < 0 || second_ > 59)
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for second must be in the range [0, 59]", second_);
+
+            second = second_;
         }
 
         /// For debug
@@ -676,18 +670,18 @@ namespace
             }
 
             template <NeedCheckSpace need_check_space>
-            static Pos assertChar(Pos cur, Pos end, char ch, [[maybe_unused]] const String & flag)
+            static Pos assertChar(Pos cur, Pos end, char expected, const String & flag)
             {
                 if constexpr (need_check_space == NeedCheckSpace::Yes)
                     checkSpace(cur, end, 1, "assertChar requires size >= 1", flag);
 
-                if (*cur != ch)
+                if (*cur != expected)
                     throw Exception(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse flag {} from {} because char {} is expected but {} provided",
                         flag,
                         std::string_view(cur, end - cur),
-                        String(ch, 1),
+                        String(expected, 1),
                         String(*cur, 1));
 
                 ++cur;
@@ -810,7 +804,7 @@ namespace
                 return cur;
             }
 
-            static Pos mysqlISO8601Year2(Pos cur, Pos end, [[maybe_unused]] const String & flag, DateTime & date)
+            static Pos mysqlISO8601Year2(Pos cur, Pos end, const String & flag, DateTime & date)
             {
                 Int32 year2;
                 cur = readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, flag, year2);
@@ -818,7 +812,7 @@ namespace
                 return cur;
             }
 
-            static Pos mysqlISO8601Year4(Pos cur, Pos end, [[maybe_unused]] const String & flag, DateTime & date)
+            static Pos mysqlISO8601Year4(Pos cur, Pos end, const String & flag, DateTime & date)
             {
                 Int32 year;
                 cur = readNumber4<Int32, NeedCheckSpace::Yes>(cur, end, flag, year);
@@ -826,7 +820,7 @@ namespace
                 return cur;
             }
 
-            static Pos mysqlDayOfYear(Pos cur, Pos end, [[maybe_unused]] const String & flag, DateTime & date)
+            static Pos mysqlDayOfYear(Pos cur, Pos end, const String & flag, DateTime & date)
             {
                 Int32 day_of_year;
                 cur = readNumber3<Int32, NeedCheckSpace::Yes>(cur, end, flag, day_of_year);
@@ -834,7 +828,7 @@ namespace
                 return cur;
             }
 
-            static Pos mysqlDayOfWeek(Pos cur, Pos end, [[maybe_unused]] const String & flag, DateTime & date)
+            static Pos mysqlDayOfWeek(Pos cur, Pos end, const String & flag, DateTime & date)
             {
                 checkSpace(cur, end, 1, "mysqlDayOfWeek requires size >= 1", flag);
                 date.setDayOfWeek(*cur - '0');
@@ -842,7 +836,7 @@ namespace
                 return cur;
             }
 
-            static Pos mysqlISO8601Week(Pos cur, Pos end, [[maybe_unused]] const String & flag, DateTime & date)
+            static Pos mysqlISO8601Week(Pos cur, Pos end, const String & flag, DateTime & date)
             {
                 Int32 week;
                 cur = readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, flag, week);
@@ -850,7 +844,7 @@ namespace
                 return cur;
             }
 
-            static Pos mysqlDayOfWeek0To6(Pos cur, Pos end, [[maybe_unused]] const String & flag, DateTime & date)
+            static Pos mysqlDayOfWeek0To6(Pos cur, Pos end, const String & flag, DateTime & date)
             {
                 checkSpace(cur, end, 1, "mysqlDayOfWeek requires size >= 1", flag);
 
@@ -863,9 +857,9 @@ namespace
                 return cur;
             }
 
-            static Pos mysqlDayOfWeekTextLong(Pos cur, Pos end, [[maybe_unused]] const String & flag, DateTime & date)
+            static Pos mysqlDayOfWeekTextLong(Pos cur, Pos end, const String & flag, DateTime & date)
             {
-                checkSpace(cur, end, 6, "jodaDayOfWeekText requires the size >= 6", flag);
+                checkSpace(cur, end, 6, "jodaDayOfWeekText requires size >= 6", flag);
                 String text1(cur, 3);
                 boost::to_lower(text1);
                 auto it = dayOfWeekMap.find(text1);
@@ -878,9 +872,9 @@ namespace
                         text1);
                 cur += 3;
 
-                size_t left_size = it->second.first.size();
-                checkSpace(cur, end, left_size, "jodaDayOfWeekText requires the second parg size >= " + std::to_string(left_size), flag);
-                String text2(cur, left_size);
+                size_t expected_remaining_size = it->second.first.size();
+                checkSpace(cur, end, expected_remaining_size, "jodaDayOfWeekText requires the second parg size >= " + std::to_string(expected_remaining_size), flag);
+                String text2(cur, expected_remaining_size);
                 boost::to_lower(text2);
                 if (text2 != it->second.first)
                     throw Exception(
@@ -889,13 +883,13 @@ namespace
                         flag,
                         std::string_view(cur, end - cur),
                         text1 + text2);
-                cur += left_size;
+                cur += expected_remaining_size;
 
                 date.setDayOfWeek(it->second.second);
                 return cur;
             }
 
-            static Pos mysqlYear2(Pos cur, Pos end, [[maybe_unused]] const String & flag, DateTime & date)
+            static Pos mysqlYear2(Pos cur, Pos end, const String & flag, DateTime & date)
             {
                 Int32 year2;
                 cur = readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, flag, year2);
@@ -903,7 +897,7 @@ namespace
                 return cur;
             }
 
-            static Pos mysqlYear4(Pos cur, Pos end, [[maybe_unused]] const String & flag, DateTime & date)
+            static Pos mysqlYear4(Pos cur, Pos end, const String & flag, DateTime & date)
             {
                 Int32 year;
                 cur = readNumber4<Int32, NeedCheckSpace::Yes>(cur, end, flag, year);
@@ -911,7 +905,7 @@ namespace
                 return cur;
             }
 
-            static Pos mysqlTimezoneOffset(Pos cur, Pos end, [[maybe_unused]] const String & flag, DateTime & date)
+            static Pos mysqlTimezoneOffset(Pos cur, Pos end, const String & flag, DateTime & date)
             {
                 checkSpace(cur, end, 5, "mysqlTimezoneOffset requires size >= 5", flag);
 
@@ -940,7 +934,7 @@ namespace
                 return cur;
             }
 
-            static Pos mysqlMinute(Pos cur, Pos end, [[maybe_unused]] const String & flag, DateTime & date)
+            static Pos mysqlMinute(Pos cur, Pos end, const String & flag, DateTime & date)
             {
                 Int32 minute;
                 cur = readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, flag, minute);
@@ -948,7 +942,7 @@ namespace
                 return cur;
             }
 
-            static Pos mysqlAMPM(Pos cur, Pos end, [[maybe_unused]] const String & flag, DateTime & date)
+            static Pos mysqlAMPM(Pos cur, Pos end, const String & flag, DateTime & date)
             {
                 checkSpace(cur, end, 2, "mysqlAMPM requires size >= 2", flag);
 
@@ -958,7 +952,7 @@ namespace
                 return cur;
             }
 
-            static Pos mysqlHHMM12(Pos cur, Pos end, [[maybe_unused]] const String & flag, DateTime & date)
+            static Pos mysqlHHMM12(Pos cur, Pos end, const String & flag, DateTime & date)
             {
                 checkSpace(cur, end, 8, "mysqlHHMM12 requires size >= 8", flag);
 
@@ -976,7 +970,7 @@ namespace
                 return cur;
             }
 
-            static Pos mysqlHHMM24(Pos cur, Pos end, [[maybe_unused]] const String & flag, DateTime & date)
+            static Pos mysqlHHMM24(Pos cur, Pos end, const String & flag, DateTime & date)
             {
                 checkSpace(cur, end, 5, "mysqlHHMM24 requires size >= 5", flag);
 
@@ -991,7 +985,7 @@ namespace
                 return cur;
             }
 
-            static Pos mysqlSecond(Pos cur, Pos end, [[maybe_unused]] const String & flag, DateTime & date)
+            static Pos mysqlSecond(Pos cur, Pos end, const String & flag, DateTime & date)
             {
                 Int32 second;
                 cur = readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, flag, second);
@@ -999,7 +993,7 @@ namespace
                 return cur;
             }
 
-            static Pos mysqlISO8601Time(Pos cur, Pos end, [[maybe_unused]] const String & flag, DateTime & date)
+            static Pos mysqlISO8601Time(Pos cur, Pos end, const String & flag, DateTime & date)
             {
                 checkSpace(cur, end, 8, "mysqlISO8601Time requires size >= 8", flag);
 
@@ -1018,7 +1012,7 @@ namespace
                 return cur;
             }
 
-            static Pos mysqlHour12(Pos cur, Pos end, [[maybe_unused]] const String & flag, DateTime & date)
+            static Pos mysqlHour12(Pos cur, Pos end, const String & flag, DateTime & date)
             {
                 Int32 hour;
                 cur = readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, flag, hour);
@@ -1026,7 +1020,7 @@ namespace
                 return cur;
             }
 
-            static Pos mysqlHour24(Pos cur, Pos end, [[maybe_unused]] const String & flag, DateTime & date)
+            static Pos mysqlHour24(Pos cur, Pos end, const String & flag, DateTime & date)
             {
                 Int32 hour;
                 cur = readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, flag, hour);
@@ -1041,7 +1035,7 @@ namespace
                 bool allow_plus_sign,
                 bool is_year,
                 int repetitions,
-                int max_digits_consume,
+                int max_digits_to_read,
                 const String & flag,
                 Int32 & number)
             {
@@ -1058,7 +1052,7 @@ namespace
                 }
 
                 number = 0;
-                Pos start = cur;
+                const Pos start = cur;
                 if (is_year && repetitions == 2)
                 {
                     // If abbreviated two year digit is provided in format string, try to read
@@ -1068,7 +1062,7 @@ namespace
                     // If more than two digits are provided, then simply read in full year
                     // normally without conversion
                     int count = 0;
-                    while (cur < end && cur < start + max_digits_consume && *cur >= '0' && *cur <= '9')
+                    while (cur < end && cur < start + max_digits_to_read && *cur >= '0' && *cur <= '9')
                     {
                         number = number * 10 + (*cur - '0');
                         ++cur;
@@ -1083,7 +1077,7 @@ namespace
                     }
                     else
                     {
-                        while (cur < end && cur < start + max_digits_consume && *cur >= '0' && *cur <= '9')
+                        while (cur < end && cur < start + max_digits_to_read && *cur >= '0' && *cur <= '9')
                         {
                             number = number * 10 + (*cur - '0');
                             ++cur;
@@ -1092,7 +1086,7 @@ namespace
                 }
                 else
                 {
-                    while (cur < end && cur < start + max_digits_consume && *cur >= '0' and *cur <= '9')
+                    while (cur < end && cur < start + max_digits_to_read && *cur >= '0' && *cur <= '9')
                     {
                         number = number * 10 + (*cur - '0');
                         ++cur;
@@ -1100,7 +1094,7 @@ namespace
                 }
 
                 /// Need to have read at least one digit.
-                if (cur <= start)
+                if (cur == start)
                     throw Exception(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse flag {} from {} because read number failed",
@@ -1113,7 +1107,7 @@ namespace
                 return cur;
             }
 
-            static Pos jodaEra(int, Pos cur, Pos end, [[maybe_unused]] const String & flag, DateTime & date)
+            static Pos jodaEra(int, Pos cur, Pos end, const String & flag, DateTime & date)
             {
                 checkSpace(cur, end, 2, "jodaEra requires size >= 2", flag);
 
@@ -1123,7 +1117,7 @@ namespace
                 return cur;
             }
 
-            static Pos jodaCenturyOfEra(int repetitions, Pos cur, Pos end, [[maybe_unused]] const String & flag, DateTime & date)
+            static Pos jodaCenturyOfEra(int repetitions, Pos cur, Pos end, const String & flag, DateTime & date)
             {
                 Int32 century;
                 cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, repetitions, flag, century);
@@ -1131,7 +1125,7 @@ namespace
                 return cur;
             }
 
-            static Pos jodaYearOfEra(int repetitions, Pos cur, Pos end, [[maybe_unused]] const String & flag, DateTime & date)
+            static Pos jodaYearOfEra(int repetitions, Pos cur, Pos end, const String & flag, DateTime & date)
             {
                 Int32 year_of_era;
                 cur = readNumberWithVariableLength(cur, end, false, false, true, repetitions, repetitions, flag, year_of_era);
@@ -1139,7 +1133,7 @@ namespace
                 return cur;
             }
 
-            static Pos jodaWeekYear(int repetitions, Pos cur, Pos end, [[maybe_unused]] const String & flag, DateTime & date)
+            static Pos jodaWeekYear(int repetitions, Pos cur, Pos end, const String & flag, DateTime & date)
             {
                 Int32 week_year;
                 cur = readNumberWithVariableLength(cur, end, true, true, true, repetitions, repetitions, flag, week_year);
@@ -1147,7 +1141,7 @@ namespace
                 return cur;
             }
 
-            static Pos jodaWeekOfWeekYear(int repetitions, Pos cur, Pos end, [[maybe_unused]] const String & flag, DateTime & date)
+            static Pos jodaWeekOfWeekYear(int repetitions, Pos cur, Pos end, const String & flag, DateTime & date)
             {
                 Int32 week;
                 cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), flag, week);
@@ -1155,7 +1149,7 @@ namespace
                 return cur;
             }
 
-            static Pos jodaDayOfWeek1Based(int repetitions, Pos cur, Pos end, [[maybe_unused]] const String & flag, DateTime & date)
+            static Pos jodaDayOfWeek1Based(int repetitions, Pos cur, Pos end, const String & flag, DateTime & date)
             {
                 Int32 day_of_week;
                 cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, repetitions, flag, day_of_week);
@@ -1164,7 +1158,7 @@ namespace
             }
 
             static Pos
-            jodaDayOfWeekText(size_t /*min_represent_digits*/, Pos cur, Pos end, [[maybe_unused]] const String & flag, DateTime & date)
+            jodaDayOfWeekText(size_t /*min_represent_digits*/, Pos cur, Pos end, const String & flag, DateTime & date)
             {
                 checkSpace(cur, end, 3, "jodaDayOfWeekText requires size >= 3", flag);
 
@@ -1181,21 +1175,21 @@ namespace
                 cur += 3;
                 date.setDayOfWeek(it->second.second);
 
-                size_t left_size = it->second.first.size();
-                if (cur + left_size <= end)
+                size_t expected_remaining_size = it->second.first.size();
+                if (cur + expected_remaining_size <= end)
                 {
-                    String text2(cur, left_size);
+                    String text2(cur, expected_remaining_size);
                     boost::to_lower(text2);
                     if (text2 == it->second.first)
                     {
-                        cur += left_size;
+                        cur += expected_remaining_size;
                         return cur;
                     }
                 }
                 return cur;
             }
 
-            static Pos jodaYear(int repetitions, Pos cur, Pos end, [[maybe_unused]] const String & flag, DateTime & date)
+            static Pos jodaYear(int repetitions, Pos cur, Pos end, const String & flag, DateTime & date)
             {
                 Int32 year;
                 cur = readNumberWithVariableLength(cur, end, true, true, true, repetitions, repetitions, flag, year);
@@ -1203,7 +1197,7 @@ namespace
                 return cur;
             }
 
-            static Pos jodaDayOfYear(int repetitions, Pos cur, Pos end, [[maybe_unused]] const String & flag, DateTime & date)
+            static Pos jodaDayOfYear(int repetitions, Pos cur, Pos end, const String & flag, DateTime & date)
             {
                 Int32 day_of_year;
                 cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 3), flag, day_of_year);
@@ -1211,7 +1205,7 @@ namespace
                 return cur;
             }
 
-            static Pos jodaMonthOfYear(int repetitions, Pos cur, Pos end, [[maybe_unused]] const String & flag, DateTime & date)
+            static Pos jodaMonthOfYear(int repetitions, Pos cur, Pos end, const String & flag, DateTime & date)
             {
                 Int32 month;
                 cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, 2, flag, month);
@@ -1219,7 +1213,7 @@ namespace
                 return cur;
             }
 
-            static Pos jodaMonthOfYearText(int, Pos cur, Pos end, [[maybe_unused]] const String & flag, DateTime & date)
+            static Pos jodaMonthOfYearText(int, Pos cur, Pos end, const String & flag, DateTime & date)
             {
                 checkSpace(cur, end, 3, "jodaMonthOfYearText requires size >= 3", flag);
                 String text1(cur, 3);
@@ -1235,21 +1229,21 @@ namespace
                 cur += 3;
                 date.setMonth(it->second.second);
 
-                size_t left_size = it->second.first.size();
-                if (cur + left_size <= end)
+                size_t expected_remaining_size = it->second.first.size();
+                if (cur + expected_remaining_size <= end)
                 {
-                    String text2(cur, left_size);
+                    String text2(cur, expected_remaining_size);
                     boost::to_lower(text2);
                     if (text2 == it->second.first)
                     {
-                        cur += left_size;
+                        cur += expected_remaining_size;
                         return cur;
                     }
                 }
                 return cur;
             }
 
-            static Pos jodaDayOfMonth(int repetitions, Pos cur, Pos end, [[maybe_unused]] const String & flag, DateTime & date)
+            static Pos jodaDayOfMonth(int repetitions, Pos cur, Pos end, const String & flag, DateTime & date)
             {
                 Int32 day_of_month;
                 cur = readNumberWithVariableLength(
@@ -1258,7 +1252,7 @@ namespace
                 return cur;
             }
 
-            static Pos jodaHalfDayOfDay(int, Pos cur, Pos end, [[maybe_unused]] const String & flag, DateTime & date)
+            static Pos jodaHalfDayOfDay(int, Pos cur, Pos end, const String & flag, DateTime & date)
             {
                 checkSpace(cur, end, 2, "jodaHalfDayOfDay requires size >= 2", flag);
 
@@ -1268,7 +1262,7 @@ namespace
                 return cur;
             }
 
-            static Pos jodaHourOfHalfDay(int repetitions, Pos cur, Pos end, [[maybe_unused]] const String & flag, DateTime & date)
+            static Pos jodaHourOfHalfDay(int repetitions, Pos cur, Pos end, const String & flag, DateTime & date)
             {
                 Int32 hour;
                 cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), flag, hour);
@@ -1276,7 +1270,7 @@ namespace
                 return cur;
             }
 
-            static Pos jodaClockHourOfHalfDay(int repetitions, Pos cur, Pos end, [[maybe_unused]] const String & flag, DateTime & date)
+            static Pos jodaClockHourOfHalfDay(int repetitions, Pos cur, Pos end, const String & flag, DateTime & date)
             {
                 Int32 hour;
                 cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), flag, hour);
@@ -1284,7 +1278,7 @@ namespace
                 return cur;
             }
 
-            static Pos jodaHourOfDay(int repetitions, Pos cur, Pos end, [[maybe_unused]] const String & flag, DateTime & date)
+            static Pos jodaHourOfDay(int repetitions, Pos cur, Pos end, const String & flag, DateTime & date)
             {
                 Int32 hour;
                 cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), flag, hour);
@@ -1292,7 +1286,7 @@ namespace
                 return cur;
             }
 
-            static Pos jodaClockHourOfDay(int repetitions, Pos cur, Pos end, [[maybe_unused]] const String & flag, DateTime & date)
+            static Pos jodaClockHourOfDay(int repetitions, Pos cur, Pos end, const String & flag, DateTime & date)
             {
                 Int32 hour;
                 cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), flag, hour);
@@ -1300,7 +1294,7 @@ namespace
                 return cur;
             }
 
-            static Pos jodaMinuteOfHour(int repetitions, Pos cur, Pos end, [[maybe_unused]] const String & flag, DateTime & date)
+            static Pos jodaMinuteOfHour(int repetitions, Pos cur, Pos end, const String & flag, DateTime & date)
             {
                 Int32 minute;
                 cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), flag, minute);
@@ -1308,7 +1302,7 @@ namespace
                 return cur;
             }
 
-            static Pos jodaSecondOfMinute(int repetitions, Pos cur, Pos end, [[maybe_unused]] const String & flag, DateTime & date)
+            static Pos jodaSecondOfMinute(int repetitions, Pos cur, Pos end, const String & flag, DateTime & date)
             {
                 Int32 second;
                 cur = readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2), flag, second);
@@ -1387,9 +1381,6 @@ namespace
                             instructions.emplace_back(ACTION_ARGS(Instruction::mysqlDayOfMonthSpacePadded));
                             break;
 
-                        // Fractional seconds
-                        case 'f':
-                            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for fractional seconds");
 
                         // Short YYYY-MM-DD date, equivalent to %Y-%m-%d   2001-08-23
                         case 'F':
@@ -1533,10 +1524,14 @@ namespace
 
                         // Escaped literal characters.
                         case '%':
-                            instructions.emplace_back("\n");
+                            instructions.emplace_back("%");
                             break;
 
-                        // Unimplemented
+                        /// Unimplemented
+
+                        /// Fractional seconds
+                        case 'f':
+                            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for fractional seconds");
                         case 'U':
                             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for WEEK (Sun-Sat)");
                         case 'v':
@@ -1545,7 +1540,6 @@ namespace
                             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for YEAR for week (Mon-Sun)");
                         case 'X':
                             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for YEAR for week (Sun-Sat)");
-
                         default:
                             throw Exception(
                                 ErrorCodes::BAD_ARGUMENTS,
@@ -1572,13 +1566,13 @@ namespace
         {
 #define ACTION_ARGS_WITH_BIND(func, arg) std::bind_front(&(func), (arg)), #func, std::string_view(cur_token, repetitions)
 
-            const char * pos = format.data();
-            const char * end = format.data() + format.size();
+            Pos pos = format.data();
+            Pos end = format.data() + format.size();
 
             std::vector<Instruction> instructions;
             while (pos < end)
             {
-                const char * cur_token = pos;
+                Pos cur_token = pos;
 
                 // Literal case
                 if (*cur_token == '\'')
@@ -1677,10 +1671,8 @@ namespace
                             break;
                         case 'S':
                             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for fractional seconds");
-                            break;
                         case 'z':
                             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for timezone");
-                            break;
                         case 'Z':
                             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "format is not supported for timezone offset id");
                         default:
