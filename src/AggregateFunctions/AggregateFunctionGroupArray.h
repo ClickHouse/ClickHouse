@@ -366,6 +366,8 @@ struct GroupArrayNodeBase
     {
         UInt64 size;
         readVarUInt(size, buf);
+        if (unlikely(size > AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE))
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size");
 
         Node * node = reinterpret_cast<Node *>(arena->alignedAlloc(sizeof(Node) + size, alignof(Node)));
         node->size = size;
