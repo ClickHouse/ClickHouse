@@ -74,7 +74,7 @@ private:
     ColumnRawPtrs extractSortColumns(const Columns & columns) const;
     bool sortColumnsEqualAt(const ColumnRawPtrs & current_chunk_sort_columns, UInt64 current_chunk_row_num) const;
 
-    void queuePushBack(QueueElement & data);
+    void queuePushBack(QueueElement & element);
     QueueElement queuePopFront();
     QueueElement popAndCutIfNeeded();
     void skipChunksForFinishedOutputPorts();

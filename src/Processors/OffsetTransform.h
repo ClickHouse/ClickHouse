@@ -50,7 +50,7 @@ private:
     UInt64 rows_in_queue = 0;
 
     QueueElement popAndCutIfNeeded();
-    void queuePushBack(QueueElement & data);
+    void queuePushBack(QueueElement & element);
     QueueElement queuePopFront();
     void skipChunksForFinishedOutputPorts();
     Status loopPop();
