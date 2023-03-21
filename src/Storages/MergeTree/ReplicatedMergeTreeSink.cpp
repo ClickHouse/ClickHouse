@@ -499,7 +499,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
     if (streams > 0 && streams <= max_insert_delayed_streams_for_parallel_write)
     {
         delayed_chunk = std::make_unique<ReplicatedMergeTreeSinkImpl<async_insert>::DelayedChunk>(replicas_num);
-        delayed_chunk->partitions = std::move(partitions);
+        delayed_chunk->partitions = partitions;
     }
 
     finishDelayedChunk(zookeeper);
