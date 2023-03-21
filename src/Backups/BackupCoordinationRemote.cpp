@@ -1,12 +1,13 @@
 #include <Backups/BackupCoordinationRemote.h>
 #include <Access/Common/AccessEntityType.h>
+#include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/escapeForFileName.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Backups/BackupCoordinationStage.h>
 
 
@@ -166,13 +167,25 @@ namespace
 }
 
 BackupCoordinationRemote::BackupCoordinationRemote(
-    const String & root_zookeeper_path_, const String & backup_uuid_, zkutil::GetZooKeeper get_zookeeper_, bool is_internal_)
-    : root_zookeeper_path(root_zookeeper_path_)
+    const BackupKeeperSettings & keeper_settings_,
+    const String & root_zookeeper_path_,
+    const String & backup_uuid_,
+    zkutil::GetZooKeeper get_zookeeper_,
+    bool is_internal_)
+    : keeper_settings(keeper_settings_)
+    , root_zookeeper_path(root_zookeeper_path_)
     , zookeeper_path(root_zookeeper_path_ + "/backup-" + backup_uuid_)
     , backup_uuid(backup_uuid_)
     , get_zookeeper(get_zookeeper_)
     , is_internal(is_internal_)
 {
+    zookeeper_retries_info = ZooKeeperRetriesInfo(
+        "BackupCoordinationRemote",
+        &Poco::Logger::get("BackupCoordinationRemote"),
+        keeper_settings.keeper_max_retries,
+        keeper_settings.keeper_retry_initial_backoff_ms,
+        keeper_settings.keeper_retry_max_backoff_ms);
+
     createRootNodes();
     stage_sync.emplace(
         zookeeper_path + "/stage", [this] { return getZooKeeper(); }, &Poco::Logger::get("BackupCoordination"));
@@ -219,6 +232,7 @@ void BackupCoordinationRemote::createRootNodes()
     zk->createIfNotExists(zookeeper_path + "/repl_mutations", "");
     zk->createIfNotExists(zookeeper_path + "/repl_data_paths", "");
     zk->createIfNotExists(zookeeper_path + "/repl_access", "");
+    zk->createIfNotExists(zookeeper_path + "/repl_sql_objects", "");
     zk->createIfNotExists(zookeeper_path + "/file_names", "");
     zk->createIfNotExists(zookeeper_path + "/file_infos", "");
     zk->createIfNotExists(zookeeper_path + "/archive_suffixes", "");
@@ -439,6 +453,64 @@ void BackupCoordinationRemote::prepareReplicatedAccess() const
     }
 }
 
+void BackupCoordinationRemote::addReplicatedSQLObjectsDir(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & host_id, const String & dir_path)
+{
+    {
+        std::lock_guard lock{mutex};
+        if (replicated_sql_objects)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "addReplicatedSQLObjectsDir() must not be called after preparing");
+    }
+
+    auto zk = getZooKeeper();
+    String path = zookeeper_path + "/repl_sql_objects/" + escapeForFileName(loader_zk_path);
+    zk->createIfNotExists(path, "");
+
+    path += "/";
+    switch (object_type)
+    {
+        case UserDefinedSQLObjectType::Function:
+            path += "functions";
+            break;
+    }
+
+    zk->createIfNotExists(path, "");
+    path += "/" + host_id;
+    zk->createIfNotExists(path, dir_path);
+}
+
+Strings BackupCoordinationRemote::getReplicatedSQLObjectsDirs(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & host_id) const
+{
+    std::lock_guard lock{mutex};
+    prepareReplicatedSQLObjects();
+    return replicated_sql_objects->getDirectories(loader_zk_path, object_type, host_id);
+}
+
+void BackupCoordinationRemote::prepareReplicatedSQLObjects() const
+{
+    if (replicated_sql_objects)
+        return;
+
+    replicated_sql_objects.emplace();
+    auto zk = getZooKeeperNoLock();
+
+    String path = zookeeper_path + "/repl_sql_objects";
+    for (const String & escaped_loader_zk_path : zk->getChildren(path))
+    {
+        String loader_zk_path = unescapeForFileName(escaped_loader_zk_path);
+        String objects_path = path + "/" + escaped_loader_zk_path;
+
+        if (String functions_path = objects_path + "/functions"; zk->exists(functions_path))
+        {
+            UserDefinedSQLObjectType object_type = UserDefinedSQLObjectType::Function;
+            for (const String & host_id : zk->getChildren(functions_path))
+            {
+                String dir = zk->get(functions_path + "/" + host_id);
+                replicated_sql_objects->addDirectory(loader_zk_path, object_type, host_id, dir);
+            }
+        }
+    }
+}
+
 
 void BackupCoordinationRemote::addFileInfo(const FileInfo & file_info, bool & is_data_file_required)
 {
@@ -486,19 +558,131 @@ void BackupCoordinationRemote::updateFileInfo(const FileInfo & file_info)
 
 std::vector<FileInfo> BackupCoordinationRemote::getAllFileInfos() const
 {
-    auto zk = getZooKeeper();
-    std::vector<FileInfo> file_infos;
-    Strings escaped_names = zk->getChildren(zookeeper_path + "/file_names");
-    for (const String & escaped_name : escaped_names)
+    /// There could be tons of files inside /file_names or /file_infos
+    /// Thus we use MultiRead requests for processing them
+    /// We also use [Zoo]Keeper retries and it should be safe, because
+    /// this function is called at the end after the actual copying is finished.
+
+    auto split_vector = [](Strings && vec, size_t max_batch_size) -> std::vector<Strings>
     {
-        String size_and_checksum = zk->get(zookeeper_path + "/file_names/" + escaped_name);
-        UInt64 size = deserializeSizeAndChecksum(size_and_checksum).first;
-        FileInfo file_info;
-        if (size) /// we don't keep FileInfos for empty files
-            file_info = deserializeFileInfo(zk->get(zookeeper_path + "/file_infos/" + size_and_checksum));
-        file_info.file_name = unescapeForFileName(escaped_name);
-        file_infos.emplace_back(std::move(file_info));
+        std::vector<Strings> result;
+        size_t left_border = 0;
+
+        auto move_to_result = [&](auto && begin, auto && end)
+        {
+            auto batch = Strings();
+            batch.reserve(max_batch_size);
+            std::move(begin, end, std::back_inserter(batch));
+            result.push_back(std::move(batch));
+        };
+
+        if (max_batch_size == 0)
+        {
+            move_to_result(vec.begin(), vec.end());
+            return result;
+        }
+
+        for (size_t pos = 0; pos < vec.size(); ++pos)
+        {
+            if (pos >= left_border + max_batch_size)
+            {
+                move_to_result(vec.begin() + left_border, vec.begin() + pos);
+                left_border = pos;
+            }
+        }
+
+        if (vec.begin() + left_border != vec.end())
+            move_to_result(vec.begin() + left_border, vec.end());
+
+        return result;
+    };
+
+    std::vector<Strings> batched_escaped_names;
+    {
+        ZooKeeperRetriesControl retries_ctl("getAllFileInfos::getChildren", zookeeper_retries_info);
+        retries_ctl.retryLoop([&]()
+        {
+            auto zk = getZooKeeper();
+            batched_escaped_names = split_vector(zk->getChildren(zookeeper_path + "/file_names"), keeper_settings.batch_size_for_keeper_multiread);
+        });
     }
+
+    std::vector<FileInfo> file_infos;
+    file_infos.reserve(batched_escaped_names.size());
+
+    for (auto & batch : batched_escaped_names)
+    {
+        zkutil::ZooKeeper::MultiGetResponse sizes_and_checksums;
+        {
+            Strings file_names_paths;
+            file_names_paths.reserve(batch.size());
+            for (const String & escaped_name : batch)
+                file_names_paths.emplace_back(zookeeper_path + "/file_names/" + escaped_name);
+
+
+            ZooKeeperRetriesControl retries_ctl("getAllFileInfos::getSizesAndChecksums", zookeeper_retries_info);
+            retries_ctl.retryLoop([&]
+            {
+                auto zk = getZooKeeper();
+                sizes_and_checksums = zk->get(file_names_paths);
+            });
+        }
+
+        Strings non_empty_file_names;
+        Strings non_empty_file_infos_paths;
+        std::vector<FileInfo> non_empty_files_infos;
+
+        /// Process all files and understand whether there are some empty files
+        /// Save non empty file names for further batch processing
+        {
+            std::vector<FileInfo> empty_files_infos;
+            for (size_t i = 0; i < batch.size(); ++i)
+            {
+                auto file_name = batch[i];
+                if (sizes_and_checksums[i].error != Coordination::Error::ZOK)
+                    throw zkutil::KeeperException(sizes_and_checksums[i].error);
+                const auto & size_and_checksum = sizes_and_checksums[i].data;
+                auto size = deserializeSizeAndChecksum(size_and_checksum).first;
+
+                if (size)
+                {
+                    /// Save it later for batch processing
+                    non_empty_file_names.emplace_back(file_name);
+                    non_empty_file_infos_paths.emplace_back(zookeeper_path + "/file_infos/" + size_and_checksum);
+                    continue;
+                }
+
+                /// File is empty
+                FileInfo empty_file_info;
+                empty_file_info.file_name = unescapeForFileName(file_name);
+                empty_files_infos.emplace_back(std::move(empty_file_info));
+            }
+
+            std::move(empty_files_infos.begin(), empty_files_infos.end(), std::back_inserter(file_infos));
+        }
+
+        zkutil::ZooKeeper::MultiGetResponse non_empty_file_infos_serialized;
+        ZooKeeperRetriesControl retries_ctl("getAllFileInfos::getFileInfos", zookeeper_retries_info);
+        retries_ctl.retryLoop([&]()
+        {
+            auto zk = getZooKeeper();
+            non_empty_file_infos_serialized = zk->get(non_empty_file_infos_paths);
+        });
+
+        /// Process non empty files
+        for (size_t i = 0; i < non_empty_file_names.size(); ++i)
+        {
+            FileInfo file_info;
+            if (non_empty_file_infos_serialized[i].error != Coordination::Error::ZOK)
+                throw zkutil::KeeperException(non_empty_file_infos_serialized[i].error);
+            file_info = deserializeFileInfo(non_empty_file_infos_serialized[i].data);
+            file_info.file_name = unescapeForFileName(non_empty_file_names[i]);
+            non_empty_files_infos.emplace_back(std::move(file_info));
+        }
+
+        std::move(non_empty_files_infos.begin(), non_empty_files_infos.end(), std::back_inserter(file_infos));
+    }
+
     return file_infos;
 }
 
@@ -604,7 +788,7 @@ bool BackupCoordinationRemote::hasConcurrentBackups(const std::atomic<size_t> &)
         return false;
 
     auto zk = getZooKeeper();
-    std::string backup_stage_path = zookeeper_path +"/stage";
+    std::string backup_stage_path = zookeeper_path + "/stage";
 
     if (!zk->exists(root_zookeeper_path))
         zk->createAncestors(root_zookeeper_path);

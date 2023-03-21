@@ -2,6 +2,7 @@
 slug: /en/operations/server-configuration-parameters/settings
 sidebar_position: 57
 sidebar_label: Server Settings
+description: This section contains descriptions of server settings that cannot be changed at the session or query level.
 ---
 
 # Server Settings
@@ -275,7 +276,7 @@ Path:
 -   Specify the absolute path or the path relative to the server config file.
 -   The path can contain wildcards \* and ?.
 
-See also “[Dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md)”.
+See also “[Dictionaries](../../sql-reference/dictionaries/index.md)”.
 
 **Example**
 
@@ -765,7 +766,7 @@ Default value: `0`.
 
 ## concurrent_threads_soft_limit_ratio_to_cores {#concurrent_threads_soft_limit_ratio_to_cores}
 The maximum number of query processing threads as multiple of number of logical cores.
-More details: [concurrent_threads_soft_limit_num](#concurrent-threads-soft-limit-num).
+More details: [concurrent_threads_soft_limit_num](#concurrent_threads_soft_limit_num).
 
 Possible values:
 
@@ -967,6 +968,7 @@ The maximum number of jobs that can be scheduled on the Global Thread pool. Incr
 Possible values:
 
 -   Positive integer.
+-   0 — No limit.
 
 Default value: `10000`.
 
@@ -975,6 +977,69 @@ Default value: `10000`.
 ``` xml
 <thread_pool_queue_size>12000</thread_pool_queue_size>
 ```
+
+## max_io_thread_pool_size {#max-io-thread-pool-size}
+
+ClickHouse uses threads from the IO Thread pool to do some IO operations (e.g. to interact with S3). `max_io_thread_pool_size` limits the maximum number of threads in the pool.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `100`.
+
+## max_io_thread_pool_free_size {#max-io-thread-pool-free-size}
+
+If the number of **idle** threads in the IO Thread pool exceeds `max_io_thread_pool_free_size`, ClickHouse will release resources occupied by idling threads and decrease the pool size. Threads can be created again if necessary.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `0`.
+
+## io_thread_pool_queue_size {#io-thread-pool-queue-size}
+
+The maximum number of jobs that can be scheduled on the IO Thread pool.
+
+Possible values:
+
+-   Positive integer.
+-   0 — No limit.
+
+Default value: `10000`.
+
+## max_backups_io_thread_pool_size {#max-backups-io-thread-pool-size}
+
+ClickHouse uses threads from the Backups IO Thread pool to do S3 backup IO operations. `max_backups_io_thread_pool_size` limits the maximum number of threads in the pool.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `1000`.
+
+## max_backups_io_thread_pool_free_size {#max-backups-io-thread-pool-free-size}
+
+If the number of **idle** threads in the Backups IO Thread pool exceeds `max_backup_io_thread_pool_free_size`, ClickHouse will release resources occupied by idling threads and decrease the pool size. Threads can be created again if necessary.
+
+Possible values:
+
+-   Positive integer.
+-   Zero.
+
+Default value: `0`.
+
+## backups_io_thread_pool_queue_size {#backups-io-thread-pool-queue-size}
+
+The maximum number of jobs that can be scheduled on the Backups IO Thread pool. It is recommended to keep this queue unlimited due to the current S3 backup logic.
+
+Possible values:
+
+-   Positive integer.
+-   0 — No limit.
+
+Default value: `0`.
 
 ## background_pool_size {#background_pool_size}
 
@@ -1254,12 +1319,12 @@ Settings:
 
 ``` xml
  <prometheus>
-        <endpoint>/metrics</endpoint>
-        <port>8001</port>
-        <metrics>true</metrics>
-        <events>true</events>
-        <asynchronous_metrics>true</asynchronous_metrics>
-    </prometheus>
+    <endpoint>/metrics</endpoint>
+    <port>9363</port>
+    <metrics>true</metrics>
+    <events>true</events>
+    <asynchronous_metrics>true</asynchronous_metrics>
+</prometheus>
 ```
 
 ## query_log {#server_configuration_parameters-query-log}
@@ -1853,7 +1918,7 @@ Default value: `/var/lib/clickhouse/access/`.
 
 **See also**
 
-- [Access Control and Account Management](../../operations/access-rights.md#access-control)
+- [Access Control and Account Management](../../guides/sre/user-management/index.md#access-control)
 
 ## user_directories {#user_directories}
 
