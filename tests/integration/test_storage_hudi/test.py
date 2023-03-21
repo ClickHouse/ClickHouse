@@ -1,84 +1,31 @@
 import logging
+import pytest
 import os
 import json
 
 import helpers.client
-import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
+from helpers.s3_tools import prepare_s3_bucket, upload_directory, get_file_contents
+
+import pyspark
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-
-
-def prepare_s3_bucket(started_cluster):
-    bucket_read_write_policy = {
-        "Version": "2012-10-17",
-        "Statement": [
-            {
-                "Sid": "",
-                "Effect": "Allow",
-                "Principal": {"AWS": "*"},
-                "Action": "s3:GetBucketLocation",
-                "Resource": "arn:aws:s3:::root",
-            },
-            {
-                "Sid": "",
-                "Effect": "Allow",
-                "Principal": {"AWS": "*"},
-                "Action": "s3:ListBucket",
-                "Resource": "arn:aws:s3:::root",
-            },
-            {
-                "Sid": "",
-                "Effect": "Allow",
-                "Principal": {"AWS": "*"},
-                "Action": "s3:GetObject",
-                "Resource": "arn:aws:s3:::root/*",
-            },
-            {
-                "Sid": "",
-                "Effect": "Allow",
-                "Principal": {"AWS": "*"},
-                "Action": "s3:PutObject",
-                "Resource": "arn:aws:s3:::root/*",
-            },
-        ],
-    }
-
-    minio_client = started_cluster.minio_client
-    minio_client.set_bucket_policy(
-        started_cluster.minio_bucket, json.dumps(bucket_read_write_policy)
-    )
-
-
-def upload_test_table(started_cluster):
-    bucket = started_cluster.minio_bucket
-
-    for address, dirs, files in os.walk(SCRIPT_DIR + "/test_table"):
-        address_without_prefix = address[len(SCRIPT_DIR) :]
-
-        for name in files:
-            started_cluster.minio_client.fput_object(
-                bucket,
-                os.path.join(address_without_prefix, name),
-                os.path.join(address, name),
-            )
+TABLE_NAME = "test_hudi_table"
+USER_FILES_PATH = "/ClickHouse/tests/integration/test_storage_hudi/_instances/node1/database/user_files"
 
 
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        cluster.add_instance("main_server", with_minio=True)
+        cluster.add_instance("node1", with_minio=True)
 
         logging.info("Starting cluster...")
         cluster.start()
 
         prepare_s3_bucket(cluster)
         logging.info("S3 bucket created")
-
-        upload_test_table(cluster)
-        logging.info("Test table uploaded")
 
         yield cluster
 
@@ -96,108 +43,75 @@ def run_query(instance, query, stdin=None, settings=None):
     return result
 
 
-def test_create_query(started_cluster):
-    instance = started_cluster.instances["main_server"]
-    bucket = started_cluster.minio_bucket
+def get_spark():
+    builder = (
+        pyspark.sql.SparkSession.builder.appName("spark_test")
+        .config(
+            "spark.jars.packages",
+            "org.apache.hudi:hudi-spark3.3-bundle_2.12:0.13.0",
+        )
+        .config(
+            "org.apache.spark.sql.hudi.catalog.HoodieCatalog",
+        )
+        .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+        .config(
+            "spark.sql.catalog.local", "org.apache.spark.sql.hudi.catalog.HoodieCatalog"
+        )
+        .config("spark.driver.memory", "20g")
+        .master("local")
+    )
+    return builder.master("local").getOrCreate()
 
-    create_query = f"""CREATE TABLE hudi ENGINE=Hudi('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/test_table/', 'minio', 'minio123')"""
 
-    run_query(instance, create_query)
-
-
-def test_select_query(started_cluster):
-    instance = started_cluster.instances["main_server"]
-    bucket = started_cluster.minio_bucket
-    columns = [
-        "_hoodie_commit_time",
-        "_hoodie_commit_seqno",
-        "_hoodie_record_key",
-        "_hoodie_partition_path",
-        "_hoodie_file_name",
-        "begin_lat",
-        "begin_lon",
-        "driver",
-        "end_lat",
-        "end_lon",
-        "fare",
-        "partitionpath",
-        "rider",
-        "ts",
-        "uuid",
-    ]
-
-    # create query in case table doesn't exist
-    create_query = f"""CREATE TABLE IF NOT EXISTS hudi ENGINE=Hudi('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/test_table/', 'minio', 'minio123')"""
-
-    run_query(instance, create_query)
-
-    select_query = "SELECT {} FROM hudi FORMAT TSV"
-
-    select_table_function_query = "SELECT {col} FROM hudi('http://{ip}:{port}/{bucket}/test_table/', 'minio', 'minio123') FORMAT TSV"
-
-    for column_name in columns:
-        result = run_query(instance, select_query.format(column_name)).splitlines()
-        assert len(result) > 0
-
-    for column_name in columns:
-        result = run_query(
-            instance,
-            select_table_function_query.format(
-                col=column_name,
-                ip=started_cluster.minio_ip,
-                port=started_cluster.minio_port,
-                bucket=bucket,
-            ),
-        ).splitlines()
-        assert len(result) > 0
-
-    # test if all partition paths is presented in result
-    distinct_select_query = (
-        "SELECT DISTINCT partitionpath FROM hudi ORDER BY partitionpath FORMAT TSV"
+def write_hudi(spark, path, result_path):
+    spark.conf.set("spark.sql.debug.maxToStringFields", 100000)
+    spark.read.load(f"file://{path}").write.mode("overwrite").option(
+        "compression", "none"
+    ).option("compression", "none").format("hudi").option(
+        "hoodie.table.name", TABLE_NAME
+    ).option(
+        "hoodie.datasource.write.partitionpath.field", "partitionpath"
+    ).option(
+        "hoodie.datasource.write.table.name", TABLE_NAME
+    ).option(
+        "hoodie.datasource.write.operation", "insert_overwrite"
+    ).option(
+        "hoodie.parquet.compression.codec", "snappy"
+    ).option(
+        "hoodie.hfile.compression.algorithm", "uncompressed"
+    ).option(
+        "hoodie.datasource.write.recordkey.field", "a"
+    ).option(
+        "hoodie.datasource.write.precombine.field", "a"
+    ).save(
+        result_path
     )
 
-    distinct_select_table_function_query = "SELECT DISTINCT partitionpath FROM hudi('http://{ip}:{port}/{bucket}/test_table/', 'minio', 'minio123') ORDER BY partitionpath FORMAT TSV"
 
-    result = run_query(instance, distinct_select_query)
-    result_table_function = run_query(
-        instance,
-        distinct_select_table_function_query.format(
-            ip=started_cluster.minio_ip, port=started_cluster.minio_port, bucket=bucket
-        ),
+def test_basic(started_cluster):
+    instance = started_cluster.instances["node1"]
+
+    data_path = f"/var/lib/clickhouse/user_files/{TABLE_NAME}.parquet"
+    inserted_data = "SELECT number, toString(number) FROM numbers(100)"
+    instance.query(
+        f"INSERT INTO TABLE FUNCTION file('{data_path}', 'Parquet', 'a Int32, b String') {inserted_data} FORMAT Parquet SETTINGS output_format_parquet_compression_method='snappy'"
     )
-    expected = [
-        "americas/brazil/sao_paulo",
-        "americas/united_states/san_francisco",
-        "asia/india/chennai",
-    ]
 
-    assert TSV(result) == TSV(expected)
-    assert TSV(result_table_function) == TSV(expected)
+    data_path = f"{USER_FILES_PATH}/{TABLE_NAME}.parquet"
+    result_path = f"/{TABLE_NAME}_result"
 
+    spark = get_spark()
+    write_hudi(spark, data_path, result_path)
 
-def test_describe_query(started_cluster):
-    instance = started_cluster.instances["main_server"]
+    minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    result = instance.query(
-        f"DESCRIBE hudi('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/test_table/', 'minio', 'minio123') FORMAT TSV",
-    )
+    upload_directory(minio_client, bucket, result_path, "")
 
-    assert result == TSV(
-        [
-            ["_hoodie_commit_time", "Nullable(String)"],
-            ["_hoodie_commit_seqno", "Nullable(String)"],
-            ["_hoodie_record_key", "Nullable(String)"],
-            ["_hoodie_partition_path", "Nullable(String)"],
-            ["_hoodie_file_name", "Nullable(String)"],
-            ["begin_lat", "Nullable(Float64)"],
-            ["begin_lon", "Nullable(Float64)"],
-            ["driver", "Nullable(String)"],
-            ["end_lat", "Nullable(Float64)"],
-            ["end_lon", "Nullable(Float64)"],
-            ["fare", "Nullable(Float64)"],
-            ["partitionpath", "Nullable(String)"],
-            ["rider", "Nullable(String)"],
-            ["ts", "Nullable(Int64)"],
-            ["uuid", "Nullable(String)"],
-        ]
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS {TABLE_NAME};
+        CREATE TABLE {TABLE_NAME} ENGINE=Hudi('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{TABLE_NAME}_result/', 'minio', 'minio123')"""
+    )
+    assert instance.query(f"SELECT * FROM {TABLE_NAME}") == instance.query(
+        inserted_data
     )

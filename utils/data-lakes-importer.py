@@ -56,8 +56,9 @@ def get_spark_for_hudi():
         .config(
             "spark.sql.catalog.local", "org.apache.spark.sql.hudi.catalog.HoodieCatalog"
         )
-        .config("spark.driver.memory", "20g") \
-        # .config('spark.sql.extensions", "org.apache.spark.sql.hudi.HoodieSparkSessionExtension')
+        .config(
+            "spark.driver.memory", "20g"
+        )  # .config('spark.sql.extensions", "org.apache.spark.sql.hudi.HoodieSparkSessionExtension')
         .master("local")
     )
     return builder.master("local").getOrCreate()
@@ -98,6 +99,10 @@ def main():
             "hoodie.datasource.write.partitionpath.field", "partitionpath"
         ).option(
             "hoodie.datasource.write.table.name", "hudi"
+        ).option(
+            "hoodie.datasource.write.recordkey.field", "ts"
+        ).option(
+            "hoodie.datasource.write.precombine.field", "ts"
         ).option(
             "hoodie.datasource.write.operation", "insert_overwrite"
         ).save(
