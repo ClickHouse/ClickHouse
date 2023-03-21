@@ -210,6 +210,10 @@ std::string DistributedSink::getCurrentStateDescription()
 }
 
 
+DistributedSink::JobReplica::JobReplica(size_t shard_index_, size_t replica_index_, bool is_local_job_, const Block & sample_block)
+    : shard_index(shard_index_), replica_index(replica_index_), is_local_job(is_local_job_), current_shard_block(sample_block.cloneEmpty()) {}
+
+
 void DistributedSink::initWritingJobs(const Block & first_block, size_t start, size_t end)
 {
     const Settings & settings = context->getSettingsRef();
