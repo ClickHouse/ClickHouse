@@ -2316,23 +2316,21 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
     return result_dag;
 }
 
-const ActionsDAG::Node * getOriginalNodeForOutputAlias(const ActionsDAGPtr & actions, const String & output_name)
+FindOriginalNodeForOutputName::FindOriginalNodeForOutputName(const ActionsDAGPtr & actions_)
+    :actions(actions_)
 {
-    /// find alias in output
-    const ActionsDAG::Node * output_alias = nullptr;
     for (const auto * node : actions->getOutputs())
-    {
-        if (node->result_name == output_name)
-        {
-            output_alias = node;
-            break;
-        }
-    }
-    if (!output_alias)
+        index.emplace(node->result_name, node);
+}
+
+const ActionsDAG::Node * FindOriginalNodeForOutputName::find(const String & output_name)
+{
+    const auto it = index.find(output_name);
+    if (it == index.end())
         return nullptr;
 
     /// find original(non alias) node it refers to
-    const ActionsDAG::Node * node = output_alias;
+    const ActionsDAG::Node * node = it->second;
     while (node && node->type == ActionsDAG::ActionType::ALIAS)
     {
         chassert(!node->children.empty());

@@ -30,6 +30,7 @@ static std::set<std::string>
 getOriginalDistinctColumns(const ColumnsWithTypeAndName & distinct_columns, std::vector<ActionsDAGPtr> & dag_stack)
 {
     auto actions = buildActionsForPlanPath(dag_stack);
+    FindOriginalNodeForOutputName original_node_finder(actions);
     std::set<std::string> original_distinct_columns;
     for (const auto & column : distinct_columns)
     {
@@ -37,7 +38,7 @@ getOriginalDistinctColumns(const ColumnsWithTypeAndName & distinct_columns, std:
         if (isColumnConst(*column.column))
             continue;
 
-        const auto * input_node = getOriginalNodeForOutputAlias(actions, column.name);
+        const auto * input_node = original_node_finder.find(column.name);
         if (!input_node)
             break;
 

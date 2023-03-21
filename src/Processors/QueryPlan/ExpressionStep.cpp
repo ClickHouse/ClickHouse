@@ -79,7 +79,7 @@ void ExpressionStep::updateOutputStream()
     if (!getDataStreamTraits().preserves_sorting)
         return;
 
-    const ActionsDAGPtr & actions = actions_dag;
+    FindOriginalNodeForOutputName original_node_finder(actions_dag);
     const auto & input_sort_description = getInputStreams().front().sort_description;
     for (size_t i = 0, s = input_sort_description.size(); i < s; ++i)
     {
@@ -88,7 +88,7 @@ void ExpressionStep::updateOutputStream()
         const auto & origin_column = desc.column_name;
         for (const auto & column : output_stream->header)
         {
-            const auto * original_node = getOriginalNodeForOutputAlias(actions, column.name);
+            const auto * original_node = original_node_finder.find(column.name);
             if (original_node && original_node->result_name == origin_column)
             {
                 alias = column.name;
