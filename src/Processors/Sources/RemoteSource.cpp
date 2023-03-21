@@ -14,10 +14,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-RemoteSource::RemoteSource(RemoteQueryExecutorPtr executor, bool add_aggregation_info_, bool async_read_, UUID uuid_)
+RemoteSource::RemoteSource(RemoteQueryExecutorPtr executor, bool add_aggregation_info_, bool async_read_, bool async_query_sending_, UUID uuid_)
     : ISource(executor->getHeader(), false)
     , add_aggregation_info(add_aggregation_info_), query_executor(std::move(executor))
     , async_read(async_read_)
+    , async_query_sending(async_query_sending_)
     , uuid(uuid_)
 {
     /// Add AggregatedChunkInfo if we expect DataTypeAggregateFunction as a result.
@@ -110,7 +111,7 @@ std::optional<Chunk> RemoteSource::tryGenerate()
                 rows_before_limit->set(info.getRowsBeforeLimit());
         });
 
-        if (async_read)
+        if (async_query_sending)
         {
             int fd_ = query_executor->sendQueryAsync();
             if (fd_ >= 0)
@@ -237,9 +238,9 @@ Chunk RemoteExtremesSource::generate()
 
 Pipe createRemoteSourcePipe(
     RemoteQueryExecutorPtr query_executor,
-    bool add_aggregation_info, bool add_totals, bool add_extremes, bool async_read, UUID uuid)
+    bool add_aggregation_info, bool add_totals, bool add_extremes, bool async_read, bool async_query_sending, UUID uuid)
 {
-    Pipe pipe(std::make_shared<RemoteSource>(query_executor, add_aggregation_info, async_read, uuid));
+    Pipe pipe(std::make_shared<RemoteSource>(query_executor, add_aggregation_info, async_read, async_query_sending, uuid));
 
     if (add_totals)
         pipe.addTotalsSource(std::make_shared<RemoteTotalsSource>(query_executor));

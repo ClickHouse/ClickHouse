@@ -150,6 +150,15 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 
 RemoteQueryExecutor::~RemoteQueryExecutor()
 {
+    /// We should finish establishing connections to disconnect it later,
+    /// so these connections won't be in the out-of-sync state.
+    if (read_context && !established)
+    {
+        /// Set was_cancelled, so the query won't be sent after creating connections.
+        was_cancelled = true;
+        read_context->cancel();
+    }
+
     /** If interrupted in the middle of the loop of communication with replicas, then interrupt
       * all connections, then read and skip the remaining packets to make sure
       * these connections did not remain hanging in the out-of-sync state.
@@ -275,10 +284,7 @@ int RemoteQueryExecutor::sendQueryAsync()
 
     read_context->resume();
 
-    if (!read_context->isQuerySent())
-        return read_context->getFileDescriptor();
-
-    return -1;
+    return read_context->isQuerySent() ? -1 : read_context->getFileDescriptor();
 }
 
 Block RemoteQueryExecutor::readBlock()
@@ -694,7 +700,7 @@ void RemoteQueryExecutor::tryCancel(const char * reason)
 
 bool RemoteQueryExecutor::isQueryPending() const
 {
-    return read_context && !finished;
+    return (sent_query || read_context) && !finished;
 }
 
 bool RemoteQueryExecutor::hasThrownException() const
