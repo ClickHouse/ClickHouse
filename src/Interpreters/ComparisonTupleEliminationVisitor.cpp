@@ -14,7 +14,6 @@ namespace ErrorCodes
 namespace
 {
 
-
 ASTs splitTuple(const ASTPtr & node)
 {
     if (const auto * func = node->as<ASTFunction>(); func && func->name == "tuple")
@@ -32,7 +31,6 @@ ASTs splitTuple(const ASTPtr & node)
     return {};
 }
 
-
 ASTPtr concatWithAnd(const ASTs & nodes)
 {
     if (nodes.empty())
@@ -46,47 +44,41 @@ ASTPtr concatWithAnd(const ASTs & nodes)
     return result;
 }
 
-void trySplitTupleComparsion(ASTPtr & expression)
+class SplitTupleComparsionExpressionMatcher
 {
-    if (!expression)
-        return;
+public:
+    using Data = ComparisonTupleEliminationMatcher::Data;
 
-    auto * func = expression->as<ASTFunction>();
-    if (!func)
-        return;
-
-    if (func->name == "and" || func->name == "or" || func->name == "not" || func->name == "tuple")
+    static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
+    static void visit(ASTPtr & ast, Data &)
     {
-        for (auto & child : func->arguments->children)
-        {
-            trySplitTupleComparsion(child);
-        }
-    }
+        auto * func = ast->as<ASTFunction>();
+        if (!func || func->arguments->children.size() != 2)
+            return;
 
-    if (func->name == "equals" || func->name == "notEquals")
-    {
-        if (func->arguments->children.size() != 2)
+        if (func->name != "equals" && func->name != "notEquals")
             return;
 
         auto lhs = splitTuple(func->arguments->children[0]);
         auto rhs = splitTuple(func->arguments->children[1]);
-        if (lhs.size() != rhs.size() || lhs.empty() || rhs.empty())
+        if (lhs.size() != rhs.size() || lhs.empty())
             return;
 
         ASTs new_args;
+        new_args.reserve(lhs.size());
         for (size_t i = 0; i < lhs.size(); ++i)
         {
-            trySplitTupleComparsion(lhs[i]);
-            trySplitTupleComparsion(rhs[i]);
             new_args.emplace_back(makeASTFunction("equals", lhs[i], rhs[i]));
         }
 
         if (func->name == "notEquals")
-            expression = makeASTFunction("not", concatWithAnd(new_args));
+            ast = makeASTFunction("not", concatWithAnd(new_args));
         else
-            expression = concatWithAnd(new_args);
+            ast = concatWithAnd(new_args);
     }
-}
+};
+
+using SplitTupleComparsionExpressionVisitor = InDepthNodeVisitor<SplitTupleComparsionExpressionMatcher, true>;
 
 }
 
@@ -95,14 +87,14 @@ bool ComparisonTupleEliminationMatcher::needChildVisit(ASTPtr &, const ASTPtr &)
     return true;
 }
 
-void ComparisonTupleEliminationMatcher::visit(ASTPtr & ast, Data &)
+void ComparisonTupleEliminationMatcher::visit(ASTPtr & ast, Data & data)
 {
     auto * select_ast = ast->as<ASTSelectQuery>();
     if (!select_ast || !select_ast->where())
         return;
 
     if (select_ast->where())
-        trySplitTupleComparsion(select_ast->refWhere());
+        SplitTupleComparsionExpressionVisitor(data).visit(select_ast->refWhere());
 }
 
 }
