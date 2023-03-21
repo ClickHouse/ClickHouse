@@ -9,8 +9,22 @@ on: # yamllint disable-line rule:truthy
     branches:
       - 'backport/**'
 jobs:
+  CheckLabels:
+    runs-on: [self-hosted, style-checker]
+    # Run the first check always, even if the CI is cancelled
+    if: ${{ always() }}
+    steps:
+      - name: Check out repository code
+        uses: ClickHouse/checkout@v1
+        with:
+          clear-repository: true
+      - name: Labels check
+        run: |
+          cd "$GITHUB_WORKSPACE/tests/ci"
+          python3 run_check.py
   PythonUnitTests:
     runs-on: [self-hosted, style-checker]
+    needs: CheckLabels
     steps:
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
@@ -22,6 +36,7 @@ jobs:
           python3 -m unittest discover -s . -p '*_test.py'
   DockerHubPushAarch64:
     runs-on: [self-hosted, style-checker-aarch64]
+    needs: CheckLabels
     steps:
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
@@ -38,6 +53,7 @@ jobs:
           path: ${{ runner.temp }}/docker_images_check/changed_images_aarch64.json
   DockerHubPushAmd64:
     runs-on: [self-hosted, style-checker]
+    needs: CheckLabels
     steps:
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
