@@ -52,21 +52,31 @@ class Labels:
 
 
 class ReleaseBranch:
-    CHERRYPICK_DESCRIPTION = """This pull-request is a first step of an automated \
-    backporting.
+    CHERRYPICK_DESCRIPTION = """Original pull-request #{pr_number}
+
+This pull-request is a first step of an automated backporting.
 It contains changes like after calling a local command `git cherry-pick`.
 If you intend to continue backporting this changes, then resolve all conflicts if any.
 Otherwise, if you do not want to backport them, then just close this pull-request.
 
 The check results does not matter at this step - you can safely ignore them.
-Also this pull-request will be merged automatically as it reaches the mergeable state, \
-    but you always can merge it manually.
+
+### Note
+
+This pull-request will be merged automatically as it reaches the mergeable state, \
+**do not merge it manually**.
+
+### If the PR was closed and then reopened
+
+If it stuck, check #{pr_number} for `{label_backports_created}` and delete it if \
+necessary. Manually merging will do nothing, since `{label_backports_created}` \
+prevents the original PR #{pr_number} from being processed.
 """
     BACKPORT_DESCRIPTION = """This pull-request is a last step of an automated \
 backporting.
 Treat it as a standard pull-request: look at the checks and resolve conflicts.
 Merge it only if you intend to backport changes to the target branch, otherwise just \
-    close it.
+close it.
 """
     REMOTE = ""
 
@@ -200,8 +210,10 @@ Merge it only if you intend to backport changes to the target branch, otherwise 
 
         self.cherrypick_pr = self.pr.base.repo.create_pull(
             title=f"Cherry pick #{self.pr.number} to {self.name}: {self.pr.title}",
-            body=f"Original pull-request #{self.pr.number}\n\n"
-            f"{self.CHERRYPICK_DESCRIPTION}",
+            body=self.CHERRYPICK_DESCRIPTION.format(
+                pr_number=self.pr.number,
+                label_backports_created=Labels.BACKPORTS_CREATED,
+            ),
             base=self.backport_branch,
             head=self.cherrypick_branch,
         )

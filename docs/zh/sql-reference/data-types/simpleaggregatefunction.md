@@ -25,10 +25,10 @@ slug: /zh/sql-reference/data-types/simpleaggregatefunction
 -   [`argMax`](../../sql-reference/aggregate-functions/reference/argmax.md)
 
 
-!!! note "注"
-    `SimpleAggregateFunction(func, Type)` 的值外观和存储方式于 `Type` 相同, 所以你不需要应用带有 `-Merge`/`-State` 后缀的函数。
-
-    `SimpleAggregateFunction` 的性能优于具有相同聚合函数的 `AggregateFunction` 。
+:::note
+`SimpleAggregateFunction(func, Type)` 的值外观和存储方式于 `Type` 相同, 所以你不需要应用带有 `-Merge`/`-State` 后缀的函数。
+`SimpleAggregateFunction` 的性能优于具有相同聚合函数的 `AggregateFunction` 。
+:::
 
 **参数**
 

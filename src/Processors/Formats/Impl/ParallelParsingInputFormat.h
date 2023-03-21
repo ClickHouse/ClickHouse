@@ -292,7 +292,7 @@ private:
 
         {
             /// Additionally notify condvars
-            std::lock_guard<std::mutex> lock(mutex);
+            std::lock_guard lock(mutex);
             segmentator_condvar.notify_all();
             reader_condvar.notify_all();
         }

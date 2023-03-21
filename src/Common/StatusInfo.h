@@ -26,13 +26,13 @@ namespace CurrentStatusInfo
 
     inline void set(Status status, Key key, Int8 value)
     {
-        std::lock_guard<std::mutex> lock(locks[status]);
+        std::lock_guard lock(locks[status]);
         values[status][key] = value;
     }
 
     inline void unset(Status status, Key key)
     {
-        std::lock_guard<std::mutex> lock(locks[status]);
+        std::lock_guard lock(locks[status]);
         values[status].erase(key);
     }
 }

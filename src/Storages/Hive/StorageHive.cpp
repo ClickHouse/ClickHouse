@@ -856,7 +856,7 @@ HiveFiles StorageHive::collectHiveFiles(
                         = collectHiveFilesFromPartition(partition, query_info, hive_table_metadata, fs, context_, prune_level);
                     if (!hive_files_in_partition.empty())
                     {
-                        std::lock_guard<std::mutex> lock(hive_files_mutex);
+                        std::lock_guard lock(hive_files_mutex);
                         hit_parttions_num += 1;
                         if (hive_max_query_partitions > 0 && hit_parttions_num > hive_max_query_partitions)
                         {
@@ -882,7 +882,7 @@ HiveFiles StorageHive::collectHiveFiles(
                     auto hive_file = getHiveFileIfNeeded(file_info, {}, query_info, hive_table_metadata, context_, prune_level);
                     if (hive_file)
                     {
-                        std::lock_guard<std::mutex> lock(hive_files_mutex);
+                        std::lock_guard lock(hive_files_mutex);
                         hive_files.push_back(hive_file);
                     }
                 });

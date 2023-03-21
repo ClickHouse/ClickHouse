@@ -628,6 +628,27 @@ def test_table_override(started_cluster):
     assert_eq_with_retry(instance, query, expected)
 
 
+def test_materialized_view(started_cluster):
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(f"DROP TABLE IF EXISTS test_table")
+    cursor.execute(f"CREATE TABLE test_table (key integer PRIMARY KEY, value integer)")
+    cursor.execute(f"INSERT INTO test_table SELECT 1, 2")
+    instance.query("DROP DATABASE IF EXISTS test_database")
+    instance.query(
+        "CREATE DATABASE test_database ENGINE = MaterializedPostgreSQL(postgres1) SETTINGS materialized_postgresql_tables_list='test_table'"
+    )
+    check_tables_are_synchronized(instance, "test_table")
+    instance.query("DROP TABLE IF EXISTS mv")
+    instance.query(
+        "CREATE MATERIALIZED VIEW mv ENGINE=MergeTree ORDER BY tuple() POPULATE AS SELECT * FROM test_database.test_table"
+    )
+    assert "1\t2" == instance.query("SELECT * FROM mv").strip()
+    cursor.execute(f"INSERT INTO test_table SELECT 3, 4")
+    check_tables_are_synchronized(instance, "test_table")
+    assert "1\t2\n3\t4" == instance.query("SELECT * FROM mv ORDER BY 1, 2").strip()
+    pg_manager.drop_materialized_db()
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
