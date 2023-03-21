@@ -72,10 +72,11 @@ namespace
         logDebug("distinct_columns size", distinct_columns.size());
 
         std::set<std::string_view> original_distinct_columns;
+        FindOriginalNodeForOutputName original_node_finder(path_actions);
         for (const auto & column : distinct_columns)
         {
             logDebug("distinct column name", column);
-            const auto * alias_node = getOriginalNodeForOutputAlias(path_actions, String(column));
+            const auto * alias_node = original_node_finder.find(String(column));
             if (!alias_node)
             {
                 logDebug("original name for alias is not found", column);
@@ -242,9 +243,10 @@ namespace
             logActionsDAG("distinct pass: merged DAG", path_actions);
 
             /// compare columns of two DISTINCTs
+            FindOriginalNodeForOutputName original_node_finder(path_actions);
             for (const auto & column : distinct_columns)
             {
-                const auto * alias_node = getOriginalNodeForOutputAlias(path_actions, String(column));
+                const auto * alias_node = original_node_finder.find(String(column));
                 if (!alias_node)
                     return false;
 
