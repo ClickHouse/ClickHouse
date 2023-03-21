@@ -248,7 +248,7 @@ def need_retry(args, stdout, stderr, total_time):
 def get_processlist_with_stacktraces(args):
     try:
         if args.replicated_database:
-            return clickhouse_execute_json(
+            return clickhouse_execute(
                 args,
                 """
             SELECT materialize(hostName() || '::' || tcpPort()::String) as host_port, *
@@ -265,14 +265,14 @@ def get_processlist_with_stacktraces(args):
                 WHERE query NOT LIKE '%system.processes%'
                 GROUP BY p.*
             ))
-            ORDER BY elapsed DESC
+            ORDER BY elapsed DESC FORMAT Vertical
             """,
                 settings={
                     "allow_introspection_functions": 1,
                 },
             )
         else:
-            return clickhouse_execute_json(
+            return clickhouse_execute(
                 args,
                 """
             SELECT
@@ -285,7 +285,7 @@ def get_processlist_with_stacktraces(args):
             JOIN system.stack_trace s USING (query_id)
             WHERE query NOT LIKE '%system.processes%'
             GROUP BY p.*
-            ORDER BY elapsed DESC
+            ORDER BY elapsed DESC FORMAT Vertical
             """,
                 settings={
                     "allow_introspection_functions": 1,

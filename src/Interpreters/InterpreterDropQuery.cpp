@@ -355,19 +355,22 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 /// Flush should not be done if shouldBeEmptyOnDetach() == false,
                 /// since in this case getTablesIterator() may do some additional work,
                 /// see DatabaseMaterializedMySQL::getTablesIterator()
-                for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
-                {
-                    iterator->table()->flush();
-                }
-
                 auto table_context = Context::createCopy(getContext());
                 table_context->setInternalQuery(true);
+                /// Do not hold extra shared pointers to tables
+                std::vector<std::pair<String, bool>> tables_to_drop;
                 for (auto iterator = database->getTablesIterator(table_context); iterator->isValid(); iterator->next())
                 {
+                    iterator->table()->flush();
+                    tables_to_drop.push_back({iterator->name(), iterator->table()->isDictionary()});
+                }
+
+                for (const auto & table : tables_to_drop)
+                {
+                    query_for_table.setTable(table.first);
+                    query_for_table.is_dictionary = table.second;
                     DatabasePtr db;
                     UUID table_to_wait = UUIDHelpers::Nil;
-                    query_for_table.setTable(iterator->name());
-                    query_for_table.is_dictionary = iterator->table()->isDictionary();
                     executeToTableImpl(table_context, query_for_table, db, table_to_wait);
                     uuids_to_wait.push_back(table_to_wait);
                 }
