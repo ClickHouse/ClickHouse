@@ -49,6 +49,12 @@ void PollingQueue::addTask(size_t thread_number, void * data, int fd)
     epoll.add(fd, data);
 }
 
+bool PollingQueue::hasTask(void *data)
+{
+    std::uintptr_t key = reinterpret_cast<uintptr_t>(data);
+    return tasks.contains(key);
+}
+
 static std::string dumpTasks(const std::unordered_map<std::uintptr_t, PollingQueue::TaskData> & tasks)
 {
     WriteBufferFromOwnString res;
@@ -65,7 +71,7 @@ static std::string dumpTasks(const std::unordered_map<std::uintptr_t, PollingQue
     return res.str();
 }
 
-PollingQueue::TaskData PollingQueue::wait(std::unique_lock<std::mutex> & lock)
+PollingQueue::TaskData PollingQueue::wait(std::unique_lock<std::mutex> & lock, bool blocking)
 {
     if (is_finished)
         return {};
@@ -74,7 +80,10 @@ PollingQueue::TaskData PollingQueue::wait(std::unique_lock<std::mutex> & lock)
 
     epoll_event event;
     event.data.ptr = nullptr;
-    epoll.getManyReady(1, &event, true);
+    size_t ready_size = epoll.getManyReady(1, &event, blocking);
+
+    if (ready_size == 0)
+        return {};
 
     lock.lock();
 

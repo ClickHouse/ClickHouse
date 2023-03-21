@@ -41,10 +41,13 @@ public:
     /// Add new task to queue.
     void addTask(size_t thread_number, void * data, int fd);
 
+    /// Checks whether a task is in a queue
+    bool hasTask(void * data);
+
     /// Wait for any descriptor. If no descriptors in queue, blocks.
     /// Returns ptr which was inserted into queue or nullptr if finished was called.
     /// Lock is unlocked during waiting.
-    TaskData wait(std::unique_lock<std::mutex> & lock);
+    TaskData wait(std::unique_lock<std::mutex> & lock, bool blocking = true);
 
     /// Interrupt waiting.
     void finish();

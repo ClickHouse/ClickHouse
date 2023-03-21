@@ -1,4 +1,6 @@
 #pragma once
+#include <mutex>
+#include <Processors/Executors/PollingQueue.h>
 #include <Processors/IProcessor.h>
 
 namespace DB
@@ -6,6 +8,19 @@ namespace DB
 
 class RemoteQueryExecutor;
 using RemoteQueryExecutorPtr = std::shared_ptr<RemoteQueryExecutor>;
+
+class ParallelReplicasScheduler
+{
+public:
+    void addTask(void * data, int fd);
+    bool hasSomething();
+    void finish();
+private:
+    PollingQueue queue;
+    bool finished{false};
+    std::mutex mutex;
+};
+
 
 /// A tiny class which is used for reading with multiple replicas in parallel.
 /// Motivation is that we don't have a full control on how
@@ -31,6 +46,11 @@ public:
     UUID getParallelReplicasGroupUUID();
 
     void connectToScheduler(OutputPort & output_port);
+    void connectToPoller(std::shared_ptr<ParallelReplicasScheduler> poller_);
+
+protected:
+    void onCancel() override;
+
 private:
     bool has_data{false};
     Chunk chunk;
@@ -40,9 +60,10 @@ private:
     InputPort * data_port{nullptr};
     InputPort * dependency_port{nullptr};
 
+    std::shared_ptr<ParallelReplicasScheduler> poller;
+
     Status prepareGenerate();
     Status prepareConsume();
 };
-
 
 }

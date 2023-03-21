@@ -3,6 +3,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/typeid_cast.h>
 #include "Core/UUID.h"
+#include "Processors/Executors/PollingQueue.h"
 #include <Core/SortDescription.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -663,15 +664,18 @@ void QueryPipelineBuilder::connectDependencies()
         auto input_dependency_iter = input_dependencies.begin();
         auto output_dependency_iter = output_dependencies.begin();
         auto scheduler = std::make_shared<ResizeProcessor>(Block{}, input_dependencies.size(), output_dependencies.size());
+        auto poller = std::make_shared<ParallelReplicasScheduler>();
 
         for (auto & scheduler_input : scheduler->getInputs())
         {
+            (*input_dependency_iter)->connectToPoller(poller);
             (*input_dependency_iter)->connectToScheduler(scheduler_input);
             ++input_dependency_iter;
         }
 
         for (auto & scheduler_output : scheduler->getOutputs())
         {
+            (*output_dependency_iter)->connectToPoller(poller);
             (*output_dependency_iter)->connectToScheduler(scheduler_output);
             ++output_dependency_iter;
         }

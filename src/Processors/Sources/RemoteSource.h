@@ -2,6 +2,7 @@
 
 #include <Processors/ISource.h>
 #include <Processors/RowsBeforeLimitCounter.h>
+#include <Processors/Transforms/ReadFromMergeTreeDependencyTransform.h>
 #include <QueryPipeline/Pipe.h>
 #include "Core/UUID.h"
 #include <atomic>
@@ -28,6 +29,7 @@ public:
     String getName() const override { return "Remote"; }
 
     void connectToScheduler(InputPort & input_port);
+    void connectToPoller(std::shared_ptr<ParallelReplicasScheduler> scheduler_);
 
     void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) { rows_before_limit.swap(counter); }
 
@@ -52,6 +54,7 @@ private:
     RowsBeforeLimitCounterPtr rows_before_limit;
 
     OutputPort * dependency_port{nullptr};
+    std::shared_ptr<ParallelReplicasScheduler> scheduler;
 
     const bool async_read;
     bool is_async_state = false;

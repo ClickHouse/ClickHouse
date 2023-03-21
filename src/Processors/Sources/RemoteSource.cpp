@@ -5,6 +5,8 @@
 #include <QueryPipeline/StreamLocalLimits.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include "Processors/Executors/PollingQueue.h"
+#include "Processors/Transforms/ReadFromMergeTreeDependencyTransform.h"
 
 namespace DB
 {
@@ -36,6 +38,11 @@ void RemoteSource::connectToScheduler(InputPort & input_port)
     connect(*dependency_port, input_port);
 }
 
+void RemoteSource::connectToPoller(std::shared_ptr<ParallelReplicasScheduler> scheduler_)
+{
+    scheduler = scheduler_;
+}
+
 UUID RemoteSource::getParallelReplicasGroupUUID()
 {
     return uuid;
@@ -61,7 +68,13 @@ ISource::Status RemoteSource::prepare()
     }
 
     if (is_async_state)
+    {
+        scheduler->addTask(this, fd);
         return Status::Async;
+    }
+
+    if (dependency_port && !dependency_port->isFinished() && !dependency_port->canPush())
+        return Status::PortFull;
 
     Status status = ISource::prepare();
     /// To avoid resetting the connection (because of "unfinished" query) in the
@@ -76,7 +89,7 @@ ISource::Status RemoteSource::prepare()
         return status;
     }
 
-    if (status == Status::PortFull)
+    if (status == Status::PortFull || status == Status::Ready)
     {
         /// Also push empty chunk to dependency to signal that we read data from remote source
         /// or answered to the incoming request from parallel replica
