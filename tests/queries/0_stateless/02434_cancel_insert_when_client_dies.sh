@@ -47,7 +47,7 @@ function thread_insert
 {
     # supress "Killed" messages from bash
     while true; do
-        export ID="$TEST_MARK$RANDOM"
+        export ID="$TEST_MARK$RANDOM-$RANDOM-$RANDOM"
         bash -c insert_data 2>&1| grep -Fav "Killed"
     done
 }
