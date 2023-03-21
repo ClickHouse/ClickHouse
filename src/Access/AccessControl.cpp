@@ -283,7 +283,7 @@ void AccessControl::setUpFromMainConfig(const Poco::Util::AbstractConfiguration 
 
     addStoragesFromMainConfig(config_, config_path_, get_zookeeper_function_);
 
-    role_cache = std::make_unique<RoleCache>(*this, config_.getInt("access_control_improvements.role_cache_expiration_time", 600));
+    role_cache = std::make_unique<RoleCache>(*this, config_.getInt("access_control_improvements.role_cache_expiration_time_seconds", 600));
 }
 
 
