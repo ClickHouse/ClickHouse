@@ -635,6 +635,8 @@ bool FileCache::tryReserveImpl(
     using QueueEntry = IFileCachePriority::Entry;
     using IterationResult = IFileCachePriority::IterationResult;
 
+    std::unordered_map<Key, std::vector<size_t>> offsets_per_key_to_delete;
+
     iterateCacheAndCollectKeyLocks(
         locked_priority_queue,
         [&](const QueueEntry & entry, LockedKey & current_locked_key) -> IterateAndLockResult
@@ -647,13 +649,14 @@ bool FileCache::tryReserveImpl(
         chassert(file_segment_metadata->queue_iterator);
         chassert(entry.size == file_segment_metadata->size());
 
-        const size_t file_segment_size = file_segment_metadata->size();
-        bool remove_current_it = false;
-
         /// It is guaranteed that file_segment_metadata is not removed from cache as long as
         /// pointer to corresponding file segment is hold by any other thread.
 
+        const size_t file_segment_size = file_segment_metadata->size();
+
+        bool remove_current_it = false;
         bool save_locked_key = false;
+
         if (file_segment_metadata->releasable())
         {
             auto file_segment = file_segment_metadata->file_segment;
@@ -670,7 +673,7 @@ bool FileCache::tryReserveImpl(
                 {
                     /// file_segment_metadata will actually be removed only if we managed to reserve enough space.
 
-                    current_locked_key.delete_offsets.push_back(file_segment->offset());
+                    offsets_per_key_to_delete[file_segment->key()].push_back(file_segment->offset());
                     save_locked_key = true;
                     break;
                 }
@@ -699,13 +702,16 @@ bool FileCache::tryReserveImpl(
     for (auto it = locked.begin(); it != locked.end();)
     {
         auto & current_locked_key = it->second;
-        for (const auto & offset_to_delete : current_locked_key->delete_offsets)
+        auto & offsets_to_delete = offsets_per_key_to_delete[current_locked_key->getKey()];
+        /// TODO: Add assertion.
+        for (const auto & offset_to_delete : offsets_to_delete)
         {
             auto * file_segment_metadata = current_locked_key->getKeyMetadata()->getByOffset(offset_to_delete);
             current_locked_key->remove(file_segment_metadata->file_segment, cache_lock);
             if (query_context)
                 query_context->remove(key, offset);
         }
+        offsets_per_key_to_delete.clear();
 
         /// Do not hold the key lock longer than required.
         it = locked.erase(it);

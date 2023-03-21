@@ -42,12 +42,12 @@ struct LockedKey : private boost::noncopyable
 
     KeyMetadataPtr getKeyMetadata() const { return key_metadata.lock(); }
 
-    std::vector<size_t> delete_offsets;
+    const FileCacheKey & getKey() const { return key; }
 
 private:
     void removeKeyIfEmpty() const;
 
-    FileCacheKey key;
+    const FileCacheKey key;
     const FileCache * cache;
 
     KeyGuard::Lock lock;
