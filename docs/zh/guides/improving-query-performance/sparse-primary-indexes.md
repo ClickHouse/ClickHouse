@@ -370,6 +370,25 @@ UserID.bin，URL.bin，和EventTime.bin是<font face = "monospace">UserID</font>
 - 索引条目(索引标记)不是基于表中的特定行，而是基于颗粒。例如，对于上图中的索引条目‘mark 0’，在我们的表中没有<font face = "monospace">UserID</font>为240.923且<font face = "monospace">URL</font>为“goal://metry=10000467796a411…”的行，相反，对于该表，有一个颗粒0，在该颗粒中，最小<font face = "monospace">UserID</font>值是240.923，最小<font face = "monospace">URL</font>值是“goal://metry=10000467796a411…”，这两个值来自不同的行。
 
 - 主索引文件完全加载到主内存中。如果文件大于可用的空闲内存空间，则ClickHouse将发生错误。
+
+- 为什么图中显示的数据与结论不符合？因为图中的数据是禁用了自适应索引粒度后得到的，默认情况下索引粒度是自适应的。
+- 下面是英文官方文档和版本更新的描述信息。
+- https://clickhouse.com/docs/en/optimize/sparse-primary-indexes
+- We mentioned in the beginning of this guide in the "DDL Statement Details", that we disabled adaptive index granularity (in order to simplify the discussions in this guide, as well as make the diagrams and results reproducible).
+- For tables with adaptive index granularity (index granularity is adaptive by default) the size of some granules can be less than 8192 rows depending on the row data sizes.
+- 我们在本指南开头的“DDL 语句详细信息”中提到，我们禁用了自适应索引粒度（为了简化本指南中的讨论，并使图表和结果可重现）。
+- 对于具有自适应索引粒度的表（默认情况下索引粒度是自适应的），某些粒度的大小可以小于 8192 行，具体取决于行数据大小。
+
+- https://clickhouse.com/docs/en/whats-new/changelog/2019#experimental-features-1
+- ClickHouse Release 19.6.3.18, 2019-06-13
+- Experimental Features：实验性特性
+- Add setting index_granularity_bytes (adaptive index granularity) for MergeTree* tables family.
+- 为合并树系列的表家族添加设置index_granularity_bytes（自适应索引粒度）。
+
+- ClickHouse Release 19.10.1.5, 2019-07-12
+- Performance Improvement：优化改进
+- Add the possibility to write the final mark at the end of MergeTree columns. It allows to avoid useless reads for keys that are out of table data range. It is enabled only if adaptive index granularity is in use.
+- 添加在合并树列末尾写入最终标记的可能性。它允许避免对超出表数据范围的键进行无用的读取。仅当使用自适应索引粒度时，才会启用它。
 :::
 
 
