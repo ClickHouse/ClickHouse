@@ -282,6 +282,8 @@ static void readAndInsertString(ReadBuffer & in, IColumn & column, BSONType bson
     if (bson_type == BSONType::STRING || bson_type == BSONType::SYMBOL || bson_type == BSONType::JAVA_SCRIPT_CODE)
     {
         auto size = readBSONSize(in);
+        if (size == 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect size of a string (zero) in BSON");
         readAndInsertStringImpl<is_fixed_string>(in, column, size - 1);
         assertChar(0, in);
     }
@@ -786,6 +788,9 @@ bool BSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
         }
         else
         {
+            if (seen_columns[index])
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing BSONEachRow format: {}", name);
+
             seen_columns[index] = true;
             read_columns[index] = readField(*columns[index], types[index], BSONType(type));
         }
@@ -992,6 +997,10 @@ fileSegmentationEngineBSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t
     {
         BSONSizeT document_size;
         readBinary(document_size, in);
+
+        if (document_size < sizeof(document_size))
+            throw ParsingException(ErrorCodes::INCORRECT_DATA, "Size of BSON document is invalid");
+
         if (min_bytes != 0 && document_size > 10 * min_bytes)
             throw ParsingException(
                 ErrorCodes::INCORRECT_DATA,
@@ -1001,7 +1010,7 @@ fileSegmentationEngineBSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t
 
         size_t old_size = memory.size();
         memory.resize(old_size + document_size);
-        memcpy(memory.data() + old_size, reinterpret_cast<char *>(&document_size), sizeof(document_size));
+        unalignedStore<BSONSizeT>(memory.data() + old_size, document_size);
         in.readStrict(memory.data() + old_size + sizeof(document_size), document_size - sizeof(document_size));
         ++number_of_rows;
     }
