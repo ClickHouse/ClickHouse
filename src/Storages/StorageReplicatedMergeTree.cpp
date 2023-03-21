@@ -13,6 +13,7 @@
 #include <Common/formatReadable.h>
 #include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
+#include <Common/ThreadFuzzer.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 
 #include <Disks/ObjectStorages/IMetadataStorage.h>
@@ -2951,7 +2952,8 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
     }
 
     if (source_replica.empty())
-        throw Exception(ErrorCodes::ALL_REPLICAS_LOST, "All replicas are lost");
+        throw Exception(ErrorCodes::ALL_REPLICAS_LOST, "All replicas are lost. "
+                        "See SYSTEM DROP REPLICA and SYSTEM RESTORE REPLICA queries, they may help");
 
     if (is_new_replica)
         LOG_INFO(log, "Will mimic {}", source_replica);
@@ -3487,22 +3489,6 @@ void StorageReplicatedMergeTree::getRemovePartFromZooKeeperOps(const String & pa
     ops.emplace_back(zkutil::makeRemoveRequest(part_path, -1));
 }
 
-void StorageReplicatedMergeTree::removePartFromZooKeeper(const String & part_name)
-{
-    auto zookeeper = getZooKeeper();
-    String part_path = fs::path(replica_path) / "parts" / part_name;
-    Coordination::Stat stat;
-
-    /// Part doesn't exist, nothing to remove
-    if (!zookeeper->exists(part_path, &stat))
-        return;
-
-    Coordination::Requests ops;
-
-    getRemovePartFromZooKeeperOps(part_name, ops, stat.numChildren > 0);
-    zookeeper->multi(ops);
-}
-
 void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_name, bool storage_init)
 {
     auto zookeeper = getZooKeeper();
@@ -3523,6 +3509,8 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
         part->makeCloneInDetached("covered-by-broken", getInMemoryMetadataPtr());
     }
 
+    ThreadFuzzer::maybeInjectSleep();
+
     /// It's possible that queue contains entries covered by part_name.
     /// For example, we had GET_PART all_1_42_5 and MUTATE_PART all_1_42_5_63,
     /// then all_1_42_5_63 was executed by fetching, but part was written to disk incorrectly.
@@ -3534,6 +3522,8 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
     ///    2. If all_1_42_5_63 is lost, then replication may stuck waiting for all_1_42_5_63 to appear,
     ///       because we may have some covered parts (more precisely, parts with the same min and max blocks)
     queue.removePartProducingOpsInRange(zookeeper, broken_part_info, /* covering_entry= */ {});
+
+    ThreadFuzzer::maybeInjectSleep();
 
     String part_path = fs::path(replica_path) / "parts" / part_name;
 
@@ -6528,10 +6518,12 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
 
     for (const auto & part : parts)
     {
-        if (!part->is_duplicate)
-            parts_to_delete_completely.emplace_back(part);
-        else
+        /// Broken part can be removed from zk by removePartAndEnqueueFetch(...) only.
+        /// Removal without enqueueing a fetch leads to intersecting parts.
+        if (part->is_duplicate || part->outdated_because_broken)
             parts_to_delete_only_from_filesystem.emplace_back(part);
+        else
+            parts_to_delete_completely.emplace_back(part);
     }
     parts.clear();
 
@@ -7580,7 +7572,7 @@ void StorageReplicatedMergeTree::onActionLockRemove(StorageActionBlockType actio
         background_moves_assignee.trigger();
 }
 
-bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_milliseconds)
+bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_milliseconds, bool strict)
 {
     Stopwatch watch;
 
@@ -7594,8 +7586,17 @@ bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_millisec
     bool set_ids_to_wait = true;
 
     Poco::Event target_entry_event;
-    auto callback = [&target_entry_event, &wait_for_ids, &set_ids_to_wait](size_t new_queue_size, std::unordered_set<String> log_entry_ids, std::optional<String> removed_log_entry_id)
+    auto callback = [&target_entry_event, &wait_for_ids, &set_ids_to_wait, strict]
+        (size_t new_queue_size, std::unordered_set<String> log_entry_ids, std::optional<String> removed_log_entry_id)
     {
+        if (strict)
+        {
+            /// In strict mode we wait for queue to become empty
+            if (new_queue_size == 0)
+                target_entry_event.set();
+            return;
+        }
+
         if (set_ids_to_wait)
         {
             wait_for_ids = log_entry_ids;
@@ -8554,7 +8555,6 @@ String StorageReplicatedMergeTree::getSharedDataReplica(
     return best_replica;
 }
 
-
 Strings StorageReplicatedMergeTree::getZeroCopyPartPath(
     const MergeTreeSettings & settings, const std::string & disk_type, const String & table_uuid,
     const String & part_name, const String & zookeeper_path_old)
@@ -8574,17 +8574,64 @@ Strings StorageReplicatedMergeTree::getZeroCopyPartPath(
     return res;
 }
 
-bool StorageReplicatedMergeTree::checkZeroCopyLockExists(const String & part_name, const DiskPtr & disk, String & lock_replica)
+void StorageReplicatedMergeTree::watchZeroCopyLock(const String & part_name, const DiskPtr & disk)
 {
     auto path = getZeroCopyPartPath(part_name, disk);
     if (path)
     {
-        /// FIXME
+        auto zookeeper = getZooKeeper();
         auto lock_path = fs::path(*path) / "part_exclusive_lock";
-        if (getZooKeeper()->tryGet(lock_path, lock_replica))
+        LOG_TEST(log, "Adding zero-copy lock on {}", lock_path);
+        /// Looks ugly, but we cannot touch any storage fields inside Watch callback
+        /// because it could lead to use-after-free (storage dropped and watch triggered)
+        std::shared_ptr<std::atomic<bool>> flag = std::make_shared<std::atomic<bool>>(true);
+        std::string replica;
+        bool exists = zookeeper->tryGetWatch(lock_path, replica, nullptr, [flag] (const Coordination::WatchResponse &)
         {
-            return true;
+            *flag = false;
+        });
+
+        if (exists)
+        {
+            std::lock_guard lock(existing_zero_copy_locks_mutex);
+            existing_zero_copy_locks[lock_path] = ZeroCopyLockDescription{replica, flag};
         }
+    }
+}
+
+bool StorageReplicatedMergeTree::checkZeroCopyLockExists(const String & part_name, const DiskPtr & disk, String & lock_replica)
+{
+    auto path = getZeroCopyPartPath(part_name, disk);
+
+    std::lock_guard lock(existing_zero_copy_locks_mutex);
+    /// Cleanup abandoned locks during each check. The set of locks is small and this is quite fast loop.
+    /// Also it's hard to properly remove locks because we can execute replication queue
+    /// in arbitrary order and some parts can be replaced by covering parts without merges.
+    for (auto it = existing_zero_copy_locks.begin(); it != existing_zero_copy_locks.end();)
+    {
+        if (*it->second.exists)
+            ++it;
+        else
+        {
+            LOG_TEST(log, "Removing zero-copy lock on {}", it->first);
+            it = existing_zero_copy_locks.erase(it);
+        }
+    }
+
+    if (path)
+    {
+        auto lock_path = fs::path(*path) / "part_exclusive_lock";
+        if (auto it = existing_zero_copy_locks.find(lock_path); it != existing_zero_copy_locks.end())
+        {
+            lock_replica = it->second.replica;
+            if (*it->second.exists)
+            {
+                LOG_TEST(log, "Zero-copy lock on path {} exists", it->first);
+                return true;
+            }
+        }
+
+        LOG_TEST(log, "Zero-copy lock on path {} doesn't exist", lock_path);
     }
 
     return false;
@@ -8598,9 +8645,35 @@ std::optional<String> StorageReplicatedMergeTree::getZeroCopyPartPath(const Stri
     return getZeroCopyPartPath(*getSettings(), toString(disk->getDataSourceDescription().type), getTableSharedID(), part_name, zookeeper_path)[0];
 }
 
+bool StorageReplicatedMergeTree::waitZeroCopyLockToDisappear(const ZeroCopyLock & lock, size_t milliseconds_to_wait)
+{
+    if (lock.isLocked())
+        return true;
+
+    if (partial_shutdown_called.load(std::memory_order_relaxed))
+        return true;
+
+    auto lock_path = lock.lock->getLockPath();
+    zkutil::ZooKeeperPtr zookeeper = tryGetZooKeeper();
+    if (!zookeeper)
+        return true;
+
+    Stopwatch time_waiting;
+    const auto & stop_waiting = [&]()
+    {
+        bool timeout_exceeded = milliseconds_to_wait < time_waiting.elapsedMilliseconds();
+        return partial_shutdown_called.load(std::memory_order_relaxed) || is_readonly.load(std::memory_order_relaxed) || timeout_exceeded;
+    };
+
+    return zookeeper->waitForDisappear(lock_path, stop_waiting);
+}
+
 std::optional<ZeroCopyLock> StorageReplicatedMergeTree::tryCreateZeroCopyExclusiveLock(const String & part_name, const DiskPtr & disk)
 {
     if (!disk || !disk->supportZeroCopyReplication())
+        return std::nullopt;
+
+    if (partial_shutdown_called.load(std::memory_order_relaxed) || is_readonly.load(std::memory_order_relaxed))
         return std::nullopt;
 
     zkutil::ZooKeeperPtr zookeeper = tryGetZooKeeper();
@@ -8615,10 +8688,8 @@ std::optional<ZeroCopyLock> StorageReplicatedMergeTree::tryCreateZeroCopyExclusi
 
     /// Create actual lock
     ZeroCopyLock lock(zookeeper, zc_zookeeper_path, replica_name);
-    if (lock.lock->tryLock())
-        return lock;
-    else
-        return std::nullopt;
+    lock.lock->tryLock();
+    return lock;
 }
 
 String StorageReplicatedMergeTree::findReplicaHavingPart(

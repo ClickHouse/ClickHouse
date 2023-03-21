@@ -626,7 +626,7 @@ struct fmt::formatter<DB::DataTypePtr>
 
         /// Only support {}.
         if (it != end && *it != '}')
-            throw format_error("invalid format");
+            throw fmt::format_error("invalid format");
 
         return it;
     }
@@ -634,6 +634,6 @@ struct fmt::formatter<DB::DataTypePtr>
     template <typename FormatContext>
     auto format(const DB::DataTypePtr & type, FormatContext & ctx)
     {
-        return format_to(ctx.out(), "{}", type->getName());
+        return fmt::format_to(ctx.out(), "{}", type->getName());
     }
 };

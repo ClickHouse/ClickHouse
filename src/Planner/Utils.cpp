@@ -4,6 +4,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 
@@ -19,6 +20,7 @@
 
 #include <Analyzer/Utils.h>
 #include <Analyzer/ConstantNode.h>
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
@@ -341,27 +343,6 @@ QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, con
     return function_node;
 }
 
-std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr & condition_node)
-{
-    const auto * constant_node = condition_node->as<ConstantNode>();
-    if (!constant_node)
-        return {};
-
-    const auto & value = constant_node->getValue();
-    auto constant_type = constant_node->getResultType();
-    constant_type = removeNullable(removeLowCardinality(constant_type));
-
-    auto which_constant_type = WhichDataType(constant_type);
-    if (!which_constant_type.isUInt8() && !which_constant_type.isNothing())
-        return {};
-
-    if (value.isNull())
-        return false;
-
-    UInt8 predicate_value = value.safeGet<UInt8>();
-    return predicate_value > 0;
-}
-
 QueryTreeNodePtr replaceTablesAndTableFunctionsWithDummyTables(const QueryTreeNodePtr & query_node,
     const ContextPtr & context,
     ResultReplacementMap * result_replacement_map)
@@ -389,6 +370,38 @@ QueryTreeNodePtr replaceTablesAndTableFunctionsWithDummyTables(const QueryTreeNo
     }
 
     return query_node->cloneAndReplace(replacement_map);
+}
+
+QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
+    const QueryTreeNodePtr & table_expression,
+    const ContextPtr & context)
+{
+    auto projection_columns = columns;
+
+    QueryTreeNodes subquery_projection_nodes;
+    subquery_projection_nodes.reserve(projection_columns.size());
+
+    for (const auto & column : projection_columns)
+        subquery_projection_nodes.push_back(std::make_shared<ColumnNode>(column, table_expression));
+
+    if (subquery_projection_nodes.empty())
+    {
+        auto constant_data_type = std::make_shared<DataTypeUInt64>();
+        subquery_projection_nodes.push_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
+        projection_columns.push_back({"1", std::move(constant_data_type)});
+    }
+
+    auto context_copy = Context::createCopy(context);
+    updateContextForSubqueryExecution(context_copy);
+
+    auto query_node = std::make_shared<QueryNode>(std::move(context_copy));
+
+    query_node->resolveProjectionColumns(projection_columns);
+    query_node->getProjection().getNodes() = std::move(subquery_projection_nodes);
+    query_node->getJoinTree() = table_expression;
+    query_node->setIsSubquery(true);
+
+    return query_node;
 }
 
 }

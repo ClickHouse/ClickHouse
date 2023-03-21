@@ -193,13 +193,9 @@ namespace ErrorCodes
   * lookup should not be continued, and exception must be thrown because if lookup continues identifier can be resolved from parent scope.
   *
   * TODO: Update exception messages
-  * TODO: JOIN TREE subquery constant columns
   * TODO: Table identifiers with optional UUID.
   * TODO: Lookup functions arrayReduce(sum, [1, 2, 3]);
-  * TODO: SELECT (compound_expression).*, (compound_expression).COLUMNS are not supported on parser level.
-  * TODO: SELECT a.b.c.*, a.b.c.COLUMNS. Qualified matcher where identifier size is greater than 2 are not supported on parser level.
   * TODO: Support function identifier resolve from parent query scope, if lambda in parent scope does not capture any columns.
-  * TODO: Scalar subqueries cache.
   */
 
 namespace
@@ -701,7 +697,9 @@ struct IdentifierResolveScope
         }
 
         if (auto * union_node = scope_node->as<UnionNode>())
+        {
             context = union_node->getContext();
+        }
         else if (auto * query_node = scope_node->as<QueryNode>())
         {
             context = query_node->getContext();
@@ -1336,6 +1334,9 @@ private:
     /// Global resolve expression node to projection names map
     std::unordered_map<QueryTreeNodePtr, ProjectionNames> resolved_expressions;
 
+    /// Global resolve expression node to tree size
+    std::unordered_map<QueryTreeNodePtr, size_t> node_to_tree_size;
+
     /// Global scalar subquery to scalar value map
     std::unordered_map<QueryTreeNodePtrWithHash, Block> scalar_subquery_to_scalar_value;
 
@@ -1864,7 +1865,10 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
     Block scalar_block;
 
-    QueryTreeNodePtrWithHash node_with_hash(node);
+    auto node_without_alias = node->clone();
+    node_without_alias->removeAlias();
+
+    QueryTreeNodePtrWithHash node_with_hash(node_without_alias);
     auto scalar_value_it = scalar_subquery_to_scalar_value.find(node_with_hash);
 
     if (scalar_value_it != scalar_subquery_to_scalar_value.end())
@@ -1954,21 +1958,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                   *
                   * Example: SELECT (SELECT 2 AS x, x)
                   */
-                NameSet block_column_names;
-                size_t unique_column_name_counter = 1;
-
-                for (auto & column_with_type : block)
-                {
-                    if (!block_column_names.contains(column_with_type.name))
-                    {
-                        block_column_names.insert(column_with_type.name);
-                        continue;
-                    }
-
-                    column_with_type.name += '_';
-                    column_with_type.name += std::to_string(unique_column_name_counter);
-                    ++unique_column_name_counter;
-                }
+                makeUniqueColumnNamesInBlock(block);
 
                 scalar_block.insert({
                     ColumnTuple::create(block.getColumns()),
@@ -2348,7 +2338,13 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveTableIdentifierFromDatabaseCatalog(con
     storage_id = context->resolveStorageID(storage_id);
     bool is_temporary_table = storage_id.getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE;
 
-    auto storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
+    StoragePtr storage;
+
+    if (is_temporary_table)
+        storage = DatabaseCatalog::instance().getTable(storage_id, context);
+    else
+        storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
+
     if (!storage)
         return {};
 
@@ -2914,7 +2910,10 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromTableExpression(const Id
                 break;
 
             IdentifierLookup column_identifier_lookup = {qualified_identifier_with_removed_part, IdentifierLookupContext::EXPRESSION};
-            if (tryBindIdentifierToAliases(column_identifier_lookup, scope) ||
+            if (tryBindIdentifierToAliases(column_identifier_lookup, scope))
+                break;
+
+            if (table_expression_data.should_qualify_columns &&
                 tryBindIdentifierToTableExpressions(column_identifier_lookup, table_expression_node, scope))
                 break;
 
@@ -3018,11 +3017,39 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromJoin(const IdentifierLoo
 
             resolved_identifier = std::move(result_column_node);
         }
-        else if (scope.joins_count == 1 && scope.context->getSettingsRef().single_join_prefer_left_table)
+        else if (left_resolved_identifier->isEqual(*right_resolved_identifier, IQueryTreeNode::CompareOptions{.compare_aliases = false}))
         {
+            const auto & identifier_path_part = identifier_lookup.identifier.front();
+            auto * left_resolved_identifier_column = left_resolved_identifier->as<ColumnNode>();
+            auto * right_resolved_identifier_column = right_resolved_identifier->as<ColumnNode>();
+
+            if (left_resolved_identifier_column && right_resolved_identifier_column)
+            {
+                const auto & left_column_source_alias = left_resolved_identifier_column->getColumnSource()->getAlias();
+                const auto & right_column_source_alias = right_resolved_identifier_column->getColumnSource()->getAlias();
+
+                /** If column from right table was resolved using alias, we prefer column from right table.
+                  *
+                  * Example: SELECT dummy FROM system.one JOIN system.one AS A ON A.dummy = system.one.dummy;
+                  *
+                  * If alias is specified for left table, and alias is not specified for right table and identifier was resolved
+                  * without using left table alias, we prefer column from right table.
+                  *
+                  * Example: SELECT dummy FROM system.one AS A JOIN system.one ON A.dummy = system.one.dummy;
+                  *
+                  * Otherwise we prefer column from left table.
+                  */
+                if (identifier_path_part == right_column_source_alias)
+                    return right_resolved_identifier;
+                else if (!left_column_source_alias.empty() &&
+                    right_column_source_alias.empty() &&
+                    identifier_path_part != left_column_source_alias)
+                    return right_resolved_identifier;
+            }
+
             return left_resolved_identifier;
         }
-        else if (left_resolved_identifier->isEqual(*right_resolved_identifier, IQueryTreeNode::CompareOptions{.compare_aliases = false}))
+        else if (scope.joins_count == 1 && scope.context->getSettingsRef().single_join_prefer_left_table)
         {
             return left_resolved_identifier;
         }
@@ -4466,6 +4493,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     bool is_special_function_dict_get = false;
     bool is_special_function_join_get = false;
     bool is_special_function_exists = false;
+    bool is_special_function_if = false;
 
     if (!lambda_expression_untyped)
     {
@@ -4473,6 +4501,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         is_special_function_dict_get = functionIsDictGet(function_name);
         is_special_function_join_get = functionIsJoinGet(function_name);
         is_special_function_exists = function_name == "exists";
+        is_special_function_if = function_name == "if";
 
         auto function_name_lowercase = Poco::toLower(function_name);
 
@@ -4569,6 +4598,60 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         node = function_node_ptr;
         function_name = "in";
         is_special_function_in = true;
+    }
+
+    if (is_special_function_if && !function_node_ptr->getArguments().getNodes().empty())
+    {
+        /** Handle special case with constant If function, even if some of the arguments are invalid.
+          *
+          * SELECT if(hasColumnInTable('system', 'numbers', 'not_existing_column'), not_existing_column, 5) FROM system.numbers;
+          */
+        auto & if_function_arguments = function_node_ptr->getArguments().getNodes();
+        auto if_function_condition = if_function_arguments[0];
+        resolveExpressionNode(if_function_condition, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+        auto constant_condition = tryExtractConstantFromConditionNode(if_function_condition);
+
+        if (constant_condition.has_value() && if_function_arguments.size() == 3)
+        {
+            QueryTreeNodePtr constant_if_result_node;
+            QueryTreeNodePtr possibly_invalid_argument_node;
+
+            if (*constant_condition)
+            {
+                possibly_invalid_argument_node = if_function_arguments[2];
+                constant_if_result_node = if_function_arguments[1];
+            }
+            else
+            {
+                possibly_invalid_argument_node = if_function_arguments[1];
+                constant_if_result_node = if_function_arguments[2];
+            }
+
+            bool apply_constant_if_optimization = false;
+
+            try
+            {
+                resolveExpressionNode(possibly_invalid_argument_node,
+                    scope,
+                    false /*allow_lambda_expression*/,
+                    false /*allow_table_expression*/);
+            }
+            catch (...)
+            {
+                apply_constant_if_optimization = true;
+            }
+
+            if (apply_constant_if_optimization)
+            {
+                auto result_projection_names = resolveExpressionNode(constant_if_result_node,
+                    scope,
+                    false /*allow_lambda_expression*/,
+                    false /*allow_table_expression*/);
+                node = std::move(constant_if_result_node);
+                return result_projection_names;
+            }
+        }
     }
 
     /// Resolve function arguments
@@ -5059,7 +5142,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         /// Do not constant fold get scalar functions
         bool disable_constant_folding = function_name == "__getScalar" || function_name == "shardNum" ||
-            function_name == "shardCount";
+            function_name == "shardCount" || function_name == "hostName";
 
         /** If function is suitable for constant folding try to convert it to constant.
           * Example: SELECT plus(1, 1);
@@ -5085,7 +5168,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             /** Do not perform constant folding if there are aggregate or arrayJoin functions inside function.
               * Example: SELECT toTypeName(sum(number)) FROM numbers(10);
               */
-            if (column && isColumnConst(*column) && (!hasAggregateFunctionNodes(node) && !hasFunctionNode(node, "arrayJoin")))
+            if (column && isColumnConst(*column) && !typeid_cast<const ColumnConst *>(column.get())->getDataColumn().isDummy() &&
+                (!hasAggregateFunctionNodes(node) && !hasFunctionNode(node, "arrayJoin")))
             {
                 /// Replace function node with result constant node
                 Field column_constant_value;
@@ -5433,9 +5517,9 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(QueryTreeNodePtr & node, Id
         }
     }
 
-    if (node
-        && scope.nullable_group_by_keys.contains(node)
-        && !scope.expressions_in_resolve_process_stack.hasAggregateFunction())
+    validateTreeSize(node, scope.context->getSettingsRef().max_expanded_ast_elements, node_to_tree_size);
+
+    if (scope.nullable_group_by_keys.contains(node) && !scope.expressions_in_resolve_process_stack.hasAggregateFunction())
     {
         node = node->clone();
         node->convertToNullable();
@@ -5643,8 +5727,27 @@ void QueryAnalyzer::resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpo
     {
         auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
 
+        auto * column_to_interpolate = interpolate_node_typed.getExpression()->as<IdentifierNode>();
+        if (!column_to_interpolate)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "INTERPOLATE can work only for indentifiers, but {} is found",
+                interpolate_node_typed.getExpression()->formatASTForErrorMessage());
+        auto column_to_interpolate_name = column_to_interpolate->getIdentifier().getFullName();
+
         resolveExpressionNode(interpolate_node_typed.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-        resolveExpressionNode(interpolate_node_typed.getInterpolateExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+        bool is_column_constant = interpolate_node_typed.getExpression()->getNodeType() == QueryTreeNodeType::CONSTANT;
+
+        auto & interpolation_to_resolve = interpolate_node_typed.getInterpolateExpression();
+        IdentifierResolveScope interpolate_scope(interpolation_to_resolve, &scope /*parent_scope*/);
+
+        auto fake_column_node = std::make_shared<ColumnNode>(NameAndTypePair(column_to_interpolate_name, interpolate_node_typed.getExpression()->getResultType()), interpolate_node_typed.getExpression());
+        if (is_column_constant)
+            interpolate_scope.expression_argument_name_to_node.emplace(column_to_interpolate_name, fake_column_node);
+
+        resolveExpressionNode(interpolation_to_resolve, interpolate_scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+        if (is_column_constant)
+            interpolation_to_resolve = interpolation_to_resolve->cloneAndReplace(fake_column_node, interpolate_node_typed.getExpression());
     }
 }
 
@@ -6592,6 +6695,17 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     /// Resolve query node sections.
 
+    NamesAndTypes projection_columns;
+
+    if (!scope.group_by_use_nulls)
+    {
+        projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope);
+        if (query_node_typed.getProjection().getNodes().empty())
+            throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED,
+                "Empty list of columns in projection. In scope {}",
+                scope.scope_node->formatASTForErrorMessage());
+    }
+
     if (query_node_typed.hasWith())
         resolveExpressionNodeList(query_node_typed.getWithNode(), scope, true /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
@@ -6686,11 +6800,14 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         convertLimitOffsetExpression(query_node_typed.getOffset(), "OFFSET", scope);
     }
 
-    auto projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope);
-    if (query_node_typed.getProjection().getNodes().empty())
-        throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED,
-            "Empty list of columns in projection. In scope {}",
-            scope.scope_node->formatASTForErrorMessage());
+    if (scope.group_by_use_nulls)
+    {
+        projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope);
+        if (query_node_typed.getProjection().getNodes().empty())
+            throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED,
+                "Empty list of columns in projection. In scope {}",
+                scope.scope_node->formatASTForErrorMessage());
+    }
 
     /** Resolve nodes with duplicate aliases.
       * Table expressions cannot have duplicate aliases.
@@ -6756,6 +6873,15 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             "in PREWHERE");
 
     validateAggregates(query_node, { .group_by_use_nulls = scope.group_by_use_nulls });
+
+    for (const auto & column : projection_columns)
+    {
+        if (isNotCreatable(column.type))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Invalid projection column with type {}. In scope {}",
+                column.type->getName(),
+                scope.scope_node->formatASTForErrorMessage());
+    }
 
     /** WITH section can be safely removed, because WITH section only can provide aliases to query expressions
       * and CTE for other sections to use.

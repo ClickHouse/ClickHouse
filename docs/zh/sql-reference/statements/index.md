@@ -20,7 +20,7 @@ sidebar_position: 31
 -   [CHECK TABLE](../../sql-reference/statements/check-table.mdx)
 -   [DESCRIBE TABLE](../../sql-reference/statements/describe-table.mdx)
 -   [DETACH](../../sql-reference/statements/detach.mdx)
--   [DROP](../../sql-reference/statements/drop)
+-   [DROP](../../sql-reference/statements/drop.md)
 -   [EXISTS](../../sql-reference/statements/exists.md)
 -   [KILL](../../sql-reference/statements/kill.mdx)
 -   [OPTIMIZE](../../sql-reference/statements/optimize.mdx)
