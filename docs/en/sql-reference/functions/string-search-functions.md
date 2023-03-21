@@ -375,7 +375,7 @@ For a case-insensitive search or/and in UTF-8 format use functions `multiSearchA
 In all `multiSearch*` functions the number of needles should be less than 2<sup>8</sup> because of implementation specification.
 :::
 
-## match(haystack, pattern)
+## match(haystack, pattern), haystack REGEXP pattern operator
 
 Checks whether string `haystack` matches the regular expression `pattern`. The pattern is an [re2 regular expression](https://github.com/google/re2/wiki/Syntax) which has a more limited syntax than Perl regular expressions.
 
