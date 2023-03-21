@@ -29,9 +29,7 @@ from helpers.s3_tools import prepare_s3_bucket, upload_directory, get_file_conte
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 TABLE_NAME = "test_delta_table"
-USER_FILES_PATH = os.path.join(
-    SCRIPT_DIR, "./_instances/node1/database/user_files"
-)
+USER_FILES_PATH = os.path.join(SCRIPT_DIR, "./_instances/node1/database/user_files")
 
 
 @pytest.fixture(scope="module")
@@ -73,35 +71,36 @@ def get_delta_metadata(delta_metadata_file):
     return combined_json
 
 
+def create_initial_data_file(node, query, table_name):
+    data_path = f"/var/lib/clickhouse/user_files/{table_name}.parquet"
+    node.query(
+        f"INSERT INTO TABLE FUNCTION file('{data_path}') SETTINGS output_format_parquet_compression_method='none', s3_truncate_on_insert=1 {query} FORMAT Parquet"
+    )
+
+
+def write_delta(spark, path, result_path):
+    spark.read.load(path).write.mode("overwrite").option("compression", "none").format(
+        "delta"
+    ).option("delta.columnMapping.mode", "name").save(result_path)
+
+
 def test_basic(started_cluster):
     instance = started_cluster.instances["node1"]
 
-    data_path = f"/var/lib/clickhouse/user_files/{TABLE_NAME}.parquet"
     inserted_data = "SELECT number, toString(number) FROM numbers(100)"
-    instance.query(
-        f"INSERT INTO TABLE FUNCTION file('{data_path}') {inserted_data} FORMAT Parquet"
-    )
+    create_initial_data_file(instance, inserted_data, TABLE_NAME)
 
-    instance.exec_in_container(
-        ["bash", "-c", "chmod 777 -R /var/lib/clickhouse/user_files"],
-        user="root",
-    )
-
-    spark = get_spark()
+    data_path = f"{USER_FILES_PATH}/{TABLE_NAME}.parquet"
     result_path = f"/{TABLE_NAME}_result"
 
-    spark.read.load(f"file://{USER_FILES_PATH}/{TABLE_NAME}.parquet").write.mode(
-        "overwrite"
-    ).option("compression", "none").format("delta").option(
-        "delta.columnMapping.mode", "name"
-    ).save(
-        result_path
-    )
+    spark = get_spark()
+    write_delta(spark, data_path, result_path)
 
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
     upload_directory(minio_client, bucket, result_path, "")
 
+    output_format_parquet_compression_method = "none"
     data = get_file_contents(
         minio_client,
         bucket,
@@ -122,6 +121,15 @@ def test_basic(started_cluster):
     assert instance.query(f"SELECT * FROM {TABLE_NAME}") == instance.query(
         inserted_data
     )
+
+
+# def test_several_actions(started_cluster):
+#    instance = started_cluster.instances["node1"]
+#
+#    inserted_data = "SELECT number, toString(number) FROM numbers(100)"
+#    create_initial_data_file(query, TABLE_NAME)
+#
+#    spark = get_spark()
 
 
 def test_types(started_cluster):
