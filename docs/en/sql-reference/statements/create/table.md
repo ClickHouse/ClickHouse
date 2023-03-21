@@ -379,8 +379,8 @@ High compression levels are useful for asymmetric scenarios, like compress once,
 `DEFLATE_QPL` — [Deflate compression algorithm](https://github.com/intel/qpl) implemented by Intel® Query Processing Library. Some limitations apply:
 
 -   DEFLATE_QPL is experimental and can only be used after setting configuration parameter `allow_experimental_codecs=1`.
--   DEFLATE_QPL only works if ClickHouse was compiled with support for AVX2 or AVX512 instructions. Refer to [Build Tips](https://github.com/ClickHouse/ClickHouse/tree/master/contrib/qpl-cmake/doc/build.md) for more details.
--   DEFLATE_QPL works best if the system has a Intel® IAA (In-Memory Analytics Accelerator) offloading device. Refer to [IAA Setup](https://intel.github.io/qpl/documentation/get_started_docs/installation.html#accelerator-configuration) and [IAA Benchmark](https://github.com/ClickHouse/ClickHouse/tree/master/contrib/qpl-cmake/doc/benchmark.md) for more details.
+-   DEFLATE_QPL only works if ClickHouse was compiled with support for AVX2 or AVX512 instructions. Refer to [Build Clickhouse with DEFLATE_QPL](/en/development/building_and_benchmarking_deflate_qpl.md/#Build-Clickhouse-with-DEFLATE_QPL) for more details.
+-   DEFLATE_QPL works best if the system has a Intel® IAA (In-Memory Analytics Accelerator) offloading device. Refer to [Accelerator Configuration](https://intel.github.io/qpl/documentation/get_started_docs/installation.html#accelerator-configuration) and [Benchmark with DEFLATE_QPL](/en/development/building_and_benchmarking_deflate_qpl.md/#Run-Benchmark-with-DEFLATE_QPL) for more details.
 -   DEFLATE_QPL-compressed data can only be transferred between ClickHouse nodes compiled with support for AVX2/AVX512
 
 ### Specialized Codecs
