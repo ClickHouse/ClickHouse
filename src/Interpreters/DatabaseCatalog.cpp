@@ -51,6 +51,7 @@ namespace ErrorCodes
     extern const int DATABASE_ACCESS_DENIED;
     extern const int LOGICAL_ERROR;
     extern const int HAVE_DEPENDENT_OBJECTS;
+    extern const int FS_METADATA_ERROR;
 }
 
 TemporaryTableHolder::TemporaryTableHolder(ContextPtr context_, const TemporaryTableHolder::Creator & creator, const ASTPtr & query)
@@ -869,6 +870,13 @@ String DatabaseCatalog::getPathForDroppedMetadata(const StorageID & table_id) co
            toString(table_id.uuid) + ".sql";
 }
 
+String DatabaseCatalog::getPathForMetadata(const StorageID & table_id) const
+{
+    return getContext()->getPath() + "metadata/" +
+           escapeForFileName(table_id.getDatabaseName()) + "/" +
+           escapeForFileName(table_id.getTableName()) + ".sql";
+}
+
 void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr table, String dropped_metadata_path, bool ignore_delay)
 {
     assert(table_id.hasUUID());
@@ -936,6 +944,118 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
         (*drop_task)->schedule();
 }
 
+void DatabaseCatalog::dequeueDroppedTableCleanup(StorageID table_id)
+{
+    String latest_metadata_dropped_path;
+    StorageID dropped_table_id = table_id;
+    TableMarkedAsDropped dropped_table;
+    {
+        std::lock_guard lock(tables_marked_dropped_mutex);
+        time_t latest_drop_time = std::numeric_limits<time_t>::min();
+        auto it_table = tables_marked_dropped.end();
+        for (auto it = tables_marked_dropped.begin(); it != tables_marked_dropped.end(); ++it)
+        {
+            auto storage_ptr = it->table;
+            if (it->table_id.uuid == table_id.uuid)
+            {
+                it_table = it;
+                dropped_table = *it;
+                break;
+            }
+            /// If table uuid exists, only find tables with equal uuid.
+            if (table_id.uuid != UUIDHelpers::Nil)
+                continue;
+            if (it->table_id.database_name == table_id.database_name &&
+                it->table_id.table_name == table_id.table_name &&
+                it->drop_time >= latest_drop_time)
+            {
+                latest_drop_time = it->drop_time;
+                it_table = it;
+                dropped_table = *it;
+            }
+        }
+        if (it_table == tables_marked_dropped.end())
+            throw Exception(ErrorCodes::UNKNOWN_TABLE,
+                "The drop task of table {} is in progress, has been dropped or the database engine doesn't support it",
+                table_id.getNameForLogs());
+        latest_metadata_dropped_path = it_table->metadata_path;
+        dropped_table_id = it_table->table_id;
+        tables_marked_dropped.erase(it_table);
+        [[maybe_unused]] auto removed = tables_marked_dropped_ids.erase(dropped_table_id.uuid);
+        assert(removed);
+    }
+    /// Remove the table from tables_marked_dropped and tables_marked_dropped_ids,
+    /// and the drop task for this table will no longer be scheduled.
+    LOG_INFO(log, "Trying Undrop table {} from {}", dropped_table_id.getNameForLogs(), latest_metadata_dropped_path);
+    String table_metadata_path = getPathForMetadata(dropped_table_id);
+
+    auto enqueue = [&]()
+    {
+        /// In the dropTableDataTask method.
+        /// 1. We will first determine whether there are tables to be dropped in tables_marked_dropped.
+        /// 2. If one is exist, the table will be removed from tables_marked_dropped.
+        /// 3. And then execute dropTableFinally.
+        /// So undrop and drop do not cross-execute.
+        std::lock_guard lock(tables_marked_dropped_mutex);
+        tables_marked_dropped.emplace_back(dropped_table);
+        tables_marked_dropped_ids.insert(dropped_table_id.uuid);
+        CurrentMetrics::add(CurrentMetrics::TablesToDropQueueSize, 1);
+    };
+
+    ASTPtr ast = DatabaseOnDisk::parseQueryFromMetadata(
+        log, getContext(), latest_metadata_dropped_path, /*throw_on_error*/ true, /*remove_empty*/ false);
+    auto * create = typeid_cast<ASTCreateQuery *>(ast.get());
+    if (!create)
+    {
+        enqueue();
+        throw Exception(
+            ErrorCodes::FS_METADATA_ERROR,
+            "Cannot parse metadata of table {} from {}",
+            dropped_table_id.getNameForLogs(),
+            table_metadata_path);
+    }
+
+    create->setDatabase(dropped_table_id.database_name);
+    create->setTable(dropped_table_id.table_name);
+
+    try
+    {
+        auto wait_dropped_table_not_in_use = [&]()
+        {
+            while (true)
+            {
+                {
+                    std::lock_guard lock(tables_marked_dropped_mutex);
+                    if (dropped_table.table.unique())
+                        return;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+        };
+        wait_dropped_table_not_in_use();
+        auto database = getDatabase(dropped_table_id.database_name, getContext());
+        String relative_table_path = fs::path(database->getDataPath()) / DatabaseCatalog::instance().getPathForUUID(dropped_table.table_id.uuid);
+        auto storage = createTableFromAST(
+            *create,
+            dropped_table.table_id.database_name,
+            relative_table_path,
+            getContext(),
+            /* force_restore */ true).second;
+        database->undropTable(getContext(), dropped_table_id.table_name, storage, relative_table_path);
+        storage->startup();
+        CurrentMetrics::sub(CurrentMetrics::TablesToDropQueueSize, 1);
+    }
+    catch (...)
+    {
+        enqueue();
+        throw Exception(
+            ErrorCodes::FS_METADATA_ERROR,
+            "Cannot undrop table {} from {}",
+            dropped_table_id.getNameForLogs(),
+            table_metadata_path);
+    }
+}
+
 void DatabaseCatalog::dropTableDataTask()
 {
     /// Background task that removes data of tables which were marked as dropped by Atomic databases.
@@ -948,7 +1068,8 @@ void DatabaseCatalog::dropTableDataTask()
     try
     {
         std::lock_guard lock(tables_marked_dropped_mutex);
-        assert(!tables_marked_dropped.empty());
+        if (tables_marked_dropped.empty())
+            return;
         time_t current_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         time_t min_drop_time = std::numeric_limits<time_t>::max();
         size_t tables_in_use_count = 0;
