@@ -562,7 +562,7 @@ void Session::closeSession(const String & session_id)
     if (!named_session)
         return;
 
-    NamedSessionsStorage::instance().releaseAnsCloseSession(*user_id, session_id, named_session);
+    NamedSessionsStorage::instance().releaseAndCloseSession(*user_id, session_id, named_session);
 }
 
 }
