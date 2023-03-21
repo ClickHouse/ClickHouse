@@ -37,7 +37,7 @@ def setup_client(index):
 def warm_client(clientN, clientL, query, loop):
     for c_idx in range(clientN):
         for _ in range(loop):
-            clientL[c_idx].execute(query)         
+            clientL[c_idx].execute(query)
 
 def read_queries(queries_list):
     queries = list()
@@ -84,13 +84,13 @@ def run_multi_clients(clientN, clientList, query, loop):
         elif c_idx == 3:
             client_pids[c_idx] = multiprocessing.Process(target=run_task, args=(clientList[c_idx], client_name, query, loop, query_latency_list3))
         elif c_idx == 4:
-            client_pids[c_idx] = multiprocessing.Process(target=run_task, args=(clientList[c_idx], client_name, query, loop, query_latency_list4))      
+            client_pids[c_idx] = multiprocessing.Process(target=run_task, args=(clientList[c_idx], client_name, query, loop, query_latency_list4))
         elif c_idx == 5:
-            client_pids[c_idx] = multiprocessing.Process(target=run_task, args=(clientList[c_idx], client_name, query, loop, query_latency_list5))                   
+            client_pids[c_idx] = multiprocessing.Process(target=run_task, args=(clientList[c_idx], client_name, query, loop, query_latency_list5))
         elif c_idx == 6:
-            client_pids[c_idx] = multiprocessing.Process(target=run_task, args=(clientList[c_idx], client_name, query, loop, query_latency_list6))    
+            client_pids[c_idx] = multiprocessing.Process(target=run_task, args=(clientList[c_idx], client_name, query, loop, query_latency_list6))
         elif c_idx == 7:
-            client_pids[c_idx] = multiprocessing.Process(target=run_task, args=(clientList[c_idx], client_name, query, loop, query_latency_list7))    
+            client_pids[c_idx] = multiprocessing.Process(target=run_task, args=(clientList[c_idx], client_name, query, loop, query_latency_list7))
         else:
             print('ERROR: CLIENT number dismatch!!')
             exit()
@@ -108,7 +108,7 @@ def run_multi_clients(clientN, clientList, query, loop):
     for item in query_latency_list1:
         query_latencyTotal.append(item)
     for item in query_latency_list2:
-        query_latencyTotal.append(item)   
+        query_latencyTotal.append(item)
     for item in query_latency_list3:
         query_latencyTotal.append(item) 
     for item in query_latency_list4:
@@ -119,7 +119,7 @@ def run_multi_clients(clientN, clientList, query, loop):
         query_latencyTotal.append(item) 
     for item in query_latency_list7:
         query_latencyTotal.append(item) 
-                   
+
     totalP95 = np.percentile(query_latencyTotal, 95) * 1000
     return totalT,totalP95
 
@@ -169,17 +169,17 @@ if __name__ == "__main__":
 
     for c_idx in range(client_number):
         client_list[c_idx] = setup_client(c_idx)
-    #clear cache    
+    #clear cache
     os.system("sync; echo 3 > /proc/sys/vm/drop_caches")
 
     print("###Polit Run Begin")
     for i in queries:
-        warm_client(client_number, client_list, i, 1)     
+        warm_client(client_number, client_list, i, 1)
     print("###Polit Run End -> Start stressing....")
 
     query_index = 0
     for q in queries:
-        print("\n###START -> Index: %d, ID: %s, Query: %s" % (query_index,queries_id[query_index], q))      
+        print("\n###START -> Index: %d, ID: %s, Query: %s" % (query_index,queries_id[query_index], q))
         warm_client(client_number, client_list, q, warmup_runs)
         print("###Warm Done!")
         for j in range(0,retest_number):

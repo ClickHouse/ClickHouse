@@ -21,7 +21,7 @@ cmake -DENABLE_AVX512=1 -DENABLE_QPL=1 ..
 The folders under [benchmark_sample](https://github.com/ClickHouse/ClickHouse/tree/master/contrib/qpl-cmake/benchmark_sample) give example to run benchmark with python scripts:
 
 `client_scripts` contains python scripts for running typical benchmark, for example:
-- `client_stressing_test.py`: The python script for query stress test with [1~4] server instances.      
+- `client_stressing_test.py`: The python script for query stress test with [1~4] server instances.
 - `queries_ssb.sql`: The file lists all queries for [Star Schema Benchmark](https://clickhouse.com/docs/en/getting-started/example-datasets/star-schema/)
 - `allin1_ssb.sh`: This shell script executes benchmark workflow all in one automatically.
 - `database_files` means it will store database files according to lz4/deflate/zstd codecs.
@@ -30,14 +30,14 @@ The folders under [benchmark_sample](https://github.com/ClickHouse/ClickHouse/tr
 
 ## Run benchmark automatically for Star Schema:
 ``` bash
-$ cd ./benchmark_sample/client_scripts    
+$ cd ./benchmark_sample/client_scripts
 $ sh run_ssb.sh
 ```
 After complete, please check all the results in this folder:`./output/`
 
 In case you run into failure, please mannually run benchmark as below sections.
 
-## Definition   
+## Definition
 [CLICKHOUSE_EXE] means the path of clickhouse executable program.
 
 ## Enviroment
@@ -65,11 +65,13 @@ $ cd ./rawdata_dir
 Use [dbgen](https://clickhouse.com/docs/en/getting-started/example-datasets/star-schema) to generate 100 million rows data with the parameters:
 -s 20
 
-The files expected to output `./rawdata_dir`:    
-customer.tbl    
-part.tbl    
-supplier.tbl    
-lineorder.tbl    
+The files expected to output `./rawdata_dir`:
+``` text
+customer.tbl
+part.tbl
+supplier.tbl
+lineorder.tbl
+```
 
 ## Database setup
 Set up database with LZ4 codec
@@ -104,7 +106,7 @@ $ [CLICKHOUSE_EXE] client
 ```
 Complete three steps same as lz4 above
 
-[self-check]    
+[self-check]
 For each codec(lz4/zstd/deflate), please execute below query to make sure the databases are created successfully:
 $ select count() from lineorder_flat
 You are expected to see below output:
@@ -113,7 +115,7 @@ You are expected to see below output:
 │ 119994608 │
 └───────────┘
 ```
-[Self-check for IAA Deflate codec]   
+[Self-check for IAA Deflate codec]
 At the first time you execute insertion or query from client, clickhouse server console is expected to print this log:
 ```text
 Hardware-assisted DeflateQpl codec is ready!
@@ -151,7 +153,7 @@ $ cd ./client_scripts
 $ numactl -m 1 -N 1 python3 client_stressing_test.py queries_ssb.sql 1 > deflate.log
 ```
 ZSTD:
-``` bash  
+``` bash
 $ cd ./database_dir/zstd
 $ numactl -m 0 -N 0 [CLICKHOUSE_EXE] server -C config_zstd.xml >&/dev/null&
 $ cd ./client_scripts
@@ -169,7 +171,7 @@ How to check performance metrics:
 
 We focus on QPS, please search the keyword: `QPS_Final` and collect statistics
 
-## Benchmark with multi-instances    
+## Benchmark with multi-instances
 - To reduce impact of memory bound on too much threads, We recommend run benchmark with multi-instances.
 - Multi-instance means multiple（2 or 4）servers connected with respective client.
 - The cores of one socket need to be divided equally and assiged to the servers respectively.
@@ -258,7 +260,7 @@ $ numactl -m 1 -N 1 python3 client_stressing_test.py queries_ssb.sql 2 > zstd_2i
 ```
 IAA deflate
 ``` bash
-$ cd ./database_dir/deflate    
+$ cd ./database_dir/deflate
 $ numactl -C 0-29,120-149 [CLICKHOUSE_EXE] server -C config_deflate.xml >&/dev/null&
 $ cd ./database_dir/deflate_s2
 $ numactl -C 30-59,150-179 [CLICKHOUSE_EXE] server -C config_deflate_s2.xml >&/dev/null&
@@ -278,9 +280,9 @@ How to check performance metrics:
 We focus on QPS, please search the keyword: `QPS_Final` and collect statistics
 
 Benchmark setup for 4 instances is similar with 2 instances above.
-We recommend use 2 instances benchmark data as final report for review.    
+We recommend use 2 instances benchmark data as final report for review.
 
-## Tips   
+## Tips
 Each time before launch new clickhouse server, please make sure no background clickhouse process running, please check and kill old one:
 ``` bash
 $ ps -aux| grep clickhouse
