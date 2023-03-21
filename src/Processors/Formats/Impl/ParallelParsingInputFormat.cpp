@@ -18,6 +18,10 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupStatusPtr 
         CurrentThread::attachToGroup(thread_group);
 
     setThreadName("Segmentator");
+
+    Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};
+    UInt64 last_profile_events_update_time = 0;
+
     try
     {
         while (!parsing_finished)
@@ -50,6 +54,15 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupStatusPtr 
 
             if (!have_more_data)
                 break;
+
+            // Segmentator thread can be long-living, so we have to manually update performance counters for CPU progress to be correct
+            constexpr UInt64 profile_events_update_period_microseconds = 10 * 1000; // 10 milliseconds
+            UInt64 total_elapsed_microseconds = total_stopwatch.elapsedMicroseconds();
+            if (last_profile_events_update_time + profile_events_update_period_microseconds < total_elapsed_microseconds)
+            {
+                CurrentThread::updatePerformanceCounters();
+                last_profile_events_update_time = total_elapsed_microseconds;
+            }
         }
     }
     catch (...)
