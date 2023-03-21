@@ -13,6 +13,14 @@ void test_find_first_not(const std::string & haystack, std::size_t expected_pos)
     ASSERT_EQ(begin + expected_pos, find_first_not_symbols<symbols...>(begin, end));
 }
 
+void test_find_first_not(const std::string & haystack, const std::string & symbols, const std::size_t expected_pos)
+{
+    const char * begin = haystack.data();
+
+    ASSERT_EQ(begin + expected_pos, find_first_not_symbols(haystack, symbols));
+}
+
+
 TEST(FindSymbols, SimpleTest)
 {
     std::string s = "Hello, world! Goodbye...";
@@ -64,6 +72,12 @@ TEST(FindNotSymbols, AllSymbolsPresent)
     test_find_first_not<'h', 'e', 'l', 'o', 'w', 'r', 'd', ' '>(str_with_15_bytes, str_with_15_bytes.size());
     test_find_first_not<'h', 'e', 'l', 'o', 'w', 'r', 'd', ' '>(str_with_16_bytes, str_with_16_bytes.size());
     test_find_first_not<'h', 'e', 'l', 'o', 'w', 'r', 'd', ' '>(str_with_17_bytes, str_with_17_bytes.size());
+
+    const auto * symbols = "helowrd ";
+
+    test_find_first_not(str_with_15_bytes, symbols, str_with_15_bytes.size());
+    test_find_first_not(str_with_16_bytes, symbols, str_with_16_bytes.size());
+    test_find_first_not(str_with_17_bytes, symbols, str_with_17_bytes.size());
 }
 
 TEST(FindNotSymbols, NoSymbolsMatch)
@@ -72,24 +86,28 @@ TEST(FindNotSymbols, NoSymbolsMatch)
 
     // begin should be returned since the first character of the string does not match any of the below symbols
     test_find_first_not<'h', 'i', 'j'>(s, 0u);
+    test_find_first_not(s, "hij",0u);
 }
 
 TEST(FindNotSymbols, ExtraSymbols)
 {
     std::string s = "hello_world_hello";
     test_find_first_not<'h', 'e', 'l', 'o', ' '>(s, 5u);
+    test_find_first_not(s, "helo ",5u);
 }
 
 TEST(FindNotSymbols, EmptyString)
 {
     std::string s;
     test_find_first_not<'h', 'e', 'l', 'o', 'w', 'r', 'd', ' '>(s, s.size());
+    test_find_first_not(s, "helowrd ", s.size());
 }
 
 TEST(FindNotSymbols, SingleChar)
 {
     std::string s = "a";
     test_find_first_not<'a'>(s, s.size());
+    test_find_first_not(s, "a", s.size());
 }
 
 TEST(FindNotSymbols, NullCharacter)
@@ -99,4 +117,5 @@ TEST(FindNotSymbols, NullCharacter)
     // to \0.
     std::string s("abcdefg\0x", 9u);
     test_find_first_not<'a', 'b', 'c', 'd', 'e', 'f', 'g'>(s, 7u);
+    test_find_first_not(s, "abcdefg", 7u);
 }
