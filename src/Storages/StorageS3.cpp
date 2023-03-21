@@ -1295,7 +1295,7 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, Context
 {
     StorageS3::Configuration configuration;
 
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
     {
         processNamedCollectionResult(configuration, *named_collection);
     }
