@@ -31,7 +31,7 @@ LockedKey::LockedKey(
 
 LockedKey::~LockedKey()
 {
-    cleanupKeyDirectory();
+    removeKeyIfEmpty();
 }
 
 void LockedKey::remove(FileSegmentPtr file_segment, const CacheGuard::Lock & cache_lock)
@@ -123,7 +123,7 @@ void LockedKey::reduceSizeToDownloaded(
     assert(file_segment_metadata->size() == entry.size);
 }
 
-void LockedKey::cleanupKeyDirectory() const
+void LockedKey::removeKeyIfEmpty() const
 {
     /// We cannot remove key directory, because if cache is not initialized,
     /// it means we are currently iterating it.

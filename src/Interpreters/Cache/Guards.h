@@ -74,8 +74,7 @@ struct CacheMetadataGuard : private boost::noncopyable
 };
 
 /**
- * Guard for a set of keys.
- * One guard per key prefix (first three digits of the path hash).
+ * Key guard. A separate guard for each cache key.
  */
 struct KeyGuard : private boost::noncopyable
 {
