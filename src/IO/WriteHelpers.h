@@ -940,27 +940,17 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
 
     if (exact_frac_digits_set && frac_digits_num < scale)
     {
-        T new_value = value / DecimalUtils::scaleMultiplier<Int256>(frac_digits_num - 1);
+        T new_value = value / DecimalUtils::scaleMultiplier<Int256>(scale - frac_digits_num - 1);
         auto round_carry = new_value % 10;
         value = new_value / 10;
         if (round_carry >= 5)
             value += 1;
     }
 
-    for (Int32 pos = exact_frac_digits_set ? frac_digits_num - 1 : scale - 1; pos >= 0; --pos)
+    for (Int32 pos = scale - 1; pos >= 0; --pos)
     {
         auto remainder = value % 10;
         value /= 10;
-//        if (unlikely(carry))
-//        {
-//            if (remainder)
-//            {
-//                --remainder;
-//                carry = 0;
-//            }
-//            else
-//                remainder = 9;
-//        }
 
         if (remainder != 0 && last_nonzero_pos == 0)
             last_nonzero_pos = pos;
