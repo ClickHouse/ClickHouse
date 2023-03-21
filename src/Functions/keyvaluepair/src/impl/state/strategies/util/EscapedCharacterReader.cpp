@@ -8,11 +8,6 @@
 namespace DB
 {
 
-bool EscapedCharacterReader::isEscapeCharacter(char character)
-{
-    return character == ESCAPE_CHARACTER;
-}
-
 EscapedCharacterReader::ReadResult EscapedCharacterReader::read(std::string_view element, std::size_t offset)
 {
     return read({element.begin() + offset, element.end()});
