@@ -551,7 +551,7 @@ Other LIKE expressions are internally converted to a regular expression and exec
 
 ## notLike(haystack, pattern), haystack NOT LIKE pattern operator
 
-The same thing as ‘like’, but negative.
+The same thing as `like`, but negative.
 
 ## ilike
 
@@ -613,7 +613,7 @@ Result:
 
 ## notILike(haystack, pattern), haystack NOT ILIKE pattern operator
 
-The same thing as ‘ilike’, but negative.
+The same thing as `ilike`, but negative.
 
 ## ngramDistance(haystack, needle)
 
