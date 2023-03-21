@@ -242,8 +242,8 @@ public:
         WriteBuffer & ostr;
     private:
         const FormatSettings & settings;
-        std::shared_ptr<FormatState> state = std::make_shared<FormatState>();
-        std::unique_ptr<FormatStateStacked> stacked_state = std::make_unique<FormatStateStacked>();
+        FormatState & state;
+        FormatStateStacked stacked_state;
 
         static const char * hilite_keyword;
         static const char * hilite_identifier;
@@ -275,8 +275,8 @@ public:
         void writePossiblyHilited(std::string_view str, const char * hilite_type) const;
         void writeIdentifierOrAlias(const String & name, bool should_hilite_as_alias = false) const;
     public:
-        FormattingBuffer(WriteBuffer & ostr_, const FormatSettings & settings_) :
-            ostr(ostr_), settings(settings_) {}
+        FormattingBuffer(WriteBuffer & ostr_, const FormatSettings & settings_, FormatState & state_) :
+            ostr(ostr_), settings(settings_), state(state_) {}
 
         FormattingBuffer(const FormattingBuffer &) = delete;
         FormattingBuffer(FormattingBuffer &&) = delete;
@@ -364,7 +364,8 @@ public:
     // With new a blank internal state.
     void format(WriteBuffer & ostr, const FormatSettings & settings) const
     {
-        formatImpl(FormattingBuffer(ostr, settings));
+        FormatState state;
+        formatImpl(FormattingBuffer(ostr, settings, state));
     }
 
     // Keeping the state.
