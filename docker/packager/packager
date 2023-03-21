@@ -255,15 +255,11 @@ def parse_env_variables(
         result.append("CCACHE_BASEDIR=/build")
         result.append("CCACHE_NOHASHDIR=true")
         result.append("CCACHE_COMPILERCHECK=content")
-        cache_maxsize = "15G"
+        result.append("CCACHE_MAXSIZE=15G")
         if clang_tidy:
-            # 15G is not enough for tidy build
-            cache_maxsize = "25G"
-
             # `CTCACHE_DIR` has the same purpose as the `CCACHE_DIR` above.
             # It's there to have the clang-tidy cache embedded into our standard `CCACHE_DIR`
             result.append("CTCACHE_DIR=/ccache/clang-tidy-cache")
-        result.append(f"CCACHE_MAXSIZE={cache_maxsize}")
 
     if additional_pkgs:
         # NOTE: This are the env for packages/build script
