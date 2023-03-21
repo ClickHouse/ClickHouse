@@ -59,7 +59,7 @@ NextState InlineEscapingValueStateHandler::read(std::string_view file, size_t po
         auto character = file[character_position];
         auto next_pos = character_position + 1u;
 
-        if (EscapedCharacterReader::isEscapeCharacter(character))
+        if (EscapedCharacterReader::ESCAPE_CHARACTER == character)
         {
             for (auto i = pos; i < character_position; i++)
             {

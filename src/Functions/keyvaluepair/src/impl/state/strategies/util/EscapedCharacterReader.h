@@ -26,7 +26,6 @@ public:
         std::vector<uint8_t> characters;
     };
 
-    static bool isEscapeCharacter(char character);
     static ReadResult read(std::string_view element);
     static ReadResult read(std::string_view element, std::size_t offset);
 };
