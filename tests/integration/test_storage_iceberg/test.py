@@ -13,7 +13,9 @@ from helpers.s3_tools import prepare_s3_bucket, upload_directory, get_file_conte
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 TABLE_NAME = "test_iceberg_table"
-USER_FILES_PATH = "/ClickHouse/tests/integration/test_storage_iceberg/_instances/node1/database/user_files"
+USER_FILES_PATH = os.path.join(
+    SCRIPT_DIR, "./_instances/node1/database/user_files"
+)
 
 
 @pytest.fixture(scope="module")
