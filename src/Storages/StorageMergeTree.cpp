@@ -245,10 +245,12 @@ void StorageMergeTree::read(
     }
     else
     {
+        const bool enable_parallel_reading = local_context->canUseParallelReplicasOnFollower() && local_context->getSettingsRef().parallel_replicas_for_non_replicated_merge_tree;
+
         if (auto plan = reader.read(
             column_names, storage_snapshot, query_info,
             local_context, max_block_size, num_streams,
-            processed_stage, nullptr, /*enable_parallel_reading*/local_context->canUseParallelReplicasOnFollower()))
+            processed_stage, nullptr, enable_parallel_reading))
             query_plan = std::move(*plan);
     }
 
