@@ -18,7 +18,7 @@
 #include <Storages/RabbitMQ/RabbitMQSource.h>
 #include <Storages/RabbitMQ/StorageRabbitMQ.h>
 #include <Storages/RabbitMQ/RabbitMQProducer.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <boost/algorithm/string/split.hpp>
@@ -1194,8 +1194,17 @@ void registerStorageRabbitMQ(StorageFactory & factory)
     auto creator_fn = [](const StorageFactory::Arguments & args)
     {
         auto rabbitmq_settings = std::make_unique<RabbitMQSettings>();
-        bool with_named_collection = getExternalDataSourceConfiguration(args.engine_args, *rabbitmq_settings, args.getLocalContext());
-        if (!with_named_collection && !args.storage_def->settings)
+
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext()))
+        {
+            for (const auto & setting : rabbitmq_settings->all())
+            {
+                const auto & setting_name = setting.getName();
+                if (named_collection->has(setting_name))
+                    rabbitmq_settings->set(setting_name, named_collection->get<String>(setting_name));
+            }
+        }
+        else if (!args.storage_def->settings)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "RabbitMQ engine must have settings");
 
         if (args.storage_def->settings)
