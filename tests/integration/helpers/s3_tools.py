@@ -5,7 +5,7 @@ import json
 
 
 def upload_directory(minio_client, bucket_name, local_path, s3_path):
-    result_files=[]
+    result_files = []
     for local_file in glob.glob(local_path + "/**"):
         if os.path.isfile(local_file):
             result_local_path = os.path.join(local_path, local_file)

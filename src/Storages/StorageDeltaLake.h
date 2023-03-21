@@ -12,6 +12,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
+
 /**
  * Documentation links:
  *  - https://github.com/delta-io/delta/blob/master/PROTOCOL.md#data-files
