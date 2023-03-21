@@ -431,7 +431,7 @@ def test_role_expiration():
 
     assert instance.query("SELECT * FROM tre", user="ure") == "0\n"
 
-    # access_control_improvements/role_cache_expiration_time value is 2 for the test
+    # access_control_improvements/role_cache_expiration_time_seconds value is 2 for the test
     # so we wait >2 seconds until the role is expired
     time.sleep(5)
 
@@ -465,7 +465,7 @@ def test_two_roles_expiration():
 
     assert instance.query("SELECT * FROM tre", user="ure") == "0\n"
 
-    # access_control_improvements/role_cache_expiration_time value is 2 for the test
+    # access_control_improvements/role_cache_expiration_time_seconds value is 2 for the test
     # so we wait >2 seconds until the roles are expired
     time.sleep(5)
 

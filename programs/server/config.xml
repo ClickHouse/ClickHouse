@@ -705,7 +705,7 @@
         <settings_constraints_replace_previous>false</settings_constraints_replace_previous>
 
         <!-- Number of seconds since last access a role is stored in the Role Cache -->
-        <role_cache_expiration_time>600</role_cache_expiration_time>
+        <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>
     </access_control_improvements>
 
     <!-- Default profile of settings. -->
