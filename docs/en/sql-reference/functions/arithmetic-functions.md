@@ -48,7 +48,35 @@ When dividing by zero you get ‘inf’, ‘-inf’, or ‘nan’.
 ## intDiv(a, b)
 
 Calculates the quotient of the numbers. Divides into integers, rounding down (by the absolute value).
-An exception is thrown when dividing by zero or when dividing a minimal negative number by minus one.
+
+Returns an integer of the type of the dividend (the first parameter).
+
+An exception is thrown when dividing by zero, when the quotient does not fit in the range of the dividend, or when dividing a minimal negative number by minus one.
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+    intDiv(toFloat64(1), 0.001) AS res,
+    toTypeName(res)
+```
+```response
+┌──res─┬─toTypeName(intDiv(toFloat64(1), 0.001))─┐
+│ 1000 │ Int64                                   │
+└──────┴─────────────────────────────────────────┘
+```
+
+```sql
+SELECT
+    intDiv(1, 0.001) AS res,
+    toTypeName(res)
+```
+```response
+Received exception from server (version 23.2.1):
+Code: 153. DB::Exception: Received from localhost:9000. DB::Exception: Cannot perform integer division, because it will produce infinite or too large number: While processing intDiv(1, 0.001) AS res, toTypeName(res). (ILLEGAL_DIVISION)
+```
 
 ## intDivOrZero(a, b)
 

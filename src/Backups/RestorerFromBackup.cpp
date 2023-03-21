@@ -316,7 +316,7 @@ void RestorerFromBackup::findTableInBackup(const QualifiedTableName & table_name
             = *root_path_in_use / "data" / escapeForFileName(table_name_in_backup.database) / escapeForFileName(table_name_in_backup.table);
     }
 
-    auto read_buffer = backup->readFile(*metadata_path)->getReadBuffer();
+    auto read_buffer = backup->readFile(*metadata_path);
     String create_query_str;
     readStringUntilEOF(create_query_str, *read_buffer);
     read_buffer.reset();
@@ -410,7 +410,7 @@ void RestorerFromBackup::findDatabaseInBackup(const String & database_name_in_ba
 
     if (metadata_path)
     {
-        auto read_buffer = backup->readFile(*metadata_path)->getReadBuffer();
+        auto read_buffer = backup->readFile(*metadata_path);
         String create_query_str;
         readStringUntilEOF(create_query_str, *read_buffer);
         read_buffer.reset();

@@ -1,13 +1,16 @@
 #pragma once
 
-#include <Core/Types.h>
 #include <optional>
+#include <fmt/format.h>
+#include <base/hex.h>
+#include <Core/Types.h>
 
 
 namespace DB
 {
 class Exception;
 enum class AccessEntityType;
+enum class UserDefinedSQLObjectType;
 
 /// Replicas use this class to coordinate what they're writing to a backup while executing BACKUP ON CLUSTER.
 /// There are two implementation of this interface: BackupCoordinationLocal and BackupCoordinationRemote.
@@ -66,6 +69,10 @@ public:
     virtual void addReplicatedAccessFilePath(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id, const String & file_path) = 0;
     virtual Strings getReplicatedAccessFilePaths(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id) const = 0;
 
+    /// Adds a path to a directory with user-defined SQL objects inside the backup.
+    virtual void addReplicatedSQLObjectsDir(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & host_id, const String & dir_path) = 0;
+    virtual Strings getReplicatedSQLObjectsDirs(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & host_id) const = 0;
+
     struct FileInfo
     {
         String file_name;
@@ -85,6 +92,22 @@ public:
 
         /// Position in the archive.
         UInt64 pos_in_archive = static_cast<UInt64>(-1);
+
+        /// Note: this format doesn't allow to parse data back
+        /// It is useful only for debugging purposes
+        [[ maybe_unused ]] String describe()
+        {
+            String result;
+            result += fmt::format("file_name: {};\n", file_name);
+            result += fmt::format("size: {};\n", size);
+            result += fmt::format("checksum: {};\n", getHexUIntLowercase(checksum));
+            result += fmt::format("base_size: {};\n", base_size);
+            result += fmt::format("base_checksum: {};\n", getHexUIntLowercase(checksum));
+            result += fmt::format("data_file_name: {};\n", data_file_name);
+            result += fmt::format("archive_suffix: {};\n", archive_suffix);
+            result += fmt::format("pos_in_archive: {};\n", pos_in_archive);
+            return result;
+        }
     };
 
     /// Adds file information.

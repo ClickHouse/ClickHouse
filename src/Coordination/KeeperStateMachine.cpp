@@ -341,7 +341,7 @@ void KeeperStateMachine::rollbackRequest(const KeeperStorage::RequestForSession 
 nuraft::ptr<nuraft::snapshot> KeeperStateMachine::last_snapshot()
 {
     /// Just return the latest snapshot.
-    std::lock_guard<std::mutex> lock(snapshots_lock);
+    std::lock_guard lock(snapshots_lock);
     return latest_snapshot_meta;
 }
 
@@ -641,6 +641,14 @@ ClusterConfigPtr KeeperStateMachine::getClusterConfig() const
         return ClusterConfig::deserialize(*tmp);
     }
     return nullptr;
+}
+
+void KeeperStateMachine::recalculateStorageStats()
+{
+    std::lock_guard lock(storage_and_responses_lock);
+    LOG_INFO(log, "Recalculating storage stats");
+    storage->recalculateStats();
+    LOG_INFO(log, "Done recalculating storage stats");
 }
 
 }
