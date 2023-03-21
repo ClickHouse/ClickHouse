@@ -73,6 +73,8 @@ ASTPtr extractTableExpression(const ASTSelectQuery & select, size_t table_number
     return nullptr;
 }
 
+/// The parameter is_create_parameterized_view is used in getSampleBlock of the subquery.
+/// If it is set to true, then query parameters are allowed in the subquery, and that expression is not evaluated.
 static NamesAndTypesList getColumnsFromTableExpression(
     const ASTTableExpression & table_expression,
     ContextPtr context,

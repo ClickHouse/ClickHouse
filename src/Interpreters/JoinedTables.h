@@ -53,7 +53,7 @@ private:
     ASTPtr left_table_expression;
     std::optional<DatabaseAndTableWithAlias> left_db_and_table;
     const ASTSelectQuery & select_query;
-    bool is_create_parameterized_view;
+    const bool is_create_parameterized_view;
 };
 
 }
