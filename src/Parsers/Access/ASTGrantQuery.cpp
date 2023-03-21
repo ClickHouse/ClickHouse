@@ -27,21 +27,28 @@ namespace
     }
 
 
-    void formatONClause(const String & database, bool any_database, const String & table, bool any_table, const IAST::FormatSettings & settings)
+    void formatONClause(const AccessRightsElement & element, const IAST::FormatSettings & settings)
     {
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "ON " << (settings.hilite ? IAST::hilite_none : "");
-        if (any_database)
+        if (element.isGlobalWithParameter())
+        {
+            if (element.any_parameter)
+                settings.ostr << "*";
+            else
+                settings.ostr << backQuoteIfNeed(element.parameter);
+        }
+        else if (element.any_database)
         {
             settings.ostr << "*.*";
         }
         else
         {
-            if (!database.empty())
-                settings.ostr << backQuoteIfNeed(database) << ".";
-            if (any_table)
+            if (!element.database.empty())
+                settings.ostr << backQuoteIfNeed(element.database) << ".";
+            if (element.any_table)
                 settings.ostr << "*";
             else
-                settings.ostr << backQuoteIfNeed(table);
+                settings.ostr << backQuoteIfNeed(element.table);
         }
     }
 
@@ -70,15 +77,16 @@ namespace
             if (i != elements.size() - 1)
             {
                 const auto & next_element = elements[i + 1];
-                if ((element.database == next_element.database) && (element.any_database == next_element.any_database)
-                    && (element.table == next_element.table) && (element.any_table == next_element.any_table))
+                if (element.sameDatabaseAndTableAndParameter(next_element))
+                {
                     next_element_on_same_db_and_table = true;
+                }
             }
 
             if (!next_element_on_same_db_and_table)
             {
                 settings.ostr << " ";
-                formatONClause(element.database, element.any_database, element.table, element.any_table, settings);
+                formatONClause(element, settings);
             }
         }
 

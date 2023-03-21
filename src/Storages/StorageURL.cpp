@@ -1121,7 +1121,7 @@ StorageURL::Configuration StorageURL::getConfiguration(ASTs & args, ContextPtr l
 {
     StorageURL::Configuration configuration;
 
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(args))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(args, local_context))
     {
         StorageURL::processNamedCollectionResult(configuration, *named_collection);
         collectHeaders(args, configuration.headers, local_context);

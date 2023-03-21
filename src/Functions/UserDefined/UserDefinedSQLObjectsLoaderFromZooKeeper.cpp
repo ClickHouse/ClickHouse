@@ -279,9 +279,9 @@ bool UserDefinedSQLObjectsLoaderFromZooKeeper::getObjectDataAndSetWatch(
         if (response.type == Coordination::Event::CHANGED)
         {
             [[maybe_unused]] bool inserted = watch_queue->emplace(object_type, object_name);
-            chassert(inserted);
+            /// `inserted` can be false if `watch_queue` was already finalized (which happens when stopWatching() is called).
         }
-        /// NOTE: Event::DELETED is processed as child event by getChildren watch
+        /// Event::DELETED is processed as child event by getChildren watch
     };
 
     Coordination::Stat entity_stat;
@@ -340,7 +340,7 @@ Strings UserDefinedSQLObjectsLoaderFromZooKeeper::getObjectNamesAndSetWatch(
     auto object_list_watcher = [watch_queue = watch_queue, object_type](const Coordination::WatchResponse &)
     {
         [[maybe_unused]] bool inserted = watch_queue->emplace(object_type, "");
-        chassert(inserted);
+        /// `inserted` can be false if `watch_queue` was already finalized (which happens when stopWatching() is called).
     };
 
     Coordination::Stat stat;

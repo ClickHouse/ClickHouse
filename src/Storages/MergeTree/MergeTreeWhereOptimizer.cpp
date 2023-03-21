@@ -44,6 +44,7 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     , log{log_}
     , column_sizes{std::move(column_sizes_)}
     , move_all_conditions_to_prewhere(context->getSettingsRef().move_all_conditions_to_prewhere)
+    , log_queries_cut_to_length(context->getSettingsRef().log_queries_cut_to_length)
 {
     for (const auto & name : queried_columns)
     {
@@ -310,7 +311,7 @@ void MergeTreeWhereOptimizer::optimize(ASTSelectQuery & select) const
     select.setExpression(ASTSelectQuery::Expression::WHERE, reconstruct(where_conditions));
     select.setExpression(ASTSelectQuery::Expression::PREWHERE, reconstruct(prewhere_conditions));
 
-    LOG_DEBUG(log, "MergeTreeWhereOptimizer: condition \"{}\" moved to PREWHERE", select.prewhere());
+    LOG_DEBUG(log, "MergeTreeWhereOptimizer: condition \"{}\" moved to PREWHERE", select.prewhere()->formatForLogging(log_queries_cut_to_length));
 }
 
 
