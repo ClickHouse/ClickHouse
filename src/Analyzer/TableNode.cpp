@@ -61,12 +61,17 @@ bool TableNode::isEqualImpl(const IQueryTreeNode & rhs) const
 
 void TableNode::updateTreeHashImpl(HashState & state) const
 {
-    auto full_name = storage_id.getFullNameNotQuoted();
-    state.update(full_name.size());
-    state.update(full_name);
-
-    state.update(temporary_table_name.size());
-    state.update(temporary_table_name);
+    if (!temporary_table_name.empty())
+    {
+        state.update(temporary_table_name.size());
+        state.update(temporary_table_name);
+    }
+    else
+    {
+        auto full_name = storage_id.getFullNameNotQuoted();
+        state.update(full_name.size());
+        state.update(full_name);
+    }
 
     if (table_expression_modifiers)
         table_expression_modifiers->updateTreeHash(state);

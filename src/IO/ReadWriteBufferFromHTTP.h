@@ -259,12 +259,12 @@ namespace detail
             {
                 try
                 {
-                    callWithRedirects<true>(response, Poco::Net::HTTPRequest::HTTP_HEAD);
+                    callWithRedirects<true>(response, Poco::Net::HTTPRequest::HTTP_HEAD, true);
                     break;
                 }
                 catch (const Poco::Exception & e)
                 {
-                    if (i == settings.http_max_tries - 1)
+                    if (i == settings.http_max_tries - 1 || !isRetriableError(response.getStatus()))
                         throw;
 
                     LOG_ERROR(log, "Failed to make HTTP_HEAD request to {}. Error: {}", uri.toString(), e.displayText());
@@ -353,11 +353,12 @@ namespace detail
 
         static bool isRetriableError(const Poco::Net::HTTPResponse::HTTPStatus http_status) noexcept
         {
-            constexpr std::array non_retriable_errors{
+            static constexpr std::array non_retriable_errors{
                 Poco::Net::HTTPResponse::HTTPStatus::HTTP_BAD_REQUEST,
                 Poco::Net::HTTPResponse::HTTPStatus::HTTP_UNAUTHORIZED,
                 Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND,
                 Poco::Net::HTTPResponse::HTTPStatus::HTTP_FORBIDDEN,
+                Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_IMPLEMENTED,
                 Poco::Net::HTTPResponse::HTTPStatus::HTTP_METHOD_NOT_ALLOWED};
 
             return std::all_of(

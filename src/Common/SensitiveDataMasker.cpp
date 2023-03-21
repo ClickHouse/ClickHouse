@@ -202,8 +202,16 @@ std::string wipeSensitiveDataAndCutToLength(const std::string & str, size_t max_
     if (auto * masker = SensitiveDataMasker::getInstance())
         masker->wipeSensitiveData(res);
 
-    if (max_length && (res.length() > max_length))
+    size_t length = res.length();
+    if (max_length && (length > max_length))
+    {
+        constexpr size_t max_extra_msg_len = sizeof("... (truncated 18446744073709551615 characters)");
+        if (max_length < max_extra_msg_len)
+            return "(removed " + std::to_string(length) + " characters)";
+        max_length -= max_extra_msg_len;
         res.resize(max_length);
+        res.append("... (truncated " + std::to_string(length - max_length) +  " characters)");
+    }
 
     return res;
 }

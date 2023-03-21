@@ -254,6 +254,7 @@ struct SelectQueryInfo
     MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr;
 
     bool is_parameterized_view = false;
+    NameToNameMap parameterized_view_values;
 
     // If limit is not 0, that means it's a trivial limit query.
     UInt64 limit = 0;

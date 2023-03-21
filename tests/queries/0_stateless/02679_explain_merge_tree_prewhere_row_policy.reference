@@ -1,0 +1,26 @@
+Expression ((Projection + Before ORDER BY))
+Header: id UInt64
+        value String
+Actions: INPUT :: 0 -> id UInt64 : 0
+         INPUT :: 1 -> value String : 1
+Positions: 0 1
+  ReadFromMergeTree (default.test_table)
+  Header: id UInt64
+          value String
+  ReadType: Default
+  Parts: 0
+  Granules: 0
+  Prewhere info
+  Need filter: 1
+    Prewhere filter
+    Prewhere filter column: equals(id, 5) (removed)
+    Actions: INPUT : 0 -> id UInt64 : 0
+             COLUMN Const(UInt8) -> 5 UInt8 : 1
+             FUNCTION equals(id : 0, 5 :: 1) -> equals(id, 5) UInt8 : 2
+    Positions: 2 0
+    Row level filter
+    Row level filter column: greaterOrEquals(id, 5)
+    Actions: INPUT : 0 -> id UInt64 : 0
+             COLUMN Const(UInt8) -> 5 UInt8 : 1
+             FUNCTION greaterOrEquals(id : 0, 5 :: 1) -> greaterOrEquals(id, 5) UInt8 : 2
+    Positions: 2 0

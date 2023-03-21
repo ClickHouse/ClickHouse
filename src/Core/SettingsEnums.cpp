@@ -158,7 +158,7 @@ IMPLEMENT_SETTING_ENUM(EscapingRule, ErrorCodes::BAD_ARGUMENTS,
      {"XML", FormatSettings::EscapingRule::XML},
      {"Raw", FormatSettings::EscapingRule::Raw}})
 
-IMPLEMENT_SETTING_ENUM(MsgPackUUIDRepresentation , ErrorCodes::BAD_ARGUMENTS,
+IMPLEMENT_SETTING_ENUM(MsgPackUUIDRepresentation, ErrorCodes::BAD_ARGUMENTS,
                        {{"bin", FormatSettings::MsgPackUUIDRepresentation::BIN},
                         {"str", FormatSettings::MsgPackUUIDRepresentation::STR},
                         {"ext", FormatSettings::MsgPackUUIDRepresentation::EXT}})
@@ -176,11 +176,30 @@ IMPLEMENT_SETTING_ENUM(LocalFSReadMethod, ErrorCodes::BAD_ARGUMENTS,
      {"pread", LocalFSReadMethod::pread},
      {"read", LocalFSReadMethod::read}})
 
-
 IMPLEMENT_SETTING_ENUM_WITH_RENAME(ParquetVersion, ErrorCodes::BAD_ARGUMENTS,
     {{"1.0",       FormatSettings::ParquetVersion::V1_0},
      {"2.4", FormatSettings::ParquetVersion::V2_4},
      {"2.6", FormatSettings::ParquetVersion::V2_6},
      {"2.latest", FormatSettings::ParquetVersion::V2_LATEST}})
+
+IMPLEMENT_SETTING_ENUM(ParquetCompression, ErrorCodes::BAD_ARGUMENTS,
+    {{"none", FormatSettings::ParquetCompression::NONE},
+     {"snappy", FormatSettings::ParquetCompression::SNAPPY},
+     {"zstd", FormatSettings::ParquetCompression::ZSTD},
+     {"gzip", FormatSettings::ParquetCompression::GZIP},
+     {"lz4", FormatSettings::ParquetCompression::LZ4},
+     {"brotli", FormatSettings::ParquetCompression::BROTLI}})
+
+IMPLEMENT_SETTING_ENUM(ArrowCompression, ErrorCodes::BAD_ARGUMENTS,
+    {{"none", FormatSettings::ArrowCompression::NONE},
+     {"lz4_frame", FormatSettings::ArrowCompression::LZ4_FRAME},
+     {"zstd", FormatSettings::ArrowCompression::ZSTD}})
+
+IMPLEMENT_SETTING_ENUM(ORCCompression, ErrorCodes::BAD_ARGUMENTS,
+    {{"none", FormatSettings::ORCCompression::NONE},
+     {"snappy", FormatSettings::ORCCompression::SNAPPY},
+     {"zstd", FormatSettings::ORCCompression::ZSTD},
+     {"zlib", FormatSettings::ORCCompression::ZLIB},
+     {"lz4", FormatSettings::ORCCompression::LZ4}})
 
 }
