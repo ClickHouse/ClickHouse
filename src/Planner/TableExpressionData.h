@@ -101,6 +101,17 @@ public:
         return column_names;
     }
 
+    NamesAndTypes getColumns() const
+    {
+        NamesAndTypes result;
+        result.reserve(column_names.size());
+
+        for (const auto & column_name : column_names)
+            result.push_back(column_name_to_column.at(column_name));
+
+        return result;
+    }
+
     ColumnIdentifiers getColumnIdentifiers() const
     {
         ColumnIdentifiers result;

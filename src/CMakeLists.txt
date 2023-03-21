@@ -75,6 +75,7 @@ add_subdirectory (Coordination)
 add_subdirectory (Bridge)
 add_subdirectory (Daemon)
 add_subdirectory (Loggers)
+add_subdirectory (Formats)
 
 
 set(dbms_headers)
