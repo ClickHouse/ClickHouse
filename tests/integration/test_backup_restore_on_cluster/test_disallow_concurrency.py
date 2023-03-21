@@ -144,7 +144,7 @@ def test_concurrent_backups_on_same_node():
         f"SELECT status FROM system.backups WHERE status == 'BACKUP_CREATED' AND id = '{id}'",
         "BACKUP_CREATED",
         retry_count=100,
-        sleep_time=1
+        sleep_time=1,
     )
 
     # This restore part is added to confirm creating an internal backup & restore work
@@ -182,7 +182,7 @@ def test_concurrent_backups_on_different_nodes():
         f"SELECT status FROM system.backups WHERE status == 'BACKUP_CREATED' AND id = '{id}'",
         "BACKUP_CREATED",
         retry_count=100,
-        sleep_time=1
+        sleep_time=1,
     )
 
 
@@ -207,7 +207,7 @@ def test_concurrent_restores_on_same_node():
         f"SELECT status FROM system.backups WHERE status == 'BACKUP_CREATED' AND id = '{id}'",
         "BACKUP_CREATED",
         retry_count=100,
-        sleep_time=1
+        sleep_time=1,
     )
 
     nodes[0].query(
@@ -252,7 +252,7 @@ def test_concurrent_restores_on_different_node():
         f"SELECT status FROM system.backups WHERE status == 'BACKUP_CREATED' AND id = '{id}'",
         "BACKUP_CREATED",
         retry_count=100,
-        sleep_time=1
+        sleep_time=1,
     )
 
     nodes[1].query(
