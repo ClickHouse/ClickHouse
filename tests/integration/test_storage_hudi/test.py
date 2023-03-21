@@ -12,9 +12,8 @@ import pyspark
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 TABLE_NAME = "test_hudi_table"
-USER_FILES_PATH = os.path.join(
-    SCRIPT_DIR, "./_instances/node1/database/user_files"
-)
+USER_FILES_PATH = os.path.join(SCRIPT_DIR, "./_instances/node1/database/user_files")
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
