@@ -1359,7 +1359,8 @@ void executeQuery(
             pipeline.setProgressCallback(context->getProgressCallback());
         }
 
-        if (set_result_details) {
+        if (set_result_details)
+        {
             set_result_details(result_details);
 
             // Clear the callback so that result details won't be set twice in case of any exception raised after this point
