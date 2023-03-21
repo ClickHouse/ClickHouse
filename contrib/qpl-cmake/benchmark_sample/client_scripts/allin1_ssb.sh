@@ -397,7 +397,7 @@ do
                 if [ $? -ne 1 ];then
                         instance_alive=1
                         break;
-                fi                                        
+                fi
         done
         if [ $instance_alive -eq 0 ];then
                 break;
@@ -441,7 +441,7 @@ if [ $is_xml -eq $inst_num ];then
 	                echo ------------------------------------------------------
 	        fi
 	fi
-        echo "Check table data required in server_${1} -> Done! "  
+        echo "Check table data required in server_${1} -> Done! "
         
         start_clickhouse_for_stressing ${1}
         for i in $(seq 0 $[inst_num-1])
@@ -499,7 +499,7 @@ function setup_check(){
 	if [ $iax_dev_num -eq 0 ] ;then
                 iax_dev_num=`accel-config list | grep iax | wc -l`
                 if [ $iax_dev_num -eq 0 ] ;then
-                        echo "No IAA devices available -> Please check IAA hardware setup manually!"                
+                        echo "No IAA devices available -> Please check IAA hardware setup manually!"
                         exit 1
                 else
 	                echo "IAA enabled devices number:$iax_dev_num"
