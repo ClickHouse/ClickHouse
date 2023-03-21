@@ -106,7 +106,9 @@ def test_basic(started_cluster):
 
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    upload_directory(minio_client, bucket, result_path, "")
+    paths = upload_directory(minio_client, bucket, result_path, "")
+    assert len(paths) == 1
+    assert paths[0].endswith(".parquet")
 
     instance.query(
         f"""

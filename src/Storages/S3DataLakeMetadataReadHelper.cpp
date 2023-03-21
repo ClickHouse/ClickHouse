@@ -117,6 +117,8 @@ std::vector<String> S3DataLakeMetadataReadHelper::listFiles(const StorageS3::Con
         is_finished = !outcome.GetResult().GetIsTruncated();
     }
 
+    LOG_TRACE(&Poco::Logger::get("S3DataLakeMetadataReadHelper"), "Listed {} files", keys.size());
+
     return keys;
 }
 }
