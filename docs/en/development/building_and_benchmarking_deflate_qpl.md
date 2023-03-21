@@ -18,14 +18,14 @@ cmake -DENABLE_AVX512=1 -DENABLE_QPL=1 ..
 
 # Run Benchmark with DEFLATE_QPL
 ## Files list
-The folders under [benchmark_sample](/contrib/qpl-cmake/benchmark_sample) give example to run benchmark with python scripts:
+The folders `benchmark_sample` under [qpl-cmake](https://github.com/ClickHouse/ClickHouse/tree/master/contrib/qpl-cmake) give example to run benchmark with python scripts:
 
 `client_scripts` contains python scripts for running typical benchmark, for example:
 - `client_stressing_test.py`: The python script for query stress test with [1~4] server instances.
 - `queries_ssb.sql`: The file lists all queries for [Star Schema Benchmark](https://clickhouse.com/docs/en/getting-started/example-datasets/star-schema/)
 - `allin1_ssb.sh`: This shell script executes benchmark workflow all in one automatically.
 
-`database_files` means it will store database files according to lz4/deflate/zstd codecs.
+`database_files` means it will store database files according to lz4/deflate/zstd codec.
 
 ## Run benchmark automatically for Star Schema:
 ``` bash
@@ -34,17 +34,19 @@ $ sh run_ssb.sh
 ```
 After complete, please check all the results in this folder:`./output/`
 
-In case you run into failure, please mannually run benchmark as below sections.
+In case you run into failure, please manually run benchmark as below sections.
 
 ## Definition
 [CLICKHOUSE_EXE] means the path of clickhouse executable program.
 
-## Enviroment
+## Environment
 - CPU: Sapphire Rapid
 - OS Requirements refer to [System Requirements for QPL](https://intel.github.io/qpl/documentation/get_started_docs/installation.html#system-requirements)
 - IAA Setup refer to [Accelerator Configuration](https://intel.github.io/qpl/documentation/get_started_docs/installation.html#accelerator-configuration)
-- Install python modules: pip3 install clickhouse_driver numpy
-
+- Install python modules:
+``` bash
+pip3 install clickhouse_driver numpy
+```
 [Self-check for IAA]
 ``` bash
 $ accel-config list | grep -P 'iax|state'
@@ -62,7 +64,7 @@ If you see nothing output, it means IAA is not ready to work. Please check IAA s
 $ cd ./benchmark_sample
 $ mkdir rawdata_dir && cd rawdata_dir
 ```
-Use [dbgen](https://clickhouse.com/docs/en/getting-started/example-datasets/star-schema) to generate 100 million rows data with the parameters:
+Use [`dbgen`](https://clickhouse.com/docs/en/getting-started/example-datasets/star-schema) to generate 100 million rows data with the parameters:
 -s 20
 
 The files expected to output from `./benchmark_sample/rawdata_dir/ssb-dbgen`:
@@ -81,12 +83,12 @@ $ cd ./database_dir/lz4
 $ [CLICKHOUSE_EXE] server -C config_lz4.xml >&/dev/null&
 $ [CLICKHOUSE_EXE] client
 ```
-Here you should see the message `Connected to ClickHouse server` from console which means client successfuly setup connection with server.
+Here you should see the message `Connected to ClickHouse server` from console which means client successfully setup connection with server.
 
 Complete below three steps mentioned in [Star Schema Benchmark](https://clickhouse.com/docs/en/getting-started/example-datasets/star-schema)
 - Creating tables in ClickHouse
 - Inserting data. Here should use `./benchmark_sample/rawdata_dir/ssb-dbgen/*.tbl` as input data.
-- Converting “star schema” to denormalized “flat schema”
+- Converting “star schema” to renormalized “flat schema”
 
 Set up database with with IAA Deflate codec
 
@@ -132,7 +134,7 @@ That means IAA devices is not ready, you need check IAA setup again.
 $ cpupower idle-set -d 3
 $ cpupower frequency-set -g performance
 ```
-- To eliminate impact of memory bound on cross sockets, we use numactl to bind server on one socket and client on another socket.
+- To eliminate impact of memory bound on cross sockets, we use `numactl` to bind server on one socket and client on another socket.
 - Single instance means single server connected with single client
 
 Now run benchmark for LZ4/Deflate/ZSTD respectively:
@@ -174,8 +176,8 @@ We focus on QPS, please search the keyword: `QPS_Final` and collect statistics
 ## Benchmark with multi-instances
 - To reduce impact of memory bound on too much threads, We recommend run benchmark with multi-instances.
 - Multi-instance means multiple（2 or 4）servers connected with respective client.
-- The cores of one socket need to be divided equally and assiged to the servers respectively.
-- For multi-instances, must create new folder for each codec and insert dataset by following the similiar steps as single instance. 
+- The cores of one socket need to be divided equally and assigned to the servers respectively.
+- For multi-instances, must create new folder for each codec and insert dataset by following the similar steps as single instance.
 
 There are 2 differences: 
 - For client side, you need launch clickhouse with the assigned port during table creation and data insertion.
@@ -288,4 +290,4 @@ Each time before launch new clickhouse server, please make sure no background cl
 $ ps -aux| grep clickhouse
 $ kill -9 [PID]
 ```
-By comparing the query list in ./client_scripts/queries_ssb.sql with official [Star Schema Benchmark](https://clickhouse.com/docs/en/getting-started/example-datasets/star-schema), you will find 3 queries are not included: Q1.2/Q1.3/Q3.4 . This is because cpu utilization% is very low <10% for these queries which means cannot demostrate performance difference for codecs.
+By comparing the query list in ./client_scripts/queries_ssb.sql with official [Star Schema Benchmark](https://clickhouse.com/docs/en/getting-started/example-datasets/star-schema), you will find 3 queries are not included: Q1.2/Q1.3/Q3.4 . This is because cpu utilization% is very low <10% for these queries which means cannot demonstrate performance differences.

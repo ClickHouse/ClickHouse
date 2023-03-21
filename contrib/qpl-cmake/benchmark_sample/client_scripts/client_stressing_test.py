@@ -198,5 +198,4 @@ if __name__ == "__main__":
 
         print( "###Completed! -> ID: %s, clientN: %d, totalT: %.2f s, latencyAVG: %.2f ms, P95: %.2f ms, QPS_Final: %.2f" % (queries_id[query_index], client_number, totalT, totalT * 1000/(curr_loop*client_number), totalP95, ((curr_loop*client_number)/totalT) ) )
         query_index += 1
-
     print("###Finished!")
