@@ -209,7 +209,7 @@ void compare(const std::string & query, const std::stringstream & expected)
     ASTPtr ast = parseQuery(parser, query, 0, 0);
 
     WriteBufferFromOwnString write_buffer;
-    IAST::FormatSettings settings{write_buffer, true};
+    IAST::FormatSettings settings(write_buffer, true);
     settings.hilite = true;
     ast->format(settings);
 
