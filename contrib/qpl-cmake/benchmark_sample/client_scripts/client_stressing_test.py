@@ -51,7 +51,7 @@ def warm_client(clientN, clientL, query, loop):
 def read_queries(queries_list):
     queries = list()
     queries_id = list()
-    with open(queries_list, 'r') as f:
+    with open(queries_list, "r") as f:
         for line in f:
             line = line.rstrip()
             line = line.split("$")
@@ -148,7 +148,7 @@ def run_multi_clients(clientN, clientList, query, loop):
     for item in query_latency_list2:
         query_latencyTotal.append(item)
     for item in query_latency_list3:
-        query_latencyTotal.append(item) 
+        query_latencyTotal.append(item)
     for item in query_latency_list4:
         query_latencyTotal.append(item)
     for item in query_latency_list5:

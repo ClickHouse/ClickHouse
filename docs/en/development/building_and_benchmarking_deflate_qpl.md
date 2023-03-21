@@ -67,13 +67,7 @@ $ mkdir rawdata_dir && cd rawdata_dir
 Use [`dbgen`](https://clickhouse.com/docs/en/getting-started/example-datasets/star-schema) to generate 100 million rows data with the parameters:
 -s 20
 
-The files expected to output from `./benchmark_sample/rawdata_dir/ssb-dbgen`:
-``` text
-customer.tbl
-part.tbl
-supplier.tbl
-lineorder.tbl
-```
+The files like `*.tbl` are expected to output under `./benchmark_sample/rawdata_dir/ssb-dbgen`:
 
 ## Database setup
 Set up database with LZ4 codec
@@ -88,7 +82,7 @@ Here you should see the message `Connected to ClickHouse server` from console wh
 Complete below three steps mentioned in [Star Schema Benchmark](https://clickhouse.com/docs/en/getting-started/example-datasets/star-schema)
 - Creating tables in ClickHouse
 - Inserting data. Here should use `./benchmark_sample/rawdata_dir/ssb-dbgen/*.tbl` as input data.
-- Converting “star schema” to renormalized “flat schema”
+- Converting “star schema” to de-normalized “flat schema”
 
 Set up database with with IAA Deflate codec
 
