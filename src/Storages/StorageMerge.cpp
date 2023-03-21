@@ -448,7 +448,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
         size_t current_need_streams = tables_count >= num_streams ? 1 : (num_streams / tables_count);
         size_t current_streams = std::min(current_need_streams, remaining_streams);
         remaining_streams -= current_streams;
-        current_streams = std::max(static_cast<size_t>(1), current_streams);
+        current_streams = std::max(1uz, current_streams);
 
         const auto & storage = std::get<1>(table);
 

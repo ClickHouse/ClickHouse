@@ -6,6 +6,9 @@ namespace DB
 {
 
 /** Rewrite _shard_num column into shardNum() function.
+  *
+  * Example: SELECT _shard_num FROM distributed_table;
+  * Result: SELECT shardNum() FROM distributed_table;
   */
 class ShardNumColumnToFunctionPass final : public IQueryTreePass
 {

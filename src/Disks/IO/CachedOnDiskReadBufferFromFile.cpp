@@ -4,7 +4,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <base/scope_guard.h>
 #include <Common/assert_cast.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Common/getRandomASCIIString.h>
 #include <Interpreters/Context.h>
 
