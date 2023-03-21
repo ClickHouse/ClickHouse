@@ -42,11 +42,12 @@ std::shared_ptr<PartitionIdToMaxBlock> getMaxAddedBlocks(ReadFromMergeTree * rea
 struct QueryDAG
 {
     ActionsDAGPtr dag;
-    ActionsDAG::NodeRawConstPtrs filter_nodes;
+    const ActionsDAG::Node * filter_node = nullptr;
 
     bool build(QueryPlan::Node & node);
 
 private:
+    bool buildImpl(QueryPlan::Node & node, ActionsDAG::NodeRawConstPtrs & filter_nodes);
     void appendExpression(const ActionsDAGPtr & expression);
 };
 

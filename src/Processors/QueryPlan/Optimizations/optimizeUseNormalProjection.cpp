@@ -7,8 +7,6 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Sources/NullSource.h>
 #include <Common/logger_useful.h>
-#include <Functions/IFunctionAdaptors.h>
-#include <Functions/FunctionsLogical.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <stack>
 
@@ -72,52 +70,6 @@ static bool hasAllRequiredColumns(const ProjectionDescription * projection, cons
     return true;
 }
 
-struct NormalQueryDAG
-{
-    ActionsDAGPtr dag;
-    const ActionsDAG::Node * filter_node = nullptr;
-
-    bool build(QueryPlan::Node & node);
-};
-
-bool NormalQueryDAG::build(QueryPlan::Node & node)
-{
-    QueryDAG query;
-    if (!query.build(node))
-        return false;
-
-    dag = std::move(query.dag);
-    auto & outputs = dag->getOutputs();
-    auto filter_nodes = std::move(query.filter_nodes);
-
-    if (!filter_nodes.empty())
-    {
-        filter_node = filter_nodes.back();
-
-        if (filter_nodes.size() > 1)
-        {
-            /// Add a conjunction of all the filters.
-
-            FunctionOverloadResolverPtr func_builder_and =
-                std::make_unique<FunctionToOverloadResolverAdaptor>(
-                    std::make_shared<FunctionAnd>());
-
-            filter_node = &dag->addFunction(func_builder_and, std::move(filter_nodes), {});
-        }
-        else
-            filter_node = &dag->addAlias(*filter_node, "_projection_filter");
-
-        outputs.insert(outputs.begin(), filter_node);
-    }
-
-    if (dag)
-    {
-        dag->removeUnusedActions();
-        // LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Query DAG: {}", dag->dumpDAG());
-    }
-
-    return true;
-}
 
 bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
 {
@@ -135,8 +87,6 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
     {
         iter = std::next(iter);
 
-        std::cerr << "... " << iter->node->step->getName() << std::endl;
-
         if (!typeid_cast<FilterStep *>(iter->node->step.get()) &&
             !typeid_cast<ExpressionStep *>(iter->node->step.get()))
             break;
@@ -153,11 +103,17 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
     if (normal_projections.empty())
         return false;
 
-    NormalQueryDAG query;
+    QueryDAG query;
     {
         auto & clild = iter->node->children[iter->next_child - 1];
         if (!query.build(*clild))
             return false;
+
+        if (query.dag)
+        {
+            query.dag->removeUnusedActions();
+            // LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Query DAG: {}", query.dag->dumpDAG());
+        }
     }
 
     std::list<NormalProjectionCandidate> candidates;

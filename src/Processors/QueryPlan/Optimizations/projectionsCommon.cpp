@@ -5,6 +5,8 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 
 #include <Common/logger_useful.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Functions/FunctionsLogical.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
@@ -83,7 +85,7 @@ const ActionsDAG::Node * findInOutputs(ActionsDAG & dag, const std::string & nam
     return nullptr;
 }
 
-bool QueryDAG::build(QueryPlan::Node & node)
+bool QueryDAG::buildImpl(QueryPlan::Node & node, ActionsDAG::NodeRawConstPtrs & filter_nodes)
 {
     IQueryPlanStep * step = node.step.get();
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
@@ -93,8 +95,8 @@ bool QueryDAG::build(QueryPlan::Node & node)
             if (prewhere_info->row_level_filter)
             {
                 appendExpression(prewhere_info->row_level_filter);
-                if (const auto * filter_node = findInOutputs(*dag, prewhere_info->row_level_column_name, false))
-                    filter_nodes.push_back(filter_node);
+                if (const auto * filter_expression = findInOutputs(*dag, prewhere_info->row_level_column_name, false))
+                    filter_nodes.push_back(filter_expression);
                 else
                     return false;
             }
@@ -102,8 +104,8 @@ bool QueryDAG::build(QueryPlan::Node & node)
             if (prewhere_info->prewhere_actions)
             {
                 appendExpression(prewhere_info->prewhere_actions);
-                if (const auto * filter_node = findInOutputs(*dag, prewhere_info->prewhere_column_name, prewhere_info->remove_prewhere_column))
-                    filter_nodes.push_back(filter_node);
+                if (const auto * filter_expression = findInOutputs(*dag, prewhere_info->prewhere_column_name, prewhere_info->remove_prewhere_column))
+                    filter_nodes.push_back(filter_expression);
                 else
                     return false;
             }
@@ -114,7 +116,7 @@ bool QueryDAG::build(QueryPlan::Node & node)
     if (node.children.size() != 1)
         return false;
 
-    if (!build(*node.children.front()))
+    if (!buildImpl(*node.children.front(), filter_nodes))
         return false;
 
     if (auto * expression = typeid_cast<ExpressionStep *>(step))
@@ -143,6 +145,36 @@ bool QueryDAG::build(QueryPlan::Node & node)
     }
 
     return false;
+}
+
+bool QueryDAG::build(QueryPlan::Node & node)
+{
+    ActionsDAG::NodeRawConstPtrs filter_nodes;
+    if (!buildImpl(node, filter_nodes))
+        return false;
+
+    if (!filter_nodes.empty())
+    {
+        filter_node = filter_nodes.back();
+
+        if (filter_nodes.size() > 1)
+        {
+            /// Add a conjunction of all the filters.
+
+            FunctionOverloadResolverPtr func_builder_and =
+                std::make_unique<FunctionToOverloadResolverAdaptor>(
+                    std::make_shared<FunctionAnd>());
+
+            filter_node = &dag->addFunction(func_builder_and, std::move(filter_nodes), {});
+        }
+        else
+            filter_node = &dag->addAlias(*filter_node, "_projection_filter");
+
+        auto & outputs = dag->getOutputs();
+        outputs.insert(outputs.begin(), filter_node);
+    }
+
+    return true;
 }
 
 bool analyzeProjectionCandidate(
