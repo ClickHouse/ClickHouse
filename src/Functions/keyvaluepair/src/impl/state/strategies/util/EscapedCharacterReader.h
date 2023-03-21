@@ -18,9 +18,6 @@ namespace DB
  * */
 class EscapedCharacterReader
 {
-    static const std::unordered_map<char, std::pair<uint8_t, uint8_t>> numeric_escape_sequences_number_of_characters;
-    static const std::unordered_map<char, char> escape_sequences;
-
 public:
     static constexpr char ESCAPE_CHARACTER = '\\';
     struct ReadResult
@@ -32,11 +29,6 @@ public:
     static bool isEscapeCharacter(char character);
     static ReadResult read(std::string_view element);
     static ReadResult read(std::string_view element, std::size_t offset);
-
-private:
-    static bool isEscapeSequence(char character);
-
-    static std::optional<uint8_t> readEscapedSequence(std::string_view & file, char sequence_identifier);
 };
 
 }

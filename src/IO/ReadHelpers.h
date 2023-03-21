@@ -1579,4 +1579,7 @@ void readQuotedField(String & s, ReadBuffer & buf);
 void readJSONField(String & s, ReadBuffer & buf);
 
 void readTSVField(String & s, ReadBuffer & buf);
+
+bool parseComplexEscapeSequence(String & s, ReadBuffer & buf);
+
 }
