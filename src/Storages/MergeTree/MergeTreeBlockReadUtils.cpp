@@ -9,7 +9,6 @@
 #include <Columns/ColumnConst.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <Common/logger_useful.h>
 
 #include <unordered_set>
 
@@ -168,8 +167,6 @@ MergeTreeReadTask::~MergeTreeReadTask()
         if (pre_reader.valid())
             pre_reader.wait();
     }
-
-    LOG_TRACE(&Poco::Logger::get("MergeTreeReadTask"), "Destructed task: {} ({})", data_part->name, toString(mark_ranges));
 }
 
 MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
