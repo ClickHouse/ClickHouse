@@ -2,7 +2,6 @@
 
 #include <iostream>
 #include <base/types.h>
-#include <base/defines.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 
@@ -15,19 +14,7 @@ namespace ErrorCodes
 }
 
 
-/** Variable-Length Quantity (VLQ) Base-128 compression
- *
- * NOTE: Due to historical reasons, only up to 1<<63-1 are supported, which
- * cannot be changed without breaking the backward compatibility.
- * Also some drivers may support full 1<<64 range (i.e. python -
- * clickhouse-driver), while others has the same limitations as ClickHouse
- * (i.e. Rust - clickhouse-rs).
- * So implementing VLQ for the whole 1<<64 range will require different set of
- * helpers.
- */
-constexpr size_t VAR_UINT_MAX = (1ULL<<63) - 1;
-
-/** Write UInt64 in variable length format (base128) */
+/** Write UInt64 in variable length format (base128) NOTE Only up to 2^63 - 1 are supported. */
 void writeVarUInt(UInt64 x, std::ostream & ostr);
 void writeVarUInt(UInt64 x, WriteBuffer & ostr);
 char * writeVarUInt(UInt64 x, char * ostr);
@@ -199,7 +186,6 @@ inline const char * readVarUInt(UInt64 & x, const char * istr, size_t size)
 
 inline void writeVarUInt(UInt64 x, WriteBuffer & ostr)
 {
-    chassert(x <= VAR_UINT_MAX);
     for (size_t i = 0; i < 9; ++i)
     {
         uint8_t byte = x & 0x7F;
@@ -219,7 +205,6 @@ inline void writeVarUInt(UInt64 x, WriteBuffer & ostr)
 
 inline void writeVarUInt(UInt64 x, std::ostream & ostr)
 {
-    chassert(x <= VAR_UINT_MAX);
     for (size_t i = 0; i < 9; ++i)
     {
         uint8_t byte = x & 0x7F;
@@ -237,7 +222,6 @@ inline void writeVarUInt(UInt64 x, std::ostream & ostr)
 
 inline char * writeVarUInt(UInt64 x, char * ostr)
 {
-    chassert(x <= VAR_UINT_MAX);
     for (size_t i = 0; i < 9; ++i)
     {
         uint8_t byte = x & 0x7F;
