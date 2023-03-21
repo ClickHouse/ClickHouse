@@ -917,9 +917,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         /// Fuzzing SELECT query to EXPLAIN query randomly
         if (fuzz_rand() % 20 == 0)
         {
-            auto explain = std::make_shared<ASTExplainQuery>();
-
-            explain->setExplainKind(fuzzExplainKind());
+            auto explain = std::make_shared<ASTExplainQuery>(fuzzExplainKind());
 
             auto settings_ast = std::make_shared<ASTSetQuery>();
             fuzzExplainSettings(*settings_ast, explain->getKind());
