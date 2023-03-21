@@ -553,6 +553,41 @@ SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut;
 └────────────┴───────┘
 ```
 
+## formatDecimal
+
+Принимает любой численный тип первым аргументом, возвращает строковое десятичное представление числа с точностью, заданной вторым аргументом.
+
+**Синтаксис**
+
+``` sql
+formatDecimal(number, num_digits)
+```
+
+**Параметры**
+
+-   `number` — Число любого числового типа: [Int, UInt](/docs/en/sql-reference/data-types/int-uint.md), [Float](/docs/en/sql-reference/data-types/float.md), [Decimal](/docs/en/sql-reference/data-types/decimal.md),
+-   `num_digits` — Требуемое количество десятичных знаков после запятой, [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
+
+**Возвращаемое значение**
+
+-   Строка ([String](/docs/en/sql-reference/data-types/string.md)), представляющая собой входное число с заданной точностью.
+
+**Пример использования**
+
+Запрос:
+
+``` sql
+SELECT formatDecimal(CAST('64.32', 'Float64'), 5);
+```
+
+Результат:
+
+```response
+┌─formatDecimal(CAST('64.32', 'Float64'), 5)──┐
+│ 64.32000                                    │
+└─────────────────────────────────────────────┘
+```
+
 ## reinterpretAsUInt(8\|16\|32\|64) {#reinterpretasuint8163264}
 
 ## reinterpretAsInt(8\|16\|32\|64) {#reinterpretasint8163264}

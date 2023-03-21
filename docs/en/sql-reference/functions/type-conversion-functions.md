@@ -737,6 +737,41 @@ Result:
 └────────────┴───────┘
 ```
 
+## formatDecimal
+
+Represents a numeric value as String with exact number of fractional digits.
+
+**Syntax**
+
+``` sql
+formatDecimal(number, num_digits)
+```
+
+**Parameters**
+
+-   `number` — Value to be represented as String, of any numeric value. [Int, UInt](/docs/en/sql-reference/data-types/int-uint.md), [Float](/docs/en/sql-reference/data-types/float.md), [Decimal](/docs/en/sql-reference/data-types/decimal.md),
+-   `num_digits` — Number of fractional digits [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
+
+**Returned value**
+
+-   Input value represented as [String](/docs/en/sql-reference/data-types/string.md) with given scale.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT formatDecimal(CAST('64.32', 'Float64'), 5);
+```
+
+Result:
+
+```response
+┌─formatDecimal(CAST('64.32', 'Float64'), 5)──┐
+│ 64.32000                                    │
+└─────────────────────────────────────────────┘
+```
+
 ## reinterpretAsUInt(8\|16\|32\|64)
 
 ## reinterpretAsInt(8\|16\|32\|64)
