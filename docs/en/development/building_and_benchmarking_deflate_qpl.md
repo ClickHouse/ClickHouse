@@ -18,7 +18,7 @@ cmake -DENABLE_AVX512=1 -DENABLE_QPL=1 ..
 
 # Run Benchmark with DEFLATE_QPL
 ## Files list
-The folders under [benchmark_sample](https://github.com/ClickHouse/ClickHouse/tree/master/contrib/qpl-cmake/benchmark_sample) give example to run benchmark with python scripts:
+The folders under [benchmark_sample](/contrib/qpl-cmake/benchmark_sample) give example to run benchmark with python scripts:
 
 `client_scripts` contains python scripts for running typical benchmark, for example:
 - `client_stressing_test.py`: The python script for query stress test with [1~4] server instances.
