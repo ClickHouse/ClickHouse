@@ -24,7 +24,6 @@
 #include <IO/Operators.h>
 #include <IO/UseSSL.h>
 #include <IO/WriteBufferFromOStream.h>
-#include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -684,43 +683,75 @@ void QueryFuzzer::fuzzTableName(ASTTableExpression & table)
 
 void QueryFuzzer::fuzzExplainQuery(ASTExplainQuery & explain)
 {
-    /// Fuzz ExplainKind
+    explain.setExplainKind(fuzzExplainKind(explain.getKind()));
+
+    bool settings_have_fuzzed = false;
+    for (auto & child : explain.children)
+    {
+        if (auto * settings_ast = typeid_cast<ASTSetQuery *>(child.get()))
+        {
+            fuzzExplainSettings(*settings_ast, explain.getKind());
+            settings_have_fuzzed = true;
+        }
+        /// Fuzzing other child like Explain Query
+        else
+        {
+            fuzz(child);
+        }
+    }
+
+    if (!settings_have_fuzzed)
+    {
+        auto settings_ast = std::make_shared<ASTSetQuery>();
+        fuzzExplainSettings(*settings_ast, explain.getKind());
+        explain.setSettings(settings_ast);
+    }
+}
+
+ASTExplainQuery::ExplainKind QueryFuzzer::fuzzExplainKind(ASTExplainQuery::ExplainKind kind)
+{
     if (fuzz_rand() % 20 == 0)
     {
-        /// Do not modify ExplainKind
+        return kind;
     }
     else if (fuzz_rand() % 11 == 0)
     {
-        explain.setExplainKind(ASTExplainQuery::ExplainKind::ParsedAST);
+        return ASTExplainQuery::ExplainKind::ParsedAST;
     }
     else if (fuzz_rand() % 11 == 0)
     {
-        explain.setExplainKind(ASTExplainQuery::ExplainKind::AnalyzedSyntax);
+        return ASTExplainQuery::ExplainKind::AnalyzedSyntax;
     }
     else if (fuzz_rand() % 11 == 0)
     {
-        explain.setExplainKind(ASTExplainQuery::ExplainKind::QueryTree);
+        return ASTExplainQuery::ExplainKind::QueryTree;
     }
     else if (fuzz_rand() % 11 == 0)
     {
-        explain.setExplainKind(ASTExplainQuery::ExplainKind::QueryPlan);
+        return ASTExplainQuery::ExplainKind::QueryPlan;
     }
     else if (fuzz_rand() % 11 == 0)
     {
-        explain.setExplainKind(ASTExplainQuery::ExplainKind::QueryPipeline);
+        return ASTExplainQuery::ExplainKind::QueryPipeline;
     }
     else if (fuzz_rand() % 11 == 0)
     {
-        explain.setExplainKind(ASTExplainQuery::ExplainKind::QueryEstimates);
+        return ASTExplainQuery::ExplainKind::QueryEstimates;
     }
     else if (fuzz_rand() % 11 == 0)
     {
-        explain.setExplainKind(ASTExplainQuery::ExplainKind::TableOverride);
+        return ASTExplainQuery::ExplainKind::TableOverride;
     }
     else if (fuzz_rand() % 11 == 0)
     {
-        explain.setExplainKind(ASTExplainQuery::ExplainKind::CurrentTransaction);
+        return ASTExplainQuery::ExplainKind::CurrentTransaction;
     }
+    return kind;
+}
+
+void QueryFuzzer::fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuery::ExplainKind kind)
+{
+    auto & changes = settings_ast.changes;
 
     static const std::unordered_map<ASTExplainQuery::ExplainKind, std::vector<String>> settings_by_kind
         = {{ASTExplainQuery::ExplainKind::ParsedAST, {"graph", "optimize"}},
@@ -732,44 +763,17 @@ void QueryFuzzer::fuzzExplainQuery(ASTExplainQuery & explain)
            {ASTExplainQuery::ExplainKind::TableOverride, {}},
            {ASTExplainQuery::ExplainKind::CurrentTransaction, {}}};
 
-    const auto & settings = settings_by_kind.at(explain.getKind());
-    bool settings_have_fuzzed = false;
-    for (auto & child : explain.children)
-    {
-        if (auto * settings_ast = typeid_cast<ASTSetQuery *>(child.get()))
-        {
-            fuzzExplainSettings(*settings_ast, settings);
-            settings_have_fuzzed = true;
-        }
-        /// Fuzz other child like Explain Query
-        else
-        {
-            fuzz(child);
-        }
-    }
-
-    if (!settings_have_fuzzed && !settings.empty())
-    {
-        auto settings_ast = std::make_shared<ASTSetQuery>();
-        fuzzExplainSettings(*settings_ast, settings);
-        explain.setSettings(settings_ast);
-    }
-}
-
-void QueryFuzzer::fuzzExplainSettings(ASTSetQuery & settings, const std::vector<String> & names)
-{
-    auto & changes = settings.changes;
-
+    const auto & settings = settings_by_kind.at(kind);
     if (fuzz_rand() % 50 == 0 && !changes.empty())
     {
         changes.erase(changes.begin() + fuzz_rand() % changes.size());
     }
 
-    for (const auto & name : names)
+    for (const auto & setting : settings)
     {
         if (fuzz_rand() % 5 == 0)
         {
-            changes.emplace_back(name, true);
+            changes.emplace_back(setting, true);
         }
     }
 }
@@ -910,6 +914,20 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     if (auto * with_union = typeid_cast<ASTSelectWithUnionQuery *>(ast.get()))
     {
         fuzz(with_union->list_of_selects);
+        /// Fuzzing SELECT query to EXPLAIN query randomly
+        if (fuzz_rand() % 20 == 0)
+        {
+            auto explain = std::make_shared<ASTExplainQuery>();
+
+            explain->setExplainKind(fuzzExplainKind());
+
+            auto settings_ast = std::make_shared<ASTSetQuery>();
+            fuzzExplainSettings(*settings_ast, explain->getKind());
+            explain->setSettings(settings_ast);
+
+            explain->setExplainedQuery(ast);
+            ast = explain;
+        }
     }
     else if (auto * with_intersect_except = typeid_cast<ASTSelectIntersectExceptQuery *>(ast.get()))
     {
