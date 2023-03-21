@@ -6,7 +6,7 @@
 #include <gtest/gtest.h>
 #include <Common/StackTrace.h>
 
-std::string hilite(const std::string & s, const char * hilite_type)
+String hilite(const String & s, const char * hilite_type)
 {
     std::stringstream ss;
     ss << hilite_type;
@@ -15,32 +15,32 @@ std::string hilite(const std::string & s, const char * hilite_type)
     return ss.str();
 }
 
-std::string keyword(const std::string & s)
+String keyword(const String & s)
 {
     return hilite(s, DB::IAST::hilite_keyword);
 }
 
-std::string identifier(const std::string & s)
+String identifier(const String & s)
 {
     return hilite(s, DB::IAST::hilite_identifier);
 }
 
-std::string alias(const std::string & s)
+String alias(const String & s)
 {
     return hilite(s, DB::IAST::hilite_alias);
 }
 
-std::string op(const std::string & s)
+String op(const String & s)
 {
     return hilite(s, DB::IAST::hilite_operator);
 }
 
-std::string function(const std::string & s)
+String function(const String & s)
 {
     return hilite(s, DB::IAST::hilite_function);
 }
 
-std::string substitution(const std::string & s)
+String substitution(const String & s)
 {
     return hilite(s, DB::IAST::hilite_substitution);
 }
@@ -77,7 +77,7 @@ std::vector<const char *> HILITES =
     return last_hilite;
 }
 
-std::string remove_hilites(std::string_view string)
+String remove_hilites(std::string_view string)
 {
     const char * it = string.begin();
     std::stringstream ss;
@@ -151,7 +151,7 @@ TEST(FormatHiliting, MetaTestConsumeHilites)
        << IAST::hilite_substitution
        << IAST::hilite_function
        << "test" << IAST::hilite_keyword;
-    std::string string = ss.str();
+    String string = ss.str();
     const char * it = string.c_str();
     const char * expected_it = strchr(it, 't');
     const char * last_hilite = consume_hilites(&it);
@@ -202,7 +202,7 @@ TEST(FormatHiliting, MetaTestAreEqualWithHilites)
     }
 }
 
-void compare(const std::string & query, const std::stringstream & expected)
+void compare(const String & query, const std::stringstream & expected)
 {
     using namespace DB;
     ParserQuery parser(query.data() + query.size());
@@ -218,7 +218,7 @@ void compare(const std::string & query, const std::stringstream & expected)
 
 TEST(FormatHiliting, SimpleSelect)
 {
-    std::string query = "select * from table";
+    String query = "select * from table";
 
     std::stringstream expected;
     expected << keyword("SELECT ") << "* " << keyword("FROM ") << identifier("table");
@@ -228,7 +228,7 @@ TEST(FormatHiliting, SimpleSelect)
 
 TEST(FormatHiliting, ASTWithElement)
 {
-    std::string query = "with alias as (select * from table) select * from table";
+    String query = "with alias as (select * from table) select * from table";
 
     std::stringstream expected;
     expected << keyword("WITH ") << alias("alias ") << keyword("AS ")
@@ -240,7 +240,7 @@ TEST(FormatHiliting, ASTWithElement)
 
 TEST(FormatHiliting, ASTWithAlias)
 {
-    std::string query = "select a + 1 as b, b";
+    String query = "select a + 1 as b, b";
 
     std::stringstream expected;
     expected << keyword("SELECT ") << identifier("a ") << op("+ ") << "1 " << keyword("AS ") << alias("b") << ", "
@@ -251,7 +251,7 @@ TEST(FormatHiliting, ASTWithAlias)
 
 TEST(FormatHiliting, ASTFunction)
 {
-    std::string query = "select * from view(select * from table)";
+    String query = "select * from view(select * from table)";
 
     std::stringstream expected;
     expected << keyword("SELECT ") << "* " << keyword("FROM ")
@@ -262,7 +262,7 @@ TEST(FormatHiliting, ASTFunction)
 
 TEST(FormatHiliting, ASTDictionaryAttributeDeclaration)
 {
-    std::string query = "CREATE DICTIONARY name (`Name` ClickHouseDataType DEFAULT '' EXPRESSION rand64() IS_OBJECT_ID)";
+    String query = "CREATE DICTIONARY name (`Name` ClickHouseDataType DEFAULT '' EXPRESSION rand64() IS_OBJECT_ID)";
 
     std::stringstream expected;
     expected << keyword("CREATE DICTIONARY ") << "name "
@@ -276,7 +276,7 @@ TEST(FormatHiliting, ASTDictionaryAttributeDeclaration)
 
 TEST(FormatHiliting, ASTDictionary_Source)
 {
-    std::string query = "CREATE DICTIONARY name (`Name` ClickHouseDataType DEFAULT '' EXPRESSION rand64() IS_OBJECT_ID) "
+    String query = "CREATE DICTIONARY name (`Name` ClickHouseDataType DEFAULT '' EXPRESSION rand64() IS_OBJECT_ID) "
                         "SOURCE(FILE(PATH 'path'))";
 
     std::stringstream expected;
@@ -292,7 +292,7 @@ TEST(FormatHiliting, ASTDictionary_Source)
 
 TEST(FormatHiliting, ASTKillQueryQuery)
 {
-    std::string query = "KILL QUERY ON CLUSTER clustername WHERE user = 'username' SYNC";
+    String query = "KILL QUERY ON CLUSTER clustername WHERE user = 'username' SYNC";
 
     std::stringstream expected;
     expected << keyword("KILL QUERY ON CLUSTER ") << "clustername "
