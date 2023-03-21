@@ -336,7 +336,23 @@ static ReturnType parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
         ++buf.position();
         /// escape sequence of the form \xAA
         char hex_code[2];
-        readPODBinary(hex_code, buf);
+
+        if constexpr (std::is_same_v<ReturnType, void>)
+        {
+            readPODBinary(hex_code, buf);
+        }
+        else
+        {
+            try
+            {
+                readPODBinary(hex_code, buf);
+            }
+            catch (const Exception &)
+            {
+                return ReturnType(false);
+            }
+        }
+
         s.push_back(unhex2(hex_code));
     }
     else if (char_after_backslash == 'N')
@@ -370,6 +386,10 @@ static ReturnType parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
     return ReturnType(true);
 }
 
+bool parseComplexEscapeSequence(String & s, ReadBuffer & buf)
+{
+    return parseComplexEscapeSequence<String, bool>(s, buf);
+}
 
 template <typename Vector, typename ReturnType>
 static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
