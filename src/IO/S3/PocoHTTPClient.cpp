@@ -382,7 +382,7 @@ bool PocoHTTPClient::tryMakeOneRequest(
             .status_code = status_code,
             .request_size = request.HasContentLength() ? Poco::NumberParser::parse(request.GetContentLength()) : 0,
             .response_size = response->GetContentLength(),
-            .exception = execution_status 
+            .exception = execution_status
         };
         request_log_report(log_entry);
     }
