@@ -42,11 +42,11 @@ A table with the specified structure for reading or writing data in the specifie
 
 **Examples**
 
-Selecting the first two rows from the table from S3 file `https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/data.csv`:
+Selecting the first two rows from the table from GCS file `https://storage.googleapis.com/my-test-bucket-768/data.csv`:
 
 ``` sql
 SELECT *
-FROM gcs('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/data.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+FROM gcs('https://storage.googleapis.com/my-test-bucket-768/data.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
 LIMIT 2;
 ```
 
@@ -61,7 +61,7 @@ The similar but from file with `gzip` compression:
 
 ``` sql
 SELECT *
-FROM gcs('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/data.csv.gz', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32', 'gzip')
+FROM gcs('https://storage.googleapis.com/my-test-bucket-768/data.csv.gz', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32', 'gzip')
 LIMIT 2;
 ```
 
@@ -74,22 +74,22 @@ LIMIT 2;
 
 ## Usage
 
-Suppose that we have several files with following URIs on S3:
+Suppose that we have several files with following URIs on GCS:
 
--   'https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some_prefix/some_file_1.csv'
--   'https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some_prefix/some_file_2.csv'
--   'https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some_prefix/some_file_3.csv'
--   'https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some_prefix/some_file_4.csv'
--   'https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another_prefix/some_file_1.csv'
--   'https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another_prefix/some_file_2.csv'
--   'https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another_prefix/some_file_3.csv'
--   'https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another_prefix/some_file_4.csv'
+-   'https://storage.googleapis.com/my-test-bucket-768/some_prefix/some_file_1.csv'
+-   'https://storage.googleapis.com/my-test-bucket-768/some_prefix/some_file_2.csv'
+-   'https://storage.googleapis.com/my-test-bucket-768/some_prefix/some_file_3.csv'
+-   'https://storage.googleapis.com/my-test-bucket-768/some_prefix/some_file_4.csv'
+-   'https://storage.googleapis.com/my-test-bucket-768/another_prefix/some_file_1.csv'
+-   'https://storage.googleapis.com/my-test-bucket-768/another_prefix/some_file_2.csv'
+-   'https://storage.googleapis.com/my-test-bucket-768/another_prefix/some_file_3.csv'
+-   'https://storage.googleapis.com/my-test-bucket-768/another_prefix/some_file_4.csv'
 
 Count the amount of rows in files ending with numbers from 1 to 3:
 
 ``` sql
 SELECT count(*)
-FROM gcs('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/{some,another}_prefix/some_file_{1..3}.csv', 'CSV', 'name String, value UInt32')
+FROM gcs('https://storage.googleapis.com/my-test-bucket-768/{some,another}_prefix/some_file_{1..3}.csv', 'CSV', 'name String, value UInt32')
 ```
 
 ``` text
@@ -102,7 +102,7 @@ Count the total amount of rows in all files in these two directories:
 
 ``` sql
 SELECT count(*)
-FROM gcs('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/{some,another}_prefix/*', 'CSV', 'name String, value UInt32')
+FROM gcs('https://storage.googleapis.com/my-test-bucket-768/{some,another}_prefix/*', 'CSV', 'name String, value UInt32')
 ```
 
 ``` text
@@ -119,7 +119,7 @@ Count the total amount of rows in files named `file-000.csv`, `file-001.csv`, â€
 
 ``` sql
 SELECT count(*)
-FROM gcs('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/big_prefix/file-{000..999}.csv', 'CSV', 'name String, value UInt32');
+FROM gcs('https://storage.googleapis.com/my-test-bucket-768/big_prefix/file-{000..999}.csv', 'CSV', 'name String, value UInt32');
 ```
 
 ``` text
@@ -131,32 +131,32 @@ FROM gcs('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768
 Insert data into file `test-data.csv.gz`:
 
 ``` sql
-INSERT INTO FUNCTION gcs('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/test-data.csv.gz', 'CSV', 'name String, value UInt32', 'gzip')
+INSERT INTO FUNCTION gcs('https://storage.googleapis.com/my-test-bucket-768/test-data.csv.gz', 'CSV', 'name String, value UInt32', 'gzip')
 VALUES ('test-data', 1), ('test-data-2', 2);
 ```
 
 Insert data into file `test-data.csv.gz` from existing table:
 
 ``` sql
-INSERT INTO FUNCTION gcs('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/test-data.csv.gz', 'CSV', 'name String, value UInt32', 'gzip')
+INSERT INTO FUNCTION gcs('https://storage.googleapis.com/my-test-bucket-768/test-data.csv.gz', 'CSV', 'name String, value UInt32', 'gzip')
 SELECT name, value FROM existing_table;
 ```
 
 Glob ** can be used for recursive directory traversal. Consider the below example, it will fetch all files from `my-test-bucket-768` directory recursively:
 
 ``` sql
-SELECT * FROM gcs('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**', 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM gcs('https://storage.googleapis.com/my-test-bucket-768/**', 'CSV', 'name String, value UInt32', 'gzip');
 ```
 
 The below get data from all `test-data.csv.gz` files from any folder inside `my-test-bucket` directory recursively:
 
 ``` sql
-SELECT * FROM gcs('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz', 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM gcs('https://storage.googleapis.com/my-test-bucket-768/**/test-data.csv.gz', 'CSV', 'name String, value UInt32', 'gzip');
 ```
 
 ## Partitioned Write
 
-If you specify `PARTITION BY` expression when inserting data into `S3` table, a separate file is created for each partition value. Splitting the data into separate files helps to improve reading operations efficiency.
+If you specify `PARTITION BY` expression when inserting data into `GCS` table, a separate file is created for each partition value. Splitting the data into separate files helps to improve reading operations efficiency.
 
 **Examples**
 
