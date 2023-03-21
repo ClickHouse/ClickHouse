@@ -77,7 +77,7 @@ std::vector<const char *> HILITES =
     return last_hilite;
 }
 
-std::string remove_hilites(const std::string_view & string)
+std::string remove_hilites(std::string_view string)
 {
     const char * it = string.begin();
     std::stringstream ss;
@@ -90,12 +90,12 @@ std::string remove_hilites(const std::string_view & string)
     }
 }
 
-bool are_equal_with_hilites_removed(const std::string_view & left, const std::string_view & right)
+bool are_equal_with_hilites_removed(std::string_view left, std::string_view right)
 {
     return remove_hilites(left) == remove_hilites(right);
 }
 
-bool are_equal_with_hilites(const std::string_view & left, const std::string_view & right)
+bool are_equal_with_hilites(const std::string_view & left, std::string_view right)
 {
     if (!are_equal_with_hilites_removed(left, right))
         return false;
