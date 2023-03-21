@@ -16,7 +16,7 @@ $CLICKHOUSE_CLIENT -q 'create table dedup_test(A Int64) Engine = MergeTree order
 function insert_data
 {
     IMPLICIT=$(( RANDOM % 2 ))
-    SESSION_ID="${SESSION}_$RANDOM.$RANDOM.$1"
+    SESSION_ID="${SESSION}_$RANDOM.$RANDOM.$NUM"
     TXN_SETTINGS="session_id=$SESSION_ID&throw_on_unsupported_query_inside_transaction=0&implicit_transaction=$IMPLICIT"
     BEGIN=""
     COMMIT=""
@@ -63,7 +63,8 @@ function thread_insert
     i=2
     while true; do
         export ID="$TEST_MARK$RANDOM-$RANDOM-$i"
-        bash -c insert_data "$i" 2>&1| grep -Fav "Killed" | grep -Fav "SESSION_IS_LOCKED" | grep -Fav "SESSION_NOT_FOUND"
+        export NUM="$i"
+        bash -c insert_data 2>&1| grep -Fav "Killed" | grep -Fav "SESSION_IS_LOCKED" | grep -Fav "SESSION_NOT_FOUND"
         i=$((i + 1))
     done
 }
