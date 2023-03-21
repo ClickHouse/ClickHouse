@@ -1273,17 +1273,23 @@ void executeQuery(
         end = begin + parse_buf.size();
     }
 
-    ASTPtr ast;
-    BlockIO streams;
-
-    std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, &istr);
-    auto & pipeline = streams.pipeline;
-
     QueryResultDetails result_details
     {
         .query_id = context->getClientInfo().current_query_id,
         .timezone = DateLUT::instance().getTimeZone(),
     };
+
+    // Set the result details in case of any exception raised during query execution
+    SCOPE_EXIT({
+        if (set_result_details)
+            set_result_details(result_details);
+    });
+
+    ASTPtr ast;
+    BlockIO streams;
+
+    std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, &istr);
+    auto & pipeline = streams.pipeline;
 
     std::unique_ptr<WriteBuffer> compressed_buffer;
     try
@@ -1353,8 +1359,12 @@ void executeQuery(
             pipeline.setProgressCallback(context->getProgressCallback());
         }
 
-        if (set_result_details)
+        if (set_result_details) {
             set_result_details(result_details);
+
+            // Clear the callback so that result details won't be set twice in case of any exception raised after this point
+            set_result_details = nullptr;
+        }
 
         if (pipeline.initialized())
         {
