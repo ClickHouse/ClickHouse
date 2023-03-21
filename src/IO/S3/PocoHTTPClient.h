@@ -19,6 +19,8 @@
 #include <aws/core/http/HttpRequest.h>
 #include <aws/core/http/standard/StandardHttpResponse.h>
 
+#include <Interpreters/HttpClientLog.h>
+
 namespace Aws::Http::Standard
 {
 class StandardHttpResponse;
@@ -56,6 +58,7 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     void updateSchemeAndRegion();
 
     std::function<void(const ClientConfigurationPerRequest &)> error_report;
+    HttpClientRequestLogger request_log_report;
 
 private:
     PocoHTTPClientConfiguration(
@@ -182,6 +185,8 @@ private:
 
     std::function<ClientConfigurationPerRequest(const Aws::Http::HttpRequest &)> per_request_configuration;
     std::function<void(const ClientConfigurationPerRequest &)> error_report;
+    HttpClientRequestLogger request_log_report;
+
     ConnectionTimeouts timeouts;
     const RemoteHostFilter & remote_host_filter;
     unsigned int s3_max_redirects;

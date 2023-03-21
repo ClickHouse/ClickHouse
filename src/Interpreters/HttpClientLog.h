@@ -7,7 +7,7 @@
 namespace DB
 {
 
-struct HttpClientLogElement
+struct HttpClientLogEntry
 {
     enum class HttpMethod
     {
@@ -24,15 +24,30 @@ struct HttpClientLogElement
         AWS
     };
 
+    HttpClient http_client;
+    HttpMethod http_method;
+    std::string_view uri;
+    UInt64 duration_ms;
+    int status_code;
+    Int64 request_size;
+    Int64 response_size;
+    const ExecutionStatus & exception;
+};
+
+typedef std::function<void(const HttpClientLogEntry &)> HttpClientRequestLogger;
+
+/// The structure of httpclient_log table
+struct HttpClientLogElement
+{
     Decimal64 event_time_microseconds = 0;
     UInt64 duration_ms = 0;
-    HttpClient client;
+    HttpClientLogEntry::HttpClient client;
 
     String query_id;
     UUID trace_id;
     UInt64 span_id;
 
-    HttpMethod method;
+    HttpClientLogEntry::HttpMethod method;
     String uri;
     int status_code;
     UInt64 request_size;
@@ -66,15 +81,7 @@ public:
         return httpclient_log.lock();
     }
 
-    static bool addLogEntry(
-        HttpClientLogElement::HttpClient client,
-        HttpClientLogElement::HttpMethod method,
-        std::string_view uri,
-        UInt64 duration_ms,
-        int status_code,
-        UInt64 request_content_length,
-        UInt64 response_content_length,
-        const ExecutionStatus & exception) noexcept;
+    static bool addLogEntry(const HttpClientLogEntry& log_entry) noexcept;
 };
 
 }

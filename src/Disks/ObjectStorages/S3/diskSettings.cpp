@@ -22,6 +22,7 @@
 #include <Disks/ObjectStorages/DiskObjectStorageCommon.h>
 #include <Disks/DiskLocal.h>
 #include <Common/Macros.h>
+#include <Interpreters/HttpClientLog.h>
 
 namespace DB
 {
@@ -131,6 +132,7 @@ std::unique_ptr<S3::Client> getClient(
     client_configuration.requestTimeoutMs = config.getUInt(config_prefix + ".request_timeout_ms", 30000);
     client_configuration.maxConnections = config.getUInt(config_prefix + ".max_connections", 100);
     client_configuration.endpointOverride = uri.endpoint;
+    client_configuration.request_log_report = &HttpClientLog::addLogEntry;
 
     auto proxy_config = getProxyConfiguration(config_prefix, config);
     if (proxy_config)

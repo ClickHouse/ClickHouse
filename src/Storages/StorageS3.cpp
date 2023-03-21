@@ -15,6 +15,7 @@
 
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/HttpClientLog.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -1252,6 +1253,7 @@ void StorageS3::updateConfiguration(ContextPtr ctx, StorageS3::Configuration & u
 
     client_configuration.endpointOverride = upd.url.endpoint;
     client_configuration.maxConnections = static_cast<unsigned>(upd.request_settings.max_connections);
+    client_configuration.request_log_report = &HttpClientLog::addLogEntry;
 
     auto credentials = Aws::Auth::AWSCredentials(upd.auth_settings.access_key_id, upd.auth_settings.secret_access_key);
     auto headers = upd.auth_settings.headers;

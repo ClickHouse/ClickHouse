@@ -135,6 +135,7 @@ void PocoHTTPClientConfiguration::updateSchemeAndRegion()
 PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & client_configuration)
     : per_request_configuration(client_configuration.per_request_configuration)
     , error_report(client_configuration.error_report)
+    , request_log_report(client_configuration.request_log_report)
     , timeouts(ConnectionTimeouts(
           Poco::Timespan(client_configuration.connectTimeoutMs * 1000), /// connection timeout.
           Poco::Timespan(client_configuration.requestTimeoutMs * 1000), /// send timeout.
@@ -347,38 +348,44 @@ bool PocoHTTPClient::tryMakeOneRequest(
     }
     watch.stop();
 
-    HttpClientLogElement::HttpMethod http_method;
-    switch (request.GetMethod())
+    if (request_log_report)
     {
+        HttpClientLogEntry::HttpMethod http_method;
+        switch (request.GetMethod())
+        {
         case Aws::Http::HttpMethod::HTTP_GET:
-            http_method = HttpClientLogElement::HttpMethod::GET;
+            http_method = HttpClientLogEntry::HttpMethod::GET;
             break;
         case Aws::Http::HttpMethod::HTTP_POST:
-            http_method = HttpClientLogElement::HttpMethod::POST;
+            http_method = HttpClientLogEntry::HttpMethod::POST;
             break;
         case Aws::Http::HttpMethod::HTTP_DELETE:
-            http_method = HttpClientLogElement::HttpMethod::DELETE;
+            http_method = HttpClientLogEntry::HttpMethod::DELETE;
             break;
         case Aws::Http::HttpMethod::HTTP_PUT:
-            http_method = HttpClientLogElement::HttpMethod::PUT;
+            http_method = HttpClientLogEntry::HttpMethod::PUT;
             break;
         case Aws::Http::HttpMethod::HTTP_HEAD:
-            http_method = HttpClientLogElement::HttpMethod::HEAD;
+            http_method = HttpClientLogEntry::HttpMethod::HEAD;
             break;
         case Aws::Http::HttpMethod::HTTP_PATCH:
-            http_method = HttpClientLogElement::HttpMethod::PATCH;
+            http_method = HttpClientLogEntry::HttpMethod::PATCH;
             break;
-    }
+        }
 
-    int request_size = request.HasContentLength() ? Poco::NumberParser::parse(request.GetContentLength()) : 0;
-    HttpClientLog::addLogEntry(HttpClientLogElement::HttpClient::AWS,
-        http_method,
-        uri,
-        watch.elapsedMilliseconds(),
-        status_code,
-        request_size,
-        response->GetContentLength(),
-        execution_status);
+        HttpClientLogEntry log_entry
+        {
+            .http_client = HttpClientLogEntry::HttpClient::AWS,
+            .http_method = http_method,
+            .uri = uri,
+            .duration_ms = watch.elapsedMilliseconds(),
+            .status_code = status_code,
+            .request_size = request.HasContentLength() ? Poco::NumberParser::parse(request.GetContentLength()) : 0,
+            .response_size = response->GetContentLength(),
+            .exception = execution_status 
+        };
+        request_log_report(log_entry);
+    }
 
     return success;
 }

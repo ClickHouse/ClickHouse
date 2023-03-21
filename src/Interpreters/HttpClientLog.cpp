@@ -20,19 +20,19 @@ NamesAndTypesList HttpClientLogElement::getNamesAndTypes()
     auto http_client_type = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
         {
-            {"AWS",         static_cast<Int8>(HttpClient::AWS)}
+            {"AWS",         static_cast<Int8>(HttpClientLogEntry::HttpClient::AWS)}
         }
     );
 
     auto http_method_type = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
         {
-            {"GET",         static_cast<Int8>(HttpMethod::GET)},
-            {"POST",        static_cast<Int8>(HttpMethod::POST)},
-            {"DELETE",      static_cast<Int8>(HttpMethod::DELETE)},
-            {"PUT",         static_cast<Int8>(HttpMethod::PUT)},
-            {"HEAD",        static_cast<Int8>(HttpMethod::HEAD)},
-            {"PATCH",       static_cast<Int8>(HttpMethod::PATCH)},
+            {"GET",         static_cast<Int8>(HttpClientLogEntry::HttpMethod::GET)},
+            {"POST",        static_cast<Int8>(HttpClientLogEntry::HttpMethod::POST)},
+            {"DELETE",      static_cast<Int8>(HttpClientLogEntry::HttpMethod::DELETE)},
+            {"PUT",         static_cast<Int8>(HttpClientLogEntry::HttpMethod::PUT)},
+            {"HEAD",        static_cast<Int8>(HttpClientLogEntry::HttpMethod::HEAD)},
+            {"PATCH",       static_cast<Int8>(HttpClientLogEntry::HttpMethod::PATCH)},
         }
     );
 
@@ -95,15 +95,7 @@ inline UInt64 time_in_microseconds(std::chrono::time_point<std::chrono::system_c
 
 std::weak_ptr<HttpClientLog> HttpClientLog::httpclient_log;
 
-bool HttpClientLog::addLogEntry(
-    HttpClientLogElement::HttpClient client,
-    HttpClientLogElement::HttpMethod method,
-    std::string_view uri,
-    UInt64 duration_ms,
-    int status_code,
-    UInt64 request_content_length,
-    UInt64 response_content_length,
-    const ExecutionStatus & exception) noexcept
+bool HttpClientLog::addLogEntry(const HttpClientLogEntry& log_entry) noexcept
 {
     try
     {
@@ -117,23 +109,23 @@ bool HttpClientLog::addLogEntry(
 
         /// Log event_time as the start time of this request
         const auto time_now = std::chrono::system_clock::now();
-        elem.event_time_microseconds = time_in_microseconds(time_now) - duration_ms * 1000;
+        elem.event_time_microseconds = time_in_microseconds(time_now) - log_entry.duration_ms * 1000;
 
         auto query_id = CurrentThread::getQueryId();
         if (!query_id.empty())
             elem.query_id.insert(0, query_id.data(), query_id.size());
 
-        elem.client = client;
+        elem.client = log_entry.http_client;
         elem.trace_id = OpenTelemetry::CurrentContext().trace_id;
         elem.span_id = OpenTelemetry::CurrentContext().span_id;
-        elem.duration_ms = duration_ms;
-        elem.method = method;
-        elem.uri = uri;
-        elem.status_code = status_code;
-        elem.request_size = request_content_length;
-        elem.response_size = response_content_length;
-        elem.exception_code = exception.code;
-        elem.exception = exception.message;
+        elem.duration_ms = log_entry.duration_ms;
+        elem.method = log_entry.http_method;
+        elem.uri = log_entry.uri;
+        elem.status_code = log_entry.status_code;
+        elem.request_size = log_entry.request_size;
+        elem.response_size = log_entry.response_size;
+        elem.exception_code = log_entry.exception.code;
+        elem.exception = log_entry.exception.message;
 
         httpclient_log_owned->add(elem);
     }
