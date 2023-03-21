@@ -498,18 +498,15 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
 
     if (streams > 0 && streams <= max_insert_delayed_streams_for_parallel_write)
     {
-        auto replicated_delayed_chunk = std::make_unique<ReplicatedMergeTreeSinkImpl<async_insert>::DelayedChunk>(replicas_num);
-        replicated_delayed_chunk->partitions = std::move(partitions);
-        finishDelayedChunk(zookeeper);
-        delayed_chunk = std::make_unique<ReplicatedMergeTreeSinkImpl::DelayedChunk>();
-        delayed_chunk->partitions = std::move(replicated_delayed_chunk->partitions);    
+        delayed_chunk = std::make_unique<ReplicatedMergeTreeSinkImpl<async_insert>::DelayedChunk>(replicas_num);
+        delayed_chunk->partitions = std::move(partitions);
+        partitions = DelayedPartitions{};
     }
-    else
-    {
-        finishDelayedChunk(zookeeper);
-        delayed_chunk = std::make_unique<ReplicatedMergeTreeSinkImpl::DelayedChunk>();
-        delayed_chunk->partitions = std::move(partitions);    
-    }
+
+    finishDelayedChunk(zookeeper);
+    delayed_chunk = std::make_unique<ReplicatedMergeTreeSinkImpl::DelayedChunk>();
+    delayed_chunk->partitions = std::move(partitions);
+
     /// If deduplicated data should not be inserted into MV, we need to set proper
     /// value for `last_block_is_duplicate`, which is possible only after the part is committed.
     /// Othervide we can delay commit.
