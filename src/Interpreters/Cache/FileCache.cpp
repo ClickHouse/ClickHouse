@@ -948,8 +948,7 @@ void FileCache::performDelayedRemovalOfDeletedKeysFromMetadata(const CacheMetada
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No such key {} in metadata", cleanup_key.toString());
 
         /// We must also lock the key.
-        auto guard = it->second->guard;
-        auto key_lock = guard->lock();
+        auto key_lock = it->second->lock();
 
         /// Remove key from metadata.
         metadata.erase(it);
@@ -988,14 +987,9 @@ LockedKeyPtr FileCache::createLockedKey(const Key & key, KeyNotFoundPolicy key_n
 
         it = metadata.emplace(key, std::make_shared<KeyMetadata>()).first;
     }
-    else if (!it->second || !it->second->guard)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trash in metadata");
-    }
 
     auto key_metadata = it->second;
-    auto key_guard = key_metadata->guard;
-    auto key_lock = key_guard->lock();
+    auto key_lock = key_metadata->lock();
 
     /// Removal of empty key from cache metadata is delayed.
     /// Therefore here we need to check if the key which we currently took from cache metadata is a valid non-removed key.
@@ -1020,7 +1014,7 @@ LockedKeyPtr FileCache::createLockedKey(const Key & key, KeyNotFoundPolicy key_n
             return nullptr;
 
         it = metadata.emplace(key, std::make_shared<KeyMetadata>()).first;
-        return std::make_unique<LockedKey>(key, it->second, it->second->guard->lock(), cleanup_keys_metadata_queue, this);
+        return std::make_unique<LockedKey>(key, it->second, it->second->lock(), cleanup_keys_metadata_queue, this);
     }
 
     return std::make_unique<LockedKey>(key, key_metadata, std::move(key_lock), cleanup_keys_metadata_queue, this);
@@ -1028,7 +1022,7 @@ LockedKeyPtr FileCache::createLockedKey(const Key & key, KeyNotFoundPolicy key_n
 
 LockedKeyPtr FileCache::createLockedKey(const Key & key, KeyMetadataPtr key_metadata) const
 {
-    auto key_lock = key_metadata->guard->lock();
+    auto key_lock = key_metadata->lock();
     if (key_metadata->removed)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot lock key: it was removed from cache");
     return std::make_unique<LockedKey>(key, key_metadata, std::move(key_lock), cleanup_keys_metadata_queue, this);
@@ -1042,8 +1036,7 @@ void FileCache::iterateCacheMetadata(const CacheMetadataGuard::Lock & lock, std:
     for (auto it = metadata.begin(); it != metadata.end();)
     {
         auto key_metadata = it->second;
-        auto key_guard = key_metadata->guard;
-        auto key_lock = key_guard->lock();
+        auto key_lock = key_metadata->lock();
 
         /// Perform delayed removal of deleted key from cache metadata.
         if (key_metadata->removed)

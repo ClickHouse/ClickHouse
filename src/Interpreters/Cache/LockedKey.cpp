@@ -17,7 +17,7 @@ namespace ErrorCodes
 LockedKey::LockedKey(
     const FileCacheKey & key_,
     std::weak_ptr<KeyMetadata> key_metadata_,
-    KeyGuard::Lock && lock_,
+    KeyGuard::Lock lock_,
     KeysQueuePtr cleanup_keys_metadata_queue_,
     const FileCache * cache_)
     : key(key_)

@@ -18,7 +18,7 @@ struct LockedKey : private boost::noncopyable
     LockedKey(
         const FileCacheKey & key_,
         std::weak_ptr<KeyMetadata> key_metadata_,
-        KeyGuard::Lock && key_lock_,
+        KeyGuard::Lock key_lock_,
         KeysQueuePtr cleanup_keys_metadata_queue_,
         const FileCache * cache_);
 
