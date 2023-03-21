@@ -94,7 +94,7 @@ def test_basic(started_cluster):
     data_path = f"/var/lib/clickhouse/user_files/{TABLE_NAME}.parquet"
     inserted_data = "SELECT number, toString(number) FROM numbers(100)"
     instance.query(
-        f"INSERT INTO TABLE FUNCTION file('{data_path}', 'Parquet', 'a Int32, b String') {inserted_data} FORMAT Parquet SETTINGS output_format_parquet_compression_method='snappy'"
+        f"INSERT INTO TABLE FUNCTION file('{data_path}', 'Parquet', 'a Int32, b String') SETTINGS output_format_parquet_compression_method='none' {inserted_data} FORMAT Parquet"
     )
 
     data_path = f"{USER_FILES_PATH}/{TABLE_NAME}.parquet"
@@ -110,8 +110,8 @@ def test_basic(started_cluster):
     instance.query(
         f"""
         DROP TABLE IF EXISTS {TABLE_NAME};
-        CREATE TABLE {TABLE_NAME} ENGINE=Hudi('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{TABLE_NAME}_result/', 'minio', 'minio123')"""
+        CREATE TABLE {TABLE_NAME} ENGINE=Hudi('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{TABLE_NAME}_result/__HIVE_DEFAULT_PARTITION__/', 'minio', 'minio123')"""
     )
-    assert instance.query(f"SELECT * FROM {TABLE_NAME}") == instance.query(
+    assert instance.query(f"SELECT a, b FROM {TABLE_NAME}") == instance.query(
         inserted_data
     )
