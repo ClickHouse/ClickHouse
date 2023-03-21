@@ -12,7 +12,7 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorHash.h>
 #include <Common/typeid_cast.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Core/Block.h>
 
 

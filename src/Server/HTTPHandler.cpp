@@ -589,11 +589,12 @@ void HTTPHandler::processQuery(
 
     /// At least, we should postpone sending of first buffer_size result bytes
     size_t buffer_size_total = std::max(
-        params.getParsed<size_t>("buffer_size", DBMS_DEFAULT_BUFFER_SIZE), static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE));
+        params.getParsed<size_t>("buffer_size", context->getSettingsRef().http_response_buffer_size),
+        static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE));
 
     /// If it is specified, the whole result will be buffered.
     ///  First ~buffer_size bytes will be buffered in memory, the remaining bytes will be stored in temporary file.
-    bool buffer_until_eof = params.getParsed<bool>("wait_end_of_query", false);
+    bool buffer_until_eof = params.getParsed<bool>("wait_end_of_query", context->getSettingsRef().http_wait_end_of_query);
 
     size_t buffer_size_http = DBMS_DEFAULT_BUFFER_SIZE;
     size_t buffer_size_memory = (buffer_size_total > buffer_size_http) ? buffer_size_total : 0;
@@ -782,7 +783,6 @@ void HTTPHandler::processQuery(
     /// they will be applied in ProcessList::insert() from executeQuery() itself.
     const auto & query = getQuery(request, params, context);
     std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query);
-    in = has_external_data ? std::move(in_param) : std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
 
     /// HTTP response compression is turned on only if the client signalled that they support it
     /// (using Accept-Encoding header) and 'enable_http_compression' setting is turned on.
@@ -832,7 +832,8 @@ void HTTPHandler::processQuery(
         });
     }
 
-    customizeContext(request, context);
+    customizeContext(request, context, *in_post_maybe_compressed);
+    in = has_external_data ? std::move(in_param) : std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
 
     executeQuery(*in, *used_output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, context,
         [&response, this] (const QueryResultDetails & details)
@@ -1001,6 +1002,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             client_info.client_trace_context,
             context->getSettingsRef(),
             context->getOpenTelemetrySpanLog());
+        thread_trace_context->root_span.kind = OpenTelemetry::SERVER;
         thread_trace_context->root_span.addAttribute("clickhouse.uri", request.getURI());
 
         response.setContentType("text/plain; charset=UTF-8");
@@ -1151,7 +1153,7 @@ bool PredefinedQueryHandler::customizeQueryParam(ContextMutablePtr context, cons
     return false;
 }
 
-void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, ContextMutablePtr context)
+void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, ContextMutablePtr context, ReadBuffer & body)
 {
     /// If in the configuration file, the handler's header is regex and contains named capture group
     /// We will extract regex named capture groups as query parameters
@@ -1184,6 +1186,15 @@ void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, Conte
     {
         const auto & header_value = request.get(header_name);
         set_query_params(header_value.data(), header_value.data() + header_value.size(), regex);
+    }
+
+    if (unlikely(receive_params.contains("_request_body") && !context->getQueryParameters().contains("_request_body")))
+    {
+        WriteBufferFromOwnString value;
+        const auto & settings = context->getSettingsRef();
+
+        copyDataMaxBytes(body, value, settings.http_max_request_param_data_size);
+        context->setQueryParameter("_request_body", value.str());
     }
 }
 

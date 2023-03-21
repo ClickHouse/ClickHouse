@@ -330,7 +330,7 @@ repeat(s, n)
 **Arguments**
 
 -   `s` — The string to repeat. [String](../../sql-reference/data-types/string.md).
--   `n` — The number of times to repeat the string. [UInt](../../sql-reference/data-types/int-uint.md).
+-   `n` — The number of times to repeat the string. [UInt or Int](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
