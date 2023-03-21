@@ -1276,7 +1276,7 @@
     <!-- <httpclient_log>
         <engine>
             engine MergeTree
-            partition by toYYYYMM(event_time)
+            partition by event_date
             order by (event_time, client, method, uri)
             ttl event_date + INTERVAL 3 DAY
         </engine>
