@@ -143,7 +143,7 @@ NextState InlineEscapingValueStateHandler::readQuoted(std::string_view file, siz
                 }
             }
         }
-        else if(quoting_character == character)
+        else if (quoting_character == character)
         {
             // todo try to optimize with resize and memcpy
             for (auto i = pos; i < character_position; i++)
