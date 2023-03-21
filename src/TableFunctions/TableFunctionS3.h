@@ -93,4 +93,18 @@ private:
 
 }
 
+class TableFunctionGCS : public TableFunctionS3
+{
+public:
+    static constexpr auto name = "gcs";
+    std::string getName() const override
+    {
+        return name;
+    }
+private:
+    const char * getStorageTypeName() const override { return "GCS"; }
+};
+
+}
+
 #endif
