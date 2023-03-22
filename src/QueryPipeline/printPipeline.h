@@ -70,5 +70,4 @@ void printPipeline(const Processors & processors, WriteBuffer & out)
 /// If QueryPlanStep wasn't set for processor, representation may be not correct.
 /// If with_header is set, prints block header for each edge.
 void printPipelineCompact(const Processors & processors, WriteBuffer & out, bool with_header);
-
 }
