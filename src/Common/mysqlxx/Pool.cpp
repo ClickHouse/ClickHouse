@@ -10,20 +10,8 @@
 #include <base/sleep.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Common/logger_useful.h>
+#include <Common/Stopwatch.h>
 #include <ctime>
-
-
-namespace
-{
-
-inline uint64_t clock_gettime_ns(clockid_t clock_type = CLOCK_MONOTONIC)
-{
-    struct timespec ts;
-    clock_gettime(clock_type, &ts);
-    return uint64_t(ts.tv_sec * 1000000000LL + ts.tv_nsec);
-}
-
-}
 
 
 namespace mysqlxx
