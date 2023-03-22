@@ -137,7 +137,6 @@ public:
         ContextPtr context,
         const ConnectionTimeouts & timeouts,
         CompressionMethod compression_method,
-        const HTTPHeaderEntries & headers = {},
         const String & method = Poco::Net::HTTPRequest::HTTP_POST);
 
     std::string getName() const override { return "StorageURLSink"; }

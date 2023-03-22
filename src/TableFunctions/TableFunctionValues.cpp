@@ -92,8 +92,7 @@ void TableFunctionValues::parseArguments(const ASTPtr & ast_function, ContextPtr
 
     const auto & literal = args[0]->as<const ASTLiteral>();
     String value;
-    String error;
-    if (args.size() > 1 && literal && literal->value.tryGet(value) && tryParseColumnsListFromString(value, structure, context, error))
+    if (args.size() > 1 && literal && literal->value.tryGet(value) && tryParseColumnsListFromString(value, structure, context))
     {
         has_structure_in_arguments = true;
         return;

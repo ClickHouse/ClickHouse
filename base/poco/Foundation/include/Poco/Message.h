@@ -105,8 +105,6 @@ public:
     const std::string & getText() const;
     /// Returns the text of the message.
 
-    void appendText(const std::string & text);
-
     void setPriority(Priority prio);
     /// Sets the priority of the message.
 

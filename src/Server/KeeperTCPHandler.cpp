@@ -20,7 +20,7 @@
 #include <queue>
 #include <mutex>
 #include <Coordination/FourLetterCommand.h>
-#include <base/hex.h>
+#include <Common/hex.h>
 
 
 #ifdef POCO_HAVE_FD_EPOLL

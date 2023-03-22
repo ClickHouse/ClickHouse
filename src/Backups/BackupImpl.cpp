@@ -6,7 +6,7 @@
 #include <Backups/BackupCoordinationLocal.h>
 #include <Backups/BackupCoordinationRemote.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <base/hex.h>
+#include <Common/hex.h>
 #include <Common/quoteString.h>
 #include <Common/XMLUtils.h>
 #include <Interpreters/Context.h>
@@ -16,11 +16,11 @@
 #include <IO/Archives/createArchiveWriter.h>
 #include <IO/ConcatSeekableReadBuffer.h>
 #include <IO/HashingReadBuffer.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
 #include <IO/copyData.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/DOM/DOMParser.h>
@@ -317,19 +317,11 @@ void BackupImpl::writeBackupMetadata()
 {
     assert(!is_internal_backup);
 
-    checkLockFile(true);
-
-    std::unique_ptr<WriteBuffer> out;
-    if (use_archives)
-        out = getArchiveWriter("")->writeFile(".backup");
-    else
-        out = writer->writeFile(".backup");
-
-    *out << "<config>";
-    *out << "<version>" << CURRENT_BACKUP_VERSION << "</version>";
-    *out << "<deduplicate_files>" << deduplicate_files << "</deduplicate_files>";
-    *out << "<timestamp>" << toString(LocalDateTime{timestamp}) << "</timestamp>";
-    *out << "<uuid>" << toString(*uuid) << "</uuid>";
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config{new Poco::Util::XMLConfiguration()};
+    config->setInt("version", CURRENT_BACKUP_VERSION);
+    config->setBool("deduplicate_files", deduplicate_files);
+    config->setString("timestamp", toString(LocalDateTime{timestamp}));
+    config->setString("uuid", toString(*uuid));
 
     auto all_file_infos = coordination->getAllFileInfos();
 
@@ -344,8 +336,8 @@ void BackupImpl::writeBackupMetadata()
 
         if (base_backup_in_use)
         {
-            *out << "<base_backup>" << xml << base_backup_info->toString() << "</base_backup>";
-            *out << "<base_backup_uuid>" << toString(*base_backup_uuid) << "</base_backup_uuid>";
+            config->setString("base_backup", base_backup_info->toString());
+            config->setString("base_backup_uuid", toString(*base_backup_uuid));
         }
     }
 
@@ -354,32 +346,31 @@ void BackupImpl::writeBackupMetadata()
     num_entries = 0;
     size_of_entries = 0;
 
-    *out << "<contents>";
-    for (const auto & info : all_file_infos)
+    for (size_t i = 0; i != all_file_infos.size(); ++i)
     {
-        *out << "<file>";
-
-        *out << "<name>" << xml << info.file_name << "</name>";
-        *out << "<size>" << info.size << "</size>";
+        const auto & info = all_file_infos[i];
+        String prefix = i ? "contents.file[" + std::to_string(i) + "]." : "contents.file.";
+        config->setString(prefix + "name", info.file_name);
+        config->setUInt64(prefix + "size", info.size);
 
         if (info.size)
         {
-            *out << "<checksum>" << hexChecksum(info.checksum) << "</checksum>";
+            config->setString(prefix + "checksum", hexChecksum(info.checksum));
             if (info.base_size)
             {
-                *out << "<use_base>true</use_base>";
+                config->setBool(prefix + "use_base", true);
                 if (info.base_size != info.size)
                 {
-                    *out << "<base_size>" << info.base_size << "</base_size>";
-                    *out << "<base_checksum>" << hexChecksum(info.base_checksum) << "</base_checksum>";
+                    config->setUInt64(prefix + "base_size", info.base_size);
+                    config->setString(prefix + "base_checksum", hexChecksum(info.base_checksum));
                 }
             }
             if (!info.data_file_name.empty() && (info.data_file_name != info.file_name))
-                *out << "<data_file>" << xml << info.data_file_name << "</data_file>";
+                config->setString(prefix + "data_file", info.data_file_name);
             if (!info.archive_suffix.empty())
-                *out << "<archive_suffix>" << xml << info.archive_suffix << "</archive_suffix>";
+                config->setString(prefix + "archive_suffix", info.archive_suffix);
             if (info.pos_in_archive != static_cast<size_t>(-1))
-                *out << "<pos_in_archive>" << info.pos_in_archive << "</pos_in_archive>";
+                config->setUInt64(prefix + "pos_in_archive", info.pos_in_archive);
         }
 
         total_size += info.size;
@@ -389,16 +380,23 @@ void BackupImpl::writeBackupMetadata()
             ++num_entries;
             size_of_entries += info.size - info.base_size;
         }
-
-        *out << "</file>";
     }
-    *out << "</contents>";
 
-    *out << "</config>";
+    std::ostringstream stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    config->save(stream);
+    String str = stream.str();
 
+    checkLockFile(true);
+
+    std::unique_ptr<WriteBuffer> out;
+    if (use_archives)
+        out = getArchiveWriter("")->writeFile(".backup");
+    else
+        out = writer->writeFile(".backup");
+    out->write(str.data(), str.size());
     out->finalize();
 
-    uncompressed_size = size_of_entries + out->count();
+    uncompressed_size = size_of_entries + str.size();
 }
 
 

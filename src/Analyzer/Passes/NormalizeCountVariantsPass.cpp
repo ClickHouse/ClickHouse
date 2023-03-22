@@ -46,7 +46,8 @@ public:
         }
         else if (function_node->getFunctionName() == "sum" &&
             first_argument_constant_literal.getType() == Field::Types::UInt64 &&
-            first_argument_constant_literal.get<UInt64>() == 1)
+            first_argument_constant_literal.get<UInt64>() == 1 &&
+            !getSettings().aggregate_functions_null_for_empty)
         {
             resolveAsCountAggregateFunction(*function_node);
             function_node->getArguments().getNodes().clear();
