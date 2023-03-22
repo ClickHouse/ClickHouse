@@ -164,6 +164,7 @@ MatchedTrees::Matches matchTrees(const ActionsDAG & inner_dag, const ActionsDAG 
                                         if (frame.mapped_children[i] == nullptr)
                                         {
                                             all_children_matched = children[i]->column && isColumnConst(*children[i]->column)
+                                                && children[i]->result_type->equals(*frame.node->children[i]->result_type)
                                                 && assert_cast<const ColumnConst &>(*children[i]->column).getField() == assert_cast<const ColumnConst &>(*frame.node->children[i]->column).getField();
                                         }
                                         else
