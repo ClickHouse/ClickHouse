@@ -43,6 +43,19 @@ namespace DB
  * Rules:
  * 1. Priority of locking: CacheGuard::Lock > CacheMetadataGuard::Lock > KeyGuard::Lock > FileSegmentGuard::Lock
  * 2. If we take more than one key lock at a moment of time, we need to take CacheGuard::Lock (example: tryReserve())
+ *
+ *
+ *                                 _CacheGuard_
+ *                                 1. FileCache::tryReserve
+ *                                 2. FileCache::removeIfExists(key)
+ *                                 3. FileCache::removeAllReleasable
+ *                                 4. FileSegment::complete
+ *
+ *             _KeyGuard_                                      _CacheMetadataGuard_
+ *             1. all from CacheGuard                          1. getOrSet/get/set
+ *             2. getOrSet/get/Set
+ *
+ * *This table does not include locks taken for introspection and system tables.
  */
 
 /**

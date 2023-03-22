@@ -48,8 +48,6 @@ public:
 
     FileCache(const String & cache_base_path_, const FileCacheSettings & cache_settings_);
 
-    ~FileCache() = default;
-
     void initialize();
 
     const String & getBasePath() const { return cache_base_path; }
