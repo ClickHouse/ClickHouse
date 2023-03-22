@@ -218,23 +218,6 @@ static Block adaptBlockStructure(const Block & block, const Block & header)
 
 void RemoteQueryExecutor::sendQuery(ClientInfo::QueryKind query_kind, AsyncCallback async_callback)
 {
-    if (sent_query)
-        return;
-
-    connections = create_connections(async_callback);
-    AsyncCallbackSetter async_callback_setter(connections.get(), async_callback);
-
-    const auto & settings = context->getSettingsRef();
-    if (needToSkipUnavailableShard())
-        return;
-
-    /// Query could be cancelled during creating connections and this code can be executed
-    /// inside read_context->cancel() under was_cancelled_mutex, it can happen only when
-    /// was_cancelled = true (because it's set to true before calling read_context->cancel())
-    /// To avoid deadlock, we should check was_cancelled before locking was_cancelled_mutex.
-    if (was_cancelled)
-        return;
-
     /// Query cannot be canceled in the middle of the send query,
     /// since there are multiple packets:
     /// - Query
@@ -245,9 +228,26 @@ void RemoteQueryExecutor::sendQuery(ClientInfo::QueryKind query_kind, AsyncCallb
     ///     Unexpected packet Data received from client
     ///
     std::lock_guard guard(was_cancelled_mutex);
+    sendQueryUnlocked(query_kind, async_callback);
+}
+
+void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, AsyncCallback async_callback)
+{
+    if (sent_query || was_cancelled)
+        return;
+
+    connections = create_connections(async_callback);
+    AsyncCallbackSetter async_callback_setter(connections.get(), async_callback);
+
+    const auto & settings = context->getSettingsRef();
+    if (needToSkipUnavailableShard())
+        return;
 
     established = true;
-    was_cancelled = false;
+
+    /// Query could be cancelled during creating connections. No need to send a query.
+    if (was_cancelled)
+        return;
 
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
     ClientInfo modified_client_info = context->getClientInfo();
