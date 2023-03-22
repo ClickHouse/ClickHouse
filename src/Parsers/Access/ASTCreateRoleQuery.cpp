@@ -51,7 +51,7 @@ ASTPtr ASTCreateRoleQuery::clone() const
 }
 
 
-void ASTCreateRoleQuery::formatImpl(const FormattingBuffer & out) const
+void ASTCreateRoleQuery::formatImpl(FormattingBuffer out) const
 {
     if (attach)
     {

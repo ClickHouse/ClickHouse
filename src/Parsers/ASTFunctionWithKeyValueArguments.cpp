@@ -22,7 +22,7 @@ ASTPtr ASTPair::clone() const
 }
 
 
-void ASTPair::formatImpl(const FormattingBuffer & out) const
+void ASTPair::formatImpl(FormattingBuffer out) const
 {
     out.writeKeyword(Poco::toUpper(first));
     out.ostr << " ";
@@ -82,7 +82,7 @@ ASTPtr ASTFunctionWithKeyValueArguments::clone() const
 }
 
 
-void ASTFunctionWithKeyValueArguments::formatImpl(const FormattingBuffer & out) const
+void ASTFunctionWithKeyValueArguments::formatImpl(FormattingBuffer out) const
 {
     out.writeKeyword(Poco::toUpper(name));
     out.ostr << (has_brackets ? "(" : "");

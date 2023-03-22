@@ -44,7 +44,7 @@ public:
     void setWhere(ASTPtr && ast) { setExpression(where_expr_pos, std::forward<ASTPtr>(ast)); }
 
 protected:
-    void formatImpl(const FormattingBuffer & out) const override;
+    void formatImpl(FormattingBuffer out) const override;
 
 private:
     int ttl_expr_pos;

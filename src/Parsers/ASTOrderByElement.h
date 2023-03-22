@@ -35,7 +35,7 @@ public:
     void updateTreeHashImpl(SipHash & hash_state) const override;
 
 protected:
-    void formatImpl(const FormattingBuffer & out) const override;
+    void formatImpl(FormattingBuffer out) const override;
 };
 
 }

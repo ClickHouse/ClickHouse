@@ -26,7 +26,7 @@ public:
     bool is_standalone = true;
     String getID(char) const override { return "TableOverride " + table_name; }
     ASTPtr clone() const override;
-    void formatImpl(const FormattingBuffer & out_) const override;
+    void formatImpl(FormattingBuffer out_) const override;
 
     void forEachPointerToChild(std::function<void(void**)> f) override
     {
@@ -45,7 +45,7 @@ class ASTTableOverrideList : public IAST
 public:
     String getID(char) const override { return "TableOverrideList"; }
     ASTPtr clone() const override;
-    void formatImpl(const FormattingBuffer & out) const override;
+    void formatImpl(FormattingBuffer out) const override;
     void setTableOverride(const String & name, ASTPtr ast);
     void removeTableOverride(const String & name);
     ASTPtr tryGetTableOverride(const String & name) const;

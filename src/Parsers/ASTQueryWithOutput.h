@@ -21,7 +21,7 @@ public:
     ASTPtr compression;
     ASTPtr compression_level;
 
-    void formatImpl(const FormattingBuffer & out) const final;
+    void formatImpl(FormattingBuffer out) const final;
 
     /// Remove 'FORMAT <fmt> and INTO OUTFILE <file>' if exists
     static bool resetOutputASTIfExist(IAST & ast);

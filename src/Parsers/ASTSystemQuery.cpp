@@ -84,7 +84,7 @@ void ASTSystemQuery::setTable(const String & name)
     }
 }
 
-void ASTSystemQuery::formatImpl(const FormattingBuffer & out) const
+void ASTSystemQuery::formatImpl(FormattingBuffer out) const
 {
     out.writeKeyword("SYSTEM ");
     out.writeKeyword(typeToString(type));

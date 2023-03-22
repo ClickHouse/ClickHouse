@@ -35,7 +35,7 @@ ASTPtr ASTStorage::clone() const
     return res;
 }
 
-void ASTStorage::formatImpl(const FormattingBuffer & out) const
+void ASTStorage::formatImpl(FormattingBuffer out) const
 {
     if (engine)
     {
@@ -98,7 +98,7 @@ public:
 
     ASTPtr clone() const override;
 
-    void formatImpl(const FormattingBuffer & out) const override;
+    void formatImpl(FormattingBuffer out) const override;
 
     void forEachPointerToChild(std::function<void(void**)> f) override
     {
@@ -115,7 +115,7 @@ ASTPtr ASTColumnsElement::clone() const
     return res;
 }
 
-void ASTColumnsElement::formatImpl(const FormattingBuffer & out) const
+void ASTColumnsElement::formatImpl(FormattingBuffer out) const
 {
     if (!elem)
         return;
@@ -150,7 +150,7 @@ ASTPtr ASTColumns::clone() const
     return res;
 }
 
-void ASTColumns::formatImpl(const FormattingBuffer & out) const
+void ASTColumns::formatImpl(FormattingBuffer out) const
 {
     ASTExpressionList list;
 

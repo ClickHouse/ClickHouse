@@ -30,7 +30,7 @@ public:
     String getID(char /*delimiter*/) const override { return "index declaration"; }
 
 protected:
-    void formatImpl(const FormattingBuffer & /*out*/) const override
+    void formatImpl(FormattingBuffer /*out*/) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method formatImpl is not supported by MySQLParser::ASTDeclareIndex.");
     }

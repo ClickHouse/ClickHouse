@@ -297,7 +297,7 @@ ASTPtr ASTCreateUserQuery::clone() const
 }
 
 
-void ASTCreateUserQuery::formatImpl(const FormattingBuffer & out) const
+void ASTCreateUserQuery::formatImpl(FormattingBuffer out) const
 {
     if (attach)
     {

@@ -25,7 +25,7 @@ public:
     String getID(char /*delimiter*/) const override { return "ASTTransactionControl"; }
     ASTPtr clone() const override { return std::make_shared<ASTTransactionControl>(*this); }
 
-    void formatImpl(const FormattingBuffer & out) const override;
+    void formatImpl(FormattingBuffer out) const override;
     void updateTreeHashImpl(SipHash & hash_state) const override;
 
     QueryKind getQueryKind() const override;

@@ -27,7 +27,7 @@ public:
     String getID(char) const override { return "Create definitions"; }
 
 protected:
-    void formatImpl(const FormattingBuffer & /*out*/) const override
+    void formatImpl(FormattingBuffer /*out*/) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method formatImpl is not supported by MySQLParser::ASTCreateDefines.");
     }

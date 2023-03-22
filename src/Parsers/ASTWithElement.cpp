@@ -14,7 +14,7 @@ ASTPtr ASTWithElement::clone() const
     return res;
 }
 
-void ASTWithElement::formatImpl(const FormattingBuffer & out) const
+void ASTWithElement::formatImpl(FormattingBuffer out) const
 {
     out.writeAlias(name);
     out.writeKeyword(" AS");

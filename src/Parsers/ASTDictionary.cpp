@@ -16,7 +16,7 @@ ASTPtr ASTDictionaryRange::clone() const
 }
 
 
-void ASTDictionaryRange::formatImpl(const FormattingBuffer & out) const
+void ASTDictionaryRange::formatImpl(FormattingBuffer out) const
 {
     out.writeKeyword("RANGE");
     out.ostr << "(";
@@ -36,7 +36,7 @@ ASTPtr ASTDictionaryLifetime::clone() const
 }
 
 
-void ASTDictionaryLifetime::formatImpl(const FormattingBuffer & settings) const
+void ASTDictionaryLifetime::formatImpl(FormattingBuffer settings) const
 {
     settings.writeKeyword("LIFETIME");
     settings.ostr << "(";
@@ -57,7 +57,7 @@ ASTPtr ASTDictionaryLayout::clone() const
 }
 
 
-void ASTDictionaryLayout::formatImpl(const FormattingBuffer & out) const
+void ASTDictionaryLayout::formatImpl(FormattingBuffer out) const
 {
     out.writeKeyword("LAYOUT");
     out.ostr << "(";
@@ -83,7 +83,7 @@ ASTPtr ASTDictionarySettings::clone() const
     return res;
 }
 
-void ASTDictionarySettings::formatImpl(const FormattingBuffer & out) const
+void ASTDictionarySettings::formatImpl(FormattingBuffer out) const
 {
     out.writeKeyword("SETTINGS");
     out.ostr << "(";
@@ -124,7 +124,7 @@ ASTPtr ASTDictionary::clone() const
 }
 
 
-void ASTDictionary::formatImpl(const FormattingBuffer & out) const
+void ASTDictionary::formatImpl(FormattingBuffer out) const
 {
     if (primary_key)
     {

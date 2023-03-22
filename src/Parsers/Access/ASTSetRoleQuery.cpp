@@ -26,7 +26,7 @@ ASTPtr ASTSetRoleQuery::clone() const
 }
 
 
-void ASTSetRoleQuery::formatImpl(const FormattingBuffer & out) const
+void ASTSetRoleQuery::formatImpl(FormattingBuffer out) const
 {
     switch (kind)
     {

@@ -52,7 +52,7 @@ String ASTWindowDefinition::getID(char) const
     return "WindowDefinition";
 }
 
-void ASTWindowDefinition::formatImpl(const FormattingBuffer & out) const
+void ASTWindowDefinition::formatImpl(FormattingBuffer out) const
 {
     out.setExpressionListPrependWhitespace(false);
     bool need_space = false;
@@ -154,7 +154,7 @@ String ASTWindowListElement::getID(char) const
     return "WindowListElement";
 }
 
-void ASTWindowListElement::formatImpl(const FormattingBuffer & out) const
+void ASTWindowListElement::formatImpl(FormattingBuffer out) const
 {
     out.ostr << backQuoteIfNeed(name);
     out.ostr << " AS (";

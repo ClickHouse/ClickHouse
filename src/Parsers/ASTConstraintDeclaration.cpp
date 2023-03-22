@@ -19,7 +19,7 @@ ASTPtr ASTConstraintDeclaration::clone() const
     return res;
 }
 
-void ASTConstraintDeclaration::formatImpl(const FormattingBuffer & out) const
+void ASTConstraintDeclaration::formatImpl(FormattingBuffer out) const
 {
     out.ostr << backQuoteIfNeed(name);
     out.writeKeyword(type == Type::CHECK ? " CHECK " : " ASSUME ");

@@ -15,7 +15,7 @@ ASTPtr ASTProjectionDeclaration::clone() const
 }
 
 
-void ASTProjectionDeclaration::formatImpl(const FormattingBuffer & out) const
+void ASTProjectionDeclaration::formatImpl(FormattingBuffer out) const
 {
     out.ostr << backQuoteIfNeed(name);
     out.nlOrWs();

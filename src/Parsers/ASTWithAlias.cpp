@@ -6,7 +6,7 @@
 namespace DB
 {
 
-void ASTWithAlias::formatImpl(const FormattingBuffer & out) const
+void ASTWithAlias::formatImpl(FormattingBuffer out) const
 {
     /// If we have previously output this node elsewhere in the query, now it is enough to output only the alias.
     /// This is needed because the query can become extraordinary large after substitution of aliases.

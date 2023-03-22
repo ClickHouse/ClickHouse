@@ -38,7 +38,7 @@ ASTPtr ASTDropAccessEntityQuery::clone() const
 }
 
 
-void ASTDropAccessEntityQuery::formatImpl(const FormattingBuffer & out) const
+void ASTDropAccessEntityQuery::formatImpl(FormattingBuffer out) const
 {
     out.writeKeyword("DROP ");
     out.writeKeyword(AccessEntityTypeInfo::get(type).name);

@@ -147,7 +147,7 @@ ASTPtr ASTCreateRowPolicyQuery::clone() const
 }
 
 
-void ASTCreateRowPolicyQuery::formatImpl(const FormattingBuffer & out) const
+void ASTCreateRowPolicyQuery::formatImpl(FormattingBuffer out) const
 {
     if (attach)
         out.writeKeyword("ATTACH ROW POLICY");

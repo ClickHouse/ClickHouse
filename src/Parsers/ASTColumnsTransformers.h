@@ -23,7 +23,7 @@ public:
     }
 
 protected:
-    void formatImpl(const FormattingBuffer & out) const override;
+    void formatImpl(FormattingBuffer out) const override;
 };
 
 class IASTColumnsTransformer : public IAST
@@ -61,7 +61,7 @@ public:
     String column_name_prefix;
 
 protected:
-    void formatImpl(const FormattingBuffer & out) const override;
+    void formatImpl(FormattingBuffer out) const override;
 };
 
 class ASTColumnsExceptTransformer : public IASTColumnsTransformer
@@ -83,7 +83,7 @@ public:
     void updateTreeHashImpl(SipHash & hash_state) const override;
 
 protected:
-    void formatImpl(const FormattingBuffer & out) const override;
+    void formatImpl(FormattingBuffer out) const override;
     std::shared_ptr<re2::RE2> column_matcher;
     String original_pattern;
 };
@@ -108,7 +108,7 @@ public:
         String name;
 
     protected:
-        void formatImpl(const FormattingBuffer & out) const override;
+        void formatImpl(FormattingBuffer out) const override;
     };
 
     bool is_strict = false;
@@ -124,7 +124,7 @@ public:
     void updateTreeHashImpl(SipHash & hash_state) const override;
 
 protected:
-    void formatImpl(const FormattingBuffer & out) const override;
+    void formatImpl(FormattingBuffer out) const override;
 
 private:
     static void replaceChildren(ASTPtr & node, const ASTPtr & replacement, const String & name);

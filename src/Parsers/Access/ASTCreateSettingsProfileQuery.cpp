@@ -61,7 +61,7 @@ ASTPtr ASTCreateSettingsProfileQuery::clone() const
 }
 
 
-void ASTCreateSettingsProfileQuery::formatImpl(const FormattingBuffer & out) const
+void ASTCreateSettingsProfileQuery::formatImpl(FormattingBuffer out) const
 {
     if (attach)
     {

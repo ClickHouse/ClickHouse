@@ -19,7 +19,7 @@ void ASTSetQuery::updateTreeHashImpl(SipHash & hash_state) const
     }
 }
 
-void ASTSetQuery::formatImpl(const FormattingBuffer & out) const
+void ASTSetQuery::formatImpl(FormattingBuffer out) const
 {
     if (is_standalone)
         out.writeKeyword("SET ");

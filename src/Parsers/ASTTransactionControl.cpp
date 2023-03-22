@@ -5,7 +5,7 @@
 namespace DB
 {
 
-void ASTTransactionControl::formatImpl(const FormattingBuffer & out) const
+void ASTTransactionControl::formatImpl(FormattingBuffer out) const
 {
     switch (action)
     {

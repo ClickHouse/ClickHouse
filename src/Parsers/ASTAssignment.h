@@ -26,7 +26,7 @@ public:
     }
 
 protected:
-    void formatImpl(const FormattingBuffer & out) const override
+    void formatImpl(FormattingBuffer out) const override
     {
         out.writeIdentifier(column_name);
         out.writeOperator(" = ");

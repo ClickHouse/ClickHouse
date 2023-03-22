@@ -16,7 +16,7 @@ public:
     String getID(char) const override { return "ExpressionList"; }
 
     ASTPtr clone() const override;
-    void formatImpl(const FormattingBuffer & out) const override;
+    void formatImpl(FormattingBuffer out) const override;
     void formatImplMultiline(const FormattingBuffer & out) const;
 
     char separator;

@@ -69,7 +69,7 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Insert; }
 
 protected:
-    void formatImpl(const FormattingBuffer & out) const override;
+    void formatImpl(FormattingBuffer out) const override;
     void updateTreeHashImpl(SipHash & hash_state) const override;
 };
 

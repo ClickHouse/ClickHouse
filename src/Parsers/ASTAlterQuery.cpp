@@ -127,7 +127,7 @@ const char * ASTAlterCommand::typeToString(ASTAlterCommand::Type type)
     UNREACHABLE();
 }
 
-void ASTAlterCommand::formatImpl(const FormattingBuffer & out) const
+void ASTAlterCommand::formatImpl(FormattingBuffer out) const
 {
     if (type == ASTAlterCommand::ADD_COLUMN)
     {

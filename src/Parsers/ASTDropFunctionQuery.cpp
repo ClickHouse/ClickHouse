@@ -10,7 +10,7 @@ ASTPtr ASTDropFunctionQuery::clone() const
     return std::make_shared<ASTDropFunctionQuery>(*this);
 }
 
-void ASTDropFunctionQuery::formatImpl(const FormattingBuffer & out) const
+void ASTDropFunctionQuery::formatImpl(FormattingBuffer out) const
 {
     out.writeKeyword("DROP FUNCTION ");
     if (if_exists)

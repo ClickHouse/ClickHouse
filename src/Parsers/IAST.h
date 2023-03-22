@@ -369,7 +369,7 @@ public:
     }
 
     // Keeping the state.
-    virtual void formatImpl(const FormattingBuffer & /*out*/) const
+    virtual void formatImpl(FormattingBuffer /*out*/) const
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown element in AST: {}", getID());
     }

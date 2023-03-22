@@ -9,7 +9,7 @@ namespace DB
         return res;
     }
 
-    void ASTCollation::formatImpl(const FormattingBuffer &out) const
+    void ASTCollation::formatImpl(FormattingBuffer out) const
     {
         if (collation)
         {

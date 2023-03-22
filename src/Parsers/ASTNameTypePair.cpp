@@ -21,7 +21,7 @@ ASTPtr ASTNameTypePair::clone() const
 }
 
 
-void ASTNameTypePair::formatImpl(const FormattingBuffer & out) const
+void ASTNameTypePair::formatImpl(FormattingBuffer out) const
 {
     out.writeIndent();
     out.ostr << backQuoteIfNeed(name) << ' ';

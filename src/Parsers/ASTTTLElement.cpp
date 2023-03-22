@@ -30,7 +30,7 @@ ASTPtr ASTTTLElement::clone() const
     return clone;
 }
 
-void ASTTTLElement::formatImpl(const FormattingBuffer & out) const
+void ASTTTLElement::formatImpl(FormattingBuffer out) const
 {
     ttl()->formatImpl(out);
     if (mode == TTLMode::MOVE)

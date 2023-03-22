@@ -20,7 +20,7 @@ ASTPtr ASTCreateFunctionQuery::clone() const
     return res;
 }
 
-void ASTCreateFunctionQuery::formatImpl(const FormattingBuffer & out) const
+void ASTCreateFunctionQuery::formatImpl(FormattingBuffer out) const
 {
     out.writeKeyword("CREATE ");
 

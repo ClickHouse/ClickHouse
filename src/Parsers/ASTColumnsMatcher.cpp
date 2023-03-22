@@ -45,7 +45,7 @@ void ASTColumnsRegexpMatcher::updateTreeHashImpl(SipHash & hash_state) const
     IAST::updateTreeHashImpl(hash_state);
 }
 
-void ASTColumnsRegexpMatcher::formatImpl(const FormattingBuffer & out) const
+void ASTColumnsRegexpMatcher::formatImpl(FormattingBuffer out) const
 {
     if (expression)
     {
@@ -118,7 +118,7 @@ void ASTColumnsListMatcher::appendColumnName(WriteBuffer & ostr) const
     writeChar(')', ostr);
 }
 
-void ASTColumnsListMatcher::formatImpl(const FormattingBuffer & out) const
+void ASTColumnsListMatcher::formatImpl(FormattingBuffer out) const
 {
     if (expression)
     {
@@ -196,7 +196,7 @@ void ASTQualifiedColumnsRegexpMatcher::updateTreeHashImpl(SipHash & hash_state) 
     IAST::updateTreeHashImpl(hash_state);
 }
 
-void ASTQualifiedColumnsRegexpMatcher::formatImpl(const FormattingBuffer & out) const
+void ASTQualifiedColumnsRegexpMatcher::formatImpl(FormattingBuffer out) const
 {
     qualifier->formatImpl(out);
 
@@ -242,7 +242,7 @@ void ASTQualifiedColumnsListMatcher::appendColumnName(WriteBuffer & ostr) const
     writeChar(')', ostr);
 }
 
-void ASTQualifiedColumnsListMatcher::formatImpl(const FormattingBuffer & out) const
+void ASTQualifiedColumnsListMatcher::formatImpl(FormattingBuffer out) const
 {
     qualifier->formatImpl(out);
 

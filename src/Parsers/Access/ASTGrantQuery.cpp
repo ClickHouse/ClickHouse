@@ -111,7 +111,7 @@ ASTPtr ASTGrantQuery::clone() const
 }
 
 
-void ASTGrantQuery::formatImpl(const FormattingBuffer & out) const
+void ASTGrantQuery::formatImpl(FormattingBuffer out) const
 {
     out.writeKeyword(attach_mode ? "ATTACH " : "");
     out.writeKeyword((!is_revoke && (replace_access || replace_granted_roles)) ? "REPLACE " : "");

@@ -52,7 +52,7 @@ void ASTSelectQuery::updateTreeHashImpl(SipHash & hash_state) const
 }
 
 
-void ASTSelectQuery::formatImpl(const FormattingBuffer & out) const
+void ASTSelectQuery::formatImpl(FormattingBuffer out) const
 {
     out.setCurrentSelect(this);
     out.setNeedsParens(false);

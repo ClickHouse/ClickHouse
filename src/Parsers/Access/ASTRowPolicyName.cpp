@@ -11,7 +11,7 @@ namespace ErrorCodes
 }
 
 
-void ASTRowPolicyName::formatImpl(const FormattingBuffer & out) const
+void ASTRowPolicyName::formatImpl(FormattingBuffer out) const
 {
     const String & database = full_name.database;
     const String & table_name = full_name.table_name;
@@ -31,7 +31,7 @@ void ASTRowPolicyName::replaceEmptyDatabase(const String & current_database)
 }
 
 
-void ASTRowPolicyNames::formatImpl(const FormattingBuffer & out) const
+void ASTRowPolicyNames::formatImpl(FormattingBuffer out) const
 {
     if (full_names.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No names of row policies in AST");

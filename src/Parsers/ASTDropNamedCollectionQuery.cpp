@@ -10,7 +10,7 @@ ASTPtr ASTDropNamedCollectionQuery::clone() const
     return std::make_shared<ASTDropNamedCollectionQuery>(*this);
 }
 
-void ASTDropNamedCollectionQuery::formatImpl(const FormattingBuffer & out) const
+void ASTDropNamedCollectionQuery::formatImpl(FormattingBuffer out) const
 {
     out.writeKeyword("DROP NAMED COLLECTION ");
     out.writeProbablyBackQuotedIdentifier(collection_name);

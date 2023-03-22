@@ -17,7 +17,7 @@ public:
     String getID(char) const override { return "Projection"; }
 
     ASTPtr clone() const override;
-    void formatImpl(const FormattingBuffer & out) const override;
+    void formatImpl(FormattingBuffer out) const override;
 
     void forEachPointerToChild(std::function<void(void**)> f) override
     {

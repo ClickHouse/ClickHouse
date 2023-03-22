@@ -262,7 +262,7 @@ ASTPtr ASTBackupQuery::clone() const
 }
 
 
-void ASTBackupQuery::formatImpl(const FormattingBuffer & out) const
+void ASTBackupQuery::formatImpl(FormattingBuffer out) const
 {
     out.writeKeyword((kind == Kind::BACKUP) ? "BACKUP " : "RESTORE ");
 

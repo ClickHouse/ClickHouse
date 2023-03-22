@@ -24,7 +24,7 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Use; }
 
 protected:
-    void formatImpl(const FormattingBuffer & out) const override
+    void formatImpl(FormattingBuffer out) const override
     {
         settings.writeKeyword("USE ");
         settings.ostr << backQuoteIfNeed(database);

@@ -33,7 +33,7 @@ public:
 
     String getID(char) const override { return "external ddl query"; }
 
-    void formatImpl(const FormattingBuffer & out) const override
+    void formatImpl(FormattingBuffer out) const override
     {
         out.writeKeyword("EXTERNAL DDL FROM ");
         from->formatImpl(out);

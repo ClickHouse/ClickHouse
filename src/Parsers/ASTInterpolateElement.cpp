@@ -7,7 +7,7 @@
 namespace DB
 {
 
-void ASTInterpolateElement::formatImpl(const FormattingBuffer & out) const
+void ASTInterpolateElement::formatImpl(FormattingBuffer out) const
 {
     out.ostr << column;
     out.writeKeyword(" AS ");

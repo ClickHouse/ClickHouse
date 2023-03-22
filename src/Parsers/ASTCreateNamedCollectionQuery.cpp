@@ -15,7 +15,7 @@ ASTPtr ASTCreateNamedCollectionQuery::clone() const
     return std::make_shared<ASTCreateNamedCollectionQuery>(*this);
 }
 
-void ASTCreateNamedCollectionQuery::formatImpl(const FormattingBuffer & out) const
+void ASTCreateNamedCollectionQuery::formatImpl(FormattingBuffer out) const
 {
     out.writeKeyword("CREATE NAMED COLLECTION ");
     out.writeProbablyBackQuotedIdentifier(collection_name);

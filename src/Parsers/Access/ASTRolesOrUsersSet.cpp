@@ -21,7 +21,7 @@ namespace
     }
 }
 
-void ASTRolesOrUsersSet::formatImpl(const FormattingBuffer & out) const
+void ASTRolesOrUsersSet::formatImpl(FormattingBuffer out) const
 {
     if (empty())
     {

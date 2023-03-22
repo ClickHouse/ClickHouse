@@ -46,7 +46,7 @@ void ASTInsertQuery::setTable(const String & name)
         table = std::make_shared<ASTIdentifier>(name);
 }
 
-void ASTInsertQuery::formatImpl(const FormattingBuffer & out) const
+void ASTInsertQuery::formatImpl(FormattingBuffer out) const
 {
     out.setNeedsParens(false);
 

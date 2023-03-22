@@ -76,7 +76,7 @@ public:
     String getID(char delim) const override { return "AlterCommand" + (delim + std::to_string(static_cast<int>(type))); }
 
 protected:
-    void formatImpl(const FormattingBuffer & /*out*/) const override
+    void formatImpl(FormattingBuffer /*out*/) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method formatImpl is not supported by MySQLParser::ASTAlterCommand.");
     }

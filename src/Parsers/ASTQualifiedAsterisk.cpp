@@ -11,7 +11,7 @@ void ASTQualifiedAsterisk::appendColumnName(WriteBuffer & ostr) const
     writeCString(".*", ostr);
 }
 
-void ASTQualifiedAsterisk::formatImpl(const FormattingBuffer & out) const
+void ASTQualifiedAsterisk::formatImpl(FormattingBuffer out) const
 {
     qualifier->formatImpl(out);
     out.ostr << ".*";

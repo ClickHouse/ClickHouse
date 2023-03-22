@@ -31,7 +31,7 @@ ASTPtr ASTDictionaryAttributeDeclaration::clone() const
     return res;
 }
 
-void ASTDictionaryAttributeDeclaration::formatImpl(const FormattingBuffer & out) const
+void ASTDictionaryAttributeDeclaration::formatImpl(FormattingBuffer out) const
 {
     out.setNeedsParens(false);
 

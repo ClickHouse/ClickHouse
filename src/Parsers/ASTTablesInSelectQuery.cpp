@@ -103,7 +103,7 @@ ASTPtr ASTTablesInSelectQuery::clone() const
 #undef CLONE
 
 
-void ASTTableExpression::formatImpl(const FormattingBuffer & out) const
+void ASTTableExpression::formatImpl(FormattingBuffer out) const
 {
     out.setCurrentSelect(this);
 
@@ -234,7 +234,7 @@ void ASTTableJoin::formatImplAfterTable(const FormattingBuffer & out) const
 }
 
 
-void ASTTableJoin::formatImpl(const FormattingBuffer & out) const
+void ASTTableJoin::formatImpl(FormattingBuffer out) const
 {
     formatImplBeforeTable(out);
     out.ostr << " ... ";
@@ -242,7 +242,7 @@ void ASTTableJoin::formatImpl(const FormattingBuffer & out) const
 }
 
 
-void ASTArrayJoin::formatImpl(const FormattingBuffer & out) const
+void ASTArrayJoin::formatImpl(FormattingBuffer out) const
 {
     out.setExpressionListPrependWhitespace();
 
@@ -257,7 +257,7 @@ void ASTArrayJoin::formatImpl(const FormattingBuffer & out) const
 }
 
 
-void ASTTablesInSelectQueryElement::formatImpl(const FormattingBuffer & out) const
+void ASTTablesInSelectQueryElement::formatImpl(FormattingBuffer out) const
 {
     if (table_expression)
     {
@@ -276,7 +276,7 @@ void ASTTablesInSelectQueryElement::formatImpl(const FormattingBuffer & out) con
 }
 
 
-void ASTTablesInSelectQuery::formatImpl(const FormattingBuffer & out) const
+void ASTTablesInSelectQuery::formatImpl(FormattingBuffer out) const
 {
     for (const auto & child : children)
         child->formatImpl(out);

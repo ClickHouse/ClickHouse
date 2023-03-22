@@ -29,7 +29,7 @@ struct ASTWindowDefinition : public IAST
 
     String getID(char delimiter) const override;
 
-    void formatImpl(const FormattingBuffer & out) const override;
+    void formatImpl(FormattingBuffer out) const override;
 
     std::string getDefaultWindowName() const;
 };
@@ -46,7 +46,7 @@ struct ASTWindowListElement : public IAST
 
     String getID(char delimiter) const override;
 
-    void formatImpl(const FormattingBuffer & out) const override;
+    void formatImpl(FormattingBuffer out) const override;
 };
 
 }

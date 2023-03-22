@@ -28,7 +28,7 @@ public:
 
     ASTPtr clone() const override;
 
-    void formatImpl(const FormattingBuffer & out) const override;
+    void formatImpl(FormattingBuffer out) const override;
 
     bool hasSecretParts() const override;
 
@@ -64,7 +64,7 @@ public:
 
     ASTPtr clone() const override;
 
-    void formatImpl(const FormattingBuffer & out) const override;
+    void formatImpl(FormattingBuffer out) const override;
 
     void updateTreeHashImpl(SipHash & hash_state) const override;
 };

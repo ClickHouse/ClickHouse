@@ -146,7 +146,7 @@ ASTPtr ASTCreateQuotaQuery::clone() const
 }
 
 
-void ASTCreateQuotaQuery::formatImpl(const FormattingBuffer & out) const
+void ASTCreateQuotaQuery::formatImpl(FormattingBuffer out) const
 {
     if (attach)
     {

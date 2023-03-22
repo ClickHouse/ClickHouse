@@ -18,7 +18,7 @@ ASTPtr ASTSelectIntersectExceptQuery::clone() const
     return res;
 }
 
-void ASTSelectIntersectExceptQuery::formatImpl(const FormattingBuffer & out) const
+void ASTSelectIntersectExceptQuery::formatImpl(FormattingBuffer out) const
 {
     for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
     {

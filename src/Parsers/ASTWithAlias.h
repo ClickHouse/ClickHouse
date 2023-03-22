@@ -27,7 +27,7 @@ public:
     void setAlias(const String & to) override { alias = to; }
 
     /// Calls formatImplWithoutAlias, and also outputs an alias. If necessary, encloses the entire expression in brackets.
-    void formatImpl(const FormattingBuffer & out) const override final;
+    void formatImpl(FormattingBuffer out) const override final;
 
     virtual void formatImplWithoutAlias(const FormattingBuffer & out) const = 0;
 

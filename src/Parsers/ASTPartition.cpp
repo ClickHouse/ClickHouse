@@ -27,7 +27,7 @@ ASTPtr ASTPartition::clone() const
     return res;
 }
 
-void ASTPartition::formatImpl(const FormattingBuffer & out) const
+void ASTPartition::formatImpl(FormattingBuffer out) const
 {
     if (value)
     {

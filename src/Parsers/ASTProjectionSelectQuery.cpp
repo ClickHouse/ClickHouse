@@ -48,7 +48,7 @@ ASTPtr ASTProjectionSelectQuery::clone() const
 }
 
 
-void ASTProjectionSelectQuery::formatImpl(const FormattingBuffer & out) const
+void ASTProjectionSelectQuery::formatImpl(FormattingBuffer out) const
 {
     out.setCurrentSelect(this);
     out.setNeedsParens(false);

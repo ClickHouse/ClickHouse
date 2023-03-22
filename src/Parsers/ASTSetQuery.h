@@ -32,7 +32,7 @@ public:
 
     ASTPtr clone() const override { return std::make_shared<ASTSetQuery>(*this); }
 
-    void formatImpl(const FormattingBuffer & out) const override;
+    void formatImpl(FormattingBuffer out) const override;
 
     void updateTreeHashImpl(SipHash & hash_state) const override;
 

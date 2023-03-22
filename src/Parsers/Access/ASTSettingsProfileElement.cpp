@@ -23,7 +23,7 @@ namespace
     }
 }
 
-void ASTSettingsProfileElement::formatImpl(const FormattingBuffer & out) const
+void ASTSettingsProfileElement::formatImpl(FormattingBuffer out) const
 {
     if (!parent_profile.empty())
     {
@@ -80,7 +80,7 @@ bool ASTSettingsProfileElements::empty() const
 }
 
 
-void ASTSettingsProfileElements::formatImpl(const FormattingBuffer & out) const
+void ASTSettingsProfileElements::formatImpl(FormattingBuffer out) const
 {
     if (empty())
     {

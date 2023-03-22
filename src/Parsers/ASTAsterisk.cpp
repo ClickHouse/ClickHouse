@@ -27,7 +27,7 @@ void ASTAsterisk::appendColumnName(WriteBuffer & ostr) const
     ostr.write('*');
 }
 
-void ASTAsterisk::formatImpl(const FormattingBuffer & out) const
+void ASTAsterisk::formatImpl(FormattingBuffer out) const
 {
     if (expression)
     {

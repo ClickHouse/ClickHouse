@@ -53,7 +53,7 @@ ASTPtr ASTColumnDeclaration::clone() const
     return res;
 }
 
-void ASTColumnDeclaration::formatImpl(const FormattingBuffer & out) const
+void ASTColumnDeclaration::formatImpl(FormattingBuffer out) const
 {
     out.setNeedsParens(false);
 

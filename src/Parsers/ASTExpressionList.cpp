@@ -12,7 +12,7 @@ ASTPtr ASTExpressionList::clone() const
     return clone;
 }
 
-void ASTExpressionList::formatImpl(const FormattingBuffer & out) const
+void ASTExpressionList::formatImpl(FormattingBuffer out) const
 {
     if (frame.expression_list_prepend_whitespace)
         out.ostr << ' ';

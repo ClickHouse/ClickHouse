@@ -25,7 +25,7 @@ public:
 
     ASTPtr clone() const override;
 
-    void formatImpl(const FormattingBuffer & out) const override;
+    void formatImpl(FormattingBuffer out) const override;
 };
 
 /// AST for external dictionary layout. Has name and contain single parameter
@@ -46,7 +46,7 @@ public:
 
     ASTPtr clone() const override;
 
-    void formatImpl(const FormattingBuffer & out) const override;
+    void formatImpl(FormattingBuffer out) const override;
 
     void forEachPointerToChild(std::function<void(void**)> f) override
     {
@@ -68,7 +68,7 @@ public:
 
     ASTPtr clone() const override;
 
-    void formatImpl(const FormattingBuffer & out) const override;
+    void formatImpl(FormattingBuffer out) const override;
 };
 
 class ASTDictionarySettings : public IAST
@@ -80,7 +80,7 @@ public:
 
     ASTPtr clone() const override;
 
-    void formatImpl(const FormattingBuffer & out) const override;
+    void formatImpl(FormattingBuffer out) const override;
 };
 
 
@@ -107,7 +107,7 @@ public:
 
     ASTPtr clone() const override;
 
-    void formatImpl(const FormattingBuffer & out) const override;
+    void formatImpl(FormattingBuffer out) const override;
 };
 
 }

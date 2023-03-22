@@ -16,7 +16,7 @@ void ASTOrderByElement::updateTreeHashImpl(SipHash & hash_state) const
     IAST::updateTreeHashImpl(hash_state);
 }
 
-void ASTOrderByElement::formatImpl(const FormattingBuffer & out) const
+void ASTOrderByElement::formatImpl(FormattingBuffer out) const
 {
     children.front()->formatImpl(out);
     out.writeKeyword(direction == -1 ? " DESC" : " ASC");

@@ -45,7 +45,7 @@ public:
     ASTPtr cloneToASTSelect() const;
 
 protected:
-    void formatImpl(const FormattingBuffer & out) const override;
+    void formatImpl(FormattingBuffer out) const override;
 
 private:
     std::unordered_map<Expression, size_t> positions;

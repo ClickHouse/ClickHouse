@@ -6,7 +6,7 @@
 namespace DB
 {
 
-void ASTUserNameWithHost::formatImpl(const FormattingBuffer & out) const
+void ASTUserNameWithHost::formatImpl(FormattingBuffer out) const
 {
     out.ostr << backQuoteIfNeed(base_name);
 
@@ -29,7 +29,7 @@ void ASTUserNameWithHost::concatParts()
 }
 
 
-void ASTUserNamesWithHost::formatImpl(const FormattingBuffer & out) const
+void ASTUserNamesWithHost::formatImpl(FormattingBuffer out) const
 {
     assert(!names.empty());
     bool need_comma = false;

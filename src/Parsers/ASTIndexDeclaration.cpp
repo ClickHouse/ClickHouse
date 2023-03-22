@@ -23,7 +23,7 @@ ASTPtr ASTIndexDeclaration::clone() const
 }
 
 
-void ASTIndexDeclaration::formatImpl(const FormattingBuffer & out) const
+void ASTIndexDeclaration::formatImpl(FormattingBuffer out) const
 {
     if (part_of_create_index_query)
     {

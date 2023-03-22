@@ -19,7 +19,7 @@ namespace ErrorCodes
     extern const int CANNOT_COMPILE_REGEXP;
 }
 
-void ASTColumnsTransformerList::formatImpl(const FormattingBuffer & out) const
+void ASTColumnsTransformerList::formatImpl(FormattingBuffer out) const
 {
     for (const auto & child : children)
     {
@@ -44,7 +44,7 @@ void IASTColumnsTransformer::transform(const ASTPtr & transformer, ASTs & nodes)
     }
 }
 
-void ASTColumnsApplyTransformer::formatImpl(const FormattingBuffer & out) const
+void ASTColumnsApplyTransformer::formatImpl(FormattingBuffer out) const
 {
     out.writeKeyword("APPLY ");
     if (!column_name_prefix.empty())
@@ -160,7 +160,7 @@ void ASTColumnsApplyTransformer::updateTreeHashImpl(SipHash & hash_state) const
     IAST::updateTreeHashImpl(hash_state);
 }
 
-void ASTColumnsExceptTransformer::formatImpl(const FormattingBuffer & out) const
+void ASTColumnsExceptTransformer::formatImpl(FormattingBuffer out) const
 {
     out.writeKeyword("EXCEPT");
     out.writeKeyword(is_strict ? " STRICT " : " ");
@@ -314,7 +314,7 @@ void ASTColumnsReplaceTransformer::Replacement::updateTreeHashImpl(SipHash & has
     IAST::updateTreeHashImpl(hash_state);
 }
 
-void ASTColumnsReplaceTransformer::formatImpl(const FormattingBuffer & out) const
+void ASTColumnsReplaceTransformer::formatImpl(FormattingBuffer out) const
 {
     out.writeKeyword("REPLACE");
     out.writeKeyword(is_strict ? " STRICT " : " ");

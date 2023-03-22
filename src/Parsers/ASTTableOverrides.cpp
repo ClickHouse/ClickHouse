@@ -22,7 +22,7 @@ ASTPtr ASTTableOverride::clone() const
     return res;
 }
 
-void ASTTableOverride::formatImpl(const FormattingBuffer & out_) const
+void ASTTableOverride::formatImpl(FormattingBuffer out_) const
 {
     FormattingBuffer out = out_.copyWithOneLine();
 
@@ -130,7 +130,7 @@ bool ASTTableOverrideList::hasOverride(const String & name) const
     return positions.contains(name);
 }
 
-void ASTTableOverrideList::formatImpl(const FormattingBuffer & out) const
+void ASTTableOverrideList::formatImpl(FormattingBuffer out) const
 {
     if (out.getExpressionListPrependWhitespace())
         out.ostr << ' ';

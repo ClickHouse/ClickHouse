@@ -4,7 +4,7 @@
 
 namespace DB
 {
-void ASTDatabaseOrNone::formatImpl(const FormattingBuffer & out) const
+void ASTDatabaseOrNone::formatImpl(FormattingBuffer out) const
 {
     if (none)
     {

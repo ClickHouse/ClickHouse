@@ -28,7 +28,7 @@ public:
     String getID(char delim) const override { return "AlterQuery" + (delim + database) + delim + table; }
 
 protected:
-    void formatImpl(const FormattingBuffer & /*out*/) const override
+    void formatImpl(FormattingBuffer /*out*/) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method formatImpl is not supported by MySQLParser::ASTAlterQuery.");
     }

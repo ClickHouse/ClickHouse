@@ -11,7 +11,7 @@ ASTPtr ASTAlterNamedCollectionQuery::clone() const
     return std::make_shared<ASTAlterNamedCollectionQuery>(*this);
 }
 
-void ASTAlterNamedCollectionQuery::formatImpl(const FormattingBuffer & out) const
+void ASTAlterNamedCollectionQuery::formatImpl(FormattingBuffer out) const
 {
     out.writeKeyword("Alter NAMED COLLECTION ");
     out.writeProbablyBackQuotedIdentifier(collection_name);

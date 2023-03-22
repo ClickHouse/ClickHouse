@@ -23,7 +23,7 @@ void ASTQueryWithOutput::cloneOutputOptions(ASTQueryWithOutput & cloned) const
     }
 }
 
-void ASTQueryWithOutput::formatImpl(const FormattingBuffer & out) const
+void ASTQueryWithOutput::formatImpl(FormattingBuffer out) const
 {
     formatQueryImpl(out);
 
