@@ -18,7 +18,7 @@ void ASTWithAlias::formatImpl(FormattingBuffer out) const
     {
         /// If there is an alias, then parentheses are required around the entire expression, including the alias.
         /// Because a record of the form `0 AS x + 0` is syntactically invalid.
-        if (out.needsParens() && !alias.empty())
+        if (out.needParens() && !alias.empty())
             out.ostr << '(';
 
         formatImplWithoutAlias(out);
@@ -27,7 +27,7 @@ void ASTWithAlias::formatImpl(FormattingBuffer out) const
         {
             out.writeKeyword(" AS ");
             out.writeAlias(alias);
-            if (out.needsParens())
+            if (out.needParens())
                 out.ostr << ')';
         }
     }

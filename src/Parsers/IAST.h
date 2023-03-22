@@ -325,7 +325,7 @@ public:
         bool isOneLine() const;
         bool shouldShowSecrets() const;  // todo rename
 
-        bool needsParens() const;  // todo rename
+        bool needParens() const;
         bool getExpressionListAlwaysStartsOnNewLine() const;
         bool getExpressionListPrependWhitespace() const;
         bool getSurroundEachListElementWithParens() const;

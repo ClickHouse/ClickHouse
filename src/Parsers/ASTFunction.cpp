@@ -691,7 +691,7 @@ void ASTFunction::formatImplWithoutAlias(FormattingBuffer out) const
                 // negate always requires parentheses, otherwise -(-1) will be printed as --1
                 bool negate_need_parens = negate && (literal_need_parens || (function && function->name == "negate"));
                 // We don't need parentheses around a single literal.
-                bool need_parens = !literal && out.needsParens() && !negate_need_parens;
+                bool need_parens = !literal && out.needParens() && !negate_need_parens;
 
                 // do not add extra parentheses for functions inside negate, i.e. -(-toUInt64(-(1)))
                 if (negate_need_parens)
@@ -735,11 +735,11 @@ void ASTFunction::formatImplWithoutAlias(FormattingBuffer out) const
                     continue;
                 }
 
-                if (out.needsParens())
+                if (out.needParens())
                     out.ostr << '(';
                 arguments->formatImpl(out_need_parens);
                 out.writeOperator(func[1]);
-                if (out.needsParens())
+                if (out.needParens())
                     out.ostr << ')';
 
                 written = true;
@@ -782,7 +782,7 @@ void ASTFunction::formatImplWithoutAlias(FormattingBuffer out) const
             {
                 if (name == std::string_view(func[0]))
                 {
-                    if (out.needsParens())
+                    if (out.needParens())
                         out.ostr << '(';
                     arguments->children[0]->formatImpl(out_need_parens);
                     out.writeOperator(func[1]);
@@ -809,7 +809,7 @@ void ASTFunction::formatImplWithoutAlias(FormattingBuffer out) const
                     if (extra_parents_around_in_rhs)
                         out.ostr << ')';
 
-                    if (out.needsParens())
+                    if (out.needParens())
                         out.ostr << ')';
                     written = true;
                 }
@@ -817,7 +817,7 @@ void ASTFunction::formatImplWithoutAlias(FormattingBuffer out) const
 
             if (!written && name == "arrayElement"sv)
             {
-                if (out.needsParens())
+                if (out.needParens())
                     out.ostr << '(';
 
                 arguments->children[0]->formatImpl(out_need_parens);
@@ -826,7 +826,7 @@ void ASTFunction::formatImplWithoutAlias(FormattingBuffer out) const
                 out.writeOperator("]");
                 written = true;
 
-                if (out.needsParens())
+                if (out.needParens())
                     out.ostr << ')';
             }
 
@@ -867,7 +867,7 @@ void ASTFunction::formatImplWithoutAlias(FormattingBuffer out) const
                     if (isInt64OrUInt64FieldType(lit_right->value.getType())
                         && lit_right->value.get<Int64>() >= 0)
                     {
-                        if (out.needsParens())
+                        if (out.needParens())
                             out.ostr << '(';
 
                         arguments->children[0]->formatImpl(out_need_parens);
@@ -875,7 +875,7 @@ void ASTFunction::formatImplWithoutAlias(FormattingBuffer out) const
                         arguments->children[1]->formatImpl(out_dont_need_parens);
                         written = true;
 
-                        if (out.needsParens())
+                        if (out.needParens())
                             out.ostr << ')';
                     }
                 }
@@ -886,7 +886,7 @@ void ASTFunction::formatImplWithoutAlias(FormattingBuffer out) const
                 /// Special case: zero elements tuple in lhs of lambda is printed as ().
                 /// Special case: one-element tuple in lhs of lambda is printed as its element.
 
-                if (out.needsParens())
+                if (out.needParens())
                     out.ostr << '(';
 
                 const auto * first_arg_func = arguments->children[0]->as<ASTFunction>();
@@ -905,7 +905,7 @@ void ASTFunction::formatImplWithoutAlias(FormattingBuffer out) const
 
                 out.writeOperator(" -> ");
                 arguments->children[1]->formatImpl(out_need_parens);
-                if (out.needsParens())
+                if (out.needParens())
                     out.ostr << ')';
                 written = true;
             }
@@ -944,7 +944,7 @@ void ASTFunction::formatImplWithoutAlias(FormattingBuffer out) const
             {
                 if (name == std::string_view(func[0]))
                 {
-                    if (out.needsParens())
+                    if (out.needParens())
                         out.ostr << '(';
                     for (size_t i = 0; i < arguments->children.size(); ++i)
                     {
@@ -954,7 +954,7 @@ void ASTFunction::formatImplWithoutAlias(FormattingBuffer out) const
                             out.ostr << "out ";
                         arguments->children[i]->formatImpl(out_need_parens);
                     }
-                    if (out.needsParens())
+                    if (out.needParens())
                         out.ostr << ')';
                     written = true;
                 }
@@ -978,7 +978,7 @@ void ASTFunction::formatImplWithoutAlias(FormattingBuffer out) const
 
         if (!written && arguments->children.size() >= 2 && name == "tuple"sv)
         {
-            if (out.needsParens() && !alias.empty())
+            if (out.needParens() && !alias.empty())
                 out.writeOperator("tuple");
             out.writeOperator("(");
             for (size_t i = 0; i < arguments->children.size(); ++i)

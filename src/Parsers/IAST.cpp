@@ -422,7 +422,7 @@ void IAST::FormattingBuffer::writeSecret(const String & secret) const
     ostr << (settings.show_secrets ? secret : "'[HIDDEN]'");
 }
 
-bool IAST::FormattingBuffer::needsParens() const
+bool IAST::FormattingBuffer::needParens() const
 {
     return stacked_state.need_parens;
 }
