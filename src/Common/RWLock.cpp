@@ -97,7 +97,7 @@ private:
   * Note: "SM" in the commentaries below stands for STATE MODIFICATION
   */
 RWLockImpl::LockHolder
-RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id, const std::chrono::milliseconds & lock_timeout_ms, bool throw_in_fast_path)
+RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id, const std::chrono::milliseconds & lock_timeout_ms)
 {
     const auto lock_deadline_tp =
         (lock_timeout_ms == std::chrono::milliseconds(0))
@@ -130,19 +130,11 @@ RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id, const std::c
         if (owner_query_it != owner_queries.end())
         {
             if (wrlock_owner != writers_queue.end())
-            {
-                if (throw_in_fast_path)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "RWLockImpl::getLock(): RWLock is already locked in exclusive mode");
-                return nullptr;
-            }
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "RWLockImpl::getLock(): RWLock is already locked in exclusive mode");
 
             /// Lock upgrading is not supported
             if (type == Write)
-            {
-                if (throw_in_fast_path)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "RWLockImpl::getLock(): Cannot acquire exclusive lock while RWLock is already locked");
-                return nullptr;
-            }
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "RWLockImpl::getLock(): Cannot acquire exclusive lock while RWLock is already locked");
 
             /// N.B. Type is Read here, query_id is not empty and it_query is a valid iterator
             ++owner_query_it->second;                                  /// SM1: nothrow

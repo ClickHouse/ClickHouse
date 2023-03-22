@@ -50,18 +50,15 @@ endif ()
 string (REGEX MATCHALL "[0-9]+" COMPILER_VERSION_LIST ${CMAKE_CXX_COMPILER_VERSION})
 list (GET COMPILER_VERSION_LIST 0 COMPILER_VERSION_MAJOR)
 
-# Example values: `lld-10`
+# Example values: `lld-10`, `gold`.
 option (LINKER_NAME "Linker name or full path")
-
-if (LINKER_NAME MATCHES "gold")
-    message (FATAL_ERROR "Linking with gold is unsupported. Please use lld.")
-endif ()
 
 # s390x doesnt support lld
 if (NOT ARCH_S390X)
     if (NOT LINKER_NAME)
         if (COMPILER_GCC)
             find_program (LLD_PATH NAMES "ld.lld")
+            find_program (GOLD_PATH NAMES "ld.gold")
         elseif (COMPILER_CLANG)
             # llvm lld is a generic driver.
             # Invoke ld.lld (Unix), ld64.lld (macOS), lld-link (Windows), wasm-ld (WebAssembly) instead
@@ -70,11 +67,13 @@ if (NOT ARCH_S390X)
             elseif (OS_DARWIN)
                 find_program (LLD_PATH NAMES "ld64.lld-${COMPILER_VERSION_MAJOR}" "ld64.lld")
             endif ()
+            find_program (GOLD_PATH NAMES "ld.gold" "gold")
         endif ()
     endif()
 endif()
 
 if ((OS_LINUX OR OS_DARWIN) AND NOT LINKER_NAME)
+    # prefer lld linker over gold or ld on linux and macos
     if (LLD_PATH)
         if (COMPILER_GCC)
             # GCC driver requires one of supported linker names like "lld".
@@ -82,6 +81,17 @@ if ((OS_LINUX OR OS_DARWIN) AND NOT LINKER_NAME)
         else ()
             # Clang driver simply allows full linker path.
             set (LINKER_NAME ${LLD_PATH})
+        endif ()
+    endif ()
+
+    if (NOT LINKER_NAME)
+        if (GOLD_PATH)
+            message (FATAL_ERROR "Linking with gold is unsupported. Please use lld.")
+            if (COMPILER_GCC)
+                set (LINKER_NAME "gold")
+            else ()
+                set (LINKER_NAME ${GOLD_PATH})
+            endif ()
         endif ()
     endif ()
 endif ()

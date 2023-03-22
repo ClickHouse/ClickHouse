@@ -809,14 +809,6 @@ bool BSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
     return true;
 }
 
-void BSONEachRowRowInputFormat::resetParser()
-{
-    IRowInputFormat::resetParser();
-    read_columns.clear();
-    seen_columns.clear();
-    prev_positions.clear();
-}
-
 BSONEachRowSchemaReader::BSONEachRowSchemaReader(ReadBuffer & in_, const FormatSettings & settings_)
     : IRowWithNamesSchemaReader(in_, settings_)
 {
@@ -998,9 +990,6 @@ fileSegmentationEngineBSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t
                 "Size of BSON document is extremely large. Expected not greater than {} bytes, but current is {} bytes per row. Increase "
                 "the value setting 'min_chunk_bytes_for_parallel_parsing' or check your data manually, most likely BSON is malformed",
                 min_bytes, document_size);
-
-        if (document_size < sizeof(document_size))
-            throw ParsingException(ErrorCodes::INCORRECT_DATA, "Size of BSON document is invalid");
 
         size_t old_size = memory.size();
         memory.resize(old_size + document_size);

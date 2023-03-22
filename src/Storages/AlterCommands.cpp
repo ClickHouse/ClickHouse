@@ -719,7 +719,7 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
             { typeid(DataTypeUInt16),   typeid(DataTypeDate)     },
         };
 
-    /// Unwrap some nested and check for valid conversions
+    /// Unwrap some nested and check for valid conevrsions
     while (true)
     {
         /// types are equal, obviously pure metadata alter
@@ -749,9 +749,10 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 
         const auto * nullable_from = typeid_cast<const DataTypeNullable *>(from);
         const auto * nullable_to = typeid_cast<const DataTypeNullable *>(to);
-        if (nullable_from && nullable_to)
+        if (nullable_to)
         {
-            from = nullable_from->getNestedType().get();
+            /// Here we allow a conversion X -> Nullable(X) to make a metadata-only conversion.
+            from = nullable_from ? nullable_from->getNestedType().get() : from;
             to = nullable_to->getNestedType().get();
             continue;
         }

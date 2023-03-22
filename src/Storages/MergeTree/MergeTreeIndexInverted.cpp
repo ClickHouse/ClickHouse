@@ -201,7 +201,6 @@ MergeTreeConditionInverted::MergeTreeConditionInverted(
             rpn.push_back(RPNElement::FUNCTION_UNKNOWN);
             return;
         }
-
         rpn = std::move(
                 RPNBuilder<RPNElement>(
                         query_info.filter_actions_dag->getOutputs().at(0), context_,
@@ -209,10 +208,10 @@ MergeTreeConditionInverted::MergeTreeConditionInverted(
                         {
                             return this->traverseAtomAST(node, out);
                         }).extractRPN());
-        return;
     }
 
     ASTPtr filter_node = buildFilterNode(query_info.query);
+
     if (!filter_node)
     {
         rpn.push_back(RPNElement::FUNCTION_UNKNOWN);
@@ -227,6 +226,7 @@ MergeTreeConditionInverted::MergeTreeConditionInverted(
         query_info.prepared_sets,
         [&](const RPNBuilderTreeNode & node, RPNElement & out) { return traverseAtomAST(node, out); });
     rpn = std::move(builder).extractRPN();
+
 }
 
 /// Keep in-sync with MergeTreeConditionFullText::alwaysUnknownOrTrue

@@ -3,7 +3,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/LiveView/StorageLiveView.h>
-#include <base/hex.h>
+#include <Common/hex.h>
 
 
 namespace DB

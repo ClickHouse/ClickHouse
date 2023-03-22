@@ -65,15 +65,6 @@ public:
         return node_name_to_node.find(node_name) != node_name_to_node.end();
     }
 
-    [[maybe_unused]] bool containsInputNode(const std::string & node_name)
-    {
-        const auto * node = tryGetNode(node_name);
-        if (node && node->type == ActionsDAG::ActionType::INPUT)
-            return true;
-
-        return false;
-    }
-
     [[maybe_unused]] const ActionsDAG::Node * tryGetNode(const std::string & node_name)
     {
         auto it = node_name_to_node.find(node_name);
@@ -132,7 +123,7 @@ public:
     }
 
     template <typename FunctionOrOverloadResolver>
-    const ActionsDAG::Node * addFunctionIfNecessary(const std::string & node_name, ActionsDAG::NodeRawConstPtrs children, const FunctionOrOverloadResolver & function)
+    const ActionsDAG::Node * addFunctionIfNecessary(const std::string & node_name, ActionsDAG::NodeRawConstPtrs children, FunctionOrOverloadResolver function)
     {
         auto it = node_name_to_node.find(node_name);
         if (it != node_name_to_node.end())
@@ -339,7 +330,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     actions_stack.pop_back();
 
     // TODO: Pass IFunctionBase here not FunctionCaptureOverloadResolver.
-    actions_stack[level].addFunctionIfNecessary(lambda_node_name, std::move(lambda_children), function_capture);
+    actions_stack[level].addFunctionIfNecessary(lambda_node_name, std::move(lambda_children), std::move(function_capture));
 
     size_t actions_stack_size = actions_stack.size();
     for (size_t i = level + 1; i < actions_stack_size; ++i)
@@ -430,16 +421,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
     auto function_node_name = calculateActionNodeName(node, *planner_context, node_to_node_name);
 
-    /* Aggregate functions, window functions, and GROUP BY expressions were already analyzed in the previous steps.
-     * If we have already visited some expression, we don't need to revisit it or its arguments again.
-     * For example, the expression from the aggregation step is also present in the projection:
-     *    SELECT foo(a, b, c) as x FROM table GROUP BY foo(a, b, c)
-     * In this case we should not analyze `a`, `b`, `c` again.
-     * Moreover, it can lead to an error if we have arrayJoin in the arguments because it will be calculated twice.
-     */
-    bool is_input_node = function_node.isAggregateFunction() || function_node.isWindowFunction()
-        || actions_stack.front().containsInputNode(function_node_name);
-    if (is_input_node)
+    if (function_node.isAggregateFunction() || function_node.isWindowFunction())
     {
         size_t actions_stack_size = actions_stack.size();
 
@@ -501,7 +483,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     }
     else
     {
-        actions_stack[level].addFunctionIfNecessary(function_node_name, children, function_node);
+        actions_stack[level].addFunctionIfNecessary(function_node_name, children, function_node.getFunction());
     }
 
     size_t actions_stack_size = actions_stack.size();

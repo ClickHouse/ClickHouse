@@ -1,8 +1,9 @@
 <test>
     <settings>
-        <allow_aggregate_partitions_independently>1</allow_aggregate_partitions_independently>
-        <force_aggregate_partitions_independently>1</force_aggregate_partitions_independently>
-        <max_number_of_partitions_for_independent_aggregation>256</max_number_of_partitions_for_independent_aggregation>
+        <!-- will enable in a subsequent PR -->
+        <!-- <allow_aggregate_partitions_independently>1</allow_aggregate_partitions_independently> -->
+        <!-- <force_aggregate_partitions_independently>1</force_aggregate_partitions_independently> -->
+        <!-- <max_number_of_partitions_for_independent_aggregation>256</max_number_of_partitions_for_independent_aggregation> -->
         <max_memory_usage>0</max_memory_usage>
         <max_partitions_per_insert_block>256</max_partitions_per_insert_block>
     </settings>

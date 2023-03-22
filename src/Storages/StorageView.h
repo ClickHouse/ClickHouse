@@ -35,7 +35,7 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    static void replaceQueryParametersIfParametrizedView(ASTPtr & outer_query, const NameToNameMap & parameter_values);
+    void replaceQueryParametersIfParametrizedView(ASTPtr & outer_query);
 
     static void replaceWithSubquery(ASTSelectQuery & select_query, ASTPtr & view_name, const StorageMetadataPtr & metadata_snapshot, const bool parameterized_view)
     {
@@ -47,14 +47,20 @@ public:
     static String replaceQueryParameterWithValue (const String & column_name, const NameToNameMap & parameter_values, const NameToNameMap & parameter_types);
     static String replaceValueWithQueryParameter (const String & column_name, const NameToNameMap & parameter_values);
 
-    const NameToNameMap & getParameterTypes() const
+    void setParameterValues (NameToNameMap parameter_values_)
     {
-        return view_parameter_types;
+        parameter_values = parameter_values_;
+    }
+
+    NameToNameMap getParameterValues() const
+    {
+        return parameter_types;
     }
 
 protected:
     bool is_parameterized_view;
-    NameToNameMap view_parameter_types;
+    NameToNameMap parameter_values;
+    NameToNameMap parameter_types;
 };
 
 }

@@ -18,7 +18,6 @@ namespace ErrorCodes
 ASTPtr ASTColumnsRegexpMatcher::clone() const
 {
     auto clone = std::make_shared<ASTColumnsRegexpMatcher>(*this);
-    clone->children.clear();
 
     if (expression) { clone->expression = expression->clone(); clone->children.push_back(clone->expression); }
     if (transformers) { clone->transformers = transformers->clone(); clone->children.push_back(clone->transformers); }
@@ -92,7 +91,6 @@ bool ASTColumnsRegexpMatcher::isColumnMatching(const String & column_name) const
 ASTPtr ASTColumnsListMatcher::clone() const
 {
     auto clone = std::make_shared<ASTColumnsListMatcher>(*this);
-    clone->children.clear();
 
     if (expression) { clone->expression = expression->clone(); clone->children.push_back(clone->expression); }
     if (transformers) { clone->transformers = transformers->clone(); clone->children.push_back(clone->transformers); }
@@ -152,7 +150,6 @@ void ASTColumnsListMatcher::formatImpl(const FormatSettings & settings, FormatSt
 ASTPtr ASTQualifiedColumnsRegexpMatcher::clone() const
 {
     auto clone = std::make_shared<ASTQualifiedColumnsRegexpMatcher>(*this);
-    clone->children.clear();
 
     if (transformers) { clone->transformers = transformers->clone(); clone->children.push_back(clone->transformers); }
 
@@ -219,7 +216,6 @@ void ASTQualifiedColumnsRegexpMatcher::formatImpl(const FormatSettings & setting
 ASTPtr ASTQualifiedColumnsListMatcher::clone() const
 {
     auto clone = std::make_shared<ASTQualifiedColumnsListMatcher>(*this);
-    clone->children.clear();
 
     if (transformers) { clone->transformers = transformers->clone(); clone->children.push_back(clone->transformers); }
 

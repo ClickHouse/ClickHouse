@@ -432,7 +432,6 @@ ReplxxLineReader::ReplxxLineReader(
     };
 
     rx.bind_key(Replxx::KEY::control('R'), interactive_history_search);
-#endif
 
     /// Rebind regular incremental search to C-T.
     ///
@@ -444,6 +443,7 @@ ReplxxLineReader::ReplxxLineReader(
         uint32_t reverse_search = Replxx::KEY::control('R');
         return rx.invoke(Replxx::ACTION::HISTORY_INCREMENTAL_SEARCH, reverse_search);
     });
+#endif
 }
 
 ReplxxLineReader::~ReplxxLineReader()
