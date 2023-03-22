@@ -430,7 +430,7 @@ namespace
             else
                 days_since_epoch = daysSinceEpochFromDate(year, month, day);
 
-            Int64 seconds_since_epoch = days_since_epoch * 86400 + hour * 3600 + minute * 60 + second;
+            Int64 seconds_since_epoch = days_since_epoch * 86400UZ + hour * 3600UZ + minute * 60UZ + second;
 
             /// Time zone is not specified, use local time zone
             if (!has_time_zone_offset)
