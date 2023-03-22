@@ -183,6 +183,11 @@ void registerTableFunctionOSS(TableFunctionFactory & factory)
     factory.registerFunction<TableFunctionOSS>();
 }
 
+void registerTableFunctionGCS(TableFunctionFactory & factory)
+{
+    factory.registerFunction<TableFunctionGCS>();
+}
+
 }
 
 #endif
