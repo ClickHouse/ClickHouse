@@ -323,9 +323,9 @@ public:
         void writeIndent(int extra_indent = 0) const;
 
         bool isOneLine() const;
-        bool shouldShowSecrets() const;
+        bool shouldShowSecrets() const;  // todo rename
 
-        bool needsParens() const;
+        bool needsParens() const;  // todo rename
         bool getExpressionListAlwaysStartsOnNewLine() const;
         bool getExpressionListPrependWhitespace() const;
         bool getSurroundEachListElementWithParens() const;

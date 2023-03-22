@@ -422,6 +422,23 @@ void IAST::FormattingBuffer::writeSecret(const String & secret) const
     ostr << (settings.show_secrets ? secret : "'[HIDDEN]'");
 }
 
+bool IAST::FormattingBuffer::needsParens() const
+{
+    return stacked_state.need_parens;
+}
+bool IAST::FormattingBuffer::getExpressionListAlwaysStartsOnNewLine() const
+{
+    return stacked_state.expression_list_always_start_on_new_line;
+}
+bool IAST::FormattingBuffer::getExpressionListPrependWhitespace() const
+{
+    return stacked_state.expression_list_prepend_whitespace;
+}
+bool IAST::FormattingBuffer::getSurroundEachListElementWithParens() const
+{
+    return stacked_state.surround_each_list_element_with_parens;
+}
+
 bool IAST::FormattingBuffer::shouldShowSecrets() const
 {
     return settings.show_secrets;
