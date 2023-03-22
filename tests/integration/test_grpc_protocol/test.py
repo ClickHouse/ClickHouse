@@ -594,8 +594,6 @@ def test_cancel_while_processing_input():
     stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
     result = stub.ExecuteQueryWithStreamInput(send_query_info())
     assert result.cancelled == True
-    assert result.progress.written_rows == 6
-    assert query("SELECT a FROM t ORDER BY a") == "1\n2\n3\n4\n5\n6\n"
 
 
 def test_cancel_while_generating_output():

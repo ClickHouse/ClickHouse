@@ -21,6 +21,9 @@ namespace DB
     M(UInt64, max_io_thread_pool_size, 100, "The maximum number of threads that would be used for IO operations", 0) \
     M(UInt64, max_io_thread_pool_free_size, 0, "Max free size for IO thread pool.", 0) \
     M(UInt64, io_thread_pool_queue_size, 10000, "Queue size for IO thread pool.", 0) \
+    M(UInt64, max_backups_io_thread_pool_size, 1000, "The maximum number of threads that would be used for IO operations for BACKUP queries", 0) \
+    M(UInt64, max_backups_io_thread_pool_free_size, 0, "Max free size for backups IO thread pool.", 0) \
+    M(UInt64, backups_io_thread_pool_queue_size, 0, "Queue size for backups IO thread pool.", 0) \
     M(Int32, max_connections, 1024, "Max server connections.", 0) \
     M(UInt32, asynchronous_metrics_update_period_s, 1, "Period in seconds for updating asynchronous metrics.", 0) \
     M(UInt32, asynchronous_heavy_metrics_update_period_s, 120, "Period in seconds for updating asynchronous metrics.", 0) \
@@ -75,4 +78,3 @@ struct ServerSettings : public BaseSettings<ServerSettingsTraits>
 };
 
 }
-

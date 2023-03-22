@@ -10,6 +10,7 @@ sidebar_label: OPTIMIZE
 
 :::danger "Внимание"
     `OPTIMIZE` не устраняет причину появления ошибки `Too many parts`.
+:::
 
 **Синтаксис**
 

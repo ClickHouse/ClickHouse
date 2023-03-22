@@ -50,7 +50,7 @@ If there are multiple profiles active for a user, then constraints are merged. M
 
 Read-only mode is enabled by `readonly` setting (not to confuse with `readonly` constraint type):
 - `readonly=0`: No read-only restrictions.
-- `readonly=1`: Only read queries are allowed and settings cannot be changes unless `changeable_in_readonly` is set.
+- `readonly=1`: Only read queries are allowed and settings cannot be changed unless `changeable_in_readonly` is set.
 - `readonly=2`: Only read queries are allowed, but settings can be changed, except for `readonly` setting itself.
 
 
