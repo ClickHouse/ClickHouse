@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <base/types.h>
 #include <memory>
 
@@ -12,7 +11,7 @@ class ReadBufferFromFileBase;
 class SeekableReadBuffer;
 
 /// Interface for reading an archive.
-class IArchiveReader : public std::enable_shared_from_this<IArchiveReader>, boost::noncopyable
+class IArchiveReader : public std::enable_shared_from_this<IArchiveReader>
 {
 public:
     virtual ~IArchiveReader() = default;
@@ -24,6 +23,7 @@ public:
     {
         UInt64 uncompressed_size;
         UInt64 compressed_size;
+        int compression_method;
         bool is_encrypted;
     };
 

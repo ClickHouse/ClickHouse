@@ -1,7 +1,4 @@
----
-slug: /en/operations/system-tables/functions
----
-# functions
+# system.functions {#system-functions}
 
 Contains information about normal and aggregate functions.
 
@@ -32,3 +29,5 @@ Columns:
 
 10 rows in set. Elapsed: 0.002 sec.
 ```
+
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/functions) <!--hide-->

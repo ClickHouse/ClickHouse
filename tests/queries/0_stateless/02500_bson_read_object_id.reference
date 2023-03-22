@@ -1,6 +1,0 @@
-_id	Nullable(FixedString(12))					
-name	Nullable(String)					
-email	Nullable(String)					
-movie_id	Nullable(FixedString(12))					
-text	Nullable(String)					
-date	Nullable(DateTime64(6, \'UTC\'))					

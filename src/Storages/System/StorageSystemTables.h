@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
 
 
@@ -11,11 +12,10 @@ class Context;
 
 /** Implements the system table `tables`, which allows you to get information about all tables.
   */
-class StorageSystemTables final : public IStorage
+class StorageSystemTables final : public shared_ptr_helper<StorageSystemTables>, public IStorage
 {
+    friend struct shared_ptr_helper<StorageSystemTables>;
 public:
-    explicit StorageSystemTables(const StorageID & table_id_);
-
     std::string getName() const override { return "SystemTables"; }
 
     Pipe read(
@@ -25,9 +25,12 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        size_t num_streams) override;
+        unsigned num_streams) override;
 
     bool isSystemStorage() const override { return true; }
+
+protected:
+    explicit StorageSystemTables(const StorageID & table_id_);
 };
 
 }

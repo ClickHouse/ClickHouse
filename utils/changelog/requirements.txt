@@ -1,3 +1,0 @@
-fuzzywuzzy
-PyGitHub
-python-Levenshtein

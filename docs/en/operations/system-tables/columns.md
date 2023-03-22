@@ -1,11 +1,8 @@
----
-slug: /en/operations/system-tables/columns
----
-# columns
+# system.columns {#system-columns}
 
 Contains information about columns in all the tables.
 
-You can use this table to get information similar to the [DESCRIBE TABLE](../../sql-reference/statements/describe-table.md) query, but for multiple tables at once.
+You can use this table to get information similar to the [DESCRIBE TABLE](../../sql-reference/statements/misc.md#misc-describe-table) query, but for multiple tables at once.
 
 Columns from [temporary tables](../../sql-reference/statements/create/table.md#temporary-tables) are visible in the `system.columns` only in those session where they have been created. They are shown with the empty `database` field.
 
@@ -88,3 +85,5 @@ numeric_precision_radix: ᴺᵁᴸᴸ
 numeric_scale:           ᴺᵁᴸᴸ
 datetime_precision:      ᴺᵁᴸᴸ
 ```
+
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/columns) <!--hide-->

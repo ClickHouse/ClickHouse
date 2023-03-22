@@ -7,8 +7,6 @@
 #include <array>
 #include <base/types.h>
 #include <base/DayNum.h>
-#include <IO/ReadBuffer.h>
-#include <IO/WriteBuffer.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 
 
@@ -74,20 +72,10 @@ struct MergeTreePartInfo
             && strictly_contains_block_range;
     }
 
-    /// Part was created with mutation of parent_candidate part
-    bool isMutationChildOf(const MergeTreePartInfo & parent_candidate) const
-    {
-        return partition_id == parent_candidate.partition_id
-            && min_block == parent_candidate.min_block
-            && max_block == parent_candidate.max_block
-            && level == parent_candidate.level
-            && mutation >= parent_candidate.mutation;
-    }
-
     /// Return part mutation version, if part wasn't mutated return zero
     Int64 getMutationVersion() const
     {
-        return mutation;
+        return mutation ? mutation : 0;
     }
 
     /// True if parts do not intersect in any way.
@@ -105,23 +93,17 @@ struct MergeTreePartInfo
         return level == MergeTreePartInfo::MAX_LEVEL || level == another_max_level;
     }
 
-    String getPartNameAndCheckFormat(MergeTreeDataFormatVersion format_version) const;
-    String getPartNameForLogs() const;
-    String getPartNameV1() const;
+    String getPartName() const;
     String getPartNameV0(DayNum left_date, DayNum right_date) const;
     UInt64 getBlocksCount() const
     {
         return static_cast<UInt64>(max_block - min_block + 1);
     }
 
-    void serialize(WriteBuffer & out) const;
-    String describe() const;
-    void deserialize(ReadBuffer & in);
-
     /// Simple sanity check for partition ID. Checking that it's not too long or too short, doesn't contain a lot of '_'.
     static void validatePartitionID(const String & partition_id, MergeTreeDataFormatVersion format_version);
 
-    static MergeTreePartInfo fromPartName(const String & part_name, MergeTreeDataFormatVersion format_version);
+    static MergeTreePartInfo fromPartName(const String & part_name, MergeTreeDataFormatVersion format_version);  // -V1071
 
     static std::optional<MergeTreePartInfo> tryParsePartName(
         std::string_view part_name, MergeTreeDataFormatVersion format_version);
@@ -162,20 +144,6 @@ struct DetachedPartInfo : public MergeTreePartInfo
         "deleting",
         "tmp-fetch",
         "covered-by-broken",
-        "merge-not-byte-identical",
-        "mutate-not-byte-identical"
-    });
-
-    static constexpr auto DETACHED_REASONS_REMOVABLE_BY_TIMEOUT = std::to_array<std::string_view>({
-        "broken",
-        "unexpected",
-        "noquorum",
-        "ignored",
-        "broken-on-start",
-        "deleting",
-        "clone",
-        "merge-not-byte-identical",
-        "mutate-not-byte-identical"
     });
 
     /// NOTE: It may parse part info incorrectly.

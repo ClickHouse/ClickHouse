@@ -15,8 +15,7 @@ def started_cluster():
     try:
         cluster.start()
         instance.query(
-            "CREATE DATABASE test ENGINE = Ordinary",
-            settings={"allow_deprecated_database_ordinary": 1},
+            "CREATE DATABASE test ENGINE = Ordinary"
         )  # Different path in shadow/ with Atomic
         instance.query("DROP TABLE IF EXISTS test.tbl")
         instance.query(

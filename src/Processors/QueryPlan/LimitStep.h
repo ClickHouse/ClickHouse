@@ -31,14 +31,12 @@ public:
         return limit + offset;
     }
 
+    /// Change input stream when limit is pushed up. TODO: add clone() for steps.
+    void updateInputStream(DataStream input_stream);
+
     bool withTies() const { return with_ties; }
 
 private:
-    void updateOutputStream() override
-    {
-        output_stream = createOutputStream(input_streams.front(), input_streams.front().header, getDataStreamTraits());
-    }
-
     size_t limit;
     size_t offset;
     bool always_read_till_end;

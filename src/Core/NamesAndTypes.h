@@ -53,17 +53,7 @@ private:
 /// This needed to use structured bindings for NameAndTypePair
 /// const auto & [name, type] = name_and_type
 template <int I>
-const std::tuple_element_t<I, NameAndTypePair> & get(const NameAndTypePair & name_and_type)
-{
-    if constexpr (I == 0)
-        return name_and_type.name;
-    else if constexpr (I == 1)
-        return name_and_type.type;
-}
-
-/// auto & [name, type] = name_and_type
-template <int I>
-std::tuple_element_t<I, NameAndTypePair> & get(NameAndTypePair & name_and_type)
+decltype(auto) get(const NameAndTypePair & name_and_type)
 {
     if constexpr (I == 0)
         return name_and_type.name;
@@ -115,14 +105,9 @@ public:
     /// Check that column contains in list
     bool contains(const String & name) const;
 
-    /// Try to get column by name, returns empty optional if column not found
+    /// Try to get column by name, return empty optional if column not found
     std::optional<NameAndTypePair> tryGetByName(const std::string & name) const;
-
-    /// Try to get column position by name, returns number of columns if column isn't found
-    size_t getPosByName(const std::string & name) const noexcept;
 };
-
-using NamesAndTypesLists = std::vector<NamesAndTypesList>;
 
 }
 

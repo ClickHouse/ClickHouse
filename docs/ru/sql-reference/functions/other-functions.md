@@ -1,7 +1,6 @@
 ---
-slug: /ru/sql-reference/functions/other-functions
-sidebar_position: 66
-sidebar_label: "Прочие функции"
+toc_priority: 66
+toc_title: "Прочие функции"
 ---
 
 # Прочие функции {#other-functions}
@@ -295,10 +294,6 @@ SELECT byteSize(NULL, 1, 0.3, '');
 
 Спит seconds секунд на каждый блок данных. Можно указать как целое число, так и число с плавающей запятой.
 
-## sleepEachRow(seconds) {# sleepeachrowseconds}
-
-Спит seconds секунд на каждую строку. Можно указать как целое число, так и число с плавающей запятой.
-
 ## currentDatabase() {#currentdatabase}
 
 Возвращает имя текущей базы данных.
@@ -572,7 +567,7 @@ ORDER BY c DESC
 
 ``` sql
 SELECT
-    transform(domain(Referer), ['yandex.ru', 'google.ru', 'vkontakte.ru'], ['www.yandex', 'example.com', 'vk.com']) AS s,
+    transform(domain(Referer), ['yandex.ru', 'google.ru', 'vk.com'], ['www.yandex', 'example.com']) AS s,
     count() AS c
 FROM test.hits
 GROUP BY domain(Referer)
@@ -592,27 +587,6 @@ LIMIT 10
 │ ██████.net     │   59141 │
 │ example.com    │   57316 │
 └────────────────┴─────────┘
-```
-
-## formatReadableDecimalSize(x)
-
-Принимает размер (число байт). Возвращает округленный размер с суффиксом (KiB, MiB и т.д.) в виде строки.
-
-Пример:
-
-``` sql
-SELECT
-    arrayJoin([1, 1024, 1024*1024, 192851925]) AS filesize_bytes,
-    formatReadableDecimalSize(filesize_bytes) AS filesize
-```
-
-``` text
-┌─filesize_bytes─┬─filesize───┐
-│              1 │ 1.00 B     │
-│           1024 │ 1.02 KB   │
-│        1048576 │ 1.05 MB   │
-│      192851925 │ 192.85 MB │
-└────────────────┴────────────┘
 ```
 
 ## formatReadableSize(x) {#formatreadablesizex}
@@ -659,92 +633,6 @@ SELECT
 └────────────────┴───────────────────┘
 ```
 
-## formatReadableTimeDelta {#formatreadabletimedelta}
-
-Принимает дельту времени в секундах. Возвращает дельту времени с (год, месяц, день, час, минута, секунда) в виде строки.
-
-**Синтаксис**
-
-``` sql
-formatReadableTimeDelta(column[, maximum_unit])
-```
-
-**Аргументы**
-
--   `column` — Столбец с числовой дельтой времени.
--   `maximum_unit` — Опциональный параметр. Максимальная единица измерения для отображения. Допустимые значения: секунды, минуты, часы, дни, месяцы, годы.
-
-Пример:
-
-``` sql
-SELECT
-    arrayJoin([100, 12345, 432546534]) AS elapsed,
-    formatReadableTimeDelta(elapsed) AS time_delta
-```
-
-``` text
-┌────elapsed─┬─time_delta ─────────────────────────────────────────────────────┐
-│        100 │ 1 minute and 40 seconds                                         │
-│      12345 │ 3 hours, 25 minutes and 45 seconds                              │
-│  432546534 │ 13 years, 8 months, 17 days, 7 hours, 48 minutes and 54 seconds │
-└────────────┴─────────────────────────────────────────────────────────────────┘
-```
-
-``` sql
-SELECT
-    arrayJoin([100, 12345, 432546534]) AS elapsed,
-    formatReadableTimeDelta(elapsed, 'minutes') AS time_delta
-```
-
-``` text
-┌────elapsed─┬─time_delta ─────────────────────────────────────────────────────┐
-│        100 │ 1 minute and 40 seconds                                         │
-│      12345 │ 205 minutes and 45 seconds                                      │
-│  432546534 │ 7209108 minutes and 54 seconds                                  │
-└────────────┴─────────────────────────────────────────────────────────────────┘
-```
-
-## parseTimeDelta {#parsetimedelta}
-
-Преобразует последовательность символов, которая напоминает нечто похожее на единицу времени.
-
-**Синтаксис**
-
-```sql
-parseTimeDelta(timestr)
-```
-
-**Аргументы**
-
--   `timestr` — Последовательность символов, которая напоминает нечто похожее на единицу времени.
-
-
-**Возвращаемое значение**
-
--   Число с плавающей точкой, содержащее количество секунд.
-
-**Пример**
-
-```sql
-SELECT parseTimeDelta('11s+22min')
-```
-
-```text
-┌─parseTimeDelta('11s+22min')─┐
-│                        1331 │
-└─────────────────────────────┘
-```
-
-```sql
-SELECT parseTimeDelta('1yr2mo')
-```
-
-```text
-┌─parseTimeDelta('1yr2mo')─┐
-│                 36806400 │
-└──────────────────────────┘
-```
-
 ## least(a, b) {#leasta-b}
 
 Возвращает наименьшее значение из a и b.
@@ -768,10 +656,6 @@ SELECT parseTimeDelta('1yr2mo')
 Возвращает ID сборки, сгенерированный компилятором для данного сервера ClickHouse.
 Если функция вызывается в контексте распределенной таблицы, то она генерирует обычный столбец со значениями, актуальными для каждого шарда. Иначе возвращается константа.
 
-## blockNumber {#function-blocknumber}
-
-Возвращает порядковый номер блока данных, в котором находится строка.
-
 ## rowNumberInBlock {#function-rownumberinblock}
 
 Возвращает порядковый номер строки в блоке данных. Для каждого блока данных нумерация начинается с 0.
@@ -792,9 +676,8 @@ neighbor(column, offset[, default_value])
 
 Результат функции зависит от затронутых блоков данных и порядка данных в блоке.
 
-:::danger "Предупреждение"
+!!! warning "Предупреждение"
     Функция может получить доступ к значению в столбце соседней строки только внутри обрабатываемого в данный момент блока данных.
-:::
 
 Порядок строк, используемый при вычислении функции `neighbor`, может отличаться от порядка строк, возвращаемых пользователю.
 Чтобы этого не случилось, вы можете сделать подзапрос с [ORDER BY](../../sql-reference/statements/select/order-by.md) и вызвать функцию извне подзапроса.
@@ -902,9 +785,8 @@ FROM numbers(16)
 Считает разницу между последовательными значениями строк в блоке данных.
 Возвращает 0 для первой строки и разницу с предыдущей строкой для каждой последующей строки.
 
-:::danger "Предупреждение"
+!!! warning "Предупреждение"
     Функция может взять значение предыдущей строки только внутри текущего обработанного блока данных.
-:::
 
 Результат функции зависит от затронутых блоков данных и порядка данных в блоке.
 
@@ -983,10 +865,10 @@ WHERE diff != 1
 У каждого события есть время начала и время окончания. Считается, что время начала включено в событие, а время окончания исключено из него. Столбцы со временем начала и окончания событий должны иметь одинаковый тип данных.
 Функция подсчитывает количество событий, происходящих одновременно на момент начала каждого из событий в выборке.
 
-:::danger "Предупреждение"
+!!! warning "Предупреждение"
     События должны быть отсортированы по возрастанию времени начала. Если это требование нарушено, то функция вызывает исключение.
     Каждый блок данных обрабатывается независимо. Если события из разных блоков данных накладываются по времени, они не могут быть корректно обработаны.
-:::
+
 **Синтаксис**
 
 ``` sql
@@ -1675,9 +1557,8 @@ FROM numbers(10);
 
 Накапливает состояния агрегатной функции для каждой строки блока данных.
 
-:::danger "Warning"
+!!! warning "Warning"
     Функция обнуляет состояние для каждого нового блока.
-:::
 
 **Синтаксис**
 
@@ -1840,13 +1721,16 @@ SELECT joinGet(db_test.id_val,'val',toUInt32(number)) from numbers(4) SETTINGS j
 └──────────────────────────────────────────────────┘
 ```
 
-## throwIf(x\[, message\[, error_code\]\]) {#throwifx-custom-message}
+## modelEvaluate(model_name, …) {#function-modelevaluate}
+
+Оценивает внешнюю модель.
+
+Принимает на вход имя и аргументы модели. Возвращает Float64.
+
+## throwIf(x\[, custom_message\]) {#throwifx-custom-message}
 
 Бросает исключение, если аргумент не равен нулю.
-`custom_message` - необязательный параметр, константная строка, задает текст сообщения об ошибке.
-`error_code` - необязательный параметр, константное число, задает код ошибки.
-
-Чтобы использовать аргумент `error_code`, должен быть включен параметр конфигурации `allow_custom_error_code_in_throwif`.
+custom_message - необязательный параметр, константная строка, задает текст сообщения об ошибке.
 
 ``` sql
 SELECT throwIf(number = 3, 'Too many') FROM numbers(10);
@@ -2133,10 +2017,9 @@ countDigits(x)
 
 Тип: [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
 
-:::note "Примечание"
+ !!! note "Примечание"
     Для `Decimal` значений учитывается их масштаб: вычисляется результат по базовому целочисленному типу, полученному как `(value * scale)`. Например: `countDigits(42) = 2`, `countDigits(42.000) = 5`, `countDigits(0.04200) = 4`. То есть вы можете проверить десятичное переполнение для `Decimal64` с помощью `countDecimal(x) > 18`. Это медленный вариант [isDecimalOverflow](#is-decimal-overflow).
-:::
- 
+
 **Пример**
 
 Запрос:
@@ -2275,7 +2158,7 @@ currentRoles()
 
 **Возвращаемое значение**
 
--   Список текущих ролей для текущего пользователя.
+-   Список текущих ролей для текущего пользователя. 
 
 Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
@@ -2291,13 +2174,13 @@ enabledRoles()
 
 **Возвращаемое значение**
 
--   Список доступных ролей для текущего пользователя.
+-   Список доступных ролей для текущего пользователя. 
 
 Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
 ## defaultRoles {#default-roles}
 
-Возвращает имена ролей, которые задаются по умолчанию для текущего пользователя при входе в систему. Изначально это все роли, которые разрешено использовать текущему пользователю (см. [GRANT](../../sql-reference/statements/grant/#grant-select)). Список ролей по умолчанию может быть изменен с помощью выражения [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement).
+Возвращает имена ролей, которые задаются по умолчанию для текущего пользователя при входе в систему. Изначально это все роли, которые разрешено использовать текущему пользователю (см. [GRANT](../../sql-reference/statements/grant/#grant-select)). Список ролей по умолчанию может быть изменен с помощью выражения [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement). 
 
 **Синтаксис**
 
@@ -2307,7 +2190,7 @@ defaultRoles()
 
 **Возвращаемое значение**
 
--   Список ролей по умолчанию.
+-   Список ролей по умолчанию. 
 
 Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
@@ -2454,7 +2337,7 @@ shardNum()
 Запрос:
 
 ``` sql
-CREATE TABLE shard_num_example (dummy UInt8)
+CREATE TABLE shard_num_example (dummy UInt8) 
     ENGINE=Distributed(test_cluster_two_shards_localhost, system, one, dummy);
 SELECT dummy, shardNum(), shardCount() FROM shard_num_example;
 ```

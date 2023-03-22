@@ -31,7 +31,7 @@ struct BitNotImpl
     static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * arg, bool)
     {
         if (!arg->getType()->isIntegerTy())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "BitNotImpl expected an integral type");
+            throw Exception("BitNotImpl expected an integral type", ErrorCodes::LOGICAL_ERROR);
         return b.CreateNot(arg);
     }
 #endif
@@ -51,7 +51,7 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameBitNot>
     }
 };
 
-REGISTER_FUNCTION(BitNot)
+void registerFunctionBitNot(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionBitNot>();
 }

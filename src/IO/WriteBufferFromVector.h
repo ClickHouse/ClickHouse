@@ -26,7 +26,6 @@ template <typename VectorType>
 class WriteBufferFromVector : public WriteBuffer
 {
 public:
-    using ValueType = typename VectorType::value_type;
     explicit WriteBufferFromVector(VectorType & vector_)
         : WriteBuffer(reinterpret_cast<Position>(vector_.data()), vector_.size()), vector(vector_)
     {
@@ -51,11 +50,9 @@ public:
 
     bool isFinished() const { return finalized; }
 
-    void restart(std::optional<size_t> max_capacity = std::nullopt)
+    void restart()
     {
-        if (max_capacity && vector.capacity() > max_capacity)
-            VectorType(initial_size, ValueType()).swap(vector);
-        else if (vector.empty())
+        if (vector.empty())
             vector.resize(initial_size);
         set(reinterpret_cast<Position>(vector.data()), vector.size());
         finalized = false;
@@ -67,12 +64,12 @@ public:
     }
 
 private:
-    void finalizeImpl() override
+    void finalizeImpl() override final
     {
         vector.resize(
             ((position() - reinterpret_cast<Position>(vector.data())) /// NOLINT
-                + sizeof(ValueType) - 1)  /// Align up.
-            / sizeof(ValueType));
+                + sizeof(typename VectorType::value_type) - 1)  /// Align up.
+            / sizeof(typename VectorType::value_type));
 
         /// Prevent further writes.
         set(nullptr, 0);
@@ -81,7 +78,7 @@ private:
     void nextImpl() override
     {
         if (finalized)
-            throw Exception(ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER, "WriteBufferFromVector is finalized");
+            throw Exception("WriteBufferFromVector is finalized", ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER);
 
         size_t old_size = vector.size();
         /// pos may not be equal to vector.data() + old_size, because WriteBuffer::next() can be used to flush data

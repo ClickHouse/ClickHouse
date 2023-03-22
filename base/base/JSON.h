@@ -38,16 +38,8 @@
   */
 
 
-// NOLINTBEGIN(google-explicit-constructor)
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wdeprecated-dynamic-exception-spec"
-#endif
 POCO_DECLARE_EXCEPTION(Foundation_API, JSONException, Poco::Exception)
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
-// NOLINTEND(google-explicit-constructor)
+
 
 class JSON
 {
@@ -63,7 +55,7 @@ public:
         checkInit();
     }
 
-    explicit JSON(std::string_view s) : ptr_begin(s.data()), ptr_end(s.data() + s.size()), level(0)
+    JSON(const std::string & s) : ptr_begin(s.data()), ptr_end(s.data() + s.size()), level(0)
     {
         checkInit();
     }
@@ -73,7 +65,13 @@ public:
         *this = rhs;
     }
 
-    JSON & operator=(const JSON & rhs) = default;
+    JSON & operator=(const JSON & rhs)
+    {
+        ptr_begin = rhs.ptr_begin;
+        ptr_end = rhs.ptr_end;
+        level = rhs.level;
+        return *this;
+    }
 
     const char * data() const { return ptr_begin; }
     const char * dataEnd() const { return ptr_end; }
@@ -132,8 +130,8 @@ public:
     std::string getName() const;    /// Получить имя name-value пары.
     JSON        getValue() const;    /// Получить значение name-value пары.
 
-    std::string_view getRawString() const;
-    std::string_view getRawName() const;
+    StringRef getRawString() const;
+    StringRef getRawName() const;
 
     /// Получить значение элемента; если элемент - строка, то распарсить значение из строки; если не строка или число - то исключение.
     double      toDouble() const;
@@ -165,7 +163,7 @@ public:
 
     /// Перейти к следующему элементу массива или следующей name-value паре объекта.
     iterator & operator++();
-    iterator operator++(int); // NOLINT(cert-dcl21-cpp)
+    iterator operator++(int);
 
     /// Есть ли в строке escape-последовательности
     bool hasEscapes() const;

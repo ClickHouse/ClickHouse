@@ -11,33 +11,31 @@ Security fixes will be announced by posting them in the [security changelog](htt
 
 The following versions of ClickHouse server are currently being supported with security updates:
 
-| Version | Supported |
-|:-|:-|
-| 23.2 | ✔️ |
-| 23.1 | ✔️ |
-| 22.12 | ✔️ |
-| 22.11 | ❌ |
-| 22.10 | ❌ |
-| 22.9 | ❌ |
-| 22.8 | ✔️ |
-| 22.7 | ❌ |
-| 22.6 | ❌ |
-| 22.5 | ❌ |
-| 22.4 | ❌ |
-| 22.3 | ✔️ |
-| 22.2 | ❌ |
-| 22.1 | ❌ |
-| 21.* | ❌ |
-| 20.* | ❌ |
-| 19.* | ❌ |
-| 18.* | ❌ |
-| 1.* | ❌ |
+| Version | Supported          |
+| ------- | ------------------ |
+| 1.x   | :x: |
+| 18.x   | :x:                |
+| 19.x   | :x:                |
+| 20.x   | :x: |
+| 21.1   | :x: |
+| 21.2   | :x: |
+| 21.3   | ✅ |
+| 21.4   | :x: |
+| 21.5   | :x: |
+| 21.6   | :x: |
+| 21.7   | :x: |
+| 21.8   | ✅ |
+| 21.9   | :x: |
+| 21.10   | :x: |
+| 21.11   | ✅ |
+| 21.12   | ✅ |
+| 22.1   | ✅ |
 
 ## Reporting a Vulnerability
 
 We're extremely grateful for security researchers and users that report vulnerabilities to the ClickHouse Open Source Community. All reports are thoroughly investigated by developers.
 
-To report a potential vulnerability in ClickHouse please send the details about it to [security@clickhouse.com](mailto:security@clickhouse.com). We do not offer any financial rewards for reporting issues to us using this method. Alternatively, you can also submit your findings through our public bug bounty program hosted by [Bugcrowd](https://bugcrowd.com/clickhouse) and be rewarded for it as per the program scope and rules of engagement.
+To report a potential vulnerability in ClickHouse please send the details about it to [security@clickhouse.com](mailto:security@clickhouse.com).
 
 ### When Should I Report a Vulnerability?
 
@@ -58,4 +56,3 @@ As the security issue moves from triage, to identified fix, to release planning 
 ## Public Disclosure Timing
 
 A public disclosure date is negotiated by the ClickHouse maintainers and the bug submitter. We prefer to fully disclose the bug as soon as possible once a user mitigation is available. It is reasonable to delay disclosure when the bug or the fix is not yet fully understood, the solution is not well-tested, or for vendor coordination. The timeframe for disclosure is from immediate (especially if it's already publicly known) to 90 days. For a vulnerability with a straightforward mitigation, we expect the report date to disclosure date to be on the order of 7 days.
-

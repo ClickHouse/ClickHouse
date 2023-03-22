@@ -49,15 +49,7 @@ String ASTCreateSettingsProfileQuery::getID(char) const
 
 ASTPtr ASTCreateSettingsProfileQuery::clone() const
 {
-    auto res = std::make_shared<ASTCreateSettingsProfileQuery>(*this);
-
-    if (to_roles)
-        res->to_roles = std::static_pointer_cast<ASTRolesOrUsersSet>(to_roles->clone());
-
-    if (settings)
-        res->settings = std::static_pointer_cast<ASTSettingsProfileElements>(settings->clone());
-
-    return res;
+    return std::make_shared<ASTCreateSettingsProfileQuery>(*this);
 }
 
 

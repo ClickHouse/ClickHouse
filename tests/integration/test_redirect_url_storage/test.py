@@ -162,4 +162,4 @@ def test_url_reconnect(started_cluster):
         thread.join()
 
         assert (int(result), 6581218782194912115)
-        assert node1.contains_in_log("Timeout: connect timed out")
+        assert node1.contains_in_log("Error: Timeout: connect timed out")

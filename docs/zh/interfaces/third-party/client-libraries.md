@@ -1,7 +1,6 @@
 ---
-slug: /zh/interfaces/third-party/client-libraries
-sidebar_position: 26
-sidebar_label: 客户端开发库
+toc_priority: 26
+toc_title: 客户端开发库
 ---
 
 # 第三方开发库 {#client-libraries-from-third-party-developers}
@@ -24,7 +23,6 @@ Yandex**没有**维护下面列出的库，也没有做过任何广泛的测试�
     -   [SeasClick C++ client](https://github.com/SeasX/SeasClick)
     -   [one-ck](https://github.com/lizhichao/one-ck)
     -   [glushkovds/phpclickhouse-laravel](https://packagist.org/packages/glushkovds/phpclickhouse-laravel)
-    -   [hyvor/clickhouse-php](https://github.com/hyvor/clickhouse-php)
 -   Go
     -   [clickhouse](https://github.com/kshvakov/clickhouse/)
     -   [go-clickhouse](https://github.com/roistat/go-clickhouse)
@@ -36,9 +34,6 @@ Yandex**没有**维护下面列出的库，也没有做过任何广泛的测试�
 -   NodeJs
     -   [clickhouse (NodeJs)](https://github.com/TimonKK/clickhouse)
     -   [node-clickhouse](https://github.com/apla/node-clickhouse)
-    -   [nestjs-clickhouse](https://github.com/depyronick/nestjs-clickhouse)
-    -   [clickhouse-client](https://github.com/depyronick/clickhouse-client)
-    -   [node-clickhouse-orm](https://github.com/zimv/node-clickhouse-orm)
 -   Perl
     -   [perl-DBD-ClickHouse](https://github.com/elcamlost/perl-DBD-ClickHouse)
     -   [HTTP-ClickHouse](https://metacpan.org/release/HTTP-ClickHouse)
@@ -46,11 +41,8 @@ Yandex**没有**维护下面列出的库，也没有做过任何广泛的测试�
 -   Ruby
     -   [ClickHouse (Ruby)](https://github.com/shlima/click_house)
     -   [clickhouse-activerecord](https://github.com/PNixx/clickhouse-activerecord)
--   Rust
-    -   [clickhouse.rs](https://github.com/loyd/clickhouse.rs)
-    -   [clickhouse-rs](https://github.com/suharev7/clickhouse-rs)
-    -   [Klickhouse](https://github.com/Protryon/klickhouse)
 -   R
+    -   [clickhouse-r](https://github.com/hannesmuehleisen/clickhouse-r)
     -   [RClickHouse](https://github.com/IMSMWU/RClickHouse)
 -   Java
     -   [clickhouse-client-java](https://github.com/VirtusAI/clickhouse-client-java)
@@ -71,3 +63,5 @@ Yandex**没有**维护下面列出的库，也没有做过任何广泛的测试�
     -   [nim-clickhouse](https://github.com/leonardoce/nim-clickhouse)
 -   Haskell
     -   [hdbc-clickhouse](https://github.com/zaneli/hdbc-clickhouse)
+
+[来源文章](https://clickhouse.com/docs/en/interfaces/third-party/client_libraries/) <!--hide-->

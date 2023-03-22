@@ -64,7 +64,7 @@ private:
     ///    value_size: size of value to add
     ///    old_value_size: size of value to minus
     /// old_value_size=0 means there is no old value with the same key.
-    void updateDataSize(OperationType op_type, uint64_t key_size, uint64_t value_size, uint64_t old_value_size, bool remove_old = true)
+    void updateDataSize(OperationType op_type, uint64_t key_size, uint64_t value_size, uint64_t old_value_size)
     {
         switch (op_type)
         {
@@ -80,7 +80,7 @@ private:
                     approximate_data_size += value_size;
                     if (!snapshot_mode)
                     {
-                        approximate_data_size -= key_size;
+                        approximate_data_size += key_size;
                         approximate_data_size -= old_value_size;
                     }
                 }
@@ -94,14 +94,14 @@ private:
             case UPDATE_VALUE:
                 approximate_data_size += key_size;
                 approximate_data_size += value_size;
-                if (remove_old)
+                if (!snapshot_mode)
                 {
                     approximate_data_size -= key_size;
                     approximate_data_size -= old_value_size;
                 }
                 break;
             case ERASE:
-                if (remove_old)
+                if (!snapshot_mode)
                 {
                     approximate_data_size -= key_size;
                     approximate_data_size -= old_value_size;
@@ -132,6 +132,7 @@ public:
 
         if (!it)
         {
+
             ListElem elem{copyStringInArena(arena, key), value, current_version};
             auto itr = list.insert(list.end(), std::move(elem));
             bool inserted;
@@ -177,7 +178,7 @@ public:
                 list_itr->value = value;
             }
         }
-        updateDataSize(INSERT_OR_REPLACE, key.size(), value.sizeInBytes(), old_value_size, !snapshot_mode);
+        updateDataSize(INSERT_OR_REPLACE, key.size(), value.sizeInBytes(), old_value_size);
     }
 
     bool erase(const std::string & key)
@@ -202,7 +203,7 @@ public:
             list.erase(list_itr);
         }
 
-        updateDataSize(ERASE, key.size(), 0, old_data_size, !snapshot_mode);
+        updateDataSize(ERASE, key.size(), 0, old_data_size);
         return true;
     }
 
@@ -222,13 +223,12 @@ public:
 
         const_iterator ret;
 
-        bool remove_old_size = true;
         if (snapshot_mode)
         {
             /// We in snapshot mode but updating some node which is already more
             /// fresh than snapshot distance. So it will not participate in
             /// snapshot and we don't need to copy it.
-            if (list_itr->version <= snapshot_up_to_version)
+            if (snapshot_mode && list_itr->version <= snapshot_up_to_version)
             {
                 auto elem_copy = *(list_itr);
                 list_itr->active_in_map = false;
@@ -238,8 +238,6 @@ public:
                 auto itr = list.insert(list.end(), std::move(elem_copy));
                 it->getMapped() = itr;
                 ret = itr;
-
-                remove_old_size = false;
             }
             else
             {
@@ -253,7 +251,7 @@ public:
             ret = list_itr;
         }
 
-        updateDataSize(UPDATE_VALUE, key.size, ret->value.sizeInBytes(), old_value_size, remove_old_size);
+        updateDataSize(UPDATE_VALUE, key.size, ret->value.sizeInBytes(), old_value_size);
         return ret;
     }
 
@@ -320,17 +318,6 @@ public:
     uint64_t getApproximateDataSize() const
     {
         return approximate_data_size;
-    }
-
-    void recalculateDataSize()
-    {
-        approximate_data_size = 0;
-        for (auto & node : list)
-        {
-            node.value.recalculateSize();
-            approximate_data_size += node.key.size;
-            approximate_data_size += node.value.sizeInBytes();
-        }
     }
 
     uint64_t keyArenaSize() const

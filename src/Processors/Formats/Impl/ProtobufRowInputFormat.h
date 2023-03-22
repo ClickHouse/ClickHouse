@@ -1,19 +1,19 @@
 #pragma once
 
-#include "config.h"
+#include "config_formats.h"
 
 #if USE_PROTOBUF
-#   include <Processors/Formats/IRowInputFormat.h>
-#   include <Processors/Formats/ISchemaReader.h>
-#   include <Formats/FormatSchemaInfo.h>
-#   include <google/protobuf/descriptor.h>
+#    include <Formats/FormatSchemaInfo.h>
+#    include <Processors/Formats/IRowInputFormat.h>
+#    include <Processors/Formats/ISchemaReader.h>
 
 namespace DB
 {
 class Block;
+class FormatSchemaInfo;
 class ProtobufReader;
 class ProtobufSerializer;
-class ReadBuffer;
+
 
 /** Stream designed to deserialize data from the google protobuf format.
   * One Protobuf message is parsed as one row of data.
@@ -29,33 +29,19 @@ class ReadBuffer;
 class ProtobufRowInputFormat final : public IRowInputFormat
 {
 public:
-    ProtobufRowInputFormat(
-        ReadBuffer & in_,
-        const Block & header_,
-        const Params & params_,
-        const FormatSchemaInfo & schema_info_,
-        bool with_length_delimiter_,
-        bool flatten_google_wrappers_);
+    ProtobufRowInputFormat(ReadBuffer & in_, const Block & header_, const Params & params_, const FormatSchemaInfo & schema_info_, bool with_length_delimiter_);
+    ~ProtobufRowInputFormat() override;
 
     String getName() const override { return "ProtobufRowInputFormat"; }
 
-    void setReadBuffer(ReadBuffer & in_) override;
-    void resetParser() override;
-
 private:
-    bool readRow(MutableColumns & columns, RowReadExtension & row_read_extension) override;
+    bool readRow(MutableColumns & columns, RowReadExtension &) override;
     bool allowSyncAfterError() const override;
     void syncAfterError() override;
-
-    void createReaderAndSerializer();
 
     std::unique_ptr<ProtobufReader> reader;
     std::vector<size_t> missing_column_indices;
     std::unique_ptr<ProtobufSerializer> serializer;
-
-    const google::protobuf::Descriptor * message_descriptor;
-    bool with_length_delimiter;
-    bool flatten_google_wrappers;
 };
 
 class ProtobufSchemaReader : public IExternalSchemaReader
@@ -66,8 +52,7 @@ public:
     NamesAndTypesList readSchema() override;
 
 private:
-    const FormatSchemaInfo schema_info;
-    bool skip_unsupported_fields;
+    FormatSchemaInfo schema_info;
 };
 
 }

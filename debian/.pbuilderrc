@@ -1,0 +1,223 @@
+#
+# sudo apt install pbuilder fakeroot debhelper debian-archive-keyring debian-keyring
+#
+# ubuntu:
+# prepare old (trusty or earlier) host system:
+
+# sudo ln -s gutsy /usr/share/debootstrap/scripts/eoan
+# sudo ln -s gutsy /usr/share/debootstrap/scripts/disco
+# sudo ln -s gutsy /usr/share/debootstrap/scripts/cosmic
+# sudo ln -s gutsy /usr/share/debootstrap/scripts/artful
+# sudo ln -s gutsy /usr/share/debootstrap/scripts/bionic
+# sudo ln -s sid /usr/share/debootstrap/scripts/buster
+# build ubuntu:
+# sudo DIST=bionic pbuilder create --configfile debian/.pbuilderrc && DIST=bionic pdebuild --configfile debian/.pbuilderrc
+# sudo DIST=cosmic pbuilder create --configfile debian/.pbuilderrc && DIST=cosmic pdebuild --configfile debian/.pbuilderrc
+# sudo DIST=disco  pbuilder create --configfile debian/.pbuilderrc && DIST=disco  pdebuild --configfile debian/.pbuilderrc
+# sudo DIST=eoan   pbuilder create --configfile debian/.pbuilderrc && DIST=eoan   pdebuild --configfile debian/.pbuilderrc
+# sudo DIST=devel  pbuilder create --configfile debian/.pbuilderrc && DIST=devel  pdebuild --configfile debian/.pbuilderrc
+# build debian:
+# sudo DIST=stable       pbuilder create --configfile debian/.pbuilderrc && DIST=stable       pdebuild --configfile debian/.pbuilderrc
+# sudo DIST=testing      pbuilder create --configfile debian/.pbuilderrc && DIST=testing      pdebuild --configfile debian/.pbuilderrc
+# sudo DIST=unstable     pbuilder create --configfile debian/.pbuilderrc && DIST=unstable     pdebuild --configfile debian/.pbuilderrc
+# sudo DIST=experimental pbuilder create --configfile debian/.pbuilderrc && DIST=experimental pdebuild --configfile debian/.pbuilderrc
+# build i386 experimental:
+# sudo DIST=trusty       ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=trusty       ARCH=i386 pdebuild --configfile debian/.pbuilderrc
+# sudo DIST=xenial       ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=xenial       ARCH=i386 pdebuild --configfile debian/.pbuilderrc
+# sudo DIST=zesty        ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=zesty        ARCH=i386 pdebuild --configfile debian/.pbuilderrc
+# sudo DIST=artful       ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=artful       ARCH=i386 pdebuild --configfile debian/.pbuilderrc
+# sudo DIST=bionic       ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=bionic       ARCH=i386 pdebuild --configfile debian/.pbuilderrc
+# sudo DIST=stable       ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=stable       ARCH=i386 pdebuild --configfile debian/.pbuilderrc
+# sudo DIST=testing      ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=testing      ARCH=i386 pdebuild --configfile debian/.pbuilderrc
+# sudo DIST=experimental ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=experimental ARCH=i386 pdebuild --configfile debian/.pbuilderrc
+# test gcc-9
+# env DEB_CC=gcc-9 DEB_CXX=g++-9 EXTRAPACKAGES="g++-9 gcc-9" DIST=disco pdebuild --configfile debian/.pbuilderrc
+# use only clang:
+# env DEB_CC=clang-8 DEB_CXX=clang++-8 EXTRAPACKAGES=clang-8 DIST=disco pdebuild --configfile debian/.pbuilderrc
+# env DEB_CC=clang-5.0 DEB_CXX=clang++-5.0 EXTRAPACKAGES=clang-5.0 DIST=artful pdebuild --configfile debian/.pbuilderrc
+# clang+asan:
+# env DEB_CC=clang-5.0 DEB_CXX=clang++-5.0 EXTRAPACKAGES="clang-5.0 libc++abi-dev libc++-dev" CMAKE_FLAGS="-DENABLE_TCMALLOC=0 -DENABLE_UNWIND=0 -DCMAKE_BUILD_TYPE=Asan" DIST=artful pdebuild --configfile debian/.pbuilderrc
+# clang+tsan:
+# env DEB_CC=clang-5.0 DEB_CXX=clang++-5.0 EXTRAPACKAGES="clang-5.0 libc++abi-dev libc++-dev" CMAKE_FLAGS="-DCMAKE_BUILD_TYPE=Tsan" DIST=artful pdebuild --configfile debian/.pbuilderrc
+# without sse for old systems and some VM:
+# env DH_VERBOSE=1 CMAKE_FLAGS="-DHAVE_SSE41=0 -DHAVE_SSE42=0 -DHAVE_POPCNT=0 -DHAVE_SSE2_INTRIN=0 -DSSE2FLAG=' ' -DHAVE_SSE42_INTRIN=0 -DSSE4FLAG=' ' -DHAVE_PCLMULQDQ_INTRIN=0 -DPCLMULFLAG=' '" DIST=artful pdebuild --configfile debian/.pbuilderrc
+
+# Note: on trusty host creating some future dists can fail (debootstrap error).
+
+# Your packages built here: /var/cache/pbuilder/*-*/result
+
+# from https://wiki.debian.org/PbuilderTricks :
+
+# Codenames for Debian suites according to their alias. Update these when
+# needed.
+UNSTABLE_CODENAME="sid"
+TESTING_CODENAME="buster"
+STABLE_CODENAME="stretch"
+STABLE_BACKPORTS_SUITE="$STABLE_CODENAME-backports"
+
+# List of Debian suites.
+DEBIAN_SUITES=($UNSTABLE_CODENAME $TESTING_CODENAME $STABLE_CODENAME $STABLE_BACKPORTS_SUITE
+    "experimental" "unstable" "testing" "stable")
+
+# List of Ubuntu suites. Update these when needed.
+UBUNTU_SUITES=("eoan" "disco" "cosmic" "bionic" "artful" "zesty" "xenial" "trusty" "devel")
+
+# Set a default distribution if none is used. Note that you can set your own default (i.e. ${DIST:="unstable"}).
+HOST_DIST=`lsb_release --short --codename`
+: ${DIST:="$HOST_DIST"}
+
+# Optionally change Debian codenames in $DIST to their aliases.
+case "$DIST" in
+    $UNSTABLE_CODENAME)
+        DIST="unstable"
+        ;;
+    $TESTING_CODENAME)
+        DIST="testing"
+        ;;
+    $STABLE_CODENAME)
+        DIST="stable"
+        ;;
+esac
+
+# Optionally set the architecture to the host architecture if none set. Note
+# that you can set your own default (i.e. ${ARCH:="i386"}).
+: ${ARCH:="$(dpkg --print-architecture)"}
+
+NAME="$DIST"
+if [ -n "${ARCH}" ]; then
+    NAME="$NAME-$ARCH"
+    DEBOOTSTRAPOPTS=("--arch" "$ARCH" "${DEBOOTSTRAPOPTS[@]}")
+fi
+
+BASETGZ=${SET_BASETGZ}
+BASETGZ=${BASETGZ:="/var/cache/pbuilder/$NAME-base.tgz"}
+DISTRIBUTION="$DIST"
+BUILDRESULT=${SET_BUILDRESULT}
+BUILDRESULT=${BUILDRESULT:="/var/cache/pbuilder/$NAME/result/"}
+APTCACHE="/var/cache/pbuilder/$NAME/aptcache/"
+BUILDPLACE="/var/cache/pbuilder/build/"
+ALLOWUNTRUSTED=${SET_ALLOWUNTRUSTED:=${ALLOWUNTRUSTED}}
+
+#DEBOOTSTRAPOPTS=( '--variant=buildd' $SET_DEBOOTSTRAPOPTS )
+
+
+if $(echo ${DEBIAN_SUITES[@]} | grep -q $DIST); then
+    # Debian configuration
+    OSNAME=debian
+    MIRRORSITE=${SET_MIRRORSITE="http://deb.debian.org/$OSNAME/"}
+    COMPONENTS="main contrib non-free"
+    if $(echo "$STABLE_CODENAME stable" | grep -q $DIST); then
+        OTHERMIRROR="$OTHERMIRROR | deb $MIRRORSITE $STABLE_BACKPORTS_SUITE $COMPONENTS"
+    fi
+    # APTKEYRINGS=/usr/share/keyrings/debian-archive-keyring.gpg
+
+    case "$HOST_DIST" in
+       "trusty" )
+            DEBOOTSTRAPOPTS+=( '--no-check-gpg' )
+        ;;
+        *)
+            DEBOOTSTRAPOPTS+=( '--keyring' '/usr/share/keyrings/debian-archive-keyring.gpg' )
+            # DEBOOTSTRAPOPTS+=( '--keyring' '/usr/share/keyrings/debian-keyring.gpg' )
+    esac
+elif $(echo ${UBUNTU_SUITES[@]} | grep -q $DIST); then
+    # Ubuntu configuration
+    OSNAME=ubuntu
+
+    if [[ "$ARCH" == "amd64" || "$ARCH" == "i386" ]]; then
+        MIRRORSITE=${SET_MIRRORSITE="http://archive.ubuntu.com/$OSNAME/"}
+    else
+        MIRRORSITE=${SET_MIRRORSITE="http://ports.ubuntu.com/ubuntu-ports/"}
+    fi
+
+    COMPONENTS="main restricted universe multiverse"
+
+    OTHERMIRROR="$OTHERMIRROR | deb $MIRRORSITE $DIST-updates main restricted universe multiverse"
+    OTHERMIRROR="$OTHERMIRROR | deb $MIRRORSITE $DIST-security main restricted universe multiverse"
+    OTHERMIRROR="$OTHERMIRROR | deb $MIRRORSITE $DIST-proposed main restricted universe multiverse"
+
+    case "$DIST" in
+       "trusty" | "xenial" )
+           OTHERMIRROR="$OTHERMIRROR | deb http://ppa.launchpad.net/ubuntu-toolchain-r/test/$OSNAME $DIST main"
+           ALLOWUNTRUSTED=yes
+           ;;
+    esac
+
+    # deb http://apt.llvm.org/zesty/ llvm-toolchain-zesty-5.0 main
+else
+    echo "Unknown distribution: $DIST"
+    exit 1
+fi
+
+echo "using $NAME $OSNAME $DIST $ARCH $LOGNAME $MIRRORSITE"
+
+case "$DIST" in
+    "trusty")
+        # ccache broken
+        ;;
+    *)
+        CCACHEDIR=${SET_CCACHEDIR:="/var/cache/pbuilder/ccache"}
+        ;;
+esac
+
+# old systems with default gcc <= 6
+case "$DIST" in
+    "trusty" | "xenial" | "stable" )
+        export DEB_CC=gcc-7
+        export DEB_CXX=g++-7
+        ;;
+esac
+
+if [ "$ARCH" != arm64 ]; then
+    case "$DIST" in
+# TODO: fix llvm-8 and use for "disco" and "eoan"
+    "experimental")
+        EXTRAPACKAGES+=" liblld-8-dev libclang-8-dev llvm-8-dev liblld-8 "
+        export CMAKE_FLAGS="-DLLVM_VERSION=8 $CMAKE_FLAGS"
+        ;;
+    "eoan" | "disco" | "cosmic" | "testing" | "unstable")
+        EXTRAPACKAGES+=" liblld-7-dev libclang-7-dev llvm-7-dev liblld-7 "
+        export CMAKE_FLAGS="-DLLVM_VERSION=7 $CMAKE_FLAGS"
+        ;;
+    "bionic")
+        EXTRAPACKAGES+=" liblld-6.0-dev libclang-6.0-dev liblld-6.0 "
+        export CMAKE_FLAGS="-DLLVM_VERSION=6 $CMAKE_FLAGS"
+        ;;
+    "artful" )
+        EXTRAPACKAGES+=" liblld-5.0-dev libclang-5.0-dev liblld-5.0 "
+        ;;
+    esac
+else
+    export CMAKE_FLAGS="-DENABLE_EMBEDDED_COMPILER=0 $CMAKE_FLAGS"
+fi
+
+# Will test symbols
+#EXTRAPACKAGES+=" gdb "
+
+# For killall in pbuilder-hooks:
+EXTRAPACKAGES+=" psmisc "
+
+[[ $CCACHE_PREFIX == 'distcc' ]] && EXTRAPACKAGES+=" $CCACHE_PREFIX " && USENETWORK=yes && export DISTCC_DIR=/var/cache/pbuilder/distcc
+
+[[ $ARCH == 'i386' ]] && EXTRAPACKAGES+=" libssl-dev "
+
+export DEB_BUILD_OPTIONS=parallel=`nproc`
+
+# Floating bug with permissions:
+[ -n "$CCACHEDIR" ] && sudo mkdir -p $CCACHEDIR
+[ -n "$CCACHEDIR" ] && sudo chmod -R a+rwx $CCACHEDIR || true
+# chown -R $BUILDUSERID:$BUILDUSERID $CCACHEDIR
+
+
+# Do not create source package inside pbuilder (-b)
+# Use current dir to make package (by default should have src archive)
+# echo "3.0 (native)" > debian/source/format
+# OR
+# pdebuild -b --debbuildopts "--source-option=--format=\"3.0 (native)\""
+# OR
+DEBBUILDOPTS="-b --source-option=--format=\"3.0 (native)\""
+
+HOOKDIR="debian/pbuilder-hooks"
+
+#echo "DEBOOTSTRAPOPTS=${DEBOOTSTRAPOPTS[@]}"
+#echo "ALLOWUNTRUSTED=${ALLOWUNTRUSTED} OTHERMIRROR=${OTHERMIRROR}"
+#echo "EXTRAPACKAGES=${EXTRAPACKAGES}"

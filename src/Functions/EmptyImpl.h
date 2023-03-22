@@ -35,7 +35,7 @@ struct EmptyImpl
     /// Only make sense if is_fixed_to_constant.
     static void vectorFixedToConstant(const ColumnString::Chars & /*data*/, size_t /*n*/, UInt8 & /*res*/)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: 'vectorFixedToConstant method' is called");
+        throw Exception("Logical error: 'vectorFixedToConstant method' is called", ErrorCodes::LOGICAL_ERROR);
     }
 
     static void vectorFixedToVector(const ColumnString::Chars & data, size_t n, PaddedPODArray<UInt8> & res)
@@ -57,18 +57,6 @@ struct EmptyImpl
     }
 
     static void uuid(const ColumnUUID::Container & container, size_t n, PaddedPODArray<UInt8> & res)
-    {
-        for (size_t i = 0; i < n; ++i)
-            res[i] = negative ^ (container[i].toUnderType() == 0);
-    }
-
-    static void ipv6(const ColumnIPv6::Container & container, size_t n, PaddedPODArray<UInt8> & res)
-    {
-        for (size_t i = 0; i < n; ++i)
-            res[i] = negative ^ (container[i].toUnderType() == 0);
-    }
-
-    static void ipv4(const ColumnIPv4::Container & container, size_t n, PaddedPODArray<UInt8> & res)
     {
         for (size_t i = 0; i < n; ++i)
             res[i] = negative ^ (container[i].toUnderType() == 0);

@@ -4,5 +4,3 @@ requests
 sqlparse
 tenacity
 xmltodict
-pandas
-numpy>=1.22.2 # not directly required, pinned by Snyk to avoid a vulnerability

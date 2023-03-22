@@ -1,0 +1,1774 @@
+milovidov@milovidov-desktop:~$ ssh -i ▉▉▉.pem ubuntu@ec2-▉▉▉.us-east-2.compute.amazonaws.com
+Welcome to Ubuntu 18.04.5 LTS (GNU/Linux 5.3.0-1032-aws x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+
+  System information as of Wed Aug 12 22:11:00 UTC 2020
+
+  System load:  0.06               Processes:           318
+  Usage of /:   2.3% of 193.82GB   Users logged in:     1
+  Memory usage: 0%                 IP address for ens5: ▉▉▉
+  Swap usage:   0%
+
+
+0 packages can be updated.
+0 updates are security updates.
+
+
+Last login: Wed Aug 12 22:00:27 2020 from 109.252.51.97
+To run a command as administrator (user "root"), use "sudo <command>".
+See "man sudo_root" for details.
+
+ubuntu@ip-▉▉▉:~$ wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/clickhouse/benchmark-new.sh
+--2020-08-12 22:11:07--  https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/clickhouse/benchmark-new.sh
+Resolving raw.githubusercontent.com (raw.githubusercontent.com)... 151.101.248.133
+Connecting to raw.githubusercontent.com (raw.githubusercontent.com)|151.101.248.133|:443... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 468 [text/plain]
+Saving to: ‘benchmark-new.sh’
+
+benchmark-new.sh                                      100%[========================================================================================================================>]     468  --.-KB/s    in 0s
+
+2020-08-12 22:11:12 (44.9 MB/s) - ‘benchmark-new.sh’ saved [468/468]
+
+ubuntu@ip-▉▉▉:~$ chmod a+x benchmark-new.sh
+ubuntu@ip-▉▉▉:~$ wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/clickhouse/queries.sql
+--2020-08-12 22:11:12--  https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/clickhouse/queries.sql
+Resolving raw.githubusercontent.com (raw.githubusercontent.com)... 151.101.248.133
+Connecting to raw.githubusercontent.com (raw.githubusercontent.com)|151.101.248.133|:443... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 8074 (7.9K) [text/plain]
+Saving to: ‘queries.sql’
+
+queries.sql                                           100%[========================================================================================================================>]   7.88K  --.-KB/s    in 0s
+
+2020-08-12 22:11:12 (135 MB/s) - ‘queries.sql’ saved [8074/8074]
+
+ubuntu@ip-▉▉▉:~$ wget https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits_100m_obfuscated_v1.tar.xz
+--2020-08-12 22:11:27--  https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits_100m_obfuscated_v1.tar.xz
+Resolving clickhouse-datasets.s3.yandex.net (clickhouse-datasets.s3.yandex.net)... 93.158.134.158, 2a02:6b8::2:158
+Connecting to clickhouse-datasets.s3.yandex.net (clickhouse-datasets.s3.yandex.net)|93.158.134.158|:443... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 9722280160 (9.1G) [application/octet-stream]
+Saving to: ‘hits_100m_obfuscated_v1.tar.xz’
+
+hits_100m_obfuscated_v1.tar.xz                        100%[========================================================================================================================>]   9.05G  10.8MB/s    in 13m 7s
+
+2020-08-12 22:24:35 (11.8 MB/s) - ‘hits_100m_obfuscated_v1.tar.xz’ saved [9722280160/9722280160]
+
+ubuntu@ip-▉▉▉:~$ tar xvf hits_100m_obfuscated_v1.tar.xz -C .
+hits_100m_obfuscated_v1/data/
+hits_100m_obfuscated_v1/data/default/
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/IsParameter.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/WithHash.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/WatchID.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/Interests.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/SocialNetwork.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/IsLink.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/RefererCategoryID.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/ResponseStartTiming.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/ParamCurrency.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/FetchTiming.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/MobilePhone.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/HistoryLength.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/Params.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/CookieEnable.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/ParamOrderID.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/Refresh.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/HasGCLID.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/IsNotBounce.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/EventDate.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/SocialAction.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/RemoteIP.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/ResolutionWidth.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/IsEvent.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/WithHash.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/SocialSourceNetworkID.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/CLID.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/DontCountHits.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/EventTime.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/FlashMinor.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/UTMMedium.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/WatchID.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/FlashMinor2.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/CLID.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/URLCategoryID.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/URLRegionID.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/IsEvent.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/IsParameter.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/WindowClientHeight.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/SocialSourcePage.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/checksums.txt
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/CounterID.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/SilverlightVersion1.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/SocialSourceNetworkID.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/Sex.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/PageCharset.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/UserAgentMajor.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/ResolutionDepth.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/OpenstatCampaignID.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/IPNetworkID.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/OriginalURL.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/IsArtifical.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/CounterClass.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/Refresh.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/UTMSource.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/BrowserLanguage.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/HTTPError.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/NetMajor.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/UTMTerm.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/OpenerName.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/Robotness.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/GoodEvent.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/FetchTiming.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/UserAgent.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/SilverlightVersion2.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/ClientEventTime.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/EventTime.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/WindowName.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/OriginalURL.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/Params.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/SearchEngineID.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/URLRegionID.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/Age.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/ParamCurrencyID.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/FlashMajor.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/FUniqID.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/SilverlightVersion3.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/UTMTerm.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/EventDate.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/SilverlightVersion4.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/URLCategoryID.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/IsOldCounter.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/WindowClientHeight.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/Referer.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/RefererCategoryID.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/IsDownload.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/ClientTimeZone.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/ParamPrice.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/UTMCampaign.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/IsArtifical.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/HitColor.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/HistoryLength.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/RegionID.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/IsLink.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/Title.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/FUniqID.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/SilverlightVersion2.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/ConnectTiming.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/ResolutionWidth.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/LocalEventTime.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/columns.txt
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/minmax_EventDate.idx
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/UTMMedium.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/TraficSourceID.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/ClientTimeZone.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/OpenstatSourceID.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/NetMinor.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/RegionID.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/HTTPError.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/URLHash.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/IsMobile.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/CodeVersion.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/Age.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/URL.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/JavascriptEnable.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/IsOldCounter.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/FlashMajor.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/WindowName.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/JavaEnable.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/CounterClass.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/SocialSourcePage.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/RefererRegionID.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/partition.dat
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/DNSTiming.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/OpenstatServiceName.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/UserAgentMinor.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/MobilePhoneModel.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/OpenstatServiceName.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/ResolutionHeight.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/ParamCurrency.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/Robotness.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/SendTiming.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/ConnectTiming.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/FromTag.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/OpenstatAdID.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/URLHash.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/DontCountHits.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/SendTiming.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/ResponseEndTiming.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/ParamOrderID.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/UTMCampaign.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/IsMobile.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/MobilePhone.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/RefererHash.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/Referer.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/BrowserCountry.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/CookieEnable.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/UserAgentMinor.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/FlashMinor.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/GoodEvent.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/AdvEngineID.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/OS.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/HasGCLID.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/OS.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/ResolutionHeight.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/ResolutionDepth.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/BrowserLanguage.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/MobilePhoneModel.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/OpenstatSourceID.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/IsDownload.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/Sex.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/ClientIP.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/DNSTiming.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/FlashMinor2.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/count.txt
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/ClientEventTime.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/LocalEventTime.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/UserAgentMajor.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/AdvEngineID.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/ResponseEndTiming.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/HitColor.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/ParamCurrencyID.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/Title.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/WindowClientWidth.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/SilverlightVersion4.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/Income.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/UTMContent.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/HID.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/SilverlightVersion1.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/NetMajor.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/UserID.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/FromTag.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/TraficSourceID.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/primary.idx
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/UTMContent.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/WindowClientWidth.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/UserAgent.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/SocialAction.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/JavascriptEnable.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/SilverlightVersion3.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/OpenstatCampaignID.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/RefererHash.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/OpenerName.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/BrowserCountry.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/JavaEnable.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/Interests.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/ResponseStartTiming.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/RefererRegionID.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/RemoteIP.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/IsNotBounce.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/ClientIP.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/CounterID.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/UserID.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/SearchPhrase.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/CodeVersion.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/SearchPhrase.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/Income.bin
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/ParamPrice.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/PageCharset.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/SearchEngineID.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/SocialNetwork.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/OpenstatAdID.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/URL.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/IPNetworkID.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/HID.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/UTMSource.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/201307_1_96_4/NetMinor.mrk2
+hits_100m_obfuscated_v1/data/default/hits_100m_obfuscated/format_version.txt
+hits_100m_obfuscated_v1/metadata/
+hits_100m_obfuscated_v1/metadata/default/
+hits_100m_obfuscated_v1/metadata/default/hits_100m_obfuscated.sql
+ubuntu@ip-▉▉▉:~$ mv hits_100m_obfuscated_v1/* .
+mv: cannot move 'hits_100m_obfuscated_v1/data' to './data': Directory not empty
+mv: cannot move 'hits_100m_obfuscated_v1/metadata' to './metadata': Directory not empty
+ubuntu@ip-▉▉▉:~$ rm -rf data metadata
+ubuntu@ip-▉▉▉:~$ mv hits_100m_obfuscated_v1/* .
+ubuntu@ip-▉▉▉:~$ ./clickhouse client --query "SELECT count() FROM hits_100m_obfuscated"
+100000000
+ubuntu@ip-▉▉▉:~$ mcedit benchmark-new.sh
+
+Command 'mcedit' not found, but can be installed with:
+
+sudo apt install mc
+
+ubuntu@ip-▉▉▉:~$ nanobenchmark-new.sh
+nanobenchmark-new.sh: command not found
+ubuntu@ip-▉▉▉:~$ nano benchmark-new.sh
+ubuntu@ip-▉▉▉:~$ ./benchmark-new.sh hits_100m_obfuscated
+[0.015, 0.001, 0.001],
+[0.038, 0.015, 0.015],
+[0.072, 0.033, 0.033],
+[0.198, 0.052, 0.051],
+[0.338, 0.166, 0.120],
+[1.036, 0.252, 0.264],
+[0.034, 0.020, 0.020],
+[0.020, 0.015, 0.015],
+[0.521, 0.414, 0.391],
+[0.563, 0.496, 0.497],
+[0.242, 0.143, 0.143],
+[0.261, 0.168, 0.168],
+[1.067, 0.574, 0.567],
+[1.537, 0.772, 0.759],
+[0.802, 0.736, 0.752],
+[0.904, 0.797, 0.742],
+[2.229, 1.795, 1.867],
+[1.314, 0.987, 0.962],
+[5.216, 4.149, 5.540],
+[0.208, 0.057, 0.036],
+[9.238, 0.660, 0.609],
+[10.105, 0.685, 0.668],
+[19.544, 1.851, 1.766],
+[19.690, 0.943, 0.817],
+[1.834, 0.228, 0.217],
+[0.757, 0.177, 0.176],
+[2.331, 0.224, 0.214],
+[9.174, 0.728, 0.688],
+[7.330, 1.130, 1.108],
+[1.834, 1.810, 1.818],
+[1.429, 0.547, 0.550],
+[4.518, 0.879, 0.895],
+[6.157, 5.540, 5.547],
+[9.846, 3.033, 3.044],
+[9.847, 3.061, 3.016],
+[1.157, 1.086, 1.117],
+[0.238, 0.169, 0.175],
+[0.094, 0.072, 0.072],
+[0.041, 0.037, 0.041],
+[0.453, 0.364, 0.345],
+[0.054, 0.015, 0.019],
+[0.024, 0.010, 0.010],
+[0.012, 0.006, 0.007],
+ubuntu@ip-▉▉▉:~$ ./clickhouse client
+ClickHouse client version 20.8.1.4338 (official build).
+Connecting to localhost:9000 as user default.
+Connected to ClickHouse server version 20.8.1 revision 54438.
+
+ip-▉▉▉.us-east-2.compute.internal :) SELECT
+:-]     toInt64(WatchID) = -9223372036854775808 ? -9223372036854775807 : toInt64(WatchID),
+:-]     toInt8(JavaEnable) = -128 ? -127 : toInt8(JavaEnable),
+:-]     toValidUTF8(toString(Title)),
+:-]     toInt16(GoodEvent) = -32768 ? -32767 : toInt16(GoodEvent),
+:-]     EventTime,
+:-]     EventDate,
+:-]     toInt32(CounterID) = -2147483648 ? -2147483647 : toInt32(CounterID),
+:-]     toInt32(ClientIP) = -2147483648 ? -2147483647 : toInt32(ClientIP),
+:-]     toInt32(RegionID) = -2147483648 ? -2147483647 : toInt32(RegionID),
+:-]     toInt64(UserID) = -9223372036854775808 ? -9223372036854775807 : toInt64(UserID),
+:-]     toInt8(CounterClass) = -128 ? -127 : toInt8(CounterClass),
+:-]     toInt8(OS) = -128 ? -127 : toInt8(OS),
+:-]     toInt8(UserAgent) = -128 ? -127 : toInt8(UserAgent),
+:-]     toValidUTF8(toString(URL)),
+:-]     toValidUTF8(toString(Referer)),
+:-]     toInt8(Refresh) = -128 ? -127 : toInt8(Refresh),
+:-]     toInt16(RefererCategoryID) = -32768 ? -32767 : toInt16(RefererCategoryID),
+:-]     toInt32(RefererRegionID) = -2147483648 ? -2147483647 : toInt32(RefererRegionID),
+:-]     toInt16(URLCategoryID) = -32768 ? -32767 : toInt16(URLCategoryID),
+:-]     toInt32(URLRegionID) = -2147483648 ? -2147483647 : toInt32(URLRegionID),
+:-]     toInt16(ResolutionWidth) = -32768 ? -32767 : toInt16(ResolutionWidth),
+:-]     toInt16(ResolutionHeight) = -32768 ? -32767 : toInt16(ResolutionHeight),
+:-]     toInt8(ResolutionDepth) = -128 ? -127 : toInt8(ResolutionDepth),
+:-]     toInt8(FlashMajor) = -128 ? -127 : toInt8(FlashMajor),
+:-]     toInt8(FlashMinor) = -128 ? -127 : toInt8(FlashMinor),
+:-]     toValidUTF8(toString(FlashMinor2)),
+:-]     toInt8(NetMajor) = -128 ? -127 : toInt8(NetMajor),
+:-]     toInt8(NetMinor) = -128 ? -127 : toInt8(NetMinor),
+:-]     toInt16(UserAgentMajor) = -32768 ? -32767 : toInt16(UserAgentMajor),
+:-]     toValidUTF8(toString(UserAgentMinor)),
+:-]     toInt8(CookieEnable) = -128 ? -127 : toInt8(CookieEnable),
+:-]     toInt8(JavascriptEnable) = -128 ? -127 : toInt8(JavascriptEnable),
+:-]     toInt8(IsMobile) = -128 ? -127 : toInt8(IsMobile),
+:-]     toInt8(MobilePhone) = -128 ? -127 : toInt8(MobilePhone),
+:-]     toValidUTF8(toString(MobilePhoneModel)),
+:-]     toValidUTF8(toString(Params)),
+:-]     toInt32(IPNetworkID) = -2147483648 ? -2147483647 : toInt32(IPNetworkID),
+:-]     toInt8(TraficSourceID) = -128 ? -127 : toInt8(TraficSourceID),
+:-]     toInt16(SearchEngineID) = -32768 ? -32767 : toInt16(SearchEngineID),
+:-]     toValidUTF8(toString(SearchPhrase)),
+:-]     toInt8(AdvEngineID) = -128 ? -127 : toInt8(AdvEngineID),
+:-]     toInt8(IsArtifical) = -128 ? -127 : toInt8(IsArtifical),
+:-]     toInt16(WindowClientWidth) = -32768 ? -32767 : toInt16(WindowClientWidth),
+:-]     toInt16(WindowClientHeight) = -32768 ? -32767 : toInt16(WindowClientHeight),
+:-]     toInt16(ClientTimeZone) = -32768 ? -32767 : toInt16(ClientTimeZone),
+:-]     ClientEventTime,
+:-]     toInt8(SilverlightVersion1) = -128 ? -127 : toInt8(SilverlightVersion1),
+:-]     toInt8(SilverlightVersion2) = -128 ? -127 : toInt8(SilverlightVersion2),
+:-]     toInt32(SilverlightVersion3) = -2147483648 ? -2147483647 : toInt32(SilverlightVersion3),
+:-]     toInt16(SilverlightVersion4) = -32768 ? -32767 : toInt16(SilverlightVersion4),
+:-]     toValidUTF8(toString(PageCharset)),
+:-]     toInt32(CodeVersion) = -2147483648 ? -2147483647 : toInt32(CodeVersion),
+:-]     toInt8(IsLink) = -128 ? -127 : toInt8(IsLink),
+:-]     toInt8(IsDownload) = -128 ? -127 : toInt8(IsDownload),
+:-]     toInt8(IsNotBounce) = -128 ? -127 : toInt8(IsNotBounce),
+:-]     toInt64(FUniqID) = -9223372036854775808 ? -9223372036854775807 : toInt64(FUniqID),
+:-]     toValidUTF8(toString(OriginalURL)),
+:-]     toInt32(HID) = -2147483648 ? -2147483647 : toInt32(HID),
+:-]     toInt8(IsOldCounter) = -128 ? -127 : toInt8(IsOldCounter),
+:-]     toInt8(IsEvent) = -128 ? -127 : toInt8(IsEvent),
+:-]     toInt8(IsParameter) = -128 ? -127 : toInt8(IsParameter),
+:-]     toInt8(DontCountHits) = -128 ? -127 : toInt8(DontCountHits),
+:-]     toInt8(WithHash) = -128 ? -127 : toInt8(WithHash),
+:-]     toValidUTF8(toString(HitColor)),
+:-]     LocalEventTime,
+:-]     toInt8(Age) = -128 ? -127 : toInt8(Age),
+:-]     toInt8(Sex) = -128 ? -127 : toInt8(Sex),
+:-]     toInt8(Income) = -128 ? -127 : toInt8(Income),
+:-]     toInt16(Interests) = -32768 ? -32767 : toInt16(Interests),
+:-]     toInt8(Robotness) = -128 ? -127 : toInt8(Robotness),
+:-]     toInt32(RemoteIP) = -2147483648 ? -2147483647 : toInt32(RemoteIP),
+:-]     toInt32(WindowName) = -2147483648 ? -2147483647 : toInt32(WindowName),
+:-]     toInt32(OpenerName) = -2147483648 ? -2147483647 : toInt32(OpenerName),
+:-]     toInt16(HistoryLength) = -32768 ? -32767 : toInt16(HistoryLength),
+:-]     toValidUTF8(toString(BrowserLanguage)),
+:-]     toValidUTF8(toString(BrowserCountry)),
+:-]     toValidUTF8(toString(SocialNetwork)),
+:-]     toValidUTF8(toString(SocialAction)),
+:-]     toInt16(HTTPError) = -32768 ? -32767 : toInt16(HTTPError),
+:-]     toInt32(SendTiming) = -2147483648 ? -2147483647 : toInt32(SendTiming),
+:-]     toInt32(DNSTiming) = -2147483648 ? -2147483647 : toInt32(DNSTiming),
+:-]     toInt32(ConnectTiming) = -2147483648 ? -2147483647 : toInt32(ConnectTiming),
+:-]     toInt32(ResponseStartTiming) = -2147483648 ? -2147483647 : toInt32(ResponseStartTiming),
+:-]     toInt32(ResponseEndTiming) = -2147483648 ? -2147483647 : toInt32(ResponseEndTiming),
+:-]     toInt32(FetchTiming) = -2147483648 ? -2147483647 : toInt32(FetchTiming),
+:-]     toInt8(SocialSourceNetworkID) = -128 ? -127 : toInt8(SocialSourceNetworkID),
+:-]     toValidUTF8(toString(SocialSourcePage)),
+:-]     toInt64(ParamPrice) = -9223372036854775808 ? -9223372036854775807 : toInt64(ParamPrice),
+:-]     toValidUTF8(toString(ParamOrderID)),
+:-]     toValidUTF8(toString(ParamCurrency)),
+:-]     toInt16(ParamCurrencyID) = -32768 ? -32767 : toInt16(ParamCurrencyID),
+:-]     toValidUTF8(toString(OpenstatServiceName)),
+:-]     toValidUTF8(toString(OpenstatCampaignID)),
+:-]     toValidUTF8(toString(OpenstatAdID)),
+:-]     toValidUTF8(toString(OpenstatSourceID)),
+:-]     toValidUTF8(toString(UTMSource)),
+:-]     toValidUTF8(toString(UTMMedium)),
+:-]     toValidUTF8(toString(UTMCampaign)),
+:-]     toValidUTF8(toString(UTMContent)),
+:-]     toValidUTF8(toString(UTMTerm)),
+:-]     toValidUTF8(toString(FromTag)),
+:-]     toInt8(HasGCLID) = -128 ? -127 : toInt8(HasGCLID),
+:-]     toInt64(RefererHash) = -9223372036854775808 ? -9223372036854775807 : toInt64(RefererHash),
+:-]     toInt64(URLHash) = -9223372036854775808 ? -9223372036854775807 : toInt64(URLHash),
+:-]     toInt32(CLID) = -2147483648 ? -2147483647 : toInt32(CLID)
+:-] FROM hits_100m_obfuscated
+:-] INTO OUTFILE '/home/ubuntu/hits_100m_obfuscated_monetdb.tsv'
+:-] FORMAT TSV;
+
+SELECT
+    if(toInt64(WatchID) = -9223372036854775808, -9223372036854775807, toInt64(WatchID)),
+    if(toInt8(JavaEnable) = -128, -127, toInt8(JavaEnable)),
+    toValidUTF8(toString(Title)),
+    if(toInt16(GoodEvent) = -32768, -32767, toInt16(GoodEvent)),
+    EventTime,
+    EventDate,
+    if(toInt32(CounterID) = -2147483648, -2147483647, toInt32(CounterID)),
+    if(toInt32(ClientIP) = -2147483648, -2147483647, toInt32(ClientIP)),
+    if(toInt32(RegionID) = -2147483648, -2147483647, toInt32(RegionID)),
+    if(toInt64(UserID) = -9223372036854775808, -9223372036854775807, toInt64(UserID)),
+    if(toInt8(CounterClass) = -128, -127, toInt8(CounterClass)),
+    if(toInt8(OS) = -128, -127, toInt8(OS)),
+    if(toInt8(UserAgent) = -128, -127, toInt8(UserAgent)),
+    toValidUTF8(toString(URL)),
+    toValidUTF8(toString(Referer)),
+    if(toInt8(Refresh) = -128, -127, toInt8(Refresh)),
+    if(toInt16(RefererCategoryID) = -32768, -32767, toInt16(RefererCategoryID)),
+    if(toInt32(RefererRegionID) = -2147483648, -2147483647, toInt32(RefererRegionID)),
+    if(toInt16(URLCategoryID) = -32768, -32767, toInt16(URLCategoryID)),
+    if(toInt32(URLRegionID) = -2147483648, -2147483647, toInt32(URLRegionID)),
+    if(toInt16(ResolutionWidth) = -32768, -32767, toInt16(ResolutionWidth)),
+    if(toInt16(ResolutionHeight) = -32768, -32767, toInt16(ResolutionHeight)),
+    if(toInt8(ResolutionDepth) = -128, -127, toInt8(ResolutionDepth)),
+    if(toInt8(FlashMajor) = -128, -127, toInt8(FlashMajor)),
+    if(toInt8(FlashMinor) = -128, -127, toInt8(FlashMinor)),
+    toValidUTF8(toString(FlashMinor2)),
+    if(toInt8(NetMajor) = -128, -127, toInt8(NetMajor)),
+    if(toInt8(NetMinor) = -128, -127, toInt8(NetMinor)),
+    if(toInt16(UserAgentMajor) = -32768, -32767, toInt16(UserAgentMajor)),
+    toValidUTF8(toString(UserAgentMinor)),
+    if(toInt8(CookieEnable) = -128, -127, toInt8(CookieEnable)),
+    if(toInt8(JavascriptEnable) = -128, -127, toInt8(JavascriptEnable)),
+    if(toInt8(IsMobile) = -128, -127, toInt8(IsMobile)),
+    if(toInt8(MobilePhone) = -128, -127, toInt8(MobilePhone)),
+    toValidUTF8(toString(MobilePhoneModel)),
+    toValidUTF8(toString(Params)),
+    if(toInt32(IPNetworkID) = -2147483648, -2147483647, toInt32(IPNetworkID)),
+    if(toInt8(TraficSourceID) = -128, -127, toInt8(TraficSourceID)),
+    if(toInt16(SearchEngineID) = -32768, -32767, toInt16(SearchEngineID)),
+    toValidUTF8(toString(SearchPhrase)),
+    if(toInt8(AdvEngineID) = -128, -127, toInt8(AdvEngineID)),
+    if(toInt8(IsArtifical) = -128, -127, toInt8(IsArtifical)),
+    if(toInt16(WindowClientWidth) = -32768, -32767, toInt16(WindowClientWidth)),
+    if(toInt16(WindowClientHeight) = -32768, -32767, toInt16(WindowClientHeight)),
+    if(toInt16(ClientTimeZone) = -32768, -32767, toInt16(ClientTimeZone)),
+    ClientEventTime,
+    if(toInt8(SilverlightVersion1) = -128, -127, toInt8(SilverlightVersion1)),
+    if(toInt8(SilverlightVersion2) = -128, -127, toInt8(SilverlightVersion2)),
+    if(toInt32(SilverlightVersion3) = -2147483648, -2147483647, toInt32(SilverlightVersion3)),
+    if(toInt16(SilverlightVersion4) = -32768, -32767, toInt16(SilverlightVersion4)),
+    toValidUTF8(toString(PageCharset)),
+    if(toInt32(CodeVersion) = -2147483648, -2147483647, toInt32(CodeVersion)),
+    if(toInt8(IsLink) = -128, -127, toInt8(IsLink)),
+    if(toInt8(IsDownload) = -128, -127, toInt8(IsDownload)),
+    if(toInt8(IsNotBounce) = -128, -127, toInt8(IsNotBounce)),
+    if(toInt64(FUniqID) = -9223372036854775808, -9223372036854775807, toInt64(FUniqID)),
+    toValidUTF8(toString(OriginalURL)),
+    if(toInt32(HID) = -2147483648, -2147483647, toInt32(HID)),
+    if(toInt8(IsOldCounter) = -128, -127, toInt8(IsOldCounter)),
+    if(toInt8(IsEvent) = -128, -127, toInt8(IsEvent)),
+    if(toInt8(IsParameter) = -128, -127, toInt8(IsParameter)),
+    if(toInt8(DontCountHits) = -128, -127, toInt8(DontCountHits)),
+    if(toInt8(WithHash) = -128, -127, toInt8(WithHash)),
+    toValidUTF8(toString(HitColor)),
+    LocalEventTime,
+    if(toInt8(Age) = -128, -127, toInt8(Age)),
+    if(toInt8(Sex) = -128, -127, toInt8(Sex)),
+    if(toInt8(Income) = -128, -127, toInt8(Income)),
+    if(toInt16(Interests) = -32768, -32767, toInt16(Interests)),
+    if(toInt8(Robotness) = -128, -127, toInt8(Robotness)),
+    if(toInt32(RemoteIP) = -2147483648, -2147483647, toInt32(RemoteIP)),
+    if(toInt32(WindowName) = -2147483648, -2147483647, toInt32(WindowName)),
+    if(toInt32(OpenerName) = -2147483648, -2147483647, toInt32(OpenerName)),
+    if(toInt16(HistoryLength) = -32768, -32767, toInt16(HistoryLength)),
+    toValidUTF8(toString(BrowserLanguage)),
+    toValidUTF8(toString(BrowserCountry)),
+    toValidUTF8(toString(SocialNetwork)),
+    toValidUTF8(toString(SocialAction)),
+    if(toInt16(HTTPError) = -32768, -32767, toInt16(HTTPError)),
+    if(toInt32(SendTiming) = -2147483648, -2147483647, toInt32(SendTiming)),
+    if(toInt32(DNSTiming) = -2147483648, -2147483647, toInt32(DNSTiming)),
+    if(toInt32(ConnectTiming) = -2147483648, -2147483647, toInt32(ConnectTiming)),
+    if(toInt32(ResponseStartTiming) = -2147483648, -2147483647, toInt32(ResponseStartTiming)),
+    if(toInt32(ResponseEndTiming) = -2147483648, -2147483647, toInt32(ResponseEndTiming)),
+    if(toInt32(FetchTiming) = -2147483648, -2147483647, toInt32(FetchTiming)),
+    if(toInt8(SocialSourceNetworkID) = -128, -127, toInt8(SocialSourceNetworkID)),
+    toValidUTF8(toString(SocialSourcePage)),
+    if(toInt64(ParamPrice) = -9223372036854775808, -9223372036854775807, toInt64(ParamPrice)),
+    toValidUTF8(toString(ParamOrderID)),
+    toValidUTF8(toString(ParamCurrency)),
+    if(toInt16(ParamCurrencyID) = -32768, -32767, toInt16(ParamCurrencyID)),
+    toValidUTF8(toString(OpenstatServiceName)),
+    toValidUTF8(toString(OpenstatCampaignID)),
+    toValidUTF8(toString(OpenstatAdID)),
+    toValidUTF8(toString(OpenstatSourceID)),
+    toValidUTF8(toString(UTMSource)),
+    toValidUTF8(toString(UTMMedium)),
+    toValidUTF8(toString(UTMCampaign)),
+    toValidUTF8(toString(UTMContent)),
+    toValidUTF8(toString(UTMTerm)),
+    toValidUTF8(toString(FromTag)),
+    if(toInt8(HasGCLID) = -128, -127, toInt8(HasGCLID)),
+    if(toInt64(RefererHash) = -9223372036854775808, -9223372036854775807, toInt64(RefererHash)),
+    if(toInt64(URLHash) = -9223372036854775808, -9223372036854775807, toInt64(URLHash)),
+    if(toInt32(CLID) = -2147483648, -2147483647, toInt32(CLID))
+FROM hits_100m_obfuscated
+INTO OUTFILE '/home/ubuntu/hits_100m_obfuscated_monetdb.tsv'
+FORMAT TSV
+
+
+100000000 rows in set. Elapsed: 460.329 sec. Processed 100.00 million rows, 74.69 GB (217.24 thousand rows/s., 162.25 MB/s.)
+
+ip-▉▉▉.us-east-2.compute.internal :) Bye.
+ubuntu@ip-▉▉▉:~$ ls -l
+total 86156956
+-rwxrwxr-x 1 ubuntu ubuntu         502 Aug 12 22:37 benchmark-new.sh
+-rwxrwxr-x 1 ubuntu ubuntu  3676614664 Aug 11 02:05 clickhouse
+drwxrwxr-x 4 ubuntu ubuntu        4096 Aug 12 22:36 data
+drwxr-x--- 2 ubuntu ubuntu        4096 Aug 12 22:10 dictionaries_lib
+drwxr-x--- 2 ubuntu ubuntu        4096 Aug 12 22:10 flags
+drwxr-x--- 2 ubuntu ubuntu        4096 Aug 12 22:10 format_schemas
+-rw-rw-r-- 1 ubuntu ubuntu 74825746736 Aug 12 22:50 hits_100m_obfuscated_monetdb.tsv
+drwxrwxr-x 2 ubuntu ubuntu        4096 Aug 12 22:36 hits_100m_obfuscated_v1
+-rw-rw-r-- 1 ubuntu ubuntu  9722280160 Aug  7  2019 hits_100m_obfuscated_v1.tar.xz
+drwxrwxr-x 4 ubuntu ubuntu        4096 Aug 12 22:36 metadata
+drwxr-x--- 2 ubuntu ubuntu        4096 Aug 12 22:10 metadata_dropped
+drwxr-x--- 2 ubuntu ubuntu        4096 Aug 12 22:10 preprocessed_configs
+-rw-rw-r-- 1 ubuntu ubuntu        8074 Aug 12 22:11 queries.sql
+-rw-r----- 1 ubuntu ubuntu          58 Aug 12 22:36 status
+drwxr-x--- 2 ubuntu ubuntu        4096 Aug 12 22:10 tmp
+drwxr-x--- 2 ubuntu ubuntu        4096 Aug 12 22:10 user_files
+ubuntu@ip-▉▉▉:~$ sudo nano /etc/apt/sources.list.d/monetdb.list
+ubuntu@ip-▉▉▉:~$ wget --output-document=- https://www.monetdb.org/downloads/MonetDB-GPG-KEY | sudo apt-key add -
+--2020-08-12 22:51:53--  https://www.monetdb.org/downloads/MonetDB-GPG-KEY
+Resolving www.monetdb.org (www.monetdb.org)... 192.16.197.137
+Connecting to www.monetdb.org (www.monetdb.org)|192.16.197.137|:443... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 6738 (6.6K)
+Saving to: ‘STDOUT’
+
+-                                                     100%[========================================================================================================================>]   6.58K  --.-KB/s    in 0s
+
+2020-08-12 22:51:53 (2.24 GB/s) - written to stdout [6738/6738]
+
+OK
+ubuntu@ip-▉▉▉:~$ sudo apt update
+Hit:1 http://us-east-2.ec2.archive.ubuntu.com/ubuntu bionic InRelease
+Get:2 http://us-east-2.ec2.archive.ubuntu.com/ubuntu bionic-updates InRelease [88.7 kB]
+Get:3 http://us-east-2.ec2.archive.ubuntu.com/ubuntu bionic-backports InRelease [74.6 kB]
+Get:4 http://security.ubuntu.com/ubuntu bionic-security InRelease [88.7 kB]
+Get:5 http://us-east-2.ec2.archive.ubuntu.com/ubuntu bionic/universe amd64 Packages [8570 kB]
+Get:6 http://us-east-2.ec2.archive.ubuntu.com/ubuntu bionic/universe Translation-en [4941 kB]
+Get:7 http://us-east-2.ec2.archive.ubuntu.com/ubuntu bionic/multiverse amd64 Packages [151 kB]
+Get:8 http://us-east-2.ec2.archive.ubuntu.com/ubuntu bionic/multiverse Translation-en [108 kB]
+Get:9 http://us-east-2.ec2.archive.ubuntu.com/ubuntu bionic-updates/main amd64 Packages [1032 kB]
+Get:10 http://us-east-2.ec2.archive.ubuntu.com/ubuntu bionic-updates/universe amd64 Packages [1097 kB]
+Get:11 http://us-east-2.ec2.archive.ubuntu.com/ubuntu bionic-updates/universe Translation-en [342 kB]
+Get:12 http://us-east-2.ec2.archive.ubuntu.com/ubuntu bionic-updates/multiverse amd64 Packages [19.2 kB]
+Get:13 http://us-east-2.ec2.archive.ubuntu.com/ubuntu bionic-updates/multiverse Translation-en [6712 B]
+Get:14 http://us-east-2.ec2.archive.ubuntu.com/ubuntu bionic-backports/main amd64 Packages [7516 B]
+Get:15 http://us-east-2.ec2.archive.ubuntu.com/ubuntu bionic-backports/main Translation-en [4764 B]
+Get:16 http://us-east-2.ec2.archive.ubuntu.com/ubuntu bionic-backports/universe amd64 Packages [7736 B]
+Get:17 http://us-east-2.ec2.archive.ubuntu.com/ubuntu bionic-backports/universe Translation-en [4588 B]
+Get:18 http://security.ubuntu.com/ubuntu bionic-security/main amd64 Packages [809 kB]
+Get:19 https://dev.monetdb.org/downloads/deb bionic InRelease [4457 B]
+Get:20 http://security.ubuntu.com/ubuntu bionic-security/main Translation-en [254 kB]
+Get:21 https://dev.monetdb.org/downloads/deb bionic/monetdb amd64 Packages [72.8 kB]
+Get:22 http://security.ubuntu.com/ubuntu bionic-security/universe amd64 Packages [689 kB]
+Get:23 http://security.ubuntu.com/ubuntu bionic-security/universe Translation-en [228 kB]
+Get:24 http://security.ubuntu.com/ubuntu bionic-security/multiverse amd64 Packages [8100 B]
+Get:25 http://security.ubuntu.com/ubuntu bionic-security/multiverse Translation-en [2852 B]
+Fetched 18.6 MB in 3s (6053 kB/s)
+Reading package lists... Done
+Building dependency tree
+Reading state information... Done
+2 packages can be upgraded. Run 'apt list --upgradable' to see them.
+ubuntu@ip-▉▉▉:~$ sudo apt install monetdb5-sql monetdb-client
+Reading package lists... Done
+Building dependency tree
+Reading state information... Done
+The following additional packages will be installed:
+  libmonetdb-client12 libmonetdb-stream13 libmonetdb20 monetdb5-server monetdb5-server-hugeint monetdb5-sql-hugeint
+The following NEW packages will be installed:
+  libmonetdb-client12 libmonetdb-stream13 libmonetdb20 monetdb-client monetdb5-server monetdb5-server-hugeint monetdb5-sql monetdb5-sql-hugeint
+0 upgraded, 8 newly installed, 0 to remove and 2 not upgraded.
+Need to get 3315 kB of archives.
+After this operation, 13.6 MB of additional disk space will be used.
+Do you want to continue? [Y/n]
+Get:1 https://dev.monetdb.org/downloads/deb bionic/monetdb amd64 libmonetdb-client12 amd64 11.37.11 [104 kB]
+Get:2 https://dev.monetdb.org/downloads/deb bionic/monetdb amd64 libmonetdb-stream13 amd64 11.37.11 [92.4 kB]
+Get:3 https://dev.monetdb.org/downloads/deb bionic/monetdb amd64 libmonetdb20 amd64 11.37.11 [1229 kB]
+Get:4 https://dev.monetdb.org/downloads/deb bionic/monetdb amd64 monetdb-client amd64 11.37.11 [149 kB]
+Get:5 https://dev.monetdb.org/downloads/deb bionic/monetdb amd64 monetdb5-server amd64 11.37.11 [695 kB]
+Get:6 https://dev.monetdb.org/downloads/deb bionic/monetdb amd64 monetdb5-server-hugeint amd64 11.37.11 [92.4 kB]
+Get:7 https://dev.monetdb.org/downloads/deb bionic/monetdb amd64 monetdb5-sql amd64 11.37.11 [875 kB]
+Get:8 https://dev.monetdb.org/downloads/deb bionic/monetdb amd64 monetdb5-sql-hugeint amd64 11.37.11 [77.7 kB]
+Get:8 https://dev.monetdb.org/downloads/deb bionic/monetdb amd64 monetdb5-sql-hugeint amd64 11.37.11 [77.7 kB]
+Fetched 3250 kB in 36s (90.3 kB/s)
+Selecting previously unselected package libmonetdb-client12.
+(Reading database ... 57084 files and directories currently installed.)
+Preparing to unpack .../0-libmonetdb-client12_11.37.11_amd64.deb ...
+Unpacking libmonetdb-client12 (11.37.11) ...
+Selecting previously unselected package libmonetdb-stream13.
+Preparing to unpack .../1-libmonetdb-stream13_11.37.11_amd64.deb ...
+Unpacking libmonetdb-stream13 (11.37.11) ...
+Selecting previously unselected package libmonetdb20.
+Preparing to unpack .../2-libmonetdb20_11.37.11_amd64.deb ...
+Unpacking libmonetdb20 (11.37.11) ...
+Selecting previously unselected package monetdb-client.
+Preparing to unpack .../3-monetdb-client_11.37.11_amd64.deb ...
+Unpacking monetdb-client (11.37.11) ...
+Selecting previously unselected package monetdb5-server.
+Preparing to unpack .../4-monetdb5-server_11.37.11_amd64.deb ...
+Unpacking monetdb5-server (11.37.11) ...
+Selecting previously unselected package monetdb5-server-hugeint.
+Preparing to unpack .../5-monetdb5-server-hugeint_11.37.11_amd64.deb ...
+Unpacking monetdb5-server-hugeint (11.37.11) ...
+Selecting previously unselected package monetdb5-sql.
+Preparing to unpack .../6-monetdb5-sql_11.37.11_amd64.deb ...
+Unpacking monetdb5-sql (11.37.11) ...
+Selecting previously unselected package monetdb5-sql-hugeint.
+Preparing to unpack .../7-monetdb5-sql-hugeint_11.37.11_amd64.deb ...
+Unpacking monetdb5-sql-hugeint (11.37.11) ...
+Setting up libmonetdb20 (11.37.11) ...
+Setting up libmonetdb-client12 (11.37.11) ...
+Setting up libmonetdb-stream13 (11.37.11) ...
+Setting up monetdb-client (11.37.11) ...
+Setting up monetdb5-server (11.37.11) ...
+Adding group `monetdb' (GID 115) ...
+Done.
+Warning: The home dir /var/lib/monetdb you specified already exists.
+Adding system user `monetdb' (UID 111) ...
+Adding new user `monetdb' (UID 111) with group `monetdb' ...
+The home directory `/var/lib/monetdb' already exists.  Not copying from `/etc/skel'.
+adduser: Warning: The home directory `/var/lib/monetdb' does not belong to the user you are currently creating.
+Setting up monetdb5-sql (11.37.11) ...
+Setting up monetdb5-server-hugeint (11.37.11) ...
+Setting up monetdb5-sql-hugeint (11.37.11) ...
+Processing triggers for systemd (237-3ubuntu10.42) ...
+Processing triggers for man-db (2.8.3-2ubuntu0.1) ...
+Processing triggers for ureadahead (0.100.0-21) ...
+Processing triggers for libc-bin (2.27-3ubuntu1.2) ...
+ubuntu@ip-▉▉▉:~$ sudo systemctl enable monetdbd
+Created symlink /etc/systemd/system/multi-user.target.wants/monetdbd.service → /lib/systemd/system/monetdbd.service.
+ubuntu@ip-▉▉▉:~$ sudo systemctl start monetdbd
+ubuntu@ip-▉▉▉:~$ sudo usermod -a -G monetdb $USER
+ubuntu@ip-▉▉▉:~$ logout
+Connection to ec2-▉▉▉.us-east-2.compute.amazonaws.com closed.
+milovidov@milovidov-desktop:~$ ssh -i ~/.ssh/aws_milovidov.pem ubuntu@ec2-▉▉▉.us-east-2.compute.amazonaws.com
+Welcome to Ubuntu 18.04.5 LTS (GNU/Linux 5.3.0-1032-aws x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+
+  System information as of Wed Aug 12 22:53:13 UTC 2020
+
+  System load:  0.31                Processes:           329
+  Usage of /:   50.1% of 193.82GB   Users logged in:     1
+  Memory usage: 2%                  IP address for ens5: ▉▉▉
+  Swap usage:   0%
+
+
+2 packages can be updated.
+2 updates are security updates.
+
+
+Last login: Wed Aug 12 22:11:01 2020 from 109.252.51.97
+ubuntu@ip-▉▉▉:~$ monetdbd create /opt/monetdb
+unable to create directory '/opt/monetdb': Permission denied
+ubuntu@ip-▉▉▉:~$ sudo monetdbd create /opt/monetdb
+ubuntu@ip-▉▉▉:~$ sudo monetdbd start /opt/monetdb
+monetdbd: binding to stream socket port 50000 failed: Address already in use
+ubuntu@ip-▉▉▉:~$ monetdb create test
+monetdb: cannot connect: control socket does not exist
+ubuntu@ip-▉▉▉:~$ sudo systemctl start monetdbd
+ubuntu@ip-▉▉▉:~$ monetdb create test
+monetdb: cannot connect: control socket does not exist
+ubuntu@ip-▉▉▉:~$ sudo systemctl start monetdbd
+ubuntu@ip-▉▉▉:~$ sudo monetdb create test
+monetdb: cannot connect: control socket does not exist
+ubuntu@ip-▉▉▉:~$ less /var/log/monetdb/merovingian.log
+/var/log/monetdb/merovingian.log: Permission denied
+ubuntu@ip-▉▉▉:~$ sudo less /var/log/monetdb/merovingian.log
+ubuntu@ip-▉▉▉:~$ monetdb create test
+monetdb: cannot connect: control socket does not exist
+ubuntu@ip-▉▉▉:~$ sudo systemctl stop monetdbd
+ubuntu@ip-▉▉▉:~$ sudo monetdbd start /opt/monetdb
+ubuntu@ip-▉▉▉:~$ monetdb create test
+monetdb: cannot connect: no permission to access control socket
+ubuntu@ip-▉▉▉:~$ sudo monetdb create test
+created database in maintenance mode: test
+ubuntu@ip-▉▉▉:~$ sudo monetdb release test
+taken database out of maintenance mode: test
+ubuntu@ip-▉▉▉:~$ mclient -u monetdb -d test
+password:
+Welcome to mclient, the MonetDB/SQL interactive terminal (Jun2020-SP1)
+Database: MonetDB v11.37.11 (Jun2020-SP1), 'mapi:monetdb://ip-▉▉▉:50000/test'
+FOLLOW US on https://twitter.com/MonetDB or https://github.com/MonetDB/MonetDB
+Type \q to quit, \? for a list of available commands
+auto commit mode: on
+sql>CREATE TABLE hits
+more>(
+more>    "WatchID" BIGINT,
+more>    "JavaEnable" TINYINT,
+more>    "Title" TEXT,
+more>    "GoodEvent" SMALLINT,
+more>    "EventTime" TIMESTAMP,
+more>    "EventDate" Date,
+more>    "CounterID" INTEGER,
+more>    "ClientIP" INTEGER,
+more>    "RegionID" INTEGER,
+more>    "UserID" BIGINT,
+more>    "CounterClass" TINYINT,
+more>    "OS" TINYINT,
+more>    "UserAgent" TINYINT,
+more>    "URL" TEXT,
+more>    "Referer" TEXT,
+more>    "Refresh" TINYINT,
+more>    "RefererCategoryID" SMALLINT,
+more>    "RefererRegionID" INTEGER,
+more>    "URLCategoryID" SMALLINT,
+more>    "URLRegionID" INTEGER,
+more>    "ResolutionWidth" SMALLINT,
+more>    "ResolutionHeight" SMALLINT,
+more>    "ResolutionDepth" TINYINT,
+more>    "FlashMajor" TINYINT,
+more>    "FlashMinor" TINYINT,
+more>    "FlashMinor2" TEXT,
+more>    "NetMajor" TINYINT,
+more>    "NetMinor" TINYINT,
+more>    "UserAgentMajor" SMALLINT,
+more>    "UserAgentMinor" TEXT,
+more>    "CookieEnable" TINYINT,
+more>    "JavascriptEnable" TINYINT,
+more>    "IsMobile" TINYINT,
+more>    "MobilePhone" TINYINT,
+more>    "MobilePhoneModel" TEXT,
+more>    "Params" TEXT,
+more>    "IPNetworkID" INTEGER,
+more>    "TraficSourceID" TINYINT,
+more>    "SearchEngineID" SMALLINT,
+more>    "SearchPhrase" TEXT,
+more>    "AdvEngineID" TINYINT,
+more>    "IsArtifical" TINYINT,
+more>    "WindowClientWidth" SMALLINT,
+more>    "WindowClientHeight" SMALLINT,
+more>    "ClientTimeZone" SMALLINT,
+more>    "ClientEventTime" TIMESTAMP,
+more>    "SilverlightVersion1" TINYINT,
+more>    "SilverlightVersion2" TINYINT,
+more>    "SilverlightVersion3" INTEGER,
+more>    "SilverlightVersion4" SMALLINT,
+more>    "PageCharset" TEXT,
+more>    "CodeVersion" INTEGER,
+more>    "IsLink" TINYINT,
+more>    "IsDownload" TINYINT,
+more>    "IsNotBounce" TINYINT,
+more>    "FUniqID" BIGINT,
+more>    "OriginalURL" TEXT,
+more>    "HID" INTEGER,
+more>    "IsOldCounter" TINYINT,
+more>    "IsEvent" TINYINT,
+more>    "IsParameter" TINYINT,
+more>    "DontCountHits" TINYINT,
+more>    "WithHash" TINYINT,
+more>    "HitColor" TEXT,
+more>    "LocalEventTime" TIMESTAMP,
+more>    "Age" TINYINT,
+more>    "Sex" TINYINT,
+more>    "Income" TINYINT,
+more>    "Interests" SMALLINT,
+more>    "Robotness" TINYINT,
+more>    "RemoteIP" INTEGER,
+more>    "WindowName" INTEGER,
+more>    "OpenerName" INTEGER,
+more>    "HistoryLength" SMALLINT,
+more>    "BrowserLanguage" TEXT,
+more>    "BrowserCountry" TEXT,
+more>    "SocialNetwork" TEXT,
+more>    "SocialAction" TEXT,
+more>    "HTTPError" SMALLINT,
+more>    "SendTiming" INTEGER,
+more>    "DNSTiming" INTEGER,
+more>    "ConnectTiming" INTEGER,
+more>    "ResponseStartTiming" INTEGER,
+more>    "ResponseEndTiming" INTEGER,
+more>    "FetchTiming" INTEGER,
+more>    "SocialSourceNetworkID" TINYINT,
+more>    "SocialSourcePage" TEXT,
+more>    "ParamPrice" BIGINT,
+more>    "ParamOrderID" TEXT,
+more>    "ParamCurrency" TEXT,
+more>    "ParamCurrencyID" SMALLINT,
+more>    "OpenstatServiceName" TEXT,
+more>    "OpenstatCampaignID" TEXT,
+more>    "OpenstatAdID" TEXT,
+more>    "OpenstatSourceID" TEXT,
+more>    "UTMSource" TEXT,
+more>    "UTMMedium" TEXT,
+more>    "UTMCampaign" TEXT,
+more>    "UTMContent" TEXT,
+more>    "UTMTerm" TEXT,
+more>    "FromTag" TEXT,
+more>    "HasGCLID" TINYINT,
+more>    "RefererHash" BIGINT,
+more>    "URLHash" BIGINT,
+more>    "CLID" INTEGER
+more>);
+operation successful
+sql>ubuntu@ip-▉▉▉:~$ mclient -u monetdb -d test
+password:
+Welcome to mclient, the MonetDB/SQL interactive terminal (Jun2020-SP1)
+Database: MonetDB v11.37.11 (Jun2020-SP1), 'mapi:monetdb://ip-▉▉▉:50000/test'
+FOLLOW US on https://twitter.com/MonetDB or https://github.com/MonetDB/MonetDB
+Type \q to quit, \? for a list of available commands
+auto commit mode: on
+sql>COPY INTO hits FROM '/home/milovidov/example_datasets/hits_100m_obfuscated_monetdb.tsv' USING DELIMITERS '\t';
+Cannot open file '/home/milovidov/example_datasets/hits_100m_obfuscated_monetdb.tsv': No such file or directory
+sql>COPY INTO hits FROM '/home/ubuntu/hits_100m_obfuscated_monetdb.tsv' USING DELIMITERS '\t';
+100000000 affected rows
+sql>SELECT count(*) FROM hits;
++-----------+
+| %1        |
++===========+
+| 100000000 |
++-----------+
+1 tuple
+sql>CREATE INDEX hits_idx ON hits ("CounterID", "EventDate");
+operation successful
+sql>ubuntu@ip-▉▉▉:~$ wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/monetdb/{queries.sql,benchmark.sh,send-query}
+--2020-08-12 23:28:53--  https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/monetdb/queries.sql
+Resolving raw.githubusercontent.com (raw.githubusercontent.com)... 151.101.200.133
+Connecting to raw.githubusercontent.com (raw.githubusercontent.com)|151.101.200.133|:443... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 8964 (8.8K) [text/plain]
+Saving to: ‘queries.sql.1’
+
+queries.sql.1                                         100%[========================================================================================================================>]   8.75K  --.-KB/s    in 0s
+
+2020-08-12 23:28:58 (93.2 MB/s) - ‘queries.sql.1’ saved [8964/8964]
+
+--2020-08-12 23:28:58--  https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/monetdb/benchmark.sh
+Reusing existing connection to raw.githubusercontent.com:443.
+HTTP request sent, awaiting response... 200 OK
+Length: 285 [text/plain]
+Saving to: ‘benchmark.sh’
+
+benchmark.sh                                          100%[========================================================================================================================>]     285  --.-KB/s    in 0s
+
+2020-08-12 23:28:58 (26.2 MB/s) - ‘benchmark.sh’ saved [285/285]
+
+--2020-08-12 23:28:58--  https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/monetdb/send-query
+Reusing existing connection to raw.githubusercontent.com:443.
+HTTP request sent, awaiting response... 200 OK
+Length: 249 [text/plain]
+Saving to: ‘send-query’
+
+send-query                                            100%[========================================================================================================================>]     249  --.-KB/s    in 0s
+
+2020-08-12 23:28:58 (24.4 MB/s) - ‘send-query’ saved [249/249]
+
+FINISHED --2020-08-12 23:28:58--
+Total wall clock time: 5.4s
+Downloaded: 3 files, 9.3K in 0s (81.0 MB/s)
+ubuntu@ip-▉▉▉:~$ chmod a+x benchmark.sh send-query
+ubuntu@ip-▉▉▉:~$ ./benchmark.sh | tee log.txt
+3
+SELECT count() FROM hits;
+3
+SELECT count() FROM hits WHERE AdvEngineID != 0;
+3
+SELECT sum(AdvEngineID), count(), avg(ResolutionWidth) FROM hits ;
+3
+SELECT sum(UserID) FROM hits ;
+3
+SELECT uniq(UserID) FROM hits ;
+3
+SELECT uniq(SearchPhrase) FROM hits ;
+3
+SELECT min(EventDate), max(EventDate) FROM hits ;
+3
+SELECT AdvEngineID, count() FROM hits WHERE AdvEngineID != 0 GROUP BY AdvEngineID ORDER BY count() DESC;
+3
+SELECT RegionID, uniq(UserID) AS u FROM hits GROUP BY RegionID ORDER BY u DESC LIMIT 10;
+3
+SELECT RegionID, sum(AdvEngineID), count() AS c, avg(ResolutionWidth), uniq(UserID) FROM hits GROUP BY RegionID ORDER BY c DESC LIMIT 10;
+3
+SELECT MobilePhoneModel, uniq(UserID) AS u FROM hits WHERE MobilePhoneModel != '' GROUP BY MobilePhoneModel ORDER BY u DESC LIMIT 10;
+3
+SELECT MobilePhone, MobilePhoneModel, uniq(UserID) AS u FROM hits WHERE MobilePhoneModel != '' GROUP BY MobilePhone, MobilePhoneModel ORDER BY u DESC LIMIT 10;
+3
+SELECT SearchPhrase, count() AS c FROM hits WHERE SearchPhrase != '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10;
+3
+SELECT SearchPhrase, uniq(UserID) AS u FROM hits WHERE SearchPhrase != '' GROUP BY SearchPhrase ORDER BY u DESC LIMIT 10;
+3
+SELECT SearchEngineID, SearchPhrase, count() AS c FROM hits WHERE SearchPhrase != '' GROUP BY SearchEngineID, SearchPhrase ORDER BY c DESC LIMIT 10;
+3
+SELECT UserID, count() FROM hits GROUP BY UserID ORDER BY count() DESC LIMIT 10;
+3
+SELECT UserID, SearchPhrase, count() FROM hits GROUP BY UserID, SearchPhrase ORDER BY count() DESC LIMIT 10;
+3
+SELECT UserID, SearchPhrase, count() FROM hits GROUP BY UserID, SearchPhrase LIMIT 10;
+3
+SELECT UserID, toMinute(EventTime) AS m, SearchPhrase, count() FROM hits GROUP BY UserID, m, SearchPhrase ORDER BY count() DESC LIMIT 10;
+3
+SELECT UserID FROM hits WHERE UserID = 12345678901234567890;
+3
+SELECT count() FROM hits WHERE URL LIKE '%metrika%';
+3
+SELECT SearchPhrase, any(URL), count() AS c FROM hits WHERE URL LIKE '%metrika%' AND SearchPhrase != '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10;
+3
+SELECT SearchPhrase, any(URL), any(Title), count() AS c, uniq(UserID) FROM hits WHERE Title LIKE '%Яндекс%' AND URL NOT LIKE '%.yandex.%' AND SearchPhrase != '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10;
+3
+SELECT * FROM hits WHERE URL LIKE '%metrika%' ORDER BY EventTime LIMIT 10;
+3
+SELECT SearchPhrase FROM hits WHERE SearchPhrase != '' ORDER BY EventTime LIMIT 10;
+3
+SELECT SearchPhrase FROM hits WHERE SearchPhrase != '' ORDER BY SearchPhrase LIMIT 10;
+3
+SELECT SearchPhrase FROM hits WHERE SearchPhrase != '' ORDER BY EventTime, SearchPhrase LIMIT 10;
+3
+SELECT CounterID, avg(length(URL)) AS l, count() AS c FROM hits WHERE URL != '' GROUP BY CounterID HAVING c > 100000 ORDER BY l DESC LIMIT 25;
+3
+SELECT domainWithoutWWW(Referer) AS key, avg(length(Referer)) AS l, count() AS c, any(Referer) FROM hits WHERE Referer != '' GROUP BY key HAVING c > 100000 ORDER BY l DESC LIMIT 25;
+3
+SELECT sum(ResolutionWidth), sum(ResolutionWidth + 1), sum(ResolutionWidth + 2), sum(ResolutionWidth + 3), sum(ResolutionWidth + 4), sum(ResolutionWidth + 5), sum(ResolutionWidth + 6), sum(ResolutionWidth + 7), sum(ResolutionWidth + 8), sum(ResolutionWidth + 9), sum(ResolutionWidth + 10), sum(ResolutionWidth + 11), sum(ResolutionWidth + 12), sum(ResolutionWidth + 13), sum(ResolutionWidth + 14), sum(ResolutionWidth + 15), sum(ResolutionWidth + 16), sum(ResolutionWidth + 17), sum(ResolutionWidth + 18), sum(ResolutionWidth + 19), sum(ResolutionWidth + 20), sum(ResolutionWidth + 21), sum(ResolutionWidth + 22), sum(ResolutionWidth + 23), sum(ResolutionWidth + 24), sum(ResolutionWidth + 25), sum(ResolutionWidth + 26), sum(ResolutionWidth + 27), sum(ResolutionWidth + 28), sum(ResolutionWidth + 29), sum(ResolutionWidth + 30), sum(ResolutionWidth + 31), sum(ResolutionWidth + 32), sum(ResolutionWidth + 33), sum(ResolutionWidth + 34), sum(ResolutionWidth + 35), sum(ResolutionWidth + 36), sum(ResolutionWidth + 37), sum(ResolutionWidth + 38), sum(ResolutionWidth + 39), sum(ResolutionWidth + 40), sum(ResolutionWidth + 41), sum(ResolutionWidth + 42), sum(ResolutionWidth + 43), sum(ResolutionWidth + 44), sum(ResolutionWidth + 45), sum(ResolutionWidth + 46), sum(ResolutionWidth + 47), sum(ResolutionWidth + 48), sum(ResolutionWidth + 49), sum(ResolutionWidth + 50), sum(ResolutionWidth + 51), sum(ResolutionWidth + 52), sum(ResolutionWidth + 53), sum(ResolutionWidth + 54), sum(ResolutionWidth + 55), sum(ResolutionWidth + 56), sum(ResolutionWidth + 57), sum(ResolutionWidth + 58), sum(ResolutionWidth + 59), sum(ResolutionWidth + 60), sum(ResolutionWidth + 61), sum(ResolutionWidth + 62), sum(ResolutionWidth + 63), sum(ResolutionWidth + 64), sum(ResolutionWidth + 65), sum(ResolutionWidth + 66), sum(ResolutionWidth + 67), sum(ResolutionWidth + 68), sum(ResolutionWidth + 69), sum(ResolutionWidth + 70), sum(ResolutionWidth + 71), sum(ResolutionWidth + 72), sum(ResolutionWidth + 73), sum(ResolutionWidth + 74), sum(ResolutionWidth + 75), sum(ResolutionWidth + 76), sum(ResolutionWidth + 77), sum(ResolutionWidth + 78), sum(ResolutionWidth + 79), sum(ResolutionWidth + 80), sum(ResolutionWidth + 81), sum(ResolutionWidth + 82), sum(ResolutionWidth + 83), sum(ResolutionWidth + 84), sum(ResolutionWidth + 85), sum(ResolutionWidth + 86), sum(ResolutionWidth + 87), sum(ResolutionWidth + 88), sum(ResolutionWidth + 89) FROM hits;
+3
+SELECT SearchEngineID, ClientIP, count() AS c, sum(Refresh), avg(ResolutionWidth) FROM hits WHERE SearchPhrase != '' GROUP BY SearchEngineID, ClientIP ORDER BY c DESC LIMIT 10;
+3
+SELECT WatchID, ClientIP, count() AS c, sum(Refresh), avg(ResolutionWidth) FROM hits WHERE SearchPhrase != '' GROUP BY WatchID, ClientIP ORDER BY c DESC LIMIT 10;
+3
+SELECT WatchID, ClientIP, count() AS c, sum(Refresh), avg(ResolutionWidth) FROM hits GROUP BY WatchID, ClientIP ORDER BY c DESC LIMIT 10;
+3
+SELECT URL, count() AS c FROM hits GROUP BY URL ORDER BY c DESC LIMIT 10;
+3
+SELECT 1, URL, count() AS c FROM hits GROUP BY 1, URL ORDER BY c DESC LIMIT 10;
+3
+SELECT ClientIP AS x, x - 1, x - 2, x - 3, count() AS c FROM hits GROUP BY x, x - 1, x - 2, x - 3 ORDER BY c DESC LIMIT 10;
+3
+SELECT URL, count() AS PageViews FROM hits WHERE CounterID = 62 AND EventDate >= '2013-07-01' AND EventDate <= '2013-07-31' AND NOT DontCountHits AND NOT Refresh AND notEmpty(URL) GROUP BY URL ORDER BY PageViews DESC LIMIT 10;
+3
+SELECT Title, count() AS PageViews FROM hits WHERE CounterID = 62 AND EventDate >= '2013-07-01' AND EventDate <= '2013-07-31' AND NOT DontCountHits AND NOT Refresh AND notEmpty(Title) GROUP BY Title ORDER BY PageViews DESC LIMIT 10;
+3
+SELECT URL, count() AS PageViews FROM hits WHERE CounterID = 62 AND EventDate >= '2013-07-01' AND EventDate <= '2013-07-31' AND NOT Refresh AND IsLink AND NOT IsDownload GROUP BY URL ORDER BY PageViews DESC LIMIT 1000;
+3
+SELECT TraficSourceID, SearchEngineID, AdvEngineID, ((SearchEngineID = 0 AND AdvEngineID = 0) ? Referer : '') AS Src, URL AS Dst, count() AS PageViews FROM hits WHERE CounterID = 62 AND EventDate >= '2013-07-01' AND EventDate <= '2013-07-31' AND NOT Refresh GROUP BY TraficSourceID, SearchEngineID, AdvEngineID, Src, Dst ORDER BY PageViews DESC LIMIT 1000;
+3
+SELECT URLHash, EventDate, count() AS PageViews FROM hits WHERE CounterID = 62 AND EventDate >= '2013-07-01' AND EventDate <= '2013-07-31' AND NOT Refresh AND TraficSourceID IN (-1, 6) AND RefererHash = halfMD5('http://example.ru/') GROUP BY URLHash, EventDate ORDER BY PageViews DESC LIMIT 100;
+3
+SELECT WindowClientWidth, WindowClientHeight, count() AS PageViews FROM hits WHERE CounterID = 62 AND EventDate >= '2013-07-01' AND EventDate <= '2013-07-31' AND NOT Refresh AND NOT DontCountHits AND URLHash = halfMD5('http://example.ru/') GROUP BY WindowClientWidth, WindowClientHeight ORDER BY PageViews DESC LIMIT 10000;
+3
+SELECT toStartOfMinute(EventTime) AS Minute, count() AS PageViews FROM hits WHERE CounterID = 62 AND EventDate >= '2013-07-01' AND EventDate <= '2013-07-02' AND NOT Refresh AND NOT DontCountHits GROUP BY Minute ORDER BY Minute;
+ubuntu@ip-▉▉▉:~$ mclient -u monetdb -d test
+password:
+Welcome to mclient, the MonetDB/SQL interactive terminal (Jun2020-SP1)
+Database: MonetDB v11.37.11 (Jun2020-SP1), 'mapi:monetdb://ip-▉▉▉:50000/test'
+FOLLOW US on https://twitter.com/MonetDB or https://github.com/MonetDB/MonetDB
+Type \q to quit, \? for a list of available commands
+auto commit mode: on
+sql>SELECT COUNT(DISTINCT "SearchPhrase") FROM hits;
++---------+
+| %1      |
++=========+
+| 6019589 |
++---------+
+1 tuple
+sql>ubuntu@ip-▉▉▉:~$ expect
+
+Command 'expect' not found, but can be installed with:
+
+sudo snap install expect  # version 5.45-7snap0, or
+sudo apt  install expect
+
+See 'snap info expect' for additional versions.
+
+ubuntu@ip-▉▉▉:~$ sudo apt install expect
+Reading package lists... Done
+Building dependency tree
+Reading state information... Done
+The following additional packages will be installed:
+  libtcl8.6 tcl-expect tcl8.6
+Suggested packages:
+  tk8.6 tcl-tclreadline
+The following NEW packages will be installed:
+  expect libtcl8.6 tcl-expect tcl8.6
+0 upgraded, 4 newly installed, 0 to remove and 2 not upgraded.
+Need to get 1138 kB of archives.
+After this operation, 4598 kB of additional disk space will be used.
+Do you want to continue? [Y/n]
+Get:1 http://us-east-2.ec2.archive.ubuntu.com/ubuntu bionic/main amd64 libtcl8.6 amd64 8.6.8+dfsg-3 [881 kB]
+Get:2 http://us-east-2.ec2.archive.ubuntu.com/ubuntu bionic/universe amd64 tcl-expect amd64 5.45.4-1 [105 kB]
+Get:3 http://us-east-2.ec2.archive.ubuntu.com/ubuntu bionic/universe amd64 expect amd64 5.45.4-1 [137 kB]
+Get:4 http://us-east-2.ec2.archive.ubuntu.com/ubuntu bionic/main amd64 tcl8.6 amd64 8.6.8+dfsg-3 [14.4 kB]
+Fetched 1138 kB in 0s (31.4 MB/s)
+Selecting previously unselected package libtcl8.6:amd64.
+(Reading database ... 57274 files and directories currently installed.)
+Preparing to unpack .../libtcl8.6_8.6.8+dfsg-3_amd64.deb ...
+Unpacking libtcl8.6:amd64 (8.6.8+dfsg-3) ...
+Selecting previously unselected package tcl-expect:amd64.
+Preparing to unpack .../tcl-expect_5.45.4-1_amd64.deb ...
+Unpacking tcl-expect:amd64 (5.45.4-1) ...
+Selecting previously unselected package expect.
+Preparing to unpack .../expect_5.45.4-1_amd64.deb ...
+Unpacking expect (5.45.4-1) ...
+Selecting previously unselected package tcl8.6.
+Preparing to unpack .../tcl8.6_8.6.8+dfsg-3_amd64.deb ...
+Unpacking tcl8.6 (8.6.8+dfsg-3) ...
+Setting up libtcl8.6:amd64 (8.6.8+dfsg-3) ...
+Setting up tcl-expect:amd64 (5.45.4-1) ...
+Setting up tcl8.6 (8.6.8+dfsg-3) ...
+Setting up expect (5.45.4-1) ...
+Processing triggers for man-db (2.8.3-2ubuntu0.1) ...
+Processing triggers for libc-bin (2.27-3ubuntu1.2) ...
+^[[Aubuntu@ip-▉▉▉:~$ ./benchmark.sh | tee log.txt
+3
+SELECT count() FROM hits;
+clk: 0.299 ms
+clk: 0.380 ms
+clk: 0.471 ms
+3
+SELECT count() FROM hits WHERE AdvEngineID != 0;
+clk: 0.297 ms
+clk: 0.342 ms
+clk: 0.363 ms
+3
+SELECT sum(AdvEngineID), count(), avg(ResolutionWidth) FROM hits ;
+SELECT: identifier 'advengineid' unknown
+clk: 0.485 ms
+SELECT: identifier 'advengineid' unknown
+clk: 0.228 ms
+SELECT: identifier 'advengineid' unknown
+clk: 0.233 ms
+3
+SELECT sum(UserID) FROM hits ;
+SELECT: identifier 'userid' unknown
+clk: 0.239 ms
+SELECT: identifier 'userid' unknown
+clk: 0.492 ms
+SELECT: identifier 'userid' unknown
+clk: 0.388 ms
+3
+SELECT uniq(UserID) FROM hits ;
+SELECT: identifier 'userid' unknown
+clk: 0.267 ms
+SELECT: identifier 'userid' unknown
+clk: 0.222 ms
+SELECT: identifier 'userid' unknown
+clk: 0.212 ms
+3
+SELECT uniq(SearchPhrase) FROM hits ;
+SELECT: identifier 'searchphrase' unknown
+clk: 0.498 ms
+SELECT: identifier 'searchphrase' unknown
+clk: 0.255 ms
+SELECT: identifier 'searchphrase' unknown
+clk: 0.224 ms
+3
+SELECT min(EventDate), max(EventDate) FROM hits ;
+SELECT: identifier 'eventdate' unknown
+clk: 0.272 ms
+SELECT: identifier 'eventdate' unknown
+clk: 0.205 ms
+SELECT: identifier 'eventdate' unknown
+clk: 0.209 ms
+3
+SELECT AdvEngineID, count() FROM hits WHERE AdvEngineID != 0 GROUP BY AdvEngineID ORDER BY count() DESC;
+clk: 0.439 ms
+clk: 0.185 ms
+clk: 0.235 ms
+3
+SELECT RegionID, uniq(UserID) AS u FROM hits GROUP BY RegionID ORDER BY u DESC LIMIT 10;
+SELECT: identifier 'regionid' unknown
+clk: 0.283 ms
+SELECT: identifier 'regionid' unknown
+clk: 0.207 ms
+SELECT: identifier 'regionid' unknown
+clk: 0.212 ms
+3
+SELECT RegionID, sum(AdvEngineID), count() AS c, avg(ResolutionWidth), uniq(UserID) FROM hits GROUP BY RegionID ORDER BY c DESC LIMIT 10;
+SELECT: identifier 'regionid' unknown
+clk: 0.271 ms
+SELECT: identifier 'regionid' unknown
+clk: 0.231 ms
+SELECT: identifier 'regionid' unknown
+clk: 0.227 ms
+3
+SELECT MobilePhoneModel, uniq(UserID) AS u FROM hits WHERE MobilePhoneModel != '' GROUP BY MobilePhoneModel ORDER BY u DESC LIMIT 10;
+clk: 0.256 ms
+clk: 0.229 ms
+clk: 0.223 ms
+3
+SELECT MobilePhone, MobilePhoneModel, uniq(UserID) AS u FROM hits WHERE MobilePhoneModel != '' GROUP BY MobilePhone, MobilePhoneModel ORDER BY u DESC LIMIT 10;
+clk: 0.244 ms
+clk: 0.201 ms
+clk: 0.234 ms
+3
+SELECT SearchPhrase, count() AS c FROM hits WHERE SearchPhrase != '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10;
+clk: 0.223 ms
+clk: 0.210 ms
+clk: 0.207 ms
+3
+SELECT SearchPhrase, uniq(UserID) AS u FROM hits WHERE SearchPhrase != '' GROUP BY SearchPhrase ORDER BY u DESC LIMIT 10;
+clk: 0.220 ms
+clk: 0.231 ms
+clk: 0.189 ms
+3
+SELECT SearchEngineID, SearchPhrase, count() AS c FROM hits WHERE SearchPhrase != '' GROUP BY SearchEngineID, SearchPhrase ORDER BY c DESC LIMIT 10;
+clk: 0.238 ms
+clk: 0.226 ms
+clk: 0.221 ms
+3
+SELECT UserID, count() FROM hits GROUP BY UserID ORDER BY count() DESC LIMIT 10;
+SELECT: identifier 'userid' unknown
+clk: 0.216 ms
+SELECT: identifier 'userid' unknown
+clk: 0.214 ms
+SELECT: identifier 'userid' unknown
+clk: 0.465 ms
+3
+SELECT UserID, SearchPhrase, count() FROM hits GROUP BY UserID, SearchPhrase ORDER BY count() DESC LIMIT 10;
+SELECT: identifier 'userid' unknown
+clk: 0.250 ms
+SELECT: identifier 'userid' unknown
+clk: 0.304 ms
+SELECT: identifier 'userid' unknown
+clk: 0.239 ms
+3
+SELECT UserID, SearchPhrase, count() FROM hits GROUP BY UserID, SearchPhrase LIMIT 10;
+SELECT: identifier 'userid' unknown
+clk: 0.203 ms
+SELECT: identifier 'userid' unknown
+clk: 0.209 ms
+SELECT: identifier 'userid' unknown
+clk: 0.221 ms
+3
+SELECT UserID, toMinute(EventTime) AS m, SearchPhrase, count() FROM hits GROUP BY UserID, m, SearchPhrase ORDER BY count() DESC LIMIT 10;
+SELECT: identifier 'userid' unknown
+clk: 0.238 ms
+SELECT: identifier 'userid' unknown
+clk: 0.249 ms
+SELECT: identifier 'userid' unknown
+clk: 0.258 ms
+3
+SELECT UserID FROM hits WHERE UserID = 12345678901234567890;
+SELECT: identifier 'userid' unknown
+clk: 0.204 ms
+SELECT: identifier 'userid' unknown
+clk: 0.187 ms
+SELECT: identifier 'userid' unknown
+clk: 0.195 ms
+3
+SELECT count() FROM hits WHERE URL LIKE '%metrika%';
+SELECT: identifier 'url' unknown
+clk: 0.575 ms
+SELECT: identifier 'url' unknown
+clk: 0.191 ms
+SELECT: identifier 'url' unknown
+clk: 0.191 ms
+3
+SELECT SearchPhrase, any(URL), count() AS c FROM hits WHERE URL LIKE '%metrika%' AND SearchPhrase != '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10;
+syntax error, unexpected ANY in: "select searchphrase, any"
+clk: 0.411 ms
+syntax error, unexpected ANY in: "select searchphrase, any"
+clk: 0.233 ms
+syntax error, unexpected ANY in: "select searchphrase, any"
+clk: 0.208 ms
+3
+SELECT SearchPhrase, any(URL), any(Title), count() AS c, uniq(UserID) FROM hits WHERE Title LIKE '%Яндекс%' AND URL NOT LIKE '%.yandex.%' AND SearchPhrase != '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10;
+syntax error, unexpected ANY in: "select searchphrase, any"
+clk: 0.266 ms
+syntax error, unexpected ANY in: "select searchphrase, any"
+clk: 0.238 ms
+syntax error, unexpected ANY in: "select searchphrase, any"
+clk: 0.311 ms
+3
+SELECT * FROM hits WHERE URL LIKE '%metrika%' ORDER BY EventTime LIMIT 10;
+SELECT: identifier 'url' unknown
+clk: 0.221 ms
+SELECT: identifier 'url' unknown
+clk: 0.205 ms
+SELECT: identifier 'url' unknown
+clk: 0.201 ms
+3
+SELECT SearchPhrase FROM hits WHERE SearchPhrase != '' ORDER BY EventTime LIMIT 10;
+clk: 0.183 ms
+clk: 0.539 ms
+clk: 0.183 ms
+3
+SELECT SearchPhrase FROM hits WHERE SearchPhrase != '' ORDER BY SearchPhrase LIMIT 10;
+clk: 0.227 ms
+clk: 0.187 ms
+clk: 0.201 ms
+3
+SELECT SearchPhrase FROM hits WHERE SearchPhrase != '' ORDER BY EventTime, SearchPhrase LIMIT 10;
+clk: 0.214 ms
+clk: 0.192 ms
+clk: 0.230 ms
+3
+SELECT CounterID, avg(length(URL)) AS l, count() AS c FROM hits WHERE URL != '' GROUP BY CounterID HAVING c > 100000 ORDER BY l DESC LIMIT 25;
+clk: 0.245 ms
+clk: 0.244 ms
+clk: 0.216 ms
+3
+SELECT domainWithoutWWW(Referer) AS key, avg(length(Referer)) AS l, count() AS c, any(Referer) FROM hits WHERE Referer != '' GROUP BY key HAVING c > 100000 ORDER BY l DESC LIMIT 25;
+syntax error, unexpected ANY in: "select domainwithoutwww(referer) as key, avg(length(referer)) as l, count() as c"
+clk: 0.415 ms
+syntax error, unexpected ANY in: "select domainwithoutwww(referer) as key, avg(length(referer)) as l, count() as c"
+clk: 0.221 ms
+syntax error, unexpected ANY in: "select domainwithoutwww(referer) as key, avg(length(referer)) as l, count() as c"
+clk: 0.232 ms
+3
+SELECT sum(ResolutionWidth), sum(ResolutionWidth + 1), sum(ResolutionWidth + 2), sum(ResolutionWidth + 3), sum(ResolutionWidth + 4), sum(ResolutionWidth + 5), sum(ResolutionWidth + 6), sum(ResolutionWidth + 7), sum(ResolutionWidth + 8), sum(ResolutionWidth + 9), sum(ResolutionWidth + 10), sum(ResolutionWidth + 11), sum(ResolutionWidth + 12), sum(ResolutionWidth + 13), sum(ResolutionWidth + 14), sum(ResolutionWidth + 15), sum(ResolutionWidth + 16), sum(ResolutionWidth + 17), sum(ResolutionWidth + 18), sum(ResolutionWidth + 19), sum(ResolutionWidth + 20), sum(ResolutionWidth + 21), sum(ResolutionWidth + 22), sum(ResolutionWidth + 23), sum(ResolutionWidth + 24), sum(ResolutionWidth + 25), sum(ResolutionWidth + 26), sum(ResolutionWidth + 27), sum(ResolutionWidth + 28), sum(ResolutionWidth + 29), sum(ResolutionWidth + 30), sum(ResolutionWidth + 31), sum(ResolutionWidth + 32), sum(ResolutionWidth + 33), sum(ResolutionWidth + 34), sum(ResolutionWidth + 35), sum(ResolutionWidth + 36), sum(ResolutionWidth + 37), sum(ResolutionWidth + 38), sum(ResolutionWidth + 39), sum(ResolutionWidth + 40), sum(ResolutionWidth + 41), sum(ResolutionWidth + 42), sum(ResolutionWidth + 43), sum(ResolutionWidth + 44), sum(ResolutionWidth + 45), sum(ResolutionWidth + 46), sum(ResolutionWidth + 47), sum(ResolutionWidth + 48), sum(ResolutionWidth + 49), sum(ResolutionWidth + 50), sum(ResolutionWidth + 51), sum(ResolutionWidth + 52), sum(ResolutionWidth + 53), sum(ResolutionWidth + 54), sum(ResolutionWidth + 55), sum(ResolutionWidth + 56), sum(ResolutionWidth + 57), sum(ResolutionWidth + 58), sum(ResolutionWidth + 59), sum(ResolutionWidth + 60), sum(ResolutionWidth + 61), sum(ResolutionWidth + 62), sum(ResolutionWidth + 63), sum(ResolutionWidth + 64), sum(ResolutionWidth + 65), sum(ResolutionWidth + 66), sum(ResolutionWidth + 67), sum(ResolutionWidth + 68), sum(ResolutionWidth + 69), sum(ResolutionWidth + 70), sum(ResolutionWidth + 71), sum(ResolutionWidth + 72), sum(ResolutionWidth + 73), sum(ResolutionWidth + 74), sum(ResolutionWidth + 75), sum(ResolutionWidth + 76), sum(ResolutionWidth + 77), sum(ResolutionWidth + 78), sum(ResolutionWidth + 79), sum(ResolutionWidth + 80), sum(ResolutionWidth + 81), sum(ResolutionWidth + 82), sum(ResolutionWidth + 83), sum(ResolutionWidth + 84), sum(ResolutionWidth + 85), sum(ResolutionWidth + 86), sum(ResolutionWidth + 87), sum(ResolutionWidth + 88), sum(ResolutionWidth + 89) FROM hits;
+SELECT: identifier 'resolutionwidth' unknown
+clk: 0.869 ms
+SELECT: identifier 'resolutionwidth' unknown
+clk: 0.705 ms
+SELECT: identifier 'resolutionwidth' unknown
+clk: 0.780 ms
+3
+SELECT SearchEngineID, ClientIP, count() AS c, sum(Refresh), avg(ResolutionWidth) FROM hits WHERE SearchPhrase != '' GROUP BY SearchEngineID, ClientIP ORDER BY c DESC LIMIT 10;
+clk: 0.251 ms
+clk: 0.239 ms
+clk: 0.231 ms
+3
+SELECT WatchID, ClientIP, count() AS c, sum(Refresh), avg(ResolutionWidth) FROM hits WHERE SearchPhrase != '' GROUP BY WatchID, ClientIP ORDER BY c DESC LIMIT 10;
+clk: 0.237 ms
+clk: 0.234 ms
+clk: 0.209 ms
+3
+SELECT WatchID, ClientIP, count() AS c, sum(Refresh), avg(ResolutionWidth) FROM hits GROUP BY WatchID, ClientIP ORDER BY c DESC LIMIT 10;
+SELECT: identifier 'watchid' unknown
+clk: 0.252 ms
+SELECT: identifier 'watchid' unknown
+clk: 0.261 ms
+SELECT: identifier 'watchid' unknown
+clk: 0.226 ms
+3
+SELECT URL, count() AS c FROM hits GROUP BY URL ORDER BY c DESC LIMIT 10;
+SELECT: identifier 'url' unknown
+clk: 0.459 ms
+SELECT: identifier 'url' unknown
+clk: 0.195 ms
+SELECT: identifier 'url' unknown
+clk: 0.206 ms
+3
+SELECT 1, URL, count() AS c FROM hits GROUP BY 1, URL ORDER BY c DESC LIMIT 10;
+SELECT: identifier 'url' unknown
+clk: 0.254 ms
+SELECT: identifier 'url' unknown
+clk: 0.204 ms
+SELECT: identifier 'url' unknown
+clk: 0.238 ms
+3
+SELECT ClientIP AS x, x - 1, x - 2, x - 3, count() AS c FROM hits GROUP BY x, x - 1, x - 2, x - 3 ORDER BY c DESC LIMIT 10;
+SELECT: identifier 'clientip' unknown
+clk: 0.275 ms
+SELECT: identifier 'clientip' unknown
+clk: 0.254 ms
+SELECT: identifier 'clientip' unknown
+clk: 0.230 ms
+3
+SELECT URL, count() AS PageViews FROM hits WHERE CounterID = 62 AND EventDate >= '2013-07-01' AND EventDate <= '2013-07-31' AND NOT DontCountHits AND NOT Refresh AND notEmpty(URL) GROUP BY URL ORDER BY PageViews DESC LIMIT 10;
+SELECT: identifier 'counterid' unknown
+clk: 0.446 ms
+SELECT: identifier 'counterid' unknown
+clk: 0.276 ms
+SELECT: identifier 'counterid' unknown
+clk: 0.255 ms
+3
+SELECT Title, count() AS PageViews FROM hits WHERE CounterID = 62 AND EventDate >= '2013-07-01' AND EventDate <= '2013-07-31' AND NOT DontCountHits AND NOT Refresh AND notEmpty(Title) GROUP BY Title ORDER BY PageViews DESC LIMIT 10;
+SELECT: identifier 'counterid' unknown
+clk: 0.248 ms
+SELECT: identifier 'counterid' unknown
+clk: 0.237 ms
+SELECT: identifier 'counterid' unknown
+clk: 0.294 ms
+3
+SELECT URL, count() AS PageViews FROM hits WHERE CounterID = 62 AND EventDate >= '2013-07-01' AND EventDate <= '2013-07-31' AND NOT Refresh AND IsLink AND NOT IsDownload GROUP BY URL ORDER BY PageViews DESC LIMIT 1000;
+SELECT: identifier 'counterid' unknown
+clk: 0.302 ms
+SELECT: identifier 'counterid' unknown
+clk: 0.234 ms
+SELECT: identifier 'counterid' unknown
+clk: 0.274 ms
+3
+SELECT TraficSourceID, SearchEngineID, AdvEngineID, ((SearchEngineID = 0 AND AdvEngineID = 0) ? Referer : '') AS Src, URL AS Dst, count() AS PageViews FROM hits WHERE CounterID = 62 AND EventDate >= '2013-07-01' AND EventDate <= '2013-07-31' AND NOT Refresh GROUP BY TraficSourceID, SearchEngineID, AdvEngineID, Src, Dst ORDER BY PageViews DESC LIMIT 1000;
+syntax error, unexpected '?', expecting ')' or OR in: "select traficsourceid, searchengineid, advengineid, ((searchengineid = 0 and adv"
+clk: 0.446 ms
+syntax error, unexpected '?', expecting ')' or OR in: "select traficsourceid, searchengineid, advengineid, ((searchengineid = 0 and adv"
+clk: 0.239 ms
+syntax error, unexpected '?', expecting ')' or OR in: "select traficsourceid, searchengineid, advengineid, ((searchengineid = 0 and adv"
+clk: 0.232 ms
+3
+SELECT URLHash, EventDate, count() AS PageViews FROM hits WHERE CounterID = 62 AND EventDate >= '2013-07-01' AND EventDate <= '2013-07-31' AND NOT Refresh AND TraficSourceID IN (-1, 6) AND RefererHash = halfMD5('http://example.ru/') GROUP BY URLHash, EventDate ORDER BY PageViews DESC LIMIT 100;
+SELECT: identifier 'counterid' unknown
+clk: 0.259 ms
+SELECT: identifier 'counterid' unknown
+clk: 0.263 ms
+SELECT: identifier 'counterid' unknown
+clk: 0.267 ms
+3
+SELECT WindowClientWidth, WindowClientHeight, count() AS PageViews FROM hits WHERE CounterID = 62 AND EventDate >= '2013-07-01' AND EventDate <= '2013-07-31' AND NOT Refresh AND NOT DontCountHits AND URLHash = halfMD5('http://example.ru/') GROUP BY WindowClientWidth, WindowClientHeight ORDER BY PageViews DESC LIMIT 10000;
+SELECT: identifier 'counterid' unknown
+clk: 0.253 ms
+SELECT: identifier 'counterid' unknown
+clk: 0.281 ms
+SELECT: identifier 'counterid' unknown
+clk: 0.556 ms
+3
+SELECT toStartOfMinute(EventTime) AS Minute, count() AS PageViews FROM hits WHERE CounterID = 62 AND EventDate >= '2013-07-01' AND EventDate <= '2013-07-02' AND NOT Refresh AND NOT DontCountHits GROUP BY Minute ORDER BY Minute;
+syntax error, unexpected MINUTE, expecting SCOLON in: "select tostartofminute(eventtime) as minute"
+clk: 0.239 ms
+syntax error, unexpected MINUTE, expecting SCOLON in: "select tostartofminute(eventtime) as minute"
+clk: 0.228 ms
+syntax error, unexpected MINUTE, expecting SCOLON in: "select tostartofminute(eventtime) as minute"
+clk: 0.223 ms
+ubuntu@ip-▉▉▉:~$ less queries.sql
+ubuntu@ip-▉▉▉:~$ rm queries.sql
+ubuntu@ip-▉▉▉:~$ mv queries.sql.1 queries.sql
+ubuntu@ip-▉▉▉:~$ ./benchmark.sh | tee log.txt
+3
+SELECT count(*) FROM hits;
+1 tuple
+clk: 2.346 ms
+1 tuple
+clk: 1.873 ms
+1 tuple
+clk: 1.862 ms
+3
+SELECT count(*) FROM hits WHERE "AdvEngineID" <> 0;
+1 tuple
+clk: 1.137 sec
+1 tuple
+clk: 36.303 ms
+1 tuple
+clk: 35.399 ms
+3
+SELECT sum("AdvEngineID"), count(*), avg("ResolutionWidth") FROM hits;
+1 tuple
+clk: 194.816 ms
+1 tuple
+clk: 54.757 ms
+1 tuple
+clk: 51.177 ms
+3
+SELECT sum("UserID") FROM hits;
+overflow in calculation.
+clk: 7.495 ms
+overflow in calculation.
+clk: 2.967 ms
+overflow in calculation.
+clk: 3.073 ms
+3
+SELECT COUNT(DISTINCT "UserID") FROM hits;
+1 tuple
+clk: 5.556 sec
+1 tuple
+clk: 3.550 sec
+1 tuple
+clk: 3.797 sec
+3
+SELECT COUNT(DISTINCT "SearchPhrase") FROM hits;
+1 tuple
+clk: 6.228 sec
+1 tuple
+clk: 4.042 sec
+1 tuple
+clk: 3.967 sec
+3
+SELECT min("EventDate"), max("EventDate") FROM hits;
+1 tuple
+clk: 67.704 ms
+1 tuple
+clk: 50.072 ms
+1 tuple
+clk: 51.354 ms
+3
+SELECT "AdvEngineID", count(*) FROM hits WHERE "AdvEngineID" <> 0 GROUP BY "AdvEngineID" ORDER BY count(*) DESC;
+18 tuples
+clk: 93.070 ms
+18 tuples
+clk: 37.996 ms
+18 tuples
+clk: 31.543 ms
+3
+SELECT "RegionID", COUNT(DISTINCT "UserID") AS u FROM hits GROUP BY "RegionID" ORDER BY u DESC LIMIT 10;
+10 tuples
+clk: 8.111 sec
+10 tuples
+clk: 4.839 sec
+10 tuples
+clk: 5.105 sec
+3
+SELECT "RegionID", sum("AdvEngineID"), count(*) AS c, avg("ResolutionWidth"), COUNT(DISTINCT "UserID") FROM hits GROUP BY "RegionID" ORDER BY c DESC LIMIT 10;
+10 tuples
+clk: 11.571 sec
+10 tuples
+clk: 7.454 sec
+10 tuples
+clk: 7.433 sec
+3
+SELECT "MobilePhoneModel", COUNT(DISTINCT "UserID") AS u FROM hits WHERE "MobilePhoneModel" <> '' GROUP BY "MobilePhoneModel" ORDER BY u DESC LIMIT 10;
+10 tuples
+clk: 3.080 sec
+10 tuples
+clk: 387.757 ms
+10 tuples
+clk: 348.083 ms
+3
+SELECT "MobilePhone", "MobilePhoneModel", COUNT(DISTINCT "UserID") AS u FROM hits WHERE "MobilePhoneModel" <> '' GROUP BY "MobilePhone", "MobilePhoneModel" ORDER BY u DESC LIMIT 10;
+10 tuples
+clk: 3.456 sec
+10 tuples
+clk: 438.178 ms
+10 tuples
+clk: 393.357 ms
+3
+SELECT "SearchPhrase", count(*) AS c FROM hits WHERE "SearchPhrase" <> '' GROUP BY "SearchPhrase" ORDER BY c DESC LIMIT 10;
+10 tuples
+clk: 8.111 sec
+10 tuples
+clk: 5.833 sec
+10 tuples
+clk: 5.808 sec
+3
+SELECT "SearchPhrase", COUNT(DISTINCT "UserID") AS u FROM hits WHERE "SearchPhrase" <> '' GROUP BY "SearchPhrase" ORDER BY u DESC LIMIT 10;
+10 tuples
+clk: 16.087 sec
+10 tuples
+clk: 10.259 sec
+10 tuples
+clk: 10.159 sec
+3
+SELECT "SearchEngineID", "SearchPhrase", count(*) AS c FROM hits WHERE "SearchPhrase" <> '' GROUP BY "SearchEngineID", "SearchPhrase" ORDER BY c DESC LIMIT 10;
+10 tuples
+clk: 9.149 sec
+10 tuples
+clk: 6.234 sec
+10 tuples
+clk: 6.197 sec
+3
+SELECT "UserID", count(*) FROM hits GROUP BY "UserID" ORDER BY count(*) DESC LIMIT 10;
+10 tuples
+clk: 5.809 sec
+10 tuples
+clk: 4.814 sec
+10 tuples
+clk: 4.413 sec
+3
+SELECT "UserID", "SearchPhrase", count(*) FROM hits GROUP BY "UserID", "SearchPhrase" ORDER BY count(*) DESC LIMIT 10;
+10 tuples
+clk: 15.222 sec
+10 tuples
+clk: 11.985 sec
+10 tuples
+clk: 10.959 sec
+3
+SELECT "UserID", "SearchPhrase", count(*) FROM hits GROUP BY "UserID", "SearchPhrase" LIMIT 10;
+10 tuples
+clk: 16.143 sec
+10 tuples
+clk: 10.903 sec
+10 tuples
+clk: 11.900 sec
+3
+SELECT "UserID", extract(minute FROM "EventTime") AS m, "SearchPhrase", count(*) FROM hits GROUP BY "UserID", m, "SearchPhrase" ORDER BY count(*) DESC LIMIT 10;
+10 tuples
+clk: 28.492 sec
+10 tuples
+clk: 22.938 sec
+10 tuples
+clk: 20.756 sec
+3
+SELECT "UserID" FROM hits WHERE "UserID" = -6101065172474983726;
+0 tuples
+clk: 5.792 sec
+0 tuples
+clk: 1.764 sec
+0 tuples
+clk: 0.574 ms
+3
+SELECT count(*) FROM hits WHERE "URL" LIKE '%metrika%';
+1 tuple
+clk: 22.995 sec
+1 tuple
+clk: 1.745 sec
+1 tuple
+clk: 1.597 sec
+3
+SELECT "SearchPhrase", min("URL"), count(*) AS c FROM hits WHERE "URL" LIKE '%metrika%' AND "SearchPhrase" <> '' GROUP BY "SearchPhrase" ORDER BY c DESC LIMIT 10;
+10 tuples
+clk: 44.995 sec
+10 tuples
+clk: 14.185 sec
+10 tuples
+clk: 15.712 sec
+3
+SELECT "SearchPhrase", min("URL"), min("Title"), count(*) AS c, COUNT(DISTINCT "UserID") FROM hits WHERE "Title" LIKE '%Яндекс%' AND "URL" NOT LIKE '%.yandex.%' AND "SearchPhrase" <> '' GROUP BY "SearchPhrase" ORDER BY c DESC LIMIT 10;
+10 tuples
+clk: 44.542 sec
+10 tuples
+clk: 1.850 sec
+10 tuples
+clk: 1.552 sec
+3
+SELECT * FROM hits WHERE "URL" LIKE '%metrika%' ORDER BY "EventTime" LIMIT 10;
+10 tuples !85 columns dropped, 29 fields truncated!
+clk: 29.023 sec
+10 tuples !85 columns dropped, 29 fields truncated!
+clk: 1.696 sec
+10 tuples !85 columns dropped, 29 fields truncated!
+clk: 1.459 sec
+3
+SELECT "SearchPhrase" FROM hits WHERE "SearchPhrase" <> '' ORDER BY "EventTime" LIMIT 10;
+10 tuples
+clk: 5.979 sec
+10 tuples
+clk: 319.889 ms
+10 tuples
+clk: 288.515 ms
+3
+SELECT "SearchPhrase" FROM hits WHERE "SearchPhrase" <> '' ORDER BY "SearchPhrase" LIMIT 10;
+10 tuples
+clk: 3.500 sec
+10 tuples
+clk: 860.218 ms
+10 tuples
+clk: 852.812 ms
+3
+SELECT "SearchPhrase" FROM hits WHERE "SearchPhrase" <> '' ORDER BY "EventTime", "SearchPhrase" LIMIT 10;
+10 tuples
+clk: 6.540 sec
+10 tuples
+clk: 853.858 ms
+10 tuples
+clk: 765.395 ms
+3
+SELECT "CounterID", avg(length("URL")) AS l, count(*) AS c FROM hits WHERE "URL" <> '' GROUP BY "CounterID" HAVING count(*) > 100000 ORDER BY l DESC LIMIT 25;
+25 tuples
+clk: 24.407 sec
+25 tuples
+clk: 2.111 sec
+25 tuples
+clk: 2.085 sec
+3
+SELECT sys.getdomain("Referer") AS key, avg(length("Referer")) AS l, count(*) AS c, min("Referer") FROM hits WHERE "Referer" <> '' GROUP BY key HAVING count(*) > 100000 ORDER BY l DESC LIMIT 25;
+clk: 16.458 sec
+clk: 7.022 sec
+clk: 8.084 sec
+3
+SELECT sum("ResolutionWidth"), sum("ResolutionWidth" + 1), sum("ResolutionWidth" + 2), sum("ResolutionWidth" + 3), sum("ResolutionWidth" + 4), sum("ResolutionWidth" + 5), sum("ResolutionWidth" + 6), sum("ResolutionWidth" + 7), sum("ResolutionWidth" + 8), sum("ResolutionWidth" + 9), sum("ResolutionWidth" + 10), sum("ResolutionWidth" + 11), sum("ResolutionWidth" + 12), sum("ResolutionWidth" + 13), sum("ResolutionWidth" + 14), sum("ResolutionWidth" + 15), sum("ResolutionWidth" + 16), sum("ResolutionWidth" + 17), sum("ResolutionWidth" + 18), sum("ResolutionWidth" + 19), sum("ResolutionWidth" + 20), sum("ResolutionWidth" + 21), sum("ResolutionWidth" + 22), sum("ResolutionWidth" + 23), sum("ResolutionWidth" + 24), sum("ResolutionWidth" + 25), sum("ResolutionWidth" + 26), sum("ResolutionWidth" + 27), sum("ResolutionWidth" + 28), sum("ResolutionWidth" + 29), sum("ResolutionWidth" + 30), sum("ResolutionWidth" + 31), sum("ResolutionWidth" + 32), sum("ResolutionWidth" + 33), sum("ResolutionWidth" + 34), sum("ResolutionWidth" + 35), sum("ResolutionWidth" + 36), sum("ResolutionWidth" + 37), sum("ResolutionWidth" + 38), sum("ResolutionWidth" + 39), sum("ResolutionWidth" + 40), sum("ResolutionWidth" + 41), sum("ResolutionWidth" + 42), sum("ResolutionWidth" + 43), sum("ResolutionWidth" + 44), sum("ResolutionWidth" + 45), sum("ResolutionWidth" + 46), sum("ResolutionWidth" + 47), sum("ResolutionWidth" + 48), sum("ResolutionWidth" + 49), sum("ResolutionWidth" + 50), sum("ResolutionWidth" + 51), sum("ResolutionWidth" + 52), sum("ResolutionWidth" + 53), sum("ResolutionWidth" + 54), sum("ResolutionWidth" + 55), sum("ResolutionWidth" + 56), sum("ResolutionWidth" + 57), sum("ResolutionWidth" + 58), sum("ResolutionWidth" + 59), sum("ResolutionWidth" + 60), sum("ResolutionWidth" + 61), sum("ResolutionWidth" + 62), sum("ResolutionWidth" + 63), sum("ResolutionWidth" + 64), sum("ResolutionWidth" + 65), sum("ResolutionWidth" + 66), sum("ResolutionWidth" + 67), sum("ResolutionWidth" + 68), sum("ResolutionWidth" + 69), sum("ResolutionWidth" + 70), sum("ResolutionWidth" + 71), sum("ResolutionWidth" + 72), sum("ResolutionWidth" + 73), sum("ResolutionWidth" + 74), sum("ResolutionWidth" + 75), sum("ResolutionWidth" + 76), sum("ResolutionWidth" + 77), sum("ResolutionWidth" + 78), sum("ResolutionWidth" + 79), sum("ResolutionWidth" + 80), sum("ResolutionWidth" + 81), sum("ResolutionWidth" + 82), sum("ResolutionWidth" + 83), sum("ResolutionWidth" + 84), sum("ResolutionWidth" + 85), sum("ResolutionWidth" + 86), sum("ResolutionWidth" + 87), sum("ResolutionWidth" + 88), sum("ResolutionWidth" + 89) FROM hits;
+1 tuple !76 columns dropped!
+clk: 3.026 sec
+1 tuple !76 columns dropped!
+clk: 2.862 sec
+1 tuple !76 columns dropped!
+clk: 2.846 sec
+3
+SELECT "SearchEngineID", "ClientIP", count(*) AS c, sum("Refresh"), avg("ResolutionWidth") FROM hits WHERE "SearchPhrase" <> '' GROUP BY "SearchEngineID", "ClientIP" ORDER BY c DESC LIMIT 10;
+10 tuples
+clk: 9.145 sec
+10 tuples
+clk: 3.225 sec
+10 tuples
+clk: 3.061 sec
+3
+SELECT "WatchID", "ClientIP", count(*) AS c, sum("Refresh"), avg("ResolutionWidth") FROM hits WHERE "SearchPhrase" <> '' GROUP BY "WatchID", "ClientIP" ORDER BY c DESC LIMIT 10;
+10 tuples
+clk: 12.443 sec
+10 tuples
+clk: 4.298 sec
+10 tuples
+clk: 4.308 sec
+3
+SELECT "WatchID", "ClientIP", count(*) AS c, sum("Refresh"), avg("ResolutionWidth") FROM hits GROUP BY "WatchID", "ClientIP" ORDER BY c DESC LIMIT 10;
+10 tuples
+clk: 28.515 sec
+10 tuples
+clk: 27.195 sec
+10 tuples
+clk: 27.687 sec
+3
+SELECT "URL", count(*) AS c FROM hits GROUP BY "URL" ORDER BY c DESC LIMIT 10;
+10 tuples
+clk: 42.507 sec
+10 tuples
+clk: 22.997 sec
+10 tuples
+clk: 21.922 sec
+3
+SELECT 1, "URL", count(*) AS c FROM hits GROUP BY 1, "URL" ORDER BY c DESC LIMIT 10;
+10 tuples
+clk: 42.009 sec
+10 tuples
+clk: 22.347 sec
+10 tuples
+clk: 21.288 sec
+3
+SELECT "ClientIP", "ClientIP" - 1, "ClientIP" - 2, "ClientIP" - 3, count(*) AS c FROM hits GROUP BY "ClientIP", "ClientIP" - 1, "ClientIP" - 2, "ClientIP" - 3 ORDER BY c DESC LIMIT 10;
+10 tuples
+clk: 16.540 sec
+10 tuples
+clk: 14.959 sec
+10 tuples
+clk: 14.100 sec
+3
+SELECT "URL", count(*) AS "PageViews" FROM hits WHERE "CounterID" = 62 AND "EventDate" >= '2013-07-01' AND "EventDate" <= '2013-07-31' AND "DontCountHits" = 0 AND "Refresh" = 0 AND "URL" <> '' GROUP BY "URL" ORDER BY "PageViews" DESC LIMIT 10;
+10 tuples
+clk: 2:08 min
+10 tuples
+clk: 24.004 sec
+10 tuples
+clk: 23.890 sec
+3
+SELECT "Title", count(*) AS "PageViews" FROM hits WHERE "CounterID" = 62 AND "EventDate" >= '2013-07-01' AND "EventDate" <= '2013-07-31' AND "DontCountHits" = 0 AND "Refresh" = 0 AND "Title" <> '' GROUP BY "Title" ORDER BY "PageViews" DESC LIMIT 10;
+10 tuples
+clk: 1.893 sec
+10 tuples
+clk: 245.259 ms
+10 tuples
+clk: 226.849 ms
+3
+SELECT "URL", count(*) AS "PageViews" FROM hits WHERE "CounterID" = 62 AND "EventDate" >= '2013-07-01' AND "EventDate" <= '2013-07-31' AND "Refresh" = 0 AND "IsLink" <> 0 AND "IsDownload" = 0 GROUP BY "URL" ORDER BY "PageViews" DESC LIMIT 1000;
+1000 tuples
+clk: 2:09 min
+1000 tuples
+clk: 22.917 sec
+1000 tuples
+clk: 23.099 sec
+3
+SELECT "TraficSourceID", "SearchEngineID", "AdvEngineID", CASE WHEN ("SearchEngineID" = 0 AND "AdvEngineID" = 0) THEN "Referer" ELSE '' END AS Src, "URL" AS Dst, count(*) AS "PageViews" FROM hits WHERE "CounterID" = 62 AND "EventDate" >= '2013-07-01' AND "EventDate" <= '2013-07-31' AND "Refresh" = 0 GROUP BY "TraficSourceID", "SearchEngineID", "AdvEngineID", CASE WHEN ("SearchEngineID" = 0 AND "AdvEngineID" = 0) THEN "Referer" ELSE '' END, "URL" ORDER BY "PageViews" DESC LIMIT 1000;
+1000 tuples
+clk: 2:09 min
+1000 tuples
+clk: 23.975 sec
+1000 tuples
+clk: 22.763 sec
+3
+SELECT "URLHash", "EventDate", count(*) AS "PageViews" FROM hits WHERE "CounterID" = 62 AND "EventDate" >= '2013-07-01' AND "EventDate" <= '2013-07-31' AND "Refresh" = 0 AND "TraficSourceID" IN (-1, 6) AND "RefererHash" = 686716256552154761 GROUP BY "URLHash", "EventDate" ORDER BY "PageViews" DESC LIMIT 100;
+0 tuples
+clk: 1.148 sec
+0 tuples
+clk: 114.740 ms
+0 tuples
+clk: 114.258 ms
+3
+SELECT "WindowClientWidth", "WindowClientHeight", count(*) AS "PageViews" FROM hits WHERE "CounterID" = 62 AND "EventDate" >= '2013-07-01' AND "EventDate" <= '2013-07-31' AND "Refresh" = 0 AND "DontCountHits" = 0 AND "URLHash" = 686716256552154761 GROUP BY "WindowClientWidth", "WindowClientHeight" ORDER BY "PageViews" DESC LIMIT 10000;
+0 tuples
+clk: 2.079 sec
+0 tuples
+clk: 235.220 ms
+0 tuples
+clk: 163.850 ms
+3
+SELECT DATE_TRUNC('minute', "EventTime") AS "Minute", count(*) AS "PageViews" FROM hits WHERE "CounterID" = 62 AND "EventDate" >= '2013-07-01' AND "EventDate" <= '2013-07-02' AND "Refresh" = 0 AND "DontCountHits" = 0 GROUP BY DATE_TRUNC('minute', "EventTime") ORDER BY DATE_TRUNC('minute', "EventTime");
+0 tuples
+clk: 1.690 sec
+0 tuples
+clk: 148.379 ms
+0 tuples
+clk: 166.565 ms
+ubuntu@ip-▉▉▉:~$ grep clk log.txt | tr -d '\r' | awk '{ if ($3 == "ms") { print $2 / 1000; } else if ($3 == "sec") { print $2 } else { print } }' > tmp.txt
+ubuntu@ip-▉▉▉:~$ nano tmp.txt
+ubuntu@ip-▉▉▉:~$ awk '{
+>     if (i % 3 == 0) { a = $1 }
+>     else if (i % 3 == 1) { b = $1 }
+>     else if (i % 3 == 2) { c = $1; print "[" a ", " b ", " c "]," };
+>     ++i; }' < tmp.txt
+[0.002346, 0.001873, 0.001862],
+[1.137, 0.036303, 0.035399],
+[0.194816, 0.054757, 0.051177],
+[0.007495, 0.002967, 0.003073],
+[5.556, 3.550, 3.797],
+[6.228, 4.042, 3.967],
+[0.067704, 0.050072, 0.051354],
+[0.09307, 0.037996, 0.031543],
+[8.111, 4.839, 5.105],
+[11.571, 7.454, 7.433],
+[3.080, 0.387757, 0.348083],
+[3.456, 0.438178, 0.393357],
+[8.111, 5.833, 5.808],
+[16.087, 10.259, 10.159],
+[9.149, 6.234, 6.197],
+[5.809, 4.814, 4.413],
+[15.222, 11.985, 10.959],
+[16.143, 10.903, 11.900],
+[28.492, 22.938, 20.756],
+[5.792, 1.764, 0.000574],
+[22.995, 1.745, 1.597],
+[44.995, 14.185, 15.712],
+[44.542, 1.850, 1.552],
+[29.023, 1.696, 1.459],
+[5.979, 0.319889, 0.288515],
+[3.500, 0.860218, 0.852812],
+[6.540, 0.853858, 0.765395],
+[24.407, 2.111, 2.085],
+[16.458, 7.022, 8.084],
+[3.026, 2.862, 2.846],
+[9.145, 3.225, 3.061],
+[12.443, 4.298, 4.308],
+[28.515, 27.195, 27.687],
+[42.507, 22.997, 21.922],
+[42.009, 22.347, 21.288],
+[16.540, 14.959, 14.100],
+[128, 24.004, 23.890],
+[1.893, 0.245259, 0.226849],
+[129, 22.917, 23.099],
+[129, 23.975, 22.763],
+[1.148, 0.11474, 0.114258],
+[2.079, 0.23522, 0.16385],
+[1.690, 0.148379, 0.166565],
+ubuntu@ip-▉▉▉:~$

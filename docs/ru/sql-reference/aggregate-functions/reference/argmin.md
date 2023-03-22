@@ -1,6 +1,5 @@
 ---
-slug: /ru/sql-reference/aggregate-functions/reference/argmin
-sidebar_position: 105
+toc_priority: 105
 ---
 
 # argMin {#agg-function-argmin}
@@ -49,3 +48,4 @@ SELECT argMin(user, salary) FROM salary;
 │ worker               │
 └──────────────────────┘
 ```
+

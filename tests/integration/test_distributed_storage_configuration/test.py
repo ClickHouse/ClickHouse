@@ -20,8 +20,7 @@ def start_cluster():
     try:
         cluster.start()
         node.query(
-            "CREATE DATABASE IF NOT EXISTS test ENGINE=Ordinary",
-            settings={"allow_deprecated_database_ordinary": 1},
+            "CREATE DATABASE IF NOT EXISTS test ENGINE=Ordinary"
         )  # Different paths with Atomic
         yield cluster
     finally:

@@ -47,7 +47,8 @@ public:
             /// if ORDER BY contains aggregate function or window functions, it
             /// shouldn't be optimized
             if (ast_function.is_window_function
-                || AggregateUtils::isAggregateFunction(ast_function))
+                || AggregateFunctionFactory::instance().isAggregateFunctionName(
+                    ast_function.name))
             {
                 return false;
             }

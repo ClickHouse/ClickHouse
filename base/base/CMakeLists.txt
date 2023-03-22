@@ -1,28 +1,28 @@
-if (USE_CLANG_TIDY)
-    set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
-endif ()
-
 set (SRCS
     argsToConfig.cpp
     coverage.cpp
     demangle.cpp
-    getAvailableMemoryAmount.cpp
     getFQDNOrHostName.cpp
     getMemoryAmount.cpp
     getPageSize.cpp
     getThreadId.cpp
     JSON.cpp
+    LineReader.cpp
     mremap.cpp
     phdr_cache.cpp
     preciseExp10.cpp
+    setTerminalEcho.cpp
     shift10.cpp
     sleep.cpp
     terminalColors.cpp
     errnoToString.cpp
     StringRef.cpp
     safeExit.cpp
-    throwError.cpp
 )
+
+if (ENABLE_REPLXX)
+    list (APPEND SRCS ReplxxLineReader.cpp)
+endif ()
 
 if (USE_DEBUG_HELPERS)
     get_target_property(MAGIC_ENUM_INCLUDE_DIR ch_contrib::magic_enum INTERFACE_INCLUDE_DIRECTORIES)
@@ -42,6 +42,10 @@ else ()
 endif ()
 
 target_include_directories(common PUBLIC .. "${CMAKE_CURRENT_BINARY_DIR}/..")
+
+if (OS_DARWIN AND NOT USE_STATIC_LIBRARIES)
+    target_link_libraries(common PUBLIC -Wl,-U,_inside_main)
+endif()
 
 target_link_libraries (common
     PUBLIC

@@ -1,10 +1,4 @@
----
-slug: /en/operations/external-authenticators/kerberos
----
-# Kerberos
-import SelfManaged from '@site/docs/en/_snippets/_self_managed_only_no_roadmap.md';
-
-<SelfManaged />
+# Kerberos {#external-authenticators-kerberos}
 
 Existing and properly configured ClickHouse users can be authenticated via Kerberos authentication protocol.
 
@@ -22,11 +16,9 @@ To enable Kerberos, one should include `kerberos` section in `config.xml`. This 
 - `principal` - canonical service principal name that will be acquired and used when accepting security contexts.
     - This parameter is optional, if omitted, the default principal will be used.
 
+
 - `realm` - a realm, that will be used to restrict authentication to only those requests whose initiator's realm matches it.
     - This parameter is optional, if omitted, no additional filtering by realm will be applied.
-
-- `keytab` - path to service keytab file.
-    - This parameter is optional, if omitted, path to service keytab file must be set in `KRB5_KTNAME` environment variable.
 
 Example (goes into `config.xml`):
 
@@ -59,13 +51,12 @@ With filtering by realm:
 </clickhouse>
 ```
 
-:::warning
-You can define only one `kerberos` section. The presence of multiple `kerberos` sections will force ClickHouse to disable Kerberos authentication.
-:::
+!!! warning "Note"
+    You can define only one `kerberos` section. The presence of multiple `kerberos` sections will force ClickHouse to disable Kerberos authentication.
 
-:::warning
-`principal` and `realm` sections cannot be specified at the same time. The presence of both `principal` and `realm` sections will force ClickHouse to disable Kerberos authentication.
-:::
+!!! warning "Note"
+    `principal` and `realm` sections cannot be specified at the same time. The presence of both `principal` and `realm` sections will force ClickHouse to disable Kerberos authentication.
+
 
 ## Kerberos as an external authenticator for existing users {#kerberos-as-an-external-authenticator-for-existing-users}
 
@@ -103,13 +94,11 @@ Example (goes into `users.xml`):
 </clickhouse>
 ```
 
-:::warning
-Note that Kerberos authentication cannot be used alongside with any other authentication mechanism. The presence of any other sections like `password` alongside `kerberos` will force ClickHouse to shutdown.
-:::
+!!! warning "Warning"
+    Note that Kerberos authentication cannot be used alongside with any other authentication mechanism. The presence of any other sections like `password` alongside `kerberos` will force ClickHouse to shutdown.
 
-:::info Reminder
-Note, that now, once user `my_user` uses `kerberos`, Kerberos must be enabled in the main `config.xml` file as described previously.
-:::
+!!! info "Reminder"
+    Note, that now, once user `my_user` uses `kerberos`, Kerberos must be enabled in the main `config.xml` file as described previously.
 
 ### Enabling Kerberos using SQL {#enabling-kerberos-using-sql}
 

@@ -7,7 +7,7 @@
 
 #include <variant>
 
-#include "config.h"
+#include "config_core.h"
 
 
 namespace DB
@@ -83,6 +83,7 @@ private:
 
 public:
     ExpressionActions() = delete;
+    ~ExpressionActions();
     explicit ExpressionActions(ActionsDAGPtr actions_dag_, const ExpressionActionsSettings & settings_ = {});
     ExpressionActions(const ExpressionActions &) = default;
     ExpressionActions & operator=(const ExpressionActions &) = default;
@@ -111,7 +112,7 @@ public:
     std::string dumpActions() const;
     JSONBuilder::ItemPtr toTree() const;
 
-    static NameAndTypePair getSmallestColumn(const NamesAndTypesList & columns);
+    static std::string getSmallestColumn(const NamesAndTypesList & columns);
 
     /// Check if column is always zero. True if it's definite, false if we can't say for sure.
     /// Call it only after subqueries for sets were executed.
@@ -254,13 +255,13 @@ struct ExpressionActionsChain : WithContext
         steps.clear();
     }
 
-    ActionsDAGPtr getLastActions(bool allow_empty = false)
+    ActionsDAGPtr getLastActions(bool allow_empty = false)  // -V1071
     {
         if (steps.empty())
         {
             if (allow_empty)
                 return {};
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty ExpressionActionsChain");
+            throw Exception("Empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
         }
 
         return typeid_cast<ExpressionActionsStep *>(steps.back().get())->actions_dag;
@@ -269,7 +270,7 @@ struct ExpressionActionsChain : WithContext
     Step & getLastStep()
     {
         if (steps.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty ExpressionActionsChain");
+            throw Exception("Empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
 
         return *steps.back();
     }

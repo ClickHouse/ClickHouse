@@ -178,7 +178,7 @@ namespace detail
             if (!elems.empty())
             {
                 size_t n = level < 1
-                    ? static_cast<size_t>(level * elems.size())
+                    ? level * elems.size()
                     : (elems.size() - 1);
 
                 /// Sorting an array will not be considered a violation of constancy.
@@ -201,7 +201,7 @@ namespace detail
                 auto level = levels[level_index];
 
                 size_t n = level < 1
-                    ? static_cast<size_t>(level * elems.size())
+                    ? level * elems.size()
                     : (elems.size() - 1);
 
                 ::nth_element(array.begin() + prev_n, array.begin() + n, array.end());
@@ -563,11 +563,8 @@ public:
         }
     }
 
-    template <typename T>
-    void add(T x_)
+    void add(UInt64 x)
     {
-        UInt64 x = static_cast<UInt64>(x_);
-
         if (tiny.count < TINY_MAX_ELEMS)
         {
             tiny.insert(x);
@@ -592,11 +589,8 @@ public:
         }
     }
 
-    template <typename T>
-    void add(T x_, size_t weight)
+    void add(UInt64 x, size_t weight)
     {
-        UInt64 x = static_cast<UInt64>(x_);
-
         /// NOTE: First condition is to avoid overflow.
         if (weight < TINY_MAX_ELEMS && tiny.count + weight <= TINY_MAX_ELEMS)
         {
@@ -670,7 +664,7 @@ public:
                     large->insert(elem);
             }
             else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error in QuantileTiming::merge function: not all cases are covered");
+                throw Exception("Logical error in QuantileTiming::merge function: not all cases are covered", ErrorCodes::LOGICAL_ERROR);
 
             /// For determinism, we should always convert to `large` when size condition is reached
             ///  - regardless of merge order.

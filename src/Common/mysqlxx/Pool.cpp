@@ -9,7 +9,6 @@
 #include <mysqlxx/Pool.h>
 #include <base/sleep.h>
 #include <Poco/Util/LayeredConfiguration.h>
-#include <Common/logger_useful.h>
 #include <ctime>
 
 
@@ -130,7 +129,7 @@ Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & co
 
 Pool::~Pool()
 {
-    std::lock_guard lock(mutex);
+    std::lock_guard<std::mutex> lock(mutex);
 
     for (auto & connection : connections)
         delete static_cast<Connection *>(connection);
@@ -187,7 +186,7 @@ Pool::Entry Pool::get(uint64_t wait_timeout)
 
 Pool::Entry Pool::tryGet()
 {
-    std::lock_guard lock(mutex);
+    std::lock_guard<std::mutex> lock(mutex);
 
     initialize();
 
@@ -229,7 +228,7 @@ void Pool::removeConnection(Connection* connection)
 {
     logger.trace("(%s): Removing connection.", getDescription());
 
-    std::lock_guard lock(mutex);
+    std::lock_guard<std::mutex> lock(mutex);
     if (connection)
     {
         if (connection->ref_count > 0)

@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Common/config.h>
 #include "registerTableFunctions.h"
 
 #if USE_HDFS
@@ -6,9 +6,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionHDFS.h>
-#include <Interpreters/parseColumnsListForTableFunction.h>
-#include <Interpreters/Context.h>
-#include <Access/Common/AccessFlags.h>
+#include <TableFunctions/parseColumnsListForTableFunction.h>
 
 namespace DB
 {
@@ -17,7 +15,7 @@ StoragePtr TableFunctionHDFS::getStorage(
     const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
     const std::string & table_name, const String & compression_method_) const
 {
-    return std::make_shared<StorageHDFS>(
+    return StorageHDFS::create(
         source,
         StorageID(getDatabaseName(), table_name),
         format_,
@@ -31,10 +29,7 @@ StoragePtr TableFunctionHDFS::getStorage(
 ColumnsDescription TableFunctionHDFS::getActualTableStructure(ContextPtr context) const
 {
     if (structure == "auto")
-    {
-        context->checkAccess(getSourceAccessType());
         return StorageHDFS::getTableStructureFromData(format, filename, compression_method, context);
-    }
 
     return parseColumnsListFromString(structure, context);
 }

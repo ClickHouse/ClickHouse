@@ -1,4 +1,4 @@
--- Tags: no-replicated-database, no-parallel
+-- Tags: no-replicated-database
 -- Tag no-replicated-database: Does not support renaming of multiple tables in single query
 
 RENAME TABLE test.hits TO test.visits_tmp, test.visits TO test.hits, test.visits_tmp TO test.visits;

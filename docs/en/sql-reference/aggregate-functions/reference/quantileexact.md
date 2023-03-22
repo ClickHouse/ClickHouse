@@ -1,11 +1,10 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/quantileexact
-sidebar_position: 202
+toc_priority: 202
 ---
 
-# quantileExact Functions
+# quantileExact Functions {#quantileexact-functions}
 
-## quantileExact
+## quantileExact {#quantileexact}
 
 Exactly computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 
@@ -52,7 +51,7 @@ Result:
 └───────────────────────┘
 ```
 
-## quantileExactLow
+## quantileExactLow {#quantileexactlow}
 
 Similar to `quantileExact`, this computes the exact [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 
@@ -110,7 +109,7 @@ Result:
 │                        4 │
 └──────────────────────────┘
 ```
-## quantileExactHigh
+## quantileExactHigh {#quantileexacthigh}
 
 Similar to `quantileExact`, this computes the exact [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 
@@ -161,7 +160,7 @@ Result:
 └───────────────────────────┘
 ```
 
-## quantileExactExclusive
+## quantileExactExclusive {#quantileexactexclusive}
 
 Exactly computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 
@@ -213,7 +212,7 @@ Result:
 └────────────────────────────────┘
 ```
 
-## quantileExactInclusive
+## quantileExactInclusive {#quantileexactinclusive}
 
 Exactly computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 

@@ -78,6 +78,22 @@ void MetricLog::shutdown()
 }
 
 
+inline UInt64 time_in_milliseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
+{
+    return std::chrono::duration_cast<std::chrono::milliseconds>(timepoint.time_since_epoch()).count();
+}
+
+inline UInt64 time_in_microseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
+{
+    return std::chrono::duration_cast<std::chrono::microseconds>(timepoint.time_since_epoch()).count();
+}
+
+inline UInt64 time_in_seconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
+{
+    return std::chrono::duration_cast<std::chrono::seconds>(timepoint.time_since_epoch()).count();
+}
+
+
 void MetricLog::metricThreadFunction()
 {
     auto desired_timepoint = std::chrono::system_clock::now();
@@ -93,8 +109,8 @@ void MetricLog::metricThreadFunction()
 
             MetricLogElement elem;
             elem.event_time = std::chrono::system_clock::to_time_t(current_time);
-            elem.event_time_microseconds = timeInMicroseconds(current_time);
-            elem.milliseconds = timeInMilliseconds(current_time) - timeInSeconds(current_time) * 1000;
+            elem.event_time_microseconds = time_in_microseconds(current_time);
+            elem.milliseconds = time_in_milliseconds(current_time) - time_in_seconds(current_time) * 1000;
 
             elem.profile_events.resize(ProfileEvents::end());
             for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)

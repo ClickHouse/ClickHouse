@@ -92,7 +92,7 @@ struct ExtractURLParameterImpl
 struct NameExtractURLParameter { static constexpr auto name = "extractURLParameter"; };
 using FunctionExtractURLParameter = FunctionsStringSearchToString<ExtractURLParameterImpl, NameExtractURLParameter>;
 
-REGISTER_FUNCTION(ExtractURLParameter)
+void registerFunctionExtractURLParameter(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionExtractURLParameter>();
 }

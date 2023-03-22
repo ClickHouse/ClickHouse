@@ -1,0 +1,19 @@
+{% if not single_page %}
+<div class="alert alert-light my-3">
+  <p class="float-right mb-0">{{ _('Rating') }}: RATING_VALUE - RATING_COUNT {{ _('votes') }}</p>
+  <span class="alert-heading display-6">{% if is_amp %}{{ _('Article Rating') }}{% else %}{{ _('Was this content helpful?') }}{% endif %}</span>
+  <div id="rating-stars" class="display-6 mb-0"
+     {% if not is_amp %}
+     data-titles="['{{ _('Unusable') }}', '{{ _('Poor') }}', 'OK', '{{ _('Good') }}', '{{ _('Excellent') }}']"
+     data-documentation="{{ _('documentation') }}"
+     {% endif %}
+  >RATING_STARS</div>
+</div>
+
+<div id="content-footer" class="text-muted pt-3 mb-5">
+    <div class="float-md-right">{{ config.copyright }}</div>
+    <div>{{ _('Built from') }} <a href="{{ config.extra.rev_url }}" rel="external nofollow noreferrer" target="_blank" class="text-reset">{{ config.extra.rev_short }}</a>{% if page and page.meta %}{% if page.meta.published_date %}, {{ _('published on') }} <span title="{{ page.meta.published_date.isoformat() }}">{{ page.meta.published_date.date().isoformat() }}</span>{% endif %}{% if page.meta.modified_date %}, {{ _('modified on') }} <span title="{{ page.meta.modified_date.isoformat() }}">{{ page.meta.modified_date.date().isoformat() }}</span>{% endif %}
+    {% endif %}
+    </div>
+</div>
+{% endif %}

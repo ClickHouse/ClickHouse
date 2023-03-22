@@ -2,7 +2,6 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/IFactoryWithAliases.h>
-#include <Parsers/ASTFunction.h>
 
 
 #include <functional>
@@ -105,15 +104,5 @@ private:
     String getFactoryName() const override { return "AggregateFunctionFactory"; }
 
 };
-
-struct AggregateUtils
-{
-    static bool isAggregateFunction(const ASTFunction & node)
-    {
-        return AggregateFunctionFactory::instance().isAggregateFunctionName(node.name);
-    }
-};
-
-const String & getAggregateFunctionCanonicalNameIfAny(const String & name);
 
 }

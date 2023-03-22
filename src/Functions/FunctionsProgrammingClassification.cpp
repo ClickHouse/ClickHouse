@@ -112,7 +112,7 @@ struct NameDetectProgrammingLanguage
 
 using FunctionDetectProgrammingLanguage = FunctionTextClassificationString<FunctionDetectProgrammingLanguageImpl, NameDetectProgrammingLanguage>;
 
-REGISTER_FUNCTION(DetectProgrammingLanguage)
+void registerFunctionDetectProgrammingLanguage(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionDetectProgrammingLanguage>();
 }

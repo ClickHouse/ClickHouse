@@ -32,7 +32,7 @@ def started_cluster():
                 node.query(
                     """
 CREATE TABLE replicated (d Date, x UInt32) ENGINE =
-    ReplicatedMergeTree('/clickhouse/tables/{shard}/replicated', '{instance}') PARTITION BY toYYYYMM(d) ORDER BY d""".format(
+    ReplicatedMergeTree('/clickhouse/tables/{shard}/replicated', '{instance}', d, d, 8192)""".format(
                         shard=shard, instance=node.name
                     )
                 )

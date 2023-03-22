@@ -1,7 +1,6 @@
 ---
-slug: /ru/sql-reference/functions/tuple-functions
-sidebar_position: 68
-sidebar_label: Функции для работы с кортежами
+toc_priority: 68
+toc_title: Функции для работы с кортежами
 ---
 
 # Функции для работы с кортежами {#tuple-functions}

@@ -1,7 +1,6 @@
 ---
-slug: /ru/sql-reference/table-functions/file
-sidebar_position: 37
-sidebar_label: file
+toc_priority: 37
+toc_title: file
 ---
 
 # file {#file}
@@ -13,7 +12,7 @@ sidebar_label: file
 **Синтаксис**
 
 ``` sql
-file(path [,format] [,structure])
+file(path, format, structure)
 ```
 
 **Параметры**
@@ -107,7 +106,7 @@ SELECT count(*) FROM file('{some,another}_dir/some_file_{1..3}', 'TSV', 'name St
 SELECT count(*) FROM file('{some,another}_dir/*', 'TSV', 'name String, value UInt32');
 ```
 
-:::danger "Предупреждение"
+!!! warning "Предупреждение"
     Если ваш список файлов содержит интервал с ведущими нулями, используйте конструкцию с фигурными скобками для каждой цифры по отдельности или используйте `?`.
 
 **Пример**
@@ -126,3 +125,4 @@ SELECT count(*) FROM file('big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name String,
 **Смотрите также**
 
 -   [Виртуальные столбцы](index.md#table_engines-virtual_columns)
+

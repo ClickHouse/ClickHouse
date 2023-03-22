@@ -1,18 +1,16 @@
+#include <Common/typeid_cast.h>
+#include <Common/quoteString.h>
 #include <Columns/IColumn.h>
-#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBufferFromString.h>
-#include <Interpreters/IdentifierSemantic.h>
-#include <Interpreters/ReplaceQueryParameterVisitor.h>
-#include <Interpreters/addTypeConversionToAST.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryParameter.h>
-#include <Parsers/TablePropertiesQueriesASTs.h>
-#include <Common/quoteString.h>
-#include <Common/typeid_cast.h>
-#include <Common/checkStackSize.h>
+#include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/ReplaceQueryParameterVisitor.h>
+#include <Interpreters/addTypeConversionToAST.h>
 
 
 namespace DB
@@ -24,26 +22,15 @@ namespace ErrorCodes
     extern const int BAD_QUERY_PARAMETER;
 }
 
-/// It is important to keep in mind that in the case of ASTIdentifier, we are changing the shared object itself,
-/// and all shared_ptr's that pointed to the original object will now point to the new replaced value.
-/// However, with ASTQueryParameter, we are only assigning a new value to the passed shared_ptr, while
-/// all other shared_ptr's still point to the old ASTQueryParameter.
 
 void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
 {
-    checkStackSize();
-
     if (ast->as<ASTQueryParameter>())
         visitQueryParameter(ast);
     else if (ast->as<ASTIdentifier>() || ast->as<ASTTableIdentifier>())
         visitIdentifier(ast);
     else
-    {
-        if (auto * describe_query = dynamic_cast<ASTDescribeQuery *>(ast.get()); describe_query && describe_query->table_expression)
-            visitChildren(describe_query->table_expression);
-        else
-            visitChildren(ast);
-    }
+        visitChildren(ast);
 }
 
 
@@ -59,7 +46,7 @@ const String & ReplaceQueryParameterVisitor::getParamValue(const String & name)
     if (search != query_parameters.end())
         return search->second;
     else
-        throw Exception(ErrorCodes::UNKNOWN_QUERY_PARAMETER, "Substitution {} is not set", backQuote(name));
+        throw Exception("Substitution " + backQuote(name) + " is not set", ErrorCodes::UNKNOWN_QUERY_PARAMETER);
 }
 
 void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)

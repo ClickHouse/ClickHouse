@@ -1,7 +1,6 @@
 ---
-slug: /ru/sql-reference/statements/create/row-policy
-sidebar_position: 41
-sidebar_label: "Политика доступа"
+toc_priority: 41
+toc_title: "Политика доступа"
 ---
 
 # CREATE ROW POLICY {#create-row-policy-statement}
@@ -28,7 +27,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name1 [ON CLUSTER cluste
 
 Ключевым словом `ALL` обозначаются все пользователи, включая текущего. Ключевые слова `ALL EXCEPT` позволяют исключить пользователей из списка всех пользователей. Например, `CREATE ROW POLICY ... TO ALL EXCEPT accountant, john@localhost`
 
-    :::note 
+!!! note "Note"
     Если для таблицы не задано ни одной политики доступа к строкам, то любой пользователь может выполнить команду SELECT и получить все строки таблицы. Если определить хотя бы одну политику для таблицы, до доступ к строкам будет управляться этими политиками, причем для всех пользователей (даже для тех, для кого политики не определялись). Например, следующая политика
 
     `CREATE ROW POLICY pol1 ON mydb.table1 USING b=1 TO mira, peter`
@@ -38,7 +37,6 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name1 [ON CLUSTER cluste
     Если это нежелательно, такое поведение можно исправить, определив дополнительную политику:
 
     `CREATE ROW POLICY pol2 ON mydb.table1 USING 1 TO ALL EXCEPT mira, peter`
-    :::
 
 ## Секция AS {#create-row-policy-as}
 
@@ -84,3 +82,5 @@ CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
 `CREATE ROW POLICY filter2 ON mydb.mytable USING a<1000 AND b=5 TO ALL EXCEPT mira`
 
 `CREATE ROW POLICY filter3 ON mydb.mytable USING 1 TO admin`
+
+<!--hide-->

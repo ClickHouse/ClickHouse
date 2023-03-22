@@ -1,10 +1,9 @@
 ---
-slug: /en/engines/table-engines/integrations/postgresql
-sidebar_position: 11
-sidebar_label: PostgreSQL
+toc_priority: 11
+toc_title: PostgreSQL
 ---
 
-# PostgreSQL
+# PostgreSQL {#postgresql}
 
 The PostgreSQL engine allows to perform `SELECT` and `INSERT` queries on data that is stored on a remote PostgreSQL server.
 
@@ -44,14 +43,14 @@ or via config (since version 21.11):
     <postgres1>
         <host></host>
         <port></port>
-        <user></user>
+        <username></username>
         <password></password>
         <table></table>
     </postgres1>
     <postgres2>
         <host></host>
         <port></port>
-        <user></user>
+        <username></username>
         <password></password>
     </postgres2>
 </named_collections>
@@ -74,9 +73,8 @@ All joins, aggregations, sorting, `IN [ array ]` conditions and the `LIMIT` samp
 
 PostgreSQL `Array` types are converted into ClickHouse arrays.
 
-:::warning
-Be careful - in PostgreSQL an array data, created like a `type_name[]`, may contain multi-dimensional arrays of different dimensions in different table rows in same column. But in ClickHouse it is only allowed to have multidimensional arrays of the same count of dimensions in all table rows in same column.
-:::
+!!! info "Note"
+    Be careful - in PostgreSQL an array data, created like a `type_name[]`, may contain multi-dimensional arrays of different dimensions in different table rows in same column. But in ClickHouse it is only allowed to have multidimensional arrays of the same count of dimensions in all table rows in same column.
 
 Supports multiple replicas that must be listed by `|`. For example:
 
@@ -174,7 +172,6 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 **See Also**
 
 -   [The `postgresql` table function](../../../sql-reference/table-functions/postgresql.md)
--   [Using PostgreSQL as a dictionary source](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-postgresql)
+-   [Using PostgreSQL as a source of external dictionary](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-postgresql)
 
-## Related content
-- Blog: [ClickHouse and PostgreSQL - a match made in data heaven - part 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)
+[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/postgresql/) <!--hide-->
