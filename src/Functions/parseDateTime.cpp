@@ -507,8 +507,12 @@ namespace
         executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
         {
             const auto * col_str = checkAndGetColumn<ColumnString>(arguments[0].column.get());
-            /// It was checked before in getReturnTypeImpl
-            assert(!col_str);
+            if (!col_str)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Illegal column {} of first ('str') argument of function {}. Must be string.",
+                    arguments[0].column->getName(),
+                    getName());
 
             String format = getFormat(arguments);
             const auto & time_zone = getTimeZone(arguments);
@@ -1697,8 +1701,12 @@ namespace
             }
 
             const auto * format_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
-            /// It was checked before in getReturnTypeImpl
-            assert(!format_column);
+            if (!format_column)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Illegal column {} of second ('format') argument of function {}. Must be constant string.",
+                    arguments[1].column->getName(),
+                    getName());
             return format_column->getValue<String>();
         }
 
