@@ -384,7 +384,7 @@ ReadFromMerge::ReadFromMerge(
     const SelectQueryInfo & query_info_,
     ContextMutablePtr context_,
     QueryProcessingStage::Enum processed_stage)
-    : ISourceStep(DataStream{.header = common_header_})
+    : SourceStepWithFilter(DataStream{.header = common_header_})
     , required_max_block_size(max_block_size)
     , requested_num_streams(num_streams)
     , common_header(std::move(common_header_))
@@ -448,7 +448,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
         size_t current_need_streams = tables_count >= num_streams ? 1 : (num_streams / tables_count);
         size_t current_streams = std::min(current_need_streams, remaining_streams);
         remaining_streams -= current_streams;
-        current_streams = std::max(static_cast<size_t>(1), current_streams);
+        current_streams = std::max(1uz, current_streams);
 
         const auto & storage = std::get<1>(table);
 
@@ -691,7 +691,11 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
             return {};
 
         if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(plan.getRootNode()->step.get()))
-            read_from_merge_tree->addFilterNodes(added_filter_nodes);
+        {
+            size_t filters_dags_size = filter_dags.size();
+            for (size_t i = 0; i < filters_dags_size; ++i)
+                read_from_merge_tree->addFilter(filter_dags[i], filter_nodes.nodes[i]);
+        }
 
         builder = plan.buildQueryPipeline(
             QueryPlanOptimizationSettings::fromContext(modified_context),

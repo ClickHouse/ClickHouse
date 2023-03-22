@@ -106,6 +106,12 @@ public:
         return locality;
     }
 
+    /// Set join locality
+    void setLocality(JoinLocality locality_value)
+    {
+        locality = locality_value;
+    }
+
     /// Get join strictness
     JoinStrictness getStrictness() const
     {

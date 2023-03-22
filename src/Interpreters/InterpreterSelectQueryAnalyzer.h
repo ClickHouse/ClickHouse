@@ -51,6 +51,8 @@ public:
 
     BlockIO execute() override;
 
+    QueryPlan & getQueryPlan();
+
     QueryPlan && extractQueryPlan() &&;
 
     QueryPipelineBuilder buildQueryPipeline();

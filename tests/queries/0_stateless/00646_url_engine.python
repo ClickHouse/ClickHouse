@@ -82,6 +82,10 @@ class CSVHTTPServer(BaseHTTPRequestHandler):
                 self.wfile.write((', '.join(row) + '\n').encode())
         return
 
+    def do_HEAD(self):
+        self._set_headers()
+        return
+
     def read_chunk(self):
         msg = ''
         while True:

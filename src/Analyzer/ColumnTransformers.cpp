@@ -348,7 +348,7 @@ ASTPtr ReplaceColumnTransformerNode::toASTImpl() const
         auto replacement_ast = std::make_shared<ASTColumnsReplaceTransformer::Replacement>();
         replacement_ast->name = replacements_names[i];
         replacement_ast->children.push_back(replacement_expressions_nodes[i]->toAST());
-        ast_replace_transformer->children.push_back(replacement_ast);
+        ast_replace_transformer->children.push_back(std::move(replacement_ast));
     }
 
     return ast_replace_transformer;

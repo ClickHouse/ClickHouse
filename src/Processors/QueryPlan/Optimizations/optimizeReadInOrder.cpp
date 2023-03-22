@@ -519,8 +519,9 @@ AggregationInputOrder buildInputOrderInfo(
 
         enreachFixedColumns(sorting_key_dag, fixed_key_columns);
 
-        for (auto it = matches.cbegin(); it != matches.cend(); ++it)
+        for (const auto * output : dag->getOutputs())
         {
+            auto it = matches.find(output);
             const MatchedTrees::Match * match = &it->second;
             if (match->node)
             {
