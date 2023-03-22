@@ -5,7 +5,7 @@
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <base/StringRef.h>
-#include <Core/Types.h>
+#include <Core/TypeId.h>
 
 #include "config.h"
 
