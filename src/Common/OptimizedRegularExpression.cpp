@@ -33,7 +33,7 @@ struct Literal
 
 using Literals = std::vector<Literal>;
 
-size_t shortest_alter_length(const Literals & literals)
+size_t shortest_literal_length(const Literals & literals)
 {
     if (literals.empty()) return 0;
     size_t shortest = std::numeric_limits<size_t>::max();
@@ -88,7 +88,7 @@ const char * analyzeImpl(
             return;
         }
         /// that means current alternatives have better quality.
-        if (shortest_alter_length(global_alternatives) < shortest_alter_length(cur_alternatives))
+        if (shortest_literal_length(global_alternatives) < shortest_literal_length(cur_alternatives))
         {
             global_alternatives.clear();
             global_alternatives = cur_alternatives;
@@ -373,14 +373,14 @@ finish:
     if (has_alternative_on_depth_0)
     {
         /// compare the quality of required substring and alternatives and choose the better one.
-        if (shortest_alter_length(global_alternatives) < required_substring.literal.size())
+        if (shortest_literal_length(global_alternatives) < required_substring.literal.size())
             global_alternatives = {required_substring};
         Literals next_alternatives;
         /// this two vals are useless, xxx|xxx cannot be trivial nor prefix.
         bool next_is_trivial = true;
         pos = analyzeImpl(regexp, pos, required_substring, next_is_trivial, next_alternatives);
         /// For xxx|xxx|xxx, we only conbine the alternatives and return a empty required_substring.
-        if (next_alternatives.empty() || shortest_alter_length(next_alternatives) < required_substring.literal.size())
+        if (next_alternatives.empty() || shortest_literal_length(next_alternatives) < required_substring.literal.size())
         {
             global_alternatives.push_back(required_substring);
         }
