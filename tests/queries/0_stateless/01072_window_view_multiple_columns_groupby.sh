@@ -17,7 +17,7 @@ DROP TABLE IF EXISTS wv;
 
 CREATE TABLE dst(time DateTime, colA String, colB String) Engine=MergeTree ORDER BY tuple();
 CREATE TABLE mt(colA String, colB String) ENGINE=MergeTree ORDER BY tuple();
-CREATE WINDOW VIEW wv TO dst AS SELECT tumbleStart(w_id) AS time, colA, colB FROM mt GROUP BY tumble(now(), INTERVAL '10' SECOND, 'US/Samoa') AS w_id, colA, colB;
+CREATE WINDOW VIEW wv TO dst AS SELECT tumbleStart(w_id) AS time, colA, colB FROM mt GROUP BY tumble(now('US/Samoa'), INTERVAL '10' SECOND, 'US/Samoa') AS w_id, colA, colB;
 
 INSERT INTO mt VALUES ('test1', 'test2');
 EOF
