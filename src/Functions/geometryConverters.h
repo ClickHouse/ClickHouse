@@ -120,11 +120,8 @@ struct ColumnToPolygonsConverter
         std::vector<Polygon<Point>> answer(offsets.size());
         auto all_rings = ColumnToRingsConverter<Point>::convert(typeid_cast<const ColumnArray &>(*col).getDataPtr());
 
-        if (all_rings.empty())
-            return answer;
-
         size_t prev_offset = 0;
-        for (size_t iter = 0; iter < offsets.size(); ++iter)
+        for (size_t iter = 0; iter < offsets.size() && iter < all_rings.size(); ++iter)
         {
             const auto current_array_size = offsets[iter] - prev_offset;
             answer[iter].outer() = std::move(all_rings[prev_offset]);
@@ -152,10 +149,7 @@ struct ColumnToMultiPolygonsConverter
 
         auto all_polygons = ColumnToPolygonsConverter<Point>::convert(typeid_cast<const ColumnArray &>(*col).getDataPtr());
 
-        if (all_polygons.empty())
-            return answer;
-
-        for (size_t iter = 0; iter < offsets.size(); ++iter)
+        for (size_t iter = 0; iter < offsets.size() && iter < all_polygons.size(); ++iter)
         {
             for (size_t polygon_iter = prev_offset; polygon_iter < offsets[iter]; ++polygon_iter)
                 answer[iter].emplace_back(std::move(all_polygons[polygon_iter]));
