@@ -3,11 +3,12 @@
 #include <Processors/IProcessor.h>
 #include <Processors/Executors/ExecutorTasks.h>
 #include <Common/EventCounter.h>
-#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
 #include <Common/ConcurrencyControl.h>
 
 #include <queue>
 #include <mutex>
+#include <memory>
 
 
 namespace DB
@@ -69,8 +70,8 @@ private:
     // Concurrency control related
     ConcurrencyControl::AllocationPtr slots;
     ConcurrencyControl::SlotPtr single_thread_slot; // slot for single-thread mode to work using executeStep()
-    std::mutex threads_mutex;
-    std::vector<ThreadFromGlobalPool> threads;
+    std::unique_ptr<ThreadPool> pool;
+    std::atomic_size_t threads = 0;
 
     /// Flag that checks that initializeExecution was called.
     bool is_execution_initialized = false;
@@ -94,7 +95,6 @@ private:
     void initializeExecution(size_t num_threads); /// Initialize executor contexts and task_queue.
     void finalizeExecution(); /// Check all processors are finished.
     void spawnThreads();
-    void joinThreads();
 
     /// Methods connected to execution.
     void executeImpl(size_t num_threads);
