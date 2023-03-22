@@ -232,7 +232,7 @@ bool analyzeProjectionCandidate(
         if (normal_result_ptr->marks() != 0)
         {
             candidate.sum_marks += normal_result_ptr->marks();
-            candidate.merge_tree_normal_select_result_ptr = std::move(normal_result_ptr);
+            candidate.merge_tree_ordinary_select_result_ptr = std::move(normal_result_ptr);
         }
     }
 

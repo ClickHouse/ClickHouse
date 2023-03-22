@@ -197,9 +197,9 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
         projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
     }
 
-    bool has_nornal_parts = best_candidate->merge_tree_normal_select_result_ptr != nullptr;
-    if (has_nornal_parts)
-        reading->setAnalyzedResult(std::move(best_candidate->merge_tree_normal_select_result_ptr));
+    bool has_ordinary_parts = best_candidate->merge_tree_ordinary_select_result_ptr != nullptr;
+    if (has_ordinary_parts)
+        reading->setAnalyzedResult(std::move(best_candidate->merge_tree_ordinary_select_result_ptr));
 
     // LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Projection reading header {}",
     //           projection_reading->getOutputStream().header.dumpStructure());
@@ -230,7 +230,7 @@ bool optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes)
         next_node = &expr_or_filter_node;
     }
 
-    if (!has_nornal_parts)
+    if (!has_ordinary_parts)
     {
         /// All parts are taken from projection
         iter->node->children[iter->next_child - 1] = next_node;
