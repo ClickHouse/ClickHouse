@@ -25,10 +25,10 @@ struct LockedKey : private boost::noncopyable
 {
     LockedKey(
         const FileCacheKey & key_,
-        std::weak_ptr<KeyMetadata> key_metadata_,
+        KeyMetadata & key_metadata_,
         KeyGuard::Lock && key_lock_,
         KeysQueuePtr cleanup_keys_metadata_queue_,
-        const FileCache * cache_);
+        const std::string & key_path_);
 
     ~LockedKey();
 
@@ -40,7 +40,8 @@ struct LockedKey : private boost::noncopyable
 
     bool isLastHolder(size_t offset) const;
 
-    KeyMetadataPtr getKeyMetadata() const { return key_metadata.lock(); }
+    const KeyMetadata & getKeyMetadata() const { return key_metadata; }
+    KeyMetadata & getKeyMetadata() { return key_metadata; }
 
     const FileCacheKey & getKey() const { return key; }
 
@@ -48,10 +49,10 @@ private:
     void removeKeyIfEmpty() const;
 
     const FileCacheKey key;
-    const FileCache * cache;
+    const std::string key_path;
 
     KeyGuard::Lock lock;
-    mutable std::weak_ptr<KeyMetadata> key_metadata;
+    KeyMetadata & key_metadata;
     KeysQueuePtr cleanup_keys_metadata_queue;
 
     Poco::Logger * log;

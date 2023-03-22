@@ -16,12 +16,12 @@ namespace ErrorCodes
 
 LockedKey::LockedKey(
     const FileCacheKey & key_,
-    std::weak_ptr<KeyMetadata> key_metadata_,
+    KeyMetadata & key_metadata_,
     KeyGuard::Lock && lock_,
     KeysQueuePtr cleanup_keys_metadata_queue_,
-    const FileCache * cache_)
+    const std::string & key_path_)
     : key(key_)
-    , cache(cache_)
+    , key_path(key_path_)
     , lock(std::move(lock_))
     , key_metadata(key_metadata_)
     , cleanup_keys_metadata_queue(cleanup_keys_metadata_queue_)
@@ -43,7 +43,7 @@ void LockedKey::remove(FileSegmentPtr file_segment, const CacheGuard::Lock & cac
 
 bool LockedKey::isLastHolder(size_t offset) const
 {
-    const auto * file_segment_metadata = getKeyMetadata()->getByOffset(offset);
+    const auto * file_segment_metadata = key_metadata.getByOffset(offset);
     return file_segment_metadata->file_segment.use_count() == 2;
 }
 
@@ -56,8 +56,7 @@ void LockedKey::remove(
         log, "Remove from cache. Key: {}, offset: {}",
         key.toString(), offset);
 
-    auto metadata = getKeyMetadata();
-    auto * file_segment_metadata = metadata->getByOffset(offset);
+    auto * file_segment_metadata = key_metadata.getByOffset(offset);
 
     if (file_segment_metadata->queue_iterator)
         LockedCachePriorityIterator(cache_lock, file_segment_metadata->queue_iterator).remove();
@@ -65,7 +64,7 @@ void LockedKey::remove(
     const auto cache_file_path = file_segment_metadata->file_segment->getPathInLocalCache();
     file_segment_metadata->file_segment->detach(segment_lock, *this);
 
-    metadata->erase(offset);
+    key_metadata.erase(offset);
 
     if (fs::exists(cache_file_path))
     {
@@ -93,7 +92,7 @@ void LockedKey::reduceSizeToDownloaded(
      * because of no space left in cache, we need to be able to cut file segment's size to downloaded_size.
      */
 
-    auto * file_segment_metadata = getKeyMetadata()->getByOffset(offset);
+    auto * file_segment_metadata = key_metadata.getByOffset(offset);
     const auto & file_segment = file_segment_metadata->file_segment;
 
     size_t downloaded_size = file_segment->downloaded_size;
@@ -114,7 +113,7 @@ void LockedKey::reduceSizeToDownloaded(
 
     CreateFileSegmentSettings create_settings(file_segment->getKind());
     file_segment_metadata->file_segment = std::make_shared<FileSegment>(
-        offset, downloaded_size, key, getKeyMetadata(), file_segment->cache, FileSegment::State::DOWNLOADED, create_settings);
+        offset, downloaded_size, key, &key_metadata, file_segment->cache, FileSegment::State::DOWNLOADED, create_settings);
 
     if (file_segment->reserved_size > file_segment->downloaded_size)
         entry.size = downloaded_size;
@@ -125,25 +124,17 @@ void LockedKey::reduceSizeToDownloaded(
 
 void LockedKey::removeKeyIfEmpty() const
 {
-    /// We cannot remove key directory, because if cache is not initialized,
-    /// it means we are currently iterating it.
-    if (!cache->isInitialized())
-        return;
-
-    auto metadata = getKeyMetadata();
     /// Someone might still need this directory.
-    if (!metadata->empty())
+    if (!key_metadata.empty())
         return;
 
-    metadata->removed = true;
+    key_metadata.removed = true;
 
     /// Now `key_metadata` empty and the key lock is still locked.
     /// So it is guaranteed that no one will add something.
-
-    fs::path key_path = cache->getPathInLocalCache(key);
     if (fs::exists(key_path))
     {
-        metadata->created_base_directory = false;
+        key_metadata.created_base_directory = false;
         fs::remove_all(key_path);
     }
     cleanup_keys_metadata_queue->add(key);

@@ -28,7 +28,7 @@ FileSegment::FileSegment(
         size_t offset_,
         size_t size_,
         const Key & key_,
-        std::weak_ptr<KeyMetadata> key_metadata_,
+        KeyMetadata * key_metadata_,
         FileCache * cache_,
         State download_state_,
         const CreateFileSegmentSettings & settings)
@@ -383,14 +383,13 @@ FileSegment::State FileSegment::wait()
 
 LockedKeyPtr FileSegment::createLockedKey(bool assert_exists) const
 {
-    if (key_metadata.expired())
+    if (!key_metadata)
     {
         if (assert_exists)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot lock key");
-        else
-            return nullptr;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot lock key, key metadata is not set");
+        return nullptr;
     }
-    return cache->createLockedKey(key(), key_metadata.lock());
+    return cache->createLockedKey(key(), *key_metadata);
 }
 
 bool FileSegment::reserve(size_t size_to_reserve)
@@ -441,7 +440,7 @@ bool FileSegment::reserve(size_t size_to_reserve)
         if (is_unbound && is_file_segment_size_exceeded)
             segment_range.right = range().left + expected_downloaded_size + size_to_reserve;
 
-        reserved = cache->tryReserve(key(), offset(), size_to_reserve, key_metadata.lock());
+        reserved = cache->tryReserve(key(), offset(), size_to_reserve, *key_metadata);
         if (reserved)
         {
             /// No lock is required because reserved size is always
@@ -738,7 +737,7 @@ FileSegmentPtr FileSegment::getSnapshot(const FileSegmentPtr & file_segment)
         file_segment->offset(),
         file_segment->range().size(),
         file_segment->key(),
-        std::weak_ptr<KeyMetadata>(),
+        nullptr,
         file_segment->cache,
         State::DETACHED,
         CreateFileSegmentSettings(file_segment->getKind()));
@@ -779,7 +778,7 @@ void FileSegment::detach(const FileSegmentGuard::Lock & lock, const LockedKey &)
 void FileSegment::detachAssumeStateFinalized(const FileSegmentGuard::Lock & lock)
 {
     is_completed = true;
-    key_metadata.reset();
+    key_metadata = nullptr;
     LOG_TEST(log, "Detached file segment: {}", getInfoForLogUnlocked(lock));
 }
 
@@ -798,7 +797,7 @@ FileSegments::iterator FileSegmentsHolder::completeAndPopFrontImpl()
     auto locked_key = file_segment.createLockedKey(/* assert_exists */false);
     if (locked_key)
     {
-        auto queue_iter = locked_key->getKeyMetadata()->tryGetByOffset(file_segment.offset())->queue_iterator;
+        auto queue_iter = locked_key->getKeyMetadata().tryGetByOffset(file_segment.offset())->queue_iterator;
         if (queue_iter)
             LockedCachePriorityIterator(cache_lock, queue_iter).use();
 
