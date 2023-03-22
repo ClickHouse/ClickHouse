@@ -200,7 +200,6 @@ void ASTSystemQuery::formatImpl(FormattingBuffer out) const
     }
     else if (type == Type::SYNC_FILE_CACHE)
     {
-        settings.ostr << (settings.hilite ? hilite_none : "");
     }
 }
 

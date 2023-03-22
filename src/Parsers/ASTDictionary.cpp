@@ -36,14 +36,14 @@ ASTPtr ASTDictionaryLifetime::clone() const
 }
 
 
-void ASTDictionaryLifetime::formatImpl(FormattingBuffer settings) const
+void ASTDictionaryLifetime::formatImpl(FormattingBuffer out) const
 {
-    settings.writeKeyword("LIFETIME");
-    settings.ostr << "(";
-    settings.writeKeyword("MIN ");
-    settings.ostr << min_sec << " ";
-    settings.writeKeyword("MAX ");
-    settings.ostr << max_sec << ")";
+    out.writeKeyword("LIFETIME");
+    out.ostr << "(";
+    out.writeKeyword("MIN ");
+    out.ostr << min_sec << " ";
+    out.writeKeyword("MAX ");
+    out.ostr << max_sec << ")";
 }
 
 

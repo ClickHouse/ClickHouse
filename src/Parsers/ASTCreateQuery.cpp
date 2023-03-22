@@ -386,7 +386,7 @@ void ASTCreateQuery::formatQueryImpl(FormattingBuffer out) const
         as_table_function->formatImpl(out);
     }
 
-    out.setExpressionListAlwaysStartsOnNewLine(true);
+    out.setExpressionListAlwaysStartsOnNewLine();
 
     if (columns_list && !columns_list->empty() && !as_table_function)
     {

@@ -26,8 +26,8 @@ public:
 protected:
     void formatImpl(FormattingBuffer out) const override
     {
-        settings.writeKeyword("USE ");
-        settings.ostr << backQuoteIfNeed(database);
+        out.writeKeyword("USE ");
+        out.ostr << backQuoteIfNeed(database);
     }
 };
 

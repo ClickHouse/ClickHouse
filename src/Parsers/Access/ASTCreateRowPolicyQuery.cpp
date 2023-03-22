@@ -31,7 +31,7 @@ namespace
     {
         out.ostr << " ";
         if (expr)
-            expr->format(out);
+            expr->formatImpl(out);
         else
             out.writeKeyword("NONE");
     }
@@ -64,7 +64,10 @@ namespace
         WriteBufferFromOwnString temp_buf;
         for (const auto & [filter_type, filter] : filters)
         {
-            formatFilterExpression(filter, out.copyWithSettingsOnly(temp_buf));
+            IAST::FormatSettings settings = out.copySettings();
+            IAST::FormatState state;
+            IAST::FormattingBuffer temp_out(temp_buf, settings, state);
+            formatFilterExpression(filter, temp_out);
             filters_as_strings.emplace_back(filter_type, temp_buf.str());
             temp_buf.restart();
         }
