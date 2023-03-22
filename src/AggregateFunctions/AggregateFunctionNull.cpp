@@ -65,18 +65,16 @@ public:
         }
 
         if (!has_nullable_types)
-            throw Exception("Aggregate function combinator 'Null' requires at least one argument to be Nullable",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function combinator 'Null' "
+                            "requires at least one argument to be Nullable");
 
         if (has_null_types)
         {
             /// Currently the only functions that returns not-NULL on all NULL arguments are count and uniq, and they returns UInt64.
             if (properties.returns_default_when_only_null)
-                return std::make_shared<AggregateFunctionNothing>(DataTypes{
-                    std::make_shared<DataTypeUInt64>()}, params);
+                return std::make_shared<AggregateFunctionNothing>(arguments, params, std::make_shared<DataTypeUInt64>());
             else
-                return std::make_shared<AggregateFunctionNothing>(DataTypes{
-                    std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>())}, params);
+                return std::make_shared<AggregateFunctionNothing>(arguments, params, std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>()));
         }
 
         assert(nested_function);

@@ -25,4 +25,3 @@ merge('db_name', 'tables_regexp')
 **See Also**
 
 -   [Merge](../../engines/table-engines/special/merge.md) table engine
-

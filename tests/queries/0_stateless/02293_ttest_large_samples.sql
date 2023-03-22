@@ -50,4 +50,4 @@ FROM
         FROM system.numbers
         LIMIT 1023
     )
-); -- { serverError 36 }
+);

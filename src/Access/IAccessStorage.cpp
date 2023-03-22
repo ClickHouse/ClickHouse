@@ -630,79 +630,70 @@ Poco::Logger * IAccessStorage::getLogger() const
 
 void IAccessStorage::throwNotFound(const UUID & id) const
 {
-    throw Exception(outputID(id) + " not found in " + getStorageName(), ErrorCodes::ACCESS_ENTITY_NOT_FOUND);
+    throw Exception(ErrorCodes::ACCESS_ENTITY_NOT_FOUND, "{} not found in {}", outputID(id), getStorageName());
 }
 
 
 void IAccessStorage::throwNotFound(AccessEntityType type, const String & name) const
 {
     int error_code = AccessEntityTypeInfo::get(type).not_found_error_code;
-    throw Exception("There is no " + formatEntityTypeWithName(type, name) + " in " + getStorageName(), error_code);
+    throw Exception(error_code, "There is no {} in {}", formatEntityTypeWithName(type, name), getStorageName());
 }
 
 
 void IAccessStorage::throwBadCast(const UUID & id, AccessEntityType type, const String & name, AccessEntityType required_type)
 {
-    throw Exception(
-        outputID(id) + ": " + formatEntityTypeWithName(type, name) + " expected to be of type " + toString(required_type),
-        ErrorCodes::LOGICAL_ERROR);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "{}: {} expected to be of type {}", outputID(id),
+        formatEntityTypeWithName(type, name), toString(required_type));
 }
 
 
 void IAccessStorage::throwIDCollisionCannotInsert(const UUID & id, AccessEntityType type, const String & name, AccessEntityType existing_type, const String & existing_name) const
 {
-    throw Exception(
-        formatEntityTypeWithName(type, name) + ": cannot insert because the " + outputID(id) + " is already used by "
-            + formatEntityTypeWithName(existing_type, existing_name) + " in " + getStorageName(),
-        ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS);
+    throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "{}: "
+        "cannot insert because the {} is already used by {} in {}", formatEntityTypeWithName(type, name),
+        outputID(id), formatEntityTypeWithName(existing_type, existing_name), getStorageName());
 }
 
 
 void IAccessStorage::throwNameCollisionCannotInsert(AccessEntityType type, const String & name) const
 {
-    throw Exception(
-        formatEntityTypeWithName(type, name) + ": cannot insert because " + formatEntityTypeWithName(type, name) + " already exists in "
-            + getStorageName(),
-        ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS);
+    throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "{}: cannot insert because {} already exists in {}",
+                    formatEntityTypeWithName(type, name), formatEntityTypeWithName(type, name), getStorageName());
 }
 
 
 void IAccessStorage::throwNameCollisionCannotRename(AccessEntityType type, const String & old_name, const String & new_name) const
 {
-    throw Exception(
-        formatEntityTypeWithName(type, old_name) + ": cannot rename to " + backQuote(new_name) + " because "
-            + formatEntityTypeWithName(type, new_name) + " already exists in " + getStorageName(),
-        ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS);
+    throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "{}: cannot rename to {} because {} already exists in {}",
+        formatEntityTypeWithName(type, old_name), backQuote(new_name), formatEntityTypeWithName(type, new_name), getStorageName());
 }
 
 
 void IAccessStorage::throwReadonlyCannotInsert(AccessEntityType type, const String & name) const
 {
-    throw Exception(
-        "Cannot insert " + formatEntityTypeWithName(type, name) + " to " + getStorageName() + " because this storage is readonly",
-        ErrorCodes::ACCESS_STORAGE_READONLY);
+    throw Exception(ErrorCodes::ACCESS_STORAGE_READONLY, "Cannot insert {} to {} because this storage is readonly",
+        formatEntityTypeWithName(type, name), getStorageName());
 }
 
 
 void IAccessStorage::throwReadonlyCannotUpdate(AccessEntityType type, const String & name) const
 {
-    throw Exception(
-        "Cannot update " + formatEntityTypeWithName(type, name) + " in " + getStorageName() + " because this storage is readonly",
-        ErrorCodes::ACCESS_STORAGE_READONLY);
+    throw Exception(ErrorCodes::ACCESS_STORAGE_READONLY, "Cannot update {} in {} because this storage is readonly",
+        formatEntityTypeWithName(type, name), getStorageName());
 }
 
 
 void IAccessStorage::throwReadonlyCannotRemove(AccessEntityType type, const String & name) const
 {
-    throw Exception(
-        "Cannot remove " + formatEntityTypeWithName(type, name) + " from " + getStorageName() + " because this storage is readonly",
-        ErrorCodes::ACCESS_STORAGE_READONLY);
+    throw Exception(ErrorCodes::ACCESS_STORAGE_READONLY, "Cannot remove {} from {} because this storage is readonly",
+        formatEntityTypeWithName(type, name), getStorageName());
 }
 
 
 void IAccessStorage::throwAddressNotAllowed(const Poco::Net::IPAddress & address)
 {
-    throw Exception("Connections from " + address.toString() + " are not allowed", ErrorCodes::IP_ADDRESS_NOT_ALLOWED);
+    throw Exception(ErrorCodes::IP_ADDRESS_NOT_ALLOWED, "Connections from {} are not allowed", address.toString());
 }
 
 void IAccessStorage::throwAuthenticationTypeNotAllowed(AuthenticationType auth_type)
@@ -715,7 +706,7 @@ void IAccessStorage::throwAuthenticationTypeNotAllowed(AuthenticationType auth_t
 
 void IAccessStorage::throwInvalidCredentials()
 {
-    throw Exception("Invalid credentials", ErrorCodes::WRONG_PASSWORD);
+    throw Exception(ErrorCodes::WRONG_PASSWORD, "Invalid credentials");
 }
 
 void IAccessStorage::throwBackupNotAllowed() const

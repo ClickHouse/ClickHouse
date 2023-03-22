@@ -13,9 +13,7 @@
 
 #if defined(__aarch64__) && defined(__ARM_NEON)
 #    include <arm_neon.h>
-#    ifdef HAS_RESERVED_IDENTIFIER
-#        pragma clang diagnostic ignored "-Wreserved-identifier"
-#    endif
+#      pragma clang diagnostic ignored "-Wreserved-identifier"
 #endif
 
 namespace DB
@@ -154,7 +152,7 @@ struct ToValidUTF8Impl
 
     [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
     {
-        throw Exception("Column of type FixedString is not supported by toValidUTF8 function", ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column of type FixedString is not supported by toValidUTF8 function");
     }
 };
 

@@ -51,5 +51,7 @@ public:
 
     void replaceCurrentUserTag(const String & current_user_name) const;
     void replaceEmptyDatabase(const String & current_database) const;
+
+    QueryKind getQueryKind() const override { return QueryKind::Create; }
 };
 }

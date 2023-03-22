@@ -1,28 +1,34 @@
 #include <Backups/RestoreCoordinationRemote.h>
+#include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/escapeForFileName.h>
-
+#include <Backups/BackupCoordinationStage.h>
+#include <Backups/BackupCoordinationRemote.h>
 
 namespace DB
 {
 
+namespace Stage = BackupCoordinationStage;
+
 RestoreCoordinationRemote::RestoreCoordinationRemote(
-    const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_, bool remove_zk_nodes_in_destructor_)
-    : zookeeper_path(zookeeper_path_)
+    const String & root_zookeeper_path_, const String & restore_uuid_, zkutil::GetZooKeeper get_zookeeper_, bool is_internal_)
+    : root_zookeeper_path(root_zookeeper_path_)
+    , zookeeper_path(root_zookeeper_path_ + "/restore-" + restore_uuid_)
+    , restore_uuid(restore_uuid_)
     , get_zookeeper(get_zookeeper_)
-    , remove_zk_nodes_in_destructor(remove_zk_nodes_in_destructor_)
+    , is_internal(is_internal_)
 {
     createRootNodes();
 
     stage_sync.emplace(
-        zookeeper_path_ + "/stage", [this] { return getZooKeeper(); }, &Poco::Logger::get("RestoreCoordination"));
+        zookeeper_path + "/stage", [this] { return getZooKeeper(); }, &Poco::Logger::get("RestoreCoordination"));
 }
 
 RestoreCoordinationRemote::~RestoreCoordinationRemote()
 {
     try
     {
-        if (remove_zk_nodes_in_destructor)
+        if (!is_internal)
             removeAllNodes();
     }
     catch (...)
@@ -53,6 +59,7 @@ void RestoreCoordinationRemote::createRootNodes()
     zk->createIfNotExists(zookeeper_path + "/repl_databases_tables_acquired", "");
     zk->createIfNotExists(zookeeper_path + "/repl_tables_data_acquired", "");
     zk->createIfNotExists(zookeeper_path + "/repl_access_storages_acquired", "");
+    zk->createIfNotExists(zookeeper_path + "/repl_sql_objects_acquired", "");
 }
 
 
@@ -116,6 +123,28 @@ bool RestoreCoordinationRemote::acquireReplicatedAccessStorage(const String & ac
     return (code == Coordination::Error::ZOK);
 }
 
+bool RestoreCoordinationRemote::acquireReplicatedSQLObjects(const String & loader_zk_path, UserDefinedSQLObjectType object_type)
+{
+    auto zk = getZooKeeper();
+
+    String path = zookeeper_path + "/repl_sql_objects_acquired/" + escapeForFileName(loader_zk_path);
+    zk->createIfNotExists(path, "");
+
+    path += "/";
+    switch (object_type)
+    {
+        case UserDefinedSQLObjectType::Function:
+            path += "functions";
+            break;
+    }
+
+    auto code = zk->tryCreate(path, "", zkutil::CreateMode::Persistent);
+    if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
+        throw zkutil::KeeperException(code, path);
+
+    return (code == Coordination::Error::ZOK);
+}
+
 void RestoreCoordinationRemote::removeAllNodes()
 {
     /// Usually this function is called by the initiator when a restore operation is complete so we don't need the coordination anymore.
@@ -127,6 +156,51 @@ void RestoreCoordinationRemote::removeAllNodes()
 
     auto zk = getZooKeeper();
     zk->removeRecursive(zookeeper_path);
+}
+
+bool RestoreCoordinationRemote::hasConcurrentRestores(const std::atomic<size_t> &) const
+{
+    /// If its internal concurrency will be checked for the base restore
+    if (is_internal)
+        return false;
+
+    auto zk = getZooKeeper();
+    std::string path = zookeeper_path +"/stage";
+
+    if (! zk->exists(root_zookeeper_path))
+        zk->createAncestors(root_zookeeper_path);
+
+    for (size_t attempt = 0; attempt < MAX_ZOOKEEPER_ATTEMPTS; ++attempt)
+    {
+        Coordination::Stat stat;
+        zk->get(root_zookeeper_path, &stat);
+        Strings existing_restore_paths = zk->getChildren(root_zookeeper_path);
+        for (const auto & existing_restore_path : existing_restore_paths)
+        {
+            if (startsWith(existing_restore_path, "backup-"))
+                continue;
+
+            String existing_restore_uuid = existing_restore_path;
+            existing_restore_uuid.erase(0, String("restore-").size());
+
+            if (existing_restore_uuid == toString(restore_uuid))
+                continue;
+
+
+            const auto status = zk->get(root_zookeeper_path + "/" + existing_restore_path + "/stage");
+            if (status != Stage::COMPLETED)
+                return true;
+        }
+
+        zk->createIfNotExists(path, "");
+        auto code = zk->trySet(path, Stage::SCHEDULED_TO_START, stat.version);
+        if (code == Coordination::Error::ZOK)
+            break;
+        bool is_last_attempt = (attempt == MAX_ZOOKEEPER_ATTEMPTS - 1);
+        if ((code != Coordination::Error::ZBADVERSION) || is_last_attempt)
+            throw zkutil::KeeperException(code, path);
+    }
+    return false;
 }
 
 }

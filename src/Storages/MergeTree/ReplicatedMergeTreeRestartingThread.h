@@ -28,7 +28,7 @@ public:
 
     void wakeup() { task->schedule(); }
 
-    void shutdown();
+    void shutdown(bool part_of_full_shutdown);
 
 private:
     StorageReplicatedMergeTree & storage;

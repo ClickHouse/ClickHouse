@@ -8,12 +8,58 @@
 namespace DB
 {
 
-void transformTypesRecursively(DataTypes & types, std::function<void(DataTypes &, const TypeIndexesSet &)> transform_simple_types, std::function<void(DataTypes &, const TypeIndexesSet &)> transform_complex_types)
+TypeIndexesSet getTypesIndexes(const DataTypes & types)
 {
     TypeIndexesSet type_indexes;
     for (const auto & type : types)
         type_indexes.insert(type->getTypeId());
+    return type_indexes;
+}
 
+void transformTypesRecursively(DataTypes & types, std::function<void(DataTypes &, TypeIndexesSet &)> transform_simple_types, std::function<void(DataTypes &, TypeIndexesSet &)> transform_complex_types)
+{
+    TypeIndexesSet type_indexes = getTypesIndexes(types);
+
+    /// Nullable
+    if (type_indexes.contains(TypeIndex::Nullable))
+    {
+        std::vector<UInt8> is_nullable;
+        is_nullable.reserve(types.size());
+        DataTypes nested_types;
+        nested_types.reserve(types.size());
+        for (const auto & type : types)
+        {
+            if (const DataTypeNullable * type_nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+            {
+                is_nullable.push_back(1);
+                nested_types.push_back(type_nullable->getNestedType());
+            }
+            else
+            {
+                is_nullable.push_back(0);
+                nested_types.push_back(type);
+            }
+        }
+
+        transformTypesRecursively(nested_types, transform_simple_types, transform_complex_types);
+        for (size_t i = 0; i != types.size(); ++i)
+        {
+            /// Type could be changed so it cannot be inside Nullable anymore.
+            if (is_nullable[i] && nested_types[i]->canBeInsideNullable())
+                types[i] = makeNullable(nested_types[i]);
+            else
+                types[i] = nested_types[i];
+        }
+
+        if (transform_complex_types)
+        {
+            /// Some types could be changed.
+            type_indexes = getTypesIndexes(types);
+            transform_complex_types(types, type_indexes);
+        }
+
+        return;
+    }
 
     /// Arrays
     if (type_indexes.contains(TypeIndex::Array))
@@ -114,49 +160,13 @@ void transformTypesRecursively(DataTypes & types, std::function<void(DataTypes &
         return;
     }
 
-    /// Nullable
-    if (type_indexes.contains(TypeIndex::Nullable))
-    {
-        std::vector<UInt8> is_nullable;
-        is_nullable.reserve(types.size());
-        DataTypes nested_types;
-        nested_types.reserve(types.size());
-        for (const auto & type : types)
-        {
-            if (const DataTypeNullable * type_nullable = typeid_cast<const DataTypeNullable *>(type.get()))
-            {
-                is_nullable.push_back(1);
-                nested_types.push_back(type_nullable->getNestedType());
-            }
-            else
-            {
-                is_nullable.push_back(0);
-                nested_types.push_back(type);
-            }
-        }
-
-        transformTypesRecursively(nested_types, transform_simple_types, transform_complex_types);
-        for (size_t i = 0; i != types.size(); ++i)
-        {
-            if (is_nullable[i])
-                types[i] = makeNullable(nested_types[i]);
-            else
-                types[i] = nested_types[i];
-        }
-
-        if (transform_complex_types)
-            transform_complex_types(types, type_indexes);
-
-        return;
-    }
-
     transform_simple_types(types, type_indexes);
 }
 
 void callOnNestedSimpleTypes(DataTypePtr & type, std::function<void(DataTypePtr &)> callback)
 {
     DataTypes types = {type};
-    transformTypesRecursively(types, [callback](auto & data_types, const TypeIndexesSet &){ callback(data_types[0]); }, {});
+    transformTypesRecursively(types, [callback](auto & data_types, TypeIndexesSet &){ callback(data_types[0]); }, {});
 }
 
 }

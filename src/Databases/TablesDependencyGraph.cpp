@@ -644,7 +644,9 @@ void TablesDependencyGraph::calculateLevels() const
             for (const Node * dependent_node : current_node->dependents)
             {
                 if (!dependent_node->num_dependencies_to_count)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "{}: Trying to decrement 0 dependencies counter for {}. It's a bug", name_for_logging, dependent_node->storage_id);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                    "{}: Trying to decrement 0 dependencies counter for {}. It's a bug",
+                                    name_for_logging, dependent_node->storage_id);
 
                 if (!--dependent_node->num_dependencies_to_count)
                 {
@@ -655,7 +657,9 @@ void TablesDependencyGraph::calculateLevels() const
         }
 
         if (nodes_sorted_by_level_lazy.size() > nodes.size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "{}: Some tables were found more than once while passing through the dependency graph. It's a bug", name_for_logging);
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "{}: Some tables were found more than once while passing through the dependency graph. "
+                            "It's a bug", name_for_logging);
 
         num_nodes_without_dependencies = nodes_sorted_by_level_lazy.size() - end;
         ++current_level;
@@ -715,7 +719,7 @@ void TablesDependencyGraph::log() const
 {
     if (nodes.empty())
     {
-        LOG_TEST(getLogger(), "No tables");
+        LOG_TRACE(getLogger(), "No tables");
         return;
     }
 
@@ -727,7 +731,7 @@ void TablesDependencyGraph::log() const
 
         String level_desc = (node->level == CYCLIC_LEVEL) ? "cyclic" : fmt::format("level {}", node->level);
 
-        LOG_TEST(getLogger(), "Table {} has {} ({})", node->storage_id, dependencies_desc, level_desc);
+        LOG_TRACE(getLogger(), "Table {} has {} ({})", node->storage_id, dependencies_desc, level_desc);
     }
 }
 

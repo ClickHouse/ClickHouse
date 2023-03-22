@@ -11,12 +11,14 @@
 
 namespace DB
 {
+
 struct Settings;
 
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int DECIMAL_OVERFLOW;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -64,6 +66,11 @@ struct VarMoments
         readPODBinary(*this, buf);
     }
 
+    T get() const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Variation moments should be obtained by either 'getSample' or 'getPopulation' method");
+    }
+
     T getPopulation() const
     {
         if (m[0] == 0)
@@ -84,34 +91,48 @@ struct VarMoments
 
     T getMoment3() const
     {
-        if (m[0] == 0)
-            return std::numeric_limits<T>::quiet_NaN();
-        // to avoid accuracy problem
-        if (m[0] == 1)
-            return 0;
-        /// \[ \frac{1}{m_0} (m_3 - (3 * m_2 - \frac{2 * {m_1}^2}{m_0}) * \frac{m_1}{m_0});\]
-        return (m[3]
-            - (3 * m[2]
-                - 2 * m[1] * m[1] / m[0]
-            ) * m[1] / m[0]
-        ) / m[0];
+        if constexpr (_level < 3)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Variation moments should be obtained by either 'getSample' or 'getPopulation' method");
+        }
+        else
+        {
+            if (m[0] == 0)
+                return std::numeric_limits<T>::quiet_NaN();
+            // to avoid accuracy problem
+            if (m[0] == 1)
+                return 0;
+            /// \[ \frac{1}{m_0} (m_3 - (3 * m_2 - \frac{2 * {m_1}^2}{m_0}) * \frac{m_1}{m_0});\]
+            return (m[3]
+                - (3 * m[2]
+                    - 2 * m[1] * m[1] / m[0]
+                ) * m[1] / m[0]
+            ) / m[0];
+        }
     }
 
     T getMoment4() const
     {
-        if (m[0] == 0)
-            return std::numeric_limits<T>::quiet_NaN();
-        // to avoid accuracy problem
-        if (m[0] == 1)
-            return 0;
-        /// \[ \frac{1}{m_0}(m_4 - (4 * m_3 - (6 * m_2 - \frac{3 * m_1^2}{m_0} ) \frac{m_1}{m_0})\frac{m_1}{m_0})\]
-        return (m[4]
-            - (4 * m[3]
-                - (6 * m[2]
-                    - 3 * m[1] * m[1] / m[0]
+        if constexpr (_level < 4)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Variation moments should be obtained by either 'getSample' or 'getPopulation' method");
+        }
+        else
+        {
+            if (m[0] == 0)
+                return std::numeric_limits<T>::quiet_NaN();
+            // to avoid accuracy problem
+            if (m[0] == 1)
+                return 0;
+            /// \[ \frac{1}{m_0}(m_4 - (4 * m_3 - (6 * m_2 - \frac{3 * m_1^2}{m_0} ) \frac{m_1}{m_0})\frac{m_1}{m_0})\]
+            return (m[4]
+                - (4 * m[3]
+                    - (6 * m[2]
+                        - 3 * m[1] * m[1] / m[0]
+                    ) * m[1] / m[0]
                 ) * m[1] / m[0]
-            ) * m[1] / m[0]
-        ) / m[0];
+            ) / m[0];
+        }
     }
 };
 
@@ -134,7 +155,7 @@ public:
             overflow = overflow || common::mulOverflow(tmp, x, tmp) || common::addOverflow(getM(4), tmp, getM(4));
 
         if (overflow)
-            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
     }
 
     void merge(const VarMomentsDecimal & rhs)
@@ -149,11 +170,16 @@ public:
             overflow = overflow || common::addOverflow(getM(4), rhs.getM(4), getM(4));
 
         if (overflow)
-            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
     }
 
     void write(WriteBuffer & buf) const { writePODBinary(*this, buf); }
     void read(ReadBuffer & buf) { readPODBinary(*this, buf); }
+
+    Float64 get() const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Variation moments should be obtained by either 'getSample' or 'getPopulation' method");
+    }
 
     Float64 getPopulation(UInt32 scale) const
     {
@@ -163,7 +189,7 @@ public:
         NativeType tmp;
         if (common::mulOverflow(getM(1), getM(1), tmp) ||
             common::subOverflow(getM(2), NativeType(tmp / m0), tmp))
-            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
         return std::max(Float64{}, DecimalUtils::convertTo<Float64>(T(tmp / m0), scale));
     }
 
@@ -177,7 +203,7 @@ public:
         NativeType tmp;
         if (common::mulOverflow(getM(1), getM(1), tmp) ||
             common::subOverflow(getM(2), NativeType(tmp / m0), tmp))
-            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
         return std::max(Float64{}, DecimalUtils::convertTo<Float64>(T(tmp / (m0 - 1)), scale));
     }
 
@@ -191,7 +217,7 @@ public:
             common::subOverflow(3 * getM(2), NativeType(tmp / m0), tmp) ||
             common::mulOverflow(tmp, getM(1), tmp) ||
             common::subOverflow(getM(3), NativeType(tmp / m0), tmp))
-            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
         return DecimalUtils::convertTo<Float64>(T(tmp / m0), scale);
     }
 
@@ -207,7 +233,7 @@ public:
             common::subOverflow(4 * getM(3), NativeType(tmp / m0), tmp) ||
             common::mulOverflow(tmp, getM(1), tmp) ||
             common::subOverflow(getM(4), NativeType(tmp / m0), tmp))
-            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
         return DecimalUtils::convertTo<Float64>(T(tmp / m0), scale);
     }
 
@@ -258,6 +284,21 @@ struct CovarMoments
     void read(ReadBuffer & buf)
     {
         readPODBinary(*this, buf);
+    }
+
+    T get() const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Covariation moments should be obtained by either 'getSample' or 'getPopulation' method");
+    }
+
+    T getMoment3() const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Covariation moments should be obtained by either 'getSample' or 'getPopulation' method");
+    }
+
+    T getMoment4() const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Covariation moments should be obtained by either 'getSample' or 'getPopulation' method");
     }
 
     T NO_SANITIZE_UNDEFINED getPopulation() const
@@ -316,6 +357,26 @@ struct CorrMoments
     T NO_SANITIZE_UNDEFINED get() const
     {
         return (m0 * xy - x1 * y1) / sqrt((m0 * x2 - x1 * x1) * (m0 * y2 - y1 * y1));
+    }
+
+    T getSample() const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Correlation moments should be obtained by the 'get' method");
+    }
+
+    T getPopulation() const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Correlation moments should be obtained by the 'get' method");
+    }
+
+    T getMoment3() const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Correlation moments should be obtained by either 'getSample' or 'getPopulation' method");
+    }
+
+    T getMoment4() const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Correlation moments should be obtained by either 'getSample' or 'getPopulation' method");
     }
 };
 
@@ -595,6 +656,9 @@ struct AnalysisOfVarianceMoments
 
     Float64 getPValue(Float64 f_statistic) const
     {
+        if (unlikely(!std::isfinite(f_statistic)))
+            return std::numeric_limits<Float64>::quiet_NaN();
+
         const auto k = xs1.size();
         const auto n = std::accumulate(ns.begin(), ns.end(), 0UL);
 

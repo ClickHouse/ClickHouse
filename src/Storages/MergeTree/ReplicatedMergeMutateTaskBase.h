@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 
+
 namespace DB
 {
 
@@ -59,9 +60,10 @@ protected:
     MergeList::EntryPtr merge_mutate_entry{nullptr};
     Poco::Logger * log;
     StorageReplicatedMergeTree & storage;
+    /// ProfileEvents for current part will be stored here
+    ProfileEvents::Counters profile_counters;
 
 private:
-
     enum class CheckExistingPartResult
     {
         PART_EXISTS,
@@ -69,7 +71,7 @@ private:
     };
 
     CheckExistingPartResult checkExistingPart();
-    bool executeImpl() ;
+    bool executeImpl();
 
     enum class State
     {

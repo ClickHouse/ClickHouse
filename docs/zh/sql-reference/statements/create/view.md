@@ -61,9 +61,9 @@ ClickHouse 中的物化视图更像是插入触发器。 如果视图查询中�
 
 请注意，物化视图受[optimize_on_insert](../../../operations/settings/settings.md#optimize-on-insert)设置的影响。 在插入视图之前合并数据。
 
-视图看起来与普通表相同。 例如，它们列在1SHOW TABLES1查询的结果中。
+视图看起来与普通表相同。 例如，它们列在`SHOW TABLES`查询的结果中。
 
-删除视图,使用[DROP VIEW](../../../sql-reference/statements/drop#drop-view). `DROP TABLE`也适用于视图。
+删除视图,使用[DROP VIEW](../../../sql-reference/statements/drop.md#drop-view). `DROP TABLE`也适用于视图。
 
 ## Live View (实验性) {#live-view}
 
@@ -210,7 +210,7 @@ Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table defa
 - 监视表更改并触发后续选择查询。
 - 使用定期刷新从系统表中查看指标。
 
-[原始文章](https://clickhouse.com/docs/en/sql-reference/statements/create/view/) <!--hide-->
+
 
 ## Window View [Experimental] {#window-view}
 

@@ -1,5 +1,6 @@
 #include <Interpreters/ActionsDAG.h>
 
+#include <Analyzer/FunctionNode.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/IFunction.h>
@@ -13,6 +14,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Core/SortDescription.h>
+#include <Planner/PlannerActionsVisitor.h>
 
 #include <stack>
 #include <base/sort.h>
@@ -31,6 +33,35 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int BAD_ARGUMENTS;
+}
+
+namespace
+{
+
+std::pair<ColumnsWithTypeAndName, bool> getFunctionArguments(const ActionsDAG::NodeRawConstPtrs & children)
+{
+    size_t num_arguments = children.size();
+
+    bool all_const = true;
+    ColumnsWithTypeAndName arguments(num_arguments);
+
+    for (size_t i = 0; i < num_arguments; ++i)
+    {
+        const auto & child = *children[i];
+
+        ColumnWithTypeAndName argument;
+        argument.column = child.column;
+        argument.type = child.result_type;
+        argument.name = child.result_name;
+
+        if (!argument.column || !isColumnConst(*argument.column))
+            all_const = false;
+
+        arguments[i] = std::move(argument);
+    }
+    return { std::move(arguments), all_const };
+}
+
 }
 
 void ActionsDAG::Node::toTree(JSONBuilder::JSONMap & map) const
@@ -142,7 +173,7 @@ const ActionsDAG::Node & ActionsDAG::addArrayJoin(const Node & child, std::strin
 {
     const auto & array_type = getArrayJoinDataType(child.result_type);
     if (!array_type)
-        throw Exception("ARRAY JOIN requires array argument", ErrorCodes::TYPE_MISMATCH);
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "ARRAY JOIN requires array argument");
 
     if (result_name.empty())
         result_name = "arrayJoin(" + child.result_name + ")";
@@ -161,79 +192,32 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
         NodeRawConstPtrs children,
         std::string result_name)
 {
-    size_t num_arguments = children.size();
+    auto [arguments, all_const] = getFunctionArguments(children);
 
-    Node node;
-    node.type = ActionType::FUNCTION;
-    node.children = std::move(children);
+    auto function_base = function->build(arguments);
+    return addFunctionImpl(
+        function_base,
+        std::move(children),
+        std::move(arguments),
+        std::move(result_name),
+        function_base->getResultType(),
+        all_const);
+}
 
-    bool all_const = true;
-    ColumnsWithTypeAndName arguments(num_arguments);
+const ActionsDAG::Node & ActionsDAG::addFunction(
+    const FunctionNode & function,
+    NodeRawConstPtrs children,
+    std::string result_name)
+{
+    auto [arguments, all_const] = getFunctionArguments(children);
 
-    for (size_t i = 0; i < num_arguments; ++i)
-    {
-        const auto & child = *node.children[i];
-
-        ColumnWithTypeAndName argument;
-        argument.column = child.column;
-        argument.type = child.result_type;
-        argument.name = child.result_name;
-
-        if (!argument.column || !isColumnConst(*argument.column))
-            all_const = false;
-
-        arguments[i] = std::move(argument);
-    }
-
-    node.function_base = function->build(arguments);
-    node.result_type = node.function_base->getResultType();
-    node.function = node.function_base->prepare(arguments);
-    node.is_deterministic = node.function_base->isDeterministic();
-
-    /// If all arguments are constants, and function is suitable to be executed in 'prepare' stage - execute function.
-    if (node.function_base->isSuitableForConstantFolding())
-    {
-        ColumnPtr column;
-
-        if (all_const)
-        {
-            size_t num_rows = arguments.empty() ? 0 : arguments.front().column->size();
-            column = node.function->execute(arguments, node.result_type, num_rows, true);
-        }
-        else
-        {
-            column = node.function_base->getConstantResultForNonConstArguments(arguments, node.result_type);
-        }
-
-        /// If the result is not a constant, just in case, we will consider the result as unknown.
-        if (column && isColumnConst(*column))
-        {
-            /// All constant (literal) columns in block are added with size 1.
-            /// But if there was no columns in block before executing a function, the result has size 0.
-            /// Change the size to 1.
-
-            if (column->empty())
-                column = column->cloneResized(1);
-
-            node.column = std::move(column);
-        }
-    }
-
-    if (result_name.empty())
-    {
-        result_name = function->getName() + "(";
-        for (size_t i = 0; i < num_arguments; ++i)
-        {
-            if (i)
-                result_name += ", ";
-            result_name += node.children[i]->result_name;
-        }
-        result_name += ")";
-    }
-
-    node.result_name = std::move(result_name);
-
-    return addNode(std::move(node));
+    return addFunctionImpl(
+        function.getFunction(),
+        std::move(children),
+        std::move(arguments),
+        std::move(result_name),
+        function.getResultType(),
+        all_const);
 }
 
 const ActionsDAG::Node & ActionsDAG::addFunction(
@@ -241,32 +225,49 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     NodeRawConstPtrs children,
     std::string result_name)
 {
+    auto [arguments, all_const] = getFunctionArguments(children);
+
+    return addFunctionImpl(
+        function_base,
+        std::move(children),
+        std::move(arguments),
+        std::move(result_name),
+        function_base->getResultType(),
+        all_const);
+}
+
+const ActionsDAG::Node & ActionsDAG::addCast(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name)
+{
+    Field cast_type_constant_value(cast_type->getName());
+
+    ColumnWithTypeAndName column;
+    column.name = calculateConstantActionNodeName(cast_type_constant_value);
+    column.column = DataTypeString().createColumnConst(0, cast_type_constant_value);
+    column.type = std::make_shared<DataTypeString>();
+
+    const auto * cast_type_constant_node = &addColumn(std::move(column));
+    ActionsDAG::NodeRawConstPtrs children = {&node_to_cast, cast_type_constant_node};
+    FunctionOverloadResolverPtr func_builder_cast = CastInternalOverloadResolver<CastType::nonAccurate>::createImpl();
+
+    return addFunction(func_builder_cast, std::move(children), result_name);
+}
+
+const ActionsDAG::Node & ActionsDAG::addFunctionImpl(
+    const FunctionBasePtr & function_base,
+    NodeRawConstPtrs children,
+    ColumnsWithTypeAndName arguments,
+    std::string result_name,
+    DataTypePtr result_type,
+    bool all_const)
+{
     size_t num_arguments = children.size();
 
     Node node;
     node.type = ActionType::FUNCTION;
     node.children = std::move(children);
 
-    bool all_const = true;
-    ColumnsWithTypeAndName arguments(num_arguments);
-
-    for (size_t i = 0; i < num_arguments; ++i)
-    {
-        const auto & child = *node.children[i];
-
-        ColumnWithTypeAndName argument;
-        argument.column = child.column;
-        argument.type = child.result_type;
-        argument.name = child.result_name;
-
-        if (!argument.column || !isColumnConst(*argument.column))
-            all_const = false;
-
-        arguments[i] = std::move(argument);
-    }
-
     node.function_base = function_base;
-    node.result_type = node.function_base->getResultType();
+    node.result_type = result_type;
     node.function = node.function_base->prepare(arguments);
     node.is_deterministic = node.function_base->isDeterministic();
 
@@ -640,8 +641,14 @@ Block ActionsDAG::updateHeader(Block header) const
                         arguments[i] = node_to_column[node->children[i]];
                         if (!arguments[i].column)
                             throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
-                                            "Not found column {} in block", node->children[i]->result_name);
+                                            "Not found column {} in block {}", node->children[i]->result_name,
+                                            header.dumpStructure());
                     }
+
+                    if (node->type == ActionsDAG::ActionType::INPUT)
+                        throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
+                                        "Not found column {} in block {}",
+                                        node->result_name, header.dumpStructure());
 
                     node_to_column[node] = executeActionForHeader(node, std::move(arguments));
                 }
@@ -1030,6 +1037,9 @@ std::string ActionsDAG::dumpDAG() const
         out << ' ' << map[node];
     out << '\n';
 
+    out << "Project input: " << project_input << '\n';
+    out << "Projected output: " << projected_output << '\n';
+
     return out.str();
 }
 
@@ -1068,6 +1078,14 @@ void ActionsDAG::assertDeterministic() const
                 "Expression must be deterministic but it contains non-deterministic part `{}`", node.result_name);
 }
 
+bool ActionsDAG::hasNonDeterministic() const
+{
+    for (const auto & node : nodes)
+        if (!node.is_deterministic)
+            return true;
+    return false;
+}
+
 void ActionsDAG::addMaterializingOutputActions()
 {
     for (auto & output_node : outputs)
@@ -1096,10 +1114,10 @@ ActionsDAGPtr ActionsDAG::makeConvertingActions(
     size_t num_result_columns = result.size();
 
     if (mode == MatchColumnsMode::Position && num_input_columns != num_result_columns)
-        throw Exception("Number of columns doesn't match", ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH, "Number of columns doesn't match");
 
     if (add_casted_columns && mode != MatchColumnsMode::Name)
-        throw Exception("Converting with add_casted_columns supported only for MatchColumnsMode::Name", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Converting with add_casted_columns supported only for MatchColumnsMode::Name");
 
     auto actions_dag = std::make_shared<ActionsDAG>(source);
     NodeRawConstPtrs projection(num_result_columns);
@@ -1948,6 +1966,9 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
     }
 
     auto conjunction = getConjunctionNodes(predicate, allowed_nodes);
+    if (conjunction.rejected.size() == 1 && WhichDataType{removeNullable(conjunction.rejected.front()->result_type)}.isFloat())
+        return nullptr;
+
     auto actions = cloneActionsForConjunction(conjunction.allowed, all_inputs);
     if (!actions)
         return nullptr;
@@ -2013,10 +2034,12 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
                 node.children.swap(new_children);
                 *predicate = std::move(node);
             }
-            else
+            else if (!WhichDataType{removeNullable(new_children.front()->result_type)}.isFloat())
             {
                 /// If type is different, cast column.
                 /// This case is possible, cause AND can use any numeric type as argument.
+                /// But casting floats to UInt8 or Bool produces different results.
+                /// so we can't apply this optimization to them.
                 Node node;
                 node.type = ActionType::COLUMN;
                 node.result_name = predicate->result_type->getName();
@@ -2038,8 +2061,20 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
         else
         {
             /// Predicate is function AND, which still have more then one argument.
+            /// Or there is only one argument that is a float and we can't just
+            /// remove the AND.
             /// Just update children and rebuild it.
             predicate->children.swap(new_children);
+            if (WhichDataType{removeNullable(predicate->children.front()->result_type)}.isFloat())
+            {
+                Node node;
+                node.type = ActionType::COLUMN;
+                node.result_name = "1";
+                node.column = DataTypeUInt8().createColumnConst(0, 1u);
+                node.result_type = std::make_shared<DataTypeUInt8>();
+                const auto * const_col = &nodes.emplace_back(std::move(node));
+                predicate->children.emplace_back(const_col);
+            }
             auto arguments = prepareFunctionArguments(predicate->children);
 
             FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
@@ -2249,7 +2284,15 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
                 for (const auto & child : node->children)
                     function_children.push_back(node_to_result_node.find(child)->second);
 
-                result_node = &result_dag->addFunction(node->function_base, std::move(function_children), {});
+                auto [arguments, all_const] = getFunctionArguments(function_children);
+
+                result_node = &result_dag->addFunctionImpl(
+                    node->function_base,
+                    std::move(function_children),
+                    std::move(arguments),
+                    {},
+                    node->result_type,
+                    all_const);
                 break;
             }
         }

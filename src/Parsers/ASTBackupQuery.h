@@ -93,5 +93,13 @@ public:
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const override;
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override;
+    QueryKind getQueryKind() const override;
+
+    void forEachPointerToChild(std::function<void(void**)> f) override
+    {
+        f(reinterpret_cast<void **>(&backup_name));
+        f(reinterpret_cast<void **>(&base_backup_name));
+    }
 };
+
 }

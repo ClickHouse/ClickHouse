@@ -2,10 +2,12 @@
 
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
-#include <Analyzer/ConstantNode.h>
 
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+
+#include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeSet.h>
 
 #include <Parsers/ASTFunction.h>
 
@@ -13,6 +15,8 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
+#include <Analyzer/Utils.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/IdentifierNode.h>
 
 namespace DB
@@ -31,18 +35,42 @@ FunctionNode::FunctionNode(String function_name_)
     children[arguments_child_index] = std::make_shared<ListNode>();
 }
 
-ColumnsWithTypeAndName FunctionNode::getArgumentTypes() const
+const DataTypes & FunctionNode::getArgumentTypes() const
 {
-    ColumnsWithTypeAndName argument_types;
-    for (const auto & arg : getArguments().getNodes())
+    if (!function)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+        "Function {} is not resolved",
+        function_name);
+    return function->getArgumentTypes();
+}
+
+ColumnsWithTypeAndName FunctionNode::getArgumentColumns() const
+{
+    const auto & arguments = getArguments().getNodes();
+    size_t arguments_size = arguments.size();
+
+    ColumnsWithTypeAndName argument_columns;
+    argument_columns.reserve(arguments.size());
+
+    for (size_t i = 0; i < arguments_size; ++i)
     {
-        ColumnWithTypeAndName argument;
-        argument.type = arg->getResultType();
-        if (auto * constant = arg->as<ConstantNode>())
-            argument.column = argument.type->createColumnConst(1, constant->getValue());
-        argument_types.push_back(argument);
+        const auto & argument = arguments[i];
+
+        ColumnWithTypeAndName argument_column;
+
+        if (isNameOfInFunction(function_name) && i == 1)
+            argument_column.type = std::make_shared<DataTypeSet>();
+        else
+            argument_column.type = argument->getResultType();
+
+        auto * constant = argument->as<ConstantNode>();
+        if (constant && !isNotCreatable(argument_column.type))
+            argument_column.column = argument_column.type->createColumnConst(1, constant->getValue());
+
+        argument_columns.push_back(std::move(argument_column));
     }
-    return argument_types;
+
+    return argument_columns;
 }
 
 void FunctionNode::resolveAsFunction(FunctionBasePtr function_value)
@@ -86,7 +114,7 @@ void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
     buffer << ", function_type: " << function_type;
 
     if (function)
-        buffer << ", result_type: " + function->getResultType()->getName();
+        buffer << ", result_type: " + getResultType()->getName();
 
     const auto & parameters = getParameters();
     if (!parameters.getNodes().empty())
@@ -164,6 +192,7 @@ QueryTreeNodePtr FunctionNode::cloneImpl() const
       */
     result_function->function = function;
     result_function->kind = kind;
+    result_function->wrap_with_nullable = wrap_with_nullable;
 
     return result_function;
 }

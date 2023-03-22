@@ -92,6 +92,7 @@ public:
     void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
     bool structureEquals(const IColumn & rhs) const override;
     double getRatioOfDefaultRows(double sample_ratio) const override;
+    UInt64 getNumberOfDefaultRows() const override;
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override;
     void finalize() override { nested->finalize(); }
     bool isFinalized() const override { return nested->isFinalized(); }

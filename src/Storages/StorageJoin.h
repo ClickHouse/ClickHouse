@@ -77,9 +77,7 @@ public:
     {
         auto metadata_snapshot = getInMemoryMetadataPtr();
         Block block = metadata_snapshot->getSampleBlock();
-        if (use_nulls && isLeftOrFull(kind))
-            for (auto & col : block)
-                JoinCommon::convertColumnToNullable(col);
+        convertRightBlock(block);
         return block;
     }
 
@@ -102,12 +100,17 @@ private:
     /// Protect state for concurrent use in insertFromBlock and joinBlock.
     /// Lock is stored in HashJoin instance during query and blocks concurrent insertions.
     mutable RWLock rwlock = RWLockImpl::create();
+
     mutable std::mutex mutate_mutex;
 
     void insertBlock(const Block & block, ContextPtr context) override;
     void finishInsert() override {}
     size_t getSize(ContextPtr context) const override;
     RWLockImpl::LockHolder tryLockTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context) const;
+    /// Same as tryLockTimedWithContext, but returns `nullptr` if lock is already acquired by current query.
+    static RWLockImpl::LockHolder tryLockForCurrentQueryTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context);
+
+    void convertRightBlock(Block & block) const;
 };
 
 }

@@ -361,19 +361,25 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
                     "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true",
                     error_msg);
         }
-        else if (match_result == EXACT && !is_node_empty(node))
+        else if (match_result == EXACT)
         {
-            if (keeper_context->ignore_system_path_on_startup || keeper_context->server_state != KeeperContext::Phase::INIT)
+            if (!is_node_empty(node))
             {
-                LOG_ERROR(&Poco::Logger::get("KeeperSnapshotManager"), "{}. Ignoring it", error_msg);
-                node = KeeperStorage::Node{};
+                if (keeper_context->ignore_system_path_on_startup || keeper_context->server_state != KeeperContext::Phase::INIT)
+                {
+                    LOG_ERROR(&Poco::Logger::get("KeeperSnapshotManager"), "{}. Ignoring it", error_msg);
+                    node = KeeperStorage::Node{};
+                }
+                else
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "{}. Ignoring it can lead to data loss. "
+                        "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true",
+                        error_msg);
             }
-            else
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "{}. Ignoring it can lead to data loss. "
-                    "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true",
-                    error_msg);
+
+            // we always ignore the written size for this node
+            node.recalculateSize();
         }
 
         storage.container.insertOrReplace(path, node);
@@ -390,7 +396,7 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
         {
             auto parent_path = parentPath(itr.key);
             storage.container.updateValue(
-                parent_path, [path = itr.key](KeeperStorage::Node & value) { value.addChild(getBaseName(path)); });
+                parent_path, [version, path = itr.key](KeeperStorage::Node & value) { value.addChild(getBaseName(path), /*update_size*/ version < SnapshotVersion::V4); });
         }
     }
 
@@ -406,7 +412,8 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
                             " is different from actual children size {} for node {}", itr.value.stat.numChildren, itr.value.getChildren().size(), itr.key);
 #else
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Children counter in stat.numChildren {}"
-                            " is different from actual children size {} for node {}", itr.value.stat.numChildren, itr.value.getChildren().size(), itr.key);
+                                " is different from actual children size {} for node {}",
+                                itr.value.stat.numChildren, itr.value.getChildren().size(), itr.key);
 #endif
             }
         }

@@ -20,19 +20,18 @@ public:
 
 private:
     HiveTextRowInputFormat(
-        const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, const Params & params_, const FormatSettings & format_settings_);
+        const Block & header_, std::shared_ptr<PeekableReadBuffer> buf_, const Params & params_, const FormatSettings & format_settings_);
 };
 
 class HiveTextFormatReader final : public CSVFormatReader
 {
 public:
-    HiveTextFormatReader(std::unique_ptr<PeekableReadBuffer> buf_, const FormatSettings & format_settings_);
+    HiveTextFormatReader(PeekableReadBuffer & buf_, const FormatSettings & format_settings_);
 
     std::vector<String> readNames() override;
     std::vector<String> readTypes() override;
 
 private:
-    std::unique_ptr<PeekableReadBuffer> buf;
     std::vector<String> input_field_names;
 };
 

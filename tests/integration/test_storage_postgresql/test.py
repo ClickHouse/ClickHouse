@@ -382,7 +382,7 @@ def test_postgres_distributed(started_cluster):
         """
         CREATE TABLE test_shards2
         (id UInt32, name String, age UInt32, money UInt32)
-        ENGINE = ExternalDistributed('PostgreSQL', postgres4, description='postgres{1|2}:5432,postgres{3|4}:5432'); """
+        ENGINE = ExternalDistributed('PostgreSQL', postgres4, addresses_expr='postgres{1|2}:5432,postgres{3|4}:5432'); """
     )
 
     result = node2.query("SELECT DISTINCT(name) FROM test_shards2 ORDER BY name")
@@ -691,19 +691,6 @@ def test_auto_close_connection(started_cluster):
 
     # Connection from python + pg_stat table also has a connection at the moment of current query
     assert count == 2
-
-
-def test_datetime(started_cluster):
-    cursor = started_cluster.postgres_conn.cursor()
-    cursor.execute("drop table if exists test")
-    cursor.execute("create table test (u timestamp)")
-
-    node1.query("drop database if exists pg")
-    node1.query("create database pg engine = PostgreSQL(postgres1)")
-    assert "DateTime64(6)" in node1.query("show create table pg.test")
-    node1.query("detach table pg.test")
-    node1.query("attach table pg.test")
-    assert "DateTime64(6)" in node1.query("show create table pg.test")
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@
 #include <Common/typeid_cast.h>
 #include <Databases/IDatabase.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 
 
 namespace DB
@@ -151,14 +152,31 @@ Pipe StorageSystemReplicas::read(
 
     MutableColumns res_columns = storage_snapshot->metadata->getSampleBlock().cloneEmptyColumns();
 
-    for (size_t i = 0, size = col_database->size(); i < size; ++i)
+    size_t tables_size = col_database->size();
+    std::vector<ReplicatedTableStatus> statuses(tables_size);
+
+    size_t thread_pool_size = std::min(tables_size, static_cast<size_t>(getNumberOfPhysicalCPUCores()));
+    auto settings = context->getSettingsRef();
+    if (settings.max_threads != 0)
+        thread_pool_size = std::min(thread_pool_size, static_cast<size_t>(settings.max_threads));
+
+    ThreadPool thread_pool(thread_pool_size);
+
+    for (size_t i = 0; i < tables_size; ++i)
     {
-        ReplicatedTableStatus status;
-        dynamic_cast<StorageReplicatedMergeTree &>(
+        thread_pool.scheduleOrThrowOnError([&, i=i]
+        {
+            dynamic_cast<StorageReplicatedMergeTree &>(
             *replicated_tables
                 [(*col_database)[i].safeGet<const String &>()]
-                [(*col_table)[i].safeGet<const String &>()]).getStatus(status, with_zk_fields);
+                [(*col_table)[i].safeGet<const String &>()]).getStatus(statuses[i], with_zk_fields);
+        });
+    }
 
+    thread_pool.wait();
+
+    for (const auto & status: statuses)
+    {
         size_t col_num = 3;
         res_columns[col_num++]->insert(status.is_leader);
         res_columns[col_num++]->insert(status.can_become_leader);

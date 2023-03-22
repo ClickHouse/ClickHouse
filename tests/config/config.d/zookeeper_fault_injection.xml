@@ -4,7 +4,6 @@
             <host>localhost</host>
             <port>9181</port>
         </node>
-
         <!-- Settings for fault injection.
           Approximate probability of request success:
             (1 - send_fault_probability) * (1 - recv_fault_probability) = 0.99998 * 0.99998 = 0.99996

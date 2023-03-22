@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+
 USE test;
 
 DROP TABLE IF EXISTS join;
@@ -7,7 +9,7 @@ INSERT INTO join
 SELECT
     UserID,
     toInt8(if((sum(SearchEngineID = 2) AS yandex) > (sum(SearchEngineID = 3) AS google),
-    yandex / (yandex + google), 
+    yandex / (yandex + google),
     -google / (yandex + google)) * 10) AS loyalty
 FROM hits
 WHERE (SearchEngineID = 2) OR (SearchEngineID = 3)

@@ -266,7 +266,7 @@ Default value: 0.
 
 Limits the size in bytes of the hash table used when joining tables.
 
-This settings applies to [SELECT … JOIN](../../sql-reference/statements/select/join.md#select-join) operations and [Join table engine](../../engines/table-engines/special/join.md).
+This setting applies to [SELECT … JOIN](../../sql-reference/statements/select/join.md#select-join) operations and [Join table engine](../../engines/table-engines/special/join.md).
 
 If the query contains joins, ClickHouse checks this setting for every intermediate result.
 
@@ -327,5 +327,3 @@ The maximum amount of data consumed by temporary files on disk in bytes for all 
 Zero means unlimited.
 
 Default value: 0.
-
-[Original article](https://clickhouse.com/docs/en/operations/settings/query_complexity/) <!--hide-->

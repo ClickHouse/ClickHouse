@@ -63,7 +63,7 @@ public:
             else if (filter_type == "methods")
                 addFilter(methodsFilter(config, prefix + ".methods"));
             else
-                throw Exception("Unknown element in config: " + prefix + "." + filter_type, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+                throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}.{}", prefix, filter_type);
         }
     }
 

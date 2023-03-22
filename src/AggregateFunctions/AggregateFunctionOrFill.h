@@ -36,8 +36,8 @@ public:
     AggregateFunctionOrFill(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
         : IAggregateFunctionHelper<AggregateFunctionOrFill>{arguments, params, createResultType(nested_function_->getResultType())}
         , nested_function{nested_function_}
-        , size_of_data {nested_function->sizeOfData()}
-        , inner_nullable {nested_function->getResultType()->isNullable()}
+        , size_of_data{nested_function->sizeOfData()}
+        , inner_nullable{nested_function->getResultType()->isNullable()}
     {
         // nothing
     }

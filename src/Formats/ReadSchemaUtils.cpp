@@ -155,7 +155,10 @@ ColumnsDescription readSchemaFromFormat(
                     }
                     catch (...)
                     {
-                        throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Cannot extract table structure from {} format file. Error: {}. You can specify the structure manually", format_name, exception_message);
+                        throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                                        "Cannot extract table structure from {} format file. "
+                                        "Error: {}. You can specify the structure manually",
+                                        format_name, exception_message);
                     }
                 }
 
@@ -167,7 +170,9 @@ ColumnsDescription readSchemaFromFormat(
             return cached_columns;
 
         if (names_and_types.empty())
-            throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "All attempts to extract table structure from files failed. Errors:{}\nYou can specify the structure manually", exception_messages);
+            throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
+                            "All attempts to extract table structure from files failed. "
+                            "Errors:{}\nYou can specify the structure manually", exception_messages);
 
         /// If we have "INSERT SELECT" query then try to order
         /// columns as they are ordered in table schema for formats
@@ -186,7 +191,9 @@ ColumnsDescription readSchemaFromFormat(
         }
     }
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} file format doesn't support schema inference. You must specify the structure manually", format_name);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "{} file format doesn't support schema inference. You must specify the structure manually",
+                        format_name);
 
     return ColumnsDescription(names_and_types);
 }

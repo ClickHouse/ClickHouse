@@ -1,3 +1,9 @@
+# Note: ClickHouse uses BoringSSL. The presence of OpenSSL is only due to IBM's port of ClickHouse to s390x. BoringSSL does not support
+# s390x, also FIPS validation provided by the OS vendor (Red Hat, Ubuntu) requires (preferrably dynamic) linking with OS packages which
+# ClickHouse generally avoids.
+#
+# Furthermore, the in-source OpenSSL dump in this directory is due to development purposes and non FIPS-compliant.
+
 if(ENABLE_OPENSSL_DYNAMIC OR ENABLE_OPENSSL)
     set(ENABLE_SSL 1 CACHE INTERNAL "")
     set(OPENSSL_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/openssl)

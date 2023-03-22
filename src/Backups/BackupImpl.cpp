@@ -6,7 +6,7 @@
 #include <Backups/BackupCoordinationLocal.h>
 #include <Backups/BackupCoordinationRemote.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Common/quoteString.h>
 #include <Common/XMLUtils.h>
 #include <Interpreters/Context.h>
@@ -16,11 +16,11 @@
 #include <IO/Archives/createArchiveWriter.h>
 #include <IO/ConcatSeekableReadBuffer.h>
 #include <IO/HashingReadBuffer.h>
-#include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
 #include <IO/copyData.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/DOM/DOMParser.h>
@@ -79,66 +79,6 @@ namespace
 }
 
 
-class BackupImpl::BackupEntryFromBackupImpl : public IBackupEntry
-{
-public:
-    BackupEntryFromBackupImpl(
-        const std::shared_ptr<const BackupImpl> & backup_,
-        const String & archive_suffix_,
-        const String & data_file_name_,
-        UInt64 size_,
-        const UInt128 checksum_,
-        BackupEntryPtr base_backup_entry_ = {})
-        : backup(backup_), archive_suffix(archive_suffix_), data_file_name(data_file_name_), size(size_), checksum(checksum_),
-          base_backup_entry(std::move(base_backup_entry_))
-    {
-    }
-
-    std::unique_ptr<SeekableReadBuffer> getReadBuffer() const override
-    {
-        std::unique_ptr<SeekableReadBuffer> read_buffer;
-        if (backup->use_archives)
-            read_buffer = backup->getArchiveReader(archive_suffix)->readFile(data_file_name);
-        else
-            read_buffer = backup->reader->readFile(data_file_name);
-        if (base_backup_entry)
-        {
-            size_t base_size = base_backup_entry->getSize();
-            read_buffer = std::make_unique<ConcatSeekableReadBuffer>(
-                base_backup_entry->getReadBuffer(), base_size, std::move(read_buffer), size - base_size);
-        }
-        return read_buffer;
-    }
-
-    UInt64 getSize() const override { return size; }
-    std::optional<UInt128> getChecksum() const override { return checksum; }
-
-    String getFilePath() const override
-    {
-        return data_file_name;
-    }
-
-    DiskPtr tryGetDiskIfExists() const override
-    {
-        return nullptr;
-    }
-
-    DataSourceDescription getDataSourceDescription() const override
-    {
-        return backup->reader->getDataSourceDescription();
-    }
-
-
-private:
-    const std::shared_ptr<const BackupImpl> backup;
-    const String archive_suffix;
-    const String data_file_name;
-    const UInt64 size;
-    const UInt128 checksum;
-    BackupEntryPtr base_backup_entry;
-};
-
-
 BackupImpl::BackupImpl(
     const String & backup_name_for_logging_,
     const ArchiveParams & archive_params_,
@@ -167,17 +107,19 @@ BackupImpl::BackupImpl(
     const ContextPtr & context_,
     bool is_internal_backup_,
     const std::shared_ptr<IBackupCoordination> & coordination_,
-    const std::optional<UUID> & backup_uuid_)
+    const std::optional<UUID> & backup_uuid_,
+    bool deduplicate_files_)
     : backup_name_for_logging(backup_name_for_logging_)
     , archive_params(archive_params_)
     , use_archives(!archive_params.archive_name.empty())
     , open_mode(OpenMode::WRITE)
     , writer(std::move(writer_))
     , is_internal_backup(is_internal_backup_)
-    , coordination(coordination_ ? coordination_ : std::make_shared<BackupCoordinationLocal>())
+    , coordination(coordination_)
     , uuid(backup_uuid_)
     , version(CURRENT_BACKUP_VERSION)
     , base_backup_info(base_backup_info_)
+    , deduplicate_files(deduplicate_files_)
     , log(&Poco::Logger::get("BackupImpl"))
 {
     open(context_);
@@ -269,6 +211,24 @@ size_t BackupImpl::getNumFiles() const
     return num_files;
 }
 
+UInt64 BackupImpl::getTotalSize() const
+{
+    std::lock_guard lock{mutex};
+    return total_size;
+}
+
+size_t BackupImpl::getNumEntries() const
+{
+    std::lock_guard lock{mutex};
+    return num_entries;
+}
+
+UInt64 BackupImpl::getSizeOfEntries() const
+{
+    std::lock_guard lock{mutex};
+    return size_of_entries;
+}
+
 UInt64 BackupImpl::getUncompressedSize() const
 {
     std::lock_guard lock{mutex};
@@ -281,14 +241,35 @@ UInt64 BackupImpl::getCompressedSize() const
     return compressed_size;
 }
 
+size_t BackupImpl::getNumReadFiles() const
+{
+    std::lock_guard lock{mutex};
+    return num_read_files;
+}
+
+UInt64 BackupImpl::getNumReadBytes() const
+{
+    std::lock_guard lock{mutex};
+    return num_read_bytes;
+}
+
 void BackupImpl::writeBackupMetadata()
 {
     assert(!is_internal_backup);
 
-    Poco::AutoPtr<Poco::Util::XMLConfiguration> config{new Poco::Util::XMLConfiguration()};
-    config->setInt("version", CURRENT_BACKUP_VERSION);
-    config->setString("timestamp", toString(LocalDateTime{timestamp}));
-    config->setString("uuid", toString(*uuid));
+    checkLockFile(true);
+
+    std::unique_ptr<WriteBuffer> out;
+    if (use_archives)
+        out = getArchiveWriter("")->writeFile(".backup");
+    else
+        out = writer->writeFile(".backup");
+
+    *out << "<config>";
+    *out << "<version>" << CURRENT_BACKUP_VERSION << "</version>";
+    *out << "<deduplicate_files>" << deduplicate_files << "</deduplicate_files>";
+    *out << "<timestamp>" << toString(LocalDateTime{timestamp}) << "</timestamp>";
+    *out << "<uuid>" << toString(*uuid) << "</uuid>";
 
     auto all_file_infos = coordination->getAllFileInfos();
 
@@ -303,55 +284,61 @@ void BackupImpl::writeBackupMetadata()
 
         if (base_backup_in_use)
         {
-            config->setString("base_backup", base_backup_info->toString());
-            config->setString("base_backup_uuid", toString(*base_backup_uuid));
+            *out << "<base_backup>" << xml << base_backup_info->toString() << "</base_backup>";
+            *out << "<base_backup_uuid>" << toString(*base_backup_uuid) << "</base_backup_uuid>";
         }
     }
 
-    size_t index = 0;
+    num_files = all_file_infos.size();
+    total_size = 0;
+    num_entries = 0;
+    size_of_entries = 0;
+
+    *out << "<contents>";
     for (const auto & info : all_file_infos)
     {
-        String prefix = index ? "contents.file[" + std::to_string(index) + "]." : "contents.file.";
-        config->setString(prefix + "name", info.file_name);
-        config->setUInt64(prefix + "size", info.size);
+        *out << "<file>";
+
+        *out << "<name>" << xml << info.file_name << "</name>";
+        *out << "<size>" << info.size << "</size>";
+
         if (info.size)
         {
-            config->setString(prefix + "checksum", hexChecksum(info.checksum));
+            *out << "<checksum>" << hexChecksum(info.checksum) << "</checksum>";
             if (info.base_size)
             {
-                config->setBool(prefix + "use_base", true);
+                *out << "<use_base>true</use_base>";
                 if (info.base_size != info.size)
                 {
-                    config->setUInt64(prefix + "base_size", info.base_size);
-                    config->setString(prefix + "base_checksum", hexChecksum(info.base_checksum));
+                    *out << "<base_size>" << info.base_size << "</base_size>";
+                    *out << "<base_checksum>" << hexChecksum(info.base_checksum) << "</base_checksum>";
                 }
             }
             if (!info.data_file_name.empty() && (info.data_file_name != info.file_name))
-                config->setString(prefix + "data_file", info.data_file_name);
+                *out << "<data_file>" << xml << info.data_file_name << "</data_file>";
             if (!info.archive_suffix.empty())
-                config->setString(prefix + "archive_suffix", info.archive_suffix);
+                *out << "<archive_suffix>" << xml << info.archive_suffix << "</archive_suffix>";
             if (info.pos_in_archive != static_cast<size_t>(-1))
-                config->setUInt64(prefix + "pos_in_archive", info.pos_in_archive);
+                *out << "<pos_in_archive>" << info.pos_in_archive << "</pos_in_archive>";
         }
-        increaseUncompressedSize(info);
-        ++index;
+
+        total_size += info.size;
+        bool has_entry = !deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || (info.data_file_name == info.file_name)));
+        if (has_entry)
+        {
+            ++num_entries;
+            size_of_entries += info.size - info.base_size;
+        }
+
+        *out << "</file>";
     }
+    *out << "</contents>";
 
-    std::ostringstream stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    config->save(stream);
-    String str = stream.str();
+    *out << "</config>";
 
-    checkLockFile(true);
-
-    std::unique_ptr<WriteBuffer> out;
-    if (use_archives)
-        out = getArchiveWriter("")->writeFile(".backup");
-    else
-        out = writer->writeFile(".backup");
-    out->write(str.data(), str.size());
     out->finalize();
 
-    increaseUncompressedSize(str.size());
+    uncompressed_size = size_of_entries + out->count();
 }
 
 
@@ -376,7 +363,6 @@ void BackupImpl::readBackupMetadata()
 
     String str;
     readStringUntilEOF(str, *in);
-    increaseUncompressedSize(str.size());
     Poco::XML::DOMParser dom_parser;
     Poco::AutoPtr<Poco::XML::Document> config = dom_parser.parseMemory(str.data(), str.size());
     const Poco::XML::Node * config_root = getRootNode(config);
@@ -394,6 +380,11 @@ void BackupImpl::readBackupMetadata()
 
     if (config_root->getNodeByPath("base_backup_uuid"))
         base_backup_uuid = parse<UUID>(getString(config_root, "base_backup_uuid"));
+
+    num_files = 0;
+    total_size = 0;
+    num_entries = 0;
+    size_of_entries = 0;
 
     const auto * contents = config_root->getNodeByPath("contents");
     for (const Poco::XML::Node * child = contents->firstChild(); child; child = child->nextSibling())
@@ -439,10 +430,20 @@ void BackupImpl::readBackupMetadata()
             }
 
             coordination->addFileInfo(info);
-            increaseUncompressedSize(info);
+
+            ++num_files;
+            total_size += info.size;
+            bool has_entry = !deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || (info.data_file_name == info.file_name)));
+            if (has_entry)
+            {
+                ++num_entries;
+                size_of_entries += info.size - info.base_size;
+            }
         }
     }
 
+    uncompressed_size = size_of_entries + str.size();
+    compressed_size = uncompressed_size;
     if (!use_archives)
         setCompressedSize();
 }
@@ -584,21 +585,22 @@ SizeAndChecksum BackupImpl::getFileSizeAndChecksum(const String & file_name) con
     return {info->size, info->checksum};
 }
 
-BackupEntryPtr BackupImpl::readFile(const String & file_name) const
+std::unique_ptr<SeekableReadBuffer> BackupImpl::readFile(const String & file_name) const
 {
     return readFile(getFileSizeAndChecksum(file_name));
 }
 
-BackupEntryPtr BackupImpl::readFile(const SizeAndChecksum & size_and_checksum) const
+std::unique_ptr<SeekableReadBuffer> BackupImpl::readFile(const SizeAndChecksum & size_and_checksum) const
 {
-    std::lock_guard lock{mutex};
     if (open_mode != OpenMode::READ)
-        throw Exception("Backup is not opened for reading", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for reading");
 
-    if (!size_and_checksum.first)
+    if (size_and_checksum.first == 0)
     {
         /// Entry's data is empty.
-        return std::make_unique<BackupEntryFromMemory>(nullptr, 0, UInt128{0, 0});
+        std::lock_guard lock{mutex};
+        ++num_read_files;
+        return std::make_unique<ReadBufferFromMemory>(static_cast<char *>(nullptr), 0);
     }
 
     auto info_opt = coordination->getFileInfo(size_and_checksum);
@@ -613,44 +615,148 @@ BackupEntryPtr BackupImpl::readFile(const SizeAndChecksum & size_and_checksum) c
 
     const auto & info = *info_opt;
 
+    std::unique_ptr<SeekableReadBuffer> read_buffer;
+    std::unique_ptr<SeekableReadBuffer> base_read_buffer;
+
+    if (info.size > info.base_size)
+    {
+        /// Make `read_buffer` if there is data for this backup entry in this backup.
+        if (use_archives)
+        {
+            std::shared_ptr<IArchiveReader> archive_reader;
+            {
+                std::lock_guard lock{mutex};
+                archive_reader = getArchiveReader(info.archive_suffix);
+            }
+            read_buffer = archive_reader->readFile(info.data_file_name);
+        }
+        else
+        {
+            read_buffer = reader->readFile(info.data_file_name);
+        }
+    }
+
+    if (info.base_size)
+    {
+        /// Make `base_read_buffer` if there is data for this backup entry in the base backup.
+        if (!base_backup)
+        {
+            throw Exception(
+                ErrorCodes::NO_BASE_BACKUP,
+                "Backup {}: Entry {} is marked to be read from a base backup, but there is no base backup specified",
+                backup_name_for_logging, formatSizeAndChecksum(size_and_checksum));
+        }
+
+        if (!base_backup->fileExists(std::pair(info.base_size, info.base_checksum)))
+        {
+            throw Exception(
+                ErrorCodes::WRONG_BASE_BACKUP,
+                "Backup {}: Entry {} is marked to be read from a base backup, but doesn't exist there",
+                backup_name_for_logging, formatSizeAndChecksum(size_and_checksum));
+        }
+
+        base_read_buffer = base_backup->readFile(std::pair{info.base_size, info.base_checksum});
+    }
+
+    {
+        /// Update number of read files.
+        std::lock_guard lock{mutex};
+        ++num_read_files;
+        num_read_bytes += info.size;
+    }
+
     if (!info.base_size)
     {
-        /// Data goes completely from this backup, the base backup isn't used.
-        return std::make_unique<BackupEntryFromBackupImpl>(
-            std::static_pointer_cast<const BackupImpl>(shared_from_this()), info.archive_suffix, info.data_file_name, info.size, info.checksum);
+        /// Data comes completely from this backup, the base backup isn't used.
+        return read_buffer;
     }
-
-    if (!base_backup)
+    else if (info.size == info.base_size)
     {
-        throw Exception(
-            ErrorCodes::NO_BASE_BACKUP,
-            "Backup {}: Entry {} is marked to be read from a base backup, but there is no base backup specified",
-            backup_name_for_logging, formatSizeAndChecksum(size_and_checksum));
+        /// Data comes completely from the base backup (nothing comes from this backup).
+        return base_read_buffer;
     }
-
-    if (!base_backup->fileExists(std::pair(info.base_size, info.base_checksum)))
+    else
     {
-        throw Exception(
-            ErrorCodes::WRONG_BASE_BACKUP,
-            "Backup {}: Entry {} is marked to be read from a base backup, but doesn't exist there",
-            backup_name_for_logging, formatSizeAndChecksum(size_and_checksum));
-    }
-
-    auto base_entry = base_backup->readFile(std::pair{info.base_size, info.base_checksum});
-
-    if (info.size == info.base_size)
-    {
-        /// Data goes completely from the base backup (nothing goes from this backup).
-        return base_entry;
-    }
-
-    {
-        /// The beginning of the data goes from the base backup,
-        /// and the ending goes from this backup.
-        return std::make_unique<BackupEntryFromBackupImpl>(
-            static_pointer_cast<const BackupImpl>(shared_from_this()), info.archive_suffix, info.data_file_name, info.size, info.checksum, std::move(base_entry));
+        /// The beginning of the data comes from the base backup,
+        /// and the ending comes from this backup.
+        return std::make_unique<ConcatSeekableReadBuffer>(
+            std::move(base_read_buffer), info.base_size, std::move(read_buffer), info.size - info.base_size);
     }
 }
+
+size_t BackupImpl::copyFileToDisk(const String & file_name, DiskPtr destination_disk, const String & destination_path,
+                                  WriteMode write_mode, const WriteSettings & write_settings) const
+{
+    return copyFileToDisk(getFileSizeAndChecksum(file_name), destination_disk, destination_path, write_mode, write_settings);
+}
+
+size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum, DiskPtr destination_disk, const String & destination_path,
+                                  WriteMode write_mode, const WriteSettings & write_settings) const
+{
+    if (open_mode != OpenMode::READ)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for reading");
+
+    if (size_and_checksum.first == 0)
+    {
+        /// Entry's data is empty.
+        if (write_mode == WriteMode::Rewrite)
+        {
+            /// Just create an empty file.
+            destination_disk->createFile(destination_path);
+        }
+        std::lock_guard lock{mutex};
+        ++num_read_files;
+        return 0;
+    }
+
+    auto info_opt = coordination->getFileInfo(size_and_checksum);
+    if (!info_opt)
+    {
+        throw Exception(
+            ErrorCodes::BACKUP_ENTRY_NOT_FOUND,
+            "Backup {}: Entry {} not found in the backup",
+            backup_name_for_logging,
+            formatSizeAndChecksum(size_and_checksum));
+    }
+
+    const auto & info = *info_opt;
+
+    bool file_copied = false;
+
+    if (info.size && !info.base_size && !use_archives)
+    {
+        /// Data comes completely from this backup.
+        reader->copyFileToDisk(info.data_file_name, info.size, destination_disk, destination_path, write_mode, write_settings);
+        file_copied = true;
+
+    }
+    else if (info.size && (info.size == info.base_size))
+    {
+        /// Data comes completely from the base backup (nothing comes from this backup).
+        base_backup->copyFileToDisk(std::pair{info.base_size, info.base_checksum}, destination_disk, destination_path, write_mode, write_settings);
+        file_copied = true;
+    }
+
+    if (file_copied)
+    {
+        /// The file is already copied, but `num_read_files` is not updated yet.
+        std::lock_guard lock{mutex};
+        ++num_read_files;
+        num_read_bytes += info.size;
+    }
+    else
+    {
+        /// Use the generic way to copy data. `readFile()` will update `num_read_files`.
+        auto read_buffer = readFile(size_and_checksum);
+        auto write_buffer = destination_disk->writeFile(destination_path, std::min<size_t>(info.size, DBMS_DEFAULT_BUFFER_SIZE),
+                                                        write_mode, write_settings);
+        copyData(*read_buffer, *write_buffer, info.size);
+        write_buffer->finalize();
+    }
+
+    return info.size;
+}
+
 
 namespace
 {
@@ -732,10 +838,10 @@ ChecksumsForNewEntry calculateNewEntryChecksumsIfNeeded(BackupEntryPtr entry, si
 void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
 {
     if (open_mode != OpenMode::WRITE)
-        throw Exception("Backup is not opened for writing", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for writing");
 
     if (writing_finalized)
-        throw Exception("Backup is already finalized", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is already finalized");
 
     std::string from_file_name = "memory buffer";
     if (auto fname = entry->getFilePath(); !fname.empty())
@@ -747,7 +853,8 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
     if (coordination->getFileInfo(adjusted_path))
     {
         throw Exception(
-            ErrorCodes::BACKUP_ENTRY_ALREADY_EXISTS, "Backup {}: Entry {} already exists", backup_name_for_logging, quoteString(file_name));
+                        ErrorCodes::BACKUP_ENTRY_ALREADY_EXISTS, "Backup {}: Entry {} already exists",
+                        backup_name_for_logging, quoteString(file_name));
     }
 
     FileInfo info
@@ -758,8 +865,14 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
         .base_checksum = 0,
     };
 
+    {
+        std::lock_guard lock{mutex};
+        ++num_files;
+        total_size += info.size;
+    }
+
     /// Empty file, nothing to backup
-    if (info.size == 0)
+    if (info.size == 0 && deduplicate_files)
     {
         coordination->addFileInfo(info);
         return;
@@ -828,7 +941,7 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
     }
 
     /// Maybe we have a copy of this file in the backup already.
-    if (coordination->getFileInfo(std::pair{info.size, info.checksum}))
+    if (coordination->getFileInfo(std::pair{info.size, info.checksum}) && deduplicate_files)
     {
         LOG_TRACE(log, "File {} already exist in current backup, adding reference", adjusted_path);
         coordination->addFileInfo(info);
@@ -861,7 +974,7 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
 
     bool is_data_file_required;
     coordination->addFileInfo(info, is_data_file_required);
-    if (!is_data_file_required)
+    if (!is_data_file_required && deduplicate_files)
     {
         LOG_TRACE(log, "File {} doesn't exist in current backup, but we have file with same size and checksum", adjusted_path);
         return; /// We copy data only if it's a new combination of size & checksum.
@@ -871,25 +984,25 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
 
     /// We need to copy whole file without archive, we can do it faster
     /// if source and destination are compatible
-    if (!use_archives && info.base_size == 0 && writer->supportNativeCopy(reader_description))
+    if (!use_archives && writer->supportNativeCopy(reader_description))
     {
         /// Should be much faster than writing data through server.
         LOG_TRACE(log, "Will copy file {} using native copy", adjusted_path);
 
         /// NOTE: `mutex` must be unlocked here otherwise writing will be in one thread maximum and hence slow.
 
-        writer->copyFileNative(entry->tryGetDiskIfExists(), entry->getFilePath(), info.data_file_name);
+        writer->copyFileNative(entry->tryGetDiskIfExists(), entry->getFilePath(), info.base_size, info.size - info.base_size, info.data_file_name);
     }
     else
     {
-        LOG_TRACE(log, "Will copy file {} through memory buffers", adjusted_path);
-        auto read_buffer = entry->getReadBuffer();
+        LOG_TRACE(log, "Will copy file {}", adjusted_path);
 
-        /// If we have prefix in base we will seek to the start of the suffix which differs
-        if (info.base_size != 0)
-            read_buffer->seek(info.base_size, SEEK_SET);
-
-        if (!num_files_written)
+        bool has_entries = false;
+        {
+            std::lock_guard lock{mutex};
+            has_entries = num_entries > 0;
+        }
+        if (!has_entries)
             checkLockFile(true);
 
         if (use_archives)
@@ -916,17 +1029,27 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
                 coordination->updateFileInfo(info);
             }
             auto out = getArchiveWriter(current_archive_suffix)->writeFile(info.data_file_name);
+            auto read_buffer = entry->getReadBuffer();
+            if (info.base_size != 0)
+                read_buffer->seek(info.base_size, SEEK_SET);
             copyData(*read_buffer, *out);
             out->finalize();
         }
         else
         {
+            auto create_read_buffer = [entry] { return entry->getReadBuffer(); };
+
             /// NOTE: `mutex` must be unlocked here otherwise writing will be in one thread maximum and hence slow.
-            writer->copyFileThroughBuffer(std::move(read_buffer), info.data_file_name);
+            writer->copyDataToFile(create_read_buffer, info.base_size, info.size - info.base_size, info.data_file_name);
         }
     }
 
-    ++num_files_written;
+    {
+        std::lock_guard lock{mutex};
+        ++num_entries;
+        size_of_entries += info.size - info.base_size;
+        uncompressed_size += info.size - info.base_size;
+    }
 }
 
 
@@ -934,13 +1057,13 @@ void BackupImpl::finalizeWriting()
 {
     std::lock_guard lock{mutex};
     if (open_mode != OpenMode::WRITE)
-        throw Exception("Backup is not opened for writing", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for writing");
 
     if (writing_finalized)
-        throw Exception("Backup is already finalized", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is already finalized");
 
     if (!coordination->hasFiles(""))
-        throw Exception("Backup must not be empty", ErrorCodes::BACKUP_IS_EMPTY);
+        throw Exception(ErrorCodes::BACKUP_IS_EMPTY, "Backup must not be empty");
 
     if (!is_internal_backup)
     {
@@ -955,18 +1078,6 @@ void BackupImpl::finalizeWriting()
     writing_finalized = true;
 }
 
-
-void BackupImpl::increaseUncompressedSize(UInt64 file_size)
-{
-    uncompressed_size += file_size;
-    ++num_files;
-}
-
-void BackupImpl::increaseUncompressedSize(const FileInfo & info)
-{
-    if ((info.size > info.base_size) && (info.data_file_name.empty() || (info.data_file_name == info.file_name)))
-        increaseUncompressedSize(info.size - info.base_size);
-}
 
 void BackupImpl::setCompressedSize()
 {
@@ -1007,7 +1118,7 @@ std::shared_ptr<IArchiveWriter> BackupImpl::getArchiveWriter(const String & suff
     String archive_name_with_suffix = getArchiveNameWithSuffix(suffix);
     auto new_archive_writer = createArchiveWriter(archive_params.archive_name, writer->writeFile(archive_name_with_suffix));
     new_archive_writer->setPassword(archive_params.password);
-
+    new_archive_writer->setCompression(archive_params.compression_method, archive_params.compression_level);
     size_t pos = suffix.empty() ? 0 : 1;
     archive_writers[pos] = {suffix, new_archive_writer};
 
