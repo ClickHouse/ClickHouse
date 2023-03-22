@@ -36,7 +36,7 @@ bool RemoteQueryExecutorReadContext::checkBeforeTaskResume()
 
 void RemoteQueryExecutorReadContext::Task::run(AsyncCallback async_callback, ResumeCallback suspend_callback)
 {
-    read_context.executor.sendQuery(ClientInfo::QueryKind::SECONDARY_QUERY, async_callback);
+    read_context.executor.sendQueryUnlocked(ClientInfo::QueryKind::SECONDARY_QUERY, async_callback);
     read_context.is_query_sent = true;
 
     if (read_context.suspend_when_query_sent)

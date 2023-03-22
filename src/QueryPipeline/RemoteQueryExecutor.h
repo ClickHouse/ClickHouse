@@ -89,6 +89,7 @@ public:
     ///                     But clickhouse-benchmark uses the same code,
     ///                     and it should pass INITIAL_QUERY.
     void sendQuery(ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::SECONDARY_QUERY, AsyncCallback async_callback = {});
+    void sendQueryUnlocked(ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::SECONDARY_QUERY, AsyncCallback async_callback = {});
 
     int sendQueryAsync();
 
