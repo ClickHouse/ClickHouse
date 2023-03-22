@@ -68,6 +68,16 @@ namespace DB
         factory.registerSource("redis", create_table_source);
     }
 
+    RedisDictionarySource::Connection::Connection(PoolPtr pool_, ClientPtr client_)
+        : pool(std::move(pool_)), client(std::move(client_))
+    {
+    }
+
+    RedisDictionarySource::Connection::~Connection()
+    {
+        pool->returnObject(std::move(client));
+    }
+
     static constexpr size_t REDIS_MAX_BLOCK_SIZE = DEFAULT_BLOCK_SIZE;
     static constexpr size_t REDIS_LOCK_ACQUIRE_TIMEOUT_MS = 5000;
 
