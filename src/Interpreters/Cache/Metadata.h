@@ -38,6 +38,7 @@ struct FileSegmentMetadata : private boost::noncopyable
 
 struct KeyMetadata : public std::map<size_t, FileSegmentMetadata>, private boost::noncopyable
 {
+public:
     const FileSegmentMetadata * getByOffset(size_t offset) const;
     FileSegmentMetadata * getByOffset(size_t offset);
 
@@ -46,15 +47,15 @@ struct KeyMetadata : public std::map<size_t, FileSegmentMetadata>, private boost
 
     std::string toString() const;
 
-    KeyGuard::Lock lock() { return guard.lock(); }
+    KeyGuard::Lock lock() const { return guard.lock(); }
 
     bool created_base_directory = false;
-
     bool removed = false;
 
 private:
-    KeyGuard guard;
+    mutable KeyGuard guard;
 };
+
 using KeyMetadataPtr = std::shared_ptr<KeyMetadata>;
 
 

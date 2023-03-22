@@ -17,7 +17,7 @@ namespace ErrorCodes
 }
 
 IFileCachePriority::Iterator LRUFileCachePriority::add(
-    const Key & key, size_t offset, size_t size, std::weak_ptr<KeyMetadata> key_metadata)
+    const Key & key, size_t offset, size_t size, KeyMetadata & key_metadata)
 {
 #ifndef NDEBUG
     for (const auto & entry : queue)

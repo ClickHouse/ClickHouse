@@ -48,8 +48,6 @@ public:
 
     FileCache(const String & cache_base_path_, const FileCacheSettings & cache_settings_);
 
-    ~FileCache() = default;
-
     void initialize();
 
     const String & getBasePath() const { return cache_base_path; }
@@ -100,7 +98,7 @@ public:
 
     size_t getMaxFileSegmentSize() const { return max_file_segment_size; }
 
-    bool tryReserve(const Key & key, size_t offset, size_t size, KeyMetadataPtr key_metadata);
+    bool tryReserve(const Key & key, size_t offset, size_t size, KeyMetadata & key_metadata);
 
     FileSegmentsHolderPtr getSnapshot();
 
@@ -112,7 +110,7 @@ public:
 
     CacheGuard::Lock cacheLock() { return cache_guard.lock(); }
 
-    LockedKeyPtr createLockedKey(const Key & key, KeyMetadataPtr key_metadata) const;
+    LockedKeyPtr createLockedKey(const Key & key, KeyMetadata & key_metadata) const;
 
     /// For per query cache limit.
     struct QueryContextHolder : private boost::noncopyable
@@ -247,6 +245,8 @@ private:
 
     void assertCacheCorrectness();
     void assertCacheCorrectness(const CacheGuard::Lock & cache_lock, const CacheMetadataGuard::Lock & metadata_lock);
+
+    static void removeFileSegment(LockedKey & locked_key, FileSegmentPtr file_segment, const CacheGuard::Lock &);
 };
 
 }

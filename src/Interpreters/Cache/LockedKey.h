@@ -13,37 +13,44 @@ using LockedKeyPtr = std::shared_ptr<LockedKey>;
 struct KeysQueue;
 using KeysQueuePtr = std::shared_ptr<KeysQueue>;
 
+/**
+ * `LockedKey` is an object which makes sure that as long as it exists the following is true:
+ * 1. the key cannot be removed from cache
+ * 2. the key cannot be modified, e.g. new offsets cannot be added to key; already existing
+ *    offsets cannot be deleted from the key
+ * And also provides some methods which allow the owner of this LockedKey object to do such
+ * modification of the key (adding/deleting offsets) and deleting the key from cache.
+ */
 struct LockedKey : private boost::noncopyable
 {
     LockedKey(
         const FileCacheKey & key_,
-        std::weak_ptr<KeyMetadata> key_metadata_,
-        KeyGuard::Lock key_lock_,
-        KeysQueuePtr cleanup_keys_metadata_queue_,
-        const FileCache * cache_);
+        KeyMetadata & key_metadata_,
+        KeyGuard::Lock && key_lock_,
+        const std::string & key_path_,
+        KeysQueuePtr cleanup_keys_metadata_queue_);
 
     ~LockedKey();
 
-    void reduceSizeToDownloaded(size_t offset, const FileSegmentGuard::Lock &, const CacheGuard::Lock &);
+    const FileCacheKey & getKey() const { return key; }
 
-    void remove(FileSegmentPtr file_segment, const CacheGuard::Lock &);
+    const KeyMetadata & getKeyMetadata() const { return key_metadata; }
+    KeyMetadata & getKeyMetadata() { return key_metadata; }
 
-    void remove(size_t offset, const FileSegmentGuard::Lock &, const CacheGuard::Lock &);
+    void removeFileSegment(size_t offset, const FileSegmentGuard::Lock &, const CacheGuard::Lock &);
 
-    bool isLastHolder(size_t offset) const;
+    void shrinkFileSegmentToDownloadedSize(size_t offset, const FileSegmentGuard::Lock &, const CacheGuard::Lock &);
 
-    KeyMetadataPtr getKeyMetadata() const { return key_metadata.lock(); }
-
-    std::vector<size_t> delete_offsets;
+    bool isLastOwnerOfFileSegment(size_t offset) const;
 
 private:
-    void cleanupKeyDirectory() const;
+    void removeKeyIfEmpty() const;
 
-    FileCacheKey key;
-    const FileCache * cache;
+    const FileCacheKey key;
+    const std::string key_path;
 
     KeyGuard::Lock lock;
-    mutable std::weak_ptr<KeyMetadata> key_metadata;
+    KeyMetadata & key_metadata;
     KeysQueuePtr cleanup_keys_metadata_queue;
 
     Poco::Logger * log;
