@@ -528,7 +528,7 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
     }
 }
 
-void ASTFunction::finishformatWithWindow(FormattingBuffer out) const
+void ASTFunction::finishFormatWithWindow(FormattingBuffer out) const
 {
     if (!is_window_function)
         return;
