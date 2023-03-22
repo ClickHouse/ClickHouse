@@ -104,7 +104,9 @@ Complete three steps same as lz4 above
 
 [self-check]
 For each codec(lz4/zstd/deflate), please execute below query to make sure the databases are created successfully:
-$ select count() from lineorder_flat
+```sql
+select count() from lineorder_flat
+```
 You are expected to see below output:
 ```sql
 ┌───count()─┐
