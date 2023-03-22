@@ -368,6 +368,7 @@ linearizability
 linearizable
 lineasstring
 linefeeds
+lineorder
 linux
 llvm
 localhost
@@ -548,4 +549,3 @@ zkcopy
 zlib
 znodes
 zstd
-lineorder
