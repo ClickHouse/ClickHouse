@@ -4,10 +4,6 @@
 SET allow_experimental_analyzer = 1;
 SET allow_experimental_query_cache = true;
 
--- The test assumes that these two settings have default values. Neutralize the effect of setting randomization:
-SET use_query_cache = false;
-SET enable_reads_from_query_cache = true;
-
 SYSTEM DROP QUERY CACHE;
 
 -- Run a silly query with a non-trivial plan and put the result into the query cache QC

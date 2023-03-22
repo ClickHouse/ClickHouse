@@ -3,10 +3,6 @@
 
 SET allow_experimental_query_cache = true;
 
--- The test assumes that these two settings have default values. Neutralize the effect of setting randomization:
-SET use_query_cache = false;
-SET enable_reads_from_query_cache = true;
-
 -- Start with empty query cache QC and query log
 SYSTEM DROP QUERY CACHE;
 DROP TABLE system.query_log SYNC;
