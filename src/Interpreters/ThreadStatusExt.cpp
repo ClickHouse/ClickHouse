@@ -175,10 +175,6 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupStatusPtr & thread_group_)
     thread_group = thread_group_;
     thread_group->linkThread(thread_id);
 
-    // Current thread is now considered as cancelable part of thread group
-    chassert(CancelToken::local().thread_id == thread_id); // should be only called for current thread
-    thread_group->enterGroup();
-
     performance_counters.setParent(&thread_group->performance_counters);
     memory_tracker.setParent(&thread_group->memory_tracker);
 
@@ -191,6 +187,10 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupStatusPtr & thread_group_)
 
     applyQuerySettings();
     initPerformanceCounters();
+
+    // Current thread is now considered as cancelable part of thread group
+    chassert(CancelToken::local().thread_id == thread_id); // should be only called for current thread
+    thread_group->enterGroup(); // Note that it can throw in case thread_group is already cancelled
 }
 
 void ThreadStatus::detachFromGroup()
