@@ -20,3 +20,4 @@ ATTACH TABLE test_db.mview;
 SET ignore_inaccessible_tables_mat_view_attach = 0;
 
 DROP DATABASE test_db;
+
