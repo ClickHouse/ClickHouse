@@ -4,7 +4,6 @@
 #include <Processors/Formats/RowInputFormatWithNamesAndTypes.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
-#include <Formats/SchemaInferenceUtils.h>
 #include <Common/HashTable/HashMap.h>
 
 namespace DB
@@ -79,14 +78,12 @@ public:
     JSONCompactEachRowRowSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, bool yield_strings_, const FormatSettings & format_settings_);
 
 private:
-    DataTypes readRowAndGetDataTypesImpl() override;
+    DataTypes readRowAndGetDataTypes() override;
 
-    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
-    void transformFinalTypeIfNeeded(DataTypePtr & type) override;
+    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type, size_t) override;
 
     JSONCompactEachRowFormatReader reader;
     bool first_row = true;
-    JSONInferenceInfo inference_info;
 };
 
 }

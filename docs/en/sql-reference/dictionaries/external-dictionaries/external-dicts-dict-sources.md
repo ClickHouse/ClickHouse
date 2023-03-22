@@ -824,24 +824,3 @@ Setting fields:
 :::note
 The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
 :::
-
-## Null
-
-A special source that can be used to create dummy (empty) dictionaries. Such dictionaries can useful for tests or with setups with separated data and query nodes at nodes with Distributed tables.
-
-``` sql
-CREATE DICTIONARY null_dict (
-    id              UInt64,
-    val             UInt8,
-    default_val     UInt8 DEFAULT 123,
-    nullable_val    Nullable(UInt8)
-)
-PRIMARY KEY id
-SOURCE(NULL())
-LAYOUT(FLAT())
-LIFETIME(0);
-```
-
-## Related Content
-
-- [Using dictionaries to accelerate queries](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)

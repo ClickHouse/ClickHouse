@@ -43,8 +43,8 @@ static String toValidUTF8String(const String & name)
 }
 
 BSONEachRowRowOutputFormat::BSONEachRowRowOutputFormat(
-    WriteBuffer & out_, const Block & header_, const FormatSettings & settings_)
-    : IRowOutputFormat(header_, out_), settings(settings_)
+    WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & settings_)
+    : IRowOutputFormat(header_, out_, params_), settings(settings_)
 {
     const auto & sample = getPort(PortKind::Main).getHeader();
     fields.reserve(sample.columns());
@@ -124,7 +124,6 @@ size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, co
         case TypeIndex::Date: [[fallthrough]];
         case TypeIndex::Date32: [[fallthrough]];
         case TypeIndex::Decimal32: [[fallthrough]];
-        case TypeIndex::IPv4: [[fallthrough]];
         case TypeIndex::Int32:
         {
             return size + sizeof(Int32);
@@ -168,10 +167,6 @@ size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, co
         {
             const auto & string_column = assert_cast<const ColumnFixedString &>(column);
             return size + sizeof(BSONSizeT) + string_column.getN() + 1; // Size of data + data + \0 or BSON subtype (in case of BSON binary)
-        }
-        case TypeIndex::IPv6:
-        {
-            return size + sizeof(BSONSizeT) + 1 + sizeof(IPv6); // Size of data + BSON binary subtype + 16 bytes of value
         }
         case TypeIndex::UUID:
         {
@@ -234,9 +229,7 @@ size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, co
 
             const auto & map_type = assert_cast<const DataTypeMap &>(*data_type);
             if (!isStringOrFixedString(map_type.getKeyType()))
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                                "Only maps with String key type are supported in BSON, got key type: {}",
-                                map_type.getKeyType()->getName());
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Only maps with String key type are supported in BSON, got key type: {}", map_type.getKeyType()->getName());
             const auto & value_type = map_type.getValueType();
 
             const auto & map_column = assert_cast<const ColumnMap &>(column);
@@ -376,19 +369,6 @@ void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const Da
             writeBSONString<ColumnFixedString>(column, row_num, name, out, settings.bson.output_string_as_string);
             break;
         }
-        case TypeIndex::IPv4:
-        {
-            writeBSONNumber<ColumnIPv4, Int32>(BSONType::INT32, column, row_num, name, out);
-            break;
-        }
-        case TypeIndex::IPv6:
-        {
-            writeBSONTypeAndKeyName(BSONType::BINARY, name, out);
-            writeBSONSize(sizeof(IPv6), out);
-            writeBSONType(BSONBinarySubtype::BINARY, out);
-            writeBinary(assert_cast<const ColumnIPv6 &>(column).getElement(row_num), out);
-            break;
-        }
         case TypeIndex::UUID:
         {
             writeBSONTypeAndKeyName(BSONType::BINARY, name, out);
@@ -472,9 +452,7 @@ void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const Da
         {
             const auto & map_type = assert_cast<const DataTypeMap &>(*data_type);
             if (!isStringOrFixedString(map_type.getKeyType()))
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                                "Only maps with String key type are supported in BSON, got key type: {}",
-                                map_type.getKeyType()->getName());
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Only maps with String key type are supported in BSON, got key type: {}", map_type.getKeyType()->getName());
             const auto & value_type = map_type.getValueType();
 
             const auto & map_column = assert_cast<const ColumnMap &>(column);
@@ -541,8 +519,8 @@ void registerOutputFormatBSONEachRow(FormatFactory & factory)
 {
     factory.registerOutputFormat(
         "BSONEachRow",
-        [](WriteBuffer & buf, const Block & sample, const FormatSettings & _format_settings)
-        { return std::make_shared<BSONEachRowRowOutputFormat>(buf, sample, _format_settings); });
+        [](WriteBuffer & buf, const Block & sample, const RowOutputFormatParams & params, const FormatSettings & _format_settings)
+        { return std::make_shared<BSONEachRowRowOutputFormat>(buf, sample, params, _format_settings); });
     factory.markOutputFormatSupportsParallelFormatting("BSONEachRow");
 }
 

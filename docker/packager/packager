@@ -100,8 +100,14 @@ def run_docker_image_with_env(
     subprocess.check_call(cmd, shell=True)
 
 
-def is_release_build(build_type, package_type, sanitizer):
-    return build_type == "" and package_type == "deb" and sanitizer == ""
+
+def is_release_build(build_type, package_type, sanitizer, shared_libraries):
+    return (
+        build_type == ""
+        and package_type == "deb"
+        and sanitizer == ""
+        and not shared_libraries
+    )
 
 
 def parse_env_variables(
@@ -111,6 +117,7 @@ def parse_env_variables(
     package_type,
     cache,
     distcc_hosts,
+    shared_libraries,
     clang_tidy,
     version,
     author,
@@ -125,7 +132,7 @@ def parse_env_variables(
     ARM_V80COMPAT_SUFFIX = "-aarch64-v80compat"
     FREEBSD_SUFFIX = "-freebsd"
     PPC_SUFFIX = "-ppc64le"
-    AMD64_COMPAT_SUFFIX = "-amd64-compat"
+    AMD64_SSE2_SUFFIX = "-amd64sse2"
 
     result = []
     result.append("OUTPUT_DIR=/output")
@@ -138,7 +145,7 @@ def parse_env_variables(
     is_cross_arm_v80compat = compiler.endswith(ARM_V80COMPAT_SUFFIX)
     is_cross_ppc = compiler.endswith(PPC_SUFFIX)
     is_cross_freebsd = compiler.endswith(FREEBSD_SUFFIX)
-    is_amd64_compat = compiler.endswith(AMD64_COMPAT_SUFFIX)
+    is_amd64_sse2 = compiler.endswith(AMD64_SSE2_SUFFIX)
 
     if is_cross_darwin:
         cc = compiler[: -len(DARWIN_SUFFIX)]
@@ -191,8 +198,8 @@ def parse_env_variables(
         cmake_flags.append(
             "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-ppc64le.cmake"
         )
-    elif is_amd64_compat:
-        cc = compiler[: -len(AMD64_COMPAT_SUFFIX)]
+    elif is_amd64_sse2:
+        cc = compiler[: -len(AMD64_SSE2_SUFFIX)]
         result.append("DEB_ARCH=amd64")
         cmake_flags.append("-DNO_SSE3_OR_HIGHER=1")
     else:
@@ -218,7 +225,7 @@ def parse_env_variables(
         build_target = (
             f"{build_target} clickhouse-odbc-bridge clickhouse-library-bridge"
         )
-        if is_release_build(build_type, package_type, sanitizer):
+        if is_release_build(build_type, package_type, sanitizer, shared_libraries):
             cmake_flags.append("-DSPLIT_DEBUG_SYMBOLS=ON")
             result.append("WITH_PERFORMANCE=1")
             if is_cross_arm:
@@ -231,10 +238,12 @@ def parse_env_variables(
     cmake_flags.append(f"-DCMAKE_C_COMPILER={cc}")
     cmake_flags.append(f"-DCMAKE_CXX_COMPILER={cxx}")
 
-    # Create combined output archive for performance tests.
+    # Create combined output archive for shared library build and for performance tests.
     if package_type == "coverity":
         result.append("COMBINED_OUTPUT=coverity")
         result.append('COVERITY_TOKEN="$COVERITY_TOKEN"')
+    elif shared_libraries:
+        result.append("COMBINED_OUTPUT=shared_build")
 
     if sanitizer:
         result.append(f"SANITIZER={sanitizer}")
@@ -282,6 +291,15 @@ def parse_env_variables(
         result.append("ENABLE_TESTS=1")
         result.append("BINARY_OUTPUT=tests")
         cmake_flags.append("-DENABLE_TESTS=1")
+
+    if shared_libraries:
+        cmake_flags.append("-DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1")
+        # We can't always build utils because it requires too much space, but
+        # we have to build them at least in some way in CI. The shared library
+        # build is probably the least heavy disk-wise.
+        cmake_flags.append("-DENABLE_UTILS=1")
+        # utils are not included into clickhouse-bundle, so build everything
+        build_target = "all"
 
     if clang_tidy:
         cmake_flags.append("-DENABLE_CLANG_TIDY=1")
@@ -347,7 +365,7 @@ if __name__ == "__main__":
             "clang-15-aarch64",
             "clang-15-aarch64-v80compat",
             "clang-15-ppc64le",
-            "clang-15-amd64-compat",
+            "clang-15-amd64sse2",
             "clang-15-freebsd",
             "gcc-11",
         ),
@@ -360,6 +378,7 @@ if __name__ == "__main__":
         default="",
     )
 
+    parser.add_argument("--shared-libraries", action="store_true")
     parser.add_argument("--clang-tidy", action="store_true")
     parser.add_argument("--cache", choices=("ccache", "distcc", ""), default="")
     parser.add_argument(
@@ -412,6 +431,7 @@ if __name__ == "__main__":
         args.package_type,
         args.cache,
         args.distcc_hosts,
+        args.shared_libraries,
         args.clang_tidy,
         args.version,
         args.author,

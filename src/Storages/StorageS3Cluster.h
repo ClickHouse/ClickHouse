@@ -10,7 +10,6 @@
 #include "Client/Connection.h"
 #include <Interpreters/Cluster.h>
 #include <IO/S3Common.h>
-#include <Storages/IStorageCluster.h>
 #include <Storages/StorageS3.h>
 
 namespace DB
@@ -18,21 +17,15 @@ namespace DB
 
 class Context;
 
-class StorageS3Cluster : public IStorageCluster
+class StorageS3Cluster : public IStorage
 {
 public:
-    struct Configuration : public StorageS3::Configuration
-    {
-        std::string cluster_name;
-    };
-
     StorageS3Cluster(
-        const Configuration & configuration_,
+        const StorageS3ClusterConfiguration & configuration_,
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        ContextPtr context_,
-        bool structure_argument_was_provided_);
+        ContextPtr context_);
 
     std::string getName() const override { return "S3Cluster"; }
 
@@ -44,17 +37,16 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
-    RemoteQueryExecutor::Extension getTaskIteratorExtension(ASTPtr query, ContextPtr context) const override;
-    ClusterPtr getCluster(ContextPtr context) const override;
-
 private:
-    StorageS3::Configuration s3_configuration;
+    StorageS3::S3Configuration s3_configuration;
+
+    String filename;
     String cluster_name;
     String format_name;
     String compression_method;
     NamesAndTypesList virtual_columns;
     Block virtual_block;
-    bool structure_argument_was_provided;
+    bool add_columns_structure_to_query = false;
 };
 
 

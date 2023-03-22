@@ -48,12 +48,12 @@ public:
 
     virtual void appendColumnName(WriteBuffer &) const
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get name of not a column: {}", getID());
+        throw Exception("Trying to get name of not a column: " + getID(), ErrorCodes::LOGICAL_ERROR);
     }
 
     virtual void appendColumnNameWithoutAlias(WriteBuffer &) const
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get name of not a column: {}", getID());
+        throw Exception("Trying to get name of not a column: " + getID(), ErrorCodes::LOGICAL_ERROR);
     }
 
     /** Get the alias, if any, or the canonical name of the column, if it is not. */
@@ -65,7 +65,7 @@ public:
     /** Set the alias. */
     virtual void setAlias(const String & /*to*/)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't set alias of {}", getColumnName());
+        throw Exception("Can't set alias of " + getColumnName(), ErrorCodes::LOGICAL_ERROR);
     }
 
     /** Get the text that identifies this element. */
@@ -119,7 +119,7 @@ public:
 
         T * casted = dynamic_cast<T *>(child.get());
         if (!casted)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not cast AST subtree");
+            throw Exception("Could not cast AST subtree", ErrorCodes::LOGICAL_ERROR);
 
         children.push_back(child);
         field = casted;
@@ -129,11 +129,11 @@ public:
     void replace(T * & field, const ASTPtr & child)
     {
         if (!child)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to replace AST subtree with nullptr");
+            throw Exception("Trying to replace AST subtree with nullptr", ErrorCodes::LOGICAL_ERROR);
 
         T * casted = dynamic_cast<T *>(child.get());
         if (!casted)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not cast AST subtree");
+            throw Exception("Could not cast AST subtree", ErrorCodes::LOGICAL_ERROR);
 
         for (ASTPtr & current_child : children)
         {
@@ -145,7 +145,7 @@ public:
             }
         }
 
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "AST subtree not found in children");
+        throw Exception("AST subtree not found in children", ErrorCodes::LOGICAL_ERROR);
     }
 
     template <typename T>
@@ -169,7 +169,7 @@ public:
         });
 
         if (child == children.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "AST subtree not found in children");
+            throw Exception("AST subtree not found in children", ErrorCodes::LOGICAL_ERROR);
 
         children.erase(child);
         field = nullptr;
@@ -247,7 +247,7 @@ public:
 
     virtual void formatImpl(const FormatSettings & /*settings*/, FormatState & /*state*/, FormatStateStacked /*frame*/) const
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown element in AST: {}", getID());
+        throw Exception("Unknown element in AST: " + getID(), ErrorCodes::LOGICAL_ERROR);
     }
 
     // A simple way to add some user-readable context to an error message.
@@ -263,32 +263,16 @@ public:
     enum class QueryKind : uint8_t
     {
         None = 0,
-        Select,
-        Insert,
-        Delete,
+        Alter,
         Create,
         Drop,
-        Rename,
-        Optimize,
-        Check,
-        Alter,
         Grant,
+        Insert,
+        Rename,
         Revoke,
+        SelectIntersectExcept,
+        Select,
         System,
-        Set,
-        Use,
-        Show,
-        Exists,
-        Describe,
-        Explain,
-        Backup,
-        Restore,
-        KillQuery,
-        ExternalDDL,
-        Begin,
-        Commit,
-        Rollback,
-        SetTransactionSnapshot,
     };
     /// Return QueryKind of this AST query.
     virtual QueryKind getQueryKind() const { return QueryKind::None; }

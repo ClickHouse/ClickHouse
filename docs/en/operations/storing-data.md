@@ -80,7 +80,7 @@ Required parameters:
 
 -   `type` — `encrypted`. Otherwise the encrypted disk is not created.
 -   `disk` — Type of disk for data storage.
--   `key` — The key for encryption and decryption. Type: [Uint64](/docs/en/sql-reference/data-types/int-uint.md). You can use `key_hex` parameter to encode the key in hexadecimal form.
+-   `key` — The key for encryption and decryption. Type: [Uint64](/docs/en/sql-reference/data-types/int-uint.md). You can use `key_hex` parameter to encrypt in hexadecimal form.
     You can specify multiple keys using the `id` attribute (see example above).
 
 Optional parameters:
@@ -135,13 +135,11 @@ Example of configuration for versions later or equal to 22.8:
             </cache>
         </disks>
         <policies>
-            <s3-cache>
-                <volumes>
-                    <main>
-                        <disk>cache</disk>
-                    </main>
-                </volumes>
-            </s3-cache>
+            <volumes>
+                <main>
+                    <disk>cache</disk>
+                </main>
+            </volumes>
         <policies>
     </storage_configuration>
 ```
@@ -161,13 +159,11 @@ Example of configuration for versions earlier than 22.8:
             </s3>
         </disks>
         <policies>
-            <s3-cache>
-                <volumes>
-                    <main>
-                        <disk>s3</disk>
-                    </main>
-                </volumes>
-            </s3-cache>
+            <volumes>
+                <main>
+                    <disk>s3</disk>
+                </main>
+            </volumes>
         <policies>
     </storage_configuration>
 ```

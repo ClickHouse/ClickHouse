@@ -4,6 +4,7 @@ CREATE TABLE table_02513 (n UInt64) ENGINE=MergeTree() ORDER BY tuple() SETTINGS
 
 INSERT INTO table_02513 SELECT number+11*13*1000 FROM numbers(20);
 
+SET allow_experimental_lightweight_delete=1;
 SET mutations_sync=2;
 SET max_threads=1;
 

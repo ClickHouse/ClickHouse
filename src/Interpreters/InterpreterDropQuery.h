@@ -24,6 +24,8 @@ public:
     /// Drop table or database.
     BlockIO execute() override;
 
+    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr) const override;
+
     static void executeDropQuery(ASTDropQuery::Kind kind, ContextPtr global_context, ContextPtr current_context, const StorageID & target_table_id, bool sync);
 
     bool supportsTransactions() const override;

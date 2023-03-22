@@ -28,23 +28,6 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-class AvroInputStreamReadBufferAdapter : public avro::InputStream
-{
-public:
-    explicit AvroInputStreamReadBufferAdapter(ReadBuffer & in_) : in(in_) {}
-
-    bool next(const uint8_t ** data, size_t * len) override;
-
-    void backup(size_t len) override;
-
-    void skip(size_t len) override;
-
-    size_t byteCount() const override;
-
-private:
-    ReadBuffer & in;
-};
-
 class AvroDeserializer
 {
 public:
@@ -52,8 +35,8 @@ public:
     void deserializeRow(MutableColumns & columns, avro::Decoder & decoder, RowReadExtension & ext) const;
 
 private:
-    using DeserializeFn = std::function<bool(IColumn & column, avro::Decoder & decoder)>;
-    using DeserializeNestedFn = std::function<bool(IColumn & column, avro::Decoder & decoder)>;
+    using DeserializeFn = std::function<void(IColumn & column, avro::Decoder & decoder)>;
+    using DeserializeNestedFn = std::function<void(IColumn & column, avro::Decoder & decoder)>;
 
     using SkipFn = std::function<void(avro::Decoder & decoder)>;
     DeserializeFn createDeserializeFn(avro::NodePtr root_node, DataTypePtr target_type);
@@ -103,7 +86,8 @@ private:
                 case Noop:
                     break;
                 case Deserialize:
-                    ext.read_columns[target_column_idx] = deserialize_fn(*columns[target_column_idx], decoder);
+                    deserialize_fn(*columns[target_column_idx], decoder);
+                    ext.read_columns[target_column_idx] = true;
                     break;
                 case Skip:
                     skip_fn(decoder);
@@ -119,7 +103,7 @@ private:
                     auto index = decoder.decodeUnionIndex();
                     if (index >= actions.size())
                     {
-                        throw Exception(ErrorCodes::INCORRECT_DATA, "Union index out of boundary");
+                        throw Exception("Union index out of boundary", ErrorCodes::INCORRECT_DATA);
                     }
                     actions[index].execute(columns, decoder, ext);
                     break;
@@ -179,7 +163,6 @@ public:
 
 private:
     virtual bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
-    void readPrefix() override;
 
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
@@ -201,8 +184,8 @@ public:
 
     NamesAndTypesList readSchema() override;
 
-    static DataTypePtr avroNodeToDataType(avro::NodePtr node);
 private:
+    DataTypePtr avroNodeToDataType(avro::NodePtr node);
 
     bool confluent;
     const FormatSettings format_settings;

@@ -41,3 +41,4 @@ CREATE TABLE test
 ENGINE = EmbeddedRocksDB
 PRIMARY KEY key;
 ```
+

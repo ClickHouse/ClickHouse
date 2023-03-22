@@ -219,9 +219,13 @@ static ReturnType safeDeserialize(
 /// Deserialize value into non-nullable column. In case of NULL, insert default value and return false.
 template <typename ReturnType = void, typename CheckForNull, typename DeserializeNested, typename std::enable_if_t<std::is_same_v<ReturnType, bool>, ReturnType>* = nullptr>
 static ReturnType safeDeserialize(
-        IColumn & column, const ISerialization &,
+        IColumn & column, const ISerialization & nested,
         CheckForNull && check_for_null, DeserializeNested && deserialize_nested)
 {
+    assert(!dynamic_cast<ColumnNullable *>(&column));
+    assert(!dynamic_cast<const SerializationNullable *>(&nested));
+    UNUSED(nested);
+
     bool insert_default = check_for_null();
     if (insert_default)
         column.insertDefault();
@@ -356,20 +360,19 @@ ReturnType SerializationNullable::deserializeTextEscapedAndRawImpl(IColumn & col
         /// or if someone uses tab or LF in TSV null_representation.
         /// In the first case we cannot continue reading anyway. The second case seems to be unlikely.
         if (null_representation.find('\t') != std::string::npos || null_representation.find('\n') != std::string::npos)
-            throw DB::ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "TSV custom null representation "
-                                       "containing '\\t' or '\\n' may not work correctly for large input.");
+            throw DB::ParsingException("TSV custom null representation containing '\\t' or '\\n' may not work correctly "
+                                       "for large input.", ErrorCodes::CANNOT_READ_ALL_DATA);
 
         WriteBufferFromOwnString parsed_value;
         if constexpr (escaped)
             nested_serialization->serializeTextEscaped(nested_column, nested_column.size() - 1, parsed_value, settings);
         else
             nested_serialization->serializeTextRaw(nested_column, nested_column.size() - 1, parsed_value, settings);
-        throw DB::ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while parsing \"{}{}\" as Nullable"
-                                   " at position {}: got \"{}\", which was deserialized as \"{}\". "
-                                   "It seems that input data is ill-formatted.",
-                                   std::string(pos, buf.buffer().end()),
-                                   std::string(istr.position(), std::min(size_t(10), istr.available())),
-                                   istr.count(), std::string(pos, buf.position() - pos), parsed_value.str());
+        throw DB::ParsingException("Error while parsing \"" + std::string(pos, buf.buffer().end()) + std::string(istr.position(), std::min(size_t(10), istr.available())) + "\" as Nullable"
+                                       + " at position " + std::to_string(istr.count()) + ": got \"" + std::string(pos, buf.position() - pos)
+                                       + "\", which was deserialized as \""
+                                       + parsed_value.str() + "\". It seems that input data is ill-formatted.",
+                                   ErrorCodes::CANNOT_READ_ALL_DATA);
     };
 
     return safeDeserialize<ReturnType>(column, *nested_serialization, check_for_null, deserialize_nested);
@@ -522,7 +525,7 @@ ReturnType SerializationNullable::deserializeTextCSVImpl(IColumn & column, ReadB
     }
 
     /// Check if we have enough data in buffer to check if it's a null.
-    if (settings.csv.custom_delimiter.empty() && istr.available() > null_representation.size())
+    if (istr.available() > null_representation.size())
     {
         auto check_for_null = [&istr, &null_representation, &settings]()
         {
@@ -547,21 +550,8 @@ ReturnType SerializationNullable::deserializeTextCSVImpl(IColumn & column, ReadB
     {
         buf.setCheckpoint();
         SCOPE_EXIT(buf.dropCheckpoint());
-        if (checkString(null_representation, buf))
-        {
-            if (!settings.csv.custom_delimiter.empty())
-            {
-                if (checkString(settings.csv.custom_delimiter, buf))
-                {
-                    /// Rollback to the beginning of custom delimiter.
-                    buf.rollbackToCheckpoint();
-                    assertString(null_representation, buf);
-                    return true;
-                }
-            }
-            else if (buf.eof() || *buf.position() == settings.csv.delimiter || *buf.position() == '\r' || *buf.position() == '\n')
-                return true;
-        }
+        if (checkString(null_representation, buf) && (buf.eof() || *buf.position() == settings.csv.delimiter || *buf.position() == '\r' || *buf.position() == '\n'))
+            return true;
 
         buf.rollbackToCheckpoint();
         return false;
@@ -581,17 +571,16 @@ ReturnType SerializationNullable::deserializeTextCSVImpl(IColumn & column, ReadB
         /// In the first case we cannot continue reading anyway. The second case seems to be unlikely.
         if (null_representation.find(settings.csv.delimiter) != std::string::npos || null_representation.find('\r') != std::string::npos
             || null_representation.find('\n') != std::string::npos)
-            throw DB::ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "CSV custom null representation containing "
-                                       "format_csv_delimiter, '\\r' or '\\n' may not work correctly for large input.");
+            throw DB::ParsingException("CSV custom null representation containing format_csv_delimiter, '\\r' or '\\n' may not work correctly "
+                                       "for large input.", ErrorCodes::CANNOT_READ_ALL_DATA);
 
         WriteBufferFromOwnString parsed_value;
         nested_serialization->serializeTextCSV(nested_column, nested_column.size() - 1, parsed_value, settings);
-        throw DB::ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while parsing \"{}{}\" as Nullable"
-                                   " at position {}: got \"{}\", which was deserialized as \"{}\". "
-                                   "It seems that input data is ill-formatted.",
-                                   std::string(pos, buf.buffer().end()),
-                                   std::string(istr.position(), std::min(size_t(10), istr.available())),
-                                   istr.count(), std::string(pos, buf.position() - pos), parsed_value.str());
+        throw DB::ParsingException("Error while parsing \"" + std::string(pos, buf.buffer().end()) + std::string(istr.position(), std::min(size_t(10), istr.available())) + "\" as Nullable"
+                                       + " at position " + std::to_string(istr.count()) + ": got \"" + std::string(pos, buf.position() - pos)
+                                       + "\", which was deserialized as \""
+                                       + parsed_value.str() + "\". It seems that input data is ill-formatted.",
+                                   ErrorCodes::CANNOT_READ_ALL_DATA);
     };
 
     return safeDeserialize<ReturnType>(column, *nested_serialization, check_for_null, deserialize_nested);

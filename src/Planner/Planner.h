@@ -28,11 +28,6 @@ public:
         const SelectQueryOptions & select_query_options_,
         GlobalPlannerContextPtr global_planner_context_);
 
-    /// Initialize planner with query tree after query analysis phase and planner context
-    Planner(const QueryTreeNodePtr & query_tree_,
-        const SelectQueryOptions & select_query_options_,
-        PlannerContextPtr planner_context_);
-
     const QueryPlan & getQueryPlan() const
     {
         return query_plan;
@@ -50,18 +45,11 @@ public:
         return std::move(query_plan);
     }
 
-    void addStorageLimits(const StorageLimitsList & limits);
-
 private:
-    void buildPlanForUnionNode();
-
-    void buildPlanForQueryNode();
-
     QueryTreeNodePtr query_tree;
+    QueryPlan query_plan;
     SelectQueryOptions select_query_options;
     PlannerContextPtr planner_context;
-    QueryPlan query_plan;
-    StorageLimitsList storage_limits;
 };
 
 }

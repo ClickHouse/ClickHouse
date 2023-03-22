@@ -120,7 +120,7 @@ static QueryDescriptors extractQueriesExceptMeAndCheckAccess(const Block & proce
     }
 
     if (res.empty() && access_denied)
-        throw Exception(ErrorCodes::ACCESS_DENIED, "User {} attempts to kill query created by {}", my_client.current_user, query_user);
+        throw Exception("User " + my_client.current_user + " attempts to kill query created by " + query_user, ErrorCodes::ACCESS_DENIED);
 
     return res;
 }
@@ -295,8 +295,9 @@ BlockIO InterpreterKillQueryQuery::execute()
         }
 
         if (res_columns[0]->empty() && access_denied)
-            throw Exception(ErrorCodes::ACCESS_DENIED, "Not allowed to kill mutation. "
-                "To execute this query it's necessary to have the grant {}", required_access_rights.toString());
+            throw Exception(
+                "Not allowed to kill mutation. To execute this query it's necessary to have the grant " + required_access_rights.toString(),
+                ErrorCodes::ACCESS_DENIED);
 
         res_io.pipeline = QueryPipeline(Pipe(std::make_shared<SourceFromSingleChunk>(header.cloneWithColumns(std::move(res_columns)))));
 
@@ -359,8 +360,9 @@ BlockIO InterpreterKillQueryQuery::execute()
         }
 
         if (res_columns[0]->empty() && access_denied)
-            throw Exception(ErrorCodes::ACCESS_DENIED, "Not allowed to kill move partition. "
-                "To execute this query it's necessary to have the grant {}", required_access_rights.toString());
+            throw Exception(
+                "Not allowed to kill move partition. To execute this query it's necessary to have the grant " + required_access_rights.toString(),
+                ErrorCodes::ACCESS_DENIED);
 
         res_io.pipeline = QueryPipeline(Pipe(std::make_shared<SourceFromSingleChunk>(header.cloneWithColumns(std::move(res_columns)))));
 
@@ -430,7 +432,7 @@ Block InterpreterKillQueryQuery::getSelectResult(const String & columns, const S
     while (executor.pull(tmp_block));
 
     if (tmp_block)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected one block from input stream");
+        throw Exception("Expected one block from input stream", ErrorCodes::LOGICAL_ERROR);
 
     return res;
 }

@@ -71,6 +71,17 @@ def test_filtering(started_cluster):
         == "2"
     )
 
+    assert (
+        node1.query(
+            "SELECT id + 1, val FROM merge_table PREWHERE id = 1 WHERE _table != '_dummy'"
+        ).rstrip()
+        == "2\tnode1"
+    )
+
+    assert (
+        node1.query("SELECT count() FROM merge_table PREWHERE id = 1").rstrip() == "1"
+    )
+
 
 def test_select_table_name_from_merge_over_distributed(started_cluster):
     node1.query("INSERT INTO local_table_2 VALUES (1, 'node1')")

@@ -70,3 +70,4 @@ sidebar_label: "Системные таблицы"
 -   `OSWriteChars`
 -   `OSReadBytes`
 -   `OSWriteBytes`
+

@@ -231,7 +231,7 @@ void SerializationObject<Parser>::deserializeBinaryBulkStatePrefix(
     auto kind = magic_enum::enum_cast<BinarySerializationKind>(kind_raw);
     if (!kind)
         throw Exception(ErrorCodes::INCORRECT_DATA,
-            "Unknown binary serialization kind of Object: {}", std::to_string(kind_raw));
+            "Unknown binary serialization kind of Object: " + std::to_string(kind_raw));
 
     auto state_object = std::make_shared<DeserializeStateObject>();
     state_object->kind = *kind;
@@ -255,7 +255,7 @@ void SerializationObject<Parser>::deserializeBinaryBulkStatePrefix(
     else
     {
         throw Exception(ErrorCodes::INCORRECT_DATA,
-            "Unknown binary serialization kind of Object: {}", std::to_string(kind_raw));
+            "Unknown binary serialization kind of Object: " + std::to_string(kind_raw));
     }
 
     settings.path.push_back(Substream::ObjectData);

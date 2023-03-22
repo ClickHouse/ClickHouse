@@ -6,31 +6,28 @@ sidebar_label: format
 
 # format
 
-Parses data from arguments according to specified input format. If structure argument is not specified, it's extracted from the data.
+Extracts table structure from data and parses it according to specified input format.
 
 **Syntax**
 
 ``` sql
-format(format_name, [structure], data)
+format(format_name, data)
 ```
 
 **Parameters**
 
 -   `format_name` — The [format](../../interfaces/formats.md#formats) of the data.
--   `structure` - Structure of the table. Optional. Format 'column1_name column1_type, column2_name column2_type, ...'.
 -   `data` — String literal or constant expression that returns a string containing data in specified format
 
 **Returned value**
 
-A table with data parsed from `data` argument according to specified format and specified or extracted structure.
+A table with data parsed from `data` argument according specified format and extracted schema.
 
 **Examples**
 
-Without `structure` argument:
-
 **Query:**
 ``` sql
-SELECT * FROM format(JSONEachRow,
+:) select * from format(JSONEachRow, 
 $$
 {"a": "Hello", "b": 111}
 {"a": "World", "b": 123}
@@ -41,7 +38,7 @@ $$)
 
 **Result:**
 
-```response
+```text
 ┌───b─┬─a─────┐
 │ 111 │ Hello │
 │ 123 │ World │
@@ -52,7 +49,8 @@ $$)
 
 **Query:**
 ```sql
-DESC format(JSONEachRow,
+
+:) desc format(JSONEachRow,
 $$
 {"a": "Hello", "b": 111}
 {"a": "World", "b": 123}
@@ -63,36 +61,15 @@ $$)
 
 **Result:**
 
-```response
+```text
 ┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ b    │ Nullable(Float64) │              │                    │         │                  │                │
 │ a    │ Nullable(String)  │              │                    │         │                  │                │
 └──────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-With `structure` argument:
-
-**Query:**
-```sql
-SELECT * FROM format(JSONEachRow, 'a String, b UInt32',
-$$
-{"a": "Hello", "b": 111}
-{"a": "World", "b": 123}
-{"a": "Hello", "b": 112}
-{"a": "World", "b": 124}
-$$)
-```
-
-**Result:**
-```response
-┌─a─────┬───b─┐
-│ Hello │ 111 │
-│ World │ 123 │
-│ Hello │ 112 │
-│ World │ 124 │
-└───────┴─────┘
-```
-
 **See Also**
 
 -   [Formats](../../interfaces/formats.md)
+
+[Original article](https://clickhouse.com/docs/en/sql-reference/table-functions/format) <!--hide-->

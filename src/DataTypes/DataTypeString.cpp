@@ -44,12 +44,11 @@ static DataTypePtr create(const ASTPtr & arguments)
     if (arguments && !arguments->children.empty())
     {
         if (arguments->children.size() > 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "String data type family mustn't have more than one argument - size in characters");
+            throw Exception("String data type family mustn't have more than one argument - size in characters", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         const auto * argument = arguments->children[0]->as<ASTLiteral>();
         if (!argument || argument->value.getType() != Field::Types::UInt64)
-            throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "String data type family may have only a number (positive integer) as its argument");
+            throw Exception("String data type family may have only a number (positive integer) as its argument", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
     }
 
     return std::make_shared<DataTypeString>();

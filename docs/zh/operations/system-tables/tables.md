@@ -126,3 +126,6 @@ lifetime_bytes:             ᴺᵁᴸᴸ
 comment:
 has_own_data:               0
 ```
+
+
+[原文](https://clickhouse.com/docs/zh/operations/system-tables/tables) <!--hide-->

@@ -119,7 +119,7 @@ public:
     inline std::pair<BucketIndex, UInt8> get() const
     {
         if ((current_bucket_index == 0) || is_eof)
-            throw Exception(ErrorCodes::NO_AVAILABLE_DATA, "No available data.");
+            throw Exception("No available data.", ErrorCodes::NO_AVAILABLE_DATA);
 
         if (fits_in_byte)
             return std::make_pair(current_bucket_index - 1, locus.read(value_l));

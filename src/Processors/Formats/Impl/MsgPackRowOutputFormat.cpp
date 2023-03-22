@@ -32,8 +32,8 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-MsgPackRowOutputFormat::MsgPackRowOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
-    : IRowOutputFormat(header_, out_), packer(out_), format_settings(format_settings_) {}
+MsgPackRowOutputFormat::MsgPackRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_)
+    : IRowOutputFormat(header_, out_, params_), packer(out_), format_settings(format_settings_) {}
 
 void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr data_type, size_t row_num)
 {
@@ -54,11 +54,6 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
         case TypeIndex::UInt32:
         {
             packer.pack_uint32(assert_cast<const ColumnUInt32 &>(column).getElement(row_num));
-            return;
-        }
-        case TypeIndex::IPv4:
-        {
-            packer.pack_uint32(assert_cast<const ColumnIPv4 &>(column).getElement(row_num));
             return;
         }
         case TypeIndex::UInt64:
@@ -113,13 +108,6 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
             const std::string_view & string = assert_cast<const ColumnFixedString &>(column).getDataAt(row_num).toView();
             packer.pack_bin(static_cast<unsigned>(string.size()));
             packer.pack_bin_body(string.data(), static_cast<unsigned>(string.size()));
-            return;
-        }
-        case TypeIndex::IPv6:
-        {
-            const std::string_view & data = assert_cast<const ColumnIPv6 &>(column).getDataAt(row_num).toView();
-            packer.pack_bin(static_cast<unsigned>(data.size()));
-            packer.pack_bin_body(data.data(), static_cast<unsigned>(data.size()));
             return;
         }
         case TypeIndex::Array:
@@ -220,7 +208,7 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
         default:
             break;
     }
-    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} is not supported for MsgPack output format", data_type->getName());
+    throw Exception("Type " + data_type->getName() + " is not supported for MsgPack output format", ErrorCodes::ILLEGAL_COLUMN);
 }
 
 void MsgPackRowOutputFormat::write(const Columns & columns, size_t row_num)
@@ -238,9 +226,10 @@ void registerOutputFormatMsgPack(FormatFactory & factory)
     factory.registerOutputFormat("MsgPack", [](
             WriteBuffer & buf,
             const Block & sample,
+            const RowOutputFormatParams & params,
             const FormatSettings & settings)
     {
-        return std::make_shared<MsgPackRowOutputFormat>(buf, sample, settings);
+        return std::make_shared<MsgPackRowOutputFormat>(buf, sample, params, settings);
     });
     factory.markOutputFormatSupportsParallelFormatting("MsgPack");
 }

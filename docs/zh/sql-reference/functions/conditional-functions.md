@@ -206,3 +206,5 @@ FROM LEFT_RIGHT
 │    4 │  ᴺᵁᴸᴸ │ Both equal       │
 └──────┴───────┴──────────────────┘
 ```
+
+[来源文章](https://clickhouse.com/docs/en/query_language/functions/conditional_functions/) <!--hide-->

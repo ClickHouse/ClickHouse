@@ -276,7 +276,7 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
     , log(&Poco::Logger::get("MergeJoinAlgorithm"))
 {
     if (input_headers.size() != 2)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeJoinAlgorithm requires exactly two inputs");
+        throw Exception("MergeJoinAlgorithm requires exactly two inputs", ErrorCodes::LOGICAL_ERROR);
 
     auto strictness = table_join->getTableJoin().strictness();
     if (strictness != JoinStrictness::Any && strictness != JoinStrictness::All)
@@ -329,10 +329,10 @@ void MergeJoinAlgorithm::initialize(Inputs inputs)
 void MergeJoinAlgorithm::consume(Input & input, size_t source_num)
 {
     if (input.skip_last_row)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "skip_last_row is not supported");
+        throw Exception("skip_last_row is not supported", ErrorCodes::NOT_IMPLEMENTED);
 
     if (input.permutation)
-        throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "permutation is not supported");
+        throw DB::Exception("permutation is not supported", ErrorCodes::NOT_IMPLEMENTED);
 
     if (input.chunk)
     {

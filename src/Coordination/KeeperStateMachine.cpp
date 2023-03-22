@@ -1,6 +1,5 @@
 #include <cerrno>
 #include <base/errnoToString.h>
-#include <base/defines.h>
 #include <future>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperStateMachine.h>
@@ -133,7 +132,7 @@ void assertDigest(
             "Digest for nodes is not matching after {} request of type '{}'.\nExpected digest - {}, actual digest - {} (digest "
             "{}). Keeper will terminate to avoid inconsistencies.\nExtra information about the request:\n{}",
             committing ? "committing" : "preprocessing",
-            Coordination::toString(request.getOpNum()),
+            request.getOpNum(),
             first.value,
             second.value,
             first.version,
@@ -252,7 +251,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
             if (!responses_queue.push(response_for_session))
             {
                 ProfileEvents::increment(ProfileEvents::KeeperCommitsFailed);
-                LOG_WARNING(log, "Failed to push response with session id {} to the queue, probably because of shutdown", session_id);
+                throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push response with session id {} into responses queue", session_id);
             }
         }
     }
@@ -265,7 +264,10 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
             if (!responses_queue.push(response_for_session))
             {
                 ProfileEvents::increment(ProfileEvents::KeeperCommitsFailed);
-                LOG_WARNING(log, "Failed to push response with session id {} to the queue, probably because of shutdown", response_for_session.session_id);
+                throw Exception(
+                    ErrorCodes::SYSTEM_ERROR,
+                    "Could not push response with session id {} into responses queue",
+                    response_for_session.session_id);
             }
 
         if (keeper_context->digest_enabled && request_for_session.digest)
@@ -341,7 +343,7 @@ void KeeperStateMachine::rollbackRequest(const KeeperStorage::RequestForSession 
 nuraft::ptr<nuraft::snapshot> KeeperStateMachine::last_snapshot()
 {
     /// Just return the latest snapshot.
-    std::lock_guard lock(snapshots_lock);
+    std::lock_guard<std::mutex> lock(snapshots_lock);
     return latest_snapshot_meta;
 }
 
@@ -472,15 +474,13 @@ static int bufferFromFile(Poco::Logger * log, const std::string & path, nuraft::
     if (chunk == MAP_FAILED)
     {
         LOG_WARNING(log, "Error mmapping {}, error: {}, errno: {}", path, errnoToString(), errno);
-        int err = ::close(fd);
-        chassert(!err || errno == EINTR);
+        ::close(fd);
         return errno;
     }
     data_out = nuraft::buffer::alloc(file_size);
     data_out->put_raw(chunk, file_size);
     ::munmap(chunk, file_size);
-    int err = ::close(fd);
-    chassert(!err || errno == EINTR);
+    ::close(fd);
     return 0;
 }
 
@@ -524,7 +524,8 @@ void KeeperStateMachine::processReadRequest(const KeeperStorage::RequestForSessi
         true /*is_local*/);
     for (const auto & response : responses)
         if (!responses_queue.push(response))
-            LOG_WARNING(log, "Failed to push response with session id {} to the queue, probably because of shutdown", response.session_id);
+            throw Exception(
+                ErrorCodes::SYSTEM_ERROR, "Could not push response with session id {} into responses queue", response.session_id);
 }
 
 void KeeperStateMachine::shutdownStorage()
@@ -641,14 +642,6 @@ ClusterConfigPtr KeeperStateMachine::getClusterConfig() const
         return ClusterConfig::deserialize(*tmp);
     }
     return nullptr;
-}
-
-void KeeperStateMachine::recalculateStorageStats()
-{
-    std::lock_guard lock(storage_and_responses_lock);
-    LOG_INFO(log, "Recalculating storage stats");
-    storage->recalculateStats();
-    LOG_INFO(log, "Done recalculating storage stats");
 }
 
 }

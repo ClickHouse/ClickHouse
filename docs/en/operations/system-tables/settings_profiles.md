@@ -23,3 +23,5 @@ Columns:
 ## See Also {#see-also}
 
 -   [SHOW PROFILES](../../sql-reference/statements/show.md#show-profiles-statement)
+
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/settings_profiles) <!--hide-->

@@ -224,7 +224,7 @@ public:
     const ShardInfo & getAnyShardInfo() const
     {
         if (shards_info.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cluster is empty");
+            throw Exception("Cluster is empty", ErrorCodes::LOGICAL_ERROR);
         return shards_info.front();
     }
 
@@ -250,7 +250,7 @@ public:
     std::unique_ptr<Cluster> getClusterWithMultipleShards(const std::vector<size_t> & indices) const;
 
     /// Get a new Cluster that contains all servers (all shards with all replicas) from existing cluster as independent shards.
-    std::unique_ptr<Cluster> getClusterWithReplicasAsShards(const Settings & settings, size_t max_replicas_from_shard = 0) const;
+    std::unique_ptr<Cluster> getClusterWithReplicasAsShards(const Settings & settings) const;
 
     /// Returns false if cluster configuration doesn't allow to use it for cross-replication.
     /// NOTE: true does not mean, that it's actually a cross-replication cluster.
@@ -271,7 +271,7 @@ private:
 
     /// For getClusterWithReplicasAsShards implementation
     struct ReplicasAsShardsTag {};
-    Cluster(ReplicasAsShardsTag, const Cluster & from, const Settings & settings, size_t max_replicas_from_shard);
+    Cluster(ReplicasAsShardsTag, const Cluster & from, const Settings & settings);
 
     /// Inter-server secret
     String secret;
