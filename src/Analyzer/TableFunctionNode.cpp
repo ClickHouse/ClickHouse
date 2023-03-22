@@ -75,7 +75,7 @@ void TableFunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_
 
     if (!settings_changes.empty())
     {
-        buffer << '\n' << std::string(indent + 6, ' ') << "SETTINGS";
+        buffer << '\n' << std::string(indent + 2, ' ') << "SETTINGS";
         for (const auto & change : settings_changes)
             buffer << fmt::format(" {}={}", change.name, toString(change.value));
     }
@@ -89,6 +89,9 @@ bool TableFunctionNode::isEqualImpl(const IQueryTreeNode & rhs) const
 
     if (storage && rhs_typed.storage)
         return storage_id == rhs_typed.storage_id;
+
+    if (settings_changes != rhs_typed.settings_changes)
+        return false;
 
     return table_expression_modifiers == rhs_typed.table_expression_modifiers;
 }
@@ -108,6 +111,7 @@ void TableFunctionNode::updateTreeHashImpl(HashState & state) const
     if (table_expression_modifiers)
         table_expression_modifiers->updateTreeHash(state);
 
+    state.update(settings_changes.size());
     for (const auto & change : settings_changes)
     {
         state.update(change.name.size());

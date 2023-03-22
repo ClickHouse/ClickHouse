@@ -103,11 +103,6 @@ public:
       */
     QueryTreeNodePtr getColumnSource() const;
 
-    void dropColumnSource()
-    {
-        getSourceWeakPointer().reset();
-    }
-
     /** Get column source.
       * If column source is not valid null is returned.
       */

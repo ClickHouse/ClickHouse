@@ -1,18 +1,13 @@
 #include <Storages/transformQueryForExternalDatabaseAnalyzer.h>
 
-#include <Storages/transformQueryForExternalDatabase.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Interpreters/convertFieldToType.h>
 
 #include <Columns/ColumnConst.h>
 
 #include <Analyzer/QueryNode.h>
-#include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ConstantValue.h>
-#include <Analyzer/TableNode.h>
-#include <Analyzer/JoinNode.h>
 
 
 #include <DataTypes/DataTypesNumber.h>

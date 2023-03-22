@@ -365,7 +365,7 @@ String transformQueryForExternalDatabase(
 
         if (column_names.empty())
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "No column names for query '{}' to external table '{}.{}'",
-                            database, table, query_info.query_tree->formatASTForErrorMessage());
+                            query_info.query_tree->formatASTForErrorMessage(), database, table);
 
         auto clone_query = getASTForExternalDatabaseFromQueryTree(query_info.query_tree);
 
