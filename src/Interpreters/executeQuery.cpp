@@ -1279,10 +1279,22 @@ void executeQuery(
         .timezone = DateLUT::instance().getTimeZone(),
     };
 
-    // Set the result details in case of any exception raised during query execution
+    /// Set the result details in case of any exception raised during query execution
     SCOPE_EXIT({
-        if (set_result_details)
+        if (set_result_details == nullptr)
+            /// Either the result_details have been set in the flow below or the caller of this function does not provide this callback
+            return;
+
+        try
+        {
             set_result_details(result_details);
+        }
+        catch (...)
+        {
+            /// This exception can be ignored because if the code goes here, 
+            /// it means there's already exception occurred during query execution,
+            /// So there's no need to report the exception thrown here.
+        }
     });
 
     ASTPtr ast;
@@ -1361,10 +1373,13 @@ void executeQuery(
 
         if (set_result_details)
         {
-            set_result_details(result_details);
-
-            // Clear the callback so that result details won't be set twice in case of any exception raised after this point
+            /// The call of set_result_details itself might throw exception,
+            /// in such case there's no need to call this function again in the SCOPE_EXIT defined above.
+            /// So the callback is cleared before its execution.
+            auto set_result_details_copy = set_result_details;
             set_result_details = nullptr;
+
+            set_result_details_copy(result_details);
         }
 
         if (pipeline.initialized())
