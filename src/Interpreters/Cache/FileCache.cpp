@@ -591,9 +591,8 @@ void FileCache::iterateCacheAndCollectKeyLocks(
 
 void FileCache::removeFileSegment(LockedKey & locked_key, FileSegmentPtr file_segment, const CacheGuard::Lock & cache_lock)
 {
-    /// FIXME:
-    /// We must hold pointer to file segment while removing it (because we remove file segment under file segment lock).
-    /// But this should not be obligatory.
+    /// We must hold pointer to file segment while removing it
+    /// (because we remove file segment under file segment lock).
 
     chassert(file_segment->key() == locked_key.getKey());
     locked_key.removeFileSegment(file_segment->offset(), file_segment->lock(), cache_lock);
