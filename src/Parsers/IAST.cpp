@@ -209,6 +209,63 @@ const char * IAST::FormattingBuffer::hilite_substitution = "\033[1;36m";
 const char * IAST::FormattingBuffer::hilite_metacharacter = "\033[1;35m";
 const char * IAST::FormattingBuffer::hilite_none         = "\033[0m";
 
+IAST::FormattingBuffer IAST::FormattingBuffer::copy() const
+{
+    return *this;
+}
+
+IAST::FormatSettings IAST::FormattingBuffer::copySettings() const
+{
+    return settings;
+}
+
+IAST::FormattingBuffer IAST::FormattingBuffer::copyWithNewSettings(const IAST::FormatSettings & settings_) const
+{
+    return IAST::FormattingBuffer(ostr, settings_, state, stacked_state);
+}
+
+IAST::FormattingBuffer & IAST::FormattingBuffer::setIndent(UInt8 indent)
+{
+    stacked_state.indent = indent;
+    return *this;
+}
+
+IAST::FormattingBuffer & IAST::FormattingBuffer::increaseIndent(int extra_indent)
+{
+    stacked_state.indent += extra_indent;
+    return *this;
+}
+
+IAST::FormattingBuffer & IAST::FormattingBuffer::setNeedParens(bool value)
+{
+    stacked_state.need_parens = value;
+    return *this;
+}
+
+IAST::FormattingBuffer & IAST::FormattingBuffer::setExpressionListAlwaysStartsOnNewLine(bool value)
+{
+    stacked_state.expression_list_always_start_on_new_line = value;
+    return *this;
+}
+
+IAST::FormattingBuffer & IAST::FormattingBuffer::setExpressionListPrependWhitespace(bool value)
+{
+    stacked_state.expression_list_prepend_whitespace = value;
+    return *this;
+}
+
+IAST::FormattingBuffer & IAST::FormattingBuffer::setSurroundEachListElementWithParens(bool value)
+{
+    stacked_state.surround_each_list_element_with_parens = value;
+    return *this;
+}
+
+IAST::FormattingBuffer & IAST::FormattingBuffer::setCurrentSelect(const IAST * select)
+{
+    stacked_state.current_select = select;
+    return *this;
+}
+
 IAST::FormattingBuffer::Hiliter::Hiliter(DB::WriteBuffer & ostr_, bool hilite_, const char * hilite_type) : ostr(ostr_), hilite(hilite_)
 {
     if (hilite)
