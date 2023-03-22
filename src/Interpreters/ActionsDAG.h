@@ -23,6 +23,8 @@ using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 class IFunctionOverloadResolver;
 using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
 
+class FunctionNode;
+
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 
@@ -139,6 +141,10 @@ public:
             const FunctionOverloadResolverPtr & function,
             NodeRawConstPtrs children,
             std::string result_name);
+    const Node & addFunction(
+        const FunctionNode & function,
+        NodeRawConstPtrs children,
+        std::string result_name);
     const Node & addFunction(
         const FunctionBasePtr & function_base,
         NodeRawConstPtrs children,
@@ -358,6 +364,7 @@ private:
         NodeRawConstPtrs children,
         ColumnsWithTypeAndName arguments,
         std::string result_name,
+        DataTypePtr result_type,
         bool all_const);
 
 #if USE_EMBEDDED_COMPILER

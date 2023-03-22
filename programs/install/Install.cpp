@@ -20,7 +20,7 @@
 #include <Common/formatReadable.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/OpenSSLHelpers.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Common/getResource.h>
 #include <base/sleep.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
