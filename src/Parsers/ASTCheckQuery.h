@@ -26,7 +26,7 @@ struct ASTCheckQuery : public ASTQueryWithTableAndOutput
     QueryKind getQueryKind() const override { return QueryKind::Check; }
 
 protected:
-    void formatQueryImpl(const FormattingBuffer & out) const override
+    void formatQueryImpl(FormattingBuffer out) const override
     {
         out.writeIndent();
         out.writeKeyword("CHECK TABLE ");

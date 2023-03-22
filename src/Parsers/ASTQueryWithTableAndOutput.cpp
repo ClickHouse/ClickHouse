@@ -64,7 +64,7 @@ void ASTQueryWithTableAndOutput::cloneTableOptions(ASTQueryWithTableAndOutput & 
         cloned.children.push_back(cloned.table);
     }
 }
-void ASTQueryWithTableAndOutput::formatHelper(const FormattingBuffer & out, const char * name) const
+void ASTQueryWithTableAndOutput::formatHelper(FormattingBuffer out, const char * name) const
 {
     out.writeKeyword(name);
     out.ostr << " ";

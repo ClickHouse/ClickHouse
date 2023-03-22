@@ -27,7 +27,7 @@ void ASTSubquery::appendColumnNameImpl(WriteBuffer & ostr) const
     }
 }
 
-void ASTSubquery::formatImplWithoutAlias(const FormattingBuffer & out) const
+void ASTSubquery::formatImplWithoutAlias(FormattingBuffer out) const
 {
     /// NOTE: due to trickery of filling cte_name (in interpreters) it is hard
     /// to print it without newline (for !oneline case), since if settings.nlOrWs()

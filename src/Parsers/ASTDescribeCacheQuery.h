@@ -19,7 +19,7 @@ public:
     }
 
 protected:
-    void formatQueryImpl(const FormattingBuffer & out) const override
+    void formatQueryImpl(FormattingBuffer out) const override
     {
         out.writeKeyword("DESCRIBE FILESYSTEM CACHE ");
         out.ostr << cache_name;

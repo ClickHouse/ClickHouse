@@ -32,7 +32,7 @@ ASTPtr ASTDropQuery::clone() const
     return res;
 }
 
-void ASTDropQuery::formatQueryImpl(const FormattingBuffer & out) const
+void ASTDropQuery::formatQueryImpl(FormattingBuffer out) const
 {
     if (kind == ASTDropQuery::Kind::Drop)
         out.writeKeyword("DROP ");

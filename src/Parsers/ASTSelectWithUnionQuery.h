@@ -15,7 +15,7 @@ public:
 
     ASTPtr clone() const override;
 
-    void formatQueryImpl(const FormattingBuffer & out) const override;
+    void formatQueryImpl(FormattingBuffer out) const override;
 
     QueryKind getQueryKind() const override { return QueryKind::Select; }
 

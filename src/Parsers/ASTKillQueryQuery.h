@@ -36,7 +36,7 @@ public:
 
     String getID(char) const override;
 
-    void formatQueryImpl(const FormattingBuffer & out) const override;
+    void formatQueryImpl(FormattingBuffer out) const override;
 
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override
     {

@@ -14,7 +14,7 @@ ASTPtr ASTShowTablesQuery::clone() const
     return res;
 }
 
-void ASTShowTablesQuery::formatLike(const FormattingBuffer & out) const
+void ASTShowTablesQuery::formatLike(FormattingBuffer out) const
 {
     if (!like.empty())
     {
@@ -24,7 +24,7 @@ void ASTShowTablesQuery::formatLike(const FormattingBuffer & out) const
     }
 }
 
-void ASTShowTablesQuery::formatLimit(const FormattingBuffer & out) const
+void ASTShowTablesQuery::formatLimit(FormattingBuffer out) const
 {
     if (limit_length)
     {
@@ -33,7 +33,7 @@ void ASTShowTablesQuery::formatLimit(const FormattingBuffer & out) const
     }
 }
 
-void ASTShowTablesQuery::formatQueryImpl(const FormattingBuffer & out) const
+void ASTShowTablesQuery::formatQueryImpl(FormattingBuffer out) const
 {
     if (databases)
     {

@@ -30,7 +30,7 @@ public:
     void cloneTableOptions(ASTQueryWithTableAndOutput & cloned) const;
 
 protected:
-    void formatHelper(const FormattingBuffer & out, const char * name) const;
+    void formatHelper(FormattingBuffer out, const char * name) const;
 };
 
 
@@ -52,7 +52,7 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Show; }
 
 protected:
-    void formatQueryImpl(const FormattingBuffer & out) const override
+    void formatQueryImpl(FormattingBuffer out) const override
     {
         formatHelper(out, temporary ? AstIDAndQueryNames::QueryTemporary : AstIDAndQueryNames::Query);
     }

@@ -47,7 +47,7 @@ ASTPtr ASTShowCreateAccessEntityQuery::clone() const
 }
 
 
-void ASTShowCreateAccessEntityQuery::formatQueryImpl(const FormattingBuffer & out) const
+void ASTShowCreateAccessEntityQuery::formatQueryImpl(FormattingBuffer out) const
 {
     out.writeKeyword("SHOW CREATE ");
     out.writeKeyword(getKeyword());

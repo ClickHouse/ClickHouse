@@ -98,7 +98,7 @@ const String & ASTIdentifier::name() const
     return full_name;
 }
 
-void ASTIdentifier::formatImplWithoutAlias(const FormattingBuffer & out) const
+void ASTIdentifier::formatImplWithoutAlias(FormattingBuffer out) const
 {
     auto format_element = [&](const String & elem_name)
     { out.writeIdentifier(elem_name);

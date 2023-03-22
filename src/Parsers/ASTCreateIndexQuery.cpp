@@ -30,7 +30,7 @@ ASTPtr ASTCreateIndexQuery::clone() const
     return res;
 }
 
-void ASTCreateIndexQuery::formatQueryImpl(const FormattingBuffer & out) const
+void ASTCreateIndexQuery::formatQueryImpl(FormattingBuffer out) const
 {
     out.setNeedsParens(false);
 

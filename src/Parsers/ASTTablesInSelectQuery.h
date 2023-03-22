@@ -78,8 +78,8 @@ struct ASTTableJoin : public IAST
     String getID(char) const override { return "TableJoin"; }
     ASTPtr clone() const override;
 
-    void formatImplBeforeTable(const FormattingBuffer & out) const;
-    void formatImplAfterTable(const FormattingBuffer & out) const;
+    void formatImplBeforeTable(FormattingBuffer out) const;
+    void formatImplAfterTable(FormattingBuffer out) const;
     void formatImpl(FormattingBuffer settings) const override;
     void updateTreeHashImpl(SipHash & hash_state) const override;
 };

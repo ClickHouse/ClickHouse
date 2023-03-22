@@ -23,7 +23,7 @@ ASTPtr ASTShowGrantsQuery::clone() const
 }
 
 
-void ASTShowGrantsQuery::formatQueryImpl(const FormattingBuffer & out) const
+void ASTShowGrantsQuery::formatQueryImpl(FormattingBuffer out) const
 {
     out.writeKeyword("SHOW GRANTS");
     if (for_roles->current_user && !for_roles->all && for_roles->names.empty() && for_roles->except_names.empty()

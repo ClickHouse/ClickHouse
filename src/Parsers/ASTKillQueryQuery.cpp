@@ -9,7 +9,7 @@ String ASTKillQueryQuery::getID(char delim) const
     return String("KillQueryQuery") + delim + (where_expression ? where_expression->getID() : "") + delim + String(sync ? "SYNC" : "ASYNC");
 }
 
-void ASTKillQueryQuery::formatQueryImpl(const FormattingBuffer & out) const
+void ASTKillQueryQuery::formatQueryImpl(FormattingBuffer out) const
 {
     out.writeKeyword("KILL ");
 

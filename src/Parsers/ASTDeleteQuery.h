@@ -22,7 +22,7 @@ public:
     ASTPtr predicate;
 
 protected:
-    void formatQueryImpl(const FormattingBuffer & out) const override;
+    void formatQueryImpl(FormattingBuffer out) const override;
 };
 
 }

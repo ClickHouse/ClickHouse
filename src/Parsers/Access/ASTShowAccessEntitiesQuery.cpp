@@ -24,7 +24,7 @@ String ASTShowAccessEntitiesQuery::getID(char) const
     return fmt::format("SHOW {} query", getKeyword());
 }
 
-void ASTShowAccessEntitiesQuery::formatQueryImpl(const FormattingBuffer & out) const
+void ASTShowAccessEntitiesQuery::formatQueryImpl(FormattingBuffer out) const
 {
     out.writeKeyword("SHOW ");
 

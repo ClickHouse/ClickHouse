@@ -77,10 +77,10 @@ public:
     bool hasSecretParts() const override;
 
 protected:
-    void formatImplWithoutAlias(const FormattingBuffer & out) const override;
+    void formatImplWithoutAlias(FormattingBuffer out) const override;
     void appendColumnNameImpl(WriteBuffer & ostr) const override;
 private:
-    void finishFormatWithWindow(const FormattingBuffer & out) const;
+    void finishformatWithWindow(FormattingBuffer out) const;
 };
 
 

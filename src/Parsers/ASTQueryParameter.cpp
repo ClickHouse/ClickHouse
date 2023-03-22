@@ -6,7 +6,7 @@
 namespace DB
 {
 
-void ASTQueryParameter::formatImplWithoutAlias(const FormattingBuffer & out) const
+void ASTQueryParameter::formatImplWithoutAlias(FormattingBuffer out) const
 {
     out.writeSubstitution("{");
     out.writeProbablyBackQuotedIdentifier(name);

@@ -278,9 +278,9 @@ public:
         FormattingBuffer(WriteBuffer & ostr_, const FormatSettings & settings_, FormatState & state_) :
             ostr(ostr_), settings(settings_), state(state_) {}
 
-        FormattingBuffer(const FormattingBuffer &) = delete;
+        formattingBuffer(FormattingBuffer) = delete;
         FormattingBuffer(FormattingBuffer &&) = delete;
-        FormattingBuffer & operator=(const FormattingBuffer &) = delete;
+        formattingBuffer & operator=(FormattingBuffer) = delete;
         FormattingBuffer & operator=(FormattingBuffer &&) = delete;
 
         // TODO(natasha): these copy* methods are still in development.

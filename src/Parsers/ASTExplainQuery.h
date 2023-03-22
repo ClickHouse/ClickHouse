@@ -112,7 +112,7 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Explain; }
 
 protected:
-    void formatQueryImpl(const FormattingBuffer & out) const override
+    void formatQueryImpl(FormattingBuffer out) const override
     {
         out.writeKeyword(toString(kind));
 

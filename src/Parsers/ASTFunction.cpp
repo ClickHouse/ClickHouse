@@ -528,7 +528,7 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
     }
 }
 
-void ASTFunction::finishFormatWithWindow(const FormattingBuffer & out) const
+void ASTFunction::finishformatWithWindow(FormattingBuffer out) const
 {
     if (!is_window_function)
         return;
@@ -642,7 +642,7 @@ ASTSelectWithUnionQuery * ASTFunction::tryGetQueryArgument() const
 }
 
 
-void ASTFunction::formatImplWithoutAlias(const FormattingBuffer & out) const
+void ASTFunction::formatImplWithoutAlias(FormattingBuffer out) const
 {
     out.setExpressionListPrependWhitespace(false);
     FormattingBuffer out_need_parens = out.copyWithNeedParens();

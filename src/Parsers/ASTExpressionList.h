@@ -17,7 +17,7 @@ public:
 
     ASTPtr clone() const override;
     void formatImpl(FormattingBuffer out) const override;
-    void formatImplMultiline(const FormattingBuffer & out) const;
+    void formatImplMultiline(FormattingBuffer out) const;
 
     char separator;
 };

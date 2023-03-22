@@ -253,7 +253,7 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Alter; }
 
 protected:
-    void formatQueryImpl(const FormattingBuffer & out) const override;
+    void formatQueryImpl(FormattingBuffer out) const override;
 
     bool isOneCommandTypeOnly(const ASTAlterCommand::Type & type) const;
 

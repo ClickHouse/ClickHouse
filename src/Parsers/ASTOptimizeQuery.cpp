@@ -5,7 +5,7 @@
 namespace DB
 {
 
-void ASTOptimizeQuery::formatQueryImpl(const FormattingBuffer & out) const
+void ASTOptimizeQuery::formatQueryImpl(FormattingBuffer out) const
 {
     out.writeKeyword("OPTIMIZE TABLE ");
     out.ostr << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());

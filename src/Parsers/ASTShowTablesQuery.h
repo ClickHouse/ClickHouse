@@ -42,9 +42,9 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Show; }
 
 protected:
-    void formatLike(const FormattingBuffer & out) const;
-    void formatLimit(const FormattingBuffer & out) const;
-    void formatQueryImpl(const FormattingBuffer & out) const override;
+    void formatLike(FormattingBuffer out) const;
+    void formatLimit(FormattingBuffer out) const;
+    void formatQueryImpl(FormattingBuffer out) const override;
 };
 
 }

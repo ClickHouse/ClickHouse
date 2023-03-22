@@ -38,7 +38,7 @@ void ASTExpressionList::formatImpl(FormattingBuffer out) const
     }
 }
 
-void ASTExpressionList::formatImplMultiline(const FormattingBuffer & out) const
+void ASTExpressionList::formatImplMultiline(FormattingBuffer out) const
 {
     std::string indent_str = "\n" + std::string(4 * (frame.indent + 1), ' ');
 

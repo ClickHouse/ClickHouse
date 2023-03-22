@@ -40,7 +40,7 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Create; }
 
 protected:
-    void formatQueryImpl(const FormattingBuffer & out) const override
+    void formatQueryImpl(FormattingBuffer out) const override
     {
         out.writeKeyword("WATCH ");
         out.ostr << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());

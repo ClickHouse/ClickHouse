@@ -25,7 +25,7 @@ ASTPtr ASTDropIndexQuery::clone() const
     return res;
 }
 
-void ASTDropIndexQuery::formatQueryImpl(const FormattingBuffer & out) const
+void ASTDropIndexQuery::formatQueryImpl(FormattingBuffer out) const
 {
     out.setNeedsParens(false);
 

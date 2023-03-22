@@ -28,7 +28,7 @@ ASTPtr ASTSelectWithUnionQuery::clone() const
 }
 
 
-void ASTSelectWithUnionQuery::formatQueryImpl(const FormattingBuffer & out) const
+void ASTSelectWithUnionQuery::formatQueryImpl(FormattingBuffer out) const
 {
     auto mode_to_str = [&](auto mode)
     {

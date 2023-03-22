@@ -31,7 +31,7 @@ protected:
     void cloneOutputOptions(ASTQueryWithOutput & cloned) const;
 
     /// Format only the query part of the AST (without output options).
-    virtual void formatQueryImpl(const FormattingBuffer & out) const = 0;
+    virtual void formatQueryImpl(FormattingBuffer out) const = 0;
 };
 
 
@@ -52,7 +52,7 @@ public:
     }
 
 protected:
-    void formatQueryImpl(const FormattingBuffer & out) const override
+    void formatQueryImpl(FormattingBuffer out) const override
     {
         out.writeKeyword(ASTIDAndQueryNames::Query);
     }

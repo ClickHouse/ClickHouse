@@ -44,7 +44,7 @@ public:
 
 protected:
     String getKeyword() const;
-    void formatQueryImpl(const FormattingBuffer & out) const override;
+    void formatQueryImpl(FormattingBuffer out) const override;
 };
 
 }

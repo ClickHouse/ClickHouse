@@ -234,7 +234,7 @@ ASTPtr ASTCreateQuery::clone() const
     return res;
 }
 
-void ASTCreateQuery::formatQueryImpl(const FormattingBuffer & out) const
+void ASTCreateQuery::formatQueryImpl(FormattingBuffer out) const
 {
     out.setNeedsParens(false);
 

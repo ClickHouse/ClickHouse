@@ -118,7 +118,7 @@ void ASTLiteral::appendColumnNameImplLegacy(WriteBuffer & ostr) const
     }
 }
 
-void ASTLiteral::formatImplWithoutAlias(const FormattingBuffer & out) const
+void ASTLiteral::formatImplWithoutAlias(FormattingBuffer out) const
 {
     out.ostr << applyVisitor(FieldVisitorToString(), value);
 }

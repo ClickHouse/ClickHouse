@@ -29,7 +29,7 @@ public:
     /// Calls formatImplWithoutAlias, and also outputs an alias. If necessary, encloses the entire expression in brackets.
     void formatImpl(FormattingBuffer out) const override final;
 
-    virtual void formatImplWithoutAlias(const FormattingBuffer & out) const = 0;
+    virtual void formatImplWithoutAlias(FormattingBuffer out) const = 0;
 
 protected:
     virtual void appendColumnNameImpl(WriteBuffer & ostr) const = 0;

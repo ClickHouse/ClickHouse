@@ -84,7 +84,7 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Rename; }
 
 protected:
-    void formatQueryImpl(const FormattingBuffer & out) const override
+    void formatQueryImpl(FormattingBuffer out) const override
     {
         if (database)
         {

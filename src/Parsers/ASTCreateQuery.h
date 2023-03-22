@@ -145,7 +145,7 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Create; }
 
 protected:
-    void formatQueryImpl(const FormattingBuffer & out) const override;
+    void formatQueryImpl(FormattingBuffer out) const override;
 
     void forEachPointerToChild(std::function<void(void**)> f) override
     {

@@ -147,7 +147,7 @@ void ASTTableExpression::formatImpl(FormattingBuffer out) const
 }
 
 
-void ASTTableJoin::formatImplBeforeTable(const FormattingBuffer & out) const
+void ASTTableJoin::formatImplBeforeTable(FormattingBuffer out) const
 {
     if (kind != JoinKind::Comma)
     {
@@ -214,7 +214,7 @@ void ASTTableJoin::formatImplBeforeTable(const FormattingBuffer & out) const
 }
 
 
-void ASTTableJoin::formatImplAfterTable(const FormattingBuffer & out) const
+void ASTTableJoin::formatImplAfterTable(FormattingBuffer out) const
 {
     out.setNeedsParens(false);
     out.setExpressionListPrependWhitespace(false);

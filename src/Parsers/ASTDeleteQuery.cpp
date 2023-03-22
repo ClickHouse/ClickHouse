@@ -30,7 +30,7 @@ ASTPtr ASTDeleteQuery::clone() const
     return res;
 }
 
-void ASTDeleteQuery::formatQueryImpl(const FormattingBuffer & out) const
+void ASTDeleteQuery::formatQueryImpl(FormattingBuffer out) const
 {
     out.writeKeyword("DELETE FROM ");
 

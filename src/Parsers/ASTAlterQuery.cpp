@@ -573,7 +573,7 @@ ASTPtr ASTAlterQuery::clone() const
     return res;
 }
 
-void ASTAlterQuery::formatQueryImpl(const FormattingBuffer & out) const
+void ASTAlterQuery::formatQueryImpl(FormattingBuffer out) const
 {
     out.setNeedsParens(false);
 

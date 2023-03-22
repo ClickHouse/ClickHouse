@@ -86,7 +86,7 @@ using ASTShowCreateDictionaryQuery = ASTQueryWithTableAndOutputImpl<ASTShowCreat
 class ASTExistsDatabaseQuery : public ASTQueryWithTableAndOutputImpl<ASTExistsDatabaseQueryIDAndQueryNames>
 {
 protected:
-    void formatQueryImpl(const FormattingBuffer & out) const override
+    void formatQueryImpl(FormattingBuffer out) const override
     {
         out.writeKeyword(ASTExistsDatabaseQueryIDAndQueryNames::Query);
         out.ostr << " ";
@@ -99,7 +99,7 @@ protected:
 class ASTShowCreateDatabaseQuery : public ASTQueryWithTableAndOutputImpl<ASTShowCreateDatabaseQueryIDAndQueryNames>
 {
 protected:
-    void formatQueryImpl(const FormattingBuffer & out) const override
+    void formatQueryImpl(FormattingBuffer out) const override
     {
         out.writeKeyword(ASTShowCreateDatabaseQueryIDAndQueryNames::Query);
         out.ostr << " ";
@@ -130,7 +130,7 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Describe; }
 
 protected:
-    void formatQueryImpl(const FormattingBuffer & out) const override
+    void formatQueryImpl(FormattingBuffer out) const override
     {
         out.writeKeyword("DESCRIBE TABLE");
         table_expression->formatImpl(out);
