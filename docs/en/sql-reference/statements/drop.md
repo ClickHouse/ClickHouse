@@ -1,12 +1,11 @@
 ---
-slug: /en/sql-reference/statements/drop
 sidebar_position: 44
 sidebar_label: DROP
 ---
 
 # DROP Statements
 
-Deletes existing entity. If the `IF EXISTS` clause is specified, these queries do not return an error if the entity does not exist. If the `SYNC` modifier is specified, the entity is dropped without delay.
+Deletes existing entity. If the `IF EXISTS` clause is specified, these queries do not return an error if the entity does not exist.
 
 ## DROP DATABASE
 
@@ -15,7 +14,7 @@ Deletes all tables inside the `db` database, then deletes the `db` database itse
 Syntax:
 
 ``` sql
-DROP DATABASE [IF EXISTS] db [ON CLUSTER cluster] [SYNC]
+DROP DATABASE [IF EXISTS] db [ON CLUSTER cluster]
 ```
 
 ## DROP TABLE
@@ -25,7 +24,7 @@ Deletes the table.
 Syntax:
 
 ``` sql
-DROP [TEMPORARY] TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
+DROP [TEMPORARY] TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
 ## DROP DICTIONARY
@@ -35,7 +34,7 @@ Deletes the dictionary.
 Syntax:
 
 ``` sql
-DROP DICTIONARY [IF EXISTS] [db.]name [SYNC]
+DROP DICTIONARY [IF EXISTS] [db.]name
 ```
 
 ## DROP USER
@@ -95,7 +94,7 @@ Deletes a view. Views can be deleted by a `DROP TABLE` command as well but `DROP
 Syntax:
 
 ``` sql
-DROP VIEW [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
+DROP VIEW [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
 ## DROP FUNCTION

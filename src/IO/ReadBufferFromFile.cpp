@@ -3,7 +3,6 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <Common/ProfileEvents.h>
-#include <base/defines.h>
 #include <cerrno>
 
 
@@ -74,8 +73,7 @@ ReadBufferFromFile::~ReadBufferFromFile()
     if (fd < 0)
         return;
 
-    int err = ::close(fd);
-    chassert(!err || errno == EINTR);
+    ::close(fd);
 }
 
 
@@ -85,7 +83,7 @@ void ReadBufferFromFile::close()
         return;
 
     if (0 != ::close(fd))
-        throw Exception(ErrorCodes::CANNOT_CLOSE_FILE, "Cannot close file");
+        throw Exception("Cannot close file", ErrorCodes::CANNOT_CLOSE_FILE);
 
     fd = -1;
     metric_increment.destroy();

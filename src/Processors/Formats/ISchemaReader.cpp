@@ -1,7 +1,7 @@
 #include <Processors/Formats/ISchemaReader.h>
-#include <Formats/SchemaInferenceUtils.h>
+#include <Formats/ReadSchemaUtils.h>
+#include <Formats/EscapingRuleUtils.h>
 #include <DataTypes/DataTypeString.h>
-#include <Common/logger_useful.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <boost/algorithm/string.hpp>
 
@@ -11,49 +11,65 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ONLY_NULLS_WHILE_READING_SCHEMA;
+    extern const int TYPE_MISMATCH;
     extern const int INCORRECT_DATA;
     extern const int EMPTY_DATA_PASSED;
     extern const int BAD_ARGUMENTS;
 }
 
-void checkFinalInferredType(
+void chooseResultColumnType(
     DataTypePtr & type,
-    const String & name,
-    const FormatSettings & settings,
+    DataTypePtr & new_type,
+    std::function<void(DataTypePtr &, DataTypePtr &)> transform_types_if_needed,
     const DataTypePtr & default_type,
-    size_t rows_read,
-    const String & hints_parsing_error)
+    const String & column_name,
+    size_t row)
 {
-    if (!checkIfTypeIsComplete(type))
+    if (!type)
+    {
+        type = new_type;
+        return;
+    }
+
+    if (!new_type || type->equals(*new_type))
+        return;
+
+    transform_types_if_needed(type, new_type);
+    if (type->equals(*new_type))
+        return;
+
+    /// If the new type and the previous type for this column are different,
+    /// we will use default type if we have it or throw an exception.
+    if (default_type)
+        type = default_type;
+    else
+    {
+        throw Exception(
+            ErrorCodes::TYPE_MISMATCH,
+            "Automatically defined type {} for column {} in row {} differs from type defined by previous rows: {}. "
+            "You can specify the type for this column using setting schema_inference_hints",
+            type->getName(),
+            column_name,
+            row,
+            new_type->getName());
+    }
+}
+
+void checkResultColumnTypeAndAppend(NamesAndTypesList & result, DataTypePtr & type, const String & name, const DataTypePtr & default_type, size_t rows_read)
+{
+    if (!type)
     {
         if (!default_type)
-        {
-            if (hints_parsing_error.empty())
-                throw Exception(
-                    ErrorCodes::ONLY_NULLS_WHILE_READING_SCHEMA,
-                    "Cannot determine type for column '{}' by first {} rows "
-                    "of data, most likely this column contains only Nulls or empty "
-                    "Arrays/Maps. You can specify the type for this column using setting schema_inference_hints. "
-                    "If your data contains complex JSON objects, try enabling one "
-                    "of the settings allow_experimental_object_type/input_format_json_read_objects_as_strings",
-                    name,
-                    rows_read);
-            else
-                throw Exception(
-                    ErrorCodes::ONLY_NULLS_WHILE_READING_SCHEMA,
-                    "Cannot determine type for column '{}' by first {} rows "
-                    "of data, most likely this column contains only Nulls or empty Arrays/Maps. "
-                    "Column types from setting schema_inference_hints couldn't be parsed because of error: {}",
-                    name,
-                    rows_read,
-                    hints_parsing_error);
-        }
+            throw Exception(
+                ErrorCodes::ONLY_NULLS_WHILE_READING_SCHEMA,
+                "Cannot determine type for column {} by first {} rows of data, most likely this column contains only Nulls or empty "
+                "Arrays/Maps. You can specify the type for this column using setting schema_inference_hints",
+                name,
+                rows_read);
 
         type = default_type;
     }
-
-    if (settings.schema_inference_make_columns_nullable)
-        type = makeNullableRecursively(type);
+    result.emplace_back(name, type);
 }
 
 IIRowSchemaReader::IIRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, DataTypePtr default_type_)
@@ -65,20 +81,11 @@ IIRowSchemaReader::IIRowSchemaReader(ReadBuffer & in_, const FormatSettings & fo
 void IIRowSchemaReader::setContext(ContextPtr & context)
 {
     ColumnsDescription columns;
-    if (tryParseColumnsListFromString(hints_str, columns, context, hints_parsing_error))
+    if (tryParseColumnsListFromString(hints_str, columns, context))
     {
         for (const auto & [name, type] : columns.getAll())
             hints[name] = type;
     }
-    else
-    {
-        LOG_WARNING(&Poco::Logger::get("IIRowSchemaReader"), "Couldn't parse schema inference hints: {}. This setting will be ignored", hints_parsing_error);
-    }
-}
-
-void IIRowSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
-{
-    transformInferredTypesIfNeeded(type, new_type, format_settings);
 }
 
 IRowSchemaReader::IRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
@@ -106,11 +113,6 @@ NamesAndTypesList IRowSchemaReader::readSchema()
             "Most likely setting input_format_max_rows_to_read_for_schema_inference is set to 0");
 
     DataTypes data_types = readRowAndGetDataTypes();
-
-    /// Check that we read at list one column.
-    if (data_types.empty())
-        throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Cannot read rows from the data");
-
     /// If column names weren't set, use default names 'c1', 'c2', ...
     if (column_names.empty())
     {
@@ -120,21 +122,9 @@ NamesAndTypesList IRowSchemaReader::readSchema()
     }
     /// If column names were set, check that the number of names match the number of types.
     else if (column_names.size() != data_types.size())
-    {
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
             "The number of column names {} differs with the number of types {}", column_names.size(), data_types.size());
-    }
-    else
-    {
-        std::unordered_set<std::string_view> names_set;
-        for (const auto & name : column_names)
-        {
-            if (names_set.contains(name))
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate column name found while schema inference: \"{}\"", name);
-            names_set.insert(name);
-        }
-    }
 
     for (size_t i = 0; i != column_names.size(); ++i)
     {
@@ -153,35 +143,27 @@ NamesAndTypesList IRowSchemaReader::readSchema()
         if (new_data_types.size() != data_types.size())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Rows have different amount of values");
 
-        for (field_index = 0; field_index != data_types.size(); ++field_index)
+        for (size_t i = 0; i != data_types.size(); ++i)
         {
             /// Check if we couldn't determine the type of this column in a new row
             /// or the type for this column was taken from hints.
-            if (!new_data_types[field_index] || hints.contains(column_names[field_index]))
+            if (!new_data_types[i] || hints.contains(column_names[i]))
                 continue;
 
-            chooseResultColumnType(
-                *this,
-                data_types[field_index],
-                new_data_types[field_index],
-                getDefaultType(field_index),
-                std::to_string(field_index + 1),
-                rows_read,
-                hints_parsing_error);
+            auto transform_types_if_needed = [&](DataTypePtr & type, DataTypePtr & new_type){ transformTypesIfNeeded(type, new_type, i); };
+            chooseResultColumnType(data_types[i], new_data_types[i], transform_types_if_needed, getDefaultType(i), std::to_string(i + 1), rows_read);
         }
     }
 
+    /// Check that we read at list one column.
+    if (data_types.empty())
+        throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Cannot read rows from the data");
+
     NamesAndTypesList result;
-    for (field_index = 0; field_index != data_types.size(); ++field_index)
+    for (size_t i = 0; i != data_types.size(); ++i)
     {
-        /// Don't check/change types from hints.
-        if (!hints.contains(column_names[field_index]))
-        {
-            transformFinalTypeIfNeeded(data_types[field_index]);
-            /// Check that we could determine the type of this column.
-            checkFinalInferredType(data_types[field_index], column_names[field_index], format_settings, getDefaultType(field_index), rows_read, hints_parsing_error);
-        }
-        result.emplace_back(column_names[field_index], data_types[field_index]);
+        /// Check that we could determine the type of this column.
+        checkResultColumnTypeAndAppend(result, data_types[i], column_names[i], getDefaultType(i), rows_read);
     }
 
     return result;
@@ -213,6 +195,11 @@ DataTypePtr IRowSchemaReader::getDefaultType(size_t column) const
     return nullptr;
 }
 
+void IRowSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type, size_t)
+{
+    transformInferredTypesIfNeeded(type, new_type, format_settings);
+}
+
 IRowWithNamesSchemaReader::IRowWithNamesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, DataTypePtr default_type_)
     : IIRowSchemaReader(in_, format_settings_, default_type_)
 {
@@ -234,9 +221,6 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
     names_order.reserve(names_and_types.size());
     for (const auto & [name, type] : names_and_types)
     {
-        if (names_to_types.contains(name))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate column name found while schema inference: \"{}\"", name);
-
         auto hint_it = hints.find(name);
         if (hint_it != hints.end())
             names_to_types[name] = hint_it->second;
@@ -245,6 +229,7 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
         names_order.push_back(name);
     }
 
+    auto transform_types_if_needed = [&](DataTypePtr & type, DataTypePtr & new_type){ transformTypesIfNeeded(type, new_type); };
     for (rows_read = 1; rows_read < max_rows_to_read; ++rows_read)
     {
         auto new_names_and_types = readRowAndGetNamesAndDataTypes(eof);
@@ -252,13 +237,8 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
             /// We reached eof.
             break;
 
-        std::unordered_set<std::string_view> names_set; /// We should check for duplicate column names in current row
         for (auto & [name, new_type] : new_names_and_types)
         {
-            if (names_set.contains(name))
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate column name found while schema inference: \"{}\"", name);
-            names_set.insert(name);
-
             auto it = names_to_types.find(name);
             /// If we didn't see this column before, just add it.
             if (it == names_to_types.end())
@@ -276,7 +256,7 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
                 continue;
 
             auto & type = it->second;
-            chooseResultColumnType(*this, type, new_type, default_type, name, rows_read, hints_parsing_error);
+            chooseResultColumnType(type, new_type, transform_types_if_needed, default_type, name, rows_read);
         }
     }
 
@@ -284,21 +264,20 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
     if (names_to_types.empty())
         throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Cannot read rows from the data");
 
-    NamesAndTypesList result = getStaticNamesAndTypes();
+    NamesAndTypesList result;
     for (auto & name : names_order)
     {
         auto & type = names_to_types[name];
-        /// Don't check/change types from hints.
-        if (!hints.contains(name))
-        {
-            transformFinalTypeIfNeeded(type);
-            /// Check that we could determine the type of this column.
-            checkFinalInferredType(type, name, format_settings, default_type, rows_read, hints_parsing_error);
-        }
-        result.emplace_back(name, type);
+        /// Check that we could determine the type of this column.
+        checkResultColumnTypeAndAppend(result, type, name, default_type, rows_read);
     }
 
     return result;
+}
+
+void IRowWithNamesSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
+{
+    transformInferredTypesIfNeeded(type, new_type, format_settings);
 }
 
 }

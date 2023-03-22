@@ -1,6 +1,3 @@
----
-slug: /en/operations/system-tables/replicas
----
 # replicas
 
 Contains information and status for replicated tables residing on the local server.
@@ -130,3 +127,6 @@ WHERE
 ```
 
 If this query does not return anything, it means that everything is fine.
+
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/replicas) <!--hide-->
+

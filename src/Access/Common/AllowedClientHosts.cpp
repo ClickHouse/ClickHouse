@@ -1,8 +1,8 @@
 #include <Access/Common/AllowedClientHosts.h>
 #include <Common/Exception.h>
-#include <Common/likePatternToRegexp.h>
 #include <Common/logger_useful.h>
 #include <base/scope_guard.h>
+#include <Functions/likePatternToRegexp.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/RegularExpression.h>
 #include <boost/algorithm/string/predicate.hpp>
@@ -236,7 +236,7 @@ void AllowedClientHosts::IPSubnet::set(const IPAddress & prefix_, const IPAddres
 
 void AllowedClientHosts::IPSubnet::set(const IPAddress & prefix_, size_t num_prefix_bits)
 {
-    set(prefix_, IPAddress(static_cast<unsigned>(num_prefix_bits), prefix_.family()));
+    set(prefix_, IPAddress(num_prefix_bits, prefix_.family()));
 }
 
 void AllowedClientHosts::IPSubnet::set(const IPAddress & address)

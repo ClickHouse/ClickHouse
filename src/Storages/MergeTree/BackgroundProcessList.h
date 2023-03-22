@@ -10,7 +10,7 @@ namespace DB
 {
 
 /// Common code for background processes lists, like system.merges and system.replicated_fetches
-/// Look at examples in MergeList, MovesList and ReplicatedFetchList
+/// Look at examples in MergeList and ReplicatedFetchList
 
 template <typename ListElement, typename Info>
 class BackgroundProcessList;

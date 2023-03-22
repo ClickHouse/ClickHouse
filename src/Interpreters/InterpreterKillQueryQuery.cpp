@@ -120,7 +120,7 @@ static QueryDescriptors extractQueriesExceptMeAndCheckAccess(const Block & proce
     }
 
     if (res.empty() && access_denied)
-        throw Exception(ErrorCodes::ACCESS_DENIED, "User {} attempts to kill query created by {}", my_client.current_user, query_user);
+        throw Exception("User " + my_client.current_user + " attempts to kill query created by " + query_user, ErrorCodes::ACCESS_DENIED);
 
     return res;
 }
@@ -160,8 +160,6 @@ public:
             {
                 if (curr_process.processed)
                     continue;
-
-                LOG_DEBUG(&Poco::Logger::get("KillQuery"), "Will kill query {} (synchronously)", curr_process.query_id);
 
                 auto code = process_list.sendCancelToQuery(curr_process.query_id, curr_process.user, true);
 
@@ -228,8 +226,6 @@ BlockIO InterpreterKillQueryQuery::execute()
             MutableColumns res_columns = header.cloneEmptyColumns();
             for (const auto & query_desc : queries_to_stop)
             {
-                if (!query.test)
-                    LOG_DEBUG(&Poco::Logger::get("KillQuery"), "Will kill query {} (asynchronously)", query_desc.query_id);
                 auto code = (query.test) ? CancellationCode::Unknown : process_list.sendCancelToQuery(query_desc.query_id, query_desc.user, true);
                 insertResultRow(query_desc.source_num, code, processes_block, header, res_columns);
             }
@@ -295,8 +291,9 @@ BlockIO InterpreterKillQueryQuery::execute()
         }
 
         if (res_columns[0]->empty() && access_denied)
-            throw Exception(ErrorCodes::ACCESS_DENIED, "Not allowed to kill mutation. "
-                "To execute this query it's necessary to have the grant {}", required_access_rights.toString());
+            throw Exception(
+                "Not allowed to kill mutation. To execute this query it's necessary to have the grant " + required_access_rights.toString(),
+                ErrorCodes::ACCESS_DENIED);
 
         res_io.pipeline = QueryPipeline(Pipe(std::make_shared<SourceFromSingleChunk>(header.cloneWithColumns(std::move(res_columns)))));
 
@@ -330,7 +327,7 @@ BlockIO InterpreterKillQueryQuery::execute()
         for (size_t i = 0; i < moves_block.rows(); ++i)
         {
             table_id = StorageID{database_col.getDataAt(i).toString(), table_col.getDataAt(i).toString()};
-            auto task_uuid = task_uuid_col[i].get<UUID>();
+            auto task_uuid = get<UUID>(task_uuid_col[i]);
 
             CancellationCode code = CancellationCode::Unknown;
 
@@ -359,8 +356,9 @@ BlockIO InterpreterKillQueryQuery::execute()
         }
 
         if (res_columns[0]->empty() && access_denied)
-            throw Exception(ErrorCodes::ACCESS_DENIED, "Not allowed to kill move partition. "
-                "To execute this query it's necessary to have the grant {}", required_access_rights.toString());
+            throw Exception(
+                "Not allowed to kill move partition. To execute this query it's necessary to have the grant " + required_access_rights.toString(),
+                ErrorCodes::ACCESS_DENIED);
 
         res_io.pipeline = QueryPipeline(Pipe(std::make_shared<SourceFromSingleChunk>(header.cloneWithColumns(std::move(res_columns)))));
 
@@ -430,7 +428,7 @@ Block InterpreterKillQueryQuery::getSelectResult(const String & columns, const S
     while (executor.pull(tmp_block));
 
     if (tmp_block)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected one block from input stream");
+        throw Exception("Expected one block from input stream", ErrorCodes::LOGICAL_ERROR);
 
     return res;
 }

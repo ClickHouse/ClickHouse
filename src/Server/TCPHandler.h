@@ -1,6 +1,5 @@
 #pragma once
 
-#include <optional>
 #include <Poco/Net/TCPServerConnection.h>
 
 #include <base/getFQDNOrHostName.h>
@@ -20,9 +19,9 @@
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
 
+#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
+
 #include "IServer.h"
-#include "Server/TCPProtocolStackData.h"
-#include "Storages/MergeTree/RequestResponse.h"
 #include "base/types.h"
 
 
@@ -138,7 +137,6 @@ public:
       * Proxy-forwarded (original client) IP address is used for quota accounting if quota is keyed by forwarded IP.
       */
     TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_);
-    TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, TCPProtocolStackData & stack_data, std::string server_display_name_);
     ~TCPHandler() override;
 
     void run() override;
@@ -153,13 +151,12 @@ private:
     Poco::Logger * log;
 
     String forwarded_for;
-    String certificate;
 
     String client_name;
     UInt64 client_version_major = 0;
     UInt64 client_version_minor = 0;
     UInt64 client_version_patch = 0;
-    UInt32 client_tcp_protocol_version = 0;
+    UInt64 client_tcp_protocol_version = 0;
     String quota_key;
 
     /// Connection settings, which are extracted from a context.
@@ -171,6 +168,7 @@ private:
     UInt64 interactive_delay = 100000;
     Poco::Timespan sleep_in_send_tables_status;
     UInt64 unknown_packet_in_send_data = 0;
+    Poco::Timespan sleep_in_receive_cancel;
     Poco::Timespan sleep_after_receiving_query;
 
     std::unique_ptr<Session> session;
@@ -189,10 +187,7 @@ private:
 
     /// For inter-server secret (remote_server.*.secret)
     bool is_interserver_mode = false;
-    /// For DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET
     String salt;
-    /// For DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2
-    std::optional<UInt64> nonce;
     String cluster;
 
     std::mutex task_callback_mutex;
@@ -224,7 +219,7 @@ private:
     void receiveQuery();
     void receiveIgnoredPartUUIDs();
     String receiveReadTaskResponseAssumeLocked();
-    std::optional<ParallelReadResponse> receivePartitionMergeTreeReadTaskResponseAssumeLocked();
+    std::optional<PartitionReadResponse> receivePartitionMergeTreeReadTaskResponseAssumeLocked();
     bool receiveData(bool scalar);
     bool readDataNext();
     void readData();
@@ -257,8 +252,7 @@ private:
     void sendEndOfStream();
     void sendPartUUIDs();
     void sendReadTaskRequestAssumeLocked();
-    void sendMergeTreeAllRangesAnnounecementAssumeLocked(InitialAllRangesAnnouncement announcement);
-    void sendMergeTreeReadTaskRequestAssumeLocked(ParallelReadRequest request);
+    void sendMergeTreeReadTaskRequestAssumeLocked(PartitionReadRequest request);
     void sendProfileInfo(const ProfileInfo & info);
     void sendTotals(const Block & totals);
     void sendExtremes(const Block & extremes);
@@ -276,8 +270,6 @@ private:
 
     /// This function is called from different threads.
     void updateProgress(const Progress & value);
-
-    Poco::Net::SocketAddress getClientAddress(const ClientInfo & client_info);
 };
 
 }

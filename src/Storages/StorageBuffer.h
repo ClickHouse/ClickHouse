@@ -82,7 +82,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
-        size_t num_streams) override;
+        unsigned num_streams) override;
 
     bool supportsParallelInsert() const override { return true; }
 
@@ -100,7 +100,6 @@ public:
         bool final,
         bool deduplicate,
         const Names & deduplicate_by_columns,
-        bool cleanup,
         ContextPtr context) override;
 
     bool supportsSampling() const override { return true; }
@@ -169,8 +168,6 @@ private:
 
     void backgroundFlush();
     void reschedule();
-
-    StoragePtr getDestinationTable() const;
 
     BackgroundSchedulePool & bg_pool;
     BackgroundSchedulePoolTaskHolder flush_handle;

@@ -1,6 +1,5 @@
 ---
-slug: /en/development/style
-sidebar_position: 70
+sidebar_position: 69
 sidebar_label: C++ Guide
 description: A list of recommendations regarding coding style, naming convention, formatting and more
 ---
@@ -870,3 +869,5 @@ function(
       const & RangesInDataParts ranges,
       size_t limit)
 ```
+
+[Original article](https://clickhouse.com/docs/en/development/style/) <!--hide-->

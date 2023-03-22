@@ -185,9 +185,9 @@ def test_mysql_client(started_cluster):
     )
 
     assert (
-        "mysql: [Warning] Using a password on the command line interface can be insecure.\n"
-        "ERROR 516 (00000): default: Authentication failed: password is incorrect, or there is no user with such name"
-        in stderr.decode()
+        stderr.decode()
+        == "mysql: [Warning] Using a password on the command line interface can be insecure.\n"
+        "ERROR 516 (00000): default: Authentication failed: password is incorrect or there is no user with such name\n"
     )
 
     code, (stdout, stderr) = started_cluster.mysql_client_container.exec_run(
@@ -365,7 +365,7 @@ def test_mysql_replacement_query(started_cluster):
         demux=True,
     )
     assert code == 0
-    assert stdout.decode() == "currentDatabase()\ndefault\n"
+    assert stdout.decode() == "DATABASE()\ndefault\n"
 
     code, (stdout, stderr) = started_cluster.mysql_client_container.exec_run(
         """
@@ -377,7 +377,7 @@ def test_mysql_replacement_query(started_cluster):
         demux=True,
     )
     assert code == 0
-    assert stdout.decode() == "currentDatabase()\ndefault\n"
+    assert stdout.decode() == "DATABASE()\ndefault\n"
 
 
 def test_mysql_select_user(started_cluster):
@@ -585,10 +585,9 @@ def test_python_client(started_cluster):
             port=server_port,
         )
 
-    assert exc_info.value.args[0] == 516
-    assert (
-        "default: Authentication failed: password is incorrect, or there is no user with such name"
-        in exc_info.value.args[1]
+    assert exc_info.value.args == (
+        516,
+        "default: Authentication failed: password is incorrect or there is no user with such name",
     )
 
     client = pymysql.connections.Connection(

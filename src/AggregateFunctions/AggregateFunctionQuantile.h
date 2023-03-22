@@ -2,12 +2,24 @@
 
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+
+/// These must be exposed in header for the purpose of dynamic compilation.
+#include <AggregateFunctions/QuantileReservoirSampler.h>
+#include <AggregateFunctions/QuantileReservoirSamplerDeterministic.h>
+#include <AggregateFunctions/QuantileExact.h>
+#include <AggregateFunctions/QuantileExactWeighted.h>
+#include <AggregateFunctions/QuantileTiming.h>
+#include <AggregateFunctions/QuantileTDigest.h>
+#include <AggregateFunctions/QuantileBFloat16Histogram.h>
+
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/QuantilesCommon.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <IO/ReadHelpers.h>
@@ -72,7 +84,7 @@ private:
 public:
     AggregateFunctionQuantile(const DataTypes & argument_types_, const Array & params)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many>>(
-            argument_types_, params, createResultType(argument_types_))
+            argument_types_, params)
         , levels(params, returns_many)
         , level(levels.levels[0])
         , argument_type(this->argument_types[0])
@@ -83,14 +95,14 @@ public:
 
     String getName() const override { return Name::name; }
 
-    static DataTypePtr createResultType(const DataTypes & argument_types_)
+    DataTypePtr getReturnType() const override
     {
         DataTypePtr res;
 
         if constexpr (returns_float)
             res = std::make_shared<DataTypeNumber<FloatReturnType>>();
         else
-            res = argument_types_[0];
+            res = argument_type;
 
         if constexpr (returns_many)
             return std::make_shared<DataTypeArray>(res);
@@ -231,9 +243,6 @@ struct NameQuantilesExactInclusive { static constexpr auto name = "quantilesExac
 
 struct NameQuantileExactWeighted { static constexpr auto name = "quantileExactWeighted"; };
 struct NameQuantilesExactWeighted { static constexpr auto name = "quantilesExactWeighted"; };
-
-struct NameQuantileInterpolatedWeighted { static constexpr auto name = "quantileInterpolatedWeighted"; };
-struct NameQuantilesInterpolatedWeighted { static constexpr auto name = "quantilesInterpolatedWeighted"; };
 
 struct NameQuantileTiming { static constexpr auto name = "quantileTiming"; };
 struct NameQuantileTimingWeighted { static constexpr auto name = "quantileTimingWeighted"; };

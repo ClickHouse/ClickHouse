@@ -42,8 +42,8 @@ PoolWithFailover::PoolWithFailover(
         /// which triggers massive re-constructing of connection pools.
         /// The state of PRNGs like std::mt19937 is considered to be quite heavy
         /// thus here we attempt to optimize its construction.
-        static thread_local std::mt19937 rnd_generator(static_cast<uint_fast32_t>(
-                std::hash<std::thread::id>{}(std::this_thread::get_id()) + std::clock()));
+        static thread_local std::mt19937 rnd_generator(
+                std::hash<std::thread::id>{}(std::this_thread::get_id()) + std::clock());
         for (auto & [_, replicas] : replicas_by_priority)
         {
             if (replicas.size() > 1)
@@ -123,7 +123,7 @@ PoolWithFailover::PoolWithFailover(const PoolWithFailover & other)
 PoolWithFailover::Entry PoolWithFailover::get()
 {
     Poco::Util::Application & app = Poco::Util::Application::instance();
-    std::lock_guard locker(mutex);
+    std::lock_guard<std::mutex> locker(mutex);
 
     /// If we cannot connect to some replica due to pool overflow, than we will wait and connect.
     PoolPtr * full_pool = nullptr;

@@ -35,9 +35,9 @@ MySQLDumpRowInputFormat::MySQLDumpRowInputFormat(ReadBuffer & in_, const Block &
     : IRowInputFormat(header_, in_, params_)
     , table_name(format_settings_.mysql_dump.table_name)
     , types(header_.getDataTypes())
+    , column_indexes_by_names(header_.getNamesToIndexesMap())
     , format_settings(format_settings_)
 {
-    column_indexes_by_names = getPort().getHeader().getNamesToIndexesMap();
 }
 
 
@@ -337,8 +337,7 @@ static void readFirstCreateAndInsertQueries(ReadBuffer & in, String & table_name
     }
 
     if (!insert_query_present)
-        throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "There is no INSERT queries{} in MySQL dump file",
-                        table_name.empty() ? "" : " for table " + table_name);
+        throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "There is no INSERT queries{} in MySQL dump file", table_name.empty() ? "" : " for table " + table_name);
 
     skipToDataInInsertQuery(in, column_names.empty() ? &column_names : nullptr);
 }
@@ -389,7 +388,7 @@ bool MySQLDumpRowInputFormat::readField(IColumn & column, size_t column_idx)
 {
     const auto & type = types[column_idx];
     const auto & serialization = serializations[column_idx];
-    if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
+    if (format_settings.null_as_default && !type->isNullable() && !type->isLowCardinalityNullable())
         return SerializationNullable::deserializeTextQuotedImpl(column, *in, format_settings, serialization);
 
     serialization->deserializeTextQuoted(column, *in, format_settings);
@@ -436,7 +435,7 @@ DataTypes MySQLDumpSchemaReader::readRowAndGetDataTypes()
             skipFieldDelimiter(in);
 
         readQuotedField(value, in);
-        auto type = tryInferDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Quoted);
+        auto type = determineDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Quoted);
         data_types.push_back(std::move(type));
     }
     skipEndOfRow(in, table_name);

@@ -4,8 +4,8 @@
 #include <IO/BoundedReadBuffer.h>
 #include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Common/FileCache.h>
+#include <Common/FileCacheFactory.h>
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 #include <filesystem>
@@ -32,13 +32,6 @@ CachedObjectStorage::CachedObjectStorage(
     , log(&Poco::Logger::get(getName()))
 {
     cache->initialize();
-}
-
-DataSourceDescription CachedObjectStorage::getDataSourceDescription() const
-{
-    auto wrapped_object_storage_data_source = object_storage->getDataSourceDescription();
-    wrapped_object_storage_data_source.is_cached = true;
-    return wrapped_object_storage_data_source;
 }
 
 FileCache::Key CachedObjectStorage::getCacheKey(const std::string & path) const
@@ -282,9 +275,9 @@ std::unique_ptr<IObjectStorage> CachedObjectStorage::cloneObjectStorage(
     return object_storage->cloneObjectStorage(new_namespace, config, config_prefix, context);
 }
 
-void CachedObjectStorage::findAllFiles(const std::string & path, RelativePathsWithSize & children, int max_keys) const
+void CachedObjectStorage::listPrefix(const std::string & path, RelativePathsWithSize & children) const
 {
-    object_storage->findAllFiles(path, children, max_keys);
+    object_storage->listPrefix(path, children);
 }
 
 ObjectMetadata CachedObjectStorage::getObjectMetadata(const std::string & path) const

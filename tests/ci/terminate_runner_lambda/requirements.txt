@@ -1,3 +1,0 @@
-requests
-PyJWT
-cryptography==37.0.4

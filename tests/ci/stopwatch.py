@@ -9,9 +9,9 @@ class Stopwatch:
         self.start_time_str_value = self.start_time.strftime("%Y-%m-%d %H:%M:%S")
 
     @property
-    def duration_seconds(self) -> float:
+    def duration_seconds(self):
         return (datetime.datetime.utcnow() - self.start_time).total_seconds()
 
     @property
-    def start_time_str(self) -> str:
+    def start_time_str(self):
         return self.start_time_str_value

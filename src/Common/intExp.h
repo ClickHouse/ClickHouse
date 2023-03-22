@@ -252,7 +252,7 @@ template <typename T>
 constexpr inline T intExp10OfSize(int x)
 {
     if constexpr (sizeof(T) <= 4)
-        return static_cast<T>(common::exp10_i32(x));
+        return common::exp10_i32(x);
     else if constexpr (sizeof(T) <= 8)
         return common::exp10_i64(x);
     else if constexpr (sizeof(T) <= 16)

@@ -51,22 +51,12 @@ struct LengthUTF8Impl
 
     [[noreturn]] static void array(const ColumnString::Offsets &, PaddedPODArray<UInt64> &)
     {
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function lengthUTF8 to Array argument");
+        throw Exception("Cannot apply function lengthUTF8 to Array argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
     [[noreturn]] static void uuid(const ColumnUUID::Container &, size_t &, PaddedPODArray<UInt64> &)
     {
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function lengthUTF8 to UUID argument");
-    }
-
-    [[noreturn]] static void ipv6(const ColumnIPv6::Container &, size_t &, PaddedPODArray<UInt64> &)
-    {
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function lengthUTF8 to IPv6 argument");
-    }
-
-    [[noreturn]] static void ipv4(const ColumnIPv4::Container &, size_t &, PaddedPODArray<UInt64> &)
-    {
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function lengthUTF8 to IPv4 argument");
+        throw Exception("Cannot apply function lengthUTF8 to UUID argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 };
 
@@ -83,8 +73,8 @@ REGISTER_FUNCTION(LengthUTF8)
     factory.registerFunction<FunctionLengthUTF8>();
 
     /// Compatibility aliases.
-    factory.registerAlias("CHAR_LENGTH", "lengthUTF8", FunctionFactory::CaseInsensitive);
-    factory.registerAlias("CHARACTER_LENGTH", "lengthUTF8", FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionLengthUTF8>("CHAR_LENGTH", FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionLengthUTF8>("CHARACTER_LENGTH", FunctionFactory::CaseInsensitive);
 }
 
 }

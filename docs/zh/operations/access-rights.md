@@ -1,5 +1,4 @@
 ---
-slug: /zh/operations/access-rights
 sidebar_position: 48
 sidebar_label: "访问权限和账户管理"
 ---
@@ -24,9 +23,9 @@ ClickHouse权限实体包括：
 
 我们建议你使用SQL工作流的方式。当然配置的方式也可以同时起作用, 所以如果你正在用服务端配置的方式来管理权限和账户，你可以平滑的切换到SQL驱动的工作流方式。
 
-:::warning
-你无法同时使用两个配置的方式来管理同一个权限实体。
-:::
+!!! note "警告"
+    你无法同时使用两个配置的方式来管理同一个权限实体。
+
 
 ## 用法 {#access-control-usage}
 
@@ -142,3 +141,6 @@ Management queries:
 - 为至少一个账户开启SQL驱动方式的访问权限和账户管理.
 
      默认情况，SQL驱动方式的访问权限和账户管理对所有用户都是关闭的。你需要在 `users.xml` 中配置至少一个用户，并且把[权限管理](settings/settings-users.md#access_management-user-setting)的值设置为1。
+
+
+[Original article](https://clickhouse.com/docs/en/operations/access_rights/) <!--hide-->

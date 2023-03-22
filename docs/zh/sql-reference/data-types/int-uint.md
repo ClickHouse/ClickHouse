@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/data-types/int-uint
 sidebar_position: 40
 sidebar_label: UInt8, UInt16, UInt32, UInt64, UInt128, UInt256, Int8, Int16, Int32, Int64, Int128, Int256
 ---
@@ -37,3 +36,6 @@ sidebar_label: UInt8, UInt16, UInt32, UInt64, UInt128, UInt256, Int8, Int16, Int
 -   `UInt64` — \[0 : 18446744073709551615\]
 -   `UInt128` — \[0 : 340282366920938463463374607431768211455\]
 -   `UInt256` — \[0 : 115792089237316195423570985008687907853269984665640564039457584007913129639935\]
+
+
+[源文档](https://clickhouse.com/docs/en/data_types/int_uint/) <!--hide-->

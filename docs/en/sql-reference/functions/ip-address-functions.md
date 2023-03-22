@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/functions/ip-address-functions
 sidebar_position: 55
 sidebar_label: IP Addresses
 ---
@@ -280,19 +279,11 @@ SELECT
 
 ## toIPv4OrDefault(string)
 
-Same as `toIPv4`, but if the IPv4 address has an invalid format, it returns `0.0.0.0` (0 IPv4).
+Same as `toIPv4`, but if the IPv4 address has an invalid format, it returns 0.
 
 ## toIPv4OrNull(string)
 
 Same as `toIPv4`, but if the IPv4 address has an invalid format, it returns null.
-
-## toIPv6OrDefault(string)
-
-Same as `toIPv6`, but if the IPv6 address has an invalid format, it returns `::` (0 IPv6).
-
-## toIPv6OrNull(string)
-
-Same as `toIPv6`, but if the IPv6 address has an invalid format, it returns null.
 
 ## toIPv6
 

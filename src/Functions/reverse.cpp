@@ -83,8 +83,8 @@ public:
     {
         if (!isStringOrFixedString(arguments[0])
             && !isArray(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                arguments[0]->getName(), getName());
+            throw Exception(
+                "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return arguments[0];
     }
@@ -107,8 +107,9 @@ public:
             return col_res;
         }
         else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-                arguments[0].column->getName(), getName());
+            throw Exception(
+                "Illegal column " + arguments[0].column->getName() + " of argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 
@@ -149,7 +150,7 @@ private:
 
 REGISTER_FUNCTION(Reverse)
 {
-    factory.registerFunction<ReverseOverloadResolver>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<ReverseOverloadResolver>(FunctionFactory::CaseInsensitive);
 }
 
 }

@@ -28,34 +28,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int NOT_IMPLEMENTED;
-}
-
-namespace
-{
-
-orc::CompressionKind getORCCompression(FormatSettings::ORCCompression method)
-{
-    if (method == FormatSettings::ORCCompression::NONE)
-        return orc::CompressionKind::CompressionKind_NONE;
-
-#if USE_SNAPPY
-    if (method == FormatSettings::ORCCompression::SNAPPY)
-        return orc::CompressionKind::CompressionKind_SNAPPY;
-#endif
-
-    if (method == FormatSettings::ORCCompression::ZSTD)
-        return orc::CompressionKind::CompressionKind_ZSTD;
-
-    if (method == FormatSettings::ORCCompression::LZ4)
-        return orc::CompressionKind::CompressionKind_LZ4;
-
-    if (method == FormatSettings::ORCCompression::ZLIB)
-        return orc::CompressionKind::CompressionKind_ZLIB;
-
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported compression method");
-}
-
 }
 
 ORCOutputStream::ORCOutputStream(WriteBuffer & out_) : out(out_) {}
@@ -87,12 +59,7 @@ std::unique_ptr<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & 
 {
     switch (type->getTypeId())
     {
-        case TypeIndex::UInt8:
-        {
-            if (isBool(type))
-                return orc::createPrimitiveType(orc::TypeKind::BOOLEAN);
-            return orc::createPrimitiveType(orc::TypeKind::BYTE);
-        }
+        case TypeIndex::UInt8: [[fallthrough]];
         case TypeIndex::Int8:
         {
             return orc::createPrimitiveType(orc::TypeKind::BYTE);
@@ -103,7 +70,6 @@ std::unique_ptr<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & 
             return orc::createPrimitiveType(orc::TypeKind::SHORT);
         }
         case TypeIndex::UInt32: [[fallthrough]];
-        case TypeIndex::IPv4: [[fallthrough]];
         case TypeIndex::Int32:
         {
             return orc::createPrimitiveType(orc::TypeKind::INT);
@@ -136,10 +102,6 @@ std::unique_ptr<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & 
         {
             if (format_settings.orc.output_string_as_string)
                 return orc::createPrimitiveType(orc::TypeKind::STRING);
-            return orc::createPrimitiveType(orc::TypeKind::BINARY);
-        }
-        case TypeIndex::IPv6:
-        {
             return orc::createPrimitiveType(orc::TypeKind::BINARY);
         }
         case TypeIndex::Nullable:
@@ -186,7 +148,7 @@ std::unique_ptr<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & 
         }
         default:
         {
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} is not supported for ORC output format", type->getName());
+            throw Exception("Type " + type->getName() + " is not supported for ORC output format", ErrorCodes::ILLEGAL_COLUMN);
         }
     }
 }
@@ -291,8 +253,8 @@ void ORCBlockOutputFormat::writeDateTimes(
         }
 
         timestamp_orc_column.notNull[i] = 1;
-        timestamp_orc_column.data[i] = static_cast<int64_t>(get_seconds(timestamp_column.getElement(i)));
-        timestamp_orc_column.nanoseconds[i] = static_cast<int64_t>(get_nanoseconds(timestamp_column.getElement(i)));
+        timestamp_orc_column.data[i] = get_seconds(timestamp_column.getElement(i));
+        timestamp_orc_column.nanoseconds[i] = get_nanoseconds(timestamp_column.getElement(i));
     }
     timestamp_orc_column.numElements = timestamp_column.size();
 }
@@ -342,11 +304,6 @@ void ORCBlockOutputFormat::writeColumn(
             writeNumbers<UInt32, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const UInt32 & value){ return value; });
             break;
         }
-        case TypeIndex::IPv4:
-        {
-            writeNumbers<IPv4, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const IPv4 & value){ return value.toUnderType(); });
-            break;
-        }
         case TypeIndex::Int64:
         {
             writeNumbers<Int64, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const Int64 & value){ return value; });
@@ -375,11 +332,6 @@ void ORCBlockOutputFormat::writeColumn(
         case TypeIndex::String:
         {
             writeStrings<ColumnString>(orc_column, column, null_bytemap);
-            break;
-        }
-        case TypeIndex::IPv6:
-        {
-            writeStrings<ColumnIPv6>(orc_column, column, null_bytemap);
             break;
         }
         case TypeIndex::DateTime:
@@ -505,7 +457,7 @@ void ORCBlockOutputFormat::writeColumn(
             break;
         }
         default:
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} is not supported for ORC output format", type->getName());
+            throw Exception("Type " + type->getName() + " is not supported for ORC output format", ErrorCodes::ILLEGAL_COLUMN);
     }
 }
 
@@ -563,16 +515,11 @@ void ORCBlockOutputFormat::finalizeImpl()
     writer->close();
 }
 
-void ORCBlockOutputFormat::resetFormatterImpl()
-{
-    writer.reset();
-}
-
 void ORCBlockOutputFormat::prepareWriter()
 {
     const Block & header = getPort(PortKind::Main).getHeader();
     schema = orc::createStructType();
-    options.setCompression(getORCCompression(format_settings.orc.output_compression_method));
+    options.setCompression(orc::CompressionKind::CompressionKind_NONE);
     size_t columns_count = header.columns();
     for (size_t i = 0; i != columns_count; ++i)
         schema->addStructField(header.safeGetByPosition(i).name, getORCType(recursiveRemoveLowCardinality(data_types[i])));
@@ -584,6 +531,7 @@ void registerOutputFormatORC(FormatFactory & factory)
     factory.registerOutputFormat("ORC", [](
             WriteBuffer & buf,
             const Block & sample,
+            const RowOutputFormatParams &,
             const FormatSettings & format_settings)
     {
         return std::make_shared<ORCBlockOutputFormat>(buf, sample, format_settings);

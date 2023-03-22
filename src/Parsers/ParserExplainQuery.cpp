@@ -19,7 +19,6 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_ast("AST");
     ParserKeyword s_explain("EXPLAIN");
     ParserKeyword s_syntax("SYNTAX");
-    ParserKeyword s_query_tree("QUERY TREE");
     ParserKeyword s_pipeline("PIPELINE");
     ParserKeyword s_plan("PLAN");
     ParserKeyword s_estimates("ESTIMATE");
@@ -34,14 +33,12 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             kind = ASTExplainQuery::ExplainKind::ParsedAST;
         else if (s_syntax.ignore(pos, expected))
             kind = ASTExplainQuery::ExplainKind::AnalyzedSyntax;
-        else if (s_query_tree.ignore(pos, expected))
-            kind = ASTExplainQuery::ExplainKind::QueryTree;
         else if (s_pipeline.ignore(pos, expected))
             kind = ASTExplainQuery::ExplainKind::QueryPipeline;
         else if (s_plan.ignore(pos, expected))
-            kind = ASTExplainQuery::ExplainKind::QueryPlan;
+            kind = ASTExplainQuery::ExplainKind::QueryPlan; //-V1048
         else if (s_estimates.ignore(pos, expected))
-            kind = ASTExplainQuery::ExplainKind::QueryEstimates;
+            kind = ASTExplainQuery::ExplainKind::QueryEstimates; //-V1048
         else if (s_table_override.ignore(pos, expected))
             kind = ASTExplainQuery::ExplainKind::TableOverride;
         else if (s_current_transaction.ignore(pos, expected))
@@ -87,35 +84,17 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         explain_query->setTableFunction(table_function);
         explain_query->setTableOverride(table_override);
     }
-    else if (kind == ASTExplainQuery::ExplainKind::QueryTree)
-    {
-        if (select_p.parse(pos, query, expected))
-            explain_query->setExplainedQuery(std::move(query));
-        else
-            return false;
-    }
     else if (kind == ASTExplainQuery::ExplainKind::CurrentTransaction)
     {
         /// Nothing to parse
-    }
-    else if (select_only)
-    {
-        if (select_p.parse(pos, query, expected))
-            explain_query->setExplainedQuery(std::move(query));
-        else
-            return false;
     }
     else if (select_p.parse(pos, query, expected) ||
         create_p.parse(pos, query, expected) ||
         insert_p.parse(pos, query, expected) ||
         system_p.parse(pos, query, expected))
-    {
         explain_query->setExplainedQuery(std::move(query));
-    }
     else
-    {
         return false;
-    }
 
     node = std::move(explain_query);
     return true;

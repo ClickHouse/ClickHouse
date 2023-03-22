@@ -1,6 +1,3 @@
----
-slug: /zh/engines/table-engines/mergetree-family/mergetree
----
 # MergeTree {#table_engines-mergetree}
 
 Clickhouse 中最强大的表引擎当属 `MergeTree` （合并树）引擎及该系列（`*MergeTree`）中的其他引擎。
@@ -25,9 +22,8 @@ Clickhouse 中最强大的表引擎当属 `MergeTree` （合并树）引擎及�
 
     需要的话，您可以给表设置一个采样方法。
 
-:::info
-[合并](../special/merge.md#merge) 引擎并不属于 `*MergeTree` 系列。
-:::
+!!! note "注意"
+    [合并](../special/merge.md#merge) 引擎并不属于 `*MergeTree` 系列。
 
 ## 建表 {#table_engine-mergetree-creating-a-table}
 
@@ -365,7 +361,7 @@ WHERE 子句中的条件可以包含对某列数据进行运算的函数表达�
 
 常量参数小于 ngram 大小的函数不能使用 `ngrambf_v1` 进行查询优化。
 
-:::note
+!!! note "注意"
 布隆过滤器可能会包含不符合条件的匹配，所以 `ngrambf_v1`, `tokenbf_v1` 和 `bloom_filter` 索引不能用于结果返回为假的函数，例如：
 
 - 可以用来优化的场景
@@ -380,7 +376,6 @@ WHERE 子句中的条件可以包含对某列数据进行运算的函数表达�
   - `NOT s = 1`
   - `s != 1`
   - `NOT startsWith(s, 'test')`
-:::
 
 ## 并发数据访问 {#concurrent-data-access}
 
@@ -481,7 +476,7 @@ CREATE TABLE example_table
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(d)
 ORDER BY d
-TTL d + INTERVAL 1 MONTH DELETE,
+TTL d + INTERVAL 1 MONTH [DELETE],
     d + INTERVAL 1 WEEK TO VOLUME 'aaa',
     d + INTERVAL 2 WEEK TO DISK 'bbb';
 ```
@@ -821,3 +816,4 @@ S3磁盘也可以设置冷热存储：
 -    `_partition_value` — `partition by` 表达式的值（元组）。
 -    `_sample_factor` - 采样因子（来自请求）。
 
+[原始文章](https://clickhouse.com/docs/en/operations/table_engines/mergetree/) <!--hide-->

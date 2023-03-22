@@ -1,5 +1,3 @@
-set optimize_group_by_function_keys=0;
-
 SELECT
     number,
     grouping(number, number % 2, number % 3) AS gr
@@ -21,8 +19,7 @@ GROUP BY
         (number),
         (number % 2)
     )
-ORDER BY number, gr
-SETTINGS force_grouping_standard_compatibility=0;
+ORDER BY number, gr;
 
 SELECT
     number,
@@ -33,8 +30,7 @@ GROUP BY
         (number),
         (number % 2)
     )
-ORDER BY number, gr
-SETTINGS force_grouping_standard_compatibility=0;
+ORDER BY number, gr;
 
 SELECT
     number,
@@ -45,8 +41,7 @@ GROUP BY
         (number),
         (number % 2)
     )
-ORDER BY number, gr
-SETTINGS force_grouping_standard_compatibility=0;
+ORDER BY number, gr;
 
 SELECT
     number
@@ -56,8 +51,7 @@ GROUP BY
         (number),
         (number % 2)
     )
-ORDER BY number, grouping(number, number % 2) = 1
-SETTINGS force_grouping_standard_compatibility=0;
+ORDER BY number, grouping(number, number % 2) = 1;
 
 SELECT
     number,
@@ -70,8 +64,7 @@ GROUP BY
         (number, number % 2),
         ()
     )
-ORDER BY (gr, number)
-SETTINGS force_grouping_standard_compatibility=0;
+ORDER BY (gr, number);
 
 SELECT
     number
@@ -83,7 +76,7 @@ GROUP BY
     )
 HAVING grouping(number, number % 2) = 2
 ORDER BY number
-SETTINGS enable_optimize_predicate_expression = 0, force_grouping_standard_compatibility=0;
+SETTINGS enable_optimize_predicate_expression = 0;
 
 SELECT
     number
@@ -95,7 +88,7 @@ GROUP BY
     )
 HAVING grouping(number, number % 2) = 1
 ORDER BY number
-SETTINGS enable_optimize_predicate_expression = 0, force_grouping_standard_compatibility=0;
+SETTINGS enable_optimize_predicate_expression = 0;
 
 SELECT
     number,
@@ -105,5 +98,4 @@ GROUP BY
     GROUPING SETS (
     (number),
     (number % 2))
-ORDER BY number, gr
-SETTINGS force_grouping_standard_compatibility=0;
+ORDER BY number, gr;

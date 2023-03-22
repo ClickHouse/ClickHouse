@@ -1,6 +1,3 @@
----
-slug: /en/operations/system-tables/errors
----
 # errors
 
 Contains error codes with the number of times they have been triggered.
@@ -36,3 +33,4 @@ FROM system.errors
 LIMIT 1
 SETTINGS allow_introspection_functions=1\G
 ```
+

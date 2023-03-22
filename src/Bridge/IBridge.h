@@ -43,7 +43,7 @@ private:
     std::string hostname;
     size_t port;
     std::string log_level;
-    unsigned max_server_connections;
+    size_t max_server_connections;
     size_t http_timeout;
 
     Poco::Logger * log;

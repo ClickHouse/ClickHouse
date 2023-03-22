@@ -2,7 +2,7 @@
 
 #include <Common/Exception.h>
 
-#include "config.h"
+#include <Common/config.h>
 
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/SocketAddress.h>
@@ -46,7 +46,7 @@ Poco::Net::StreamSocket StorageMongoDBSocketFactory::createSecureSocket(const st
 
     return socket;
 #else
-    throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "SSL is not enabled at build time.");
+    throw Exception("SSL is not enabled at build time.", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
 #endif
 }
 

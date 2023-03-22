@@ -1,5 +1,4 @@
 ---
-slug: /ru/getting-started/example-datasets/amplab-benchmark
 sidebar_position: 19
 sidebar_label: AMPLab Big Data Benchmark
 ---
@@ -125,3 +124,4 @@ GROUP BY sourceIP
 ORDER BY totalRevenue DESC
 LIMIT 1
 ```
+

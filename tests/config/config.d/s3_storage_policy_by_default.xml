@@ -13,7 +13,9 @@
         <policies>
             <s3>
                 <volumes>
-                    <main><disk>s3</disk></main>
+                    <main>
+                        <disk>s3</disk>
+                    </main>
                 </volumes>
             </s3>
         </policies>
