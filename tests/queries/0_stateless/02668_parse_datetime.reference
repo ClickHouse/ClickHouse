@@ -1,6 +1,6 @@
 -- { echoOn }
 -- year
-select parseDateTime('2020', '%Y') = toDateTime('2020-01-01');
+select parseDateTime('2020', '%Y', 'UTC') = toDateTime('2020-01-01', 'UTC');
 1
 -- month
 select parseDateTime('02', '%m') = toDateTime('2000-02-01');
@@ -191,9 +191,9 @@ select parseDateTime('60', '%s', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME 
 select parseDateTime('-1', '%s', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
 select parseDateTime('123456789', '%s', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
 -- mixed YMD format
-select parseDateTime('2021-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s') = toDateTime('2021-01-04 23:00:00');
+select parseDateTime('2021-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s', 'UTC') = toDateTime('2021-01-04 23:00:00', 'UTC');
 1
-select parseDateTime('2019-07-03 11:04:10', '%Y-%m-%d %H:%i:%s') = toDateTime('2019-07-03 11:04:10');
+select parseDateTime('2019-07-03 11:04:10', '%Y-%m-%d %H:%i:%s', 'UTC') = toDateTime('2019-07-03 11:04:10', 'UTC');
 1
-select parseDateTime('10:04:11 03-07-2019', '%s:%i:%H %d-%m-%Y') = toDateTime('2019-07-03 11:04:10');
+select parseDateTime('10:04:11 03-07-2019', '%s:%i:%H %d-%m-%Y', 'UTC') = toDateTime('2019-07-03 11:04:10', 'UTC');
 1
