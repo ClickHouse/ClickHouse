@@ -12,11 +12,14 @@ set deduplicate_blocks_in_dependent_materialized_views=0;
 CREATE TABLE test (test String, A Int64, B Int64) ENGINE = ReplicatedMergeTree ('/clickhouse/tables/{database}/test_02124/{table}', '1')
 ORDER BY tuple();
 
-CREATE MATERIALIZED VIEW test_mv_a Engine=ReplicatedMergeTree ('/clickhouse/tables/{database}/test_02124/{table}', '1') order by tuple() AS SELECT test, A, count() c FROM test group by test, A;
+CREATE MATERIALIZED VIEW test_mv_a Engine=ReplicatedMergeTree ('/clickhouse/tables/{database}/test_02124/{table}', '1')
+order by tuple() AS SELECT test, A, count() c FROM test group by test, A;
 
-CREATE MATERIALIZED VIEW test_mv_b Engine=ReplicatedMergeTree ('/clickhouse/tables/{database}/test_02124/{table}', '1') partition by A order by tuple() AS SELECT test, A, count() c FROM test group by test, A;
+CREATE MATERIALIZED VIEW test_mv_b Engine=ReplicatedMergeTree ('/clickhouse/tables/{database}/test_02124/{table}', '1')
+partition by A order by tuple() AS SELECT test, A, count() c FROM test group by test, A;
 
-CREATE MATERIALIZED VIEW test_mv_c Engine=ReplicatedMergeTree ('/clickhouse/tables/{database}/test_02124/{table}', '1') order by tuple() AS SELECT test, A, count() c FROM test group by test, A;
+CREATE MATERIALIZED VIEW test_mv_c Engine=ReplicatedMergeTree ('/clickhouse/tables/{database}/test_02124/{table}', '1')
+order by tuple() AS SELECT test, A, count() c FROM test group by test, A;
 
 SET max_partitions_per_insert_block = 1;
 INSERT INTO test SELECT 'case1', number%3, 1 FROM numbers(9); -- { serverError 252 }
