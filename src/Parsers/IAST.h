@@ -323,7 +323,7 @@ public:
         void writeIndent(int extra_indent = 0) const;
 
         bool isOneLine() const;
-        bool shouldShowSecrets() const;  // todo rename
+        bool shouldShowSecrets() const;
 
         bool needParens() const;
         bool getExpressionListAlwaysStartsOnNewLine() const;
