@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/COW.h>
-#include <Core/Types.h>
+#include <Core/Types_fwd.h>
 #include <base/demangle.h>
 #include <Common/typeid_cast.h>
 #include <Columns/IColumn.h>
