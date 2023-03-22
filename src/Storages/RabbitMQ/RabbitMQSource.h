@@ -27,12 +27,13 @@ public:
 
     Chunk generate() override;
 
-    bool queueEmpty() const { return !consumer || consumer->hasPendingMessages(); }
+    bool queueEmpty() const { return !consumer || consumer->queueEmpty(); }
     bool needChannelUpdate();
     void updateChannel();
     bool sendAck();
 
-    void setTimeLimit(uint64_t max_execution_time_ms_) { max_execution_time_ms = max_execution_time_ms_; }
+
+    void setTimeLimit(Poco::Timespan max_execution_time_) { max_execution_time = max_execution_time_; }
 
 private:
     StorageRabbitMQ & storage;
@@ -46,13 +47,12 @@ private:
     const Block non_virtual_header;
     const Block virtual_header;
 
-    Poco::Logger * log;
     RabbitMQConsumerPtr consumer;
 
-    uint64_t max_execution_time_ms = 0;
+    Poco::Timespan max_execution_time = 0;
     Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};
 
-    bool isTimeLimitExceeded() const;
+    bool checkTimeLimit() const;
 
     RabbitMQSource(
         StorageRabbitMQ & storage_,

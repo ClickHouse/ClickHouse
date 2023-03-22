@@ -57,7 +57,6 @@ namespace
     if (_is_clients_log || _logger->is((PRIORITY)))                               \
     {                                                                             \
         std::string formatted_message = numArgs(__VA_ARGS__) > 1 ? fmt::format(__VA_ARGS__) : firstArg(__VA_ARGS__); \
-        formatStringCheckArgsNum(__VA_ARGS__);                                    \
         if (auto _channel = _logger->getChannel())                                \
         {                                                                         \
             std::string file_function;                                            \

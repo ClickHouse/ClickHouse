@@ -202,9 +202,4 @@ Strings BackupCoordinationLocal::getAllArchiveSuffixes() const
     return archive_suffixes;
 }
 
-bool BackupCoordinationLocal::hasConcurrentBackups(const std::atomic<size_t> & num_active_backups) const
-{
-    return (num_active_backups > 1);
-}
-
 }

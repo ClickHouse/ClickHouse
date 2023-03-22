@@ -225,13 +225,6 @@ public:
     {
         return server->requestLeader();
     }
-
-    void recalculateStorageStats()
-    {
-        return server->recalculateStorageStats();
-    }
-
-    static void cleanResources();
 };
 
 }

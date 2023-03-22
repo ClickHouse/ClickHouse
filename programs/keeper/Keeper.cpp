@@ -196,7 +196,7 @@ void Keeper::createServer(const std::string & listen_host, const char * port_nam
         }
         else
         {
-            throw Exception::createDeprecated(message, ErrorCodes::NETWORK_ERROR);
+            throw Exception{message, ErrorCodes::NETWORK_ERROR};
         }
     }
 }
@@ -376,7 +376,7 @@ try
         if (effective_user_id == 0)
         {
             message += " Run under 'sudo -u " + data_owner + "'.";
-            throw Exception::createDeprecated(message, ErrorCodes::MISMATCHING_USERS_FOR_PROCESS_AND_DATA);
+            throw Exception(message, ErrorCodes::MISMATCHING_USERS_FOR_PROCESS_AND_DATA);
         }
         else
         {

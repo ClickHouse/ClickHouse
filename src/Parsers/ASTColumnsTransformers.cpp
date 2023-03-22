@@ -273,8 +273,9 @@ void ASTColumnsExceptTransformer::setPattern(String pattern)
     original_pattern = std::move(pattern);
     column_matcher = std::make_shared<RE2>(original_pattern, RE2::Quiet);
     if (!column_matcher->ok())
-        throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP, "COLUMNS pattern {} cannot be compiled: {}",
-            original_pattern, column_matcher->error());
+        throw DB::Exception(
+            "COLUMNS pattern " + original_pattern + " cannot be compiled: " + column_matcher->error(),
+            DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
 }
 
 const std::shared_ptr<re2::RE2> & ASTColumnsExceptTransformer::getMatcher() const
@@ -290,28 +291,22 @@ bool ASTColumnsExceptTransformer::isColumnMatching(const String & column_name) c
 void ASTColumnsReplaceTransformer::Replacement::formatImpl(
     const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    assert(children.size() == 1);
-
-    children[0]->formatImpl(settings, state, frame);
+    expr->formatImpl(settings, state, frame);
     settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(name);
 }
 
 void ASTColumnsReplaceTransformer::Replacement::appendColumnName(WriteBuffer & ostr) const
 {
-    assert(children.size() == 1);
-
-    children[0]->appendColumnName(ostr);
+    expr->appendColumnName(ostr);
     writeCString(" AS ", ostr);
     writeProbablyBackQuotedString(name, ostr);
 }
 
 void ASTColumnsReplaceTransformer::Replacement::updateTreeHashImpl(SipHash & hash_state) const
 {
-    assert(children.size() == 1);
-
     hash_state.update(name.size());
     hash_state.update(name);
-    children[0]->updateTreeHashImpl(hash_state);
+    expr->updateTreeHashImpl(hash_state);
     IAST::updateTreeHashImpl(hash_state);
 }
 
@@ -383,7 +378,7 @@ void ASTColumnsReplaceTransformer::transform(ASTs & nodes) const
         if (replace_map.find(replacement.name) != replace_map.end())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                             "Expressions in columns transformer REPLACE should not contain the same replacement more than once");
-        replace_map.emplace(replacement.name, replacement.children[0]);
+        replace_map.emplace(replacement.name, replacement.expr);
     }
 
     for (auto & column : nodes)

@@ -4,33 +4,16 @@
 #include <Backups/BackupCoordinationReplicatedAccess.h>
 #include <Backups/BackupCoordinationReplicatedTables.h>
 #include <Backups/BackupCoordinationStageSync.h>
-#include <Storages/MergeTree/ZooKeeperRetries.h>
 
 
 namespace DB
 {
 
-/// We try to store data to zookeeper several times due to possible version conflicts.
-constexpr size_t MAX_ZOOKEEPER_ATTEMPTS = 10;
-
 /// Implementation of the IBackupCoordination interface performing coordination via ZooKeeper. It's necessary for "BACKUP ON CLUSTER".
 class BackupCoordinationRemote : public IBackupCoordination
 {
 public:
-    struct BackupKeeperSettings
-    {
-        UInt64 keeper_max_retries;
-        UInt64 keeper_retry_initial_backoff_ms;
-        UInt64 keeper_retry_max_backoff_ms;
-        UInt64 batch_size_for_keeper_multiread;
-    };
-
-    BackupCoordinationRemote(
-        const BackupKeeperSettings & keeper_settings_,
-        const String & root_zookeeper_path_,
-        const String & backup_uuid_,
-        zkutil::GetZooKeeper get_zookeeper_,
-        bool is_internal_);
+    BackupCoordinationRemote(const String & zookeeper_path_, zkutil::GetZooKeeper get_zookeeper_, bool remove_zk_nodes_in_destructor_);
     ~BackupCoordinationRemote() override;
 
     void setStage(const String & current_host, const String & new_stage, const String & message) override;
@@ -72,8 +55,6 @@ public:
     String getNextArchiveSuffix() override;
     Strings getAllArchiveSuffixes() const override;
 
-    bool hasConcurrentBackups(const std::atomic<size_t> & num_active_backups) const override;
-
 private:
     zkutil::ZooKeeperPtr getZooKeeper() const;
     zkutil::ZooKeeperPtr getZooKeeperNoLock() const;
@@ -82,14 +63,10 @@ private:
     void prepareReplicatedTables() const;
     void prepareReplicatedAccess() const;
 
-    const BackupKeeperSettings keeper_settings;
-    const String root_zookeeper_path;
     const String zookeeper_path;
-    const String backup_uuid;
     const zkutil::GetZooKeeper get_zookeeper;
-    const bool is_internal;
+    const bool remove_zk_nodes_in_destructor;
 
-    mutable ZooKeeperRetriesInfo zookeeper_retries_info;
     std::optional<BackupCoordinationStageSync> stage_sync;
 
     mutable std::mutex mutex;

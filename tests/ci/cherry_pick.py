@@ -52,7 +52,7 @@ class Labels:
 
 
 class ReleaseBranch:
-    CHERRYPICK_DESCRIPTION = f"""This pull-request is a first step of an automated \
+    CHERRYPICK_DESCRIPTION = """This pull-request is a first step of an automated \
     backporting.
 It contains changes like after calling a local command `git cherry-pick`.
 If you intend to continue backporting this changes, then resolve all conflicts if any.
@@ -60,16 +60,13 @@ Otherwise, if you do not want to backport them, then just close this pull-reques
 
 The check results does not matter at this step - you can safely ignore them.
 Also this pull-request will be merged automatically as it reaches the mergeable state, \
-**do not merge it manually**.
-
-If it stuck, check the original PR for `{Labels.BACKPORTS_CREATED}` and delete it if \
-necessary.
+    but you always can merge it manually.
 """
     BACKPORT_DESCRIPTION = """This pull-request is a last step of an automated \
 backporting.
 Treat it as a standard pull-request: look at the checks and resolve conflicts.
 Merge it only if you intend to backport changes to the target branch, otherwise just \
-close it.
+    close it.
 """
     REMOTE = ""
 
@@ -211,8 +208,6 @@ close it.
         self.cherrypick_pr.add_to_labels(Labels.CHERRYPICK)
         self.cherrypick_pr.add_to_labels(Labels.DO_NOT_TEST)
         self._assign_new_pr(self.cherrypick_pr)
-        # update cherrypick PR to get the state for PR.mergable
-        self.cherrypick_pr.update()
 
     def create_backport(self):
         assert self.cherrypick_pr is not None
@@ -228,7 +223,7 @@ close it.
         )
         git_runner(f"{self.git_prefix} reset --soft {merge_base}")
         title = f"Backport #{self.pr.number} to {self.name}: {self.pr.title}"
-        git_runner(f"{self.git_prefix} commit --allow-empty -F -", input=title)
+        git_runner(f"{self.git_prefix} commit -a --allow-empty -F -", input=title)
 
         # Push with force, create the backport PR, lable and assign it
         git_runner(
@@ -314,21 +309,6 @@ class Backport:
             f"v{branch}-must-backport" for branch in self.release_branches
         ]
         logging.info("Active releases: %s", ", ".join(self.release_branches))
-
-    def update_local_release_branches(self):
-        logging.info("Update local release branches")
-        branches = git_runner("git branch").split()
-        for branch in self.release_branches:
-            if branch not in branches:
-                # the local branch is not exist, so continue
-                continue
-            local_ref = git_runner(f"git rev-parse {branch}")
-            remote_ref = git_runner(f"git rev-parse {self.remote}/{branch}")
-            if local_ref == remote_ref:
-                # Do not need to update, continue
-                continue
-            logging.info("Resetting %s to %s/%s", branch, self.remote, branch)
-            git_runner(f"git branch -f {branch} {self.remote}/{branch}")
 
     def receive_prs_for_backport(self):
         # The commits in the oldest open release branch
@@ -485,8 +465,7 @@ def clear_repo():
 
 @contextmanager
 def stash():
-    # diff.ignoreSubmodules=all don't show changed submodules
-    need_stash = bool(git_runner("git -c diff.ignoreSubmodules=all diff HEAD"))
+    need_stash = bool(git_runner("git diff HEAD"))
     if need_stash:
         git_runner("git stash push --no-keep-index -m 'running cherry_pick.py'")
     try:
@@ -511,12 +490,11 @@ def main():
         logging.getLogger("git_helper").setLevel(logging.DEBUG)
     token = args.token or get_best_robot_token()
 
-    gh = GitHub(token, create_cache_dir=False)
+    gh = GitHub(token, create_cache_dir=False, per_page=100)
     bp = Backport(gh, args.repo, args.dry_run)
     # https://github.com/python/mypy/issues/3004
     bp.gh.cache_path = f"{TEMP_PATH}/gh_cache"  # type: ignore
     bp.receive_release_prs()
-    bp.update_local_release_branches()
     bp.receive_prs_for_backport()
     bp.process_backports()
     if bp.error is not None:

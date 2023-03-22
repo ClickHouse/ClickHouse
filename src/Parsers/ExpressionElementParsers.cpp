@@ -1474,7 +1474,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         auto opos = pos;
         if (ParserExpression().parse(pos, lambda, expected))
         {
-            if (auto * func = lambda->as<ASTFunction>(); func && func->name == "lambda")
+            if (const auto * func = lambda->as<ASTFunction>(); func && func->name == "lambda")
             {
                 if (func->arguments->children.size() != 2)
                     throw Exception(ErrorCodes::SYNTAX_ERROR, "lambda requires two arguments");
@@ -1491,8 +1491,6 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
                     lambda_arg = *opt_arg_name;
                 else
                     throw Exception(ErrorCodes::SYNTAX_ERROR, "lambda argument declarations must be identifiers");
-
-                func->is_lambda_function = true;
             }
             else
             {
@@ -1621,7 +1619,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
             auto replacement = std::make_shared<ASTColumnsReplaceTransformer::Replacement>();
             replacement->name = getIdentifierName(ident);
-            replacement->children.push_back(std::move(expr));
+            replacement->expr = std::move(expr);
             replacements.emplace_back(std::move(replacement));
             return true;
         };

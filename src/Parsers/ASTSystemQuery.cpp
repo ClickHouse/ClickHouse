@@ -206,10 +206,6 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     {
         settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(backup_name);
     }
-    else if (type == Type::SYNC_FILE_CACHE)
-    {
-        settings.ostr << (settings.hilite ? hilite_none : "");
-    }
 }
 
 
