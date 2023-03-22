@@ -553,6 +553,12 @@ struct DeserializeBinaryBulkStateMap : public ISerialization::DeserializeBinaryB
 {
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> states;
     std::vector<ColumnPtr> cached_shards;
+
+    void resetCachedShards()
+    {
+        for (auto & shard : cached_shards)
+            shard.reset();
+    }
 };
 
 template <typename Settings, Fn<void(size_t)> Func>
@@ -744,6 +750,8 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
     std::vector<ColumnPtr> shard_values(num_shards);
 
     auto * map_state = checkAndGetState<DeserializeBinaryBulkStateMap>(state);
+    if (column_map.empty())
+        map_state->resetCachedShards();
 
     applyForShards(num_shards, settings, [&](size_t i)
     {
@@ -877,6 +885,8 @@ void SerializationMapKeysValues::deserializeBinaryBulkWithMultipleStreams(
 {
     std::vector<ColumnPtr> shards(num_shards);
     auto * map_state = checkAndGetState<DeserializeBinaryBulkStateMap>(state);
+    if (column->empty())
+        map_state->resetCachedShards();
 
     applyForShards(num_shards, settings, [&](size_t i)
     {
@@ -914,6 +924,8 @@ void SerializationMapSize::deserializeBinaryBulkWithMultipleStreams(
     SubstreamsCache * cache) const
 {
     auto * map_state = checkAndGetState<DeserializeBinaryBulkStateMap>(state);
+    if (column->empty())
+        map_state->resetCachedShards();
 
     auto mutable_column = column->assumeMutable();
     auto & result_vector = assert_cast<ColumnUInt64 &>(*mutable_column).getData();

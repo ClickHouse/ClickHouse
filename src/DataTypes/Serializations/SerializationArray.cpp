@@ -359,7 +359,8 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
         else
             SerializationNumber<ColumnArray::Offset>().deserializeBinaryBulk(column_array.getOffsetsColumn(), *stream, limit, 0);
 
-        addToSubstreamsCache(cache, settings.path, arrayOffsetsToSizes(column_array.getOffsetsColumn()));
+        if (cache)
+            addToSubstreamsCache(cache, settings.path, arrayOffsetsToSizes(column_array.getOffsetsColumn()));
     }
 
     settings.path.back() = Substream::ArrayElements;
