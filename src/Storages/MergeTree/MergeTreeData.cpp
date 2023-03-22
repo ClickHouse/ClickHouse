@@ -6193,15 +6193,14 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     const DataPartsVector & parts,
     DataPartsVector & normal_parts,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
-    ContextPtr query_context,
-    Block * sample_block) const
+    ContextPtr query_context) const
 {
     if (!metadata_snapshot->minmax_count_projection)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Cannot find the definition of minmax_count projection but it's used in current query. "
                         "It's a bug");
 
-    auto block = sample_block ? *sample_block : metadata_snapshot->minmax_count_projection->sample_block.cloneEmpty();
+    auto block = metadata_snapshot->minmax_count_projection->sample_block.cloneEmpty();
     bool need_primary_key_max_column = false;
     const auto & primary_key_max_column_name = metadata_snapshot->minmax_count_projection->primary_key_max_column_name;
     NameSet required_columns_set(required_columns.begin(), required_columns.end());
