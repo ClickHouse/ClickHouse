@@ -915,8 +915,9 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     if (auto * with_union = typeid_cast<ASTSelectWithUnionQuery *>(ast.get()))
     {
         fuzz(with_union->list_of_selects);
-        /// Fuzzing SELECT query to EXPLAIN query randomly
-        if (fuzz_rand() % 20 == 0)
+        /// Fuzzing SELECT query to EXPLAIN query randomly.
+        /// And we only fuzzing the root query into an EXPLAIN query, not fuzzing subquery
+        if (fuzz_rand() % 20 == 0 && current_ast_depth <= 1)
         {
             auto explain = std::make_shared<ASTExplainQuery>(fuzzExplainKind());
 
