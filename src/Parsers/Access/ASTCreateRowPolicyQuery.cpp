@@ -168,15 +168,15 @@ void ASTCreateRowPolicyQuery::formatImpl(FormattingBuffer out) const
     assert(names->cluster.empty());
 
     if (!new_short_name.empty())
-        formatRenameTo(new_short_name, out.copy());
+        formatRenameTo(new_short_name, out);
 
     if (is_restrictive)
-        formatAsRestrictiveOrPermissive(*is_restrictive, out.copy());
+        formatAsRestrictiveOrPermissive(*is_restrictive, out);
 
-    formatForClauses(filters, alter, out.copy());
+    formatForClauses(filters, alter, out);
 
     if (roles && (!roles->empty() || alter))
-        formatToRoles(*roles, out.copy());
+        formatToRoles(*roles, out);
 }
 
 

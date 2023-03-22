@@ -38,14 +38,14 @@ void ASTShowTablesQuery::formatQueryImpl(FormattingBuffer out) const
     if (databases)
     {
         out.writeKeyword("SHOW DATABASES");
-        formatLike(out.copy());
+        formatLike(out);
         formatLimit(out);
 
     }
     else if (clusters)
     {
         out.writeKeyword("SHOW CLUSTERS");
-        formatLike(out.copy());
+        formatLike(out);
         formatLimit(out);
 
     }
@@ -57,7 +57,7 @@ void ASTShowTablesQuery::formatQueryImpl(FormattingBuffer out) const
     else if (caches)
     {
         out.writeKeyword("SHOW FILESYSTEM CACHES");
-        formatLike(out.copy());
+        formatLike(out);
         formatLimit(out);
     }
     else if (m_settings)
@@ -65,7 +65,7 @@ void ASTShowTablesQuery::formatQueryImpl(FormattingBuffer out) const
         out.writeKeyword("SHOW ");
         out.writeKeyword(changed ? "CHANGED " : "");
         out.writeKeyword("SETTINGS");
-        formatLike(out.copy());
+        formatLike(out);
     }
     else
     {
@@ -79,7 +79,7 @@ void ASTShowTablesQuery::formatQueryImpl(FormattingBuffer out) const
             out.ostr << backQuoteIfNeed(from);
         }
 
-        formatLike(out.copy());
+        formatLike(out);
 
         if (where_expression)
         {

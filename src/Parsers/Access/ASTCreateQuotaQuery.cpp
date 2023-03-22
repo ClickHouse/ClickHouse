@@ -164,19 +164,19 @@ void ASTCreateQuotaQuery::formatImpl(FormattingBuffer out) const
     else if (or_replace)
         out.writeKeyword(" OR REPLACE");
 
-    formatNames(names, out.copy());
-    formatOnCluster(out.copy());
+    formatNames(names, out);
+    formatOnCluster(out);
 
     if (!new_name.empty())
-        formatRenameTo(new_name, out.copy());
+        formatRenameTo(new_name, out);
 
     if (key_type)
-        formatKeyType(*key_type, out.copy());
+        formatKeyType(*key_type, out);
 
-    formatIntervalsWithLimits(all_limits, out.copy());
+    formatIntervalsWithLimits(all_limits, out);
 
     if (roles && (!roles->empty() || alter))
-        formatToRoles(*roles, out.copy());
+        formatToRoles(*roles, out);
 }
 
 

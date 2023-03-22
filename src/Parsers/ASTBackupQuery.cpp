@@ -24,7 +24,7 @@ namespace
             if (std::exchange(need_comma, true))
                 out.ostr << ",";
             out.ostr << " ";
-            partition->format(out.copy());
+            partition->format(out);
         }
     }
 
@@ -86,7 +86,7 @@ namespace
                 }
 
                 if (element.partitions)
-                    formatPartitions(*element.partitions, out.copy());
+                    formatPartitions(*element.partitions, out);
                 break;
             }
 
@@ -114,15 +114,15 @@ namespace
                     out.ostr << backQuoteIfNeed(element.new_database_name);
                 }
 
-                formatExceptTables(element.except_tables, out.copy());
+                formatExceptTables(element.except_tables, out);
                 break;
             }
 
             case ElementType::ALL:
             {
                 out.writeKeyword("ALL");
-                formatExceptDatabases(element.except_databases, out.copy());
-                formatExceptTables(element.except_tables, out.copy());
+                formatExceptDatabases(element.except_databases, out);
+                formatExceptTables(element.except_tables, out);
                 break;
             }
         }
@@ -135,7 +135,7 @@ namespace
         {
             if (std::exchange(need_comma, true))
                 out.ostr << ", ";
-            formatElement(element, out.copy());
+            formatElement(element, out);
         }
     }
 
@@ -150,7 +150,7 @@ namespace
         if (base_backup_name)
         {
             out.ostr << "base_backup = ";
-            base_backup_name->format(out.copy());
+            base_backup_name->format(out);
             empty = false;
         }
 
@@ -158,7 +158,7 @@ namespace
         {
             if (!empty)
                 out.ostr << ", ";
-            settings->format(out.copy());
+            settings->format(out);
             empty = false;
         }
 
@@ -167,7 +167,7 @@ namespace
             if (!empty)
                 out.ostr << ", ";
             out.ostr << "cluster_host_ids = ";
-            cluster_host_ids->format(out.copy());
+            cluster_host_ids->format(out);
         }
     }
 
@@ -266,14 +266,14 @@ void ASTBackupQuery::formatImpl(FormattingBuffer out) const
 {
     out.writeKeyword((kind == Kind::BACKUP) ? "BACKUP " : "RESTORE ");
 
-    formatElements(elements, out.copy());
+    formatElements(elements, out);
     formatOnCluster(out);
 
     out.writeKeyword((kind == Kind::BACKUP) ? " TO " : " FROM ");
     backup_name->format(out);
 
     if (settings || base_backup_name)
-        formatSettings(settings, base_backup_name, cluster_host_ids, out.copy());
+        formatSettings(settings, base_backup_name, cluster_host_ids, out);
 }
 
 ASTPtr ASTBackupQuery::getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const

@@ -376,7 +376,7 @@ void ASTCreateQuery::formatQueryImpl(FormattingBuffer out) const
             out.setExpressionListAlwaysStartsOnNewLine();
             out.nlOrWs();
             out.ostr << "(";
-            columns_list->formatImpl(out.copy());
+            columns_list->formatImpl(out);
             out.nlOrNothing();
             out.ostr << ")";
             out.setExpressionListAlwaysStartsOnNewLine(false);
@@ -392,7 +392,7 @@ void ASTCreateQuery::formatQueryImpl(FormattingBuffer out) const
     {
         out.nlOrWs();
         out.ostr << "(";
-        columns_list->formatImpl(out.copy());
+        columns_list->formatImpl(out);
         out.nlOrNothing();
         out.ostr << ")";
     }
@@ -401,8 +401,8 @@ void ASTCreateQuery::formatQueryImpl(FormattingBuffer out) const
     {
         out.nlOrWs();
         out.ostr << "(";
-        out.isOneLine() ? dictionary_attributes_list->formatImpl(out.copy())
-                        : dictionary_attributes_list->formatImplMultiline(out.copy());
+        out.isOneLine() ? dictionary_attributes_list->formatImpl(out)
+                        : dictionary_attributes_list->formatImplMultiline(out);
         out.nlOrNothing();
         out.ostr << ")";
     }

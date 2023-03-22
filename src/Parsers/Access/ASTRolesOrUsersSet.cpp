@@ -43,7 +43,7 @@ void ASTRolesOrUsersSet::formatImpl(FormattingBuffer out) const
         {
             if (std::exchange(need_comma, true))
                 out.ostr << ", ";
-            formatNameOrID(name, id_mode, out.copy());
+            formatNameOrID(name, id_mode, out);
         }
 
         if (current_user)
@@ -63,7 +63,7 @@ void ASTRolesOrUsersSet::formatImpl(FormattingBuffer out) const
         {
             if (std::exchange(need_comma, true))
                 out.ostr << ", ";
-            formatNameOrID(name, id_mode, out.copy());
+            formatNameOrID(name, id_mode, out);
         }
 
         if (except_current_user)

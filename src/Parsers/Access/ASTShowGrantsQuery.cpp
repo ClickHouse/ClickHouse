@@ -33,7 +33,7 @@ void ASTShowGrantsQuery::formatQueryImpl(FormattingBuffer out) const
     else
     {
         out.writeKeyword(" FOR ");
-        for_roles->format(out.copy());
+        for_roles->format(out);
     }
 }
 }

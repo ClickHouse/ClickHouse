@@ -95,7 +95,7 @@ void ASTSettingsProfileElements::formatImpl(FormattingBuffer out) const
             out.ostr << ", ";
         need_comma = true;
 
-        element->format(out.copy());
+        element->format(out);
     }
 }
 

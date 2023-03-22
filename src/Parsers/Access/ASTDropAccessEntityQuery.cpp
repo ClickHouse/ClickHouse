@@ -50,7 +50,7 @@ void ASTDropAccessEntityQuery::formatImpl(FormattingBuffer out) const
         row_policy_names->format(out);
     }
     else
-        formatNames(names, out.copy());
+        formatNames(names, out);
 
     formatOnCluster(out);
 }

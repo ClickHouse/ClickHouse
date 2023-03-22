@@ -321,29 +321,29 @@ void ASTCreateUserQuery::formatImpl(FormattingBuffer out) const
     formatOnCluster(out);
 
     if (new_name)
-        formatRenameTo(*new_name, out.copy());
+        formatRenameTo(*new_name, out);
 
     if (auth_data)
-        formatAuthenticationData(*auth_data, out.copy());
+        formatAuthenticationData(*auth_data, out);
 
     if (hosts)
-        formatHosts(nullptr, *hosts, out.copy());
+        formatHosts(nullptr, *hosts, out);
     if (add_hosts)
-        formatHosts("ADD", *add_hosts, out.copy());
+        formatHosts("ADD", *add_hosts, out);
     if (remove_hosts)
-        formatHosts("DROP", *remove_hosts, out.copy());
+        formatHosts("DROP", *remove_hosts, out);
 
     if (default_database)
-        formatDefaultDatabase(*default_database, out.copy());
+        formatDefaultDatabase(*default_database, out);
 
     if (default_roles)
-        formatDefaultRoles(*default_roles, out.copy());
+        formatDefaultRoles(*default_roles, out);
 
     if (settings && (!settings->empty() || alter))
-        formatSettings(*settings, out.copy());
+        formatSettings(*settings, out);
 
     if (grantees)
-        formatGrantees(*grantees, out.copy());
+        formatGrantees(*grantees, out);
 }
 
 bool ASTCreateUserQuery::hasSecretParts() const

@@ -53,12 +53,12 @@ void ASTShowCreateAccessEntityQuery::formatQueryImpl(FormattingBuffer out) const
     out.writeKeyword(getKeyword());
 
     if (!names.empty())
-        formatNames(names, out.copy());
+        formatNames(names, out);
 
     if (row_policy_names)
     {
         out.ostr << " ";
-        row_policy_names->format(out.copy());
+        row_policy_names->format(out);
     }
 
     if (!short_name.empty())

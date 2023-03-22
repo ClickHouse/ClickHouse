@@ -63,7 +63,7 @@ namespace
 
                 out.writeKeyword(keyword);
                 if (!element.any_column)
-                    formatColumnNames(element.columns, out.copy());
+                    formatColumnNames(element.columns, out);
             }
 
             bool next_element_on_same_db_and_table = false;
@@ -78,7 +78,7 @@ namespace
             if (!next_element_on_same_db_and_table)
             {
                 out.ostr << " ";
-                formatONClause(element.database, element.any_database, element.table, element.any_table, out.copy());
+                formatONClause(element.database, element.any_database, element.table, element.any_table, out);
             }
         }
 
@@ -123,7 +123,7 @@ void ASTGrantQuery::formatImpl(FormattingBuffer out) const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A partial revoke should be revoked, not granted");
     bool grant_option = !access_rights_elements.empty() && access_rights_elements[0].grant_option;
 
-    formatOnCluster(out.copy());
+    formatOnCluster(out);
 
     if (is_revoke)
     {
@@ -136,17 +136,17 @@ void ASTGrantQuery::formatImpl(FormattingBuffer out) const
     out.ostr << " ";
     if (roles)
     {
-        roles->format(out.copy());
+        roles->format(out);
         if (!access_rights_elements.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "ASTGrantQuery can contain either roles or access rights elements "
                             "to grant or revoke, not both of them");
     }
     else
-        formatElementsWithoutOptions(access_rights_elements, out.copy());
+        formatElementsWithoutOptions(access_rights_elements, out);
 
     out.writeKeyword(is_revoke ? " FROM " : " TO ");
-    grantees->format(out.copy());
+    grantees->format(out);
 
     if (!is_revoke)
     {
