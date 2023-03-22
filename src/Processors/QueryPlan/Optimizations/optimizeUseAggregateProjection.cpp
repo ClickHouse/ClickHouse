@@ -45,52 +45,10 @@ struct AggregateProjectionInfo
     Names keys;
     AggregateDescriptions aggregates;
 
-    /// This field is needed for getSampleBlock only.
-    size_t num_virtual_keys = 0;
-
     /// A context copy from interpreter which was used for analysis.
     /// Just in case it is used by some function.
     ContextPtr context;
-
-    /// This is a sample block which we expect before aggregation.
-    /// Now, it is needed only for minmax_count projection.
-    Block getSampleBlock()
-    {
-        auto index = buildDAGIndex(*before_aggregation);
-        Block res;
-        size_t num_keys = keys.size() - num_virtual_keys;
-        for (size_t i = 0; i < num_keys; ++i)
-        {
-            const auto & key = keys[i];
-            const ActionsDAG::Node & node = *index.at(key);
-            res.insert({node.result_type->createColumn(), node.result_type, node.result_name});
-        }
-
-        for (const auto & aggregate : aggregates)
-        {
-            size_t arguments_size = aggregate.argument_names.size();
-            DataTypes argument_types(arguments_size);
-            for (size_t j = 0; j < arguments_size; ++j)
-                argument_types[j] = index.at(aggregate.argument_names[j])->result_type;
-
-            auto type = std::make_shared<DataTypeAggregateFunction>(aggregate.function, argument_types, aggregate.parameters);
-
-            res.insert({ type->createColumn(), type, aggregate.column_name });
-        }
-
-        return res;
-    }
 };
-
-/// This is a projection-specific.
-/// We can expect specific query tree structure for projection query.
-static void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr & context, const StoragePtr & storage)
-{
-    auto replacement = std::make_shared<TableNode>(storage, context);
-    auto & query_node = query_tree->as<QueryNode &>();
-    auto & join_tree = query_node.getJoinTree();
-    query_tree = query_tree->cloneAndReplace(join_tree, std::move(replacement));
-}
 
 /// Get required info from aggregate projection.
 /// Ideally, this should be pre-calculated and stored inside ProjectionDescription.
@@ -100,50 +58,34 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
     const StorageMetadataPtr & metadata_snapshot,
     const Block & key_virtual_columns)
 {
-    // LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Projection query : {}", queryToString(projection.query_ast));
+    /// This is a bad approach.
+    /// We'd better have a separate interpreter for projections.
+    /// Now it's not obvious we didn't miss anything here.
+    InterpreterSelectQuery interpreter(
+        projection.query_ast,
+        context,
+        Pipe(std::make_shared<SourceFromSingleChunk>(metadata_snapshot->getSampleBlock())),
+        SelectQueryOptions{QueryProcessingStage::WithMergeableState});
 
-    /// This is a query tree from projection query.
-    /// This query does not contain source table, so it is not valid.
-    auto query_tree = buildQueryTree(projection.query_ast, context);
-    // LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "QueryTree : {}", query_tree->dumpTree());
+    const auto & analysis_result = interpreter.getAnalysisResult();
+    const auto & query_analyzer = interpreter.getQueryAnalyzer();
 
-    /// Replace a storage so that query tree become valid and possilbe to analyze.
-    auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, metadata_snapshot->getColumns());
-    replaceStorageInQueryTree(query_tree, context, storage);
-    // LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "QueryTree : {}", query_tree->dumpTree());
-
-    /// Aggregated copy-paste from InterpreterSelectQueryAnalyzer.
-    QueryTreePassManager query_tree_pass_manager(context);
-    addQueryTreePasses(query_tree_pass_manager);
-    query_tree_pass_manager.run(query_tree);
-
-    auto columns = metadata_snapshot->getSampleBlock().getColumnsWithTypeAndName();
-    auto mutable_context = Context::createCopy(context);
-    auto global_planner_context = std::make_shared<GlobalPlannerContext>();
-    auto planner_context = std::make_shared<PlannerContext>(mutable_context, std::move(global_planner_context));
-    PlannerQueryProcessingInfo info(QueryProcessingStage::FetchColumns, QueryProcessingStage::WithMergeableState);
-
-    auto analysis_result = buildExpressionAnalysisResult(query_tree, columns, planner_context, info);
-
-    const auto & aggregation = analysis_result.getAggregation();
-
-    AggregateProjectionInfo proj_info;
-    proj_info.context = planner_context->getQueryContext();
-    proj_info.before_aggregation = aggregation.before_aggregation_actions;
-    proj_info.keys = aggregation.aggregation_keys;
-    proj_info.aggregates = aggregation.aggregate_descriptions;
-    proj_info.num_virtual_keys = key_virtual_columns.columns();
+    AggregateProjectionInfo info;
+    info.context = interpreter.getContext();
+    info.before_aggregation = analysis_result.before_aggregation;
+    info.keys = query_analyzer->aggregationKeys().getNames();
+    info.aggregates = query_analyzer->aggregates();
 
     /// Add part/partition virtual columns to projection aggregation keys.
     /// We can do it because projection is stored for every part separately.
     for (const auto & virt_column : key_virtual_columns)
     {
-        const auto * input = &proj_info.before_aggregation->addInput(virt_column);
-        proj_info.before_aggregation->getOutputs().push_back(input);
-        proj_info.keys.push_back(virt_column.name);
+        const auto * input = &info.before_aggregation->addInput(virt_column);
+        info.before_aggregation->getOutputs().push_back(input);
+        info.keys.push_back(virt_column.name);
     }
 
-    return proj_info;
+    return info;
 }
 
 static bool hasNullableOrMissingColumn(const DAGIndex & index, const Names & names)
@@ -488,20 +430,9 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
         // LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Projection DAG {}", info.before_aggregation->dumpDAG());
         if (auto proj_dag = analyzeAggregateProjection(info, dag, keys, aggregates))
         {
-            LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Projection analyzed DAG {}", proj_dag->dumpDAG());
+            // LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Projection analyzed DAG {}", proj_dag->dumpDAG());
             AggregateProjectionCandidate candidate{.info = std::move(info), .dag = std::move(proj_dag)};
             MergeTreeData::DataPartsVector minmax_projection_normal_parts;
-
-            /// Why do we need this sample block?
-            /// Currently, we are using InterpreterSelectQuery in order to analyze minmax_count projection.
-            /// This is gives different columns names after aggregation than InterpreterSelectAnalyzerQuery.
-            ///
-            /// It would be good to use InterpreterSelectAnalyzerQuery to analyze projection as well.
-            /// Now I can't do it cause it will breake old projection analysis which should be kept for some time.
-            ///
-            /// So, here we re-calculate the sample block the way it should be in a new analyzer.
-            /// Hopefully the column order is the same.
-            auto sample_block = candidate.info.getSampleBlock();
 
             // LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Projection sample block {}", sample_block.dumpStructure());
             auto block = reading.getMergeTreeData().getMinMaxCountProjectionBlock(
@@ -512,8 +443,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
                 parts,
                 minmax_projection_normal_parts,
                 max_added_blocks.get(),
-                context,
-                &sample_block);
+                context);
 
             // LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Projection sample block 2 {}", block.dumpStructure());
 
@@ -534,12 +464,12 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
         candidates.real.reserve(agg_projections.size());
         for (const auto * projection : agg_projections)
         {
-            // LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Try projection {}", projection->name);
+            LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Try projection {}", projection->name);
             auto info = getAggregatingProjectionInfo(*projection, context, metadata, key_virtual_columns);
-            // LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Projection DAG {}", info.before_aggregation->dumpDAG());
+            LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Projection DAG {}", info.before_aggregation->dumpDAG());
             if (auto proj_dag = analyzeAggregateProjection(info, dag, keys, aggregates))
             {
-                // LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Projection analyzed DAG {}", proj_dag->dumpDAG());
+                LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Projection analyzed DAG {}", proj_dag->dumpDAG());
                 AggregateProjectionCandidate candidate{.info = std::move(info), .dag = std::move(proj_dag)};
                 candidate.projection = projection;
                 candidates.real.emplace_back(std::move(candidate));
