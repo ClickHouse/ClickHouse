@@ -24,7 +24,8 @@ ASTPtr ASTTableOverride::clone() const
 
 void ASTTableOverride::formatImpl(FormattingBuffer out_) const
 {
-    FormattingBuffer out = out_.copyWithOneLine();
+    const FormatSettings settings(out_.copySettings(), true);
+    FormattingBuffer out = out_.copyWithNewSettings(settings);
 
     if (is_standalone)
     {
@@ -49,7 +50,7 @@ void ASTTableOverride::formatImpl(FormattingBuffer out_) const
         out.nlOrWs();
         out.writeIndent();
         out.ostr << "(";
-        columns->formatImpl(out.copyWithExpressionListAlwaysStartOnNewLine());
+        columns->formatImpl(out.copy().setExpressionListAlwaysStartsOnNewLine());
         out.nlOrNothing();
         out.writeIndent();
         out.ostr << ")";

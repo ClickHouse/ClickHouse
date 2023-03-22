@@ -14,7 +14,7 @@ ASTPtr ASTExpressionList::clone() const
 
 void ASTExpressionList::formatImpl(FormattingBuffer out) const
 {
-    if (frame.expression_list_prepend_whitespace)
+    if (out.getExpressionListPrependWhitespace())
         out.ostr << ' ';
 
     for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
@@ -26,29 +26,25 @@ void ASTExpressionList::formatImpl(FormattingBuffer out) const
             out.ostr << ' ';
         }
 
-        if (frame.surround_each_list_element_with_parens)
+        if (out.getSurroundEachListElementWithParens())
             out.ostr << "(";
 
-        FormatStateStacked frame_nested = frame;
-        frame_nested.surround_each_list_element_with_parens = false;
-        (*it)->formatImpl(out, state, frame_nested);
+        (*it)->formatImpl(out.copy().setSurroundEachListElementWithParens(false));
 
-        if (frame.surround_each_list_element_with_parens)
+        if (out.getSurroundEachListElementWithParens())
             out.ostr << ")";
     }
 }
 
 void ASTExpressionList::formatImplMultiline(FormattingBuffer out) const
 {
-    std::string indent_str = "\n" + std::string(4 * (frame.indent + 1), ' ');
-
-    if (frame.expression_list_prepend_whitespace)
+    if (out.getExpressionListPrependWhitespace())
     {
-        if (!(children.size() > 1 || frame.expression_list_always_start_on_new_line))
+        if (!(children.size() > 1 || out.getExpressionListAlwaysStartsOnNewLine()))
             out.ostr << ' ';
     }
 
-    ++frame.indent;
+    out.increaseIndent();
 
     for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
     {
@@ -58,19 +54,17 @@ void ASTExpressionList::formatImplMultiline(FormattingBuffer out) const
                 out.ostr << separator;
         }
 
-        if (children.size() > 1 || frame.expression_list_always_start_on_new_line)
-            out.ostr << indent_str;
+        if (children.size() > 1 || out.getExpressionListAlwaysStartsOnNewLine())
+            out.writeIndent();
 
-        FormatStateStacked frame_nested = frame;
-        frame_nested.expression_list_always_start_on_new_line = false;
-        frame_nested.surround_each_list_element_with_parens = false;
-
-        if (frame.surround_each_list_element_with_parens)
+        if (out.getSurroundEachListElementWithParens())
             out.ostr << "(";
 
-        (*it)->formatImpl(out, state, frame_nested);
+        (*it)->formatImpl(out.copy()
+                .setExpressionListAlwaysStartsOnNewLine(false)
+                .setSurroundEachListElementWithParens(false));
 
-        if (frame.surround_each_list_element_with_parens)
+        if (out.getSurroundEachListElementWithParens())
             out.ostr << ")";
     }
 }

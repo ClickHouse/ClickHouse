@@ -61,7 +61,7 @@ void ASTColumnsApplyTransformer::formatImpl(FormattingBuffer out) const
         if (parameters)
         {
             out.ostr << "(";
-            parameters->formatImpl(out.copyWithoutExpressionListPrependWhitespace());
+            parameters->formatImpl(out.copy().setExpressionListPrependWhitespace(false));
             out.ostr << ")";
         }
     }

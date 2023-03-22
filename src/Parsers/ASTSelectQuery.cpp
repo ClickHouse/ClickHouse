@@ -138,10 +138,13 @@ void ASTSelectQuery::formatImpl(FormattingBuffer out) const
         out.writeIndent(true);
         out.writeKeyword("GROUPING SETS");
         out.ostr << " (";
-        FormattingBuffer nested_out = out.copy(true, true, false);
+        FormattingBuffer out_copy = out.copy()
+                .setSurroundEachListElementWithParens()
+                .setExpressionListPrependWhitespace(false)
+                .increaseIndent();
         out.isOneLine()
-        ? groupBy()->formatImpl(nested_out)
-        : groupBy()->as<ASTExpressionList &>().formatImplMultiline(nested_out);
+        ? groupBy()->formatImpl(out_copy)
+        : groupBy()->as<ASTExpressionList &>().formatImplMultiline(out_copy);
         out.ostr << ")";
     }
 

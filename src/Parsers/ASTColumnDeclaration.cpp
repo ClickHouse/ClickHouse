@@ -63,7 +63,7 @@ void ASTColumnDeclaration::formatImpl(FormattingBuffer out) const
     if (type)
     {
         out.ostr << ' ';
-        type->formatImpl(out.copyWithIndent(0));
+        type->formatImpl(out.copy().setIndent(0));
     }
 
     if (null_modifier)

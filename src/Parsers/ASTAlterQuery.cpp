@@ -614,7 +614,7 @@ void ASTAlterQuery::formatQueryImpl(FormattingBuffer out) const
     formatOnCluster(out);
 
     static_cast<ASTExpressionList *>(command_list)->formatImplMultiline(
-        out.copyWithoutNeedParensAndWithExpressionListAlwaysStartOnNewLine());
+        out.copy().setNeedsParens(false).setExpressionListAlwaysStartsOnNewLine());
 }
 
 }

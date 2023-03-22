@@ -645,15 +645,15 @@ ASTSelectWithUnionQuery * ASTFunction::tryGetQueryArgument() const
 void ASTFunction::formatImplWithoutAlias(FormattingBuffer out) const
 {
     out.setExpressionListPrependWhitespace(false);
-    FormattingBuffer out_need_parens = out.copyWithNeedParens();
-    FormattingBuffer out_dont_need_parens = out.copyWithNeedParens(false);
+    FormattingBuffer out_need_parens = out.copy().setNeedsParens();
+    FormattingBuffer out_dont_need_parens = out.copy().setNeedsParens(false);
 
     if (auto * query = tryGetQueryArgument())
     {
         out.writeFunction(name);
         out.writeFunction("(");
         out.nlOrNothing();
-        query->formatImpl(out.copyWithoutNeedParensAndWithExtraIndent());
+        query->formatImpl(out.copy().setNeedsParens(false).increaseIndent());
         out.nlOrNothing();
         out.writeIndent();
         out.writeFunction(")");
@@ -916,15 +916,14 @@ void ASTFunction::formatImplWithoutAlias(FormattingBuffer out) const
                 out.writeFunction(name);
                 out.writeFunction("(");
                 out.nlOrNothing();
-                FormattingBuffer out_nested = out.copyWithNeedParensAndExtraIndent(2);
-                arguments->children[0]->formatImpl(out_nested);
+                FormattingBuffer out_copy = out.copy().setNeedsParens(false).increaseIndent(2);
+                arguments->children[0]->formatImpl(out_copy);
                 out.nlOrWs();
                 out.writeIndent(1);
                 out.writeKeyword("ELSE ");
                 out.nlOrNothing();
                 out.writeIndent(2);
-                // TODO(me): does it **need** to erase FormatStateStacked here? and does copy() erases it?
-                arguments->children[1]->formatImpl(out_nested.copy());
+                arguments->children[1]->formatImpl(out_copy);
                 out.nlOrNothing();
                 out.writeIndent();
                 out.writeKeyword(")");

@@ -202,15 +202,9 @@ public:
             : hilite(hilite_), one_line(one_line_), always_quote_identifiers(always_quote_identifiers_),
             identifier_quoting_style(identifier_quoting_style_), show_secrets(show_secrets_) {}
 
-//        FormatSettings(WriteBuffer & ostr_, const FormatSettings & other)
-//            : ostr(ostr_), one_line(other.one_line), always_quote_identifiers(other.always_quote_identifiers),
-//            identifier_quoting_style(other.identifier_quoting_style), hilite(other.hilite),
-//            should_show_secrets(other.should_show_secrets) {}
-//
-//        FormatSettings(const FormatSettings & other, bool always_quote_identifiers_)
-//            : ostr(other.ostr), one_line(other.one_line), always_quote_identifiers(always_quote_identifiers_),
-//            identifier_quoting_style(other.identifier_quoting_style), hilite(other.hilite),
-//            should_show_secrets(other.should_show_secrets) {}
+        FormatSettings(const FormatSettings & other, bool always_quote_identifiers_)
+            : hilite(other.hilite), one_line(other.one_line), always_quote_identifiers(always_quote_identifiers_),
+            identifier_quoting_style(other.identifier_quoting_style), show_secrets(other.show_secrets) {}
     };
 
     /// State. For example, a set of nodes can be remembered, which we already walk through.
@@ -278,53 +272,25 @@ public:
         FormattingBuffer(WriteBuffer & ostr_, const FormatSettings & settings_, FormatState & state_) :
             ostr(ostr_), settings(settings_), state(state_) {}
 
-        // TODO(natasha): these copy* methods are still in development.
-        // I'm trying to adapt them to current usage as I go, so I'll be able to declare them final,
-        // once I see all the usages.
         FormattingBuffer copy() const;
 
-        FormattingBuffer copyWithIndent(int indent) const;
+        FormatSettings copySettings() const;
 
-        FormattingBuffer copyWithOneLine() const;
+        FormattingBuffer copyWithNewSettings(const FormatSettings & settings_) const;
 
-        FormattingBuffer copy(bool increase_indent, bool need_parens) const;
+        FormattingBuffer & setIndent(UInt8 indent);
 
-        FormattingBuffer copy(bool increase_indent,
-                              bool surround_each_list_element_with_parens,
-                              bool expression_list_prepend_whitespace) const;
+        FormattingBuffer & increaseIndent(int extra_indent = 1);
 
-        FormattingBuffer copyWithoutExpressionListPrependWhitespace() const;
+        FormattingBuffer & setNeedsParens(bool value = true);  // todo: rename into setNeedParens
 
-        FormattingBuffer copyWithoutNeedParensAndWithExpressionListAlwaysStartOnNewLine() const;
+        FormattingBuffer & setExpressionListAlwaysStartsOnNewLine(bool value = true);
 
-        FormattingBuffer copyWithoutNeedParensAndWithExtraIndent() const;
+        FormattingBuffer & setExpressionListPrependWhitespace(bool value = true);
 
-        FormattingBuffer copyWithExpressionListAlwaysStartOnNewLine() const;
+        FormattingBuffer & setSurroundEachListElementWithParens(bool value = true);
 
-        FormattingBuffer copyWithSettingsOnly(WriteBuffer & ostr) const;
-
-        // copy FormatStateStacked
-        FormattingBuffer copyWithNeedParens(bool need_parens = true) const;
-
-        // copy FormatStateStacked
-        // todo: duplicating copy(bool, bool)
-        FormattingBuffer copyWithNeedParensAndExtraIndent(int extra_indent) const;
-
-        bool needsParens() const;  // TODO: impl
-
-        void setNeedsParens(bool value) const;  // TODO: impl
-
-        void setExpressionListPrependWhitespace(bool value = true) const;  // TOOD: impl
-
-        void setCurrentSelect(const IAST *) const;  // TODO: impl
-
-        void setExpressionListAlwaysStartsOnNewLine(bool value = true) const;  // TOOD: impl
-
-        bool getExpressionListPrependWhitespace() const; // TODO: impl
-
-        void increaseIndent() const; // TODO: impl
-
-        void writeIndent(int extra_indent = 0) const;
+        FormattingBuffer & setCurrentSelect(const IAST *);
 
         bool insertAlias(std::string alias, Hash printed_content) const;
 
@@ -347,13 +313,19 @@ public:
         void writeAlias(const String & name) const;
         void writeProbablyBackQuotedIdentifier(const String & name) const;
 
-        bool isOneLine() const;
-        // Newline or whitespace.
-        void nlOrWs() const;
+        void nlOrWs() const;  // Write newline or whitespace.
         void nlOrNothing() const;
 
-        bool shouldShowSecrets() const;
         void writeSecret(const String & secret = "") const;
+        void writeIndent(int extra_indent = 0) const;
+
+        bool isOneLine() const;
+        bool shouldShowSecrets() const;
+
+        bool needsParens() const;
+        bool getExpressionListAlwaysStartsOnNewLine() const;
+        bool getExpressionListPrependWhitespace() const;
+        bool getSurroundEachListElementWithParens() const;
     };
 
     // With new a blank internal state.

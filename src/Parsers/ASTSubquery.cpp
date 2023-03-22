@@ -42,7 +42,7 @@ void ASTSubquery::formatImplWithoutAlias(FormattingBuffer out) const
 
     out.ostr << "(";
     out.nlOrNothing();
-    children[0]->formatImpl(out.copy(true, false));
+    children[0]->formatImpl(out.copy().setNeedsParens(false).increaseIndent());
     out.nlOrNothing();
     out.writeIndent();
     out.ostr << ")";

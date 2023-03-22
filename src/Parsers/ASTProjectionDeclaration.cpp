@@ -22,7 +22,7 @@ void ASTProjectionDeclaration::formatImpl(FormattingBuffer out) const
     out.writeIndent();
     out.ostr << "(";
     out.nlOrNothing();
-    query->formatImpl(out.copyWithoutNeedParensAndWithExtraIndent());
+    query->formatImpl(out.copy().setNeedsParens(false).increaseIndent());
     out.nlOrNothing();
     out.writeIndent();
     out.ostr << ")";
