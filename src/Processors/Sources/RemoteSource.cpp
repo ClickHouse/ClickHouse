@@ -107,7 +107,7 @@ std::optional<Chunk> RemoteSource::tryGenerate()
         query_executor->setProfileInfoCallback([this](const ProfileInfo & info)
         {
             if (rows_before_limit && info.hasAppliedLimit())
-                rows_before_limit->set(info.getRowsBeforeLimit());
+                rows_before_limit->add(info.getRowsBeforeLimit());
         });
 
         query_executor->sendQuery();

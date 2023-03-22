@@ -3,7 +3,7 @@
 #include <Processors/ISource.h>
 #include <Processors/RowsBeforeLimitCounter.h>
 #include <QueryPipeline/Pipe.h>
-#include "Core/UUID.h"
+#include <Core/UUID.h>
 #include <atomic>
 
 namespace DB
@@ -29,7 +29,7 @@ public:
 
     void connectToScheduler(InputPort & input_port);
 
-    void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) { rows_before_limit.swap(counter); }
+    void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) override { rows_before_limit.swap(counter); }
 
     UUID getParallelReplicasGroupUUID();
 
