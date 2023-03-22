@@ -703,6 +703,7 @@ void QueryFuzzer::fuzzExplainQuery(ASTExplainQuery & explain)
     if (!settings_have_fuzzed)
     {
         auto settings_ast = std::make_shared<ASTSetQuery>();
+        settings_ast->is_standalone = false;
         fuzzExplainSettings(*settings_ast, explain.getKind());
         explain.setSettings(settings_ast);
     }
@@ -920,6 +921,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             auto explain = std::make_shared<ASTExplainQuery>(fuzzExplainKind());
 
             auto settings_ast = std::make_shared<ASTSetQuery>();
+            settings_ast->is_standalone = false;
             fuzzExplainSettings(*settings_ast, explain->getKind());
             explain->setSettings(settings_ast);
 
