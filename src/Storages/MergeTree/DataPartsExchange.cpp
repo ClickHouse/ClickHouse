@@ -505,7 +505,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     {
         for (const auto & disk_candidate : data.getDisks())
         {
-            if (toString(disk_candidate->getDataSourceDescription().type) == remote_fs_metadata)
+            if (toString(disk_candidate->getType()) == remote_fs_metadata)
             {
                 preffered_disk = disk_candidate;
                 break;
@@ -532,6 +532,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
                     = data.balancedReservation(metadata_snapshot, sum_files_size, 0, part_name, part_info, {}, tagger_ptr, &ttl_infos, true);
 
                 if (!reservation)
+                {
                     reservation = data.reserveSpacePreferringTTLRules(metadata_snapshot, sum_files_size, ttl_infos, std::time(nullptr), 0, true, preffered_disk);
                 }
             }
@@ -552,11 +553,11 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     if (!disk)
     {
         disk = reservation->getDisk();
-        LOG_TEST(log, "Disk for fetch is not provided, getting disk from reservation {} with type '{}'", disk->getName(), toString(disk->getDataSourceDescription().type));
+        LOG_TEST(log, "Disk for fetch is not provided, getting disk from reservation {} with type '{}'", disk->getName(), toString(disk->getType()));
     }
     else
     {
-        LOG_TEST(log, "Disk for fetch is disk {} with type {}", disk->getName(), toString(disk->getDataSourceDescription().type));
+        LOG_TEST(log, "Disk for fetch is disk {} with type {}", disk->getName(), toString(disk->getType()));
     }
 
     UInt64 revision = parse<UInt64>(in->getResponseCookie("disk_revision", "0"));
@@ -627,10 +628,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         replica_path, uri, to_detached, sum_files_size);
 
     in->setNextCallback(ReplicatedFetchReadCallback(*entry));
-
-    size_t projections = 0;
-    if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION)
-        readBinary(projections, *in);
 
     MergeTreeData::DataPart::Checksums checksums;
     return part_type == "InMemory"
