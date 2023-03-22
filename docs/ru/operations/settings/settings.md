@@ -1315,12 +1315,6 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 Чем меньше значение, тем чаще данные сбрасываются в таблицу. Установка слишком низкого значения приводит к снижению производительности.
 
-## stream_poll_timeout_ms {#stream_poll_timeout_ms}
-
-Таймаут для poll стримнга данных.
-
-Значение по умолчанию: 500.
-
 ## load_balancing {#settings-load_balancing}
 
 Задает алгоритм выбора реплик, используемый при обработке распределенных запросов.
@@ -2000,21 +1994,6 @@ SELECT * FROM test_table
 
 -   1 — генерирование исключения включено.
 -   0 — генерирование исключения выключено.
-
-Значение по умолчанию: 0.
-
-## optimize_skip_merged_partitions {#optimize-skip-merged-partitions}
-
-Включает или отключает оптимизацию для запроса [OPTIMIZE TABLE ... FINAL](../../sql-reference/statements/optimize.md), когда есть только один парт с level > 0 и неистекший TTL.
-
-- `OPTIMIZE TABLE ... FINAL SETTINGS optimize_skip_merged_partitions=1`
-
-По умолчанию, `OPTIMIZE TABLE ... FINAL` перезапишет даже один парт.
-
-Возможные значения:
-
--   1 - Включена
--   0 - Выключена
 
 Значение по умолчанию: 0.
 
@@ -3649,7 +3628,7 @@ SETTINGS index_granularity = 8192 │
 
 Значение по умолчанию: `0`.
 
-## alter_sync {#alter-sync}
+## replication_alter_partitions_sync {#replication-alter-partitions-sync}
 
 Позволяет настроить ожидание выполнения действий на репликах запросами [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) или [TRUNCATE](../../sql-reference/statements/truncate.md).
 

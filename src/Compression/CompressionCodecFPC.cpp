@@ -39,7 +39,6 @@ protected:
 
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return false; }
-    bool isFloatingPointTimeSeriesCodec() const override { return true; }
 
 private:
     static constexpr UInt32 HEADER_SIZE = 2;

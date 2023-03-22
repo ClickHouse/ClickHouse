@@ -268,8 +268,7 @@ void MergeTreeBackgroundExecutor<Queue>::threadFunction()
 }
 
 
-template class MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>;
-template class MergeTreeBackgroundExecutor<PriorityRuntimeQueue>;
-template class MergeTreeBackgroundExecutor<DynamicRuntimeQueue>;
+template class MergeTreeBackgroundExecutor<MergeMutateRuntimeQueue>;
+template class MergeTreeBackgroundExecutor<OrdinaryRuntimeQueue>;
 
 }

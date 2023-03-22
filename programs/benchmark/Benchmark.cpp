@@ -26,6 +26,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
+#include <IO/ConnectionTimeoutsContext.h>
 #include <IO/UseSSL.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Interpreters/Context.h>
@@ -276,7 +277,7 @@ private:
             }
 
             if (queries.empty())
-                throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "Empty list of queries.");
+                throw Exception("Empty list of queries.", ErrorCodes::EMPTY_DATA_PASSED);
         }
         else
         {
@@ -473,7 +474,7 @@ private:
         executor.sendQuery(ClientInfo::QueryKind::INITIAL_QUERY);
 
         ProfileInfo info;
-        while (Block block = executor.readBlock())
+        while (Block block = executor.read())
             info.update(block);
 
         executor.finish();

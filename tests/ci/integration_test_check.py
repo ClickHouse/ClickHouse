@@ -117,18 +117,10 @@ def process_results(
         return "error", "Invalid check_status.tsv", test_results, additional_files
     state, description = status[0][0], status[0][1]
 
-    try:
-        results_path = Path(result_folder) / "test_results.tsv"
-        test_results = read_test_results(results_path, False)
-        if len(test_results) == 0:
-            return "error", "Empty test_results.tsv", test_results, additional_files
-    except Exception as e:
-        return (
-            "error",
-            f"Cannot parse test_results.tsv ({e})",
-            test_results,
-            additional_files,
-        )
+    results_path = Path(result_folder) / "test_results.tsv"
+    test_results = read_test_results(results_path, False)
+    if len(test_results) == 0:
+        return "error", "Empty test_results.tsv", test_results, additional_files
 
     return state, description, test_results, additional_files
 

@@ -584,12 +584,6 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
             {
                 /// Do not execute function if it's result is already known.
                 res_column.column = action.node->column->cloneResized(num_rows);
-                /// But still need to remove unused arguments.
-                for (const auto & argument : action.arguments)
-                {
-                    if (!argument.needed_later)
-                        columns[argument.pos] = {};
-                }
                 break;
             }
 

@@ -417,10 +417,6 @@ ReplxxLineReader::ReplxxLineReader(
         {
             rx.print("skim failed: %s (consider using Ctrl-T for a regular non-fuzzy reverse search)\n", e.what());
         }
-
-        /// REPAINT before to avoid prompt overlap by the query
-        rx.invoke(Replxx::ACTION::REPAINT, code);
-
         if (!new_query.empty())
             rx.set_state(replxx::Replxx::State(new_query.c_str(), static_cast<int>(new_query.size())));
 
@@ -432,7 +428,6 @@ ReplxxLineReader::ReplxxLineReader(
     };
 
     rx.bind_key(Replxx::KEY::control('R'), interactive_history_search);
-#endif
 
     /// Rebind regular incremental search to C-T.
     ///
@@ -444,6 +439,7 @@ ReplxxLineReader::ReplxxLineReader(
         uint32_t reverse_search = Replxx::KEY::control('R');
         return rx.invoke(Replxx::ACTION::HISTORY_INCREMENTAL_SEARCH, reverse_search);
     });
+#endif
 }
 
 ReplxxLineReader::~ReplxxLineReader()

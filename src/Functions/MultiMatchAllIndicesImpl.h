@@ -6,7 +6,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/checkHyperscanRegexp.h>
-#include <Functions/Regexps.h>
+#include "Regexps.h"
 
 #include "config.h"
 
@@ -51,10 +51,9 @@ struct MultiMatchAllIndicesImpl
         PaddedPODArray<UInt64> & offsets,
         bool allow_hyperscan,
         size_t max_hyperscan_regexp_length,
-        size_t max_hyperscan_regexp_total_length,
-        bool reject_expensive_hyperscan_regexps)
+        size_t max_hyperscan_regexp_total_length)
     {
-        vectorConstant(haystack_data, haystack_offsets, needles_arr, res, offsets, std::nullopt, allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length, reject_expensive_hyperscan_regexps);
+        vectorConstant(haystack_data, haystack_offsets, needles_arr, res, offsets, std::nullopt, allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
     }
 
     static void vectorConstant(
@@ -66,8 +65,7 @@ struct MultiMatchAllIndicesImpl
         std::optional<UInt32> edit_distance,
         bool allow_hyperscan,
         size_t max_hyperscan_regexp_length,
-        size_t max_hyperscan_regexp_total_length,
-        bool reject_expensive_hyperscan_regexps)
+        size_t max_hyperscan_regexp_total_length)
     {
         if (!allow_hyperscan)
             throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED, "Hyperscan functions are disabled, because setting 'allow_hyperscan' is set to 0");
@@ -78,14 +76,6 @@ struct MultiMatchAllIndicesImpl
             needles.emplace_back(needle.get<String>());
 
         checkHyperscanRegexp(needles, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
-
-        if (reject_expensive_hyperscan_regexps)
-        {
-            SlowWithHyperscanChecker checker;
-            for (auto needle : needles)
-                if (checker.isSlow(needle))
-                    throw Exception(ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT, "Regular expression evaluation in vectorscan will be too slow. To ignore this error, disable setting 'reject_expensive_hyperscan_regexps'.");
-        }
 
         offsets.resize(haystack_offsets.size());
 
@@ -145,7 +135,6 @@ struct MultiMatchAllIndicesImpl
         (void)edit_distance;
         (void)max_hyperscan_regexp_length;
         (void)max_hyperscan_regexp_total_length;
-        (void)reject_expensive_hyperscan_regexps;
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "multi-search all indices is not implemented when vectorscan is off");
 #endif // USE_VECTORSCAN
     }
@@ -159,10 +148,9 @@ struct MultiMatchAllIndicesImpl
         PaddedPODArray<UInt64> & offsets,
         bool allow_hyperscan,
         size_t max_hyperscan_regexp_length,
-        size_t max_hyperscan_regexp_total_length,
-        bool reject_expensive_hyperscan_regexps)
+        size_t max_hyperscan_regexp_total_length)
     {
-        vectorVector(haystack_data, haystack_offsets, needles_data, needles_offsets, res, offsets, std::nullopt, allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length, reject_expensive_hyperscan_regexps);
+        vectorVector(haystack_data, haystack_offsets, needles_data, needles_offsets, res, offsets, std::nullopt, allow_hyperscan, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
     }
 
     static void vectorVector(
@@ -175,8 +163,7 @@ struct MultiMatchAllIndicesImpl
         std::optional<UInt32> edit_distance,
         bool allow_hyperscan,
         size_t max_hyperscan_regexp_length,
-        size_t max_hyperscan_regexp_total_length,
-        bool reject_expensive_hyperscan_regexps)
+        size_t max_hyperscan_regexp_total_length)
     {
         if (!allow_hyperscan)
             throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED, "Hyperscan functions are disabled, because setting 'allow_hyperscan' is set to 0");
@@ -207,14 +194,6 @@ struct MultiMatchAllIndicesImpl
             }
 
             checkHyperscanRegexp(needles, max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
-
-            if (reject_expensive_hyperscan_regexps)
-            {
-                SlowWithHyperscanChecker checker;
-                for (auto needle : needles)
-                    if (checker.isSlow(needle))
-                        throw Exception(ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT, "Regular expression evaluation in vectorscan will be too slow. To ignore this error, disable setting 'reject_expensive_hyperscan_regexps'.");
-            }
 
             MultiRegexps::DeferredConstructedRegexpsPtr deferred_constructed_regexps = MultiRegexps::getOrSet</*SaveIndices*/ true, WithEditDistance>(needles, edit_distance);
             MultiRegexps::Regexps * regexps = deferred_constructed_regexps->get();
@@ -270,7 +249,6 @@ struct MultiMatchAllIndicesImpl
         (void)edit_distance;
         (void)max_hyperscan_regexp_length;
         (void)max_hyperscan_regexp_total_length;
-        (void)reject_expensive_hyperscan_regexps;
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "multi-search all indices is not implemented when vectorscan is off");
 #endif // USE_VECTORSCAN
     }

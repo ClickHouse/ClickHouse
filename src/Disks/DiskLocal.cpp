@@ -61,8 +61,9 @@ static void loadDiskLocalConfig(const String & name,
     if (name == "default")
     {
         if (!path.empty())
-            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
-                "\"default\" disk path should be provided in <path> not it <storage_configuration>");
+            throw Exception(
+                "\"default\" disk path should be provided in <path> not it <storage_configuration>",
+                ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
         path = context->getPath();
     }
     else

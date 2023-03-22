@@ -55,7 +55,7 @@ bool isSupportedAlterType(int type)
 
 BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, const DDLQueryOnClusterParams & params)
 {
-    OpenTelemetry::SpanHolder span(__FUNCTION__, OpenTelemetry::PRODUCER);
+    OpenTelemetry::SpanHolder span(__FUNCTION__);
 
     if (context->getCurrentTransaction() && context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ON CLUSTER queries inside transactions are not supported");
@@ -392,14 +392,15 @@ Chunk DDLQueryStatusSource::generate()
             size_t num_unfinished_hosts = waiting_hosts.size() - num_hosts_finished;
             size_t num_active_hosts = current_active_hosts.size();
 
-            constexpr auto msg_format = "Watching task {} is executing longer than distributed_ddl_task_timeout (={}) seconds. "
+            constexpr const char * msg_format = "Watching task {} is executing longer than distributed_ddl_task_timeout (={}) seconds. "
                                                 "There are {} unfinished hosts ({} of them are currently active), "
                                                 "they are going to execute the query in background";
             if (throw_on_timeout)
             {
                 if (!first_exception)
-                    first_exception = std::make_unique<Exception>(Exception(ErrorCodes::TIMEOUT_EXCEEDED,
-                        msg_format, node_path, timeout_seconds, num_unfinished_hosts, num_active_hosts));
+                    first_exception = std::make_unique<Exception>(
+                        fmt::format(msg_format, node_path, timeout_seconds, num_unfinished_hosts, num_active_hosts),
+                        ErrorCodes::TIMEOUT_EXCEEDED);
 
                 /// For Replicated database print a list of unfinished hosts as well. Will return empty block on next iteration.
                 if (is_replicated_database)
@@ -422,10 +423,12 @@ Chunk DDLQueryStatusSource::generate()
             /// Paradoxically, this exception will be throw even in case of "never_throw" mode.
 
             if (!first_exception)
-                first_exception = std::make_unique<Exception>(Exception(ErrorCodes::UNFINISHED,
+                first_exception = std::make_unique<Exception>(
+                    fmt::format(
                         "Cannot provide query execution status. The query's node {} has been deleted by the cleaner"
                         " since it was finished (or its lifetime is expired)",
-                        node_path));
+                        node_path),
+                    ErrorCodes::UNFINISHED);
             return {};
         }
 
@@ -461,8 +464,8 @@ Chunk DDLQueryStatusSource::generate()
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "There was an error on {}: {} (probably it's a bug)", host_id, status.message);
 
                 auto [host, port] = parseHostAndPort(host_id);
-                first_exception = std::make_unique<Exception>(Exception(status.code,
-                    "There was an error on [{}:{}]: {}", host, port, status.message));
+                first_exception = std::make_unique<Exception>(
+                    fmt::format("There was an error on [{}:{}]: {}", host, port, status.message), status.code);
             }
 
             ++num_hosts_finished;

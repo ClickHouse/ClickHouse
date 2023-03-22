@@ -106,7 +106,7 @@ public:
                 default:
                     throw Exception(
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Map key type {} is not is not supported by combinator {}", key_type->getName(), getName());
+                        "Map key type " + key_type->getName() + " is not is not supported by combinator " + getName());
             }
         }
         else

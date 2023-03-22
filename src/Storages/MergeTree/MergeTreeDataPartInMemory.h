@@ -17,6 +17,12 @@ public:
         const MutableDataPartStoragePtr & data_part_storage_,
         const IMergeTreeDataPart * parent_part_ = nullptr);
 
+    MergeTreeDataPartInMemory(
+        MergeTreeData & storage_,
+        const String & name_,
+        const MutableDataPartStoragePtr & data_part_storage_,
+        const IMergeTreeDataPart * parent_part_ = nullptr);
+
     MergeTreeReaderPtr getReader(
         const NamesAndTypesList & columns,
         const StorageMetadataPtr & metadata_snapshot,

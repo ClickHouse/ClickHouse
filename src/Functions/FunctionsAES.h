@@ -60,7 +60,8 @@ struct KeyHolder
     inline StringRef setKey(size_t cipher_key_size, StringRef key) const
     {
         if (key.size != cipher_key_size)
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Invalid key size: {} expected {}", key.size, cipher_key_size);
+            throw DB::Exception(fmt::format("Invalid key size: {} expected {}", key.size, cipher_key_size),
+                    DB::ErrorCodes::BAD_ARGUMENTS);
 
         return key;
     }
@@ -72,7 +73,8 @@ struct KeyHolder<CipherMode::MySQLCompatibility>
     inline StringRef setKey(size_t cipher_key_size, StringRef key)
     {
         if (key.size < cipher_key_size)
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Invalid key size: {} expected {}", key.size, cipher_key_size);
+            throw DB::Exception(fmt::format("Invalid key size: {} expected {}", key.size, cipher_key_size),
+                    DB::ErrorCodes::BAD_ARGUMENTS);
 
         // MySQL does something fancy with the keys that are too long,
         // ruining compatibility with OpenSSL and not improving security.
@@ -127,7 +129,8 @@ inline void validateIV(StringRef iv_value, const size_t cipher_iv_size)
     // In MySQL mode we don't care if IV is longer than expected, only if shorter.
     if ((mode == CipherMode::MySQLCompatibility && iv_value.size != 0 && iv_value.size < cipher_iv_size)
             || (mode == CipherMode::OpenSSLCompatibility && iv_value.size != 0 && iv_value.size != cipher_iv_size))
-        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Invalid IV size: {} expected {}", iv_value.size, cipher_iv_size);
+        throw DB::Exception(fmt::format("Invalid IV size: {} expected {}", iv_value.size, cipher_iv_size),
+                DB::ErrorCodes::BAD_ARGUMENTS);
 }
 
 }
@@ -597,7 +600,7 @@ private:
                     if (input_value.size < tag_size)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Encrypted data is too short: only {} bytes, "
                                 "should contain at least {} bytes of a tag.",
-                                input_value.size, tag_size);
+                                input_value.size, block_size, tag_size);
 
                     input_value.size -= tag_size;
                 }

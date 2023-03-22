@@ -28,10 +28,10 @@ void CachedCompressedReadBuffer::initInput()
 }
 
 
-void CachedCompressedReadBuffer::prefetch(int64_t priority)
+void CachedCompressedReadBuffer::prefetch()
 {
     initInput();
-    file_in->prefetch(priority);
+    file_in->prefetch();
 }
 
 

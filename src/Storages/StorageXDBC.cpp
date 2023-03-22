@@ -5,7 +5,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 
 #include <Formats/FormatFactory.h>
-#include <IO/ConnectionTimeouts.h>
+#include <IO/ConnectionTimeoutsContext.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
@@ -130,16 +130,13 @@ SinkToStoragePtr StorageXDBC::write(const ASTPtr & /* query */, const StorageMet
     request_uri.addQueryParameter("format_name", format_name);
     request_uri.addQueryParameter("sample_block", metadata_snapshot->getSampleBlock().getNamesAndTypesList().toString());
 
-
     return std::make_shared<StorageURLSink>(
         request_uri.toString(),
         format_name,
         getFormatSettings(local_context),
         metadata_snapshot->getSampleBlock(),
         local_context,
-        ConnectionTimeouts::getHTTPTimeouts(
-            local_context->getSettingsRef(),
-            {local_context->getConfigRef().getUInt("keep_alive_timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT), 0}),
+        ConnectionTimeouts::getHTTPTimeouts(local_context),
         compression_method);
 }
 
@@ -176,8 +173,7 @@ namespace
 
             BridgeHelperPtr bridge_helper = std::make_shared<XDBCBridgeHelper<BridgeHelperMixin>>(args.getContext(),
                 args.getContext()->getSettingsRef().http_receive_timeout.value,
-                checkAndGetLiteralArgument<String>(engine_args[0], "connection_string"),
-                args.getContext()->getSettingsRef().odbc_bridge_use_connection_pooling.value);
+                checkAndGetLiteralArgument<String>(engine_args[0], "connection_string"));
             return std::make_shared<StorageXDBC>(
                 args.table_id,
                 checkAndGetLiteralArgument<String>(engine_args[1], "database_name"),

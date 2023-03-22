@@ -23,7 +23,7 @@ bool isStorageTouchedByMutations(
     MergeTreeData::DataPartPtr source_part,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
-    ContextPtr context
+    ContextMutablePtr context_copy
 );
 
 ASTPtr getPartitionAndPredicateExpressionForMutationCommand(

@@ -243,15 +243,13 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
 
         auto sink = std::make_shared<EmbeddedRocksDBSink>(*this, metadata_snapshot);
 
-        auto header = interpreter->getUpdatedHeader();
-        auto primary_key_pos = header.getPositionByName(primary_key);
-
         Block block;
         while (executor.pull(block))
         {
-            auto & column_type_name = block.getByPosition(primary_key_pos);
+            auto column_it = std::find_if(block.begin(), block.end(), [&](const auto & column) { return column.name == primary_key; });
+            assert(column_it != block.end());
 
-            auto column = column_type_name.column;
+            auto column = column_it->column;
             auto size = column->size();
 
             rocksdb::WriteBatch batch;
@@ -260,7 +258,7 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
             {
                 wb_key.restart();
 
-                column_type_name.type->getDefaultSerialization()->serializeBinary(*column, i, wb_key, {});
+                column_it->type->getDefaultSerialization()->serializeBinary(*column, i, wb_key, {});
                 auto status = batch.Delete(wb_key.str());
                 if (!status.ok())
                     throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
