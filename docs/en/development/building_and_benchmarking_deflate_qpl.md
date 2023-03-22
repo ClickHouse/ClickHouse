@@ -223,16 +223,10 @@ $ [CLICKHOUSE_EXE] client -m --port=9001
 ```
 Inserting data:
 ``` bash
-$ [CLICKHOUSE_EXE] client --query "INSERT INTO customer FORMAT CSV" < customer.tbl  --port=9001
-$ [CLICKHOUSE_EXE] client --query "INSERT INTO part FORMAT CSV" < part.tbl  --port=9001 
-$ [CLICKHOUSE_EXE] client --query "INSERT INTO supplier FORMAT CSV" < supplier.tbl   --port=9001
-$ [CLICKHOUSE_EXE] client --query "INSERT INTO lineorder FORMAT CSV" < lineorder.tbl   --port=9001
+$ [CLICKHOUSE_EXE] client --query "INSERT INTO [TBL_FILE_NAME] FORMAT CSV" < [TBL_FILE_NAME].tbl  --port=9001
 ```
-Here `--port=9002` stands for the assigned port for server instance which is also defined in config_lz4_s2.xml/config_zstd_s2.xml/config_deflate_s2.xml
-
-For even more instances, you need replace it with the value: 9002/9003 which stand for s3/s4 instance respectively.
-
-if you don't assign it, the port is 9000 by default which has been used by first instance.
+- [TBL_FILE_NAME] represents the name of a file named with the regular expression: *. tbl under `./benchmark_sample/rawdata_dir/ssb-dbgen`.
+- `--port=9001` stands for the assigned port for server instance which is also defined in config_lz4_s2.xml/config_zstd_s2.xml/config_deflate_s2.xml. For even more instances, you need replace it with the value: 9002/9003 which stand for s3/s4 instance respectively. If you don't assign it, the port is 9000 by default which has been used by first instance.
 
 Benchmarking with 2 instances
 
