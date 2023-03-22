@@ -962,11 +962,6 @@ void FileCache::performDelayedRemovalOfDeletedKeysFromMetadata(const CacheMetada
         /// In this case it will work fine because on each attempt to add any key to cache
         /// we perform this delayed removal of deleted keys.
 
-        /// We must also lock the key.
-        /// FIXME: I forgot why.
-        auto key_metadata = it->second;
-        auto key_lock = key_metadata->lock();
-
         /// Remove key from metadata.
         metadata.erase(it);
 
