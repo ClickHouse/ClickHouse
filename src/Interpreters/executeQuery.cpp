@@ -1292,8 +1292,9 @@ void executeQuery(
         catch (...)
         {
             /// This exception can be ignored because if the code goes here, 
-            /// it means there's already exception occurred during query execution,
-            /// So there's no need to report the exception thrown here.
+            /// it means there's already an exception raised during query execution,
+            /// and that exception will be propagated to outter caller,
+            /// there's no need to report the exception thrown here.
         }
     });
 
