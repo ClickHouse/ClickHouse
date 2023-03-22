@@ -20,7 +20,7 @@
 #include <Common/formatReadable.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/OpenSSLHelpers.h>
-#include <base/hex.h>
+#include <Common/hex.h>
 #include <Common/getResource.h>
 #include <base/sleep.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -1051,12 +1051,18 @@ namespace
         return pid;
     }
 
-    bool sendSignalAndWaitForStop(const fs::path & pid_file, int signal, unsigned max_tries, unsigned wait_ms, const char * signal_name)
+    int stop(const fs::path & pid_file, bool force, bool do_not_kill, unsigned max_tries)
     {
+        if (force && do_not_kill)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Specified flags are incompatible");
+
         int pid = isRunning(pid_file);
 
         if (!pid)
-            return true;
+            return 0;
+
+        int signal = force ? SIGKILL : SIGTERM;
+        const char * signal_name = force ? "kill" : "terminate";
 
         if (0 == kill(pid, signal))
             fmt::print("Sent {} signal to process with pid {}.\n", signal_name, pid);
@@ -1072,51 +1078,46 @@ namespace
                 fmt::print("Server stopped\n");
                 break;
             }
-            sleepForMilliseconds(wait_ms);
+            sleepForSeconds(1);
         }
 
-        return try_num < max_tries;
-    }
-
-    int stop(const fs::path & pid_file, bool force, bool do_not_kill, unsigned max_tries)
-    {
-        if (force && do_not_kill)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Specified flags are incompatible");
-
-        int signal = force ? SIGKILL : SIGTERM;
-        const char * signal_name = force ? "kill" : "terminate";
-
-        if (sendSignalAndWaitForStop(pid_file, signal, max_tries, 1000, signal_name))
-            return 0;
-
-        int pid = isRunning(pid_file);
-        if (!pid)
-            return 0;
-
-        if (do_not_kill)
+        if (try_num == max_tries)
         {
-            fmt::print("Process (pid = {}) is still running. Will not try to kill it.\n", pid);
-            return 1;
+            if (do_not_kill)
+            {
+                fmt::print("Process (pid = {}) is still running. Will not try to kill it.\n", pid);
+                return 1;
+            }
+
+            fmt::print("Will terminate forcefully (pid = {}).\n", pid);
+            if (0 == kill(pid, 9))
+                fmt::print("Sent kill signal (pid = {}).\n", pid);
+            else
+                throwFromErrno("Cannot send kill signal", ErrorCodes::SYSTEM_ERROR);
+
+            /// Wait for the process (100 seconds).
+            constexpr size_t num_kill_check_tries = 1000;
+            constexpr size_t kill_check_delay_ms = 100;
+            for (size_t i = 0; i < num_kill_check_tries; ++i)
+            {
+                fmt::print("Waiting for server to be killed\n");
+                if (!isRunning(pid_file))
+                {
+                    fmt::print("Server exited\n");
+                    break;
+                }
+                sleepForMilliseconds(kill_check_delay_ms);
+            }
+
+            if (isRunning(pid_file))
+            {
+                throw Exception(ErrorCodes::CANNOT_KILL,
+                    "The server process still exists after {} tries (delay: {} ms)",
+                    num_kill_check_tries, kill_check_delay_ms);
+            }
         }
 
-        /// Send termination signal again, the server will receive it and immediately terminate.
-        fmt::print("Will send the termination signal again to force the termination (pid = {}).\n", pid);
-        if (sendSignalAndWaitForStop(pid_file, signal, std::min(10U, max_tries), 1000, signal_name))
-            return 0;
-
-        /// Send kill signal. Total wait is 100 seconds.
-        constexpr size_t num_kill_check_tries = 1000;
-        constexpr size_t kill_check_delay_ms = 100;
-        fmt::print("Will terminate forcefully (pid = {}).\n", pid);
-        if (sendSignalAndWaitForStop(pid_file, SIGKILL, num_kill_check_tries, kill_check_delay_ms, signal_name))
-            return 0;
-
-        if (!isRunning(pid_file))
-            return 0;
-
-        throw Exception(ErrorCodes::CANNOT_KILL,
-            "The server process still exists after {} tries (delay: {} ms)",
-            num_kill_check_tries, kill_check_delay_ms);
+        return 0;
     }
 }
 

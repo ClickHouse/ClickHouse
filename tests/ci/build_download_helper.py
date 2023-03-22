@@ -137,6 +137,12 @@ def download_all_deb_packages(check_name, reports_path, result_path):
     )
 
 
+def download_shared_build(check_name, reports_path, result_path):
+    download_builds_filter(
+        check_name, reports_path, result_path, lambda x: x.endswith("shared_build.tgz")
+    )
+
+
 def download_unit_tests(check_name, reports_path, result_path):
     download_builds_filter(
         check_name, reports_path, result_path, lambda x: x.endswith("unit_tests_dbms")
@@ -151,8 +157,5 @@ def download_clickhouse_binary(check_name, reports_path, result_path):
 
 def download_performance_build(check_name, reports_path, result_path):
     download_builds_filter(
-        check_name,
-        reports_path,
-        result_path,
-        lambda x: x.endswith("performance.tar.zst"),
+        check_name, reports_path, result_path, lambda x: x.endswith("performance.tgz")
     )

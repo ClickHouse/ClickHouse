@@ -24,7 +24,7 @@ private:
     ColumnsDescription getActualTableStructure(ContextPtr context) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
-    std::optional<StorageMongoDB::Configuration> configuration;
+    std::optional<StorageMongoDBConfiguration> configuration;
     String structure;
 };
 

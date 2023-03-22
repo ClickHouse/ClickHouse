@@ -8,8 +8,7 @@
 #include <Access/Common/AccessType.h>
 #include <Access/Common/AccessFlags.h>
 #include <Columns/ColumnMap.h>
-#include <Common/NamedCollections/NamedCollections.h>
-#include <Access/ContextAccess.h>
+#include <Storages/NamedCollections.h>
 
 
 namespace DB
@@ -31,9 +30,6 @@ StorageSystemNamedCollections::StorageSystemNamedCollections(const StorageID & t
 void StorageSystemNamedCollections::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
     context->checkAccess(AccessType::SHOW_NAMED_COLLECTIONS);
-    const auto & access = context->getAccess();
-
-    NamedCollectionUtils::loadIfNot();
 
     auto collections = NamedCollectionFactory::instance().getAll();
     for (const auto & [name, collection] : collections)
@@ -51,10 +47,7 @@ void StorageSystemNamedCollections::fillData(MutableColumns & res_columns, Conte
         for (const auto & key : collection->getKeys())
         {
             key_column.insertData(key.data(), key.size());
-            if (access->isGranted(AccessType::SHOW_NAMED_COLLECTIONS_SECRETS))
-                value_column.insert(collection->get<String>(key));
-            else
-                value_column.insert("[HIDDEN]");
+            value_column.insert(collection->get<String>(key));
             size++;
         }
 

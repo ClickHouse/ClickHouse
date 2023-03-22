@@ -130,11 +130,15 @@ RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id, const std::c
         if (owner_query_it != owner_queries.end())
         {
             if (wrlock_owner != writers_queue.end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "RWLockImpl::getLock(): RWLock is already locked in exclusive mode");
+                throw Exception(
+                        "RWLockImpl::getLock(): RWLock is already locked in exclusive mode",
+                        ErrorCodes::LOGICAL_ERROR);
 
             /// Lock upgrading is not supported
             if (type == Write)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "RWLockImpl::getLock(): Cannot acquire exclusive lock while RWLock is already locked");
+                throw Exception(
+                        "RWLockImpl::getLock(): Cannot acquire exclusive lock while RWLock is already locked",
+                        ErrorCodes::LOGICAL_ERROR);
 
             /// N.B. Type is Read here, query_id is not empty and it_query is a valid iterator
             ++owner_query_it->second;                                  /// SM1: nothrow

@@ -129,7 +129,7 @@ StorageSetOrJoinBase::StorageSetOrJoinBase(
 
 
     if (relative_path_.empty())
-        throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Join and Set storages require data path");
+        throw Exception("Join and Set storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
 
     path = relative_path_;
 }
@@ -162,11 +162,7 @@ std::optional<UInt64> StorageSet::totalBytes(const Settings &) const { return se
 
 void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &)
 {
-    if (disk->exists(path))
-        disk->removeRecursive(path);
-    else
-        LOG_INFO(&Poco::Logger::get("StorageSet"), "Path {} is already removed from disk {}", path, disk->getName());
-
+    disk->removeRecursive(path);
     disk->createDirectories(path);
     disk->createDirectories(fs::path(path) / "tmp/");
 
@@ -246,8 +242,9 @@ void registerStorageSet(StorageFactory & factory)
     factory.registerStorage("Set", [](const StorageFactory::Arguments & args)
     {
         if (!args.engine_args.empty())
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Engine {} doesn't support any arguments ({} given)",
-                args.engine_name, args.engine_args.size());
+            throw Exception(
+                "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         bool has_settings = args.storage_def->settings;
         SetSettings set_settings;

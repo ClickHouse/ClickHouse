@@ -83,7 +83,6 @@ public:
         bool final,
         bool deduplicate,
         const Names & deduplicate_by_columns,
-        bool cleanup,
         ContextPtr context) override;
 
     void mutate(const MutationCommands & commands, ContextPtr context) override;
@@ -166,7 +165,6 @@ private:
             const String & partition_id,
             bool final, bool deduplicate,
             const Names & deduplicate_by_columns,
-            bool cleanup,
             const MergeTreeTransactionPtr & txn,
             String * out_disable_reason = nullptr,
             bool optimize_skip_merged_partitions = false);
@@ -176,7 +174,7 @@ private:
     /// Make part state outdated and queue it to remove without timeout
     /// If force, then stop merges and block them until part state became outdated. Throw exception if part doesn't exists
     /// If not force, then take merges selector and check that part is not participating in background operations.
-    MergeTreeDataPartPtr outdatePart(MergeTreeTransaction * txn, const String & part_name, bool force, bool clear_without_timeout = true);
+    MergeTreeDataPartPtr outdatePart(MergeTreeTransaction * txn, const String & part_name, bool force);
     ActionLock stopMergesAndWait();
 
     /// Allocate block number for new mutation, write mutation to disk
@@ -214,15 +212,6 @@ private:
     UInt64 getCurrentMutationVersion(
         const DataPartPtr & part,
         std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
-
-    /// Returns the maximum level of all outdated parts in a range (left; right), or 0 in case if empty range.
-    /// Merges have to be aware of the outdated part's levels inside designated merge range.
-    /// When two parts all_1_1_0, all_3_3_0 are merged into all_1_3_1, the gap between those parts have to be verified.
-    /// There should not be an unactive part all_1_1_1. Otherwise it is impossible to load parts after restart, they intersects.
-    /// Therefore this function is used in merge predicate in order to prevent merges over the gaps with high level outdated parts.
-    UInt32 getMaxLevelInBetween(
-        const DataPartPtr & left,
-        const DataPartPtr & right) const;
 
     size_t clearOldMutations(bool truncate = false);
 

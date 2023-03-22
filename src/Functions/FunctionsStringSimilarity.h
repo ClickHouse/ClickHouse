@@ -44,12 +44,12 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                arguments[0]->getName(), getName());
+            throw Exception(
+                "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (!isString(arguments[1]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                arguments[1]->getName(), getName());
+            throw Exception(
+                "Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeNumber<typename Impl::ResultType>>();
     }
@@ -70,8 +70,10 @@ public:
             const String & needle = col_needle_const->getValue<String>();
             if (needle.size() > Impl::max_string_size)
             {
-                throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String size of needle is too big for function {}. "
-                    "Should be at most {}", getName(), Impl::max_string_size);
+                throw Exception(
+                    "String size of needle is too big for function " + getName() + ". Should be at most "
+                        + std::to_string(Impl::max_string_size),
+                    ErrorCodes::TOO_LARGE_STRING_SIZE);
             }
             Impl::constantConstant(col_haystack_const->getValue<String>(), needle, res);
             return result_type->createColumnConst(col_haystack_const->size(), toField(res));
@@ -90,8 +92,10 @@ public:
             const String & needle = col_needle_const->getValue<String>();
             if (needle.size() > Impl::max_string_size)
             {
-                throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String size of needle is too big for function {}. "
-                    "Should be at most {}", getName(), Impl::max_string_size);
+                throw Exception(
+                    "String size of needle is too big for function " + getName() + ". Should be at most "
+                        + std::to_string(Impl::max_string_size),
+                    ErrorCodes::TOO_LARGE_STRING_SIZE);
             }
             Impl::vectorConstant(col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), needle, vec_res);
         }
@@ -109,15 +113,19 @@ public:
             const String & haystack = col_haystack_const->getValue<String>();
             if (haystack.size() > Impl::max_string_size)
             {
-                throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String size of haystack is too big for function {}. "
-                    "Should be at most {}", getName(), Impl::max_string_size);
+                throw Exception(
+                    "String size of haystack is too big for function " + getName() + ". Should be at most "
+                        + std::to_string(Impl::max_string_size),
+                    ErrorCodes::TOO_LARGE_STRING_SIZE);
             }
             Impl::constantVector(haystack, col_needle_vector->getChars(), col_needle_vector->getOffsets(), vec_res);
         }
         else
         {
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal columns {} and {} of arguments of function {}",
-                arguments[0].column->getName(), arguments[1].column->getName(), getName());
+            throw Exception(
+                "Illegal columns " + arguments[0].column->getName() + " and "
+                    + arguments[1].column->getName() + " of arguments of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
         }
 
         return col_res;

@@ -70,4 +70,9 @@ void ITransformingStep::describePipeline(FormatSettings & settings) const
     IQueryPlanStep::describePipeline(processors, settings);
 }
 
+void ITransformingStep::appendExtraProcessors(const Processors & extra_processors)
+{
+    processors.insert(processors.end(), extra_processors.begin(), extra_processors.end());
+}
+
 }

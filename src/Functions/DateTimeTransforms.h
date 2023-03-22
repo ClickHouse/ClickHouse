@@ -710,56 +710,6 @@ struct ToYearImpl
     using FactorTransform = ZeroTransform;
 };
 
-struct ToWeekYearImpl
-{
-    static constexpr auto name = "toWeekYear";
-
-    static constexpr Int8 week_mode = 3;
-
-    static inline UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toYearWeek(t, week_mode).first;
-    }
-    static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toYearWeek(t, week_mode).first;
-    }
-    static inline UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toYearWeek(ExtendedDayNum(d), week_mode).first;
-    }
-    static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toYearWeek(DayNum(d), week_mode).first;
-    }
-
-    using FactorTransform = ZeroTransform;
-};
-
-struct ToWeekOfWeekYearImpl
-{
-    static constexpr auto name = "toWeekOfWeekYear";
-
-    static inline UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toISOWeek(t);
-    }
-    static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toISOWeek(t);
-    }
-    static inline UInt16 execute(Int32 d, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toISOWeek(ExtendedDayNum(d));
-    }
-    static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toISOWeek(DayNum(d));
-    }
-
-    using FactorTransform = ZeroTransform;
-};
-
 struct ToQuarterImpl
 {
     static constexpr auto name = "toQuarter";
@@ -836,21 +786,21 @@ struct ToDayOfWeekImpl
 {
     static constexpr auto name = "toDayOfWeek";
 
-    static inline UInt8 execute(Int64 t, UInt8 mode, const DateLUTImpl & time_zone)
+    static inline UInt8 execute(Int64 t, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDayOfWeek(t, mode);
+        return time_zone.toDayOfWeek(t);
     }
-    static inline UInt8 execute(UInt32 t, UInt8 mode, const DateLUTImpl & time_zone)
+    static inline UInt8 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDayOfWeek(t, mode);
+        return time_zone.toDayOfWeek(t);
     }
-    static inline UInt8 execute(Int32 d, UInt8 mode, const DateLUTImpl & time_zone)
+    static inline UInt8 execute(Int32 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDayOfWeek(ExtendedDayNum(d), mode);
+        return time_zone.toDayOfWeek(ExtendedDayNum(d));
     }
-    static inline UInt8 execute(UInt16 d, UInt8 mode, const DateLUTImpl & time_zone)
+    static inline UInt8 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDayOfWeek(DayNum(d), mode);
+        return time_zone.toDayOfWeek(DayNum(d));
     }
 
     using FactorTransform = ToMondayImpl;
@@ -1388,30 +1338,6 @@ struct ToYYYYMMDDhhmmssImpl
     static inline UInt64 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
         return time_zone.toNumYYYYMMDDhhmmss(time_zone.toDate(DayNum(d)));
-    }
-
-    using FactorTransform = ZeroTransform;
-};
-
-struct ToDateTimeComponentsImpl
-{
-    static constexpr auto name = "toDateTimeComponents";
-
-    static inline DateLUTImpl::DateTimeComponents execute(Int64 t, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toDateTimeComponents(t);
-    }
-    static inline DateLUTImpl::DateTimeComponents execute(UInt32 t, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toDateTimeComponents(static_cast<DateLUTImpl::Time>(t));
-    }
-    static inline DateLUTImpl::DateTimeComponents execute(Int32 d, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toDateTimeComponents(ExtendedDayNum(d));
-    }
-    static inline DateLUTImpl::DateTimeComponents execute(UInt16 d, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toDateTimeComponents(DayNum(d));
     }
 
     using FactorTransform = ZeroTransform;

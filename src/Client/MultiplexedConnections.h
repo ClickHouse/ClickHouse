@@ -42,7 +42,7 @@ public:
         bool with_pending_data) override;
 
     void sendReadTaskResponse(const String &) override;
-    void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
+    void sendMergeTreeReadTaskResponse(PartitionReadResponse response) override;
 
     Packet receivePacket() override;
 
@@ -104,8 +104,7 @@ private:
     bool sent_query = false;
     bool cancelled = false;
 
-    /// std::nullopt if parallel reading from replicas is not used
-    std::optional<ReplicaInfo> replica_info;
+    ReplicaInfo replica_info;
 
     /// A mutex for the sendCancel function to execute safely
     /// in separate thread.

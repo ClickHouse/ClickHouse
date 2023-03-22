@@ -43,3 +43,4 @@ $ cat data.csv | clickhouse-client --query="INSERT INTO test SELECT lower(col1),
 $ cat data.csv | clickhouse-client --query="INSERT INTO test FORMAT CSV"
 $ cat data.csv | clickhouse-client --query="INSERT INTO test SELECT * FROM input('test_structure') FORMAT CSV"
 ```
+

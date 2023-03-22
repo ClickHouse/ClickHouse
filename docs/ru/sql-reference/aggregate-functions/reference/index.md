@@ -66,3 +66,4 @@ sidebar_position: 36
 -   [simpleLinearRegression](../../../sql-reference/aggregate-functions/reference/simplelinearregression.md)
 -   [stochasticLinearRegression](../../../sql-reference/aggregate-functions/reference/stochasticlinearregression.md)
 -   [stochasticLogisticRegression](../../../sql-reference/aggregate-functions/reference/stochasticlogisticregression.md)
+

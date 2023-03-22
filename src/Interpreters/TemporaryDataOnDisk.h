@@ -6,8 +6,6 @@
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/IVolume.h>
 #include <Common/CurrentMetrics.h>
-#include <Interpreters/Cache/FileSegment.h>
-#include <Interpreters/Cache/FileCache.h>
 
 
 namespace CurrentMetrics
@@ -46,12 +44,8 @@ public:
         : volume(std::move(volume_)), limit(limit_)
     {}
 
-    explicit TemporaryDataOnDiskScope(VolumePtr volume_, FileCache * file_cache_, size_t limit_)
-        : volume(std::move(volume_)), file_cache(file_cache_), limit(limit_)
-    {}
-
     explicit TemporaryDataOnDiskScope(TemporaryDataOnDiskScopePtr parent_, size_t limit_)
-        : parent(std::move(parent_)), volume(parent->volume), file_cache(parent->file_cache), limit(limit_)
+        : parent(std::move(parent_)), volume(parent->volume), limit(limit_)
     {}
 
     /// TODO: remove
@@ -62,9 +56,7 @@ protected:
     void deltaAllocAndCheck(ssize_t compressed_delta, ssize_t uncompressed_delta);
 
     TemporaryDataOnDiskScopePtr parent = nullptr;
-
-    VolumePtr volume = nullptr;
-    FileCache * file_cache = nullptr;
+    VolumePtr volume;
 
     StatAtomic stat;
     size_t limit = 0;
@@ -101,9 +93,6 @@ public:
     const StatAtomic & getStat() const { return stat; }
 
 private:
-    TemporaryFileStream & createStreamToCacheFile(const Block & header, size_t max_file_size);
-    TemporaryFileStream & createStreamToRegularFile(const Block & header, size_t max_file_size);
-
     mutable std::mutex mutex;
     std::vector<TemporaryFileStreamPtr> streams TSA_GUARDED_BY(mutex);
 
@@ -128,18 +117,14 @@ public:
     };
 
     TemporaryFileStream(TemporaryFileOnDiskHolder file_, const Block & header_, TemporaryDataOnDisk * parent_);
-    TemporaryFileStream(FileSegmentsHolder && segments_, const Block & header_, TemporaryDataOnDisk * parent_);
 
-    size_t write(const Block & block);
-    void flush();
-
+    void write(const Block & block);
     Stat finishWriting();
     bool isWriteFinished() const;
 
     Block read();
 
-    String getPath() const;
-
+    const String path() const { return file->getPath(); }
     Block getHeader() const { return header; }
 
     /// Read finished and file released
@@ -157,9 +142,7 @@ private:
 
     Block header;
 
-    /// Data can be stored in file directly or in the cache
     TemporaryFileOnDiskHolder file;
-    FileSegmentsHolder segment_holder;
 
     Stat stat;
 

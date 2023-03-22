@@ -17,7 +17,6 @@ RUN apt-get update \
         python3-termcolor \
         unixodbc \
         pv \
-        zstd \
     --yes --no-install-recommends
 
 # Install CMake 3.20+ for Rust compilation

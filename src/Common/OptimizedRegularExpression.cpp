@@ -291,7 +291,7 @@ OptimizedRegularExpressionImpl<thread_safe>::OptimizedRegularExpressionImpl(cons
 
     /// Just three following options are supported
     if (options & (~(RE_CASELESS | RE_NO_CAPTURE | RE_DOT_NL)))
-        throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP, "OptimizedRegularExpression: Unsupported option.");
+        throw DB::Exception("OptimizedRegularExpression: Unsupported option.", DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
 
     is_case_insensitive = options & RE_CASELESS;
     bool is_no_capture = options & RE_NO_CAPTURE;
@@ -315,21 +315,21 @@ OptimizedRegularExpressionImpl<thread_safe>::OptimizedRegularExpressionImpl(cons
         re2 = std::make_unique<RegexType>(regexp_, regexp_options);
         if (!re2->ok())
         {
-            throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP,
-                "OptimizedRegularExpression: cannot compile re2: {}, error: {}. "
-                "Look at https://github.com/google/re2/wiki/Syntax "
+            throw DB::Exception("OptimizedRegularExpression: cannot compile re2: "
+                + regexp_ + ", error: " + re2->error()
+                + ". Look at https://github.com/google/re2/wiki/Syntax "
                 "for reference. Please note that if you specify regex as an SQL "
                 "string literal, the slashes have to be additionally escaped. "
                 "For example, to match an opening brace, write '\\(' -- "
                 "the first slash is for SQL and the second one is for regex",
-                regexp_, re2->error());
+                DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
         }
 
         if (!is_no_capture)
         {
             number_of_subpatterns = re2->NumberOfCapturingGroups();
             if (number_of_subpatterns > MAX_SUBPATTERNS)
-                throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP, "OptimizedRegularExpression: too many subpatterns in regexp: {}", regexp_);
+                throw DB::Exception("OptimizedRegularExpression: too many subpatterns in regexp: " + regexp_, DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
         }
     }
 

@@ -188,6 +188,15 @@ std::optional<FileInfo> BackupCoordinationLocal::getFileInfo(const SizeAndChecks
     return it->second;
 }
 
+std::optional<SizeAndChecksum> BackupCoordinationLocal::getFileSizeAndChecksum(const String & file_name) const
+{
+    std::lock_guard lock{mutex};
+    auto it = file_names.find(file_name);
+    if (it == file_names.end())
+        return std::nullopt;
+    return it->second;
+}
+
 String BackupCoordinationLocal::getNextArchiveSuffix()
 {
     std::lock_guard lock{mutex};
@@ -200,11 +209,6 @@ Strings BackupCoordinationLocal::getAllArchiveSuffixes() const
 {
     std::lock_guard lock{mutex};
     return archive_suffixes;
-}
-
-bool BackupCoordinationLocal::hasConcurrentBackups(const std::atomic<size_t> & num_active_backups) const
-{
-    return (num_active_backups > 1);
 }
 
 }

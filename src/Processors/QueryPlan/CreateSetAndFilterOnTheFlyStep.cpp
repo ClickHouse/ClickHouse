@@ -62,7 +62,7 @@ public:
     {
         assert(!rhs_ports.first->isConnected() && !rhs_ports.second->isConnected());
 
-        std::lock_guard lock(mux);
+        std::lock_guard<std::mutex> lock(mux);
         if (input_port || output_port)
         {
             assert(input_port && output_port);
@@ -198,7 +198,7 @@ void CreateSetAndFilterOnTheFlyStep::updateOutputStream()
 
     own_set->setHeader(getColumnSubset(input_streams[0].header, column_names));
 
-    output_stream = createOutputStream(input_streams.front(), input_streams.front().header, getDataStreamTraits());
+    output_stream = input_streams[0];
 }
 
 

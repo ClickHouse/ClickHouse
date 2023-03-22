@@ -78,12 +78,7 @@ std::string MetadataStorageFromDisk::readFileToString(const std::string & path) 
     return result;
 }
 
-std::string MetadataStorageFromDisk::readInlineDataToString(const std::string & path) const
-{
-    return readMetadata(path)->getInlineData();
-}
-
-DiskObjectStorageMetadataPtr MetadataStorageFromDisk::readMetadataUnlocked(const std::string & path, std::shared_lock<SharedMutex> &) const
+DiskObjectStorageMetadataPtr MetadataStorageFromDisk::readMetadataUnlocked(const std::string & path, std::shared_lock<std::shared_mutex> &) const
 {
     auto metadata = std::make_unique<DiskObjectStorageMetadata>(disk->getPath(), object_storage_root_path, path);
     auto str = readFileToString(path);
@@ -91,7 +86,7 @@ DiskObjectStorageMetadataPtr MetadataStorageFromDisk::readMetadataUnlocked(const
     return metadata;
 }
 
-DiskObjectStorageMetadataPtr MetadataStorageFromDisk::readMetadataUnlocked(const std::string & path, std::unique_lock<SharedMutex> &) const
+DiskObjectStorageMetadataPtr MetadataStorageFromDisk::readMetadataUnlocked(const std::string & path, std::unique_lock<std::shared_mutex> &) const
 {
     auto metadata = std::make_unique<DiskObjectStorageMetadata>(disk->getPath(), object_storage_root_path, path);
     auto str = readFileToString(path);
@@ -127,7 +122,7 @@ void MetadataStorageFromDiskTransaction::createHardLink(const std::string & path
     addOperation(std::make_unique<CreateHardlinkOperation>(path_from, path_to, *metadata_storage.disk, metadata_storage));
 }
 
-MetadataTransactionPtr MetadataStorageFromDisk::createTransaction()
+MetadataTransactionPtr MetadataStorageFromDisk::createTransaction() const
 {
     return std::make_shared<MetadataStorageFromDiskTransaction>(*this);
 }
@@ -145,7 +140,7 @@ StoredObjects MetadataStorageFromDisk::getStorageObjects(const std::string & pat
     for (auto & [object_relative_path, size] : object_storage_relative_paths)
     {
         auto object_path = fs::path(metadata->getBlobsCommonPrefix()) / object_relative_path;
-        StoredObject object{ object_path, size, path, [](const String & path_){ return path_; }};
+        StoredObject object{ object_path, size, [](const String & path_){ return path_; }};
         object_storage_paths.push_back(object);
     }
 
@@ -247,16 +242,6 @@ void MetadataStorageFromDiskTransaction::writeStringToFile(
      const std::string & data)
 {
     addOperation(std::make_unique<WriteFileOperation>(path, *metadata_storage.getDisk(), data));
-}
-
-void MetadataStorageFromDiskTransaction::writeInlineDataToFile(
-     const std::string & path,
-     const std::string & data)
-{
-    auto metadata = std::make_unique<DiskObjectStorageMetadata>(
-        metadata_storage.getDisk()->getPath(), metadata_storage.getObjectStorageRootPath(), path);
-    metadata->setInlineData(data);
-    writeStringToFile(path, metadata->serializeToString());
 }
 
 void MetadataStorageFromDiskTransaction::setLastModified(const std::string & path, const Poco::Timestamp & timestamp)

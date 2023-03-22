@@ -26,7 +26,6 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int CANNOT_READ_ALL_DATA;
-    extern const int DIRECTORY_DOESNT_EXIST;
 }
 
 namespace
@@ -127,9 +126,6 @@ StoredObjects DiskObjectStorage::getStorageObjects(const String & local_path) co
 
 void DiskObjectStorage::getRemotePathsRecursive(const String & local_path, std::vector<LocalPathWithObjectStoragePaths> & paths_map)
 {
-    if (!metadata_storage->exists(local_path))
-        return;
-
     /// Protect against concurrent delition of files (for example because of a merge).
     if (metadata_storage->isFile(local_path))
     {
@@ -142,7 +138,6 @@ void DiskObjectStorage::getRemotePathsRecursive(const String & local_path, std::
             /// Unfortunately in rare cases it can happen when files disappear
             /// or can be empty in case of operation interruption (like cancelled metadata fetch)
             if (e.code() == ErrorCodes::FILE_DOESNT_EXIST ||
-                e.code() == ErrorCodes::DIRECTORY_DOESNT_EXIST ||
                 e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF ||
                 e.code() == ErrorCodes::CANNOT_READ_ALL_DATA)
                 return;
@@ -162,7 +157,6 @@ void DiskObjectStorage::getRemotePathsRecursive(const String & local_path, std::
             /// Unfortunately in rare cases it can happen when files disappear
             /// or can be empty in case of operation interruption (like cancelled metadata fetch)
             if (e.code() == ErrorCodes::FILE_DOESNT_EXIST ||
-                e.code() == ErrorCodes::DIRECTORY_DOESNT_EXIST ||
                 e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF ||
                 e.code() == ErrorCodes::CANNOT_READ_ALL_DATA)
                 return;
@@ -525,14 +519,6 @@ void DiskObjectStorage::wrapWithCache(FileCachePtr cache, const FileCacheSetting
     object_storage = std::make_shared<CachedObjectStorage>(object_storage, cache, cache_settings, layer_name);
 }
 
-FileCachePtr DiskObjectStorage::getCache() const
-{
-    const auto * cached_object_storage = typeid_cast<CachedObjectStorage *>(object_storage.get());
-    if (!cached_object_storage)
-        return nullptr;
-    return cached_object_storage->getCache();
-}
-
 NameSet DiskObjectStorage::getCacheLayersNames() const
 {
     NameSet cache_layers;
@@ -616,7 +602,7 @@ UInt64 DiskObjectStorage::getRevision() const
 DiskPtr DiskObjectStorageReservation::getDisk(size_t i) const
 {
     if (i != 0)
-        throw Exception(ErrorCodes::INCORRECT_DISK_INDEX, "Can't use i != 0 with single disk reservation");
+        throw Exception("Can't use i != 0 with single disk reservation", ErrorCodes::INCORRECT_DISK_INDEX);
     return disk;
 }
 

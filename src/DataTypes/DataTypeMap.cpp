@@ -68,9 +68,8 @@ void DataTypeMap::assertKeyType() const
 {
     if (!checkKeyType(key_type))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Type of Map key must be a type, that can be represented by integer "
-                        "or String or FixedString (possibly LowCardinality) or UUID,"
-                        " but {} given", key_type->getName());
+            "Type of Map key must be a type, that can be represented by integer or String or FixedString (possibly LowCardinality) or UUID,"
+            " but {} given", key_type->getName());
 }
 
 
@@ -131,7 +130,7 @@ bool DataTypeMap::checkKeyType(DataTypePtr key_type)
 static DataTypePtr create(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.size() != 2)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Map data type family must have two arguments: key and value types");
+        throw Exception("Map data type family must have two arguments: key and value types", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     DataTypes nested_types;
     nested_types.reserve(arguments->children.size());

@@ -1,4 +1,3 @@
-#include <cassert>
 #include <base/defines.h>
 #include <Parsers/Lexer.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -43,36 +42,6 @@ Token quotedString(const char *& pos, const char * const token_begin, const char
 
         UNREACHABLE();
     }
-}
-
-Token quotedHexOrBinString(const char *& pos, const char * const token_begin, const char * const end)
-{
-    constexpr char quote = '\'';
-
-    assert(pos[1] == quote);
-
-    bool hex = (*pos == 'x' || *pos == 'X');
-
-    pos += 2;
-
-    if (hex)
-    {
-        while (pos < end && isHexDigit(*pos))
-            ++pos;
-    }
-    else
-    {
-        pos = find_first_not_symbols<'0', '1'>(pos, end);
-    }
-
-    if (pos >= end || *pos != quote)
-    {
-        pos = end;
-        return Token(TokenType::ErrorSingleQuoteIsNotClosed, token_begin, end);
-    }
-
-    ++pos;
-    return Token(TokenType::StringLiteral, token_begin, pos);
 }
 
 }
@@ -451,12 +420,6 @@ Token Lexer::nextTokenImpl()
                     return Token(TokenType::DollarSign, token_begin, ++pos);
                 }
             }
-
-            if (pos + 2 < end && pos[1] == '\'' && (*pos == 'x' || *pos == 'b' || *pos == 'X' || *pos == 'B'))
-            {
-                return quotedHexOrBinString(pos, token_begin, end);
-            }
-
             if (isWordCharASCII(*pos) || *pos == '$')
             {
                 ++pos;

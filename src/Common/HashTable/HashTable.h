@@ -41,7 +41,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NO_AVAILABLE_DATA;
-    extern const int CANNOT_ALLOCATE_MEMORY;
 }
 }
 
@@ -369,7 +368,7 @@ template <bool need_zero_value_storage, typename Cell>
 struct ZeroValueStorage;
 
 template <typename Cell>
-struct ZeroValueStorage<true, Cell>
+struct ZeroValueStorage<true, Cell> //-V730
 {
 private:
     bool has_zero = false;
@@ -390,11 +389,6 @@ public:
         zeroValue()->~Cell();
     }
 
-    void clearHasZeroFlag()
-    {
-        has_zero = false;
-    }
-
     Cell * zeroValue()             { return std::launder(reinterpret_cast<Cell*>(&zero_value_storage)); }
     const Cell * zeroValue() const { return std::launder(reinterpret_cast<const Cell*>(&zero_value_storage)); }
 };
@@ -403,9 +397,8 @@ template <typename Cell>
 struct ZeroValueStorage<false, Cell>
 {
     bool hasZero() const { return false; }
-    void setHasZero() { throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "HashTable: logical error"); }
+    void setHasZero() { throw DB::Exception("HashTable: logical error", DB::ErrorCodes::LOGICAL_ERROR); }
     void clearHasZero() {}
-    void clearHasZeroFlag() {}
 
     Cell * zeroValue()             { return nullptr; }
     const Cell * zeroValue() const { return nullptr; }
@@ -508,21 +501,9 @@ protected:
         return place_value;
     }
 
-    static size_t allocCheckOverflow(size_t buffer_size)
-    {
-        size_t size = 0;
-        if (common::mulOverflow(buffer_size, sizeof(Cell), size))
-            throw DB::Exception(
-                DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY,
-                "Integer overflow trying to allocate memory for HashTable. Trying to allocate {} cells of {} bytes each",
-                buffer_size, sizeof(Cell));
-
-        return size;
-    }
-
     void alloc(const Grower & new_grower)
     {
-        buf = reinterpret_cast<Cell *>(Allocator::alloc(allocCheckOverflow(new_grower.bufSize())));
+        buf = reinterpret_cast<Cell *>(Allocator::alloc(new_grower.bufSize() * sizeof(Cell)));
         grower = new_grower;
     }
 
@@ -579,11 +560,11 @@ protected:
 
         if constexpr (Cell::need_to_notify_cell_during_move)
         {
-            buf = reinterpret_cast<Cell *>(Allocator::alloc(allocCheckOverflow(new_grower.bufSize())));
+            buf = reinterpret_cast<Cell *>(Allocator::alloc(new_grower.bufSize() * sizeof(Cell)));
             memcpy(reinterpret_cast<void *>(buf), reinterpret_cast<const void *>(old_buffer.get()), old_buffer_size);
         }
         else
-            buf = reinterpret_cast<Cell *>(Allocator::realloc(buf, old_buffer_size, allocCheckOverflow(new_grower.bufSize())));
+            buf = reinterpret_cast<Cell *>(Allocator::realloc(buf, old_buffer_size, new_grower.bufSize() * sizeof(Cell)));
 
         grower = new_grower;
 
@@ -671,17 +652,6 @@ protected:
                 ///   [1]: https://github.com/google/sanitizers/issues/854#issuecomment-329661378
                 __msan_unpoison(it.ptr, sizeof(*it.ptr));
             }
-
-            /// Everything had been destroyed in the loop above, reset the flag
-            /// only, without calling destructor.
-            this->clearHasZeroFlag();
-        }
-        else
-        {
-            /// NOTE: it is OK to call dtor for trivially destructible type
-            /// even the object hadn't been initialized, so no need to has
-            /// hasZero() check.
-            this->clearHasZero();
         }
     }
 
@@ -841,7 +811,7 @@ public:
         inline const value_type & get() const
         {
             if (!is_initialized || is_eof)
-                throw DB::Exception(DB::ErrorCodes::NO_AVAILABLE_DATA, "No available data");
+                throw DB::Exception("No available data", DB::ErrorCodes::NO_AVAILABLE_DATA);
 
             return cell.getValue();
         }
@@ -1314,6 +1284,7 @@ public:
         Cell::State::read(rb);
 
         destroyElements();
+        this->clearHasZero();
         m_size = 0;
 
         size_t new_size = 0;
@@ -1337,6 +1308,7 @@ public:
         Cell::State::readText(rb);
 
         destroyElements();
+        this->clearHasZero();
         m_size = 0;
 
         size_t new_size = 0;
@@ -1370,6 +1342,7 @@ public:
     void clear()
     {
         destroyElements();
+        this->clearHasZero();
         m_size = 0;
 
         memset(static_cast<void*>(buf), 0, grower.bufSize() * sizeof(*buf));
@@ -1380,6 +1353,7 @@ public:
     void clearAndShrink()
     {
         destroyElements();
+        this->clearHasZero();
         m_size = 0;
         free();
     }

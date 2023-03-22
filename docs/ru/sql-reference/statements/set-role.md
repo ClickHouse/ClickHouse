@@ -53,3 +53,5 @@ SET DEFAULT ROLE NONE TO user
 ```sql
 SET DEFAULT ROLE ALL EXCEPT role1, role2 TO user
 ```
+
+

@@ -59,7 +59,6 @@ namespace ErrorCodes
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int CANNOT_COMPILE_REGEXP;
 }
 namespace
 {
@@ -76,9 +75,6 @@ namespace
 
         const size_t next_slash = suffix_with_globs.find('/', 1);
         re2::RE2 matcher(makeRegexpPatternFromGlobs(suffix_with_globs.substr(0, next_slash)));
-        if (!matcher.ok())
-            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
-                "Cannot compile regex from glob ({}): {}", for_match, matcher.error());
 
         HDFSFileInfo ls;
         ls.file_info = hdfsListDirectory(fs.get(), prefix_without_globs.data(), &ls.length);
@@ -132,7 +128,7 @@ namespace
                 return {uri.substr(pos), uri.substr(0, pos)};
         }
 
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage HDFS requires valid URL to be set");
+        throw Exception("Storage HDFS requires valid URL to be set", ErrorCodes::BAD_ARGUMENTS);
     }
 
     std::vector<String> getPathsList(const String & path_from_uri, const String & uri_without_path, ContextPtr context, std::unordered_map<String, time_t> * last_mod_times = nullptr)
@@ -204,8 +200,9 @@ ColumnsDescription StorageHDFS::getTableStructureFromData(
     if (paths.empty() && !FormatFactory::instance().checkIfFormatHasExternalSchemaReader(format))
         throw Exception(
             ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-            "Cannot extract table structure from {} format file, because there are no files in HDFS with provided path."
-            " You must specify table structure manually", format);
+            "Cannot extract table structure from {} format file, because there are no files in HDFS with provided path. You must "
+            "specify table structure manually",
+            format);
 
     std::optional<ColumnsDescription> columns_from_cache;
     if (ctx->getSettingsRef().schema_inference_use_cache_for_hdfs)
@@ -341,6 +338,13 @@ HDFSSource::HDFSSource(
     initialize();
 }
 
+void HDFSSource::onCancel()
+{
+    std::lock_guard lock(reader_mutex);
+    if (reader)
+        reader->cancel();
+}
+
 bool HDFSSource::initialize()
 {
     current_path = (*file_iterator)();
@@ -380,12 +384,8 @@ Chunk HDFSSource::generate()
 {
     while (true)
     {
-        if (isCancelled() || !reader)
-        {
-            if (reader)
-                reader->cancel();
+        if (!reader || isCancelled())
             break;
-        }
 
         Chunk chunk;
         if (reader->pull(chunk))
@@ -413,12 +413,15 @@ Chunk HDFSSource::generate()
             return Chunk(std::move(columns), num_rows);
         }
 
-        reader.reset();
-        pipeline.reset();
-        read_buf.reset();
+        {
+            std::lock_guard lock(reader_mutex);
+            reader.reset();
+            pipeline.reset();
+            read_buf.reset();
 
-        if (!initialize())
-            break;
+            if (!initialize())
+                break;
+        }
     }
     return {};
 }
@@ -596,7 +599,7 @@ Pipe StorageHDFS::read(
             { return std::any_of(virtuals.begin(), virtuals.end(), [&](const NameAndTypePair & virtual_col){ return col == virtual_col.name; }); });
 
         if (fetch_columns.empty())
-            fetch_columns.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()).name);
+            fetch_columns.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()));
 
         columns_description = storage_snapshot->getDescriptionForColumns(fetch_columns);
         block_for_format = storage_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
@@ -710,9 +713,8 @@ void registerStorageHDFS(StorageFactory & factory)
         ASTs & engine_args = args.engine_args;
 
         if (engine_args.empty() || engine_args.size() > 3)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Storage HDFS requires 1, 2 or 3 arguments: "
-                            "url, name of used format (taken from file extension by default) and optional compression method.");
+            throw Exception(
+                "Storage HDFS requires 1, 2 or 3 arguments: url, name of used format (taken from file extension by default) and optional compression method.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.getLocalContext());
 
