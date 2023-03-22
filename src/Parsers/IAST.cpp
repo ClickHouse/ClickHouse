@@ -163,7 +163,7 @@ String IAST::formatWithSecretsHidden(size_t max_length, bool one_line) const
     WriteBufferFromOwnString buf;
 
     FormatSettings settings(one_line, false, IdentifierQuotingStyle::Backticks, false, false);
-    format(FormattingBuffer(buf, settings));
+    format(buf, settings);
 
     return wipeSensitiveDataAndCutToLength(buf.str(), max_length);
 }
@@ -427,15 +427,15 @@ bool IAST::FormattingBuffer::shouldShowSecrets() const
     return settings.show_secrets;
 }
 
-void IAST::FormattingBuffer::writeIndent(bool add_extra_indent) const
+void IAST::FormattingBuffer::writeIndent(int extra_indent) const
 {
-    std::string indent_str = settings.one_line ? "" : std::string(4 * stacked_state->indent + add_extra_indent, ' ');
-    ostr << indent_str;
+    if (!settings.one_line)
+        ostr << std::string(4 * stacked_state.indent + extra_indent, ' ');
 }
 
 bool IAST::FormattingBuffer::insertAlias(std::string alias, Hash printed_content) const
 {
-    return !state->printed_asts_with_alias.emplace(stacked_state->current_select, alias, printed_content).second;
+    return !state.printed_asts_with_alias.emplace(stacked_state.current_select, alias, printed_content).second;
 }
 
 void IAST::dumpTree(WriteBuffer & ostr, size_t indent) const
