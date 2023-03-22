@@ -123,6 +123,9 @@ public:
         size_t limit,
         SerializeBinaryBulkSettings & settings,
         SerializeBinaryBulkStatePtr & state) const override;
+
+protected:
+    static void assertSettings(const ISerialization::SerializeBinaryBulkSettings & settings);
 };
 
 class SerializationMapKeysValues : public SerializationMapSubcolumn

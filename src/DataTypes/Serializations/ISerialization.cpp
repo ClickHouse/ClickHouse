@@ -121,8 +121,7 @@ void ISerialization::deserializeBinaryBulkWithMultipleStreams(
     DeserializeBinaryBulkStatePtr & /* state */,
     SubstreamsCache * cache) const
 {
-    auto cached_column = getFromSubstreamsCache(cache, settings.path);
-    if (cached_column)
+    if (auto cached_column = getFromSubstreamsCache(cache, settings.path))
     {
         column = cached_column;
     }
