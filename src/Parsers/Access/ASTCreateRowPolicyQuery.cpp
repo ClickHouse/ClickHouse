@@ -13,21 +13,21 @@ namespace DB
 {
 namespace
 {
-    void formatRenameTo(const String & new_short_name, const IAST::FormattingBuffer & out)
+    void formatRenameTo(const String & new_short_name, IAST::FormattingBuffer out)
     {
         out.writeKeyword(" RENAME TO ");
         out.ostr << backQuote(new_short_name);
     }
 
 
-    void formatAsRestrictiveOrPermissive(bool is_restrictive, const IAST::FormattingBuffer & out)
+    void formatAsRestrictiveOrPermissive(bool is_restrictive, IAST::FormattingBuffer out)
     {
         out.writeKeyword(" AS ");
         out.ostr << (is_restrictive ? "restrictive" : "permissive");
     }
 
 
-    void formatFilterExpression(const ASTPtr & expr, const IAST::FormattingBuffer & out)
+    void formatFilterExpression(const ASTPtr & expr, IAST::FormattingBuffer out)
     {
         out.ostr << " ";
         if (expr)
@@ -109,7 +109,7 @@ namespace
     }
 
 
-    void formatToRoles(const ASTRolesOrUsersSet & roles, const IAST::FormattingBuffer & out)
+    void formatToRoles(const ASTRolesOrUsersSet & roles, IAST::FormattingBuffer out)
     {
         out.writeKeyword(" TO ");
         roles.format(out);

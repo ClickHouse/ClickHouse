@@ -9,7 +9,7 @@ namespace DB
 {
 namespace
 {
-    void formatNames(const Strings & names, const IAST::FormattingBuffer & out)
+    void formatNames(const Strings & names, IAST::FormattingBuffer out)
     {
         out.ostr << " ";
         bool need_comma = false;
@@ -21,19 +21,19 @@ namespace
         }
     }
 
-    void formatRenameTo(const String & new_name, const IAST::FormattingBuffer & out)
+    void formatRenameTo(const String & new_name, IAST::FormattingBuffer out)
     {
         out.writeKeyword(" RENAME TO ");
         out.ostr << quoteString(new_name);
     }
 
-    void formatSettings(const ASTSettingsProfileElements & settings, const IAST::FormattingBuffer & out)
+    void formatSettings(const ASTSettingsProfileElements & settings, IAST::FormattingBuffer out)
     {
         out.writeKeyword(" SETTINGS ");
         settings.format(out);
     }
 
-    void formatToRoles(const ASTRolesOrUsersSet & roles, const IAST::FormattingBuffer & out)
+    void formatToRoles(const ASTRolesOrUsersSet & roles, IAST::FormattingBuffer out)
     {
         out.writeKeyword(" TO ");
         roles.format(out);

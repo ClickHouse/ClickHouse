@@ -26,7 +26,7 @@ bool ASTQueryWithOnCluster::parse(Pos & pos, std::string & cluster_str, Expected
 }
 
 
-void ASTQueryWithOnCluster::formatOnCluster(const IAST::FormattingBuffer & out) const
+void ASTQueryWithOnCluster::formatOnCluster(IAST::FormattingBuffer out) const
 {
     if (!cluster.empty())
     {

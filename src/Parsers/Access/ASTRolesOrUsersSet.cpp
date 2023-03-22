@@ -7,7 +7,7 @@ namespace DB
 {
 namespace
 {
-    void formatNameOrID(const String & str, bool is_id, const IAST::FormattingBuffer & out)
+    void formatNameOrID(const String & str, bool is_id, IAST::FormattingBuffer out)
     {
         if (is_id)
         {

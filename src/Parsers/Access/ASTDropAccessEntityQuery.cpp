@@ -8,7 +8,7 @@ namespace DB
 {
 namespace
 {
-    void formatNames(const Strings & names, const IAST::FormattingBuffer & out)
+    void formatNames(const Strings & names, IAST::FormattingBuffer out)
     {
         bool need_comma = false;
         for (const auto & name : names)

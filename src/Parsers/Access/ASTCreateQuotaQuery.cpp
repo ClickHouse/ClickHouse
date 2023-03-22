@@ -10,7 +10,7 @@ namespace DB
 {
 namespace
 {
-    void formatKeyType(const QuotaKeyType & key_type, const IAST::FormattingBuffer & out)
+    void formatKeyType(const QuotaKeyType & key_type, IAST::FormattingBuffer out)
     {
         const auto & type_info = QuotaKeyTypeInfo::get(key_type);
         if (key_type == QuotaKeyType::NONE)
@@ -37,7 +37,7 @@ namespace
     }
 
 
-    void formatNames(const Strings & names, const IAST::FormattingBuffer & out)
+    void formatNames(const Strings & names, IAST::FormattingBuffer out)
     {
         out.ostr << " ";
         bool need_comma = false;
@@ -50,21 +50,21 @@ namespace
     }
 
 
-    void formatRenameTo(const String & new_name, const IAST::FormattingBuffer & out)
+    void formatRenameTo(const String & new_name, IAST::FormattingBuffer out)
     {
         out.writeKeyword(" RENAME TO ");
         out.ostr << backQuote(new_name);
     }
 
 
-    void formatLimit(QuotaType quota_type, QuotaValue max_value, const IAST::FormattingBuffer & out)
+    void formatLimit(QuotaType quota_type, QuotaValue max_value, IAST::FormattingBuffer out)
     {
         const auto & type_info = QuotaTypeInfo::get(quota_type);
         out.ostr << " " << type_info.name << " = " << type_info.valueToString(max_value);
     }
 
 
-    void formatIntervalWithLimits(const ASTCreateQuotaQuery::Limits & limits, const IAST::FormattingBuffer & out)
+    void formatIntervalWithLimits(const ASTCreateQuotaQuery::Limits & limits, IAST::FormattingBuffer out)
     {
         auto interval_kind = IntervalKind::fromAvgSeconds(limits.duration.count());
         Int64 num_intervals = limits.duration.count() / interval_kind.toAvgSeconds();
@@ -108,7 +108,7 @@ namespace
         }
     }
 
-    void formatIntervalsWithLimits(const std::vector<ASTCreateQuotaQuery::Limits> & all_limits, const IAST::FormattingBuffer & out)
+    void formatIntervalsWithLimits(const std::vector<ASTCreateQuotaQuery::Limits> & all_limits, IAST::FormattingBuffer out)
     {
         bool need_comma = false;
         for (const auto & limits : all_limits)
@@ -121,7 +121,7 @@ namespace
         }
     }
 
-    void formatToRoles(const ASTRolesOrUsersSet & roles, const IAST::FormattingBuffer & out)
+    void formatToRoles(const ASTRolesOrUsersSet & roles, IAST::FormattingBuffer out)
     {
         out.writeKeyword(" TO ");
         roles.format(out);

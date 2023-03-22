@@ -16,14 +16,14 @@ namespace ErrorCodes
 
 namespace
 {
-    void formatRenameTo(const String & new_name, const IAST::FormattingBuffer & out)
+    void formatRenameTo(const String & new_name, IAST::FormattingBuffer out)
     {
         out.writeKeyword(" RENAME TO ");
         out.ostr << quoteString(new_name);
     }
 
 
-    void formatAuthenticationData(const AuthenticationData & auth_data, const IAST::FormattingBuffer & out)
+    void formatAuthenticationData(const AuthenticationData & auth_data, IAST::FormattingBuffer out)
     {
         auto auth_type = auth_data.getType();
         if (auth_type == AuthenticationType::NO_PASSWORD)
@@ -142,7 +142,7 @@ namespace
     }
 
 
-    void formatHosts(const char * prefix, const AllowedClientHosts & hosts, const IAST::FormattingBuffer & out)
+    void formatHosts(const char * prefix, const AllowedClientHosts & hosts, IAST::FormattingBuffer out)
     {
         if (prefix)
         {
@@ -240,27 +240,27 @@ namespace
     }
 
 
-    void formatDefaultRoles(const ASTRolesOrUsersSet & default_roles, const IAST::FormattingBuffer & out)
+    void formatDefaultRoles(const ASTRolesOrUsersSet & default_roles, IAST::FormattingBuffer out)
     {
         out.writeKeyword(" DEFAULT ROLE ");
         default_roles.format(out);
     }
 
 
-    void formatSettings(const ASTSettingsProfileElements & settings, const IAST::FormattingBuffer & out)
+    void formatSettings(const ASTSettingsProfileElements & settings, IAST::FormattingBuffer out)
     {
         out.writeKeyword(" SETTINGS ");
         settings.format(out);
     }
 
 
-    void formatGrantees(const ASTRolesOrUsersSet & grantees, const IAST::FormattingBuffer & out)
+    void formatGrantees(const ASTRolesOrUsersSet & grantees, IAST::FormattingBuffer out)
     {
         out.writeKeyword(" GRANTEES ");
         grantees.format(out);
     }
 
-    void formatDefaultDatabase(const ASTDatabaseOrNone & default_database, const IAST::FormattingBuffer & out)
+    void formatDefaultDatabase(const ASTDatabaseOrNone & default_database, IAST::FormattingBuffer out)
     {
         out.writeKeyword(" DEFAULT DATABASE ");
         default_database.format(out);

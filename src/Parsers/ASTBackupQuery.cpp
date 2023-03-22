@@ -15,7 +15,7 @@ namespace
     using Element = ASTBackupQuery::Element;
     using ElementType = ASTBackupQuery::ElementType;
 
-    void formatPartitions(const ASTs & partitions, const IAST::FormattingBuffer & out)
+    void formatPartitions(const ASTs & partitions, IAST::FormattingBuffer out)
     {
         out.writeKeyword((partitions.size() == 1) ? "PARTITION " : "PARTITIONS ");
         bool need_comma = false;
@@ -28,7 +28,7 @@ namespace
         }
     }
 
-    void formatExceptDatabases(const std::set<String> & except_databases, const IAST::FormattingBuffer & out)
+    void formatExceptDatabases(const std::set<String> & except_databases, IAST::FormattingBuffer out)
     {
         if (except_databases.empty())
             return;
@@ -45,7 +45,7 @@ namespace
         }
     }
 
-    void formatExceptTables(const std::set<DatabaseAndTableName> & except_tables, const IAST::FormattingBuffer & out)
+    void formatExceptTables(const std::set<DatabaseAndTableName> & except_tables, IAST::FormattingBuffer out)
     {
         if (except_tables.empty())
             return;
@@ -65,7 +65,7 @@ namespace
         }
     }
 
-    void formatElement(const Element & element, const IAST::FormattingBuffer & out)
+    void formatElement(const Element & element, IAST::FormattingBuffer out)
     {
         switch (element.type)
         {
@@ -128,7 +128,7 @@ namespace
         }
     }
 
-    void formatElements(const std::vector<Element> & elements, const IAST::FormattingBuffer & out)
+    void formatElements(const std::vector<Element> & elements, IAST::FormattingBuffer out)
     {
         bool need_comma = false;
         for (const auto & element : elements)
@@ -139,7 +139,7 @@ namespace
         }
     }
 
-    void formatSettings(const ASTPtr & settings, const ASTFunction * base_backup_name, const ASTPtr & cluster_host_ids, const IAST::FormattingBuffer & out)
+    void formatSettings(const ASTPtr & settings, const ASTFunction * base_backup_name, const ASTPtr & cluster_host_ids, IAST::FormattingBuffer out)
     {
         if (!settings && !base_backup_name && !cluster_host_ids)
             return;

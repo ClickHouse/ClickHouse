@@ -13,7 +13,7 @@ namespace ErrorCodes
 
 namespace
 {
-    void formatColumnNames(const Strings & columns, const IAST::FormattingBuffer & out)
+    void formatColumnNames(const Strings & columns, IAST::FormattingBuffer out)
     {
         out.ostr << "(";
         bool need_comma = false;
@@ -27,7 +27,7 @@ namespace
     }
 
 
-    void formatONClause(const String & database, bool any_database, const String & table, bool any_table, const IAST::FormattingBuffer & out)
+    void formatONClause(const String & database, bool any_database, const String & table, bool any_table, IAST::FormattingBuffer out)
     {
         out.writeKeyword("ON ");
         if (any_database)
@@ -46,7 +46,7 @@ namespace
     }
 
 
-    void formatElementsWithoutOptions(const AccessRightsElements & elements, const IAST::FormattingBuffer & out)
+    void formatElementsWithoutOptions(const AccessRightsElements & elements, IAST::FormattingBuffer out)
     {
         bool no_output = true;
         for (size_t i = 0; i != elements.size(); ++i)
