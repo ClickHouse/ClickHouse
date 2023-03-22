@@ -43,6 +43,10 @@ def get_options(i, upgrade_check):
             client_options.append("join_algorithm='auto'")
             client_options.append("max_rows_in_join=1000")
 
+    if i % 3 == 1:
+        client_options.append("allow_experimental_query_cache=1")
+        client_options.append("use_query_cache=1")
+
     if i % 5 == 1:
         client_options.append("memory_tracker_fault_probability=0.001")
 
