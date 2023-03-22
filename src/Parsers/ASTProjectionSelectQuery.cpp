@@ -51,7 +51,7 @@ ASTPtr ASTProjectionSelectQuery::clone() const
 void ASTProjectionSelectQuery::formatImpl(FormattingBuffer out) const
 {
     out.setCurrentSelect(this);
-    out.setNeedsParens(false);
+    out.setNeedParens(false);
 
     if (with())
     {

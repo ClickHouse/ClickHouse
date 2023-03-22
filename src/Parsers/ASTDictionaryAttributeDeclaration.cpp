@@ -33,7 +33,7 @@ ASTPtr ASTDictionaryAttributeDeclaration::clone() const
 
 void ASTDictionaryAttributeDeclaration::formatImpl(FormattingBuffer out) const
 {
-    out.setNeedsParens(false);
+    out.setNeedParens(false);
 
     out.ostr << backQuote(name);
 

@@ -55,7 +55,7 @@ void ASTSelectQuery::updateTreeHashImpl(SipHash & hash_state) const
 void ASTSelectQuery::formatImpl(FormattingBuffer out) const
 {
     out.setCurrentSelect(this);
-    out.setNeedsParens(false);
+    out.setNeedParens(false);
     out.setExpressionListPrependWhitespace();
 
     if (with())

@@ -282,7 +282,7 @@ public:
 
         FormattingBuffer & increaseIndent(int extra_indent = 1);
 
-        FormattingBuffer & setNeedsParens(bool value = true);  // todo: rename into setNeedParens
+        FormattingBuffer & setNeedParens(bool value = true);
 
         FormattingBuffer & setExpressionListAlwaysStartsOnNewLine(bool value = true);
 

@@ -645,15 +645,15 @@ ASTSelectWithUnionQuery * ASTFunction::tryGetQueryArgument() const
 void ASTFunction::formatImplWithoutAlias(FormattingBuffer out) const
 {
     out.setExpressionListPrependWhitespace(false);
-    FormattingBuffer out_need_parens = out.copy().setNeedsParens();
-    FormattingBuffer out_dont_need_parens = out.copy().setNeedsParens(false);
+    FormattingBuffer out_need_parens = out.copy().setNeedParens();
+    FormattingBuffer out_dont_need_parens = out.copy().setNeedParens(false);
 
     if (auto * query = tryGetQueryArgument())
     {
         out.writeFunction(name);
         out.writeFunction("(");
         out.nlOrNothing();
-        query->formatImpl(out.copy().setNeedsParens(false).increaseIndent());
+        query->formatImpl(out.copy().setNeedParens(false).increaseIndent());
         out.nlOrNothing();
         out.writeIndent();
         out.writeFunction(")");
@@ -695,7 +695,7 @@ void ASTFunction::formatImplWithoutAlias(FormattingBuffer out) const
 
                 // do not add extra parentheses for functions inside negate, i.e. -(-toUInt64(-(1)))
                 if (negate_need_parens)
-                    out_need_parens.setNeedsParens(false);
+                    out_need_parens.setNeedParens(false);
 
                 if (need_parens)
                     out.ostr << '(';
@@ -916,7 +916,7 @@ void ASTFunction::formatImplWithoutAlias(FormattingBuffer out) const
                 out.writeFunction(name);
                 out.writeFunction("(");
                 out.nlOrNothing();
-                FormattingBuffer out_copy = out.copy().setNeedsParens(false).increaseIndent(2);
+                FormattingBuffer out_copy = out.copy().setNeedParens(false).increaseIndent(2);
                 arguments->children[0]->formatImpl(out_copy);
                 out.nlOrWs();
                 out.writeIndent(1);

@@ -216,7 +216,7 @@ void ASTTableJoin::formatImplBeforeTable(FormattingBuffer out) const
 
 void ASTTableJoin::formatImplAfterTable(FormattingBuffer out) const
 {
-    out.setNeedsParens(false);
+    out.setNeedParens(false);
     out.setExpressionListPrependWhitespace(false);
 
     if (using_expression_list)

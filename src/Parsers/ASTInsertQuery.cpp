@@ -48,7 +48,7 @@ void ASTInsertQuery::setTable(const String & name)
 
 void ASTInsertQuery::formatImpl(FormattingBuffer out) const
 {
-    out.setNeedsParens(false);
+    out.setNeedParens(false);
 
     out.writeKeyword("INSERT INTO ");
     if (table_function)

@@ -236,7 +236,7 @@ ASTPtr ASTCreateQuery::clone() const
 
 void ASTCreateQuery::formatQueryImpl(FormattingBuffer out) const
 {
-    out.setNeedsParens(false);
+    out.setNeedParens(false);
 
     if (database && !table)
     {

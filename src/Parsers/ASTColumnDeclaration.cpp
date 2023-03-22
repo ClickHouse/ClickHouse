@@ -55,7 +55,7 @@ ASTPtr ASTColumnDeclaration::clone() const
 
 void ASTColumnDeclaration::formatImpl(FormattingBuffer out) const
 {
-    out.setNeedsParens(false);
+    out.setNeedParens(false);
 
     /// We have to always backquote column names to avoid ambiguouty with INDEX and other declarations in CREATE query.
     out.ostr << backQuote(name);
