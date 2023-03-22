@@ -115,7 +115,7 @@ namespace
     void formatToRoles(const ASTRolesOrUsersSet & roles, IAST::FormattingBuffer out)
     {
         out.writeKeyword(" TO ");
-        roles.format(out);
+        roles.formatImpl(out);
     }
 }
 
@@ -165,7 +165,7 @@ void ASTCreateRowPolicyQuery::formatImpl(FormattingBuffer out) const
         out.writeKeyword(" OR REPLACE");
 
     out.ostr << " ";
-    names->format(out);
+    names->formatImpl(out);
 
     formatOnCluster(out);
     assert(names->cluster.empty());

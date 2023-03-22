@@ -243,27 +243,27 @@ namespace
     void formatDefaultRoles(const ASTRolesOrUsersSet & default_roles, IAST::FormattingBuffer out)
     {
         out.writeKeyword(" DEFAULT ROLE ");
-        default_roles.format(out);
+        default_roles.formatImpl(out);
     }
 
 
     void formatSettings(const ASTSettingsProfileElements & settings, IAST::FormattingBuffer out)
     {
         out.writeKeyword(" SETTINGS ");
-        settings.format(out);
+        settings.formatImpl(out);
     }
 
 
     void formatGrantees(const ASTRolesOrUsersSet & grantees, IAST::FormattingBuffer out)
     {
         out.writeKeyword(" GRANTEES ");
-        grantees.format(out);
+        grantees.formatImpl(out);
     }
 
     void formatDefaultDatabase(const ASTDatabaseOrNone & default_database, IAST::FormattingBuffer out)
     {
         out.writeKeyword(" DEFAULT DATABASE ");
-        default_database.format(out);
+        default_database.formatImpl(out);
     }
 }
 
@@ -316,7 +316,7 @@ void ASTCreateUserQuery::formatImpl(FormattingBuffer out) const
         out.writeKeyword(" OR REPLACE");
 
     out.ostr << " ";
-    names->format(out);
+    names->formatImpl(out);
 
     formatOnCluster(out);
 

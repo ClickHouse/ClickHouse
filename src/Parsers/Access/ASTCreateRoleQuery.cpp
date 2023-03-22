@@ -29,7 +29,7 @@ namespace
     void formatSettings(const ASTSettingsProfileElements & settings, IAST::FormattingBuffer out)
     {
         out.writeKeyword(" SETTINGS ");
-        settings.format(out);
+        settings.formatImpl(out);
     }
 }
 

@@ -30,13 +30,13 @@ namespace
     void formatSettings(const ASTSettingsProfileElements & settings, IAST::FormattingBuffer out)
     {
         out.writeKeyword(" SETTINGS ");
-        settings.format(out);
+        settings.formatImpl(out);
     }
 
     void formatToRoles(const ASTRolesOrUsersSet & roles, IAST::FormattingBuffer out)
     {
         out.writeKeyword(" TO ");
-        roles.format(out);
+        roles.formatImpl(out);
     }
 }
 

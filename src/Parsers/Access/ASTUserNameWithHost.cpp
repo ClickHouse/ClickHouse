@@ -37,7 +37,7 @@ void ASTUserNamesWithHost::formatImpl(FormattingBuffer out) const
     {
         if (std::exchange(need_comma, true))
             out.ostr << ", ";
-        name->format(out);
+        name->formatImpl(out);
     }
 }
 

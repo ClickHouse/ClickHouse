@@ -42,12 +42,12 @@ void ASTSetRoleQuery::formatImpl(FormattingBuffer out) const
         return;
 
     out.ostr << " ";
-    roles->format(out);
+    roles->formatImpl(out);
 
     if (kind == Kind::SET_ROLE)
         return;
 
     out.writeKeyword(" TO ");
-    to_users->format(out);
+    to_users->formatImpl(out);
 }
 }

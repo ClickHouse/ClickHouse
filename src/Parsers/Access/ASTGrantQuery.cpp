@@ -136,7 +136,7 @@ void ASTGrantQuery::formatImpl(FormattingBuffer out) const
     out.ostr << " ";
     if (roles)
     {
-        roles->format(out);
+        roles->formatImpl(out);
         if (!access_rights_elements.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "ASTGrantQuery can contain either roles or access rights elements "
@@ -146,7 +146,7 @@ void ASTGrantQuery::formatImpl(FormattingBuffer out) const
         formatElementsWithoutOptions(access_rights_elements, out);
 
     out.writeKeyword(is_revoke ? " FROM " : " TO ");
-    grantees->format(out);
+    grantees->formatImpl(out);
 
     if (!is_revoke)
     {

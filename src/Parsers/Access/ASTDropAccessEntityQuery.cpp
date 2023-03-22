@@ -47,7 +47,7 @@ void ASTDropAccessEntityQuery::formatImpl(FormattingBuffer out) const
     if (type == AccessEntityType::ROW_POLICY)
     {
         out.ostr << " ";
-        row_policy_names->format(out);
+        row_policy_names->formatImpl(out);
     }
     else
         formatNames(names, out);

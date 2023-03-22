@@ -58,7 +58,7 @@ void ASTShowCreateAccessEntityQuery::formatQueryImpl(FormattingBuffer out) const
     if (row_policy_names)
     {
         out.ostr << " ";
-        row_policy_names->format(out);
+        row_policy_names->formatImpl(out);
     }
 
     if (!short_name.empty())

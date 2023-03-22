@@ -24,7 +24,7 @@ namespace
             if (std::exchange(need_comma, true))
                 out.ostr << ",";
             out.ostr << " ";
-            partition->format(out);
+            partition->formatImpl(out);
         }
     }
 
@@ -150,7 +150,7 @@ namespace
         if (base_backup_name)
         {
             out.ostr << "base_backup = ";
-            base_backup_name->format(out);
+            base_backup_name->formatImpl(out);
             empty = false;
         }
 
@@ -158,7 +158,7 @@ namespace
         {
             if (!empty)
                 out.ostr << ", ";
-            settings->format(out);
+            settings->formatImpl(out);
             empty = false;
         }
 
@@ -167,7 +167,7 @@ namespace
             if (!empty)
                 out.ostr << ", ";
             out.ostr << "cluster_host_ids = ";
-            cluster_host_ids->format(out);
+            cluster_host_ids->formatImpl(out);
         }
     }
 
@@ -270,7 +270,7 @@ void ASTBackupQuery::formatImpl(FormattingBuffer out) const
     formatOnCluster(out);
 
     out.writeKeyword((kind == Kind::BACKUP) ? " TO " : " FROM ");
-    backup_name->format(out);
+    backup_name->formatImpl(out);
 
     if (settings || base_backup_name)
         formatSettings(settings, base_backup_name, cluster_host_ids, out);

@@ -124,7 +124,7 @@ namespace
     void formatToRoles(const ASTRolesOrUsersSet & roles, IAST::FormattingBuffer out)
     {
         out.writeKeyword(" TO ");
-        roles.format(out);
+        roles.formatImpl(out);
     }
 }
 
