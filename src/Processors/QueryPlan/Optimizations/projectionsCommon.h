@@ -62,7 +62,7 @@ struct ProjectionCandidate
     /// Analysis is done in order to estimate the number of marks we are going to read.
     /// For chosen projection, it is reused for reading step.
     MergeTreeDataSelectAnalysisResultPtr merge_tree_projection_select_result_ptr;
-    MergeTreeDataSelectAnalysisResultPtr merge_tree_normal_select_result_ptr;
+    MergeTreeDataSelectAnalysisResultPtr merge_tree_ordinary_select_result_ptr;
 };
 
 /// This function fills ProjectionCandidate structure for specified projection.

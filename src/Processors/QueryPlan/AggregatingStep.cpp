@@ -527,11 +527,11 @@ void AggregatingStep::requestOnlyMergeForAggregateProjection(const DataStream & 
     if (!canUseProjection())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot aggregate from projection");
 
-    auto cur_header = getOutputStream().header;
+    auto output_header = getOutputStream().header;
     input_streams.front() = input_stream;
     params.only_merge = true;
     updateOutputStream();
-    assertBlocksHaveEqualStructure(cur_header, getOutputStream().header, "AggregatingStep");
+    assertBlocksHaveEqualStructure(output_header, getOutputStream().header, "AggregatingStep");
 }
 
 std::unique_ptr<AggregatingProjectionStep> AggregatingStep::convertToAggregatingProjection(const DataStream & input_stream) const
