@@ -367,7 +367,7 @@ struct ArrayAggregateImpl
             executeType<Decimal128>(mapped, offsets, res))
             return res;
         else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column for arraySum: {}", mapped->getName());
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column for arraySum: {}" + mapped->getName());
     }
 };
 

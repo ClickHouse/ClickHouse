@@ -55,7 +55,7 @@ ReadBufferPtr WriteBufferFromTemporaryFile::getReadBufferImpl()
 
     auto res = ReadBufferFromTemporaryWriteBuffer::createFrom(this);
 
-    /// invalidate FD to avoid close() in destructor
+    /// invalidate FD to avoid close(fd) in destructor
     setFD(-1);
     file_name = {};
 

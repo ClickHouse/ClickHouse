@@ -8,12 +8,10 @@
 #include <Client/Connection.h>
 #include <Core/QueryProcessingStage.h>
 #include <DataTypes/DataTypeString.h>
-#include <IO/ConnectionTimeouts.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <QueryPipeline/narrowPipe.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
@@ -84,12 +82,8 @@ Pipe StorageHDFSCluster::read(
     auto extension = getTaskIteratorExtension(query_info.query, context);
 
     /// Calculate the header. This is significant, because some columns could be thrown away in some cases like query with count(*)
-    Block header;
-
-    if (context->getSettingsRef().allow_experimental_analyzer)
-        header = InterpreterSelectQueryAnalyzer::getSampleBlock(query_info.query, context, SelectQueryOptions(processed_stage).analyze());
-    else
-        header = InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+    Block header =
+        InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
 
     const Scalars & scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
 
@@ -110,6 +104,7 @@ Pipe StorageHDFSCluster::read(
         for (auto & try_result : try_results)
         {
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
+                shard_info.pool,
                 std::vector<IConnectionPool::Entry>{try_result},
                 queryToString(query_to_send),
                 header,

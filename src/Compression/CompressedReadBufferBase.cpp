@@ -6,7 +6,7 @@
 #include <city.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
-#include <base/hex.h>
+#include <Common/hex.h>
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/ReadBuffer.h>
@@ -86,7 +86,7 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
             {
                 message << ". The mismatch is caused by single bit flip in data block at byte " << (bit_pos / 8) << ", bit " << (bit_pos % 8) << ". "
                     << message_hardware_failure;
-                throw Exception::createDeprecated(message.str(), ErrorCodes::CHECKSUM_DOESNT_MATCH);
+                throw Exception(message.str(), ErrorCodes::CHECKSUM_DOESNT_MATCH);
             }
 
             flip_bit(tmp_data, bit_pos);    /// Restore
@@ -101,10 +101,10 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
     {
         message << ". The mismatch is caused by single bit flip in checksum. "
             << message_hardware_failure;
-        throw Exception::createDeprecated(message.str(), ErrorCodes::CHECKSUM_DOESNT_MATCH);
+        throw Exception(message.str(), ErrorCodes::CHECKSUM_DOESNT_MATCH);
     }
 
-    throw Exception::createDeprecated(message.str(), ErrorCodes::CHECKSUM_DOESNT_MATCH);
+    throw Exception(message.str(), ErrorCodes::CHECKSUM_DOESNT_MATCH);
 }
 
 static void readHeaderAndGetCodecAndSize(

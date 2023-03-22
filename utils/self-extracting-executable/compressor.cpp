@@ -86,7 +86,7 @@ int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct sta
     char * input = static_cast<char*>(mmap(nullptr, info_in.st_size, PROT_READ, MAP_PRIVATE, in_fd, 0));
     if (input == MAP_FAILED)
     {
-        perror("mmap");
+        perror(nullptr);
         return 1;
     }
 
@@ -132,13 +132,13 @@ int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct sta
         );
     if (output == MAP_FAILED)
     {
-        perror("mmap");
+        perror(nullptr);
         ZSTD_freeCCtx(cctx);
         return 1;
     }
     if (-1 == lseek(out_fd, 0, SEEK_END))
     {
-        perror("lseek");
+        perror(nullptr);
         ZSTD_freeCCtx(cctx);
         return 1;
     }
@@ -159,9 +159,9 @@ int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct sta
         if (0 != doCompress(input, output, in_offset, current_block_size, size, ZSTD_compressBound(size), cctx))
         {
             if (0 != munmap(input, info_in.st_size))
-                perror("munmap");
+                perror(nullptr);
             if (0 != munmap(output, 2 * max_block_size))
-                perror("munmap");
+                perror(nullptr);
             ZSTD_freeCCtx(cctx);
             return 1;
         }
@@ -169,7 +169,7 @@ int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct sta
         /// Save data into file and refresh pointer
         if (current_block_size != write_data(out_fd, output, current_block_size))
         {
-            perror("write");
+            perror(nullptr);
             ZSTD_freeCCtx(cctx);
             return 1;
         }
@@ -188,7 +188,7 @@ int compress(int in_fd, int out_fd, int level, off_t & pointer, const struct sta
     if (0 != munmap(input, info_in.st_size) ||
         0 != munmap(output, 2 * max_block_size))
     {
-        perror("munmap");
+        perror(nullptr);
         ZSTD_freeCCtx(cctx);
         return 1;
     }
@@ -204,7 +204,7 @@ int saveMetaData(const char* filenames[], int count, int output_fd, const MetaDa
     /// Allocate memory for metadata
     if (0 != ftruncate(output_fd, pointer + count * sizeof(FileData) + sum_file_size + sizeof(MetaData)))
     {
-        perror("ftruncate");
+        perror(nullptr);
         return 1;
     }
 
@@ -217,7 +217,7 @@ int saveMetaData(const char* filenames[], int count, int output_fd, const MetaDa
         );
     if (output == MAP_FAILED)
     {
-        perror("mmap");
+        perror(nullptr);
         return 1;
     }
 
@@ -271,7 +271,7 @@ int compressFiles(const char* out_name, const char* exec, char* filenames[], int
         int input_fd = open(filename, O_RDONLY);
         if (input_fd == -1)
         {
-            perror("open");
+            perror(nullptr);
             delete [] files_data;
             return 1;
         }
@@ -295,7 +295,7 @@ int compressFiles(const char* out_name, const char* exec, char* filenames[], int
         struct stat info_in;
         if (0 != fstat(input_fd, &info_in))
         {
-            perror("fstat");
+            perror(nullptr);
             delete [] files_data;
             return 1;
         }
@@ -323,7 +323,7 @@ int compressFiles(const char* out_name, const char* exec, char* filenames[], int
         /// It will allow to create self extracting executable from file
         if (0 != compress(input_fd, output_fd, level, pointer, info_in, compressed_size))
         {
-            perror("compress");
+            perror(nullptr);
             delete [] files_data;
             return 1;
         }
@@ -334,7 +334,7 @@ int compressFiles(const char* out_name, const char* exec, char* filenames[], int
         /// If file cannot be closed, in some cases it will lead to
         /// error in other function that will stop compression process
         if (0 != close(input_fd))
-            perror("close");
+            perror(nullptr);
 
         files_data[i].end = htole64(pointer);
     }
@@ -368,14 +368,14 @@ int copy_decompressor(int input_fd, ssize_t decompressor_size, int output_fd)
         ssize_t n = read_data(input_fd, buf, read_size);
         if (n < read_size)
         {
-            perror("read");
+            perror(nullptr);
             return 1;
         }
         decompressor_size -= n;
 
         if (n != write_data(output_fd, buf, n))
         {
-            perror("write");
+            perror(nullptr);
             return 1;
         }
     }
@@ -388,15 +388,14 @@ int copy_decompressor_self(const char *self, int output_fd)
     int input_fd = open(self, O_RDONLY);
     if (input_fd == -1)
     {
-        perror("open");
+        perror(nullptr);
         return 1;
     }
 
     if (-1 == lseek(input_fd, -15, SEEK_END))
     {
-        perror("lseek");
-        if (0 != close(input_fd))
-            perror("close");
+        perror(nullptr);
+        close(input_fd);
         return 1;
     }
 
@@ -404,11 +403,10 @@ int copy_decompressor_self(const char *self, int output_fd)
     if (ssize_t sz = read_data(input_fd, size_str, 15); sz < 15)
     {
         if (sz < 0)
-            perror("read");
+            perror(nullptr);
         else
             std::cerr << "Error: unable to extract decompressor" << std::endl;
-        if (0 != close(input_fd))
-            perror("close");
+        close(input_fd);
         return 1;
     }
 
@@ -417,22 +415,19 @@ int copy_decompressor_self(const char *self, int output_fd)
     if (*end != 0)
     {
         std::cerr << "Error: unable to extract decompressor" << std::endl;
-        if (0 != close(input_fd))
-            perror("close");
+        close(input_fd);
         return 1;
     }
 
     if (-1 == lseek(input_fd, -(decompressor_size + 15), SEEK_END))
     {
-        perror("lseek");
-        if (0 != close(input_fd))
-            perror("close");
+        perror(nullptr);
+        close(input_fd);
         return 1;
     }
 
     int ret = copy_decompressor(input_fd, decompressor_size, output_fd);
-    if (0 != close(input_fd))
-        perror("close");
+    close(input_fd);
     return ret;
 }
 
@@ -442,7 +437,7 @@ int copy_decompressor_file(const char *path, int output_fd)
     if (stat(path, &info_in) != 0)
     {
         std::cerr << "Error: decompressor file [" << path << "]." << std::endl;
-        perror("stat");
+        perror(nullptr);
         return 1;
     }
 
@@ -455,13 +450,12 @@ int copy_decompressor_file(const char *path, int output_fd)
     int input_fd = open(path, O_RDONLY);
     if (input_fd == -1)
     {
-        perror("open");
+        perror(nullptr);
         return 1;
     }
 
     int ret = copy_decompressor(input_fd, info_in.st_size, output_fd);
-    if (0 != close(input_fd))
-        perror("close");
+    close(input_fd);
     return ret;
 }
 
@@ -566,7 +560,7 @@ int main(int argc, char* argv[])
     int output_fd = open(argv[start_of_files], O_RDWR | O_CREAT, 0775);
     if (output_fd == -1)
     {
-        perror("open");
+        perror(nullptr);
         return 1;
     }
 
@@ -590,7 +584,7 @@ int main(int argc, char* argv[])
 
     if (0 != fstat(output_fd, &info_out))
     {
-        perror("fstat");
+        perror(nullptr);
         return 1;
     }
 
@@ -598,8 +592,7 @@ int main(int argc, char* argv[])
     if (0 != compressFiles(out_name, exec, &argv[start_of_files], argc - start_of_files, output_fd, level, info_out))
     {
         printf("Compression failed.\n");
-        if (0 != close(output_fd))
-            perror("close");
+        close(output_fd);
         unlink(argv[start_of_files - 1]);
         return 1;
     }
@@ -607,7 +600,7 @@ int main(int argc, char* argv[])
     printf("Successfully compressed.\n");
 
     if (0 != close(output_fd))
-        perror("close");
+        perror(nullptr);
 
     return 0;
 }

@@ -107,23 +107,20 @@ void wrapIntoToString(FunctionNode & function_node, QueryTreeNodePtr arg, Contex
     assert(isString(function_node.getResultType()));
 }
 
-class ConvertStringsToEnumVisitor : public InDepthQueryTreeVisitorWithContext<ConvertStringsToEnumVisitor>
+class ConvertStringsToEnumVisitor : public InDepthQueryTreeVisitor<ConvertStringsToEnumVisitor>
 {
 public:
-    using Base = InDepthQueryTreeVisitorWithContext<ConvertStringsToEnumVisitor>;
-    using Base::Base;
+    explicit ConvertStringsToEnumVisitor(ContextPtr context_)
+        : context(std::move(context_))
+    {
+    }
 
     void visitImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings().optimize_if_transform_strings_to_enum)
-            return;
-
         auto * function_node = node->as<FunctionNode>();
 
         if (!function_node)
             return;
-
-        const auto & context = getContext();
 
         /// to preserve return type (String) of the current function_node, we wrap the newly
         /// generated function nodes into toString
@@ -201,13 +198,16 @@ public:
             return;
         }
     }
+
+private:
+    ContextPtr context;
 };
 
 }
 
 void IfTransformStringsToEnumPass::run(QueryTreeNodePtr query, ContextPtr context)
 {
-    ConvertStringsToEnumVisitor visitor(std::move(context));
+    ConvertStringsToEnumVisitor visitor(context);
     visitor.visit(query);
 }
 

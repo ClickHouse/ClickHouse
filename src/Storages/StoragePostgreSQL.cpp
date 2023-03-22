@@ -1,7 +1,7 @@
 #include "StoragePostgreSQL.h"
 
 #if USE_LIBPQXX
-#include <Processors/Sources/PostgreSQLSource.h>
+#include <Processors/Transforms/PostgreSQLSource.h>
 
 #include <Common/parseAddress.h>
 #include <Common/assert_cast.h>

@@ -1,5 +1,4 @@
 #include <DataTypes/Serializations/SerializationArray.h>
-#include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/DataTypeArray.h>
@@ -374,8 +373,8 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
     /// Check consistency between offsets and elements subcolumns.
     /// But if elements column is empty - it's ok for columns of Nested types that was added by ALTER.
     if (!nested_column->empty() && nested_column->size() != last_offset)
-        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all array values: read just {} of {}",
-            toString(nested_column->size()), toString(last_offset));
+        throw ParsingException("Cannot read all array values: read just " + toString(nested_column->size()) + " of " + toString(last_offset),
+            ErrorCodes::CANNOT_READ_ALL_DATA);
 
     column = std::move(mutable_column);
 }
@@ -511,10 +510,7 @@ void SerializationArray::deserializeTextJSON(IColumn & column, ReadBuffer & istr
     deserializeTextImpl(column, istr,
         [&](IColumn & nested_column)
         {
-            if (settings.null_as_default)
-                SerializationNullable::deserializeTextJSONImpl(nested_column, istr, settings, nested);
-            else
-                nested->deserializeTextJSON(nested_column, istr, settings);
+            nested->deserializeTextJSON(nested_column, istr, settings);
         }, false);
 }
 

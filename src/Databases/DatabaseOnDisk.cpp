@@ -676,7 +676,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
                              "in file " + metadata_file_path, /* allow_multi_statements = */ false, 0, settings.max_parser_depth);
 
     if (!ast && throw_on_error)
-        throw Exception::createDeprecated(error_message, ErrorCodes::SYNTAX_ERROR);
+        throw Exception(error_message, ErrorCodes::SYNTAX_ERROR);
     else if (!ast)
         return nullptr;
 

@@ -5,10 +5,9 @@
 #include <cerrno>
 
 #include <Common/logger_useful.h>
+#include <base/errnoToString.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/LocalDateTime.h>
-#include <base/errnoToString.h>
-#include <base/defines.h>
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/LimitReadBuffer.h>
@@ -89,8 +88,7 @@ StatusFile::StatusFile(std::string path_, FillFunction fill_)
     }
     catch (...)
     {
-        int err = close(fd);
-        chassert(!err || errno == EINTR);
+        close(fd);
         throw;
     }
 }

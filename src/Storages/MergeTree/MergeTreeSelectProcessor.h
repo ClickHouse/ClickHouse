@@ -3,7 +3,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
-#include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/SelectQueryInfo.h>
 
 
@@ -28,12 +27,12 @@ public:
         MarkRanges mark_ranges,
         bool use_uncompressed_cache,
         const PrewhereInfoPtr & prewhere_info,
-        const ExpressionActionsSettings & actions_settings_,
+        ExpressionActionsSettings actions_settings,
         const MergeTreeReaderSettings & reader_settings,
-        MergeTreeInOrderReadPoolParallelReplicasPtr pool_,
         const Names & virt_column_names = {},
         size_t part_index_in_query_ = 0,
-        bool has_limit_below_one_block_ = false);
+        bool has_limit_below_one_block_ = false,
+        std::optional<ParallelReadingExtension> extension_ = {});
 
     ~MergeTreeSelectAlgorithm() override;
 
@@ -64,9 +63,6 @@ protected:
     /// If true, every task will be created only with one range.
     /// It reduces amount of read data for queries with small LIMIT.
     bool has_limit_below_one_block = false;
-
-    /// Pool for reading in order
-    MergeTreeInOrderReadPoolParallelReplicasPtr pool;
 
     size_t total_rows = 0;
 };

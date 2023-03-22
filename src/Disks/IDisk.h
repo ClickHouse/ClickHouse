@@ -28,7 +28,6 @@ namespace Poco
 {
     namespace Util
     {
-        /// NOLINTNEXTLINE(cppcoreguidelines-virtual-class-destructor)
         class AbstractConfiguration;
     }
 }
@@ -208,15 +207,6 @@ public:
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         WriteMode mode = WriteMode::Rewrite,
         const WriteSettings & settings = {}) = 0;
-
-    /// Write a file using a custom function to write an object to the disk's object storage.
-    /// This method is alternative to writeFile(), the difference is that writeFile() calls IObjectStorage::writeObject()
-    /// to write an object to the object storage while this method allows to specify a callback for that.
-    virtual void writeFileUsingCustomWriteObject(
-        const String & path,
-        WriteMode mode,
-        std::function<size_t(const StoredObject & object, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>
-            custom_write_object_function);
 
     /// Remove file. Throws exception if file doesn't exists or it's a directory.
     /// Return whether file was finally removed. (For remote disks it is not always removed).
@@ -418,11 +408,6 @@ public:
     virtual bool supportsChmod() const { return false; }
     virtual void chmod(const String & /*path*/, mode_t /*mode*/) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk does not support chmod"); }
 
-    /// Was disk created to be used without storage configuration?
-    bool isCustomDisk() const { return is_custom_disk; }
-
-    void markDiskAsCustom() { is_custom_disk = true; }
-
 protected:
     friend class DiskDecorator;
 
@@ -440,7 +425,6 @@ protected:
 
 private:
     std::shared_ptr<Executor> executor;
-    bool is_custom_disk = false;
 
     /// Check access to the disk.
     void checkAccess();
@@ -503,13 +487,3 @@ inline String directoryPath(const String & path)
 }
 
 }
-
-template <>
-struct fmt::formatter<fs::path> : fmt::formatter<std::string>
-{
-    template <typename FormatCtx>
-    auto format(const fs::path & path, FormatCtx & ctx) const
-    {
-        return fmt::formatter<std::string>::format(path.string(), ctx);
-    }
-};
