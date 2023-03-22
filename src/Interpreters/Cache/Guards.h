@@ -87,7 +87,6 @@ struct KeyGuard : private boost::noncopyable
     Lock lock() { return Lock(mutex); }
     std::mutex mutex;
 };
-using KeyGuardPtr = std::shared_ptr<KeyGuard>;
 
 /**
  * Guard for a file segment.
