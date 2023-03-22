@@ -711,7 +711,7 @@ bool FileCache::tryReserveImpl(
             if (query_context)
                 query_context->remove(key, offset);
         }
-        offsets_per_key_to_delete.clear();
+        offsets_to_delete.clear();
 
         /// Do not hold the key lock longer than required.
         it = locked.erase(it);
