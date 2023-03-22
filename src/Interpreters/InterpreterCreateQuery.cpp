@@ -97,6 +97,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_DATABASE;
+    extern const int UNKNOWN_TABLE;
     extern const int PATH_ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
     extern const int ENGINE_REQUIRED;
@@ -1210,35 +1211,61 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         {
             Block input_block;
 
-            if (getContext()->getSettingsRef().allow_experimental_analyzer)
+            auto check_type_compatible_for_materialize_view = [&]()
             {
-                input_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), getContext());
+                if (getContext()->getSettingsRef().allow_experimental_analyzer)
+                {
+                    input_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), getContext());
+                }
+                else
+                {
+                    input_block = InterpreterSelectWithUnionQuery(create.select->clone(),
+                        getContext(),
+                        SelectQueryOptions().analyze()).getSampleBlock();
+                }
+
+                Block output_block = to_table->getInMemoryMetadataPtr()->getSampleBlock();
+
+                ColumnsWithTypeAndName input_columns;
+                ColumnsWithTypeAndName output_columns;
+                for (const auto & input_column : input_block)
+                {
+                    if (const auto * output_column = output_block.findByName(input_column.name))
+                    {
+                        input_columns.push_back(input_column.cloneEmpty());
+                        output_columns.push_back(output_column->cloneEmpty());
+                    }
+                }
+
+                ActionsDAG::makeConvertingActions(
+                    input_columns,
+                    output_columns,
+                    ActionsDAG::MatchColumnsMode::Position
+                );
+            };
+
+            if (getContext()->getSettingsRef().ignore_inaccessible_tables_mat_view_attach)
+            {
+                try
+                {
+                    check_type_compatible_for_materialize_view();
+                } catch (const Exception & e)
+                {
+                    if (e.code() == ErrorCodes::UNKNOWN_TABLE && create.attach)
+                    {
+                        auto * log = &Poco::Logger::get("InterpreterSelectQuery");
+                        LOG_WARNING(log, "{}", e.message());
+                    }
+                    else
+                    {
+                        throw;
+                    }
+                }
             }
             else
             {
-                input_block = InterpreterSelectWithUnionQuery(create.select->clone(),
-                    getContext(),
-                    SelectQueryOptions().analyze()).getSampleBlock();
+                check_type_compatible_for_materialize_view();
             }
-
-            Block output_block = to_table->getInMemoryMetadataPtr()->getSampleBlock();
-
-            ColumnsWithTypeAndName input_columns;
-            ColumnsWithTypeAndName output_columns;
-            for (const auto & input_column : input_block)
-            {
-                if (const auto * output_column = output_block.findByName(input_column.name))
-                {
-                    input_columns.push_back(input_column.cloneEmpty());
-                    output_columns.push_back(output_column->cloneEmpty());
-                }
-            }
-
-            ActionsDAG::makeConvertingActions(
-                input_columns,
-                output_columns,
-                ActionsDAG::MatchColumnsMode::Position
-            );
         }
     }
 
