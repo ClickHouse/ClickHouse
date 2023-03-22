@@ -123,7 +123,7 @@ public:
         size_t offset_,
         size_t size_,
         const Key & key_,
-        std::weak_ptr<KeyMetadata> key_metadata,
+        KeyMetadata * key_metadata,
         FileCache * cache_,
         State download_state_,
         const CreateFileSegmentSettings & create_settings);
@@ -316,7 +316,7 @@ private:
     mutable std::mutex download_mutex;
 
     mutable FileSegmentGuard segment_guard;
-    std::weak_ptr<KeyMetadata> key_metadata;
+    KeyMetadata * key_metadata;
     std::condition_variable cv;
 
     Key file_key;

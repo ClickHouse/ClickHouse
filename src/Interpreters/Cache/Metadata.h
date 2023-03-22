@@ -47,14 +47,15 @@ public:
 
     std::string toString() const;
 
-    KeyGuard::Lock lock() const { return guard->lock(); }
+    KeyGuard::Lock lock() const { return guard.lock(); }
 
     bool created_base_directory = false;
     bool removed = false;
 
 private:
-    KeyGuardPtr guard = std::make_shared<KeyGuard>();
+    mutable KeyGuard guard;
 };
+
 using KeyMetadataPtr = std::shared_ptr<KeyMetadata>;
 
 

@@ -25,16 +25,14 @@ public:
 
     struct Entry
     {
-        Entry(const Key & key_, size_t offset_, size_t size_, std::weak_ptr<KeyMetadata> key_metadata_)
+        Entry(const Key & key_, size_t offset_, size_t size_, KeyMetadata & key_metadata_)
             : key(key_) , offset(offset_) , size(size_) , key_metadata(key_metadata_) {}
-
-        KeyMetadataPtr getKeyMetadata() const { return key_metadata.lock(); }
 
         Key key;
         size_t offset;
         size_t size;
         size_t hits = 0;
-        mutable std::weak_ptr<KeyMetadata> key_metadata;
+        KeyMetadata & key_metadata;
     };
 
     /// Provides an iterator to traverse the cache priority. Under normal circumstances,
@@ -85,7 +83,7 @@ protected:
 
     virtual size_t getElementsCount() const = 0;
 
-    virtual Iterator add(const Key & key, size_t offset, size_t size, std::weak_ptr<KeyMetadata> key_metadata) = 0;
+    virtual Iterator add(const Key & key, size_t offset, size_t size, KeyMetadata & key_metadata) = 0;
 
     virtual void pop() = 0;
 
