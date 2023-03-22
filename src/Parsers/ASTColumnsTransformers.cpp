@@ -285,8 +285,7 @@ bool ASTColumnsExceptTransformer::isColumnMatching(const String & column_name) c
     return RE2::PartialMatch(column_name, *column_matcher);
 }
 
-void ASTColumnsReplaceTransformer::Replacement::formatImpl(
-    const FormattingBuffer & out) const
+void ASTColumnsReplaceTransformer::Replacement::formatImpl(FormattingBuffer out) const
 {
     assert(children.size() == 1);
 
