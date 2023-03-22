@@ -11,6 +11,10 @@
 #include <Common/UTF8Helpers.h>
 #include <base/unaligned.h>
 
+#ifdef __SSE4_1__
+    #include <smmintrin.h>
+#endif
+
 /** Search for a substring in a string by Volnitsky's algorithm
   * http://volnitsky.com/project/str_search/
   *
@@ -193,8 +197,8 @@ namespace VolnitskyTraits
                         chars.c1 = seq_l[seq_ngram_offset + 1];
                         putNGramBase(n, offset);
 
-                        chars.c0 = seq_r[seq_ngram_offset]; //-V519
-                        chars.c1 = seq_r[seq_ngram_offset + 1]; //-V519
+                        chars.c0 = seq_r[seq_ngram_offset];
+                        chars.c1 = seq_r[seq_ngram_offset + 1];
                         putNGramBase(n, offset);
 
                     }
@@ -317,7 +321,7 @@ namespace VolnitskyTraits
                     {
                         /// ngram for Ul
                         chars.c0 = c0u;
-                        chars.c1 = c1l; //-V1048
+                        chars.c1 = c1l;
                         putNGramBase(n, offset);
                     }
 
@@ -428,6 +432,10 @@ public:
             return haystack;
 
         const auto * haystack_end = haystack + haystack_size;
+
+#ifdef __SSE4_1__
+        return fallback_searcher.search(haystack, haystack_end);
+#endif
 
         if (fallback || haystack_size <= needle_size || fallback_searcher.force_fallback)
             return fallback_searcher.search(haystack, haystack_end);

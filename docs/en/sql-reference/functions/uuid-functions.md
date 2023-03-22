@@ -38,7 +38,7 @@ INSERT INTO t_uuid SELECT generateUUIDv4()
 SELECT * FROM t_uuid
 ```
 
-``` text
+```response
 ┌────────────────────────────────────x─┐
 │ f4bf890f-f9dc-4332-ad5c-0c18e73f28e9 │
 └──────────────────────────────────────┘
@@ -89,7 +89,7 @@ SELECT empty(generateUUIDv4());
 
 Result:
 
-```text
+```response
 ┌─empty(generateUUIDv4())─┐
 │                       0 │
 └─────────────────────────┘
@@ -131,7 +131,7 @@ SELECT notEmpty(generateUUIDv4());
 
 Result:
 
-```text
+```response
 ┌─notEmpty(generateUUIDv4())─┐
 │                          1 │
 └────────────────────────────┘
@@ -155,10 +155,54 @@ The UUID type value.
 SELECT toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
 ```
 
-``` text
+```response
 ┌─────────────────────────────────uuid─┐
 │ 61f0c404-5cb3-11e7-907b-a6006ad3dba0 │
 └──────────────────────────────────────┘
+```
+
+## toUUIDOrDefault (x,y)
+
+**Arguments**
+
+-   `string` — String of 36 characters or FixedString(36). [String](../../sql-reference/syntax.md#string).
+-   `default` — UUID to be used as the default if the first argument cannot be converted to a UUID type. [UUID](/docs/en/sql-reference/data-types/uuid.md).
+
+**Returned value**
+
+UUID
+
+``` sql
+toUUIDOrDefault(String, UUID)
+```
+
+**Returned value**
+
+The UUID type value.
+
+**Usage examples**
+
+This first example returns the first argument converted to a UUID type as it can be converted:
+
+``` sql
+SELECT toUUIDOrDefault('61f0c404-5cb3-11e7-907b-a6006ad3dba0', cast('59f0c404-5cb3-11e7-907b-a6006ad3dba0' as UUID));
+```
+```response
+┌─toUUIDOrDefault('61f0c404-5cb3-11e7-907b-a6006ad3dba0', CAST('59f0c404-5cb3-11e7-907b-a6006ad3dba0', 'UUID'))─┐
+│ 61f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                          │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+This second example returns the second argument (the provided default UUID) as the first argument cannot be converted to a UUID type:
+
+```sql
+SELECT toUUIDOrDefault('-----61f0c404-5cb3-11e7-907b-a6006ad3dba0', cast('59f0c404-5cb3-11e7-907b-a6006ad3dba0' as UUID));
+```
+
+```response
+┌─toUUIDOrDefault('-----61f0c404-5cb3-11e7-907b-a6006ad3dba0', CAST('59f0c404-5cb3-11e7-907b-a6006ad3dba0', 'UUID'))─┐
+│ 59f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                               │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## toUUIDOrNull (x)
@@ -179,7 +223,7 @@ The Nullable(UUID) type value.
 SELECT toUUIDOrNull('61f0c404-5cb3-11e7-907b-a6006ad3dba0T') AS uuid
 ```
 
-``` text
+```response
 ┌─uuid─┐
 │ ᴺᵁᴸᴸ │
 └──────┘
@@ -203,7 +247,7 @@ The UUID type value.
 SELECT toUUIDOrZero('61f0c404-5cb3-11e7-907b-a6006ad3dba0T') AS uuid
 ```
 
-``` text
+```response
 ┌─────────────────────────────────uuid─┐
 │ 00000000-0000-0000-0000-000000000000 │
 └──────────────────────────────────────┘
@@ -236,7 +280,7 @@ SELECT
     UUIDStringToNum(uuid) AS bytes
 ```
 
-``` text
+```response
 ┌─uuid─────────────────────────────────┬─bytes────────────┐
 │ 612f3c40-5d3b-217e-707b-6a546a3d7b29 │ a/<@];!~p{jTj={) │
 └──────────────────────────────────────┴──────────────────┘
@@ -248,7 +292,7 @@ SELECT
     UUIDStringToNum(uuid, 2) AS bytes
 ```
 
-``` text
+```response
 ┌─uuid─────────────────────────────────┬─bytes────────────┐
 │ 612f3c40-5d3b-217e-707b-6a546a3d7b29 │ @</a;]~!p{jTj={) │
 └──────────────────────────────────────┴──────────────────┘
@@ -281,7 +325,7 @@ SELECT
     UUIDNumToString(toFixedString(bytes, 16)) AS uuid
 ```
 
-``` text
+```response
 ┌─bytes────────────┬─uuid─────────────────────────────────┐
 │ a/<@];!~p{jTj={) │ 612f3c40-5d3b-217e-707b-6a546a3d7b29 │
 └──────────────────┴──────────────────────────────────────┘
@@ -293,7 +337,7 @@ SELECT
     UUIDNumToString(toFixedString(bytes, 16), 2) AS uuid
 ```
 
-``` text
+```response
 ┌─bytes────────────┬─uuid─────────────────────────────────┐
 │ @</a;]~!p{jTj={) │ 612f3c40-5d3b-217e-707b-6a546a3d7b29 │
 └──────────────────┴──────────────────────────────────────┘

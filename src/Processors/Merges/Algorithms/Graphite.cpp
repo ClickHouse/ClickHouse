@@ -43,7 +43,7 @@ const String & ruleTypeStr(RuleType rule_type)
     }
     catch (...)
     {
-        throw Exception("invalid rule type: " + std::to_string(rule_type), DB::ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(DB::ErrorCodes::BAD_ARGUMENTS, "invalid rule type: {}", std::to_string(rule_type));
     }
 }
 
@@ -58,7 +58,7 @@ RuleType ruleType(const String & s)
     else if (s == "tag_list")
         return RuleTypeTagList;
     else
-        throw Exception("invalid rule type: " + s, DB::ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(DB::ErrorCodes::BAD_ARGUMENTS, "invalid rule type: {}", s);
 }
 
 static const Graphite::Pattern undef_pattern =
@@ -166,7 +166,7 @@ static bool compareRetentions(const Retention & a, const Retention & b)
     String error_msg = "age and precision should only grow up: "
         + std::to_string(a.age) + ":" + std::to_string(a.precision) + " vs "
         + std::to_string(b.age) + ":" + std::to_string(b.precision);
-    throw Exception(
+    throw Exception::createDeprecated(
         error_msg,
         DB::ErrorCodes::BAD_ARGUMENTS);
 }
@@ -374,7 +374,7 @@ static const Pattern & appendGraphitePattern(
                 .precision = config.getUInt(config_element + "." + key + ".precision")});
         }
         else
-            throw Exception("Unknown element in config: " + key, DB::ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+            throw Exception(DB::ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}", key);
     }
 
     if (!pattern.regexp_str.empty())
@@ -389,15 +389,13 @@ static const Pattern & appendGraphitePattern(
     }
 
     if (!pattern.function && pattern.retentions.empty())
-        throw Exception(
-            "At least one of an aggregate function or retention rules is mandatory for rollup patterns in GraphiteMergeTree",
-            DB::ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+        throw Exception(DB::ErrorCodes::NO_ELEMENTS_IN_CONFIG,
+            "At least one of an aggregate function or retention rules is mandatory for rollup patterns in GraphiteMergeTree");
 
     if (default_rule && pattern.rule_type != RuleTypeAll)
     {
-        throw Exception(
-            "Default must have rule_type all for rollup patterns in GraphiteMergeTree",
-            DB::ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(DB::ErrorCodes::BAD_ARGUMENTS,
+            "Default must have rule_type all for rollup patterns in GraphiteMergeTree");
     }
 
     if (!pattern.function)
@@ -415,8 +413,8 @@ static const Pattern & appendGraphitePattern(
 
     if (pattern.type & pattern.TypeAggregation) /// TypeAggregation or TypeAll
         if (pattern.function->allocatesMemoryInArena())
-            throw Exception(
-                "Aggregate function " + pattern.function->getName() + " isn't supported in GraphiteMergeTree", DB::ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(DB::ErrorCodes::NOT_IMPLEMENTED,
+                            "Aggregate function {} isn't supported in GraphiteMergeTree", pattern.function->getName());
 
     /// retention should be in descending order of age.
     if (pattern.type & pattern.TypeRetention) /// TypeRetention or TypeAll
@@ -431,7 +429,7 @@ void setGraphitePatternsFromConfig(ContextPtr context, const String & config_ele
     const auto & config = context->getConfigRef();
 
     if (!config.has(config_element))
-        throw Exception("No '" + config_element + "' element in configuration file", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "No '{}' element in configuration file", config_element);
 
     params.config_name = config_element;
     params.path_column_name = config.getString(config_element + ".path_column_name", "Path");
@@ -460,7 +458,7 @@ void setGraphitePatternsFromConfig(ContextPtr context, const String & config_ele
             /// See above.
         }
         else
-            throw Exception("Unknown element in config: " + key, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}", key);
     }
 
     if (config.has(config_element + ".default"))
@@ -486,7 +484,7 @@ void setGraphitePatternsFromConfig(ContextPtr context, const String & config_ele
         }
         else
         {
-            throw Exception("Unhandled rule_type in config: " + ruleTypeStr(pattern.rule_type), ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unhandled rule_type in config: {}", ruleTypeStr(pattern.rule_type));
         }
     }
 }

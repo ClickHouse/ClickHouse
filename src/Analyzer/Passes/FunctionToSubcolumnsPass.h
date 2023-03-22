@@ -5,7 +5,7 @@
 namespace DB
 {
 
-/** Transform functions to subcolumns.
+/** Transform functions to subcolumns. Enabled using setting optimize_functions_to_subcolumns.
   * It can help to reduce amount of read data.
   *
   * Example: SELECT tupleElement(column, subcolumn) FROM test_table;

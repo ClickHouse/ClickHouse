@@ -45,6 +45,15 @@ void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssiz
     stat.uncompressed_size += uncompressed_delta;
 }
 
+TemporaryDataOnDisk::TemporaryDataOnDisk(TemporaryDataOnDiskScopePtr parent_)
+    : TemporaryDataOnDiskScope(std::move(parent_), /* limit_ = */ 0)
+{}
+
+TemporaryDataOnDisk::TemporaryDataOnDisk(TemporaryDataOnDiskScopePtr parent_, CurrentMetrics::Value metric_scope)
+    : TemporaryDataOnDiskScope(std::move(parent_), /* limit_ = */ 0)
+    , current_metric_scope(metric_scope)
+{}
+
 TemporaryFileStream & TemporaryDataOnDisk::createStream(const Block & header, size_t max_file_size)
 {
     if (file_cache)
@@ -52,13 +61,13 @@ TemporaryFileStream & TemporaryDataOnDisk::createStream(const Block & header, si
     else if (volume)
         return createStreamToRegularFile(header, max_file_size);
 
-    throw Exception("TemporaryDataOnDiskScope has no cache and no volume", ErrorCodes::LOGICAL_ERROR);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "TemporaryDataOnDiskScope has no cache and no volume");
 }
 
 TemporaryFileStream & TemporaryDataOnDisk::createStreamToCacheFile(const Block & header, size_t max_file_size)
 {
     if (!file_cache)
-        throw Exception("TemporaryDataOnDiskScope has no cache", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "TemporaryDataOnDiskScope has no cache");
 
     auto holder = file_cache->set(FileSegment::Key::random(), 0, std::max(10_MiB, max_file_size), CreateFileSegmentSettings(FileSegmentKind::Temporary, /* unbounded */ true));
 
@@ -70,14 +79,14 @@ TemporaryFileStream & TemporaryDataOnDisk::createStreamToCacheFile(const Block &
 TemporaryFileStream & TemporaryDataOnDisk::createStreamToRegularFile(const Block & header, size_t max_file_size)
 {
     if (!volume)
-        throw Exception("TemporaryDataOnDiskScope has no volume", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "TemporaryDataOnDiskScope has no volume");
 
     DiskPtr disk;
     if (max_file_size > 0)
     {
         auto reservation = volume->reserve(max_file_size);
         if (!reservation)
-            throw Exception("Not enough space on temporary disk", ErrorCodes::NOT_ENOUGH_SPACE);
+            throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Not enough space on temporary disk");
         disk = reservation->getDisk();
     }
     else
@@ -115,7 +124,7 @@ struct TemporaryFileStream::OutputWriter
         , out_compressed_buf(*out_buf)
         , out_writer(out_compressed_buf, DBMS_TCP_PROTOCOL_VERSION, header_)
     {
-        LOG_TEST(&Poco::Logger::get("TemporaryFileStream"), "Writing to {}", path);
+        LOG_TEST(&Poco::Logger::get("TemporaryFileStream"), "Writing to temporary file {}", path);
     }
 
     OutputWriter(std::unique_ptr<WriteBufferToFileSegment> out_buf_, const Block & header_)
@@ -124,14 +133,14 @@ struct TemporaryFileStream::OutputWriter
         , out_writer(out_compressed_buf, DBMS_TCP_PROTOCOL_VERSION, header_)
     {
         LOG_TEST(&Poco::Logger::get("TemporaryFileStream"),
-            "Writing to {}",
+            "Writing to temporary file {}",
             static_cast<const WriteBufferToFileSegment *>(out_buf.get())->getFileName());
     }
 
     size_t write(const Block & block)
     {
         if (finalized)
-            throw Exception("Cannot write to finalized stream", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot write to finalized stream");
         size_t written_bytes = out_writer.write(block);
         num_rows += block.rows();
         return written_bytes;
@@ -140,7 +149,7 @@ struct TemporaryFileStream::OutputWriter
     void flush()
     {
         if (finalized)
-            throw Exception("Cannot flush finalized stream", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot flush finalized stream");
 
         out_compressed_buf.next();
         out_buf->next();
@@ -233,7 +242,7 @@ TemporaryFileStream::TemporaryFileStream(FileSegmentsHolder && segments_, const 
 size_t TemporaryFileStream::write(const Block & block)
 {
     if (!out_writer)
-        throw Exception("Writing has been finished", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Writing has been finished");
 
     updateAllocAndCheck();
     size_t bytes_written = out_writer->write(block);
@@ -243,7 +252,7 @@ size_t TemporaryFileStream::write(const Block & block)
 void TemporaryFileStream::flush()
 {
     if (!out_writer)
-        throw Exception("Writing has been finished", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Writing has been finished");
 
     out_writer->flush();
 }

@@ -52,5 +52,3 @@ PREWHERE，FINAL 和 SAMPLE 对缓冲表不起作用。这些条件将传递到�
 当在单位时间内从大量服务器接收到太多 INSERTs 并且在插入之前无法缓冲数据时使用 Buffer 表，这意味着这些 INSERTs 不能足够快地执行。
 
 请注意，一次插入一行数据是没有意义的，即使对于 Buffer 表也是如此。这将只产生每秒几千行的速度，而插入更大的数据块每秒可以产生超过一百万行（参见 «性能» 部分）。
-
-[原始文章](https://clickhouse.com/docs/zh/operations/table_engines/buffer/) <!--hide-->

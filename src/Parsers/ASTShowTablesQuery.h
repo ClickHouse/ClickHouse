@@ -39,6 +39,8 @@ public:
 
     ASTPtr clone() const override;
 
+    QueryKind getQueryKind() const override { return QueryKind::Show; }
+
 protected:
     void formatLike(const FormatSettings & settings) const;
     void formatLimit(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;

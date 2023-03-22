@@ -9,7 +9,7 @@ sidebar_label: User Settings
 The `users` section of the `user.xml` configuration file contains user settings.
 
 :::note
-ClickHouse also supports [SQL-driven workflow](../../operations/access-rights.md#access-control) for managing users. We recommend using it.
+ClickHouse also supports [SQL-driven workflow](../../guides/sre/user-management/index.md#access-control) for managing users. We recommend using it.
 :::
 
 Structure of the `users` section:
@@ -77,7 +77,7 @@ Password can be specified in plaintext or in SHA256 (hex format).
 
 ### access_management {#access_management-user-setting}
 
-This setting enables or disables using of SQL-driven [access control and account management](../../operations/access-rights.md#access-control) for the user.
+This setting enables or disables using of SQL-driven [access control and account management](../../guides/sre/user-management/index.md#access-control) for the user.
 
 Possible values:
 
@@ -161,5 +161,3 @@ The following configuration forces that user `user1` can only see the rows of `t
 ```
 
 The `filter` can be any expression resulting in a [UInt8](../../sql-reference/data-types/int-uint.md)-type value. It usually contains comparisons and logical operators. Rows from `database_name.table1` where filter results to 0 are not returned for this user. The filtering is incompatible with `PREWHERE` operations and disables `WHERE→PREWHERE` optimization.
-
-[Original article](https://clickhouse.com/docs/en/operations/settings/settings_users/) <!--hide-->

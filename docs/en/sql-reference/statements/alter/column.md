@@ -158,8 +158,6 @@ For examples of columns TTL modifying, see [Column TTL](/docs/en/engines/table-e
 
 If the `IF EXISTS` clause is specified, the query won’t return an error if the column does not exist.
 
-The query also can change the order of the columns using `FIRST | AFTER` clause, see [ADD COLUMN](#alter_add-column) description.
-
 When changing the type, values are converted as if the [toType](/docs/en/sql-reference/functions/type-conversion-functions.md) functions were applied to them. If only the default expression is changed, the query does not do anything complex, and is completed almost instantly.
 
 Example:
@@ -169,6 +167,40 @@ ALTER TABLE visits MODIFY COLUMN browser Array(String)
 ```
 
 Changing the column type is the only complex action – it changes the contents of files with data. For large tables, this may take a long time.
+
+The query also can change the order of the columns using `FIRST | AFTER` clause, see [ADD COLUMN](#alter_add-column) description, but column type is mandatory in this case.
+
+Example:
+
+```sql
+CREATE TABLE users (
+    c1 Int16,
+    c2 String
+) ENGINE = MergeTree
+ORDER BY c1;
+
+DESCRIBE users;
+┌─name─┬─type───┬
+│ c1   │ Int16  │
+│ c2   │ String │
+└──────┴────────┴
+
+ALTER TABLE users MODIFY COLUMN c2 String FIRST;
+
+DESCRIBE users;
+┌─name─┬─type───┬
+│ c2   │ String │
+│ c1   │ Int16  │
+└──────┴────────┴
+
+ALTER TABLE users ALTER COLUMN c2 TYPE String AFTER c1;
+
+DESCRIBE users;
+┌─name─┬─type───┬
+│ c1   │ Int16  │
+│ c2   │ String │
+└──────┴────────┴
+```
 
 The `ALTER` query is atomic. For MergeTree tables it is also lock-free.
 

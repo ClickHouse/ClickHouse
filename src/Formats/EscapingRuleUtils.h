@@ -34,8 +34,14 @@ void serializeFieldByEscapingRule(
 
 void writeStringByEscapingRule(const String & value, WriteBuffer & out, FormatSettings::EscapingRule escaping_rule, const FormatSettings & format_settings);
 
+/// Read String serialized in specified escaping rule.
 String readStringByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule escaping_rule, const FormatSettings & format_settings);
+/// Read any field serialized in specified escaping rule. It can be any fild like number/array/etc.
+/// This function should return value exactly as it was in the data without changes
+/// (for example without parsing escaped sequences)
 String readFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule escaping_rule, const FormatSettings & format_settings);
+/// In case if we don't know if we have String value or not, but need to read String values as String (with correct escaped sequences parsing).
+String readStringOrFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule escaping_rule, const FormatSettings & format_settings);
 
 /// Try to determine the type of the field written by a specific escaping rule.
 /// If cannot, return nullptr.

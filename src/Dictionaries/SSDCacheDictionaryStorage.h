@@ -12,6 +12,7 @@
 #include <absl/container/flat_hash_set.h>
 
 #include <base/unaligned.h>
+#include <base/defines.h>
 #include <base/sort.h>
 #include <Common/randomSeed.h>
 #include <Common/Arena.h>
@@ -544,7 +545,7 @@ public:
             throw Exception(ErrorCodes::AIO_WRITE_ERROR,
                 "Not all data was written for asynchronous IO on file {}. returned: {}",
                 file_path,
-                std::to_string(bytes_written));
+                bytes_written);
 
         ProfileEvents::increment(ProfileEvents::FileSync);
 
@@ -768,7 +769,8 @@ private:
             if (this == &rhs)
                 return *this;
 
-            close(fd);
+            int err = ::close(fd);
+            chassert(!err || errno == EINTR);
 
             fd = rhs.fd;
             rhs.fd = -1;
@@ -777,7 +779,10 @@ private:
         ~FileDescriptor()
         {
             if (fd != -1)
-                close(fd);
+            {
+                int err = close(fd);
+                chassert(!err || errno == EINTR);
+            }
         }
 
         int fd = -1;

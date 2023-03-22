@@ -81,7 +81,7 @@ EventDate DateTime,
 KeyID     UInt32
 ) Engine = ReplicatedMergeTree('/clickhouse/tables/{shard}/{database}/t_async_insert_dedup', '{replica}')
 PARTITION BY toYYYYMM(EventDate)
-ORDER BY (KeyID, EventDate)
+ORDER BY (KeyID, EventDate) SETTINGS use_async_block_ids_cache = 1
 ''')
 
 q = queue.Queue(100)
@@ -98,7 +98,7 @@ gen.join()
 
 retry = 0
 
-while (True):
+while True:
     time.sleep(5)
     result = client.query("select KeyID from t_async_insert_dedup order by KeyID")
     result = result.split()
@@ -124,6 +124,16 @@ while (True):
     else:
         print(len(result), flush=True)
     break
+
+result = client.query("SELECT value FROM system.metrics  where metric = 'AsyncInsertCacheSize'")
+result = int(result.split()[0])
+if result <= 0:
+    raise Exception(f"AsyncInsertCacheSize should > 0, but got {result}")
+result = client.query("SELECT value FROM system.events  where event = 'AsyncInsertCacheHits'")
+result = int(result.split()[0])
+if result <= 0:
+    raise Exception(f"AsyncInsertCacheHits should > 0, but got {result}")
+
 client.query("DROP TABLE IF EXISTS t_async_insert_dedup NO DELAY")
 
 os._exit(os.EX_OK)

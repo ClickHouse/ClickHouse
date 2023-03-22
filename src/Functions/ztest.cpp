@@ -190,7 +190,7 @@ public:
                 zstat = diff / std::sqrt(p_pooled * (1.0 - p_pooled) * trials_fact);
             }
 
-            if (!std::isfinite(zstat))
+            if (unlikely(!std::isfinite(zstat)))
             {
                 insert_values_into_result(nan, nan, nan, nan);
                 continue;

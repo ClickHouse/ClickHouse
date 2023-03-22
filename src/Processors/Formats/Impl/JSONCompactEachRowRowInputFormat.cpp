@@ -1,8 +1,8 @@
 #include <Processors/Formats/Impl/JSONCompactEachRowRowInputFormat.h>
 
 #include <IO/ReadHelpers.h>
-#include <IO/PeekableReadBuffer.h>
 #include <IO/Operators.h>
+#include <IO/ReadBufferFromString.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/verbosePrintString.h>
 #include <Formats/JSONUtils.h>
@@ -187,7 +187,7 @@ JSONCompactEachRowRowSchemaReader::JSONCompactEachRowRowSchemaReader(
 {
 }
 
-DataTypes JSONCompactEachRowRowSchemaReader::readRowAndGetDataTypes()
+DataTypes JSONCompactEachRowRowSchemaReader::readRowAndGetDataTypesImpl()
 {
     if (first_row)
         first_row = false;

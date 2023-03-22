@@ -81,7 +81,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexHypothesis::createIndexAggregator() co
 MergeTreeIndexConditionPtr MergeTreeIndexHypothesis::createIndexCondition(
     const SelectQueryInfo &, ContextPtr) const
 {
-    throw Exception("Not supported", ErrorCodes::LOGICAL_ERROR);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Not supported");
 }
 
 MergeTreeIndexMergedConditionPtr MergeTreeIndexHypothesis::createIndexMergedCondition(
@@ -104,7 +104,7 @@ MergeTreeIndexPtr hypothesisIndexCreator(const IndexDescription & index)
 void hypothesisIndexValidator(const IndexDescription & index, bool /*attach*/)
 {
     if (index.expression_list_ast->children.size() != 1)
-        throw Exception("Hypothesis index needs exactly one expression", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Hypothesis index needs exactly one expression");
 }
 
 }

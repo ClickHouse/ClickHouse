@@ -146,7 +146,7 @@ ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num, arrayMap(x -> x + 1, arr) AS ma
 └───────┴─────────┴───┴─────┴────────┘
 ```
 
-The example below uses the [arrayEnumerate](../../../sql-reference/functions/array-functions#array_functions-arrayenumerate) function:
+The example below uses the [arrayEnumerate](../../../sql-reference/functions/array-functions.md#array_functions-arrayenumerate) function:
 
 ``` sql
 SELECT s, arr, a, num, arrayEnumerate(arr)
@@ -166,8 +166,8 @@ ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num;
 Multiple arrays with different sizes can be joined by using: `SETTINGS enable_unaligned_array_join = 1`. Example:
 
 ```sql
-SELECT s, arr, a, b 
-FROM arrays_test ARRAY JOIN arr as a, [['a','b'],['c']] as b 
+SELECT s, arr, a, b
+FROM arrays_test ARRAY JOIN arr as a, [['a','b'],['c']] as b
 SETTINGS enable_unaligned_array_join = 1;
 ```
 
@@ -278,7 +278,7 @@ ARRAY JOIN nest AS n;
 └───────┴─────┴─────┴─────────┴────────────┘
 ```
 
-Example of using the [arrayEnumerate](../../../sql-reference/functions/array-functions#array_functions-arrayenumerate) function:
+Example of using the [arrayEnumerate](../../../sql-reference/functions/array-functions.md#array_functions-arrayenumerate) function:
 
 ``` sql
 SELECT s, `n.x`, `n.y`, `nest.x`, `nest.y`, num
@@ -299,3 +299,8 @@ ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num;
 ## Implementation Details
 
 The query execution order is optimized when running `ARRAY JOIN`. Although `ARRAY JOIN` must always be specified before the [WHERE](../../../sql-reference/statements/select/where.md)/[PREWHERE](../../../sql-reference/statements/select/prewhere.md) clause in a query, technically they can be performed in any order, unless result of `ARRAY JOIN` is used for filtering. The processing order is controlled by the query optimizer.
+
+
+## Related content
+
+- Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)

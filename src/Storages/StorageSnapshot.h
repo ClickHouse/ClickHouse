@@ -66,7 +66,7 @@ struct StorageSnapshot
     NameAndTypePair getColumn(const GetColumnsOptions & options, const String & column_name) const;
 
     /// Block with ordinary + materialized + aliases + virtuals + subcolumns.
-    Block getSampleBlockForColumns(const Names & column_names) const;
+    Block getSampleBlockForColumns(const Names & column_names, const NameToNameMap & parameter_values = {}) const;
 
     ColumnsDescription getDescriptionForColumns(const Names & column_names) const;
 

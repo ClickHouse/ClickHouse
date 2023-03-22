@@ -577,6 +577,17 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
     return result;
 }
 
+void DiskObjectStorage::writeFileUsingCustomWriteObject(
+    const String & path,
+    WriteMode mode,
+    std::function<size_t(const StoredObject & object, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>
+        custom_write_object_function)
+{
+    LOG_TEST(log, "Write file: {}", path);
+    auto transaction = createObjectStorageTransaction();
+    return transaction->writeFileUsingCustomWriteObject(path, mode, std::move(custom_write_object_function));
+}
+
 void DiskObjectStorage::applyNewSettings(
     const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String &, const DisksMap &)
 {
@@ -616,7 +627,7 @@ UInt64 DiskObjectStorage::getRevision() const
 DiskPtr DiskObjectStorageReservation::getDisk(size_t i) const
 {
     if (i != 0)
-        throw Exception("Can't use i != 0 with single disk reservation", ErrorCodes::INCORRECT_DISK_INDEX);
+        throw Exception(ErrorCodes::INCORRECT_DISK_INDEX, "Can't use i != 0 with single disk reservation");
     return disk;
 }
 

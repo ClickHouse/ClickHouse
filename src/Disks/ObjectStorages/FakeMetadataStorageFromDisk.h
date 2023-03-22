@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/SharedMutex.h>
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Disks/ObjectStorages/MetadataFromDiskTransactionState.h>
@@ -15,7 +16,7 @@ class FakeMetadataStorageFromDisk final : public IMetadataStorage
 private:
     friend class FakeMetadataStorageFromDiskTransaction;
 
-    mutable std::shared_mutex metadata_mutex;
+    mutable SharedMutex metadata_mutex;
 
     DiskPtr disk;
     ObjectStoragePtr object_storage;

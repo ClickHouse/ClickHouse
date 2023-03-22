@@ -3,7 +3,7 @@ slug: /en/operations/system-tables/users
 ---
 # users
 
-Contains a list of [user accounts](../../operations/access-rights.md#user-account-management) configured at the server.
+Contains a list of [user accounts](../../guides/sre/user-management/index.md#user-account-management) configured at the server.
 
 Columns:
 -    `name` ([String](../../sql-reference/data-types/string.md)) — User name.
@@ -33,5 +33,3 @@ Columns:
 ## See Also {#see-also}
 
 -   [SHOW USERS](../../sql-reference/statements/show.md#show-users-statement)
-
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/users) <!--hide-->

@@ -201,5 +201,3 @@ Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table defa
 - Кеширование результатов часто используемых запросов для получения их без задержки.
 - Отслеживание изменений таблицы для запуска других запросов `SELECT`.
 - Отслеживание показателей из системных таблиц с помощью периодических обновлений.
-
-[Оригинальная статья](https://clickhouse.com/docs/ru/sql-reference/statements/create/view) <!--hide-->

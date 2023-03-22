@@ -60,7 +60,7 @@ namespace
         else if (uri.getScheme() == "http")
             return false;
         else
-            throw Exception("Unsupported scheme in URI '" + uri.toString() + "'", ErrorCodes::UNSUPPORTED_URI_SCHEME);
+            throw Exception(ErrorCodes::UNSUPPORTED_URI_SCHEME, "Unsupported scheme in URI '{}'", uri.toString());
     }
 
     HTTPSessionPtr makeHTTPSessionImpl(const std::string & host, UInt16 port, bool https, bool keep_alive, bool resolve_host = true)
@@ -77,7 +77,7 @@ namespace
 
             session = std::move(https_session);
 #else
-            throw Exception("ClickHouse was built without HTTPS support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
+            throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ClickHouse was built without HTTPS support");
 #endif
         }
         else
@@ -324,13 +324,14 @@ void assertResponseIsOk(const Poco::Net::HTTPRequest & request, Poco::Net::HTTPR
     }
 }
 
-std::string HTTPException::makeExceptionMessage(
+Exception HTTPException::makeExceptionMessage(
+    int code,
     const std::string & uri,
     Poco::Net::HTTPResponse::HTTPStatus http_status,
     const std::string & reason,
     const std::string & body)
 {
-    return fmt::format(
+    return Exception(code,
         "Received error from remote server {}. "
         "HTTP status code: {} {}, "
         "body: {}",

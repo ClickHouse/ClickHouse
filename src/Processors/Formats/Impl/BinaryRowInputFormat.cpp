@@ -90,7 +90,8 @@ void BinaryFormatReader::skipTypes()
 void BinaryFormatReader::skipField(size_t file_column)
 {
     if (file_column >= read_data_types.size())
-        throw Exception(ErrorCodes::CANNOT_SKIP_UNKNOWN_FIELD, "Cannot skip unknown field in RowBinaryWithNames format, because it's type is unknown");
+        throw Exception(ErrorCodes::CANNOT_SKIP_UNKNOWN_FIELD,
+                        "Cannot skip unknown field in RowBinaryWithNames format, because it's type is unknown");
     Field field;
     read_data_types[file_column]->getDefaultSerialization()->deserializeBinary(field, *in, format_settings);
 }

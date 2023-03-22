@@ -276,14 +276,12 @@ EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
 
 With `indexes` = 1, the `Indexes` key is added. It contains an array of used indexes. Each index is described as JSON with `Type` key (a string `MinMax`, `Partition`, `PrimaryKey` or `Skip`) and optional keys:
 
--   `Name` — An index name (for now, is used only for `Skip` index).
--   `Keys` — An array of columns used by the index.
--   `Condition` — A string with condition used.
--   `Description` — An index (for now, is used only for `Skip` index).
--   `Initial Parts` — A number of parts before the index is applied.
--   `Selected Parts` — A number of parts after the index is applied.
--   `Initial Granules` — A number of granules before the index is applied.
--   `Selected Granulesis` — A number of granules after the index is applied.
+-   `Name` — The index name (currently only used for `Skip` indexes).
+-   `Keys` — The array of columns used by the index.
+-   `Condition` —  The used condition.
+-   `Description` — The index description (currently only used for `Skip` indexes).
+-   `Parts` — The number of parts before/after the index is applied.
+-   `Granules` — The number of granules before/after the index is applied.
 
 Example:
 
@@ -294,46 +292,36 @@ Example:
     "Type": "MinMax",
     "Keys": ["y"],
     "Condition": "(y in [1, +inf))",
-    "Initial Parts": 5,
-    "Selected Parts": 4,
-    "Initial Granules": 12,
-    "Selected Granules": 11
+    "Parts": 5/4,
+    "Granules": 12/11
   },
   {
     "Type": "Partition",
     "Keys": ["y", "bitAnd(z, 3)"],
     "Condition": "and((bitAnd(z, 3) not in [1, 1]), and((y in [1, +inf)), (bitAnd(z, 3) not in [1, 1])))",
-    "Initial Parts": 4,
-    "Selected Parts": 3,
-    "Initial Granules": 11,
-    "Selected Granules": 10
+    "Parts": 4/3,
+    "Granules": 11/10
   },
   {
     "Type": "PrimaryKey",
     "Keys": ["x", "y"],
     "Condition": "and((x in [11, +inf)), (y in [1, +inf)))",
-    "Initial Parts": 3,
-    "Selected Parts": 2,
-    "Initial Granules": 10,
-    "Selected Granules": 6
+    "Parts": 3/2,
+    "Granules": 10/6
   },
   {
     "Type": "Skip",
     "Name": "t_minmax",
     "Description": "minmax GRANULARITY 2",
-    "Initial Parts": 2,
-    "Selected Parts": 1,
-    "Initial Granules": 6,
-    "Selected Granules": 2
+    "Parts": 2/1,
+    "Granules": 6/2
   },
   {
     "Type": "Skip",
     "Name": "t_set",
     "Description": "set GRANULARITY 2",
-    "Initial Parts": 1,
-    "Selected Parts": 1,
-    "Initial Granules": 2,
-    "Selected Granules": 1
+    "": 1/1,
+    "Granules": 2/1
   }
 ]
 ```
@@ -477,5 +465,3 @@ Result:
 :::note    
 The validation is not complete, so a successfull query does not guarantee that the override would not cause issues.
 :::
-
-[Оriginal article](https://clickhouse.com/docs/en/sql-reference/statements/explain/) <!--hide-->

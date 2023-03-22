@@ -30,6 +30,7 @@ INSERT INTO t_read_in_order SELECT '2020-10-12', number, number FROM numbers(100
 
 SELECT date, i FROM t_read_in_order WHERE date = '2020-10-12' ORDER BY i LIMIT 5;
 
+EXPLAIN SYNTAX SELECT date, i FROM t_read_in_order WHERE date = '2020-10-12' ORDER BY i DESC LIMIT 5;
 EXPLAIN PIPELINE SELECT date, i FROM t_read_in_order WHERE date = '2020-10-12' ORDER BY i DESC LIMIT 5;
 SELECT date, i FROM t_read_in_order WHERE date = '2020-10-12' ORDER BY i DESC LIMIT 5;
 
@@ -37,7 +38,7 @@ DROP TABLE IF EXISTS t_read_in_order;
 
 CREATE TABLE t_read_in_order(a UInt32, b UInt32)
 ENGINE = MergeTree ORDER BY (a, b)
-SETTINGS index_granularity = 3;
+SETTINGS index_granularity = 3, index_granularity_bytes = '10Mi';
 
 SYSTEM STOP MERGES t_read_in_order;
 

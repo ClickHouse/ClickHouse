@@ -14,7 +14,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
+    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
     extern const int TYPE_MISMATCH;
 }
 
@@ -64,7 +64,7 @@ ArrayJoinAction::ArrayJoinAction(const NameSet & array_joined_columns_, bool arr
     , is_unaligned(context->getSettingsRef().enable_unaligned_array_join)
 {
     if (columns.empty())
-        throw Exception("No arrays to join", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No arrays to join");
 
     if (is_unaligned)
     {
@@ -89,19 +89,19 @@ void ArrayJoinAction::prepare(ColumnsWithTypeAndName & sample) const
             current.type = type->getNestedType();
         }
         else
-            throw Exception("ARRAY JOIN requires array or map argument", ErrorCodes::TYPE_MISMATCH);
+            throw Exception(ErrorCodes::TYPE_MISMATCH, "ARRAY JOIN requires array or map argument");
     }
 }
 
 void ArrayJoinAction::execute(Block & block)
 {
     if (columns.empty())
-        throw Exception("No arrays to join", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No arrays to join");
 
     ColumnPtr any_array_map_ptr = block.getByName(*columns.begin()).column->convertToFullColumnIfConst();
     const auto * any_array = getArrayJoinColumnRawPtr(any_array_map_ptr);
     if (!any_array)
-        throw Exception("ARRAY JOIN requires array or map argument", ErrorCodes::TYPE_MISMATCH);
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "ARRAY JOIN requires array or map argument");
 
     /// If LEFT ARRAY JOIN, then we create columns in which empty arrays are replaced by arrays with one element - the default value.
     std::map<String, ColumnPtr> non_empty_array_columns;
@@ -143,7 +143,7 @@ void ArrayJoinAction::execute(Block & block)
 
         any_array = getArrayJoinColumnRawPtr(any_array_map_ptr);
         if (!any_array)
-            throw Exception("ARRAY JOIN requires array or map argument", ErrorCodes::TYPE_MISMATCH);
+            throw Exception(ErrorCodes::TYPE_MISMATCH, "ARRAY JOIN requires array or map argument");
     }
     else if (is_left)
     {
@@ -158,7 +158,7 @@ void ArrayJoinAction::execute(Block & block)
         any_array_map_ptr = non_empty_array_columns.begin()->second->convertToFullColumnIfConst();
         any_array = getArrayJoinColumnRawPtr(any_array_map_ptr);
         if (!any_array)
-            throw Exception("ARRAY JOIN requires array or map argument", ErrorCodes::TYPE_MISMATCH);
+            throw Exception(ErrorCodes::TYPE_MISMATCH, "ARRAY JOIN requires array or map argument");
     }
 
 
@@ -186,13 +186,13 @@ void ArrayJoinAction::execute(Block & block)
 
                 const ColumnArray & array = typeid_cast<const ColumnArray &>(*array_ptr);
                 if (!is_unaligned && !array.hasEqualOffsets(*any_array))
-                    throw Exception("Sizes of ARRAY-JOIN-ed arrays do not match", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
+                    throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Sizes of ARRAY-JOIN-ed arrays do not match");
 
                 current.column = typeid_cast<const ColumnArray &>(*array_ptr).getDataPtr();
                 current.type = type->getNestedType();
             }
             else
-                throw Exception("ARRAY JOIN of not array nor map: " + current.name, ErrorCodes::TYPE_MISMATCH);
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "ARRAY JOIN of not array nor map: {}", current.name);
         }
         else
         {

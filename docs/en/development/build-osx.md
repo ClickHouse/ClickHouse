@@ -149,5 +149,3 @@ To check if it’s working, use the `ulimit -n` or `launchctl limit maxfiles` co
 cd ClickHouse
 ./build/programs/clickhouse-server --config-file ./programs/server/config.xml
 ```
-
-[Original article](https://clickhouse.com/docs/en/development/build_osx/) <!--hide-->

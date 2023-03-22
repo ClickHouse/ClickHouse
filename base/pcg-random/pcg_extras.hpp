@@ -455,7 +455,7 @@ auto bounded_rand(RngType& rng, typename RngType::result_type upper_bound)
     typedef typename RngType::result_type rtype;
     rtype threshold = (RngType::max() - RngType::min() + rtype(1) - upper_bound)
                     % upper_bound;
-    for (;;) { //-V1044
+    for (;;) {
         rtype r = rng() - RngType::min();
         if (r >= threshold)
             return r % upper_bound;

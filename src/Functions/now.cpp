@@ -96,12 +96,12 @@ public:
     {
         if (arguments.size() > 1)
         {
-            throw Exception("Arguments size of function " + getName() + " should be 0 or 1", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Arguments size of function {} should be 0 or 1", getName());
         }
         if (arguments.size() == 1 && !isStringOrFixedString(arguments[0].type))
         {
-            throw Exception(
-                "Arguments of function " + getName() + " should be String or FixedString", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments of function {} should be String or FixedString",
+                getName());
         }
         if (arguments.size() == 1)
         {
@@ -114,12 +114,12 @@ public:
     {
         if (arguments.size() > 1)
         {
-            throw Exception("Arguments size of function " + getName() + " should be 0 or 1", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Arguments size of function {} should be 0 or 1", getName());
         }
         if (arguments.size() == 1 && !isStringOrFixedString(arguments[0].type))
         {
-            throw Exception(
-                "Arguments of function " + getName() + " should be String or FixedString", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments of function {} should be String or FixedString",
+                getName());
         }
         if (arguments.size() == 1)
             return std::make_unique<FunctionBaseNow>(

@@ -42,10 +42,9 @@ void CapnProtoOutputStream::write(const void * buffer, size_t size)
 CapnProtoRowOutputFormat::CapnProtoRowOutputFormat(
     WriteBuffer & out_,
     const Block & header_,
-    const RowOutputFormatParams & params_,
     const FormatSchemaInfo & info,
     const FormatSettings & format_settings_)
-    : IRowOutputFormat(header_, out_, params_), column_names(header_.getNames()), column_types(header_.getDataTypes()), output_stream(std::make_unique<CapnProtoOutputStream>(out_)), format_settings(format_settings_)
+    : IRowOutputFormat(header_, out_), column_names(header_.getNames()), column_types(header_.getDataTypes()), output_stream(std::make_unique<CapnProtoOutputStream>(out_)), format_settings(format_settings_)
 {
     schema = schema_parser.getMessageSchema(info);
     checkCapnProtoSchemaStructure(schema, getPort(PortKind::Main).getHeader(), format_settings.capn_proto.enum_comparing_mode);
@@ -112,7 +111,12 @@ static std::optional<capnp::DynamicValue::Reader> convertToDynamicValue(
         case capnp::DynamicValue::Type::INT:
             return capnp::DynamicValue::Reader(column->getInt(row_num));
         case capnp::DynamicValue::Type::UINT:
+        {
+            /// IPv4 column doesn't support getUInt method.
+            if (isIPv4(data_type))
+                return capnp::DynamicValue::Reader(assert_cast<const ColumnIPv4 *>(column.get())->getElement(row_num));
             return capnp::DynamicValue::Reader(column->getUInt(row_num));
+        }
         case capnp::DynamicValue::Type::BOOL:
             return capnp::DynamicValue::Reader(column->getBool(row_num));
         case capnp::DynamicValue::Type::FLOAT:
@@ -264,10 +268,9 @@ void registerOutputFormatCapnProto(FormatFactory & factory)
     factory.registerOutputFormat("CapnProto", [](
         WriteBuffer & buf,
         const Block & sample,
-        const RowOutputFormatParams & params,
         const FormatSettings & format_settings)
     {
-        return std::make_shared<CapnProtoRowOutputFormat>(buf, sample, params, FormatSchemaInfo(format_settings, "CapnProto", true), format_settings);
+        return std::make_shared<CapnProtoRowOutputFormat>(buf, sample, FormatSchemaInfo(format_settings, "CapnProto", true), format_settings);
     });
 }
 

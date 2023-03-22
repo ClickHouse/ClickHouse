@@ -6,6 +6,8 @@ import argparse
 import csv
 
 
+# TODO: add typing and log files to the fourth column, think about launching
+# everything from the python and not bash
 def process_result(result_folder):
     status = "success"
     description = ""

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <Poco/Net/TCPServerConnection.h>
 
 #include <base/getFQDNOrHostName.h>
@@ -21,6 +22,7 @@
 
 #include "IServer.h"
 #include "Server/TCPProtocolStackData.h"
+#include "Storages/MergeTree/RequestResponse.h"
 #include "base/types.h"
 
 
@@ -169,7 +171,6 @@ private:
     UInt64 interactive_delay = 100000;
     Poco::Timespan sleep_in_send_tables_status;
     UInt64 unknown_packet_in_send_data = 0;
-    Poco::Timespan sleep_in_receive_cancel;
     Poco::Timespan sleep_after_receiving_query;
 
     std::unique_ptr<Session> session;
@@ -188,7 +189,10 @@ private:
 
     /// For inter-server secret (remote_server.*.secret)
     bool is_interserver_mode = false;
+    /// For DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET
     String salt;
+    /// For DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2
+    std::optional<UInt64> nonce;
     String cluster;
 
     std::mutex task_callback_mutex;
@@ -220,7 +224,7 @@ private:
     void receiveQuery();
     void receiveIgnoredPartUUIDs();
     String receiveReadTaskResponseAssumeLocked();
-    std::optional<PartitionReadResponse> receivePartitionMergeTreeReadTaskResponseAssumeLocked();
+    std::optional<ParallelReadResponse> receivePartitionMergeTreeReadTaskResponseAssumeLocked();
     bool receiveData(bool scalar);
     bool readDataNext();
     void readData();
@@ -253,7 +257,8 @@ private:
     void sendEndOfStream();
     void sendPartUUIDs();
     void sendReadTaskRequestAssumeLocked();
-    void sendMergeTreeReadTaskRequestAssumeLocked(PartitionReadRequest request);
+    void sendMergeTreeAllRangesAnnounecementAssumeLocked(InitialAllRangesAnnouncement announcement);
+    void sendMergeTreeReadTaskRequestAssumeLocked(ParallelReadRequest request);
     void sendProfileInfo(const ProfileInfo & info);
     void sendTotals(const Block & totals);
     void sendExtremes(const Block & extremes);
@@ -271,6 +276,8 @@ private:
 
     /// This function is called from different threads.
     void updateProgress(const Progress & value);
+
+    Poco::Net::SocketAddress getClientAddress(const ClientInfo & client_info);
 };
 
 }

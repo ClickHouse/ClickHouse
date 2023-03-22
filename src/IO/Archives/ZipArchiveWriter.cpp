@@ -343,7 +343,7 @@ void ZipArchiveWriter::checkCompressionMethodIsEnabled(int compression_method_)
 #if USE_BZIP2
             return;
 #else
-            throw Exception("bzip2 compression method is disabled", ErrorCodes::SUPPORT_IS_DISABLED);
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "bzip2 compression method is disabled");
 #endif
         }
     }
@@ -354,7 +354,7 @@ void ZipArchiveWriter::checkCompressionMethodIsEnabled(int compression_method_)
 void ZipArchiveWriter::checkEncryptionIsEnabled()
 {
 #if !USE_SSL
-    throw Exception("Encryption in zip archive is disabled", ErrorCodes::SUPPORT_IS_DISABLED);
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Encryption in zip archive is disabled");
 #endif
 }
 
