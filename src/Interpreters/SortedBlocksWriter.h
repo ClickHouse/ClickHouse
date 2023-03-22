@@ -8,7 +8,7 @@
 #include <Core/SortDescription.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/SizeLimits.h>
-#include <Disks/TemporaryFileOnDisk.h>
+
 
 namespace DB
 {
@@ -24,7 +24,7 @@ using VolumePtr = std::shared_ptr<IVolume>;
 
 struct SortedBlocksWriter
 {
-    using TmpFilePtr = TemporaryFileOnDiskHolder;
+    using TmpFilePtr = std::unique_ptr<TemporaryFile>;
     using SortedFiles = std::vector<TmpFilePtr>;
 
     struct Blocks

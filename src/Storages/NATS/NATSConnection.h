@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Storages/NATS/Buffer_fwd.h>
 #include <Storages/NATS/NATSHandler.h>
 #include <Storages/UVLoop.h>
 

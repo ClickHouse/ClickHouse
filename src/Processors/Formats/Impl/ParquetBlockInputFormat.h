@@ -1,5 +1,5 @@
 #pragma once
-#include "config.h"
+#include "config_formats.h"
 #if USE_PARQUET
 
 #include <Processors/Formats/IInputFormat.h>
@@ -8,7 +8,7 @@
 
 namespace parquet::arrow { class FileReader; }
 
-namespace arrow { class Buffer; class RecordBatchReader;}
+namespace arrow { class Buffer; }
 
 namespace DB
 {
@@ -42,10 +42,10 @@ private:
     // indices of columns to read from Parquet file
     std::vector<int> column_indices;
     std::unique_ptr<ArrowColumnToCHColumn> arrow_column_to_ch_column;
+    std::vector<size_t> missing_columns;
     BlockMissingValues block_missing_values;
     const FormatSettings format_settings;
     const std::unordered_set<int> & skip_row_groups;
-    std::shared_ptr<arrow::RecordBatchReader> current_record_batch_reader;
 
     std::atomic<int> is_stopped{0};
 };

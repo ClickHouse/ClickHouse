@@ -3,6 +3,7 @@
 #include <condition_variable>
 #include <memory>
 #include <optional>
+#include <Core/BackgroundSchedulePool.h>
 #include <Functions/FunctionsLogical.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -46,7 +47,7 @@ public:
     size_t getTotalByteCount() const override;
     bool alwaysReturnsEmptySet() const override;
     bool supportParallelJoin() const override { return true; }
-    IBlocksStreamPtr
+    std::shared_ptr<NotJoinedBlocks>
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
 private:

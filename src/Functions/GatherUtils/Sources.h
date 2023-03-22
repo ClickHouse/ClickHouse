@@ -140,12 +140,17 @@ struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
 
 
 /// The methods can be virtual or not depending on the template parameter. See IStringSource.
-#pragma GCC diagnostic push
-#ifdef HAS_SUGGEST_OVERRIDE
+#if !defined(__clang__)
+#   pragma GCC diagnostic push
 #   pragma GCC diagnostic ignored "-Wsuggest-override"
-#endif
-#ifdef HAS_SUGGEST_DESTRUCTOR_OVERRIDE
-#   pragma GCC diagnostic ignored "-Wsuggest-destructor-override"
+#elif __clang_major__ >= 11
+#   pragma GCC diagnostic push
+#   ifdef HAS_SUGGEST_OVERRIDE
+#       pragma GCC diagnostic ignored "-Wsuggest-override"
+#   endif
+#   ifdef HAS_SUGGEST_DESTRUCTOR_OVERRIDE
+#       pragma GCC diagnostic ignored "-Wsuggest-destructor-override"
+#   endif
 #endif
 
 template <typename Base>
@@ -182,10 +187,9 @@ struct ConstSource : public Base
         if constexpr (std::is_base_of_v<IArraySource, Base>)
             visitor.visit(*this);
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                            "accept(ArraySourceVisitor &) is not implemented for {} because {} "
-                            "is not derived from IArraySource",
-                            demangle(typeid(ConstSource<Base>).name()), demangle(typeid(Base).name()));
+            throw Exception(
+                    "accept(ArraySourceVisitor &) is not implemented for " + demangle(typeid(ConstSource<Base>).name())
+                    + " because " + demangle(typeid(Base).name()) + " is not derived from IArraySource", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     virtual void accept(ValueSourceVisitor & visitor) // override
@@ -193,10 +197,9 @@ struct ConstSource : public Base
         if constexpr (std::is_base_of_v<IValueSource, Base>)
             visitor.visit(*this);
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                            "accept(ValueSourceVisitor &) is not implemented for {} because {} "
-                            "is not derived from IValueSource",
-                            demangle(typeid(ConstSource<Base>).name()), demangle(typeid(Base).name()));
+            throw Exception(
+                    "accept(ValueSourceVisitor &) is not implemented for " + demangle(typeid(ConstSource<Base>).name())
+                    + " because " + demangle(typeid(Base).name()) + " is not derived from IValueSource", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     void next()
@@ -230,7 +233,9 @@ struct ConstSource : public Base
     }
 };
 
-#pragma GCC diagnostic pop
+#if !defined(__clang__) || __clang_major__ >= 11
+#   pragma GCC diagnostic pop
+#endif
 
 struct StringSource
 {
@@ -534,7 +539,7 @@ inline std::unique_ptr<IStringSource> createDynamicStringSource(const IColumn & 
         return std::make_unique<DynamicStringSource<ConstSource<StringSource>>>(col);
     if (checkColumnConst<ColumnFixedString>(&col))
         return std::make_unique<DynamicStringSource<ConstSource<FixedStringSource>>>(col);
-    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type of string column: {}", col.getName());
+    throw Exception("Unexpected type of string column: " + col.getName(), ErrorCodes::ILLEGAL_COLUMN);
 }
 
 using StringSources = std::vector<std::unique_ptr<IStringSource>>;

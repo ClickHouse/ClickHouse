@@ -61,23 +61,18 @@ public:
         return host_fqdn_id;
     }
 
-    std::string getQueueDir() const
-    {
-        return queue_dir;
-    }
-
     void startup();
     virtual void shutdown();
 
     bool isCurrentlyActive() const { return initialized && !stop_flag; }
 
+protected:
 
     /// Returns cached ZooKeeper session (possibly expired).
     ZooKeeperPtr tryGetZooKeeper() const;
     /// If necessary, creates a new session and caches it.
     ZooKeeperPtr getAndSetZooKeeper();
 
-protected:
     /// Iterates through queue tasks in ZooKeeper, runs execution of new tasks
     void scheduleTasks(bool reinitialized);
 
@@ -101,11 +96,12 @@ protected:
     bool tryExecuteQueryOnLeaderReplica(
         DDLTaskBase & task,
         StoragePtr storage,
+        const String & rewritten_query,
         const String & node_path,
         const ZooKeeperPtr & zookeeper,
         std::unique_ptr<zkutil::ZooKeeperLock> & execute_on_leader_lock);
 
-    bool tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeeper);
+    bool tryExecuteQuery(const String & query, DDLTaskBase & task, const ZooKeeperPtr & zookeeper);
 
     /// Checks and cleanups queue's nodes
     void cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zookeeper);
@@ -158,7 +154,7 @@ protected:
     /// How many tasks could be in the queue
     size_t max_tasks_in_queue = 1000;
 
-    std::atomic<UInt32> max_id = 0;
+    std::atomic<UInt64> max_id = 0;
     const CurrentMetrics::Metric * max_entry_metric;
     const CurrentMetrics::Metric * max_pushed_entry_metric;
 };

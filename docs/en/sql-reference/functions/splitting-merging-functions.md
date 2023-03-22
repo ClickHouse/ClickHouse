@@ -1,27 +1,25 @@
 ---
-slug: /en/sql-reference/functions/splitting-merging-functions
 sidebar_position: 47
 sidebar_label: Splitting and Merging Strings and Arrays
 ---
 
 # Functions for Splitting and Merging Strings and Arrays
 
-## splitByChar(separator, s[, max_substrings])
+## splitByChar(separator, s)
 
-Splits a string into substrings separated by a specified character. It uses a constant string `separator` which consists of exactly one character.
+Splits a string into substrings separated by a specified character. It uses a constant string `separator` which consisting of exactly one character.
 Returns an array of selected substrings. Empty substrings may be selected if the separator occurs at the beginning or end of the string, or if there are multiple consecutive separators.
 
 **Syntax**
 
 ``` sql
-splitByChar(separator, s[, max_substrings]))
+splitByChar(separator, s)
 ```
 
 **Arguments**
 
 -   `separator` — The separator which should contain exactly one character. [String](../../sql-reference/data-types/string.md).
 -   `s` — The string to split. [String](../../sql-reference/data-types/string.md).
--   `max_substrings` — An optional `Int64` defaulting to 0. When `max_substrings` > 0, the returned substrings will be no more than `max_substrings`, otherwise the function will return as many substrings as possible.
 
 **Returned value(s)**
 
@@ -45,22 +43,20 @@ SELECT splitByChar(',', '1,2,3,abcde');
 └─────────────────────────────────┘
 ```
 
-## splitByString(separator, s[, max_substrings])
+## splitByString(separator, s)
 
 Splits a string into substrings separated by a string. It uses a constant string `separator` of multiple characters as the separator. If the string `separator` is empty, it will split the string `s` into an array of single characters.
 
 **Syntax**
 
 ``` sql
-splitByString(separator, s[, max_substrings]))
+splitByString(separator, s)
 ```
 
 **Arguments**
 
 -   `separator` — The separator. [String](../../sql-reference/data-types/string.md).
 -   `s` — The string to split. [String](../../sql-reference/data-types/string.md).
--   `max_substrings` — An optional `Int64` defaulting to 0. When `max_substrings` > 0, the returned substrings will be no more than `max_substrings`, otherwise the function will return as many substrings as possible.
-
 
 **Returned value(s)**
 
@@ -94,22 +90,20 @@ SELECT splitByString('', 'abcde');
 └────────────────────────────┘
 ```
 
-## splitByRegexp(regexp, s[, max_substrings])
+## splitByRegexp(regexp, s)
 
 Splits a string into substrings separated by a regular expression. It uses a regular expression string `regexp` as the separator. If the `regexp` is empty, it will split the string `s` into an array of single characters. If no match is found for this regular expression, the string `s` won't be split.
 
 **Syntax**
 
 ``` sql
-splitByRegexp(regexp, s[, max_substrings]))
+splitByRegexp(regexp, s)
 ```
 
 **Arguments**
 
 -   `regexp` — Regular expression. Constant. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
 -   `s` — The string to split. [String](../../sql-reference/data-types/string.md).
--   `max_substrings` — An optional `Int64` defaulting to 0. When `max_substrings` > 0, the returned substrings will be no more than `max_substrings`, otherwise the function will return as many substrings as possible.
-
 
 **Returned value(s)**
 
@@ -151,7 +145,7 @@ Result:
 └────────────────────────────┘
 ```
 
-## splitByWhitespace(s[, max_substrings])
+## splitByWhitespace(s)
 
 Splits a string into substrings separated by whitespace characters. 
 Returns an array of selected substrings.
@@ -159,14 +153,12 @@ Returns an array of selected substrings.
 **Syntax**
 
 ``` sql
-splitByWhitespace(s[, max_substrings]))
+splitByWhitespace(s)
 ```
 
 **Arguments**
 
 -   `s` — The string to split. [String](../../sql-reference/data-types/string.md).
--   `max_substrings` — An optional `Int64` defaulting to 0. When `max_substrings` > 0, the returned substrings will be no more than `max_substrings`, otherwise the function will return as many substrings as possible.
-
 
 **Returned value(s)**
 
@@ -186,7 +178,7 @@ SELECT splitByWhitespace('  1!  a,  b.  ');
 └─────────────────────────────────────┘
 ```
 
-## splitByNonAlpha(s[, max_substrings])
+## splitByNonAlpha(s)
 
 Splits a string into substrings separated by whitespace and punctuation characters. 
 Returns an array of selected substrings.
@@ -194,14 +186,12 @@ Returns an array of selected substrings.
 **Syntax**
 
 ``` sql
-splitByNonAlpha(s[, max_substrings]))
+splitByNonAlpha(s)
 ```
 
 **Arguments**
 
 -   `s` — The string to split. [String](../../sql-reference/data-types/string.md).
--   `max_substrings` — An optional `Int64` defaulting to 0. When `max_substrings` > 0, the returned substrings will be no more than `max_substrings`, otherwise the function will return as many substrings as possible.
-
 
 **Returned value(s)**
 
@@ -226,38 +216,9 @@ SELECT splitByNonAlpha('  1!  a,  b.  ');
 Concatenates string representations of values listed in the array with the separator. `separator` is an optional parameter: a constant string, set to an empty string by default.
 Returns the string.
 
-**Example**
-
-``` sql
-SELECT arrayStringConcat(['12/05/2021', '12:50:00'], ' ') AS DateString;
-```
-```text
-┌─DateString──────────┐
-│ 12/05/2021 12:50:00 │
-└─────────────────────┘
-```
-
-## alphaTokens(s[, max_substrings]), splitByAlpha(s[, max_substrings])
+## alphaTokens(s)
 
 Selects substrings of consecutive bytes from the ranges a-z and A-Z.Returns an array of substrings.
-
-**Syntax**
-
-``` sql
-alphaTokens(s[, max_substrings]))
-splitByAlpha(s[, max_substrings])
-```
-
-**Arguments**
-
--   `s` — The string to split. [String](../../sql-reference/data-types/string.md).
--   `max_substrings` — An optional `Int64` defaulting to 0. When `max_substrings` > 0, the returned substrings will be no more than `max_substrings`, otherwise the function will return as many substrings as possible.
-
-**Returned value(s)**
-
-Returns an array of selected substrings.
-
-Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
 **Example**
 

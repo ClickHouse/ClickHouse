@@ -1,6 +1,3 @@
----
-slug: /en/operations/system-tables/quota_usage
----
 # quota_usage
 
 Quota usage by the current user: how much is used and how much is left.
@@ -31,3 +28,5 @@ Columns:
 ## See Also {#see-also}
 
 -   [SHOW QUOTA](../../sql-reference/statements/show.md#show-quota-statement)
+
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/quota_usage) <!--hide-->

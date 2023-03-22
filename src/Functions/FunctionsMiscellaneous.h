@@ -55,8 +55,6 @@ public:
     /// default implementation for Nothing.
     /// Example: arrayMap(x -> CAST(x, 'UInt8'), []);
     bool useDefaultImplementationForNothing() const override { return false; }
-    /// Example: SELECT arrayMap(x -> (x + (arrayMap(y -> ((x + y) + toLowCardinality(1)), [])[1])), [])
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
 private:
     ExpressionActionsPtr expression_actions;
@@ -81,6 +79,8 @@ public:
 
     String getName() const override { return "FunctionExpression"; }
 
+    bool isDeterministic() const override { return true; }
+    bool isDeterministicInScopeOfQuery() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     const DataTypes & getArgumentTypes() const override { return argument_types; }
@@ -176,6 +176,8 @@ public:
 
     String getName() const override { return name; }
 
+    bool isDeterministic() const override { return true; }
+    bool isDeterministicInScopeOfQuery() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     const DataTypes & getArgumentTypes() const override { return capture->captured_types; }
@@ -207,10 +209,10 @@ public:
             const String & expression_return_name_)
         : expression_actions(std::move(expression_actions_))
     {
-        /// Check that expression does not contain unusual actions that will break columns structure.
+        /// Check that expression does not contain unusual actions that will break columnss structure.
         for (const auto & action : expression_actions->getActions())
             if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression with arrayJoin or other unusual action cannot be captured");
+                throw Exception("Expression with arrayJoin or other unusual action cannot be captured", ErrorCodes::BAD_ARGUMENTS);
 
         std::unordered_map<std::string, DataTypePtr> arguments_map;
 
@@ -225,7 +227,8 @@ public:
         {
             auto it = arguments_map.find(captured_name);
             if (it == arguments_map.end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Lambda captured argument {} not found in required columns.", captured_name);
+                throw Exception("Lambda captured argument " + captured_name + " not found in required columns.",
+                                ErrorCodes::LOGICAL_ERROR);
 
             captured_types.push_back(it->second);
             arguments_map.erase(it);
@@ -243,7 +246,7 @@ public:
 
         capture = std::make_shared<Capture>(Capture{
                 .captured_names = captured_names_,
-                .captured_types = std::move(captured_types),
+                .captured_types = std::move(captured_types), //-V1030
                 .lambda_arguments = lambda_arguments_,
                 .return_name = expression_return_name_,
                 .return_type = function_return_type_,

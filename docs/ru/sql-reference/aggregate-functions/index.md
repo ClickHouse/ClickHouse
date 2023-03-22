@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/aggregate-functions/
 sidebar_label: "Агрегатные функции"
 sidebar_position: 33
 ---
@@ -56,3 +55,4 @@ SELECT groupArray(y) FROM t_null_big
 ```
 
 `groupArray` не включает `NULL` в результирующий массив.
+

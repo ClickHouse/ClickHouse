@@ -1,14 +1,12 @@
 ---
-slug: /zh/sql-reference/ansi
 sidebar_position: 40
 sidebar_label: "ANSI\u517C\u5BB9\u6027"
 ---
 
 # ClickHouse SQL方言 与ANSI SQL的兼容性{#ansi-sql-compatibility-of-clickhouse-sql-dialect}
 
-:::note
-本文参考Annex G所著的[ISO/IEC CD 9075-2:2011](https://www.iso.org/obp/ui/#iso:std:iso-iec:9075:-2:ed-4:v1:en:sec:8)标准.
-:::
+!!! note "注"
+    本文参考Annex G所著的[ISO/IEC CD 9075-2:2011](https://www.iso.org/obp/ui/#iso:std:iso-iec:9075:-2:ed-4:v1:en:sec:8)标准.
 
 ## 行为差异 {#differences-in-behaviour}
 
@@ -153,7 +151,7 @@ sidebar_label: "ANSI\u517C\u5BB9\u6027"
 | F051-02  | TIME（时间）数据类型（并支持用于表达时间的字面量），小数秒精度至少为0                    | 否 {.text-danger}       |                                                                                                                                                                          |
 | F051-03  | 时间戳数据类型（并支持用于表达时间戳的字面量），小数秒精度至少为0和6                     | 是 {.text-danger}       |                                                                                                                                                                          |
 | F051-04  | 日期、时间和时间戳数据类型的比较谓词                                                     | 是 {.text-success}      |                                                                                                                                                                          |
-| F051-05  | DateTime 类型和字符串形式表达的时间之间的显式转换                                         | 是 {.text-success}      |                                                                                                                                                                          |
+| F051-05  | Datetime 类型和字符串形式表达的时间之间的显式转换                                         | 是 {.text-success}      |                                                                                                                                                                          |
 | F051-06  | CURRENT_DATE                                                                             | 否 {.text-danger}       | 使用`today()`替代                                                                                                                                                        |
 | F051-07  | LOCALTIME                                                                                | 否 {.text-danger}       | 使用`now()`替代                                                                                                                                                          |
 | F051-08  | LOCALTIMESTAMP                                                                           | 否 {.text-danger}       |                                                                                                                                                                          |

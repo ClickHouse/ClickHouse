@@ -54,8 +54,6 @@ public:
     void onFinish() override;
 
 private:
-    void onCancel() override;
-
     IColumn::Selector createSelector(const Block & source_block) const;
 
     void writeAsync(const Block & block);
@@ -71,9 +69,9 @@ private:
     Block removeSuperfluousColumns(Block block) const;
 
     /// Increments finished_writings_count after each repeat.
-    void writeToLocal(const Cluster::ShardInfo & shard_info, const Block & block, size_t repeats);
+    void writeToLocal(const Block & block, size_t repeats);
 
-    void writeToShard(const Cluster::ShardInfo & shard_info, const Block & block, const std::vector<std::string> & dir_names);
+    void writeToShard(const Block & block, const std::vector<std::string> & dir_names);
 
 
     /// Performs synchronous insertion to remote nodes. If timeout_exceeded flag was set, throws.

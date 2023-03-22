@@ -1,6 +1,3 @@
--- Tags: no-cpu-ppc64le
--- Tag no-cpu-ppc64le: Depending on the target platform, CRC32C function returns different hash values. So, should not run on PowerPC. Whenever a new test gets added here, same has to be updated in 01016_simhash_minhash_ppc.sql
- 
 SELECT ngramSimHash('');
 SELECT ngramSimHash('what a cute cat.');
 SELECT ngramSimHashCaseInsensitive('what a cute cat.');

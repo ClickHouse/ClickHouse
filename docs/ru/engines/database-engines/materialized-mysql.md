@@ -1,5 +1,4 @@
 ---
-slug: /ru/engines/database-engines/materialized-mysql
 sidebar_position: 29
 sidebar_label: "[experimental] MaterializedMySQL"
 ---
@@ -194,3 +193,5 @@ SELECT * FROM mysql.test;
 │ 2 │ 222 │ Wow! │
 └───┴─────┴──────┘
 ```
+
+[Оригинальная статья](https://clickhouse.com/docs/ru/engines/database-engines/materialized-mysql/) <!--hide-->

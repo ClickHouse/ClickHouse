@@ -1,5 +1,4 @@
 ---
-slug: /ru/faq/use-cases/
 title: Вопросы о применении ClickHouse
 toc_hidden_folder: true
 sidebar_position: 2

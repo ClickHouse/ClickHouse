@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/bit_cast.h>
 #include <Common/HashTable/Hash.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnArray.h>
@@ -94,11 +95,9 @@ struct BloomFilterHash
         else if (which.isFloat32()) return build_hash_column(getNumberTypeHash<Float64, Float64>(field));
         else if (which.isFloat64()) return build_hash_column(getNumberTypeHash<Float64, Float64>(field));
         else if (which.isUUID()) return build_hash_column(getNumberTypeHash<UUID, UUID>(field));
-        else if (which.isIPv4()) return build_hash_column(getNumberTypeHash<IPv4, IPv4>(field));
-        else if (which.isIPv6()) return build_hash_column(getNumberTypeHash<IPv6, IPv6>(field));
         else if (which.isString()) return build_hash_column(getStringTypeHash(field));
         else if (which.isFixedString()) return build_hash_column(getFixedStringTypeHash(field, data_type));
-        else throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type {} of bloom filter index.", data_type->getName());
+        else throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::BAD_ARGUMENTS);
     }
 
     static ColumnPtr hashWithColumn(const DataTypePtr & data_type, const ColumnPtr & column, size_t pos, size_t limit)
@@ -109,7 +108,7 @@ struct BloomFilterHash
             const auto * array_col = typeid_cast<const ColumnArray *>(column.get());
 
             if (checkAndGetColumn<ColumnNullable>(array_col->getData()))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type {} of bloom filter index.", data_type->getName());
+                throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::BAD_ARGUMENTS);
 
             const auto & offsets = array_col->getOffsets();
             limit = offsets[pos + limit - 1] - offsets[pos - 1];    /// PaddedPODArray allows access on index -1.
@@ -158,11 +157,9 @@ struct BloomFilterHash
         else if (which.isFloat32()) getNumberTypeHash<Float32, is_first>(column, vec, pos);
         else if (which.isFloat64()) getNumberTypeHash<Float64, is_first>(column, vec, pos);
         else if (which.isUUID()) getNumberTypeHash<UUID, is_first>(column, vec, pos);
-        else if (which.isIPv4()) getNumberTypeHash<IPv4, is_first>(column, vec, pos);
-        else if (which.isIPv6()) getNumberTypeHash<IPv6, is_first>(column, vec, pos);
         else if (which.isString()) getStringTypeHash<is_first>(column, vec, pos);
         else if (which.isFixedString()) getStringTypeHash<is_first>(column, vec, pos);
-        else throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type {} of bloom filter index.", data_type->getName());
+        else throw Exception("Unexpected type " + data_type->getName() + " of bloom filter index.", ErrorCodes::BAD_ARGUMENTS);
     }
 
     template <typename Type, bool is_first>
@@ -171,7 +168,7 @@ struct BloomFilterHash
         const auto * index_column = typeid_cast<const ColumnVector<Type> *>(column);
 
         if (unlikely(!index_column))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column type was passed to the bloom filter index.");
+            throw Exception("Illegal column type was passed to the bloom filter index.", ErrorCodes::ILLEGAL_COLUMN);
 
         const typename ColumnVector<Type>::Container & vec_from = index_column->getData();
 
@@ -240,7 +237,7 @@ struct BloomFilterHash
             }
         }
         else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column type was passed to the bloom filter index.");
+            throw Exception("Illegal column type was passed to the bloom filter index.", ErrorCodes::ILLEGAL_COLUMN);
     }
 
     static std::pair<size_t, size_t> calculationBestPractices(double max_conflict_probability)

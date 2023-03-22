@@ -20,7 +20,7 @@
 #include <Common/BridgeProtocolVersion.h>
 #include <Common/logger_useful.h>
 #include <Server/HTTP/HTMLForm.h>
-#include "config.h"
+#include <Common/config.h>
 
 #include <mutex>
 #include <memory>
@@ -102,9 +102,7 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
     std::string format = params.get("format", "RowBinary");
     std::string connection_string = params.get("connection_string");
-    bool use_connection_pooling = params.getParsed<bool>("use_connection_pooling", true);
     LOG_TRACE(log, "Connection string: '{}'", connection_string);
-    LOG_TRACE(log, "Use pooling: {}", use_connection_pooling);
 
     UInt64 max_block_size = DEFAULT_BLOCK_SIZE;
     if (params.has("max_block_size"))
@@ -136,7 +134,7 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
     try
     {
         nanodbc::ConnectionHolderPtr connection_handler;
-        if (use_connection_pooling)
+        if (getContext()->getSettingsRef().odbc_bridge_use_connection_pooling)
             connection_handler = ODBCPooledConnectionFactory::instance().get(
                 validateODBCConnectionString(connection_string), getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
         else

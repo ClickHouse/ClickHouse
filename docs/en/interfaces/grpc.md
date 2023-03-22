@@ -1,5 +1,4 @@
 ---
-slug: /en/interfaces/grpc
 sidebar_position: 19
 sidebar_label: gRPC Interface
 ---
@@ -84,8 +83,8 @@ In the following example a table is created and loaded with data from a CSV file
 
 ``` bash
 ./clickhouse-grpc-client.py -q "CREATE TABLE grpc_example_table (id UInt32, text String) ENGINE = MergeTree() ORDER BY id;"
-echo -e "0,Input data for\n1,gRPC protocol example" > a.csv
-cat a.csv | ./clickhouse-grpc-client.py -q "INSERT INTO grpc_example_table FORMAT CSV"
+echo "0,Input data for" > a.txt ; echo "1,gRPC protocol example" >> a.txt
+cat a.txt | ./clickhouse-grpc-client.py -q "INSERT INTO grpc_example_table FORMAT CSV"
 
 ./clickhouse-grpc-client.py --format PrettyCompact -q "SELECT * FROM grpc_example_table;"
 ```

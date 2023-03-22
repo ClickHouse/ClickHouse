@@ -18,23 +18,18 @@ public:
         bool optimize_distinct_in_order_);
 
     String getName() const override { return "Distinct"; }
-    const Names & getColumnNames() const { return columns; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-    bool isPreliminary() const { return pre_distinct; }
-
-    UInt64 getLimitHint() const { return limit_hint; }
-
 private:
     void updateOutputStream() override;
 
     SizeLimits set_size_limits;
     UInt64 limit_hint;
-    const Names columns;
+    Names columns;
     bool pre_distinct;
     bool optimize_distinct_in_order;
 };

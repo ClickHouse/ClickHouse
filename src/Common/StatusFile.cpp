@@ -5,10 +5,9 @@
 #include <cerrno>
 
 #include <Common/logger_useful.h>
+#include <base/errnoToString.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/LocalDateTime.h>
-#include <base/errnoToString.h>
-#include <base/defines.h>
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/LimitReadBuffer.h>
@@ -24,6 +23,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_OPEN_FILE;
+    extern const int CANNOT_CLOSE_FILE;
     extern const int CANNOT_TRUNCATE_FILE;
     extern const int CANNOT_SEEK_THROUGH_FILE;
 }
@@ -51,7 +51,7 @@ StatusFile::StatusFile(std::string path_, FillFunction fill_)
         std::string contents;
         {
             ReadBufferFromFile in(path, 1024);
-            LimitReadBuffer limit_in(in, 1024, /* trow_exception */ false, /* exact_limit */ {});
+            LimitReadBuffer limit_in(in, 1024, false);
             readStringUntilEOF(contents, limit_in);
         }
 
@@ -72,7 +72,7 @@ StatusFile::StatusFile(std::string path_, FillFunction fill_)
         if (-1 == flock_ret)
         {
             if (errno == EWOULDBLOCK)
-                throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Cannot lock file {}. Another server instance in same directory is already running.", path);
+                throw Exception("Cannot lock file " + path + ". Another server instance in same directory is already running.", ErrorCodes::CANNOT_OPEN_FILE);
             else
                 throwFromErrnoWithPath("Cannot lock file " + path, path, ErrorCodes::CANNOT_OPEN_FILE);
         }
@@ -89,8 +89,7 @@ StatusFile::StatusFile(std::string path_, FillFunction fill_)
     }
     catch (...)
     {
-        int err = close(fd);
-        chassert(!err || errno == EINTR);
+        close(fd);
         throw;
     }
 }
@@ -99,10 +98,10 @@ StatusFile::StatusFile(std::string path_, FillFunction fill_)
 StatusFile::~StatusFile()
 {
     if (0 != close(fd))
-        LOG_ERROR(&Poco::Logger::get("StatusFile"), "Cannot close file {}, {}", path, errnoToString());
+        LOG_ERROR(&Poco::Logger::get("StatusFile"), "Cannot close file {}, {}", path, errnoToString(ErrorCodes::CANNOT_CLOSE_FILE));
 
     if (0 != unlink(path.c_str()))
-        LOG_ERROR(&Poco::Logger::get("StatusFile"), "Cannot unlink file {}, {}", path, errnoToString());
+        LOG_ERROR(&Poco::Logger::get("StatusFile"), "Cannot unlink file {}, {}", path, errnoToString(ErrorCodes::CANNOT_CLOSE_FILE));
 }
 
 }

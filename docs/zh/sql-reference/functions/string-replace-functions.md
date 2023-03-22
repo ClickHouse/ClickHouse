@@ -1,6 +1,3 @@
----
-slug: /zh/sql-reference/functions/string-replace-functions
----
 # 字符串替换函数 {#zi-fu-chuan-ti-huan-han-shu}
 
 ## replaceOne(haystack, pattern, replacement) {#replaceonehaystack-pattern-replacement}
@@ -78,3 +75,6 @@ SELECT replaceRegexpAll('Hello, World!', '^', 'here: ') AS res
 预定义字符：`\0`, `\\`, `|`, `(`, `)`, `^`, `$`, `.`, `[`, `]`, `?`, `*`, `+`, `{`, `:`, `-`。
 这个实现与re2::RE2::QuoteMeta略有不同。它以`\0` 转义零字节，而不是`\x00`，并且只转义必需的字符。
 有关详细信息，请参阅链接：[RE2](https://github.com/google/re2/blob/master/re2/re2.cc#L473)
+
+[来源文章](https://clickhouse.com/docs/en/query_language/functions/string_replace_functions/) <!--hide-->
+
