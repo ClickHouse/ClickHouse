@@ -595,8 +595,7 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
         if (!backup->fileExists(index_file_path))
             throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", index_file_path);
 
-        auto backup_entry = backup->readFile(index_file_path);
-        auto in = backup_entry->getReadBuffer();
+        auto in = backup->readFile(index_file_path);
         CompressedReadBuffer compressed_in{*in};
         index.read(compressed_in);
     }
@@ -610,8 +609,7 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
         if (!backup->fileExists(data_file_path))
             throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", data_file_path);
 
-        auto backup_entry = backup->readFile(data_file_path);
-        std::unique_ptr<ReadBuffer> in = backup_entry->getReadBuffer();
+        auto in = backup->readFile(data_file_path);
         std::optional<TemporaryFileOnDisk> temp_data_file;
         if (!dynamic_cast<ReadBufferFromFileBase *>(in.get()))
         {

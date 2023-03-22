@@ -42,8 +42,11 @@ private:
     using Base = CacheBase<UInt128, UncompressedCacheCell, UInt128TrivialHash, UncompressedSizeWeightFunction>;
 
 public:
-    explicit UncompressedCache(size_t max_size_in_bytes, const String & uncompressed_cache_policy = "")
-        : Base(max_size_in_bytes, 0, uncompressed_cache_policy) {}
+    explicit UncompressedCache(size_t max_size_in_bytes)
+        : Base(max_size_in_bytes) {}
+
+    UncompressedCache(const String & uncompressed_cache_policy, size_t max_size_in_bytes)
+        : Base(uncompressed_cache_policy, max_size_in_bytes) {}
 
     /// Calculate key from path to file and offset.
     static UInt128 hash(const String & path_to_file, size_t offset)
