@@ -322,7 +322,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read(std::unique_ptr<ReadCo
         read_context = std::make_unique<ReadContext>(*connections);
     }
 
-    while (true)
+    do
     {
         if (!read_context->resumeRoutine())
             return ReadResult(Block());
@@ -349,6 +349,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read(std::unique_ptr<ReadCo
                 return restartQueryWithoutDuplicatedUUIDs(&read_context);
         }
     }
+    while (true);
 #else
     return read();
 #endif

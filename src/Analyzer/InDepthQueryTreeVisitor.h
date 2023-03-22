@@ -99,9 +99,8 @@ class InDepthQueryTreeVisitorWithContext
 public:
     using VisitQueryTreeNodeType = std::conditional_t<const_visitor, const QueryTreeNodePtr, QueryTreeNodePtr>;
 
-    explicit InDepthQueryTreeVisitorWithContext(ContextPtr context, size_t initial_subquery_depth = 0)
+    explicit InDepthQueryTreeVisitorWithContext(ContextPtr context)
         : current_context(std::move(context))
-        , subquery_depth(initial_subquery_depth)
     {}
 
     /// Return true if visitor should traverse tree top to bottom, false otherwise
@@ -126,25 +125,17 @@ public:
         return current_context->getSettingsRef();
     }
 
-    size_t getSubqueryDepth() const
-    {
-        return subquery_depth;
-    }
-
     void visit(VisitQueryTreeNodeType & query_tree_node)
     {
         auto current_scope_context_ptr = current_context;
         SCOPE_EXIT(
             current_context = std::move(current_scope_context_ptr);
-            --subquery_depth;
         );
 
         if (auto * query_node = query_tree_node->template as<QueryNode>())
             current_context = query_node->getContext();
         else if (auto * union_node = query_tree_node->template as<UnionNode>())
             current_context = union_node->getContext();
-
-        ++subquery_depth;
 
         bool traverse_top_to_bottom = getDerived().shouldTraverseTopToBottom();
         if (!traverse_top_to_bottom)
@@ -154,12 +145,7 @@ public:
 
         if (traverse_top_to_bottom)
             visitChildren(query_tree_node);
-
-        getDerived().leaveImpl(query_tree_node);
     }
-
-    void leaveImpl(VisitQueryTreeNodeType & node [[maybe_unused]])
-    {}
 private:
     Derived & getDerived()
     {
@@ -186,7 +172,6 @@ private:
     }
 
     ContextPtr current_context;
-    size_t subquery_depth = 0;
 };
 
 template <typename Derived>

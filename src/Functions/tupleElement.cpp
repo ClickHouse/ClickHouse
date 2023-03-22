@@ -21,7 +21,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int NUMBER_OF_DIMENSIONS_MISMATCHED;
-    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
+    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
 }
 
 namespace
@@ -200,7 +200,7 @@ private:
             const auto & array_y = *assert_cast<const ColumnArray *>(col_y.get());
             if (!array_x.hasEqualOffsets(array_y))
             {
-                throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
+                throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH,
                                 "The argument 1 and argument 3 of function {} have different array sizes", getName());
             }
         }
@@ -222,7 +222,7 @@ private:
         {
             if (unlikely(offsets_x[0] != offsets_y[row] - prev_offset))
             {
-                throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
+                throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH,
                                 "The argument 1 and argument 3 of function {} have different array sizes", getName());
             }
             prev_offset = offsets_y[row];

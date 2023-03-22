@@ -421,7 +421,6 @@ mapContains
 mapContainsKeyLike
 mapExtractKeyLike
 mapFilter
-mapFromArrays
 mapKeys
 mapPopulateSeries
 mapSubtract

@@ -384,7 +384,7 @@ ReadFromMerge::ReadFromMerge(
     const SelectQueryInfo & query_info_,
     ContextMutablePtr context_,
     QueryProcessingStage::Enum processed_stage)
-    : SourceStepWithFilter(DataStream{.header = common_header_})
+    : ISourceStep(DataStream{.header = common_header_})
     , required_max_block_size(max_block_size)
     , requested_num_streams(num_streams)
     , common_header(std::move(common_header_))
@@ -691,11 +691,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
             return {};
 
         if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(plan.getRootNode()->step.get()))
-        {
-            size_t filters_dags_size = filter_dags.size();
-            for (size_t i = 0; i < filters_dags_size; ++i)
-                read_from_merge_tree->addFilter(filter_dags[i], filter_nodes.nodes[i]);
-        }
+            read_from_merge_tree->addFilterNodes(added_filter_nodes);
 
         builder = plan.buildQueryPipeline(
             QueryPlanOptimizationSettings::fromContext(modified_context),

@@ -139,7 +139,6 @@ private:
     mutable SharedMutex rehash_mutex;
 
     FileBucket * current_bucket = nullptr;
-
     mutable std::mutex current_bucket_mutex;
 
     InMemoryJoinPtr hash_join;

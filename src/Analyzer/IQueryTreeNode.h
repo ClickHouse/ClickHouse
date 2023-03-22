@@ -90,11 +90,6 @@ public:
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is not supported for {} query node", getNodeTypeName());
     }
 
-    virtual void convertToNullable()
-    {
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method convertToNullable is not supported for {} query node", getNodeTypeName());
-    }
-
     struct CompareOptions
     {
         bool compare_aliases = true;

@@ -685,9 +685,8 @@ CREATE TABLE IF NOT EXISTS example_table
 -   如果`input_format_defaults_for_omitted_fields = 0`, 那么`x`和`a`的默认值等于`0`(作为`UInt32`数据类型的默认值)。
 -   如果`input_format_defaults_for_omitted_fields = 1`, 那么`x`的默认值为`0`，但`a`的默认值为`x * 2`。
 
-:::warning
+!!! note "注意"
 当使用`input_format_defaults_for_omitted_fields = 1`插入数据时，与使用`input_format_defaults_for_omitted_fields = 0`相比，ClickHouse消耗更多的计算资源。
-:::
 
 ### Selecting Data {#selecting-data}
 
@@ -709,9 +708,8 @@ CREATE TABLE IF NOT EXISTS example_table
 
 与[JSON](#json)格式不同，没有替换无效的UTF-8序列。值以与`JSON`相同的方式转义。
 
-:::info
+!!! note "提示"
 字符串中可以输出任意一组字节。如果您确信表中的数据可以被格式化为JSON而不会丢失任何信息，那么就使用`JSONEachRow`格式。
-:::
 
 ### Nested Structures {#jsoneachrow-nested}
 
@@ -1218,9 +1216,9 @@ SET format_avro_schema_registry_url = 'http://schema-registry';
 SELECT * FROM topic1_stream;
 ```
 
-:::warning
-设置 `format_avro_schema_registry_url` 需要写入配置文件`users.xml`以在Clickhouse重启后，该设置仍为您的设定值。您也可以在使用Kafka引擎的时候指定该设置。
-:::
+!!! note "警告"
+    设置 `format_avro_schema_registry_url` 需要写入配置文件`users.xml`以在Clickhouse重启后，该设置仍为您的设定值。您也可以在使用Kafka引擎的时候指定该设置。
+
 
 ## Parquet {#data-format-parquet}
 

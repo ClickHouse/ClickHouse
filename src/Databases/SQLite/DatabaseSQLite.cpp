@@ -40,14 +40,14 @@ DatabaseSQLite::DatabaseSQLite(
 
 bool DatabaseSQLite::empty() const
 {
-    std::lock_guard lock(mutex);
+    std::lock_guard<std::mutex> lock(mutex);
     return fetchTablesList().empty();
 }
 
 
 DatabaseTablesIteratorPtr DatabaseSQLite::getTablesIterator(ContextPtr local_context, const IDatabase::FilterByNameFunction &) const
 {
-    std::lock_guard lock(mutex);
+    std::lock_guard<std::mutex> lock(mutex);
 
     Tables tables;
     auto table_names = fetchTablesList();
@@ -120,14 +120,14 @@ bool DatabaseSQLite::checkSQLiteTable(const String & table_name) const
 
 bool DatabaseSQLite::isTableExist(const String & table_name, ContextPtr) const
 {
-    std::lock_guard lock(mutex);
+    std::lock_guard<std::mutex> lock(mutex);
     return checkSQLiteTable(table_name);
 }
 
 
 StoragePtr DatabaseSQLite::tryGetTable(const String & table_name, ContextPtr local_context) const
 {
-    std::lock_guard lock(mutex);
+    std::lock_guard<std::mutex> lock(mutex);
     return fetchTable(table_name, local_context, false);
 }
 
@@ -175,7 +175,7 @@ ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, Contex
 {
     StoragePtr storage;
     {
-        std::lock_guard lock(mutex);
+        std::lock_guard<std::mutex> lock(mutex);
         storage = fetchTable(table_name, local_context, false);
     }
     if (!storage)

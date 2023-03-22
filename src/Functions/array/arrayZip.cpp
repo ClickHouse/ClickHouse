@@ -13,7 +13,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
+    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
 }
@@ -81,7 +81,7 @@ public:
             }
             else if (!column_array->hasEqualOffsets(static_cast<const ColumnArray &>(*first_array_column)))
             {
-                throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
+                throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH,
                                 "The argument 1 and argument {} of function {} have different array sizes",
                                 i + 1, getName());
             }

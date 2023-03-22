@@ -46,9 +46,6 @@
 
 #include <chrono>
 #include <sstream>
-#include <filesystem>
-
-namespace fs = std::filesystem;
 
 #if USE_SSL
 #include <Poco/Net/X509Certificate.h>
@@ -623,7 +620,7 @@ void HTTPHandler::processQuery(
         if (buffer_until_eof)
         {
             const std::string tmp_path(server.context()->getTemporaryVolume()->getDisk()->getPath());
-            const std::string tmp_path_template(fs::path(tmp_path) / "http_buffers/");
+            const std::string tmp_path_template(tmp_path + "http_buffers/");
 
             auto create_tmp_disk_buffer = [tmp_path_template] (const WriteBufferPtr &)
             {
@@ -835,20 +832,12 @@ void HTTPHandler::processQuery(
     customizeContext(request, context);
 
     executeQuery(*in, *used_output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, context,
-        [&response, this] (const QueryResultDetails & details)
+        [&response, this] (const String & current_query_id, const String & content_type, const String & format, const String & timezone)
         {
-            response.add("X-ClickHouse-Query-Id", details.query_id);
-
-            if (content_type_override)
-                response.setContentType(*content_type_override);
-            else if (details.content_type)
-                response.setContentType(*details.content_type);
-
-            if (details.format)
-                response.add("X-ClickHouse-Format", *details.format);
-
-            if (details.timezone)
-                response.add("X-ClickHouse-Timezone", *details.timezone);
+            response.setContentType(content_type_override.value_or(content_type));
+            response.add("X-ClickHouse-Query-Id", current_query_id);
+            response.add("X-ClickHouse-Format", format);
+            response.add("X-ClickHouse-Timezone", timezone);
         }
     );
 

@@ -49,8 +49,8 @@ duplicate column names
 {"a1":1,"tab1_copy.a1":2}
 {"a1":1,"tab1_copy.a1":2}
 {"a1":1,"copy.a1":2}
-{"a1":1,"tab1_copy.a1":2}
-{"a1":1,"tab1_copy.a1":2}
+{"a1":1,"copy.a1":2}
+{"a1":1,"copy.a1":2}
 subquery
 1
 1
