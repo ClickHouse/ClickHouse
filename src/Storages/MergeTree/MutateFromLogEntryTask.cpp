@@ -125,7 +125,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
             zero_copy_lock = storage.tryCreateZeroCopyExclusiveLock(entry.new_part_name, disk);
 
-            if (!zero_copy_lock)
+            if (!zero_copy_lock || !zero_copy_lock->isLocked())
             {
                 LOG_DEBUG(log, "Mutation of part {} started by some other replica, will wait it and mutated merged part", entry.new_part_name);
                 return PrepareResult{
