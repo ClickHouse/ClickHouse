@@ -48,6 +48,8 @@ public:
 
     void flushAllData();
 
+    void flushAllSettings(const ContextPtr & context_);
+
     void shutdownAndDropAllData();
 
     static std::shared_ptr<ISource> createSourceFromFile(const String & file_name);
@@ -80,8 +82,8 @@ private:
     void run();
 
     std::map<UInt64, std::string> getFiles();
-    bool processFiles(const std::map<UInt64, std::string> & files);
-    void processFile(const std::string & file_path);
+    bool processFiles(const std::map<UInt64, std::string> & files, const bool & is_flush_settings, ContextPtr context);
+    void processFile(const std::string & file_path, const bool & is_flush_settings, ContextPtr context);
     void processFilesWithBatching(const std::map<UInt64, std::string> & files);
 
     void markAsBroken(const std::string & file_path);

@@ -407,7 +407,24 @@ void StorageDistributedDirectoryMonitor::flushAllData()
     const auto & files = getFiles();
     if (!files.empty())
     {
-        processFiles(files);
+        processFiles(files, false, nullptr);
+
+        /// Update counters.
+        getFiles();
+    }
+}
+
+void StorageDistributedDirectoryMonitor::flushAllSettings(const ContextPtr & context_)
+{
+    if (quit)
+        return;
+
+    std::lock_guard lock{mutex};
+
+    const auto & files = getFiles();
+    if (!files.empty())
+    {
+        processFiles(files, true, context_);
 
         /// Update counters.
         getFiles();
@@ -444,7 +461,7 @@ void StorageDistributedDirectoryMonitor::run()
         {
             try
             {
-                do_sleep = !processFiles(files);
+                do_sleep = !processFiles(files, false, nullptr);
 
                 std::lock_guard status_lock(status_mutex);
                 status.last_exception = std::exception_ptr{};
@@ -584,7 +601,7 @@ std::map<UInt64, std::string> StorageDistributedDirectoryMonitor::getFiles()
 
     return files;
 }
-bool StorageDistributedDirectoryMonitor::processFiles(const std::map<UInt64, std::string> & files)
+bool StorageDistributedDirectoryMonitor::processFiles(const std::map<UInt64, std::string> & files, const bool & is_flush_settings, ContextPtr context_)
 {
     if (should_batch_inserts)
     {
@@ -597,14 +614,14 @@ bool StorageDistributedDirectoryMonitor::processFiles(const std::map<UInt64, std
             if (quit)
                 return true;
 
-            processFile(file.second);
+            processFile(file.second, is_flush_settings, context_);
         }
     }
 
     return true;
 }
 
-void StorageDistributedDirectoryMonitor::processFile(const std::string & file_path)
+void StorageDistributedDirectoryMonitor::processFile(const std::string & file_path, const bool & is_flush_settings, ContextPtr context_)
 {
     OpenTelemetry::TracingContextHolderPtr thread_trace_context;
 
@@ -626,21 +643,41 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
         thread_trace_context->root_span.addAttribute("clickhouse.rows", distributed_header.rows);
         thread_trace_context->root_span.addAttribute("clickhouse.bytes", distributed_header.bytes);
 
-        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(distributed_header.insert_settings);
-        auto connection = pool->get(timeouts, &distributed_header.insert_settings);
-        LOG_DEBUG(log, "Sending `{}` to {} ({} rows, {} bytes)",
-            file_path,
-            connection->getDescription(),
-            formatReadableQuantity(distributed_header.rows),
-            formatReadableSizeWithBinarySuffix(distributed_header.bytes));
+        if (is_flush_settings)
+        {
+            auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(context_->getSettingsRef());
+            auto connection = pool->get(timeouts, &context_->getSettingsRef());
+            LOG_DEBUG(log, "Sending `{}` to {} ({} rows, {} bytes)",
+                      file_path,
+                      connection->getDescription(),
+                      formatReadableQuantity(distributed_header.rows),
+                      formatReadableSizeWithBinarySuffix(distributed_header.bytes));
 
-        RemoteInserter remote{*connection, timeouts,
-            distributed_header.insert_query,
-            distributed_header.insert_settings,
-            distributed_header.client_info};
-        bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;
-        writeRemoteConvert(distributed_header, remote, compression_expected, in, log);
-        remote.onFinish();
+            RemoteInserter remote{*connection, timeouts,
+                                  distributed_header.insert_query,
+                                  context_->getSettingsRef(),
+                                  distributed_header.client_info};
+            bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;
+            writeRemoteConvert(distributed_header, remote, compression_expected, in, log);
+            remote.onFinish();
+        } else
+        {
+            auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(distributed_header.insert_settings);
+            auto connection = pool->get(timeouts, &distributed_header.insert_settings);
+            LOG_DEBUG(log, "Sending `{}` to {} ({} rows, {} bytes)",
+                      file_path,
+                      connection->getDescription(),
+                      formatReadableQuantity(distributed_header.rows),
+                      formatReadableSizeWithBinarySuffix(distributed_header.bytes));
+
+            RemoteInserter remote{*connection, timeouts,
+                                  distributed_header.insert_query,
+                                  distributed_header.insert_settings,
+                                  distributed_header.client_info};
+            bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;
+            writeRemoteConvert(distributed_header, remote, compression_expected, in, log);
+            remote.onFinish();
+        }
     }
     catch (Exception & e)
     {
