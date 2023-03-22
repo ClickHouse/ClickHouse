@@ -115,6 +115,7 @@ private:
     UInt64 total_size_of_queried_columns = 0;
     NameSet array_joined_names;
     const bool move_all_conditions_to_prewhere = false;
+    UInt64 log_queries_cut_to_length = 0;
 };
 
 
