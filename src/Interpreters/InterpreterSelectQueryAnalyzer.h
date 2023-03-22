@@ -9,6 +9,8 @@
 #include <Planner/Planner.h>
 #include <Interpreters/Context_fwd.h>
 
+struct TestExternalDatabaseQueryState;
+
 namespace DB
 {
 
@@ -71,14 +73,11 @@ public:
     /// Set number_of_current_replica and count_participating_replicas in client_info
     void setProperClientInfo(size_t replica_number, size_t count_participating_replicas);
 
-    const QueryTreeNodePtr & getQueryTree() const { return query_tree; }
-
-    SelectQueryInfo getSelectQueryInfo()
-    {
-        planner.buildQueryPlanIfNeeded(); return planner.buildSelectQueryInfo();
-    }
-
 private:
+
+    /// Access select query info from unit tests (see gtest_transform_query_for_external_database)
+    friend struct ::TestExternalDatabaseQueryState;
+
     ASTPtr query;
     ContextMutablePtr context;
     SelectQueryOptions select_query_options;
