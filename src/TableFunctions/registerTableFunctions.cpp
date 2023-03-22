@@ -28,6 +28,7 @@ void registerTableFunctions()
     registerTableFunctionS3Cluster(factory);
     registerTableFunctionCOS(factory);
     registerTableFunctionOSS(factory);
+    registerTableFunctionGCS(factory);
     registerTableFunctionHudi(factory);
     registerTableFunctionDeltaLake(factory);
 #if USE_AVRO
