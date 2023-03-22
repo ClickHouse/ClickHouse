@@ -528,8 +528,6 @@ class SettingsRandomizer:
         "enable_memory_bound_merging_of_aggregation_results": lambda: random.randint(
             0, 1
         ),
-        "use_query_cache": lambda: random.randint(0, 1),
-        "enable_reads_from_query_cache": lambda: 0,
     }
 
     @staticmethod
