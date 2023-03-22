@@ -589,6 +589,16 @@ void FileCache::iterateCacheAndCollectKeyLocks(
     });
 }
 
+void FileCache::removeFileSegment(LockedKey & locked_key, FileSegmentPtr file_segment, const CacheGuard::Lock & cache_lock)
+{
+    /// FIXME:
+    /// We must hold pointer to file segment while removing it (because we remove file segment under file segment lock).
+    /// But this should not be obligatory.
+
+    chassert(file_segment->key() == locked_key.getKey());
+    locked_key.removeFileSegment(file_segment->offset(), file_segment->lock(), cache_lock);
+}
+
 bool FileCache::tryReserveImpl(
     IFileCachePriority & priority_queue,
     const Key & key,
@@ -682,7 +692,7 @@ bool FileCache::tryReserveImpl(
                 {
                     remove_current_it = true;
                     file_segment_metadata->queue_iterator = {};
-                    current_locked_key.remove(file_segment, cache_lock);
+                    removeFileSegment(current_locked_key, file_segment, cache_lock);
                     break;
                 }
             }
@@ -708,7 +718,7 @@ bool FileCache::tryReserveImpl(
         for (const auto & offset_to_delete : offsets_to_delete)
         {
             auto * file_segment_metadata = current_locked_key->getKeyMetadata().getByOffset(offset_to_delete);
-            current_locked_key->remove(file_segment_metadata->file_segment, cache_lock);
+            removeFileSegment(*current_locked_key, file_segment_metadata->file_segment, cache_lock);
             if (query_context)
                 query_context->remove(key, offset);
         }
@@ -780,7 +790,7 @@ void FileCache::removeKeyIfExists(const Key & key)
             if (!file_segment_metadata->releasable())
                 continue;
 
-            locked_key->remove(file_segment_metadata->file_segment, lock);
+            removeFileSegment(*locked_key, file_segment_metadata->file_segment, lock);
         }
     }
 }
@@ -809,7 +819,7 @@ void FileCache::removeAllReleasable()
         if (file_segment_metadata->releasable())
         {
             file_segment_metadata->queue_iterator = {};
-            locked_key->remove(file_segment_metadata->file_segment, lock);
+            removeFileSegment(*locked_key, file_segment_metadata->file_segment, lock);
             return IterationResult::REMOVE_AND_CONTINUE;
         }
         return IterationResult::CONTINUE;
@@ -1026,10 +1036,10 @@ LockedKeyPtr FileCache::createLockedKey(const Key & key, KeyNotFoundPolicy key_n
             return nullptr;
 
         it = metadata.emplace(key, std::make_shared<KeyMetadata>()).first;
-        return std::make_unique<LockedKey>(key, *it->second, it->second->lock(), cleanup_keys_metadata_queue, getPathInLocalCache(key));
+        return std::make_unique<LockedKey>(key, *it->second, it->second->lock(), getPathInLocalCache(key), cleanup_keys_metadata_queue);
     }
 
-    return std::make_unique<LockedKey>(key, *key_metadata, std::move(key_lock), cleanup_keys_metadata_queue, getPathInLocalCache(key));
+    return std::make_unique<LockedKey>(key, *key_metadata, std::move(key_lock), getPathInLocalCache(key), cleanup_keys_metadata_queue);
 }
 
 LockedKeyPtr FileCache::createLockedKey(const Key & key, KeyMetadata & key_metadata) const
@@ -1037,7 +1047,7 @@ LockedKeyPtr FileCache::createLockedKey(const Key & key, KeyMetadata & key_metad
     auto key_lock = key_metadata.lock();
     if (key_metadata.removed)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot lock key: it was removed from cache");
-    return std::make_unique<LockedKey>(key, key_metadata, std::move(key_lock), cleanup_keys_metadata_queue, getPathInLocalCache(key));
+    return std::make_unique<LockedKey>(key, key_metadata, std::move(key_lock), getPathInLocalCache(key), cleanup_keys_metadata_queue);
 }
 
 void FileCache::iterateCacheMetadata(const CacheMetadataGuard::Lock & lock, std::function<void(KeyMetadata &)> && func)

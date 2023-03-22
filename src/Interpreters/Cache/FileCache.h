@@ -245,6 +245,8 @@ private:
 
     void assertCacheCorrectness();
     void assertCacheCorrectness(const CacheGuard::Lock & cache_lock, const CacheMetadataGuard::Lock & metadata_lock);
+
+    static void removeFileSegment(LockedKey & locked_key, FileSegmentPtr file_segment, const CacheGuard::Lock &);
 };
 
 }

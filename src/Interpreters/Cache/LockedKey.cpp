@@ -18,8 +18,8 @@ LockedKey::LockedKey(
     const FileCacheKey & key_,
     KeyMetadata & key_metadata_,
     KeyGuard::Lock && lock_,
-    KeysQueuePtr cleanup_keys_metadata_queue_,
-    const std::string & key_path_)
+    const std::string & key_path_,
+    KeysQueuePtr cleanup_keys_metadata_queue_)
     : key(key_)
     , key_path(key_path_)
     , lock(std::move(lock_))
@@ -34,20 +34,13 @@ LockedKey::~LockedKey()
     removeKeyIfEmpty();
 }
 
-void LockedKey::remove(FileSegmentPtr file_segment, const CacheGuard::Lock & cache_lock)
-{
-    /// We must hold pointer to file segment while removing it.
-    chassert(file_segment->key() == key);
-    remove(file_segment->offset(), file_segment->lock(), cache_lock);
-}
-
-bool LockedKey::isLastHolder(size_t offset) const
+bool LockedKey::isLastOwnerOfFileSegment(size_t offset) const
 {
     const auto * file_segment_metadata = key_metadata.getByOffset(offset);
     return file_segment_metadata->file_segment.use_count() == 2;
 }
 
-void LockedKey::remove(
+void LockedKey::removeFileSegment(
     size_t offset,
     const FileSegmentGuard::Lock & segment_lock,
     const CacheGuard::Lock & cache_lock)
@@ -82,7 +75,7 @@ void LockedKey::remove(
     }
 }
 
-void LockedKey::reduceSizeToDownloaded(
+void LockedKey::shrinkFileSegmentToDownloadedSize(
     size_t offset,
     const FileSegmentGuard::Lock & segment_lock,
     const CacheGuard::Lock & cache_lock)

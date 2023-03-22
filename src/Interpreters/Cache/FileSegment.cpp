@@ -56,7 +56,7 @@ FileSegment::FileSegment(
             break;
         }
         /// DOWNLOADED is used either on initial cache metadata load into memory on server startup
-        /// or on reduceSizeToDownloaded() -- when file segment object is updated.
+        /// or on shrinkFileSegmentToDownloadedSize() -- when file segment object is updated.
         case (State::DOWNLOADED):
         {
             reserved_size = downloaded_size = size_;
@@ -254,7 +254,7 @@ FileSegment::RemoteFileReaderPtr FileSegment::extractRemoteFileReader()
 
     assert(download_state != State::DETACHED);
 
-    bool is_last_holder = locked_key->isLastHolder(offset());
+    bool is_last_holder = locked_key->isLastOwnerOfFileSegment(offset());
     if (!downloader_id.empty() || !is_last_holder)
         return nullptr;
 
@@ -445,7 +445,7 @@ bool FileSegment::reserve(size_t size_to_reserve)
         {
             /// No lock is required because reserved size is always
             /// mananaged (read/modified) by the downloader only
-            /// or in isLastHolder() case.
+            /// or in isLastOwnerOfFileSegment() case.
             /// It is made atomic because of getInfoForLog.
             reserved_size += size_to_reserve;
         }
@@ -534,7 +534,7 @@ void FileSegment::completeUnlocked(LockedKey & locked_key, const CacheGuard::Loc
         return;
 
     const bool is_downloader = isDownloaderUnlocked(segment_lock);
-    const bool is_last_holder = locked_key.isLastHolder(offset());
+    const bool is_last_holder = locked_key.isLastOwnerOfFileSegment(offset());
     const size_t current_downloaded_size = getDownloadedSize(true);
 
     SCOPE_EXIT({
@@ -567,7 +567,7 @@ void FileSegment::completeUnlocked(LockedKey & locked_key, const CacheGuard::Loc
         LOG_TEST(log, "Removing temporary file segment: {}", getInfoForLogUnlocked(segment_lock));
         detach(segment_lock, locked_key);
         setDownloadState(State::DETACHED, segment_lock);
-        locked_key.remove(offset(), segment_lock, cache_lock);
+        locked_key.removeFileSegment(offset(), segment_lock, cache_lock);
         return;
     }
 
@@ -598,7 +598,7 @@ void FileSegment::completeUnlocked(LockedKey & locked_key, const CacheGuard::Loc
                     LOG_TEST(log, "Remove cell {} (nothing downloaded)", range().toString());
 
                     setDownloadState(State::DETACHED, segment_lock);
-                    locked_key.remove(offset(), segment_lock, cache_lock);
+                    locked_key.removeFileSegment(offset(), segment_lock, cache_lock);
                 }
                 else
                 {
@@ -616,7 +616,7 @@ void FileSegment::completeUnlocked(LockedKey & locked_key, const CacheGuard::Loc
                     /// but current file segment should remain PARRTIALLY_DOWNLOADED_NO_CONTINUATION and with detached state,
                     /// because otherwise an invariant that getOrSet() returns a contiguous range of file segments will be broken
                     /// (this will be crucial for other file segment holder, not for current one).
-                    locked_key.reduceSizeToDownloaded(offset(), segment_lock, cache_lock);
+                    locked_key.shrinkFileSegmentToDownloadedSize(offset(), segment_lock, cache_lock);
                 }
 
                 detachAssumeStateFinalized(segment_lock);

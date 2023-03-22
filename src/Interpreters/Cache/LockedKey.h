@@ -27,23 +27,21 @@ struct LockedKey : private boost::noncopyable
         const FileCacheKey & key_,
         KeyMetadata & key_metadata_,
         KeyGuard::Lock && key_lock_,
-        KeysQueuePtr cleanup_keys_metadata_queue_,
-        const std::string & key_path_);
+        const std::string & key_path_,
+        KeysQueuePtr cleanup_keys_metadata_queue_);
 
     ~LockedKey();
 
-    void reduceSizeToDownloaded(size_t offset, const FileSegmentGuard::Lock &, const CacheGuard::Lock &);
-
-    void remove(FileSegmentPtr file_segment, const CacheGuard::Lock &);
-
-    void remove(size_t offset, const FileSegmentGuard::Lock &, const CacheGuard::Lock &);
-
-    bool isLastHolder(size_t offset) const;
+    const FileCacheKey & getKey() const { return key; }
 
     const KeyMetadata & getKeyMetadata() const { return key_metadata; }
     KeyMetadata & getKeyMetadata() { return key_metadata; }
 
-    const FileCacheKey & getKey() const { return key; }
+    void removeFileSegment(size_t offset, const FileSegmentGuard::Lock &, const CacheGuard::Lock &);
+
+    void shrinkFileSegmentToDownloadedSize(size_t offset, const FileSegmentGuard::Lock &, const CacheGuard::Lock &);
+
+    bool isLastOwnerOfFileSegment(size_t offset) const;
 
 private:
     void removeKeyIfEmpty() const;
