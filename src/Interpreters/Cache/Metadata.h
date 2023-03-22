@@ -36,9 +36,23 @@ struct FileSegmentMetadata : private boost::noncopyable
 };
 
 
-struct KeyMetadata : public std::map<size_t, FileSegmentMetadata>, private boost::noncopyable
+struct KeyMetadata : private std::map<size_t, FileSegmentMetadata>, private boost::noncopyable
 {
+    friend LockedKey;
+
 public:
+    using Map = std::map<size_t, FileSegmentMetadata>;
+
+    using Map::begin;
+    using Map::rbegin;
+    using Map::end;
+    using Map::empty;
+    using Map::size;
+    using Map::emplace;
+    using Map::lower_bound;
+    using Map::find;
+    using Map::iterator;
+
     const FileSegmentMetadata * getByOffset(size_t offset) const;
     FileSegmentMetadata * getByOffset(size_t offset);
 
