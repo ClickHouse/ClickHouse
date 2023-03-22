@@ -1,3 +1,4 @@
+#include <limits>
 #include <Common/Exception.h>
 #include <Common/PODArray.h>
 #include <Common/OptimizedRegularExpression.h>
@@ -21,7 +22,7 @@ struct Literal
 {
     std::string literal;
     bool prefix; /// this literal string is the prefix of the whole string.
-    bool suffix; /// this literal string is the suffic of the whole string.
+    bool suffix; /// this literal string is the suffix of the whole string.
     void clear()
     {
         literal.clear();
@@ -35,12 +36,10 @@ using Literals = std::vector<Literal>;
 size_t shortest_alter_length(const Literals & literals)
 {
     if (literals.empty()) return 0;
-    size_t shortest = ~(0);
+    size_t shortest = std::numeric_limits<size_t>::max();
     for (const auto & lit : literals)
-    {
         if (shortest > lit.literal.size())
             shortest = lit.literal.size();
-    }
     return shortest;
 }
 
@@ -49,7 +48,7 @@ const char * analyzeImpl(
     const char * pos,
     Literal & required_substring,
     bool & is_trivial,
-    Literals & global_alters)
+    Literals & global_alternatives)
 {
     /** The expression is trivial if all the metacharacters in it are escaped.
       * The non-alternative string is
@@ -61,10 +60,9 @@ const char * analyzeImpl(
       */
     const char * begin = pos;
     const char * end = regexp.data() + regexp.size();
-    bool first_call = begin == regexp.data();
+    bool is_first_call = begin == regexp.data();
     int depth = 0;
     is_trivial = true;
-    ///required_substring_is_prefix = false;
     required_substring.clear();
     bool has_alternative_on_depth_0 = false;
     bool has_case_insensitive_flag = false;
@@ -76,26 +74,26 @@ const char * analyzeImpl(
     Substrings trivial_substrings(1);
     Substring * last_substring = &trivial_substrings.back();
 
-    Literals cur_alters;
+    Literals cur_alternatives;
 
-    auto finish_cur_alters = [&]()
+    auto finish_cur_alternatives = [&]()
     {
-        if (cur_alters.empty())
+        if (cur_alternatives.empty())
             return;
 
-        if (global_alters.empty())
+        if (global_alternatives.empty())
         {
-            global_alters = cur_alters;
-            cur_alters.clear();
+            global_alternatives = cur_alternatives;
+            cur_alternatives.clear();
             return;
         }
         /// that means current alternatives have better quality.
-        if (shortest_alter_length(global_alters) < shortest_alter_length(cur_alters))
+        if (shortest_alter_length(global_alternatives) < shortest_alter_length(cur_alternatives))
         {
-            global_alters.clear();
-            global_alters = cur_alters;
+            global_alternatives.clear();
+            global_alternatives = cur_alternatives;
         }
-        cur_alters.clear();
+        cur_alternatives.clear();
     };
 
     auto finish_non_trivial_char = [&](bool create_new_substr = true)
@@ -103,7 +101,7 @@ const char * analyzeImpl(
         if (depth != 0)
             return;
 
-        for (auto & alter : cur_alters)
+        for (auto & alter : cur_alternatives)
         {
             if (alter.suffix)
             {
@@ -111,7 +109,7 @@ const char * analyzeImpl(
             }
         }
 
-        finish_cur_alters();
+        finish_cur_alternatives();
 
         if (!last_substring->first.empty() && create_new_substr)
         {
@@ -121,9 +119,9 @@ const char * analyzeImpl(
     };
 
     /// Resolve the string or alters in a group (xxxxx)
-    auto finish_group = [&](Literal & group_required_string, Literals & group_alters)
+    auto finish_group = [&](Literal & group_required_string, Literals & group_alternatives)
     {
-        for (auto & alter : group_alters)
+        for (auto & alter : group_alternatives)
         {
             if (alter.prefix)
             {
@@ -146,8 +144,8 @@ const char * analyzeImpl(
         }
 
         /// assign group alters to current alters.
-        finish_cur_alters();
-        cur_alters = std::move(group_alters);
+        finish_cur_alternatives();
+        cur_alternatives = std::move(group_alternatives);
     };
 
     bool in_curly_braces = false;
@@ -356,7 +354,7 @@ finish:
                 }
             }
 
-            if (max_length >= MIN_LENGTH_FOR_STRSTR || (!first_call && max_length > 0))
+            if (max_length >= MIN_LENGTH_FOR_STRSTR || (!is_first_call && max_length > 0))
             {
                 required_substring.literal = candidate_it->first;
                 required_substring.prefix = candidate_it->second == 0;
@@ -375,8 +373,8 @@ finish:
     if (has_alternative_on_depth_0)
     {
         /// compare the quality of required substring and alternatives and choose the better one.
-        if (shortest_alter_length(global_alters) < required_substring.literal.size())
-            global_alters = {required_substring};
+        if (shortest_alter_length(global_alternatives) < required_substring.literal.size())
+            global_alternatives = {required_substring};
         Literals next_alternatives;
         /// this two vals are useless, xxx|xxx cannot be trivial nor prefix.
         bool next_is_trivial = true;
@@ -384,11 +382,11 @@ finish:
         /// For xxx|xxx|xxx, we only conbine the alternatives and return a empty required_substring.
         if (next_alternatives.empty() || shortest_alter_length(next_alternatives) < required_substring.literal.size())
         {
-            global_alters.push_back(required_substring);
+            global_alternatives.push_back(required_substring);
         }
         else
         {
-            global_alters.insert(global_alters.end(), next_alternatives.begin(), next_alternatives.end());
+            global_alternatives.insert(global_alternatives.end(), next_alternatives.begin(), next_alternatives.end());
         }
         required_substring.clear();
     }
@@ -412,20 +410,20 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
         bool & required_substring_is_prefix,
         std::vector<std::string> & alternatives)
 {
-    Literals alter_literals;
-    Literal required_lit;
-    analyzeImpl(regexp_, regexp_.data(), required_lit, is_trivial, alter_literals);
-    required_substring = std::move(required_lit.literal);
-    required_substring_is_prefix = required_lit.prefix;
-    for (auto & lit : alter_literals)
+    Literals alternative_literals;
+    Literal required_literal;
+    analyzeImpl(regexp_, regexp_.data(), required_literal, is_trivial, alternative_literals);
+    required_substring = std::move(required_literal.literal);
+    required_substring_is_prefix = required_literal.prefix;
+    for (auto & lit : alternative_literals)
         alternatives.push_back(std::move(lit.literal));
 }
 
 template <bool thread_safe>
 OptimizedRegularExpressionImpl<thread_safe>::OptimizedRegularExpressionImpl(const std::string & regexp_, int options)
 {
-    std::vector<std::string> alternatives; /// this vector collects patterns in (xx|xx|xx). for now it's not used.
-    analyze(regexp_, required_substring, is_trivial, required_substring_is_prefix, alternatives);
+    std::vector<std::string> alternativesDummy; /// this vector extracts patterns a,b,c from pattern (a|b|c). for now it's not used.
+    analyze(regexp_, required_substring, is_trivial, required_substring_is_prefix, alternativesDummy);
 
 
     /// Just three following options are supported

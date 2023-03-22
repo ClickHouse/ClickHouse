@@ -242,9 +242,9 @@ void RegExpTreeDictionary::initRegexNodes(Block & block)
         }
         else if (!alternatives.empty())
         {
-            for (auto & alter : alternatives)
+            for (auto & alternative : alternatives)
             {
-                simple_regexps.push_back(alter);
+                simple_regexps.push_back(alternative);
                 regexp_ids.push_back(id);
             }
         }
@@ -311,12 +311,12 @@ void RegExpTreeDictionary::loadData()
 #if USE_VECTORSCAN
         std::vector<const char *> patterns;
         std::vector<unsigned int> flags;
-        std::vector<size_t> lens;
+        std::vector<size_t> lengths;
 
-        for (const std::string & ref : simple_regexps)
+        for (const std::string & simple_regexp : simple_regexps)
         {
-            patterns.push_back(ref.data());
-            lens.push_back(ref.size());
+            patterns.push_back(simple_regexp.data());
+            lengths.push_back(simple_regexp.size());
             flags.push_back(HS_FLAG_SINGLEMATCH);
         }
 
@@ -328,7 +328,7 @@ void RegExpTreeDictionary::loadData()
         for (size_t i = 0; i < patterns.size(); i++)
             ids[i] = static_cast<unsigned>(i+1);
 
-        hs_error_t err = hs_compile_lit_multi(patterns.data(), flags.data(), ids.get(), lens.data(), static_cast<unsigned>(patterns.size()), HS_MODE_BLOCK, nullptr, &db, &compile_error);
+        hs_error_t err = hs_compile_lit_multi(patterns.data(), flags.data(), ids.get(), lengths.data(), static_cast<unsigned>(patterns.size()), HS_MODE_BLOCK, nullptr, &db, &compile_error);
         origin_db = (db);
         if (err != HS_SUCCESS)
         {
