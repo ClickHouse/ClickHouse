@@ -84,6 +84,7 @@ struct AuthSettings
 
     std::optional<bool> use_environment_credentials;
     std::optional<bool> use_insecure_imds_request;
+    std::optional<uint64_t> expiration_window_seconds;
 
     bool operator==(const AuthSettings & other) const = default;
 

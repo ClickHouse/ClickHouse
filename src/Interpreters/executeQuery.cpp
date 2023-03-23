@@ -306,22 +306,6 @@ static void setQuerySpecificSettings(ASTPtr & ast, ContextMutablePtr context)
     }
 }
 
-static void applySettingsFromSelectWithUnion(const ASTSelectWithUnionQuery & select_with_union, ContextMutablePtr context)
-{
-    const ASTs & children = select_with_union.list_of_selects->children;
-    if (children.empty())
-        return;
-
-    // We might have an arbitrarily complex UNION tree, so just give
-    // up if the last first-order child is not a plain SELECT.
-    // It is flattened later, when we process UNION ALL/DISTINCT.
-    const auto * last_select = children.back()->as<ASTSelectQuery>();
-    if (last_select && last_select->settings())
-    {
-        InterpreterSetQuery(last_select->settings(), context).executeForCurrentContext();
-    }
-}
-
 static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     const char * begin,
     const char * end,
@@ -483,35 +467,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
         /// to allow settings to take effect.
-        if (const auto * select_query = ast->as<ASTSelectQuery>())
-        {
-            if (auto new_settings = select_query->settings())
-                InterpreterSetQuery(new_settings, context).executeForCurrentContext();
-        }
-        else if (const auto * select_with_union_query = ast->as<ASTSelectWithUnionQuery>())
-        {
-            applySettingsFromSelectWithUnion(*select_with_union_query, context);
-        }
-        else if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
-        {
-            if (query_with_output->settings_ast)
-                InterpreterSetQuery(query_with_output->settings_ast, context).executeForCurrentContext();
+        InterpreterSetQuery::applySettingsFromQuery(ast, context);
 
-            if (const auto * create_query = ast->as<ASTCreateQuery>())
-            {
-                if (create_query->select)
-                {
-                    applySettingsFromSelectWithUnion(create_query->select->as<ASTSelectWithUnionQuery &>(), context);
-                }
-            }
-        }
-        else if (auto * insert_query = ast->as<ASTInsertQuery>())
-        {
-            context->setInsertFormat(insert_query->format);
-            if (insert_query->settings_ast)
-                InterpreterSetQuery(insert_query->settings_ast, context).executeForCurrentContext();
+        if (auto * insert_query = ast->as<ASTInsertQuery>())
             insert_query->tail = istr;
-        }
 
         setQuerySpecificSettings(ast, context);
 
@@ -678,6 +637,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             }
         }
 
+        bool can_use_query_cache =
+            settings.allow_experimental_query_cache && settings.use_query_cache
+            && !ast->as<ASTExplainQuery>();
+
         if (!async_insert)
         {
             /// We need to start the (implicit) transaction before getting the interpreter as this will get links to the latest snapshots
@@ -757,7 +720,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 auto query_cache = context->getQueryCache();
                 bool read_result_from_query_cache = false; /// a query must not read from *and* write to the query cache at the same time
                 if (query_cache != nullptr
-                    && (settings.allow_experimental_query_cache && settings.use_query_cache && settings.enable_reads_from_query_cache)
+                    && (can_use_query_cache && settings.enable_reads_from_query_cache)
                     && res.pipeline.pulling())
                 {
                     QueryCache::Key key(
@@ -778,7 +741,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 /// then add a processor on top of the pipeline which stores the result in the query cache.
                 if (!read_result_from_query_cache
                     && query_cache != nullptr
-                    && settings.allow_experimental_query_cache && settings.use_query_cache && settings.enable_writes_to_query_cache
+                    && can_use_query_cache && settings.enable_writes_to_query_cache
                     && res.pipeline.pulling()
                     && (!astContainsNonDeterministicFunctions(ast, context) || settings.query_cache_store_results_of_queries_with_nondeterministic_functions))
                 {
@@ -946,8 +909,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             auto finish_callback = [elem,
                                     context,
                                     ast,
-                                    allow_experimental_query_cache = settings.allow_experimental_query_cache,
-                                    use_query_cache = settings.use_query_cache,
+                                    can_use_query_cache = can_use_query_cache,
                                     enable_writes_to_query_cache = settings.enable_writes_to_query_cache,
                                     query_cache_store_results_of_queries_with_nondeterministic_functions = settings.query_cache_store_results_of_queries_with_nondeterministic_functions,
                                     log_queries,
@@ -965,7 +927,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 auto query_cache = context->getQueryCache();
                 if (query_cache != nullptr
                     && pulling_pipeline
-                    && allow_experimental_query_cache && use_query_cache && enable_writes_to_query_cache
+                    && can_use_query_cache && enable_writes_to_query_cache
                     && (!astContainsNonDeterministicFunctions(ast, context) || query_cache_store_results_of_queries_with_nondeterministic_functions))
                 {
                     query_pipeline.finalizeWriteInQueryCache();

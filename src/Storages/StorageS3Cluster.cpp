@@ -146,7 +146,6 @@ Pipe StorageS3Cluster::read(
         for (auto & try_result : try_results)
         {
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                    shard_info.pool,
                     std::vector<IConnectionPool::Entry>{try_result},
                     queryToString(query_to_send),
                     sample_block,
