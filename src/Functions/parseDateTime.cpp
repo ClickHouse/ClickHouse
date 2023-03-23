@@ -1035,7 +1035,7 @@ namespace
                 int repetitions,
                 int max_digits_to_read,
                 const String & fragment,
-                Int32 & number)
+                Int32 & result)
             {
                 bool negative = false;
                 if (allow_negative && cur < end && *cur == '-')
@@ -1049,7 +1049,7 @@ namespace
                     ++cur;
                 }
 
-                number = 0;
+                Int64 number = 0;
                 const Pos start = cur;
                 if (is_year && repetitions == 2)
                 {
@@ -1101,6 +1101,15 @@ namespace
 
                 if (negative)
                     number *= -1;
+
+                /// Check if number exceeds the range of Int32
+                if (number < std::numeric_limits<Int32>::lowest() || number > std::numeric_limits<Int32>::max())
+                    throw Exception(
+                        ErrorCodes::CANNOT_PARSE_DATETIME,
+                        "Unable to parse fragment {} from {} because number is out of range of Int32",
+                        fragment,
+                        std::string_view(start, cur - start));
+                result = static_cast<Int32>(number);
 
                 return cur;
             }
