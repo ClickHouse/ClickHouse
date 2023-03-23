@@ -409,12 +409,12 @@ bool IAST::FormattingBuffer::isOneLine() const
 
 void IAST::FormattingBuffer::nlOrWs() const
 {
-    ostr << (settings.one_line ? '\n' : ' ');
+    ostr << (settings.one_line ? ' ' : '\n');
 }
 
 void IAST::FormattingBuffer::nlOrNothing() const
 {
-    ostr << (settings.one_line ? "\n" : "");
+    ostr << (settings.one_line ? "" : "\n");
 }
 
 void IAST::FormattingBuffer::writeSecret(const String & secret) const
