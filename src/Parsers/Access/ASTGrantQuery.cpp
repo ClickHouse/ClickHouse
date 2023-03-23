@@ -122,7 +122,6 @@ ASTPtr ASTGrantQuery::clone() const
 void ASTGrantQuery::formatImpl(FormattingBuffer out) const
 {
     out.writeKeyword(attach_mode ? "ATTACH " : "");
-    out.writeKeyword((!is_revoke && (replace_access || replace_granted_roles)) ? "REPLACE " : "");
     out.writeKeyword(is_revoke ? "REVOKE" : "GRANT");
 
     if (!access_rights_elements.sameOptions())
@@ -162,6 +161,8 @@ void ASTGrantQuery::formatImpl(FormattingBuffer out) const
             out.writeKeyword(" WITH GRANT OPTION");
         else if (admin_option)
             out.writeKeyword(" WITH ADMIN OPTION");
+        if (replace_access || replace_granted_roles)
+            out.writeKeyword(" WITH REPLACE OPTION");
     }
 }
 
