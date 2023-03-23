@@ -181,49 +181,46 @@ private:
 
     void loadMetadata();
 
-    FileSegments getImpl(
-        const Key & key,
-        const FileSegment::Range & range,
-        const LockedKey & locked_key);
+    FileSegments getImpl(const LockedKey & locked_key, const FileSegment::Range & range);
 
     FileSegments splitRangeInfoFileSegments(
-        const Key & key,
+        LockedKey & locked_key,
         size_t offset,
         size_t size,
         FileSegment::State state,
-        const CreateFileSegmentSettings & create_settings,
-        LockedKey & locked_key);
+        const CreateFileSegmentSettings & create_settings);
 
     void fillHolesWithEmptyFileSegments(
+        LockedKey & locked_key,
         FileSegments & file_segments,
-        const Key & key,
         const FileSegment::Range & range,
         bool fill_with_detached_file_segments,
-        const CreateFileSegmentSettings & settings,
-        LockedKey & locked_key);
+        const CreateFileSegmentSettings & settings);
 
     KeyMetadata::iterator addFileSegment(
-        const Key & key,
+        LockedKey & locked_key,
         size_t offset,
         size_t size,
         FileSegment::State state,
         const CreateFileSegmentSettings & create_settings,
-        LockedKey & locked_key,
         const CacheGuard::Lock *);
 
+    static void removeFileSegment(
+        LockedKey & locked_key,
+        FileSegmentPtr file_segment,
+        const CacheGuard::Lock &);
+
     bool tryReserveUnlocked(
-        const Key & key,
+        LockedKeyPtr locked_key,
         size_t offset,
         size_t size,
-        LockedKeyPtr locked_key,
         const CacheGuard::Lock &);
 
     bool tryReserveImpl(
         IFileCachePriority & priority_queue,
-        const Key & key,
+        LockedKeyPtr locked_key,
         size_t offset,
         size_t size,
-        LockedKeyPtr locked_key,
         QueryLimit::LockedQueryContext * query_context,
         const CacheGuard::Lock &);
 
@@ -239,14 +236,13 @@ private:
         IterateAndCollectLocksFunc && func,
         LockedKeysMap & locked_map) const;
 
-    void iterateCacheMetadata(const CacheMetadataGuard::Lock &, std::function<void(KeyMetadata &)> && func);
+    void iterateCacheMetadata(
+        const CacheMetadataGuard::Lock &, std::function<void(KeyMetadata &)> && func);
 
     void performDelayedRemovalOfDeletedKeysFromMetadata(const CacheMetadataGuard::Lock &);
 
     void assertCacheCorrectness();
     void assertCacheCorrectness(const CacheGuard::Lock & cache_lock, const CacheMetadataGuard::Lock & metadata_lock);
-
-    static void removeFileSegment(LockedKey & locked_key, FileSegmentPtr file_segment, const CacheGuard::Lock &);
 };
 
 }
