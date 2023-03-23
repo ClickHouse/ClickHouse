@@ -414,8 +414,6 @@ class IColumn;
     M(UInt64, max_temporary_data_on_disk_size_for_user, 0, "The maximum amount of data consumed by temporary files on disk in bytes for all concurrently running user queries. Zero means unlimited.", 0)\
     M(UInt64, max_temporary_data_on_disk_size_for_query, 0, "The maximum amount of data consumed by temporary files on disk in bytes for all concurrently running queries. Zero means unlimited.", 0)\
     \
-    M(UInt64, backup_threads, 16, "The maximum number of threads to execute BACKUP requests.", 0) \
-    M(UInt64, restore_threads, 16, "The maximum number of threads to execute RESTORE requests.", 0) \
     M(UInt64, backup_keeper_max_retries, 20, "Max retries for keeper operations during backup", 0) \
     M(UInt64, backup_keeper_retry_initial_backoff_ms, 100, "Initial backoff timeout for [Zoo]Keeper operations during backup", 0) \
     M(UInt64, backup_keeper_retry_max_backoff_ms, 5000, "Max backoff timeout for [Zoo]Keeper operations during backup", 0) \
@@ -761,6 +759,8 @@ class IColumn;
     MAKE_OBSOLETE(M, Milliseconds, async_insert_cleanup_timeout_ms, 1000) \
     MAKE_OBSOLETE(M, Bool, optimize_fuse_sum_count_avg, 0) \
     MAKE_OBSOLETE(M, Seconds, drain_timeout, 3) \
+    MAKE_OBSOLETE(M, UInt64, backup_threads, 16) \
+    MAKE_OBSOLETE(M, UInt64, restore_threads, 16) \
 
     /** The section above is for obsolete settings. Do not add anything there. */
 
