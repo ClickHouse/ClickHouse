@@ -1105,7 +1105,16 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     else if (auto * explain_query = typeid_cast<ASTExplainQuery *>(ast.get()))
     {
-        fuzzExplainQuery(*explain_query);
+        /// Fuzzing EXPLAIN query to SELECT query randomly
+        if (fuzz_rand() % 20 == 0 && explain_query->getExplainedQuery()->getQueryKind() == IAST::QueryKind::Select)
+        {
+            ast = explain_query->getExplainedQuery();
+            fuzz(ast);
+        }
+        else
+        {
+            fuzzExplainQuery(*explain_query);
+        }
     }
     else
     {
