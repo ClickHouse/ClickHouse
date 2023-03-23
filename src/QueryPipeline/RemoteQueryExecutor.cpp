@@ -245,10 +245,6 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
 
     established = true;
 
-    /// Query could be cancelled during creating connections. No need to send a query.
-    if (was_cancelled)
-        return;
-
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
     ClientInfo modified_client_info = context->getClientInfo();
     modified_client_info.query_kind = query_kind;
@@ -271,11 +267,12 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
 
 int RemoteQueryExecutor::sendQueryAsync()
 {
+    std::lock_guard lock(was_cancelled_mutex);
+    if (was_cancelled)
+        return -1;
+
     if (!read_context)
-    {
-        std::lock_guard lock(was_cancelled_mutex);
         read_context = std::make_unique<ReadContext>(*this, /*suspend_when_query_sent*/ true);
-    }
 
     /// If query already sent, do nothing. Note that we cannot use sent_query flag here,
     /// because we can still be in process of sending scalars or external tables.
@@ -322,8 +319,10 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
             return anything;
 
         if (got_duplicated_part_uuids)
-            return restartQueryWithoutDuplicatedUUIDs();
+            break;
     }
+
+    return restartQueryWithoutDuplicatedUUIDs();
 }
 
 RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
@@ -332,29 +331,27 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
     if (!read_context || (resent_query && recreate_read_context))
     {
         std::lock_guard lock(was_cancelled_mutex);
+        if (was_cancelled)
+            return ReadResult(Block());
+
         read_context = std::make_unique<ReadContext>(*this);
         recreate_read_context = false;
     }
 
     while (true)
     {
+        std::lock_guard lock(was_cancelled_mutex);
+        if (was_cancelled)
+            return ReadResult(Block());
+
         read_context->resume();
 
         if (needToSkipUnavailableShard())
             return ReadResult(Block());
 
-        if (read_context->isCancelled())
-            return ReadResult(Block());
-
         /// Check if packet is not ready yet.
         if (read_context->isInProgress())
             return ReadResult(read_context->getFileDescriptor());
-
-        /// We need to check that query was not cancelled again,
-        /// to avoid the race between cancel() thread and read() thread.
-        /// (since cancel() thread will steal the fiber and may update the packet).
-        if (was_cancelled)
-            return ReadResult(Block());
 
         auto anything = processPacket(read_context->getPacket());
 
@@ -362,8 +359,10 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
             return anything;
 
         if (got_duplicated_part_uuids)
-            return restartQueryWithoutDuplicatedUUIDs();
+            break;
     }
+
+    return restartQueryWithoutDuplicatedUUIDs();
 #else
     return read();
 #endif
@@ -372,13 +371,19 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
 
 RemoteQueryExecutor::ReadResult RemoteQueryExecutor::restartQueryWithoutDuplicatedUUIDs()
 {
-    /// Cancel previous query and disconnect before retry.
-    cancel();
-    connections->disconnect();
-
-    /// Only resend once, otherwise throw an exception
-    if (!resent_query)
     {
+        std::lock_guard lock(was_cancelled_mutex);
+        if (was_cancelled)
+            return ReadResult(Block());
+
+        /// Cancel previous query and disconnect before retry.
+        cancelUnlocked();
+        connections->disconnect();
+
+        /// Only resend once, otherwise throw an exception
+        if (resent_query)
+            throw Exception(ErrorCodes::DUPLICATED_PART_UUIDS, "Found duplicate uuids while processing query");
+
         if (log)
             LOG_DEBUG(log, "Found duplicate UUIDs, will retry query without those parts");
 
@@ -386,13 +391,14 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::restartQueryWithoutDuplicat
         recreate_read_context = true;
         sent_query = false;
         got_duplicated_part_uuids = false;
-        /// Consecutive read will implicitly send query first.
-        if (!read_context)
-            return read();
-        else
-            return readAsync();
+        was_cancelled = false;
     }
-    throw Exception(ErrorCodes::DUPLICATED_PART_UUIDS, "Found duplicate uuids while processing query");
+
+    /// Consecutive read will implicitly send query first.
+    if (!read_context)
+        return read();
+    else
+        return readAsync();
 }
 
 RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet)
@@ -534,6 +540,8 @@ void RemoteQueryExecutor::processMergeTreeInitialReadAnnounecement(InitialAllRan
 
 void RemoteQueryExecutor::finish()
 {
+    std::lock_guard guard(was_cancelled_mutex);
+
     /** If one of:
       * - nothing started to do;
       * - received all packets before EndOfStream;
@@ -590,6 +598,12 @@ void RemoteQueryExecutor::finish()
 }
 
 void RemoteQueryExecutor::cancel()
+{
+    std::lock_guard guard(was_cancelled_mutex);
+    cancelUnlocked();
+}
+
+void RemoteQueryExecutor::cancelUnlocked()
 {
     {
         std::lock_guard lock(external_tables_mutex);
@@ -676,10 +690,6 @@ void RemoteQueryExecutor::sendExternalTables()
 
 void RemoteQueryExecutor::tryCancel(const char * reason)
 {
-    /// Flag was_cancelled is atomic because it is checked in read(),
-    /// in case of packet had been read by fiber (async_socket_for_remote).
-    std::lock_guard guard(was_cancelled_mutex);
-
     if (was_cancelled)
         return;
 
@@ -688,8 +698,8 @@ void RemoteQueryExecutor::tryCancel(const char * reason)
     if (read_context)
         read_context->cancel();
 
-    /// Query could be cancelled during connection creation, we should check
-    /// if connections were already created.
+    /// Query could be cancelled during connection creation or query sending,
+    /// we should check if connections were already created and query were sent.
     if (connections && sent_query)
     {
         connections->sendCancel();

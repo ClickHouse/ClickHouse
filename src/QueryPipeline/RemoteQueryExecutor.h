@@ -94,8 +94,8 @@ public:
     int sendQueryAsync();
 
     /// Query is resent to a replica, the query itself can be modified.
-    std::atomic<bool> resent_query { false };
-    std::atomic<bool> recreate_read_context { false };
+    bool resent_query { false };
+    bool recreate_read_context { false };
 
     struct ReadResult
     {
@@ -228,39 +228,39 @@ private:
     std::mutex external_tables_mutex;
 
     /// Connections to replicas are established, but no queries are sent yet
-    std::atomic<bool> established { false };
+    bool established = false;
 
     /// Query is sent (used before getting first block)
-    std::atomic<bool> sent_query { false };
+    bool sent_query { false };
 
     /** All data from all replicas are received, before EndOfStream packet.
       * To prevent desynchronization, if not all data is read before object
       * destruction, it's required to send cancel query request to replicas and
       * read all packets before EndOfStream
       */
-    std::atomic<bool> finished { false };
+    bool finished = false;
 
     /** Cancel query request was sent to all replicas because data is not needed anymore
       * This behaviour may occur when:
       * - data size is already satisfactory (when using LIMIT, for example)
       * - an exception was thrown from client side
       */
-    std::atomic<bool> was_cancelled { false };
+    bool was_cancelled = false;
     std::mutex was_cancelled_mutex;
 
     /** An exception from replica was received. No need in receiving more packets or
       * requesting to cancel query execution
       */
-    std::atomic<bool> got_exception_from_replica { false };
+    bool got_exception_from_replica = false;
 
     /** Unknown packet was received from replica. No need in receiving more packets or
       * requesting to cancel query execution
       */
-    std::atomic<bool> got_unknown_packet_from_replica { false };
+    bool got_unknown_packet_from_replica = false;
 
     /** Got duplicated uuids from replica
       */
-    std::atomic<bool> got_duplicated_part_uuids{ false };
+    bool got_duplicated_part_uuids = false;
 
     /// Parts uuids, collected from remote replicas
     std::mutex duplicated_part_uuids_mutex;
@@ -291,6 +291,7 @@ private:
     ReadResult restartQueryWithoutDuplicatedUUIDs();
 
     /// If wasn't sent yet, send request to cancel all connections to replicas
+    void cancelUnlocked();
     void tryCancel(const char * reason);
 
     /// Returns true if query was sent
