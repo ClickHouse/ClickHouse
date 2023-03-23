@@ -5,13 +5,22 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 
 #include <Common/logger_useful.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionsLogical.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
 
-namespace DB::QueryPlanOptimizations
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
+}
+
+namespace QueryPlanOptimizations
 {
 
 bool canUseProjectionForReadingStep(ReadFromMergeTree * reading)
@@ -65,6 +74,13 @@ const ActionsDAG::Node * findInOutputs(ActionsDAG & dag, const std::string & nam
         if ((*it)->result_name == name)
         {
             const auto * node = *it;
+
+
+            if (!isUInt8(removeNullable(node->result_type)))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+                    "Illegal type {} of column {} for filter. Must be UInt8 or Nullable(UInt8).",
+                    node->result_type->getName(), name);
+
             if (remove)
             {
                 outputs.erase(it);
@@ -239,4 +255,5 @@ bool analyzeProjectionCandidate(
     return true;
 }
 
+}
 }
