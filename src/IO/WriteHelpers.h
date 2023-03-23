@@ -892,26 +892,25 @@ inline void writeText(const IPv6 & x, WriteBuffer & buf) { writeIPv6Text(x, buf)
 
 template <typename T>
 void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool trailing_zeros,
-                            bool exact_frac_digits_set, UInt32 frac_digits_num)
+                            bool fixed_fractional_length, UInt32 fractional_length)
 {
     /// If it's big integer, but the number of digits is small,
     /// use the implementation for smaller integers for more efficient arithmetic.
-
     if constexpr (std::is_same_v<T, Int256>)
     {
         if (x <= std::numeric_limits<UInt32>::max())
         {
-            writeDecimalFractional(static_cast<UInt32>(x), scale, ostr, trailing_zeros, exact_frac_digits_set, frac_digits_num);
+            writeDecimalFractional(static_cast<UInt32>(x), scale, ostr, trailing_zeros, fixed_fractional_length, fractional_length);
             return;
         }
         else if (x <= std::numeric_limits<UInt64>::max())
         {
-            writeDecimalFractional(static_cast<UInt64>(x), scale, ostr, trailing_zeros, exact_frac_digits_set, frac_digits_num);
+            writeDecimalFractional(static_cast<UInt64>(x), scale, ostr, trailing_zeros, fixed_fractional_length, fractional_length);
             return;
         }
         else if (x <= std::numeric_limits<UInt128>::max())
         {
-            writeDecimalFractional(static_cast<UInt128>(x), scale, ostr, trailing_zeros, exact_frac_digits_set, frac_digits_num);
+            writeDecimalFractional(static_cast<UInt128>(x), scale, ostr, trailing_zeros, fixed_fractional_length, fractional_length);
             return;
         }
     }
@@ -919,35 +918,35 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
     {
         if (x <= std::numeric_limits<UInt32>::max())
         {
-            writeDecimalFractional(static_cast<UInt32>(x), scale, ostr, trailing_zeros, exact_frac_digits_set, frac_digits_num);
+            writeDecimalFractional(static_cast<UInt32>(x), scale, ostr, trailing_zeros, fixed_fractional_length, fractional_length);
             return;
         }
         else if (x <= std::numeric_limits<UInt64>::max())
         {
-            writeDecimalFractional(static_cast<UInt64>(x), scale, ostr, trailing_zeros, exact_frac_digits_set, frac_digits_num);
+            writeDecimalFractional(static_cast<UInt64>(x), scale, ostr, trailing_zeros, fixed_fractional_length, fractional_length);
             return;
         }
     }
 
     constexpr size_t max_digits = std::numeric_limits<UInt256>::digits10;
-    assert(scale <= max_digits);
+    assert(scale <= max_digits && fractional_length <= max_digits);
 
     char buf[max_digits];
-    memset(buf, '0', scale);
+    memset(buf, '0', std::max(scale, fractional_length));
 
     T value = x;
     Int32 last_nonzero_pos = 0;
 
-    if (exact_frac_digits_set && frac_digits_num < scale)
+    if (fixed_fractional_length && fractional_length < scale)
     {
-        T new_value = value / DecimalUtils::scaleMultiplier<Int256>(scale - frac_digits_num - 1);
+        T new_value = value / DecimalUtils::scaleMultiplier<Int256>(scale - fractional_length - 1);
         auto round_carry = new_value % 10;
         value = new_value / 10;
         if (round_carry >= 5)
             value += 1;
     }
 
-    for (Int32 pos = scale - 1; pos >= 0; --pos)
+    for (Int32 pos = fixed_fractional_length ? std::min(scale - 1, fractional_length - 1) : scale - 1; pos >= 0; --pos)
     {
         auto remainder = value % 10;
         value /= 10;
@@ -958,15 +957,13 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
         buf[pos] += static_cast<char>(remainder);
     }
 
-
-    if (likely(!exact_frac_digits_set || frac_digits_num != 0))
-        writeChar('.', ostr);
-    ostr.write(buf, exact_frac_digits_set ? frac_digits_num : trailing_zeros ? scale : last_nonzero_pos + 1);
+    writeChar('.', ostr);
+    ostr.write(buf, fixed_fractional_length ? fractional_length : (trailing_zeros ? scale : last_nonzero_pos + 1));
 }
 
 template <typename T>
 void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zeros,
-               bool exact_frac_digits_set = false, UInt32 frac_digits_num = 0)
+               bool fixed_fractional_length = false, UInt32 fractional_length = 0)
 {
     T part = DecimalUtils::getWholePart(x, scale);
 
@@ -977,7 +974,7 @@ void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zer
 
     writeIntText(part, ostr);
 
-    if (scale)
+    if (scale || (fixed_fractional_length && fractional_length))
     {
         part = DecimalUtils::getFractionalPart(x, scale);
         if (part || trailing_zeros)
@@ -985,7 +982,7 @@ void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zer
             if (part < 0)
                 part *= T(-1);
 
-            writeDecimalFractional(part, scale, ostr, trailing_zeros, exact_frac_digits_set, frac_digits_num);
+            writeDecimalFractional(part, scale, ostr, trailing_zeros, fixed_fractional_length, fractional_length);
         }
     }
 }

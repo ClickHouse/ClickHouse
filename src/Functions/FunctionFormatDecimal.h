@@ -92,6 +92,7 @@ struct Processor
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             writeText(vec_from[i], from_scale, buf_to, true, true, static_cast<UInt32>(value_precision));
+            writeChar(0, buf_to);
             offsets_to[i] = buf_to.count();
         }
         buf_to.finalize();
@@ -126,6 +127,7 @@ struct Processor
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             writeText(value_from, from_scale, buf_to, true, true, static_cast<UInt32>(vec_precision[i]));
+            writeChar(0, buf_to);
             offsets_to[i] = buf_to.count();
         }
 
