@@ -20,11 +20,6 @@
 
 #include <re2/re2.h>
 
-namespace DB::ErrorCodes
-{
-    extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
-}
-
 static void setupLogging(const std::string & log_level)
 {
     Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel);
@@ -95,11 +90,9 @@ static std::vector<std::string> extractFromConfig(
     {
         DB::ConfigurationPtr bootstrap_configuration(new Poco::Util::XMLConfiguration(config_xml));
 
-        if (bootstrap_configuration->has("zookeeper") && bootstrap_configuration->has("keeper"))
-            throw DB::Exception(DB::ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "Both ZooKeeper and Keeper are specified");
+        zkutil::validateZooKeeperConfig(*bootstrap_configuration);
 
-        zkutil::ZooKeeperPtr zookeeper;
-        zookeeper = std::make_shared<zkutil::ZooKeeper>(
+        zkutil::ZooKeeperPtr zookeeper = std::make_shared<zkutil::ZooKeeper>(
             *bootstrap_configuration, bootstrap_configuration->has("zookeeper") ? "zookeeper" : "keeper", nullptr);
 
         zkutil::ZooKeeperNodeCache zk_node_cache([&] { return zookeeper; });
