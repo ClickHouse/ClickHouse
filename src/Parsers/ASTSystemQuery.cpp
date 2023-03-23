@@ -176,7 +176,7 @@ void ASTSystemQuery::formatImpl(FormattingBuffer out) const
             print_identifier(disk);
 
         if (strict_sync)
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " STRICT" << (settings.hilite ? hilite_none : "");
+            out.writeKeyword(" STRICT");
     }
     else if (type == Type::SYNC_DATABASE_REPLICA)
     {
