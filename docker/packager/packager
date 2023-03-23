@@ -113,17 +113,20 @@ def is_release_build(build_type: str, package_type: str, sanitizer: str) -> bool
 
 
 def parse_env_variables(
-    build_type,
-    compiler,
-    sanitizer,
-    package_type,
-    cache,
-    clang_tidy,
-    version,
-    official,
-    additional_pkgs,
-    with_coverage,
-    with_binaries,
+    build_type: str,
+    compiler: str,
+    sanitizer: str,
+    package_type: str,
+    cache: str,
+    s3_bucket: str,
+    s3_directory: str,
+    s3_rw_access: bool,
+    clang_tidy: bool,
+    version: str,
+    official: bool,
+    additional_pkgs: bool,
+    with_coverage: bool,
+    with_binaries: str,
 ):
     DARWIN_SUFFIX = "-darwin"
     DARWIN_ARM_SUFFIX = "-darwin-aarch64"
@@ -256,10 +259,30 @@ def parse_env_variables(
         result.append("CCACHE_NOHASHDIR=true")
         result.append("CCACHE_COMPILERCHECK=content")
         result.append("CCACHE_MAXSIZE=15G")
-        if clang_tidy:
-            # `CTCACHE_DIR` has the same purpose as the `CCACHE_DIR` above.
-            # It's there to have the clang-tidy cache embedded into our standard `CCACHE_DIR`
-            result.append("CTCACHE_DIR=/ccache/clang-tidy-cache")
+
+    if cache == "sccache":
+        # see https://github.com/mozilla/sccache/blob/main/docs/S3.md
+        result.append(f"SCCACHE_BUCKET={s3_bucket}")
+        sccache_dir = "sccache"
+        if s3_directory:
+            sccache_dir = f"{s3_directory}/{sccache_dir}"
+        result.append(f"SCCACHE_S3_KEY_PREFIX={sccache_dir}")
+        if not s3_rw_access:
+            result.append("SCCACHE_S3_NO_CREDENTIALS=true")
+
+    if clang_tidy:
+        # `CTCACHE_DIR` has the same purpose as the `CCACHE_DIR` above.
+        # It's there to have the clang-tidy cache embedded into our standard `CCACHE_DIR`
+        result.append("CTCACHE_DIR=/ccache/clang-tidy-cache")
+        if s3_bucket:
+            # see https://github.com/matus-chochlik/ctcache#environment-variables
+            ctcache_dir = "clang-tidy-cache"
+            if s3_directory:
+                ctcache_dir = f"{s3_directory}/{ctcache_dir}"
+            result.append(f"CTCACHE_S3_BUCKET={s3_bucket}")
+            result.append(f"CTCACHE_S3_FOLDER={ctcache_dir}")
+            if not s3_rw_access:
+                result.append("CTCACHE_S3_NO_CREDENTIALS=true")
 
     if additional_pkgs:
         # NOTE: This are the env for packages/build script
@@ -349,7 +372,12 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument("--clang-tidy", action="store_true")
-    parser.add_argument("--cache", choices=("ccache", "sccache", ""), default="")
+    parser.add_argument(
+        "--cache",
+        choices=("ccache", "sccache", ""),
+        default="",
+        help="ccache or sccache for objects caching; sccache uses only S3 buckets",
+    )
     parser.add_argument(
         "--ccache_dir",
         default=Path.home() / ".ccache",
@@ -358,7 +386,17 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--s3-bucket",
-        help="a bucket with cache for clang-tidy-cache and sscache",
+        help="an S3 bucket used for sscache and clang-tidy-cache",
+    )
+    parser.add_argument(
+        "--s3-directory",
+        default="ccache",
+        help="an S3 directory prefix used for sscache and clang-tidy-cache",
+    )
+    parser.add_argument(
+        "--s3-rw-access",
+        action="store_true",
+        help="if set, the build fails on errors writing cache to S3",
     )
     parser.add_argument("--force-build-image", action="store_true")
     parser.add_argument("--version")
@@ -389,6 +427,10 @@ def parse_args() -> argparse.Namespace:
             )
         logging.info("Should place %s to output", args.with_binaries)
 
+    if args.cache == "sccache":
+        if not args.s3_bucket:
+            raise argparse.ArgumentTypeError("sccache must have --s3-bucket set")
+
     return args
 
 
@@ -413,6 +455,9 @@ def main():
         args.sanitizer,
         args.package_type,
         args.cache,
+        args.s3_bucket,
+        args.s3_directory,
+        args.s3_rw_access,
         args.clang_tidy,
         args.version,
         args.official,
