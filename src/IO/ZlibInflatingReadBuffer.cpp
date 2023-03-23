@@ -64,7 +64,9 @@ bool ZlibInflatingReadBuffer::nextImpl()
         {
             in->nextIfAtEnd();
             zstr.next_in = reinterpret_cast<unsigned char *>(in->position());
-            zstr.avail_in = static_cast<BufferSizeType>(std::min(in->buffer().end() - in->position(), static_cast<Int64>(max_buffer_size)));
+            zstr.avail_in = static_cast<BufferSizeType>(std::min(
+                static_cast<UInt64>(in->buffer().end() - in->position()),
+                static_cast<UInt64>(max_buffer_size)));
         }
 
         /// init output bytes (place, where decompressed data will be)
