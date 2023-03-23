@@ -971,6 +971,12 @@ void FileCache::performDelayedRemovalOfDeletedKeysFromMetadata(const CacheMetada
         /// In this case it will work fine because on each attempt to add any key to cache
         /// we perform this delayed removal of deleted keys.
 
+        /// We need to take this mutex to avoid race with LockedKey destructor.
+        /// (it submit key to removal queue and then unlocked the mutex,
+        /// but this mutex lies in metadata which we are going to delete)
+        auto key_metadata = it->second;
+        auto lock = key_metadata->lock();
+
         /// Remove key from metadata.
         metadata.erase(it);
 
