@@ -691,16 +691,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 query_info.filter_asts.push_back(query_info.additional_filter_ast);
             }
 
-            if (parallel_replicas_custom_filter_ast)
-            {
-                parallel_replicas_custom_filter_info = generateFilterActions(
-                        table_id, parallel_replicas_custom_filter_ast, context, storage, storage_snapshot, metadata_snapshot, required_columns,
-                        prepared_sets);
-
-                parallel_replicas_custom_filter_info->do_remove_column = true;
-                query_info.filter_asts.push_back(parallel_replicas_custom_filter_ast);
-            }
-
             source_header = storage_snapshot->getSampleBlockForColumns(required_columns, query_info.parameterized_view_values);
         }
 
