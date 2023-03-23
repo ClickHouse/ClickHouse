@@ -6,8 +6,6 @@
 #include <Interpreters/Context.h>
 
 #include <Poco/Logger.h>
-#include <base/getThreadId.h>
-#include <base/getPageSize.h>
 
 #include <csignal>
 #include <sys/mman.h>

@@ -415,7 +415,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         RewriteCountDistinctFunctionVisitor(data_rewrite_countdistinct).visit(query_ptr);
     }
 
-    JoinedTables joined_tables(getSubqueryContext(context), getSelectQuery(), options.with_all_cols);
+    JoinedTables joined_tables(getSubqueryContext(context), getSelectQuery(), options.with_all_cols, options_.is_create_parameterized_view);
 
     bool got_storage_from_query = false;
     if (!has_input && !storage)
@@ -636,14 +636,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 Names queried_columns = syntax_analyzer_result->requiredSourceColumns();
                 const auto & supported_prewhere_columns = storage->supportedPrewhereColumns();
 
-                MergeTreeWhereOptimizer where_optimizer{
+                MergeTreeWhereOptimizer{
+                    current_info,
+                    context,
                     std::move(column_compressed_sizes),
                     metadata_snapshot,
                     queried_columns,
                     supported_prewhere_columns,
                     log};
-
-                where_optimizer.optimize(current_info, context);
             }
         }
 

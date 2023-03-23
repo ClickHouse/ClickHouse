@@ -76,7 +76,7 @@ ISource::Status RemoteSource::prepare()
         return status;
     }
 
-    if (status == Status::PortFull)
+    if (status == Status::PortFull || status == Status::Ready)
     {
         /// Also push empty chunk to dependency to signal that we read data from remote source
         /// or answered to the incoming request from parallel replica

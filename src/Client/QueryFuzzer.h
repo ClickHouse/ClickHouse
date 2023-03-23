@@ -22,6 +22,8 @@ class ASTCreateQuery;
 class ASTInsertQuery;
 class ASTColumnDeclaration;
 class ASTDropQuery;
+class ASTExplainQuery;
+class ASTSetQuery;
 struct ASTTableExpression;
 struct ASTWindowDefinition;
 
@@ -86,6 +88,8 @@ struct QueryFuzzer
     void fuzzColumnLikeExpressionList(IAST * ast);
     void fuzzWindowFrame(ASTWindowDefinition & def);
     void fuzzCreateQuery(ASTCreateQuery & create);
+    void fuzzExplainQuery(ASTExplainQuery & explain);
+    void fuzzExplainSettings(ASTSetQuery & settings, const std::vector<String> & names);
     void fuzzColumnDeclaration(ASTColumnDeclaration & column);
     void fuzzTableName(ASTTableExpression & table);
     void fuzz(ASTs & asts);

@@ -11,6 +11,7 @@ cluster = ClickHouseCluster(__file__)
 main_configs = [
     "configs/remote_servers.xml",
     "configs/replicated_access_storage.xml",
+    "configs/replicated_user_defined_sql_objects.xml",
     "configs/backups_disk.xml",
     "configs/lesser_timeouts.xml",  # Default timeouts are quite big (a few minutes), the tests don't need them to be that big.
 ]
@@ -602,6 +603,50 @@ def test_system_users():
         node1.query("SHOW CREATE USER u1") == "CREATE USER u1 SETTINGS custom_a = 123\n"
     )
     assert node1.query("SHOW GRANTS FOR u1") == "GRANT SELECT ON default.tbl TO u1\n"
+
+
+def test_system_functions():
+    node1.query("CREATE FUNCTION linear_equation AS (x, k, b) -> k*x + b;")
+
+    node1.query("CREATE FUNCTION parity_str AS (n) -> if(n % 2, 'odd', 'even');")
+
+    backup_name = new_backup_name()
+    node1.query(f"BACKUP TABLE system.functions ON CLUSTER 'cluster' TO {backup_name}")
+
+    node1.query("DROP FUNCTION linear_equation")
+    node1.query("DROP FUNCTION parity_str")
+    assert_eq_with_retry(
+        node2, "SELECT name FROM system.functions WHERE name='parity_str'", ""
+    )
+
+    node1.query(
+        f"RESTORE TABLE system.functions ON CLUSTER 'cluster' FROM {backup_name}"
+    )
+
+    assert node1.query(
+        "SELECT number, linear_equation(number, 2, 1) FROM numbers(3)"
+    ) == TSV([[0, 1], [1, 3], [2, 5]])
+
+    assert node1.query("SELECT number, parity_str(number) FROM numbers(3)") == TSV(
+        [[0, "even"], [1, "odd"], [2, "even"]]
+    )
+
+    assert node2.query(
+        "SELECT number, linear_equation(number, 2, 1) FROM numbers(3)"
+    ) == TSV([[0, 1], [1, 3], [2, 5]])
+
+    assert node2.query("SELECT number, parity_str(number) FROM numbers(3)") == TSV(
+        [[0, "even"], [1, "odd"], [2, "even"]]
+    )
+
+    assert_eq_with_retry(
+        node2,
+        "SELECT name FROM system.functions WHERE name='parity_str'",
+        "parity_str\n",
+    )
+    assert node2.query("SELECT number, parity_str(number) FROM numbers(3)") == TSV(
+        [[0, "even"], [1, "odd"], [2, "even"]]
+    )
 
 
 def test_projection():
