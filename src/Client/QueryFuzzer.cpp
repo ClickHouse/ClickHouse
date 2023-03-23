@@ -1108,7 +1108,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         /// Fuzzing EXPLAIN query to SELECT query randomly
         if (fuzz_rand() % 20 == 0 && explain_query->getExplainedQuery()->getQueryKind() == IAST::QueryKind::Select)
         {
-            ast = explain_query->getExplainedQuery();
+            ast = explain_query->getExplainedQuery()->clone();
             fuzz(ast);
         }
         else
