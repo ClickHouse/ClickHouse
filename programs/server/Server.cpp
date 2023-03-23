@@ -815,10 +815,8 @@ try
         }
     );
 
-    if (config().has("zookeeper") && config().has("keeper"))
-        throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "Both ZooKeeper and Keeper are specified");
-
-    bool has_zookeeper = config().has("zookeeper") || config().has("keeper") || config().has("keeper_server");
+    zkutil::validateZooKeeperConfig(config());
+    bool has_zookeeper = zkutil::hasZooKeeperConfig(config());
 
     zkutil::ZooKeeperNodeCache main_config_zk_node_cache([&] { return global_context->getZooKeeper(); });
     zkutil::EventPtr main_config_zk_changed_event = std::make_shared<Poco::Event>();
@@ -1310,7 +1308,7 @@ try
             {
                 /// We do not load ZooKeeper configuration on the first config loading
                 /// because TestKeeper server is not started yet.
-                if (config->has("zookeeper") || config->has("keeper") || config->has("keeper_server"))
+                if (zkutil::hasZooKeeperConfig(config))
                     global_context->reloadZooKeeperIfChanged(config);
 
                 global_context->reloadAuxiliaryZooKeepersConfigIfChanged(config);

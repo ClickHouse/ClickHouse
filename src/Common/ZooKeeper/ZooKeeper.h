@@ -667,6 +667,10 @@ String extractZooKeeperPath(const String & path, bool check_starts_with_slash, P
 
 String getSequentialNodeName(const String & prefix, UInt64 number);
 
-String getZookeeperConfigName(const Poco::Util::AbstractConfiguration & config);
+void validateZooKeeperConfig(const Poco::Util::AbstractConfiguration & config);
+
+bool hasZooKeeperConfig(const Poco::Util::AbstractConfiguration & config, bool allow_keeper_server = true);
+
+String getZooKeeperConfigName(const Poco::Util::AbstractConfiguration & config, bool allow_keeper_server = true);
 
 }

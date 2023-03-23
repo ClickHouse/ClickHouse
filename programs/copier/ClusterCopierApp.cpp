@@ -1,4 +1,5 @@
 #include "ClusterCopierApp.h"
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/StatusFile.h>
 #include <Common/TerminalSize.h>
 #include <IO/ConnectionTimeouts.h>
@@ -11,11 +12,6 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
-}
 
 /// ClusterCopierApp
 
@@ -197,8 +193,7 @@ void ClusterCopierApp::mainImpl()
     if (!task_file.empty())
         copier->uploadTaskDescription(task_path, task_file, config().getBool("task-upload-force", false));
 
-    if (config().has("zookeeper") && config().has("keeper"))
-        throw Exception("Both ZooKeeper and Keeper are specified", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+    zkutil::validateZooKeeperConfig(config());
 
     copier->init();
     copier->process(ConnectionTimeouts::getTCPTimeoutsWithoutFailover(context->getSettingsRef()));

@@ -30,6 +30,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
     extern const int NO_ELEMENTS_IN_CONFIG;
+    extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
 }
 }
 
@@ -1335,16 +1336,29 @@ String getSequentialNodeName(const String & prefix, UInt64 number)
     return name;
 }
 
-String getZookeeperConfigName(const Poco::Util::AbstractConfiguration & config)
+void validateZooKeeperConfig(const Poco::Util::AbstractConfiguration & config)
+{
+    if (config.has("zookeeper") && config.has("keeper"))
+        throw DB::Exception(DB::ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "Both ZooKeeper and Keeper are specified");
+}
+
+bool hasZooKeeperConfig(const Poco::Util::AbstractConfiguration & config, bool allow_keeper_server)
+{
+    return config.has("zookeeper") || config.has("keeper") || (allow_keeper_server && config.has("keeper_server"));
+}
+
+String getZooKeeperConfigName(const Poco::Util::AbstractConfiguration & config, bool allow_keeper_server)
 {
     if (config.has("zookeeper"))
         return "zookeeper";
-    else if (config.has("keeper"))
+
+    if (config.has("keeper"))
         return "keeper";
-    else if (config.has("keeper_server"))
+
+    if (allow_keeper_server && config.has("keeper_server"))
         return "keeper_server";
-    else
-        throw DB::Exception("There is no Zookeeper configuration in server config", DB::ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+
+    throw DB::Exception(DB::ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no Zookeeper configuration in server config");
 }
 
 }
