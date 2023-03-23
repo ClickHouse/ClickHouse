@@ -3438,7 +3438,7 @@ Default value: `throw`.
 
 ## flatten_nested {#flatten-nested}
 
-Sets the data format of a [nested](../../sql-reference/data-types/nested-data-structures/nested.md) columns.
+Sets the data format of a [nested](../../sql-reference/data-types/nested-data-structures/index.md) columns.
 
 Possible values:
 
