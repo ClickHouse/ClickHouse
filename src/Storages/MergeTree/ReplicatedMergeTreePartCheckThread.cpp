@@ -119,6 +119,9 @@ void ReplicatedMergeTreePartCheckThread::cancelRemovedPartsCheck(const MergeTree
     });
 
     parts_queue.erase(new_end, parts_queue.end());
+
+    for (const auto & elem : removed_parts)
+        parts_set.erase(elem);
 }
 
 size_t ReplicatedMergeTreePartCheckThread::size() const
