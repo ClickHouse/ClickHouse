@@ -106,7 +106,7 @@ bool QueryDAG::buildImpl(QueryPlan::Node & node, ActionsDAG::NodeRawConstPtrs & 
     IQueryPlanStep * step = node.step.get();
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
     {
-        if (const auto * prewhere_info = reading->getPrewhereInfo())
+        if (const auto & prewhere_info = reading->getPrewhereInfo())
         {
             if (prewhere_info->row_level_filter)
             {
