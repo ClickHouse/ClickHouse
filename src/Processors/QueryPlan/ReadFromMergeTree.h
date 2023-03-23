@@ -152,7 +152,6 @@ public:
     ContextPtr getContext() const { return context; }
     const SelectQueryInfo & getQueryInfo() const { return query_info; }
     StorageMetadataPtr getStorageMetadata() const { return metadata_for_reading; }
-    StorageSnapshotPtr getStorageSnapshot() const { return storage_snapshot; }
     const PrewhereInfoPtr & getPrewhereInfo() const { return prewhere_info; }
 
     /// Returns `false` if requested reading cannot be performed.
@@ -174,7 +173,6 @@ public:
 
     const MergeTreeData::DataPartsVector & getParts() const { return prepared_parts; }
     const MergeTreeData & getMergeTreeData() const { return data; }
-    const Names & getRealColumnNames() const { return real_column_names; }
     size_t getMaxBlockSize() const { return max_block_size; }
     size_t getNumStreams() const { return requested_num_streams; }
     bool isParallelReadingEnabled() const { return read_task_callback != std::nullopt; }
