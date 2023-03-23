@@ -732,7 +732,7 @@ public:
             if (std::numeric_limits<T>::is_signed && (is_negative(lhs) != is_negative(rhs)))
                 return is_negative(rhs);
 
-	    integer<Bits, Signed> t = rhs;
+            integer<Bits, Signed> t = rhs;
             for (unsigned i = 0; i < item_count; ++i)
             {
                 base_type rhs_item = get_item(t, big(i));
@@ -758,7 +758,7 @@ public:
             if (std::numeric_limits<T>::is_signed && (is_negative(lhs) != is_negative(rhs)))
                 return is_negative(lhs);
 
-	    integer<Bits, Signed> t = rhs;
+            integer<Bits, Signed> t = rhs;
             for (unsigned i = 0; i < item_count; ++i)
             {
                 base_type rhs_item = get_item(t, big(i));
@@ -781,7 +781,7 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-	    integer<Bits, Signed> t = rhs;
+            integer<Bits, Signed> t = rhs;
             for (unsigned i = 0; i < item_count; ++i)
             {
                 base_type rhs_item = get_item(t, any(i));
