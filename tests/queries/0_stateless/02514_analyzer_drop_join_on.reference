@@ -30,20 +30,20 @@ Header: count() UInt64
                 Expression ((JOIN actions + Change column names to column identifiers))
                 Header: default.a.a1_1 UInt64
                         default.a.a2_4 String
-                  ReadFromStorage (Memory)
+                  ReadFromMemoryStorage
                   Header: a1 UInt64
                           a2 String
                 Expression ((JOIN actions + Change column names to column identifiers))
                 Header: default.b.b1_0 UInt64
-                  ReadFromStorage (Memory)
+                  ReadFromMemoryStorage
                   Header: b1 UInt64
             Expression ((JOIN actions + Change column names to column identifiers))
             Header: default.c.c1_2 UInt64
-              ReadFromStorage (Memory)
+              ReadFromMemoryStorage
               Header: c1 UInt64
         Expression ((JOIN actions + Change column names to column identifiers))
         Header: default.d.d1_3 UInt64
-          ReadFromStorage (Memory)
+          ReadFromMemoryStorage
           Header: d1 UInt64
 EXPLAIN PLAN header = 1
 SELECT a.a2, d.d2 FROM a JOIN b USING (k) JOIN c USING (k) JOIN d USING (k)
@@ -70,21 +70,21 @@ Header: a2 String
             Expression (Change column names to column identifiers)
             Header: default.a.a2_0 String
                     default.a.k_2 UInt64
-              ReadFromStorage (Memory)
+              ReadFromMemoryStorage
               Header: a2 String
                       k UInt64
             Expression (Change column names to column identifiers)
             Header: default.b.k_3 UInt64
-              ReadFromStorage (Memory)
+              ReadFromMemoryStorage
               Header: k UInt64
         Expression (Change column names to column identifiers)
         Header: default.c.k_4 UInt64
-          ReadFromStorage (Memory)
+          ReadFromMemoryStorage
           Header: k UInt64
     Expression (Change column names to column identifiers)
     Header: default.d.d2_1 String
             default.d.k_5 UInt64
-      ReadFromStorage (Memory)
+      ReadFromMemoryStorage
       Header: d2 String
               k UInt64
 EXPLAIN PLAN header = 1
@@ -130,19 +130,19 @@ Header: bx String
                 Expression ((JOIN actions + Change column names to column identifiers))
                 Header: default.a.a1_2 UInt64
                         default.a.a2_6 String
-                  ReadFromStorage (Memory)
+                  ReadFromMemoryStorage
                   Header: a1 UInt64
                           a2 String
                 Expression ((JOIN actions + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
                 Header: b.b1_1 UInt64
                         b.bx_0 String
-                  ReadFromStorage (Memory)
+                  ReadFromMemoryStorage
                   Header: b1 UInt64
                           b2 String
             Expression ((JOIN actions + Change column names to column identifiers))
             Header: default.c.c1_3 UInt64
                     default.c.c2_5 String
-              ReadFromStorage (Memory)
+              ReadFromMemoryStorage
               Header: c1 UInt64
                       c2 String
         Expression ((JOIN actions + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
