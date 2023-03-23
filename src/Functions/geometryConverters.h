@@ -120,10 +120,23 @@ struct ColumnToPolygonsConverter
         std::vector<Polygon<Point>> answer(offsets.size());
         auto all_rings = ColumnToRingsConverter<Point>::convert(typeid_cast<const ColumnArray &>(*col).getDataPtr());
 
+        // [1, 2, 3]
+        // [[1],
+        //  [2, 3],
+        //  []]
+
+        // [1, 3, 3]
+
         size_t prev_offset = 0;
-        for (size_t iter = 0; iter < offsets.size() && iter < all_rings.size(); ++iter)
+        for (size_t iter = 0; iter < offsets.size(); ++iter)
         {
             const auto current_array_size = offsets[iter] - prev_offset;
+            if (current_array_size == 0)
+            {
+                answer.emplace_back();
+                continue;
+            }
+
             answer[iter].outer() = std::move(all_rings[prev_offset]);
             answer[iter].inners().reserve(current_array_size);
             for (size_t inner_holes = prev_offset + 1; inner_holes < offsets[iter]; ++inner_holes)
