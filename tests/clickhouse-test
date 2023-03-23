@@ -1076,10 +1076,7 @@ class TestCase:
 
         # >> append to stderr (but not stdout since it is not used there),
         # because there are also output of per test database creation
-        if not args.database:
-            pattern = "{test} > {stdout} 2> {stderr}"
-        else:
-            pattern = "{test} > {stdout} 2> {stderr}"
+        pattern = "{test} > {stdout} 2> {stderr}"
 
         if self.ext == ".sql":
             pattern = (

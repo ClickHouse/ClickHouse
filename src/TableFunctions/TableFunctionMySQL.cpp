@@ -6,7 +6,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
-#include <Storages/StorageMySQL.h>
 #include <Storages/MySQL/MySQLSettings.h>
 #include <Storages/MySQL/MySQLHelpers.h>
 #include <TableFunctions/ITableFunction.h>
