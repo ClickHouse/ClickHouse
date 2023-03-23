@@ -566,7 +566,11 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
         if (!DataTypeMap::checkKeyType(key_type))
             key_type = type_map->getKeyType();
 
-        return std::make_shared<DataTypeMap>(key_type, value_type);
+        size_t num_shards = type_map->getNumShards();
+        if (fuzz_rand() % 2 == 0)
+            num_shards = fuzz_rand() % 10 + 1;
+
+        return std::make_shared<DataTypeMap>(key_type, value_type, num_shards);
     }
 
     const auto * type_nullable = typeid_cast<const DataTypeNullable *>(type.get());

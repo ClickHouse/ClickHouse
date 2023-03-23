@@ -148,7 +148,7 @@ static DataTypePtr create(const ASTPtr & arguments)
         DataTypeFactory::instance().get(children[1]),
     };
 
-    size_t num_shards = 1;
+    size_t num_shards = 8;
     if (arguments->children.size() == 3)
     {
         const auto * literal = arguments->children[2]->as<ASTLiteral>();
