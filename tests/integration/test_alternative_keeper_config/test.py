@@ -8,16 +8,28 @@ cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance(
     "node1",
-    with_zookeeper=True,
-    main_configs=["configs/remote_servers.xml", "configs/keeper_config.xml"],
+    main_configs=[
+        "configs/remote_servers.xml",
+        "configs/keeper_config.xml",
+        "configs/enable_keeper1.xml",
+    ],
     macros={"replica": "node1"},
 )
 
 node2 = cluster.add_instance(
     "node2",
-    with_zookeeper=True,
-    main_configs=["configs/remote_servers.xml", "configs/zookeeper_config.xml"],
+    main_configs=[
+        "configs/remote_servers.xml",
+        "configs/zookeeper_config.xml",
+        "configs/enable_keeper2.xml",
+    ],
     macros={"replica": "node2"},
+)
+
+node3 = cluster.add_instance(
+    "node3",
+    main_configs=["configs/remote_servers.xml", "configs/enable_keeper3.xml"],
+    macros={"replica": "node3"},
 )
 
 
@@ -45,10 +57,9 @@ def test_create_insert(started_cluster):
 
     node1.query("INSERT INTO tbl VALUES (1, 'str1')")
     node2.query("INSERT INTO tbl VALUES (1, 'str1')")  # Test deduplication
-    node2.query("INSERT INTO tbl VALUES (2, 'str2')")
+    node3.query("INSERT INTO tbl VALUES (2, 'str2')")
 
-    expected = [[1, "str1"], [2, "str2"]]
-    assert node1.query("SELECT * FROM tbl ORDER BY id") == TSV(expected)
-    assert node2.query("SELECT * FROM tbl ORDER BY id") == TSV(expected)
-    assert node1.query("CHECK TABLE tbl") == "1\n"
-    assert node2.query("CHECK TABLE tbl") == "1\n"
+    for node in [node1, node2, node3]:
+        expected = [[1, "str1"], [2, "str2"]]
+        assert node.query("SELECT * FROM tbl ORDER BY id") == TSV(expected)
+        assert node.query("CHECK TABLE tbl") == "1\n"

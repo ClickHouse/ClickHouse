@@ -669,8 +669,8 @@ String getSequentialNodeName(const String & prefix, UInt64 number);
 
 void validateZooKeeperConfig(const Poco::Util::AbstractConfiguration & config);
 
-bool hasZooKeeperConfig(const Poco::Util::AbstractConfiguration & config, bool allow_keeper_server = true);
+bool hasZooKeeperConfig(const Poco::Util::AbstractConfiguration & config);
 
-String getZooKeeperConfigName(const Poco::Util::AbstractConfiguration & config, bool allow_keeper_server = true);
+String getZooKeeperConfigName(const Poco::Util::AbstractConfiguration & config);
 
 }

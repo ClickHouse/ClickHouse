@@ -2624,7 +2624,7 @@ void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & 
 
 bool Context::hasZooKeeper() const
 {
-    return getConfigRef().has("zookeeper") || getConfigRef().has("keeper") || getConfigRef().has("keeper_server");
+    return zkutil::hasZooKeeperConfig(getConfigRef());
 }
 
 bool Context::hasAuxiliaryZooKeeper(const String & name) const
