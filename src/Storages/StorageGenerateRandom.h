@@ -17,7 +17,7 @@ public:
         const String & comment,
         UInt64 max_array_length,
         UInt64 max_string_length,
-        std::optional<UInt64> random_seed);
+        const std::optional<UInt64> & random_seed);
 
     std::string getName() const override { return "GenerateRandom"; }
 
