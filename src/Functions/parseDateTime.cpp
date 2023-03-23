@@ -101,16 +101,16 @@ namespace
         bool is_year_of_era = false; /// If true, year is calculated from era and year of era, the latter cannot be zero or negative.
         bool has_year = false; /// Whether year was explicitly specified.
 
-        /// If is_clock_hour = true, is_hour_of_half_day = true, hour's range is [1, 12]
-        /// If is_clock_hour = true, is_hour_of_half_day = false, hour's range is [1, 24]
-        /// If is_clock_hour = false, is_hour_of_half_day = true, hour's range is [0, 11]
-        /// If is_clock_hour = false, is_hour_of_half_day = false, hour's range is [0, 23]
+        /// If hour_starts_at_1 = true, is_hour_of_half_day = true, hour's range is [1, 12]
+        /// If hour_starts_at_1 = true, is_hour_of_half_day = false, hour's range is [1, 24]
+        /// If hour_starts_at_1 = false, is_hour_of_half_day = true, hour's range is [0, 11]
+        /// If hour_starts_at_1 = false, is_hour_of_half_day = false, hour's range is [0, 23]
         Int32 hour = 0;
         Int32 minute = 0; /// range [0, 59]
         Int32 second = 0; /// range [0, 59]
 
         bool is_am = true; /// If is_hour_of_half_day = true and is_am = false (i.e. pm) then add 12 hours to the result DateTime
-        bool is_clock_hour = false; /// Whether the hour is clockhour
+        bool hour_starts_at_1 = false; /// Whether the hour is clockhour
         bool is_hour_of_half_day = false; /// Whether the hour is of half day
 
         bool has_time_zone_offset = false; /// If true, time zone offset is explicitly specified.
@@ -137,7 +137,7 @@ namespace
             second = 0;
 
             is_am = true;
-            is_clock_hour = false;
+            hour_starts_at_1 = false;
             is_hour_of_half_day = false;
 
             has_time_zone_offset = false;
@@ -275,23 +275,23 @@ namespace
                 throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Unknown half day of day: {}", text);
         }
 
-        void setHour(Int32 hour_, bool is_hour_of_half_day_ = false, bool is_clock_hour_ = false)
+        void setHour(Int32 hour_, bool is_hour_of_half_day_ = false, bool hour_starts_at_1_ = false)
         {
             Int32 max_hour;
             Int32 min_hour;
             Int32 new_hour = hour_;
-            if (!is_hour_of_half_day_ && !is_clock_hour_)
+            if (!is_hour_of_half_day_ && !hour_starts_at_1_)
             {
                 max_hour = 23;
                 min_hour = 0;
             }
-            else if (!is_hour_of_half_day_ && is_clock_hour_)
+            else if (!is_hour_of_half_day_ && hour_starts_at_1_)
             {
                 max_hour = 24;
                 min_hour = 1;
                 new_hour = hour_ % 24;
             }
-            else if (is_hour_of_half_day_ && !is_clock_hour_)
+            else if (is_hour_of_half_day_ && !hour_starts_at_1_)
             {
                 max_hour = 11;
                 min_hour = 0;
@@ -306,16 +306,16 @@ namespace
             if (hour_ < min_hour || hour_ > max_hour)
                 throw Exception(
                     ErrorCodes::CANNOT_PARSE_DATETIME,
-                    "Value {} for hour must be in the range [{}, {}] if_hour_of_half_day={} and is_clock_hour={}",
+                    "Value {} for hour must be in the range [{}, {}] if_hour_of_half_day={} and hour_starts_at_1={}",
                     hour,
                     max_hour,
                     min_hour,
                     is_hour_of_half_day_,
-                    is_clock_hour_);
+                    hour_starts_at_1_);
 
             hour = new_hour;
             is_hour_of_half_day = is_hour_of_half_day_;
-            is_clock_hour = is_clock_hour_;
+            hour_starts_at_1 = hour_starts_at_1_;
         }
 
         void setMinute(Int32 minute_)
