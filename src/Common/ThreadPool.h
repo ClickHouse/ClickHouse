@@ -102,6 +102,7 @@ private:
 
     size_t scheduled_jobs = 0;
     bool shutdown = false;
+    bool threads_remove_themselves = true;
     const bool shutdown_on_exception = true;
 
     struct JobWithPriority
@@ -128,6 +129,9 @@ private:
     ReturnType scheduleImpl(Job job, ssize_t priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context = true);
 
     void worker(typename std::list<Thread>::iterator thread_it);
+
+    /// Tries to start new threads if there are scheduled jobs and the limit `max_threads` is not reached. Must be called with `mutex` locked.
+    void startNewThreadsNoLock();
 
     void finalize();
     void onDestroy();
@@ -258,6 +262,11 @@ public:
         if (state->thread_id == std::this_thread::get_id())
             return false;
         return true;
+    }
+
+    std::thread::id get_id() const
+    {
+        return state ? state->thread_id.load() : std::thread::id{};
     }
 
 protected:
