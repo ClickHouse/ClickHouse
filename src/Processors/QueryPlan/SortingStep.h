@@ -102,7 +102,7 @@ private:
     SortDescription prefix_description;
     const SortDescription result_description;
     UInt64 limit;
-    bool always_read_till_end;
+    bool always_read_till_end = false;
 
     Settings sort_settings;
 

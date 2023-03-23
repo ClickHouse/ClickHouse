@@ -58,6 +58,8 @@ private:
     std::unique_ptr<RemoteQueryExecutorReadContext> read_context;
     UUID uuid;
     int fd = -1;
+    size_t rows = 0;
+    bool manually_add_rows_before_limit_counter = false;
 };
 
 /// Totals source from RemoteQueryExecutor.

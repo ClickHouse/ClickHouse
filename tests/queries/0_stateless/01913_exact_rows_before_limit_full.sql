@@ -24,4 +24,6 @@ set prefer_localhost_replica = 1;
 select * from cluster(test_cluster_two_shards, currentDatabase(), test) where i < 30 limit 1 FORMAT JSONCompact;
 select * from cluster(test_cluster_two_shards, currentDatabase(), test) where i < 20 order by i limit 1 FORMAT JSONCompact;
 
+select * from (select * from cluster(test_cluster_two_shards, currentDatabase(), test) where i < 10) limit 1 FORMAT JSONCompact;
+
 drop table if exists test;
