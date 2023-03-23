@@ -5,13 +5,13 @@ JOIN INNER
 SELECT 'JOIN ON without conditions';
 JOIN ON without conditions
 SELECT test_table_join_1.id, test_table_join_1.value, test_table_join_2.id, test_table_join_2.value
-FROM test_table_join_1 INNER JOIN test_table_join_2 ON test_table_join_1.id = test_table_join_2.id;
+FROM test_table_join_1 INNER JOIN test_table_join_2 ON test_table_join_1.id = test_table_join_2.id order by test_table_join_1.id, test_table_join_1.value, test_table_join_1.value;
 0	Join_1_Value_0	0	Join_2_Value_0
 1	Join_1_Value_1	1	Join_2_Value_1
 SELECT '--';
 --
 SELECT t1.id, t1.value, t2.id, t2.value
-FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON t1.id = t2.id;
+FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON t1.id = t2.id order by t1.id, t1.value;
 0	Join_1_Value_0	0	Join_2_Value_0
 1	Join_1_Value_1	1	Join_2_Value_1
 SELECT '--';
@@ -51,17 +51,17 @@ FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON toString(t1.i
 SELECT 'JOIN multiple clauses';
 JOIN multiple clauses
 SELECT t1.id, t1.value, t2.id, t2.value
-FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON t1.id = t2.id OR t1.id = t2.id;
+FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON t1.id = t2.id OR t1.id = t2.id order by t1.id, t1.value;
 0	Join_1_Value_0	0	Join_2_Value_0
 1	Join_1_Value_1	1	Join_2_Value_1
 SELECT 'JOIN expression aliases';
 JOIN expression aliases
-SELECT t1_id, t1.value, t2_id, t2.value FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id);
+SELECT t1_id, t1.value, t2_id, t2.value FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id) order by t1_id, t1.value, t2_id;
 0	Join_1_Value_0	0	Join_2_Value_0
 1	Join_1_Value_1	1	Join_2_Value_1
 SELECT '--';
 --
-SELECT t1.id AS t1_id, t1.value, t2.id AS t2_id, t2.value FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON t1_id = t2_id;
+SELECT t1.id AS t1_id, t1.value, t2.id AS t2_id, t2.value FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON t1_id = t2_id order by t1_id, t1.value, t2_id;
 0	Join_1_Value_0	0	Join_2_Value_0
 1	Join_1_Value_1	1	Join_2_Value_1
 SELECT 'JOIN LEFT';
@@ -69,14 +69,14 @@ JOIN LEFT
 SELECT 'JOIN ON without conditions';
 JOIN ON without conditions
 SELECT test_table_join_1.id, test_table_join_1.value, test_table_join_2.id, test_table_join_2.value
-FROM test_table_join_1 LEFT JOIN test_table_join_2 ON test_table_join_1.id = test_table_join_2.id;
+FROM test_table_join_1 LEFT JOIN test_table_join_2 ON test_table_join_1.id = test_table_join_2.id order by test_table_join_1.id, test_table_join_1.value, test_table_join_1.value;
 0	Join_1_Value_0	0	Join_2_Value_0
 1	Join_1_Value_1	1	Join_2_Value_1
 2	Join_1_Value_2	0	
 SELECT '--';
 --
 SELECT t1.id, t1.value, t2.id, t2.value
-FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 ON t1.id = t2.id;
+FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 ON t1.id = t2.id order by t1.id, t1.value;
 0	Join_1_Value_0	0	Join_2_Value_0
 1	Join_1_Value_1	1	Join_2_Value_1
 2	Join_1_Value_2	0	
@@ -125,19 +125,19 @@ FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 ON toString(t1.id
 SELECT 'JOIN multiple clauses';
 JOIN multiple clauses
 SELECT t1.id, t1.value, t2.id, t2.value
-FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 ON t1.id = t2.id OR t1.id = t2.id;
+FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 ON t1.id = t2.id OR t1.id = t2.id order by t1.id, t1.value;
 0	Join_1_Value_0	0	Join_2_Value_0
 1	Join_1_Value_1	1	Join_2_Value_1
 2	Join_1_Value_2	0	
 SELECT 'JOIN expression aliases';
 JOIN expression aliases
-SELECT t1_id, t1.value, t2_id, t2.value FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id);
+SELECT t1_id, t1.value, t2_id, t2.value FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id) order by t1_id, t1.value, t2_id;
 0	Join_1_Value_0	0	Join_2_Value_0
 1	Join_1_Value_1	1	Join_2_Value_1
 2	Join_1_Value_2	0	
 SELECT '--';
 --
-SELECT t1.id AS t1_id, t1.value, t2.id AS t2_id, t2.value FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 ON t1_id = t2_id;
+SELECT t1.id AS t1_id, t1.value, t2.id AS t2_id, t2.value FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 ON t1_id = t2_id order by t1_id, t1.value, t2_id;
 0	Join_1_Value_0	0	Join_2_Value_0
 1	Join_1_Value_1	1	Join_2_Value_1
 2	Join_1_Value_2	0	
@@ -146,17 +146,17 @@ JOIN RIGHT
 SELECT 'JOIN ON without conditions';
 JOIN ON without conditions
 SELECT test_table_join_1.id, test_table_join_1.value, test_table_join_2.id, test_table_join_2.value
-FROM test_table_join_1 RIGHT JOIN test_table_join_2 ON test_table_join_1.id = test_table_join_2.id;
+FROM test_table_join_1 RIGHT JOIN test_table_join_2 ON test_table_join_1.id = test_table_join_2.id order by test_table_join_1.id, test_table_join_1.value, test_table_join_1.value;
+0		3	Join_2_Value_3
 0	Join_1_Value_0	0	Join_2_Value_0
 1	Join_1_Value_1	1	Join_2_Value_1
-0		3	Join_2_Value_3
 SELECT '--';
 --
 SELECT t1.id, t1.value, t2.id, t2.value
-FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 ON t1.id = t2.id;
+FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 ON t1.id = t2.id order by t1.id, t1.value;
+0		3	Join_2_Value_3
 0	Join_1_Value_0	0	Join_2_Value_0
 1	Join_1_Value_1	1	Join_2_Value_1
-0		3	Join_2_Value_3
 SELECT '--';
 --
 SELECT t1.id, test_table_join_1.id, t1.value, test_table_join_1.value, t2.id, test_table_join_2.id, t2.value, test_table_join_2.value
@@ -202,40 +202,40 @@ FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 ON toString(t1.i
 SELECT 'JOIN multiple clauses';
 JOIN multiple clauses
 SELECT t1.id, t1.value, t2.id, t2.value
-FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 ON t1.id = t2.id OR t1.id = t2.id;
+FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 ON t1.id = t2.id OR t1.id = t2.id order by t1.id, t1.value;
+0		3	Join_2_Value_3
 0	Join_1_Value_0	0	Join_2_Value_0
 1	Join_1_Value_1	1	Join_2_Value_1
-0		3	Join_2_Value_3
 SELECT 'JOIN expression aliases';
 JOIN expression aliases
-SELECT t1_id, t1.value, t2_id, t2.value FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id);
+SELECT t1_id, t1.value, t2_id, t2.value FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id) order by t1_id, t1.value, t2_id;
+0		3	Join_2_Value_3
 0	Join_1_Value_0	0	Join_2_Value_0
 1	Join_1_Value_1	1	Join_2_Value_1
-0		3	Join_2_Value_3
 SELECT '--';
 --
-SELECT t1.id AS t1_id, t1.value, t2.id AS t2_id, t2.value FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 ON t1_id = t2_id;
+SELECT t1.id AS t1_id, t1.value, t2.id AS t2_id, t2.value FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 ON t1_id = t2_id order by t1_id, t1.value, t2_id;
+0		3	Join_2_Value_3
 0	Join_1_Value_0	0	Join_2_Value_0
 1	Join_1_Value_1	1	Join_2_Value_1
-0		3	Join_2_Value_3
 SELECT 'JOIN FULL';
 JOIN FULL
 SELECT 'JOIN ON without conditions';
 JOIN ON without conditions
 SELECT test_table_join_1.id, test_table_join_1.value, test_table_join_2.id, test_table_join_2.value
-FROM test_table_join_1 FULL JOIN test_table_join_2 ON test_table_join_1.id = test_table_join_2.id;
+FROM test_table_join_1 FULL JOIN test_table_join_2 ON test_table_join_1.id = test_table_join_2.id order by test_table_join_1.id, test_table_join_1.value;
+0		3	Join_2_Value_3
 0	Join_1_Value_0	0	Join_2_Value_0
 1	Join_1_Value_1	1	Join_2_Value_1
 2	Join_1_Value_2	0	
-0		3	Join_2_Value_3
 SELECT '--';
 --
 SELECT t1.id, t1.value, t2.id, t2.value
-FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 ON t1.id = t2.id;
+FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 ON t1.id = t2.id order by t1.id, t1.value;
+0		3	Join_2_Value_3
 0	Join_1_Value_0	0	Join_2_Value_0
 1	Join_1_Value_1	1	Join_2_Value_1
 2	Join_1_Value_2	0	
-0		3	Join_2_Value_3
 SELECT '--';
 --
 SELECT t1.id, test_table_join_1.id, t1.value, test_table_join_1.value, t2.id, test_table_join_2.id, t2.value, test_table_join_2.value
@@ -289,25 +289,25 @@ FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 ON toString(t1.id
 SELECT 'JOIN multiple clauses';
 JOIN multiple clauses
 SELECT t1.id, t1.value, t2.id, t2.value
-FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 ON t1.id = t2.id OR t1.id = t2.id;
+FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 ON t1.id = t2.id OR t1.id = t2.id order by t1.id, t1.value;
+0		3	Join_2_Value_3
 0	Join_1_Value_0	0	Join_2_Value_0
 1	Join_1_Value_1	1	Join_2_Value_1
 2	Join_1_Value_2	0	
-0		3	Join_2_Value_3
 SELECT 'JOIN expression aliases';
 JOIN expression aliases
-SELECT t1_id, t1.value, t2_id, t2.value FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id);
+SELECT t1_id, t1.value, t2_id, t2.value FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id) order by t1_id, t1.value, t2_id;
+0		3	Join_2_Value_3
 0	Join_1_Value_0	0	Join_2_Value_0
 1	Join_1_Value_1	1	Join_2_Value_1
 2	Join_1_Value_2	0	
-0		3	Join_2_Value_3
 SELECT '--';
 --
-SELECT t1.id AS t1_id, t1.value, t2.id AS t2_id, t2.value FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 ON t1_id = t2_id;
+SELECT t1.id AS t1_id, t1.value, t2.id AS t2_id, t2.value FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 ON t1_id = t2_id order by t1_id, t1.value, t2_id;
+0		3	Join_2_Value_3
 0	Join_1_Value_0	0	Join_2_Value_0
 1	Join_1_Value_1	1	Join_2_Value_1
 2	Join_1_Value_2	0	
-0		3	Join_2_Value_3
 SELECT 'First JOIN INNER second JOIN INNER';
 First JOIN INNER second JOIN INNER
 SELECT 'JOIN ON without conditions';
@@ -362,7 +362,7 @@ Join_1_Value_1	Join_2_Value_1	Join_3_Value_1
 SELECT 'JOIN expression aliases';
 JOIN expression aliases
 SELECT t1_id, t1.value, t2_id, t2.value, t3_id, t3.value
-FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id)
+FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id) order by t1_id, t1.value, t2_id
 INNER JOIN test_table_join_3 AS t3 ON t2_id = (t3.id AS t3_id);
 0	Join_1_Value_0	0	Join_2_Value_0	0	Join_3_Value_0
 1	Join_1_Value_1	1	Join_2_Value_1	1	Join_3_Value_1
@@ -427,7 +427,7 @@ Join_1_Value_1	Join_2_Value_1	Join_3_Value_1
 SELECT 'JOIN expression aliases';
 JOIN expression aliases
 SELECT t1_id, t1.value, t2_id, t2.value, t3_id, t3.value
-FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id)
+FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id) order by t1_id, t1.value, t2_id
 LEFT JOIN test_table_join_3 AS t3 ON t2_id = (t3.id AS t3_id);
 0	Join_1_Value_0	0	Join_2_Value_0	0	Join_3_Value_0
 1	Join_1_Value_1	1	Join_2_Value_1	1	Join_3_Value_1
@@ -501,11 +501,11 @@ Join_1_Value_1	Join_2_Value_1	Join_3_Value_1
 SELECT 'JOIN expression aliases';
 JOIN expression aliases
 SELECT t1_id, t1.value, t2_id, t2.value, t3_id, t3.value
-FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id)
+FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id) order by t1_id, t1.value, t2_id
 RIGHT JOIN test_table_join_3 AS t3 ON t2_id = (t3.id AS t3_id);
+0		0		4	Join_3_Value_4
 0	Join_1_Value_0	0	Join_2_Value_0	0	Join_3_Value_0
 1	Join_1_Value_1	1	Join_2_Value_1	1	Join_3_Value_1
-0		0		4	Join_3_Value_4
 SELECT '--';
 --
 SELECT t1.id AS t1_id, t1.value, t2.id AS t2_id, t2.value, t3.id AS t3_id, t3.value
@@ -577,11 +577,11 @@ Join_1_Value_1	Join_2_Value_1	Join_3_Value_1
 SELECT 'JOIN expression aliases';
 JOIN expression aliases
 SELECT t1_id, t1.value, t2_id, t2.value, t3_id, t3.value
-FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id)
+FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id) order by t1_id, t1.value, t2_id
 FULL JOIN test_table_join_3 AS t3 ON t2_id = (t3.id AS t3_id);
+0		0		4	Join_3_Value_4
 0	Join_1_Value_0	0	Join_2_Value_0	0	Join_3_Value_0
 1	Join_1_Value_1	1	Join_2_Value_1	1	Join_3_Value_1
-0		0		4	Join_3_Value_4
 SELECT '--';
 --
 SELECT t1.id AS t1_id, t1.value, t2.id AS t2_id, t2.value, t3.id AS t3_id, t3.value
@@ -649,7 +649,7 @@ Join_1_Value_2		Join_3_Value_0
 SELECT 'JOIN expression aliases';
 JOIN expression aliases
 SELECT t1_id, t1.value, t2_id, t2.value, t3_id, t3.value
-FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id)
+FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id) order by t1_id, t1.value, t2_id
 INNER JOIN test_table_join_3 AS t3 ON t2_id = (t3.id AS t3_id);
 0	Join_1_Value_0	0	Join_2_Value_0	0	Join_3_Value_0
 1	Join_1_Value_1	1	Join_2_Value_1	1	Join_3_Value_1
@@ -725,7 +725,7 @@ Join_1_Value_2		Join_3_Value_0
 SELECT 'JOIN expression aliases';
 JOIN expression aliases
 SELECT t1_id, t1.value, t2_id, t2.value, t3_id, t3.value
-FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id)
+FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id) order by t1_id, t1.value, t2_id
 LEFT JOIN test_table_join_3 AS t3 ON t2_id = (t3.id AS t3_id);
 0	Join_1_Value_0	0	Join_2_Value_0	0	Join_3_Value_0
 1	Join_1_Value_1	1	Join_2_Value_1	1	Join_3_Value_1
@@ -806,12 +806,12 @@ Join_1_Value_2		Join_3_Value_0
 SELECT 'JOIN expression aliases';
 JOIN expression aliases
 SELECT t1_id, t1.value, t2_id, t2.value, t3_id, t3.value
-FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id)
+FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id) order by t1_id, t1.value, t2_id
 RIGHT JOIN test_table_join_3 AS t3 ON t2_id = (t3.id AS t3_id);
+0		0		4	Join_3_Value_4
 0	Join_1_Value_0	0	Join_2_Value_0	0	Join_3_Value_0
 1	Join_1_Value_1	1	Join_2_Value_1	1	Join_3_Value_1
 2	Join_1_Value_2	0		0	Join_3_Value_0
-0		0		4	Join_3_Value_4
 SELECT '--';
 --
 SELECT t1.id AS t1_id, t1.value, t2.id AS t2_id, t2.value, t3.id AS t3_id, t3.value
@@ -893,12 +893,12 @@ Join_1_Value_2		Join_3_Value_0
 SELECT 'JOIN expression aliases';
 JOIN expression aliases
 SELECT t1_id, t1.value, t2_id, t2.value, t3_id, t3.value
-FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id)
+FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id) order by t1_id, t1.value, t2_id
 FULL JOIN test_table_join_3 AS t3 ON t2_id = (t3.id AS t3_id);
+0		0		4	Join_3_Value_4
 0	Join_1_Value_0	0	Join_2_Value_0	0	Join_3_Value_0
 1	Join_1_Value_1	1	Join_2_Value_1	1	Join_3_Value_1
 2	Join_1_Value_2	0		0	Join_3_Value_0
-0		0		4	Join_3_Value_4
 SELECT '--';
 --
 SELECT t1.id AS t1_id, t1.value, t2.id AS t2_id, t2.value, t3.id AS t3_id, t3.value
@@ -962,7 +962,7 @@ Join_1_Value_1	Join_2_Value_1	Join_3_Value_1
 SELECT 'JOIN expression aliases';
 JOIN expression aliases
 SELECT t1_id, t1.value, t2_id, t2.value, t3_id, t3.value
-FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id)
+FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id) order by t1_id, t1.value, t2_id
 INNER JOIN test_table_join_3 AS t3 ON t2_id = (t3.id AS t3_id);
 0	Join_1_Value_0	0	Join_2_Value_0	0	Join_3_Value_0
 1	Join_1_Value_1	1	Join_2_Value_1	1	Join_3_Value_1
@@ -1036,11 +1036,11 @@ Join_1_Value_1	Join_2_Value_1	Join_3_Value_1
 SELECT 'JOIN expression aliases';
 JOIN expression aliases
 SELECT t1_id, t1.value, t2_id, t2.value, t3_id, t3.value
-FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id)
+FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id) order by t1_id, t1.value, t2_id
 LEFT JOIN test_table_join_3 AS t3 ON t2_id = (t3.id AS t3_id);
+0		3	Join_2_Value_3	0	
 0	Join_1_Value_0	0	Join_2_Value_0	0	Join_3_Value_0
 1	Join_1_Value_1	1	Join_2_Value_1	1	Join_3_Value_1
-0		3	Join_2_Value_3	0	
 SELECT '--';
 --
 SELECT t1.id AS t1_id, t1.value, t2.id AS t2_id, t2.value, t3.id AS t3_id, t3.value
@@ -1112,11 +1112,11 @@ Join_1_Value_1	Join_2_Value_1	Join_3_Value_1
 SELECT 'JOIN expression aliases';
 JOIN expression aliases
 SELECT t1_id, t1.value, t2_id, t2.value, t3_id, t3.value
-FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id)
+FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id) order by t1_id, t1.value, t2_id
 RIGHT JOIN test_table_join_3 AS t3 ON t2_id = (t3.id AS t3_id);
+0		0		4	Join_3_Value_4
 0	Join_1_Value_0	0	Join_2_Value_0	0	Join_3_Value_0
 1	Join_1_Value_1	1	Join_2_Value_1	1	Join_3_Value_1
-0		0		4	Join_3_Value_4
 SELECT '--';
 --
 SELECT t1.id AS t1_id, t1.value, t2.id AS t2_id, t2.value, t3.id AS t3_id, t3.value
@@ -1197,12 +1197,12 @@ Join_1_Value_1	Join_2_Value_1	Join_3_Value_1
 SELECT 'JOIN expression aliases';
 JOIN expression aliases
 SELECT t1_id, t1.value, t2_id, t2.value, t3_id, t3.value
-FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id)
+FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id) order by t1_id, t1.value, t2_id
 FULL JOIN test_table_join_3 AS t3 ON t2_id = (t3.id AS t3_id);
+0		0		4	Join_3_Value_4
+0		3	Join_2_Value_3	0	
 0	Join_1_Value_0	0	Join_2_Value_0	0	Join_3_Value_0
 1	Join_1_Value_1	1	Join_2_Value_1	1	Join_3_Value_1
-0		3	Join_2_Value_3	0	
-0		0		4	Join_3_Value_4
 SELECT '--';
 --
 SELECT t1.id AS t1_id, t1.value, t2.id AS t2_id, t2.value, t3.id AS t3_id, t3.value
@@ -1271,7 +1271,7 @@ Join_1_Value_2		Join_3_Value_0
 SELECT 'JOIN expression aliases';
 JOIN expression aliases
 SELECT t1_id, t1.value, t2_id, t2.value, t3_id, t3.value
-FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id)
+FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id) order by t1_id, t1.value, t2_id
 INNER JOIN test_table_join_3 AS t3 ON t2_id = (t3.id AS t3_id);
 0	Join_1_Value_0	0	Join_2_Value_0	0	Join_3_Value_0
 1	Join_1_Value_1	1	Join_2_Value_1	1	Join_3_Value_1
@@ -1356,12 +1356,12 @@ Join_1_Value_2		Join_3_Value_0
 SELECT 'JOIN expression aliases';
 JOIN expression aliases
 SELECT t1_id, t1.value, t2_id, t2.value, t3_id, t3.value
-FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id)
+FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id) order by t1_id, t1.value, t2_id
 LEFT JOIN test_table_join_3 AS t3 ON t2_id = (t3.id AS t3_id);
+0		3	Join_2_Value_3	0	
 0	Join_1_Value_0	0	Join_2_Value_0	0	Join_3_Value_0
 1	Join_1_Value_1	1	Join_2_Value_1	1	Join_3_Value_1
 2	Join_1_Value_2	0		0	Join_3_Value_0
-0		3	Join_2_Value_3	0	
 SELECT '--';
 --
 SELECT t1.id AS t1_id, t1.value, t2.id AS t2_id, t2.value, t3.id AS t3_id, t3.value
@@ -1439,12 +1439,12 @@ Join_1_Value_2		Join_3_Value_0
 SELECT 'JOIN expression aliases';
 JOIN expression aliases
 SELECT t1_id, t1.value, t2_id, t2.value, t3_id, t3.value
-FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id)
+FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id) order by t1_id, t1.value, t2_id
 RIGHT JOIN test_table_join_3 AS t3 ON t2_id = (t3.id AS t3_id);
+0		0		4	Join_3_Value_4
 0	Join_1_Value_0	0	Join_2_Value_0	0	Join_3_Value_0
 1	Join_1_Value_1	1	Join_2_Value_1	1	Join_3_Value_1
 2	Join_1_Value_2	0		0	Join_3_Value_0
-0		0		4	Join_3_Value_4
 SELECT '--';
 --
 SELECT t1.id AS t1_id, t1.value, t2.id AS t2_id, t2.value, t3.id AS t3_id, t3.value
@@ -1535,13 +1535,13 @@ Join_1_Value_2		Join_3_Value_0
 SELECT 'JOIN expression aliases';
 JOIN expression aliases
 SELECT t1_id, t1.value, t2_id, t2.value, t3_id, t3.value
-FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id)
+FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 ON (t1.id AS t1_id) = (t2.id AS t2_id) order by t1_id, t1.value, t2_id
 FULL JOIN test_table_join_3 AS t3 ON t2_id = (t3.id AS t3_id);
+0		0		4	Join_3_Value_4
+0		3	Join_2_Value_3	0	
 0	Join_1_Value_0	0	Join_2_Value_0	0	Join_3_Value_0
 1	Join_1_Value_1	1	Join_2_Value_1	1	Join_3_Value_1
 2	Join_1_Value_2	0		0	Join_3_Value_0
-0		3	Join_2_Value_3	0	
-0		0		4	Join_3_Value_4
 SELECT '--';
 --
 SELECT t1.id AS t1_id, t1.value, t2.id AS t2_id, t2.value, t3.id AS t3_id, t3.value
