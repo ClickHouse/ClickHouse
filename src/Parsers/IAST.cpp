@@ -447,7 +447,7 @@ bool IAST::FormattingBuffer::shouldShowSecrets() const
 void IAST::FormattingBuffer::writeIndent(int extra_indent) const
 {
     if (!settings.one_line)
-        ostr << std::string(4 * stacked_state.indent + extra_indent, ' ');
+        ostr << std::string(4 * (stacked_state.indent + extra_indent), ' ');
 }
 
 bool IAST::FormattingBuffer::insertAlias(std::string alias, Hash printed_content) const

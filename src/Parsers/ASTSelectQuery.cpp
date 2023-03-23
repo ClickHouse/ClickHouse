@@ -122,20 +122,20 @@ void ASTSelectQuery::formatImpl(FormattingBuffer out) const
     if (group_by_with_rollup)
     {
         out.nlOrWs();
-        out.writeIndent(true);
+        out.writeIndent(1);
         out.writeKeyword("WITH ROLLUP");
     }
     if (group_by_with_cube)
     {
         out.nlOrWs();
-        out.writeIndent(true);
+        out.writeIndent(1);
         out.writeKeyword("WITH CUBE");
     }
 
     if (group_by_with_grouping_sets && groupBy())
     {
         out.nlOrWs();
-        out.writeIndent(true);
+        out.writeIndent(1);
         out.writeKeyword("GROUPING SETS");
         out.ostr << " (";
         FormattingBuffer out_copy = out.copy()
@@ -151,7 +151,7 @@ void ASTSelectQuery::formatImpl(FormattingBuffer out) const
     if (group_by_with_totals)
     {
         out.nlOrWs();
-        out.writeIndent(true);
+        out.writeIndent(1);
         out.writeKeyword("WITH TOTALS");
     }
     if (having())
