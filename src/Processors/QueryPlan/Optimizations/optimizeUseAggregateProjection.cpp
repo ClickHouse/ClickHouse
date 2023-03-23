@@ -231,10 +231,10 @@ bool areAggregatesMatch(
 ActionsDAGPtr analyzeAggregateProjection(
     const AggregateProjectionInfo & info,
     const QueryDAG & query,
+    const DAGIndex & query_index,
     const Names & keys,
     const AggregateDescriptions & aggregates)
 {
-    auto query_index = buildDAGIndex(*query.dag);
     auto proj_index = buildDAGIndex(*info.before_aggregation);
 
     MatchedTrees::Matches matches = matchTrees(*info.before_aggregation, *query.dag);
@@ -418,6 +418,8 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
     if (!dag.build(*node.children.front()))
         return candidates;
 
+    auto query_index = buildDAGIndex(*dag.dag);
+
     // LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Query DAG: {}", dag.dag->dumpDAG());
 
     candidates.has_filter = dag.filter_node;
@@ -428,7 +430,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
         // LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Try projection {}", projection->name);
         auto info = getAggregatingProjectionInfo(*projection, context, metadata, key_virtual_columns);
         // LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Projection DAG {}", info.before_aggregation->dumpDAG());
-        if (auto proj_dag = analyzeAggregateProjection(info, dag, keys, aggregates))
+        if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates))
         {
             // LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Projection analyzed DAG {}", proj_dag->dumpDAG());
             AggregateProjectionCandidate candidate{.info = std::move(info), .dag = std::move(proj_dag)};
@@ -467,7 +469,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
             // LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Try projection {}", projection->name);
             auto info = getAggregatingProjectionInfo(*projection, context, metadata, key_virtual_columns);
             // LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Projection DAG {}", info.before_aggregation->dumpDAG());
-            if (auto proj_dag = analyzeAggregateProjection(info, dag, keys, aggregates))
+            if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates))
             {
                 // LOG_TRACE(&Poco::Logger::get("optimizeUseProjections"), "Projection analyzed DAG {}", proj_dag->dumpDAG());
                 AggregateProjectionCandidate candidate{.info = std::move(info), .dag = std::move(proj_dag)};
