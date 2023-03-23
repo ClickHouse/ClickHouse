@@ -1370,6 +1370,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             {
                 constexpr auto fmt_string = "Not executing merge/mutation for the part {}, waiting for {} to execute it and will fetch after.";
                 out_postpone_reason = fmt::format(fmt_string, entry.new_part_name, replica_to_execute_merge);
+                LOG_TEST(log, fmt_string, entry.new_part_name, replica_to_execute_merge);
                 return false;
             }
         }
