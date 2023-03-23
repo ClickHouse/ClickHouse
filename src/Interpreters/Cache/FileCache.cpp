@@ -617,8 +617,8 @@ bool FileCache::tryReserveImpl(
     chassert(queue_size <= locked_priority_queue.getElementsLimit());
 
     /// A file_segment_metadata acquires a LRUQueue iterator on first successful space reservation attempt.
-    auto * file_segment_for_reserve = locked_key->getKeyMetadata().tryGetByOffset(offset);
-    if (!file_segment_for_reserve || !file_segment_for_reserve->queue_iterator)
+    auto * file_segment_for_reserve = locked_key->getKeyMetadata().getByOffset(offset);
+    if (!file_segment_for_reserve->queue_iterator)
         queue_size += 1;
 
     size_t removed_size = 0;
@@ -719,19 +719,16 @@ bool FileCache::tryReserveImpl(
         it = locked.erase(it);
     }
 
-    if (file_segment_for_reserve)
+    /// queue_iteratir is std::nullopt here if no space has been reserved yet, a file_segment_metadata
+    /// acquires queue iterator on first successful space reservation attempt.
+    /// If queue iterator already exists, we need to update the size after each space reservation.
+    if (file_segment_for_reserve->queue_iterator)
+        LockedCachePriorityIterator(cache_lock, file_segment_for_reserve->queue_iterator).incrementSize(size);
+    else
     {
-        /// queue_iteratir is std::nullopt here if no space has been reserved yet, a file_segment_metadata
-        /// acquires queue iterator on first successful space reservation attempt.
-        /// If queue iterator already exists, we need to update the size after each space reservation.
-        if (file_segment_for_reserve->queue_iterator)
-            LockedCachePriorityIterator(cache_lock, file_segment_for_reserve->queue_iterator).incrementSize(size);
-        else
-        {
-            /// Space reservation is incremental, so file_segment_metadata is created first (with state empty),
-            /// and queue_iterator is assigned on first space reservation attempt.
-            file_segment_for_reserve->queue_iterator = locked_main_priority.add(key, offset, size, locked_key->getKeyMetadata());
-        }
+        /// Space reservation is incremental, so file_segment_metadata is created first (with state empty),
+        /// and queue_iterator is assigned on first space reservation attempt.
+        file_segment_for_reserve->queue_iterator = locked_main_priority.add(key, offset, size, locked_key->getKeyMetadata());
     }
 
     if (query_context)
@@ -843,8 +840,8 @@ void FileCache::loadMetadata()
             "Please, check log for error messages");
     }
 
-    fs::directory_iterator key_prefix_it{cache_base_path};
-    for (; key_prefix_it != fs::directory_iterator(); ++key_prefix_it)
+    size_t total_size = 0;
+    for (auto key_prefix_it = fs::directory_iterator{cache_base_path}; key_prefix_it != fs::directory_iterator(); ++key_prefix_it)
     {
         if (!key_prefix_it->is_directory())
         {
@@ -918,6 +915,7 @@ void FileCache::loadMetadata()
 
                     chassert(file_segment_metadata_it->second.queue_iterator);
                     chassert(file_segment_metadata_it->second.size() == size);
+                    total_size += size;
 
                     queue_entries.emplace_back(
                         file_segment_metadata_it->second.queue_iterator, file_segment_metadata_it->second.file_segment);
@@ -935,6 +933,9 @@ void FileCache::loadMetadata()
             }
         }
     }
+
+    chassert(total_size == queue.getSize());
+    chassert(total_size <= queue.getSizeLimit());
 
     /// Shuffle file_segment_metadatas to have random order in LRUQueue
     /// as at startup all file_segment_metadatas have the same priority.
