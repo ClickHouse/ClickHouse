@@ -434,11 +434,16 @@ void QueryStatus::addPipelineExecutor(PipelineExecutor * e)
 
 void QueryStatus::removePipelineExecutor(PipelineExecutor * e)
 {
-    std::lock_guard lock(executors_mutex);
-    auto it = std::find_if(executors.begin(), executors.end(), [e](const ExecutorHolderPtr & x){ return x->executor == e; });
-    assert(it != executors.end());
+    ExecutorHolderPtr executor_holder;
+    {
+        std::lock_guard lock(executors_mutex);
+        auto it = std::find_if(executors.begin(), executors.end(), [e](const ExecutorHolderPtr & x){ return x->executor == e; });
+        assert(it != executors.end());
+        executor_holder = *it;
+    }
     /// Invalidate executor pointer inside holder, but don't remove holder from the executors (to avoid race with cancelQuery)
-    (*it)->remove();
+    /// We should do it with released executors_mutex to avoid possible lock order inversion.
+    executor_holder->remove();
 }
 
 bool QueryStatus::checkTimeLimit()
