@@ -1,5 +1,5 @@
 <clickhouse>
-    <keeper>
+    <zookeeper>
         <node index="1">
             <host>zoo1</host>
             <port>2281</port>
@@ -13,5 +13,5 @@
             <port>2281</port>
         </node>
         <session_timeout_ms>15000</session_timeout_ms>
-    </keeper>
+    </zookeeper>
 </clickhouse>

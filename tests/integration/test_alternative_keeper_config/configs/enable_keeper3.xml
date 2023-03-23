@@ -1,7 +1,7 @@
 <clickhouse>
     <keeper_server>
         <tcp_port>9181</tcp_port>
-        <server_id>2</server_id>
+        <server_id>3</server_id>
         <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
         <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
 
@@ -27,6 +27,14 @@
                 <can_become_leader>true</can_become_leader>
                 <start_as_follower>true</start_as_follower>
                 <priority>2</priority>
+            </server>
+            <server>
+                <id>3</id>
+                <hostname>node3</hostname>
+                <port>9234</port>
+                <can_become_leader>true</can_become_leader>
+                <start_as_follower>true</start_as_follower>
+                <priority>3</priority>
             </server>
         </raft_configuration>
     </keeper_server>

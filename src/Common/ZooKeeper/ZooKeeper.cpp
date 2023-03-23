@@ -1342,12 +1342,12 @@ void validateZooKeeperConfig(const Poco::Util::AbstractConfiguration & config)
         throw DB::Exception(DB::ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "Both ZooKeeper and Keeper are specified");
 }
 
-bool hasZooKeeperConfig(const Poco::Util::AbstractConfiguration & config, bool allow_keeper_server)
+bool hasZooKeeperConfig(const Poco::Util::AbstractConfiguration & config)
 {
-    return config.has("zookeeper") || config.has("keeper") || (allow_keeper_server && config.has("keeper_server"));
+    return config.has("zookeeper") || config.has("keeper") || (config.has("keeper_server") && config.getBool("keeper_server.use_cluster", true));
 }
 
-String getZooKeeperConfigName(const Poco::Util::AbstractConfiguration & config, bool allow_keeper_server)
+String getZooKeeperConfigName(const Poco::Util::AbstractConfiguration & config)
 {
     if (config.has("zookeeper"))
         return "zookeeper";
@@ -1355,7 +1355,7 @@ String getZooKeeperConfigName(const Poco::Util::AbstractConfiguration & config, 
     if (config.has("keeper"))
         return "keeper";
 
-    if (allow_keeper_server && config.has("keeper_server"))
+    if (config.has("keeper_server") && config.getBool("keeper_server.use_cluster", true))
         return "keeper_server";
 
     throw DB::Exception(DB::ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no Zookeeper configuration in server config");
