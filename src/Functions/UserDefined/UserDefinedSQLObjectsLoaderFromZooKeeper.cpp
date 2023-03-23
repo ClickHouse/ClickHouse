@@ -119,10 +119,20 @@ void UserDefinedSQLObjectsLoaderFromZooKeeper::resetAfterError()
 
 void UserDefinedSQLObjectsLoaderFromZooKeeper::loadObjects()
 {
+    /// loadObjects() is called at start from Server::main(), so it's better not to stop here on no connection to ZooKeeper or any other error.
+    /// However the watching thread must be started anyway in case the connection will be established later.
     if (!objects_loaded)
     {
-        reloadObjects();
+        try
+        {
+            reloadObjects();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to load user-defined objects");
+        }
     }
+    startWatchingThread();
 }
 
 
