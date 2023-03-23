@@ -390,7 +390,7 @@ SELECT count() FROM table WHERE s < 'z'
 SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 ```
 
-Data skipping indexes can also be created composite columns:
+Data skipping indexes can also be created on composite columns:
 
 ```sql
 -- on columns of type Map:
