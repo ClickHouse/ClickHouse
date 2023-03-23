@@ -142,7 +142,7 @@ static bool isConditionGood(const RPNBuilderTreeNode & condition, const NameSet 
     /** We are only considering conditions of form `equals(one, another)` or `one = another`,
       * especially if either `one` or `another` is ASTIdentifier
       */
-    if (function_node.getFunctionName() != "equals")
+    if (function_node.getFunctionName() != "equals" || function_node.getArgumentsSize() != 2)
         return false;
 
     auto lhs_argument = function_node.getArgumentAt(0);
