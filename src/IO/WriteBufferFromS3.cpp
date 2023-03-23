@@ -396,7 +396,7 @@ void WriteBufferFromS3::completeMultipartUpload()
         if (outcome.IsSuccess())
         {
             LOG_TRACE(log, "Multipart upload has completed. Bucket: {}, Key: {}, Upload_id: {}, Parts: {}", bucket, key, multipart_upload_id, tags.size());
-            break;
+            return;
         }
         else if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
         {
@@ -412,6 +412,11 @@ void WriteBufferFromS3::completeMultipartUpload()
                 outcome.GetError().GetMessage(), key, bucket, fmt::join(tags.begin(), tags.end(), " "));
         }
     }
+
+    throw S3Exception(
+        Aws::S3::S3Errors::NO_SUCH_KEY,
+        "Message: Multipart upload failed with NO_SUCH_KEY error, retries {}, Key: {}, Bucket: {}",
+        max_retry, key, bucket);
 }
 
 void WriteBufferFromS3::makeSinglepartUpload()
@@ -508,7 +513,7 @@ void WriteBufferFromS3::processPutRequest(const PutObjectTask & task)
         if (outcome.IsSuccess())
         {
             LOG_TRACE(log, "Single part upload has completed. Bucket: {}, Key: {}, Object size: {}, WithPool: {}", bucket, key, task.req.GetContentLength(), with_pool);
-            break;
+            return;
         }
         else if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
         {
@@ -525,6 +530,11 @@ void WriteBufferFromS3::processPutRequest(const PutObjectTask & task)
                 outcome.GetError().GetMessage(), key, bucket, task.req.GetContentLength(), with_pool);
         }
     }
+
+    throw S3Exception(
+        Aws::S3::S3Errors::NO_SUCH_KEY,
+        "Message: Single part upload failed with NO_SUCH_KEY error, retries {}, Key: {}, Bucket: {}",
+        max_retry, key, bucket);
 }
 
 void WriteBufferFromS3::waitForReadyBackGroundTasks()
