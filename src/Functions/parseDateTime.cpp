@@ -48,7 +48,7 @@ namespace
     const std::unordered_map<String, std::pair<String, Int32>> monthMap{
         {"jan", {"uary", 1}},
         {"feb", {"ruary", 2}},
-        {"mar", {"rch", 3}},
+        {"mar", {"ch", 3}},
         {"apr", {"il", 4}},
         {"may", {"", 5}},
         {"jun", {"e", 6}},
@@ -724,6 +724,38 @@ namespace
                 return cur;
             }
 
+            static Pos mysqlMonthOfYearTextLong(Pos cur, Pos end, const String & fragment, DateTime & date)
+            {
+                checkSpace(cur, end, 3, "mysqlMonthOfYearTextLong requires size >= 3", fragment);
+                String text1(cur, 3);
+                boost::to_lower(text1);
+                auto it = monthMap.find(text1);
+                if (it == monthMap.end())
+                    throw Exception(
+                        ErrorCodes::CANNOT_PARSE_DATETIME,
+                        "Unable to parse first part of fragment {} from {} because of unknown month of year text: {}",
+                        fragment,
+                        std::string_view(cur, end - cur),
+                        text1);
+                cur += 3;
+
+                size_t expected_remaining_size = it->second.first.size();
+                checkSpace(cur, end, expected_remaining_size, "mysqlMonthOfYearTextLong requires the second parg size >= " + std::to_string(expected_remaining_size), fragment);
+                String text2(cur, expected_remaining_size);
+                boost::to_lower(text2);
+                if (text2 != it->second.first)
+                    throw Exception(
+                        ErrorCodes::CANNOT_PARSE_DATETIME,
+                        "Unable to parse second part of fragment {} from {} because of unknown month of year text: {}",
+                        fragment,
+                        std::string_view(cur, end - cur),
+                        text1 + text2);
+                cur += expected_remaining_size;
+
+                date.setMonth(it->second.second);
+                return cur;
+            }
+
             static Pos mysqlMonth(Pos cur, Pos end, const String & fragment, DateTime & date)
             {
                 Int32 month;
@@ -856,7 +888,7 @@ namespace
 
             static Pos mysqlDayOfWeekTextLong(Pos cur, Pos end, const String & fragment, DateTime & date)
             {
-                checkSpace(cur, end, 6, "jodaDayOfWeekText requires size >= 6", fragment);
+                checkSpace(cur, end, 6, "mysqlDayOfWeekTextLong requires size >= 6", fragment);
                 String text1(cur, 3);
                 boost::to_lower(text1);
                 auto it = dayOfWeekMap.find(text1);
@@ -870,7 +902,7 @@ namespace
                 cur += 3;
 
                 size_t expected_remaining_size = it->second.first.size();
-                checkSpace(cur, end, expected_remaining_size, "jodaDayOfWeekText requires the second parg size >= " + std::to_string(expected_remaining_size), fragment);
+                checkSpace(cur, end, expected_remaining_size, "mysqlDayOfWeekTextLong requires the second parg size >= " + std::to_string(expected_remaining_size), fragment);
                 String text2(cur, expected_remaining_size);
                 boost::to_lower(text2);
                 if (text2 != it->second.first)
@@ -1470,7 +1502,7 @@ namespace
 
                         // Minute (00-59)
                         case 'M':
-                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlMinute));
+                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlMonthOfYearTextLong));
                             break;
 
                         // AM or PM
