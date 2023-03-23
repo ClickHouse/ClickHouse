@@ -432,18 +432,13 @@ Syntax: `tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, ran
 - An experimental index to support approximate nearest neighbor (ANN) search. See [here](annindexes.md) for details.
 - An experimental inverted index to support full-text search. See [here](invertedindexes.md) for details.
 
-## Example of index creation for Map data type
+### Example of index creation for the Map data type
 
-```
+Data skipping indexes can be created on the key or map parts of Map columns:
+
+```sql
 INDEX map_key_index mapKeys(map_column) TYPE bloom_filter GRANULARITY 1
-INDEX map_key_index mapValues(map_column) TYPE bloom_filter GRANULARITY 1
-```
-
-
-``` sql
-INDEX sample_index (u64 * length(s)) TYPE minmax GRANULARITY 4
-INDEX sample_index2 (u64 * length(str), i32 + f64 * 100, date, str) TYPE set(100) GRANULARITY 4
-INDEX sample_index3 (lower(str), str) TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 4
+INDEX map_value_index mapValues(map_column) TYPE bloom_filter GRANULARITY 1
 ```
 
 ### Functions Support {#functions-support}
