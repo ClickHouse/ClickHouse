@@ -131,33 +131,35 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
 {
     RowsBeforeLimitCounterPtr rows_before_limit_at_least;
     std::vector<IProcessor *> processors;
-    std::map<IProcessor *, bool> limit_candidates;
+    std::map<LimitTransform *, std::vector<size_t>> limit_candidates;
     std::unordered_set<IProcessor *> visited;
     bool has_limit = false;
 
     struct QueuedEntry
     {
         IProcessor * processor;
-        IProcessor * limit_processor;
+        LimitTransform * limit_processor;
+        ssize_t limit_input_port;
     };
 
     std::queue<QueuedEntry> queue;
 
-    queue.push({ output_format, nullptr });
+    queue.push({ output_format, nullptr, -1 });
     visited.emplace(output_format);
 
     while (!queue.empty())
     {
         auto * processor = queue.front().processor;
         auto * limit_processor = queue.front().limit_processor;
+        auto limit_input_port = queue.front().limit_input_port;
         queue.pop();
 
         /// Set counter based on the following cases:
         ///   1. Remote: Set counter on Remote
         ///   2. Limit ... PartialSorting: Set counter on PartialSorting
-        ///   3. Limit ... TotalsHaving(with filter) ... Remote: Set counter on Limit
+        ///   3. Limit ... TotalsHaving(with filter) ... Remote: Set counter on the input port of Limit
         ///   4. Limit ... Remote: Set counter on Remote
-        ///   5. Limit ... : Set counter on Limit
+        ///   5. Limit ... : Set counter on the input port of Limit
 
         /// Case 1.
         if (typeid_cast<RemoteSource *>(processor) && !limit_processor)
@@ -166,7 +168,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
             continue;
         }
 
-        if (typeid_cast<LimitTransform *>(processor))
+        if (auto * limit = typeid_cast<LimitTransform *>(processor))
         {
             has_limit = true;
 
@@ -174,8 +176,8 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
             if (limit_processor)
                 continue;
 
-            limit_processor = processor;
-            limit_candidates.emplace(limit_processor, true);
+            limit_processor = limit;
+            limit_candidates[limit_processor] = {};
         }
         else if (limit_processor)
         {
@@ -183,7 +185,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
             if (typeid_cast<PartialSortingTransform *>(processor))
             {
                 processors.emplace_back(processor);
-                limit_candidates[limit_processor] = false;
+                limit_candidates[limit_processor].push_back(limit_input_port);
                 continue;
             }
 
@@ -198,7 +200,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
             if (typeid_cast<RemoteSource *>(processor))
             {
                 processors.emplace_back(processor);
-                limit_candidates[limit_processor] = false;
+                limit_candidates[limit_processor].push_back(limit_input_port);
                 continue;
             }
         }
@@ -208,24 +210,43 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         {
             auto * child_processor = &format->getPort(IOutputFormat::PortKind::Main).getOutputPort().getProcessor();
             if (visited.emplace(child_processor).second)
-                queue.push({ child_processor, limit_processor });
+                queue.push({ child_processor, limit_processor, limit_input_port });
 
             continue;
         }
 
-        for (auto & child_port : processor->getInputs())
+        if (limit_processor == processor)
         {
-            auto * child_processor = &child_port.getOutputPort().getProcessor();
-            if (visited.emplace(child_processor).second)
-                queue.push({ child_processor, limit_processor });
+            ssize_t i = 0;
+            for (auto & child_port : processor->getInputs())
+            {
+                auto * child_processor = &child_port.getOutputPort().getProcessor();
+                if (visited.emplace(child_processor).second)
+                    queue.push({ child_processor, limit_processor, i });
+                ++i;
+            }
+        }
+        else
+        {
+            for (auto & child_port : processor->getInputs())
+            {
+                auto * child_processor = &child_port.getOutputPort().getProcessor();
+                if (visited.emplace(child_processor).second)
+                    queue.push({ child_processor, limit_processor, limit_input_port });
+            }
         }
     }
 
     /// Case 5.
-    for (auto && [limit, valid] : limit_candidates)
+    for (auto && [limit, ports] : limit_candidates)
     {
-        if (valid)
+        /// If there are some input ports which don't have the counter, add it to LimitTransform.
+        if (ports.size() < limit->getInputs().size())
+        {
             processors.push_back(limit);
+            for (auto port : ports)
+                limit->setInputPortHasCounter(port);
+        }
     }
 
     if (!processors.empty())
