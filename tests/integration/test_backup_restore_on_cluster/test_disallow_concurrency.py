@@ -156,7 +156,6 @@ def test_concurrent_backups_on_same_node():
         },
     )
     nodes[0].query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
-    nodes[0].query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
 
 
 def test_concurrent_backups_on_different_nodes():
