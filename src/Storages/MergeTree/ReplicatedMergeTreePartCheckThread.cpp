@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Common/ThreadFuzzer.h>
 #include <Interpreters/Context.h>
 
 
@@ -75,20 +76,49 @@ std::unique_lock<std::mutex> ReplicatedMergeTreePartCheckThread::pausePartsCheck
 
 void ReplicatedMergeTreePartCheckThread::cancelRemovedPartsCheck(const MergeTreePartInfo & drop_range_info)
 {
-    std::lock_guard lock(parts_mutex);
-    for (auto it = parts_queue.begin(); it != parts_queue.end();)
+    Strings removed_names;
     {
-        if (drop_range_info.contains(MergeTreePartInfo::fromPartName(it->first, storage.format_version)))
+        std::lock_guard lock(parts_mutex);
+        removed_names.reserve(parts_queue.size());      /// Avoid memory limit in the middle
+        for (auto it = parts_queue.begin(); it != parts_queue.end();)
         {
-            /// Remove part from the queue to avoid part resurrection
-            /// if we will check it and enqueue fetch after DROP/REPLACE execution.
-            parts_set.erase(it->first);
-            it = parts_queue.erase(it);
+            if (drop_range_info.contains(MergeTreePartInfo::fromPartName(it->first, storage.format_version)))
+            {
+                /// Remove part from the queue to avoid part resurrection
+                /// if we will check it and enqueue fetch after DROP/REPLACE execution.
+                removed_names.push_back(it->first);
+                parts_set.erase(it->first);
+                it = parts_queue.erase(it);
+            }
+            else
+            {
+                ++it;
+            }
         }
-        else
-        {
-            ++it;
-        }
+    }
+
+    /// This filtering is not necessary
+    auto new_end = std::remove_if(removed_names.begin(), removed_names.end(), [this](const String & part_name)
+    {
+        auto part = storage.getPartIfExists(part_name, {MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated, MergeTreeDataPartState::Deleting});
+        /// The rest of parts will be removed normally
+        return part && !part->outdated_because_broken;
+    });
+    removed_names.erase(new_end, removed_names.end());
+    if (removed_names.empty())
+        return;
+
+    try
+    {
+        /// We have to remove parts that were not removed by removePartAndEnqueueFetch
+        LOG_INFO(log, "Removing broken parts from ZooKeeper: {}", fmt::join(removed_names, ", "));
+        storage.removePartsFromZooKeeperWithRetries(removed_names, /* max_retries */ 100);
+    }
+    catch (...)
+    {
+        /// It's highly unlikely to happen on normal use cases. And if it happens it's easier to restart and reinitialize
+        LOG_FATAL(log, "Failed to remove parts [{}] from ZooKeeper: {}", fmt::join(removed_names, ", "), getCurrentExceptionMessage(/* with_stacktrace = */ true));
+        std::terminate();
     }
 }
 
@@ -263,6 +293,8 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPartAndFetchIfPossible(
             }
         }
 
+        ThreadFuzzer::maybeInjectSleep();
+
         if (storage.createEmptyPartInsteadOfLost(zookeeper, part_name))
         {
             /** This situation is possible if on all the replicas where the part was, it deteriorated.
@@ -383,6 +415,9 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
                 /// Delete part locally.
                 storage.outdateBrokenPartAndCloneToDetached(part, "broken");
 
+                ThreadFuzzer::maybeInjectMemoryLimitException();
+                ThreadFuzzer::maybeInjectSleep();
+
                 /// Part is broken, let's try to find it and fetch.
                 searchForMissingPartAndFetchIfPossible(part_name, exists_in_zookeeper);
 
@@ -399,6 +434,7 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
             String message = fmt::format(fmt_string, part_name);
             LOG_ERROR(log, fmt_string, part_name);
             storage.outdateBrokenPartAndCloneToDetached(part, "unexpected");
+            ThreadFuzzer::maybeInjectSleep();
             return {part_name, false, message};
         }
         else
