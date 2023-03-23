@@ -827,7 +827,7 @@ void FileCache::removeAllReleasable()
 void FileCache::loadMetadata()
 {
     auto lock = cache_guard.lock();
-    LockedCachePriority priority_queue(lock, *main_priority);
+    LockedCachePriority queue(lock, *main_priority);
 
     UInt64 offset = 0;
     size_t size = 0;
@@ -887,7 +887,9 @@ void FileCache::loadMetadata()
                 {
                     parsed = tryParse<UInt64>(offset, offset_with_suffix.substr(0, delim_pos));
                     if (offset_with_suffix.substr(delim_pos+1) == "persistent")
+                    {
                         segment_kind = FileSegmentKind::Persistent;
+                    }
                     if (offset_with_suffix.substr(delim_pos+1) == "temporary")
                     {
                         fs::remove(offset_it->path());
@@ -908,11 +910,14 @@ void FileCache::loadMetadata()
                     continue;
                 }
 
-                if (tryReserveUnlocked(locked_key, offset, size, lock))
+                if ((queue.getSizeLimit() == 0 || queue.getSize() + size <= queue.getSizeLimit())
+                    && (queue.getElementsLimit() == 0 || queue.getElementsCount() + 1 <= queue.getElementsLimit()))
                 {
                     auto file_segment_metadata_it = addFileSegment(
-                        *locked_key, offset, size, FileSegment::State::DOWNLOADED,
-                        CreateFileSegmentSettings(segment_kind), &lock);
+                        *locked_key, offset, size, FileSegment::State::DOWNLOADED, CreateFileSegmentSettings(segment_kind), &lock);
+
+                    chassert(file_segment_metadata_it->second.queue_iterator);
+                    chassert(file_segment_metadata_it->second.size() == size);
 
                     queue_entries.emplace_back(
                         file_segment_metadata_it->second.queue_iterator, file_segment_metadata_it->second.file_segment);
@@ -923,7 +928,7 @@ void FileCache::loadMetadata()
                         log,
                         "Cache capacity changed (max size: {}, used: {}), "
                         "cached file `{}` does not fit in cache anymore (size: {})",
-                        priority_queue.getSizeLimit(), priority_queue.getSize(), key_it->path().string(), size);
+                        queue.getSizeLimit(), queue.getSize(), key_it->path().string(), size);
 
                     fs::remove(offset_it->path());
                 }
