@@ -60,19 +60,7 @@ void LockedKey::removeFileSegment(
     key_metadata.erase(offset);
 
     if (fs::exists(cache_file_path))
-    {
-        try
-        {
-            fs::remove(cache_file_path);
-        }
-        catch (...)
-        {
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Removal of cached file failed. Key: {}, offset: {}, path: {}, error: {}",
-                key.toString(), offset, cache_file_path, getCurrentExceptionMessage(false));
-        }
-    }
+        fs::remove(cache_file_path);
 }
 
 void LockedKey::shrinkFileSegmentToDownloadedSize(
