@@ -390,6 +390,22 @@ SELECT count() FROM table WHERE s < 'z'
 SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 ```
 
+Data skipping indexes can also be created composite columns:
+
+```sql
+-- on columns of type Map:
+INDEX map_key_index mapKeys(map_column) TYPE bloom_filter
+INDEX map_value_index mapValues(map_column) TYPE bloom_filter
+
+-- on columns of type Tuple:
+INDEX tuple_1_index tuple_column.1 TYPE bloom_filter
+INDEX tuple_2_index tuple_column.2 TYPE bloom_filter
+
+-- on columns of type Nested:
+INDEX nested_1_index col.nested_col1 TYPE bloom_filter
+INDEX nested_2_index col.nested_col2 TYPE bloom_filter
+```
+
 ### Available Types of Indices {#available-types-of-indices}
 
 #### MinMax
@@ -431,15 +447,6 @@ Syntax: `tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, ran
 
 - An experimental index to support approximate nearest neighbor (ANN) search. See [here](annindexes.md) for details.
 - An experimental inverted index to support full-text search. See [here](invertedindexes.md) for details.
-
-### Example of index creation for the Map data type
-
-Data skipping indexes can be created on the key or map parts of Map columns:
-
-```sql
-INDEX map_key_index mapKeys(map_column) TYPE bloom_filter GRANULARITY 1
-INDEX map_value_index mapValues(map_column) TYPE bloom_filter GRANULARITY 1
-```
 
 ### Functions Support {#functions-support}
 
