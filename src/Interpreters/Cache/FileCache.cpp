@@ -775,12 +775,12 @@ void FileCache::removeKeyIfExists(const Key & key)
     auto & offsets = locked_key->getKeyMetadata();
     if (!offsets.empty())
     {
-        std::vector<FileSegmentMetadata *> remove_file_segment_metadatas;
-        remove_file_segment_metadatas.reserve(offsets.size());
-        for (auto & [offset, file_segment_metadata] : offsets)
-            remove_file_segment_metadatas.push_back(&file_segment_metadata);
+        std::vector<const FileSegmentMetadata *> file_segments_metadata_to_remove;
+        file_segments_metadata_to_remove.reserve(offsets.size());
+        for (const auto & [offset, file_segment_metadata] : offsets)
+            file_segments_metadata_to_remove.push_back(&file_segment_metadata);
 
-        for (auto & file_segment_metadata : remove_file_segment_metadatas)
+        for (const auto * file_segment_metadata : file_segments_metadata_to_remove)
         {
             /// In ordinary case we remove data from cache when it's not used by anyone.
             /// But if we have multiple replicated zero-copy tables on the same server
