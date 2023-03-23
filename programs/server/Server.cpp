@@ -1456,7 +1456,7 @@ try
         LOG_INFO(log, "Uncompressed cache size was lowered to {} because the system has low amount of memory",
             formatReadableSizeWithBinarySuffix(uncompressed_cache_size));
     }
-    global_context->setUncompressedCache(uncompressed_cache_size, uncompressed_cache_policy);
+    global_context->setUncompressedCache(uncompressed_cache_policy, uncompressed_cache_size);
 
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(config());
@@ -1481,7 +1481,7 @@ try
         LOG_INFO(log, "Mark cache size was lowered to {} because the system has low amount of memory",
             formatReadableSizeWithBinarySuffix(mark_cache_size));
     }
-    global_context->setMarkCache(mark_cache_size, mark_cache_policy);
+    global_context->setMarkCache(mark_cache_policy, mark_cache_size);
 
     if (server_settings.index_uncompressed_cache_size)
         global_context->setIndexUncompressedCache(server_settings.index_uncompressed_cache_size);

@@ -111,6 +111,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int ALIAS_REQUIRED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_PREWHERE;
     extern const int UNKNOWN_TABLE;
 }
 
@@ -1577,41 +1578,20 @@ void QueryAnalyzer::collectCompoundExpressionValidIdentifiersForTypoCorrection(
     const Identifier & valid_identifier_prefix,
     std::unordered_set<Identifier> & valid_identifiers_result)
 {
-    std::vector<std::pair<Identifier, const IDataType *>> identifiers_with_types_to_process;
-    identifiers_with_types_to_process.emplace_back(valid_identifier_prefix, compound_expression_type.get());
-
-    while (!identifiers_with_types_to_process.empty())
+    IDataType::forEachSubcolumn([&](const auto &, const auto & name, const auto &)
     {
-        auto [identifier, type] = identifiers_with_types_to_process.back();
-        identifiers_with_types_to_process.pop_back();
+        Identifier subcolumn_indentifier(name);
+        size_t new_identifier_size = valid_identifier_prefix.getPartsSize() + subcolumn_indentifier.getPartsSize();
 
-        if (identifier.getPartsSize() + 1 > unresolved_identifier.getPartsSize())
-            continue;
-
-        while (const DataTypeArray * array = checkAndGetDataType<DataTypeArray>(type))
-            type = array->getNestedType().get();
-
-        const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(type);
-
-        if (!tuple)
-            continue;
-
-        const auto & tuple_element_names = tuple->getElementNames();
-        size_t tuple_element_names_size = tuple_element_names.size();
-
-        for (size_t i = 0; i < tuple_element_names_size; ++i)
+        if (new_identifier_size == unresolved_identifier.getPartsSize())
         {
-            const auto & element_name = tuple_element_names[i];
-            const auto & element_type = tuple->getElements()[i];
+            auto new_identifier = valid_identifier_prefix;
+            for (const auto & part : subcolumn_indentifier)
+                new_identifier.push_back(part);
 
-            identifier.push_back(element_name);
-
-            valid_identifiers_result.insert(identifier);
-            identifiers_with_types_to_process.emplace_back(identifier, element_type.get());
-
-            identifier.pop_back();
+            valid_identifiers_result.insert(std::move(new_identifier));
         }
-    }
+    }, ISerialization::SubstreamData(compound_expression_type->getDefaultSerialization()));
 }
 
 /// Get valid identifiers for typo correction from table expression
@@ -2373,7 +2353,7 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromCompoundExpression(const
 
     auto expression_type = compound_expression->getResultType();
 
-    if (!nestedIdentifierCanBeResolved(expression_type, nested_path))
+    if (!expression_type->hasSubcolumn(nested_path.getFullName()))
     {
         std::unordered_set<Identifier> valid_identifiers;
         collectCompoundExpressionValidIdentifiersForTypoCorrection(expression_identifier,
@@ -2400,10 +2380,15 @@ QueryTreeNodePtr QueryAnalyzer::tryResolveIdentifierFromCompoundExpression(const
             getHintsErrorMessageSuffix(hints));
     }
 
-    auto tuple_element_result = wrapExpressionNodeInTupleElement(compound_expression, nested_path);
-    resolveFunction(tuple_element_result, scope);
+    QueryTreeNodePtr get_subcolumn_function = std::make_shared<FunctionNode>("getSubcolumn");
+    auto & get_subcolumn_function_arguments_nodes = get_subcolumn_function->as<FunctionNode>()->getArguments().getNodes();
 
-    return tuple_element_result;
+    get_subcolumn_function_arguments_nodes.reserve(2);
+    get_subcolumn_function_arguments_nodes.push_back(compound_expression);
+    get_subcolumn_function_arguments_nodes.push_back(std::make_shared<ConstantNode>(nested_path.getFullName()));
+
+    resolveFunction(get_subcolumn_function, scope);
+    return get_subcolumn_function;
 }
 
 /** Resolve identifier from expression arguments.
@@ -3707,8 +3692,15 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
     {
         auto result_type = expression_query_tree_node->getResultType();
 
-        while (const auto * array_type = typeid_cast<const DataTypeArray *>(result_type.get()))
-            result_type = array_type->getNestedType();
+        while (true)
+        {
+            if (const auto * array_type = typeid_cast<const DataTypeArray *>(result_type.get()))
+                result_type = array_type->getNestedType();
+            else if (const auto * map_type = typeid_cast<const DataTypeMap *>(result_type.get()))
+                result_type = map_type->getNestedType();
+            else
+                break;
+        }
 
         const auto * tuple_data_type = typeid_cast<const DataTypeTuple *>(result_type.get());
         if (!tuple_data_type)
@@ -3728,11 +3720,11 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
             if (!matcher_node_typed.isMatchingColumn(element_name))
                 continue;
 
-            auto tuple_element_function = std::make_shared<FunctionNode>("tupleElement");
-            tuple_element_function->getArguments().getNodes().push_back(expression_query_tree_node);
-            tuple_element_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(element_name));
+            auto get_subcolumn_function = std::make_shared<FunctionNode>("getSubcolumn");
+            get_subcolumn_function->getArguments().getNodes().push_back(expression_query_tree_node);
+            get_subcolumn_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(element_name));
 
-            QueryTreeNodePtr function_query_node = tuple_element_function;
+            QueryTreeNodePtr function_query_node = get_subcolumn_function;
             resolveFunction(function_query_node, scope);
 
             qualified_matcher_element_identifier.push_back(element_name);
@@ -6864,7 +6856,13 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     if (query_node_typed.isGroupByAll())
         expandGroupByAll(query_node_typed);
 
-    validateFilters(query_node);
+    if (query_node_typed.hasPrewhere())
+        assertNoFunctionNodes(query_node_typed.getPrewhere(),
+            "arrayJoin",
+            ErrorCodes::ILLEGAL_PREWHERE,
+            "ARRAY JOIN",
+            "in PREWHERE");
+
     validateAggregates(query_node, { .group_by_use_nulls = scope.group_by_use_nulls });
 
     for (const auto & column : projection_columns)
