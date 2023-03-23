@@ -74,3 +74,6 @@ select formatDateTime(toDateTime64('2022-12-08 18:11:29.1234', 0, 'UTC'), '%F %T
 select formatDateTime(toDateTime('2022-12-08 18:11:29', 'UTC'), '%F %T.%f');
 select formatDateTime(toDate32('2022-12-08 18:11:29', 'UTC'), '%F %T.%f');
 select formatDateTime(toDate('2022-12-08 18:11:29', 'UTC'), '%F %T.%f');
+
+select formatDateTime(toDateTime('2018-05-07 15:16:17', 'UTC'), '%i%t%n%%%M%W%i');
+select formatDateTime(toDate32('2018-05-07', 'UTC'), '%i%t%n%%%M%W%i');
