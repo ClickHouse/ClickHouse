@@ -214,8 +214,28 @@ ConnectionPoolWithFailover::tryGetEntry(
         const QualifiedTableName * table_to_check,
         AsyncCallback async_callback)
 {
+    if (async_callback)
+    {
+        ConnectionEstablisherAsync connection_establisher_async(&pool, &timeouts, settings, log, table_to_check);
+        while (true)
+        {
+            connection_establisher_async.resume();
+            if (connection_establisher_async.isFinished())
+                break;
+
+            async_callback(
+                connection_establisher_async.getFileDescriptor(),
+                0,
+                AsyncEventTimeoutType::NONE,
+                "Connection establisher file descriptor",
+                AsyncTaskExecutor::Event::READ | AsyncTaskExecutor::Event::ERROR);
+        }
+
+        fail_message = connection_establisher_async.getFailMessage();
+        return connection_establisher_async.getResult();
+    }
+
     ConnectionEstablisher connection_establisher(&pool, &timeouts, settings, log, table_to_check);
-    connection_establisher.setAsyncCallback(std::move(async_callback));
     TryResult result;
     connection_establisher.run(result, fail_message);
     return result;
