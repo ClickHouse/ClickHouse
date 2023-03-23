@@ -703,6 +703,9 @@
              actions of previous constraint (defined in other profiles) for the same specific setting, including fields that are not set by new constraint.
              It also enables 'changeable_in_readonly' constraint type -->
         <settings_constraints_replace_previous>false</settings_constraints_replace_previous>
+
+        <!-- Number of seconds since last access a role is stored in the Role Cache -->
+        <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>
     </access_control_improvements>
 
     <!-- Default profile of settings. -->
@@ -1287,6 +1290,10 @@
 
     <!-- Configuration of user defined executable functions -->
     <user_defined_executable_functions_config>*_function.xml</user_defined_executable_functions_config>
+
+    <!-- Path in ZooKeeper to store user-defined SQL functions created by the command CREATE FUNCTION.
+     If not specified they will be stored locally. -->
+    <!-- <user_defined_zookeeper_path>/clickhouse/user_defined<user_defined_zookeeper_path> -->
 
     <!-- Uncomment if you want data to be compressed 30-100% better.
          Don't do that if you just started using ClickHouse.
