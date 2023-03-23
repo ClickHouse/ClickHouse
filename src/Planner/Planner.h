@@ -55,6 +55,11 @@ public:
 
     void addStorageLimits(const StorageLimitsList & limits);
 
+    PlannerContextPtr getPlannerContext() const
+    {
+        return planner_context;
+    }
+
 private:
     void buildPlanForUnionNode();
 

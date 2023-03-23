@@ -18,27 +18,23 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/JoinNode.h>
+#include <Analyzer/QueryTreeBuilder.h>
+#include <Planner/Utils.h>
 
 using namespace DB;
 
 
 /// TODO: use gtest fixture
-struct TestExternalDatabaseQueryState
+struct State
 {
-    TestExternalDatabaseQueryState(const TestExternalDatabaseQueryState&) = delete;
+    State(const State&) = delete;
 
     ContextMutablePtr context;
 
-    static const TestExternalDatabaseQueryState & instance()
+    static const State & instance()
     {
-        static TestExternalDatabaseQueryState state;
+        static State state;
         return state;
-    }
-
-    static SelectQueryInfo getSelectQueryInfo(InterpreterSelectQueryAnalyzer & interpreter)
-    {
-        interpreter.planner.buildQueryPlanIfNeeded();
-        return interpreter.planner.buildSelectQueryInfo();
     }
 
     const NamesAndTypesList & getColumns(size_t idx = 0) const
@@ -92,7 +88,7 @@ private:
             }),
     };
 
-    explicit TestExternalDatabaseQueryState()
+    explicit State()
         : context(Context::createCopy(getContext().context))
     {
         tryRegisterFunctions();
@@ -129,7 +125,7 @@ private:
 };
 
 static void checkOld(
-    const TestExternalDatabaseQueryState & state,
+    const State & state,
     size_t table_num,
     const std::string & query,
     const std::string & expected)
@@ -171,7 +167,7 @@ static QueryTreeNodePtr findTableExpression(const QueryTreeNodePtr & node, const
 
 /// `column_names` - Normally it's passed to query plan step. But in test we do it manually.
 static void checkNewAnalyzer(
-    const TestExternalDatabaseQueryState & state,
+    const State & state,
     const Names & column_names,
     const std::string & query,
     const std::string & expected)
@@ -179,9 +175,17 @@ static void checkNewAnalyzer(
     ParserSelectQuery parser;
     ASTPtr ast = parseQuery(parser, query, 1000, 1000);
 
-    SelectQueryOptions select_options;
-    InterpreterSelectQueryAnalyzer interpreter(ast, state.context, select_options);
-    SelectQueryInfo query_info = state.getSelectQueryInfo(interpreter);
+    SelectQueryOptions select_query_options;
+    auto query_tree = buildQueryTree(ast, state.context);
+    QueryTreePassManager query_tree_pass_manager(state.context);
+    addQueryTreePasses(query_tree_pass_manager);
+    query_tree_pass_manager.run(query_tree);
+
+    InterpreterSelectQueryAnalyzer interpreter(query_tree, state.context, select_query_options);
+    interpreter.getQueryPlan();
+
+    auto planner_context = interpreter.getPlanner().getPlannerContext();
+    SelectQueryInfo query_info = buildSelectQueryInfo(query_tree, planner_context);
     const auto * query_node = query_info.query_tree->as<QueryNode>();
     if (!query_node)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "QueryNode expected");
@@ -195,7 +199,7 @@ static void checkNewAnalyzer(
 }
 
 static void check(
-    const TestExternalDatabaseQueryState & state,
+    const State & state,
     size_t table_num,
     const Names & column_names,
     const std::string & query,
@@ -214,7 +218,7 @@ static void check(
 
 TEST(TransformQueryForExternalDatabase, InWithSingleElement)
 {
-    const TestExternalDatabaseQueryState & state = TestExternalDatabaseQueryState::instance();
+    const State & state = State::instance();
 
     check(state, 1, {"column"},
           "SELECT column FROM test.table WHERE 1 IN (1)",
@@ -232,7 +236,7 @@ TEST(TransformQueryForExternalDatabase, InWithSingleElement)
 
 TEST(TransformQueryForExternalDatabase, InWithMultipleColumns)
 {
-    const TestExternalDatabaseQueryState & state = TestExternalDatabaseQueryState::instance();
+    const State & state = State::instance();
 
     check(state, 1, {"column"},
           "SELECT column FROM test.table WHERE (1,1) IN ((1,1))",
@@ -245,7 +249,7 @@ TEST(TransformQueryForExternalDatabase, InWithMultipleColumns)
 
 TEST(TransformQueryForExternalDatabase, InWithTable)
 {
-    const TestExternalDatabaseQueryState & state = TestExternalDatabaseQueryState::instance();
+    const State & state = State::instance();
 
     check(state, 1, {"column"},
           "SELECT column FROM test.table WHERE 1 IN external_table",
@@ -263,7 +267,7 @@ TEST(TransformQueryForExternalDatabase, InWithTable)
 
 TEST(TransformQueryForExternalDatabase, Like)
 {
-    const TestExternalDatabaseQueryState & state = TestExternalDatabaseQueryState::instance();
+    const State & state = State::instance();
 
     check(state, 1, {"field"},
           "SELECT field FROM test.table WHERE field LIKE '%hello%'",
@@ -275,7 +279,7 @@ TEST(TransformQueryForExternalDatabase, Like)
 
 TEST(TransformQueryForExternalDatabase, Substring)
 {
-    const TestExternalDatabaseQueryState & state = TestExternalDatabaseQueryState::instance();
+    const State & state = State::instance();
 
     check(state, 1, {"field"},
           "SELECT field FROM test.table WHERE left(field, 10) = RIGHT(field, 10) AND SUBSTRING(field FROM 1 FOR 2) = 'Hello'",
@@ -284,7 +288,7 @@ TEST(TransformQueryForExternalDatabase, Substring)
 
 TEST(TransformQueryForExternalDatabase, MultipleAndSubqueries)
 {
-    const TestExternalDatabaseQueryState & state = TestExternalDatabaseQueryState::instance();
+    const State & state = State::instance();
 
     check(state, 1, {"column"},
           "SELECT column FROM test.table WHERE 1 = 1 AND toString(column) = '42' AND column = 42 AND left(toString(column), 10) = RIGHT(toString(column), 10) AND column IN (1, 42) AND SUBSTRING(toString(column) FROM 1 FOR 2) = 'Hello' AND column != 4",
@@ -296,7 +300,7 @@ TEST(TransformQueryForExternalDatabase, MultipleAndSubqueries)
 
 TEST(TransformQueryForExternalDatabase, Issue7245)
 {
-    const TestExternalDatabaseQueryState & state = TestExternalDatabaseQueryState::instance();
+    const State & state = State::instance();
 
     check(state, 1, {"apply_id", "apply_type", "apply_status", "create_time"},
           "SELECT apply_id FROM test.table WHERE apply_type = 2 AND create_time > addDays(toDateTime('2019-01-01 01:02:03'),-7) AND apply_status IN (3,4)",
@@ -305,7 +309,7 @@ TEST(TransformQueryForExternalDatabase, Issue7245)
 
 TEST(TransformQueryForExternalDatabase, Aliases)
 {
-    const TestExternalDatabaseQueryState & state = TestExternalDatabaseQueryState::instance();
+    const State & state = State::instance();
 
     check(state, 1, {"field"},
           "SELECT field AS value, field AS display FROM table WHERE field NOT IN ('') AND display LIKE '%test%'",
@@ -314,7 +318,7 @@ TEST(TransformQueryForExternalDatabase, Aliases)
 
 TEST(TransformQueryForExternalDatabase, ForeignColumnInWhere)
 {
-    const TestExternalDatabaseQueryState & state = TestExternalDatabaseQueryState::instance();
+    const State & state = State::instance();
 
     check(state, 2, {"column", "apply_id"},
           "SELECT column FROM test.table "
@@ -325,7 +329,7 @@ TEST(TransformQueryForExternalDatabase, ForeignColumnInWhere)
 
 TEST(TransformQueryForExternalDatabase, NoStrict)
 {
-    const TestExternalDatabaseQueryState & state = TestExternalDatabaseQueryState::instance();
+    const State & state = State::instance();
 
     check(state, 1, {"field"},
           "SELECT field FROM table WHERE field IN (SELECT attr FROM table2)",
@@ -334,7 +338,7 @@ TEST(TransformQueryForExternalDatabase, NoStrict)
 
 TEST(TransformQueryForExternalDatabase, Strict)
 {
-    const TestExternalDatabaseQueryState & state = TestExternalDatabaseQueryState::instance();
+    const State & state = State::instance();
     state.context->setSetting("external_table_strict_query", true);
 
     check(state, 1, {"field"},
@@ -355,7 +359,7 @@ TEST(TransformQueryForExternalDatabase, Strict)
 
 TEST(TransformQueryForExternalDatabase, Null)
 {
-    const TestExternalDatabaseQueryState & state = TestExternalDatabaseQueryState::instance();
+    const State & state = State::instance();
 
     check(state, 1, {"field"},
           "SELECT field FROM table WHERE field IS NULL",
@@ -374,7 +378,7 @@ TEST(TransformQueryForExternalDatabase, Null)
 
 TEST(TransformQueryForExternalDatabase, ToDate)
 {
-    const TestExternalDatabaseQueryState & state = TestExternalDatabaseQueryState::instance();
+    const State & state = State::instance();
 
     check(state, 1, {"a", "b", "foo"},
         "SELECT foo FROM table WHERE a=10 AND b=toDate('2019-10-05')",
@@ -383,7 +387,7 @@ TEST(TransformQueryForExternalDatabase, ToDate)
 
 TEST(TransformQueryForExternalDatabase, Analyzer)
 {
-    const TestExternalDatabaseQueryState & state = TestExternalDatabaseQueryState::instance();
+    const State & state = State::instance();
 
     check(state, 1, {"field"},
         "SELECT count() FROM table WHERE field LIKE '%name_%'",
