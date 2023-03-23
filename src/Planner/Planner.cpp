@@ -79,26 +79,14 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int TOO_DEEP_SUBQUERIES;
     extern const int NOT_IMPLEMENTED;
-    extern const int ILLEGAL_PREWHERE;
 }
 
 /** ClickHouse query planner.
   *
-  * TODO: Support JOIN with JOIN engine.
-  * TODO: Support VIEWs.
-  * TODO: JOIN drop unnecessary columns after ON, USING section
-  * TODO: Support RBAC. Support RBAC for ALIAS columns
-  * TODO: Support PREWHERE
-  * TODO: Support DISTINCT
-  * TODO: Support trivial count optimization
-  * TODO: Support projections
-  * TODO: Support read in order optimization
-  * TODO: UNION storage limits
-  * TODO: Support max streams
-  * TODO: Support ORDER BY read in order optimization
-  * TODO: Support GROUP BY read in order optimization
-  * TODO: Support Key Condition. Support indexes for IN function.
-  * TODO: Better support for quota and limits.
+  * TODO: Support projections.
+  * TODO: Support trivial count using partition predicates.
+  * TODO: Support trivial count for table functions.
+  * TODO: Support indexes for IN function.
   */
 
 namespace
@@ -132,37 +120,6 @@ void checkStoragesSupportTransactions(const PlannerContextPtr & planner_context)
             "Storage {} (table {}) does not support transactions",
             storage->getName(),
             storage->getStorageID().getNameForLogs());
-    }
-}
-
-void checkStorageSupportPrewhere(const QueryTreeNodePtr & query_node)
-{
-    auto & query_node_typed = query_node->as<QueryNode &>();
-    auto table_expression = extractLeftTableExpression(query_node_typed.getJoinTree());
-
-    if (auto * table_node = table_expression->as<TableNode>())
-    {
-        auto storage = table_node->getStorage();
-        if (!storage->supportsPrewhere())
-            throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
-                "Storage {} (table {}) does not support PREWHERE",
-                storage->getName(),
-                storage->getStorageID().getNameForLogs());
-    }
-    else if (auto * table_function_node = table_expression->as<TableFunctionNode>())
-    {
-        auto storage = table_function_node->getStorage();
-        if (!storage->supportsPrewhere())
-            throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
-                "Table function storage {} (table {}) does not support PREWHERE",
-                storage->getName(),
-                storage->getStorageID().getNameForLogs());
-    }
-    else
-    {
-        throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
-            "Subquery {} does not support PREWHERE",
-            query_node->formatASTForErrorMessage());
     }
 }
 
@@ -395,7 +352,11 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
       * but it can work more slowly.
       */
 
-    Aggregator::Params params(aggregation_analysis_result.aggregation_keys,
+    auto keys = aggregation_analysis_result.aggregation_keys;
+    if (!aggregation_analysis_result.grouping_sets_parameters_list.empty())
+        keys.insert(keys.begin(), "__grouping_set");
+
+    Aggregator::Params params(keys,
         aggregation_analysis_result.aggregate_descriptions,
         query_analysis_result.aggregate_overflow_row,
         settings.max_threads,
@@ -1136,18 +1097,6 @@ void Planner::buildPlanForQueryNode()
     auto & query_node = query_tree->as<QueryNode &>();
     const auto & query_context = planner_context->getQueryContext();
 
-    if (query_node.hasPrewhere())
-    {
-        checkStorageSupportPrewhere(query_tree);
-
-        if (query_node.hasWhere())
-            query_node.getWhere() = mergeConditionNodes({query_node.getPrewhere(), query_node.getWhere()}, query_context);
-        else
-            query_node.getWhere() = query_node.getPrewhere();
-
-        query_node.getPrewhere() = {};
-    }
-
     if (query_node.hasWhere())
     {
         auto condition_constant = tryExtractConstantFromConditionNode(query_node.getWhere());
@@ -1181,8 +1130,8 @@ void Planner::buildPlanForQueryNode()
     }
 
     checkStoragesSupportTransactions(planner_context);
-    collectTableExpressionData(query_tree, *planner_context);
     collectSets(query_tree, *planner_context);
+    collectTableExpressionData(query_tree, planner_context);
 
     auto top_level_identifiers = collectTopLevelColumnIdentifiers(query_tree, planner_context);
     auto join_tree_query_plan = buildJoinTreeQueryPlan(query_tree,
@@ -1210,6 +1159,12 @@ void Planner::buildPlanForQueryNode()
         query_processing_info);
 
     std::vector<ActionsDAGPtr> result_actions_to_execute;
+
+    for (auto & [_, table_expression_data] : planner_context->getTableExpressionNodeToData())
+    {
+        if (table_expression_data.getPrewhereFilterActions())
+            result_actions_to_execute.push_back(table_expression_data.getPrewhereFilterActions());
+    }
 
     if (query_processing_info.isIntermediateStage())
     {

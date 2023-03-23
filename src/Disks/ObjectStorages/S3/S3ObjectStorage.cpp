@@ -1,7 +1,4 @@
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
-#include <Common/ProfileEvents.h>
-#include <Interpreters/Context.h>
-
 
 #if USE_AWS_S3
 
@@ -18,10 +15,12 @@
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/S3/copyS3File.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/threadPoolCallbackRunner.h>
 #include <Disks/ObjectStorages/S3/diskSettings.h>
 
 #include <Common/getRandomASCIIString.h>
+#include <Common/ProfileEvents.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/MultiVersion.h>
