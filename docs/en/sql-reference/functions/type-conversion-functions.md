@@ -1148,6 +1148,81 @@ Result:
 └───────────────────────────┴──────────────────────────────┘
 ```
 
+## parseDateTime
+
+Converts a [String](/docs/en/sql-reference/data-types/string.md) to [DateTime](/docs/en/sql-reference/data-types/datetime.md) according to a [MySQL format string](https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format).
+This function is the opposite operation of function [formatDateTime](/docs/en/sql-reference/functions/date-time-functions.md#date_time_functions-formatDateTime).
+
+**Syntax**
+
+``` sql
+parseDateTime(str, format[, timezone])
+```
+
+**Arguments**
+
+-   `str` — the String to be parsed
+-   `format` — the format string
+
+**Returned value(s)**
+
+Returns DateTime values parsed from input string according to a MySQL style format string.
+
+**Supported format specifiers**
+
+All format specifiers listed in [formatDateTime](/docs/en/sql-reference/functions/date-time-functions.md#date_time_functions-formatDateTime) except:
+- %f: fractional second
+- %Q: Quarter (1-4) 
+
+**Example**
+
+``` sql
+SELECT parseDateTime('2021-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
+
+┌─parseDateTime('2021-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')─┐
+│                                       2021-01-04 23:00:00 │
+└───────────────────────────────────────────────────────────┘
+```
+
+Alias: `TO_TIMESTAMP`.
+
+## parseDateTimeInJodaSyntax
+
+Similar to [parseDateTime](#parsedatetime), except that the format string is in [Joda](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html) instead of MySQL syntax.
+This function is the opposite operation of function [formatDateTimeInJodaSyntax](/docs/en/sql-reference/functions/date-time-functions.md#date_time_functions-formatDateTimeInJodaSyntax).
+
+**Syntax**
+
+``` sql
+parseDateTimeInJodaSyntax(str, format[, timezone])
+```
+
+**Arguments**
+
+-   `str` — the String to be parsed
+-   `format` — the format string
+
+**Returned value(s)**
+
+Returns DateTime values parsed from input string according to a Joda style format.
+
+**Supported format specifiers**
+
+All format specifiers listed in [formatDateTimeInJoda](/docs/en/sql-reference/functions/date-time-functions.md#date_time_functions-formatDateTime) are supported, except:
+- S: fraction of second
+- z: time zone
+- Z: time zone offset/id
+
+**Example**
+
+``` sql
+SELECT parseDateTimeInJodaSyntax('2023-02-24 14:53:31', 'yyyy-MM-dd HH:mm:ss', 'Europe/Minsk')
+
+┌─parseDateTimeInJodaSyntax('2023-02-24 14:53:31', 'yyyy-MM-dd HH:mm:ss', 'Europe/Minsk')─┐
+│                                                                     2023-02-24 14:53:31 │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
 ## parseDateTimeBestEffort
 ## parseDateTime32BestEffort
 
@@ -1350,70 +1425,6 @@ Same as for [parseDateTime64BestEffort](#parsedatetime64besteffort), except that
 ## parseDateTime64BestEffortUSOrZero
 
 Same as for [parseDateTime64BestEffort](#parsedatetime64besteffort), except that this function prefers US date format (`MM/DD/YYYY` etc.) in case of ambiguity and returns zero date or zero date time when it encounters a date format that cannot be processed.
-
-## parseDateTime
-Parse [DateTime](/docs/en/sql-reference/data-types/datetime.md) from string according to a specified MySQL format string, refer to https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format. It is nearly an opposite operation of function [formatDateTime](/docs/en/sql-reference/functions/date-time-functions.md#date_time_functions-formatDateTime).
-
-Alias: `TO_TIMESTAMP`.
-
-
-**Syntax**
-
-``` sql
-parseDateTime(str, format[, timezone])
-```
-
-**Returned value(s)**
-
-Returns DateTime values parsed from input string according to the determined MySQL style format.
-
-
-**Supported replacement fields**
-
-Most of replacement fields used in [formatDateTime](/docs/en/sql-reference/functions/date-time-functions.md#date_time_functions-formatDateTime) is supported, except:
-- %f: fractional second
-- %Q: Quarter (1-4) 
-
-**Example**
-
-``` sql
-SELECT parseDateTime('2021-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
-
-┌─parseDateTime('2021-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')─┐
-│                                       2021-01-04 23:00:00 │
-└───────────────────────────────────────────────────────────┘
-```
-
-## parseDateTimeInJodaSyntax
-
-Similar to parseDateTime, except that it parses string to [DateTime](/docs/en/sql-reference/data-types/datetime.md) in Joda style instead of MySQL style. Refer to https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html. It is nearly an opposite operation of function [formatDateTimeInJodaSyntax](/docs/en/sql-reference/functions/date-time-functions.md#date_time_functions-formatDateTimeInJodaSyntax)
-
-**Syntax**
-
-``` sql
-parseDateTimeInJodaSyntax(str, format[, timezone])
-```
-
-**Returned value(s)**
-
-Returns DateTime values parsed from input string according to the determined Joda style format.
-
-**Supported replacement fields**
-
-Most of replacement fields used in [formatDateTimeInJoda](/docs/en/sql-reference/functions/date-time-functions.md#date_time_functions-formatDateTime) is supported, except:
-- S: fraction of second
-- z: time zone
-- Z: time zone offset/id
-
-**Example**
-
-``` sql
-SELECT parseDateTimeInJodaSyntax('2023-02-24 14:53:31', 'yyyy-MM-dd HH:mm:ss', 'Europe/Minsk')
-
-┌─parseDateTimeInJodaSyntax('2023-02-24 14:53:31', 'yyyy-MM-dd HH:mm:ss', 'Europe/Minsk')─┐
-│                                                                     2023-02-24 14:53:31 │
-└─────────────────────────────────────────────────────────────────────────────────────────┘
-```
 
 ## toLowCardinality
 
