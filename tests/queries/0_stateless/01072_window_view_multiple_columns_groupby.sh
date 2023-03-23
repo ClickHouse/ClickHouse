@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings, no-fasttest
+# Tags: no-random-settings, no-fasttest, no-parallel
+# For unknown reason this test is flaky without no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
