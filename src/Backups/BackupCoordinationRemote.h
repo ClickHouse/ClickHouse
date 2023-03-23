@@ -2,8 +2,10 @@
 
 #include <Backups/IBackupCoordination.h>
 #include <Backups/BackupCoordinationReplicatedAccess.h>
+#include <Backups/BackupCoordinationReplicatedSQLObjects.h>
 #include <Backups/BackupCoordinationReplicatedTables.h>
 #include <Backups/BackupCoordinationStageSync.h>
+#include <Storages/MergeTree/ZooKeeperRetries.h>
 
 
 namespace DB
@@ -16,7 +18,20 @@ constexpr size_t MAX_ZOOKEEPER_ATTEMPTS = 10;
 class BackupCoordinationRemote : public IBackupCoordination
 {
 public:
-    BackupCoordinationRemote(const String & root_zookeeper_path_, const String & backup_uuid_, zkutil::GetZooKeeper get_zookeeper_, bool is_internal_);
+    struct BackupKeeperSettings
+    {
+        UInt64 keeper_max_retries;
+        UInt64 keeper_retry_initial_backoff_ms;
+        UInt64 keeper_retry_max_backoff_ms;
+        UInt64 batch_size_for_keeper_multiread;
+    };
+
+    BackupCoordinationRemote(
+        const BackupKeeperSettings & keeper_settings_,
+        const String & root_zookeeper_path_,
+        const String & backup_uuid_,
+        zkutil::GetZooKeeper get_zookeeper_,
+        bool is_internal_);
     ~BackupCoordinationRemote() override;
 
     void setStage(const String & current_host, const String & new_stage, const String & message) override;
@@ -46,6 +61,9 @@ public:
     void addReplicatedAccessFilePath(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id, const String & file_path) override;
     Strings getReplicatedAccessFilePaths(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id) const override;
 
+    void addReplicatedSQLObjectsDir(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & host_id, const String & dir_path) override;
+    Strings getReplicatedSQLObjectsDirs(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & host_id) const override;
+
     void addFileInfo(const FileInfo & file_info, bool & is_data_file_required) override;
     void updateFileInfo(const FileInfo & file_info) override;
 
@@ -65,21 +83,29 @@ private:
     zkutil::ZooKeeperPtr getZooKeeperNoLock() const;
     void createRootNodes();
     void removeAllNodes();
+
+    /// Reads data of all objects from ZooKeeper that replicas have added to backup and add it to the corresponding
+    /// BackupCoordinationReplicated* objects.
+    /// After that, calling addReplicated* functions is not allowed and throws an exception.
     void prepareReplicatedTables() const;
     void prepareReplicatedAccess() const;
+    void prepareReplicatedSQLObjects() const;
 
+    const BackupKeeperSettings keeper_settings;
     const String root_zookeeper_path;
     const String zookeeper_path;
     const String backup_uuid;
     const zkutil::GetZooKeeper get_zookeeper;
     const bool is_internal;
 
+    mutable ZooKeeperRetriesInfo zookeeper_retries_info;
     std::optional<BackupCoordinationStageSync> stage_sync;
 
     mutable std::mutex mutex;
     mutable zkutil::ZooKeeperPtr zookeeper;
     mutable std::optional<BackupCoordinationReplicatedTables> replicated_tables;
     mutable std::optional<BackupCoordinationReplicatedAccess> replicated_access;
+    mutable std::optional<BackupCoordinationReplicatedSQLObjects> replicated_sql_objects;
 };
 
 }

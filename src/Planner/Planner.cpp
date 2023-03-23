@@ -214,9 +214,14 @@ public:
         {
             /// Constness of limit is validated during query analysis stage
             limit_length = query_node.getLimit()->as<ConstantNode &>().getValue().safeGet<UInt64>();
-        }
 
-        if (query_node.hasOffset())
+            if (query_node.hasOffset() && limit_length)
+            {
+                /// Constness of offset is validated during query analysis stage
+                limit_offset = query_node.getOffset()->as<ConstantNode &>().getValue().safeGet<UInt64>();
+            }
+        }
+        else if (query_node.hasOffset())
         {
             /// Constness of offset is validated during query analysis stage
             limit_offset = query_node.getOffset()->as<ConstantNode &>().getValue().safeGet<UInt64>();
@@ -390,7 +395,11 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
       * but it can work more slowly.
       */
 
-    Aggregator::Params params(aggregation_analysis_result.aggregation_keys,
+    auto keys = aggregation_analysis_result.aggregation_keys;
+    if (!aggregation_analysis_result.grouping_sets_parameters_list.empty())
+        keys.insert(keys.begin(), "__grouping_set");
+
+    Aggregator::Params params(keys,
         aggregation_analysis_result.aggregate_descriptions,
         query_analysis_result.aggregate_overflow_row,
         settings.max_threads,
@@ -591,20 +600,25 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
     if (query_node.hasInterpolate())
     {
         auto interpolate_actions_dag = std::make_shared<ActionsDAG>();
+        auto query_plan_columns = query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
+        for (auto & query_plan_column : query_plan_columns)
+        {
+            /// INTERPOLATE actions dag input columns must be non constant
+            query_plan_column.column = nullptr;
+            interpolate_actions_dag->addInput(query_plan_column);
+        }
 
         auto & interpolate_list_node = query_node.getInterpolate()->as<ListNode &>();
         auto & interpolate_list_nodes = interpolate_list_node.getNodes();
 
         if (interpolate_list_nodes.empty())
         {
-            auto query_plan_columns = query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName();
-            for (auto & query_plan_column : query_plan_columns)
+            for (const auto * input_node : interpolate_actions_dag->getInputs())
             {
-                if (column_names_with_fill.contains(query_plan_column.name))
+                if (column_names_with_fill.contains(input_node->result_name))
                     continue;
 
-                const auto * input_action_node = &interpolate_actions_dag->addInput(query_plan_column);
-                interpolate_actions_dag->getOutputs().push_back(input_action_node);
+                interpolate_actions_dag->getOutputs().push_back(input_node);
             }
         }
         else
@@ -1012,6 +1026,11 @@ void Planner::buildQueryPlanIfNeeded()
     if (query_plan.isInitialized())
         return;
 
+    LOG_TRACE(&Poco::Logger::get("Planner"), "Query {} to stage {}{}",
+        query_tree->formatConvertedASTForErrorMessage(),
+        QueryProcessingStage::toString(select_query_options.to_stage),
+        select_query_options.only_analyze ? " only analyze" : "");
+
     if (query_tree->getNodeType() == QueryTreeNodeType::UNION)
         buildPlanForUnionNode();
     else
@@ -1169,36 +1188,20 @@ void Planner::buildPlanForQueryNode()
     collectTableExpressionData(query_tree, *planner_context);
     collectSets(query_tree, *planner_context);
 
-    QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
+    auto top_level_identifiers = collectTopLevelColumnIdentifiers(query_tree, planner_context);
+    auto join_tree_query_plan = buildJoinTreeQueryPlan(query_tree,
+        select_query_info,
+        select_query_options,
+        top_level_identifiers,
+        planner_context);
+    auto from_stage = join_tree_query_plan.from_stage;
+    query_plan = std::move(join_tree_query_plan.query_plan);
 
-    if (select_query_options.only_analyze)
-    {
-        Block join_tree_block;
-
-        for (const auto & [_, table_expression_data] : planner_context->getTableExpressionNodeToData())
-        {
-            for (const auto & [column_name, column] : table_expression_data.getColumnNameToColumn())
-            {
-                const auto & column_identifier = table_expression_data.getColumnIdentifierOrThrow(column_name);
-                join_tree_block.insert(ColumnWithTypeAndName(column.type, column_identifier));
-            }
-        }
-
-        auto read_nothing_step = std::make_unique<ReadNothingStep>(join_tree_block);
-        read_nothing_step->setStepDescription("Read nothing");
-        query_plan.addStep(std::move(read_nothing_step));
-    }
-    else
-    {
-        auto top_level_identifiers = collectTopLevelColumnIdentifiers(query_tree, planner_context);
-        auto join_tree_query_plan = buildJoinTreeQueryPlan(query_tree,
-            select_query_info,
-            select_query_options,
-            top_level_identifiers,
-            planner_context);
-        from_stage = join_tree_query_plan.from_stage;
-        query_plan = std::move(join_tree_query_plan.query_plan);
-    }
+    LOG_TRACE(&Poco::Logger::get("Planner"), "Query {} from stage {} to stage {}{}",
+        query_tree->formatConvertedASTForErrorMessage(),
+        QueryProcessingStage::toString(from_stage),
+        QueryProcessingStage::toString(select_query_options.to_stage),
+        select_query_options.only_analyze ? " only analyze" : "");
 
     if (select_query_options.to_stage == QueryProcessingStage::FetchColumns)
         return;
@@ -1447,7 +1450,8 @@ void Planner::buildPlanForQueryNode()
         }
     }
 
-    addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, result_actions_to_execute);
+    if (!select_query_options.only_analyze)
+        addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, result_actions_to_execute);
 }
 
 void Planner::addStorageLimits(const StorageLimitsList & limits)
