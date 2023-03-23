@@ -16,6 +16,10 @@ using KeysQueuePtr = std::shared_ptr<KeysQueue>;
 /**
  * `LockedKey` is an object which makes sure that as long as it exists the following is true:
  * 1. the key cannot be removed from cache
+ *    (Why: this LockedKey locks key metadata mutex in ctor, unlocks it in dtor, and so
+ *    when key is going to be deleted, key mutex is also locked.
+ *    Why it cannot be the other way round? E.g. that ctor of LockedKey locks the key
+ *    right after it was deleted? This case it taken into consideration in createLockedKey())
  * 2. the key cannot be modified, e.g. new offsets cannot be added to key; already existing
  *    offsets cannot be deleted from the key
  * And also provides some methods which allow the owner of this LockedKey object to do such
