@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP TABLE IF EXISTS t_sharded_map_1;
 
 CREATE TABLE t_sharded_map_1 (id UInt64, m Map(String, UInt64, 4))

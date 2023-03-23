@@ -76,6 +76,7 @@ static void splitToSubcolumns(NamesAndTypesList & columns_list, const NameSet & 
 
 /// PK columns are sorted and merged, ordinary columns are gathered using info from merge step
 static void extractMergingAndGatheringColumns(
+    const MergeTreeDataPartType & new_part_type,
     const NamesAndTypesList & storage_columns,
     const ExpressionActionsPtr & sorting_key_expr,
     const IndicesDescription & indexes,
@@ -121,7 +122,9 @@ static void extractMergingAndGatheringColumns(
             gathering_columns.emplace_back(column);
     }
 
-    splitToSubcolumns(gathering_columns, {});
+    if (new_part_type == MergeTreeDataPartType::Wide)
+        splitToSubcolumns(gathering_columns, {});
+
     merging_column_names = merging_columns.getNames();
     gathering_column_names = gathering_columns.getNames();
 }
@@ -226,6 +229,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     extendObjectColumns(global_ctx->storage_columns, object_columns, false);
 
     extractMergingAndGatheringColumns(
+        global_ctx->new_data_part->getType(),
         global_ctx->storage_columns,
         global_ctx->metadata_snapshot->getSortingKey().expression,
         global_ctx->metadata_snapshot->getSecondaryIndices(),
@@ -310,7 +314,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         {
             NameSet merging_columns_set(global_ctx->merging_column_names.begin(), global_ctx->merging_column_names.end());
             global_ctx->merging_columns = global_ctx->storage_columns;
-            splitToSubcolumns(global_ctx->merging_columns, merging_columns_set);
+
+            if (isWidePart(global_ctx->new_data_part))
+                splitToSubcolumns(global_ctx->merging_columns, merging_columns_set);
 
             global_ctx->merging_column_names = global_ctx->merging_columns.getNames();
             global_ctx->gathering_columns.clear();
