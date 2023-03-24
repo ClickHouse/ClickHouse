@@ -127,8 +127,6 @@ protected:
 
         void remove();
 
-        bool equals(const PipelineExecutor * e);
-
         PipelineExecutor * executor;
         std::mutex mutex;
     };
@@ -137,6 +135,7 @@ protected:
 
     /// Array of PipelineExecutors to be cancelled when a cancelQuery is received
     std::vector<ExecutorHolderPtr> executors;
+    std::unordered_map<PipelineExecutor *, size_t> executor_indexes;
 
     enum QueryStreamsStatus
     {
