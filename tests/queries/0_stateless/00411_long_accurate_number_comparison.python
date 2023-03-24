@@ -183,7 +183,7 @@ def main():
     num_parts = 4
     for part in range(0, num_parts):
         if "int" + str(part + 1) in sys.argv[1:]:
-            for (v1, v2) in itertools.islice(
+            for v1, v2 in itertools.islice(
                 itertools.combinations(VALUES, 2),
                 part * num_int_tests // num_parts,
                 (part + 1) * num_int_tests // num_parts,
@@ -194,7 +194,7 @@ def main():
                     ref_file.write(a + "\n")
 
     if "float" in sys.argv[1:]:
-        for (i, f) in itertools.product(VALUES_INT, VALUES_FLOAT):
+        for i, f in itertools.product(VALUES_INT, VALUES_FLOAT):
             q, a = test_float_pair(i, f)
             if GENERATE_TEST_FILES:
                 sql_file.write(q + ";\n")

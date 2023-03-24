@@ -107,7 +107,6 @@ class S3API(object):
 
 
 def make_tar_file_for_table(clickhouse_data_path, db_name, table_name, tmp_prefix):
-
     relative_data_path = os.path.join("data", db_name, table_name)
     relative_meta_path = os.path.join("metadata", db_name, table_name + ".sql")
     path_to_data = os.path.join(clickhouse_data_path, relative_data_path)
@@ -193,7 +192,6 @@ if __name__ == "__main__":
         )
         logging.info("Data uploaded: %s", url)
     else:
-
         if args.table_name is not None:
             if "." not in args.table_name:
                 db_name = "default"
