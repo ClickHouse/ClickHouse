@@ -90,13 +90,15 @@ void KeeperDispatcher::requestThread()
 
                 KeeperStorage::RequestsForSessions current_batch;
 
-                bool has_read_request = false;
+                bool has_read_request{false};
 
                 /// If new request is not read request or we must to process it through quorum.
                 /// Otherwise we will process it locally.
                 if (coordination_settings->quorum_reads || !request.request->isReadRequest())
                 {
                     current_batch.emplace_back(request);
+
+                    size_t read_requests = 0;
 
                     const auto try_get_request = [&]
                     {
@@ -106,7 +108,12 @@ void KeeperDispatcher::requestThread()
                             CurrentMetrics::sub(CurrentMetrics::KeeperOutstandingRequets);
                             /// Don't append read request into batch, we have to process them separately
                             if (!coordination_settings->quorum_reads && request.request->isReadRequest())
-                                has_read_request = true;
+                            {
+                                ++read_requests;
+                                std::pair<int64_t, int32_t> key{current_batch.back().session_id, current_batch.back().request->xid};
+                                std::lock_guard lock(read_mutex);
+                                related_read_requests[key].push_back(request);
+                            }
                             else
                                 current_batch.emplace_back(request);
 
@@ -118,7 +125,7 @@ void KeeperDispatcher::requestThread()
 
                     /// If we have enough requests in queue, we will try to batch at least max_quick_batch_size of them.
                     size_t max_quick_batch_size = coordination_settings->max_requests_quick_batch_size;
-                    while (!shutdown_called && !has_read_request && current_batch.size() < max_quick_batch_size && try_get_request())
+                    while (!shutdown_called && current_batch.size() + read_requests < max_quick_batch_size && try_get_request())
                         ;
 
                     const auto prev_result_done = [&]
@@ -129,7 +136,7 @@ void KeeperDispatcher::requestThread()
                     };
 
                     /// Waiting until previous append will be successful, or batch is big enough
-                    while (!shutdown_called && !has_read_request && !prev_result_done() && current_batch.size() <= max_batch_size)
+                    while (!shutdown_called && !prev_result_done() && current_batch.size() <= max_batch_size)
                     {
                         try_get_request();
                     }
@@ -319,7 +326,22 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
 
     snapshot_s3.startup(config, macros);
 
-    server = std::make_unique<KeeperServer>(configuration_and_settings, config, responses_queue, snapshots_queue, snapshot_s3);
+    server = std::make_unique<KeeperServer>(configuration_and_settings, config, responses_queue, snapshots_queue, snapshot_s3, [this](const KeeperStorage::RequestForSession & request_for_session)
+    {
+        std::lock_guard lock(read_mutex);
+        if (auto it = related_read_requests.find(std::pair{request_for_session.session_id, request_for_session.request->xid}); it != related_read_requests.end())
+        {
+            for (const auto & read_request : it->second)
+            {
+                if (server->isLeaderAlive())
+                    server->putLocalReadRequest(read_request);
+                else
+                    addErrorResponses({read_request}, Coordination::Error::ZCONNECTIONLOSS);
+            }
+
+            related_read_requests.erase(it);
+        }
+    });
 
     try
     {

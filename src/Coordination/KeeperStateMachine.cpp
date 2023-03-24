@@ -46,8 +46,10 @@ KeeperStateMachine::KeeperStateMachine(
     const CoordinationSettingsPtr & coordination_settings_,
     const KeeperContextPtr & keeper_context_,
     KeeperSnapshotManagerS3 * snapshot_manager_s3_,
+    CommitCallback commit_callback_,
     const std::string & superdigest_)
-    : coordination_settings(coordination_settings_)
+    : commit_callback(commit_callback_)
+    , coordination_settings(coordination_settings_)
     , snapshot_manager(
           snapshots_path_,
           coordination_settings->snapshots_to_keep,
@@ -274,6 +276,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
 
     ProfileEvents::increment(ProfileEvents::KeeperCommits);
     last_committed_idx = log_idx;
+    commit_callback(request_for_session);
     return nullptr;
 }
 

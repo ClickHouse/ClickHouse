@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Common/ZooKeeper/ZooKeeperCommon.h"
 #include "config.h"
 
 #if USE_NURAFT
@@ -103,6 +104,21 @@ private:
     void forceWaitAndProcessResult(RaftAppendResult & result, KeeperStorage::RequestsForSessions & requests_for_sessions);
 
 public:
+    std::mutex read_mutex;
+
+    struct PairHash
+    {
+        auto operator()(std::pair<int64_t, int32_t> pair) const
+        {
+            SipHash hash;
+            hash.update(pair.first);
+            hash.update(pair.second);
+            return hash.get64();
+        }
+    };
+
+    std::unordered_map<std::pair<int64_t, int32_t>, KeeperStorage::RequestsForSessions, PairHash> related_read_requests;
+
     /// Just allocate some objects, real initialization is done by `intialize method`
     KeeperDispatcher();
 
