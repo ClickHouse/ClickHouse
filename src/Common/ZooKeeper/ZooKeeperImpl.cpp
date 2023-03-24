@@ -1,19 +1,21 @@
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
 
+#include <IO/Operators.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
+#include <base/getThreadId.h>
+#include <base/sleep.h>
+#include <Common/EventNotifier.h>
+#include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
-#include <Common/Exception.h>
-#include <Common/EventNotifier.h>
 #include <Common/logger_useful.h>
-#include <Common/ProfileEvents.h>
 #include <Common/setThreadName.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/Operators.h>
-#include <IO/WriteBufferFromString.h>
-#include <base/getThreadId.h>
 
 #include "Coordination/KeeperConstants.h"
 #include "config.h"
@@ -352,6 +354,14 @@ ZooKeeper::ZooKeeper(
     {
         recv_inject_fault.emplace(args.recv_fault_probability);
     }
+    if (0 < args.send_sleep_probability && args.send_sleep_probability <= 1)
+    {
+        send_inject_sleep.emplace(args.send_sleep_probability);
+    }
+    if (0 < args.recv_sleep_probability && args.recv_sleep_probability <= 1)
+    {
+        recv_inject_sleep.emplace(args.recv_sleep_probability);
+    }
 
     connect(nodes, args.connection_timeout_ms * 1000);
 
@@ -571,7 +581,6 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
                         static_cast<int32_t>(err), errorMessage(err));
 }
 
-
 void ZooKeeper::sendThread()
 {
     setThreadName("ZooKeeperSend");
@@ -586,6 +595,8 @@ void ZooKeeper::sendThread()
 
             auto now = clock::now();
             auto next_heartbeat_time = prev_heartbeat_time + std::chrono::milliseconds(args.session_timeout_ms / 3);
+
+            maybeInjectSendSleep();
 
             if (next_heartbeat_time > now)
             {
@@ -659,6 +670,7 @@ void ZooKeeper::receiveThread()
         Int64 waited_us = 0;
         while (!requests_queue.isFinished())
         {
+            maybeInjectRecvSleep();
             auto prev_bytes_received = in->count();
 
             clock::time_point now = clock::now();
@@ -728,8 +740,7 @@ void ZooKeeper::receiveEvent()
     ZooKeeperResponsePtr response;
     UInt64 elapsed_ms = 0;
 
-    if (unlikely(recv_inject_fault) && recv_inject_fault.value()(thread_local_rng))
-        throw Exception(Error::ZSESSIONEXPIRED, "Session expired (fault injected on recv)");
+    maybeInjectRecvFault();
 
     if (xid == PING_XID)
     {
@@ -1078,8 +1089,7 @@ void ZooKeeper::pushRequest(RequestInfo && info)
             }
         }
 
-        if (unlikely(send_inject_fault) && send_inject_fault.value()(thread_local_rng))
-            throw Exception(Error::ZSESSIONEXPIRED, "Session expired (fault injected on send)");
+        maybeInjectSendFault();
 
         if (!requests_queue.tryPush(std::move(info), args.operation_timeout_ms))
         {
@@ -1403,4 +1413,31 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr &, const ZooKeepe
 {}
 #endif
 
+void ZooKeeper::maybeInjectSendFault()
+{
+    if (unlikely(send_inject_fault) && send_inject_fault.value()(thread_local_rng)
+        && (args.enable_fault_injections_during_startup || Context::getGlobalContextInstance()->isServerCompletelyStarted()))
+        throw Exception(Error::ZSESSIONEXPIRED, "Session expired (fault injected on recv)");
+}
+
+void ZooKeeper::maybeInjectRecvFault()
+{
+    if (unlikely(recv_inject_fault) && recv_inject_fault.value()(thread_local_rng)
+        && (args.enable_fault_injections_during_startup || Context::getGlobalContextInstance()->isServerCompletelyStarted()))
+        throw Exception(Error::ZSESSIONEXPIRED, "Session expired (fault injected on recv)");
+}
+
+void ZooKeeper::maybeInjectSendSleep()
+{
+    if (unlikely(send_inject_sleep) && send_inject_sleep.value()(thread_local_rng)
+        && (args.enable_fault_injections_during_startup || Context::getGlobalContextInstance()->isServerCompletelyStarted()))
+        sleepForMilliseconds(args.send_sleep_ms);
+}
+
+void ZooKeeper::maybeInjectRecvSleep()
+{
+    if (unlikely(recv_inject_sleep) && recv_inject_sleep.value()(thread_local_rng)
+        && (args.enable_fault_injections_during_startup || Context::getGlobalContextInstance()->isServerCompletelyStarted()))
+        sleepForMilliseconds(args.recv_sleep_ms);
+}
 }

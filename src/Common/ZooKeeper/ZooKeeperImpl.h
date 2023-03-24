@@ -202,8 +202,15 @@ private:
 
     zkutil::ZooKeeperArgs args;
 
+    /// Fault injection
+    void maybeInjectSendFault();
+    void maybeInjectRecvFault();
+    void maybeInjectSendSleep();
+    void maybeInjectRecvSleep();
     std::optional<std::bernoulli_distribution> send_inject_fault;
     std::optional<std::bernoulli_distribution> recv_inject_fault;
+    std::optional<std::bernoulli_distribution> send_inject_sleep;
+    std::optional<std::bernoulli_distribution> recv_inject_sleep;
 
     Poco::Net::StreamSocket socket;
     /// To avoid excessive getpeername(2) calls.
