@@ -23,6 +23,8 @@ from pyspark.sql.types import (
 )
 from pyspark.sql.functions import current_timestamp
 from datetime import datetime
+from pyspark.sql.functions import monotonically_increasing_id, row_number
+from pyspark.sql.window import Window
 
 from helpers.s3_tools import prepare_s3_bucket, upload_directory, get_file_contents
 
@@ -36,7 +38,11 @@ USER_FILES_PATH = os.path.join(SCRIPT_DIR, "./_instances/node1/database/user_fil
 def started_cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        cluster.add_instance("node1", with_minio=True)
+        cluster.add_instance(
+            "node1",
+            main_configs=["configs/config.d/named_collections.xml"],
+            with_minio=True,
+        )
 
         logging.info("Starting cluster...")
         cluster.start()
@@ -63,6 +69,30 @@ def get_spark():
     return configure_spark_with_delta_pip(builder).master("local").getOrCreate()
 
 
+def write_delta_from_file(spark, path, result_path, mode="overwrite"):
+    spark.read.load(path).write.mode(mode).option("compression", "none").format(
+        "delta"
+    ).option("delta.columnMapping.mode", "name").save(result_path)
+
+
+def write_delta_from_df(spark, df, result_path, mode="overwrite"):
+    df.write.mode(mode).option("compression", "none").format("delta").option(
+        "delta.columnMapping.mode", "name"
+    ).save(result_path)
+
+
+def generate_data(spark, start, end):
+    a = spark.range(start, end, 1).toDF("a")
+    b = spark.range(start + 1, end + 1, 1).toDF("b")
+    b = b.withColumn("b", b["b"].cast(StringType()))
+
+    a = a.withColumn('row_index', row_number().over(Window.orderBy(monotonically_increasing_id())))
+    b = b.withColumn('row_index', row_number().over(Window.orderBy(monotonically_increasing_id())))
+
+    df = a.join(b, on=["row_index"]).drop("row_index")
+    return df
+
+
 def get_delta_metadata(delta_metadata_file):
     jsons = [json.loads(x) for x in delta_metadata_file.splitlines()]
     combined_json = {}
@@ -71,40 +101,100 @@ def get_delta_metadata(delta_metadata_file):
     return combined_json
 
 
-def create_initial_data_file(node, query, table_name):
-    data_path = f"/var/lib/clickhouse/user_files/{table_name}.parquet"
+def create_delta_table(node, table_name):
     node.query(
-        f"INSERT INTO TABLE FUNCTION file('{data_path}') SETTINGS output_format_parquet_compression_method='none', s3_truncate_on_insert=1 {query} FORMAT Parquet"
+        f"""
+        DROP TABLE IF EXISTS {table_name};
+        CREATE TABLE {table_name}
+        ENGINE=DeltaLake(s3, filename = '{table_name}/')"""
     )
 
 
-def write_delta(spark, path, result_path):
-    spark.read.load(path).write.mode("overwrite").option("compression", "none").format(
-        "delta"
-    ).option("delta.columnMapping.mode", "name").save(result_path)
+def create_initial_data_file(node, query, table_name, compression_method="none"):
+    node.query(
+        f"""
+        INSERT INTO TABLE FUNCTION
+            file('{table_name}.parquet')
+        SETTINGS
+            output_format_parquet_compression_method='{compression_method}',
+            s3_truncate_on_insert=1 {query}
+        FORMAT Parquet"""
+    )
+    result_path = f"{USER_FILES_PATH}/{table_name}.parquet"
+    return result_path
 
 
-def test_basic(started_cluster):
+def test_single_log_file(started_cluster):
     instance = started_cluster.instances["node1"]
-
-    inserted_data = "SELECT number, toString(number) FROM numbers(100)"
-    create_initial_data_file(instance, inserted_data, TABLE_NAME)
-
-    data_path = f"{USER_FILES_PATH}/{TABLE_NAME}.parquet"
-    result_path = f"/{TABLE_NAME}_result"
-
-    spark = get_spark()
-    write_delta(spark, data_path, result_path)
-
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    upload_directory(minio_client, bucket, result_path, "")
+    spark = get_spark()
 
-    output_format_parquet_compression_method = "none"
+    inserted_data = "SELECT number, toString(number + 1) FROM numbers(100)"
+    parquet_data_path = create_initial_data_file(instance, inserted_data, TABLE_NAME)
+
+    write_delta_from_file(spark, parquet_data_path, f"/{TABLE_NAME}")
+    files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    assert len(files) == 1
+
+    create_delta_table(instance, TABLE_NAME)
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+    assert instance.query(f"SELECT * FROM {TABLE_NAME}") == instance.query(
+        inserted_data
+    )
+
+
+def test_multiple_log_files(started_cluster):
+    instance = started_cluster.instances["node1"]
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    spark = get_spark()
+
+    write_delta_from_df(spark, generate_data(spark, 0, 100), f"/{TABLE_NAME}", mode="append")
+    files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    assert len(files) == 1
+
+    s3_objects = list(
+        minio_client.list_objects(bucket, f"/{TABLE_NAME}/_delta_log/", recursive=True)
+    )
+    assert len(s3_objects) == 1
+
+    create_delta_table(instance, TABLE_NAME)
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+
+    write_delta_from_df(spark, generate_data(spark, 100, 200), f"/{TABLE_NAME}", mode="append")
+    files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    assert len(files) == 2
+
+    s3_objects = list(
+        minio_client.list_objects(bucket, f"/{TABLE_NAME}/_delta_log/", recursive=True)
+    )
+    assert len(s3_objects) == 2
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 200
+    assert instance.query(f"SELECT * FROM {TABLE_NAME}") == instance.query(
+        "SELECT number, toString(number + 1) FROM numbers(200)"
+    )
+
+
+def test_metadata(started_cluster):
+    instance = started_cluster.instances["node1"]
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    spark = get_spark()
+
+    parquet_data_path = create_initial_data_file(
+        instance, "SELECT number, toString(number) FROM numbers(100)", TABLE_NAME
+    )
+
+    write_delta_from_file(spark, parquet_data_path, f"/{TABLE_NAME}")
+    upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+
     data = get_file_contents(
         minio_client,
         bucket,
-        "/test_delta_table_result/_delta_log/00000000000000000000.json",
+        f"/{TABLE_NAME}/_delta_log/00000000000000000000.json",
     )
     delta_metadata = get_delta_metadata(data)
 
@@ -113,23 +203,8 @@ def test_basic(started_cluster):
     assert next(iter(stats["minValues"].values())) == 0
     assert next(iter(stats["maxValues"].values())) == 99
 
-    instance.query(
-        f"""
-        DROP TABLE IF EXISTS {TABLE_NAME};
-        CREATE TABLE {TABLE_NAME} ENGINE=DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/test_delta_table_result/', 'minio', 'minio123')"""
-    )
-    assert instance.query(f"SELECT * FROM {TABLE_NAME}") == instance.query(
-        inserted_data
-    )
-
-
-# def test_several_actions(started_cluster):
-#    instance = started_cluster.instances["node1"]
-#
-#    inserted_data = "SELECT number, toString(number) FROM numbers(100)"
-#    create_initial_data_file(query, TABLE_NAME)
-#
-#    spark = get_spark()
+    create_delta_table(instance, TABLE_NAME)
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
 
 def test_types(started_cluster):

@@ -16,10 +16,10 @@ void registerStorageHudi(StorageFactory & factory)
         "Hudi",
         [](const StorageFactory::Arguments & args)
         {
-            StorageS3::Configuration configuration = StorageHudi::getConfiguration(args.engine_args, args.getLocalContext());
+            auto configuration = StorageHudi::getConfiguration(args.engine_args, args.getLocalContext());
             return std::make_shared<StorageHudi>(
-                configuration, args.table_id, args.columns, args.constraints, args.comment,
-                args.getContext(), getFormatSettings(args.getContext()));
+                std::move(configuration), args.getContext(), args.table_id, args.columns, args.constraints,
+                args.comment, getFormatSettings(args.getContext()));
         },
         {
             .supports_settings = false,

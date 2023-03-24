@@ -38,7 +38,8 @@ protected:
             columns = parseColumnsListFromString(configuration.structure, context);
 
         StoragePtr storage = std::make_shared<Storage>(
-            configuration, StorageID(getDatabaseName(), table_name), columns, ConstraintsDescription{}, String{}, context, std::nullopt);
+            std::make_unique<typename Storage::Configuration>(configuration), context,
+            StorageID(getDatabaseName(), table_name), columns, ConstraintsDescription{}, String{}, std::nullopt);
 
         storage->startup();
 

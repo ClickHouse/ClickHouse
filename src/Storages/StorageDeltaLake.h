@@ -23,16 +23,20 @@ namespace ErrorCodes
  */
 
 template <typename Configuration, typename MetadataReadHelper>
-class DeltaLakeMetadataParser
+class DeltaLakeMetadataParser : private WithContext
 {
 public:
-    DeltaLakeMetadataParser(const Configuration & storage_configuration_, ContextPtr context)
-        : storage_configuration(storage_configuration_)
+    DeltaLakeMetadataParser(const Configuration & storage_configuration_, ContextPtr context_)
+        : WithContext(context_)
+        , storage_configuration(storage_configuration_)
     {
-        processMetadataFiles(context);
     }
 
-    Strings getFiles() { return Strings(data_files.begin(), data_files.end()); }
+    Strings getFiles() const
+    {
+        auto data_files = processMetadataFiles();
+        return Strings(data_files.begin(), data_files.end());
+    }
 
     static String generateQueryFromKeys(const std::vector<String> & keys, const std::string & /* format */)
     {
@@ -71,12 +75,13 @@ private:
      * previous table state (n-1.json) in order to the construct nth snapshot of the table.
      * An action changes one aspect of the table's state, for example, adding or removing a file.
      */
-    void processMetadataFiles(ContextPtr context)
+    std::set<String> processMetadataFiles() const
     {
+        std::set<String> result;
         const auto keys = getMetadataFiles();
         for (const String & key : keys)
         {
-            auto buf = MetadataReadHelper::createReadBuffer(key, context, storage_configuration);
+            auto buf = MetadataReadHelper::createReadBuffer(key, getContext(), storage_configuration);
 
             char c;
             while (!buf->eof())
@@ -95,9 +100,10 @@ private:
                     continue;
 
                 const JSON json(json_str);
-                handleJSON(json);
+                handleJSON(json, result);
             }
         }
+        return result;
     }
 
     /**
@@ -134,26 +140,25 @@ private:
      *             \"nullCount\":{\"col-6c990940-59bb-4709-8f2e-17083a82c01a\":0,\"col-763cd7e2-7627-4d8e-9fb7-9e85d0c8845b\":0}}"}}
      * "
      */
-    void handleJSON(const JSON & json)
+    void handleJSON(const JSON & json, std::set<String> & result) const
     {
         if (json.has("add"))
         {
             const auto path = json["add"]["path"].getString();
-            const auto [_, inserted] = data_files.insert(path);
+            const auto [_, inserted] = result.insert(path);
             if (!inserted)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "File already exists {}", path);
         }
         else if (json.has("remove"))
         {
             const auto path = json["remove"]["path"].getString();
-            const bool erase = data_files.erase(path);
+            const bool erase = result.erase(path);
             if (!erase)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "File doesn't exist {}", path);
         }
     }
 
     Configuration storage_configuration;
-    std::set<String> data_files;
 };
 
 struct StorageDeltaLakeName

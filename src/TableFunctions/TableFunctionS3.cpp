@@ -152,13 +152,14 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, Context
     else if (!structure_hint.empty())
         columns = structure_hint;
 
+    auto storage_configuration = std::make_unique<StorageS3::Configuration>(configuration);
     StoragePtr storage = std::make_shared<StorageS3>(
-        configuration,
+        std::move(storage_configuration),
+        context,
         StorageID(getDatabaseName(), table_name),
         columns,
         ConstraintsDescription{},
         String{},
-        context,
         /// No format_settings for table function S3
         std::nullopt);
 
