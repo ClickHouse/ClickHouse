@@ -467,7 +467,7 @@ class IColumn;
     M(Int64, max_partitions_to_read, -1, "Limit the max number of partitions that can be accessed in one query. <= 0 means unlimited.", 0) \
     M(Bool, check_query_single_value_result, true, "Return check query result as single 1/0 value", 0) \
     M(Bool, allow_drop_detached, false, "Allow ALTER TABLE ... DROP DETACHED PART[ITION] ... queries", 0) \
-    M(Bool, ignore_inaccessible_tables_mat_view_attach, false, "Ignoring inaccessible tables for attaching to the materilized view.", 0) \
+    M(Bool, skip_materialized_view_checking_if_source_table_not_exist, false, "Allow attaching to a materialized view even if dependent tables are inaccessible.", 0) \
     \
     M(UInt64, postgresql_connection_pool_size, 16, "Connection pool size for PostgreSQL table engine and database engine.", 0) \
     M(UInt64, postgresql_connection_pool_wait_timeout, 5000, "Connection pool push/pop timeout on empty pool for PostgreSQL table engine and database engine. By default it will block on empty pool.", 0) \
