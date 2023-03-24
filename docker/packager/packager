@@ -6,7 +6,7 @@ import argparse
 import logging
 import sys
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 SCRIPT_PATH = Path(__file__).absolute()
 IMAGE_TYPE = "binary"
@@ -80,7 +80,7 @@ def run_docker_image_with_env(
     output_dir: Path,
     env_variables: List[str],
     ch_root: Path,
-    ccache_dir: Path,
+    ccache_dir: Optional[Path],
 ):
     output_dir.mkdir(parents=True, exist_ok=True)
     env_part = " -e ".join(env_variables)
@@ -97,9 +97,13 @@ def run_docker_image_with_env(
     else:
         user = f"{os.geteuid()}:{os.getegid()}"
 
+    ccache_mount = f"--volume={ccache_dir}:/ccache"
+    if ccache_dir is None:
+        ccache_mount = ""
+
     cmd = (
-        f"docker run --network=host --user={user} --rm --volume={output_dir}:/output "
-        f"--volume={ch_root}:/build --volume={ccache_dir}:/ccache {env_part} "
+        f"docker run --network=host --user={user} --rm {ccache_mount}"
+        f"--volume={output_dir}:/output --volume={ch_root}:/build {env_part} "
         f"{interactive} {image_name}"
     )
 
@@ -252,7 +256,13 @@ def parse_env_variables(
     else:
         result.append("BUILD_TYPE=None")
 
+    if not cache:
+        cmake_flags.append("-DENABLE_CCACHE=OFF")
+        cmake_flags.append("-DFORCE_SCCACHE=OFF")
+
     if cache == "ccache":
+        cmake_flags.append("-DENABLE_CCACHE=ON")
+        cmake_flags.append("-DFORCE_SCCACHE=OFF")
         result.append("CCACHE_DIR=/ccache")
         result.append("CCACHE_COMPRESSLEVEL=5")
         result.append("CCACHE_BASEDIR=/build")
@@ -261,6 +271,8 @@ def parse_env_variables(
         result.append("CCACHE_MAXSIZE=15G")
 
     if cache == "sccache":
+        cmake_flags.append("-DENABLE_CCACHE=OFF")
+        cmake_flags.append("-DFORCE_SCCACHE=ON")
         # see https://github.com/mozilla/sccache/blob/main/docs/S3.md
         result.append(f"SCCACHE_BUCKET={s3_bucket}")
         sccache_dir = "sccache"
@@ -419,6 +431,9 @@ def parse_args() -> argparse.Namespace:
         raise argparse.ArgumentTypeError(
             "Can build additional packages only in deb build"
         )
+
+    if args.cache != "ccache":
+        args.ccache_dir = None
 
     if args.with_binaries != "":
         if args.package_type != "deb":
