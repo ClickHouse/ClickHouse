@@ -279,7 +279,7 @@ def testAmazonModelManyRows(ch_cluster):
     )
 
     result = instance.query(
-        "insert into amazon select number % 256, number, number, number, number, number, number, number, number, number from numbers(7500)"
+        "insert into amazon select number % 256, number, number, number, number, number, number, number, number, number from numbers(750000)"
     )
 
     # First compute prediction, then as a very crude way to fingerprint and compare the result: sum and floor
