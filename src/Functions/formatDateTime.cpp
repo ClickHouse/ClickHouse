@@ -38,6 +38,7 @@ namespace ErrorCodes
 
 namespace
 {
+using Pos = const char *;
 
 enum class SupportInteger
 {
@@ -149,8 +150,8 @@ private:
         /// Joda format generally requires capturing extra variables (i.e. holding state) which is more convenient with
         /// std::function and std::bind. Unfortunately, std::function causes a performance degradation by 0.45x compared to raw function
         /// pointers. For MySQL format, we generally prefer raw function pointers. Because of the special case that not all formatters are
-        /// fixed-width formatters (see mysqlLiteral), we still need to be able to store state. For that reason, we use member function
-        /// pointers instead of static function pointers.
+        /// fixed-width formatters (see mysqlLiteral instruction ), we still need to be able to store state. For that reason, we use member
+        /// function pointers (which come with even uglier syntax) instead of static function pointers.
         using FuncMysql = size_t (Instruction<Time>::*)(char *, Time, UInt64, UInt32, const DateLUTImpl &);
         FuncMysql func_mysql = nullptr;
 
@@ -666,7 +667,7 @@ private:
         }
     };
 
-    [[noreturn]] static void throwPercentIsLastCharacterException()
+    [[noreturn]] static void throwLastCharacterIsPercentException()
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "'%' must not be the last character in the format string, use '%%' instead");
     }
@@ -681,7 +682,7 @@ private:
             {
                 case '%':
                     if (i + 1 >= format.size())
-                        throwPercentIsLastCharacterException();
+                        throwLastCharacterIsPercentException();
                     if (std::any_of(variable_width_formatter.begin(), variable_width_formatter.end(), [&](char c){ return c == format[i + 1]; }))
                         return false;
                     i += 1;
@@ -971,12 +972,12 @@ public:
                 add_extra_shift_or_literal_instruction(amount, literal);
         };
 
-        const char * pos = format.data();
-        const char * const end = format.data() + format.size();
+        Pos pos = format.data();
+        Pos const end = format.data() + format.size();
 
         while (true)
         {
-            const char * const percent_pos = find_first_symbols<'%'>(pos, end);
+            Pos const percent_pos = find_first_symbols<'%'>(pos, end);
 
             if (percent_pos < end)
             {
@@ -989,7 +990,7 @@ public:
 
                 pos = percent_pos + 1;
                 if (pos >= end)
-                    throwPercentIsLastCharacterException();
+                    throwLastCharacterIsPercentException();
 
                 switch (*pos)
                 {
@@ -1401,11 +1402,11 @@ public:
         };
 
         size_t reserve_size = 0;
-        const char * pos = format.data();
-        const char * end = format.data() + format.size();
+        Pos pos = format.data();
+        Pos end = format.data() + format.size();
         while (pos < end)
         {
-            const char * cur_token = pos;
+            Pos cur_token = pos;
             // Literal case
             if (*cur_token == '\'')
             {
