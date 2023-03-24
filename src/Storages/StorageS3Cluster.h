@@ -48,6 +48,7 @@ public:
     ClusterPtr getCluster(ContextPtr context) const override;
 
 private:
+    Poco::Logger * log;
     StorageS3::Configuration s3_configuration;
     String cluster_name;
     String format_name;
