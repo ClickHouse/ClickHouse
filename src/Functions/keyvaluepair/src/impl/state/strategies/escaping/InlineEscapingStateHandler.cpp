@@ -1,57 +1,59 @@
-#include "InlineEscapingKeyStateHandler.h"
+#include "InlineEscapingValueStateHandler.h"
 #include <Functions/keyvaluepair/src/impl/state/strategies/util/CharacterFinder.h>
 #include <Functions/keyvaluepair/src/impl/state/strategies/util/EscapedCharacterReader.h>
 #include <Functions/keyvaluepair/src/impl/state/strategies/util/NeedleFactory.h>
 
+#include <IO/ReadBufferFromMemory.h>
+
+namespace
+{
+
+}
+
 namespace DB
 {
 
-InlineEscapingKeyStateHandler::InlineEscapingKeyStateHandler(Configuration configuration_)
-    : extractor_configuration(std::move(configuration_))
+InlineEscapingValueStateHandler::InlineEscapingValueStateHandler(Configuration extractor_configuration_)
+    : extractor_configuration(std::move(extractor_configuration_))
 {
-    wait_needles = EscapingNeedleFactory::getWaitNeedles(extractor_configuration);
     read_needles = EscapingNeedleFactory::getReadNeedles(extractor_configuration);
     read_quoted_needles = EscapingNeedleFactory::getReadQuotedNeedles(extractor_configuration);
 }
 
-NextState InlineEscapingKeyStateHandler::wait(std::string_view file, size_t pos) const
+NextState InlineEscapingValueStateHandler::wait(std::string_view file, size_t pos) const
 {
-    BoundsSafeCharacterFinder finder;
+    const auto & [key_value_delimiter, quoting_character, pair_delimiters]
+        = extractor_configuration;
 
-    const auto quoting_character = extractor_configuration.quoting_character;
-
-    while (auto character_position_opt = finder.findFirstNot(file, pos, wait_needles))
+    if (pos < file.size())
     {
-        auto character_position = *character_position_opt;
-        auto character = file[character_position];
+        const auto current_character = file[pos];
 
-        if (quoting_character == character)
+        if (quoting_character == current_character)
         {
-            return {character_position + 1u, State::READING_QUOTED_KEY};
+            return {pos + 1u, State::READING_QUOTED_VALUE};
+        }
+        else if (key_value_delimiter == current_character)
+        {
+            return {pos, State::WAITING_KEY};
         }
         else
         {
-            return {character_position, State::READING_KEY};
+            return {pos, State::READING_VALUE};
         }
     }
 
-    return {file.size(), State::END};
+    return {pos, State::READING_VALUE};
 }
 
-/*
- * I only need to iteratively copy stuff if there are escape sequences. If not, views are sufficient.
- * TSKV has a nice catch for that, implementers kept an auxiliary string to hold copied characters.
- * If I find a key value delimiter and that is empty, I do not need to copy? hm,m hm hm
- * */
-
-NextState InlineEscapingKeyStateHandler::read(std::string_view file, size_t pos, ElementType & key) const
+NextState InlineEscapingValueStateHandler::read(std::string_view file, size_t pos, ElementType & value) const
 {
     BoundsSafeCharacterFinder finder;
 
     const auto & [key_value_delimiter, quoting_character, pair_delimiters]
         = extractor_configuration;
 
-    key.clear();
+    value.clear();
 
     /*
      * Maybe modify finder return type to be the actual pos. In case of failures, it shall return pointer to the end.
@@ -68,7 +70,7 @@ NextState InlineEscapingKeyStateHandler::read(std::string_view file, size_t pos,
         {
             for (auto i = pos; i < character_position; i++)
             {
-                key.push_back(file[i]);
+                value.push_back(file[i]);
             }
 
             auto [next_byte_ptr, escaped_characters] = EscapedCharacterReader::read(file, character_position);
@@ -82,40 +84,43 @@ NextState InlineEscapingKeyStateHandler::read(std::string_view file, size_t pos,
             {
                 for (auto escaped_character : escaped_characters)
                 {
-                    key.push_back(escaped_character);
+                    value.push_back(escaped_character);
                 }
             }
         }
-        else if (character == key_value_delimiter)
+        else if (key_value_delimiter == character)
+        {
+            return {next_pos, State::WAITING_KEY};
+        }
+        else if (std::find(pair_delimiters.begin(), pair_delimiters.end(), character) != pair_delimiters.end())
         {
             // todo try to optimize with resize and memcpy
             for (auto i = pos; i < character_position; i++)
             {
-                key.push_back(file[i]);
+                value.push_back(file[i]);
             }
 
-            return {next_pos, State::WAITING_VALUE};
-        }
-        else if (std::find(pair_delimiters.begin(), pair_delimiters.end(), character) != pair_delimiters.end())
-        {
-            return {next_pos, State::WAITING_KEY};
+            return {next_pos, State::FLUSH_PAIR};
         }
 
         pos = next_pos;
     }
 
-    // might be problematic in case string reaches the end and I haven't copied anything over to key
+    for (; pos < file.size(); pos++)
+    {
+        value.push_back(file[pos]);
+    }
 
-    return {file.size(), State::END};
+    return {pos, State::FLUSH_PAIR};
 }
 
-NextState InlineEscapingKeyStateHandler::readQuoted(std::string_view file, size_t pos, ElementType & key) const
+NextState InlineEscapingValueStateHandler::readQuoted(std::string_view file, size_t pos, ElementType & value) const
 {
     BoundsSafeCharacterFinder finder;
 
     const auto quoting_character = extractor_configuration.quoting_character;
 
-    key.clear();
+    value.clear();
 
     while (auto character_position_opt = finder.findFirst(file, pos, read_quoted_needles))
     {
@@ -127,7 +132,7 @@ NextState InlineEscapingKeyStateHandler::readQuoted(std::string_view file, size_
         {
             for (auto i = pos; i < character_position; i++)
             {
-                key.push_back(file[i]);
+                value.push_back(file[i]);
             }
 
             auto [next_byte_ptr, escaped_characters] = EscapedCharacterReader::read(file, character_position);
@@ -141,7 +146,7 @@ NextState InlineEscapingKeyStateHandler::readQuoted(std::string_view file, size_
             {
                 for (auto escaped_character : escaped_characters)
                 {
-                    key.push_back(escaped_character);
+                    value.push_back(escaped_character);
                 }
             }
         }
@@ -150,34 +155,16 @@ NextState InlineEscapingKeyStateHandler::readQuoted(std::string_view file, size_
             // todo try to optimize with resize and memcpy
             for (auto i = pos; i < character_position; i++)
             {
-                key.push_back(file[i]);
+                value.push_back(file[i]);
             }
 
-            if (key.empty())
-            {
-                return {next_pos, State::WAITING_KEY};
-            }
-
-            return {next_pos, State::READING_KV_DELIMITER};
+            return {next_pos, State::FLUSH_PAIR};
         }
 
         pos = next_pos;
     }
 
-    return {file.size(), State::END};
-}
-
-NextState InlineEscapingKeyStateHandler::readKeyValueDelimiter(std::string_view file, size_t pos) const
-{
-    if (pos == file.size())
-    {
-        return {pos, State::END};
-    }
-    else
-    {
-        const auto current_character = file[pos++];
-        return {pos, extractor_configuration.key_value_delimiter == current_character ? State::WAITING_VALUE : State::WAITING_KEY};
-    }
+    return {pos, State::END};
 }
 
 }
