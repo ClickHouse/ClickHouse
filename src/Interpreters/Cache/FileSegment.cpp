@@ -60,13 +60,11 @@ FileSegment::FileSegment(
         case (State::DOWNLOADED):
         {
             reserved_size = downloaded_size = size_;
-            is_completed = true;
             chassert(std::filesystem::file_size(file_path) == size_);
             break;
         }
         case (State::DETACHED):
         {
-            is_completed = true;
             break;
         }
         default:
@@ -524,13 +522,7 @@ void FileSegment::completeUnlocked(LockedKey & locked_key, const CacheGuard::Loc
 {
     auto segment_lock = segment_guard.lock();
 
-    if (download_state == State::DETACHED)
-    {
-        assertDetachedStatus(segment_lock);
-        return;
-    }
-
-    if (is_completed)
+    if (isCompleted(false))
         return;
 
     const bool is_downloader = isDownloaderUnlocked(segment_lock);
@@ -578,8 +570,6 @@ void FileSegment::completeUnlocked(LockedKey & locked_key, const CacheGuard::Loc
             chassert(current_downloaded_size == range().size());
             chassert(current_downloaded_size == std::filesystem::file_size(file_path));
             chassert(!cache_writer);
-
-            is_completed = true;
             break;
         }
         case State::DOWNLOADING:
@@ -641,7 +631,7 @@ String FileSegment::getInfoForLogUnlocked(const FileSegmentGuard::Lock &) const
     WriteBufferFromOwnString info;
     info << "File segment: " << range().toString() << ", ";
     info << "key: " << key().toString() << ", ";
-    info << "state: " << download_state << ", ";
+    info << "state: " << download_state.load() << ", ";
     info << "downloaded size: " << getDownloadedSize(false) << ", ";
     info << "reserved size: " << reserved_size.load() << ", ";
     info << "downloader id: " << (downloader_id.empty() ? "None" : downloader_id) << ", ";
@@ -713,22 +703,6 @@ void FileSegment::assertNotDetachedUnlocked(const FileSegmentGuard::Lock & lock)
         throwIfDetachedUnlocked(lock);
 }
 
-void FileSegment::assertDetachedStatus(const FileSegmentGuard::Lock & lock) const
-{
-    /// Detached file segment is allowed to have only a certain subset of states.
-    /// It should be either EMPTY or one of the finalized states.
-
-    if (download_state != State::EMPTY
-        && download_state != State::PARTIALLY_DOWNLOADED_NO_CONTINUATION
-        && !hasFinalizedStateUnlocked(lock))
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Detached file segment has incorrect state: {}",
-            getInfoForLogUnlocked(lock));
-    }
-}
-
 FileSegmentPtr FileSegment::getSnapshot(const FileSegmentPtr & file_segment)
 {
     auto lock = file_segment->segment_guard.lock();
@@ -744,24 +718,37 @@ FileSegmentPtr FileSegment::getSnapshot(const FileSegmentPtr & file_segment)
 
     snapshot->hits_count = file_segment->getHitsCount();
     snapshot->downloaded_size = file_segment->getDownloadedSize(false);
-    snapshot->download_state = file_segment->download_state;
+    snapshot->download_state = file_segment->download_state.load();
 
     snapshot->ref_count = file_segment.use_count();
-    snapshot->is_completed = true;
 
     return snapshot;
-}
-
-bool FileSegment::hasFinalizedStateUnlocked(const FileSegmentGuard::Lock &) const
-{
-    return download_state == State::DOWNLOADED
-        || download_state == State::DETACHED;
 }
 
 bool FileSegment::isDetached() const
 {
     auto lock = segment_guard.lock();
     return download_state == State::DETACHED;
+}
+
+bool FileSegment::isCompleted(bool sync) const
+{
+    auto is_completed_state = [this]() -> bool
+    {
+        return download_state == State::DOWNLOADED
+            || download_state == State::DETACHED
+            /// the following means that file segment was shrinked to the downloaded size via calling complete().
+            /// a more correct way to call such state is PARTIALLY_DOWNLOADED_NO_CONTINUATION_DETACHED.
+            || ((download_state == State::PARTIALLY_DOWNLOADED_NO_CONTINUATION) && (key_metadata == nullptr));
+    };
+
+    if (sync)
+    {
+        auto lock = segment_guard.lock();
+        return is_completed_state();
+    }
+
+    return is_completed_state();
 }
 
 void FileSegment::detach(const FileSegmentGuard::Lock & lock, const LockedKey &)
@@ -777,7 +764,6 @@ void FileSegment::detach(const FileSegmentGuard::Lock & lock, const LockedKey &)
 
 void FileSegment::detachAssumeStateFinalized(const FileSegmentGuard::Lock & lock)
 {
-    is_completed = true;
     key_metadata = nullptr;
     LOG_TEST(log, "Detached file segment: {}", getInfoForLogUnlocked(lock));
 }
