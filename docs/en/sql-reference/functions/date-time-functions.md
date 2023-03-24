@@ -1238,7 +1238,7 @@ Formats a Time according to the given Format string. Format is a constant expres
 
 formatDateTime uses MySQL datetime format style, refer to https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format.
 
-The opposite operation of this function is [formatDateTime](/docs/en/sql-reference/functions/type-conversion-functions.md#formatdatetime).
+The opposite operation of this function is [parseDateTime](/docs/en/sql-reference/functions/type-conversion-functions.md#type_conversion_functions-parseDateTime).
 
 Alias: `DATE_FORMAT`.
 
@@ -1334,7 +1334,7 @@ Result:
 
 Similar to formatDateTime, except that it formats datetime in Joda style instead of MySQL style. Refer to https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html.
 
-The opposite operation of this function is [formatDateTimeInJodaSyntax](/docs/en/sql-reference/functions/type-conversion-functions.md#formatdatetimeinjodasyntax).
+The opposite operation of this function is [parseDateTimeInJodaSyntax](/docs/en/sql-reference/functions/type-conversion-functions.md#type_conversion_functions-parseDateTimeInJodaSyntax).
 
 **Replacement fields**
 
