@@ -214,6 +214,7 @@ ConnectionPoolWithFailover::tryGetEntry(
         const QualifiedTableName * table_to_check,
         AsyncCallback async_callback)
 {
+#if defined(OS_LINUX)
     if (async_callback)
     {
         ConnectionEstablisherAsync connection_establisher_async(&pool, &timeouts, settings, log, table_to_check);
@@ -234,6 +235,7 @@ ConnectionPoolWithFailover::tryGetEntry(
         fail_message = connection_establisher_async.getFailMessage();
         return connection_establisher_async.getResult();
     }
+#endif    
 
     ConnectionEstablisher connection_establisher(&pool, &timeouts, settings, log, table_to_check);
     TryResult result;
