@@ -268,7 +268,7 @@ static ASTPtr convertIntoTableExpressionAST(const QueryTreeNodePtr & table_expre
     return result_table_expression;
 }
 
-void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_query_ast, const QueryTreeNodePtr & table_expression)
+void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_query_ast, const QueryTreeNodePtr & table_expression, const IQueryTreeNode::ConvertToASTOptions & convert_to_ast_options)
 {
     auto table_expression_node_type = table_expression->getNodeType();
 
@@ -297,7 +297,7 @@ void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_q
             [[fallthrough]];
         case QueryTreeNodeType::JOIN:
         {
-            auto table_expression_tables_in_select_query_ast = table_expression->toAST();
+            auto table_expression_tables_in_select_query_ast = table_expression->toAST(convert_to_ast_options);
             tables_in_select_query_ast->children.reserve(table_expression_tables_in_select_query_ast->children.size());
             for (auto && table_element_ast : table_expression_tables_in_select_query_ast->children)
                 tables_in_select_query_ast->children.push_back(std::move(table_element_ast));
