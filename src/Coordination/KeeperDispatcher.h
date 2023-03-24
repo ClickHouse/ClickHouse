@@ -104,20 +104,10 @@ private:
     void forceWaitAndProcessResult(RaftAppendResult & result, KeeperStorage::RequestsForSessions & requests_for_sessions);
 
 public:
-    std::mutex read_mutex;
+    std::mutex read_request_queue_mutex;
 
-    struct PairHash
-    {
-        auto operator()(std::pair<int64_t, int32_t> pair) const
-        {
-            SipHash hash;
-            hash.update(pair.first);
-            hash.update(pair.second);
-            return hash.get64();
-        }
-    };
-
-    std::unordered_map<std::pair<int64_t, int32_t>, KeeperStorage::RequestsForSessions, PairHash> related_read_requests;
+    /// queue of read requests that can be processed after a request with specific session ID and XID is committed
+    std::unordered_map<int64_t, std::unordered_map<Coordination::XID, KeeperStorage::RequestsForSessions>> read_request_queue;
 
     /// Just allocate some objects, real initialization is done by `intialize method`
     KeeperDispatcher();

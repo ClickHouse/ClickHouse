@@ -110,9 +110,9 @@ void KeeperDispatcher::requestThread()
                             if (!coordination_settings->quorum_reads && request.request->isReadRequest())
                             {
                                 ++read_requests;
-                                std::pair<int64_t, int32_t> key{current_batch.back().session_id, current_batch.back().request->xid};
-                                std::lock_guard lock(read_mutex);
-                                related_read_requests[key].push_back(request);
+                                const auto & last_request = current_batch.back();
+                                std::lock_guard lock(read_request_queue_mutex);
+                                read_request_queue[last_request.session_id][last_request.request->xid].push_back(request);
                             }
                             else
                                 current_batch.emplace_back(request);
@@ -328,18 +328,24 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
 
     server = std::make_unique<KeeperServer>(configuration_and_settings, config, responses_queue, snapshots_queue, snapshot_s3, [this](const KeeperStorage::RequestForSession & request_for_session)
     {
-        std::lock_guard lock(read_mutex);
-        if (auto it = related_read_requests.find(std::pair{request_for_session.session_id, request_for_session.request->xid}); it != related_read_requests.end())
+        /// check if we have queue of read requests depending on this request to be committed
+        std::lock_guard lock(read_request_queue_mutex);
+        if (auto it = read_request_queue.find(request_for_session.session_id); it != read_request_queue.end())
         {
-            for (const auto & read_request : it->second)
-            {
-                if (server->isLeaderAlive())
-                    server->putLocalReadRequest(read_request);
-                else
-                    addErrorResponses({read_request}, Coordination::Error::ZCONNECTIONLOSS);
-            }
+            auto & xid_to_request_queue = it->second;
 
-            related_read_requests.erase(it);
+            if (auto request_queue_it = xid_to_request_queue.find(request_for_session.request->xid); request_queue_it != xid_to_request_queue.end())
+            {
+                for (const auto & read_request : request_queue_it->second)
+                {
+                    if (server->isLeaderAlive())
+                        server->putLocalReadRequest(read_request);
+                    else
+                        addErrorResponses({read_request}, Coordination::Error::ZCONNECTIONLOSS);
+                }
+
+                xid_to_request_queue.erase(request_queue_it);
+            }
         }
     });
 
@@ -554,12 +560,18 @@ void KeeperDispatcher::sessionCleanerTask()
 
 void KeeperDispatcher::finishSession(int64_t session_id)
 {
-    std::lock_guard lock(session_to_response_callback_mutex);
-    auto session_it = session_to_response_callback.find(session_id);
-    if (session_it != session_to_response_callback.end())
     {
-        session_to_response_callback.erase(session_it);
-        CurrentMetrics::sub(CurrentMetrics::KeeperAliveConnections);
+        std::lock_guard lock(session_to_response_callback_mutex);
+        auto session_it = session_to_response_callback.find(session_id);
+        if (session_it != session_to_response_callback.end())
+        {
+            session_to_response_callback.erase(session_it);
+            CurrentMetrics::sub(CurrentMetrics::KeeperAliveConnections);
+        }
+    }
+    {
+        std::lock_guard lock(read_request_queue_mutex);
+        read_request_queue.erase(session_id);
     }
 }
 

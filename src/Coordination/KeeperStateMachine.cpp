@@ -276,7 +276,9 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
 
     ProfileEvents::increment(ProfileEvents::KeeperCommits);
     last_committed_idx = log_idx;
-    commit_callback(request_for_session);
+
+    if (commit_callback)
+        commit_callback(request_for_session);
     return nullptr;
 }
 
