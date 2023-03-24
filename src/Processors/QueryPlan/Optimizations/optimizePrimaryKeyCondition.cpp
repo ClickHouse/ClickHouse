@@ -2,7 +2,6 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
-#include <Interpreters/ActionsDAG.h>
 #include <deque>
 
 namespace DB::QueryPlanOptimizations
