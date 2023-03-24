@@ -3,7 +3,8 @@
 #include <vector>
 #include <arrow/util/logging.h>
 
-using namespace DB;
+namespace DB
+{
 
 TEST(ChunkedArray, ChunkedArrayWithZeroChunksShouldNotAbort)
 {
@@ -15,4 +16,6 @@ TEST(ChunkedArray, ChunkedArrayWithZeroChunksShouldNotAbort)
 TEST(ArrowLog, FatalLogShouldThrow)
 {
     EXPECT_ANY_THROW(::arrow::util::ArrowLog(__FILE__, __LINE__, ::arrow::util::ArrowLogLevel::ARROW_FATAL));
+}
+
 }
