@@ -1394,60 +1394,39 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
         }
         if (getSettingsRef().use_structure_from_insertion_table_in_table_functions && table_function_ptr->needStructureHint() && hasInsertionTable())
         {
-            const auto & structure_hint = DatabaseCatalog::instance().getTable(getInsertionTable(), shared_from_this())->getInMemoryMetadataPtr()->getColumns();
-            bool use_columns_from_insert_query = true;
+            const auto & insert_structure = DatabaseCatalog::instance().getTable(getInsertionTable(), shared_from_this())->getInMemoryMetadataPtr()->getColumns();
+            auto table_structure = table_function_ptr->getActualTableStructure(getQueryContext());
 
-            /// use_structure_from_insertion_table_in_table_functions=2 means `auto`
-            if (select_query_hint && getSettingsRef().use_structure_from_insertion_table_in_table_functions == 2)
+            /// Insert table matches columns against SELECT expression by position, so we want to map
+            /// insert table columns to table function columns through names from SELECT expression.
+
+            auto insert_column = insert_structure.begin();
+            for (const auto & expression : select_query_hint->select()->as<ASTExpressionList>()->children)
             {
-                const auto * expression_list = select_query_hint->select()->as<ASTExpressionList>();
-                std::unordered_set<String> virtual_column_names = table_function_ptr->getVirtualsToCheckBeforeUsingStructureHint();
-                Names columns_names;
-                bool have_asterisk = false;
-                /// First, check if we have only identifiers, asterisk and literals in select expression,
-                /// and if no, we cannot use the structure from insertion table.
-                for (const auto & expression : expression_list->children)
+                if (auto * identifier = expression->as<ASTIdentifier>())
                 {
-                    if (auto * identifier = expression->as<ASTIdentifier>())
+                    if (table_structure.hasPhysical(identifier->name()))
+                        table_structure.modify(identifier->name(), [&insert_column](ColumnDescription & column){ column.type = insert_column->type; });
+                    ++insert_column;
+                }
+                else if (expression->as<ASTAsterisk>())
+                {
+                    for (const auto & column : table_structure)
                     {
-                        columns_names.push_back(identifier->name());
-                    }
-                    else if (expression->as<ASTAsterisk>())
-                    {
-                        have_asterisk = true;
-                    }
-                    else if (!expression->as<ASTLiteral>())
-                    {
-                        use_columns_from_insert_query = false;
-                        break;
+                        table_structure.modify(column.name, [&insert_column](ColumnDescription & column){ column.type = insert_column->type; });
+                        ++insert_column;
+                        if (insert_column == insert_structure.end())
+                            break;
                     }
                 }
+                else
+                    ++insert_column;
 
-                /// Check that all identifiers are column names from insertion table and not virtual column names from storage.
-                for (const auto & column_name : columns_names)
-                {
-                    if (!structure_hint.has(column_name) || virtual_column_names.contains(column_name))
-                    {
-                        use_columns_from_insert_query = false;
-                        break;
-                    }
-                }
-
-                /// If we don't have asterisk but only subset of columns, we should use
-                /// structure from insertion table only in case when table function
-                /// supports reading subset of columns from data.
-                if (use_columns_from_insert_query && !have_asterisk && !columns_names.empty())
-                {
-                    /// For input function we should check if input format supports reading subset of columns.
-                    if (table_function_ptr->getName() == "input")
-                        use_columns_from_insert_query = FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(getInsertFormat());
-                    else
-                        use_columns_from_insert_query = table_function_ptr->supportsReadingSubsetOfColumns();
-                }
+                if (insert_column == insert_structure.end())
+                    break;
             }
 
-            if (use_columns_from_insert_query)
-                table_function_ptr->setStructureHint(structure_hint);
+            table_function_ptr->setStructureHint(table_structure);
         }
 
         res = table_function_ptr->execute(table_expression, shared_from_this(), table_function_ptr->getName());
