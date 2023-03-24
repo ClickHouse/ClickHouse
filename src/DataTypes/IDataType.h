@@ -79,15 +79,15 @@ public:
     /// Data type id. It's used for runtime type checks.
     virtual TypeIndex getTypeId() const = 0;
 
-    bool hasSubcolumn(const String & subcolumn_name) const;
+    bool hasSubcolumn(std::string_view subcolumn_name) const;
 
-    DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const;
-    DataTypePtr getSubcolumnType(const String & subcolumn_name) const;
+    DataTypePtr tryGetSubcolumnType(std::string_view subcolumn_name) const;
+    DataTypePtr getSubcolumnType(std::string_view subcolumn_name) const;
 
-    ColumnPtr tryGetSubcolumn(const String & subcolumn_name, const ColumnPtr & column) const;
-    ColumnPtr getSubcolumn(const String & subcolumn_name, const ColumnPtr & column) const;
+    ColumnPtr tryGetSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const;
+    ColumnPtr getSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const;
 
-    SerializationPtr getSubcolumnSerialization(const String & subcolumn_name, const SerializationPtr & serialization) const;
+    SerializationPtr getSubcolumnSerialization(std::string_view subcolumn_name, const SerializationPtr & serialization) const;
 
     using SubstreamData = ISerialization::SubstreamData;
     using SubstreamPath = ISerialization::SubstreamPath;
@@ -315,7 +315,7 @@ public:
 private:
     template <typename Ptr>
     Ptr getForSubcolumn(
-        const String & subcolumn_name,
+        std::string_view subcolumn_name,
         const SubstreamData & data,
         Ptr SubstreamData::*member,
         bool throw_if_null) const;
