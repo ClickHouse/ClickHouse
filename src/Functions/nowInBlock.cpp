@@ -3,6 +3,7 @@
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <Columns/ColumnsDateTime.h>
+#include <Columns/ColumnVector.h>
 
 
 namespace DB
