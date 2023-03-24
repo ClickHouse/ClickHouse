@@ -23,7 +23,7 @@ void test_find_first_not(const std::string & haystack, const std::string & symbo
 
 TEST(FindSymbols, SimpleTest)
 {
-    std::string s = "Hello, world! Goodbye...";
+    const std::string s = "Hello, world! Goodbye...";
     const char * begin = s.data();
     const char * end = s.data() + s.size();
 
@@ -33,6 +33,14 @@ TEST(FindSymbols, SimpleTest)
     ASSERT_EQ(find_first_symbols<' '>(begin, end), begin + 6);
     ASSERT_EQ(find_first_symbols<'H'>(begin, end), begin);
     ASSERT_EQ((find_first_symbols<'a', 'e'>(begin, end)), begin + 1);
+
+    // Check that nothing matches on big haystack,
+    ASSERT_EQ(find_first_symbols(s, "ABCDEFIJKLMNOPQRSTUVWXYZacfghijkmnpqstuvxz"), end);
+    // only 16 bytes of haystack are checked, so nothing is found
+    ASSERT_EQ(find_first_symbols(s, "ABCDEFIJKLMNOPQR0helloworld"), end);
+
+    // 16-byte needle
+    ASSERT_EQ(find_first_symbols(s, "XYZ!,.GHbdelorwy"), begin + 12);
 
     ASSERT_EQ(find_last_symbols_or_null<'a'>(begin, end), nullptr);
     ASSERT_EQ(find_last_symbols_or_null<'e'>(begin, end), end - 4);
@@ -52,6 +60,79 @@ TEST(FindSymbols, SimpleTest)
         splitInto<' ', ','>(vals, "s String", true);
         ASSERT_EQ(vals, (std::vector<std::string>{"s", "String"}));
     }
+}
+
+TEST(FindSymbols, RunTimeNeedle)
+{
+    auto test_haystack = [](const auto & haystack, const auto & unfindable_needle) {
+#define TEST_HAYSTACK_AND_NEEDLE(haystack_, needle_) \
+        do { \
+            const auto & h = haystack_; \
+            const auto & n = needle_; \
+            EXPECT_EQ( \
+                    std::find_first_of(h.data(), h.data() + h.size(), n.data(), n.data() + n.size()), \
+                    find_first_symbols(h, n) \
+            ) << "haystack: \"" << h << "\"" \
+              << ", needle: \"" << n << "\""; \
+        } \
+        while (false)
+
+        // can't find
+        TEST_HAYSTACK_AND_NEEDLE(haystack, unfindable_needle);
+
+#define test_with_modified_needle(haystack, in_needle, needle_update, with) \
+        do \
+        { \
+            std::string needle = in_needle; \
+            needle_update = with; \
+            TEST_HAYSTACK_AND_NEEDLE(haystack, needle); \
+        } \
+        while (false)
+
+        // findable symbol is at beginnig of the needle
+        // Can find at first pos of haystack
+        test_with_modified_needle(haystack, unfindable_needle, needle.front(), haystack.front());
+        // Can find at first pos of haystack
+        test_with_modified_needle(haystack, unfindable_needle, needle.front(), haystack.back());
+        // Can find in the middle of haystack
+        test_with_modified_needle(haystack, unfindable_needle, needle.front(), haystack[haystack.size() / 2]);
+
+        // findable symbol is at end of the needle
+        // Can find at first pos of haystack
+        test_with_modified_needle(haystack, unfindable_needle, needle.back(), haystack.front());
+        // Can find at first pos of haystack
+        test_with_modified_needle(haystack, unfindable_needle, needle.back(), haystack.back());
+        // Can find in the middle of haystack
+        test_with_modified_needle(haystack, unfindable_needle, needle.back(), haystack[haystack.size() / 2]);
+
+        // findable symbol is in the middle of the needle
+        // Can find at first pos of haystack
+        test_with_modified_needle(haystack, unfindable_needle, needle[needle.size() / 2], haystack.front());
+        // Can find at first pos of haystack
+        test_with_modified_needle(haystack, unfindable_needle, needle[needle.size() / 2], haystack.back());
+        // Can find in the middle of haystack
+        test_with_modified_needle(haystack, unfindable_needle, needle[needle.size() / 2], haystack[haystack.size() / 2]);
+
+    };
+
+    // there are 4 major groups of cases:
+    // haystack < 16 bytes, haystack > 16 bytes
+    // needle < 5 bytes,    needle >= 5 bytes
+
+    // First and last symbols of haystack should be unique
+    const std::string long_haystack = "Hello, world! Goodbye...?";
+    const std::string short_haystack = "Hello, world!";
+
+    // In sync with find_first_symbols_dispatch code: long needles receve special treatment.
+    // as of now "long" means >= 5
+    const std::string unfindable_long_needle = "0123456789ABCDEF";
+    const std::string unfindable_short_needle = "0123";
+
+    test_haystack(long_haystack, unfindable_long_needle);
+    test_haystack(long_haystack, unfindable_short_needle);
+
+    test_haystack(short_haystack, unfindable_long_needle);
+    test_haystack(short_haystack, unfindable_short_needle);
 }
 
 TEST(FindNotSymbols, AllSymbolsPresent)
