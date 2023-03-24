@@ -52,7 +52,21 @@ public:
     virtual bool isIntegratedWithFilesystemCache() const { return false; }
 };
 
+// Useful for reading in parallel.
+class SeekableReadBufferFactory : public WithFileSize
+{
+public:
+    ~SeekableReadBufferFactory() override = default;
+
+    // We usually call setReadUntilPosition() and seek() on the returned buffer before reading.
+    // So it's recommended that the returned implementation be lazy, i.e. don't start reading
+    // before the first call to nextImpl().
+    virtual std::unique_ptr<SeekableReadBuffer> getReader() = 0;
+};
+
 using SeekableReadBufferPtr = std::shared_ptr<SeekableReadBuffer>;
+
+using SeekableReadBufferFactoryPtr = std::unique_ptr<SeekableReadBufferFactory>;
 
 /// Wraps a reference to a SeekableReadBuffer into an unique pointer to SeekableReadBuffer.
 /// This function is like wrapReadBufferReference() but for SeekableReadBuffer.

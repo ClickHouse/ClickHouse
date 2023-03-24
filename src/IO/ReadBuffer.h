@@ -218,8 +218,8 @@ public:
      * Behavior in weird cases is currently implementation-defined:
      *  - setReadUntilPosition() below current position,
      *  - setReadUntilPosition() above the end of the file,
-     *  - seek() to a position above the until position (even if you setUntilPosition() to a higher
-     *    value right after the seek!),
+     *  - seek() to a position above the until position (even if you setReadUntilPosition() to a
+     *    higher value right after the seek!),
      *
      * Typical implementations discard any current buffers and connections, even if the position is
      * adjusted only a little.

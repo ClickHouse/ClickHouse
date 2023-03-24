@@ -13,7 +13,6 @@
 #include <arrow/io/memory.h>
 #include <arrow/result.h>
 #include <Core/Settings.h>
-#include <Common/logger_useful.h>
 
 #include <sys/stat.h>
 
@@ -51,7 +50,6 @@ arrow::Status ArrowBufferedOutputStream::Write(const void * data, int64_t length
 RandomAccessFileFromSeekableReadBuffer::RandomAccessFileFromSeekableReadBuffer(ReadBuffer & in_, std::optional<off_t> file_size_, bool avoid_buffering_)
     : in{in_}, seekable_in{dynamic_cast<SeekableReadBuffer &>(in_)}, file_size{file_size_}, is_open{true}, avoid_buffering(avoid_buffering_)
 {
-    LOG_INFO(&Poco::Logger::get("asdqwe"), "asdqwe creating with size {}", file_size.value_or(0));
 }
 
 arrow::Result<int64_t> RandomAccessFileFromSeekableReadBuffer::GetSize()
@@ -66,7 +64,6 @@ arrow::Result<int64_t> RandomAccessFileFromSeekableReadBuffer::GetSize()
 
 arrow::Status RandomAccessFileFromSeekableReadBuffer::Close()
 {
-    LOG_INFO(&Poco::Logger::get("asdqwe"), "asdqwe closing");
     is_open = false;
     return arrow::Status::OK();
 }
@@ -78,7 +75,6 @@ arrow::Result<int64_t> RandomAccessFileFromSeekableReadBuffer::Tell() const
 
 arrow::Result<int64_t> RandomAccessFileFromSeekableReadBuffer::Read(int64_t nbytes, void * out)
 {
-    LOG_INFO(&Poco::Logger::get("asdqwe"), "asdqwe read {}", nbytes);
     if (avoid_buffering)
         in.setReadUntilPosition(seekable_in.getPosition() + nbytes);
     return in.readBig(reinterpret_cast<char *>(out), nbytes);
@@ -103,7 +99,6 @@ arrow::Future<std::shared_ptr<arrow::Buffer>> RandomAccessFileFromSeekableReadBu
 
 arrow::Status RandomAccessFileFromSeekableReadBuffer::Seek(int64_t position)
 {
-    LOG_INFO(&Poco::Logger::get("asdqwe"), "asdqwe seek {}", position);
     if (avoid_buffering) {
         // Seeking to a position above a previous setReadUntilPosition() confuses some of the
         // ReadBuffer implementations.
@@ -150,6 +145,59 @@ arrow::Status ArrowInputStreamFromReadBuffer::Close()
     return arrow::Status();
 }
 
+RandomAccessFileFromManyReadBuffers::RandomAccessFileFromManyReadBuffers(SeekableReadBufferFactory & factory) : buf_factory(factory) {}
+
+arrow::Result<int64_t> RandomAccessFileFromManyReadBuffers::GetSize() {
+    return buf_factory.getFileSize();
+}
+
+arrow::Result<int64_t> RandomAccessFileFromManyReadBuffers::ReadAt(int64_t position, int64_t nbytes, void* out) {
+    std::unique_lock lock(mutex);
+    if (free_bufs.empty())
+        free_bufs.push_back(buf_factory.getReader());
+    auto buf = std::move(free_bufs.back());
+    free_bufs.pop_back();
+    lock.unlock();
+
+    buf->seek(position, SEEK_SET);
+    buf->setReadUntilPosition(position + nbytes);
+    size_t bytes_read = buf->readBig(reinterpret_cast<char *>(out), nbytes);
+
+    // Seeking to a position above a previous setReadUntilPosition() confuses some of the
+    // ReadBuffer implementations. So we reset it before next seek.
+    buf->setReadUntilEnd();
+
+    lock.lock();
+    free_bufs.push_back(std::move(buf));
+
+    return static_cast<int64_t>(bytes_read);
+}
+
+arrow::Result<std::shared_ptr<arrow::Buffer>> RandomAccessFileFromManyReadBuffers::ReadAt(int64_t position, int64_t nbytes) {
+    ARROW_ASSIGN_OR_RAISE(auto buffer, arrow::AllocateResizableBuffer(nbytes))
+    ARROW_ASSIGN_OR_RAISE(int64_t bytes_read, ReadAt(position, nbytes, buffer->mutable_data()))
+
+    if (bytes_read < nbytes)
+        RETURN_NOT_OK(buffer->Resize(bytes_read));
+
+    return buffer;
+}
+
+arrow::Future<std::shared_ptr<arrow::Buffer>> RandomAccessFileFromManyReadBuffers::ReadAsync(const arrow::io::IOContext&, int64_t position, int64_t nbytes) {
+    return arrow::Future<std::shared_ptr<arrow::Buffer>>::MakeFinished(ReadAt(position, nbytes));
+}
+
+arrow::Status RandomAccessFileFromManyReadBuffers::Close() {
+    chassert(is_open);
+    is_open = false;
+    return arrow::Status::OK();
+}
+
+arrow::Status RandomAccessFileFromManyReadBuffers::Seek(int64_t) { return arrow::Status::NotImplemented(""); }
+arrow::Result<int64_t> RandomAccessFileFromManyReadBuffers::Tell() const { return arrow::Status::NotImplemented(""); }
+arrow::Result<int64_t> RandomAccessFileFromManyReadBuffers::Read(int64_t, void*) { return arrow::Status::NotImplemented(""); }
+arrow::Result<std::shared_ptr<arrow::Buffer>> RandomAccessFileFromManyReadBuffers::Read(int64_t) { return arrow::Status::NotImplemented(""); }
+
 std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(
     ReadBuffer & in,
     const FormatSettings & settings,
@@ -160,11 +208,11 @@ std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(
 {
     if (auto * fd_in = dynamic_cast<ReadBufferFromFileDescriptor *>(&in))
     {
-        struct stat stat;
-        auto res = ::fstat(fd_in->getFD(), &stat);
-        // if fd is a regular file i.e. not stdin
-        if (res == 0 && S_ISREG(stat.st_mode))
-            return std::make_shared<RandomAccessFileFromSeekableReadBuffer>(*fd_in, stat.st_size, avoid_buffering);
+            struct stat stat;
+            auto res = ::fstat(fd_in->getFD(), &stat);
+            // if fd is a regular file i.e. not stdin
+            if (res == 0 && S_ISREG(stat.st_mode))
+                return std::make_shared<RandomAccessFileFromSeekableReadBuffer>(*fd_in, stat.st_size, avoid_buffering);
     }
     else if (dynamic_cast<SeekableReadBuffer *>(&in) && isBufferWithFileSize(in))
     {

@@ -300,7 +300,7 @@ bool ReadBufferFromS3::atEndOfRequestedRangeGuess() {
     if (read_until_position)
         return getPosition() >= read_until_position;
     if (file_size)
-        return getPosition() >= file_size;
+        return getPosition() >= static_cast<off_t>(*file_size);
     return false;
 }
 

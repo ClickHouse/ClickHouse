@@ -11,7 +11,7 @@ namespace DB
 
 /**
  * Reads from multiple ReadBuffers in parallel.
- * Preserves order of readers obtained from ReadBufferFactory.
+ * Preserves order of readers obtained from SeekableReadBufferFactory.
  *
  * It consumes multiple readers and yields data from them in order as it passed.
  * Each working reader save segments of data to internal queue.
@@ -29,20 +29,7 @@ private:
     bool nextImpl() override;
 
 public:
-    class ReadBufferFactory : public WithFileSize
-    {
-    public:
-        ~ReadBufferFactory() override = default;
-
-        // We usually call setReadUntilPosition() and seek() on the returned buffer before reading.
-        // So it's recommended that the returned implementation be lazy, i.e. don't start reading
-        // before the first call to nextImpl().
-        virtual std::unique_ptr<SeekableReadBuffer> getReader() = 0;
-    };
-
-    using ReadBufferFactoryPtr = std::unique_ptr<ReadBufferFactory>;
-
-    ParallelReadBuffer(ReadBufferFactoryPtr reader_factory_, ThreadPoolCallbackRunner<void> schedule_, size_t max_working_readers, size_t range_step_);
+    ParallelReadBuffer(SeekableReadBufferFactoryPtr reader_factory_, ThreadPoolCallbackRunner<void> schedule_, size_t max_working_readers, size_t range_step_);
 
     ~ParallelReadBuffer() override { finishAndWait(); }
 
@@ -50,8 +37,8 @@ public:
     size_t getFileSize();
     off_t getPosition() override;
 
-    const ReadBufferFactory & getReadBufferFactory() const { return *reader_factory; }
-    ReadBufferFactory & getReadBufferFactory() { return *reader_factory; }
+    const SeekableReadBufferFactory & getReadBufferFactory() const { return *reader_factory; }
+    SeekableReadBufferFactory & getReadBufferFactory() { return *reader_factory; }
 
 private:
     /// Reader in progress with a list of read segments
@@ -81,7 +68,7 @@ private:
 
     ThreadPoolCallbackRunner<void> schedule;
 
-    std::unique_ptr<ReadBufferFactory> reader_factory;
+    std::unique_ptr<SeekableReadBufferFactory> reader_factory;
     size_t range_step;
     size_t next_range_start{0};
 
