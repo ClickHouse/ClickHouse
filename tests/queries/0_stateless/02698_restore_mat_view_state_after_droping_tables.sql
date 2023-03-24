@@ -25,3 +25,4 @@ SELECT n,s  FROM test_db.table ORDER BY n;
 SELECT n,n2 FROM test_db.mview ORDER by n;
 
 DROP DATABASE test_db;
+

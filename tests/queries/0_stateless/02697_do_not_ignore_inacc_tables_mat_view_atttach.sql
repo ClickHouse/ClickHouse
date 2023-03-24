@@ -18,3 +18,4 @@ DETACH TABLE test_db.mview;
 ATTACH TABLE test_db.mview; --{serverError 60}
 
 DROP DATABASE test_db;
+
