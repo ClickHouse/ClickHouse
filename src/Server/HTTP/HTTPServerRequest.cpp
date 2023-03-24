@@ -63,8 +63,10 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
     }
     else if (getMethod() != HTTPRequest::HTTP_GET && getMethod() != HTTPRequest::HTTP_HEAD && getMethod() != HTTPRequest::HTTP_DELETE)
     {
+        /// That check for has_body may be false-negative in rare cases, but it's okay
+        bool has_body = in->hasPendingData();
         stream = std::move(in);
-        if (!startsWith(getContentType(), "multipart/form-data"))
+        if (!startsWith(getContentType(), "multipart/form-data") && has_body)
             LOG_WARNING(&Poco::Logger::get("HTTPServerRequest"), "Got an HTTP request with no content length "
                 "and no chunked/multipart encoding, it may be impossible to distinguish graceful EOF from abnormal connection loss");
     }
