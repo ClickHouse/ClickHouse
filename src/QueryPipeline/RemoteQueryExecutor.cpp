@@ -267,6 +267,7 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
 
 int RemoteQueryExecutor::sendQueryAsync()
 {
+#if defined(OS_LINUX)
     std::lock_guard lock(was_cancelled_mutex);
     if (was_cancelled)
         return -1;
@@ -282,6 +283,10 @@ int RemoteQueryExecutor::sendQueryAsync()
     read_context->resume();
 
     return read_context->isQuerySent() ? -1 : read_context->getFileDescriptor();
+#else
+    sendQuery();
+    return -1;
+#endif
 }
 
 Block RemoteQueryExecutor::readBlock()
