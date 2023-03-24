@@ -223,7 +223,7 @@ void ThreadStatus::updatePerformanceCountersIfNeeded()
     UInt64 total_elapsed_microseconds = stopwatch.elapsedMicroseconds();
     if (last_performance_counters_update_time + performance_counters_update_period_microseconds < total_elapsed_microseconds)
     {
-        CurrentThread::updatePerformanceCounters();
+        updatePerformanceCounters();
         last_performance_counters_update_time = total_elapsed_microseconds;
     }
 }
