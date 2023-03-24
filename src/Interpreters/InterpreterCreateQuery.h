@@ -97,7 +97,6 @@ private:
     BlockIO fillTableIfNeeded(const ASTCreateQuery & create);
     /// Check type compatible for materialized dest table and select columns
     void checkTypecompatibleForMaterializeView(const ASTCreateQuery & create);
-    Block getSampleBlockFromCreteQuery(const ASTCreateQuery & create);
 
     void assertOrSetUUID(ASTCreateQuery & create, const DatabasePtr & database) const;
 

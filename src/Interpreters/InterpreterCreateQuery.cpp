@@ -1077,22 +1077,6 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
     }
 }
 
-Block InterpreterCreateQuery::getSampleBlockFromCreteQuery(const ASTCreateQuery & create)
-{
-    Block result_block;
-    if (getContext()->getSettingsRef().allow_experimental_analyzer)
-    {
-        result_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), getContext());
-    }
-    else
-    {
-        result_block = InterpreterSelectWithUnionQuery(create.select->clone(),
-            getContext(),
-            SelectQueryOptions().analyze()).getSampleBlock();
-    }
-    return result_block;
-}
-
 void InterpreterCreateQuery::checkTypecompatibleForMaterializeView(const ASTCreateQuery & create)
 {
     if (StoragePtr to_table = DatabaseCatalog::instance().tryGetTable(
@@ -1103,7 +1087,16 @@ void InterpreterCreateQuery::checkTypecompatibleForMaterializeView(const ASTCrea
             Block input_block;
             try
             {
-                input_block = getSampleBlockFromCreteQuery(create);
+                if (getContext()->getSettingsRef().allow_experimental_analyzer)
+                {
+                    input_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), getContext());
+                }
+                else
+                {
+                    input_block = InterpreterSelectWithUnionQuery(create.select->clone(),
+                        getContext(),
+                        SelectQueryOptions().analyze()).getSampleBlock();
+                }
             }
             catch (const Exception & e)
             {
@@ -1112,6 +1105,7 @@ void InterpreterCreateQuery::checkTypecompatibleForMaterializeView(const ASTCrea
                 )
                 {
                     LOG_WARNING(&Poco::Logger::get("InterpreterSelectQuery"), "{}", e.message());
+                    return;
                 }
                 else
                 {
