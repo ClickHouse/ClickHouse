@@ -20,3 +20,4 @@ ATTACH TABLE test_db.mview;
 SET skip_materialized_view_checking_if_source_table_not_exist = 0;
 
 DROP DATABASE test_db;
+
