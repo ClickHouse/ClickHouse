@@ -162,9 +162,6 @@ FileSegments FileCache::getImpl(const LockedKey & locked_key, const FileSegment:
             }
     #endif
         }
-        auto state = file_segment_metadata.file_segment->state();
-        if (state == FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
-            std::terminate();
 
         result.push_back(file_segment_metadata.file_segment);
     };
@@ -598,14 +595,9 @@ bool FileCache::tryReserveImpl(
     FileCacheQueryLimit::LockedQueryContext * query_context,
     const CacheGuard::Lock & cache_lock)
 {
-    /// Iterate cache entries in the priority of `priority_queue`.
-    /// If some entry is in `priority_queue` it must be guaranteed to have a
-    /// corresponding cache entry in locked_key->offsets() and in
-    /// query_context->records (if query_context != nullptr).
-    /// When we evict some entry, then it must be removed from both:
-    /// main_priority and query_context::priority (if query_context != nullptr).
-    /// If we successfulkly reserved space, entry must be added to both:
-    /// cache entries and query_context::records (if query_context != nullptr);
+    /// In case of per query cache limit (by default disabled).
+    /// We add/remove entries from both (global and local) priority queues,
+    /// but iterate only local, though check the limits in both.
 
     const auto & key = locked_key->getKey();
     LOG_TEST(log, "Reserving space {} for {}:{}", size, key.toString(), offset);
@@ -742,6 +734,7 @@ bool FileCache::tryReserveImpl(
         {
             auto it = LockedCachePriority(
                 cache_lock, query_context->getPriority()).add(key, offset, size, locked_key->getKeyMetadata());
+
             query_context->add(key, offset, it);
         }
     }
@@ -980,13 +973,8 @@ void FileCache::performDelayedRemovalOfDeletedKeysFromMetadata(const CacheMetada
 
         try
         {
-            /// Delete key directory if not yet deleted.
-            const fs::path path = fs::path(getPathInLocalCache(cleanup_key));
-            if (fs::exists(path))
-                fs::remove_all(path);
-
             /// Delete three digit directory if empty.
-            const fs::path prefix_path = path.parent_path();
+            const fs::path prefix_path = fs::path(getPathInLocalCache(cleanup_key)).parent_path();
             if (fs::exists(prefix_path) && fs::is_empty(prefix_path))
                 fs::remove_all(prefix_path);
         }
