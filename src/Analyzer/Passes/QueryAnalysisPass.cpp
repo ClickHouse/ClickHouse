@@ -112,6 +112,8 @@ namespace ErrorCodes
     extern const int ALIAS_REQUIRED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNKNOWN_TABLE;
+    extern const int ILLEGAL_COLUMN;
+    extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
 
 /** Query analyzer implementation overview. Please check documentation in QueryAnalysisPass.h before.
@@ -6087,9 +6089,24 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     if (!nested_table_function)
         expressions_visitor.visit(table_function_node_typed.getArgumentsNode());
 
+    const auto & table_function_name = table_function_node_typed.getTableFunctionName();
+
     auto & scope_context = scope.context;
 
-    TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_function_node_typed.toAST(), scope_context);
+    TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().tryGet(table_function_name, scope_context);
+    if (!table_function_ptr)
+    {
+        auto hints = TableFunctionFactory::instance().getHints(table_function_name);
+        if (!hints.empty())
+            throw Exception(ErrorCodes::UNKNOWN_FUNCTION,
+                "Unknown table function {}. Maybe you meant: {}",
+                table_function_name,
+                DB::toString(hints));
+        else
+            throw Exception(ErrorCodes::UNKNOWN_FUNCTION,
+                "Unknown table function {}",
+                table_function_name);
+    }
 
     if (!nested_table_function &&
         scope_context->getSettingsRef().use_structure_from_insertion_table_in_table_functions &&
@@ -6099,40 +6116,65 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         const auto & insertion_table = scope_context->getInsertionTable();
         if (!insertion_table.empty())
         {
-            auto & expression_list = scope.scope_node->as<QueryNode &>().getProjection();
             const auto & insert_structure = DatabaseCatalog::instance().getTable(insertion_table, scope_context)->getInMemoryMetadataPtr()->getColumns();
-            auto table_structure = table_function_ptr->getActualTableStructure(scope_context);
+            DB::ColumnsDescription structure_hint;
 
             /// Insert table matches columns against SELECT expression by position, so we want to map
             /// insert table columns to table function columns through names from SELECT expression.
 
             auto insert_column = insert_structure.begin();
-            for (const auto & expression : expression_list)
+            auto insert_structure_end = insert_structure.end();
+            auto virtual_column_names = table_function_ptr->getVirtualsToCheckBeforeUsingStructureHint();
+            bool asterisk = false;
+            const auto & expression_list = scope.scope_node->as<QueryNode &>().getProjection();
+            auto expression = expression_list.begin();
+
+            for (; expression != expression_list.end() && insert_column != insert_structure_end; ++expression)
             {
-                if (auto * identifier_node = expression->as<IdentifierNode>())
+                if (auto * identifier_node = (*expression)->as<IdentifierNode>())
                 {
-                    if (table_structure.hasPhysical(identifier_node->getIdentifier().getFullName()))
-                        table_structure.modify(identifier_node->getIdentifier().getFullName(), [&insert_column](ColumnDescription & column){ column.type = insert_column->type; });
-                    ++insert_column;
-                }
-                else if (auto * matcher_node = expression->as<MatcherNode>(); matcher_node && matcher_node->getMatcherType() == MatcherNodeType::ASTERISK)
-                {
-                    for (const auto & column : table_structure)
+                    if (!virtual_column_names.contains(identifier_node->getIdentifier().getFullName()))
                     {
-                        table_structure.modify(column.name, [&insert_column](ColumnDescription & column){ column.type = insert_column->type; });
-                        ++insert_column;
-                        if (insert_column == insert_structure.end())
-                            break;
+                        if (asterisk)
+                            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Asterisk cannot be mixed with column list in INSERT SELECT query.");
+
+                        structure_hint.add({ identifier_node->getIdentifier().getFullName(), insert_column->type });
                     }
+
+                    if (asterisk)
+                        --insert_structure_end;
+                    else
+                        ++insert_column;
+                }
+                else if (auto * matcher_node = (*expression)->as<MatcherNode>(); matcher_node && matcher_node->getMatcherType() == MatcherNodeType::ASTERISK)
+                {
+                    if (asterisk)
+                        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Only one asterisk can be used in INSERT SELECT query.");
+                    if (!structure_hint.empty())
+                        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Asterisk cannot be mixed with column list in INSERT SELECT query.");
+
+                    asterisk = true;
                 }
                 else
-                    ++insert_column;
-
-                if (insert_column == insert_structure.end())
-                    break;
+                {
+                    if (asterisk)
+                        --insert_structure_end;
+                    else
+                        ++insert_column;
+                }
             }
 
-            table_function_ptr->setStructureHint(table_structure);
+            if (expression != expression_list.end())
+                throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH, "Number of columns in insert table less than required by SELECT expression.");
+
+            if (asterisk)
+            {
+                for (; insert_column != insert_structure_end; ++insert_column)
+                    structure_hint.add({ insert_column->name, insert_column->type });
+            }
+
+            if (!structure_hint.empty())
+                table_function_ptr->setStructureHint(structure_hint);
         }
     }
 
