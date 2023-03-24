@@ -28,13 +28,13 @@ FileSegment::FileSegment(
         size_t offset_,
         size_t size_,
         const Key & key_,
-        KeyMetadata * key_metadata_,
+        std::weak_ptr<KeyMetadata> key_metadata_,
         FileCache * cache_,
         State download_state_,
         const CreateFileSegmentSettings & settings)
     : segment_range(offset_, offset_ + size_ - 1)
     , download_state(download_state_)
-    , key_metadata(std::move(key_metadata_))
+    , key_metadata(key_metadata_)
     , file_key(key_)
     , file_path(cache_->getPathInLocalCache(key(), offset(), settings.kind))
     , cache(cache_)
@@ -379,15 +379,21 @@ FileSegment::State FileSegment::wait()
     return download_state;
 }
 
-LockedKeyPtr FileSegment::createLockedKey(bool assert_exists) const
+KeyMetadataPtr FileSegment::getKeyMetadata(bool assert_exists) const
 {
-    if (!key_metadata)
+    auto metadata = key_metadata.lock();
+    if (!metadata)
     {
         if (assert_exists)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot lock key, key metadata is not set");
         return nullptr;
     }
-    return cache->createLockedKey(key(), *key_metadata);
+    return metadata;
+}
+
+LockedKeyPtr FileSegment::createLockedKey(bool assert_exists) const
+{
+    return cache->createLockedKey(key(), getKeyMetadata(assert_exists));
 }
 
 bool FileSegment::reserve(size_t size_to_reserve)
@@ -438,7 +444,7 @@ bool FileSegment::reserve(size_t size_to_reserve)
         if (is_unbound && is_file_segment_size_exceeded)
             segment_range.right = range().left + expected_downloaded_size + size_to_reserve;
 
-        reserved = cache->tryReserve(key(), offset(), size_to_reserve, *key_metadata);
+        reserved = cache->tryReserve(key(), offset(), size_to_reserve, getKeyMetadata(true));
         if (reserved)
         {
             /// No lock is required because reserved size is always
@@ -711,7 +717,7 @@ FileSegmentPtr FileSegment::getSnapshot(const FileSegmentPtr & file_segment)
         file_segment->offset(),
         file_segment->range().size(),
         file_segment->key(),
-        nullptr,
+        std::weak_ptr<KeyMetadata>(),
         file_segment->cache,
         State::DETACHED,
         CreateFileSegmentSettings(file_segment->getKind()));
@@ -737,9 +743,9 @@ bool FileSegment::isCompleted(bool sync) const
     {
         return download_state == State::DOWNLOADED
             || download_state == State::DETACHED
-            /// the following means that file segment was shrinked to the downloaded size via calling complete().
+            /// the following means that file segment was shrunk to the downloaded size via calling complete().
             /// a more correct way to call such state is PARTIALLY_DOWNLOADED_NO_CONTINUATION_DETACHED.
-            || ((download_state == State::PARTIALLY_DOWNLOADED_NO_CONTINUATION) && (key_metadata == nullptr));
+            || ((download_state == State::PARTIALLY_DOWNLOADED_NO_CONTINUATION) && (key_metadata.expired()));
     };
 
     if (sync)
@@ -764,7 +770,7 @@ void FileSegment::detach(const FileSegmentGuard::Lock & lock, const LockedKey &)
 
 void FileSegment::detachAssumeStateFinalized(const FileSegmentGuard::Lock & lock)
 {
-    key_metadata = nullptr;
+    key_metadata.reset();
     LOG_TEST(log, "Detached file segment: {}", getInfoForLogUnlocked(lock));
 }
 
@@ -783,7 +789,7 @@ FileSegments::iterator FileSegmentsHolder::completeAndPopFrontImpl()
     auto locked_key = file_segment.createLockedKey(/* assert_exists */false);
     if (locked_key)
     {
-        auto queue_iter = locked_key->getKeyMetadata().tryGetByOffset(file_segment.offset())->queue_iterator;
+        auto queue_iter = locked_key->getKeyMetadata()->tryGetByOffset(file_segment.offset())->queue_iterator;
         if (queue_iter)
             LockedCachePriorityIterator(cache_lock, queue_iter).use();
 

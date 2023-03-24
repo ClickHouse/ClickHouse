@@ -33,6 +33,7 @@ using FileSegments = std::list<FileSegmentPtr>;
 struct LockedKey;
 using LockedKeyPtr = std::shared_ptr<LockedKey>;
 struct KeyMetadata;
+using KeyMetadataPtr = std::shared_ptr<KeyMetadata>;
 
 /*
  * FileSegmentKind is used to specify the eviction policy for file segments.
@@ -122,7 +123,7 @@ public:
         size_t offset_,
         size_t size_,
         const Key & key_,
-        KeyMetadata * key_metadata,
+        std::weak_ptr<KeyMetadata> key_metadata,
         FileCache * cache_,
         State download_state_,
         const CreateFileSegmentSettings & create_settings);
@@ -284,6 +285,7 @@ private:
     void assertCorrectnessUnlocked(const FileSegmentGuard::Lock &) const;
 
     LockedKeyPtr createLockedKey(bool assert_exists = true) const;
+    KeyMetadataPtr getKeyMetadata(bool assert_exists) const;
 
     /// completeWithoutStateUnlocked() is called from destructor of FileSegmentsHolder.
     /// Function might check if the caller of the method
@@ -312,7 +314,7 @@ private:
     mutable std::mutex download_mutex;
 
     mutable FileSegmentGuard segment_guard;
-    KeyMetadata * key_metadata;
+    std::weak_ptr<KeyMetadata> key_metadata;
     std::condition_variable cv;
 
     Key file_key;

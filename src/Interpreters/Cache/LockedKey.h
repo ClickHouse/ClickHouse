@@ -29,7 +29,7 @@ struct LockedKey : private boost::noncopyable
 {
     LockedKey(
         const FileCacheKey & key_,
-        KeyMetadata & key_metadata_,
+        std::shared_ptr<KeyMetadata> key_metadata_,
         KeyGuard::Lock && key_lock_,
         const std::string & key_path_,
         KeysQueuePtr cleanup_keys_metadata_queue_);
@@ -38,8 +38,7 @@ struct LockedKey : private boost::noncopyable
 
     const FileCacheKey & getKey() const { return key; }
 
-    const KeyMetadata & getKeyMetadata() const { return key_metadata; }
-    KeyMetadata & getKeyMetadata() { return key_metadata; }
+    KeyMetadataPtr getKeyMetadata() const { return key_metadata; }
 
     void removeFileSegment(size_t offset, const FileSegmentGuard::Lock &, const CacheGuard::Lock &);
 
@@ -54,7 +53,7 @@ private:
     const std::string key_path;
 
     KeyGuard::Lock lock;
-    KeyMetadata & key_metadata;
+    const std::shared_ptr<KeyMetadata> key_metadata;
     KeysQueuePtr cleanup_keys_metadata_queue;
 
     Poco::Logger * log;
