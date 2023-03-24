@@ -50,10 +50,16 @@ namespace
         }
 
         if (!filter.empty())
+        {
             out.writeKeyword(" USING");
+            out.ostr << filter;
+        }
 
         if (!check.empty() && (alter || (check != filter)))
+        {
             out.writeKeyword(" WITH CHECK");
+            out.ostr << check;
+        }
     }
 
 
