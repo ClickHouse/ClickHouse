@@ -525,7 +525,8 @@ void addMergeSortingStep(QueryPlan & query_plan,
     auto merging_sorted = std::make_unique<SortingStep>(query_plan.getCurrentDataStream(),
         sort_description,
         max_block_size,
-        query_analysis_result.partial_sorting_limit);
+        query_analysis_result.partial_sorting_limit,
+        settings.exact_rows_before_limit);
     merging_sorted->setStepDescription("Merge sorted streams " + description);
     query_plan.addStep(std::move(merging_sorted));
 }
