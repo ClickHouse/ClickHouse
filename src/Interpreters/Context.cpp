@@ -165,6 +165,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_READ_METHOD;
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_FUNCTION;
+    extern const int ILLEGAL_COLUMN;
+    extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
 
 
@@ -1395,38 +1397,64 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
         if (getSettingsRef().use_structure_from_insertion_table_in_table_functions && table_function_ptr->needStructureHint() && hasInsertionTable())
         {
             const auto & insert_structure = DatabaseCatalog::instance().getTable(getInsertionTable(), shared_from_this())->getInMemoryMetadataPtr()->getColumns();
-            auto table_structure = table_function_ptr->getActualTableStructure(getQueryContext());
+            DB::ColumnsDescription structure_hint;
 
             /// Insert table matches columns against SELECT expression by position, so we want to map
             /// insert table columns to table function columns through names from SELECT expression.
 
             auto insert_column = insert_structure.begin();
-            for (const auto & expression : select_query_hint->select()->as<ASTExpressionList>()->children)
+            auto insert_structure_end = insert_structure.end();
+            auto virtual_column_names = table_function_ptr->getVirtualsToCheckBeforeUsingStructureHint();
+            bool asterisk = false;
+            const auto & expression_list = select_query_hint->select()->as<ASTExpressionList>()->children;
+            auto expression = expression_list.begin();
+
+            for (; expression != expression_list.end() && insert_column != insert_structure_end; ++expression)
             {
-                if (auto * identifier = expression->as<ASTIdentifier>())
+                if (auto * identifier = (*expression)->as<ASTIdentifier>())
                 {
-                    if (table_structure.hasPhysical(identifier->name()))
-                        table_structure.modify(identifier->name(), [&insert_column](ColumnDescription & column){ column.type = insert_column->type; });
-                    ++insert_column;
-                }
-                else if (expression->as<ASTAsterisk>())
-                {
-                    for (const auto & column : table_structure)
+                    if (!virtual_column_names.contains(identifier->name()))
                     {
-                        table_structure.modify(column.name, [&insert_column](ColumnDescription & column){ column.type = insert_column->type; });
-                        ++insert_column;
-                        if (insert_column == insert_structure.end())
-                            break;
+                        if (asterisk)
+                            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Asterisk cannot be mixed with column list in INSERT SELECT query.");
+
+                        structure_hint.add({ identifier->name(), insert_column->type });
                     }
+
+                    if (asterisk)
+                        --insert_structure_end;
+                    else
+                        ++insert_column;
+                }
+                else if ((*expression)->as<ASTAsterisk>())
+                {
+                    if (asterisk)
+                        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Only one asterisk can be used in INSERT SELECT query.");
+                    if (!structure_hint.empty())
+                        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Asterisk cannot be mixed with column list in INSERT SELECT query.");
+
+                    asterisk = true;
                 }
                 else
-                    ++insert_column;
-
-                if (insert_column == insert_structure.end())
-                    break;
+                {
+                    if (asterisk)
+                        --insert_structure_end;
+                    else
+                        ++insert_column;
+                }
             }
 
-            table_function_ptr->setStructureHint(table_structure);
+            if (expression != expression_list.end())
+                throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH, "Number of columns in insert table less than required by SELECT expression.");
+
+            if (asterisk)
+            {
+                for (; insert_column != insert_structure_end; ++insert_column)
+                    structure_hint.add({ insert_column->name, insert_column->type });
+            }
+
+            if (!structure_hint.empty())
+                table_function_ptr->setStructureHint(structure_hint);
         }
 
         res = table_function_ptr->execute(table_expression, shared_from_this(), table_function_ptr->getName());
