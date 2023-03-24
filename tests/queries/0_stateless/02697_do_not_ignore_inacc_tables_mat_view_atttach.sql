@@ -1,6 +1,6 @@
 DROP DATABASE IF EXISTS test_db;
 
-SET skip_materialized_view_checking_if_source_table_not_exist = 1;
+SET skip_materialized_view_checking_if_source_table_not_exist = 0;
 SET send_logs_level = 'fatal';
 
 CREATE DATABASE test_db;
@@ -15,8 +15,6 @@ DROP TABLE test_db.table;
 
 DETACH TABLE test_db.mview;
 
-ATTACH TABLE test_db.mview;
-
-SET skip_materialized_view_checking_if_source_table_not_exist = 0;
+ATTACH TABLE test_db.mview; --{serverError 60}
 
 DROP DATABASE test_db;
