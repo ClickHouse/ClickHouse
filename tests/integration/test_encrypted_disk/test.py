@@ -292,3 +292,5 @@ def test_restart():
     node.restart_clickhouse()
 
     assert node.query(select_query) == "(0,'data'),(1,'data')"
+
+    node.query("DROP TABLE IF EXISTS encrypted_test NO DELAY;")
