@@ -6,6 +6,8 @@ namespace DB
 
 void formatAST(const IAST & ast, WriteBuffer & buf, bool hilite, bool one_line)
 {
+    ast.dumpTree();
+
     IAST::FormatSettings settings(one_line, false, IdentifierQuotingStyle::Backticks, hilite);
     ast.format(buf, settings);
 }
