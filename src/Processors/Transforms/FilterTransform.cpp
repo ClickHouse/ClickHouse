@@ -44,7 +44,7 @@ Block FilterTransform::transformHeader(
         header = expression->updateHeader(std::move(header));
 
     auto filter_type = header.getByName(filter_column_name).type;
-    if (!isUInt8(removeNullable(removeLowCardinality(filter_type))))
+    if (!filter_type->onlyNull() && !isUInt8(removeNullable(removeLowCardinality(filter_type))))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
             "Illegal type {} of column {} for filter. Must be UInt8 or Nullable(UInt8).",
             filter_type->getName(), filter_column_name);
