@@ -441,7 +441,7 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
 
         if (restore_settings.async)
         {
-            backups_thread_pool.scheduleOrThrowOnError(
+            restores_thread_pool.scheduleOrThrowOnError(
                 [this, restore_query, restore_id, backup_name_for_logging, backup_info, restore_settings, restore_coordination, context_in_use]
                 {
                     doRestore(
