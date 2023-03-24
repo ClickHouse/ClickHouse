@@ -95,6 +95,9 @@ private:
     BlockIO doCreateOrReplaceTable(ASTCreateQuery & create, const InterpreterCreateQuery::TableProperties & properties);
     /// Inserts data in created table if it's CREATE ... SELECT
     BlockIO fillTableIfNeeded(const ASTCreateQuery & create);
+    /// Check type compatible for materialized dest table and select columns
+    void checkTypecompatibleForMaterializeView(const ASTCreateQuery & create);
+    Block getSampleBlockFromCreteQuery(const ASTCreateQuery & create);
 
     void assertOrSetUUID(ASTCreateQuery & create, const DatabasePtr & database) const;
 

@@ -17,6 +17,11 @@ DETACH TABLE test_db.mview;
 
 ATTACH TABLE test_db.mview;
 
-SET skip_materialized_view_checking_if_source_table_not_exist = 0;
+CREATE TABLE test_db.table (n Int32, s String) ENGINE MergeTree PARTITION BY n ORDER BY n;
+
+INSERT INTO test_db.table VALUES (3,'some_val');
+
+SELECT n,s  FROM test_db.table ORDER BY n;
+SELECT n,n2 FROM test_db.mview ORDER by n;
 
 DROP DATABASE test_db;
