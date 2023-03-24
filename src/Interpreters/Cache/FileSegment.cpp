@@ -379,21 +379,34 @@ FileSegment::State FileSegment::wait()
     return download_state;
 }
 
-KeyMetadataPtr FileSegment::getKeyMetadata(bool assert_exists) const
+KeyMetadataPtr FileSegment::getKeyMetadata() const
 {
     auto metadata = key_metadata.lock();
-    if (!metadata)
-    {
-        if (assert_exists)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot lock key, key metadata is not set");
-        return nullptr;
-    }
-    return metadata;
+    if (metadata)
+        return metadata;
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot lock key, key metadata is not set");
+}
+
+KeyMetadataPtr FileSegment::tryGetKeyMetadata() const
+{
+    auto metadata = key_metadata.lock();
+    if (metadata)
+        return metadata;
+    return nullptr;
 }
 
 LockedKeyPtr FileSegment::createLockedKey(bool assert_exists) const
 {
-    return cache->createLockedKey(key(), getKeyMetadata(assert_exists));
+    KeyMetadataPtr metadata;
+    if (assert_exists)
+        metadata = getKeyMetadata();
+    else
+    {
+        metadata = tryGetKeyMetadata();
+        if (!metadata)
+            return nullptr;
+    }
+    return cache->createLockedKey(key(), metadata);
 }
 
 bool FileSegment::reserve(size_t size_to_reserve)
@@ -444,7 +457,7 @@ bool FileSegment::reserve(size_t size_to_reserve)
         if (is_unbound && is_file_segment_size_exceeded)
             segment_range.right = range().left + expected_downloaded_size + size_to_reserve;
 
-        reserved = cache->tryReserve(key(), offset(), size_to_reserve, getKeyMetadata(true));
+        reserved = cache->tryReserve(key(), offset(), size_to_reserve, getKeyMetadata());
         if (reserved)
         {
             /// No lock is required because reserved size is always

@@ -285,7 +285,8 @@ private:
     void assertCorrectnessUnlocked(const FileSegmentGuard::Lock &) const;
 
     LockedKeyPtr createLockedKey(bool assert_exists = true) const;
-    KeyMetadataPtr getKeyMetadata(bool assert_exists) const;
+    KeyMetadataPtr getKeyMetadata() const;
+    KeyMetadataPtr tryGetKeyMetadata() const;
 
     /// completeWithoutStateUnlocked() is called from destructor of FileSegmentsHolder.
     /// Function might check if the caller of the method
