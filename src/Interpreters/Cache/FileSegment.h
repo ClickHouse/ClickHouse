@@ -276,7 +276,6 @@ private:
     /// Finalized state is such a state that does not need to be completed (with complete()).
     bool hasFinalizedStateUnlocked(const FileSegmentGuard::Lock &) const;
 
-    bool isDetached(const FileSegmentGuard::Lock &) const { return download_state == State::DETACHED; }
     void detachAssumeStateFinalized(const FileSegmentGuard::Lock &);
     [[noreturn]] void throwIfDetachedUnlocked(const FileSegmentGuard::Lock &) const;
 

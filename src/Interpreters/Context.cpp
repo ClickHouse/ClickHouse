@@ -111,6 +111,7 @@
 #include <Storages/StorageView.h>
 #include <Parsers/ASTFunction.h>
 #include <base/find_symbols.h>
+#include <Interpreters/Cache/FileCache.h>
 
 #if USE_ROCKSDB
 #include <rocksdb/table.h>

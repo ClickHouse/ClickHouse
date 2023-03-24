@@ -375,7 +375,7 @@ FileSegment::State FileSegment::wait()
         chassert(!getDownloaderUnlocked(lock).empty());
         chassert(!isDownloaderUnlocked(lock));
 
-        cv.wait_for(lock, std::chrono::seconds(60));
+        cv.wait_for(lock, std::chrono::seconds(60), [&]() { return download_state != State::DOWNLOADING; });
     }
 
     return download_state;

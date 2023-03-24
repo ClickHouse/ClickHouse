@@ -6,8 +6,7 @@
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/IVolume.h>
 #include <Common/CurrentMetrics.h>
-#include <Interpreters/Cache/FileSegment.h>
-#include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/FileCache_fwd.h>
 
 
 namespace CurrentMetrics

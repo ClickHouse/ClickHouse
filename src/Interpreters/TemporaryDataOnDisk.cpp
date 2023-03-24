@@ -12,6 +12,8 @@
 
 #include <Common/logger_useful.h>
 #include <Interpreters/Cache/WriteBufferToFileSegment.h>
+#include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/FileSegment.h>
 
 namespace DB
 {

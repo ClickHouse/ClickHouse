@@ -15,4 +15,10 @@ using FileCachePtr = std::shared_ptr<FileCache>;
 struct FileCacheSettings;
 struct CreateFileSegmentSettings;
 
+class FileSegment;
+using FileSegmentPtr = std::shared_ptr<FileSegment>;
+
+struct FileSegmentsHolder;
+using FileSegmentsHolderPtr = std::unique_ptr<FileSegmentsHolder>;
+
 }
