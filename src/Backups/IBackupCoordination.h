@@ -87,12 +87,6 @@ public:
         /// Name of the data file.
         String data_file_name;
 
-        /// Suffix of an archive if the backup is stored as a series of archives.
-        String archive_suffix;
-
-        /// Position in the archive.
-        UInt64 pos_in_archive = static_cast<UInt64>(-1);
-
         /// Note: this format doesn't allow to parse data back
         /// It is useful only for debugging purposes
         [[ maybe_unused ]] String describe()
@@ -104,8 +98,6 @@ public:
             result += fmt::format("base_size: {};\n", base_size);
             result += fmt::format("base_checksum: {};\n", getHexUIntLowercase(checksum));
             result += fmt::format("data_file_name: {};\n", data_file_name);
-            result += fmt::format("archive_suffix: {};\n", archive_suffix);
-            result += fmt::format("pos_in_archive: {};\n", pos_in_archive);
             return result;
         }
     };
@@ -120,9 +112,6 @@ public:
         addFileInfo(file_info, is_data_file_required);
     }
 
-    /// Updates some fields (currently only `archive_suffix`) of a stored file's information.
-    virtual void updateFileInfo(const FileInfo & file_info) = 0;
-
     virtual std::vector<FileInfo> getAllFileInfos() const = 0;
     virtual Strings listFiles(const String & directory, bool recursive) const = 0;
     virtual bool hasFiles(const String & directory) const = 0;
@@ -131,12 +120,6 @@ public:
 
     virtual std::optional<FileInfo> getFileInfo(const String & file_name) const = 0;
     virtual std::optional<FileInfo> getFileInfo(const SizeAndChecksum & size_and_checksum) const = 0;
-
-    /// Generates a new archive suffix, e.g. "001", "002", "003", ...
-    virtual String getNextArchiveSuffix() = 0;
-
-    /// Returns the list of all the archive suffixes which were generated.
-    virtual Strings getAllArchiveSuffixes() const = 0;
 
     /// This function is used to check if concurrent backups are running
     /// other than the backup passed to the function

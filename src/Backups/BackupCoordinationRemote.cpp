@@ -24,8 +24,6 @@ namespace Stage = BackupCoordinationStage;
 
 /// zookeeper_path/file_names/file_name->checksum_and_size
 /// zookeeper_path/file_infos/checksum_and_size->info
-/// zookeeper_path/archive_suffixes
-/// zookeeper_path/current_archive_suffix
 
 namespace
 {
@@ -113,8 +111,6 @@ namespace
         writeBinary(info.base_size, out);
         writeBinary(info.base_checksum, out);
         writeBinary(info.data_file_name, out);
-        writeBinary(info.archive_suffix, out);
-        writeBinary(info.pos_in_archive, out);
         return out.str();
     }
 
@@ -128,8 +124,6 @@ namespace
         readBinary(info.base_size, in);
         readBinary(info.base_checksum, in);
         readBinary(info.data_file_name, in);
-        readBinary(info.archive_suffix, in);
-        readBinary(info.pos_in_archive, in);
         return info;
     }
 
@@ -150,19 +144,6 @@ namespace
         UInt128 checksum = unhexUInt<UInt128>(str.data());
         UInt64 size = parseFromString<UInt64>(str.substr(num_chars_in_checksum + 1));
         return std::pair{size, checksum};
-    }
-
-    size_t extractCounterFromSequentialNodeName(const String & node_name)
-    {
-        size_t pos_before_counter = node_name.find_last_not_of("0123456789");
-        size_t counter_length = node_name.length() - 1 - pos_before_counter;
-        auto counter = std::string_view{node_name}.substr(node_name.length() - counter_length);
-        return parseFromString<UInt64>(counter);
-    }
-
-    String formatArchiveSuffix(size_t counter)
-    {
-        return fmt::format("{:03}", counter); /// Outputs 001, 002, 003, ...
     }
 }
 
@@ -248,7 +229,6 @@ void BackupCoordinationRemote::createRootNodes()
     zk->createIfNotExists(zookeeper_path + "/repl_sql_objects", "");
     zk->createIfNotExists(zookeeper_path + "/file_names", "");
     zk->createIfNotExists(zookeeper_path + "/file_infos", "");
-    zk->createIfNotExists(zookeeper_path + "/archive_suffixes", "");
 }
 
 void BackupCoordinationRemote::removeAllNodes()
@@ -547,28 +527,6 @@ void BackupCoordinationRemote::addFileInfo(const FileInfo & file_info, bool & is
     is_data_file_required = (code == Coordination::Error::ZOK) && (file_info.size > file_info.base_size);
 }
 
-void BackupCoordinationRemote::updateFileInfo(const FileInfo & file_info)
-{
-    if (!file_info.size)
-        return; /// we don't keep FileInfos for empty files, nothing to update
-
-    auto zk = getZooKeeper();
-    String size_and_checksum = serializeSizeAndChecksum(std::pair{file_info.size, file_info.checksum});
-    String full_path = zookeeper_path + "/file_infos/" + size_and_checksum;
-    for (size_t attempt = 0; attempt < MAX_ZOOKEEPER_ATTEMPTS; ++attempt)
-    {
-        Coordination::Stat stat;
-        auto new_info = deserializeFileInfo(zk->get(full_path, &stat));
-        new_info.archive_suffix = file_info.archive_suffix;
-        auto code = zk->trySet(full_path, serializeFileInfo(new_info), stat.version);
-        if (code == Coordination::Error::ZOK)
-            return;
-        bool is_last_attempt = (attempt == MAX_ZOOKEEPER_ATTEMPTS - 1);
-        if ((code != Coordination::Error::ZBADVERSION) || is_last_attempt)
-            throw zkutil::KeeperException(code, full_path);
-    }
-}
-
 std::vector<FileInfo> BackupCoordinationRemote::getAllFileInfos() const
 {
     /// There could be tons of files inside /file_names or /file_infos
@@ -772,26 +730,6 @@ std::optional<FileInfo> BackupCoordinationRemote::getFileInfo(const SizeAndCheck
     if (!zk->tryGet(zookeeper_path + "/file_infos/" + serializeSizeAndChecksum(size_and_checksum), file_info_str))
         return std::nullopt;
     return deserializeFileInfo(file_info_str);
-}
-
-String BackupCoordinationRemote::getNextArchiveSuffix()
-{
-    auto zk = getZooKeeper();
-    String path = zookeeper_path + "/archive_suffixes/a";
-    String path_created;
-    auto code = zk->tryCreate(path, "", zkutil::CreateMode::PersistentSequential, path_created);
-    if (code != Coordination::Error::ZOK)
-        throw zkutil::KeeperException(code, path);
-    return formatArchiveSuffix(extractCounterFromSequentialNodeName(path_created));
-}
-
-Strings BackupCoordinationRemote::getAllArchiveSuffixes() const
-{
-    auto zk = getZooKeeper();
-    Strings node_names = zk->getChildren(zookeeper_path + "/archive_suffixes");
-    for (auto & node_name : node_names)
-        node_name = formatArchiveSuffix(extractCounterFromSequentialNodeName(node_name));
-    return node_names;
 }
 
 bool BackupCoordinationRemote::hasConcurrentBackups(const std::atomic<size_t> &) const

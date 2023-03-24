@@ -81,7 +81,7 @@ public:
                           WriteMode write_mode, const WriteSettings & write_settings) const override;
     void writeFile(const String & file_name, BackupEntryPtr entry) override;
     void finalizeWriting() override;
-    bool supportsWritingInMultipleThreads() const override { return !use_archives; }
+    bool supportsWritingInMultipleThreads() const override { return !use_archive; }
 
 private:
     using FileInfo = IBackupCoordination::FileInfo;
@@ -89,7 +89,9 @@ private:
 
     void open(const ContextPtr & context);
     void close();
-    void closeArchives();
+
+    void openArchive();
+    void closeArchive();
 
     /// Writes the file ".backup" containing backup's metadata.
     void writeBackupMetadata();
@@ -106,16 +108,12 @@ private:
 
     void removeAllFilesAfterFailure();
 
-    String getArchiveNameWithSuffix(const String & suffix) const;
-    std::shared_ptr<IArchiveReader> getArchiveReader(const String & suffix) const;
-    std::shared_ptr<IArchiveWriter> getArchiveWriter(const String & suffix);
-
     /// Calculates and sets `compressed_size`.
     void setCompressedSize();
 
     const String backup_name_for_logging;
+    const bool use_archive;
     const ArchiveParams archive_params;
-    const bool use_archives;
     const OpenMode open_mode;
     std::shared_ptr<IBackupWriter> writer;
     std::shared_ptr<IBackupReader> reader;
@@ -137,9 +135,8 @@ private:
     std::optional<BackupInfo> base_backup_info;
     std::shared_ptr<const IBackup> base_backup;
     std::optional<UUID> base_backup_uuid;
-    mutable std::unordered_map<String /* archive_suffix */, std::shared_ptr<IArchiveReader>> archive_readers;
-    std::pair<String, std::shared_ptr<IArchiveWriter>> archive_writers[2];
-    String current_archive_suffix;
+    std::shared_ptr<IArchiveReader> archive_reader;
+    std::shared_ptr<IArchiveWriter> archive_writer;
     String lock_file_name;
     bool writing_finalized = false;
     bool deduplicate_files = true;

@@ -44,7 +44,6 @@ public:
     Strings getReplicatedSQLObjectsDirs(const String & loader_zk_path, UserDefinedSQLObjectType object_type) const override;
 
     void addFileInfo(const FileInfo & file_info, bool & is_data_file_required) override;
-    void updateFileInfo(const FileInfo & file_info) override;
 
     std::vector<FileInfo> getAllFileInfos() const override;
     Strings listFiles(const String & directory, bool recursive) const override;
@@ -52,9 +51,6 @@ public:
 
     std::optional<FileInfo> getFileInfo(const String & file_name) const override;
     std::optional<FileInfo> getFileInfo(const SizeAndChecksum & size_and_checksum) const override;
-
-    String getNextArchiveSuffix() override;
-    Strings getAllArchiveSuffixes() const override;
 
     bool hasConcurrentBackups(const std::atomic<size_t> & num_active_backups) const override;
 
@@ -66,8 +62,6 @@ private:
 
     std::map<String /* file_name */, SizeAndChecksum> file_names TSA_GUARDED_BY(mutex); /// Should be ordered alphabetically, see listFiles(). For empty files we assume checksum = 0.
     std::map<SizeAndChecksum, FileInfo> file_infos TSA_GUARDED_BY(mutex); /// Information about files. Without empty files.
-    Strings archive_suffixes TSA_GUARDED_BY(mutex);
-    size_t current_archive_suffix TSA_GUARDED_BY(mutex) = 0;
 };
 
 }

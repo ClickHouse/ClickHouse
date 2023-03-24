@@ -109,16 +109,6 @@ void BackupCoordinationLocal::addFileInfo(const FileInfo & file_info, bool & is_
     is_data_file_required = inserted_file_info && (file_info.size > file_info.base_size);
 }
 
-void BackupCoordinationLocal::updateFileInfo(const FileInfo & file_info)
-{
-    if (!file_info.size)
-        return; /// we don't keep FileInfos for empty files, nothing to update
-
-    std::lock_guard lock{mutex};
-    auto & dest = file_infos.at(std::pair{file_info.size, file_info.checksum});
-    dest.archive_suffix = file_info.archive_suffix;
-}
-
 std::vector<FileInfo> BackupCoordinationLocal::getAllFileInfos() const
 {
     std::lock_guard lock{mutex};
@@ -199,20 +189,6 @@ std::optional<FileInfo> BackupCoordinationLocal::getFileInfo(const SizeAndChecks
     if (it == file_infos.end())
         return std::nullopt;
     return it->second;
-}
-
-String BackupCoordinationLocal::getNextArchiveSuffix()
-{
-    std::lock_guard lock{mutex};
-    String new_archive_suffix = fmt::format("{:03}", ++current_archive_suffix); /// Outputs 001, 002, 003, ...
-    archive_suffixes.push_back(new_archive_suffix);
-    return new_archive_suffix;
-}
-
-Strings BackupCoordinationLocal::getAllArchiveSuffixes() const
-{
-    std::lock_guard lock{mutex};
-    return archive_suffixes;
 }
 
 bool BackupCoordinationLocal::hasConcurrentBackups(const std::atomic<size_t> & num_active_backups) const
