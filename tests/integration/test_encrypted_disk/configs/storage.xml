@@ -14,7 +14,6 @@
             <disk_s3_encrypted>
                 <type>encrypted</type>
                 <disk>disk_s3</disk>
-                <path>encrypted/</path>
                 <key>1234567812345678</key>
             </disk_s3_encrypted>
             <disk_local_encrypted>
