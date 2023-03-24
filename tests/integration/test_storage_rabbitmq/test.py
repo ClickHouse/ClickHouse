@@ -2718,7 +2718,7 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
         else:
             logging.debug(f"Number of rows in test.view: {res}")
 
-    instance.query("DROP VIEW test.consumer")
+    instance.query("DROP VIEW test.consumer SYNC")
     for i in range(20, 40):
         channel.basic_publish(
             exchange="mv", routing_key="", body=json.dumps({"key": i, "value": i})
