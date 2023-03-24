@@ -37,6 +37,7 @@ result = client.query("select count(*) from t_async_insert_dedup_no_part")
 print(result, flush=True)
 client.query("DROP TABLE IF EXISTS t_async_insert_dedup_no_part NO DELAY")
 
+
 # generate data and push to queue
 def generate_data(q, total_number):
     old_data = []
