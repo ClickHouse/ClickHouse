@@ -31,7 +31,7 @@ public:
         const CoordinationSettingsPtr & coordination_settings_,
         const KeeperContextPtr & keeper_context_,
         KeeperSnapshotManagerS3 * snapshot_manager_s3_,
-        CommitCallback commit_callback_,
+        CommitCallback commit_callback_ = {},
         const std::string & superdigest_ = "");
 
     /// Read state from the latest snapshot
