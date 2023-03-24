@@ -789,8 +789,10 @@ void ASTFunction::formatImplWithoutAlias(FormattingBuffer out) const
                     out.writeOperator(func[1]);
 
                     auto string_literal = getOptionalStringLiteral(arguments->children[1]);
+                    bool special_hilite = false;
                     if (string_literal.has_value() && (name == "like" || name == "notLike" || name == "ilike" || name == "notILike"))
                     {
+                        special_hilite = true;
                         out.writeStringLiteralWithMetacharacters(string_literal.value(), "%_");
                     }
 
@@ -805,10 +807,14 @@ void ASTFunction::formatImplWithoutAlias(FormattingBuffer out) const
                         && !arguments->children[1]->as<ASTSubquery>();
 
                     if (extra_parents_around_in_rhs)
+                    {
                         out.ostr << '(';
-                    arguments->children[1]->formatImpl(out_dont_need_parens);
-                    if (extra_parents_around_in_rhs)
+                        arguments->children[1]->formatImpl(out_dont_need_parens);
                         out.ostr << ')';
+                    }
+
+                    if (!special_hilite && !extra_parents_around_in_rhs)
+                        arguments->children[1]->formatImpl(out_need_parens);
 
                     if (out.needParens())
                         out.ostr << ')';
