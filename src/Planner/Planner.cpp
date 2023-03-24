@@ -1105,11 +1105,7 @@ void Planner::buildPlanForQueryNode()
             query_node.getWhere() = {};
     }
 
-    SelectQueryInfo select_query_info;
-    select_query_info.original_query = queryNodeToSelectQuery(query_tree);
-    select_query_info.query = select_query_info.original_query;
-    select_query_info.query_tree = query_tree;
-    select_query_info.planner_context = planner_context;
+    SelectQueryInfo select_query_info = buildSelectQueryInfo();
 
     StorageLimitsList current_storage_limits = storage_limits;
     select_query_info.local_storage_limits = buildStorageLimits(*query_context, select_query_options);
@@ -1404,6 +1400,11 @@ void Planner::buildPlanForQueryNode()
 
     if (!select_query_options.only_analyze)
         addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, result_actions_to_execute);
+}
+
+SelectQueryInfo Planner::buildSelectQueryInfo() const
+{
+    return ::DB::buildSelectQueryInfo(query_tree, planner_context);
 }
 
 void Planner::addStorageLimits(const StorageLimitsList & limits)
