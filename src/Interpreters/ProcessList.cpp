@@ -388,6 +388,12 @@ void QueryStatus::ExecutorHolder::remove()
     executor = nullptr;
 }
 
+bool QueryStatus::ExecutorHolder::equals(const PipelineExecutor * e)
+{
+    std::lock_guard lock(mutex);
+    return executor == e;
+}
+
 CancellationCode QueryStatus::cancelQuery(bool)
 {
     if (is_killed.load())
@@ -428,7 +434,7 @@ void QueryStatus::addPipelineExecutor(PipelineExecutor * e)
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 
     std::lock_guard lock(executors_mutex);
-    assert(std::find_if(executors.begin(), executors.end(), [e](const ExecutorHolderPtr & x){ return x->executor == e; }) == executors.end());
+    assert(std::find_if(executors.begin(), executors.end(), [e](ExecutorHolderPtr & x){ return x->equals(e); }) == executors.end());
     executors.push_back(std::make_shared<ExecutorHolder>(e));
 }
 
@@ -437,7 +443,7 @@ void QueryStatus::removePipelineExecutor(PipelineExecutor * e)
     ExecutorHolderPtr executor_holder;
     {
         std::lock_guard lock(executors_mutex);
-        auto it = std::find_if(executors.begin(), executors.end(), [e](const ExecutorHolderPtr & x){ return x->executor == e; });
+        auto it = std::find_if(executors.begin(), executors.end(), [e](ExecutorHolderPtr & x){ return x->equals(e); });
         assert(it != executors.end());
         executor_holder = *it;
     }

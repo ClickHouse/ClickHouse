@@ -127,6 +127,8 @@ protected:
 
         void remove();
 
+        bool equals(const PipelineExecutor * e);
+
         PipelineExecutor * executor;
         std::mutex mutex;
     };
