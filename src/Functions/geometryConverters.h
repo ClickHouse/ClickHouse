@@ -120,13 +120,6 @@ struct ColumnToPolygonsConverter
         std::vector<Polygon<Point>> answer(offsets.size());
         auto all_rings = ColumnToRingsConverter<Point>::convert(typeid_cast<const ColumnArray &>(*col).getDataPtr());
 
-        // [1, 2, 3]
-        // [[1],
-        //  [2, 3],
-        //  []]
-
-        // [1, 3, 3]
-
         size_t prev_offset = 0;
         for (size_t iter = 0; iter < offsets.size(); ++iter)
         {
