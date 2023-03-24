@@ -75,6 +75,10 @@ const ActionsDAG::Node * findInOutputs(ActionsDAG & dag, const std::string & nam
         {
             const auto * node = *it;
 
+            /// We allow to use Null as a filter.
+            /// In this case, result is empty. Ignore optimizations.
+            if (node->result_type->onlyNull())
+                return nullptr;
 
             if (!isUInt8(removeNullable(removeLowCardinality(node->result_type))))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
