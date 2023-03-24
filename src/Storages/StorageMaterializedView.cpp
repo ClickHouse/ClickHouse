@@ -212,7 +212,18 @@ void StorageMaterializedView::drop()
     if (!select_query.select_table_id.empty())
         DatabaseCatalog::instance().removeViewDependency(select_query.select_table_id, table_id);
 
-    dropInnerTableIfAny(true, getContext());
+    /// Sync flag and the setting make sense for Atomic databases only.
+    /// However, with Atomic databases, IStorage::drop() can be called only from a background task in DatabaseCatalog.
+    /// Running synchronous DROP from that task leads to deadlock.
+    /// Usually dropInnerTableIfAny is no-op, because the inner table is dropped before enqueueing a drop task for the MV itself.
+    /// But there's a race condition with SYSTEM RESTART REPLICA: the inner table might be detached due to RESTART.
+    /// In this case, dropInnerTableIfAny will not find the inner table and will not drop it during executions of DROP query for the MV itself.
+    /// DDLGuard does not protect from that, because RESTART REPLICA acquires DDLGuard for the inner table name,
+    /// but DROP acquires DDLGuard for the name of MV. And we cannot acquire second DDLGuard for the inner name in DROP,
+    /// because it may lead to lock-order-inversion (DDLGuards must be acquired in lexicographical order).
+    auto modified_context = Context::createCopy(getContext());
+    modified_context->setSetting("database_atomic_wait_for_drop_and_detach_synchronously", false);
+    dropInnerTableIfAny(/* sync */ false, modified_context);
 }
 
 void StorageMaterializedView::dropInnerTableIfAny(bool sync, ContextPtr local_context)

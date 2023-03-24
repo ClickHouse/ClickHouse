@@ -597,6 +597,7 @@ void InterpreterSystemQuery::restoreReplica()
 
 StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, ContextMutablePtr system_context, bool need_ddl_guard)
 {
+    LOG_TRACE(log, "Restarting replica {}", replica);
     auto table_ddl_guard = need_ddl_guard
         ? DatabaseCatalog::instance().getDDLGuard(replica.getDatabaseName(), replica.getTableName())
         : nullptr;
@@ -640,6 +641,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     database->attachTable(system_context, replica.table_name, table, data_path);
 
     table->startup();
+    LOG_TRACE(log, "Restarted replica {}", replica);
     return table;
 }
 
@@ -685,11 +687,12 @@ void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
     for (auto & guard : guards)
         guard.second = catalog.getDDLGuard(guard.first.database_name, guard.first.table_name);
 
+    LOG_DEBUG(log, "Will restart {} replicas using {} threads", replica_names.size(), getNumberOfPhysicalCPUCores());
+
     ThreadPool pool(std::min(static_cast<size_t>(getNumberOfPhysicalCPUCores()), replica_names.size()));
 
     for (auto & replica : replica_names)
     {
-        LOG_TRACE(log, "Restarting replica on {}", replica.getNameForLogs());
         pool.scheduleOrThrowOnError([&]() { tryRestartReplica(replica, system_context, false); });
     }
     pool.wait();
