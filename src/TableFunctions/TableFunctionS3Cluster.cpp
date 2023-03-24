@@ -108,12 +108,12 @@ StoragePtr TableFunctionS3Cluster::executeImpl(
     {
         /// On worker node this filename won't contains globs
         storage = std::make_shared<StorageS3>(
-            configuration,
+            std::make_unique<StorageS3::Configuration>(configuration),
+            context,
             StorageID(getDatabaseName(), table_name),
             columns,
             ConstraintsDescription{},
             /* comment */String{},
-            context,
             /* format_settings */std::nullopt, /// No format_settings for S3Cluster
             /*distributed_processing=*/true);
     }

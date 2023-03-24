@@ -16,9 +16,10 @@ void registerStorageDeltaLake(StorageFactory & factory)
         "DeltaLake",
         [](const StorageFactory::Arguments & args)
         {
-            StorageS3::Configuration configuration = StorageDeltaLake::getConfiguration(args.engine_args, args.getLocalContext());
+            auto configuration = StorageDeltaLake::getConfiguration(args.engine_args, args.getLocalContext());
             return std::make_shared<StorageDeltaLake>(
-                configuration, args.table_id, args.columns, args.constraints, args.comment, args.getContext(), getFormatSettings(args.getContext()));
+                std::move(configuration), args.getContext(), args.table_id, args.columns, args.constraints,
+                args.comment, getFormatSettings(args.getContext()));
         },
         {
             .supports_settings = false,

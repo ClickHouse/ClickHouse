@@ -249,13 +249,10 @@ void registerStorageIceberg(StorageFactory & factory)
         "Iceberg",
         [](const StorageFactory::Arguments & args)
         {
-            auto & engine_args = args.engine_args;
-            StorageS3::Configuration configuration = StorageIceberg::getConfiguration(engine_args, args.getLocalContext());
-
+            auto configuration = StorageIceberg::getConfiguration(args.engine_args, args.getLocalContext());
             auto format_settings = getFormatSettings(args.getContext());
-
             return std::make_shared<StorageIceberg>(
-                configuration, args.table_id, args.columns, args.constraints, args.comment, args.getContext(), format_settings);
+                std::move(configuration), args.getContext(), args.table_id, args.columns, args.constraints, args.comment, format_settings);
         },
         {
             .supports_settings = false,

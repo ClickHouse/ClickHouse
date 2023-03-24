@@ -240,6 +240,10 @@ class StorageS3 : public IStorage, WithContext
 public:
     struct Configuration : public StatelessTableEngineConfiguration
     {
+        Configuration() = default;
+        virtual ~Configuration() = default;
+        Configuration(const Configuration &) = default;
+
         S3::URI url;
         std::shared_ptr<const S3::Client> client;
         S3::AuthSettings auth_settings;
@@ -250,21 +254,26 @@ public:
         /// Headers from ast is a part of static configuration.
         HTTPHeaderEntries headers_from_ast;
 
+        String getPath() const { return url.uri.toString(); } /// For logging
+
+        bool withGlobs() const { return url.key.find_first_of("*?{") != std::string::npos; }
+
         void appendToPath(const String & suffix)
         {
             url = S3::URI{std::filesystem::path(url.uri.toString()) / suffix};
         }
 
-        String getPath() const { return url.uri.toString(); } /// For logging
+        virtual bool update(ContextPtr context);
     };
+    using ConfigurationPtr = std::unique_ptr<Configuration>;
 
     StorageS3(
-        const StorageS3::Configuration & configuration_,
+        StorageS3::ConfigurationPtr configuration_,
+        ContextPtr context_,
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & comment,
-        ContextPtr context_,
         std::optional<FormatSettings> format_settings_,
         bool distributed_processing_ = false,
         ASTPtr partition_by_ = nullptr);
@@ -297,7 +306,7 @@ public:
 
     static SchemaCache & getSchemaCache(const ContextPtr & ctx);
 
-    static StorageS3::Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context, bool get_format_from_file = true);
+    static StorageS3::ConfigurationPtr getConfiguration(ASTs & engine_args, ContextPtr local_context, bool get_format_from_file = true);
 
     static ColumnsDescription getTableStructureFromData(
         StorageS3::Configuration & configuration,
@@ -305,33 +314,25 @@ public:
         ContextPtr ctx,
         ObjectInfos * object_infos = nullptr);
 
-protected:
-    static StorageS3::Configuration updateConfiguration(ContextPtr local_context, const Configuration & configuration);
-    static void updateConfiguration(ContextPtr, Configuration &);
-
 private:
     friend class StorageS3Cluster;
     friend class TableFunctionS3Cluster;
 
-    Configuration s3_configuration;
+    const ConfigurationPtr s3_configuration;
     std::vector<String> keys;
     NamesAndTypesList virtual_columns;
     Block virtual_block;
 
-    String format_name;
-    String compression_method;
     String name;
     const bool distributed_processing;
     std::optional<FormatSettings> format_settings;
     ASTPtr partition_by;
-    bool is_key_with_globs = false;
 
     ObjectInfos object_infos;
 
     static std::shared_ptr<StorageS3Source::IIterator> createFileIterator(
         const Configuration & s3_configuration,
         const std::vector<String> & keys,
-        bool is_key_with_globs,
         bool distributed_processing,
         ContextPtr local_context,
         ASTPtr query,
@@ -340,10 +341,7 @@ private:
         Strings * read_keys = nullptr);
 
     static ColumnsDescription getTableStructureFromDataImpl(
-        const String & format,
         const Configuration & s3_configuration,
-        const String & compression_method,
-        bool is_key_with_globs,
         const std::optional<FormatSettings> & format_settings,
         ContextPtr ctx,
         ObjectInfos * object_infos = nullptr);
@@ -357,7 +355,6 @@ private:
         const Strings::const_iterator & end,
         const Configuration & s3_configuration,
         ObjectInfos * object_infos,
-        const String & format_name,
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & ctx);
 
