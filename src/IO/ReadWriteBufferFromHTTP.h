@@ -534,9 +534,7 @@ namespace detail
                 next_callback(count());
 
             if (read_range.end && getOffset() > read_range.end.value())
-            {
                 return false;
-            }
 
             if (impl)
             {
@@ -699,7 +697,8 @@ namespace detail
                     }
                 }
 
-                ProfileEvents::increment(ProfileEvents::ReadBufferSeekCancelConnection);
+                if (!atEndOfRequestedRangeGuess())
+                    ProfileEvents::increment(ProfileEvents::ReadBufferSeekCancelConnection);
                 impl.reset();
             }
 
@@ -715,29 +714,42 @@ namespace detail
             until = std::max(until, 1ul);
             if (read_range.end && *read_range.end + 1 == until)
                 return;
+            if (impl) {
+                if (!atEndOfRequestedRangeGuess())
+                    ProfileEvents::increment(ProfileEvents::ReadBufferSeekCancelConnection);
+                impl.reset();
+            }
             read_range.end = until - 1;
             read_range.begin = getPosition();
             resetWorkingBuffer();
-            if (impl) {
-                ProfileEvents::increment(ProfileEvents::ReadBufferSeekCancelConnection);
-                impl.reset();
-            }
         }
 
         void setReadUntilEnd() override
         {
             if (!read_range.end)
                 return;
+            if (impl) {
+                if (!atEndOfRequestedRangeGuess())
+                    ProfileEvents::increment(ProfileEvents::ReadBufferSeekCancelConnection);
+                impl.reset();
+            }
             read_range.end.reset();
             read_range.begin = getPosition();
             resetWorkingBuffer();
-            if (impl) {
-                ProfileEvents::increment(ProfileEvents::ReadBufferSeekCancelConnection);
-                impl.reset();
-            }
         }
 
         bool supportsRightBoundedReads() const override { return true; }
+
+        // If true, if we destroy impl now, no work was wasted. Just for metrics.
+        bool atEndOfRequestedRangeGuess() {
+            if (!impl)
+                return true;
+            if (read_range.end)
+                return getPosition() > static_cast<off_t>(*read_range.end);
+            if (file_size)
+                return getPosition() >= static_cast<off_t>(*file_size);
+            return false;
+        }
 
         std::string getResponseCookie(const std::string & name, const std::string & def) const
         {
@@ -829,7 +841,7 @@ public:
     }
 };
 
-class RangedReadWriteBufferFromHTTPFactory : public ParallelReadBuffer::ReadBufferFactory, public WithFileName
+class RangedReadWriteBufferFromHTTPFactory : public SeekableReadBufferFactory, public WithFileName
 {
     using OutStreamCallback = ReadWriteBufferFromHTTP::OutStreamCallback;
 

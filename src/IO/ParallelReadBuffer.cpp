@@ -51,7 +51,7 @@ struct ParallelReadBuffer::ReadWorker
 };
 
 ParallelReadBuffer::ParallelReadBuffer(
-    std::unique_ptr<ReadBufferFactory> reader_factory_, ThreadPoolCallbackRunner<void> schedule_, size_t max_working_readers_, size_t range_step_)
+    std::unique_ptr<SeekableReadBufferFactory> reader_factory_, ThreadPoolCallbackRunner<void> schedule_, size_t max_working_readers_, size_t range_step_)
     : SeekableReadBuffer(nullptr, 0)
     , max_working_readers(max_working_readers_)
     , schedule(std::move(schedule_))

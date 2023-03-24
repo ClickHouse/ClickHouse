@@ -92,7 +92,7 @@ private:
 };
 
 /// Creates separate ReadBufferFromS3 for sequence of ranges of particular object
-class ReadBufferS3Factory : public ParallelReadBuffer::ReadBufferFactory, public WithFileName
+class ReadBufferS3Factory : public SeekableReadBufferFactory, public WithFileName
 {
 public:
     explicit ReadBufferS3Factory(

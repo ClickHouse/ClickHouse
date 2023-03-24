@@ -241,7 +241,7 @@ InputFormatPtr FormatFactory::getInput(
 
 InputFormatPtr FormatFactory::getInputMultistream(
     const String & name,
-    ParallelReadBuffer::ReadBufferFactoryPtr buf_factory,
+    SeekableReadBufferFactoryPtr buf_factory,
     const Block & sample,
     ContextPtr context,
     UInt64 max_block_size,
@@ -270,7 +270,7 @@ InputFormatPtr FormatFactory::getInputMultistream(
 InputFormatPtr FormatFactory::getInputImpl(
     const String & name,
     // exactly one of the following two is nullptr
-    ParallelReadBuffer::ReadBufferFactoryPtr buf_factory,
+    SeekableReadBufferFactoryPtr buf_factory,
     ReadBuffer * _buf,
     const Block & sample,
     ContextPtr context,

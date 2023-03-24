@@ -314,7 +314,7 @@ namespace
         struct ReadBufferInfo {
             // Exactly one of these two is nullptr.
             std::unique_ptr<ReadBuffer> buf;
-            ParallelReadBuffer::ReadBufferFactoryPtr buf_factory;
+            SeekableReadBufferFactoryPtr buf_factory;
 
             // TODO: This is currently not always used and not always assigned. Rethink.
             //       Something like this is required to make Parquet format work when the HTTP
@@ -417,8 +417,7 @@ namespace
                             else
                                 LOG_TRACE(&Poco::Logger::get("StorageURLSource"), "HTTP Range is not supported");
 
-                            if (buf_info.seekable_read && res.getStatus() == Poco::Net::HTTPResponse::HTTP_PARTIAL_CONTENT
-                                && res.hasContentLength())
+                            if (buf_info.seekable_read && res.hasContentLength())
                             {
                                 LOG_TRACE(
                                     &Poco::Logger::get("StorageURLSource"),

@@ -92,8 +92,21 @@ private:
     // and get some information about projections (min/max/count per column per row group).
     //
     // TODO: This doesn't seem good. Rethink.
+    //        * Rename multistream to random-access.
+    //        * Pass max_parsing_threads to InputCreator too. Or require random-access formats to be
+    //          created with this function, not InputCreator, and add a ReadBuf* param here.
+    //        * Pass max_download_buffer_size to both creators. Maybe it should be in ReadSettings?
+    //        * Do something about the seekable_read situation in StorageURL.
+    //          Probably add something like checkIfActuallySeekable() in SeekableReadBuffer or in
+    //          SeekableReadBufferFactory.
+    //          (There's also the problem that if the http server doesn't support ranges, we'll read
+    //          the file twice: for schema, then for data. But I think we should ignore that, even
+    //          if we end up solving the related problem of caching metadata.)
+    //        * Would be good to distinguish between max_download_threads = 0 vs 1. 0 would mean
+    //          read inline, on normal threads. 1 would mean read from one IO thread, so that IO can
+    //          overlap with processing.
     using MultistreamInputCreator = std::function<InputFormatPtr(
-            ParallelReadBuffer::ReadBufferFactoryPtr,
+            SeekableReadBufferFactoryPtr buf_factory,
             const Block & header,
             const FormatSettings & settings,
             const ReadSettings& read_settings,
@@ -164,7 +177,7 @@ public:
     // Prefer this over getInput() when reading from random-access source like file or HTTP.
     InputFormatPtr getInputMultistream(
         const String & name,
-        ParallelReadBuffer::ReadBufferFactoryPtr buf_factory,
+        SeekableReadBufferFactoryPtr buf_factory,
         const Block & sample,
         ContextPtr context,
         UInt64 max_block_size,
@@ -266,7 +279,7 @@ private:
     InputFormatPtr getInputImpl(
         const String & name,
         // exactly one of the following two is nullptr
-        ParallelReadBuffer::ReadBufferFactoryPtr buf_factory,
+        SeekableReadBufferFactoryPtr buf_factory,
         ReadBuffer * buf,
         const Block & sample,
         ContextPtr context,
