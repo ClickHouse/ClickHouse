@@ -331,7 +331,7 @@ It is also possible to `BACKUP`/`RESTORE` to S3 by configuring an S3 disk in the
             <s3>
                 <volumes>
                     <main>
-                        <disk>s3</disk>
+                        <disk>s3_plain</disk>
                     </main>
                 </volumes>
             </s3>

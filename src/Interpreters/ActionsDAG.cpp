@@ -9,6 +9,7 @@
 #include <Functions/materialize.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/CastOverloadResolver.h>
+#include <Functions/indexHint.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <IO/WriteBufferFromString.h>
@@ -188,9 +189,9 @@ const ActionsDAG::Node & ActionsDAG::addArrayJoin(const Node & child, std::strin
 }
 
 const ActionsDAG::Node & ActionsDAG::addFunction(
-        const FunctionOverloadResolverPtr & function,
-        NodeRawConstPtrs children,
-        std::string result_name)
+    const FunctionOverloadResolverPtr & function,
+    NodeRawConstPtrs children,
+    std::string result_name)
 {
     auto [arguments, all_const] = getFunctionArguments(children);
 
@@ -1364,6 +1365,83 @@ void ActionsDAG::mergeInplace(ActionsDAG && second)
     first.projected_output = second.projected_output;
 }
 
+void ActionsDAG::mergeNodes(ActionsDAG && second)
+{
+    std::unordered_map<std::string, const ActionsDAG::Node *> node_name_to_node;
+    for (auto & node : nodes)
+        node_name_to_node.emplace(node.result_name, &node);
+
+    struct Frame
+    {
+        ActionsDAG::Node * node = nullptr;
+        bool visited_children = false;
+    };
+
+    std::unordered_map<const ActionsDAG::Node *, ActionsDAG::Node *> const_node_to_node;
+    for (auto & node : second.nodes)
+        const_node_to_node.emplace(&node, &node);
+
+    std::vector<Frame> nodes_to_process;
+    nodes_to_process.reserve(second.getOutputs().size());
+    for (auto & node : second.getOutputs())
+        nodes_to_process.push_back({const_node_to_node.at(node), false /*visited_children*/});
+
+    std::unordered_set<const ActionsDAG::Node *> nodes_to_move_from_second_dag;
+
+    while (!nodes_to_process.empty())
+    {
+        auto & node_to_process = nodes_to_process.back();
+        auto * node = node_to_process.node;
+
+        auto node_it = node_name_to_node.find(node->result_name);
+        if (node_it != node_name_to_node.end())
+        {
+            nodes_to_process.pop_back();
+            continue;
+        }
+
+        if (!node_to_process.visited_children)
+        {
+            node_to_process.visited_children = true;
+
+            for (auto & child : node->children)
+                nodes_to_process.push_back({const_node_to_node.at(child), false /*visited_children*/});
+
+            /// If node has children process them first
+            if (!node->children.empty())
+                continue;
+        }
+
+        for (auto & child : node->children)
+            child = node_name_to_node.at(child->result_name);
+
+        node_name_to_node.emplace(node->result_name, node);
+        nodes_to_move_from_second_dag.insert(node);
+
+        nodes_to_process.pop_back();
+    }
+
+    if (nodes_to_move_from_second_dag.empty())
+        return;
+
+    auto second_nodes_end = second.nodes.end();
+    for (auto second_node_it = second.nodes.begin(); second_node_it != second_nodes_end;)
+    {
+        if (!nodes_to_move_from_second_dag.contains(&(*second_node_it)))
+        {
+            ++second_node_it;
+            continue;
+        }
+
+        auto node_to_move_it = second_node_it;
+        ++second_node_it;
+        nodes.splice(nodes.end(), second.nodes, node_to_move_it);
+
+        if (node_to_move_it->type == ActionType::INPUT)
+            inputs.push_back(&(*node_to_move_it));
+    }
+}
+
 ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split_nodes) const
 {
     /// Split DAG into two parts.
@@ -2193,7 +2271,8 @@ bool ActionsDAG::isSortingPreserved(
 ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
     const NodeRawConstPtrs & filter_nodes,
     const std::unordered_map<std::string, ColumnWithTypeAndName> & node_name_to_input_node_column,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    bool single_output_condition_node)
 {
     if (filter_nodes.empty())
         return nullptr;
@@ -2281,13 +2360,35 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
                 NodeRawConstPtrs function_children;
                 function_children.reserve(node->children.size());
 
+                FunctionOverloadResolverPtr function_overload_resolver;
+
+                if (node->function_base->getName() == "indexHint")
+                {
+                    ActionsDAG::NodeRawConstPtrs children;
+                    if (const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(node->function_base.get()))
+                    {
+                        if (const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get()))
+                        {
+                            auto index_hint_filter_dag = buildFilterActionsDAG(index_hint->getActions()->getOutputs(),
+                                node_name_to_input_node_column,
+                                context,
+                                false /*single_output_condition_node*/);
+
+                            auto index_hint_function_clone = std::make_shared<FunctionIndexHint>();
+                            index_hint_function_clone->setActions(std::move(index_hint_filter_dag));
+                            function_overload_resolver = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(index_hint_function_clone));
+                        }
+                    }
+                }
+
                 for (const auto & child : node->children)
                     function_children.push_back(node_to_result_node.find(child)->second);
 
                 auto [arguments, all_const] = getFunctionArguments(function_children);
+                auto function_base = function_overload_resolver ? function_overload_resolver->build(arguments) : node->function_base;
 
                 result_node = &result_dag->addFunctionImpl(
-                    node->function_base,
+                    function_base,
                     std::move(function_children),
                     std::move(arguments),
                     {},
@@ -2307,7 +2408,7 @@ ActionsDAGPtr ActionsDAG::buildFilterActionsDAG(
     for (const auto & node : filter_nodes)
         result_dag_outputs.push_back(node_to_result_node.find(node)->second);
 
-    if (result_dag_outputs.size() > 1)
+    if (result_dag_outputs.size() > 1 && single_output_condition_node)
     {
         auto function_builder = FunctionFactory::instance().get("and", context);
         result_dag_outputs = { &result_dag->addFunction(function_builder, result_dag_outputs, {}) };
