@@ -612,7 +612,7 @@ std::vector<FileInfo> BackupCoordinationRemote::getAllFileInfos() const
 
     std::vector<Strings> batched_escaped_names;
     {
-        ZooKeeperRetriesControl retries_ctl("getAllFileInfos::getChildren", zookeeper_retries_info);
+        ZooKeeperRetriesControl retries_ctl("getAllFileInfos::getChildren", zookeeper_retries_info, nullptr);
         retries_ctl.retryLoop([&]()
         {
             auto zk = getZooKeeper();
@@ -633,7 +633,7 @@ std::vector<FileInfo> BackupCoordinationRemote::getAllFileInfos() const
                 file_names_paths.emplace_back(zookeeper_path + "/file_names/" + escaped_name);
 
 
-            ZooKeeperRetriesControl retries_ctl("getAllFileInfos::getSizesAndChecksums", zookeeper_retries_info);
+            ZooKeeperRetriesControl retries_ctl("getAllFileInfos::getSizesAndChecksums", zookeeper_retries_info, nullptr);
             retries_ctl.retryLoop([&]
             {
                 auto zk = getZooKeeper();
@@ -675,7 +675,7 @@ std::vector<FileInfo> BackupCoordinationRemote::getAllFileInfos() const
         }
 
         zkutil::ZooKeeper::MultiGetResponse non_empty_file_infos_serialized;
-        ZooKeeperRetriesControl retries_ctl("getAllFileInfos::getFileInfos", zookeeper_retries_info);
+        ZooKeeperRetriesControl retries_ctl("getAllFileInfos::getFileInfos", zookeeper_retries_info, nullptr);
         retries_ctl.retryLoop([&]()
         {
             auto zk = getZooKeeper();
