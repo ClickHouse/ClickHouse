@@ -34,13 +34,8 @@ TEST(FindSymbols, SimpleTest)
     ASSERT_EQ(find_first_symbols<'H'>(begin, end), begin);
     ASSERT_EQ((find_first_symbols<'a', 'e'>(begin, end)), begin + 1);
 
-    // Check that nothing matches on big haystack,
-    ASSERT_EQ(find_first_symbols(s, "ABCDEFIJKLMNOPQRSTUVWXYZacfghijkmnpqstuvxz"), end);
-    // only 16 bytes of haystack are checked, so nothing is found
-    ASSERT_EQ(find_first_symbols(s, "ABCDEFIJKLMNOPQR0helloworld"), end);
-
-    // 16-byte needle
-    ASSERT_EQ(find_first_symbols(s, "XYZ!,.GHbdelorwy"), begin + 12);
+    ASSERT_EQ((find_first_symbols<'a', 'e', 'w', 'x', 'z'>(begin, end)), begin + 1);
+    ASSERT_EQ((find_first_symbols<'p', 'q', 's', 'x', 'z'>(begin, end)), end);
 
     ASSERT_EQ(find_last_symbols_or_null<'a'>(begin, end), nullptr);
     ASSERT_EQ(find_last_symbols_or_null<'e'>(begin, end), end - 4);
@@ -62,6 +57,54 @@ TEST(FindSymbols, SimpleTest)
     }
 }
 
+template <bool positive, detail::ReturnMode return_mode>
+inline const char * find_first_symbols_sse42_MY(const char * const begin, const char * const end, const char * symbols, size_t num_chars)
+{
+    using namespace detail;
+    const char * pos = begin;
+
+#if defined(__SSE4_2__)
+    constexpr int mode = _SIDD_UBYTE_OPS | _SIDD_CMP_EQUAL_ANY | _SIDD_LEAST_SIGNIFICANT;
+
+#if defined(__AVX512F__) || defined(__AVX512BW__) || defined(__AVX__) || defined(__AVX2__)
+
+#else
+    // This is to avoid read past end of allocated string while loading `set` from `symbols` if `num_chars < 16`.
+    char buffer[16] = {'\0'};
+    memcpy(buffer, symbols, num_chars);
+    const __m128i set = _mm_loadu_si128(reinterpret_cast<const __m128i *>(buffer));
+#endif
+
+    for (; pos + 15 < end; pos += 16)
+    {
+        __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos));
+
+        if constexpr (positive)
+        {
+            if (_mm_cmpestrc(set, num_chars, bytes, 16, mode))
+                return pos + _mm_cmpestri(set, num_chars, bytes, 16, mode);
+        }
+        else
+        {
+            if (_mm_cmpestrc(set, num_chars, bytes, 16, mode | _SIDD_NEGATIVE_POLARITY))
+                return pos + _mm_cmpestri(set, num_chars, bytes, 16, mode | _SIDD_NEGATIVE_POLARITY);
+        }
+    }
+#endif
+
+    for (; pos < end; ++pos)
+        if (maybe_negate<positive>(is_in(*pos, symbols, num_chars)))
+            return pos;
+
+    return return_mode == ReturnMode::End ? end : nullptr;
+}
+
+template <char... symbols>
+inline const char * find_first_symbols_MY(const char * begin, const char * end)
+{
+    return detail::find_first_symbols_dispatch<true, detail::ReturnMode::End, symbols...>(begin, end);
+}
+
 TEST(FindSymbols, RunTimeNeedle)
 {
     auto test_haystack = [](const auto & haystack, const auto & unfindable_needle) {
@@ -72,47 +115,47 @@ TEST(FindSymbols, RunTimeNeedle)
             EXPECT_EQ( \
                     std::find_first_of(h.data(), h.data() + h.size(), n.data(), n.data() + n.size()), \
                     find_first_symbols(h, n) \
-            ) << "haystack: \"" << h << "\"" \
+            ) << "haystack: \"" << h << "\" (" << static_cast<const void*>(h.data()) << ")" \
               << ", needle: \"" << n << "\""; \
         } \
         while (false)
 
-        // can't find
+        // can't find needle
         TEST_HAYSTACK_AND_NEEDLE(haystack, unfindable_needle);
 
-#define test_with_modified_needle(haystack, in_needle, needle_update, with) \
+#define test_with_modified_needle(haystack, in_needle, needle_update_statement) \
         do \
         { \
-            std::string needle = in_needle; \
-            needle_update = with; \
+            std::string needle = (in_needle); \
+            (needle_update_statement); \
+            std::cerr << "!!!\tHaystack: \"" << haystack << "\" needele: \"" << needle << "\"" << std::endl; \
             TEST_HAYSTACK_AND_NEEDLE(haystack, needle); \
         } \
         while (false)
 
         // findable symbol is at beginnig of the needle
         // Can find at first pos of haystack
-        test_with_modified_needle(haystack, unfindable_needle, needle.front(), haystack.front());
+        test_with_modified_needle(haystack, unfindable_needle, needle.front() = haystack.front());
         // Can find at first pos of haystack
-        test_with_modified_needle(haystack, unfindable_needle, needle.front(), haystack.back());
+        test_with_modified_needle(haystack, unfindable_needle, needle.front() = haystack.back());
         // Can find in the middle of haystack
-        test_with_modified_needle(haystack, unfindable_needle, needle.front(), haystack[haystack.size() / 2]);
+        test_with_modified_needle(haystack, unfindable_needle, needle.front() = haystack[haystack.size() / 2]);
 
         // findable symbol is at end of the needle
         // Can find at first pos of haystack
-        test_with_modified_needle(haystack, unfindable_needle, needle.back(), haystack.front());
+        test_with_modified_needle(haystack, unfindable_needle, needle.back() = haystack.front());
         // Can find at first pos of haystack
-        test_with_modified_needle(haystack, unfindable_needle, needle.back(), haystack.back());
+        test_with_modified_needle(haystack, unfindable_needle, needle.back() = haystack.back());
         // Can find in the middle of haystack
-        test_with_modified_needle(haystack, unfindable_needle, needle.back(), haystack[haystack.size() / 2]);
+        test_with_modified_needle(haystack, unfindable_needle, needle.back() = haystack[haystack.size() / 2]);
 
         // findable symbol is in the middle of the needle
         // Can find at first pos of haystack
-        test_with_modified_needle(haystack, unfindable_needle, needle[needle.size() / 2], haystack.front());
+        test_with_modified_needle(haystack, unfindable_needle, needle[needle.size() / 2] = haystack.front());
         // Can find at first pos of haystack
-        test_with_modified_needle(haystack, unfindable_needle, needle[needle.size() / 2], haystack.back());
+        test_with_modified_needle(haystack, unfindable_needle, needle[needle.size() / 2] = haystack.back());
         // Can find in the middle of haystack
-        test_with_modified_needle(haystack, unfindable_needle, needle[needle.size() / 2], haystack[haystack.size() / 2]);
-
+        test_with_modified_needle(haystack, unfindable_needle, needle[needle.size() / 2] = haystack[haystack.size() / 2]);
     };
 
     // there are 4 major groups of cases:
@@ -120,19 +163,41 @@ TEST(FindSymbols, RunTimeNeedle)
     // needle < 5 bytes,    needle >= 5 bytes
 
     // First and last symbols of haystack should be unique
-    const std::string long_haystack = "Hello, world! Goodbye...?";
-    const std::string short_haystack = "Hello, world!";
+    std::string long_haystack = "Hello, world! Goodbye...?";
+    std::string short_haystack = "Hello, world!";
 
     // In sync with find_first_symbols_dispatch code: long needles receve special treatment.
     // as of now "long" means >= 5
-    const std::string unfindable_long_needle = "0123456789ABCDEF";
-    const std::string unfindable_short_needle = "0123";
+    std::string unfindable_long_needle = "0123456789ABCDEF";
+    std::string unfindable_short_needle = "0123";
 
-    test_haystack(long_haystack, unfindable_long_needle);
-    test_haystack(long_haystack, unfindable_short_needle);
 
-    test_haystack(short_haystack, unfindable_long_needle);
-    test_haystack(short_haystack, unfindable_short_needle);
+    for (size_t i = 0; i < 100; ++i)
+    {
+        {
+            SCOPED_TRACE("Long haystack");
+            test_haystack(long_haystack, unfindable_long_needle);
+            test_haystack(long_haystack, unfindable_short_needle);
+        }
+
+        {
+            SCOPED_TRACE("Short haystack");
+            test_haystack(short_haystack, unfindable_long_needle);
+            test_haystack(short_haystack, unfindable_short_needle);
+        }
+
+        // re-allocate buffers to make sure that we run tests against different addresses each time.
+        long_haystack.reserve(long_haystack.capacity() + 1);
+        short_haystack.reserve(long_haystack.capacity() + 1);
+        unfindable_long_needle.reserve(unfindable_long_needle.capacity() + 1);
+        unfindable_short_needle.reserve(unfindable_short_needle.capacity() + 1);
+    }
+
+    // Check that nothing matches on big haystack,
+    EXPECT_EQ(find_first_symbols(long_haystack, "ABCDEFIJKLMNOPQRSTUVWXYZacfghijkmnpqstuvxz"), long_haystack.data() + long_haystack.size());
+
+    // only 16 bytes of haystack are checked, so nothing is found
+    EXPECT_EQ(find_first_symbols(long_haystack, "ABCDEFIJKLMNOPQR0helloworld"), long_haystack.data() + long_haystack.size());
 }
 
 TEST(FindNotSymbols, AllSymbolsPresent)
