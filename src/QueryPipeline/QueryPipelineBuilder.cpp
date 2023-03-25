@@ -743,6 +743,10 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     left->resources = std::move(right->resources);
     left->pipe.header = left->pipe.output_ports.front()->getHeader();
     left->pipe.max_parallel_streams = std::max(left->pipe.max_parallel_streams, right->pipe.max_parallel_streams);
+
+    // FIXME, mess up the streams here, otherwise the executing graph will be hungup with MergingSortedTransform.
+    left->resize(1);
+    left->resize(num_streams);
     return left;
 }
 

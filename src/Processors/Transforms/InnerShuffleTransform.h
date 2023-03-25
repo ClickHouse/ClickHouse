@@ -35,6 +35,7 @@ private:
     bool has_output = false;
     std::list<Chunk> input_chunks;
     size_t pending_rows = 0;
+    size_t pending_chunks = 0;
     Chunk output_chunk;
     std::list<InputPort *> running_inputs;
     Chunk generateOneChunk();

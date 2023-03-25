@@ -92,23 +92,24 @@ IProcessor::Status InnerShuffleScatterTransform::prepare()
     if (input.isFinished())
     {
         bool has_pending_chunks = false;
-        for (const auto & chunks : pending_output_chunks)
+        auto outport_iter = outputs.begin();
+        auto outchunk_iter = pending_output_chunks.begin();
+        for (; outchunk_iter != pending_output_chunks.end();)
         {
-            if (!chunks.empty())
+            const auto & chunks = *outchunk_iter;
+            if (chunks.empty() && !outport_iter->isFinished() && !outport_iter->hasData())
+            {
+                outport_iter->finish();
+            }
+            else
             {
                 has_pending_chunks = true;
-                break;
             }
+            outport_iter++;
+            outchunk_iter++;
         }
         if (has_pending_chunks)
-        {
             return Status::Ready;
-        }
-
-        for (auto & output : outputs)
-        {
-            output.finish();
-        }
         return Status::Finished;
     }
 
@@ -222,7 +223,9 @@ IProcessor::Status InnerShuffleGatherTransform::prepare()
             continue;
         }
         input_chunks.emplace_back(input->pull(true));
+        input->setNeeded();
         pending_rows += input_chunks.back().getNumRows();
+        pending_chunks += 1;
         has_input = true;
     }
 
@@ -259,7 +262,7 @@ void InnerShuffleGatherTransform::work()
     if (has_input)
     {
         has_input = false;
-        if (pending_rows >= DEFAULT_BLOCK_SIZE || running_inputs.empty())
+        if (pending_rows >= DEFAULT_BLOCK_SIZE || running_inputs.empty() || pending_chunks > 100)
         {
             output_chunk = generateOneChunk();
             has_output = true;
@@ -269,7 +272,9 @@ void InnerShuffleGatherTransform::work()
 
 Chunk InnerShuffleGatherTransform::generateOneChunk()
 {
-    auto mutable_cols = input_chunks.front().mutateColumns();
+    Chunk head_chunk = std::move(input_chunks.front());
+    input_chunks.pop_front();
+    auto mutable_cols = head_chunk.mutateColumns();
     while (!input_chunks.empty())
     {
         if (!input_chunks.front().hasRows()) [[unlikely]]
@@ -289,6 +294,7 @@ Chunk InnerShuffleGatherTransform::generateOneChunk()
     auto chunk = Chunk(std::move(mutable_cols), pending_rows);
     input_chunks.clear();
     pending_rows = 0;
+    pending_chunks = 0;
     return chunk;
 }
 }

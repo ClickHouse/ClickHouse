@@ -23,10 +23,10 @@
         )ENGINE = Memory
     </create_query>
     <fill_query>
-        insert into test_data_left select number as id, number % 1111 as x, number * 3 as y, number - 100 as z, cast(number as String) as w from numbers(100000000);
+        insert into test_data_left select number as id, number % 1111 as x, number * 3 as y, number - 100 as z, cast(number as String) as w from numbers(10000000);
     </fill_query>
     <fill_query>
-        insert into test_data_right select number as id, number % 1311 as x, number * 5 as y, number + 100 as z, cast(number as String) as w from numbers(100000000);    </fill_query>
+        insert into test_data_right select number as id, number % 1311 as x, number * 5 as y, number + 100 as z, cast(number as String) as w from numbers(10000000);    </fill_query>
     <!-- could test the performance of column scatter -->
     <query>
         SELECT
