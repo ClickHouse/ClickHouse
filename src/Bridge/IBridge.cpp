@@ -121,7 +121,7 @@ void IBridge::defineOptions(Poco::Util::OptionSet & options)
     options.addOption(
         Poco::Util::Option("help", "", "produce this help message").binding("help").callback(Poco::Util::OptionCallback<Me>(this, &Me::handleHelp)));
 
-    ServerApplication::defineOptions(options); // Don't need complex BaseDaemon's .xml config
+    ServerApplication::defineOptions(options); // NOLINT Don't need complex BaseDaemon's .xml config
 }
 
 
