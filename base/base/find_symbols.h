@@ -263,7 +263,10 @@ inline const char * find_first_symbols_sse42(const char * const begin, const cha
 #if defined(__SSE4_2__)
     constexpr int mode = _SIDD_UBYTE_OPS | _SIDD_CMP_EQUAL_ANY | _SIDD_LEAST_SIGNIFICANT;
 
-    const __m128i set = _mm_loadu_si128(reinterpret_cast<const __m128i *>(symbols));
+    // This is to avoid read past end of `symbols` if `num_chars < 16`.
+    char buffer[16] = {'\0'};
+    memcpy(buffer, symbols, num_chars);
+    const __m128i set = _mm_loadu_si128(reinterpret_cast<const __m128i *>(buffer));
 
     for (; pos + 15 < end; pos += 16)
     {
@@ -306,7 +309,7 @@ inline const char * find_first_symbols_dispatch(const char * begin, const char *
 template <bool positive, ReturnMode return_mode>
 inline const char * find_first_symbols_dispatch(const std::string_view haystack, const std::string_view symbols)
 {
-    const size_t num_chars = std::max<size_t>(symbols.size(), 16);
+    const size_t num_chars = std::min<size_t>(symbols.size(), 16);
 #if defined(__SSE4_2__)
     if (num_chars >= 5)
         return find_first_symbols_sse42<positive, return_mode>(haystack.begin(), haystack.end(), symbols.begin(), num_chars);
