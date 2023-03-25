@@ -212,7 +212,7 @@ ConnectionPoolWithFailover::tryGetEntry(
         std::string & fail_message,
         const Settings * settings,
         const QualifiedTableName * table_to_check,
-        AsyncCallback async_callback)
+        [[maybe_unused]] AsyncCallback async_callback)
 {
 #if defined(OS_LINUX)
     if (async_callback)
