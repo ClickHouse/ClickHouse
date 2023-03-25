@@ -33,6 +33,7 @@ using FileSegments = std::list<FileSegmentPtr>;
 struct LockedKey;
 using LockedKeyPtr = std::shared_ptr<LockedKey>;
 struct KeyMetadata;
+using KeyMetadataPtr = std::shared_ptr<KeyMetadata>;
 
 /*
  * FileSegmentKind is used to specify the eviction policy for file segments.
@@ -65,8 +66,7 @@ struct CreateFileSegmentSettings
     CreateFileSegmentSettings() = default;
 
     explicit CreateFileSegmentSettings(FileSegmentKind kind_, bool unbounded_ = false)
-        : kind(kind_), unbounded(unbounded_)
-    {}
+        : kind(kind_), unbounded(unbounded_) {}
 };
 
 class FileSegment : private boost::noncopyable
@@ -123,7 +123,7 @@ public:
         size_t offset_,
         size_t size_,
         const Key & key_,
-        KeyMetadata * key_metadata,
+        std::weak_ptr<KeyMetadata> key_metadata,
         FileCache * cache_,
         State download_state_,
         const CreateFileSegmentSettings & create_settings);
@@ -218,7 +218,9 @@ public:
 
     bool isDetached() const;
 
-    bool isCompleted() const { return is_completed; }
+    /// File segment has a completed state, if this state is final and is not going to be changed.
+    /// Completed states: DOWNALODED, DETACHED.
+    bool isCompleted(bool sync = false) const;
 
     void assertCorrectness() const;
 
@@ -273,19 +275,18 @@ private:
     void setDownloadedUnlocked(const FileSegmentGuard::Lock &);
     void setDownloadFailedUnlocked(const FileSegmentGuard::Lock &);
 
-    /// Finalized state is such a state that does not need to be completed (with complete()).
-    bool hasFinalizedStateUnlocked(const FileSegmentGuard::Lock &) const;
-
+    bool isDetached(const FileSegmentGuard::Lock &) const { return download_state == State::DETACHED; }
     void detachAssumeStateFinalized(const FileSegmentGuard::Lock &);
     [[noreturn]] void throwIfDetachedUnlocked(const FileSegmentGuard::Lock &) const;
 
-    void assertDetachedStatus(const FileSegmentGuard::Lock &) const;
     void assertNotDetached() const;
     void assertNotDetachedUnlocked(const FileSegmentGuard::Lock &) const;
     void assertIsDownloaderUnlocked(const std::string & operation, const FileSegmentGuard::Lock &) const;
     void assertCorrectnessUnlocked(const FileSegmentGuard::Lock &) const;
 
     LockedKeyPtr createLockedKey(bool assert_exists = true) const;
+    KeyMetadataPtr getKeyMetadata() const;
+    KeyMetadataPtr tryGetKeyMetadata() const;
 
     /// completeWithoutStateUnlocked() is called from destructor of FileSegmentsHolder.
     /// Function might check if the caller of the method
@@ -296,12 +297,11 @@ private:
     void completePartAndResetDownloaderUnlocked(const FileSegmentGuard::Lock & segment_lock);
     bool isDownloaderUnlocked(const FileSegmentGuard::Lock & segment_lock) const;
 
-    void wrapWithCacheInfo(
-        Exception & e, const String & message, const FileSegmentGuard::Lock & segment_lock) const;
+    void wrapWithCacheInfo(Exception & e, const String & message, const FileSegmentGuard::Lock & segment_lock) const;
 
     Range segment_range;
 
-    State download_state;
+    std::atomic<State> download_state;
 
     /// The one who prepares the download
     DownloaderId downloader_id;
@@ -315,7 +315,7 @@ private:
     mutable std::mutex download_mutex;
 
     mutable FileSegmentGuard segment_guard;
-    KeyMetadata * key_metadata;
+    std::weak_ptr<KeyMetadata> key_metadata;
     std::condition_variable cv;
 
     Key file_key;
@@ -323,10 +323,6 @@ private:
     FileCache * cache;
 
     Poco::Logger * log;
-
-    /// Does the file segment have completed state?
-    /// If so, complete() call can be omitted.
-    std::atomic<bool> is_completed = false;
 
     std::atomic<size_t> hits_count = 0; /// cache hits.
     std::atomic<size_t> ref_count = 0; /// Used for getting snapshot state

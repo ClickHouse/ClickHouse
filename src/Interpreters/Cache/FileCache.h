@@ -98,7 +98,7 @@ public:
 
     size_t getMaxFileSegmentSize() const { return max_file_segment_size; }
 
-    bool tryReserve(const Key & key, size_t offset, size_t size, KeyMetadata & key_metadata);
+    bool tryReserve(const Key & key, size_t offset, size_t size, KeyMetadataPtr key_metadata);
 
     FileSegmentsHolderPtr getSnapshot();
 
@@ -110,7 +110,7 @@ public:
 
     CacheGuard::Lock cacheLock() { return cache_guard.lock(); }
 
-    LockedKeyPtr createLockedKey(const Key & key, KeyMetadata & key_metadata) const;
+    LockedKeyPtr createLockedKey(const Key & key, KeyMetadataPtr key_metadata) const;
 
     /// For per query cache limit.
     struct QueryContextHolder : private boost::noncopyable
