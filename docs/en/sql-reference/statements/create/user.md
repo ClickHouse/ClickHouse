@@ -54,7 +54,7 @@ There are multiple ways of user identification:
     The password is stored in a SQL text file in `/var/lib/clickhouse/access`, so it's not a good idea to use `plaintext_password`. Try `sha256_password` instead, as demonstrated next...
     :::
 
-3. The best option is o use a password that is hashed using SHA-256. ClickHouse will hash the password for you when you specify `IDENTIFIED WITH sha256_password`. For example:
+3. The best option is to use a password that is hashed using SHA-256. ClickHouse will hash the password for you when you specify `IDENTIFIED WITH sha256_password`. For example:
 
     ```sql
     CREATE USER name3 IDENTIFIED WITH sha256_password BY 'my_password'
