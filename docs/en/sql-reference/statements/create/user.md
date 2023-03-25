@@ -69,7 +69,7 @@ There are multiple ways of user identification:
     SALT 'D6489D8B5692D82FF944EA6415785A8A8A1AF33825456AFC554487725A74A609'
     ```
 
-    The `name3` user can now login using `my_password`, but the passowrd is stored as the hashed value above. THe following SQL file was created in `/var/lib/clickhouse/access` and gets executed at server startup:
+    The `name3` user can now login using `my_password`, but the password is stored as the hashed value above. THe following SQL file was created in `/var/lib/clickhouse/access` and gets executed at server startup:
 
     ```bash
     /var/lib/clickhouse/access $ cat 3843f510-6ebd-a52d-72ac-e021686d8a93.sql
