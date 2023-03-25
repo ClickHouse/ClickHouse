@@ -42,8 +42,7 @@ public:
     class Executor
     {
     public:
-        static ColumnPtr run(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, uint32_t parse_depth, 
-            const bool & return_type_allow_complex)
+        static ColumnPtr run(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, uint32_t parse_depth, const bool & return_type_allow_complex)
         {
             MutableColumnPtr to{result_type->createColumn()};
             to->reserve(input_rows_count);
