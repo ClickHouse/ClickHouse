@@ -22,8 +22,8 @@ LockedKey::LockedKey(
     KeysQueuePtr cleanup_keys_metadata_queue_)
     : key(key_)
     , key_path(key_path_)
-    , lock(std::move(lock_))
     , key_metadata(key_metadata_)
+    , lock(std::move(lock_))
     , cleanup_keys_metadata_queue(cleanup_keys_metadata_queue_)
     , log(&Poco::Logger::get("LockedKey"))
 {

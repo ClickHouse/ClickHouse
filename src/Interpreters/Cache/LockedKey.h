@@ -52,8 +52,8 @@ private:
     const FileCacheKey key;
     const std::string key_path;
 
-    KeyGuard::Lock lock;
     const std::shared_ptr<KeyMetadata> key_metadata;
+    KeyGuard::Lock lock;
     KeysQueuePtr cleanup_keys_metadata_queue;
 
     Poco::Logger * log;
