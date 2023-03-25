@@ -528,7 +528,9 @@ def test_make_clone_in_detached(started_cluster):
         ["cp", "-r", path + "all_0_0_0", path + "detached/broken_all_0_0_0"]
     )
     assert_eq_with_retry(instance, "select * from clone_in_detached", "\n")
-    assert ["broken_all_0_0_0",] == sorted(
+    assert [
+        "broken_all_0_0_0",
+    ] == sorted(
         instance.exec_in_container(["ls", path + "detached/"]).strip().split("\n")
     )
 
