@@ -964,7 +964,7 @@ Default value: 1.
 
 ### input_format_arrow_import_nested {#input_format_arrow_import_nested}
 
-Enables or disables the ability to insert the data into [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) columns as an array of structs in [Arrow](../../interfaces/formats.md/#data_types-matching-arrow) input format.
+Enables or disables the ability to insert the data into [Nested](../../sql-reference/data-types/nested-data-structures/index.md) columns as an array of structs in [Arrow](../../interfaces/formats.md/#data_types-matching-arrow) input format.
 
 Possible values:
 
@@ -1024,7 +1024,7 @@ Default value: `none`.
 
 ### input_format_orc_import_nested {#input_format_orc_import_nested}
 
-Enables or disables the ability to insert the data into [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) columns as an array of structs in [ORC](../../interfaces/formats.md/#data-format-orc) input format.
+Enables or disables the ability to insert the data into [Nested](../../sql-reference/data-types/nested-data-structures/index.md) columns as an array of structs in [ORC](../../interfaces/formats.md/#data-format-orc) input format.
 
 Possible values:
 
@@ -1073,7 +1073,7 @@ Default value: `none`.
 
 ### input_format_parquet_import_nested {#input_format_parquet_import_nested}
 
-Enables or disables the ability to insert the data into [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) columns as an array of structs in [Parquet](../../interfaces/formats.md/#data-format-parquet) input format.
+Enables or disables the ability to insert the data into [Nested](../../sql-reference/data-types/nested-data-structures/index.md) columns as an array of structs in [Parquet](../../interfaces/formats.md/#data-format-parquet) input format.
 
 Possible values:
 
@@ -1538,6 +1538,6 @@ Default value: `1GiB`.
 
 ### input_format_native_allow_types_conversion {#input_format_native_allow_types_conversion}
 
-Allow types conversion in Native input format between columns from input data and requested columns. 
+Allow types conversion in Native input format between columns from input data and requested columns.
 
 Enabled by default.

@@ -2864,7 +2864,6 @@ def test_rabbitmq_predefined_configuration(rabbitmq_cluster):
 
 
 def test_rabbitmq_msgpack(rabbitmq_cluster):
-
     instance.query(
         """
         drop table if exists rabbit_in;
@@ -2908,7 +2907,6 @@ def test_rabbitmq_msgpack(rabbitmq_cluster):
 
 
 def test_rabbitmq_address(rabbitmq_cluster):
-
     instance2.query(
         """
         drop table if exists rabbit_in;
@@ -3243,7 +3241,6 @@ def test_block_based_formats_2(rabbitmq_cluster):
         "ORC",
         "JSONCompactColumns",
     ]:
-
         print(format_name)
 
         instance.query(

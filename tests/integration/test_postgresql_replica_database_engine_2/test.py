@@ -203,7 +203,7 @@ def test_remove_table_from_replication(started_cluster):
     table_name = "postgresql_replica_4"
     instance.query(f"DETACH TABLE test_database.{table_name} PERMANENTLY")
     result = instance.query_and_get_error(f"SELECT * FROM test_database.{table_name}")
-    assert "doesn't exist" in result
+    assert "UNKNOWN_TABLE" in result
 
     result = instance.query("SHOW TABLES FROM test_database")
     assert (

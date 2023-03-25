@@ -192,7 +192,9 @@ StorageLimits buildStorageLimits(const Context & context, const SelectQueryOptio
     return {limits, leaf_limits};
 }
 
-ActionsDAGPtr buildActionsDAGFromExpressionNode(const QueryTreeNodePtr & expression_node, const ColumnsWithTypeAndName & input_columns, const PlannerContextPtr & planner_context)
+ActionsDAGPtr buildActionsDAGFromExpressionNode(const QueryTreeNodePtr & expression_node,
+    const ColumnsWithTypeAndName & input_columns,
+    const PlannerContextPtr & planner_context)
 {
     ActionsDAGPtr action_dag = std::make_shared<ActionsDAG>(input_columns);
     PlannerActionsVisitor actions_visitor(planner_context);
@@ -402,6 +404,16 @@ QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTyp
     query_node->setIsSubquery(true);
 
     return query_node;
+}
+
+SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const PlannerContextPtr & planner_context)
+{
+    SelectQueryInfo select_query_info;
+    select_query_info.original_query = queryNodeToSelectQuery(query_tree);
+    select_query_info.query = select_query_info.original_query;
+    select_query_info.query_tree = query_tree;
+    select_query_info.planner_context = planner_context;
+    return select_query_info;
 }
 
 }
