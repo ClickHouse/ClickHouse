@@ -602,11 +602,11 @@ void FileSegment::completeUnlocked(LockedKey & locked_key, const CacheGuard::Loc
         {
             if (is_last_holder)
             {
+                setDownloadState(State::DETACHED, segment_lock);
+
                 if (current_downloaded_size == 0)
                 {
                     LOG_TEST(log, "Remove cell {} (nothing downloaded)", range().toString());
-
-                    setDownloadState(State::DETACHED, segment_lock);
                     locked_key.removeFileSegment(offset(), segment_lock, cache_lock);
                 }
                 else
@@ -619,13 +619,15 @@ void FileSegment::completeUnlocked(LockedKey & locked_key, const CacheGuard::Loc
                     * in FileSegmentsHolder represent a contiguous range, so we can resize
                     * it only when nobody needs it.
                     */
-                    setDownloadState(State::PARTIALLY_DOWNLOADED_NO_CONTINUATION, segment_lock);
 
                     /// Resize this file segment by creating a copy file segment with DOWNLOADED state,
                     /// but current file segment should remain PARRTIALLY_DOWNLOADED_NO_CONTINUATION and with detached state,
                     /// because otherwise an invariant that getOrSet() returns a contiguous range of file segments will be broken
                     /// (this will be crucial for other file segment holder, not for current one).
                     locked_key.shrinkFileSegmentToDownloadedSize(offset(), segment_lock, cache_lock);
+
+                    /// We mark current file segment with state DETACHED, even though the data is still in cache
+                    /// (but a separate file segment) because is_last_holder is satisfied, so it does not matter.
                 }
 
                 detachAssumeStateFinalized(segment_lock);
@@ -754,11 +756,7 @@ bool FileSegment::isCompleted(bool sync) const
 {
     auto is_completed_state = [this]() -> bool
     {
-        return download_state == State::DOWNLOADED
-            || download_state == State::DETACHED
-            /// the following means that file segment was shrunk to the downloaded size via calling complete().
-            /// a more correct way to call such state is PARTIALLY_DOWNLOADED_NO_CONTINUATION_DETACHED.
-            || ((download_state == State::PARTIALLY_DOWNLOADED_NO_CONTINUATION) && (key_metadata.expired()));
+        return download_state == State::DOWNLOADED || download_state == State::DETACHED;
     };
 
     if (sync)
