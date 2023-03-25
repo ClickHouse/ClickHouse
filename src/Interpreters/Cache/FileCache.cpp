@@ -348,9 +348,6 @@ void FileCache::fillHolesWithEmptyFileSegments(
 FileSegmentsHolderPtr FileCache::set(const Key & key, size_t offset, size_t size, const CreateFileSegmentSettings & settings)
 {
     assertInitialized();
-#ifndef NDEBUG
-    assertCacheCorrectness();
-#endif
 
     auto locked_key = createLockedKey(key, KeyNotFoundPolicy::CREATE_EMPTY);
     FileSegment::Range range(offset, offset + size - 1);
@@ -379,9 +376,6 @@ FileSegmentsHolderPtr FileCache::getOrSet(
     const CreateFileSegmentSettings & settings)
 {
     assertInitialized();
-#ifndef NDEBUG
-    assertCacheCorrectness();
-#endif
 
     FileSegment::Range range(offset, offset + size - 1);
 
@@ -405,9 +399,6 @@ FileSegmentsHolderPtr FileCache::getOrSet(
 FileSegmentsHolderPtr FileCache::get(const Key & key, size_t offset, size_t size)
 {
     assertInitialized();
-#ifndef NDEBUG
-    assertCacheCorrectness();
-#endif
 
     auto locked_key = createLockedKey(key, KeyNotFoundPolicy::RETURN_NULL);
     if (locked_key)
@@ -748,6 +739,9 @@ bool FileCache::tryReserveImpl(
 void FileCache::removeKeyIfExists(const Key & key)
 {
     assertInitialized();
+#ifndef NDEBUG
+    assertCacheCorrectness();
+#endif
 
     auto lock = cache_guard.lock();
     auto locked_key = createLockedKey(key, KeyNotFoundPolicy::RETURN_NULL);
@@ -1132,47 +1126,48 @@ size_t FileCache::getFileSegmentsNum() const
 
 void FileCache::assertCacheCorrectness()
 {
-    return assertCacheCorrectness(cache_guard.lock(), metadata.lock());
-}
-
-void FileCache::assertCacheCorrectness(
-    const CacheGuard::Lock & cache_lock, const CacheMetadataGuard::Lock & metadata_lock)
-{
-    iterateCacheMetadata(metadata_lock, [&](KeyMetadata & key_metadata)
     {
-        for (auto & [offset, file_segment_metadata] : key_metadata)
+        auto lock = metadata.lock();
+        iterateCacheMetadata(lock, [&](KeyMetadata & key_metadata)
         {
-            file_segment_metadata.file_segment->assertCorrectness();
-            if (file_segment_metadata.size())
-                chassert(file_segment_metadata.queue_iterator);
-        }
-    });
+            for (auto & [offset, file_segment_metadata] : key_metadata)
+            {
+                file_segment_metadata.file_segment->assertCorrectness();
+                if (file_segment_metadata.size())
+                    chassert(file_segment_metadata.queue_iterator);
+            }
+        });
+    }
 
-    LockedCachePriority queue(cache_lock, *main_priority);
-    [[maybe_unused]] size_t total_size = 0;
-
-    using QueueEntry = IFileCachePriority::Entry;
-    using IterationResult = IFileCachePriority::IterationResult;
-
-    queue.iterate([&](const QueueEntry & entry) -> IterationResult
     {
-        auto locked_key = createLockedKey(entry.key, entry.getKeyMetadata());
-        auto * file_segment_metadata = locked_key->getKeyMetadata()->getByOffset(entry.offset);
+        auto lock = cache_guard.lock();
 
-        if (file_segment_metadata->size() != entry.size)
+        LockedCachePriority queue(lock, *main_priority);
+        [[maybe_unused]] size_t total_size = 0;
+
+        using QueueEntry = IFileCachePriority::Entry;
+        using IterationResult = IFileCachePriority::IterationResult;
+
+        queue.iterate([&](const QueueEntry & entry) -> IterationResult
         {
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Expected {} == {} size ({})",
-                file_segment_metadata->size(), entry.size, file_segment_metadata->file_segment->getInfoForLog());
-        }
+            auto locked_key = createLockedKey(entry.key, entry.getKeyMetadata());
+            auto * file_segment_metadata = locked_key->getKeyMetadata()->getByOffset(entry.offset);
 
-        total_size += entry.size;
-        return IterationResult::CONTINUE;
-    });
+            if (file_segment_metadata->size() != entry.size)
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "Expected {} == {} size ({})",
+                    file_segment_metadata->size(), entry.size, file_segment_metadata->file_segment->getInfoForLog());
+            }
 
-    chassert(queue.getSize() == total_size);
-    chassert(queue.getSize() <= queue.getSizeLimit());
-    chassert(queue.getElementsCount() <= queue.getElementsLimit());
+            total_size += entry.size;
+            return IterationResult::CONTINUE;
+        });
+
+        assert(queue.getSize() == total_size);
+        assert(queue.getSize() <= queue.getSizeLimit());
+        assert(queue.getElementsCount() <= queue.getElementsLimit());
+    }
 }
 
 FileCache::QueryContextHolder::QueryContextHolder(

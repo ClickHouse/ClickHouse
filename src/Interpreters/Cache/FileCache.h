@@ -242,7 +242,6 @@ private:
     void performDelayedRemovalOfDeletedKeysFromMetadata(const CacheMetadataGuard::Lock &);
 
     void assertCacheCorrectness();
-    void assertCacheCorrectness(const CacheGuard::Lock & cache_lock, const CacheMetadataGuard::Lock & metadata_lock);
 };
 
 }
