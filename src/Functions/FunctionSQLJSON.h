@@ -23,7 +23,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <base/range.h>
-#include <boost/tti/has_static_member_function.hpp>
 
 #include "config.h"
 
@@ -43,7 +42,8 @@ public:
     class Executor
     {
     public:
-        static ColumnPtr run(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, uint32_t parse_depth)
+        static ColumnPtr run(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, uint32_t parse_depth, 
+            const bool & return_type_allow_complex)
         {
             MutableColumnPtr to{result_type->createColumn()};
             to->reserve(input_rows_count);
@@ -127,7 +127,7 @@ public:
                 bool added_to_column = false;
                 if (document_ok)
                 {
-                    added_to_column = impl.insertResultToColumn(*to, document, res);
+                    added_to_column = impl.insertResultToColumn(*to, document, res, return_type_allow_complex);
                 }
                 if (!added_to_column)
                 {
@@ -156,14 +156,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if constexpr (has_static_member_function_getReturnType<Impl<DummyJSONParser>, DataTypePtr(const char *, const ColumnsWithTypeAndName &, const bool &)>::value)
-        {
-            return Impl<DummyJSONParser>::getReturnType(Name::name, arguments, getContext()->getSettingsRef().function_return_type_allow_nullable);
-        }
-        else
-        {
-            return Impl<DummyJSONParser>::getReturnType(Name::name, arguments);
-        }
+        return Impl<DummyJSONParser>::getReturnType(Name::name, arguments, getContext());
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -176,13 +169,12 @@ public:
         unsigned parse_depth = static_cast<unsigned>(getContext()->getSettingsRef().max_parser_depth);
 #if USE_SIMDJSON
         if (getContext()->getSettingsRef().allow_simdjson)
-            return FunctionSQLJSONHelpers::Executor<Name, Impl, SimdJSONParser>::run(arguments, result_type, input_rows_count, parse_depth);
+            return FunctionSQLJSONHelpers::Executor<Name, Impl, SimdJSONParser>::run(arguments, result_type, input_rows_count, parse_depth,
+                getContext()->getSettingsRef().function_json_value_return_type_allow_complex);
 #endif
-        return FunctionSQLJSONHelpers::Executor<Name, Impl, DummyJSONParser>::run(arguments, result_type, input_rows_count, parse_depth);
+        return FunctionSQLJSONHelpers::Executor<Name, Impl, DummyJSONParser>::run(arguments, result_type, input_rows_count, parse_depth,
+                getContext()->getSettingsRef().function_json_value_return_type_allow_complex);
     }
-
-private:
-    BOOST_TTI_HAS_STATIC_MEMBER_FUNCTION(getReturnType)
 };
 
 struct NameJSONExists
@@ -206,11 +198,11 @@ class JSONExistsImpl
 public:
     using Element = typename JSONParser::Element;
 
-    static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &) { return std::make_shared<DataTypeUInt8>(); }
+    static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &, const ContextPtr &) { return std::make_shared<DataTypeUInt8>(); }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
-    static bool insertResultToColumn(IColumn & dest, const Element & root, ASTPtr & query_ptr)
+    static bool insertResultToColumn(IColumn & dest, const Element & root, ASTPtr & query_ptr, const bool &)
     {
         GeneratorJSONPath<JSONParser> generator_json_path(query_ptr);
         Element current_element = root;
@@ -245,9 +237,9 @@ class JSONValueImpl
 public:
     using Element = typename JSONParser::Element;
 
-    static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &, const bool & allow_nullable)
+    static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &, const ContextPtr & context)
     {
-        if (allow_nullable)
+        if (context->getSettingsRef().function_return_type_allow_nullable)
         {
             DataTypePtr string_type = std::make_shared<DataTypeString>();
             return std::make_shared<DataTypeNullable>(string_type);
@@ -258,14 +250,9 @@ public:
         }
     }
 
-    static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
-    {
-        return std::make_shared<DataTypeString>();
-    }
-
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
-    static bool insertResultToColumn(IColumn & dest, const Element & root, ASTPtr & query_ptr)
+    static bool insertResultToColumn(IColumn & dest, const Element & root, ASTPtr & query_ptr, const bool & return_type_allow_complex)
     {
         GeneratorJSONPath<JSONParser> generator_json_path(query_ptr);
         Element current_element = root;
@@ -275,7 +262,14 @@ public:
         {
             if (status == VisitorStatus::Ok)
             {
-                break;
+                if (return_type_allow_complex)
+                {
+                    break;
+                }
+                else if (!(current_element.isArray() || current_element.isObject()))
+                {
+                    break;
+                }
             }
             else if (status == VisitorStatus::Error)
             {
@@ -292,22 +286,19 @@ public:
         std::stringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         out << current_element.getElement();
         auto output_str = out.str();
-        auto cast_to_column_string = [&] (IColumn & col, bool & is_nullable_col) -> ColumnString &
+        ColumnString * col_str;
+        if (isColumnNullable(dest))
         {
-            if (is_nullable_col)
-            {
-                ColumnNullable & col_null = assert_cast<ColumnNullable &>(col);
-                return assert_cast<ColumnString &>(col_null.getNestedColumn());
-            }
-            else
-            {
-                return assert_cast<ColumnString &>(dest);
-            }
-        };
-        bool is_nullable_col = typeid(dest) == typeid(ColumnNullable);
-        ColumnString & col_str = cast_to_column_string(dest, is_nullable_col);
-        ColumnString::Chars & data = col_str.getChars();
-        ColumnString::Offsets & offsets = col_str.getOffsets();
+            ColumnNullable & col_null = assert_cast<ColumnNullable &>(dest);
+            col_null.getNullMapData().push_back(0);
+            col_str = assert_cast<ColumnString *>(&col_null.getNestedColumn());
+        }
+        else
+        {
+            col_str = assert_cast<ColumnString *>(&dest);
+        }
+        ColumnString::Chars & data = col_str->getChars();
+        ColumnString::Offsets & offsets = col_str->getOffsets();
 
         if (current_element.isString())
         {
@@ -318,12 +309,7 @@ public:
         }
         else
         {
-            col_str.insertData(output_str.data(), output_str.size());
-        }
-        if (is_nullable_col)
-        {
-            ColumnNullable & col_null = assert_cast<ColumnNullable &>(dest);
-            col_null.getNullMapColumn().insertValue(0);
+            col_str->insertData(output_str.data(), output_str.size());
         }
         return true;
     }
@@ -339,11 +325,11 @@ class JSONQueryImpl
 public:
     using Element = typename JSONParser::Element;
 
-    static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &) { return std::make_shared<DataTypeString>(); }
+    static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &, const ContextPtr &) { return std::make_shared<DataTypeString>(); }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
-    static bool insertResultToColumn(IColumn & dest, const Element & root, ASTPtr & query_ptr)
+    static bool insertResultToColumn(IColumn & dest, const Element & root, ASTPtr & query_ptr, const bool &)
     {
         GeneratorJSONPath<JSONParser> generator_json_path(query_ptr);
         Element current_element = root;
