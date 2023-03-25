@@ -235,7 +235,7 @@ ConnectionPoolWithFailover::tryGetEntry(
         fail_message = connection_establisher_async.getFailMessage();
         return connection_establisher_async.getResult();
     }
-#endif    
+#endif
 
     ConnectionEstablisher connection_establisher(&pool, &timeouts, settings, log, table_to_check);
     TryResult result;
