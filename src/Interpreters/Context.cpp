@@ -1407,7 +1407,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             auto virtual_column_names = table_function_ptr->getVirtualsToCheckBeforeUsingStructureHint();
             bool asterisk = false;
             const auto & expression_list = select_query_hint->select()->as<ASTExpressionList>()->children;
-            auto expression = expression_list.begin();
+            const auto * expression = expression_list.begin();
 
             for (; expression != expression_list.end() && insert_column != insert_structure_end; ++expression)
             {
