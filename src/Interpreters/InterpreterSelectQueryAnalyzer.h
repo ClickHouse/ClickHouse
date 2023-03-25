@@ -71,6 +71,8 @@ public:
     /// Set number_of_current_replica and count_participating_replicas in client_info
     void setProperClientInfo(size_t replica_number, size_t count_participating_replicas);
 
+    const Planner & getPlanner() const { return planner; }
+
 private:
     ASTPtr query;
     ContextMutablePtr context;

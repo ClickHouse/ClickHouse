@@ -2901,8 +2901,10 @@ void InterpreterSelectQuery::executeMergeSorted(QueryPlan & query_plan, const st
     SortDescription sort_description = getSortDescription(query, context);
     const UInt64 limit = getLimitForSorting(query, context);
     const auto max_block_size = context->getSettingsRef().max_block_size;
+    const auto exact_rows_before_limit = context->getSettingsRef().exact_rows_before_limit;
 
-    auto merging_sorted = std::make_unique<SortingStep>(query_plan.getCurrentDataStream(), std::move(sort_description), max_block_size, limit);
+    auto merging_sorted = std::make_unique<SortingStep>(
+        query_plan.getCurrentDataStream(), std::move(sort_description), max_block_size, limit, exact_rows_before_limit);
     merging_sorted->setStepDescription("Merge sorted streams " + description);
     query_plan.addStep(std::move(merging_sorted));
 }
