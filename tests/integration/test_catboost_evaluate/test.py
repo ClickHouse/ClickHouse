@@ -288,7 +288,7 @@ def testAmazonModelManyRows(ch_cluster):
         "SELECT floor(sum(catboostEvaluate('/etc/clickhouse-server/model/amazon_model.bin', RESOURCE, MGR_ID, ROLE_ROLLUP_1, ROLE_ROLLUP_2, ROLE_DEPTNAME, ROLE_TITLE, ROLE_FAMILY_DESC, ROLE_FAMILY, ROLE_CODE))) FROM amazon"
     )
 
-    expected = "5834\n"
+    expected = "583092\n"
     assert result == expected
 
     result = instance.query("drop table if exists amazon")
