@@ -1361,7 +1361,7 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
 
 The following settings are available:
 
--   `size`: The maximum cache size in bytes. 0 means the query cache is disabled. Default value: `1073741824` (1 GiB).
+-   `max_size`: The maximum cache size in bytes. 0 means the query cache is disabled. Default value: `1073741824` (1 GiB).
 -   `max_entries`: The maximum number of `SELECT` query results stored in the cache. Default value: `1024`.
 -   `max_entry_size`: The maximum size in bytes `SELECT` query results may have to be saved in the cache. Default value: `1048576` (1 MiB).
 -   `max_entry_rows`: The maximum number of rows `SELECT` query results may have to be saved in the cache. Default value: `30000000` (30 mil).
@@ -1369,7 +1369,7 @@ The following settings are available:
 Changed settings take effect immediately.
 
 :::warning
-Data for the query cache is allocated in DRAM. If memory is scarce, make sure to set a small value for `size` or disable the query cache altogether.
+Data for the query cache is allocated in DRAM. If memory is scarce, make sure to set a small value for `max_size` or disable the query cache altogether.
 :::
 
 **Example**
