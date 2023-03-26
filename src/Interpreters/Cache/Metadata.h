@@ -114,7 +114,6 @@ private:
 };
 
 
-
 /**
  * `LockedKeyMetadata` is an object which makes sure that as long as it exists the following is true:
  * 1. the key cannot be removed from cache
