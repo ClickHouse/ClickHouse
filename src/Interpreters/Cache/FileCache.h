@@ -46,6 +46,8 @@ public:
 
     FileCache(const String & cache_base_path_, const FileCacheSettings & cache_settings_);
 
+    ~FileCache();
+
     void initialize();
 
     const String & getBasePath() const { return cache_base_path; }
@@ -111,6 +113,8 @@ public:
     CacheGuard::Lock cacheLock() { return cache_guard.lock(); }
 
     LockedKeyMetadataPtr lockKeyMetadata(const Key & key, KeyMetadataPtr key_metadata) const;
+
+    void cleanup();
 
     /// For per query cache limit.
     struct QueryContextHolder : private boost::noncopyable

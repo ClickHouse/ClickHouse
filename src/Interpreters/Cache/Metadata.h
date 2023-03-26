@@ -11,6 +11,7 @@ using FileSegmentPtr = std::shared_ptr<FileSegment>;
 struct LockedKeyMetadata;
 class LockedCachePriority;
 struct KeysQueue;
+struct CleanupQueue;
 
 
 struct FileSegmentMetadata : private boost::noncopyable
@@ -36,12 +37,12 @@ struct FileSegmentMetadata : private boost::noncopyable
         : file_segment(std::move(other.file_segment)), queue_iterator(std::move(other.queue_iterator)) {}
 };
 
-
 struct KeyMetadata : public std::map<size_t, FileSegmentMetadata>, private boost::noncopyable
 {
     friend struct LockedKeyMetadata;
 public:
-    explicit KeyMetadata(bool created_base_directory_) : created_base_directory(created_base_directory_) {}
+    explicit KeyMetadata(bool created_base_directory_, CleanupQueue & cleanup_queue_)
+        : created_base_directory(created_base_directory_), cleanup_queue(cleanup_queue_) {}
 
     const FileSegmentMetadata * getByOffset(size_t offset) const;
     FileSegmentMetadata * getByOffset(size_t offset);
@@ -55,30 +56,41 @@ public:
 
     bool createdBaseDirectory(const KeyGuard::Lock &) const { return created_base_directory; }
 
-    bool inCleanupQueue(const KeyGuard::Lock &) const { return in_cleanup_queue; }
+    enum class CleanupState
+    {
+        NOT_SUBMITTED,
+        SUBMITTED_TO_CLEANUP_QUEUE,
+        CLEANED_BY_CLEANUP_THREAD,
+    };
+
+    CleanupState getCleanupState(const KeyGuard::Lock &) const { return cleanup_state; }
+
+    void addToCleanupQueue(const FileCacheKey & key, const KeyGuard::Lock &);
+
+    void removeFromCleanupQueue(const FileCacheKey & key, const KeyGuard::Lock &);
 
 private:
     mutable KeyGuard guard;
     bool created_base_directory = false;
-    bool in_cleanup_queue = false;
+    CleanupState cleanup_state = CleanupState::NOT_SUBMITTED;
+    CleanupQueue & cleanup_queue;
 };
 
 using KeyMetadataPtr = std::shared_ptr<KeyMetadata>;
-
 
 struct CleanupQueue
 {
     friend struct CacheMetadata;
 public:
     void add(const FileCacheKey & key);
-
     void remove(const FileCacheKey & key);
+    size_t getSize() const;
 
 private:
     bool tryPop(FileCacheKey & key);
 
     std::unordered_set<FileCacheKey> keys;
-    std::mutex mutex;
+    mutable std::mutex mutex;
 };
 
 struct CacheMetadata : public std::unordered_map<FileCacheKey, KeyMetadataPtr>, private boost::noncopyable
@@ -88,17 +100,19 @@ public:
 
     CacheMetadataGuard::Lock lock() { return guard.lock(); }
 
-    CleanupQueue & getCleanupQueue() const { return cleanup_queue; }
-
-    void removeFromCleanupQueue(const FileCacheKey & key, const CacheMetadataGuard::Lock &) const;
-
     void doCleanup();
 
+    CleanupQueue & getCleanupQueue() { return cleanup_queue; }
+
 private:
+    void addToCleanupQueue(const FileCacheKey & key, const KeyGuard::Lock &);
+    void removeFromCleanupQueue(const FileCacheKey & key, const KeyGuard::Lock &);
+
     const std::string base_directory;
     CacheMetadataGuard guard;
-    mutable CleanupQueue cleanup_queue;
+    CleanupQueue cleanup_queue;
 };
+
 
 
 /**
@@ -119,8 +133,7 @@ struct LockedKeyMetadata : private boost::noncopyable
         const FileCacheKey & key_,
         std::shared_ptr<KeyMetadata> key_metadata_,
         KeyGuard::Lock && key_lock_,
-        const std::string & key_path_,
-        CleanupQueue & cleanup_keys_metadata_queue_);
+        const std::string & key_path_);
 
     ~LockedKeyMetadata();
 
@@ -138,10 +151,9 @@ struct LockedKeyMetadata : private boost::noncopyable
 
 private:
     const FileCacheKey key;
-    const std::string & key_path;
+    const std::string key_path;
     const std::shared_ptr<KeyMetadata> key_metadata;
     KeyGuard::Lock lock; /// `lock` must be destructed before `key_metadata`.
-    CleanupQueue & cleanup_keys_metadata_queue;
     Poco::Logger * log;
 };
 

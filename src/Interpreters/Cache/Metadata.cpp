@@ -2,6 +2,7 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/Cache/LockedFileCachePriority.h>
+#include <Common/logger_useful.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -103,34 +104,26 @@ std::string KeyMetadata::toString() const
     return result;
 }
 
-void CleanupQueue::add(const FileCacheKey & key)
+void KeyMetadata::addToCleanupQueue(const FileCacheKey & key, const KeyGuard::Lock &)
 {
-    std::lock_guard lock(mutex);
-    keys.insert(key);
+    cleanup_queue.add(key);
+    cleanup_state = CleanupState::SUBMITTED_TO_CLEANUP_QUEUE;
 }
 
-void CleanupQueue::remove(const FileCacheKey & key)
+void KeyMetadata::removeFromCleanupQueue(const FileCacheKey & key, const KeyGuard::Lock &)
 {
-    std::lock_guard lock(mutex);
-    bool erased = keys.erase(key);
-    if (!erased)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No such key to erase: {}", key.toString());
-}
-
-bool CleanupQueue::tryPop(FileCacheKey & key)
-{
-    std::lock_guard lock(mutex);
-    if (keys.empty())
-        return false;
-    auto it = keys.begin();
-    key = *it;
-    keys.erase(it);
-    return true;
+    cleanup_queue.remove(key);
+    cleanup_state = CleanupState::NOT_SUBMITTED;
 }
 
 void CacheMetadata::doCleanup()
 {
     auto lock = guard.lock();
+
+    LOG_INFO(
+        &Poco::Logger::get("FileCacheCleanupThread"),
+        "Performing background cleanup (size: {})",
+        cleanup_queue.getSize());
 
     /// Let's mention this case.
     /// This metadata cleanup is delayed so what is we marked key as deleted and
@@ -145,6 +138,15 @@ void CacheMetadata::doCleanup()
         auto it = find(cleanup_key);
         if (it == end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No such key {} in metadata", cleanup_key.toString());
+
+        auto key_metadata = it->second;
+        auto key_lock = key_metadata->lock();
+        /// As in lockKeyMetadata we extract key metadata from cache metadata
+        /// under CacheMetadataGuard::Lock, but take KeyGuard::Lock only after we
+        /// released cache CacheMetadataGuard::Lock, then we must to take into
+        /// account it here.
+        if (key_metadata->getCleanupState(key_lock) == KeyMetadata::CleanupState::NOT_SUBMITTED)
+            continue;
 
         erase(it);
 
@@ -170,25 +172,21 @@ LockedKeyMetadata::LockedKeyMetadata(
     const FileCacheKey & key_,
     std::shared_ptr<KeyMetadata> key_metadata_,
     KeyGuard::Lock && lock_,
-    const std::string & key_path_,
-    CleanupQueue & cleanup_keys_metadata_queue_)
+    const std::string & key_path_)
     : key(key_)
     , key_path(key_path_)
     , key_metadata(key_metadata_)
     , lock(std::move(lock_))
-    , cleanup_keys_metadata_queue(cleanup_keys_metadata_queue_)
     , log(&Poco::Logger::get("LockedKeyMetadata"))
 {
 }
 
 LockedKeyMetadata::~LockedKeyMetadata()
 {
-    /// Someone might still need this directory.
     if (!key_metadata->empty())
         return;
 
-    cleanup_keys_metadata_queue.add(key);
-    key_metadata->in_cleanup_queue = true;
+    key_metadata->addToCleanupQueue(key, lock);
 }
 
 void LockedKeyMetadata::createKeyDirectoryIfNot()
@@ -267,6 +265,42 @@ void LockedKeyMetadata::shrinkFileSegmentToDownloadedSize(
 
     assert(file_segment->reserved_size == downloaded_size);
     assert(file_segment_metadata->size() == entry.size);
+}
+
+void CleanupQueue::add(const FileCacheKey & key)
+{
+    std::lock_guard lock(mutex);
+    auto [_, inserted] = keys.insert(key);
+    if (!inserted)
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Key {} is already in removal queue", key.toString());
+    }
+}
+
+void CleanupQueue::remove(const FileCacheKey & key)
+{
+    std::lock_guard lock(mutex);
+    bool erased = keys.erase(key);
+    if (!erased)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No such key {} in removal queue", key.toString());
+}
+
+bool CleanupQueue::tryPop(FileCacheKey & key)
+{
+    std::lock_guard lock(mutex);
+    if (keys.empty())
+        return false;
+    auto it = keys.begin();
+    key = *it;
+    keys.erase(it);
+    return true;
+}
+
+size_t CleanupQueue::getSize() const
+{
+    std::lock_guard lock(mutex);
+    return keys.size();
 }
 
 }
