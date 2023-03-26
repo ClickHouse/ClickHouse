@@ -16,6 +16,9 @@
 #include <filesystem>
 #include <thread>
 #include <DataTypes/DataTypesNumber.h>
+#include <Poco/Util/XMLConfiguration.h>
+#include <Poco/DOM/DOMParser.h>
+#include <base/sleep.h>
 
 #include <Poco/ConsoleChannel.h>
 #include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
@@ -62,6 +65,7 @@ using HolderPtr = FileSegmentsHolderPtr;
 
 fs::path caches_dir = fs::current_path() / "lru_cache_test";
 std::string cache_base_path = caches_dir / "cache1" / "";
+
 
 void assertEqual(const HolderPtr & holder, const Ranges & expected_ranges, const States & expected_states = {})
 {
@@ -131,7 +135,6 @@ void download(const HolderPtr & holder)
 class FileCacheTest : public ::testing::Test
 {
 public:
-
     static void setupLogs(const std::string & level)
     {
         Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel(std::cerr));
@@ -165,6 +168,14 @@ TEST_F(FileCacheTest, get)
 
     /// To work with cache need query_id and query context.
     std::string query_id = "query_id";
+
+    Poco::XML::DOMParser dom_parser;
+    std::string xml(R"CONFIG(<clickhouse>
+</clickhouse>)CONFIG");
+    Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
+    getMutableContext().context->setConfig(config);
+
     auto query_context = DB::Context::createCopy(getContext().context);
     query_context->makeQueryContext();
     query_context->setCurrentQueryId(query_id);
@@ -178,23 +189,36 @@ TEST_F(FileCacheTest, get)
         std::cerr << "Step 1\n";
 
         auto cache = FileCache(cache_base_path, settings);
+        std::cerr << "Step 1\n";
         cache.initialize();
+        std::cerr << "Step 1\n";
         auto key = cache.createKeyForPath("key1");
+        std::cerr << "Step 1\n";
 
         {
+            std::cerr << "Step 1\n";
             auto holder = cache.getOrSet(key, 0, 10, {});  /// Add range [0, 9]
+            std::cerr << "Step 1\n";
             assertEqual(holder, { Range(0, 9) }, { State::EMPTY });
+            std::cerr << "Step 1\n";
             download(holder->front());
+            std::cerr << "Step 1\n";
             assertEqual(holder, { Range(0, 9) }, { State::DOWNLOADED });
+            std::cerr << "Step 1\n";
         }
 
         /// Current cache:    [__________]
         ///                   ^          ^
         ///                   0          9
+        std::cerr << "Step 1\n";
         assertEqual(cache.getSnapshot(key), { Range(0, 9) });
+        std::cerr << "Step 1\n";
         assertEqual(cache.dumpQueue(), { Range(0, 9) });
+        std::cerr << "Step 1\n";
         ASSERT_EQ(cache.getFileSegmentsNum(), 1);
+        std::cerr << "Step 1\n";
         ASSERT_EQ(cache.getUsedCacheSize(), 10);
+        std::cerr << "Step 1\n";
 
         std::cerr << "Step 2\n";
 
@@ -520,6 +544,60 @@ TEST_F(FileCacheTest, get)
                     { State::EMPTY, State::EMPTY,  State::EMPTY });
     }
 
+    std::cerr << "Step 13\n";
+    {
+        /// Test delated cleanup
+
+        auto cache = FileCache(cache_base_path, settings);
+        cache.initialize();
+        cache.cleanup();
+        const auto key = cache.createKeyForPath("key10");
+        const auto key_path = cache.getPathInLocalCache(key);
+
+        cache.removeAllReleasable();
+        ASSERT_EQ(cache.getUsedCacheSize(), 0);
+        ASSERT_TRUE(!fs::exists(key_path));
+        ASSERT_TRUE(!fs::exists(fs::path(key_path).parent_path()));
+
+        download(cache.getOrSet(key, 0, 10, {}));
+        ASSERT_EQ(cache.getUsedCacheSize(), 10);
+        ASSERT_TRUE(fs::exists(cache.getPathInLocalCache(key, 0, FileSegmentKind::Regular)));
+
+        cache.removeAllReleasable();
+        ASSERT_EQ(cache.getUsedCacheSize(), 0);
+        ASSERT_TRUE(fs::exists(key_path));
+        ASSERT_TRUE(!fs::exists(cache.getPathInLocalCache(key, 0, FileSegmentKind::Regular)));
+
+        cache.cleanup();
+        ASSERT_TRUE(!fs::exists(key_path));
+        ASSERT_TRUE(!fs::exists(fs::path(key_path).parent_path()));
+    }
+
+    std::cerr << "Step 14\n";
+    {
+        /// Test background thread delated cleanup
+
+        auto settings2{settings};
+        settings2.delayed_cleanup_interval_ms = 0;
+        auto cache = FileCache(cache_base_path, settings2);
+        cache.initialize();
+        const auto key = cache.createKeyForPath("key10");
+        const auto key_path = cache.getPathInLocalCache(key);
+
+        cache.removeAllReleasable();
+        ASSERT_EQ(cache.getUsedCacheSize(), 0);
+        ASSERT_TRUE(!fs::exists(key_path));
+        ASSERT_TRUE(!fs::exists(fs::path(key_path).parent_path()));
+
+        download(cache.getOrSet(key, 0, 10, {}));
+        ASSERT_EQ(cache.getUsedCacheSize(), 10);
+        ASSERT_TRUE(fs::exists(key_path));
+
+        cache.removeAllReleasable();
+        ASSERT_EQ(cache.getUsedCacheSize(), 0);
+        sleepForSeconds(2);
+        ASSERT_TRUE(!fs::exists(key_path));
+    }
 }
 
 TEST_F(FileCacheTest, writeBuffer)

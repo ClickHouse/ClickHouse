@@ -115,6 +115,7 @@ void FileCache::initialize()
     }
 
     is_initialized = true;
+    cleanup_task->activate();
     cleanup_task->scheduleAfter(delayed_cleanup_interval_ms);
 }
 
@@ -833,43 +834,46 @@ void FileCache::loadMetadata()
     }
 
     size_t total_size = 0;
-    for (auto key_prefix_it = fs::directory_iterator{cache_base_path}; key_prefix_it != fs::directory_iterator(); ++key_prefix_it)
+    for (auto key_prefix_it = fs::directory_iterator{cache_base_path}; key_prefix_it != fs::directory_iterator();)
     {
         const fs::path key_prefix_directory = key_prefix_it->path();
+        key_prefix_it++;
 
-        if (!key_prefix_it->is_directory())
+        if (!fs::is_directory(key_prefix_directory))
         {
             if (key_prefix_directory.filename() != "status")
             {
                 LOG_WARNING(
                     log, "Unexpected file {} (not a directory), will skip it",
-                    key_prefix_it->path().string());
+                    key_prefix_directory.string());
             }
             continue;
         }
 
         if (fs::is_empty(key_prefix_directory))
         {
+            LOG_DEBUG(log, "Removing empty key prefix directory: {}", key_prefix_directory.string());
             fs::remove(key_prefix_directory);
             continue;
         }
 
-        fs::directory_iterator key_it{};
-        for (; key_it != fs::directory_iterator(); ++key_it)
+        for (fs::directory_iterator key_it{key_prefix_directory}; key_it != fs::directory_iterator();)
         {
             const fs::path key_directory = key_it->path();
+            ++key_it;
 
-            if (!key_it->is_directory())
+            if (!fs::is_directory(key_directory))
             {
                 LOG_DEBUG(
                     log,
                     "Unexpected file: {} (not a directory). Expected a directory",
-                    key_it->path().string());
+                    key_directory.string());
                 continue;
             }
 
             if (fs::is_empty(key_directory))
             {
+                LOG_DEBUG(log, "Removing empty key directory: {}", key_directory.string());
                 fs::remove(key_directory);
                 continue;
             }
@@ -932,7 +936,7 @@ void FileCache::loadMetadata()
                         log,
                         "Cache capacity changed (max size: {}, used: {}), "
                         "cached file `{}` does not fit in cache anymore (size: {})",
-                        queue.getSizeLimit(), queue.getSize(), key_it->path().string(), size);
+                        queue.getSizeLimit(), queue.getSize(), key_directory.string(), size);
 
                     fs::remove(offset_it->path());
                 }
@@ -961,46 +965,66 @@ void FileCache::loadMetadata()
 
 LockedKeyMetadataPtr FileCache::lockKeyMetadata(const Key & key, KeyNotFoundPolicy key_not_found_policy, bool is_initial_load)
 {
-    auto lock = metadata.lock();
-
-    auto it = metadata.find(key);
-    if (it == metadata.end())
+    KeyMetadataPtr key_metadata;
     {
+        auto lock = metadata.lock();
+
+        auto it = metadata.find(key);
+        if (it == metadata.end())
+        {
+            if (key_not_found_policy == KeyNotFoundPolicy::THROW)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "No such key `{}` in cache", key.toString());
+            else if (key_not_found_policy == KeyNotFoundPolicy::RETURN_NULL)
+                return nullptr;
+
+            it = metadata.emplace(
+                key,
+                std::make_shared<KeyMetadata>(/* base_directory_already_exists */is_initial_load, metadata.getCleanupQueue())).first;
+        }
+
+        key_metadata = it->second;
+    }
+
+    {
+        auto key_lock = key_metadata->lock();
+
+        const auto cleanup_state = key_metadata->getCleanupState(key_lock);
+
+        if (cleanup_state == KeyMetadata::CleanupState::NOT_SUBMITTED)
+        {
+            return std::make_unique<LockedKeyMetadata>(key, key_metadata, std::move(key_lock), getPathInLocalCache(key));
+        }
+
         if (key_not_found_policy == KeyNotFoundPolicy::THROW)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No such key `{}` in cache", key.toString());
         else if (key_not_found_policy == KeyNotFoundPolicy::RETURN_NULL)
             return nullptr;
 
-        it = metadata.emplace(key, std::make_shared<KeyMetadata>(/* created_base_directory */is_initial_load)).first;
+        if (cleanup_state == KeyMetadata::CleanupState::SUBMITTED_TO_CLEANUP_QUEUE)
+        {
+            key_metadata->removeFromCleanupQueue(key, key_lock);
+            return std::make_unique<LockedKeyMetadata>(key, key_metadata, std::move(key_lock), getPathInLocalCache(key));
+        }
+
+        chassert(cleanup_state == KeyMetadata::CleanupState::CLEANED_BY_CLEANUP_THREAD);
+        chassert(key_not_found_policy == KeyNotFoundPolicy::CREATE_EMPTY);
     }
 
-    auto key_metadata = it->second;
-    auto key_lock = key_metadata->lock();
-
-    if (key_metadata->inCleanupQueue(key_lock))
-    {
-        /// No race is guaranteed because KeyGuard::Lock and CacheMetadataGuard::Lock are hold.
-        metadata.getCleanupQueue().remove(key);
-
-        if (key_not_found_policy == KeyNotFoundPolicy::THROW)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "No such key `{}` in cache", key.toString());
-        else if (key_not_found_policy == KeyNotFoundPolicy::RETURN_NULL)
-            return nullptr;
-    }
-
-    return std::make_unique<LockedKeyMetadata>(
-        key, key_metadata, std::move(key_lock), getPathInLocalCache(key), metadata.getCleanupQueue());
+    /// Not we are at a case:
+    /// cleanup_state == KeyMetadata::CleanupState::CLEANED_BY_CLEANUP_THREAD
+    /// and KeyNotFoundPolicy == CREATE_EMPTY
+    /// Retry.
+    return lockKeyMetadata(key, key_not_found_policy);
 }
 
 LockedKeyMetadataPtr FileCache::lockKeyMetadata(const Key & key, KeyMetadataPtr key_metadata) const
 {
     auto key_lock = key_metadata->lock();
 
-    if (key_metadata->inCleanupQueue(key_lock))
+    if (key_metadata->getCleanupState(key_lock) != KeyMetadata::CleanupState::NOT_SUBMITTED)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot lock key: it was removed from cache");
 
-    return std::make_unique<LockedKeyMetadata>(
-        key, key_metadata, std::move(key_lock), getPathInLocalCache(key), metadata.getCleanupQueue());
+    return std::make_unique<LockedKeyMetadata>(key, key_metadata, std::move(key_lock), getPathInLocalCache(key));
 }
 
 void FileCache::iterateCacheMetadata(const CacheMetadataGuard::Lock &, std::function<void(KeyMetadata &)> && func)
@@ -1010,18 +1034,28 @@ void FileCache::iterateCacheMetadata(const CacheMetadataGuard::Lock &, std::func
     {
         auto key_lock = key_metadata->lock();
 
-        if (key_metadata->inCleanupQueue(key_lock))
+        if (key_metadata->getCleanupState(key_lock) != KeyMetadata::CleanupState::NOT_SUBMITTED)
             continue;
 
         func(*key_metadata);
     }
 }
 
+FileCache::~FileCache()
+{
+    cleanup_task->deactivate();
+}
+
+void FileCache::cleanup()
+{
+    metadata.doCleanup();
+}
+
 void FileCache::cleanupThreadFunc()
 {
     try
     {
-        metadata.doCleanup();
+        cleanup();
     }
     catch (...)
     {
