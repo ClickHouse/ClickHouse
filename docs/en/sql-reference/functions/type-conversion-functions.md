@@ -1188,6 +1188,16 @@ SELECT parseDateTime('2021-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
 
 Alias: `TO_TIMESTAMP`.
 
+## parseDateTimeOrZero
+
+Same as for [parseDateTime](#type_conversion_functions-parseDateTime) except that it returns zero date when it encounters a date format that cannot be processed.
+
+## parseDateTimeOrNull
+
+Same as for [parseDateTime](#type_conversion_functions-parseDateTime) except that it returns `NULL` when it encounters a date format that cannot be processed.
+
+Alias: `str_to_date`.
+
 ## parseDateTimeInJodaSyntax {#type_conversion_functions-parseDateTimeInJodaSyntax}
 
 Similar to [parseDateTime](#parsedatetime), except that the format string is in [Joda](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html) instead of MySQL syntax.
@@ -1226,6 +1236,14 @@ SELECT parseDateTimeInJodaSyntax('2023-02-24 14:53:31', 'yyyy-MM-dd HH:mm:ss', '
 │                                                                     2023-02-24 14:53:31 │
 └─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+## parseDateTimeInJodaSyntaxOrZero
+
+Same as for [parseDateTimeInJodaSyntax](#type_conversion_functions-parseDateTimeInJodaSyntax) except that it returns zero date when it encounters a date format that cannot be processed.
+
+## parseDateTimeInJodaSyntaxOrNull
+
+Same as for [parseDateTimeInJodaSyntax](#type_conversion_functions-parseDateTimeInJodaSyntax) except that it returns `NULL` when it encounters a date format that cannot be processed.
 
 ## parseDateTimeBestEffort
 ## parseDateTime32BestEffort
