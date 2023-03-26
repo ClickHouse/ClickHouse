@@ -9,7 +9,7 @@ description: A collection is dislikes of YouTube videos.
 In November of 2021, YouTube removed the public ***dislike*** count from all of its videos. While creators can still see the number of dislikes, viewers can only see how many ***likes*** a video has received.
 
 :::important
-The dataset has over 4 billion records, so be careful just copying-and-pasting the commands below unless your resources can handle that type of volume. The commands below were tested on a Development instance of [ClickHouse Cloud](https://clickhouse.cloud).
+The dataset has over 4.5 billion records, so be careful just copying-and-pasting the commands below unless your resources can handle that type of volume. The commands below were ran on a **Development** instance of [ClickHouse Cloud](https://clickhouse.cloud).
 :::
 
 The data is in a JSON format and can be downloaded from [archive.org](https://archive.org/download/dislikes_youtube_2021_12_video_json_files). We have made this same data available in S3 so that it can be downloaded much more efficiently into a ClickHouse Cloud instance.
@@ -113,4 +113,33 @@ SELECT
 FROM s3Cluster('default','https://clickhouse-public-datasets.s3.amazonaws.com/youtube/original/files/*.zst', 'JSONLines');
 ```
 
-4.
+4. Open a new tab in the SQL Console of ClickHouse Cloud (or a new `clickhouse-client` window) and watch the count increase:
+
+```sql
+select formatReadableQuantity(count()) from youtube;
+```
+
+5. It will take a while to insert 4.56B rows, depending on your server resources. Once the data is inserted, go ahead and count the number of dislikes of your favorite videos or channels. Let's see how many videos were uploaded by ClickHouse:
+
+```sql
+SELECT *
+FROM youtube
+WHERE uploader ILIKE '%ClickHouse%';
+```
+
+6. Here is a search for videos with **ClickHouse** in the `title` or `description` fields:
+
+```sql
+SELECT
+    view_count,
+    like_count,
+    dislike_count,
+    concat('https://youtu.be/', id) AS url,
+    title
+FROM youtube
+WHERE (title ILIKE '%ClickHouse%') OR (description ILIKE '%ClickHouse%')
+ORDER BY
+    like_count DESC,
+    view_count DESC;
+```
+
