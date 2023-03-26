@@ -213,30 +213,12 @@ bool applyTrivialCountIfPossible(
     if (!num_rows)
         return false;
 
-    /// set aggregation state
-    const AggregateFunctionCount & agg_count = *count_func;
-    std::vector<char> state(agg_count.sizeOfData());
-    AggregateDataPtr place = state.data();
-    agg_count.create(place);
-    SCOPE_EXIT_MEMORY_SAFE(agg_count.destroy(place));
-    agg_count.set(place, num_rows.value());
+    DataTypePtr result_type = std::make_shared<DataTypeUInt64>();
+    auto column = result_type->createColumn();
+    UInt64 count = num_rows.value();
+    column->insertData(reinterpret_cast<char*>(&count), sizeof(count));
 
-    auto column = ColumnAggregateFunction::create(function_node.getAggregateFunction());
-    column->insertFrom(place);
-
-    /// get count() argument type
-    DataTypes argument_types;
-    argument_types.reserve(columns_names.size());
-    {
-        const Block source_header = table_node.getStorageSnapshot()->getSampleBlockForColumns(columns_names);
-        for (const auto & column_name : columns_names)
-            argument_types.push_back(source_header.getByName(column_name).type);
-    }
-
-    Block block_with_count{
-        {std::move(column),
-         std::make_shared<DataTypeAggregateFunction>(function_node.getAggregateFunction(), argument_types, Array{}),
-         columns_names.front()}};
+    Block block_with_count{{std::move(column), result_type, columns_names.front()}};
 
     auto source = std::make_shared<SourceFromSingleChunk>(block_with_count);
     auto prepared_count = std::make_unique<ReadFromPreparedSource>(Pipe(std::move(source)));
@@ -457,7 +439,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
         if (is_trivial_count_applied)
         {
-            from_stage = QueryProcessingStage::WithMergeableState;
+            from_stage = QueryProcessingStage::Complete;
         }
         else
         {
