@@ -4,5 +4,6 @@ database	String
 table	String					
 uuid	UUID					
 engine	String					
+is_being_undropped	UInt8					
 metadata_dropped_path	String					
 table_dropped_time	DateTime					
