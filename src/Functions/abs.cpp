@@ -46,13 +46,13 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameAbs>
         if ((left_float < 0 && right_float > 0) || (left_float > 0 && right_float < 0))
             return {};
 
-        return { .is_monotonic = true, .is_positive = left_float > 0, .is_strict = true, };
+        return { .is_monotonic = true, .is_positive = left_float > 0 };
     }
 };
 
-REGISTER_FUNCTION(Abs)
+void registerFunctionAbs(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionAbs>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionAbs>(FunctionFactory::CaseInsensitive);
 }
 
 }

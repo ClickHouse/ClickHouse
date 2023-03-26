@@ -37,7 +37,7 @@ ColumnString::ColumnString(const ColumnString & src)
 
         /// This will also prevent possible overflow in offset.
         if (chars.size() != last_offset)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "String offsets has data inconsistent with chars array");
+            throw Exception("String offsets has data inconsistent with chars array", ErrorCodes::LOGICAL_ERROR);
     }
 }
 
@@ -90,8 +90,8 @@ void ColumnString::updateWeakHash32(WeakHash32 & hash) const
     auto s = offsets.size();
 
     if (hash.getData().size() != s)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
-                        "column size is {}, hash size is {}", std::to_string(s), std::to_string(hash.getData().size()));
+        throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
+                        ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
 
     const UInt8 * pos = chars.data();
     UInt32 * hash_data = hash.getData().data();
@@ -118,13 +118,11 @@ void ColumnString::insertRangeFrom(const IColumn & src, size_t start, size_t len
     const ColumnString & src_concrete = assert_cast<const ColumnString &>(src);
 
     if (start + length > src_concrete.offsets.size())
-        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameter out of bound in IColumnString::insertRangeFrom method.");
+        throw Exception("Parameter out of bound in IColumnString::insertRangeFrom method.",
+            ErrorCodes::PARAMETER_OUT_OF_BOUND);
 
     size_t nested_offset = src_concrete.offsetAt(start);
     size_t nested_length = src_concrete.offsets[start + length - 1] - nested_offset;
-
-    /// Reserve offsets before to make it more exception safe (in case of MEMORY_LIMIT_EXCEEDED)
-    offsets.reserve(offsets.size() + length);
 
     size_t old_chars_size = chars.size();
     chars.resize(old_chars_size + nested_length);
@@ -165,13 +163,13 @@ void ColumnString::expand(const IColumn::Filter & mask, bool inverted)
     auto & offsets_data = getOffsets();
     auto & chars_data = getChars();
     if (mask.size() < offsets_data.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mask size should be no less than data size.");
+        throw Exception("Mask size should be no less than data size.", ErrorCodes::LOGICAL_ERROR);
 
     /// We cannot change only offsets, because each string should end with terminating zero byte.
     /// So, we will insert one zero byte when mask value is zero.
 
-    ssize_t index = mask.size() - 1;
-    ssize_t from = offsets_data.size() - 1;
+    int index = mask.size() - 1;
+    int from = offsets_data.size() - 1;
     /// mask.size() - offsets_data.size() should be equal to the number of zeros in mask
     /// (if not, one of exceptions below will throw) and we can calculate the resulting chars size.
     UInt64 last_offset = offsets_data[from] + (mask.size() - offsets_data.size());
@@ -183,7 +181,7 @@ void ColumnString::expand(const IColumn::Filter & mask, bool inverted)
         if (!!mask[index] ^ inverted)
         {
             if (from < 0)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many bytes in mask");
+                throw Exception("Too many bytes in mask", ErrorCodes::LOGICAL_ERROR);
 
             size_t len = offsets_data[from] - offsets_data[from - 1];
 
@@ -204,7 +202,7 @@ void ColumnString::expand(const IColumn::Filter & mask, bool inverted)
     }
 
     if (from != -1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough bytes in mask");
+        throw Exception("Not enough bytes in mask", ErrorCodes::LOGICAL_ERROR);
 }
 
 
@@ -432,7 +430,7 @@ ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
 {
     size_t col_size = size();
     if (col_size != replicate_offsets.size())
-        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets doesn't match size of column.");
+        throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
     auto res = ColumnString::create();
 
@@ -572,9 +570,7 @@ void ColumnString::protect()
 void ColumnString::validate() const
 {
     if (!offsets.empty() && offsets.back() != chars.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "ColumnString validation failed: size mismatch (internal logical error) {} != {}",
-                        offsets.back(), chars.size());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnString validation failed: size mismatch (internal logical error) {} != {}", offsets.back(), chars.size());
 }
 
 }

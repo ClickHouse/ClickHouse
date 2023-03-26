@@ -17,8 +17,7 @@ struct MultiEnum
         : MultiEnum((toBitFlag(v) | ... | 0u))
     {}
 
-    template <typename ValueType>
-    requires std::is_convertible_v<ValueType, StorageType>
+    template <typename ValueType, typename = std::enable_if_t<std::is_convertible_v<ValueType, StorageType>>>
     constexpr explicit MultiEnum(ValueType v)
         : bitset(v)
     {

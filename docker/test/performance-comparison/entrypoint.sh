@@ -12,11 +12,11 @@ export S3_URL BUILD_NAME
 # current curl version options.
 function curl_with_retry
 {
-    for _ in 1 2 3 4 5 6 7 8 9 10; do
+    for _ in 1 2 3 4; do
         if curl --fail --head "$1";then
             return 0
         else
-            sleep 1
+            sleep 0.5
         fi
     done
     return 1
@@ -65,6 +65,7 @@ function find_reference_sha
             "$S3_URL/PRs/0/$REF_SHA/$BUILD_NAME/performance.tar.zst"
             "$S3_URL/0/$REF_SHA/$BUILD_NAME/performance.tar.zst"
             "$S3_URL/0/$REF_SHA/$BUILD_NAME/performance.tgz"
+            "https://s3.amazonaws.com/clickhouse-builds/0/$REF_SHA/performance/performance.tgz"
         )
         for path in "${urls_to_try[@]}"
         do
@@ -100,7 +101,7 @@ do
 done
 
 mkdir right
-wget -nv -nd -c "$right_path" -O- | tar -C right --no-same-owner --strip-components=1 --zstd --extract --verbose
+wget -nv -nd -c "$right_path" -O- | tar -C right --strip-components=1 -zxv
 
 # Find reference revision if not specified explicitly
 if [ "$REF_SHA" == "" ]; then find_reference_sha; fi
@@ -161,7 +162,7 @@ ulimit -c unlimited
 cat /proc/sys/kernel/core_pattern
 
 # Start the main comparison script.
-{
+{ \
     time ../download.sh "$REF_PR" "$REF_SHA" "$PR_TO_TEST" "$SHA_TO_TEST" && \
     time stage=configure "$script_path"/compare.sh ; \
 } 2>&1 | ts "$(printf '%%Y-%%m-%%d %%H:%%M:%%S\t')" | tee compare.log
@@ -184,6 +185,4 @@ ls -lath
     report analyze benchmark metrics \
     ./*.core.dmp ./*.core
 
-# If the files aren't same, copy it
-cmp --silent compare.log /output/compare.log || \
-  cp compare.log /output
+cp compare.log /output

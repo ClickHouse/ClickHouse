@@ -5,7 +5,7 @@
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
@@ -73,7 +73,7 @@ public:
             using Converter = typename TypeConverter::Type;
 
             if constexpr (std::is_same_v<ColumnToPointsConverter<Point>, Converter>)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument of function {} must not be Point", getName());
+                throw Exception(fmt::format("The argument of function {} must not be Point", getName()), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             else
             {
                 auto geometries = Converter::convert(arguments[0].column->convertToFullColumnIfConst());
@@ -100,7 +100,7 @@ template <>
 const char * FunctionPolygonArea<SphericalPoint>::name = "polygonAreaSpherical";
 
 
-REGISTER_FUNCTION(PolygonArea)
+void registerFunctionPolygonArea(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionPolygonArea<CartesianPoint>>();
     factory.registerFunction<FunctionPolygonArea<SphericalPoint>>();

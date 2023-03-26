@@ -50,6 +50,8 @@ public:
         return file_name;
     }
 
+    Range getRemainingReadRange() const override { return Range{ .left = file_offset_of_buffer_end, .right = std::nullopt }; }
+
     size_t getFileOffsetOfBufferEnd() const override { return file_offset_of_buffer_end; }
 };
 

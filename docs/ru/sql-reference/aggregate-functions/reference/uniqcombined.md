@@ -1,6 +1,5 @@
 ---
-slug: /ru/sql-reference/aggregate-functions/reference/uniqcombined
-sidebar_position: 192
+toc_priority: 192
 ---
 
 # uniqCombined {#agg_function-uniqcombined}
@@ -35,9 +34,9 @@ uniqCombined(HLL_precision)(x[, ...])
 
 -   Результат детерминирован (не зависит от порядка выполнения запроса).
 
-    :::note "Note"
+!!! note "Note"
     Так как используется 32-битный хэш для не-`String` типов, результат будет иметь очень очень большую ошибку для количества разичных элементов существенно больше `UINT_MAX` (ошибка быстро растёт начиная с нескольких десятков миллиардов различных значений), таким образом в этом случае нужно использовать [uniqCombined64](#agg_function-uniqcombined64)
-    :::
+
 По сравнению с функцией [uniq](#agg_function-uniq), `uniqCombined`:
 
 -   Потребляет в несколько раз меньше памяти.
@@ -50,3 +49,4 @@ uniqCombined(HLL_precision)(x[, ...])
 -   [uniqCombined64](../../../sql-reference/aggregate-functions/reference/uniqcombined64.md#agg_function-uniqcombined64)
 -   [uniqHLL12](../../../sql-reference/aggregate-functions/reference/uniqhll12.md#agg_function-uniqhll12)
 -   [uniqExact](../../../sql-reference/aggregate-functions/reference/uniqexact.md#agg_function-uniqexact)
+

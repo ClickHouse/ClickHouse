@@ -1,7 +1,6 @@
 ---
-slug: /zh/sql-reference/aggregate-functions/reference/welchttest
-sidebar_position: 301
-sidebar_label: welchTTest
+toc_priority: 301
+toc_title: welchTTest
 ---
 
 # welchTTest {#welchttest}

@@ -78,7 +78,7 @@ struct DivideIntegralByConstantImpl
 #pragma GCC diagnostic pop
 
         if (unlikely(static_cast<A>(b) == 0))
-            throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by zero");
+            throw Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
 
         divideImpl(a_pos, b, c_pos, size);
     }
@@ -126,7 +126,7 @@ template <> struct BinaryOperationImpl<Int32, Int64, DivideIntegralImpl<Int32, I
 struct NameIntDiv { static constexpr auto name = "intDiv"; };
 using FunctionIntDiv = BinaryArithmeticOverloadResolver<DivideIntegralImpl, NameIntDiv, false>;
 
-REGISTER_FUNCTION(IntDiv)
+void registerFunctionIntDiv(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionIntDiv>();
 }

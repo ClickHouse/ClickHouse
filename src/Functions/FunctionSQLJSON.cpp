@@ -5,7 +5,7 @@
 namespace DB
 {
 
-REGISTER_FUNCTION(SQLJSON)
+void registerFunctionsSQLJSON(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionSQLJSON<NameJSONExists, JSONExistsImpl>>();
     factory.registerFunction<FunctionSQLJSON<NameJSONQuery, JSONQueryImpl>>();

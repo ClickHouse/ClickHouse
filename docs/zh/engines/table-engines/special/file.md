@@ -1,6 +1,3 @@
----
-slug: /zh/engines/table-engines/special/file
----
 # 文件(输入格式) {#table_engines-file}
 
 数据源是以 Clickhouse 支持的一种输入格式（TabSeparated，Native等）存储数据的文件。
@@ -72,3 +69,5 @@ $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64
     -   `SELECT ... SAMPLE`
     -   索引
     -   副本
+
+[来源文章](https://clickhouse.com/docs/en/operations/table_engines/file/) <!--hide-->

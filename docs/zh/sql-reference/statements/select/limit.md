@@ -1,6 +1,5 @@
 ---
-slug: /zh/sql-reference/statements/select/limit
-sidebar_label: LIMIT
+toc_title: LIMIT
 ---
 
 # LIMIT {#limit-clause}

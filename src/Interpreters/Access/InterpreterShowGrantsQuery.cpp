@@ -6,7 +6,6 @@
 #include <Access/AccessControl.h>
 #include <Access/CachedAccessChecking.h>
 #include <Access/ContextAccess.h>
-#include <Access/EnabledRolesInfo.h>
 #include <Access/Role.h>
 #include <Access/RolesOrUsersSet.h>
 #include <Access/User.h>
@@ -48,7 +47,7 @@ namespace
             if (current_query)
             {
                 const auto & prev_element = current_query->access_rights_elements.back();
-                bool continue_with_current_query = element.sameDatabaseAndTableAndParameter(prev_element) && element.sameOptions(prev_element);
+                bool continue_with_current_query = element.sameDatabaseAndTable(prev_element) && element.sameOptions(prev_element);
                 if (!continue_with_current_query)
                     current_query = nullptr;
             }
@@ -94,7 +93,7 @@ namespace
             return getGrantQueriesImpl(*user, access_control, attach_mode);
         if (const Role * role = typeid_cast<const Role *>(&entity))
             return getGrantQueriesImpl(*role, access_control, attach_mode);
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "{} is expected to be user or role", entity.formatTypeWithName());
+        throw Exception(entity.formatTypeWithName() + " is expected to be user or role", ErrorCodes::LOGICAL_ERROR);
     }
 
 }
@@ -148,22 +147,13 @@ std::vector<AccessEntityPtr> InterpreterShowGrantsQuery::getEntities() const
     CachedAccessChecking show_roles(access, AccessType::SHOW_ROLES);
     bool throw_if_access_denied = !show_query.for_roles->all;
 
-    auto current_user = access->getUser();
-    auto roles_info = access->getRolesInfo();
-
     std::vector<AccessEntityPtr> entities;
     for (const auto & id : ids)
     {
         auto entity = access_control.tryRead(id);
         if (!entity)
             continue;
-
-        bool is_current_user = (id == access->getUserID());
-        bool is_enabled_or_granted_role = entity->isTypeOf<Role>()
-            && (current_user->granted_roles.isGranted(id) || roles_info->enabled_roles.contains(id));
-
-        if ((is_current_user /* Any user can see his own grants */)
-            || (is_enabled_or_granted_role /* and grants from the granted roles */)
+        if ((id == access->getUserID() /* Any user can see his own grants */)
             || (entity->isTypeOf<User>() && show_users.checkAccess(throw_if_access_denied))
             || (entity->isTypeOf<Role>() && show_roles.checkAccess(throw_if_access_denied)))
             entities.push_back(entity);

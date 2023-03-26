@@ -2,10 +2,10 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Common/ThreadStatus.h>
+#include <base/StringRef.h>
 
 #include <memory>
 #include <string>
-#include <string_view>
 
 
 namespace ProfileEvents
@@ -49,48 +49,60 @@ public:
     static void attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & queue);
     static InternalProfileEventsQueuePtr getInternalProfileEventsQueue();
 
-    static void attachQueryForLog(const String & query_);
+    static void setFatalErrorCallback(std::function<void()> callback);
 
     /// Makes system calls to update ProfileEvents that contain info from rusage and taskstats
     static void updatePerformanceCounters();
 
     static ProfileEvents::Counters & getProfileEvents();
-    inline ALWAYS_INLINE static MemoryTracker * getMemoryTracker()
-    {
-        if (unlikely(!current_thread))
-            return nullptr;
-        return &current_thread->memory_tracker;
-    }
+    static MemoryTracker * getMemoryTracker();
 
     /// Update read and write rows (bytes) statistics (used in system.query_thread_log)
     static void updateProgressIn(const Progress & value);
     static void updateProgressOut(const Progress & value);
 
+    /// Query management:
+
+    /// Call from master thread as soon as possible (e.g. when thread accepted connection)
+    static void initializeQuery();
+
     /// You must call one of these methods when create a query child thread:
     /// Add current thread to a group associated with the thread group
-    static void attachToGroup(const ThreadGroupStatusPtr & thread_group);
+    static void attachTo(const ThreadGroupStatusPtr & thread_group);
     /// Is useful for a ThreadPool tasks
-    static void attachToGroupIfDetached(const ThreadGroupStatusPtr & thread_group);
-
-    /// Non-master threads call this method in destructor automatically
-    static void detachFromGroupIfNotDetached();
+    static void attachToIfDetached(const ThreadGroupStatusPtr & thread_group);
 
     /// Update ProfileEvents and dumps info to system.query_thread_log
     static void finalizePerformanceCounters();
 
     /// Returns a non-empty string if the thread is attached to a query
-    static std::string_view getQueryId();
+    static StringRef getQueryId()
+    {
+        if (unlikely(!current_thread))
+            return {};
+        return current_thread->getQueryId();
+    }
+
+    /// Non-master threads call this method in destructor automatically
+    static void detachQuery();
+    static void detachQueryIfNotDetached();
 
     /// Initializes query with current thread as master thread in constructor, and detaches it in destructor
-    struct QueryScope : private boost::noncopyable
+    struct QueryScope
     {
-        explicit QueryScope(ContextMutablePtr query_context, std::function<void()> fatal_error_callback = {});
-        explicit QueryScope(ContextPtr query_context, std::function<void()> fatal_error_callback = {});
+        explicit QueryScope(ContextMutablePtr query_context);
         ~QueryScope();
 
         void logPeakMemoryUsage();
         bool log_peak_memory_usage_in_destructor = true;
     };
+
+private:
+    static void defaultThreadDeleter();
+
+    /// Sets query_context for current thread group
+    /// Can by used only through QueryScope
+    static void attachQueryContext(ContextPtr query_context);
 };
 
 }

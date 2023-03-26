@@ -1,9 +1,0 @@
-(Expression)
-ExpressionTransform × 10
-  (Aggregating)
-  Resize 1 → 10
-    AggregatingTransform
-      (Expression)
-      ExpressionTransform
-        (ReadFromPreparedSource)
-        SourceFromSingleChunk 0 → 1

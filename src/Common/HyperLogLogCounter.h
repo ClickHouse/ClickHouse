@@ -11,7 +11,6 @@
 #include <IO/WriteHelpers.h>
 #include <Core/Defines.h>
 
-#include <bit>
 #include <cmath>
 #include <cstring>
 
@@ -79,7 +78,8 @@ template <UInt64 MaxValue> struct MinCounterType
 };
 
 /// Denominator of expression for HyperLogLog algorithm.
-template <UInt8 precision, int max_rank, typename HashValueType, typename DenominatorType, DenominatorMode denominator_mode>
+template <UInt8 precision, int max_rank, typename HashValueType, typename DenominatorType,
+    DenominatorMode denominator_mode, typename Enable = void>
 class Denominator;
 
 /// Returns true if rank storage is big.
@@ -89,12 +89,11 @@ constexpr bool isBigRankStore(UInt8 precision)
 }
 
 /// Used to deduce denominator type depending on options provided.
-template <typename HashValueType, typename DenominatorType, DenominatorMode denominator_mode>
+template <typename HashValueType, typename DenominatorType, DenominatorMode denominator_mode, typename Enable = void>
 struct IntermediateDenominator;
 
 template <typename DenominatorType, DenominatorMode denominator_mode>
-requires (denominator_mode != DenominatorMode::ExactType)
-struct IntermediateDenominator<UInt32, DenominatorType, denominator_mode>
+struct IntermediateDenominator<UInt32, DenominatorType, denominator_mode, std::enable_if_t<denominator_mode != DenominatorMode::ExactType>>
 {
     using Type = double;
 };
@@ -114,9 +113,11 @@ struct IntermediateDenominator<HashValueType, DenominatorType, DenominatorMode::
 /// "Lightweight" implementation of expression's denominator for HyperLogLog algorithm.
 /// Uses minimum amount of memory, but estimates may be unstable.
 /// Satisfiable when rank storage is small enough.
-template <UInt8 precision, int max_rank, typename HashValueType, typename DenominatorType, DenominatorMode denominator_mode>
-requires (!details::isBigRankStore(precision)) || (!(denominator_mode == DenominatorMode::StableIfBig))
-class __attribute__((__packed__)) Denominator<precision, max_rank, HashValueType, DenominatorType, denominator_mode>
+template <UInt8 precision, int max_rank, typename HashValueType, typename DenominatorType,
+    DenominatorMode denominator_mode>
+class __attribute__((__packed__)) Denominator<precision, max_rank, HashValueType, DenominatorType,
+    denominator_mode,
+    std::enable_if_t<!details::isBigRankStore(precision) || !(denominator_mode == DenominatorMode::StableIfBig)>>
 {
 private:
     using T = typename IntermediateDenominator<HashValueType, DenominatorType, denominator_mode>::Type;
@@ -155,14 +156,16 @@ private:
 /// Fully-functional version of expression's denominator for HyperLogLog algorithm.
 /// Spends more space that lightweight version. Estimates will always be stable.
 /// Used when rank storage is big.
-template <UInt8 precision, int max_rank, typename HashValueType, typename DenominatorType, DenominatorMode denominator_mode>
-requires (details::isBigRankStore(precision)) && (denominator_mode == DenominatorMode::StableIfBig)
-class __attribute__((__packed__)) Denominator<precision, max_rank, HashValueType, DenominatorType, denominator_mode>
+template <UInt8 precision, int max_rank, typename HashValueType, typename DenominatorType,
+    DenominatorMode denominator_mode>
+class __attribute__((__packed__)) Denominator<precision, max_rank, HashValueType, DenominatorType,
+    denominator_mode,
+    std::enable_if_t<details::isBigRankStore(precision) && denominator_mode == DenominatorMode::StableIfBig>>
 {
 public:
     Denominator(DenominatorType initial_value) /// NOLINT
     {
-        rank_count[0] = static_cast<UInt32>(initial_value);
+        rank_count[0] = initial_value;
     }
 
     inline void update(UInt8 cur_rank, UInt8 new_rank)
@@ -189,7 +192,7 @@ public:
             val /= 2.0;
             val += rank_count[i];
         }
-        return static_cast<DenominatorType>(val);
+        return val;
     }
 
 private:
@@ -206,7 +209,7 @@ struct TrailingZerosCounter<UInt32>
 {
     static int apply(UInt32 val)
     {
-        return std::countr_zero(val);
+        return __builtin_ctz(val);
     }
 };
 
@@ -215,7 +218,7 @@ struct TrailingZerosCounter<UInt64>
 {
     static int apply(UInt64 val)
     {
-        return std::countr_zero(val);
+        return __builtin_ctzll(val);
     }
 };
 
@@ -264,8 +267,7 @@ enum class HyperLogLogMode
 /// of Algorithms).
 template <
     UInt8 precision,
-    typename Key = UInt64,
-    typename Hash = IntHash32<Key>,
+    typename Hash = IntHash32<UInt64>,
     typename HashValueType = UInt32,
     typename DenominatorType = double,
     typename BiasEstimator = TrivialBiasEstimator,
@@ -410,9 +412,7 @@ private:
 
     inline HashValueType getHash(Value key) const
     {
-        /// NOTE: this should be OK, since value is the same as key for HLL.
-        return static_cast<HashValueType>(
-            Hash::operator()(static_cast<Key>(key)));
+        return Hash::operator()(key);
     }
 
     /// Update maximum rank for current bucket.
@@ -535,7 +535,6 @@ private:
 template
 <
     UInt8 precision,
-    typename Key,
     typename Hash,
     typename HashValueType,
     typename DenominatorType,
@@ -546,7 +545,6 @@ template
 details::LogLUT<precision> HyperLogLogCounter
 <
     precision,
-    Key,
     Hash,
     HashValueType,
     DenominatorType,
@@ -560,7 +558,6 @@ details::LogLUT<precision> HyperLogLogCounter
 /// Serialization format must not be changed.
 using HLL12 = HyperLogLogCounter<
     12,
-    UInt64,
     IntHash32<UInt64>,
     UInt32,
     double,

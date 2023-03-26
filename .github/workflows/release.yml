@@ -60,6 +60,6 @@ jobs:
     - name: Cleanup
       if: always()
       run: |
-        docker ps --quiet | xargs --no-run-if-empty docker kill ||:
-        docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
+        docker kill "$(docker ps -q)" ||:
+        docker rm -f "$(docker ps -a -q)" ||:
         sudo rm -fr "$TEMP_PATH"

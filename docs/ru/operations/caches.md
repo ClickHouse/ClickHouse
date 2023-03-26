@@ -1,7 +1,6 @@
 ---
-slug: /ru/operations/caches
-sidebar_position: 65
-sidebar_label: Кеши
+toc_priority: 65
+toc_title: Кеши
 ---
 
 # Типы кеша {#cache-types}
@@ -26,3 +25,4 @@ sidebar_label: Кеши
 - Кеш страницы ОС.
 
 Чтобы очистить кеш, используйте выражение [SYSTEM DROP ... CACHE](../sql-reference/statements/system.md).
+

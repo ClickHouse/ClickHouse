@@ -1,6 +1,5 @@
 ---
-slug: /zh/sql-reference/aggregate-functions/reference/quantileexact
-sidebar_position: 202
+toc_priority: 202
 ---
 
 # quantileExact {#quantileexact}

@@ -158,7 +158,7 @@ def assert_eq_stats(stat1, stat2):
     assert stat1.version == stat2.version
     assert stat1.cversion == stat2.cversion
     assert stat1.aversion == stat2.aversion
-    assert stat1.ephemeralOwner == stat2.ephemeralOwner
+    assert stat1.aversion == stat2.aversion
     assert stat1.dataLength == stat2.dataLength
     assert stat1.numChildren == stat2.numChildren
 
@@ -546,6 +546,7 @@ def test_random_requests(started_cluster):
 
 
 def test_end_of_session(started_cluster):
+
     fake_zk1 = None
     fake_zk2 = None
     genuine_zk1 = None
@@ -684,7 +685,6 @@ def test_concurrent_watches(started_cluster):
             nonlocal watches_created
             nonlocal all_paths_created
             fake_zk.ensure_path(global_path + "/" + str(i))
-
             # new function each time
             def dumb_watch(event):
                 nonlocal dumb_watch_triggered_counter

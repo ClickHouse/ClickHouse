@@ -19,7 +19,7 @@ using FunctionMultiSearchFirstPositionCaseInsensitiveUTF8 = FunctionsMultiString
 
 }
 
-REGISTER_FUNCTION(MultiSearchFirstPositionCaseInsensitiveUTF8)
+void registerFunctionMultiSearchFirstPositionCaseInsensitiveUTF8(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionMultiSearchFirstPositionCaseInsensitiveUTF8>();
 }

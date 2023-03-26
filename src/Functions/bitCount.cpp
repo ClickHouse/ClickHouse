@@ -53,7 +53,7 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameBitCount>
     }
 };
 
-REGISTER_FUNCTION(BitCount)
+void registerFunctionBitCount(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionBitCount>();
 }

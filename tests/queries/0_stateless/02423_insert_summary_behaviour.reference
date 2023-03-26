@@ -1,8 +1,0 @@
-No materialized views
-< X-ClickHouse-Summary: {"read_rows":"1","read_bytes":"8","written_rows":"1","written_bytes":"8","total_rows_to_read":"0","result_rows":"1","result_bytes":"8"}
-< X-ClickHouse-Summary: {"read_rows":"10","read_bytes":"80","written_rows":"10","written_bytes":"80","total_rows_to_read":"0","result_rows":"10","result_bytes":"80"}
-< X-ClickHouse-Summary: {"read_rows":"10","read_bytes":"80","written_rows":"10","written_bytes":"80","total_rows_to_read":"0","result_rows":"10","result_bytes":"80"}
-With materialized views
-< X-ClickHouse-Summary: {"read_rows":"5","read_bytes":"40","written_rows":"4","written_bytes":"32","total_rows_to_read":"2","result_rows":"4","result_bytes":"32"}
-< X-ClickHouse-Summary: {"read_rows":"32","read_bytes":"256","written_rows":"40","written_bytes":"320","total_rows_to_read":"2","result_rows":"40","result_bytes":"320"}
-< X-ClickHouse-Summary: {"read_rows":"32","read_bytes":"256","written_rows":"40","written_bytes":"320","total_rows_to_read":"2","result_rows":"40","result_bytes":"320"}

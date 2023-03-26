@@ -203,7 +203,7 @@ SOFTWARE.
             len -= 16;
         };
 
-        while (len >= 16) // NOLINT
+        while (len >= 16) // NOLINT //-V1044
             check_packed(_mm_loadu_si128(reinterpret_cast<const __m128i *>(data)));
 
         /// 0 <= len <= 15 for now. Reading data from data - 1 because of right padding of 15 and left padding
@@ -241,22 +241,12 @@ SOFTWARE.
 
     [[noreturn]] static void array(const ColumnString::Offsets &, PaddedPODArray<UInt8> &)
     {
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function isValidUTF8 to Array argument");
+        throw Exception("Cannot apply function isValidUTF8 to Array argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
     [[noreturn]] static void uuid(const ColumnUUID::Container &, size_t &, PaddedPODArray<UInt8> &)
     {
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function isValidUTF8 to UUID argument");
-    }
-
-    [[noreturn]] static void ipv6(const ColumnIPv6::Container &, size_t &, PaddedPODArray<UInt8> &)
-    {
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function isValidUTF8 to IPv6 argument");
-    }
-
-    [[noreturn]] static void ipv4(const ColumnIPv4::Container &, size_t &, PaddedPODArray<UInt8> &)
-    {
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot apply function isValidUTF8 to IPv4 argument");
+        throw Exception("Cannot apply function isValidUTF8 to UUID argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 };
 
@@ -266,7 +256,7 @@ struct NameIsValidUTF8
 };
 using FunctionValidUTF8 = FunctionStringOrArrayToT<ValidUTF8Impl, NameIsValidUTF8, UInt8>;
 
-REGISTER_FUNCTION(IsValidUTF8)
+void registerFunctionIsValidUTF8(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionValidUTF8>();
 }

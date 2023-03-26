@@ -1,9 +1,9 @@
-#include "config.h"
+#include "config_functions.h"
 
 #if USE_H3
 
 #include <array>
-#include <cmath>
+#include <math.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
@@ -100,7 +100,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(H3ToGeo)
+void registerFunctionH3ToGeo(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionH3ToGeo>();
 }

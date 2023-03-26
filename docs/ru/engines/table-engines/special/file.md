@@ -1,7 +1,6 @@
 ---
-slug: /ru/engines/table-engines/special/file
-sidebar_position: 37
-sidebar_label: File
+toc_priority: 37
+toc_title: File
 ---
 
 # File(Format) {#table_engines-file}
@@ -28,7 +27,7 @@ File(Format)
 
 Можно вручную создать в хранилище каталог таблицы, поместить туда файл, затем на сервере ClickHouse добавить ([ATTACH](../../../sql-reference/statements/attach.md#attach)) информацию о таблице, соответствующей имени каталога и прочитать из файла данные.
 
-:::danger "Warning"
+!!! warning "Warning"
     Будьте аккуратны с этой функциональностью, поскольку сервер ClickHouse не отслеживает внешние изменения данных. Если в файл будет производиться запись одновременно со стороны сервера ClickHouse и с внешней стороны, то результат непредсказуем.
 
 **Пример:**
@@ -81,3 +80,4 @@ $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64
     -   использование операций `ALTER` и `SELECT...SAMPLE`;
     -   индексы;
     -   репликация.
+

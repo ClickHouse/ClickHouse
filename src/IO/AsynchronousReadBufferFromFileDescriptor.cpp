@@ -1,5 +1,5 @@
-#include <cerrno>
-#include <ctime>
+#include <errno.h>
+#include <time.h>
 #include <optional>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -7,7 +7,6 @@
 #include <Common/CurrentMetrics.h>
 #include <IO/AsynchronousReadBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
-#include <Common/filesystemHelpers.h>
 
 
 namespace ProfileEvents
@@ -37,35 +36,38 @@ std::string AsynchronousReadBufferFromFileDescriptor::getFileName() const
 }
 
 
-std::future<IAsynchronousReader::Result> AsynchronousReadBufferFromFileDescriptor::asyncReadInto(char * data, size_t size, int64_t priority)
+std::future<IAsynchronousReader::Result> AsynchronousReadBufferFromFileDescriptor::readInto(char * data, size_t size)
 {
     IAsynchronousReader::Request request;
     request.descriptor = std::make_shared<IAsynchronousReader::LocalFileDescriptor>(fd);
     request.buf = data;
     request.size = size;
     request.offset = file_offset_of_buffer_end;
-    request.priority = base_priority + priority;
+    request.priority = priority;
     request.ignore = bytes_to_ignore;
     bytes_to_ignore = 0;
 
     /// This is a workaround of a read pass EOF bug in linux kernel with pread()
     if (file_size.has_value() && file_offset_of_buffer_end >= *file_size)
     {
-        return std::async(std::launch::deferred, [] { return IAsynchronousReader::Result{.size = 0, .offset = 0}; });
+        return std::async(std::launch::deferred, []
+        {
+            return IAsynchronousReader::Result{ .size = 0, .offset = 0 };
+        });
     }
 
-    return reader.submit(request);
+    return reader->submit(request);
 }
 
 
-void AsynchronousReadBufferFromFileDescriptor::prefetch(int64_t priority)
+void AsynchronousReadBufferFromFileDescriptor::prefetch()
 {
     if (prefetch_future.valid())
         return;
 
     /// Will request the same amount of data that is read in nextImpl.
     prefetch_buffer.resize(internal_buffer.size());
-    prefetch_future = asyncReadInto(prefetch_buffer.data(), prefetch_buffer.size(), priority);
+    prefetch_future = readInto(prefetch_buffer.data(), prefetch_buffer.size());
 }
 
 
@@ -81,25 +83,20 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
             Stopwatch watch;
             CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
             auto result = prefetch_future.get();
-            ProfileEvents::increment(ProfileEvents::AsynchronousReadWaitMicroseconds, watch.elapsedMicroseconds());
             size = result.size;
             offset = result.offset;
             assert(offset < size || size == 0);
+            ProfileEvents::increment(ProfileEvents::AsynchronousReadWaitMicroseconds, watch.elapsedMicroseconds());
         }
 
         prefetch_future = {};
         file_offset_of_buffer_end += size;
 
-        assert(offset <= size);
-        size_t bytes_read = size - offset;
-
-        if (bytes_read)
+        if (size)
         {
             prefetch_buffer.swap(memory);
             /// Adjust the working buffer so that it ignores `offset` bytes.
-            internal_buffer = Buffer(memory.data(), memory.data() + memory.size());
-            working_buffer = Buffer(memory.data() + offset, memory.data() + size);
-            pos = working_buffer.begin();
+            setWithBytesToIgnore(memory.data(), size, offset);
             return true;
         }
 
@@ -109,21 +106,13 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
     {
         /// No pending request. Do synchronous read.
 
-        Stopwatch watch;
-        auto [size, offset, _] = asyncReadInto(memory.data(), memory.size(), DEFAULT_PREFETCH_PRIORITY).get();
-        ProfileEvents::increment(ProfileEvents::AsynchronousReadWaitMicroseconds, watch.elapsedMicroseconds());
-
+        auto [size, offset] = readInto(memory.data(), memory.size()).get();
         file_offset_of_buffer_end += size;
 
-        assert(offset <= size);
-        size_t bytes_read = size - offset;
-
-        if (bytes_read)
+        if (size)
         {
             /// Adjust the working buffer so that it ignores `offset` bytes.
-            internal_buffer = Buffer(memory.data(), memory.data() + memory.size());
-            working_buffer = Buffer(memory.data() + offset, memory.data() + size);
-            pos = working_buffer.begin();
+            setWithBytesToIgnore(memory.data(), size, offset);
             return true;
         }
 
@@ -143,7 +132,7 @@ void AsynchronousReadBufferFromFileDescriptor::finalize()
 
 
 AsynchronousReadBufferFromFileDescriptor::AsynchronousReadBufferFromFileDescriptor(
-    IAsynchronousReader & reader_,
+    AsynchronousReaderPtr reader_,
     Int32 priority_,
     int fd_,
     size_t buf_size,
@@ -151,8 +140,8 @@ AsynchronousReadBufferFromFileDescriptor::AsynchronousReadBufferFromFileDescript
     size_t alignment,
     std::optional<size_t> file_size_)
     : ReadBufferFromFileBase(buf_size, existing_memory, alignment, file_size_)
-    , reader(reader_)
-    , base_priority(priority_)
+    , reader(std::move(reader_))
+    , priority(priority_)
     , required_alignment(alignment)
     , fd(fd_)
 {
@@ -187,7 +176,7 @@ off_t AsynchronousReadBufferFromFileDescriptor::seek(off_t offset, int whence)
     }
     else
     {
-        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "ReadBufferFromFileDescriptor::seek expects SEEK_SET or SEEK_CUR as whence");
+        throw Exception("ReadBufferFromFileDescriptor::seek expects SEEK_SET or SEEK_CUR as whence", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
     }
 
     /// Position is unchanged.
@@ -210,6 +199,7 @@ off_t AsynchronousReadBufferFromFileDescriptor::seek(off_t offset, int whence)
         else if (prefetch_future.valid())
         {
             /// Read from prefetch buffer and recheck if the new position is valid inside.
+
             if (nextImpl())
                 continue;
         }
@@ -232,10 +222,7 @@ off_t AsynchronousReadBufferFromFileDescriptor::seek(off_t offset, int whence)
     file_offset_of_buffer_end = seek_pos;
     bytes_to_ignore = new_pos - seek_pos;
 
-    if (bytes_to_ignore >= internal_buffer.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Logical error in AsynchronousReadBufferFromFileDescriptor, bytes_to_ignore ({}"
-                        ") >= internal_buffer.size() ({})", bytes_to_ignore, internal_buffer.size());
+    assert(bytes_to_ignore < internal_buffer.size());
 
     return seek_pos;
 }
@@ -253,11 +240,6 @@ void AsynchronousReadBufferFromFileDescriptor::rewind()
     working_buffer.resize(0);
     pos = working_buffer.begin();
     file_offset_of_buffer_end = 0;
-}
-
-size_t AsynchronousReadBufferFromFileDescriptor::getFileSize()
-{
-    return getSizeFromFileDescriptor(fd, getFileName());
 }
 
 }

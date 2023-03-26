@@ -2,29 +2,25 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageGenerateRandom.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/checkAndGetLiteralArgument.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
 #include <Parsers/ASTLiteral.h>
 
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnLowCardinality.h>
-#include <Columns/ColumnMap.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnVector.h>
-#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeDecimalBase.h>
-#include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnTuple.h>
 
 #include <Common/SipHash.h>
 #include <Common/randomSeed.h>
@@ -50,33 +46,16 @@ namespace ErrorCodes
 namespace
 {
 
-void fillBufferWithRandomData(char * __restrict data, size_t limit, size_t size_of_type, pcg64 & rng, [[maybe_unused]] bool flip_bytes = false)
+void fillBufferWithRandomData(char * __restrict data, size_t size, pcg64 & rng)
 {
-    size_t size = limit * size_of_type;
     char * __restrict end = data + size;
     while (data < end)
     {
         /// The loop can be further optimized.
         UInt64 number = rng();
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        unalignedStoreLE<UInt64>(data, number);
-#else
         unalignedStore<UInt64>(data, number);
-#endif
         data += sizeof(UInt64); /// We assume that data has at least 7-byte padding (see PaddedPODArray)
     }
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    if (flip_bytes)
-    {
-        data = end - size;
-        while (data < end)
-        {
-            char * rev_end = data + size_of_type;
-            std::reverse(data, rev_end);
-            data += size_of_type;
-        }
-    }
-#endif
 }
 
 
@@ -178,7 +157,7 @@ ColumnPtr fillColumnWithRandomData(
 
         case TypeIndex::Array:
         {
-            auto nested_type = typeid_cast<const DataTypeArray &>(*type).getNestedType();
+            auto nested_type = typeid_cast<const DataTypeArray *>(type.get())->getNestedType();
 
             auto offsets_column = ColumnVector<ColumnArray::Offset>::create();
             auto & offsets = offsets_column->getData();
@@ -196,13 +175,6 @@ ColumnPtr fillColumnWithRandomData(
             return ColumnArray::create(data_column, std::move(offsets_column));
         }
 
-        case TypeIndex::Map:
-        {
-            const DataTypePtr & nested_type = typeid_cast<const DataTypeMap &>(*type).getNestedType();
-            auto nested_column = fillColumnWithRandomData(nested_type, limit, max_array_length, max_string_length, rng, context);
-            return ColumnMap::create(nested_column);
-        }
-
         case TypeIndex::Tuple:
         {
             auto elements = typeid_cast<const DataTypeTuple *>(type.get())->getElements();
@@ -217,7 +189,7 @@ ColumnPtr fillColumnWithRandomData(
 
         case TypeIndex::Nullable:
         {
-            auto nested_type = typeid_cast<const DataTypeNullable &>(*type).getNestedType();
+            auto nested_type = typeid_cast<const DataTypeNullable *>(type.get())->getNestedType();
             auto nested_column = fillColumnWithRandomData(nested_type, limit, max_array_length, max_string_length, rng, context);
 
             auto null_map_column = ColumnUInt8::create();
@@ -233,7 +205,7 @@ ColumnPtr fillColumnWithRandomData(
         {
             auto column = ColumnUInt8::create();
             column->getData().resize(limit);
-            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit, sizeof(UInt8), rng);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(UInt8), rng);
             return column;
         }
         case TypeIndex::UInt16: [[fallthrough]];
@@ -241,17 +213,14 @@ ColumnPtr fillColumnWithRandomData(
         {
             auto column = ColumnUInt16::create();
             column->getData().resize(limit);
-            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit, sizeof(UInt16), rng, true);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(UInt16), rng);
             return column;
         }
         case TypeIndex::Date32:
         {
             auto column = ColumnInt32::create();
             column->getData().resize(limit);
-
-            for (size_t i = 0; i < limit; ++i)
-                column->getData()[i] = (rng() % static_cast<UInt64>(DATE_LUT_SIZE)) - DAYNUM_OFFSET_EPOCH;
-
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(Int32), rng);
             return column;
         }
         case TypeIndex::UInt32: [[fallthrough]];
@@ -259,28 +228,28 @@ ColumnPtr fillColumnWithRandomData(
         {
             auto column = ColumnUInt32::create();
             column->getData().resize(limit);
-            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit, sizeof(UInt32), rng, true);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(UInt32), rng);
             return column;
         }
         case TypeIndex::UInt64:
         {
             auto column = ColumnUInt64::create();
             column->getData().resize(limit);
-            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit, sizeof(UInt64), rng, true);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(UInt64), rng);
             return column;
         }
         case TypeIndex::UInt128:
         {
             auto column = ColumnUInt128::create();
             column->getData().resize(limit);
-            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit, sizeof(UInt128), rng, true);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(UInt128), rng);
             return column;
         }
         case TypeIndex::UInt256:
         {
             auto column = ColumnUInt256::create();
             column->getData().resize(limit);
-            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit, sizeof(UInt256), rng);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(UInt256), rng);
             return column;
         }
         case TypeIndex::UUID:
@@ -288,63 +257,63 @@ ColumnPtr fillColumnWithRandomData(
             auto column = ColumnUUID::create();
             column->getData().resize(limit);
             /// NOTE This is slightly incorrect as random UUIDs should have fixed version 4.
-            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit, sizeof(UUID), rng);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(UUID), rng);
             return column;
         }
         case TypeIndex::Int8:
         {
             auto column = ColumnInt8::create();
             column->getData().resize(limit);
-            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit, sizeof(Int8), rng);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(Int8), rng);
             return column;
         }
         case TypeIndex::Int16:
         {
             auto column = ColumnInt16::create();
             column->getData().resize(limit);
-            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit, sizeof(Int16), rng, true);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(Int16), rng);
             return column;
         }
         case TypeIndex::Int32:
         {
             auto column = ColumnInt32::create();
             column->getData().resize(limit);
-            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit, sizeof(Int32), rng, true);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(Int32), rng);
             return column;
         }
         case TypeIndex::Int64:
         {
             auto column = ColumnInt64::create();
             column->getData().resize(limit);
-            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit, sizeof(Int64), rng, true);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(Int64), rng);
             return column;
         }
         case TypeIndex::Int128:
         {
             auto column = ColumnInt128::create();
             column->getData().resize(limit);
-            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit, sizeof(Int128), rng, true);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(Int128), rng);
             return column;
         }
         case TypeIndex::Int256:
         {
             auto column = ColumnInt256::create();
             column->getData().resize(limit);
-            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit, sizeof(Int256), rng, true);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(Int256), rng);
             return column;
         }
         case TypeIndex::Float32:
         {
             auto column = ColumnFloat32::create();
             column->getData().resize(limit);
-            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit, sizeof(Float32), rng, true);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(Float32), rng);
             return column;
         }
         case TypeIndex::Float64:
         {
             auto column = ColumnFloat64::create();
             column->getData().resize(limit);
-            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit, sizeof(Float64), rng, true);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(Float64), rng);
             return column;
         }
         case TypeIndex::Decimal32:
@@ -352,7 +321,7 @@ ColumnPtr fillColumnWithRandomData(
             auto column = type->createColumn();
             auto & column_concrete = typeid_cast<ColumnDecimal<Decimal32> &>(*column);
             column_concrete.getData().resize(limit);
-            fillBufferWithRandomData(reinterpret_cast<char *>(column_concrete.getData().data()), limit, sizeof(Decimal32), rng, true);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column_concrete.getData().data()), limit * sizeof(Decimal32), rng);
             return column;
         }
         case TypeIndex::Decimal64:  /// TODO Decimal may be generated out of range.
@@ -360,7 +329,7 @@ ColumnPtr fillColumnWithRandomData(
             auto column = type->createColumn();
             auto & column_concrete = typeid_cast<ColumnDecimal<Decimal64> &>(*column);
             column_concrete.getData().resize(limit);
-            fillBufferWithRandomData(reinterpret_cast<char *>(column_concrete.getData().data()), limit, sizeof(Decimal64), rng, true);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column_concrete.getData().data()), limit * sizeof(Decimal64), rng);
             return column;
         }
         case TypeIndex::Decimal128:
@@ -368,7 +337,7 @@ ColumnPtr fillColumnWithRandomData(
             auto column = type->createColumn();
             auto & column_concrete = typeid_cast<ColumnDecimal<Decimal128> &>(*column);
             column_concrete.getData().resize(limit);
-            fillBufferWithRandomData(reinterpret_cast<char *>(column_concrete.getData().data()), limit, sizeof(Decimal128), rng, true);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column_concrete.getData().data()), limit * sizeof(Decimal128), rng);
             return column;
         }
         case TypeIndex::Decimal256:
@@ -376,7 +345,7 @@ ColumnPtr fillColumnWithRandomData(
             auto column = type->createColumn();
             auto & column_concrete = typeid_cast<ColumnDecimal<Decimal256> &>(*column);
             column_concrete.getData().resize(limit);
-            fillBufferWithRandomData(reinterpret_cast<char *>(column_concrete.getData().data()), limit, sizeof(Decimal256), rng, true);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column_concrete.getData().data()), limit * sizeof(Decimal256), rng);
             return column;
         }
         case TypeIndex::FixedString:
@@ -384,7 +353,7 @@ ColumnPtr fillColumnWithRandomData(
             size_t n = typeid_cast<const DataTypeFixedString &>(*type).getN();
             auto column = ColumnFixedString::create(n);
             column->getChars().resize(limit * n);
-            fillBufferWithRandomData(reinterpret_cast<char *>(column->getChars().data()), limit, n, rng);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getChars().data()), limit * n, rng);
             return column;
         }
         case TypeIndex::DateTime64:
@@ -400,46 +369,18 @@ ColumnPtr fillColumnWithRandomData(
 
             return column;
         }
-        case TypeIndex::LowCardinality:
-        {
-            /// We are generating the values using the same random distribution as for full columns
-            /// so it's not in fact "low cardinality",
-            /// but it's ok for testing purposes, because the LowCardinality data type supports high cardinality data as well.
-
-            auto nested_type = typeid_cast<const DataTypeLowCardinality &>(*type).getDictionaryType();
-            auto nested_column = fillColumnWithRandomData(nested_type, limit, max_array_length, max_string_length, rng, context);
-
-            auto column = type->createColumn();
-            typeid_cast<ColumnLowCardinality &>(*column).insertRangeFromFullColumn(*nested_column, 0, limit);
-
-            return column;
-        }
-        case TypeIndex::IPv4:
-        {
-            auto column = ColumnIPv4::create();
-            column->getData().resize(limit);
-            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit, sizeof(IPv4), rng);
-            return column;
-        }
-        case TypeIndex::IPv6:
-        {
-            auto column = ColumnIPv6::create();
-            column->getData().resize(limit);
-            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit, sizeof(IPv6), rng);
-            return column;
-        }
 
         default:
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The 'GenerateRandom' is not implemented for type {}", type->getName());
+            throw Exception("The 'GenerateRandom' is not implemented for type " + type->getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 }
 
 
-class GenerateSource : public ISource
+class GenerateSource : public SourceWithProgress
 {
 public:
     GenerateSource(UInt64 block_size_, UInt64 max_array_length_, UInt64 max_string_length_, UInt64 random_seed_, Block block_header_, ContextPtr context_)
-        : ISource(Nested::flatten(prepareBlockToFill(block_header_)))
+        : SourceWithProgress(Nested::flatten(prepareBlockToFill(block_header_)))
         , block_size(block_size_), max_array_length(max_array_length_), max_string_length(max_string_length_)
         , block_to_fill(std::move(block_header_)), rng(random_seed_), context(context_) {}
 
@@ -490,7 +431,7 @@ StorageGenerateRandom::StorageGenerateRandom(
     const String & comment,
     UInt64 max_array_length_,
     UInt64 max_string_length_,
-    const std::optional<UInt64> & random_seed_)
+    std::optional<UInt64> random_seed_)
     : IStorage(table_id_), max_array_length(max_array_length_), max_string_length(max_string_length_)
 {
     static constexpr size_t MAX_ARRAY_SIZE = 1 << 30;
@@ -518,9 +459,9 @@ void registerStorageGenerateRandom(StorageFactory & factory)
         ASTs & engine_args = args.engine_args;
 
         if (engine_args.size() > 3)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Storage GenerateRandom requires at most three arguments: "
-                            "random_seed, max_string_length, max_array_length.");
+            throw Exception("Storage GenerateRandom requires at most three arguments: "
+                "random_seed, max_string_length, max_array_length.",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         std::optional<UInt64> random_seed;
         UInt64 max_string_length = 10;
@@ -528,18 +469,18 @@ void registerStorageGenerateRandom(StorageFactory & factory)
 
         if (!engine_args.empty())
         {
-            const auto & ast_literal = engine_args[0]->as<const ASTLiteral &>();
-            if (!ast_literal.value.isNull())
-                random_seed = checkAndGetLiteralArgument<UInt64>(ast_literal, "random_seed");
+            const Field & value = engine_args[0]->as<const ASTLiteral &>().value;
+            if (!value.isNull())
+                random_seed = value.safeGet<UInt64>();
         }
 
         if (engine_args.size() >= 2)
-            max_string_length = checkAndGetLiteralArgument<UInt64>(engine_args[1], "max_string_length");
+            max_string_length = engine_args[1]->as<const ASTLiteral &>().value.safeGet<UInt64>();
 
         if (engine_args.size() == 3)
-            max_array_length = checkAndGetLiteralArgument<UInt64>(engine_args[2], "max_array_length");
+            max_array_length = engine_args[2]->as<const ASTLiteral &>().value.safeGet<UInt64>();
 
-        return std::make_shared<StorageGenerateRandom>(args.table_id, args.columns, args.comment, max_array_length, max_string_length, random_seed);
+        return StorageGenerateRandom::create(args.table_id, args.columns, args.comment, max_array_length, max_string_length, random_seed);
     });
 }
 
@@ -550,7 +491,7 @@ Pipe StorageGenerateRandom::read(
     ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    size_t num_streams)
+    unsigned num_streams)
 {
     storage_snapshot->check(column_names);
 

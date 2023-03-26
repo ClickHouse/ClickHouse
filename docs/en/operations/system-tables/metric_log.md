@@ -1,7 +1,4 @@
----
-slug: /en/operations/system-tables/metric_log
----
-# metric_log
+# system.metric_log {#system_tables-metric_log}
 
 Contains history of metrics values from tables `system.metrics` and `system.events`, periodically flushed to disk.
 
@@ -50,3 +47,5 @@ CurrentMetric_DistributedFilesToInsert:                          0
 -   [system.events](../../operations/system-tables/events.md#system_tables-events) — Contains a number of events that occurred.
 -   [system.metrics](../../operations/system-tables/metrics.md) — Contains instantly calculated metrics.
 -   [Monitoring](../../operations/monitoring.md) — Base concepts of ClickHouse monitoring.
+
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/metric_log) <!--hide-->

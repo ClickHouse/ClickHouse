@@ -1,9 +1,8 @@
 ---
-slug: /zh/faq/use-cases/
 title: 关于ClickHouse使用案例的问题
 toc_hidden_folder: true
-sidebar_position: 2
-sidebar_label: 使用案例
+toc_priority: 2
+toc_title: 使用案例
 ---
 
 # 关于ClickHouse使用案例的问题 {#questions-about-clickhouse-use-cases}

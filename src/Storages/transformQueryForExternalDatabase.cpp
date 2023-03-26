@@ -14,8 +14,6 @@
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
-#include <Storages/transformQueryForExternalDatabaseAnalyzer.h>
-
 
 namespace DB
 {
@@ -24,7 +22,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
-    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace
@@ -110,15 +107,15 @@ void dropAliases(ASTPtr & node)
 }
 
 
-bool isCompatible(ASTPtr & node)
+bool isCompatible(IAST & node)
 {
-    if (auto * function = node->as<ASTFunction>())
+    if (auto * function = node.as<ASTFunction>())
     {
         if (function->parameters)   /// Parametric aggregate functions
             return false;
 
         if (!function->arguments)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: function->arguments is not set");
+            throw Exception("Logical error: function->arguments is not set", ErrorCodes::LOGICAL_ERROR);
 
         String name = function->name;
 
@@ -156,30 +153,20 @@ bool isCompatible(ASTPtr & node)
             && (function->arguments->children.size() != 2 || function->arguments->children[1]->as<ASTTableIdentifier>()))
             return false;
 
-        for (auto & expr : function->arguments->children)
-            if (!isCompatible(expr))
+        for (const auto & expr : function->arguments->children)
+            if (!isCompatible(*expr))
                 return false;
 
         return true;
     }
 
-    if (const auto * literal = node->as<ASTLiteral>())
+    if (const auto * literal = node.as<ASTLiteral>())
     {
-        if (literal->value.getType() == Field::Types::Tuple)
-        {
-            /// Represent a tuple with zero or one elements as (x) instead of tuple(x).
-            auto tuple_value = literal->value.safeGet<Tuple>();
-            if (tuple_value.size() == 1)
-            {
-                node = makeASTFunction("", std::make_shared<ASTLiteral>(tuple_value[0]));
-                return true;
-            }
-        }
         /// Foreign databases often have no support for Array. But Tuple literals are passed to support IN clause.
         return literal->value.getType() != Field::Types::Array;
     }
 
-    return node->as<ASTIdentifier>();
+    return node.as<ASTIdentifier>();
 }
 
 bool removeUnknownSubexpressions(ASTPtr & node, const NameSet & known_names);
@@ -253,15 +240,18 @@ bool removeUnknownSubexpressionsFromWhere(ASTPtr & node, const NamesAndTypesList
     return removeUnknownSubexpressions(node, known_names);
 }
 
-String transformQueryForExternalDatabaseImpl(
-    ASTPtr clone_query,
-    Names used_columns,
+}
+
+String transformQueryForExternalDatabase(
+    const SelectQueryInfo & query_info,
     const NamesAndTypesList & available_columns,
     IdentifierQuotingStyle identifier_quoting_style,
     const String & database,
     const String & table,
     ContextPtr context)
 {
+    auto clone_query = query_info.query->clone();
+    const Names used_columns = query_info.syntax_analyzer_result->requiredSourceColumns();
     bool strict = context->getSettingsRef().external_table_strict_query;
 
     auto select = std::make_shared<ASTSelectQuery>();
@@ -282,27 +272,26 @@ String transformQueryForExternalDatabaseImpl(
 
     ASTPtr original_where = clone_query->as<ASTSelectQuery &>().where();
     bool where_has_known_columns = removeUnknownSubexpressionsFromWhere(original_where, available_columns);
-
     if (original_where && where_has_known_columns)
     {
         replaceConstantExpressions(original_where, context, available_columns);
 
-        if (isCompatible(original_where))
+        if (isCompatible(*original_where))
         {
             select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(original_where));
         }
         else if (strict)
         {
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Query contains non-compatible expressions (and external_table_strict_query=true)");
+            throw Exception("Query contains non-compatible expressions (and external_table_strict_query=true)", ErrorCodes::INCORRECT_QUERY);
         }
-        else if (auto * function = original_where->as<ASTFunction>())
+        else if (const auto * function = original_where->as<ASTFunction>())
         {
             if (function->name == "and")
             {
                 auto new_function_and = makeASTFunction("and");
-                for (auto & elem : function->arguments->children)
+                for (const auto & elem : function->arguments->children)
                 {
-                    if (isCompatible(elem))
+                    if (isCompatible(*elem))
                         new_function_and->arguments->children.push_back(elem);
                 }
                 if (new_function_and->arguments->children.size() == 1)
@@ -314,8 +303,7 @@ String transformQueryForExternalDatabaseImpl(
     }
     else if (strict && original_where)
     {
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Query contains non-compatible expressions '{}' (and external_table_strict_query=true)",
-                        original_where->formatForErrorMessage());
+        throw Exception("Query contains non-compatible expressions (and external_table_strict_query=true)", ErrorCodes::INCORRECT_QUERY);
     }
 
     auto * literal_expr = typeid_cast<ASTLiteral *>(original_where.get());
@@ -341,53 +329,6 @@ String transformQueryForExternalDatabaseImpl(
     select->format(settings);
 
     return out.str();
-}
-
-}
-
-String transformQueryForExternalDatabase(
-    const SelectQueryInfo & query_info,
-    const Names & column_names,
-    const NamesAndTypesList & available_columns,
-    IdentifierQuotingStyle identifier_quoting_style,
-    const String & database,
-    const String & table,
-    ContextPtr context)
-{
-    if (!query_info.syntax_analyzer_result)
-    {
-        if (!query_info.query_tree)
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Query is not analyzed: no query tree");
-        if (!query_info.planner_context)
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Query is not analyzed: no planner context");
-        if (!query_info.table_expression)
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Query is not analyzed: no table expression");
-
-        if (column_names.empty())
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "No column names for query '{}' to external table '{}.{}'",
-                            query_info.query_tree->formatASTForErrorMessage(), database, table);
-
-        auto clone_query = getASTForExternalDatabaseFromQueryTree(query_info.query_tree);
-
-        return transformQueryForExternalDatabaseImpl(
-            clone_query,
-            column_names,
-            available_columns,
-            identifier_quoting_style,
-            database,
-            table,
-            context);
-    }
-
-    auto clone_query = query_info.query->clone();
-    return transformQueryForExternalDatabaseImpl(
-        clone_query,
-        query_info.syntax_analyzer_result->requiredSourceColumns(),
-        available_columns,
-        identifier_quoting_style,
-        database,
-        table,
-        context);
 }
 
 }

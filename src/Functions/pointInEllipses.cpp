@@ -63,16 +63,16 @@ private:
     {
         if (arguments.size() < 6 || arguments.size() % 4 != 2)
         {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Incorrect number of arguments of function {}. "
-                "Must be 2 for your point plus 4 * N for ellipses (x_i, y_i, a_i, b_i).", getName());
+            throw Exception(
+                "Incorrect number of arguments of function " + getName() + ". Must be 2 for your point plus 4 * N for ellipses (x_i, y_i, a_i, b_i).",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         }
 
         /// For array on stack, see below.
         if (arguments.size() > 10000)
         {
-            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Number of arguments of function {} is too large.",
-                getName());
+            throw Exception(
+                "Number of arguments of function " + getName() + " is too large.", ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION);
         }
 
         for (const auto arg_idx : collections::range(0, arguments.size()))
@@ -80,8 +80,9 @@ private:
             const auto * arg = arguments[arg_idx].get();
             if (!WhichDataType(arg).isFloat64())
             {
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument {} of function {}. "
-                    "Must be Float64", arg->getName(), std::to_string(arg_idx + 1), getName());
+                throw Exception(
+                    "Illegal type " + arg->getName() + " of argument " + std::to_string(arg_idx + 1) + " of function " + getName() + ". Must be Float64",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             }
         }
 
@@ -101,7 +102,7 @@ private:
             Float64 ellipse_data[4];
             for (const auto idx : collections::range(0, 4))
             {
-                size_t arg_idx = 2 + 4 * ellipse_idx + idx;
+                int arg_idx = 2 + 4 * ellipse_idx + idx;
                 const auto * column = arguments[arg_idx].column.get();
                 if (const auto * col = checkAndGetColumnConst<ColumnVector<Float64>>(column))
                 {
@@ -109,8 +110,9 @@ private:
                 }
                 else
                 {
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument {} of function {}. "
-                        "Must be const Float64", column->getName(), std::to_string(arg_idx + 1), getName());
+                    throw Exception(
+                        "Illegal type " + column->getName() + " of argument " + std::to_string(arg_idx + 1) + " of function " + getName() + ". Must be const Float64",
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
                 }
             }
             ellipses[ellipse_idx] = Ellipse{ellipse_data[0], ellipse_data[1], ellipse_data[2], ellipse_data[3]};
@@ -126,8 +128,8 @@ private:
             }
             else if (!typeid_cast<const ColumnVector<Float64> *> (column))
             {
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-                    column->getName(), getName());
+                throw Exception("Illegal column " + column->getName() + " of argument of function " + getName(),
+                    ErrorCodes::ILLEGAL_COLUMN);
             }
         }
 
@@ -149,20 +151,21 @@ private:
                 }
 
                 return dst;
-        }
-        else if (const_cnt == 2)
-        {
-            const auto * col_const_x = assert_cast<const ColumnConst *> (col_x);
-            const auto * col_const_y = assert_cast<const ColumnConst *> (col_y);
-            size_t start_index = 0;
-            UInt8 res = isPointInEllipses(col_const_x->getValue<Float64>(), col_const_y->getValue<Float64>(), ellipses.data(), ellipses_count, start_index);
-            return DataTypeUInt8().createColumnConst(size, res);
-        }
-        else
-        {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types {}, {} of arguments 1, 2 of function {}. "
-                "Both must be either const or vector", col_x->getName(), col_y->getName(), getName());
-        }
+            }
+            else if (const_cnt == 2)
+            {
+                const auto * col_const_x = assert_cast<const ColumnConst *> (col_x);
+                const auto * col_const_y = assert_cast<const ColumnConst *> (col_y);
+                size_t start_index = 0;
+                UInt8 res = isPointInEllipses(col_const_x->getValue<Float64>(), col_const_y->getValue<Float64>(), ellipses.data(), ellipses_count, start_index);
+                return DataTypeUInt8().createColumnConst(size, res);
+            }
+            else
+            {
+                throw Exception(
+                    "Illegal types " + col_x->getName() + ", " + col_y->getName() + " of arguments 1, 2 of function " + getName() + ". Both must be either const or vector",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            }
     }
 
     static bool isPointInEllipses(Float64 x, Float64 y, const Ellipse * ellipses, size_t ellipses_count, size_t & start_index)
@@ -191,7 +194,7 @@ private:
 
 }
 
-REGISTER_FUNCTION(PointInEllipses)
+void registerFunctionPointInEllipses(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionPointInEllipses>();
 }

@@ -1,7 +1,4 @@
----
-slug: /en/operations/system-tables/grants
----
-# grants
+# system.grants {#system_tables-grants}
 
 Privileges granted to ClickHouse user accounts.
 
@@ -23,3 +20,5 @@ Columns:
 - `1` — The row describes a grant.
 
 -    `grant_option` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Permission is granted `WITH GRANT OPTION`, see [GRANT](../../sql-reference/statements/grant.md#grant-privigele-syntax).
+
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/grants) <!--hide-->

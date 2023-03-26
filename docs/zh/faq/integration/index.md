@@ -1,9 +1,8 @@
 ---
-slug: /zh/faq/integration/
 title: 关于集成ClickHouse和其他系统的问题
 toc_hidden_folder: true
-sidebar_position: 4
-sidebar_label: Integration
+toc_priority: 4
+toc_title: Integration
 ---
 
 # 关于集成ClickHouse和其他系统的问题 {#question-about-integrating-clickhouse-and-other-systems}

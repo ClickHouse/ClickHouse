@@ -17,9 +17,9 @@ using FunctionPosition = FunctionsStringSearch<PositionImpl<NamePosition, Positi
 
 }
 
-REGISTER_FUNCTION(Position)
+void registerFunctionPosition(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionPosition>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionPosition>(FunctionFactory::CaseInsensitive);
     factory.registerAlias("locate", NamePosition::name, FunctionFactory::CaseInsensitive);
 }
 }

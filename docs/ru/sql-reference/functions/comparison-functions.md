@@ -1,7 +1,6 @@
 ---
-slug: /ru/sql-reference/functions/comparison-functions
-sidebar_position: 36
-sidebar_label: "Функции сравнения"
+toc_priority: 36
+toc_title: "Функции сравнения"
 ---
 
 # Функции сравнения {#funktsii-sravneniia}
@@ -34,3 +33,4 @@ sidebar_label: "Функции сравнения"
 ## lessOrEquals, оператор `<=` {#function-lessorequals}
 
 ## greaterOrEquals, оператор `>=` {#function-greaterorequals}
+

@@ -38,8 +38,8 @@ select sumMap(val, cnt) from ( SELECT [ CAST(1, 'Float64') ] as val, [1] as cnt 
 ([1],[1])
 select sumMap(val, cnt) from ( SELECT [ CAST('a', 'Enum16(\'a\'=1)') ] as val, [1] as cnt );
 (['a'],[1])
-select sumMap(val, cnt) from ( SELECT [ CAST(1, 'DateTime(\'Asia/Istanbul\')') ] as val, [1] as cnt );
-(['1970-01-01 02:00:01'],[1])
+select sumMap(val, cnt) from ( SELECT [ CAST(1, 'DateTime(\'Europe/Moscow\')') ] as val, [1] as cnt );
+(['1970-01-01 03:00:01'],[1])
 select sumMap(val, cnt) from ( SELECT [ CAST(1, 'Date') ] as val, [1] as cnt );
 (['1970-01-02'],[1])
 select sumMap(val, cnt) from ( SELECT [ CAST('01234567-89ab-cdef-0123-456789abcdef', 'UUID') ] as val, [1] as cnt );

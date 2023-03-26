@@ -41,7 +41,8 @@ public:
     {
         if (checkAndGetDataType<DataTypeString>(arguments[0].get()) == nullptr)
         {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument should be String");
+            throw Exception("First argument should be String",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
         return DataTypeFactory::instance().get(DataTypeName().getName());
@@ -95,7 +96,7 @@ struct ReadWKTMultiPolygonNameHolder
     static constexpr const char * name = "readWKTMultiPolygon";
 };
 
-REGISTER_FUNCTION(ReadWKT)
+void registerFunctionReadWKT(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionReadWKT<DataTypePointName, CartesianPoint, PointSerializer<CartesianPoint>, ReadWKTPointNameHolder>>();
     factory.registerFunction<FunctionReadWKT<DataTypeRingName, CartesianRing, RingSerializer<CartesianPoint>, ReadWKTRingNameHolder>>();

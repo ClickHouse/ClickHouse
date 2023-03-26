@@ -1,8 +1,0 @@
-<test>
-  <settings>
-    <max_memory_usage>100000000000</max_memory_usage>
-  </settings>
-
-  <query>select number, uniq(number) from numbers_mt(1e7) group by number limit 100 format Null</query>
-  <query>select number, uniq(number) from numbers_mt(1e8) group by number limit 100 format Null</query>
-</test>

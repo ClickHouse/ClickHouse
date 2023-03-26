@@ -1,0 +1,2511 @@
+start time: Вт. сент.  3 15:44:00 MSK 2013
+-- set GLOBAL max_length_for_sort_data = 8388608;
+
+
+times: 1
+query: SELECT count(*) FROM hits_10m;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 11
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT count(*) FROM hits_10m;
++----------+
++----------+
++----------+
+1 row in set (0.00 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT count(*) FROM hits_10m;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 12
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT count(*) FROM hits_10m;
++----------+
++----------+
++----------+
+1 row in set (0.00 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT count(*) FROM hits_10m;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 13
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT count(*) FROM hits_10m;
++----------+
++----------+
++----------+
+1 row in set (0.00 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 1
+query: SELECT count(*) FROM hits_10m WHERE AdvEngineID != 0;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 14
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT count(*) FROM hits_10m WHERE AdvEngineID != 0;
++----------+
++----------+
++----------+
+1 row in set (0.40 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT count(*) FROM hits_10m WHERE AdvEngineID != 0;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 15
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT count(*) FROM hits_10m WHERE AdvEngineID != 0;
++----------+
++----------+
++----------+
+1 row in set (0.38 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT count(*) FROM hits_10m WHERE AdvEngineID != 0;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 16
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT count(*) FROM hits_10m WHERE AdvEngineID != 0;
++----------+
++----------+
++----------+
+1 row in set (0.39 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 1
+query: SELECT sum(AdvEngineID), count(*), avg(ResolutionWidth) FROM hits_10m;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 17
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT sum(AdvEngineID), count(*), avg(ResolutionWidth) FROM hits_10m;
++------------------+----------+----------------------+
++------------------+----------+----------------------+
++------------------+----------+----------------------+
+1 row in set (0.10 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT sum(AdvEngineID), count(*), avg(ResolutionWidth) FROM hits_10m;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 18
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT sum(AdvEngineID), count(*), avg(ResolutionWidth) FROM hits_10m;
++------------------+----------+----------------------+
++------------------+----------+----------------------+
++------------------+----------+----------------------+
+1 row in set (0.00 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT sum(AdvEngineID), count(*), avg(ResolutionWidth) FROM hits_10m;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 19
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT sum(AdvEngineID), count(*), avg(ResolutionWidth) FROM hits_10m;
++------------------+----------+----------------------+
++------------------+----------+----------------------+
++------------------+----------+----------------------+
+1 row in set (0.00 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 1
+query: SELECT sum(UserID) FROM hits_10m;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 20
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT sum(UserID) FROM hits_10m;
+ERROR 5 (HY000): The query includes syntax that is not supported by the Infobright Optimizer. Either restructure the query with supported syntax, or enable the MySQL Query Path in the brighthouse.ini file to execute the query with reduced performance.
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT sum(UserID) FROM hits_10m;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 21
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT sum(UserID) FROM hits_10m;
+ERROR 5 (HY000): The query includes syntax that is not supported by the Infobright Optimizer. Either restructure the query with supported syntax, or enable the MySQL Query Path in the brighthouse.ini file to execute the query with reduced performance.
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT sum(UserID) FROM hits_10m;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 22
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT sum(UserID) FROM hits_10m;
+ERROR 5 (HY000): The query includes syntax that is not supported by the Infobright Optimizer. Either restructure the query with supported syntax, or enable the MySQL Query Path in the brighthouse.ini file to execute the query with reduced performance.
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 1
+query: SELECT count(DISTINCT UserID) FROM hits_10m;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 23
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT count(DISTINCT UserID) FROM hits_10m;
++------------------------+
++------------------------+
++------------------------+
+1 row in set (2.83 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT count(DISTINCT UserID) FROM hits_10m;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 24
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT count(DISTINCT UserID) FROM hits_10m;
++------------------------+
++------------------------+
++------------------------+
+1 row in set (1.91 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT count(DISTINCT UserID) FROM hits_10m;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 25
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT count(DISTINCT UserID) FROM hits_10m;
++------------------------+
++------------------------+
++------------------------+
+1 row in set (1.95 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 1
+query: SELECT count(DISTINCT SearchPhrase) FROM hits_10m;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 26
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT count(DISTINCT SearchPhrase) FROM hits_10m;
++------------------------------+
++------------------------------+
++------------------------------+
+1 row in set (9.16 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT count(DISTINCT SearchPhrase) FROM hits_10m;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 27
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT count(DISTINCT SearchPhrase) FROM hits_10m;
++------------------------------+
++------------------------------+
++------------------------------+
+1 row in set (1.65 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT count(DISTINCT SearchPhrase) FROM hits_10m;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 28
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT count(DISTINCT SearchPhrase) FROM hits_10m;
++------------------------------+
++------------------------------+
++------------------------------+
+1 row in set (1.70 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 1
+query: SELECT min(EventDate), max(EventDate) FROM hits_10m;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 29
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT min(EventDate), max(EventDate) FROM hits_10m;
++----------------+----------------+
++----------------+----------------+
++----------------+----------------+
+1 row in set (0.03 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT min(EventDate), max(EventDate) FROM hits_10m;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 30
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT min(EventDate), max(EventDate) FROM hits_10m;
++----------------+----------------+
++----------------+----------------+
++----------------+----------------+
+1 row in set (0.00 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT min(EventDate), max(EventDate) FROM hits_10m;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 31
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT min(EventDate), max(EventDate) FROM hits_10m;
++----------------+----------------+
++----------------+----------------+
++----------------+----------------+
+1 row in set (0.00 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 1
+query: SELECT AdvEngineID, count(*) FROM hits_10m WHERE AdvEngineID != 0 GROUP BY AdvEngineID ORDER BY count(*) DESC;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 32
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT AdvEngineID, count(*) FROM hits_10m WHERE AdvEngineID != 0 GROUP BY AdvEngineID ORDER BY count(*) DESC;
++-------------+----------+
++-------------+----------+
++-------------+----------+
+9 rows in set (0.46 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT AdvEngineID, count(*) FROM hits_10m WHERE AdvEngineID != 0 GROUP BY AdvEngineID ORDER BY count(*) DESC;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 33
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT AdvEngineID, count(*) FROM hits_10m WHERE AdvEngineID != 0 GROUP BY AdvEngineID ORDER BY count(*) DESC;
++-------------+----------+
++-------------+----------+
++-------------+----------+
+9 rows in set (0.40 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT AdvEngineID, count(*) FROM hits_10m WHERE AdvEngineID != 0 GROUP BY AdvEngineID ORDER BY count(*) DESC;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 34
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT AdvEngineID, count(*) FROM hits_10m WHERE AdvEngineID != 0 GROUP BY AdvEngineID ORDER BY count(*) DESC;
++-------------+----------+
++-------------+----------+
++-------------+----------+
+9 rows in set (0.41 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+-- мощная фильтрация. После фильтрации почти ничего не остаётся, но делаем ещё агрегацию.;
+
+
+times: 1
+query: SELECT RegionID, count(DISTINCT UserID) AS u FROM hits_10m GROUP BY RegionID ORDER BY u DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 35
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT RegionID, count(DISTINCT UserID) AS u FROM hits_10m GROUP BY RegionID ORDER BY u DESC LIMIT 10;
++----------+--------+
++----------+--------+
++----------+--------+
+10 rows in set (4.13 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT RegionID, count(DISTINCT UserID) AS u FROM hits_10m GROUP BY RegionID ORDER BY u DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 36
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT RegionID, count(DISTINCT UserID) AS u FROM hits_10m GROUP BY RegionID ORDER BY u DESC LIMIT 10;
++----------+--------+
++----------+--------+
++----------+--------+
+10 rows in set (2.97 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT RegionID, count(DISTINCT UserID) AS u FROM hits_10m GROUP BY RegionID ORDER BY u DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 37
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT RegionID, count(DISTINCT UserID) AS u FROM hits_10m GROUP BY RegionID ORDER BY u DESC LIMIT 10;
++----------+--------+
++----------+--------+
++----------+--------+
+10 rows in set (3.43 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+-- агрегация, среднее количество ключей.;
+
+
+times: 1
+query: SELECT RegionID, sum(AdvEngineID), count(*) AS c, avg(ResolutionWidth), count(DISTINCT UserID) FROM hits_10m GROUP BY RegionID ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 38
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT RegionID, sum(AdvEngineID), count(*) AS c, avg(ResolutionWidth), count(DISTINCT UserID) FROM hits_10m GROUP BY RegionID ORDER BY count(*) DESC LIMIT 10;
++----------+------------------+---------+----------------------+------------------------+
++----------+------------------+---------+----------------------+------------------------+
++----------+------------------+---------+----------------------+------------------------+
+10 rows in set (5.12 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT RegionID, sum(AdvEngineID), count(*) AS c, avg(ResolutionWidth), count(DISTINCT UserID) FROM hits_10m GROUP BY RegionID ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 39
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT RegionID, sum(AdvEngineID), count(*) AS c, avg(ResolutionWidth), count(DISTINCT UserID) FROM hits_10m GROUP BY RegionID ORDER BY count(*) DESC LIMIT 10;
++----------+------------------+---------+----------------------+------------------------+
++----------+------------------+---------+----------------------+------------------------+
++----------+------------------+---------+----------------------+------------------------+
+10 rows in set (4.46 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT RegionID, sum(AdvEngineID), count(*) AS c, avg(ResolutionWidth), count(DISTINCT UserID) FROM hits_10m GROUP BY RegionID ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 40
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT RegionID, sum(AdvEngineID), count(*) AS c, avg(ResolutionWidth), count(DISTINCT UserID) FROM hits_10m GROUP BY RegionID ORDER BY count(*) DESC LIMIT 10;
++----------+------------------+---------+----------------------+------------------------+
++----------+------------------+---------+----------------------+------------------------+
++----------+------------------+---------+----------------------+------------------------+
+10 rows in set (4.15 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+-- агрегация, среднее количество ключей, несколько агрегатных функций.;
+
+
+times: 1
+query: SELECT MobilePhoneModel, count(DISTINCT UserID) AS u FROM hits_10m WHERE MobilePhoneModel != '' GROUP BY MobilePhoneModel ORDER BY u DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 41
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT MobilePhoneModel, count(DISTINCT UserID) AS u FROM hits_10m WHERE MobilePhoneModel != '' GROUP BY MobilePhoneModel ORDER BY u DESC LIMIT 10;
++------------------+-------+
++------------------+-------+
++------------------+-------+
+10 rows in set (1.98 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT MobilePhoneModel, count(DISTINCT UserID) AS u FROM hits_10m WHERE MobilePhoneModel != '' GROUP BY MobilePhoneModel ORDER BY u DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 42
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT MobilePhoneModel, count(DISTINCT UserID) AS u FROM hits_10m WHERE MobilePhoneModel != '' GROUP BY MobilePhoneModel ORDER BY u DESC LIMIT 10;
++------------------+-------+
++------------------+-------+
++------------------+-------+
+10 rows in set (1.24 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT MobilePhoneModel, count(DISTINCT UserID) AS u FROM hits_10m WHERE MobilePhoneModel != '' GROUP BY MobilePhoneModel ORDER BY u DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 43
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT MobilePhoneModel, count(DISTINCT UserID) AS u FROM hits_10m WHERE MobilePhoneModel != '' GROUP BY MobilePhoneModel ORDER BY u DESC LIMIT 10;
++------------------+-------+
++------------------+-------+
++------------------+-------+
+10 rows in set (1.36 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+-- мощная фильтрация по строкам, затем агрегация по строкам.;
+
+
+times: 1
+query: SELECT MobilePhone, MobilePhoneModel, count(DISTINCT UserID) AS u FROM hits_10m WHERE MobilePhoneModel != '' GROUP BY MobilePhone, MobilePhoneModel ORDER BY u DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 44
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT MobilePhone, MobilePhoneModel, count(DISTINCT UserID) AS u FROM hits_10m WHERE MobilePhoneModel != '' GROUP BY MobilePhone, MobilePhoneModel ORDER BY u DES C LIMIT 10;
++-------------+------------------+-------+
++-------------+------------------+-------+
++-------------+------------------+-------+
+10 rows in set (1.58 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT MobilePhone, MobilePhoneModel, count(DISTINCT UserID) AS u FROM hits_10m WHERE MobilePhoneModel != '' GROUP BY MobilePhone, MobilePhoneModel ORDER BY u DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 45
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT MobilePhone, MobilePhoneModel, count(DISTINCT UserID) AS u FROM hits_10m WHERE MobilePhoneModel != '' GROUP BY MobilePhone, MobilePhoneModel ORDER BY u DES C LIMIT 10;
++-------------+------------------+-------+
++-------------+------------------+-------+
++-------------+------------------+-------+
+10 rows in set (1.26 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT MobilePhone, MobilePhoneModel, count(DISTINCT UserID) AS u FROM hits_10m WHERE MobilePhoneModel != '' GROUP BY MobilePhone, MobilePhoneModel ORDER BY u DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 46
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT MobilePhone, MobilePhoneModel, count(DISTINCT UserID) AS u FROM hits_10m WHERE MobilePhoneModel != '' GROUP BY MobilePhone, MobilePhoneModel ORDER BY u DES C LIMIT 10;
++-------------+------------------+-------+
++-------------+------------------+-------+
++-------------+------------------+-------+
+10 rows in set (1.27 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+-- мощная фильтрация по строкам, затем агрегация по паре из числа и строки.;
+
+
+times: 1
+query: SELECT SearchPhrase, count(*) FROM hits_10m WHERE SearchPhrase != '' GROUP BY SearchPhrase ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 47
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT SearchPhrase, count(*) FROM hits_10m WHERE SearchPhrase != '' GROUP BY SearchPhrase ORDER BY count(*) DESC LIMIT 10;
++-----------------------------+----------+
++-----------------------------+----------+
++-----------------------------+----------+
+10 rows in set (13.37 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT SearchPhrase, count(*) FROM hits_10m WHERE SearchPhrase != '' GROUP BY SearchPhrase ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 48
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT SearchPhrase, count(*) FROM hits_10m WHERE SearchPhrase != '' GROUP BY SearchPhrase ORDER BY count(*) DESC LIMIT 10;
++-----------------------------+----------+
++-----------------------------+----------+
++-----------------------------+----------+
+10 rows in set (30.81 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT SearchPhrase, count(*) FROM hits_10m WHERE SearchPhrase != '' GROUP BY SearchPhrase ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 49
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT SearchPhrase, count(*) FROM hits_10m WHERE SearchPhrase != '' GROUP BY SearchPhrase ORDER BY count(*) DESC LIMIT 10;
++-----------------------------+----------+
++-----------------------------+----------+
++-----------------------------+----------+
+10 rows in set (29.76 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+-- средняя фильтрация по строкам, затем агрегация по строкам, большое количество ключей.;
+
+
+times: 1
+query: SELECT SearchPhrase, count(DISTINCT UserID) AS u FROM hits_10m WHERE SearchPhrase != '' GROUP BY SearchPhrase ORDER BY u DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 50
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT SearchPhrase, count(DISTINCT UserID) AS u FROM hits_10m WHERE SearchPhrase != '' GROUP BY SearchPhrase ORDER BY u DESC LIMIT 10;
++-------------------------------------------+------+
++-------------------------------------------+------+
++-------------------------------------------+------+
+10 rows in set (32.59 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT SearchPhrase, count(DISTINCT UserID) AS u FROM hits_10m WHERE SearchPhrase != '' GROUP BY SearchPhrase ORDER BY u DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 51
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT SearchPhrase, count(DISTINCT UserID) AS u FROM hits_10m WHERE SearchPhrase != '' GROUP BY SearchPhrase ORDER BY u DESC LIMIT 10;
++-------------------------------------------+------+
++-------------------------------------------+------+
++-------------------------------------------+------+
+10 rows in set (30.22 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT SearchPhrase, count(DISTINCT UserID) AS u FROM hits_10m WHERE SearchPhrase != '' GROUP BY SearchPhrase ORDER BY u DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 52
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT SearchPhrase, count(DISTINCT UserID) AS u FROM hits_10m WHERE SearchPhrase != '' GROUP BY SearchPhrase ORDER BY u DESC LIMIT 10;
++-------------------------------------------+------+
++-------------------------------------------+------+
++-------------------------------------------+------+
+10 rows in set (13.00 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+-- агрегация чуть сложнее.;
+
+
+times: 1
+query: SELECT SearchEngineID, SearchPhrase, count(*) FROM hits_10m WHERE SearchPhrase != '' GROUP BY SearchEngineID, SearchPhrase ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 53
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT SearchEngineID, SearchPhrase, count(*) FROM hits_10m WHERE SearchPhrase != '' GROUP BY SearchEngineID, SearchPhrase ORDER BY count(*) DESC LIMIT 10;
++----------------+-----------------------------+----------+
++----------------+-----------------------------+----------+
++----------------+-----------------------------+----------+
+10 rows in set (12.93 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT SearchEngineID, SearchPhrase, count(*) FROM hits_10m WHERE SearchPhrase != '' GROUP BY SearchEngineID, SearchPhrase ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 54
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT SearchEngineID, SearchPhrase, count(*) FROM hits_10m WHERE SearchPhrase != '' GROUP BY SearchEngineID, SearchPhrase ORDER BY count(*) DESC LIMIT 10;
++----------------+-----------------------------+----------+
++----------------+-----------------------------+----------+
++----------------+-----------------------------+----------+
+10 rows in set (11.39 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT SearchEngineID, SearchPhrase, count(*) FROM hits_10m WHERE SearchPhrase != '' GROUP BY SearchEngineID, SearchPhrase ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 55
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT SearchEngineID, SearchPhrase, count(*) FROM hits_10m WHERE SearchPhrase != '' GROUP BY SearchEngineID, SearchPhrase ORDER BY count(*) DESC LIMIT 10;
++----------------+-----------------------------+----------+
++----------------+-----------------------------+----------+
++----------------+-----------------------------+----------+
+10 rows in set (30.46 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+-- агрегация по числу и строке, большое количество ключей.;
+
+
+times: 1
+query: SELECT UserID, count(*) FROM hits_10m GROUP BY UserID ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 56
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT UserID, count(*) FROM hits_10m GROUP BY UserID ORDER BY count(*) DESC LIMIT 10;
++---------------------+----------+
++---------------------+----------+
++---------------------+----------+
+10 rows in set (2.98 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT UserID, count(*) FROM hits_10m GROUP BY UserID ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 57
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT UserID, count(*) FROM hits_10m GROUP BY UserID ORDER BY count(*) DESC LIMIT 10;
++---------------------+----------+
++---------------------+----------+
++---------------------+----------+
+10 rows in set (3.05 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT UserID, count(*) FROM hits_10m GROUP BY UserID ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 58
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT UserID, count(*) FROM hits_10m GROUP BY UserID ORDER BY count(*) DESC LIMIT 10;
++---------------------+----------+
++---------------------+----------+
++---------------------+----------+
+10 rows in set (2.96 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+-- агрегация по очень большому количеству ключей, может не хватить оперативки.;
+
+
+times: 1
+query: SELECT UserID, SearchPhrase, count(*) FROM hits_10m GROUP BY UserID, SearchPhrase ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 59
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT UserID, SearchPhrase, count(*) FROM hits_10m GROUP BY UserID, SearchPhrase ORDER BY count(*) DESC LIMIT 10;
++---------------------+--------------+----------+
++---------------------+--------------+----------+
++---------------------+--------------+----------+
+10 rows in set (1 min 9.90 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT UserID, SearchPhrase, count(*) FROM hits_10m GROUP BY UserID, SearchPhrase ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 60
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT UserID, SearchPhrase, count(*) FROM hits_10m GROUP BY UserID, SearchPhrase ORDER BY count(*) DESC LIMIT 10;
++---------------------+--------------+----------+
++---------------------+--------------+----------+
++---------------------+--------------+----------+
+10 rows in set (1 min 20.86 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT UserID, SearchPhrase, count(*) FROM hits_10m GROUP BY UserID, SearchPhrase ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 61
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT UserID, SearchPhrase, count(*) FROM hits_10m GROUP BY UserID, SearchPhrase ORDER BY count(*) DESC LIMIT 10;
++---------------------+--------------+----------+
++---------------------+--------------+----------+
++---------------------+--------------+----------+
+10 rows in set (1 min 25.17 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+-- ещё более сложная агрегация.;
+
+
+times: 1
+query: SELECT UserID, SearchPhrase, count(*) FROM hits_10m GROUP BY UserID, SearchPhrase LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 62
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT UserID, SearchPhrase, count(*) FROM hits_10m GROUP BY UserID, SearchPhrase LIMIT 10;
++---------------------+-----------------------------------------------------------------+----------+
++---------------------+-----------------------------------------------------------------+----------+
++---------------------+-----------------------------------------------------------------+----------+
+10 rows in set (10.38 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT UserID, SearchPhrase, count(*) FROM hits_10m GROUP BY UserID, SearchPhrase LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 63
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT UserID, SearchPhrase, count(*) FROM hits_10m GROUP BY UserID, SearchPhrase LIMIT 10;
++---------------------+-----------------------------------------------------------------+----------+
++---------------------+-----------------------------------------------------------------+----------+
++---------------------+-----------------------------------------------------------------+----------+
+10 rows in set (10.19 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT UserID, SearchPhrase, count(*) FROM hits_10m GROUP BY UserID, SearchPhrase LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 64
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT UserID, SearchPhrase, count(*) FROM hits_10m GROUP BY UserID, SearchPhrase LIMIT 10;
++---------------------+-----------------------------------------------------------------+----------+
++---------------------+-----------------------------------------------------------------+----------+
++---------------------+-----------------------------------------------------------------+----------+
+10 rows in set (10.28 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+-- то же самое, но без сортировки.;
+
+
+times: 1
+query: SELECT UserID, Minute(EventTime) AS m, SearchPhrase, count(*) FROM hits_10m GROUP BY UserID, m, SearchPhrase ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 65
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT UserID, Minute(EventTime) AS m, SearchPhrase, count(*) FROM hits_10m GROUP BY UserID, m, SearchPhrase ORDER BY count(*) DESC LIMIT 10;
++---------------------+------+--------------+----------+
++---------------------+------+--------------+----------+
++---------------------+------+--------------+----------+
+10 rows in set (2 min 42.43 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT UserID, Minute(EventTime) AS m, SearchPhrase, count(*) FROM hits_10m GROUP BY UserID, m, SearchPhrase ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 66
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT UserID, Minute(EventTime) AS m, SearchPhrase, count(*) FROM hits_10m GROUP BY UserID, m, SearchPhrase ORDER BY count(*) DESC LIMIT 10;
++---------------------+------+--------------+----------+
++---------------------+------+--------------+----------+
++---------------------+------+--------------+----------+
+10 rows in set (2 min 44.35 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT UserID, Minute(EventTime) AS m, SearchPhrase, count(*) FROM hits_10m GROUP BY UserID, m, SearchPhrase ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 67
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT UserID, Minute(EventTime) AS m, SearchPhrase, count(*) FROM hits_10m GROUP BY UserID, m, SearchPhrase ORDER BY count(*) DESC LIMIT 10;
++---------------------+------+--------------+----------+
++---------------------+------+--------------+----------+
++---------------------+------+--------------+----------+
+10 rows in set (2 min 49.28 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+-- ещё более сложная агрегация, не стоит выполнять на больших таблицах.;
+
+
+times: 1
+query: SELECT UserID FROM hits_10m WHERE UserID = 12345678901234567890;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 68
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT UserID FROM hits_10m WHERE UserID = 12345678901234567890;
+ERROR 5 (HY000): The query includes syntax that is not supported by the Infobright Optimizer. Either restructure the query with supported syntax, or enable the MySQL Query Path in the brighthouse.ini file to execute the query with reduced performance.
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT UserID FROM hits_10m WHERE UserID = 12345678901234567890;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 69
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT UserID FROM hits_10m WHERE UserID = 12345678901234567890;
+ERROR 5 (HY000): The query includes syntax that is not supported by the Infobright Optimizer. Either restructure the query with supported syntax, or enable the MySQL Query Path in the brighthouse.ini file to execute the query with reduced performance.
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT UserID FROM hits_10m WHERE UserID = 12345678901234567890;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 70
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT UserID FROM hits_10m WHERE UserID = 12345678901234567890;
+ERROR 5 (HY000): The query includes syntax that is not supported by the Infobright Optimizer. Either restructure the query with supported syntax, or enable the MySQL Query Path in the brighthouse.ini file to execute the query with reduced performance.
+mysql> quit
+Bye
+ * MySQL running (21735)
+-- мощная фильтрация по столбцу типа UInt64.;
+
+
+times: 1
+query: SELECT count(*) FROM hits_10m WHERE URL LIKE '%metrika%';
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 71
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT count(*) FROM hits_10m WHERE URL LIKE '%metrika%';
++----------+
++----------+
++----------+
+1 row in set (47.80 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT count(*) FROM hits_10m WHERE URL LIKE '%metrika%';
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 72
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT count(*) FROM hits_10m WHERE URL LIKE '%metrika%';
++----------+
++----------+
++----------+
+1 row in set (4.40 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT count(*) FROM hits_10m WHERE URL LIKE '%metrika%';
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 73
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT count(*) FROM hits_10m WHERE URL LIKE '%metrika%';
++----------+
++----------+
++----------+
+1 row in set (4.47 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+-- фильтрация по поиску подстроки в строке.;
+
+
+times: 1
+query: SELECT SearchPhrase, MAX(URL), count(*) FROM hits_10m WHERE URL LIKE '%metrika%' AND SearchPhrase != '' GROUP BY SearchPhrase ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 74
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT SearchPhrase, MAX(URL), count(*) FROM hits_10m WHERE URL LIKE '%metrika%' AND SearchPhrase != '' GROUP BY SearchPhrase ORDER BY count(*) DESC LIMIT 10;
++--------------------------------------------------------------------------------------------------------------------------------------+-----------------------------------------------------------------------------------------+----------+
++--------------------------------------------------------------------------------------------------------------------------------------+-----------------------------------------------------------------------------------------+----------+
++--------------------------------------------------------------------------------------------------------------------------------------+-----------------------------------------------------------------------------------------+----------+
+10 rows in set (4.83 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT SearchPhrase, MAX(URL), count(*) FROM hits_10m WHERE URL LIKE '%metrika%' AND SearchPhrase != '' GROUP BY SearchPhrase ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 75
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT SearchPhrase, MAX(URL), count(*) FROM hits_10m WHERE URL LIKE '%metrika%' AND SearchPhrase != '' GROUP BY SearchPhrase ORDER BY count(*) DESC LIMIT 10;
++--------------------------------------------------------------------------------------------------------------------------------------+-----------------------------------------------------------------------------------------+----------+
++--------------------------------------------------------------------------------------------------------------------------------------+-----------------------------------------------------------------------------------------+----------+
++--------------------------------------------------------------------------------------------------------------------------------------+-----------------------------------------------------------------------------------------+----------+
+10 rows in set (1.15 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT SearchPhrase, MAX(URL), count(*) FROM hits_10m WHERE URL LIKE '%metrika%' AND SearchPhrase != '' GROUP BY SearchPhrase ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 76
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT SearchPhrase, MAX(URL), count(*) FROM hits_10m WHERE URL LIKE '%metrika%' AND SearchPhrase != '' GROUP BY SearchPhrase ORDER BY count(*) DESC LIMIT 10;
++--------------------------------------------------------------------------------------------------------------------------------------+-----------------------------------------------------------------------------------------+----------+
++--------------------------------------------------------------------------------------------------------------------------------------+-----------------------------------------------------------------------------------------+----------+
++--------------------------------------------------------------------------------------------------------------------------------------+-----------------------------------------------------------------------------------------+----------+
+10 rows in set (1.14 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+-- вынимаем большие столбцы, фильтрация по строке.;
+
+
+times: 1
+query: SELECT SearchPhrase, MAX(URL), MAX(Title), count(*) AS c, count(DISTINCT UserID) FROM hits_10m WHERE Title LIKE '%Яндекс%' AND URL NOT LIKE '%.yandex.%' AND SearchPhrase != '' GROUP BY SearchPhrase ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 77
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT SearchPhrase, MAX(URL), MAX(Title), count(*) AS c, count(DISTINCT UserID) FROM hits_10m WHERE Title LIKE '%Яндекс%' AND URL NOT LIKE '%.yandex.%' AND SearchPhrase  != '' GROUP BY SearchPhrase ORDER BY count(*) DESC LIMIT 10;
++-----------------------------------------------------------------------------------+----------------------------------------------------------------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------+---+------------------------+
++-----------------------------------------------------------------------------------+----------------------------------------------------------------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------+---+------------------------+
++-----------------------------------------------------------------------------------+----------------------------------------------------------------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------+---+------------------------+
+10 rows in set (43.82 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT SearchPhrase, MAX(URL), MAX(Title), count(*) AS c, count(DISTINCT UserID) FROM hits_10m WHERE Title LIKE '%Яндекс%' AND URL NOT LIKE '%.yandex.%' AND SearchPhrase != '' GROUP BY SearchPhrase ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 78
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT SearchPhrase, MAX(URL), MAX(Title), count(*) AS c, count(DISTINCT UserID) FROM hits_10m WHERE Title LIKE '%Яндекс%' AND URL NOT LIKE '%.yandex.%' AND SearchPhrase  != '' GROUP BY SearchPhrase ORDER BY count(*) DESC LIMIT 10;
++-----------------------------------------------------------------------------------+----------------------------------------------------------------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------+---+------------------------+
++-----------------------------------------------------------------------------------+----------------------------------------------------------------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------+---+------------------------+
++-----------------------------------------------------------------------------------+----------------------------------------------------------------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------+---+------------------------+
+10 rows in set (2.14 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT SearchPhrase, MAX(URL), MAX(Title), count(*) AS c, count(DISTINCT UserID) FROM hits_10m WHERE Title LIKE '%Яндекс%' AND URL NOT LIKE '%.yandex.%' AND SearchPhrase != '' GROUP BY SearchPhrase ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 79
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT SearchPhrase, MAX(URL), MAX(Title), count(*) AS c, count(DISTINCT UserID) FROM hits_10m WHERE Title LIKE '%Яндекс%' AND URL NOT LIKE '%.yandex.%' AND SearchPhrase  != '' GROUP BY SearchPhrase ORDER BY count(*) DESC LIMIT 10;
++-----------------------------------------------------------------------------------+----------------------------------------------------------------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------+---+------------------------+
++-----------------------------------------------------------------------------------+----------------------------------------------------------------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------+---+------------------------+
++-----------------------------------------------------------------------------------+----------------------------------------------------------------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------+---+------------------------+
+10 rows in set (2.16 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+-- чуть больше столбцы.;
+
+
+times: 1
+query: SELECT * FROM hits_10m WHERE URL LIKE '%metrika%' ORDER BY EventTime LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 80
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT * FROM hits_10m WHERE URL LIKE '%metrika%' ORDER BY EventTime LIMIT 10;
++---------------------+------------+-------------------------+-----------+---------------------+------------+-----------+------------+----------+---------------------+--------------+------+-----------+---------------------------------------------------------------------------------------+-----------------------------------------------------------------------------------------------------------------+---------+-------------------+-----------------+---------------+-------------+-----------------+------------------+-----------------+------------+------------+-------------+----------+----------+----------------+----------------+--------------+------------------+----------+-------------+------------------+--------+-------------+----------------+----------------+--------------+-------------+-------------+-------------------+--------------------+----------------+---------------------+---------------------+---------------------+---------------------+---------------------+-------------+-------------+--------+------------+-------------+---------------------+-------------+------------+--------------+---------+-------------+---------------+----------+----------+---------------------+------+------+--------+-----------+-----------+------------+------------+------------+---------------+-----------------+----------------+---------------+--------------+-----------+------------+-----------+---------------+---------------------+-------------------+-------------+-----------------------+------------------+------------+--------------+---------------+-----------------+---------------------+--------------------+--------------+------------------+-----------+-----------+-------------+------------+---------+---------+----------+----------------------+---------------------+------+------------+
++---------------------+------------+-------------------------+-----------+---------------------+------------+-----------+------------+----------+---------------------+--------------+------+-----------+---------------------------------------------------------------------------------------+-----------------------------------------------------------------------------------------------------------------+---------+-------------------+-----------------+---------------+-------------+-----------------+------------------+-----------------+------------+------------+-------------+----------+----------+----------------+----------------+--------------+------------------+----------+-------------+------------------+--------+-------------+----------------+----------------+--------------+-------------+-------------+-------------------+--------------------+----------------+---------------------+---------------------+---------------------+---------------------+---------------------+-------------+-------------+--------+------------+-------------+---------------------+-------------+------------+--------------+---------+-------------+---------------+----------+----------+---------------------+------+------+--------+-----------+-----------+------------+------------+------------+---------------+-----------------+----------------+---------------+--------------+-----------+------------+-----------+---------------+---------------------+-------------------+-------------+-----------------------+------------------+------------+--------------+---------------+-----------------+---------------------+--------------------+--------------+------------------+-----------+-----------+-------------+------------+---------+---------+----------+----------------------+---------------------+------+------------+
++---------------------+------------+-------------------------+-----------+---------------------+------------+-----------+------------+----------+---------------------+--------------+------+-----------+---------------------------------------------------------------------------------------+-----------------------------------------------------------------------------------------------------------------+---------+-------------------+-----------------+---------------+-------------+-----------------+------------------+-----------------+------------+------------+-------------+----------+----------+----------------+----------------+--------------+------------------+----------+-------------+------------------+--------+-------------+----------------+----------------+--------------+-------------+-------------+-------------------+--------------------+----------------+---------------------+---------------------+---------------------+---------------------+---------------------+-------------+-------------+--------+------------+-------------+---------------------+-------------+------------+--------------+---------+-------------+---------------+----------+----------+---------------------+------+------+--------+-----------+-----------+------------+------------+------------+---------------+-----------------+----------------+---------------+--------------+-----------+------------+-----------+---------------+---------------------+-------------------+-------------+-----------------------+------------------+------------+--------------+---------------+-----------------+---------------------+--------------------+--------------+------------------+-----------+-----------+-------------+------------+---------+---------+----------+----------------------+---------------------+------+------------+
+10 rows in set (6.14 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT * FROM hits_10m WHERE URL LIKE '%metrika%' ORDER BY EventTime LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 81
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT * FROM hits_10m WHERE URL LIKE '%metrika%' ORDER BY EventTime LIMIT 10;
++---------------------+------------+-------------------------+-----------+---------------------+------------+-----------+------------+----------+---------------------+--------------+------+-----------+---------------------------------------------------------------------------------------+-----------------------------------------------------------------------------------------------------------------+---------+-------------------+-----------------+---------------+-------------+-----------------+------------------+-----------------+------------+------------+-------------+----------+----------+----------------+----------------+--------------+------------------+----------+-------------+------------------+--------+-------------+----------------+----------------+--------------+-------------+-------------+-------------------+--------------------+----------------+---------------------+---------------------+---------------------+---------------------+---------------------+-------------+-------------+--------+------------+-------------+---------------------+-------------+------------+--------------+---------+-------------+---------------+----------+----------+---------------------+------+------+--------+-----------+-----------+------------+------------+------------+---------------+-----------------+----------------+---------------+--------------+-----------+------------+-----------+---------------+---------------------+-------------------+-------------+-----------------------+------------------+------------+--------------+---------------+-----------------+---------------------+--------------------+--------------+------------------+-----------+-----------+-------------+------------+---------+---------+----------+----------------------+---------------------+------+------------+
++---------------------+------------+-------------------------+-----------+---------------------+------------+-----------+------------+----------+---------------------+--------------+------+-----------+---------------------------------------------------------------------------------------+-----------------------------------------------------------------------------------------------------------------+---------+-------------------+-----------------+---------------+-------------+-----------------+------------------+-----------------+------------+------------+-------------+----------+----------+----------------+----------------+--------------+------------------+----------+-------------+------------------+--------+-------------+----------------+----------------+--------------+-------------+-------------+-------------------+--------------------+----------------+---------------------+---------------------+---------------------+---------------------+---------------------+-------------+-------------+--------+------------+-------------+---------------------+-------------+------------+--------------+---------+-------------+---------------+----------+----------+---------------------+------+------+--------+-----------+-----------+------------+------------+------------+---------------+-----------------+----------------+---------------+--------------+-----------+------------+-----------+---------------+---------------------+-------------------+-------------+-----------------------+------------------+------------+--------------+---------------+-----------------+---------------------+--------------------+--------------+------------------+-----------+-----------+-------------+------------+---------+---------+----------+----------------------+---------------------+------+------------+
++---------------------+------------+-------------------------+-----------+---------------------+------------+-----------+------------+----------+---------------------+--------------+------+-----------+---------------------------------------------------------------------------------------+-----------------------------------------------------------------------------------------------------------------+---------+-------------------+-----------------+---------------+-------------+-----------------+------------------+-----------------+------------+------------+-------------+----------+----------+----------------+----------------+--------------+------------------+----------+-------------+------------------+--------+-------------+----------------+----------------+--------------+-------------+-------------+-------------------+--------------------+----------------+---------------------+---------------------+---------------------+---------------------+---------------------+-------------+-------------+--------+------------+-------------+---------------------+-------------+------------+--------------+---------+-------------+---------------+----------+----------+---------------------+------+------+--------+-----------+-----------+------------+------------+------------+---------------+-----------------+----------------+---------------+--------------+-----------+------------+-----------+---------------+---------------------+-------------------+-------------+-----------------------+------------------+------------+--------------+---------------+-----------------+---------------------+--------------------+--------------+------------------+-----------+-----------+-------------+------------+---------+---------+----------+----------------------+---------------------+------+------------+
+10 rows in set (4.39 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT * FROM hits_10m WHERE URL LIKE '%metrika%' ORDER BY EventTime LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 82
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT * FROM hits_10m WHERE URL LIKE '%metrika%' ORDER BY EventTime LIMIT 10;
++---------------------+------------+-------------------------+-----------+---------------------+------------+-----------+------------+----------+---------------------+--------------+------+-----------+---------------------------------------------------------------------------------------+-----------------------------------------------------------------------------------------------------------------+---------+-------------------+-----------------+---------------+-------------+-----------------+------------------+-----------------+------------+------------+-------------+----------+----------+----------------+----------------+--------------+------------------+----------+-------------+------------------+--------+-------------+----------------+----------------+--------------+-------------+-------------+-------------------+--------------------+----------------+---------------------+---------------------+---------------------+---------------------+---------------------+-------------+-------------+--------+------------+-------------+---------------------+-------------+------------+--------------+---------+-------------+---------------+----------+----------+---------------------+------+------+--------+-----------+-----------+------------+------------+------------+---------------+-----------------+----------------+---------------+--------------+-----------+------------+-----------+---------------+---------------------+-------------------+-------------+-----------------------+------------------+------------+--------------+---------------+-----------------+---------------------+--------------------+--------------+------------------+-----------+-----------+-------------+------------+---------+---------+----------+----------------------+---------------------+------+------------+
++---------------------+------------+-------------------------+-----------+---------------------+------------+-----------+------------+----------+---------------------+--------------+------+-----------+---------------------------------------------------------------------------------------+-----------------------------------------------------------------------------------------------------------------+---------+-------------------+-----------------+---------------+-------------+-----------------+------------------+-----------------+------------+------------+-------------+----------+----------+----------------+----------------+--------------+------------------+----------+-------------+------------------+--------+-------------+----------------+----------------+--------------+-------------+-------------+-------------------+--------------------+----------------+---------------------+---------------------+---------------------+---------------------+---------------------+-------------+-------------+--------+------------+-------------+---------------------+-------------+------------+--------------+---------+-------------+---------------+----------+----------+---------------------+------+------+--------+-----------+-----------+------------+------------+------------+---------------+-----------------+----------------+---------------+--------------+-----------+------------+-----------+---------------+---------------------+-------------------+-------------+-----------------------+------------------+------------+--------------+---------------+-----------------+---------------------+--------------------+--------------+------------------+-----------+-----------+-------------+------------+---------+---------+----------+----------------------+---------------------+------+------------+
++---------------------+------------+-------------------------+-----------+---------------------+------------+-----------+------------+----------+---------------------+--------------+------+-----------+---------------------------------------------------------------------------------------+-----------------------------------------------------------------------------------------------------------------+---------+-------------------+-----------------+---------------+-------------+-----------------+------------------+-----------------+------------+------------+-------------+----------+----------+----------------+----------------+--------------+------------------+----------+-------------+------------------+--------+-------------+----------------+----------------+--------------+-------------+-------------+-------------------+--------------------+----------------+---------------------+---------------------+---------------------+---------------------+---------------------+-------------+-------------+--------+------------+-------------+---------------------+-------------+------------+--------------+---------+-------------+---------------+----------+----------+---------------------+------+------+--------+-----------+-----------+------------+------------+------------+---------------+-----------------+----------------+---------------+--------------+-----------+------------+-----------+---------------+---------------------+-------------------+-------------+-----------------------+------------------+------------+--------------+---------------+-----------------+---------------------+--------------------+--------------+------------------+-----------+-----------+-------------+------------+---------+---------+----------+----------------------+---------------------+------+------------+
+10 rows in set (4.35 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+-- плохой запрос - вынимаем все столбцы.;
+
+
+times: 1
+query: SELECT SearchPhrase FROM hits_10m WHERE SearchPhrase != '' ORDER BY EventTime LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 83
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT SearchPhrase FROM hits_10m WHERE SearchPhrase != '' ORDER BY EventTime LIMIT 10;
++--------------------------------------------------------------------+
++--------------------------------------------------------------------+
++--------------------------------------------------------------------+
+10 rows in set (0.41 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT SearchPhrase FROM hits_10m WHERE SearchPhrase != '' ORDER BY EventTime LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 84
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT SearchPhrase FROM hits_10m WHERE SearchPhrase != '' ORDER BY EventTime LIMIT 10;
++--------------------------------------------------------------------+
++--------------------------------------------------------------------+
++--------------------------------------------------------------------+
+10 rows in set (0.41 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT SearchPhrase FROM hits_10m WHERE SearchPhrase != '' ORDER BY EventTime LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 85
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT SearchPhrase FROM hits_10m WHERE SearchPhrase != '' ORDER BY EventTime LIMIT 10;
++--------------------------------------------------------------------+
++--------------------------------------------------------------------+
++--------------------------------------------------------------------+
+10 rows in set (0.41 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+-- большая сортировка.;
+
+
+times: 1
+query: SELECT SearchPhrase FROM hits_10m WHERE SearchPhrase != '' ORDER BY SearchPhrase LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 86
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT SearchPhrase FROM hits_10m WHERE SearchPhrase != '' ORDER BY SearchPhrase LIMIT 10;
++------------------------------------------------------------------------------------------------------------------------------------+
++------------------------------------------------------------------------------------------------------------------------------------+
++------------------------------------------------------------------------------------------------------------------------------------+
+10 rows in set (0.80 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT SearchPhrase FROM hits_10m WHERE SearchPhrase != '' ORDER BY SearchPhrase LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 87
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT SearchPhrase FROM hits_10m WHERE SearchPhrase != '' ORDER BY SearchPhrase LIMIT 10;
++------------------------------------------------------------------------------------------------------------------------------------+
++------------------------------------------------------------------------------------------------------------------------------------+
++------------------------------------------------------------------------------------------------------------------------------------+
+10 rows in set (0.80 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT SearchPhrase FROM hits_10m WHERE SearchPhrase != '' ORDER BY SearchPhrase LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 88
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT SearchPhrase FROM hits_10m WHERE SearchPhrase != '' ORDER BY SearchPhrase LIMIT 10;
++------------------------------------------------------------------------------------------------------------------------------------+
++------------------------------------------------------------------------------------------------------------------------------------+
++------------------------------------------------------------------------------------------------------------------------------------+
+10 rows in set (0.80 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+-- большая сортировка по строкам.;
+
+
+times: 1
+query: SELECT SearchPhrase FROM hits_10m WHERE SearchPhrase != '' ORDER BY EventTime, SearchPhrase LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 89
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT SearchPhrase FROM hits_10m WHERE SearchPhrase != '' ORDER BY EventTime, SearchPhrase LIMIT 10;
++--------------------------------------------------------------------+
++--------------------------------------------------------------------+
++--------------------------------------------------------------------+
+10 rows in set (0.41 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT SearchPhrase FROM hits_10m WHERE SearchPhrase != '' ORDER BY EventTime, SearchPhrase LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 90
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT SearchPhrase FROM hits_10m WHERE SearchPhrase != '' ORDER BY EventTime, SearchPhrase LIMIT 10;
++--------------------------------------------------------------------+
++--------------------------------------------------------------------+
++--------------------------------------------------------------------+
+10 rows in set (0.41 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT SearchPhrase FROM hits_10m WHERE SearchPhrase != '' ORDER BY EventTime, SearchPhrase LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 91
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT SearchPhrase FROM hits_10m WHERE SearchPhrase != '' ORDER BY EventTime, SearchPhrase LIMIT 10;
++--------------------------------------------------------------------+
++--------------------------------------------------------------------+
++--------------------------------------------------------------------+
+10 rows in set (0.40 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+-- большая сортировка по кортежу.;
+
+
+times: 1
+query: SELECT CounterID, avg(length(URL)) AS l, count(*) FROM hits_10m WHERE URL != '' GROUP BY CounterID HAVING count(*) > 100000 ORDER BY l DESC LIMIT 25;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 92
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT CounterID, avg(length(URL)) AS l, count(*) FROM hits_10m WHERE URL != '' GROUP BY CounterID HAVING count(*) > 100000 ORDER BY l DESC LIMIT 25;
++-----------+----------+----------+
++-----------+----------+----------+
++-----------+----------+----------+
+19 rows in set (10.39 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT CounterID, avg(length(URL)) AS l, count(*) FROM hits_10m WHERE URL != '' GROUP BY CounterID HAVING count(*) > 100000 ORDER BY l DESC LIMIT 25;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 93
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT CounterID, avg(length(URL)) AS l, count(*) FROM hits_10m WHERE URL != '' GROUP BY CounterID HAVING count(*) > 100000 ORDER BY l DESC LIMIT 25;
++-----------+----------+----------+
++-----------+----------+----------+
++-----------+----------+----------+
+19 rows in set (10.12 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT CounterID, avg(length(URL)) AS l, count(*) FROM hits_10m WHERE URL != '' GROUP BY CounterID HAVING count(*) > 100000 ORDER BY l DESC LIMIT 25;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 94
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT CounterID, avg(length(URL)) AS l, count(*) FROM hits_10m WHERE URL != '' GROUP BY CounterID HAVING count(*) > 100000 ORDER BY l DESC LIMIT 25;
++-----------+----------+----------+
++-----------+----------+----------+
++-----------+----------+----------+
+19 rows in set (9.88 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+-- считаем средние длины URL для крупных счётчиков.;
+
+
+times: 1
+query: SELECT SUBSTRING(SUBSTRING(Referer, POSITION('//' IN Referer) + 2), 1, GREATEST(0, POSITION('/' IN SUBSTRING(Referer, POSITION('//' IN Referer) + 2)) - 1)) AS k,       avg(length(Referer)) AS l, count(*) AS c, MAX(Referer) FROM hits_10m WHERE Referer != '' GROUP BY k HAVING count(*) > 100000 ORDER BY l DESC LIMIT 25;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 95
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT SUBSTRING(SUBSTRING(Referer, POSITION('//' IN Referer) + 2), 1, GREATEST(0, POSITION('/' IN SUBSTRING(Referer, POSITION('//' IN Referer) + 2)) - 1)) AS k,       a vg(length(Referer)) AS l, count(*) AS c, MAX(Referer) FROM hits_10m WHERE Referer != '' GROUP BY k HAVING count(*) > 100000 ORDER BY l DESC LIMIT 25;
++------------------+----------+---------+--------------------------------------------------------------------------------------------------+
++------------------+----------+---------+--------------------------------------------------------------------------------------------------+
++------------------+----------+---------+--------------------------------------------------------------------------------------------------+
+11 rows in set (2 min 19.25 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT SUBSTRING(SUBSTRING(Referer, POSITION('//' IN Referer) + 2), 1, GREATEST(0, POSITION('/' IN SUBSTRING(Referer, POSITION('//' IN Referer) + 2)) - 1)) AS k,       avg(length(Referer)) AS l, count(*) AS c, MAX(Referer) FROM hits_10m WHERE Referer != '' GROUP BY k HAVING count(*) > 100000 ORDER BY l DESC LIMIT 25;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 96
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT SUBSTRING(SUBSTRING(Referer, POSITION('//' IN Referer) + 2), 1, GREATEST(0, POSITION('/' IN SUBSTRING(Referer, POSITION('//' IN Referer) + 2)) - 1)) AS k,       a vg(length(Referer)) AS l, count(*) AS c, MAX(Referer) FROM hits_10m WHERE Referer != '' GROUP BY k HAVING count(*) > 100000 ORDER BY l DESC LIMIT 25;
++------------------+----------+---------+--------------------------------------------------------------------------------------------------+
++------------------+----------+---------+--------------------------------------------------------------------------------------------------+
++------------------+----------+---------+--------------------------------------------------------------------------------------------------+
+11 rows in set (1 min 19.33 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT SUBSTRING(SUBSTRING(Referer, POSITION('//' IN Referer) + 2), 1, GREATEST(0, POSITION('/' IN SUBSTRING(Referer, POSITION('//' IN Referer) + 2)) - 1)) AS k,       avg(length(Referer)) AS l, count(*) AS c, MAX(Referer) FROM hits_10m WHERE Referer != '' GROUP BY k HAVING count(*) > 100000 ORDER BY l DESC LIMIT 25;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 97
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT SUBSTRING(SUBSTRING(Referer, POSITION('//' IN Referer) + 2), 1, GREATEST(0, POSITION('/' IN SUBSTRING(Referer, POSITION('//' IN Referer) + 2)) - 1)) AS k,       a vg(length(Referer)) AS l, count(*) AS c, MAX(Referer) FROM hits_10m WHERE Referer != '' GROUP BY k HAVING count(*) > 100000 ORDER BY l DESC LIMIT 25;
++------------------+----------+---------+--------------------------------------------------------------------------------------------------+
++------------------+----------+---------+--------------------------------------------------------------------------------------------------+
++------------------+----------+---------+--------------------------------------------------------------------------------------------------+
+11 rows in set (1 min 18.92 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+-- то же самое, но с разбивкой по доменам.;
+
+
+times: 1
+query: SELECT sum(ResolutionWidth), sum(ResolutionWidth + 1), sum(ResolutionWidth + 2), sum(ResolutionWidth + 3), sum(ResolutionWidth + 4), sum(ResolutionWidth + 5), sum(ResolutionWidth + 6), sum(ResolutionWidth + 7), sum(ResolutionWidth + 8), sum(ResolutionWidth + 9), sum(ResolutionWidth + 10), sum(ResolutionWidth + 11), sum(ResolutionWidth + 12), sum(ResolutionWidth + 13), sum(ResolutionWidth + 14), sum(ResolutionWidth + 15), sum(ResolutionWidth + 16), sum(ResolutionWidth + 17), sum(ResolutionWidth + 18), sum(ResolutionWidth + 19), sum(ResolutionWidth + 20), sum(ResolutionWidth + 21), sum(ResolutionWidth + 22), sum(ResolutionWidth + 23), sum(ResolutionWidth + 24), sum(ResolutionWidth + 25), sum(ResolutionWidth + 26), sum(ResolutionWidth + 27), sum(ResolutionWidth + 28), sum(ResolutionWidth + 29), sum(ResolutionWidth + 30), sum(ResolutionWidth + 31), sum(ResolutionWidth + 32), sum(ResolutionWidth + 33), sum(ResolutionWidth + 34), sum(ResolutionWidth + 35), sum(ResolutionWidth + 36), sum(ResolutionWidth + 37), sum(ResolutionWidth + 38), sum(ResolutionWidth + 39), sum(ResolutionWidth + 40), sum(ResolutionWidth + 41), sum(ResolutionWidth + 42), sum(ResolutionWidth + 43), sum(ResolutionWidth + 44), sum(ResolutionWidth + 45), sum(ResolutionWidth + 46), sum(ResolutionWidth + 47), sum(ResolutionWidth + 48), sum(ResolutionWidth + 49), sum(ResolutionWidth + 50), sum(ResolutionWidth + 51), sum(ResolutionWidth + 52), sum(ResolutionWidth + 53), sum(ResolutionWidth + 54), sum(ResolutionWidth + 55), sum(ResolutionWidth + 56), sum(ResolutionWidth + 57), sum(ResolutionWidth + 58), sum(ResolutionWidth + 59), sum(ResolutionWidth + 60), sum(ResolutionWidth + 61), sum(ResolutionWidth + 62), sum(ResolutionWidth + 63), sum(ResolutionWidth + 64), sum(ResolutionWidth + 65), sum(ResolutionWidth + 66), sum(ResolutionWidth + 67), sum(ResolutionWidth + 68), sum(ResolutionWidth + 69), sum(ResolutionWidth + 70), sum(ResolutionWidth + 71), sum(ResolutionWidth + 72), sum(ResolutionWidth + 73), sum(ResolutionWidth + 74), sum(ResolutionWidth + 75), sum(ResolutionWidth + 76), sum(ResolutionWidth + 77), sum(ResolutionWidth + 78), sum(ResolutionWidth + 79), sum(ResolutionWidth + 80), sum(ResolutionWidth + 81), sum(ResolutionWidth + 82), sum(ResolutionWidth + 83), sum(ResolutionWidth + 84), sum(ResolutionWidth + 85), sum(ResolutionWidth + 86), sum(ResolutionWidth + 87), sum(ResolutionWidth + 88), sum(ResolutionWidth + 89) FROM hits_10m;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 98
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT sum(ResolutionWidth), sum(ResolutionWidth + 1), sum(ResolutionWidth + 2), sum(ResolutionWidth + 3), sum(ResolutionWidth + 4), sum(ResolutionWidth + 5), sum(Resolu tionWidth + 6), sum(ResolutionWidth + 7), sum(ResolutionWidth + 8), sum(ResolutionWidth + 9), sum(ResolutionWidth + 10), sum(ResolutionWidth + 11), sum(ResolutionWidth + 12), s um(ResolutionWidth + 13), sum(ResolutionWidth + 14), sum(ResolutionWidth + 15), sum(ResolutionWidth + 16), sum(ResolutionWidth + 17), sum(ResolutionWidth + 18), sum(ResolutionW idth + 19), sum(ResolutionWidth + 20), sum(ResolutionWidth + 21), sum(ResolutionWidth + 22), sum(ResolutionWidth + 23), sum(ResolutionWidth + 24), sum(ResolutionWidth + 25), su m(ResolutionWidth + 26), sum(ResolutionWidth + 27), sum(ResolutionWidth + 28), sum(ResolutionWidth + 29), sum(ResolutionWidth + 30), sum(ResolutionWidth + 31), sum(ResolutionWi dth + 32), sum(ResolutionWidth + 33), sum(ResolutionWidth + 34), sum(ResolutionWidth + 35), sum(ResolutionWidth + 36), sum(ResolutionWidth + 37), sum(ResolutionWidth + 38), sum (ResolutionWidth + 39), sum(ResolutionWidth + 40), sum(ResolutionWidth + 41), sum(ResolutionWidth + 42), sum(ResolutionWidth + 43), sum(ResolutionWidth + 44), sum(ResolutionWid th + 45), sum(ResolutionWidth + 46), sum(ResolutionWidth + 47), sum(ResolutionWidth + 48), sum(ResolutionWidth + 49), sum(ResolutionWidth + 50), sum(ResolutionWidth + 51), sum( ResolutionWidth + 52), sum(ResolutionWidth + 53), sum(ResolutionWidth + 54), sum(ResolutionWidth + 55), sum(ResolutionWidth + 56), sum(ResolutionWidth + 57), sum(ResolutionWidt h + 58), sum(ResolutionWidth + 59), sum(ResolutionWidth + 60), sum(ResolutionWidth + 61), sum(ResolutionWidth + 62), sum(ResolutionWidth + 63), sum(ResolutionWidth + 64), sum(R esolutionWidth + 65), sum(ResolutionWidth + 66), sum(ResolutionWidth + 67), sum(ResolutionWidth + 68), sum(ResolutionWidth + 69), sum(ResolutionWidth + 70), sum(ResolutionWidth  + 71), sum(ResolutionWidth + 72), sum(ResolutionWidth + 73), sum(ResolutionWidth + 74), sum(ResolutionWidth + 75), sum(ResolutionWidth + 76), sum(ResolutionWidth + 77), sum(Re solutionWidth + 78), sum(ResolutionWidth + 79), sum(ResolutionWidth + 80), sum(ResolutionWidth + 81), sum(ResolutionWidth + 82), sum(ResolutionWidth + 83), sum(ResolutionWidth  + 84), sum(ResolutionWidth + 85), sum(ResolutionWidth + 86), sum(ResolutionWidth + 87), sum(ResolutionWidth + 88), sum(ResolutionWidth + 89) FROM hits_10m;
++----------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+
++----------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+
++----------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+
+1 row in set (2 min 25.80 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT sum(ResolutionWidth), sum(ResolutionWidth + 1), sum(ResolutionWidth + 2), sum(ResolutionWidth + 3), sum(ResolutionWidth + 4), sum(ResolutionWidth + 5), sum(ResolutionWidth + 6), sum(ResolutionWidth + 7), sum(ResolutionWidth + 8), sum(ResolutionWidth + 9), sum(ResolutionWidth + 10), sum(ResolutionWidth + 11), sum(ResolutionWidth + 12), sum(ResolutionWidth + 13), sum(ResolutionWidth + 14), sum(ResolutionWidth + 15), sum(ResolutionWidth + 16), sum(ResolutionWidth + 17), sum(ResolutionWidth + 18), sum(ResolutionWidth + 19), sum(ResolutionWidth + 20), sum(ResolutionWidth + 21), sum(ResolutionWidth + 22), sum(ResolutionWidth + 23), sum(ResolutionWidth + 24), sum(ResolutionWidth + 25), sum(ResolutionWidth + 26), sum(ResolutionWidth + 27), sum(ResolutionWidth + 28), sum(ResolutionWidth + 29), sum(ResolutionWidth + 30), sum(ResolutionWidth + 31), sum(ResolutionWidth + 32), sum(ResolutionWidth + 33), sum(ResolutionWidth + 34), sum(ResolutionWidth + 35), sum(ResolutionWidth + 36), sum(ResolutionWidth + 37), sum(ResolutionWidth + 38), sum(ResolutionWidth + 39), sum(ResolutionWidth + 40), sum(ResolutionWidth + 41), sum(ResolutionWidth + 42), sum(ResolutionWidth + 43), sum(ResolutionWidth + 44), sum(ResolutionWidth + 45), sum(ResolutionWidth + 46), sum(ResolutionWidth + 47), sum(ResolutionWidth + 48), sum(ResolutionWidth + 49), sum(ResolutionWidth + 50), sum(ResolutionWidth + 51), sum(ResolutionWidth + 52), sum(ResolutionWidth + 53), sum(ResolutionWidth + 54), sum(ResolutionWidth + 55), sum(ResolutionWidth + 56), sum(ResolutionWidth + 57), sum(ResolutionWidth + 58), sum(ResolutionWidth + 59), sum(ResolutionWidth + 60), sum(ResolutionWidth + 61), sum(ResolutionWidth + 62), sum(ResolutionWidth + 63), sum(ResolutionWidth + 64), sum(ResolutionWidth + 65), sum(ResolutionWidth + 66), sum(ResolutionWidth + 67), sum(ResolutionWidth + 68), sum(ResolutionWidth + 69), sum(ResolutionWidth + 70), sum(ResolutionWidth + 71), sum(ResolutionWidth + 72), sum(ResolutionWidth + 73), sum(ResolutionWidth + 74), sum(ResolutionWidth + 75), sum(ResolutionWidth + 76), sum(ResolutionWidth + 77), sum(ResolutionWidth + 78), sum(ResolutionWidth + 79), sum(ResolutionWidth + 80), sum(ResolutionWidth + 81), sum(ResolutionWidth + 82), sum(ResolutionWidth + 83), sum(ResolutionWidth + 84), sum(ResolutionWidth + 85), sum(ResolutionWidth + 86), sum(ResolutionWidth + 87), sum(ResolutionWidth + 88), sum(ResolutionWidth + 89) FROM hits_10m;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 99
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT sum(ResolutionWidth), sum(ResolutionWidth + 1), sum(ResolutionWidth + 2), sum(ResolutionWidth + 3), sum(ResolutionWidth + 4), sum(ResolutionWidth + 5), sum(Resolu tionWidth + 6), sum(ResolutionWidth + 7), sum(ResolutionWidth + 8), sum(ResolutionWidth + 9), sum(ResolutionWidth + 10), sum(ResolutionWidth + 11), sum(ResolutionWidth + 12), s um(ResolutionWidth + 13), sum(ResolutionWidth + 14), sum(ResolutionWidth + 15), sum(ResolutionWidth + 16), sum(ResolutionWidth + 17), sum(ResolutionWidth + 18), sum(ResolutionW idth + 19), sum(ResolutionWidth + 20), sum(ResolutionWidth + 21), sum(ResolutionWidth + 22), sum(ResolutionWidth + 23), sum(ResolutionWidth + 24), sum(ResolutionWidth + 25), su m(ResolutionWidth + 26), sum(ResolutionWidth + 27), sum(ResolutionWidth + 28), sum(ResolutionWidth + 29), sum(ResolutionWidth + 30), sum(ResolutionWidth + 31), sum(ResolutionWi dth + 32), sum(ResolutionWidth + 33), sum(ResolutionWidth + 34), sum(ResolutionWidth + 35), sum(ResolutionWidth + 36), sum(ResolutionWidth + 37), sum(ResolutionWidth + 38), sum (ResolutionWidth + 39), sum(ResolutionWidth + 40), sum(ResolutionWidth + 41), sum(ResolutionWidth + 42), sum(ResolutionWidth + 43), sum(ResolutionWidth + 44), sum(ResolutionWid th + 45), sum(ResolutionWidth + 46), sum(ResolutionWidth + 47), sum(ResolutionWidth + 48), sum(ResolutionWidth + 49), sum(ResolutionWidth + 50), sum(ResolutionWidth + 51), sum( ResolutionWidth + 52), sum(ResolutionWidth + 53), sum(ResolutionWidth + 54), sum(ResolutionWidth + 55), sum(ResolutionWidth + 56), sum(ResolutionWidth + 57), sum(ResolutionWidt h + 58), sum(ResolutionWidth + 59), sum(ResolutionWidth + 60), sum(ResolutionWidth + 61), sum(ResolutionWidth + 62), sum(ResolutionWidth + 63), sum(ResolutionWidth + 64), sum(R esolutionWidth + 65), sum(ResolutionWidth + 66), sum(ResolutionWidth + 67), sum(ResolutionWidth + 68), sum(ResolutionWidth + 69), sum(ResolutionWidth + 70), sum(ResolutionWidth  + 71), sum(ResolutionWidth + 72), sum(ResolutionWidth + 73), sum(ResolutionWidth + 74), sum(ResolutionWidth + 75), sum(ResolutionWidth + 76), sum(ResolutionWidth + 77), sum(Re solutionWidth + 78), sum(ResolutionWidth + 79), sum(ResolutionWidth + 80), sum(ResolutionWidth + 81), sum(ResolutionWidth + 82), sum(ResolutionWidth + 83), sum(ResolutionWidth  + 84), sum(ResolutionWidth + 85), sum(ResolutionWidth + 86), sum(ResolutionWidth + 87), sum(ResolutionWidth + 88), sum(ResolutionWidth + 89) FROM hits_10m;
++----------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+
++----------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+
++----------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+
+1 row in set (2 min 26.20 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT sum(ResolutionWidth), sum(ResolutionWidth + 1), sum(ResolutionWidth + 2), sum(ResolutionWidth + 3), sum(ResolutionWidth + 4), sum(ResolutionWidth + 5), sum(ResolutionWidth + 6), sum(ResolutionWidth + 7), sum(ResolutionWidth + 8), sum(ResolutionWidth + 9), sum(ResolutionWidth + 10), sum(ResolutionWidth + 11), sum(ResolutionWidth + 12), sum(ResolutionWidth + 13), sum(ResolutionWidth + 14), sum(ResolutionWidth + 15), sum(ResolutionWidth + 16), sum(ResolutionWidth + 17), sum(ResolutionWidth + 18), sum(ResolutionWidth + 19), sum(ResolutionWidth + 20), sum(ResolutionWidth + 21), sum(ResolutionWidth + 22), sum(ResolutionWidth + 23), sum(ResolutionWidth + 24), sum(ResolutionWidth + 25), sum(ResolutionWidth + 26), sum(ResolutionWidth + 27), sum(ResolutionWidth + 28), sum(ResolutionWidth + 29), sum(ResolutionWidth + 30), sum(ResolutionWidth + 31), sum(ResolutionWidth + 32), sum(ResolutionWidth + 33), sum(ResolutionWidth + 34), sum(ResolutionWidth + 35), sum(ResolutionWidth + 36), sum(ResolutionWidth + 37), sum(ResolutionWidth + 38), sum(ResolutionWidth + 39), sum(ResolutionWidth + 40), sum(ResolutionWidth + 41), sum(ResolutionWidth + 42), sum(ResolutionWidth + 43), sum(ResolutionWidth + 44), sum(ResolutionWidth + 45), sum(ResolutionWidth + 46), sum(ResolutionWidth + 47), sum(ResolutionWidth + 48), sum(ResolutionWidth + 49), sum(ResolutionWidth + 50), sum(ResolutionWidth + 51), sum(ResolutionWidth + 52), sum(ResolutionWidth + 53), sum(ResolutionWidth + 54), sum(ResolutionWidth + 55), sum(ResolutionWidth + 56), sum(ResolutionWidth + 57), sum(ResolutionWidth + 58), sum(ResolutionWidth + 59), sum(ResolutionWidth + 60), sum(ResolutionWidth + 61), sum(ResolutionWidth + 62), sum(ResolutionWidth + 63), sum(ResolutionWidth + 64), sum(ResolutionWidth + 65), sum(ResolutionWidth + 66), sum(ResolutionWidth + 67), sum(ResolutionWidth + 68), sum(ResolutionWidth + 69), sum(ResolutionWidth + 70), sum(ResolutionWidth + 71), sum(ResolutionWidth + 72), sum(ResolutionWidth + 73), sum(ResolutionWidth + 74), sum(ResolutionWidth + 75), sum(ResolutionWidth + 76), sum(ResolutionWidth + 77), sum(ResolutionWidth + 78), sum(ResolutionWidth + 79), sum(ResolutionWidth + 80), sum(ResolutionWidth + 81), sum(ResolutionWidth + 82), sum(ResolutionWidth + 83), sum(ResolutionWidth + 84), sum(ResolutionWidth + 85), sum(ResolutionWidth + 86), sum(ResolutionWidth + 87), sum(ResolutionWidth + 88), sum(ResolutionWidth + 89) FROM hits_10m;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 100
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT sum(ResolutionWidth), sum(ResolutionWidth + 1), sum(ResolutionWidth + 2), sum(ResolutionWidth + 3), sum(ResolutionWidth + 4), sum(ResolutionWidth + 5), sum(Resolu tionWidth + 6), sum(ResolutionWidth + 7), sum(ResolutionWidth + 8), sum(ResolutionWidth + 9), sum(ResolutionWidth + 10), sum(ResolutionWidth + 11), sum(ResolutionWidth + 12), s um(ResolutionWidth + 13), sum(ResolutionWidth + 14), sum(ResolutionWidth + 15), sum(ResolutionWidth + 16), sum(ResolutionWidth + 17), sum(ResolutionWidth + 18), sum(ResolutionW idth + 19), sum(ResolutionWidth + 20), sum(ResolutionWidth + 21), sum(ResolutionWidth + 22), sum(ResolutionWidth + 23), sum(ResolutionWidth + 24), sum(ResolutionWidth + 25), su m(ResolutionWidth + 26), sum(ResolutionWidth + 27), sum(ResolutionWidth + 28), sum(ResolutionWidth + 29), sum(ResolutionWidth + 30), sum(ResolutionWidth + 31), sum(ResolutionWi dth + 32), sum(ResolutionWidth + 33), sum(ResolutionWidth + 34), sum(ResolutionWidth + 35), sum(ResolutionWidth + 36), sum(ResolutionWidth + 37), sum(ResolutionWidth + 38), sum (ResolutionWidth + 39), sum(ResolutionWidth + 40), sum(ResolutionWidth + 41), sum(ResolutionWidth + 42), sum(ResolutionWidth + 43), sum(ResolutionWidth + 44), sum(ResolutionWid th + 45), sum(ResolutionWidth + 46), sum(ResolutionWidth + 47), sum(ResolutionWidth + 48), sum(ResolutionWidth + 49), sum(ResolutionWidth + 50), sum(ResolutionWidth + 51), sum( ResolutionWidth + 52), sum(ResolutionWidth + 53), sum(ResolutionWidth + 54), sum(ResolutionWidth + 55), sum(ResolutionWidth + 56), sum(ResolutionWidth + 57), sum(ResolutionWidt h + 58), sum(ResolutionWidth + 59), sum(ResolutionWidth + 60), sum(ResolutionWidth + 61), sum(ResolutionWidth + 62), sum(ResolutionWidth + 63), sum(ResolutionWidth + 64), sum(R esolutionWidth + 65), sum(ResolutionWidth + 66), sum(ResolutionWidth + 67), sum(ResolutionWidth + 68), sum(ResolutionWidth + 69), sum(ResolutionWidth + 70), sum(ResolutionWidth  + 71), sum(ResolutionWidth + 72), sum(ResolutionWidth + 73), sum(ResolutionWidth + 74), sum(ResolutionWidth + 75), sum(ResolutionWidth + 76), sum(ResolutionWidth + 77), sum(Re solutionWidth + 78), sum(ResolutionWidth + 79), sum(ResolutionWidth + 80), sum(ResolutionWidth + 81), sum(ResolutionWidth + 82), sum(ResolutionWidth + 83), sum(ResolutionWidth  + 84), sum(ResolutionWidth + 85), sum(ResolutionWidth + 86), sum(ResolutionWidth + 87), sum(ResolutionWidth + 88), sum(ResolutionWidth + 89) FROM hits_10m;
++----------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+
++----------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+
++----------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+--------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+---------------------------+
+1 row in set (2 min 24.97 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+-- много тупых агрегатных функций.;
+
+
+times: 1
+query: SELECT SearchEngineID, ClientIP, count(*) AS c, sum(Refresh), avg(ResolutionWidth) FROM hits_10m WHERE SearchPhrase != '' GROUP BY SearchEngineID, ClientIP ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 101
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT SearchEngineID, ClientIP, count(*) AS c, sum(Refresh), avg(ResolutionWidth) FROM hits_10m WHERE SearchPhrase != '' GROUP BY SearchEngineID, ClientIP ORDER BY coun t(*) DESC LIMIT 10;
++----------------+------------+-----+--------------+----------------------+
++----------------+------------+-----+--------------+----------------------+
++----------------+------------+-----+--------------+----------------------+
+10 rows in set (3.34 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT SearchEngineID, ClientIP, count(*) AS c, sum(Refresh), avg(ResolutionWidth) FROM hits_10m WHERE SearchPhrase != '' GROUP BY SearchEngineID, ClientIP ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 102
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT SearchEngineID, ClientIP, count(*) AS c, sum(Refresh), avg(ResolutionWidth) FROM hits_10m WHERE SearchPhrase != '' GROUP BY SearchEngineID, ClientIP ORDER BY coun t(*) DESC LIMIT 10;
++----------------+------------+-----+--------------+----------------------+
++----------------+------------+-----+--------------+----------------------+
++----------------+------------+-----+--------------+----------------------+
+10 rows in set (2.02 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT SearchEngineID, ClientIP, count(*) AS c, sum(Refresh), avg(ResolutionWidth) FROM hits_10m WHERE SearchPhrase != '' GROUP BY SearchEngineID, ClientIP ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 103
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT SearchEngineID, ClientIP, count(*) AS c, sum(Refresh), avg(ResolutionWidth) FROM hits_10m WHERE SearchPhrase != '' GROUP BY SearchEngineID, ClientIP ORDER BY coun t(*) DESC LIMIT 10;
++----------------+------------+-----+--------------+----------------------+
++----------------+------------+-----+--------------+----------------------+
++----------------+------------+-----+--------------+----------------------+
+10 rows in set (2.06 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+-- сложная агрегация, для больших таблиц может не хватить оперативки.;
+
+
+times: 1
+query: SELECT WatchID, ClientIP, count(*) AS c, sum(Refresh), avg(ResolutionWidth) FROM hits_10m WHERE SearchPhrase != '' GROUP BY WatchID, ClientIP ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 104
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT WatchID, ClientIP, count(*) AS c, sum(Refresh), avg(ResolutionWidth) FROM hits_10m WHERE SearchPhrase != '' GROUP BY WatchID, ClientIP ORDER BY count(*) DESC LIMI T 10;
++---------------------+------------+---+--------------+----------------------+
++---------------------+------------+---+--------------+----------------------+
++---------------------+------------+---+--------------+----------------------+
+10 rows in set (3.68 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT WatchID, ClientIP, count(*) AS c, sum(Refresh), avg(ResolutionWidth) FROM hits_10m WHERE SearchPhrase != '' GROUP BY WatchID, ClientIP ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 105
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT WatchID, ClientIP, count(*) AS c, sum(Refresh), avg(ResolutionWidth) FROM hits_10m WHERE SearchPhrase != '' GROUP BY WatchID, ClientIP ORDER BY count(*) DESC LIMI T 10;
++---------------------+------------+---+--------------+----------------------+
++---------------------+------------+---+--------------+----------------------+
++---------------------+------------+---+--------------+----------------------+
+10 rows in set (3.05 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT WatchID, ClientIP, count(*) AS c, sum(Refresh), avg(ResolutionWidth) FROM hits_10m WHERE SearchPhrase != '' GROUP BY WatchID, ClientIP ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 106
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT WatchID, ClientIP, count(*) AS c, sum(Refresh), avg(ResolutionWidth) FROM hits_10m WHERE SearchPhrase != '' GROUP BY WatchID, ClientIP ORDER BY count(*) DESC LIMI T 10;
++---------------------+------------+---+--------------+----------------------+
++---------------------+------------+---+--------------+----------------------+
++---------------------+------------+---+--------------+----------------------+
+10 rows in set (3.02 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+-- агрегация по двум полям, которая ничего не агрегирует. Для больших таблиц выполнить не получится.;
+
+
+times: 1
+query: SELECT WatchID, ClientIP, count(*) AS c, sum(Refresh), avg(ResolutionWidth) FROM hits_10m GROUP BY WatchID, ClientIP ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 107
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT WatchID, ClientIP, count(*) AS c, sum(Refresh), avg(ResolutionWidth) FROM hits_10m GROUP BY WatchID, ClientIP ORDER BY count(*) DESC LIMIT 10;
++---------------------+------------+---+--------------+----------------------+
++---------------------+------------+---+--------------+----------------------+
++---------------------+------------+---+--------------+----------------------+
+10 rows in set (14.76 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT WatchID, ClientIP, count(*) AS c, sum(Refresh), avg(ResolutionWidth) FROM hits_10m GROUP BY WatchID, ClientIP ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 108
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT WatchID, ClientIP, count(*) AS c, sum(Refresh), avg(ResolutionWidth) FROM hits_10m GROUP BY WatchID, ClientIP ORDER BY count(*) DESC LIMIT 10;
++---------------------+------------+---+--------------+----------------------+
++---------------------+------------+---+--------------+----------------------+
++---------------------+------------+---+--------------+----------------------+
+10 rows in set (14.82 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT WatchID, ClientIP, count(*) AS c, sum(Refresh), avg(ResolutionWidth) FROM hits_10m GROUP BY WatchID, ClientIP ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 109
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT WatchID, ClientIP, count(*) AS c, sum(Refresh), avg(ResolutionWidth) FROM hits_10m GROUP BY WatchID, ClientIP ORDER BY count(*) DESC LIMIT 10;
++---------------------+------------+---+--------------+----------------------+
++---------------------+------------+---+--------------+----------------------+
++---------------------+------------+---+--------------+----------------------+
+10 rows in set (14.76 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+-- то же самое, но ещё и без фильтрации.;
+
+
+times: 1
+query: SELECT URL, count(*) FROM hits_10m GROUP BY URL ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 110
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT URL, count(*) FROM hits_10m GROUP BY URL ORDER BY count(*) DESC LIMIT 10;
++--------------------------------------------------------------+----------+
++--------------------------------------------------------------+----------+
++--------------------------------------------------------------+----------+
+10 rows in set (1 min 17.49 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT URL, count(*) FROM hits_10m GROUP BY URL ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 111
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT URL, count(*) FROM hits_10m GROUP BY URL ORDER BY count(*) DESC LIMIT 10;
++--------------------------------------------------------------+----------+
++--------------------------------------------------------------+----------+
++--------------------------------------------------------------+----------+
+10 rows in set (1 min 31.40 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT URL, count(*) FROM hits_10m GROUP BY URL ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 112
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT URL, count(*) FROM hits_10m GROUP BY URL ORDER BY count(*) DESC LIMIT 10;
++--------------------------------------------------------------+----------+
++--------------------------------------------------------------+----------+
++--------------------------------------------------------------+----------+
+10 rows in set (1 min 30.90 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+-- агрегация по URL.;
+
+
+times: 1
+query: SELECT 1, URL, count(*) FROM hits_10m GROUP BY 1, URL ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 113
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT 1, URL, count(*) FROM hits_10m GROUP BY 1, URL ORDER BY count(*) DESC LIMIT 10;
++---+--------------------------------------------------------------+----------+
++---+--------------------------------------------------------------+----------+
++---+--------------------------------------------------------------+----------+
+10 rows in set (1 min 15.37 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT 1, URL, count(*) FROM hits_10m GROUP BY 1, URL ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 114
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT 1, URL, count(*) FROM hits_10m GROUP BY 1, URL ORDER BY count(*) DESC LIMIT 10;
++---+--------------------------------------------------------------+----------+
++---+--------------------------------------------------------------+----------+
++---+--------------------------------------------------------------+----------+
+10 rows in set (1 min 23.55 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT 1, URL, count(*) FROM hits_10m GROUP BY 1, URL ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 115
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT 1, URL, count(*) FROM hits_10m GROUP BY 1, URL ORDER BY count(*) DESC LIMIT 10;
++---+--------------------------------------------------------------+----------+
++---+--------------------------------------------------------------+----------+
++---+--------------------------------------------------------------+----------+
+10 rows in set (1 min 3.55 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+-- агрегация по URL и числу.;
+
+
+times: 1
+query: SELECT ClientIP, ClientIP - 1, ClientIP - 2, ClientIP - 3, count(*) FROM hits_10m GROUP BY ClientIP, ClientIP - 1, ClientIP - 2, ClientIP - 3 ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 116
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT ClientIP, ClientIP - 1, ClientIP - 2, ClientIP - 3, count(*) FROM hits_10m GROUP BY ClientIP, ClientIP - 1, ClientIP - 2, ClientIP - 3 ORDER BY count(*) DESC LIMI T 10;
++------------+--------------+--------------+--------------+----------+
++------------+--------------+--------------+--------------+----------+
++------------+--------------+--------------+--------------+----------+
+10 rows in set (10.80 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT ClientIP, ClientIP - 1, ClientIP - 2, ClientIP - 3, count(*) FROM hits_10m GROUP BY ClientIP, ClientIP - 1, ClientIP - 2, ClientIP - 3 ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 117
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT ClientIP, ClientIP - 1, ClientIP - 2, ClientIP - 3, count(*) FROM hits_10m GROUP BY ClientIP, ClientIP - 1, ClientIP - 2, ClientIP - 3 ORDER BY count(*) DESC LIMI T 10;
++------------+--------------+--------------+--------------+----------+
++------------+--------------+--------------+--------------+----------+
++------------+--------------+--------------+--------------+----------+
+10 rows in set (10.52 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT ClientIP, ClientIP - 1, ClientIP - 2, ClientIP - 3, count(*) FROM hits_10m GROUP BY ClientIP, ClientIP - 1, ClientIP - 2, ClientIP - 3 ORDER BY count(*) DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 118
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT ClientIP, ClientIP - 1, ClientIP - 2, ClientIP - 3, count(*) FROM hits_10m GROUP BY ClientIP, ClientIP - 1, ClientIP - 2, ClientIP - 3 ORDER BY count(*) DESC LIMI T 10;
++------------+--------------+--------------+--------------+----------+
++------------+--------------+--------------+--------------+----------+
++------------+--------------+--------------+--------------+----------+
+10 rows in set (10.67 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 1
+query:  
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 119
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql>  
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query:  
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 120
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql>  
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query:  
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 121
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql>  
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 1
+query: SELECT URL,     count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDate <= DATE('2013-07-31') AND NOT DontCountHits AND NOT Refresh AND URL != '' GROUP BY URL ORDER BY PageViews DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 122
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT URL,     count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDate <= DATE('2013-07-31') AND NOT DontCountHits AN D NOT Refresh AND URL != '' GROUP BY URL ORDER BY PageViews DESC LIMIT 10;
++---------------------------------------------------------------------------------+-----------+
++---------------------------------------------------------------------------------+-----------+
++---------------------------------------------------------------------------------+-----------+
+10 rows in set (23.77 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT URL,     count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDate <= DATE('2013-07-31') AND NOT DontCountHits AND NOT Refresh AND URL != '' GROUP BY URL ORDER BY PageViews DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 123
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT URL,     count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDate <= DATE('2013-07-31') AND NOT DontCountHits AN D NOT Refresh AND URL != '' GROUP BY URL ORDER BY PageViews DESC LIMIT 10;
++---------------------------------------------------------------------------------+-----------+
++---------------------------------------------------------------------------------+-----------+
++---------------------------------------------------------------------------------+-----------+
+10 rows in set (9.47 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT URL,     count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDate <= DATE('2013-07-31') AND NOT DontCountHits AND NOT Refresh AND URL != '' GROUP BY URL ORDER BY PageViews DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 124
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT URL,     count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDate <= DATE('2013-07-31') AND NOT DontCountHits AN D NOT Refresh AND URL != '' GROUP BY URL ORDER BY PageViews DESC LIMIT 10;
++---------------------------------------------------------------------------------+-----------+
++---------------------------------------------------------------------------------+-----------+
++---------------------------------------------------------------------------------+-----------+
+10 rows in set (9.30 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 1
+query: SELECT Title, count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDate <= DATE('2013-07-31') AND NOT DontCountHits AND NOT Refresh AND Title != '' GROUP BY Title ORDER BY PageViews DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 125
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT Title, count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDate <= DATE('2013-07-31') AND NOT DontCountHits AND  NOT Refresh AND Title != '' GROUP BY Title ORDER BY PageViews DESC LIMIT 10;
++---------------------------------------------------------------------------------------+-----------+
++---------------------------------------------------------------------------------------+-----------+
++---------------------------------------------------------------------------------------+-----------+
+10 rows in set (50.21 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT Title, count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDate <= DATE('2013-07-31') AND NOT DontCountHits AND NOT Refresh AND Title != '' GROUP BY Title ORDER BY PageViews DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 126
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT Title, count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDate <= DATE('2013-07-31') AND NOT DontCountHits AND  NOT Refresh AND Title != '' GROUP BY Title ORDER BY PageViews DESC LIMIT 10;
++---------------------------------------------------------------------------------------+-----------+
++---------------------------------------------------------------------------------------+-----------+
++---------------------------------------------------------------------------------------+-----------+
+10 rows in set (3.37 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT Title, count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDate <= DATE('2013-07-31') AND NOT DontCountHits AND NOT Refresh AND Title != '' GROUP BY Title ORDER BY PageViews DESC LIMIT 10;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 127
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT Title, count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDate <= DATE('2013-07-31') AND NOT DontCountHits AND  NOT Refresh AND Title != '' GROUP BY Title ORDER BY PageViews DESC LIMIT 10;
++---------------------------------------------------------------------------------------+-----------+
++---------------------------------------------------------------------------------------+-----------+
++---------------------------------------------------------------------------------------+-----------+
+10 rows in set (3.36 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 1
+query: SELECT URL, count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDate <= DATE('2013-07-31') AND NOT Refresh AND IsLink AND NOT IsDownload GROUP BY URL ORDER BY PageViews DESC LIMIT 1000;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 128
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT URL, count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDate <= DATE('2013-07-31') AND NOT Refresh AND IsLink A ND NOT IsDownload GROUP BY URL ORDER BY PageViews DESC LIMIT 1000;
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------+
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------+
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------+
+1000 rows in set (1.26 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT URL, count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDate <= DATE('2013-07-31') AND NOT Refresh AND IsLink AND NOT IsDownload GROUP BY URL ORDER BY PageViews DESC LIMIT 1000;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 129
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT URL, count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDate <= DATE('2013-07-31') AND NOT Refresh AND IsLink A ND NOT IsDownload GROUP BY URL ORDER BY PageViews DESC LIMIT 1000;
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------+
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------+
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------+
+1000 rows in set (0.77 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT URL, count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDate <= DATE('2013-07-31') AND NOT Refresh AND IsLink AND NOT IsDownload GROUP BY URL ORDER BY PageViews DESC LIMIT 1000;
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 130
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT URL, count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDate <= DATE('2013-07-31') AND NOT Refresh AND IsLink A ND NOT IsDownload GROUP BY URL ORDER BY PageViews DESC LIMIT 1000;
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------+
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------+
++-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------+
+1000 rows in set (0.76 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 1
+query: SELECT TraficSourceID, SearchEngineID, AdvEngineID, CASE WHEN SearchEngineID = 0 AND AdvEngineID = 0 THEN  Referer ELSE '' END AS Src, URL AS Dst, count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDate <= DATE('2013-07-31') AND NOT Refresh GROUP BY TraficSourceID, SearchEngineID, AdvEngineID, Src, Dst ORDER BY PageViews DESC LIMIT 1000; 
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 131
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT TraficSourceID, SearchEngineID, AdvEngineID, CASE WHEN SearchEngineID = 0 AND AdvEngineID = 0 THEN  Referer ELSE '' END AS Src, URL AS Dst, count(*) AS PageViews  FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDate <= DATE('2013-07-31') AND NOT Refresh GROUP BY TraficSourceID, SearchEngineID, AdvEngineID,  Src, Dst ORDER BY PageViews DESC LIMIT 1000; 
++----------------+----------------+-------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------+
++----------------+----------------+-------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------+
++----------------+----------------+-------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------+
+1000 rows in set (1 min 38.25 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT TraficSourceID, SearchEngineID, AdvEngineID, CASE WHEN SearchEngineID = 0 AND AdvEngineID = 0 THEN  Referer ELSE '' END AS Src, URL AS Dst, count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDate <= DATE('2013-07-31') AND NOT Refresh GROUP BY TraficSourceID, SearchEngineID, AdvEngineID, Src, Dst ORDER BY PageViews DESC LIMIT 1000; 
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 132
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT TraficSourceID, SearchEngineID, AdvEngineID, CASE WHEN SearchEngineID = 0 AND AdvEngineID = 0 THEN  Referer ELSE '' END AS Src, URL AS Dst, count(*) AS PageViews  FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDate <= DATE('2013-07-31') AND NOT Refresh GROUP BY TraficSourceID, SearchEngineID, AdvEngineID,  Src, Dst ORDER BY PageViews DESC LIMIT 1000; 
++----------------+----------------+-------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------+
++----------------+----------------+-------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------+
++----------------+----------------+-------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------+
+1000 rows in set (1 min 44.60 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT TraficSourceID, SearchEngineID, AdvEngineID, CASE WHEN SearchEngineID = 0 AND AdvEngineID = 0 THEN  Referer ELSE '' END AS Src, URL AS Dst, count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDate <= DATE('2013-07-31') AND NOT Refresh GROUP BY TraficSourceID, SearchEngineID, AdvEngineID, Src, Dst ORDER BY PageViews DESC LIMIT 1000; 
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 133
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT TraficSourceID, SearchEngineID, AdvEngineID, CASE WHEN SearchEngineID = 0 AND AdvEngineID = 0 THEN  Referer ELSE '' END AS Src, URL AS Dst, count(*) AS PageViews  FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDate <= DATE('2013-07-31') AND NOT Refresh GROUP BY TraficSourceID, SearchEngineID, AdvEngineID,  Src, Dst ORDER BY PageViews DESC LIMIT 1000; 
++----------------+----------------+-------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------+
++----------------+----------------+-------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------+
++----------------+----------------+-------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------+
+1000 rows in set (1 min 34.29 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 1
+query: SELECT URLHash, EventDate, count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDate <= DATE('2013-07-31') AND NOT Refresh AND TraficSourceID IN (-1, 6) AND RefererHash =  6202628419148573758  GROUP BY URLHash, EventDate ORDER BY PageViews DESC LIMIT 100000; 
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 134
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT URLHash, EventDate, count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDate <= DATE('2013-07-31') AND NOT Refre sh AND TraficSourceID IN (-1, 6) AND RefererHash =  6202628419148573758  GROUP BY URLHash, EventDate ORDER BY PageViews DESC LIMIT 100000; 
+Empty set (2.04 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT URLHash, EventDate, count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDate <= DATE('2013-07-31') AND NOT Refresh AND TraficSourceID IN (-1, 6) AND RefererHash =  6202628419148573758  GROUP BY URLHash, EventDate ORDER BY PageViews DESC LIMIT 100000; 
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 135
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT URLHash, EventDate, count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDate <= DATE('2013-07-31') AND NOT Refre sh AND TraficSourceID IN (-1, 6) AND RefererHash =  6202628419148573758  GROUP BY URLHash, EventDate ORDER BY PageViews DESC LIMIT 100000; 
+Empty set (0.47 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT URLHash, EventDate, count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDate <= DATE('2013-07-31') AND NOT Refresh AND TraficSourceID IN (-1, 6) AND RefererHash =  6202628419148573758  GROUP BY URLHash, EventDate ORDER BY PageViews DESC LIMIT 100000; 
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 136
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT URLHash, EventDate, count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDate <= DATE('2013-07-31') AND NOT Refre sh AND TraficSourceID IN (-1, 6) AND RefererHash =  6202628419148573758  GROUP BY URLHash, EventDate ORDER BY PageViews DESC LIMIT 100000; 
+Empty set (0.54 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 1
+query: SELECT WindowClientWidth, WindowClientHeight, count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDate <= DATE('2013-07-31') AND NOT Refresh AND NOT DontCountHits AND URLHash =  6202628419148573758 GROUP BY WindowClientWidth, WindowClientHeight ORDER BY PageViews DESC LIMIT 10000; 
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 137
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT WindowClientWidth, WindowClientHeight, count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDate <= DATE('2013-07 -31') AND NOT Refresh AND NOT DontCountHits AND URLHash =  6202628419148573758 GROUP BY WindowClientWidth, WindowClientHeight ORDER BY PageViews DESC LIMIT 10000; 
+Empty set (1.36 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT WindowClientWidth, WindowClientHeight, count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDate <= DATE('2013-07-31') AND NOT Refresh AND NOT DontCountHits AND URLHash =  6202628419148573758 GROUP BY WindowClientWidth, WindowClientHeight ORDER BY PageViews DESC LIMIT 10000; 
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 138
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT WindowClientWidth, WindowClientHeight, count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDate <= DATE('2013-07 -31') AND NOT Refresh AND NOT DontCountHits AND URLHash =  6202628419148573758 GROUP BY WindowClientWidth, WindowClientHeight ORDER BY PageViews DESC LIMIT 10000; 
+Empty set (0.42 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT WindowClientWidth, WindowClientHeight, count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDate <= DATE('2013-07-31') AND NOT Refresh AND NOT DontCountHits AND URLHash =  6202628419148573758 GROUP BY WindowClientWidth, WindowClientHeight ORDER BY PageViews DESC LIMIT 10000; 
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 139
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT WindowClientWidth, WindowClientHeight, count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDate <= DATE('2013-07 -31') AND NOT Refresh AND NOT DontCountHits AND URLHash =  6202628419148573758 GROUP BY WindowClientWidth, WindowClientHeight ORDER BY PageViews DESC LIMIT 10000; 
+Empty set (0.41 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 1
+query: SELECT EventTime - INTERVAL SECOND(EventTime) SECOND AS Minute, count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDate <= DATE('2013-07-02') AND NOT Refresh AND NOT DontCountHits GROUP BY Minute ORDER BY Minute; 
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 140
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT EventTime - INTERVAL SECOND(EventTime) SECOND AS Minute, count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDat e <= DATE('2013-07-02') AND NOT Refresh AND NOT DontCountHits GROUP BY Minute ORDER BY Minute; 
++---------------------+-----------+
++---------------------+-----------+
++---------------------+-----------+
+652 rows in set (4.58 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 2
+query: SELECT EventTime - INTERVAL SECOND(EventTime) SECOND AS Minute, count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDate <= DATE('2013-07-02') AND NOT Refresh AND NOT DontCountHits GROUP BY Minute ORDER BY Minute; 
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 141
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT EventTime - INTERVAL SECOND(EventTime) SECOND AS Minute, count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDat e <= DATE('2013-07-02') AND NOT Refresh AND NOT DontCountHits GROUP BY Minute ORDER BY Minute; 
++---------------------+-----------+
++---------------------+-----------+
++---------------------+-----------+
+652 rows in set (4.01 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+
+times: 3
+query: SELECT EventTime - INTERVAL SECOND(EventTime) SECOND AS Minute, count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDate <= DATE('2013-07-02') AND NOT Refresh AND NOT DontCountHits GROUP BY Minute ORDER BY Minute; 
+spawn mysql-ib -u root -D hits
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 142
+Server version: 5.1.40 build number (revision)=IB_4.0.7_r16961_17249(ice) (static)
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SELECT EventTime - INTERVAL SECOND(EventTime) SECOND AS Minute, count(*) AS PageViews FROM hits_10m WHERE CounterID = 34 AND EventDate >= DATE('2013-07-01') AND EventDat e <= DATE('2013-07-02') AND NOT Refresh AND NOT DontCountHits GROUP BY Minute ORDER BY Minute; 
++---------------------+-----------+
++---------------------+-----------+
++---------------------+-----------+
+652 rows in set (3.98 sec)
+
+mysql> quit
+Bye
+ * MySQL running (21735)
+stop time: Вт. сент.  3 16:34:22 MSK 2013

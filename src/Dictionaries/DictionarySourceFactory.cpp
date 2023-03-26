@@ -6,7 +6,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Poco/Logger.h>
-#include <Common/logger_useful.h>
+#include <base/logger_useful.h>
 #include "DictionaryStructure.h"
 
 namespace DB

@@ -12,9 +12,9 @@ using FunctionAtan = FunctionMathUnary<UnaryFunctionVectorized<AtanName, atan>>;
 
 }
 
-REGISTER_FUNCTION(Atan)
+void registerFunctionAtan(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionAtan>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionAtan>(FunctionFactory::CaseInsensitive);
 }
 
 }

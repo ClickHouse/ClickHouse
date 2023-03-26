@@ -1,4 +1,4 @@
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if defined(__ELF__) && !defined(__FreeBSD__)
 
 #include <Common/Dwarf.h>
 #include <Columns/ColumnString.h>
@@ -58,7 +58,7 @@ protected:
 
 }
 
-REGISTER_FUNCTION(AddressToLine)
+void registerFunctionAddressToLine(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionAddressToLine>();
 }

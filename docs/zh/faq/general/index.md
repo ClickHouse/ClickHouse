@@ -1,9 +1,8 @@
 ---
-slug: /zh/faq/general/
 title: ClickHouse 有关常见问题
 toc_hidden_folder: true
-sidebar_position: 1
-sidebar_label: General
+toc_priority: 1
+toc_title: General
 ---
 
 # ClickHouse 有关常见问题 {#general-questions}
@@ -21,7 +20,8 @@ sidebar_label: General
 -   [我如何为 ClickHouse贡献代码?](../../faq/general/how-do-i-contribute-code-to-clickhouse.md)
 
 
+
 !!! info "没找到您需要的内容?"
     请查阅 [其他 F.A.Q. 类别](../../faq/index.md) 或者从左侧导航栏浏览其他文档
-
+    
 {## [原始文档](https://clickhouse.com/docs/en/faq/general/) ##}

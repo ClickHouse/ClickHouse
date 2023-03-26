@@ -42,9 +42,9 @@ DATA_DIR=$CUR_DIR/data_parquet
 for NAME in $(find "$DATA_DIR"/*.parquet -print0 | xargs -0 -n 1 basename | LC_ALL=C sort); do
     JSON=$DATA_DIR/$NAME.json
     COLUMNS_FILE=$DATA_DIR/$NAME.columns
-
+    
     ([ -z "$PARQUET_READER" ] || [ ! -s "$PARQUET_READER" ]) && [ ! -s "$COLUMNS_FILE" ] && continue
-
+    
     echo === Try load data from "$NAME"
 
     # If you want change or add .parquet file - rm data_parquet/*.json data_parquet/*.columns

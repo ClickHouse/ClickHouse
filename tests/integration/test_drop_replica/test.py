@@ -2,6 +2,7 @@ import time
 
 import pytest
 from helpers.cluster import ClickHouseCluster
+from helpers.network import PartitionManager
 
 
 def fill_nodes(nodes, shard):

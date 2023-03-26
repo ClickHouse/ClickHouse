@@ -9,7 +9,6 @@ CREATE TABLE test.visits_null
     UserID UInt64
 ) ENGINE = Null;
 
-set allow_deprecated_syntax_for_merge_tree=1;
 CREATE MATERIALIZED VIEW test.basic
 ENGINE = AggregatingMergeTree(StartDate, (CounterID, StartDate), 8192)
 AS SELECT

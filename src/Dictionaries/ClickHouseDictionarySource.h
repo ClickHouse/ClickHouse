@@ -23,7 +23,6 @@ public:
         const std::string host;
         const std::string user;
         const std::string password;
-        const std::string quota_key;
         const std::string db;
         const std::string table;
         const std::string query;
@@ -46,13 +45,15 @@ public:
     ClickHouseDictionarySource(const ClickHouseDictionarySource & other);
     ClickHouseDictionarySource & operator=(const ClickHouseDictionarySource &) = delete;
 
-    QueryPipeline loadAll() override;
+    Pipe loadAllWithSizeHint(std::atomic<size_t> * result_size_hint) override;
 
-    QueryPipeline loadUpdatedAll() override;
+    Pipe loadAll() override;
 
-    QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
+    Pipe loadUpdatedAll() override;
 
-    QueryPipeline loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    Pipe loadIds(const std::vector<UInt64> & ids) override;
+
+    Pipe loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     bool isModified() const override;
     bool supportsSelectiveLoad() const override { return true; }
@@ -70,7 +71,7 @@ public:
 private:
     std::string getUpdateFieldAndDate();
 
-    QueryPipeline createStreamForQuery(const String & query);
+    Pipe createStreamForQuery(const String & query, std::atomic<size_t> * result_size_hint = nullptr);
 
     std::string doInvalidateQuery(const std::string & request) const;
 
@@ -84,10 +85,6 @@ private:
     ConnectionPoolWithFailoverPtr pool;
     const std::string load_all_query;
     Poco::Logger * log = &Poco::Logger::get("ClickHouseDictionarySource");
-
-    /// RegExpTreeDictionary is the only dictionary whose structure of attributions differ from the input block.
-    /// For now we need to modify sample_block in the ctor of RegExpTreeDictionary.
-    friend class RegExpTreeDictionary;
 };
 
 }

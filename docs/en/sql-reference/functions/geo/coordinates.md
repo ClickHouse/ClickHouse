@@ -1,11 +1,12 @@
 ---
-slug: /en/sql-reference/functions/geo/coordinates
-sidebar_label: Geographical Coordinates
-sidebar_position: 62
-title: "Functions for Working with Geographical Coordinates"
+toc_title: Geographical Coordinates
+toc_priority: 62
 ---
 
-## greatCircleDistance
+
+# Functions for Working with Geographical Coordinates {#geographical-coordinates}
+
+## greatCircleDistance {#greatcircledistance}
 
 Calculates the distance between two points on the Earth’s surface using [the great-circle formula](https://en.wikipedia.org/wiki/Great-circle_distance).
 
@@ -31,13 +32,13 @@ Generates an exception when the input parameter values fall outside of the range
 **Example**
 
 ``` sql
-SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673) AS greatCircleDistance
+SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673)
 ```
 
 ``` text
-┌─greatCircleDistance─┐
-│            14128352 │
-└─────────────────────┘
+┌─greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673)─┐
+│                                                14132374.194975413 │
+└───────────────────────────────────────────────────────────────────┘
 ```
 
 ## geoDistance
@@ -47,38 +48,7 @@ The performance is the same as for `greatCircleDistance` (no performance drawbac
 
 Technical note: for close enough points we calculate the distance using planar approximation with the metric on the tangent plane at the midpoint of the coordinates.
 
-``` sql
-geoDistance(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
-```
-
-**Input parameters**
-
--   `lon1Deg` — Longitude of the first point in degrees. Range: `[-180°, 180°]`.
--   `lat1Deg` — Latitude of the first point in degrees. Range: `[-90°, 90°]`.
--   `lon2Deg` — Longitude of the second point in degrees. Range: `[-180°, 180°]`.
--   `lat2Deg` — Latitude of the second point in degrees. Range: `[-90°, 90°]`.
-
-Positive values correspond to North latitude and East longitude, and negative values correspond to South latitude and West longitude.
-
-**Returned value**
-
-The distance between two points on the Earth’s surface, in meters.
-
-Generates an exception when the input parameter values fall outside of the range.
-
-**Example**
-
-``` sql
-SELECT geoDistance(38.8976, -77.0366, 39.9496, -75.1503) AS geoDistance
-```
-
-``` text
-┌─geoDistance─┐
-│   212458.73 │
-└─────────────┘
-```
-
-## greatCircleAngle
+## greatCircleAngle {#greatcircleangle}
 
 Calculates the central angle between two points on the Earth’s surface using [the great-circle formula](https://en.wikipedia.org/wiki/Great-circle_distance).
 
@@ -109,7 +79,7 @@ SELECT greatCircleAngle(0, 0, 45, 0) AS arc
 └─────┘
 ```
 
-## pointInEllipses
+## pointInEllipses {#pointinellipses}
 
 Checks whether the point belongs to at least one of the ellipses.
 Coordinates are geometric in the Cartesian coordinate system.
@@ -142,7 +112,7 @@ SELECT pointInEllipses(10., 10., 10., 9.1, 1., 0.9999)
 └─────────────────────────────────────────────────┘
 ```
 
-## pointInPolygon
+## pointInPolygon {#pointinpolygon}
 
 Checks whether the point belongs to the polygon on the plane.
 
@@ -172,3 +142,6 @@ SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2)]) AS res
 │   1 │
 └─────┘
 ```
+
+
+[Original article](https://clickhouse.com/docs/en/sql-reference/functions/geo/coordinates) <!--hide-->

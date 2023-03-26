@@ -56,7 +56,7 @@ public:
 
 }
 
-REGISTER_FUNCTION(DefaultValueOfArgumentType)
+void registerFunctionDefaultValueOfArgumentType(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionDefaultValueOfArgumentType>();
 }

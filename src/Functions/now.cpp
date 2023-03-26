@@ -3,10 +3,11 @@
 #include <Functions/IFunction.h>
 #include <Core/DecimalFunctions.h>
 #include <Functions/FunctionFactory.h>
+#include <Core/Field.h>
 
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 
-#include <ctime>
+#include <time.h>
 
 
 namespace DB
@@ -62,15 +63,9 @@ public:
         return std::make_unique<ExecutableFunctionNow>(time_value);
     }
 
-    bool isDeterministic() const override
-    {
-        return false;
-    }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override
-    {
-        return false;
-    }
+    bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
 private:
     time_t time_value;
@@ -96,12 +91,12 @@ public:
     {
         if (arguments.size() > 1)
         {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Arguments size of function {} should be 0 or 1", getName());
+            throw Exception("Arguments size of function " + getName() + " should be 0 or 1", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         }
         if (arguments.size() == 1 && !isStringOrFixedString(arguments[0].type))
         {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments of function {} should be String or FixedString",
-                getName());
+            throw Exception(
+                "Arguments of function " + getName() + " should be String or FixedString", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
         if (arguments.size() == 1)
         {
@@ -114,12 +109,12 @@ public:
     {
         if (arguments.size() > 1)
         {
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Arguments size of function {} should be 0 or 1", getName());
+            throw Exception("Arguments size of function " + getName() + " should be 0 or 1", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         }
         if (arguments.size() == 1 && !isStringOrFixedString(arguments[0].type))
         {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments of function {} should be String or FixedString",
-                getName());
+            throw Exception(
+                "Arguments of function " + getName() + " should be String or FixedString", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
         if (arguments.size() == 1)
             return std::make_unique<FunctionBaseNow>(
@@ -132,9 +127,9 @@ public:
 
 }
 
-REGISTER_FUNCTION(Now)
+void registerFunctionNow(FunctionFactory & factory)
 {
-    factory.registerFunction<NowOverloadResolver>({}, FunctionFactory::CaseInsensitive);
+    factory.registerFunction<NowOverloadResolver>(FunctionFactory::CaseInsensitive);
 }
 
 }

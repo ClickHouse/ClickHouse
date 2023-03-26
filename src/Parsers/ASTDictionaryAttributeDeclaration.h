@@ -20,8 +20,6 @@ public:
     ASTPtr expression;
     /// Is attribute mirrored to the parent identifier
     bool hierarchical;
-    /// Is hierarchical attribute bidirectional
-    bool bidirectional;
     /// Flag that shows whether the id->attribute image is injective
     bool injective;
     /// MongoDB object ID

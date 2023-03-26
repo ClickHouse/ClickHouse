@@ -6,12 +6,6 @@ from helpers.test_tools import TSV
 from helpers.network import _NetworkManager
 
 
-# This is a workaround for a problem with logging in pytest [1].
-#
-#   [1]: https://github.com/pytest-dev/pytest/issues/5502
-logging.raiseExceptions = False
-
-
 @pytest.fixture(autouse=True, scope="session")
 def cleanup_environment():
     try:

@@ -3,7 +3,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Common/Volnitsky.h>
 #include <Functions/IFunction.h>
@@ -13,7 +12,7 @@
 
 
 /** Functions for retrieving "visit parameters".
- * Visit parameters in Metrica web analytics system are a special kind of JSONs.
+ * Visit parameters in Yandex.Metrika are a special kind of JSONs.
  * These functions are applicable to almost any JSONs.
  * Implemented via templates from FunctionsStringSearch.h.
  *
@@ -84,29 +83,23 @@ struct ExtractParamImpl
     static constexpr bool supports_start_pos = false;
     static constexpr auto name = Name::name;
 
-    static ColumnNumbers getArgumentsThatAreAlwaysConstant() { return {1, 2};}
-
     /// It is assumed that `res` is the correct size and initialized with zeros.
     static void vectorConstant(
-        const ColumnString::Chars & haystack_data,
-        const ColumnString::Offsets & haystack_offsets,
+        const ColumnString::Chars & data,
+        const ColumnString::Offsets & offsets,
         std::string needle,
         const ColumnPtr & start_pos,
-        PaddedPODArray<ResultType> & res,
-        [[maybe_unused]] ColumnUInt8 * res_null)
+        PaddedPODArray<ResultType> & res)
     {
-        /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
-        assert(!res_null);
-
         if (start_pos != nullptr)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function '{}' doesn't support start_pos argument", name);
 
         /// We are looking for a parameter simply as a substring of the form "name"
         needle = "\"" + needle + "\":";
 
-        const UInt8 * const begin = haystack_data.data();
-        const UInt8 * const end = haystack_data.data() + haystack_data.size();
+        const UInt8 * begin = data.data();
         const UInt8 * pos = begin;
+        const UInt8 * end = pos + data.size();
 
         /// The current index in the string array.
         size_t i = 0;
@@ -117,19 +110,19 @@ struct ExtractParamImpl
         while (pos < end && end != (pos = searcher.search(pos, end - pos)))
         {
             /// Let's determine which index it belongs to.
-            while (begin + haystack_offsets[i] <= pos)
+            while (begin + offsets[i] <= pos)
             {
                 res[i] = 0;
                 ++i;
             }
 
             /// We check that the entry does not pass through the boundaries of strings.
-            if (pos + needle.size() < begin + haystack_offsets[i])
-                res[i] = ParamExtractor::extract(pos + needle.size(), begin + haystack_offsets[i] - 1);  /// don't include terminating zero
+            if (pos + needle.size() < begin + offsets[i])
+                res[i] = ParamExtractor::extract(pos + needle.size(), begin + offsets[i] - 1);  /// don't include terminating zero
             else
                 res[i] = 0;
 
-            pos = begin + haystack_offsets[i];
+            pos = begin + offsets[i];
             ++i;
         }
 
@@ -152,12 +145,6 @@ struct ExtractParamImpl
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support FixedString haystack argument", name);
     }
-
-    template <typename... Args>
-    static void vectorFixedVector(Args &&...)
-    {
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support FixedString haystack argument", name);
-    }
 };
 
 
@@ -166,20 +153,20 @@ struct ExtractParamImpl
 template <typename ParamExtractor>
 struct ExtractParamToStringImpl
 {
-    static void vector(const ColumnString::Chars & haystack_data, const ColumnString::Offsets & haystack_offsets,
+    static void vector(const ColumnString::Chars & data, const ColumnString::Offsets & offsets,
                        std::string needle,
                        ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets)
     {
         /// Constant 5 is taken from a function that performs a similar task FunctionsStringSearch.h::ExtractImpl
-        res_data.reserve(haystack_data.size() / 5);
-        res_offsets.resize(haystack_offsets.size());
+        res_data.reserve(data.size() / 5);
+        res_offsets.resize(offsets.size());
 
         /// We are looking for a parameter simply as a substring of the form "name"
         needle = "\"" + needle + "\":";
 
-        const UInt8 * const begin = haystack_data.data();
-        const UInt8 * const end = haystack_data.data() + haystack_data.size();
+        const UInt8 * begin = data.data();
         const UInt8 * pos = begin;
+        const UInt8 * end = pos + data.size();
 
         /// The current index in the string array.
         size_t i = 0;
@@ -190,7 +177,7 @@ struct ExtractParamToStringImpl
         while (pos < end && end != (pos = searcher.search(pos, end - pos)))
         {
             /// Determine which index it belongs to.
-            while (begin + haystack_offsets[i] <= pos)
+            while (begin + offsets[i] <= pos)
             {
                 res_data.push_back(0);
                 res_offsets[i] = res_data.size();
@@ -198,10 +185,10 @@ struct ExtractParamToStringImpl
             }
 
             /// We check that the entry does not pass through the boundaries of strings.
-            if (pos + needle.size() < begin + haystack_offsets[i])
-                ParamExtractor::extract(pos + needle.size(), begin + haystack_offsets[i], res_data);
+            if (pos + needle.size() < begin + offsets[i])
+                ParamExtractor::extract(pos + needle.size(), begin + offsets[i], res_data);
 
-            pos = begin + haystack_offsets[i];
+            pos = begin + offsets[i];
 
             res_data.push_back(0);
             res_offsets[i] = res_data.size();

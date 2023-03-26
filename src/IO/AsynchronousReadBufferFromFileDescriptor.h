@@ -16,8 +16,8 @@ namespace DB
 class AsynchronousReadBufferFromFileDescriptor : public ReadBufferFromFileBase
 {
 protected:
-    IAsynchronousReader & reader;
-    int64_t base_priority;
+    AsynchronousReaderPtr reader;
+    Int32 priority;
 
     Memory<> prefetch_buffer;
     std::future<IAsynchronousReader::Result> prefetch_future;
@@ -36,7 +36,7 @@ protected:
 
 public:
     AsynchronousReadBufferFromFileDescriptor(
-        IAsynchronousReader & reader_,
+        AsynchronousReaderPtr reader_,
         Int32 priority_,
         int fd_,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
@@ -46,7 +46,7 @@ public:
 
     ~AsynchronousReadBufferFromFileDescriptor() override;
 
-    void prefetch(int64_t priority) override;
+    void prefetch() override;
 
     int getFD() const
     {
@@ -64,10 +64,9 @@ public:
     /// Seek to the beginning, discarding already read data if any. Useful to reread file that changes on every read.
     void rewind();
 
-    size_t getFileSize() override;
-
 private:
-    std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size, int64_t priority);
+    std::future<IAsynchronousReader::Result> readInto(char * data, size_t size);
 };
 
 }
+

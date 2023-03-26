@@ -57,10 +57,10 @@ q2_01297	local directory	[]	[5259492]	0	['r1_01297','u1_01297']	[]
 q3_01297	local directory	['client_key','user_name']	[5259492,15778476]	0	[]	[]
 q4_01297	local directory	[]	[604800]	1	[]	['u1_01297']
 -- system.quota_limits
-q2_01297	5259492	0	100	\N	\N	11	1000	10000	1001	10001	2.5	\N
-q3_01297	5259492	0	\N	\N	\N	\N	1002	\N	\N	\N	\N	\N
-q3_01297	15778476	0	100	\N	\N	11	\N	\N	\N	\N	\N	\N
-q4_01297	604800	0	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
+q2_01297	5259492	0	100	\N	\N	11	1000	10000	1001	10001	2.5
+q3_01297	5259492	0	\N	\N	\N	\N	1002	\N	\N	\N	\N
+q3_01297	15778476	0	100	\N	\N	11	\N	\N	\N	\N	\N
+q4_01297	604800	0	\N	\N	\N	\N	\N	\N	\N	\N	\N
 -- query_selects query_inserts
 CREATE QUOTA q1_01297 KEYED BY user_name FOR INTERVAL 1 minute MAX query_selects = 1 TO r1_01297
 CREATE QUOTA q2_01297 KEYED BY user_name FOR INTERVAL 1 minute MAX query_inserts = 1 TO r1_01297
