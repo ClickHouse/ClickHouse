@@ -141,10 +141,11 @@ void CacheMetadata::doCleanup()
 
         auto key_metadata = it->second;
         auto key_lock = key_metadata->lock();
-        /// As in lockKeyMetadata we extract key metadata from cache metadata
-        /// under CacheMetadataGuard::Lock, but take KeyGuard::Lock only after we
-        /// released cache CacheMetadataGuard::Lock, then we must to take into
-        /// account it here.
+        /// As in lockKeyMetadata we extract key metadata from cache metadata under
+        /// CacheMetadataGuard::Lock, but take KeyGuard::Lock only after we released
+        /// cache CacheMetadataGuard::Lock (because CacheMetadataGuard::Lock must be lightweight).
+        /// So it is possible that a key which was submitted to cleanup queue was afterwards added
+        /// to cache, so here we need to check this case.
         if (key_metadata->getCleanupState(key_lock) == KeyMetadata::CleanupState::NOT_SUBMITTED)
             continue;
 

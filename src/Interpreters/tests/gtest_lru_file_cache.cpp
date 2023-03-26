@@ -189,36 +189,23 @@ TEST_F(FileCacheTest, get)
         std::cerr << "Step 1\n";
 
         auto cache = FileCache(cache_base_path, settings);
-        std::cerr << "Step 1\n";
         cache.initialize();
-        std::cerr << "Step 1\n";
         auto key = cache.createKeyForPath("key1");
-        std::cerr << "Step 1\n";
 
         {
-            std::cerr << "Step 1\n";
             auto holder = cache.getOrSet(key, 0, 10, {});  /// Add range [0, 9]
-            std::cerr << "Step 1\n";
             assertEqual(holder, { Range(0, 9) }, { State::EMPTY });
-            std::cerr << "Step 1\n";
             download(holder->front());
-            std::cerr << "Step 1\n";
             assertEqual(holder, { Range(0, 9) }, { State::DOWNLOADED });
-            std::cerr << "Step 1\n";
         }
 
         /// Current cache:    [__________]
         ///                   ^          ^
         ///                   0          9
-        std::cerr << "Step 1\n";
         assertEqual(cache.getSnapshot(key), { Range(0, 9) });
-        std::cerr << "Step 1\n";
         assertEqual(cache.dumpQueue(), { Range(0, 9) });
-        std::cerr << "Step 1\n";
         ASSERT_EQ(cache.getFileSegmentsNum(), 1);
-        std::cerr << "Step 1\n";
         ASSERT_EQ(cache.getUsedCacheSize(), 10);
-        std::cerr << "Step 1\n";
 
         std::cerr << "Step 2\n";
 
