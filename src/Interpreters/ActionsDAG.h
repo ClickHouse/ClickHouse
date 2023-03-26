@@ -1,6 +1,5 @@
 #pragma once
 
-#include <utility>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Names.h>
@@ -18,12 +17,10 @@ class IExecutableFunction;
 using ExecutableFunctionPtr = std::shared_ptr<IExecutableFunction>;
 
 class IFunctionBase;
-using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
+using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 
 class IFunctionOverloadResolver;
 using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
-
-class FunctionNode;
 
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
@@ -77,6 +74,7 @@ public:
         std::string result_name;
         DataTypePtr result_type;
 
+        FunctionOverloadResolverPtr function_builder;
         /// Can be used to get function signature or properties like monotonicity.
         FunctionBasePtr function_base;
         /// Prepared function which is used in function execution.
@@ -141,15 +139,6 @@ public:
             const FunctionOverloadResolverPtr & function,
             NodeRawConstPtrs children,
             std::string result_name);
-    const Node & addFunction(
-        const FunctionNode & function,
-        NodeRawConstPtrs children,
-        std::string result_name);
-    const Node & addFunction(
-        const FunctionBasePtr & function_base,
-        NodeRawConstPtrs children,
-        std::string result_name);
-    const Node & addCast(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name);
 
     /// Find first column by name in output nodes. This search is linear.
     const Node & findInOutputs(const std::string & name) const;
@@ -221,28 +210,6 @@ public:
         const String & predicate_column_name = {},
         bool add_missing_keys = true);
 
-    /// Get an ActionsDAG where:
-    /// * Subtrees from new_inputs are converted to inputs with specified names.
-    /// * Outputs are taken from required_outputs.
-    /// Here want to substitute some expressions to columns from projection.
-    /// This function expects that all required_outputs can be calculated from nodes in new_inputs.
-    /// If not, exception will happen.
-    /// This function also expects that new_inputs and required_outputs are valid nodes from the same DAG.
-    /// Example:
-    /// DAG:                   new_inputs:                   Result DAG
-    /// a      b               c * d -> "(a + b) * d"
-    /// \     /                e     -> ""
-    ///  a + b
-    ///     \                  required_outputs:         =>  "(a + b) * d"    e
-    ///   c (alias)   d        c * d - e                              \      /
-    ///       \      /                                               c * d - e
-    ///        c * d       e
-    ///            \      /
-    ///            c * d - e
-    static ActionsDAGPtr foldActionsByProjection(
-        const std::unordered_map<const Node *, std::string> & new_inputs,
-        const NodeRawConstPtrs & required_outputs);
-
     /// Reorder the output nodes using given position mapping.
     void reorderAggregationKeysForProjection(const std::unordered_map<std::string_view, size_t> & key_names_pos_map);
 
@@ -253,7 +220,6 @@ public:
     bool hasStatefulFunctions() const;
     bool trivial() const; /// If actions has no functions or array join.
     void assertDeterministic() const; /// Throw if not isDeterministic.
-    bool hasNonDeterministic() const;
 
 #if USE_EMBEDDED_COMPILER
     void compileExpressions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
@@ -312,9 +278,6 @@ public:
     /// So that pointers to nodes are kept valid.
     void mergeInplace(ActionsDAG && second);
 
-    /// Merge current nodes with specified dag nodes
-    void mergeNodes(ActionsDAG && second);
-
     using SplitResult = std::pair<ActionsDAGPtr, ActionsDAGPtr>;
 
     /// Split ActionsDAG into two DAGs, where first part contains all nodes from split_nodes and their children.
@@ -369,31 +332,18 @@ public:
       * Additionally during dag construction if node has name that exists in node_name_to_input_column map argument
       * in final dag this node is represented as INPUT node with specified column.
       *
-      * If single_output_condition_node = true, result dag has single output node:
+      * Result dag has only single output node:
       * 1. If there is single filter node, result dag output will contain this node.
       * 2. If there are multiple filter nodes, result dag output will contain single `and` function node
       * and children of this node will be filter nodes.
-      *
-      * If single_output_condition_node = false, result dag has multiple output nodes.
       */
     static ActionsDAGPtr buildFilterActionsDAG(
         const NodeRawConstPtrs & filter_nodes,
         const std::unordered_map<std::string, ColumnWithTypeAndName> & node_name_to_input_node_column,
-        const ContextPtr & context,
-        bool single_output_condition_node = true);
+        const ContextPtr & context);
 
 private:
-    NodeRawConstPtrs getParents(const Node * target) const;
-
     Node & addNode(Node node);
-
-    const Node & addFunctionImpl(
-        const FunctionBasePtr & function_base,
-        NodeRawConstPtrs children,
-        ColumnsWithTypeAndName arguments,
-        std::string result_name,
-        DataTypePtr result_type,
-        bool all_const);
 
 #if USE_EMBEDDED_COMPILER
     void compileFunctions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});

@@ -21,24 +21,21 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Poco/String.h>
-#include <filesystem>
+#include <Poco/String.h> /// toLower
 
-namespace fs = std::filesystem;
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
-    extern const int DEADLOCK_AVOIDED;
-    extern const int INCOMPATIBLE_TYPE_OF_JOIN;
-    extern const int LOGICAL_ERROR;
-    extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int NOT_IMPLEMENTED;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int LOGICAL_ERROR;
     extern const int UNSUPPORTED_JOIN_KEYS;
+    extern const int NO_SUCH_COLUMN_IN_TABLE;
+    extern const int INCOMPATIBLE_TYPE_OF_JOIN;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int BAD_ARGUMENTS;
 }
 
 StorageJoin::StorageJoin(
@@ -66,7 +63,7 @@ StorageJoin::StorageJoin(
     auto metadata_snapshot = getInMemoryMetadataPtr();
     for (const auto & key : key_names)
         if (!metadata_snapshot->getColumns().hasPhysical(key))
-            throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Key column ({}) does not exist in table declaration.", key);
+            throw Exception{"Key column (" + key + ") does not exist in table declaration.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE};
 
     table_join = std::make_shared<TableJoin>(limits, use_nulls, kind, strictness, key_names);
     join = std::make_shared<HashJoin>(table_join, getRightSampleBlock(), overwrite);
@@ -81,14 +78,6 @@ RWLockImpl::LockHolder StorageJoin::tryLockTimedWithContext(const RWLock & lock,
     return tryLockTimed(lock, type, query_id, acquire_timeout);
 }
 
-RWLockImpl::LockHolder StorageJoin::tryLockForCurrentQueryTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context)
-{
-    const String query_id = context ? context->getInitialQueryId() : RWLockImpl::NO_QUERY;
-    const std::chrono::milliseconds acquire_timeout
-        = context ? context->getSettingsRef().lock_acquire_timeout : std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC);
-    return lock->getLock(type, query_id, acquire_timeout, false);
-}
-
 SinkToStoragePtr StorageJoin::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
     std::lock_guard mutate_lock(mutate_mutex);
@@ -100,13 +89,9 @@ void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPt
     std::lock_guard mutate_lock(mutate_mutex);
     TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, context);
 
-    if (disk->exists(path))
-        disk->removeRecursive(path);
-    else
-        LOG_INFO(&Poco::Logger::get("StorageJoin"), "Path {} is already removed from disk {}", path, disk->getName());
-
+    disk->removeRecursive(path);
     disk->createDirectories(path);
-    disk->createDirectories(fs::path(path) / "tmp/");
+    disk->createDirectories(path + "tmp/");
 
     increment = 0;
     join = std::make_shared<HashJoin>(table_join, getRightSampleBlock(), overwrite);
@@ -116,7 +101,7 @@ void StorageJoin::checkMutationIsPossible(const MutationCommands & commands, con
 {
     for (const auto & command : commands)
         if (command.type != MutationCommand::DELETE)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine Join supports only DELETE mutations");
+            throw Exception("Table engine Join supports only DELETE mutations", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
@@ -190,8 +175,7 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
             getStorageID().getNameForLogs());
 
     if (analyzed_join->getClauses().size() != 1)
-        throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN, "JOIN keys should match to the Join engine keys [{}]",
-                        fmt::join(getKeyNames(), ", "));
+        throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN, "JOIN keys should match to the Join engine keys [{}]", fmt::join(getKeyNames(), ", "));
 
     const auto & join_on = analyzed_join->getOnlyClause();
     if (join_on.on_filter_condition_left || join_on.on_filter_condition_right)
@@ -245,17 +229,11 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
     return join_clone;
 }
 
+
 void StorageJoin::insertBlock(const Block & block, ContextPtr context)
 {
-    Block block_to_insert = block;
-    convertRightBlock(block_to_insert);
-    TableLockHolder holder = tryLockForCurrentQueryTimedWithContext(rwlock, RWLockImpl::Write, context);
-
-    /// Protection from `INSERT INTO test_table_join SELECT * FROM test_table_join`
-    if (!holder)
-        throw Exception(ErrorCodes::DEADLOCK_AVOIDED, "StorageJoin: cannot insert data because current query tries to read from this storage");
-
-    join->addJoinedBlock(block_to_insert, true);
+    TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, context);
+    join->addJoinedBlock(block, true);
 }
 
 size_t StorageJoin::getSize(ContextPtr context) const
@@ -285,16 +263,6 @@ ColumnWithTypeAndName StorageJoin::joinGet(const Block & block, const Block & bl
 {
     TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, context);
     return join->joinGet(block, block_with_columns_to_add);
-}
-
-void StorageJoin::convertRightBlock(Block & block) const
-{
-    bool need_covert = use_nulls && isLeftOrFull(kind);
-    if (!need_covert)
-        return;
-
-    for (auto & col : block)
-        JoinCommon::convertColumnToNullable(col);
 }
 
 void registerStorageJoin(StorageFactory & factory)
@@ -339,16 +307,16 @@ void registerStorageJoin(StorageFactory & factory)
                     persistent = setting.value.get<bool>();
                 }
                 else
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown setting {} for storage {}", setting.name, args.engine_name);
+                    throw Exception("Unknown setting " + setting.name + " for storage " + args.engine_name, ErrorCodes::BAD_ARGUMENTS);
             }
         }
 
         DiskPtr disk = args.getContext()->getDisk(disk_name);
 
         if (engine_args.size() < 3)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Storage Join requires at least 3 parameters: "
-                            "Join(ANY|ALL|SEMI|ANTI, LEFT|INNER|RIGHT, keys...).");
+            throw Exception(
+                "Storage Join requires at least 3 parameters: Join(ANY|ALL|SEMI|ANTI, LEFT|INNER|RIGHT, keys...).",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         JoinStrictness strictness = JoinStrictness::Unspecified;
         JoinKind kind = JoinKind::Comma;
@@ -373,7 +341,8 @@ void registerStorageJoin(StorageFactory & factory)
         }
 
         if (strictness == JoinStrictness::Unspecified)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "First parameter of storage Join must be ANY or ALL or SEMI or ANTI (without quotes).");
+            throw Exception("First parameter of storage Join must be ANY or ALL or SEMI or ANTI (without quotes).",
+                            ErrorCodes::BAD_ARGUMENTS);
 
         if (auto opt_kind_id = tryGetIdentifierName(engine_args[1]))
         {
@@ -394,7 +363,8 @@ void registerStorageJoin(StorageFactory & factory)
         }
 
         if (kind == JoinKind::Comma)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second parameter of storage Join must be LEFT or INNER or RIGHT or FULL (without quotes).");
+            throw Exception("Second parameter of storage Join must be LEFT or INNER or RIGHT or FULL (without quotes).",
+                            ErrorCodes::BAD_ARGUMENTS);
 
         Names key_names;
         key_names.reserve(engine_args.size() - 2);
@@ -402,7 +372,7 @@ void registerStorageJoin(StorageFactory & factory)
         {
             auto opt_key = tryGetIdentifierName(engine_args[i]);
             if (!opt_key)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter №{} of storage Join don't look like column name.", i + 1);
+                throw Exception("Parameter №" + toString(i + 1) + " of storage Join don't look like column name.", ErrorCodes::BAD_ARGUMENTS);
 
             key_names.push_back(*opt_key);
         }
@@ -495,7 +465,7 @@ protected:
         Chunk chunk;
         if (!joinDispatch(join->kind, join->strictness, join->data->maps.front(),
                 [&](auto kind, auto strictness, auto & map) { chunk = createChunk<kind, strictness>(map); }))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: unknown JOIN strictness");
+            throw Exception("Logical error: unknown JOIN strictness", ErrorCodes::LOGICAL_ERROR);
         return chunk;
     }
 
@@ -530,8 +500,8 @@ private:
 #undef M
 
             default:
-                throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys in StorageJoin. Type: {}",
-                                static_cast<UInt32>(join->data->type));
+                throw Exception("Unsupported JOIN keys in StorageJoin. Type: " + toString(static_cast<UInt32>(join->data->type)),
+                                ErrorCodes::UNSUPPORTED_JOIN_KEYS);
         }
 
         if (!rows_added)
@@ -567,7 +537,7 @@ private:
 
         if (!position)
             position = decltype(position)(
-                static_cast<void *>(new typename Map::const_iterator(map.begin())),
+                static_cast<void *>(new typename Map::const_iterator(map.begin())), //-V572
                 [](void * ptr) { delete reinterpret_cast<typename Map::const_iterator *>(ptr); });
 
         auto & it = *reinterpret_cast<typename Map::const_iterator *>(position.get());
@@ -605,7 +575,7 @@ private:
                     fillAll<Map>(columns, column_indices, it, key_pos, rows_added);
             }
             else
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This JOIN is not implemented yet");
+                throw Exception("This JOIN is not implemented yet", ErrorCodes::NOT_IMPLEMENTED);
 
             if (rows_added >= max_block_size)
             {

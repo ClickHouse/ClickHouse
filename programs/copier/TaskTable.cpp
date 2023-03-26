@@ -102,7 +102,7 @@ TaskTable::TaskTable(TaskCluster & parent, const Poco::Util::AbstractConfigurati
             for (const String &key : keys)
             {
                 if (!startsWith(key, "partition"))
-                    throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown key {} in {}", key, enabled_partitions_prefix);
+                    throw Exception("Unknown key " + key + " in " + enabled_partitions_prefix, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
 
                 enabled_partitions.emplace_back(config.getString(enabled_partitions_prefix + "." + key));
             }
@@ -213,7 +213,8 @@ ClusterPartition & TaskTable::getClusterPartition(const String & partition_name)
 {
     auto it = cluster_partitions.find(partition_name);
     if (it == cluster_partitions.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "There are no cluster partition {} in {}", partition_name, table_id);
+        throw Exception("There are no cluster partition " + partition_name + " in " + table_id,
+                        ErrorCodes::LOGICAL_ERROR);
     return it->second;
 }
 

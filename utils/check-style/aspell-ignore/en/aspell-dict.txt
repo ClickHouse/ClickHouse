@@ -1,4 +1,4 @@
-personal_ws-1.1 en 543
+personal_ws-1.1 en 484
 AArch
 ACLs
 AMQP
@@ -22,11 +22,8 @@ CSVWithNamesAndTypes
 CamelCase
 CapnProto
 CentOS
-ClickableSquare
 ClickHouse
 ClickHouse's
-CodeBlock
-CodeLLDB
 Config
 ConnectionDetails
 Contrib
@@ -36,7 +33,6 @@ CustomSeparatedWithNames
 CustomSeparatedWithNamesAndTypes
 DBMSs
 DateTime
-DateTimes
 DockerHub
 Doxygen
 Encodings
@@ -54,12 +50,10 @@ HDDs
 Heredoc
 Homebrew
 Homebrew's
-HorizontalDivide
 Hostname
 IPv
 IntN
 Integrations
-JSONAsObject
 JSONAsString
 JSONColumns
 JSONColumnsWithMetadata
@@ -84,12 +78,10 @@ Jemalloc
 Jepsen
 KDevelop
 LGPL
-LLDB
 LOCALTIME
 LOCALTIMESTAMP
 LibFuzzer
 LineAsString
-LinksDeployment
 LowCardinality
 MEMTABLE
 MSan
@@ -108,11 +100,8 @@ NULLIF
 NVME
 NYPD
 NuRaft
-OLAP
-OLTP
 ObjectId
 Ok
-OpenSSL
 OpenSUSE
 OpenStack
 OpenTelemetry
@@ -133,10 +122,7 @@ PrettySpaceNoEscapes
 PrettySpaceNoEscapesMonoBlock
 Protobuf
 ProtobufSingle
-QEMU
 QTCreator
-QueryCacheHits
-QueryCacheMisses
 RBAC
 RawBLOB
 RedHat
@@ -159,7 +145,6 @@ Submodules
 Subqueries
 TSVRaw
 TSan
-TabItem
 TabSeparated
 TabSeparatedRaw
 TabSeparatedRawWithNames
@@ -172,7 +157,6 @@ Testflows
 Tgz
 Toolset
 Tradeoff
-TwoColumnList
 UBSan
 UInt
 UIntN
@@ -182,18 +166,14 @@ Updatable
 Util
 Valgrind
 Vectorized
-VideoContainer
-ViewAllLink
 VirtualBox
 Werror
-WithNamesAndTypes
 Woboq
 WriteBuffer
 WriteBuffers
 XCode
 YAML
 YYYY
-Yasm
 Zipkin
 ZooKeeper
 ZooKeeper's
@@ -208,7 +188,6 @@ autostart
 avro
 avx
 aws
-backend
 backoff
 backticks
 benchmarking
@@ -268,7 +247,6 @@ datafiles
 dataset
 datasets
 datetime
-datetimes
 dbms
 ddl
 deallocation
@@ -318,7 +296,6 @@ instantiation
 integrational
 integrations
 interserver
-invariants
 jdbc
 jemalloc
 json
@@ -343,7 +320,6 @@ jsonstringseachrowwithprogress
 kafka
 kafkacat
 konsole
-laion
 latencies
 lexicographically
 libFuzzer
@@ -368,7 +344,6 @@ linearizability
 linearizable
 lineasstring
 linefeeds
-lineorder
 linux
 llvm
 localhost
@@ -384,9 +359,7 @@ mutex
 mysql
 mysqldump
 mysqljs
-natively
 noop
-nullability
 nullable
 num
 obfuscator
@@ -457,7 +430,6 @@ rowbinary
 rowbinarywithnames
 rowbinarywithnamesandtypes
 rsync
-runnable
 runningAccumulate
 runtime
 russian
@@ -510,15 +482,12 @@ th
 tmp
 tokenization
 toml
-toolchain
 toolset
-transactionally
 tskv
 tsv
 tui
 turbostat
 txt
-ubuntu
 uint
 unary
 unencrypted
@@ -544,7 +513,6 @@ xcode
 xml
 xz
 zLib
-zLinux
 zkcopy
 zlib
 znodes

@@ -18,6 +18,7 @@
 #include <sys/stat.h>
 
 #include <Disks/DiskFactory.h>
+#include <Disks/DiskRestartProxy.h>
 #include <Common/randomSeed.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromTemporaryFile.h>
@@ -61,16 +62,17 @@ static void loadDiskLocalConfig(const String & name,
     if (name == "default")
     {
         if (!path.empty())
-            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
-                "\"default\" disk path should be provided in <path> not it <storage_configuration>");
+            throw Exception(
+                "\"default\" disk path should be provided in <path> not it <storage_configuration>",
+                ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
         path = context->getPath();
     }
     else
     {
         if (path.empty())
-            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Disk path can not be empty. Disk {}", name);
+            throw Exception("Disk path can not be empty. Disk " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
         if (path.back() != '/')
-            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Disk path must end with /. Disk {}", name);
+            throw Exception("Disk path must end with /. Disk " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
         if (path == context->getPath())
             throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Disk path ('{}') cannot be equal to <path>. Use <default> disk instead.", path);
     }
@@ -78,8 +80,9 @@ static void loadDiskLocalConfig(const String & name,
     bool has_space_ratio = config.has(config_prefix + ".keep_free_space_ratio");
 
     if (config.has(config_prefix + ".keep_free_space_bytes") && has_space_ratio)
-        throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG,
-                        "Only one of 'keep_free_space_bytes' and 'keep_free_space_ratio' can be specified");
+        throw Exception(
+            "Only one of 'keep_free_space_bytes' and 'keep_free_space_ratio' can be specified",
+            ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
     keep_free_space_bytes = config.getUInt64(config_prefix + ".keep_free_space_bytes", 0);
 
@@ -87,7 +90,7 @@ static void loadDiskLocalConfig(const String & name,
     {
         auto ratio = config.getDouble(config_prefix + ".keep_free_space_ratio");
         if (ratio < 0 || ratio > 1)
-            throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "'keep_free_space_ratio' have to be between 0 and 1");
+            throw Exception("'keep_free_space_ratio' have to be between 0 and 1", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
         String tmp_path = path;
         if (tmp_path.empty())
             tmp_path = context->getPath();
@@ -129,7 +132,7 @@ public:
     DiskPtr getDisk(size_t i) const override
     {
         if (i != 0)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't use i != 0 with single disk reservation. It's a bug");
+            throw Exception("Can't use i != 0 with single disk reservation. It's a bug", ErrorCodes::LOGICAL_ERROR);
         return disk;
     }
 
@@ -489,7 +492,7 @@ void DiskLocal::applyNewSettings(const Poco::Util::AbstractConfiguration & confi
     loadDiskLocalConfig(name, config, config_prefix, context, new_disk_path, new_keep_free_space_bytes);
 
     if (disk_path != new_disk_path)
-        throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Disk path can't be updated from config {}", name);
+        throw Exception("Disk path can't be updated from config " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
 
     if (keep_free_space_bytes != new_keep_free_space_bytes)
         keep_free_space_bytes = new_keep_free_space_bytes;
@@ -703,7 +706,7 @@ void DiskLocal::setup()
     }
 
     if (disk_checker_magic_number == -1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "disk_checker_magic_number is not initialized. It's a bug");
+        throw Exception("disk_checker_magic_number is not initialized. It's a bug", ErrorCodes::LOGICAL_ERROR);
 }
 
 void DiskLocal::startupImpl(ContextPtr)
@@ -772,7 +775,7 @@ void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check)
         std::shared_ptr<IDisk> disk
             = std::make_shared<DiskLocal>(name, path, keep_free_space_bytes, context, config.getUInt("local_disk_check_period_ms", 0));
         disk->startup(context, skip_access_check);
-        return disk;
+        return std::make_shared<DiskRestartProxy>(disk);
     };
     factory.registerDiskType("local", creator);
 }

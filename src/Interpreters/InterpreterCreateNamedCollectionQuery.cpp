@@ -4,7 +4,7 @@
 #include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
-#include <Common/NamedCollections/NamedCollectionUtils.h>
+#include <Storages/NamedCollectionUtils.h>
 
 
 namespace DB
@@ -13,9 +13,9 @@ namespace DB
 BlockIO InterpreterCreateNamedCollectionQuery::execute()
 {
     auto current_context = getContext();
-    const auto & query = query_ptr->as<const ASTCreateNamedCollectionQuery &>();
+    current_context->checkAccess(AccessType::CREATE_NAMED_COLLECTION);
 
-    current_context->checkAccess(AccessType::CREATE_NAMED_COLLECTION, query.collection_name);
+    const auto & query = query_ptr->as<const ASTCreateNamedCollectionQuery &>();
 
     if (!query.cluster.empty())
     {

@@ -8,8 +8,6 @@
 #include <base/sort.h>
 #include <base/types.h>
 
-#define QUANTILE_EXACT_MAX_ARRAY_SIZE 1'000'000'000
-
 
 namespace DB
 {
@@ -19,7 +17,6 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
-    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 
@@ -41,7 +38,7 @@ struct QuantileExactBase
     template <typename Weight>
     void add(const Value &, const Weight &)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method add with weight is not implemented for QuantileExact");
+        throw Exception("Method add with weight is not implemented for QuantileExact", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     void merge(const QuantileExactBase & rhs) { array.insert(rhs.array.begin(), rhs.array.end()); }
@@ -57,8 +54,6 @@ struct QuantileExactBase
     {
         size_t size = 0;
         readVarUInt(size, buf);
-        if (unlikely(size > QUANTILE_EXACT_MAX_ARRAY_SIZE))
-            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size");
         array.resize(size);
         buf.readStrict(reinterpret_cast<char *>(array.data()), size * sizeof(array[0]));
     }
@@ -138,15 +133,15 @@ struct QuantileExactExclusive : public QuantileExact<Value>
         if (!array.empty())
         {
             if (level == 0. || level == 1.)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "QuantileExactExclusive cannot interpolate for the percentiles 1 and 0");
+                throw Exception("QuantileExactExclusive cannot interpolate for the percentiles 1 and 0", ErrorCodes::BAD_ARGUMENTS);
 
             Float64 h = level * (array.size() + 1);
             auto n = static_cast<size_t>(h);
 
             if (n >= array.size())
-                return static_cast<Float64>(*std::max_element(array.begin(), array.end()));
+                return static_cast<Float64>(array[array.size() - 1]);
             else if (n < 1)
-                return static_cast<Float64>(*std::min_element(array.begin(), array.end()));
+                return static_cast<Float64>(array[0]);
 
             ::nth_element(array.begin(), array.begin() + n - 1, array.end());
             auto nth_elem = std::min_element(array.begin() + n, array.end());
@@ -166,15 +161,15 @@ struct QuantileExactExclusive : public QuantileExact<Value>
             {
                 auto level = levels[indices[i]];
                 if (level == 0. || level == 1.)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "QuantileExactExclusive cannot interpolate for the percentiles 1 and 0");
+                    throw Exception("QuantileExactExclusive cannot interpolate for the percentiles 1 and 0", ErrorCodes::BAD_ARGUMENTS);
 
                 Float64 h = level * (array.size() + 1);
                 auto n = static_cast<size_t>(h);
 
                 if (n >= array.size())
-                    result[indices[i]] = static_cast<Float64>(*std::max_element(array.begin(), array.end()));
+                    result[indices[i]] = static_cast<Float64>(array[array.size() - 1]);
                 else if (n < 1)
-                    result[indices[i]] = static_cast<Float64>(*std::min_element(array.begin(), array.end()));
+                    result[indices[i]] = static_cast<Float64>(array[0]);
                 else
                 {
                     ::nth_element(array.begin() + prev_n, array.begin() + n - 1, array.end());
@@ -209,9 +204,9 @@ struct QuantileExactInclusive : public QuantileExact<Value>
             auto n = static_cast<size_t>(h);
 
             if (n >= array.size())
-                return static_cast<Float64>(*std::max_element(array.begin(), array.end()));
+                return static_cast<Float64>(array[array.size() - 1]);
             else if (n < 1)
-                return static_cast<Float64>(*std::min_element(array.begin(), array.end()));
+                return static_cast<Float64>(array[0]);
             ::nth_element(array.begin(), array.begin() + n - 1, array.end());
             auto nth_elem = std::min_element(array.begin() + n, array.end());
 
@@ -234,9 +229,9 @@ struct QuantileExactInclusive : public QuantileExact<Value>
                 auto n = static_cast<size_t>(h);
 
                 if (n >= array.size())
-                    result[indices[i]] = static_cast<Float64>(*std::max_element(array.begin(), array.end()));
+                    result[indices[i]] = static_cast<Float64>(array[array.size() - 1]);
                 else if (n < 1)
-                    result[indices[i]] = static_cast<Float64>(*std::min_element(array.begin(), array.end()));
+                    result[indices[i]] = static_cast<Float64>(array[0]);
                 else
                 {
                     ::nth_element(array.begin() + prev_n, array.begin() + n - 1, array.end());

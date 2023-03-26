@@ -114,11 +114,7 @@ MongoDBDictionarySource::MongoDBDictionarySource(
 {
     if (!uri.empty())
     {
-        // Connect with URI.
-        Poco::MongoDB::Connection::SocketFactory socket_factory;
-        connection->connect(uri, socket_factory);
-
-        Poco::URI poco_uri(connection->uri());
+        Poco::URI poco_uri(uri);
 
         // Parse database from URI. This is required for correctness -- the
         // cursor is created using database name and collection name, so we have
@@ -138,6 +134,10 @@ MongoDBDictionarySource::MongoDBDictionarySource(
         {
             user.resize(separator);
         }
+
+        // Connect with URI.
+        Poco::MongoDB::Connection::SocketFactory socket_factory;
+        connection->connect(uri, socket_factory);
     }
     else
     {
@@ -145,9 +145,13 @@ MongoDBDictionarySource::MongoDBDictionarySource(
         connection->connect(host, port);
         if (!user.empty())
         {
+#if POCO_VERSION >= 0x01070800
             Poco::MongoDB::Database poco_db(db);
             if (!poco_db.authenticate(*connection, user, password, method.empty() ? Poco::MongoDB::Database::AUTH_SCRAM_SHA1 : method))
                 throw Exception(ErrorCodes::MONGODB_CANNOT_AUTHENTICATE, "Cannot authenticate in MongoDB, incorrect user or password");
+#else
+            authenticate(*connection, db, user, password);
+#endif
         }
     }
 }
@@ -241,7 +245,7 @@ QueryPipeline MongoDBDictionarySource::loadKeys(const Columns & key_columns, con
                     break;
                 }
                 default:
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported dictionary attribute type for MongoDB dictionary source");
+                    throw Exception("Unsupported dictionary attribute type for MongoDB dictionary source", ErrorCodes::NOT_IMPLEMENTED);
             }
         }
     }

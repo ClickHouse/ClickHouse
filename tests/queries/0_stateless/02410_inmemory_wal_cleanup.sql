@@ -1,5 +1,3 @@
--- Tags: no-s3-storage
-
 -- { echo }
 
 DROP TABLE IF EXISTS in_memory;

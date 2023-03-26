@@ -15,8 +15,6 @@
 #include <Coordination/Keeper4LWInfo.h>
 #include <Coordination/KeeperConnectionStats.h>
 #include <Coordination/KeeperSnapshotManagerS3.h>
-#include <Common/MultiVersion.h>
-#include <Common/Macros.h>
 
 namespace DB
 {
@@ -111,8 +109,7 @@ public:
 
     /// Initialization from config.
     /// standalone_keeper -- we are standalone keeper application (not inside clickhouse server)
-    /// 'macros' are used to substitute macros in endpoint of disks
-    void initialize(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper, bool start_async, const MultiVersion<Macros>::Version & macros);
+    void initialize(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper, bool start_async);
 
     void startServer();
 
@@ -127,8 +124,7 @@ public:
 
     /// Registered in ConfigReloader callback. Add new configuration changes to
     /// update_configuration_queue. Keeper Dispatcher apply them asynchronously.
-    /// 'macros' are used to substitute macros in endpoint of disks
-    void updateConfiguration(const Poco::Util::AbstractConfiguration & config, const MultiVersion<Macros>::Version & macros);
+    void updateConfiguration(const Poco::Util::AbstractConfiguration & config);
 
     /// Shutdown internal keeper parts (server, state machine, log storage, etc)
     void shutdown();
@@ -225,13 +221,6 @@ public:
     {
         return server->requestLeader();
     }
-
-    void recalculateStorageStats()
-    {
-        return server->recalculateStorageStats();
-    }
-
-    static void cleanResources();
 };
 
 }

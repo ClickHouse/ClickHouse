@@ -37,8 +37,6 @@ public:
 
     void unlock();
     bool tryLock();
-    bool isLocked() const;
-    const std::string & getLockPath() const;
 
 private:
     zkutil::ZooKeeperPtr zookeeper;

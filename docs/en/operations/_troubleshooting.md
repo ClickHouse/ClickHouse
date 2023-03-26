@@ -56,19 +56,6 @@ sudo apt-get clean
 sudo apt-get autoclean
 ```
 
-### You Can't Get Packages With Yum Because Of Wrong Signature
-
-Possible issue: the cache is wrong, maybe it's broken after updated GPG key in 2022-09.
-
-The solution is to clean out the cache and lib directory for yum:
-
-```
-sudo find /var/lib/yum/repos/ /var/cache/yum/ -name 'clickhouse-*' -type d -exec rm -rf {} +
-sudo rm -f /etc/yum.repos.d/clickhouse.repo
-```
-
-After that follow the [install guide](../getting-started/install.md#from-rpm-packages)
-
 ## Connecting to the Server {#troubleshooting-accepts-no-connections}
 
 Possible issues:

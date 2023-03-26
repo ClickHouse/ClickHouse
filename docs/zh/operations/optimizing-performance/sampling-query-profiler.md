@@ -32,7 +32,7 @@ ClickHouse运行允许分析查询执行的采样探查器。 使用探查器，
 
 -   使用 `addressToLine`, `addressToSymbol` 和 `demangle` [内省功能](../../sql-reference/functions/introspection.md) 获取函数名称及其在ClickHouse代码中的位置。 要获取某些查询的配置文件，您需要从以下内容汇总数据 `trace_log` 桌子 您可以通过单个函数或整个堆栈跟踪聚合数据。
 
-如果你需要想象 `trace_log` 信息，尝试 [flamegraph](../../interfaces/third-party/gui.md#clickhouse-flamegraph) 和 [测速镜](https://github.com/laplab/clickhouse-speedscope).
+如果你需要想象 `trace_log` 信息，尝试 [flamegraph](../../interfaces/third-party/gui/#clickhouse-flamegraph) 和 [测速镜](https://github.com/laplab/clickhouse-speedscope).
 
 ## 示例 {#example}
 

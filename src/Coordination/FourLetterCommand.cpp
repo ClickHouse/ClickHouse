@@ -56,7 +56,7 @@ FourLetterCommandFactory & FourLetterCommandFactory::instance()
 void FourLetterCommandFactory::checkInitialization() const
 {
     if (!initialized)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Four letter command not initialized");
+        throw Exception("Four letter command  not initialized", ErrorCodes::LOGICAL_ERROR);
 }
 
 bool FourLetterCommandFactory::isKnown(int32_t code)
@@ -74,7 +74,7 @@ FourLetterCommandPtr FourLetterCommandFactory::get(int32_t code)
 void FourLetterCommandFactory::registerCommand(FourLetterCommandPtr & command)
 {
     if (commands.contains(command->code()))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Four letter command {} already registered", command->name());
+        throw Exception("Four letter command " + command->name() + " already registered", ErrorCodes::LOGICAL_ERROR);
 
     commands.emplace(command->code(), std::move(command));
 }
@@ -144,12 +144,6 @@ void FourLetterCommandFactory::registerCommands(KeeperDispatcher & keeper_dispat
 
         FourLetterCommandPtr request_leader_command = std::make_shared<RequestLeaderCommand>(keeper_dispatcher);
         factory.registerCommand(request_leader_command);
-
-        FourLetterCommandPtr recalculate_command = std::make_shared<RecalculateCommand>(keeper_dispatcher);
-        factory.registerCommand(recalculate_command);
-
-        FourLetterCommandPtr clean_resources_command = std::make_shared<CleanResourcesCommand>(keeper_dispatcher);
-        factory.registerCommand(clean_resources_command);
 
         factory.initializeAllowList(keeper_dispatcher);
         factory.setInitialize(true);
@@ -519,18 +513,6 @@ String LogInfoCommand::run()
 String RequestLeaderCommand::run()
 {
     return keeper_dispatcher.requestLeader() ? "Sent leadership request to leader." : "Failed to send leadership request to leader.";
-}
-
-String RecalculateCommand::run()
-{
-    keeper_dispatcher.recalculateStorageStats();
-    return "ok";
-}
-
-String CleanResourcesCommand::run()
-{
-    keeper_dispatcher.cleanResources();
-    return "ok";
 }
 
 }

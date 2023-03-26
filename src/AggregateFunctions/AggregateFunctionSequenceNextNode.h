@@ -86,8 +86,8 @@ struct NodeBase
     {
         UInt64 size;
         readVarUInt(size, buf);
-        if (unlikely(size > max_node_size_deserialize))
-            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large node state size");
+        if unlikely (size > max_node_size_deserialize)
+            throw Exception("Too large node state size", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
 
         Node * node = reinterpret_cast<Node *>(arena->alignedAlloc(sizeof(Node) + size, alignof(Node)));
         node->size = size;
@@ -190,7 +190,7 @@ public:
         SequenceDirection seq_direction_,
         size_t min_required_args_,
         UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
-        : IAggregateFunctionDataHelper<SequenceNextNodeGeneralData<Node>, Self>(arguments, parameters_, data_type_)
+        : IAggregateFunctionDataHelper<SequenceNextNodeGeneralData<Node>, Self>({data_type_}, parameters_)
         , seq_base_kind(seq_base_kind_)
         , seq_direction(seq_direction_)
         , min_required_args(min_required_args_)
@@ -201,6 +201,8 @@ public:
     }
 
     String getName() const override { return "sequenceNextNode"; }
+
+    DataTypePtr getReturnType() const override { return data_type; }
 
     bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
     {
@@ -322,9 +324,6 @@ public:
 
         if (unlikely(size == 0))
             return;
-
-        if (unlikely(size > max_node_size_deserialize))
-            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size");
 
         auto & value = data(place).value;
 

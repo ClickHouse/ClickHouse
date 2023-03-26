@@ -1,4 +1,4 @@
--- Tags: long, replica, no-random-merge-tree-settings
+-- Tags: long, replica
 
 ----- Group of very similar simple tests ------
 select '----HORIZONTAL MERGE TESTS----';

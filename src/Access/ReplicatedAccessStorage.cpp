@@ -51,7 +51,7 @@ ReplicatedAccessStorage::ReplicatedAccessStorage(
     , backup_allowed(allow_backup_)
 {
     if (zookeeper_path.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path must be non-empty");
+        throw Exception("ZooKeeper path must be non-empty", ErrorCodes::BAD_ARGUMENTS);
 
     if (zookeeper_path.back() == '/')
         zookeeper_path.resize(zookeeper_path.size() - 1);
@@ -458,7 +458,7 @@ zkutil::ZooKeeperPtr ReplicatedAccessStorage::getZooKeeperNoLock()
     {
         auto zookeeper = get_zookeeper();
         if (!zookeeper)
-            throw Exception(ErrorCodes::NO_ZOOKEEPER, "Can't have Replicated access without ZooKeeper");
+            throw Exception("Can't have Replicated access without ZooKeeper", ErrorCodes::NO_ZOOKEEPER);
 
         /// It's possible that we connected to different [Zoo]Keeper instance
         /// so we may read a bit stale state.
@@ -674,16 +674,18 @@ void ReplicatedAccessStorage::backup(BackupEntriesCollector & backup_entries_col
         backup_entries_collector.getContext()->getAccessControl());
 
     auto backup_coordination = backup_entries_collector.getBackupCoordination();
-    backup_coordination->addReplicatedAccessFilePath(zookeeper_path, type, backup_entry_with_path.first);
+    String current_host_id = backup_entries_collector.getBackupSettings().host_id;
+    backup_coordination->addReplicatedAccessFilePath(zookeeper_path, type, current_host_id, backup_entry_with_path.first);
 
     backup_entries_collector.addPostTask(
         [backup_entry = backup_entry_with_path.second,
          zookeeper_path = zookeeper_path,
          type,
+         current_host_id,
          &backup_entries_collector,
          backup_coordination]
         {
-            for (const String & path : backup_coordination->getReplicatedAccessFilePaths(zookeeper_path, type))
+            for (const String & path : backup_coordination->getReplicatedAccessFilePaths(zookeeper_path, type, current_host_id))
                 backup_entries_collector.addBackupEntry(path, backup_entry);
         });
 }

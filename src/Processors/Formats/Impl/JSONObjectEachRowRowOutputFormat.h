@@ -23,6 +23,7 @@ public:
     JSONObjectEachRowRowOutputFormat(
         WriteBuffer & out_,
         const Block & header_,
+        const RowOutputFormatParams & params_,
         const FormatSettings & settings_);
 
     String getName() const override { return "JSONObjectEachRowRowOutputFormat"; }

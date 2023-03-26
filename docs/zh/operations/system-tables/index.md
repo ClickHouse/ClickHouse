@@ -73,3 +73,5 @@ sidebar_label: "\u7CFB\u7EDF\u8868"
 -   `OSWriteChars`
 -   `OSReadBytes`
 -   `OSWriteBytes`
+
+[原始文章](https://clickhouse.com/docs/en/operations/system-tables/) <!--hide-->

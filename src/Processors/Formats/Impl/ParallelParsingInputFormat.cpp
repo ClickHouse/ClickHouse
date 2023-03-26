@@ -12,10 +12,10 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupStatusPtr 
 {
     SCOPE_EXIT_SAFE(
         if (thread_group)
-            CurrentThread::detachFromGroupIfNotDetached();
+            CurrentThread::detachQueryIfNotDetached();
     );
     if (thread_group)
-        CurrentThread::attachToGroup(thread_group);
+        CurrentThread::attachTo(thread_group);
 
     setThreadName("Segmentator");
     try
@@ -62,10 +62,10 @@ void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr threa
 {
     SCOPE_EXIT_SAFE(
         if (thread_group)
-            CurrentThread::detachFromGroupIfNotDetached();
+            CurrentThread::detachQueryIfNotDetached();
     );
     if (thread_group)
-        CurrentThread::attachToGroupIfDetached(thread_group);
+        CurrentThread::attachToIfDetached(thread_group);
 
     const auto parser_unit_number = current_ticket_number % processing_units.size();
     auto & unit = processing_units[parser_unit_number];
@@ -161,12 +161,6 @@ Chunk ParallelParsingInputFormat::generate()
     /// Delayed launching of segmentator thread
     if (unlikely(!parsing_started.exchange(true)))
     {
-        /// Lock 'finish_and_wait_mutex' to avoid recreation of
-        /// 'segmentator_thread' after it was joined.
-        std::lock_guard finish_and_wait_lock(finish_and_wait_mutex);
-        if (finish_and_wait_called)
-            return {};
-
         segmentator_thread = ThreadFromGlobalPool(
             &ParallelParsingInputFormat::segmentatorThreadFunction, this, CurrentThread::getGroup());
     }

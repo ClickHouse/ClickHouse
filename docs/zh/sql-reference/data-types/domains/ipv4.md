@@ -67,3 +67,5 @@ SELECT toTypeName(i), CAST(from as UInt32) as i FROM hits LIMIT 1;
     ┌─toTypeName(CAST(from, 'UInt32'))─┬──────────i─┐
     │ UInt32                           │ 3086477370 │
     └──────────────────────────────────┴────────────┘
+
+[来源文章](https://clickhouse.com/docs/en/data_types/domains/ipv4) <!--hide-->

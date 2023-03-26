@@ -90,22 +90,12 @@ public:
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is not supported for {} query node", getNodeTypeName());
     }
 
-    virtual void convertToNullable()
-    {
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method convertToNullable is not supported for {} query node", getNodeTypeName());
-    }
-
-    struct CompareOptions
-    {
-        bool compare_aliases = true;
-    };
-
     /** Is tree equal to other tree with node root.
       *
-      * With default compare options aliases of query tree nodes are compared during isEqual call.
+      * Aliases of query tree nodes are compared during isEqual call.
       * Original ASTs of query tree nodes are not compared during isEqual call.
       */
-    bool isEqual(const IQueryTreeNode & rhs, CompareOptions compare_options = { .compare_aliases = true }) const;
+    bool isEqual(const IQueryTreeNode & rhs) const;
 
     using Hash = std::pair<UInt64, UInt64>;
     using HashState = SipHash;
@@ -119,18 +109,6 @@ public:
 
     /// Get a deep copy of the query tree
     QueryTreeNodePtr clone() const;
-
-    /** Get a deep copy of the query tree.
-      * If node to clone is key in replacement map, then instead of clone it
-      * use value node from replacement map.
-      */
-    using ReplacementMap = std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr>;
-    QueryTreeNodePtr cloneAndReplace(const ReplacementMap & replacement_map) const;
-
-    /** Get a deep copy of the query tree.
-      * If node to clone is node to replace, then instead of clone it use replacement node.
-      */
-    QueryTreeNodePtr cloneAndReplace(const QueryTreeNodePtr & node_to_replace, QueryTreeNodePtr replacement_node) const;
 
     /// Returns true if node has alias, false otherwise
     bool hasAlias() const
@@ -181,17 +159,8 @@ public:
       */
     String formatOriginalASTForErrorMessage() const;
 
-    struct ConvertToASTOptions
-    {
-        /// Add _CAST if constant litral type is different from column type
-        bool add_cast_for_constants = true;
-
-        /// Identifiers are fully qualified (`database.table.column`), otherwise names are just column names (`column`)
-        bool fully_qualified_identifiers = true;
-    };
-
     /// Convert query tree to AST
-    ASTPtr toAST(const ConvertToASTOptions & options = { .add_cast_for_constants = true, .fully_qualified_identifiers = true }) const;
+    ASTPtr toAST() const;
 
     /// Convert query tree to AST and then format it for error message.
     String formatConvertedASTForErrorMessage() const;
@@ -267,7 +236,7 @@ protected:
     virtual QueryTreeNodePtr cloneImpl() const = 0;
 
     /// Subclass must convert its internal state and its children to AST
-    virtual ASTPtr toASTImpl(const ConvertToASTOptions & options) const = 0;
+    virtual ASTPtr toASTImpl() const = 0;
 
     QueryTreeNodes children;
     QueryTreeWeakNodes weak_pointers;

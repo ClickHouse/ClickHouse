@@ -92,15 +92,12 @@ ExpressionTransform × 16
   (MergingAggregated)
   Resize 1 → 16
     MergingAggregatedTransform
-      Resize 17 → 1
+      Resize 2 → 1
         (Union)
-          (Aggregating)
-          Resize 1 → 16
-            AggregatingTransform
-              (Expression)
-              ExpressionTransform
-                (ReadFromMergeTree)
-                MergeTreeInOrder 0 → 1
+          (ReadFromStorage)
+          AggregatingTransform
+            ExpressionTransform
+              MergeTreeInOrder 0 → 1
           (ReadFromRemote)
 explain pipeline SELECT k1, k3, sum(value) v FROM remote('127.0.0.{1,2}', currentDatabase(), proj_agg_02343) GROUP BY k1, k3 SETTINGS distributed_aggregation_memory_efficient = 1;
 (Expression)
@@ -112,11 +109,9 @@ ExpressionTransform × 16
         Resize 1 → 16
           GroupingAggregatedTransform 2 → 1
             (Union)
-              (Aggregating)
+              (ReadFromStorage)
               AggregatingTransform
-                (Expression)
                 ExpressionTransform
-                  (ReadFromMergeTree)
                   MergeTreeInOrder 0 → 1
               (ReadFromRemote)
 -- { echoOn }

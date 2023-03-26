@@ -14,10 +14,6 @@
 
 #include <city.h>
 
-#if (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-#include "vec_crc32.h"
-#endif
-
 namespace DB
 {
 
@@ -40,12 +36,8 @@ struct Hash
         return _mm_crc32_u64(crc, val);
 #elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
         return __crc32cd(static_cast<UInt32>(crc), val);
-#elif (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-        return crc32_ppc(crc, reinterpret_cast<const unsigned char *>(&val), sizeof(val));
-#elif defined(__s390x__) && __BYTE_ORDER__==__ORDER_BIG_ENDIAN__
-        return s390x_crc32(crc, val);
 #else
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "String hash is not implemented without sse4.2 support");
+        throw Exception("String hash is not implemented without sse4.2 support", ErrorCodes::NOT_IMPLEMENTED);
 #endif
     }
 
@@ -55,12 +47,8 @@ struct Hash
         return _mm_crc32_u32(crc, val);
 #elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
         return __crc32cw(crc, val);
-#elif (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-        return crc32_ppc(crc, reinterpret_cast<const unsigned char *>(&val), sizeof(val));
-#elif defined(__s390x__) && __BYTE_ORDER__==__ORDER_BIG_ENDIAN__
-        return s390x_crc32_u32(crc, val);
 #else
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "String hash is not implemented without sse4.2 support");
+        throw Exception("String hash is not implemented without sse4.2 support", ErrorCodes::NOT_IMPLEMENTED);
 #endif
     }
 
@@ -70,12 +58,8 @@ struct Hash
         return _mm_crc32_u16(crc, val);
 #elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
         return __crc32ch(crc, val);
-#elif (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-        return crc32_ppc(crc, reinterpret_cast<const unsigned char *>(&val), sizeof(val));
-#elif defined(__s390x__) && __BYTE_ORDER__==__ORDER_BIG_ENDIAN__
-        return s390x_crc32_u16(crc, val);
 #else
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "String hash is not implemented without sse4.2 support");
+        throw Exception("String hash is not implemented without sse4.2 support", ErrorCodes::NOT_IMPLEMENTED);
 #endif
     }
 
@@ -85,12 +69,8 @@ struct Hash
         return _mm_crc32_u8(crc, val);
 #elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
         return __crc32cb(crc, val);
-#elif (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-        return crc32_ppc(crc, reinterpret_cast<const unsigned char *>(&val), sizeof(val));
-#elif defined(__s390x__) && __BYTE_ORDER__==__ORDER_BIG_ENDIAN__
-        return s390x_crc32_u8(crc, val);
 #else
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "String hash is not implemented without sse4.2 support");
+        throw Exception("String hash is not implemented without sse4.2 support", ErrorCodes::NOT_IMPLEMENTED);
 #endif
     }
 

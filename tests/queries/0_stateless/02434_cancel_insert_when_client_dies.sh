@@ -46,11 +46,9 @@ $CLICKHOUSE_CLIENT -q 'select count() from dedup_test'
 function thread_insert
 {
     # supress "Killed" messages from bash
-    i=0
     while true; do
-        export ID="$TEST_MARK$RANDOM-$RANDOM-$i"
+        export ID="$TEST_MARK$RANDOM"
         bash -c insert_data 2>&1| grep -Fav "Killed"
-        i=$((i + 1))
     done
 }
 
@@ -95,6 +93,7 @@ $CLICKHOUSE_CLIENT -q 'system flush logs'
 
 # Ensure that thread_cancel actually did something
 $CLICKHOUSE_CLIENT -q "select count() > 0 from system.text_log where event_date >= yesterday() and query_id like '$TEST_MARK%' and (
-  message_format_string in ('Unexpected end of file while reading chunk header of HTTP chunked data', 'Unexpected EOF, got {} of {} bytes',
-  'Query was cancelled or a client has unexpectedly dropped the connection') or
+  message like '%Unexpected end of file while reading chunk header of HTTP chunked data%' or
+  message like '%Unexpected EOF, got % of % bytes%' or
+  message like '%Query was cancelled or a client has unexpectedly dropped the connection%' or
   message like '%Connection reset by peer%' or message like '%Broken pipe, while writing to socket%')"

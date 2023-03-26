@@ -97,41 +97,6 @@ MutableSerializationInfoPtr SerializationInfo::clone() const
     return std::make_shared<SerializationInfo>(kind, settings, data);
 }
 
-/// Returns true if all rows with default values of type 'lhs'
-/// are mapped to default values of type 'rhs' after conversion.
-static bool preserveDefaultsAfterConversion(const IDataType & lhs, const IDataType & rhs)
-{
-    if (lhs.equals(rhs))
-        return true;
-
-    bool lhs_is_columned_as_numeric = isColumnedAsNumber(lhs) || isColumnedAsDecimal(lhs);
-    bool rhs_is_columned_as_numeric = isColumnedAsNumber(rhs) || isColumnedAsDecimal(rhs);
-
-    if (lhs_is_columned_as_numeric && rhs_is_columned_as_numeric)
-        return true;
-
-    if (isStringOrFixedString(lhs) && isStringOrFixedString(rhs))
-        return true;
-
-    return false;
-}
-
-std::shared_ptr<SerializationInfo> SerializationInfo::createWithType(
-    const IDataType & old_type,
-    const IDataType & new_type,
-    const Settings & new_settings) const
-{
-    auto new_kind = kind;
-    if (new_kind == ISerialization::Kind::SPARSE)
-    {
-        if (!new_type.supportsSparseSerialization()
-            || !preserveDefaultsAfterConversion(old_type, new_type))
-            new_kind = ISerialization::Kind::DEFAULT;
-    }
-
-    return std::make_shared<SerializationInfo>(new_kind, new_settings);
-}
-
 void SerializationInfo::serialializeKindBinary(WriteBuffer & out) const
 {
     writeBinary(static_cast<UInt8>(kind), out);
@@ -143,7 +108,7 @@ void SerializationInfo::deserializeFromKindsBinary(ReadBuffer & in)
     readBinary(kind_num, in);
     auto maybe_kind = magic_enum::enum_cast<ISerialization::Kind>(kind_num);
     if (!maybe_kind)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown serialization kind {}", std::to_string(kind_num));
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown serialization kind " + std::to_string(kind_num));
 
     kind = *maybe_kind;
 }

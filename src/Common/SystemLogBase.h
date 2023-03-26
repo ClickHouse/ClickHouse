@@ -28,7 +28,6 @@
     M(ProcessorProfileLogElement) \
     M(TextLogElement) \
     M(FilesystemCacheLogElement) \
-    M(FilesystemReadPrefetchesLogElement) \
     M(AsynchronousInsertLogElement)
 
 namespace Poco

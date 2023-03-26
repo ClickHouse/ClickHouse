@@ -16,7 +16,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
+    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
@@ -81,7 +81,7 @@ ColumnWithTypeAndName columnGetNested(const ColumnWithTypeAndName & col)
             return ColumnWithTypeAndName{ nullable_res, nested_type, col.name };
         }
         else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column for DataTypeNullable");
+            throw Exception("Illegal column for DataTypeNullable", ErrorCodes::ILLEGAL_COLUMN);
     }
     return col;
 }
@@ -100,13 +100,16 @@ void validateArgumentType(const IFunction & func, const DataTypes & arguments,
                           const char * expected_type_description)
 {
     if (arguments.size() <= argument_index)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Incorrect number of arguments of function {}",
-                        func.getName());
+        throw Exception("Incorrect number of arguments of function " + func.getName(),
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     const auto & argument = arguments[argument_index];
     if (!validator_func(*argument))
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of {} argument of function {} expected {}",
-                        argument->getName(), std::to_string(argument_index), func.getName(), expected_type_description);
+        throw Exception("Illegal type " + argument->getName() +
+                        " of " + std::to_string(argument_index) +
+                        " argument of function " + func.getName() +
+                        " expected " + expected_type_description,
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 }
 
 namespace
@@ -127,13 +130,12 @@ void validateArgumentsImpl(const IFunction & func,
         const auto & arg = arguments[i + argument_offset];
         const auto & descriptor = descriptors[i];
         if (int error_code = descriptor.isValid(arg.type, arg.column); error_code != 0)
-            throw Exception(error_code,
-                            "Illegal type of argument #{}{} of function {}{}{}",
-                            argument_offset + i + 1,    // +1 is for human-friendly 1-based indexing
-                            (descriptor.argument_name ? " '" + std::string(descriptor.argument_name) + "'" : String{}),
-                            func.getName(),
-                            (descriptor.expected_type_description ? String(", expected ") + descriptor.expected_type_description : String{}),
-                            (arg.type ? ", got " + arg.type->getName() : String{}));
+            throw Exception("Illegal type of argument #" + std::to_string(argument_offset + i + 1) // +1 is for human-friendly 1-based indexing
+                            + (descriptor.argument_name ? " '" + std::string(descriptor.argument_name) + "'" : String{})
+                            + " of function " + func.getName()
+                            + (descriptor.expected_type_description ? String(", expected ") + descriptor.expected_type_description : String{})
+                            + (arg.type ? ", got " + arg.type->getName() : String{}),
+                            error_code);
     }
 }
 
@@ -182,11 +184,15 @@ void validateFunctionArgumentTypes(const IFunction & func,
             return result;
         };
 
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Incorrect number of arguments for function {} provided {}{}, expected {}{} ({}{})",
-            func.getName(), arguments.size(), (!arguments.empty() ? " (" + join_argument_types(arguments) + ")" : String{}),
-            mandatory_args.size(), (!optional_args.empty() ? " to " + std::to_string(mandatory_args.size() + optional_args.size()) : ""),
-            join_argument_types(mandatory_args), (!optional_args.empty() ? ", [" + join_argument_types(optional_args) + "]" : ""));
+        throw Exception("Incorrect number of arguments for function " + func.getName()
+                        + " provided " + std::to_string(arguments.size())
+                        + (!arguments.empty() ? " (" + join_argument_types(arguments) + ")" : String{})
+                        + ", expected " + std::to_string(mandatory_args.size())
+                        + (!optional_args.empty() ? " to " + std::to_string(mandatory_args.size() + optional_args.size()) : "")
+                        + " (" + join_argument_types(mandatory_args)
+                        + (!optional_args.empty() ? ", [" + join_argument_types(optional_args) + "]" : "")
+                        + ")",
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
     }
 
     validateArgumentsImpl(func, arguments, 0, mandatory_args);
@@ -209,11 +215,11 @@ checkAndGetNestedArrayOffset(const IColumn ** columns, size_t num_arguments)
             offsets_i = &arr->getOffsets();
         }
         else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} as argument of function", columns[i]->getName());
+            throw Exception("Illegal column " + columns[i]->getName() + " as argument of function", ErrorCodes::ILLEGAL_COLUMN);
         if (i == 0)
             offsets = offsets_i;
         else if (*offsets_i != *offsets)
-            throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Lengths of all arrays passed to aggregate function must be equal.");
+            throw Exception("Lengths of all arrays passed to aggregate function must be equal.", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
     }
     return {nested_columns, offsets->data()};
 }
@@ -264,7 +270,7 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & a
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*elem.column))
         {
             const ColumnPtr & null_map_column = nullable->getNullMapColumnPtr();
-            if (!result_null_map_column)
+            if (!result_null_map_column) //-V1051
             {
                 result_null_map_column = null_map_column;
             }

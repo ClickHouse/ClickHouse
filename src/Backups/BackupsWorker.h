@@ -23,7 +23,7 @@ class IRestoreCoordination;
 class BackupsWorker
 {
 public:
-    BackupsWorker(size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_);
+    BackupsWorker(size_t num_backup_threads, size_t num_restore_threads);
 
     /// Waits until all tasks have been completed.
     void shutdown();
@@ -53,26 +53,14 @@ public:
         /// Status of backup or restore operation.
         BackupStatus status;
 
-        /// The number of files stored in the backup.
+        /// Number of files in the backup (including backup's metadata; only unique files are counted).
         size_t num_files = 0;
 
-        /// The total size of files stored in the backup.
-        UInt64 total_size = 0;
-
-        /// The number of entries in the backup, i.e. the number of files inside the folder if the backup is stored as a folder.
-        size_t num_entries = 0;
-
-        /// The uncompressed size of the backup.
+        /// Size of all files in the backup (including backup's metadata; only unique files are counted).
         UInt64 uncompressed_size = 0;
 
-        /// The compressed size of the backup.
+        /// Size of the backup if it's stored as an archive; or the same as `uncompressed_size` if the backup is stored as a folder.
         UInt64 compressed_size = 0;
-
-        /// Returns the number of files read during RESTORE from this backup.
-        size_t num_read_files = 0;
-
-        // Returns the total size of files read during RESTORE from this backup.
-        UInt64 num_read_bytes = 0;
 
         /// Set only if there was an error.
         std::exception_ptr exception;
@@ -114,8 +102,7 @@ private:
     void addInfo(const OperationID & id, const String & name, bool internal, BackupStatus status);
     void setStatus(const OperationID & id, BackupStatus status, bool throw_if_error = true);
     void setStatusSafe(const String & id, BackupStatus status) { setStatus(id, status, false); }
-    void setNumFilesAndSize(const OperationID & id, size_t num_files, UInt64 total_size, size_t num_entries,
-                            UInt64 uncompressed_size, UInt64 compressed_size, size_t num_read_files, UInt64 num_read_bytes);
+    void setNumFilesAndSize(const OperationID & id, size_t num_files, UInt64 uncompressed_size, UInt64 compressed_size);
 
     ThreadPool backups_thread_pool;
     ThreadPool restores_thread_pool;
@@ -126,8 +113,6 @@ private:
     std::atomic<size_t> num_active_restores = 0;
     mutable std::mutex infos_mutex;
     Poco::Logger * log;
-    const bool allow_concurrent_backups;
-    const bool allow_concurrent_restores;
 };
 
 }

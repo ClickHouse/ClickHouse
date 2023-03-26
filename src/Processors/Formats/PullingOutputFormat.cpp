@@ -14,7 +14,8 @@ WriteBuffer PullingOutputFormat::out(nullptr, 0);
 void PullingOutputFormat::consume(Chunk chunk)
 {
     if (data)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "PullingOutputFormat cannot consume chunk because it already has data");
+        throw Exception("PullingOutputFormat cannot consume chunk because it already has data",
+                        ErrorCodes::LOGICAL_ERROR);
 
     if (chunk)
         info.update(chunk.getNumRows(), chunk.allocatedBytes());

@@ -54,7 +54,7 @@ QueryTreeNodePtr ListNode::cloneImpl() const
     return std::make_shared<ListNode>();
 }
 
-ASTPtr ListNode::toASTImpl(const ConvertToASTOptions & options) const
+ASTPtr ListNode::toASTImpl() const
 {
     auto expression_list_ast = std::make_shared<ASTExpressionList>();
 
@@ -62,7 +62,7 @@ ASTPtr ListNode::toASTImpl(const ConvertToASTOptions & options) const
     expression_list_ast->children.resize(children_size);
 
     for (size_t i = 0; i < children_size; ++i)
-        expression_list_ast->children[i] = children[i]->toAST(options);
+        expression_list_ast->children[i] = children[i]->toAST();
 
     return expression_list_ast;
 }

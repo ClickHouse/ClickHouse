@@ -1315,12 +1315,6 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 Чем меньше значение, тем чаще данные сбрасываются в таблицу. Установка слишком низкого значения приводит к снижению производительности.
 
-## stream_poll_timeout_ms {#stream_poll_timeout_ms}
-
-Таймаут для poll стримнга данных.
-
-Значение по умолчанию: 500.
-
 ## load_balancing {#settings-load_balancing}
 
 Задает алгоритм выбора реплик, используемый при обработке распределенных запросов.
@@ -2000,21 +1994,6 @@ SELECT * FROM test_table
 
 -   1 — генерирование исключения включено.
 -   0 — генерирование исключения выключено.
-
-Значение по умолчанию: 0.
-
-## optimize_skip_merged_partitions {#optimize-skip-merged-partitions}
-
-Включает или отключает оптимизацию для запроса [OPTIMIZE TABLE ... FINAL](../../sql-reference/statements/optimize.md), когда есть только один парт с level > 0 и неистекший TTL.
-
-- `OPTIMIZE TABLE ... FINAL SETTINGS optimize_skip_merged_partitions=1`
-
-По умолчанию, `OPTIMIZE TABLE ... FINAL` перезапишет даже один парт.
-
-Возможные значения:
-
--   1 - Включена
--   0 - Выключена
 
 Значение по умолчанию: 0.
 
@@ -3649,7 +3628,7 @@ SETTINGS index_granularity = 8192 │
 
 Значение по умолчанию: `0`.
 
-## alter_sync {#alter-sync}
+## replication_alter_partitions_sync {#replication-alter-partitions-sync}
 
 Позволяет настроить ожидание выполнения действий на репликах запросами [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) или [TRUNCATE](../../sql-reference/statements/truncate.md).
 
@@ -4084,32 +4063,3 @@ ALTER TABLE test FREEZE SETTINGS alter_partition_verbose_result = 1;
 Задает символ, который интерпретируется как суффикс после результирующего набора данных формата [CustomSeparated](../../interfaces/formats.md#format-customseparated).
 
 Значение по умолчанию: `''`.
-
-## stop_reading_on_first_cancel {#stop_reading_on_first_cancel}
-Если установлено значение `true` и пользователь хочет прервать запрос (например, с помощью `Ctrl+C` на клиенте), то запрос продолжает выполнение только для данных, которые уже были считаны из таблицы. После этого он вернет частичный результат запроса для той части таблицы, которая была прочитана. Чтобы полностью остановить выполнение запроса без частичного результата, пользователь должен отправить 2 запроса отмены.
-
-**Пример с выключенной настройкой при нажатии Ctrl+C**
-```sql
-SELECT sum(number) FROM numbers(10000000000)
-
-Cancelling query.
-Ok.
-Query was cancelled.
-
-0 rows in set. Elapsed: 1.334 sec. Processed 52.65 million rows, 421.23 MB (39.48 million rows/s., 315.85 MB/s.)
-```
-
-**Пример с включенной настройкой при нажатии Ctrl+C**
-```sql
-SELECT sum(number) FROM numbers(10000000000) SETTINGS stop_reading_on_first_cancel=true
-
-┌──────sum(number)─┐
-│ 1355411451286266 │
-└──────────────────┘
-
-1 row in set. Elapsed: 1.331 sec. Processed 52.13 million rows, 417.05 MB (39.17 million rows/s., 313.33 MB/s.)
-```
-
-Возможные значения:: `true`, `false`
-
-Значение по умолчанию: `false`

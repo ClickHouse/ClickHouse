@@ -16,7 +16,7 @@ sidebar_position: 27
 
 -   [MaterializeMySQL](../../engines/database-engines/materialized-mysql.md)
 
--   [Lazy](../../engines/database-engines/lazy.md)
+-   [Lazy](../../engines/database-engines/lazy)
 
 -   [Atomic](../../engines/database-engines/atomic.md)
 
@@ -27,3 +27,5 @@ sidebar_position: 27
 -   [Replicated](../../engines/database-engines/replicated.md)
 
 -   [SQLite](../../engines/database-engines/sqlite.md)
+
+[来源文章](https://clickhouse.com/docs/en/database_engines/) <!--hide-->

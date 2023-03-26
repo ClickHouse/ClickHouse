@@ -544,6 +544,4 @@ Result:
 └─────┴──────────┴───────┘
 ```
 
-## Related content
-
-- Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
+[Original article](https://clickhouse.com/docs/en/sql-reference/statements/select/order-by/) <!--hide-->

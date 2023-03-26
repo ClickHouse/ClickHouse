@@ -81,3 +81,4 @@ SELECT toTypeName(i), CAST(from AS UInt32) AS i FROM hits LIMIT 1;
 │ UInt32                           │ 3086477370 │
 └──────────────────────────────────┴────────────┘
 ```
+

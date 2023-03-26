@@ -11,7 +11,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-
 void IInterpreter::extendQueryLogElem(
     QueryLogElement & elem, const ASTPtr & ast, ContextPtr context, const String & query_database, const String & query_table) const
 {
@@ -30,7 +29,7 @@ void IInterpreter::extendQueryLogElem(
     extendQueryLogElemImpl(elem, ast, context);
 }
 
-void IInterpreter::checkStorageSupportsTransactionsIfNeeded(const StoragePtr & storage, ContextPtr context, bool is_readonly_query)
+void IInterpreter::checkStorageSupportsTransactionsIfNeeded(const StoragePtr & storage, ContextPtr context)
 {
     if (!context->getCurrentTransaction())
         return;
@@ -41,13 +40,6 @@ void IInterpreter::checkStorageSupportsTransactionsIfNeeded(const StoragePtr & s
     if (context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Storage {} (table {}) does not support transactions",
                         storage->getName(), storage->getStorageID().getNameForLogs());
-
-    /// Do not allow transactions with ReplicatedMergeTree anyway (unless it's a readonly SELECT query)
-    /// because it may try to process transaction on MergeTreeData-level,
-    /// but then fail with a logical error or something on StorageReplicatedMergeTree-level.
-    if (!is_readonly_query && storage->supportsReplication())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ReplicatedMergeTree (table {}) does not support transactions",
-                        storage->getStorageID().getNameForLogs());
 }
 
 }

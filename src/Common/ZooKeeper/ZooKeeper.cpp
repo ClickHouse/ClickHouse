@@ -115,7 +115,7 @@ void ZooKeeper::init(ZooKeeperArgs args_)
     }
     else
     {
-        throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Unknown implementation of coordination service: {}", args.implementation);
+        throw DB::Exception("Unknown implementation of coordination service: " + args.implementation, DB::ErrorCodes::NOT_IMPLEMENTED);
     }
 
     if (!args.chroot.empty())
@@ -1167,18 +1167,17 @@ void ZooKeeper::setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_)
 size_t getFailedOpIndex(Coordination::Error exception_code, const Coordination::Responses & responses)
 {
     if (responses.empty())
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Responses for multi transaction is empty");
+        throw DB::Exception("Responses for multi transaction is empty", DB::ErrorCodes::LOGICAL_ERROR);
 
     for (size_t index = 0, size = responses.size(); index < size; ++index)
         if (responses[index]->error != Coordination::Error::ZOK)
             return index;
 
     if (!Coordination::isUserError(exception_code))
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR,
-                            "There are no failed OPs because '{}' is not valid response code for that",
-                            std::string(Coordination::errorMessage(exception_code)));
+        throw DB::Exception("There are no failed OPs because '" + std::string(Coordination::errorMessage(exception_code)) + "' is not valid response code for that",
+                            DB::ErrorCodes::LOGICAL_ERROR);
 
-    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "There is no failed OpResult");
+    throw DB::Exception("There is no failed OpResult", DB::ErrorCodes::LOGICAL_ERROR);
 }
 
 
@@ -1296,7 +1295,7 @@ String extractZooKeeperName(const String & path)
 {
     static constexpr auto default_zookeeper_name = "default";
     if (path.empty())
-        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path should not be empty");
+        throw DB::Exception("ZooKeeper path should not be empty", DB::ErrorCodes::BAD_ARGUMENTS);
     if (path[0] == '/')
         return default_zookeeper_name;
     auto pos = path.find(":/");
@@ -1304,7 +1303,7 @@ String extractZooKeeperName(const String & path)
     {
         auto zookeeper_name = path.substr(0, pos);
         if (zookeeper_name.empty())
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Zookeeper path should start with '/' or '<auxiliary_zookeeper_name>:/'");
+            throw DB::Exception("Zookeeper path should start with '/' or '<auxiliary_zookeeper_name>:/'", DB::ErrorCodes::BAD_ARGUMENTS);
         return zookeeper_name;
     }
     return default_zookeeper_name;
@@ -1313,7 +1312,7 @@ String extractZooKeeperName(const String & path)
 String extractZooKeeperPath(const String & path, bool check_starts_with_slash, Poco::Logger * log)
 {
     if (path.empty())
-        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path should not be empty");
+        throw DB::Exception("ZooKeeper path should not be empty", DB::ErrorCodes::BAD_ARGUMENTS);
     if (path[0] == '/')
         return normalizeZooKeeperPath(path, check_starts_with_slash, log);
     auto pos = path.find(":/");

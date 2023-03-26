@@ -4,7 +4,6 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/parseColumnsListForTableFunction.h>
 
 #include <Parsers/ASTLiteral.h>
 
@@ -35,33 +34,27 @@ void TableFunctionFormat::parseArguments(const ASTPtr & ast_function, ContextPtr
     ASTs & args_func = ast_function->children;
 
     if (args_func.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function '{}' must have arguments", getName());
+        throw Exception("Table function '" + getName() + "' must have arguments", ErrorCodes::LOGICAL_ERROR);
 
     ASTs & args = args_func.at(0)->children;
 
-    if (args.size() != 2 && args.size() != 3)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' requires 2 or 3 arguments: format, [structure], data", getName());
+    if (args.size() != 2)
+        throw Exception("Table function '" + getName() + "' requires 2 arguments: format and data", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     for (auto & arg : args)
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
     format = checkAndGetLiteralArgument<String>(args[0], "format");
-    data = checkAndGetLiteralArgument<String>(args.back(), "data");
-    if (args.size() == 3)
-        structure = checkAndGetLiteralArgument<String>(args[1], "structure");
+    data = checkAndGetLiteralArgument<String>(args[1], "data");
 }
 
 ColumnsDescription TableFunctionFormat::getActualTableStructure(ContextPtr context) const
 {
-    if (structure == "auto")
+    ReadBufferIterator read_buffer_iterator = [&](ColumnsDescription &)
     {
-        ReadBufferIterator read_buffer_iterator = [&](ColumnsDescription &)
-        {
-            return std::make_unique<ReadBufferFromString>(data);
-        };
-        return readSchemaFromFormat(format, std::nullopt, read_buffer_iterator, false, context);
-    }
-    return parseColumnsListFromString(structure, context);
+        return std::make_unique<ReadBufferFromString>(data);
+    };
+    return readSchemaFromFormat(format, std::nullopt, read_buffer_iterator, false, context);
 }
 
 Block TableFunctionFormat::parseData(ColumnsDescription columns, ContextPtr context) const

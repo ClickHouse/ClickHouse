@@ -22,11 +22,9 @@ To enable Kerberos, one should include `kerberos` section in `config.xml`. This 
 - `principal` - canonical service principal name that will be acquired and used when accepting security contexts.
     - This parameter is optional, if omitted, the default principal will be used.
 
+
 - `realm` - a realm, that will be used to restrict authentication to only those requests whose initiator's realm matches it.
     - This parameter is optional, if omitted, no additional filtering by realm will be applied.
-
-- `keytab` - path to service keytab file.
-    - This parameter is optional, if omitted, path to service keytab file must be set in `KRB5_KTNAME` environment variable.
 
 Example (goes into `config.xml`):
 
@@ -113,7 +111,7 @@ Note, that now, once user `my_user` uses `kerberos`, Kerberos must be enabled in
 
 ### Enabling Kerberos using SQL {#enabling-kerberos-using-sql}
 
-When [SQL-driven Access Control and Account Management](/docs/en/guides/sre/user-management/index.md#access-control) is enabled in ClickHouse, users identified by Kerberos can also be created using SQL statements.
+When [SQL-driven Access Control and Account Management](../access-rights.md#access-control) is enabled in ClickHouse, users identified by Kerberos can also be created using SQL statements.
 
 ```sql
 CREATE USER my_user IDENTIFIED WITH kerberos REALM 'EXAMPLE.COM'
