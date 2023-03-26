@@ -119,7 +119,8 @@ void PartMetadataManagerWithCache::updateAll(bool include_projection)
     String read_value;
 
     /// This is used to remove the keys in case of any exception while caching other keys
-    Strings keys_added_to_cache(file_names.size());
+    Strings keys_added_to_cache;
+    keys_added_to_cache.reserve(file_names.size());
 
     try
     {
