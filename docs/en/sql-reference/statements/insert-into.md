@@ -1,10 +1,9 @@
 ---
-slug: /en/sql-reference/statements/insert-into
 sidebar_position: 33
 sidebar_label: INSERT INTO
 ---
 
-# INSERT INTO Statement
+# INSERT INTO Statement 
 
 Inserts data into a table.
 
@@ -89,20 +88,13 @@ INSERT INTO t FORMAT TabSeparated
 22  Qwerty
 ```
 
-You can insert data separately from the query by using the [command-line client](/docs/en/integrations/sql-clients/clickhouse-client-local) or the [HTTP interface](/docs/en/interfaces/http/).
+You can insert data separately from the query by using the command-line client or the HTTP interface. For more information, see the section “[Interfaces](../../interfaces)”.
 
-:::note
-If you want to specify `SETTINGS` for `INSERT` query then you have to do it _before_ `FORMAT` clause since everything after `FORMAT format_name` is treated as data. For example:
-```sql
-INSERT INTO table SETTINGS ... FORMAT format_name data_set
-```
-:::
-
-## Constraints
+### Constraints
 
 If table has [constraints](../../sql-reference/statements/create/table.md#constraints), their expressions will be checked for each row of inserted data. If any of those constraints is not satisfied — server will raise an exception containing constraint name and expression, the query will be stopped.
 
-## Inserting the Results of SELECT
+### Inserting the Results of `SELECT`
 
 **Syntax**
 
@@ -121,7 +113,7 @@ However, you can delete old data using `ALTER TABLE ... DROP PARTITION`.
 
 To insert a default value instead of `NULL` into a column with not nullable data type, enable [insert_null_as_default](../../operations/settings/settings.md#insert_null_as_default) setting.
 
-## Inserting Data from a File
+### Inserting Data from a File
 
 **Syntax**
 
@@ -129,15 +121,14 @@ To insert a default value instead of `NULL` into a column with not nullable data
 INSERT INTO [db.]table [(c1, c2, c3)] FROM INFILE file_name [COMPRESSION type] FORMAT format_name
 ```
 
-Use the syntax above to insert data from a file, or files, stored on the **client** side. `file_name` and `type` are string literals. Input file [format](../../interfaces/formats.md) must be set in the `FORMAT` clause.
+Use the syntax above to insert data from a file stored on a **client** side. `file_name` and `type` are string literals. Input file [format](../../interfaces/formats.md) must be set in the `FORMAT` clause. 
 
-Compressed files are supported. The compression type is detected by the extension of the file name. Or it can be explicitly specified in a `COMPRESSION` clause. Supported types are: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
+Compressed files are supported. Compression type is detected by the extension of the file name. Or it can be explicitly specified in a `COMPRESSION` clause. Supported types are: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
 
 This functionality is available in the [command-line client](../../interfaces/cli.md) and [clickhouse-local](../../operations/utilities/clickhouse-local.md).
 
-**Examples**
+**Example**
 
-### Single file with FROM INFILE
 Execute the following queries using [command-line client](../../interfaces/cli.md):
 
 ```bash
@@ -156,27 +147,7 @@ Result:
 └────┴──────┘
 ```
 
-### Multiple files with FROM INFILE using globs
-
-This example is very similar to the previous one but inserts from multiple files using `FROM INFILE 'input_*.csv`.
-
-```bash
-echo 1,A > input_1.csv ; echo 2,B > input_2.csv
-clickhouse-client --query="CREATE TABLE infile_globs (id UInt32, text String) ENGINE=MergeTree() ORDER BY id;"
-clickhouse-client --query="INSERT INTO infile_globs FROM INFILE 'input_*.csv' FORMAT CSV;"
-clickhouse-client --query="SELECT * FROM infile_globs FORMAT PrettyCompact;"
-```
-
-:::tip
-In addition to selecting multiple files with `*`, you can use ranges (`{1,2}` or `{1..9}`) and other [glob substitutions](/docs/en/sql-reference/table-functions/file.md/#globs-in-path). These three all would work with the above example:
-```sql
-INSERT INTO infile_globs FROM INFILE 'input_*.csv' FORMAT CSV;
-INSERT INTO infile_globs FROM INFILE 'input_{1,2}.csv' FORMAT CSV;
-INSERT INTO infile_globs FROM INFILE 'input_?.csv' FORMAT CSV;
-```
-:::
-
-## Inserting into Table Function
+### Inserting into Table Function
 
 Data can be inserted into tables referenced by [table functions](../../sql-reference/table-functions/index.md).
 
@@ -191,7 +162,7 @@ INSERT INTO [TABLE] FUNCTION table_func ...
 
 ``` sql
 CREATE TABLE simple_table (id UInt32, text String) ENGINE=MergeTree() ORDER BY id;
-INSERT INTO TABLE FUNCTION remote('localhost', default.simple_table)
+INSERT INTO TABLE FUNCTION remote('localhost', default.simple_table) 
     VALUES (100, 'inserted via remote()');
 SELECT * FROM simple_table;
 ```
@@ -204,7 +175,7 @@ Result:
 └─────┴───────────────────────┘
 ```
 
-## Performance Considerations
+### Performance Considerations
 
 `INSERT` sorts the input data by primary key and splits them into partitions by a partition key. If you insert data into several partitions at once, it can significantly reduce the performance of the `INSERT` query. To avoid this:
 

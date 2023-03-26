@@ -1,5 +1,4 @@
 ---
-slug: /ru/sql-reference/functions/string-replace-functions
 sidebar_position: 42
 sidebar_label: "Функции поиска и замены в строках"
 ---

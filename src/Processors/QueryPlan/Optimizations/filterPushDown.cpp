@@ -8,7 +8,6 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
@@ -23,7 +22,6 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/TableJoin.h>
-#include <fmt/format.h>
 
 namespace DB::ErrorCodes
 {
@@ -51,53 +49,6 @@ static void checkChildrenSize(QueryPlan::Node * node, size_t child_num)
     if (child_num > child->getInputStreams().size() || child_num > node->children.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of children: expected at least {}, got {} children and {} streams",
                         child_num, child->getInputStreams().size(), node->children.size());
-}
-
-static bool identifiersIsAmongAllGroupingSets(const GroupingSetsParamsList & grouping_sets_params, const NameSet & identifiers_in_predicate)
-{
-    for (const auto & grouping_set : grouping_sets_params)
-    {
-        for (const auto & identifier : identifiers_in_predicate)
-        {
-            if (std::find(grouping_set.used_keys.begin(), grouping_set.used_keys.end(), identifier) == grouping_set.used_keys.end())
-                return false;
-        }
-    }
-    return true;
-}
-
-static NameSet findIdentifiersOfNode(const ActionsDAG::Node * node)
-{
-    NameSet res;
-
-    /// We treat all INPUT as identifier
-    if (node->type == ActionsDAG::ActionType::INPUT)
-    {
-        res.emplace(node->result_name);
-        return res;
-    }
-
-    std::queue<const ActionsDAG::Node *> queue;
-    queue.push(node);
-
-    while (!queue.empty())
-    {
-        const auto * top = queue.front();
-        for (const auto * child : top->children)
-        {
-            if (child->type == ActionsDAG::ActionType::INPUT)
-            {
-                res.emplace(child->result_name);
-            }
-            else
-            {
-                /// Only push non INPUT child into the queue
-                queue.push(child);
-            }
-        }
-        queue.pop();
-    }
-    return res;
 }
 
 static ActionsDAGPtr splitFilter(QueryPlan::Node * parent_node, const Names & allowed_inputs, size_t child_idx = 0)
@@ -183,24 +134,10 @@ tryAddNewFilterStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, con
 
 static size_t
 tryAddNewFilterStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Names & allowed_inputs,
-                    bool can_remove_filter = true, size_t child_idx = 0)
+                    bool can_remove_filter = true)
 {
-    if (auto split_filter = splitFilter(parent_node, allowed_inputs, child_idx))
-        return tryAddNewFilterStep(parent_node, nodes, split_filter, can_remove_filter, child_idx);
-    return 0;
-}
-
-
-/// Push down filter through specified type of step
-template <typename Step>
-static size_t simplePushDownOverStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, QueryPlanStepPtr & child)
-{
-    if (typeid_cast<Step *>(child.get()))
-    {
-        Names allowed_inputs = child->getOutputStream().header.getNames();
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_inputs))
-            return updated_steps;
-    }
+    if (auto split_filter = splitFilter(parent_node, allowed_inputs, 0))
+        return tryAddNewFilterStep(parent_node, nodes, split_filter, can_remove_filter, 0);
     return 0;
 }
 
@@ -223,20 +160,6 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (auto * aggregating = typeid_cast<AggregatingStep *>(child.get()))
     {
-        /// If aggregating is GROUPING SETS, and not all the identifiers exist in all
-        /// of the grouping sets, we could not push the filter down.
-        if (aggregating->isGroupingSets())
-        {
-
-            const auto & actions = filter->getExpression();
-            const auto & filter_node = actions->findInOutputs(filter->getFilterColumnName());
-
-            auto identifiers_in_predicate = findIdentifiersOfNode(&filter_node);
-
-            if (!identifiersIsAmongAllGroupingSets(aggregating->getGroupingSetsParamsList(), identifiers_in_predicate))
-                return 0;
-        }
-
         const auto & params = aggregating->getParams();
         const auto & keys = params.keys;
 
@@ -311,17 +234,18 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
             return updated_steps;
     }
 
-    if (auto updated_steps = simplePushDownOverStep<DistinctStep>(parent_node, nodes, child))
-        return updated_steps;
+    if (auto * distinct = typeid_cast<DistinctStep *>(child.get()))
+    {
+        Names allowed_inputs = distinct->getOutputStream().header.getNames();
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_inputs))
+            return updated_steps;
+    }
 
-    auto * join = typeid_cast<JoinStep *>(child.get());
-    auto * filled_join = typeid_cast<FilledJoinStep *>(child.get());
-
-    if (join || filled_join)
+    if (auto * join = typeid_cast<JoinStep *>(child.get()))
     {
         auto join_push_down = [&](JoinKind kind) -> size_t
         {
-            const auto & table_join = join ? join->getJoin()->getTableJoin() : filled_join->getJoin()->getTableJoin();
+            const auto & table_join = join->getJoin()->getTableJoin();
 
             /// Only inner and left(/right) join are supported. Other types may generate default values for left table keys.
             /// So, if we push down a condition like `key != 0`, not all rows may be filtered.
@@ -329,8 +253,8 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
                 return 0;
 
             bool is_left = kind == JoinKind::Left;
-            const auto & input_header = is_left ? child->getInputStreams().front().header : child->getInputStreams().back().header;
-            const auto & res_header = child->getOutputStream().header;
+            const auto & input_header = is_left ? join->getInputStreams().front().header : join->getInputStreams().back().header;
+            const auto & res_header = join->getOutputStream().header;
             Names allowed_keys;
             const auto & source_columns = input_header.getNames();
             for (const auto & name : source_columns)
@@ -366,7 +290,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
             const size_t updated_steps = tryAddNewFilterStep(parent_node, nodes, split_filter, can_remove_filter, child_idx);
             if (updated_steps > 0)
             {
-                LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"), "Pushed down filter {} to the {} side of join", split_filter_column_name, kind);
+                LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"), "Pushed down filter to {} side of join", kind);
             }
             return updated_steps;
         };
@@ -375,7 +299,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
             return updated_steps;
 
         /// For full sorting merge join we push down both to the left and right tables, because left and right streams are not independent.
-        if (join && join->allowPushDownToRight())
+        if (join->allowPushDownToRight())
         {
             if (size_t updated_steps = join_push_down(JoinKind::Right))
                 return updated_steps;
@@ -397,22 +321,12 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     // {
     // }
 
-    if (auto * sorting = typeid_cast<SortingStep *>(child.get()))
+    if (typeid_cast<SortingStep *>(child.get()))
     {
-        const auto & sort_description = sorting->getSortDescription();
-        auto sort_description_it = std::find_if(sort_description.begin(), sort_description.end(), [&](auto & sort_column_description)
-        {
-            return sort_column_description.column_name == filter->getFilterColumnName();
-        });
-        bool can_remove_filter = sort_description_it == sort_description.end();
-
         Names allowed_inputs = child->getOutputStream().header.getNames();
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_inputs, can_remove_filter))
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_inputs))
             return updated_steps;
     }
-
-    if (auto updated_steps = simplePushDownOverStep<CreateSetAndFilterOnTheFlyStep>(parent_node, nodes, child))
-        return updated_steps;
 
     if (auto * union_step = typeid_cast<UnionStep *>(child.get()))
     {

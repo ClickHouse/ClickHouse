@@ -1,5 +1,4 @@
 ---
-slug: /ru/engines/table-engines/integrations/mysql
 sidebar_position: 4
 sidebar_label: MySQL
 ---

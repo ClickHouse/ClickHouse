@@ -2,6 +2,7 @@
 
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Common/FileCache_fwd.h>
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
@@ -33,17 +34,20 @@ public:
         const String & log_name,
         MetadataStoragePtr metadata_storage_,
         ObjectStoragePtr object_storage_,
+        DiskType disk_type_,
         bool send_metadata_,
         uint64_t thread_pool_size_);
 
     /// Create fake transaction
     DiskTransactionPtr createTransaction() override;
 
-    DataSourceDescription getDataSourceDescription() const override { return object_storage->getDataSourceDescription(); }
+    DiskType getType() const override { return disk_type; }
 
     bool supportZeroCopyReplication() const override { return true; }
 
     bool supportParallelWrite() const override { return object_storage->supportParallelWrite(); }
+
+    const String & getName() const override { return name; }
 
     const String & getPath() const override { return metadata_storage->getPath(); }
 
@@ -90,8 +94,6 @@ public:
 
     void removeSharedRecursive(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
 
-    void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override;
-
     MetadataStoragePtr getMetadataStorage() override { return metadata_storage; }
 
     UInt32 getRefCount(const String & path) const override;
@@ -136,7 +138,7 @@ public:
 
     void shutdown() override;
 
-    void startupImpl(ContextPtr context) override;
+    void startup(ContextPtr context) override;
 
     ReservationPtr reserve(UInt64 bytes) override;
 
@@ -152,14 +154,6 @@ public:
         WriteMode mode,
         const WriteSettings & settings) override;
 
-    void writeFileUsingCustomWriteObject(
-        const String & path,
-        WriteMode mode,
-        std::function<size_t(const StoredObject & object, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>
-            custom_write_object_function) override;
-
-    void copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path) override;
-
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String &, const DisksMap &) override;
 
     void restoreMetadataIfNeeded(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context);
@@ -170,8 +164,6 @@ public:
 
     UInt64 getRevision() const override;
 
-    ObjectStoragePtr getObjectStorage() override;
-
     DiskObjectStoragePtr createDiskObjectStorage() override;
 
     bool supportsCache() const override;
@@ -181,18 +173,11 @@ public:
     /// with static files, so only read-only operations are allowed for this storage.
     bool isReadOnly() const override;
 
-    /// Is object write-once?
-    /// For example: S3PlainObjectStorage is write once, this means that it
-    /// does support BACKUP to this disk, but does not support INSERT into
-    /// MergeTree table on this disk.
-    bool isWriteOnce() const override;
-
     /// Add a cache layer.
     /// Example: DiskObjectStorage(S3ObjectStorage) -> DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
     /// There can be any number of cache layers:
     /// DiskObjectStorage(CachedObjectStorage(...CacheObjectStorage(S3ObjectStorage)...))
     void wrapWithCache(FileCachePtr cache, const FileCacheSettings & cache_settings, const String & layer_name);
-    FileCachePtr getCache() const;
 
     /// Get structure of object storage this disk works with. Examples:
     /// DiskObjectStorage(S3ObjectStorage)
@@ -217,9 +202,11 @@ private:
     /// execution.
     DiskTransactionPtr createObjectStorageTransaction();
 
+    const String name;
     const String object_storage_root_path;
     Poco::Logger * log;
 
+    const DiskType disk_type;
     MetadataStoragePtr metadata_storage;
     ObjectStoragePtr object_storage;
 

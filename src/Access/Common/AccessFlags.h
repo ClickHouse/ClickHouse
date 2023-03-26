@@ -48,17 +48,8 @@ public:
     AccessFlags operator ~() const { AccessFlags res; res.flags = ~flags; return res; }
 
     bool isEmpty() const { return flags.none(); }
-    bool isAll() const { return flags.all(); }
     explicit operator bool() const { return !isEmpty(); }
     bool contains(const AccessFlags & other) const { return (flags & other.flags) == other.flags; }
-    bool isGlobalWithParameter() const;
-    enum ParameterType
-    {
-        NONE,
-        NAMED_COLLECTION,
-    };
-    ParameterType getParameterType() const;
-    std::unordered_map<ParameterType, AccessFlags> splitIntoParameterTypes() const;
 
     friend bool operator ==(const AccessFlags & left, const AccessFlags & right) { return left.flags == right.flags; }
     friend bool operator !=(const AccessFlags & left, const AccessFlags & right) { return !(left == right); }
@@ -85,8 +76,6 @@ public:
     /// Returns all the global flags.
     static AccessFlags allGlobalFlags();
 
-    static AccessFlags allGlobalWithParameterFlags();
-
     /// Returns all the flags related to a database.
     static AccessFlags allDatabaseFlags();
 
@@ -99,15 +88,9 @@ public:
     /// Returns all the flags related to a dictionary.
     static AccessFlags allDictionaryFlags();
 
-    /// Returns all the flags related to a named collection.
-    static AccessFlags allNamedCollectionFlags();
-
     /// Returns all the flags which could be granted on the global level.
     /// The same as allFlags().
     static AccessFlags allFlagsGrantableOnGlobalLevel();
-
-    /// Returns all the flags which could be granted on the global with parameter level.
-    static AccessFlags allFlagsGrantableOnGlobalWithParameterLevel();
 
     /// Returns all the flags which could be granted on the database level.
     /// Returns allDatabaseFlags() | allTableFlags() | allDictionaryFlags() | allColumnFlags().
@@ -121,7 +104,7 @@ public:
     /// The same as allColumnFlags().
     static AccessFlags allFlagsGrantableOnColumnLevel();
 
-    static constexpr size_t SIZE = 256;
+    static constexpr size_t SIZE = 128;
 private:
     using Flags = std::bitset<SIZE>;
     Flags flags;

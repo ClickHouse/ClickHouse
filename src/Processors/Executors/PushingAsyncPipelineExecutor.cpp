@@ -6,7 +6,6 @@
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
 #include <Poco/Event.h>
-#include <Common/scope_guard_safe.h>
 
 namespace DB
 {
@@ -99,16 +98,12 @@ struct PushingAsyncPipelineExecutor::Data
 
 static void threadFunction(PushingAsyncPipelineExecutor::Data & data, ThreadGroupStatusPtr thread_group, size_t num_threads)
 {
-    SCOPE_EXIT_SAFE(
-        if (thread_group)
-            CurrentThread::detachFromGroupIfNotDetached();
-    );
     setThreadName("QueryPushPipeEx");
 
     try
     {
         if (thread_group)
-            CurrentThread::attachToGroup(thread_group);
+            CurrentThread::attachTo(thread_group);
 
         data.executor->execute(num_threads);
     }
@@ -134,16 +129,14 @@ PushingAsyncPipelineExecutor::PushingAsyncPipelineExecutor(QueryPipeline & pipel
 
     pushing_source = std::make_shared<PushingAsyncSource>(pipeline.input->getHeader());
     connect(pushing_source->getPort(), *pipeline.input);
-    pipeline.processors->emplace_back(pushing_source);
+    pipeline.processors.emplace_back(pushing_source);
 }
 
 PushingAsyncPipelineExecutor::~PushingAsyncPipelineExecutor()
 {
-    /// It must be finalized explicitly. Otherwise we cancel it assuming it's due to an exception.
-    chassert(finished || std::uncaught_exceptions() || std::current_exception());
     try
     {
-        cancel();
+        finish();
     }
     catch (...)
     {
@@ -187,7 +180,7 @@ void PushingAsyncPipelineExecutor::push(Chunk chunk)
 
     if (!is_pushed)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Pipeline for PushingAsyncPipelineExecutor was finished before all data was inserted");
+                        "Pipeline for PushingPipelineExecutor was finished before all data was inserted");
 }
 
 void PushingAsyncPipelineExecutor::push(Block block)

@@ -1,6 +1,3 @@
----
-slug: /en/operations/system-tables/parts_columns
----
 # parts_columns
 
 Contains information about parts and columns of [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
@@ -147,3 +144,4 @@ column_marks_bytes:                    48
 **See Also**
 
 -   [MergeTree family](../../engines/table-engines/mergetree-family/mergetree.md)
+

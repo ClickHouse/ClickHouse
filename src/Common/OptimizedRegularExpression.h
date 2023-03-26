@@ -5,8 +5,9 @@
 #include <memory>
 #include <optional>
 #include <Common/StringSearcher.h>
-#include "config.h"
 #include <re2/re2.h>
+
+#include <Common/config.h>
 #include <re2_st/re2.h>
 
 
@@ -100,8 +101,8 @@ private:
     bool required_substring_is_prefix;
     bool is_case_insensitive;
     std::string required_substring;
-    std::optional<DB::ASCIICaseSensitiveStringSearcher> case_sensitive_substring_searcher;
-    std::optional<DB::ASCIICaseInsensitiveStringSearcher> case_insensitive_substring_searcher;
+    std::optional<DB::StringSearcher<true, true>> case_sensitive_substring_searcher;
+    std::optional<DB::StringSearcher<false, true>> case_insensitive_substring_searcher;
     std::unique_ptr<RegexType> re2;
     unsigned number_of_subpatterns;
 

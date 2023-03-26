@@ -1,8 +1,10 @@
 # We use vectorscan, a portable and API/ABI-compatible drop-in replacement for hyperscan.
 
-if ((ARCH_AMD64 AND NOT NO_SSE3_OR_HIGHER) OR ARCH_AARCH64)
+if (ARCH_AMD64)
     option (ENABLE_VECTORSCAN "Enable vectorscan library" ${ENABLE_LIBRARIES})
 endif()
+
+# TODO: vectorscan supports ARM yet some tests involving cyrillic letters fail (PR #38171) ... needs further investigation
 
 # TODO PPC should generally work but needs manual generation of ppc/config.h file on a PPC machine
 
@@ -234,27 +236,11 @@ set (SRCS
 
 # The original build system invokes ragel on src/parser/{Parser|control_verbs}.rl (+ a few more .rl files which are unneeded). To avoid a
 # build-time dependency on ragel (via contrib/ or find_program()), add the manually generated output of ragel to the sources.
-#
-# Please regenerate these files if you update vectorscan. They must be regenerated for each platform separately because ragel produces for
-# weird reasons different constants in the output.
-#
-# Also, please use upstream versions of colm and ragel, the packages in Ubuntu 22.04 seem to produce wrong output on ARM.
-if (ARCH_AMD64)
-    list (APPEND SRCS
-        "${LIBRARY_DIR}/../vectorscan-cmake/rageled_files/amd64/Parser.cpp"
-        "${LIBRARY_DIR}/../vectorscan-cmake/rageled_files/amd64/control_verbs.cpp"
-    )
-elseif (ARCH_AARCH64)
-    list (APPEND SRCS
-        "${LIBRARY_DIR}/../vectorscan-cmake/rageled_files/aarch64/Parser.cpp"
-        "${LIBRARY_DIR}/../vectorscan-cmake/rageled_files/aarch64/control_verbs.cpp"
-    )
-    set_source_files_properties(
-        "${LIBRARY_DIR}/../vectorscan-cmake/rageled_files/aarch64/Parser.cpp"
-        "${LIBRARY_DIR}/../vectorscan-cmake/rageled_files/aarch64/control_verbs.cpp"
-        COMPILE_FLAGS -Wno-c++11-narrowing
-    )
-endif()
+# Please regenerate these files if you update vectorscan.
+list (APPEND SRCS
+    "${LIBRARY_DIR}/../vectorscan-cmake/rageled_files/Parser.cpp"
+    "${LIBRARY_DIR}/../vectorscan-cmake/rageled_files/control_verbs.cpp"
+)
 
 # Platform-dependent files
 if (ARCH_AMD64)
@@ -304,7 +290,7 @@ target_include_directories (_vectorscan SYSTEM PUBLIC "${LIBRARY_DIR}/src")
 # Please regenerate these files if you update vectorscan.
 
 if (ARCH_AMD64)
-    target_include_directories (_vectorscan PRIVATE amd64)
+    target_include_directories (_vectorscan PRIVATE x86_64)
 endif ()
 
 if (ARCH_AARCH64)

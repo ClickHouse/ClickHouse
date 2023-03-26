@@ -1,3 +1,4 @@
+-- Tags: no-fasttest
 
 DROP TABLE IF EXISTS t_tuple_numeric;
 

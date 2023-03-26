@@ -10,18 +10,15 @@
 #include <queue>
 #include <mutex>
 
-
 namespace DB
 {
 
 class QueryStatus;
-using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 class ExecutingGraph;
 using ExecutingGraphPtr = std::unique_ptr<ExecutingGraph>;
 
 class ReadProgressCallback;
 using ReadProgressCallbackPtr = std::unique_ptr<ReadProgressCallback>;
-
 
 /// Executes query pipeline.
 class PipelineExecutor
@@ -33,7 +30,7 @@ public:
     /// During pipeline execution new processors can appear. They will be added to existing set.
     ///
     /// Explicit graph representation is built in constructor. Throws if graph is not correct.
-    explicit PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem);
+    explicit PipelineExecutor(Processors & processors, QueryStatus * elem);
     ~PipelineExecutor();
 
     /// Execute pipeline in multiple threads. Must be called once.
@@ -49,9 +46,6 @@ public:
 
     /// Cancel execution. May be called from another thread.
     void cancel();
-
-    /// Cancel processors which only read data from source. May be called from another thread.
-    void cancelReading();
 
     /// Checks the query time limits (cancelled or timeout). Throws on cancellation or when time limit is reached and the query uses "break"
     bool checkTimeLimit();
@@ -81,12 +75,11 @@ private:
     bool trace_processors = false;
 
     std::atomic_bool cancelled = false;
-    std::atomic_bool cancelled_reading = false;
 
     Poco::Logger * log = &Poco::Logger::get("PipelineExecutor");
 
     /// Now it's used to check if query was killed.
-    QueryStatusPtr process_list_element;
+    QueryStatus * const process_list_element = nullptr;
 
     ReadProgressCallbackPtr read_progress_callback;
 

@@ -31,33 +31,15 @@ namespace
 template <bool is_weighted>
 class AggregateFunctionTopKDate : public AggregateFunctionTopK<DataTypeDate::FieldType, is_weighted>
 {
-public:
     using AggregateFunctionTopK<DataTypeDate::FieldType, is_weighted>::AggregateFunctionTopK;
-
-    AggregateFunctionTopKDate(UInt64 threshold_, UInt64 load_factor, const DataTypes & argument_types_, const Array & params)
-        : AggregateFunctionTopK<DataTypeDate::FieldType, is_weighted>(
-            threshold_,
-            load_factor,
-            argument_types_,
-            params,
-            std::make_shared<DataTypeArray>(std::make_shared<DataTypeDate>()))
-    {}
+    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDate>()); }
 };
 
 template <bool is_weighted>
 class AggregateFunctionTopKDateTime : public AggregateFunctionTopK<DataTypeDateTime::FieldType, is_weighted>
 {
-public:
     using AggregateFunctionTopK<DataTypeDateTime::FieldType, is_weighted>::AggregateFunctionTopK;
-
-    AggregateFunctionTopKDateTime(UInt64 threshold_, UInt64 load_factor, const DataTypes & argument_types_, const Array & params)
-        : AggregateFunctionTopK<DataTypeDateTime::FieldType, is_weighted>(
-            threshold_,
-            load_factor,
-            argument_types_,
-            params,
-            std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()))
-    {}
+    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()); }
 };
 
 
@@ -92,7 +74,7 @@ AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const
     {
         assertBinary(name, argument_types);
         if (!isInteger(argument_types[1]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The second argument for aggregate function 'topKWeighted' must have integer type");
+            throw Exception("The second argument for aggregate function 'topKWeighted' must have integer type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
     UInt64 threshold = 10;  /// default values

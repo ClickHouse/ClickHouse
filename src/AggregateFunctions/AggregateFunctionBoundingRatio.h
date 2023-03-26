@@ -20,7 +20,7 @@ namespace ErrorCodes
 
 /** Tracks the leftmost and rightmost (x, y) data points.
   */
-struct AggregateFunctionBoundingRatioData
+struct AggregateFunctionBoundingRatioData //-V730
 {
     struct Point
     {
@@ -112,15 +112,19 @@ public:
     }
 
     explicit AggregateFunctionBoundingRatio(const DataTypes & arguments)
-        : IAggregateFunctionDataHelper<AggregateFunctionBoundingRatioData, AggregateFunctionBoundingRatio>(arguments, {}, std::make_shared<DataTypeFloat64>())
+        : IAggregateFunctionDataHelper<AggregateFunctionBoundingRatioData, AggregateFunctionBoundingRatio>(arguments, {})
     {
         const auto * x_arg = arguments.at(0).get();
         const auto * y_arg = arguments.at(1).get();
 
         if (!x_arg->isValueRepresentedByNumber() || !y_arg->isValueRepresentedByNumber())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Illegal types of arguments of aggregate function {}, must have number representation.",
-                            getName());
+            throw Exception("Illegal types of arguments of aggregate function " + getName() + ", must have number representation.",
+                ErrorCodes::BAD_ARGUMENTS);
+    }
+
+    DataTypePtr getReturnType() const override
+    {
+        return std::make_shared<DataTypeFloat64>();
     }
 
     bool allocatesMemoryInArena() const override { return false; }

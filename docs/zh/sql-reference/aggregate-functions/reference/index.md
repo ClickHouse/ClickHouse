@@ -1,5 +1,4 @@
 ---
-slug: /zh/sql-reference/aggregate-functions/reference/
 sidebar_label: Reference
 sidebar_position: 36
 ---

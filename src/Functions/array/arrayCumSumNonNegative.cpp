@@ -46,8 +46,7 @@ struct ArrayCumSumNonNegativeImpl
             return std::make_shared<DataTypeArray>(nested);
         }
 
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "arrayCumSumNonNegativeImpl cannot add values of type {}", expression_return->getName());
+        throw Exception("arrayCumSumNonNegativeImpl cannot add values of type " + expression_return->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
 
@@ -119,7 +118,7 @@ struct ArrayCumSumNonNegativeImpl
             executeType<Decimal128, Decimal128>(mapped, array, res))
             return res;
         else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column for arrayCumSumNonNegativeImpl: {}", mapped->getName());
+            throw Exception("Unexpected column for arrayCumSumNonNegativeImpl: " + mapped->getName(), ErrorCodes::ILLEGAL_COLUMN);
     }
 
 };

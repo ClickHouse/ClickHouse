@@ -1,6 +1,3 @@
----
-slug: /zh/sql-reference/aggregate-functions/reference/median
----
 # median {#median}
 
 `median*` 函数是 `quantile*` 函数的别名。它们计算数字数据样本的中位数。

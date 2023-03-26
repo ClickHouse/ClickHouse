@@ -1,5 +1,4 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/meanztest
 sidebar_position: 303
 sidebar_label: meanZTest
 ---
@@ -66,3 +65,4 @@ Result:
 │ (3.2841296025548123,0.0010229786769086013,0.8198428246768334,3.2468238419898365) │
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
+
