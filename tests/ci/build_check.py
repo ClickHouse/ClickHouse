@@ -194,19 +194,21 @@ def create_json_artifact(
 
 
 def get_release_or_pr(pr_info: PRInfo, version: ClickHouseVersion) -> Tuple[str, str]:
+    "Return prefixes for S3 artifacts paths"
     # FIXME performance
     # performance builds are havily relies on a fixed path for artifacts, that's why
     # we need to preserve 0 for anything but PR number
     # It should be fixed in performance-comparison image eventually
-    performance_pr = "0"
+    # For performance tests we always set PRs prefix
+    performance_pr = "PRs/0"
     if "release" in pr_info.labels or "release-lts" in pr_info.labels:
         # for release pull requests we use branch names prefixes, not pr numbers
         return pr_info.head_ref, performance_pr
-    elif pr_info.number == 0:
+    if pr_info.number == 0:
         # for pushes to master - major version
         return f"{version.major}.{version.minor}", performance_pr
     # PR number for anything else
-    pr_number = str(pr_info.number)
+    pr_number = f"PRs/{pr_info.number}"
     return pr_number, pr_number
 
 
