@@ -514,22 +514,7 @@ bool FileCache::tryReserve(const Key & key, size_t offset, size_t size, KeyMetad
     auto locked_key = lockKeyMetadata(key, key_metadata);
 
     LOG_TEST(log, "Reserving {} bytes for key {} at offset {}", size, key.toString(), offset);
-    const bool reserved = tryReserveUnlocked(locked_key, offset, size, lock);
 
-    if (reserved)
-        LOG_TEST(log, "Successfully reserved {} bytes for key {} at offset {}", size, key.toString(), offset);
-    else
-        LOG_TEST(log, "Failed to reserve {} bytes for key {} at offset {}", size, key.toString(), offset);
-
-    return reserved;
-}
-
-bool FileCache::tryReserveUnlocked(
-    LockedKeyMetadataPtr locked_key,
-    size_t offset,
-    size_t size,
-    const CacheGuard::Lock & lock)
-{
     auto query_context = query_limit ? query_limit->tryGetQueryContext(lock) : nullptr;
     bool reserved;
 
@@ -545,7 +530,12 @@ bool FileCache::tryReserveUnlocked(
     }
 
     if (reserved)
+    {
+        LOG_TEST(log, "Successfully reserved {} bytes for key {} at offset {}", size, key.toString(), offset);
         locked_key->createKeyDirectoryIfNot();
+    }
+    else
+        LOG_TEST(log, "Failed to reserve {} bytes for key {} at offset {}", size, key.toString(), offset);
 
     return reserved;
 }
