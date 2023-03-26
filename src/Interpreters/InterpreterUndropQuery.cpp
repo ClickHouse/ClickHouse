@@ -46,7 +46,6 @@ BlockIO InterpreterUndropQuery::execute()
 BlockIO InterpreterUndropQuery::executeToTable(ASTUndropQuery & query)
 {
     auto table_id = StorageID(query);
-    auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name);
 
     auto context = getContext();
     if (table_id.database_name.empty())
@@ -55,10 +54,12 @@ BlockIO InterpreterUndropQuery::executeToTable(ASTUndropQuery & query)
         query.setDatabase(table_id.database_name);
     }
 
+    auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name);
+
     auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (database->isTableExist(table_id.table_name, getContext()))
         throw Exception(
-            ErrorCodes::TABLE_ALREADY_EXISTS, "Cannot Undrop table, {}.{} already exists", backQuote(table_id.database_name), backQuote(table_id.table_name));
+            ErrorCodes::TABLE_ALREADY_EXISTS, "Cannot Undrop table, {} already exists", table_id);
 
     database->checkMetadataFilenameAvailability(table_id.table_name);
 
