@@ -58,6 +58,7 @@
                 <max_size>2147483648</max_size>
                 <cache_on_write_operations>1</cache_on_write_operations>
                 <do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>
+                <delayed_cleanup_interval_ms>100</delayed_cleanup_interval_ms>
             </s3_cache>
             <s3_cache_2>
                 <type>cache</type>
@@ -66,6 +67,7 @@
                 <max_size>2Gi</max_size>
                 <do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>
                 <max_file_segment_size>100Mi</max_file_segment_size>
+                <delayed_cleanup_interval_ms>100</delayed_cleanup_interval_ms>
             </s3_cache_2>
             <s3_cache_3>
                 <type>cache</type>
@@ -76,6 +78,7 @@
                 <cache_on_write_operations>1</cache_on_write_operations>
                 <enable_cache_hits_threshold>1</enable_cache_hits_threshold>
                 <do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>
+                <delayed_cleanup_interval_ms>100</delayed_cleanup_interval_ms>
             </s3_cache_3>
             <s3_cache_4>
                 <type>cache</type>
@@ -85,6 +88,7 @@
                 <cache_on_write_operations>1</cache_on_write_operations>
                 <enable_filesystem_query_cache_limit>1</enable_filesystem_query_cache_limit>
                 <do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>
+                <delayed_cleanup_interval_ms>100</delayed_cleanup_interval_ms>
             </s3_cache_4>
             <s3_cache_5>
                 <type>cache</type>
@@ -92,6 +96,7 @@
                 <path>s3_cache_5/</path>
                 <max_size>22548578304</max_size>
                 <do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>
+                <delayed_cleanup_interval_ms>100</delayed_cleanup_interval_ms>
             </s3_cache_5>
             <s3_cache_6>
                 <type>cache</type>
@@ -101,6 +106,7 @@
                 <do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>
                 <enable_bypass_cache_with_threashold>1</enable_bypass_cache_with_threashold>
                 <bypass_cache_threashold>100</bypass_cache_threashold>
+                <delayed_cleanup_interval_ms>100</delayed_cleanup_interval_ms>
             </s3_cache_6>
             <s3_cache_small>
                 <type>cache</type>
@@ -108,6 +114,7 @@
                 <path>s3_cache_small/</path>
                 <max_size>1000</max_size>
                 <do_not_evict_index_and_mark_files>1</do_not_evict_index_and_mark_files>
+                <delayed_cleanup_interval_ms>100</delayed_cleanup_interval_ms>
             </s3_cache_small>
             <s3_cache_small_segment_size>
                 <type>cache</type>
@@ -117,6 +124,7 @@
                 <max_file_segment_size>10Ki</max_file_segment_size>
                 <do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>
                 <cache_on_write_operations>1</cache_on_write_operations>
+                <delayed_cleanup_interval_ms>100</delayed_cleanup_interval_ms>
             </s3_cache_small_segment_size>
             <!-- local disks -->
             <local_disk>
@@ -139,6 +147,7 @@
                 <max_size>22548578304</max_size>
                 <cache_on_write_operations>1</cache_on_write_operations>
                 <do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>
+                <delayed_cleanup_interval_ms>100</delayed_cleanup_interval_ms>
             </local_cache>
             <local_cache_2>
                 <type>cache</type>
@@ -146,6 +155,7 @@
                 <path>local_cache_2/</path>
                 <max_size>22548578304</max_size>
                 <do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>
+                <delayed_cleanup_interval_ms>100</delayed_cleanup_interval_ms>
             </local_cache_2>
             <local_cache_3>
                 <type>cache</type>
@@ -155,6 +165,7 @@
                 <cache_on_write_operations>1</cache_on_write_operations>
                 <enable_cache_hits_threshold>1</enable_cache_hits_threshold>
                 <do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>
+                <delayed_cleanup_interval_ms>100</delayed_cleanup_interval_ms>
             </local_cache_3>
             <!-- multi layer cache -->
             <s3_cache_multi>
@@ -163,6 +174,7 @@
                 <path>s3_cache_multi/</path>
                 <max_size>22548578304</max_size>
                 <do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>
+                <delayed_cleanup_interval_ms>100</delayed_cleanup_interval_ms>
             </s3_cache_multi>
             <s3_cache_multi_2>
                 <type>cache</type>
@@ -170,6 +182,7 @@
                 <path>s3_cache_multi_2/</path>
                 <max_size>22548578304</max_size>
                 <do_not_evict_index_and_mark_files>0</do_not_evict_index_and_mark_files>
+                <delayed_cleanup_interval_ms>100</delayed_cleanup_interval_ms>
             </s3_cache_multi_2>
         </disks>
         <policies>

@@ -1,5 +1,5 @@
 #include <Interpreters/Cache/QueryLimit.h>
-#include <Interpreters/Cache/LockedKey.h>
+#include <Interpreters/Cache/Metadata.h>
 
 namespace DB
 {

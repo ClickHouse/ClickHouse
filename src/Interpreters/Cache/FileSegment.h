@@ -30,8 +30,8 @@ class ReadBufferFromFileBase;
 class FileSegment;
 using FileSegmentPtr = std::shared_ptr<FileSegment>;
 using FileSegments = std::list<FileSegmentPtr>;
-struct LockedKey;
-using LockedKeyPtr = std::shared_ptr<LockedKey>;
+struct LockedKeyMetadata;
+using LockedKeyMetadataPtr = std::shared_ptr<LockedKeyMetadata>;
 struct KeyMetadata;
 using KeyMetadataPtr = std::shared_ptr<KeyMetadata>;
 
@@ -76,7 +76,7 @@ friend class FileCache;
 friend struct FileSegmentsHolder;
 friend class FileSegmentRangeWriter;
 friend class StorageSystemFilesystemCache;
-friend struct LockedKey;
+friend struct LockedKeyMetadata;
 
 public:
     using Key = FileCacheKey;
@@ -212,7 +212,7 @@ public:
     /// 2. Detached file segment can still be hold by some cache users, but it's state became
     /// immutable at the point it was detached, any non-const / stateful method will throw an
     /// exception.
-    void detach(const FileSegmentGuard::Lock &, const LockedKey &);
+    void detach(const FileSegmentGuard::Lock &, const LockedKeyMetadata &);
 
     static FileSegmentPtr getSnapshot(const FileSegmentPtr & file_segment);
 
@@ -284,7 +284,7 @@ private:
     void assertIsDownloaderUnlocked(const std::string & operation, const FileSegmentGuard::Lock &) const;
     void assertCorrectnessUnlocked(const FileSegmentGuard::Lock &) const;
 
-    LockedKeyPtr createLockedKey(bool assert_exists = true) const;
+    LockedKeyMetadataPtr lockKeyMetadata(bool assert_exists = true) const;
     KeyMetadataPtr getKeyMetadata() const;
     KeyMetadataPtr tryGetKeyMetadata() const;
 
@@ -292,7 +292,7 @@ private:
     /// Function might check if the caller of the method
     /// is the last alive holder of the segment. Therefore, completion and destruction
     /// of the file segment pointer must be done under the same cache mutex.
-    void completeUnlocked(LockedKey & locked_key, const CacheGuard::Lock &);
+    void completeUnlocked(LockedKeyMetadata & locked_key, const CacheGuard::Lock &);
 
     void completePartAndResetDownloaderUnlocked(const FileSegmentGuard::Lock & segment_lock);
     bool isDownloaderUnlocked(const FileSegmentGuard::Lock & segment_lock) const;
