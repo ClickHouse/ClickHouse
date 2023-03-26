@@ -164,6 +164,7 @@ def create_json_artifact(
         json.dump(result, build_links)
 
 
+
 def get_release_or_pr(
     pr_info: PRInfo, build_config: BuildConfig, version: ClickHouseVersion
 ) -> str:
@@ -176,7 +177,7 @@ def get_release_or_pr(
         # to deploy them somewhere, so it's ok.
         return f"{version.major}.{version.minor}"
     # PR number for anything else
-    return str(pr_info.number)
+    return f"PRs/{pr_info.number}"
 
 
 def upload_master_static_binaries(
