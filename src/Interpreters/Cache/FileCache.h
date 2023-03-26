@@ -213,12 +213,6 @@ private:
         FileSegmentPtr file_segment,
         const CacheGuard::Lock &);
 
-    bool tryReserveUnlocked(
-        LockedKeyMetadataPtr locked_key,
-        size_t offset,
-        size_t size,
-        const CacheGuard::Lock &);
-
     bool tryReserveImpl(
         IFileCachePriority & priority_queue,
         LockedKeyMetadataPtr locked_key,
