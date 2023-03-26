@@ -160,7 +160,34 @@ WHERE uploader = 'ClickHouse';
 The query above runs so quickly because we chose `uploader` as the first column of the primary key - so it only had to process 237k rows.
 :::
 
-6. Here is a search for videos with **ClickHouse** in the `title` or `description` fields:
+6. Let's look and likes and dislikes of ClickHouse videos:
+
+```sql
+SELECT
+    title,
+    like_count,
+    dislike_count
+FROM youtube
+WHERE uploader = 'ClickHouse'
+ORDER BY dislike_count DESC;
+```
+
+The response looks like:
+
+```response
+┌─title────────────────────────────────────────────────────────────────────────────────────────────────┬─like_count─┬─dislike_count─┐
+│ ClickHouse v21.11 Release Webinar                                                                    │         52 │             3 │
+│ ClickHouse Introduction                                                                              │         97 │             3 │
+│ Casa Modelo Algarve                                                                                  │        180 │             3 │
+│ Профайлер запросов:  трудный путь                                                                    │         33 │             3 │
+│ ClickHouse в Курсометре                                                                              │          4 │             2 │
+│ 10 Good Reasons to Use ClickHouse                                                                    │         27 │             2 │
+...
+
+84 rows in set. Elapsed: 0.013 sec. Processed 155.65 thousand rows, 16.94 MB (11.96 million rows/s., 1.30 GB/s.)
+```
+
+7. Here is a search for videos with **ClickHouse** in the `title` or `description` fields:
 
 ```sql
 SELECT
