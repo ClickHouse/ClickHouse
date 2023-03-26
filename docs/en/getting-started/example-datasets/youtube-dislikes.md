@@ -9,7 +9,7 @@ description: A collection is dislikes of YouTube videos.
 In November of 2021, YouTube removed the public ***dislike*** count from all of its videos. While creators can still see the number of dislikes, viewers can only see how many ***likes*** a video has received.
 
 :::important
-The dataset has over 4.5 billion records, so be careful just copying-and-pasting the commands below unless your resources can handle that type of volume. The commands below were ran on a **Development** instance of [ClickHouse Cloud](https://clickhouse.cloud).
+The dataset has over 4.5 billion records, so be careful just copying-and-pasting the commands below unless your resources can handle that type of volume. The commands below were executed on a **Development** instance of [ClickHouse Cloud](https://clickhouse.cloud).
 :::
 
 The data is in a JSON format and can be downloaded from [archive.org](https://archive.org/download/dislikes_youtube_2021_12_video_json_files). We have made this same data available in S3 so that it can be downloaded much more efficiently into a ClickHouse Cloud instance.
@@ -19,6 +19,8 @@ Here are the steps to create a table in ClickHouse Cloud and insert the data.
 :::note
 The steps below will easily work on a local install of ClickHouse too. The only change would be to use the `s3` function instead of `s3cluster` (unless you have a cluster configured - in which case change `default` to the name of your cluster).
 :::
+
+## Step-by-step instructions
 
 1. Let's see what the data looks like. The `s3cluster` table function returns a table, so we can `DESCRIBE` the reult:
 
@@ -84,7 +86,11 @@ ENGINE = MergeTree
 ORDER BY (upload_date, uploader);
 ```
 
-3. The following command streams the records from the S3 files into the `youtube` table. **(NOTE: It's a lot of data!)** If you do not want the entire dataset, add a `LIMIT` clause:
+3. The following command streams the records from the S3 files into the `youtube` table.
+
+:::important
+This inserts a lot of data - 4.65 billion rows. If you do not want the entire dataset, simply add a `LIMIT` clause with the desired number of rows.
+:::
 
 ```sql
 INSERT INTO youtube
