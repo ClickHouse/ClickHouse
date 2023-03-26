@@ -20,6 +20,7 @@
 #include <Parsers/ASTShowEngineQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTShowTablesQuery.h>
+#include <Parsers/ASTShowColumnsQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTWatchQuery.h>
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
@@ -77,6 +78,7 @@
 #include <Interpreters/InterpreterShowEngineQuery.h>
 #include <Interpreters/InterpreterShowProcesslistQuery.h>
 #include <Interpreters/InterpreterShowTablesQuery.h>
+#include <Interpreters/InterpreterShowColumnsQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Interpreters/InterpreterUseQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
@@ -168,6 +170,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextMut
     else if (query->as<ASTShowTablesQuery>())
     {
         return std::make_unique<InterpreterShowTablesQuery>(query, context);
+    }
+    else if (query->as<ASTShowColumnsQuery>())
+    {
+        return std::make_unique<InterpreterShowColumnsQuery>(query, context);
     }
     else if (query->as<ASTShowEnginesQuery>())
     {
