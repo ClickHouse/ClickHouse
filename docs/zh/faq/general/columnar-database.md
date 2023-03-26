@@ -18,9 +18,9 @@ sidebar_position: 101
 下面是构建报表时传统的面向行系统和柱状数据库之间的区别:
 
 **传统行存储**
-!(传统行存储)(https://clickhouse.com/docs/assets/images/row-oriented-3e6fd5aa48e3075202d242b4799da8fa.gif)
+![传统行存储](https://clickhouse.com/docs/assets/images/row-oriented-3e6fd5aa48e3075202d242b4799da8fa.gif)
 
 **列存储**
-!(列存储)(https://clickhouse.com/docs/assets/images/column-oriented-d082e49b7743d4ded32c7952bfdb028f.gif)
+![列存储](https://clickhouse.com/docs/assets/images/column-oriented-d082e49b7743d4ded32c7952bfdb028f.gif)
 
 列存储数据库是分析应用程序的首选，因为它允许在一个表中有许多列以防万一，但不会在读取查询执行时为未使用的列付出代价。面向列的数据库是为大数据处理而设计的，因为和数据仓库一样，它们通常使用分布式的低成本硬件集群来提高吞吐量。ClickHouse 结合了[分布式](../../engines/table-engines/special/distributed.md)和[复制式](../../engines/table-engines/mergetree-family/replication.md)两类表。
