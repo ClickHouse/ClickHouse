@@ -452,7 +452,7 @@ FilterDAGInfo buildCustomKeyFilterIfNeeded(const StoragePtr & storage,
     if (!custom_key_ast)
         throw DB::Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Parallel replicas processing iwth custom_key has been requested "
+                "Parallel replicas processing with custom_key has been requested "
                 "(setting 'max_parallel_replcias'), but the table does not have custom_key defined for it "
                 " or it's invalid (setting 'parallel_replicas_custom_key')");
 
