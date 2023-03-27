@@ -244,8 +244,6 @@ public:
         StoragePtr table;
         String metadata_path;
         time_t drop_time{};
-        /// If is_being_undropped marks true, the drop task for table will no longer be scheduled.
-        bool is_being_undropped = false;
     };
     using TablesMarkedAsDropped = std::list<TableMarkedAsDropped>;
 

@@ -21,7 +21,6 @@ NamesAndTypesList StorageSystemDroppedTables::getNamesAndTypes()
         {"table", std::make_shared<DataTypeString>()},
         {"uuid", std::make_shared<DataTypeUUID>()},
         {"engine", std::make_shared<DataTypeString>()},
-        {"is_being_undropped", std::make_shared<DataTypeUInt8>()},
         {"metadata_dropped_path", std::make_shared<DataTypeString>()},
         {"table_dropped_time", std::make_shared<DataTypeDateTime>()},
     };
@@ -40,7 +39,6 @@ void StorageSystemDroppedTables::fillData(MutableColumns & res_columns, ContextP
     auto & column_table = assert_cast<ColumnString &>(*res_columns[index++]);
     auto & column_uuid = assert_cast<ColumnUUID &>(*res_columns[index++]).getData();
     auto & column_engine = assert_cast<ColumnString &>(*res_columns[index++]);
-    auto & column_is_being_undropped = assert_cast<ColumnUInt8 &>(*res_columns[index++]);
     auto & column_metadata_dropped_path = assert_cast<ColumnString &>(*res_columns[index++]);
     auto & column_table_dropped_time = assert_cast<ColumnUInt32 &>(*res_columns[index++]);
 
@@ -54,7 +52,6 @@ void StorageSystemDroppedTables::fillData(MutableColumns & res_columns, ContextP
             column_engine.insertData(table_mark_dropped.table->getName().data(), table_mark_dropped.table->getName().size());
         else
             column_engine.insertData({}, 0);
-        column_is_being_undropped.insertValue(static_cast<UInt8>(table_mark_dropped.is_being_undropped));
         column_metadata_dropped_path.insertData(table_mark_dropped.metadata_path.data(), table_mark_dropped.metadata_path.size());
         column_table_dropped_time.insertValue(static_cast<UInt32>(table_mark_dropped.drop_time));
     };
