@@ -2,6 +2,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/InterpreterCreateQuery.h>
 #include <Storages/IStorage.h>
 #include <Databases/IDatabase.h>
 #include <Databases/DatabaseMemory.h>
