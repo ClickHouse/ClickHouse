@@ -929,7 +929,8 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
     }
 
     constexpr size_t max_digits = std::numeric_limits<UInt256>::digits10;
-    assert(scale <= max_digits && fractional_length <= max_digits);
+    assert(scale <= max_digits);
+    assert(fractional_length <= max_digits);
 
     char buf[max_digits];
     memset(buf, '0', std::max(scale, fractional_length));
@@ -974,7 +975,7 @@ void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zer
 
     writeIntText(part, ostr);
 
-    if (scale || (fixed_fractional_length && fractional_length))
+    if (scale || (fixed_fractional_length && fractional_length > 0))
     {
         part = DecimalUtils::getFractionalPart(x, scale);
         if (part || trailing_zeros)
