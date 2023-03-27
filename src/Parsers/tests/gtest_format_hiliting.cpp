@@ -95,6 +95,13 @@ bool are_equal_with_hilites_removed(std::string_view left, std::string_view righ
     return remove_hilites(left) == remove_hilites(right);
 }
 
+/*
+ * Hilited queries cannot be compared symbol-by-symbol, as there's some frivolousness introduced with the hilites. Specifically:
+ * 1. Whitespaces could be hilited with any hilite type.
+ * 2. Hilite could or could be not reset with hilite_none before the next hilite, i.e. strings a and b are equal.
+ *      a. hilite_keyword foo hilite_none hilite_operator +
+ *      b. hilite_keyword foo hilite_operator +
+ */
 bool are_equal_with_hilites(const std::string_view & left, std::string_view right)
 {
     if (!are_equal_with_hilites_removed(left, right))
@@ -255,7 +262,7 @@ TEST(FormatHiliting, ASTFunction)
 
     std::stringstream expected;
     expected << keyword("SELECT ") << "* " << keyword("FROM ")
-             << function("view") << "(" << keyword("SELECT ") << "* " << keyword("FROM ") << identifier("table") << ")";
+             << function("view(") << keyword("SELECT ") << "* " << keyword("FROM ") << identifier("table") << function(")");
 
     compare(query, expected);
 }
