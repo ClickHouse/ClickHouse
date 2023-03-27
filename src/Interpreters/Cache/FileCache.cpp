@@ -39,7 +39,6 @@ FileCache::FileCache(
         query_limit = std::make_unique<FileCacheQueryLimit>();
 
     cleanup_task = Context::getGlobalContextInstance()->getSchedulePool().createTask("FileCacheCleanup", [this]{ cleanupThreadFunc(); });
-    cleanup_task->deactivate();
 }
 
 FileCache::Key FileCache::createKeyForPath(const String & path)
@@ -1033,7 +1032,8 @@ void FileCache::iterateCacheMetadata(const CacheMetadataGuard::Lock &, std::func
 
 FileCache::~FileCache()
 {
-    cleanup_task->deactivate();
+    if (cleanup_task)
+        cleanup_task->deactivate();
 }
 
 void FileCache::cleanup()

@@ -120,11 +120,6 @@ void CacheMetadata::doCleanup()
 {
     auto lock = guard.lock();
 
-    LOG_INFO(
-        &Poco::Logger::get("FileCacheCleanupThread"),
-        "Performing background cleanup (size: {})",
-        cleanup_queue.getSize());
-
     /// Let's mention this case.
     /// This metadata cleanup is delayed so what is we marked key as deleted and
     /// put it to deletion queue, but then the same key was added to cache before
