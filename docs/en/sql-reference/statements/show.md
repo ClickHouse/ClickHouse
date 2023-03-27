@@ -21,13 +21,13 @@ Note that if you use this statement to get `CREATE` query of system tables, you 
 Prints a list of all databases.
 
 ```sql
-SHOW DATABASES [LIKE | ILIKE | NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE filename] [FORMAT format]
+SHOW DATABASES [[NOT] LIKE | ILIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE filename] [FORMAT format]
 ```
 
 This statement is identical to the query:
 
 ```sql
-SELECT name FROM system.databases [WHERE name LIKE | ILIKE | NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE filename] [FORMAT format]
+SELECT name FROM system.databases [WHERE name [NOT] LIKE | ILIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE filename] [FORMAT format]
 ```
 
 ### Examples
@@ -117,7 +117,7 @@ $ watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
 Displays a list of tables.
 
 ```sql
-SHOW [FULL] [TEMPORARY] TABLES [{FROM | IN} <db>] [LIKE | ILIKE | NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
+SHOW [FULL] [TEMPORARY] TABLES [{FROM | IN} <db>] [[NOT] LIKE | ILIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
 If the `FROM` clause is not specified, the query returns the list of tables from the current database.
@@ -125,7 +125,7 @@ If the `FROM` clause is not specified, the query returns the list of tables from
 This statement is identical to the query:
 
 ```sql
-SELECT name FROM system.tables [WHERE name LIKE | ILIKE | NOT LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
+SELECT name FROM system.tables [WHERE name [NOT] LIKE | ILIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
 ### Examples
@@ -370,7 +370,7 @@ Returns a list of clusters. All available clusters are listed in the [system.clu
 
 ``` sql
 SHOW CLUSTER '<name>'
-SHOW CLUSTERS [LIKE|NOT LIKE '<pattern>'] [LIMIT <N>]
+SHOW CLUSTERS [[NOT] LIKE|ILIKE '<pattern>'] [LIMIT <N>]
 ```
 ### Examples
 
