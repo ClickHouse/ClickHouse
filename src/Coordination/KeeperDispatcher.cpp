@@ -92,7 +92,7 @@ void KeeperDispatcher::requestThread()
                 KeeperStorage::RequestsForSessions current_batch;
                 size_t current_batch_bytes_size = 0;
 
-                bool has_read_request{false};
+                bool has_read_request = false;
 
                 /// If new request is not read request or we must to process it through quorum.
                 /// Otherwise we will process it locally.
@@ -100,8 +100,6 @@ void KeeperDispatcher::requestThread()
                 {
                     current_batch_bytes_size += request.request->bytesSize();
                     current_batch.emplace_back(request);
-
-                    size_t read_requests = 0;
 
                     const auto try_get_request = [&]
                     {
@@ -112,7 +110,6 @@ void KeeperDispatcher::requestThread()
                             /// Don't append read request into batch, we have to process them separately
                             if (!coordination_settings->quorum_reads && request.request->isReadRequest())
                             {
-                                ++read_requests;
                                 const auto & last_request = current_batch.back();
                                 std::lock_guard lock(read_request_queue_mutex);
                                 read_request_queue[last_request.session_id][last_request.request->xid].push_back(request);
