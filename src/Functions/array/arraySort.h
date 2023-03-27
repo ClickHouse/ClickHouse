@@ -17,9 +17,6 @@ namespace ErrorCodes
 template <bool positive, bool is_partial>
 struct ArraySortImpl
 {
-    using column_type = ColumnArray;
-    using data_type = DataTypeArray;
-
     static constexpr auto num_fixed_params = is_partial;
 
     static bool needBoolean() { return false; }

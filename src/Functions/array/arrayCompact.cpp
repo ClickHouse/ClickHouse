@@ -19,9 +19,6 @@ namespace ErrorCodes
 
 struct ArrayCompactImpl
 {
-    using column_type = ColumnArray;
-    using data_type = DataTypeArray;
-
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
