@@ -608,7 +608,6 @@ if (ENABLE_TESTS)
         dbms
         clickhouse_common_config
         clickhouse_common_zookeeper
-        ch_contrib::parquet
         string_utils)
 
     if (TARGET ch_contrib::simdjson)
@@ -623,6 +622,9 @@ if (ENABLE_TESTS)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::azure_sdk)
     endif()
 
+    if (TARGET ch_contrib::parquet)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::parquet)
+    endif()
 
     add_check(unit_tests_dbms)
 endif ()
