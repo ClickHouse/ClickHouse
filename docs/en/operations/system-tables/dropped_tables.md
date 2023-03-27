@@ -1,5 +1,5 @@
 ---
-slug: /en/operations/system-tables/marked_dropped_tables
+slug: /en/operations/system-tables/dropped_tables
 ---
 # marked_dropped_tables
 
