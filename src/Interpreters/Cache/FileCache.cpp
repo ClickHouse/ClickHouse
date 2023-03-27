@@ -1032,6 +1032,11 @@ void FileCache::iterateCacheMetadata(const CacheMetadataGuard::Lock &, std::func
 
 FileCache::~FileCache()
 {
+    deactivateBackgroundOperations();
+}
+
+void FileCache::deactivateBackgroundOperations()
+{
     if (cleanup_task)
         cleanup_task->deactivate();
 }

@@ -116,6 +116,8 @@ public:
 
     void cleanup();
 
+    void deactivateBackgroundOperations();
+
     /// For per query cache limit.
     struct QueryContextHolder : private boost::noncopyable
     {
