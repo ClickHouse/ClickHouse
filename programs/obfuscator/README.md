@@ -312,7 +312,7 @@ hash("images/c") % total_count:             ^
  
 <pre class='code-with-play'>
 <div class='code'>
-PhotoFunia - Haber7 - Hava mükemment.net Oynamak içinde şaşıracak haber, Oyunu Oynanılmaz • apród.hu kínálatában - RT Arabic
+PhotoFunia - Haber7 - Have mükemment.net Oynamak içinde şaşıracak haber, Oyunu Oynanılmaz • apród.hu kínálatában - RT Arabic
 PhotoFunia - Kinobar.Net - apród: Ingyenes | Posti
 PhotoFunia - Peg Perfeo - Castika, Sıradışı Deniz Lokoning Your Code, sire Eminema.tv/
 PhotoFunia - TUT.BY - Your Ayakkanın ve Son Dakika Spor,
@@ -323,7 +323,7 @@ PhotoFunia Monstelli'nin En İyi kisa.com.tr –Star Thunder Ekranı
 PhotoFunia Seks - Politika,Ekonomi,Spor GTA SANAYİ VE
 PhotoFunia Taker-Rating Star TV Resmi Söylenen Yatağa każdy dzież wierzchnie
 PhotoFunia TourIndex.Marketime oyunu Oyna Geldolları Mynet Spor,Magazin,Haberler yerel Haberleri ve Solvia, korkusuz Ev SahneTv
-PhotoFunia todo in the Gratis Perky Parti'nin yapıyı bu fotogram
+PhotoFunia todo in the Gratis Perky Parti'nin yapıyı by fotogram
 PhotoFunian Dünyasın takımız halles en kulları - TEZ
 </div>
 </pre>
