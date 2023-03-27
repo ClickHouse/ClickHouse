@@ -544,7 +544,7 @@ void ReplicatedMergeTreeQueue::removeProcessedEntry(zkutil::ZooKeeperPtr zookeep
     if (!found && need_remove_from_zk)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't find {} in the memory queue. It is a bug. Entry: {}",
                                                       entry->znode_name, entry->toString());
-    notifySubscribers(queue_size, entry->znode_name);
+    notifySubscribers(queue_size, &(entry->znode_name));
 
     if (!need_remove_from_zk)
         return;
@@ -2465,20 +2465,42 @@ String ReplicatedMergeTreeMergePredicate::getCoveringVirtualPart(const String & 
 ReplicatedMergeTreeQueue::SubscriberHandler
 ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCallBack && callback)
 {
-    std::lock_guard lock(state_mutex);
-    std::unordered_set<String> result;
-    result.reserve(queue.size());
-    for (const auto & entry : queue)
-        result.insert(entry->znode_name);
-
+    std::lock_guard<std::mutex> lock(state_mutex);
     std::lock_guard lock_subscribers(subscribers_mutex);
 
     auto it = subscribers.emplace(subscribers.end(), std::move(callback));
 
-    /// Notify queue size & log entry ids to avoid waiting for removed entries
-    (*it)(result.size(), result, std::nullopt);
+    /// Atomically notify about current size
+    (*it)(queue.size(), nullptr);
 
     return SubscriberHandler(it, *this);
+}
+
+std::unordered_set<String> ReplicatedMergeTreeQueue::getEntryNamesSet(bool lightweight_entries_only)
+{
+    std::lock_guard lock(state_mutex);
+    std::unordered_set<String> result;
+    result.reserve(queue.size());
+    for (const auto & entry : queue)
+    {
+        bool is_lightweight = entry->type == LogEntry::GET_PART || entry->type == LogEntry::ATTACH_PART
+            || entry->type == LogEntry::DROP_RANGE || entry->type == LogEntry::REPLACE_RANGE || entry->type == LogEntry::DROP_PART;
+        if (!lightweight_entries_only || is_lightweight)
+            result.insert(entry->znode_name);
+    }
+    return result;
+}
+
+void ReplicatedMergeTreeQueue::notifySubscribersOnPartialShutdown()
+{
+    size_t queue_size;
+    {
+        std::lock_guard<std::mutex> lock(state_mutex);
+        queue_size = queue.size();
+    }
+    std::lock_guard lock_subscribers(subscribers_mutex);
+    for (auto & subscriber_callback : subscribers)
+        subscriber_callback(queue_size, nullptr);
 }
 
 ReplicatedMergeTreeQueue::SubscriberHandler::~SubscriberHandler()
@@ -2487,16 +2509,11 @@ ReplicatedMergeTreeQueue::SubscriberHandler::~SubscriberHandler()
     queue.subscribers.erase(it);
 }
 
-void ReplicatedMergeTreeQueue::notifySubscribers(size_t new_queue_size, std::optional<String> removed_log_entry_id)
+void ReplicatedMergeTreeQueue::notifySubscribers(size_t new_queue_size, const String * removed_log_entry_id)
 {
     std::lock_guard lock_subscribers(subscribers_mutex);
     for (auto & subscriber_callback : subscribers)
-        subscriber_callback(new_queue_size, {}, removed_log_entry_id);
-}
-
-ReplicatedMergeTreeQueue::~ReplicatedMergeTreeQueue()
-{
-    notifySubscribers(0, std::nullopt);
+        subscriber_callback(new_queue_size, removed_log_entry_id);
 }
 
 String padIndex(Int64 index)

@@ -4415,6 +4415,7 @@ void StorageReplicatedMergeTree::partialShutdown()
 
     partial_shutdown_called = true;
     partial_shutdown_event.set();
+    queue.notifySubscribersOnPartialShutdown();
     replica_is_active_node = nullptr;
 
     LOG_TRACE(log, "Waiting for threads to finish");
@@ -7578,53 +7579,59 @@ void StorageReplicatedMergeTree::onActionLockRemove(StorageActionBlockType actio
         background_moves_assignee.trigger();
 }
 
-bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_milliseconds, bool strict)
+bool StorageReplicatedMergeTree::waitForProcessingQueue(UInt64 max_wait_milliseconds, SyncReplicaMode sync_mode)
 {
-    Stopwatch watch;
-
     /// Let's fetch new log entries firstly
     queue.pullLogsToQueue(getZooKeeperAndAssertNotReadonly(), {}, ReplicatedMergeTreeQueue::SYNC);
+
+    if (sync_mode == SyncReplicaMode::PULL)
+        return true;
+
     /// This is significant, because the execution of this task could be delayed at BackgroundPool.
     /// And we force it to be executed.
     background_operations_assignee.trigger();
 
     std::unordered_set<String> wait_for_ids;
-    bool set_ids_to_wait = true;
+    bool was_interrupted = false;
+    if (sync_mode == SyncReplicaMode::DEFAULT)
+        wait_for_ids = queue.getEntryNamesSet(/* lightweight_entries_only */ false);
+    else if (sync_mode == SyncReplicaMode::LIGHTWEIGHT)
+        wait_for_ids = queue.getEntryNamesSet(/* lightweight_entries_only */ true);
 
     Poco::Event target_entry_event;
-    auto callback = [&target_entry_event, &wait_for_ids, &set_ids_to_wait, strict]
-        (size_t new_queue_size, std::unordered_set<String> log_entry_ids, std::optional<String> removed_log_entry_id)
+    auto callback = [this, &target_entry_event, &wait_for_ids, &was_interrupted, sync_mode]
+        (size_t new_queue_size, const String * removed_log_entry_id)
     {
-        if (strict)
+        if (partial_shutdown_called)
         {
-            /// In strict mode we wait for queue to become empty
+            was_interrupted = true;
+            target_entry_event.set();
+            return;
+        }
+
+        if (sync_mode == SyncReplicaMode::STRICT)
+        {
+            /// Wait for queue to become empty
             if (new_queue_size == 0)
                 target_entry_event.set();
             return;
         }
 
-        if (set_ids_to_wait)
-        {
-            wait_for_ids = log_entry_ids;
-            set_ids_to_wait = false;
-        }
+        if (removed_log_entry_id)
+            wait_for_ids.erase(*removed_log_entry_id);
 
-        if (removed_log_entry_id.has_value())
-            wait_for_ids.erase(removed_log_entry_id.value());
-
-        if (wait_for_ids.empty() || new_queue_size == 0)
+        chassert(new_queue_size || wait_for_ids.empty());
+        if (wait_for_ids.empty())
             target_entry_event.set();
     };
     const auto handler = queue.addSubscriber(std::move(callback));
 
-    while (!target_entry_event.tryWait(50))
-    {
-        if (max_wait_milliseconds && watch.elapsedMilliseconds() > max_wait_milliseconds)
-            return false;
+    if (!target_entry_event.tryWait(max_wait_milliseconds))
+        return false;
 
-        if (partial_shutdown_called)
-            throw Exception(ErrorCodes::ABORTED, "Shutdown is called for table");
-    }
+    if (was_interrupted)
+        throw Exception(ErrorCodes::ABORTED, "Shutdown is called for table");
+
     return true;
 }
 
