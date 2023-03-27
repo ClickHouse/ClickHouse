@@ -994,8 +994,7 @@ Timeout to close idle TCP connections after specified number of seconds.
 
 Possible values:
 
--   Positive integer.
--   0 — Never.
+-   Positive integer (0 - close immediatly, after 0 seconds).
 
 Default value: 3600.
 
