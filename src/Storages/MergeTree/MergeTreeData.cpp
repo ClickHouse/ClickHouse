@@ -6238,7 +6238,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             agg_count->set(place, value.get<UInt64>());
         else
         {
-            auto value_column = func->getResultType()->createColumnConst(1, value)->convertToFullColumnIfConst();
+            auto value_column = func->getArgumentTypes().front()->createColumnConst(1, value)->convertToFullColumnIfConst();
             const auto * value_column_ptr = value_column.get();
             func->add(place, &value_column_ptr, 0, &arena);
         }
@@ -6444,6 +6444,9 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
 {
     const auto & metadata_snapshot = storage_snapshot->metadata;
     const auto & settings = query_context->getSettingsRef();
+
+    if (settings.query_plan_optimize_projection)
+        return std::nullopt;
 
     /// TODO: Analyzer syntax analyzer result
     if (!query_info.syntax_analyzer_result)
