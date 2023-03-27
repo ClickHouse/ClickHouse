@@ -726,6 +726,9 @@ class IColumn;
 #define MAKE_OBSOLETE(M, TYPE, NAME, DEFAULT) \
     M(TYPE, NAME, DEFAULT, "Obsolete setting, does nothing.", BaseSettingsHelpers::Flags::OBSOLETE)
 
+#define MAKE_DEPRECATED_BY_SERVER_CONFIG(M, TYPE, NAME, DEFAULT) \
+    M(TYPE, NAME, DEFAULT, "User-level setting is deprecated, and it must be defined in the server configuration instead.", BaseSettingsHelpers::Flags::OBSOLETE)
+
 #define OBSOLETE_SETTINGS(M, ALIAS) \
     /** Obsolete settings that do nothing but left for compatibility reasons. Remove each one after half a year of obsolescence. */ \
     MAKE_OBSOLETE(M, UInt64, max_memory_usage_for_all_queries, 0) \
@@ -746,15 +749,17 @@ class IColumn;
     MAKE_OBSOLETE(M, UInt64, partial_merge_join_optimizations, 0) \
     MAKE_OBSOLETE(M, MaxThreads, max_alter_threads, 0) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_projection_optimization, true) \
-    MAKE_OBSOLETE(M, UInt64, background_buffer_flush_schedule_pool_size, 16) \
-    MAKE_OBSOLETE(M, UInt64, background_pool_size, 16) \
-    MAKE_OBSOLETE(M, Float, background_merges_mutations_concurrency_ratio, 2) \
-    MAKE_OBSOLETE(M, UInt64, background_move_pool_size, 8) \
-    MAKE_OBSOLETE(M, UInt64, background_fetches_pool_size, 8) \
-    MAKE_OBSOLETE(M, UInt64, background_common_pool_size, 8) \
-    MAKE_OBSOLETE(M, UInt64, background_schedule_pool_size, 128) \
-    MAKE_OBSOLETE(M, UInt64, background_message_broker_schedule_pool_size, 16) \
-    MAKE_OBSOLETE(M, UInt64, background_distributed_schedule_pool_size, 16) \
+    /* moved to config.xml: see also src/Core/ServerSettings.h */ \
+    MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_buffer_flush_schedule_pool_size, 16) \
+    MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_pool_size, 16) \
+    MAKE_DEPRECATED_BY_SERVER_CONFIG(M, Float, background_merges_mutations_concurrency_ratio, 2) \
+    MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_move_pool_size, 8) \
+    MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_fetches_pool_size, 8) \
+    MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_common_pool_size, 8) \
+    MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_schedule_pool_size, 128) \
+    MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_message_broker_schedule_pool_size, 16) \
+    MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_distributed_schedule_pool_size, 16) \
+    /* ---- */ \
     MAKE_OBSOLETE(M, DefaultDatabaseEngine, default_database_engine, DefaultDatabaseEngine::Atomic) \
     MAKE_OBSOLETE(M, UInt64, max_pipeline_depth, 0)                                                                                 \
     MAKE_OBSOLETE(M, Seconds, temporary_live_view_timeout, 1) \
