@@ -103,7 +103,7 @@ protected:
     {
         out.writeKeyword(ASTShowCreateDatabaseQueryIDAndQueryNames::Query);
         out.ostr << " ";
-        out.writeKeyword(backQuoteIfNeed(getDatabase()));
+        out.ostr << backQuoteIfNeed(getDatabase());
     }
 };
 
