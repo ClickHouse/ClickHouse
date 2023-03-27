@@ -133,9 +133,8 @@ protected:
 
     using ExecutorHolderPtr = std::shared_ptr<ExecutorHolder>;
 
-    /// Array of PipelineExecutors to be cancelled when a cancelQuery is received
-    std::vector<ExecutorHolderPtr> executors;
-    std::unordered_map<PipelineExecutor *, size_t> executor_indexes;
+    /// Container of PipelineExecutors to be cancelled when a cancelQuery is received
+    std::unordered_map<PipelineExecutor *, ExecutorHolderPtr> executors;
 
     enum QueryStreamsStatus
     {

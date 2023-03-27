@@ -362,7 +362,7 @@ QueryStatus::~QueryStatus()
 {
 #if !defined(NDEBUG)
     /// Check that all executors were invalidated.
-    for (const auto & e : executors)
+    for (const auto & [_, e] : executors)
         assert(!e->executor);
 #endif
 
@@ -400,7 +400,9 @@ CancellationCode QueryStatus::cancelQuery(bool)
     {
         /// Create a snapshot of executors under a mutex.
         std::lock_guard lock(executors_mutex);
-        executors_snapshot = executors;
+        executors_snapshot.reserve(executors.size());
+        for (const auto & [_, e] : executors)
+            executors_snapshot.push_back(e);
     }
 
     /// We should call cancel() for each executor with unlocked executors_mutex, because
@@ -428,9 +430,8 @@ void QueryStatus::addPipelineExecutor(PipelineExecutor * e)
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 
     std::lock_guard lock(executors_mutex);
-    assert(!executor_indexes.contains(e));
-    executors.push_back(std::make_shared<ExecutorHolder>(e));
-    executor_indexes[e] = executors.size() - 1;
+    assert(!executors.contains(e));
+    executors[e] = std::make_shared<ExecutorHolder>(e);
 }
 
 void QueryStatus::removePipelineExecutor(PipelineExecutor * e)
@@ -439,12 +440,12 @@ void QueryStatus::removePipelineExecutor(PipelineExecutor * e)
 
     {
         std::lock_guard lock(executors_mutex);
-        assert(executor_indexes.contains(e));
-        executor_holder = executors[executor_indexes[e]];
-        executor_indexes.erase(e);
+        assert(executors.contains(e));
+        executor_holder = executors[e];
+        executors.erase(e);
     }
 
-    /// Invalidate executor pointer inside holder, but don't remove holder from the executors (to avoid race with cancelQuery)
+    /// Invalidate executor pointer inside holder.
     /// We should do it with released executors_mutex to avoid possible lock order inversion.
     executor_holder->remove();
 }
