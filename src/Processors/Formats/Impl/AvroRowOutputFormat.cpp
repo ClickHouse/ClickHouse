@@ -386,7 +386,9 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             const auto & nested_names = tuple_type.getElementNames();
             std::vector<SerializeFn> nested_serializers;
             nested_serializers.reserve(nested_types.size());
-            auto schema = avro::RecordSchema(column_name);
+            /// We should use unique names for records. Otherwise avro will reuse schema of this record later
+            /// for all records with the same name.
+            auto schema = avro::RecordSchema(column_name + "_" + std::to_string(type_name_increment));
             for (size_t i = 0; i != nested_types.size(); ++i)
             {
                 auto nested_mapping = createSchemaWithSerializeFn(nested_types[i], type_name_increment, nested_names[i]);
