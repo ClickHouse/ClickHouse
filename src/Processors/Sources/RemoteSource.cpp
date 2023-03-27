@@ -106,8 +106,13 @@ std::optional<Chunk> RemoteSource::tryGenerate()
         /// Get rows_before_limit result for remote query from ProfileInfo packet.
         query_executor->setProfileInfoCallback([this](const ProfileInfo & info)
         {
-            if (rows_before_limit && info.hasAppliedLimit())
-                rows_before_limit->set(info.getRowsBeforeLimit());
+            if (rows_before_limit)
+            {
+                if (info.hasAppliedLimit())
+                    rows_before_limit->add(info.getRowsBeforeLimit());
+                else
+                    manually_add_rows_before_limit_counter = true; /// Remote subquery doesn't contain a limit
+            }
         });
 
         query_executor->sendQuery();
@@ -146,11 +151,15 @@ std::optional<Chunk> RemoteSource::tryGenerate()
 
     if (!block)
     {
+        if (manually_add_rows_before_limit_counter)
+            rows_before_limit->add(rows);
+
         query_executor->finish(&read_context);
         return {};
     }
 
     UInt64 num_rows = block.rows();
+    rows += num_rows;
     Chunk chunk(block.getColumns(), num_rows);
 
     if (add_aggregation_info)

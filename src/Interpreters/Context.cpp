@@ -1918,8 +1918,13 @@ BackupsWorker & Context::getBackupsWorker() const
     const bool allow_concurrent_backups = this->getConfigRef().getBool("backups.allow_concurrent_backups", true);
     const bool allow_concurrent_restores = this->getConfigRef().getBool("backups.allow_concurrent_restores", true);
 
+    const auto & config = getConfigRef();
+    const auto & settings = getSettingsRef();
+    UInt64 backup_threads = config.getUInt64("backup_threads", settings.backup_threads);
+    UInt64 restore_threads = config.getUInt64("restore_threads", settings.restore_threads);
+
     if (!shared->backups_worker)
-        shared->backups_worker.emplace(getSettingsRef().backup_threads, getSettingsRef().restore_threads, allow_concurrent_backups, allow_concurrent_restores);
+        shared->backups_worker.emplace(backup_threads, restore_threads, allow_concurrent_backups, allow_concurrent_restores);
 
     return *shared->backups_worker;
 }
