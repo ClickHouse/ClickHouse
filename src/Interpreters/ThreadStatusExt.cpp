@@ -73,6 +73,32 @@ ThreadGroupStatusPtr ThreadGroupStatus::createForQuery(ContextPtr query_context_
     return group;
 }
 
+ThreadGroupStatusPtr ThreadGroupStatus::createForBackgroundProcess(ContextPtr storage_context, const char * description)
+{
+    /// Only for the case optimize query
+    /// Push the counters to the upper process level counters
+    auto * p_counters = CurrentThread::get().current_performance_counters;
+    while (p_counters && p_counters->level != VariableContext::Process)
+        p_counters = p_counters->getParent();
+
+    auto group = std::make_shared<ThreadGroupStatus>();
+    if (p_counters)
+        group->performance_counters.setParent(p_counters);
+
+    group->memory_tracker.setDescription(description);
+
+    /// No query context for background process
+    /// However settings from storage context have to be applied
+    const Settings & settings = storage_context->getSettingsRef();
+    group->memory_tracker.setProfilerStep(settings.memory_profiler_step);
+    group->memory_tracker.setSampleProbability(settings.memory_profiler_sample_probability);
+    group->memory_tracker.setSoftLimit(settings.memory_overcommit_ratio_denominator);
+    if (settings.memory_tracker_fault_probability > 0.0)
+        group->memory_tracker.setFaultProbability(settings.memory_tracker_fault_probability);
+
+    return group;
+}
+
 void ThreadGroupStatus::attachQueryForLog(const String & query_, UInt64 normalized_hash)
 {
     auto hash = normalized_hash ? normalized_hash : normalizedQueryHash<false>(query_);
