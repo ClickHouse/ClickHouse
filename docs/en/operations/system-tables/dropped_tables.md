@@ -1,7 +1,7 @@
 ---
-slug: /en/operations/system-tables/marked_dropped_tables
+slug: /en/operations/system-tables/dropped_tables
 ---
-# marked_dropped_tables
+# dropped_tables
 
 Contains information about tables that drop table has been executed but data cleanup has not been actually performed.
 
@@ -17,11 +17,11 @@ Columns:
 
 **Example**
 
-The following example shows how to get information about marked_dropped_tables.
+The following example shows how to get information about dropped_tables.
 
 ``` sql
 SELECT *
-FROM system.marked_dropped_tables\G
+FROM system.dropped_tables\G
 ```
 
 ``` text
