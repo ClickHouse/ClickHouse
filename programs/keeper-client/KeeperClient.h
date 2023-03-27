@@ -30,7 +30,7 @@ public:
 
 protected:
     void runInteractive();
-    void loadCommands(std::vector<std::tuple<String, size_t, Callback>> && callback);
+    void loadCommands(std::vector<std::tuple<String, size_t, Callback>> && new_commands);
     bool processQueryText(const String & text);
     void executeQuery(const String & query);
 
