@@ -711,6 +711,7 @@ public:
 
         optimize_filter(query_node->getWhere());
         optimize_filter(query_node->getPrewhere());
+        optimize_filter(query_node->getHaving());
 
         if (has_filter && settings.optimize_substitute_columns)
             substituteColumns(*query_node, table_expressions, context);
@@ -719,7 +720,7 @@ public:
 
 }
 
-void ConvertQueryToCNFPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
+void ConvertLogicalExpressionToCNFPass::run(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
     const auto & settings = context->getSettingsRef();
     if (!settings.convert_query_to_cnf)
