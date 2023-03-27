@@ -1,7 +1,7 @@
 ---
 slug: /en/operations/system-tables/dropped_tables
 ---
-# marked_dropped_tables
+# dropped_tables
 
 Contains information about tables that drop table has been executed but data cleanup has not been actually performed.
 
