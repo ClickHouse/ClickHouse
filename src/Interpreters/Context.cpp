@@ -42,6 +42,8 @@
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/Cache/QueryCache.h>
+#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/Cache/FileCache.h>
 #include <Core/Settings.h>
 #include <Core/SettingsQuirks.h>
 #include <Access/AccessControl.h>
@@ -435,6 +437,10 @@ struct ContextSharedPart : boost::noncopyable
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             }
         }
+
+        const auto & caches = FileCacheFactory::instance().getAll();
+        for (const auto & [_, cache] : caches)
+            cache->cache->deactivateBackgroundOperations();
 
         try
         {
