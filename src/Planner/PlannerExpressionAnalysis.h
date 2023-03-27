@@ -7,7 +7,6 @@
 
 #include <Interpreters/ActionsDAG.h>
 
-#include <Planner/ActionsChain.h>
 #include <Planner/PlannerContext.h>
 #include <Planner/PlannerAggregation.h>
 #include <Planner/PlannerWindowFunctions.h>
@@ -169,11 +168,6 @@ private:
     SortAnalysisResult sort_analysis_result;
     LimitByAnalysisResult limit_by_analysis_result;
 };
-
-FilterAnalysisResult analyzeFilter(const QueryTreeNodePtr & filter_expression_node,
-    const ColumnsWithTypeAndName & input_columns,
-    const PlannerContextPtr & planner_context,
-    ActionsChain & actions_chain);
 
 /// Build expression analysis result for query tree, join tree input columns and planner context
 PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNodePtr & query_tree,

@@ -29,6 +29,24 @@ namespace ErrorCodes
 namespace
 {
 
+/** Construct filter analysis result for filter expression node
+  * Actions before filter are added into into actions chain.
+  * It is client responsibility to update filter analysis result if filter column must be removed after chain is finalized.
+  */
+FilterAnalysisResult analyzeFilter(const QueryTreeNodePtr & filter_expression_node,
+    const ColumnsWithTypeAndName & input_columns,
+    const PlannerContextPtr & planner_context,
+    ActionsChain & actions_chain)
+{
+    FilterAnalysisResult result;
+
+    result.filter_actions = buildActionsDAGFromExpressionNode(filter_expression_node, input_columns, planner_context);
+    result.filter_column_name = result.filter_actions->getOutputs().at(0)->result_name;
+    actions_chain.addStep(std::make_unique<ActionsChainStep>(result.filter_actions));
+
+    return result;
+}
+
 /** Construct aggregation analysis result if query tree has GROUP BY or aggregates.
   * Actions before aggregation are added into actions chain, if result is not null optional.
   */
@@ -449,25 +467,6 @@ LimitByAnalysisResult analyzeLimitBy(const QueryNode & query_node,
 }
 
 }
-
-/** Construct filter analysis result for filter expression node
-  * Actions before filter are added into into actions chain.
-  * It is client responsibility to update filter analysis result if filter column must be removed after chain is finalized.
-  */
-FilterAnalysisResult analyzeFilter(const QueryTreeNodePtr & filter_expression_node,
-    const ColumnsWithTypeAndName & input_columns,
-    const PlannerContextPtr & planner_context,
-    ActionsChain & actions_chain)
-{
-    FilterAnalysisResult result;
-
-    result.filter_actions = buildActionsDAGFromExpressionNode(filter_expression_node, input_columns, planner_context);
-    result.filter_column_name = result.filter_actions->getOutputs().at(0)->result_name;
-    actions_chain.addStep(std::make_unique<ActionsChainStep>(result.filter_actions));
-
-    return result;
-}
-
 
 PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNodePtr & query_tree,
     const ColumnsWithTypeAndName & join_tree_input_columns,
