@@ -979,26 +979,12 @@ void DatabaseCatalog::dequeueDroppedTableCleanup(StorageID table_id)
                 "The drop task of table {} is in progress, has been dropped or the database engine doesn't support it",
                 table_id.getNameForLogs());
         latest_metadata_dropped_path = it_dropped_table->metadata_path;
-        /// If is_being_undropped of table is true, table drop task will skip this table.
-        it_dropped_table->is_being_undropped = true;
         String table_metadata_path = getPathForMetadata(it_dropped_table->table_id);
 
-        try
-        {
-            /// a table is successfully marked undropped,
-            /// if and only if its metadata file was moved to a database.
-            renameNoReplace(latest_metadata_dropped_path, table_metadata_path);
-        }
-        catch (...)
-        {
-            it_dropped_table->is_being_undropped = false;
-            throw Exception(
-                ErrorCodes::FS_METADATA_ERROR,
-                "Cannot undrop table {}, failed to rename {} to {}",
-                dropped_table.table_id.getNameForLogs(),
-                latest_metadata_dropped_path,
-                table_metadata_path);
-        }
+        /// a table is successfully marked undropped,
+        /// if and only if its metadata file was moved to a database.
+        /// This maybe throw exception.
+        renameNoReplace(latest_metadata_dropped_path, table_metadata_path);
 
         tables_marked_dropped.erase(it_dropped_table);
         [[maybe_unused]] auto removed = tables_marked_dropped_ids.erase(dropped_table.table_id.uuid);
@@ -1024,12 +1010,20 @@ void DatabaseCatalog::dequeueDroppedTableCleanup(StorageID table_id)
         };
         wait_dropped_table_not_in_use();
 
-        String query = fmt::format("ATTACH TABLE {}", dropped_table.table_id.getFullTableName());
+        auto ast_attach = std::make_shared<ASTCreateQuery>();
+        ast_attach->attach = true;
+        ast_attach->setDatabase(dropped_table.table_id.database_name);
+        ast_attach->setTable(dropped_table.table_id.table_name);
+
         auto query_context = Context::createCopy(getContext());
         /// Attach table needs to acquire ddl guard, that has already been acquired in undrop table,
         /// and cannot be acquired in the attach table again.
         query_context->setInDDLGuard(true);
-        executeQuery(query, query_context, true);
+        InterpreterCreateQuery interpreter(ast_attach, query_context);
+        interpreter.setForceAttach(true);
+        interpreter.setForceRestoreData(true);
+        interpreter.execute();
+
         LOG_INFO(log, "Table {} was successfully Undropped.", dropped_table.table_id.getNameForLogs());
     }
     catch (...)
@@ -1065,7 +1059,7 @@ void DatabaseCatalog::dropTableDataTask()
             bool old_enough = elem.drop_time <= current_time;
             min_drop_time = std::min(min_drop_time, elem.drop_time);
             tables_in_use_count += !not_in_use;
-            return not_in_use && old_enough && !elem.is_being_undropped;
+            return not_in_use && old_enough;
         });
         if (it != tables_marked_dropped.end())
         {
