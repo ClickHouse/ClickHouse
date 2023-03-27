@@ -737,37 +737,38 @@ Result:
 └────────────┴───────┘
 ```
 
-## formatDecimal
+## toDecimalString
 
-Represents a numeric value as String with exact number of fractional digits.
+Converts a numeric value to String with the number of fractional digits in the output specified by the user.
 
 **Syntax**
 
 ``` sql
-formatDecimal(number, num_digits)
+toDecimalString(number, scale)
 ```
 
 **Parameters**
 
--   `number` — Value to be represented as String, of any numeric value. [Int, UInt](/docs/en/sql-reference/data-types/int-uint.md), [Float](/docs/en/sql-reference/data-types/float.md), [Decimal](/docs/en/sql-reference/data-types/decimal.md),
--   `num_digits` — Number of fractional digits [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
+-   `number` — Value to be represented as String, [Int, UInt](/docs/en/sql-reference/data-types/int-uint.md), [Float](/docs/en/sql-reference/data-types/float.md), [Decimal](/docs/en/sql-reference/data-types/decimal.md),
+-   `scale` — Number of fractional digits, [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
--   Input value represented as [String](/docs/en/sql-reference/data-types/string.md) with given scale.
+-   Input value represented as [String](/docs/en/sql-reference/data-types/string.md) with given number of fractional digits (scale).
+    The number is rounded up or down according to common arithmetics in case requested scale is smaller than original number's scale.
 
 **Example**
 
 Query:
 
 ``` sql
-SELECT formatDecimal(CAST('64.32', 'Float64'), 5);
+SELECT toDecimalString(CAST('64.32', 'Float64'), 5);
 ```
 
 Result:
 
 ```response
-┌─formatDecimal(CAST('64.32', 'Float64'), 5)──┐
+┌toDecimalString(CAST('64.32', 'Float64'), 5)─┐
 │ 64.32000                                    │
 └─────────────────────────────────────────────┘
 ```
