@@ -97,7 +97,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_DATABASE;
-    extern const int UNKNOWN_TABLE;
     extern const int PATH_ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
     extern const int ENGINE_REQUIRED;
@@ -1077,62 +1076,6 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
     }
 }
 
-void InterpreterCreateQuery::checkTypecompatibleForMaterializeView(const ASTCreateQuery & create)
-{
-    if (StoragePtr to_table = DatabaseCatalog::instance().tryGetTable(
-            {create.to_table_id.database_name, create.to_table_id.table_name, create.to_table_id.uuid},
-            getContext()
-        ))
-        {
-            Block input_block;
-            try
-            {
-                if (getContext()->getSettingsRef().allow_experimental_analyzer)
-                {
-                    input_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), getContext());
-                }
-                else
-                {
-                    input_block = InterpreterSelectWithUnionQuery(create.select->clone(),
-                        getContext(),
-                        SelectQueryOptions().analyze()).getSampleBlock();
-                }
-            }
-            catch (const Exception & e)
-            {
-                if (getContext()->getSettingsRef().skip_materialized_view_checking_if_source_table_not_exist &&
-                    e.code() == ErrorCodes::UNKNOWN_TABLE && create.attach
-                )
-                {
-                    LOG_WARNING(&Poco::Logger::get("InterpreterSelectQuery"), "{}", e.message());
-                    return;
-                }
-                else
-                {
-                    throw;
-                }
-            }
-
-            Block output_block = to_table->getInMemoryMetadataPtr()->getSampleBlock();
-
-            ColumnsWithTypeAndName input_columns;
-            ColumnsWithTypeAndName output_columns;
-            for (const auto & input_column : input_block)
-            {
-                if (const auto * output_column = output_block.findByName(input_column.name))
-                {
-                    input_columns.push_back(input_column.cloneEmpty());
-                    output_columns.push_back(output_column->cloneEmpty());
-                }
-            }
-
-            ActionsDAG::makeConvertingActions(
-                input_columns,
-                output_columns,
-                ActionsDAG::MatchColumnsMode::Position
-            );
-        }
-}
 
 BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 {
@@ -1258,9 +1201,45 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create);
 
     /// Check type compatible for materialized dest table and select columns
-    if (create.select && create.is_materialized_view && create.to_table_id)
+    if (create.select && create.is_materialized_view && create.to_table_id && !create.attach)
     {
-        checkTypecompatibleForMaterializeView(create);
+        if (StoragePtr to_table = DatabaseCatalog::instance().tryGetTable(
+            {create.to_table_id.database_name, create.to_table_id.table_name, create.to_table_id.uuid},
+            getContext()
+        ))
+        {
+            Block input_block;
+
+            if (getContext()->getSettingsRef().allow_experimental_analyzer)
+            {
+                input_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), getContext());
+            }
+            else
+            {
+                input_block = InterpreterSelectWithUnionQuery(create.select->clone(),
+                    getContext(),
+                    SelectQueryOptions().analyze()).getSampleBlock();
+            }
+
+            Block output_block = to_table->getInMemoryMetadataPtr()->getSampleBlock();
+
+            ColumnsWithTypeAndName input_columns;
+            ColumnsWithTypeAndName output_columns;
+            for (const auto & input_column : input_block)
+            {
+                if (const auto * output_column = output_block.findByName(input_column.name))
+                {
+                    input_columns.push_back(input_column.cloneEmpty());
+                    output_columns.push_back(output_column->cloneEmpty());
+                }
+            }
+
+            ActionsDAG::makeConvertingActions(
+                input_columns,
+                output_columns,
+                ActionsDAG::MatchColumnsMode::Position
+            );
+        }
     }
 
     DatabasePtr database;

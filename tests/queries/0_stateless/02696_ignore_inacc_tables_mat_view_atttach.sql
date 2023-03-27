@@ -10,13 +10,7 @@ DROP TABLE test_table;
 
 DETACH TABLE mview;
 
-/* Check that we get an exception with the option. */
-
-SET skip_materialized_view_checking_if_source_table_not_exist = 0;
-ATTACH TABLE mview; --{serverError 60}
-
 /* Check that we don't get an exception with the option. */
-SET skip_materialized_view_checking_if_source_table_not_exist = 1;
 ATTACH TABLE mview;
 
 /* Check if the data in the materialized view is updated after the restore.*/
