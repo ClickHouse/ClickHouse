@@ -273,24 +273,25 @@ def test_read_in_order():
 
 
 def test_restart():
-    node.query(
-        """
-        DROP TABLE IF EXISTS encrypted_test;
-        CREATE TABLE encrypted_test (
-            id Int64,
-            data String
-        ) ENGINE=MergeTree()
-        ORDER BY id
-        SETTINGS disk='disk_s3_encrypted'
-        """
-    )
+    for policy in ["disk_s3_encrypted_default_path", "encrypted_s3_cache"]:
+        node.query(
+            f"""
+            DROP TABLE IF EXISTS encrypted_test;
+            CREATE TABLE encrypted_test (
+                id Int64,
+                data String
+            ) ENGINE=MergeTree()
+            ORDER BY id
+            SETTINGS disk='{policy}'
+            """
+        )
 
-    node.query("INSERT INTO encrypted_test VALUES (0,'data'),(1,'data')")
-    select_query = "SELECT * FROM encrypted_test ORDER BY id FORMAT Values"
-    assert node.query(select_query) == "(0,'data'),(1,'data')"
+        node.query("INSERT INTO encrypted_test VALUES (0,'data'),(1,'data')")
+        select_query = "SELECT * FROM encrypted_test ORDER BY id FORMAT Values"
+        assert node.query(select_query) == "(0,'data'),(1,'data')"
 
-    node.restart_clickhouse()
+        node.restart_clickhouse()
 
-    assert node.query(select_query) == "(0,'data'),(1,'data')"
+        assert node.query(select_query) == "(0,'data'),(1,'data')"
 
-    node.query("DROP TABLE IF EXISTS encrypted_test NO DELAY;")
+        node.query("DROP TABLE encrypted_test NO DELAY;")
