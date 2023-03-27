@@ -1,6 +1,6 @@
 ---
 slug: /en/development/tests
-sidebar_position: 70
+sidebar_position: 71
 sidebar_label: Testing
 title: ClickHouse Testing
 description: Most of ClickHouse features can be tested with functional tests and they are mandatory to use for every change in ClickHouse code that can be tested that way.
@@ -30,6 +30,9 @@ folder and run the following command:
 ```
 PATH=$PATH:<path to clickhouse-client> tests/clickhouse-test 01428_hash_set_nan_key
 ```
+
+Test results (`stderr` and `stdout`) are written to files `01428_hash_set_nan_key.[stderr|stdout]` which
+are located near the test file itself (so for `queries/0_stateless/foo.sql` output will be in `queries/0_stateless/foo.stdout`).
 
 For more options, see `tests/clickhouse-test --help`. You can simply run all tests or run subset of tests filtered by substring in test name: `./clickhouse-test substring`. There are also options to run tests in parallel or in randomized order.
 
@@ -68,7 +71,7 @@ SELECT 1
 | `global` | Same as `shard`. Prefer `shard` ||
 | `zookeeper` | Test requires Zookeeper or ClickHouse Keeper to run | Test uses `ReplicatedMergeTree` |
 | `replica` | Same as `zookeeper`. Prefer `zookeeper` ||
-| `no-fasttest`|  Test is not run under [Fast test](continuous-integration#fast-test) | Test uses `MySQL` table engine which is disabled in Fast test|
+| `no-fasttest`|  Test is not run under [Fast test](continuous-integration.md#fast-test) | Test uses `MySQL` table engine which is disabled in Fast test|
 | `no-[asan, tsan, msan, ubsan]` | Disables tests in build with [sanitizers](#sanitizers) | Test is run under QEMU which doesn't work with sanitizers |
 | `no-replicated-database` |||
 | `no-ordinary-database` |||

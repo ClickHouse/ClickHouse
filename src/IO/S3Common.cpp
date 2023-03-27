@@ -85,6 +85,10 @@ AuthSettings AuthSettings::loadFromConfig(const std::string & config_elem, const
     if (config.has(config_elem + ".use_insecure_imds_request"))
         use_insecure_imds_request = config.getBool(config_elem + ".use_insecure_imds_request");
 
+    std::optional<uint64_t> expiration_window_seconds;
+    if (config.has(config_elem + ".expiration_window_seconds"))
+        expiration_window_seconds = config.getUInt64(config_elem + ".expiration_window_seconds");
+
     HTTPHeaderEntries headers;
     Poco::Util::AbstractConfiguration::Keys subconfig_keys;
     config.keys(config_elem, subconfig_keys);
@@ -107,7 +111,8 @@ AuthSettings AuthSettings::loadFromConfig(const std::string & config_elem, const
         std::move(server_side_encryption_customer_key_base64),
         std::move(headers),
         use_environment_credentials,
-        use_insecure_imds_request
+        use_insecure_imds_request,
+        expiration_window_seconds
     };
 }
 
@@ -127,6 +132,7 @@ void AuthSettings::updateFrom(const AuthSettings & from)
     server_side_encryption_customer_key_base64 = from.server_side_encryption_customer_key_base64;
     use_environment_credentials = from.use_environment_credentials;
     use_insecure_imds_request = from.use_insecure_imds_request;
+    expiration_window_seconds = from.expiration_window_seconds;
 }
 
 }

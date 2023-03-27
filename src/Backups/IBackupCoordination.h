@@ -2,7 +2,7 @@
 
 #include <optional>
 #include <fmt/format.h>
-#include <Common/hex.h>
+#include <base/hex.h>
 #include <Core/Types.h>
 
 
@@ -10,6 +10,7 @@ namespace DB
 {
 class Exception;
 enum class AccessEntityType;
+enum class UserDefinedSQLObjectType;
 
 /// Replicas use this class to coordinate what they're writing to a backup while executing BACKUP ON CLUSTER.
 /// There are two implementation of this interface: BackupCoordinationLocal and BackupCoordinationRemote.
@@ -21,10 +22,10 @@ public:
     virtual ~IBackupCoordination() = default;
 
     /// Sets the current stage and waits for other hosts to come to this stage too.
-    virtual void setStage(const String & current_host, const String & new_stage, const String & message) = 0;
-    virtual void setError(const String & current_host, const Exception & exception) = 0;
-    virtual Strings waitForStage(const Strings & all_hosts, const String & stage_to_wait) = 0;
-    virtual Strings waitForStage(const Strings & all_hosts, const String & stage_to_wait, std::chrono::milliseconds timeout) = 0;
+    virtual void setStage(const String & new_stage, const String & message) = 0;
+    virtual void setError(const Exception & exception) = 0;
+    virtual Strings waitForStage(const String & stage_to_wait) = 0;
+    virtual Strings waitForStage(const String & stage_to_wait, std::chrono::milliseconds timeout) = 0;
 
     struct PartNameAndChecksum
     {
@@ -65,8 +66,12 @@ public:
     virtual Strings getReplicatedDataPaths(const String & table_shared_id) const = 0;
 
     /// Adds a path to access.txt file keeping access entities of a ReplicatedAccessStorage.
-    virtual void addReplicatedAccessFilePath(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id, const String & file_path) = 0;
-    virtual Strings getReplicatedAccessFilePaths(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id) const = 0;
+    virtual void addReplicatedAccessFilePath(const String & access_zk_path, AccessEntityType access_entity_type, const String & file_path) = 0;
+    virtual Strings getReplicatedAccessFilePaths(const String & access_zk_path, AccessEntityType access_entity_type) const = 0;
+
+    /// Adds a path to a directory with user-defined SQL objects inside the backup.
+    virtual void addReplicatedSQLObjectsDir(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & dir_path) = 0;
+    virtual Strings getReplicatedSQLObjectsDirs(const String & loader_zk_path, UserDefinedSQLObjectType object_type) const = 0;
 
     struct FileInfo
     {
