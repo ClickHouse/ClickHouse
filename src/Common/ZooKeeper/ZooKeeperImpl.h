@@ -197,6 +197,8 @@ public:
 
     void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
+    void setServerCompletelyStarted();
+
 private:
     ACLs default_acls;
 
@@ -207,6 +209,8 @@ private:
     void maybeInjectRecvFault();
     void maybeInjectSendSleep();
     void maybeInjectRecvSleep();
+    void setupFaultDistributions();
+    std::atomic_flag inject_setup = ATOMIC_FLAG_INIT;
     std::optional<std::bernoulli_distribution> send_inject_fault;
     std::optional<std::bernoulli_distribution> recv_inject_fault;
     std::optional<std::bernoulli_distribution> send_inject_sleep;
