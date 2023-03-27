@@ -1,7 +1,7 @@
+#pragma once
+
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Functions/FunctionFactory.h>
-
 #include "FunctionArrayMapped.h"
 
 
@@ -87,11 +87,4 @@ struct ArrayExistsImpl
 struct NameArrayExists { static constexpr auto name = "arrayExists"; };
 using FunctionArrayExists = FunctionArrayMapped<ArrayExistsImpl, NameArrayExists>;
 
-REGISTER_FUNCTION(ArrayExists)
-{
-    factory.registerFunction<FunctionArrayExists>();
 }
-
-}
-
-

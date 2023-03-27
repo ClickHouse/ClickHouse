@@ -1,9 +1,11 @@
+#pragma once
+
 #include <Functions/IFunction.h>
-#include <Functions/FunctionFactory.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/Context_fwd.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Common/typeid_cast.h>
@@ -97,11 +99,5 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 };
-
-
-REGISTER_FUNCTION(ArrayConcat)
-{
-    factory.registerFunction<FunctionArrayConcat>();
-}
 
 }
