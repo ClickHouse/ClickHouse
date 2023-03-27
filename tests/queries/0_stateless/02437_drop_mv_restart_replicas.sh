@@ -9,7 +9,7 @@ $CLICKHOUSE_CLIENT -q "create user u_$CLICKHOUSE_DATABASE"
 $CLICKHOUSE_CLIENT -q "grant all on db_$CLICKHOUSE_DATABASE.* to u_$CLICKHOUSE_DATABASE"
 
 # For tests with Replicated
-ENGINE=$($CLICKHOUSE_CLIENT -q "select replace(engine_full, '$CLICKHOUSE_DATABASE', 'db_$CLICKHOUSE_DATABASE') from system.databases where name='$CLICKHOUSE_DATABASE'")
+ENGINE=$($CLICKHOUSE_CLIENT -q "select replace(engine_full, '$CLICKHOUSE_DATABASE', 'db_$CLICKHOUSE_DATABASE') from system.databases where name='$CLICKHOUSE_DATABASE' format TSVRaw")
 export ENGINE
 
 function thread_ddl()
@@ -47,7 +47,7 @@ export -f thread_ddl;
 export -f thread_insert;
 export -f thread_restart;
 
-TIMEOUT=30
+TIMEOUT=15
 
 timeout $TIMEOUT bash -c thread_ddl 2>&1| grep -Fa "Exception: " | grep -Fv -e "TABLE_IS_DROPPED" -e "UNKNOWN_TABLE" -e "DATABASE_NOT_EMPTY" &
 timeout $TIMEOUT bash -c thread_insert 2> /dev/null &
