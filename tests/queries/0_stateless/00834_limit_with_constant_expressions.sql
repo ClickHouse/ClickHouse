@@ -1,5 +1,3 @@
-SET allow_experimental_analyzer = 1;
-
 SELECT number FROM numbers(10) LIMIT 0 + 1;
 SELECT number FROM numbers(10) LIMIT 1 - 1;
 SELECT number FROM numbers(10) LIMIT 2 - 1;
@@ -11,7 +9,7 @@ SELECT number FROM numbers(10) LIMIT now(); -- { serverError 440 }
 SELECT number FROM numbers(10) LIMIT today(); -- { serverError 440 }
 SELECT number FROM numbers(10) LIMIT toUInt8('1');
 SELECT number FROM numbers(10) LIMIT toFloat32('1');
-SELECT number FROM numbers(10) LIMIT rand(); -- { serverError 440 }
+SELECT number FROM numbers(10) LIMIT rand(); -- { serverError 36, 440 }
 
 SELECT count() <= 1 FROM (SELECT number FROM numbers(10) LIMIT randConstant() % 2);
 

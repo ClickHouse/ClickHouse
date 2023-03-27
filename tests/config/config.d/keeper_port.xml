@@ -9,8 +9,7 @@
             <operation_timeout_ms>10000</operation_timeout_ms>
             <session_timeout_ms>100000</session_timeout_ms>
             <min_session_timeout_ms>10000</min_session_timeout_ms>
-            <!-- FIXME enable force_sync because of suspicious rollback without it -->
-            <force_sync>true</force_sync>
+            <force_sync>false</force_sync>
             <startup_timeout>240000</startup_timeout>
             <!-- we want all logs for complex problems investigation -->
             <reserved_log_items>1000000000000000</reserved_log_items>

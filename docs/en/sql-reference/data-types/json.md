@@ -7,7 +7,7 @@ sidebar_label: JSON
 # JSON
 
 :::warning
-This feature is experimental and is not production ready. If you need to work with JSON documents, consider using [this guide](/docs/en/guides/developer/working-with-json/json-load-data.md) instead.
+This feature is experimental and is not production ready. If you need to work with JSON documents, consider using [this guide](/docs/en/integrations/data-ingestion/data-formats/json.md) instead.
 :::
 
 Stores JavaScript Object Notation (JSON) documents in a single column.
