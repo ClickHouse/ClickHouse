@@ -19,6 +19,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeTuple.h>
 
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -133,6 +134,10 @@ public:
 
         size_t nested_types_count = (arguments.size() - num_fixed_params - 1) * (is_argument_type_map ? 2 : 1);
         DataTypes nested_types(nested_types_count);
+
+        size_t num_array_tuple_arguments = 0;
+        size_t tuple_argument_size = 0;
+
         for (size_t i = 0; i < arguments.size() - 1 - num_fixed_params; ++i)
         {
             const auto * array_type = checkAndGetDataType<typename Impl::data_type>(&*arguments[i + 1 + num_fixed_params]);
@@ -144,6 +149,13 @@ public:
                     getName(),
                     argument_type_name,
                     arguments[i + 1 + num_fixed_params]->getName());
+
+            if (const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(array_type->getNestedType().get()))
+            {
+                ++num_array_tuple_arguments;
+                tuple_argument_size = tuple_type->getElements().size();
+            }
+
             if constexpr (is_argument_type_map)
             {
                 nested_types[2 * i] = recursiveRemoveLowCardinality(array_type->getKeyType());
@@ -155,8 +167,31 @@ public:
             }
         }
 
-        const DataTypeFunction * function_type = checkAndGetDataType<DataTypeFunction>(arguments[0].get());
-        if (!function_type || function_type->getArgumentTypes().size() != nested_types.size())
+        const auto * function_type = checkAndGetDataType<DataTypeFunction>(arguments[0].get());
+        if (!function_type)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "First argument for this overload of {} must be a function with {} arguments, found {} instead",
+                getName(),
+                nested_types.size(),
+                arguments[0]->getName());
+
+        size_t num_function_arguments = function_type->getArgumentTypes().size();
+        if (num_array_tuple_arguments == 1 && tuple_argument_size == num_function_arguments)
+        {
+            assert(nested_types.size() == 1);
+
+            auto argument_type = nested_types[0];
+            const auto & tuple_type = assert_cast<const DataTypeTuple &>(*argument_type);
+
+            nested_types.clear();
+            nested_types.reserve(tuple_argument_size);
+
+            for (const auto & element : tuple_type.getElements())
+                nested_types.push_back(element);
+        }
+
+        if (num_function_arguments != nested_types.size())
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "First argument for this overload of {} must be a function with {} arguments, found {} instead",
@@ -315,18 +350,20 @@ public:
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a function.", getName());
 
             const auto * column_function = typeid_cast<const ColumnFunction *>(column_with_type_and_name.column.get());
-
             if (!column_function)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a function.", getName());
 
-            ColumnPtr offsets_column;
+            const auto & type_function = assert_cast<const DataTypeFunction &>(*arguments[0].type);
+            size_t num_function_arguments = type_function.getArgumentTypes().size();
 
+            ColumnPtr offsets_column;
             ColumnPtr column_first_array_ptr;
             const typename Impl::column_type * column_first_array = nullptr;
 
             ColumnsWithTypeAndName arrays;
-            arrays.reserve(arguments.size() - 1);
+            arrays.reserve(arguments.size() - 1 - num_fixed_params);
 
+            bool is_single_array_argument = arguments.size() == num_fixed_params + 2;
             for (size_t i = 1 + num_fixed_params; i < arguments.size(); ++i)
             {
                 const auto & array_with_type_and_name = arguments[i];
@@ -367,12 +404,6 @@ public:
                             getName());
                 }
 
-                if (i == 1 + num_fixed_params)
-                {
-                    column_first_array_ptr = column_array_ptr;
-                    column_first_array = column_array;
-                }
-
                 if constexpr (is_argument_type_map)
                 {
                     arrays.emplace_back(ColumnWithTypeAndName(
@@ -382,9 +413,35 @@ public:
                 }
                 else
                 {
-                    arrays.emplace_back(ColumnWithTypeAndName(column_array->getDataPtr(),
-                                                            recursiveRemoveLowCardinality(array_type->getNestedType()),
-                                                            array_with_type_and_name.name));
+                    const auto * column_tuple = checkAndGetColumn<ColumnTuple>(&column_array->getData());
+                    if (is_single_array_argument && column_tuple && column_tuple->getColumns().size() == num_function_arguments)
+                    {
+                        const auto & type_tuple = assert_cast<const DataTypeTuple &>(*array_type->getNestedType());
+                        const auto & tuple_names = type_tuple.getElementNames();
+
+                        size_t tuple_size = column_tuple->getColumns().size();
+                        arrays.reserve(column_tuple->getColumns().size());
+                        for (size_t j = 0; j < tuple_size; ++j)
+                        {
+                            arrays.emplace_back(
+                                column_tuple->getColumnPtr(j),
+                                recursiveRemoveLowCardinality(type_tuple.getElement(j)),
+                                array_with_type_and_name.name + "." + tuple_names[j]);
+                        }
+                    }
+                    else
+                    {
+                        arrays.emplace_back(
+                            column_array->getDataPtr(),
+                            recursiveRemoveLowCardinality(array_type->getNestedType()),
+                            array_with_type_and_name.name);
+                    }
+                }
+
+                if (i == 1 + num_fixed_params)
+                {
+                    column_first_array_ptr = column_array_ptr;
+                    column_first_array = column_array;
                 }
             }
 

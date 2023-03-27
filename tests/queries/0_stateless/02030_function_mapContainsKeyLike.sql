@@ -10,3 +10,8 @@ SELECT id, map FROM map_containsKeyLike_test WHERE mapContainsKeyLike(map, '1-%'
 SELECT id, map FROM map_containsKeyLike_test WHERE mapContainsKeyLike(map, '3-%') = 0 order by id;
 
 DROP TABLE map_containsKeyLike_test;
+
+SELECT mapContainsKeyLike(map('aa', 1, 'bb', 2), 'a%');
+SELECT mapContainsKeyLike(map('aa', 1, 'bb', 2), materialize('a%'));
+SELECT mapContainsKeyLike(materialize(map('aa', 1, 'bb', 2)), 'a%');
+SELECT mapContainsKeyLike(materialize(map('aa', 1, 'bb', 2)), materialize('a%'));
