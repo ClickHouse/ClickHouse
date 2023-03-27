@@ -85,8 +85,8 @@ make the matching more natural, all query-level settings related to the query ca
 
 If the query was aborted due to an exception or user cancellation, no entry is written into the query cache.
 
-The size of the query cache, the maximum number of cache entries and the maximum size of cache entries (in bytes and in records) can
-be configured using different [server configuration options](server-configuration-parameters/settings.md#server_configuration_parameters_query-cache).
+The size of the query cache in bytes, the maximum number of cache entries and the maximum size of individual cache entries (in bytes and in
+records) can be configured using different [server configuration options](server-configuration-parameters/settings.md#server_configuration_parameters_query-cache).
 
 To define how long a query must run at least such that its result can be cached, you can use setting
 [query_cache_min_query_duration](settings/settings.md#query-cache-min-query-duration). For example, the result of query

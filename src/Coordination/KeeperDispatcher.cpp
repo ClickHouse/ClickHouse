@@ -73,6 +73,7 @@ void KeeperDispatcher::requestThread()
         auto coordination_settings = configuration_and_settings->coordination_settings;
         uint64_t max_wait = coordination_settings->operation_timeout_ms.totalMilliseconds();
         uint64_t max_batch_size = coordination_settings->max_requests_batch_size;
+        uint64_t max_batch_bytes_size = coordination_settings->max_requests_batch_bytes_size;
 
         /// The code below do a very simple thing: batch all write (quorum) requests into vector until
         /// previous write batch is not finished or max_batch size achieved. The main complexity goes from
@@ -89,6 +90,7 @@ void KeeperDispatcher::requestThread()
                     break;
 
                 KeeperStorage::RequestsForSessions current_batch;
+                size_t current_batch_bytes_size = 0;
 
                 bool has_read_request = false;
 
@@ -96,6 +98,7 @@ void KeeperDispatcher::requestThread()
                 /// Otherwise we will process it locally.
                 if (coordination_settings->quorum_reads || !request.request->isReadRequest())
                 {
+                    current_batch_bytes_size += request.request->bytesSize();
                     current_batch.emplace_back(request);
 
                     const auto try_get_request = [&]
@@ -108,7 +111,10 @@ void KeeperDispatcher::requestThread()
                             if (!coordination_settings->quorum_reads && request.request->isReadRequest())
                                 has_read_request = true;
                             else
+                            {
+                                current_batch_bytes_size += request.request->bytesSize();
                                 current_batch.emplace_back(request);
+                            }
 
                             return true;
                         }
@@ -116,9 +122,11 @@ void KeeperDispatcher::requestThread()
                         return false;
                     };
 
-                    /// If we have enough requests in queue, we will try to batch at least max_quick_batch_size of them.
+                    /// TODO: Deprecate max_requests_quick_batch_size and use only max_requests_batch_size and max_requests_batch_bytes_size
                     size_t max_quick_batch_size = coordination_settings->max_requests_quick_batch_size;
-                    while (!shutdown_called && !has_read_request && current_batch.size() < max_quick_batch_size && try_get_request())
+                    while (!shutdown_called && !has_read_request &&
+                        current_batch.size() < max_quick_batch_size && current_batch_bytes_size < max_batch_bytes_size &&
+                        try_get_request())
                         ;
 
                     const auto prev_result_done = [&]
@@ -129,7 +137,8 @@ void KeeperDispatcher::requestThread()
                     };
 
                     /// Waiting until previous append will be successful, or batch is big enough
-                    while (!shutdown_called && !has_read_request && !prev_result_done() && current_batch.size() <= max_batch_size)
+                    while (!shutdown_called && !has_read_request && !prev_result_done() &&
+                        current_batch.size() <= max_batch_size && current_batch_bytes_size < max_batch_bytes_size)
                     {
                         try_get_request();
                     }
@@ -147,6 +156,8 @@ void KeeperDispatcher::requestThread()
                 /// Process collected write requests batch
                 if (!current_batch.empty())
                 {
+                    LOG_TRACE(log, "Processing requests batch, size: {}, bytes: {}", current_batch.size(), current_batch_bytes_size);
+
                     auto result = server->putRequestBatch(current_batch);
 
                     if (result)
@@ -158,6 +169,7 @@ void KeeperDispatcher::requestThread()
                     {
                         addErrorResponses(current_batch, Coordination::Error::ZCONNECTIONLOSS);
                         current_batch.clear();
+                        current_batch_bytes_size = 0;
                     }
 
                     prev_batch = std::move(current_batch);
