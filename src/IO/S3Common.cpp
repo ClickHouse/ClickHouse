@@ -89,6 +89,10 @@ AuthSettings AuthSettings::loadFromConfig(const std::string & config_elem, const
     if (config.has(config_elem + ".expiration_window_seconds"))
         expiration_window_seconds = config.getUInt64(config_elem + ".expiration_window_seconds");
 
+    std::optional<bool> no_sign_request;
+    if (config.has(config_elem + ".no_sign_request"))
+        no_sign_request = config.getBool(config_elem + ".no_sign_request");
+
     HTTPHeaderEntries headers;
     Poco::Util::AbstractConfiguration::Keys subconfig_keys;
     config.keys(config_elem, subconfig_keys);
@@ -112,7 +116,8 @@ AuthSettings AuthSettings::loadFromConfig(const std::string & config_elem, const
         std::move(headers),
         use_environment_credentials,
         use_insecure_imds_request,
-        expiration_window_seconds
+        expiration_window_seconds,
+        no_sign_request
     };
 }
 
@@ -133,6 +138,9 @@ void AuthSettings::updateFrom(const AuthSettings & from)
     use_environment_credentials = from.use_environment_credentials;
     use_insecure_imds_request = from.use_insecure_imds_request;
     expiration_window_seconds = from.expiration_window_seconds;
+
+    if (from.no_sign_request.has_value())
+        no_sign_request = *from.no_sign_request;
 }
 
 }
