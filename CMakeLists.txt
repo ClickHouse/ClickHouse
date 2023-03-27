@@ -121,6 +121,7 @@ if (ENABLE_COLORED_BUILD AND CMAKE_GENERATOR STREQUAL "Ninja")
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fdiagnostics-color=always")
     # ... such manually setting of flags can be removed once CMake supports a variable to
     # activate colors in *all* build systems: https://gitlab.kitware.com/cmake/cmake/-/issues/15502
+    # --> available since CMake 3.24: https://stackoverflow.com/a/73349744
 endif ()
 
 include (cmake/check_flags.cmake)
@@ -134,22 +135,13 @@ if (COMPILER_CLANG)
         set(COMPILER_FLAGS "${COMPILER_FLAGS} -gdwarf-aranges")
     endif ()
 
-    if (HAS_USE_CTOR_HOMING)
-        # For more info see https://blog.llvm.org/posts/2021-04-05-constructor-homing-for-debug-info/
-        if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO")
-            set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Xclang -fuse-ctor-homing")
-            set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Xclang -fuse-ctor-homing")
-        endif()
+    # See https://blog.llvm.org/posts/2021-04-05-constructor-homing-for-debug-info/
+    if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO")
+        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Xclang -fuse-ctor-homing")
+        set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Xclang -fuse-ctor-homing")
     endif()
 
     no_warning(enum-constexpr-conversion) # breaks Protobuf in clang-16
-endif ()
-
-# If compiler has support for -Wreserved-identifier. It is difficult to detect by clang version,
-# because there are two different branches of clang: clang and AppleClang.
-# (AppleClang is not supported by ClickHouse, but some developers have misfortune to use it).
-if (HAS_RESERVED_IDENTIFIER)
-    add_compile_definitions (HAS_RESERVED_IDENTIFIER)
 endif ()
 
 option(ENABLE_TESTS "Provide unit_test_dbms target with Google.Test unit tests" ON)
@@ -297,6 +289,7 @@ set (CMAKE_C_STANDARD_REQUIRED ON)
 
 if (COMPILER_GCC OR COMPILER_CLANG)
     # Enable C++14 sized global deallocation functions. It should be enabled by setting -std=c++14 but I'm not sure.
+    # See https://reviews.llvm.org/D112921
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsized-deallocation")
 endif ()
 
@@ -315,11 +308,7 @@ if (ARCH_AMD64)
         set(BRANCHES_WITHIN_32B_BOUNDARIES "-Wa,${BRANCHES_WITHIN_32B_BOUNDARIES}")
     endif()
 
-    include(CheckCXXCompilerFlag)
-    check_cxx_compiler_flag("${BRANCHES_WITHIN_32B_BOUNDARIES}" HAS_BRANCHES_WITHIN_32B_BOUNDARIES)
-    if (HAS_BRANCHES_WITHIN_32B_BOUNDARIES)
-        set(COMPILER_FLAGS "${COMPILER_FLAGS} ${BRANCHES_WITHIN_32B_BOUNDARIES}")
-    endif()
+    set(COMPILER_FLAGS "${COMPILER_FLAGS} ${BRANCHES_WITHIN_32B_BOUNDARIES}")
 endif()
 
 if (COMPILER_GCC)
@@ -361,7 +350,17 @@ set (CMAKE_ASM_FLAGS_DEBUG               "${CMAKE_ASM_FLAGS_DEBUG} -O0 ${DEBUG_I
 if (COMPILER_CLANG)
     if (OS_DARWIN)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
+
         set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-U,_inside_main")
+
+        # The LLVM MachO linker (ld64.lld, used in native builds) generates by default unwind info in 'compact' format which the internal
+        # unwinder doesn't support and the server will not come up ('invalid compact unwind encoding'). Disable it. You will see warning
+        # during the build "ld64.lld: warning: Option `-no_compact_unwind' is undocumented. Should lld implement it?". Yes, ld64.lld does
+        # not document the option, likely for compat with Apple's system ld after which ld64.lld is modeled after and which also does not
+        # document it.
+        if (NOT CMAKE_CROSSCOMPILING)
+            set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-no_compact_unwind")
+        endif ()
     endif()
 
     # Display absolute paths in error messages. Otherwise KDevelop fails to navigate to correct file and opens a new file instead.
@@ -431,6 +430,7 @@ option(WERROR "Enable -Werror compiler option" ON)
 if (WERROR)
     # Don't pollute CMAKE_CXX_FLAGS with -Werror as it will break some CMake checks.
     # Instead, adopt modern cmake usage requirement.
+    # TODO: Set CMAKE_COMPILE_WARNING_AS_ERROR (cmake 3.24)
     target_compile_options(global-group INTERFACE "-Werror")
 endif ()
 

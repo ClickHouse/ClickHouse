@@ -1,7 +1,7 @@
 ---
 slug: /en/interfaces/formats
 sidebar_position: 21
-sidebar_label: Input and Output Formats
+sidebar_label: View all formats...
 title: Formats for Input and Output Data
 ---
 
@@ -154,7 +154,7 @@ Arrays are written as a list of comma-separated values in square brackets. Numbe
 In input data, ENUM values can be represented as names or as ids. First, we try to match the input value to the ENUM name. If we fail and the input value is a number, we try to match this number to ENUM id.
 If input data contains only ENUM ids, it's recommended to enable the setting [input_format_tsv_enum_as_number](/docs/en/operations/settings/settings-formats.md/#input_format_tsv_enum_as_number) to optimize ENUM parsing.
 
-Each element of [Nested](/docs/en/sql-reference/data-types/nested-data-structures/nested.md) structures is represented as an array.
+Each element of [Nested](/docs/en/sql-reference/data-types/nested-data-structures/index.md) structures is represented as an array.
 
 For example:
 
@@ -684,7 +684,7 @@ Example:
 ## JSONColumns {#jsoncolumns}
 
 :::tip
-The output of the JSONColumns* formats provides the ClickHouse field name and then the content of each row of the table for that field; 
+The output of the JSONColumns* formats provides the ClickHouse field name and then the content of each row of the table for that field;
 visually, the data is rotated 90 degrees to the left.
 :::
 
@@ -1150,7 +1150,7 @@ Any set of bytes can be output in the strings. Use the `JSONEachRow` format if y
 
 ### Usage of Nested Structures {#jsoneachrow-nested}
 
-If you have a table with [Nested](/docs/en/sql-reference/data-types/nested-data-structures/nested.md) data type columns, you can insert JSON data with the same structure. Enable this feature with the [input_format_import_nested_json](/docs/en/operations/settings/settings-formats.md/#input_format_import_nested_json) setting.
+If you have a table with [Nested](/docs/en/sql-reference/data-types/nested-data-structures/index.md) data type columns, you can insert JSON data with the same structure. Enable this feature with the [input_format_import_nested_json](/docs/en/operations/settings/settings-formats.md/#input_format_import_nested_json) setting.
 
 For example, consider the following table:
 
@@ -1776,7 +1776,7 @@ message MessageType {
 ```
 
 ClickHouse tries to find a column named `x.y.z` (or `x_y_z` or `X.y_Z` and so on).
-Nested messages are suitable to input or output a [nested data structures](/docs/en/sql-reference/data-types/nested-data-structures/nested.md).
+Nested messages are suitable to input or output a [nested data structures](/docs/en/sql-reference/data-types/nested-data-structures/index.md).
 
 Default values defined in a protobuf schema like this
 
@@ -1808,23 +1808,26 @@ ClickHouse Avro format supports reading and writing [Avro data files](https://av
 
 The table below shows supported data types and how they match ClickHouse [data types](/docs/en/sql-reference/data-types/index.md) in `INSERT` and `SELECT` queries.
 
-| Avro data type `INSERT`                     | ClickHouse data type                                                                                            | Avro data type `SELECT`                         |
-|---------------------------------------------|-----------------------------------------------------------------------------------------------------------------|-------------------------------------------------|
-| `boolean`, `int`, `long`, `float`, `double` | [Int(8\                                                                                                         | 16\                                             |32)](/docs/en/sql-reference/data-types/int-uint.md), [UInt(8\|16\|32)](/docs/en/sql-reference/data-types/int-uint.md) | `int`                        |
-| `boolean`, `int`, `long`, `float`, `double` | [Int64](/docs/en/sql-reference/data-types/int-uint.md), [UInt64](/docs/en/sql-reference/data-types/int-uint.md) | `long`                                          |
-| `boolean`, `int`, `long`, `float`, `double` | [Float32](/docs/en/sql-reference/data-types/float.md)                                                           | `float`                                         |
-| `boolean`, `int`, `long`, `float`, `double` | [Float64](/docs/en/sql-reference/data-types/float.md)                                                           | `double`                                        |
-| `bytes`, `string`, `fixed`, `enum`          | [String](/docs/en/sql-reference/data-types/string.md)                                                           | `bytes` or `string` \*                          |
-| `bytes`, `string`, `fixed`                  | [FixedString(N)](/docs/en/sql-reference/data-types/fixedstring.md)                                              | `fixed(N)`                                      |
-| `enum`                                      | [Enum(8\                                                                                                        | 16)](/docs/en/sql-reference/data-types/enum.md) | `enum`                       |
-| `array(T)`                                  | [Array(T)](/docs/en/sql-reference/data-types/array.md)                                                          | `array(T)`                                      |
-| `union(null, T)`, `union(T, null)`          | [Nullable(T)](/docs/en/sql-reference/data-types/date.md)                                                        | `union(null, T)`                                |
-| `null`                                      | [Nullable(Nothing)](/docs/en/sql-reference/data-types/special-data-types/nothing.md)                            | `null`                                          |
-| `int (date)` \**                            | [Date](/docs/en/sql-reference/data-types/date.md)                                                               | `int (date)` \**                                |
-| `long (timestamp-millis)` \**               | [DateTime64(3)](/docs/en/sql-reference/data-types/datetime.md)                                                  | `long (timestamp-millis)` \*                    |
-| `long (timestamp-micros)` \**               | [DateTime64(6)](/docs/en/sql-reference/data-types/datetime.md)                                                  | `long (timestamp-micros)` \*                    |
-| `int`                                       | [IPv4](/docs/en/sql-reference/data-types/domains/ipv4.md)                                                       | `int`                                           |
-| `fixed(16)`                                 | [IPv6](/docs/en/sql-reference/data-types/domains/ipv6.md)                                                       | `fixed(16)`                                     |
+| Avro data type `INSERT`                     | ClickHouse data type                                                                                                          | Avro data type `SELECT`       |
+|---------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------|-------------------------------|
+| `boolean`, `int`, `long`, `float`, `double` | [Int(8\16\32)](/docs/en/sql-reference/data-types/int-uint.md), [UInt(8\16\32)](/docs/en/sql-reference/data-types/int-uint.md) | `int`                         |
+| `boolean`, `int`, `long`, `float`, `double` | [Int64](/docs/en/sql-reference/data-types/int-uint.md), [UInt64](/docs/en/sql-reference/data-types/int-uint.md)               | `long`                        |
+| `boolean`, `int`, `long`, `float`, `double` | [Float32](/docs/en/sql-reference/data-types/float.md)                                                                         | `float`                       |
+| `boolean`, `int`, `long`, `float`, `double` | [Float64](/docs/en/sql-reference/data-types/float.md)                                                                         | `double`                      |
+| `bytes`, `string`, `fixed`, `enum`          | [String](/docs/en/sql-reference/data-types/string.md)                                                                         | `bytes` or `string` \*        |
+| `bytes`, `string`, `fixed`                  | [FixedString(N)](/docs/en/sql-reference/data-types/fixedstring.md)                                                            | `fixed(N)`                    |
+| `enum`                                      | [Enum(8\16)](/docs/en/sql-reference/data-types/enum.md)                                                                       | `enum`                        |
+| `array(T)`                                  | [Array(T)](/docs/en/sql-reference/data-types/array.md)                                                                        | `array(T)`                    |
+| `union(null, T)`, `union(T, null)`          | [Nullable(T)](/docs/en/sql-reference/data-types/date.md)                                                                      | `union(null, T)`              |
+| `null`                                      | [Nullable(Nothing)](/docs/en/sql-reference/data-types/special-data-types/nothing.md)                                          | `null`                        |
+| `int (date)` \**                            | [Date](/docs/en/sql-reference/data-types/date.md), [Date32](docs/en/sql-reference/data-types/date32.md)                       | `int (date)` \**              |
+| `long (timestamp-millis)` \**               | [DateTime64(3)](/docs/en/sql-reference/data-types/datetime.md)                                                                | `long (timestamp-millis)` \** |
+| `long (timestamp-micros)` \**               | [DateTime64(6)](/docs/en/sql-reference/data-types/datetime.md)                                                                | `long (timestamp-micros)` \** |
+| `int`                                       | [IPv4](/docs/en/sql-reference/data-types/domains/ipv4.md)                                                                     | `int`                         |
+| `fixed(16)`                                 | [IPv6](/docs/en/sql-reference/data-types/domains/ipv6.md)                                                                     | `fixed(16)`                   |
+| `bytes (decimal)` \**                       | [Decimal(P, S)](/docs/en/sql-reference/data-types/decimal.md)                                                                | `bytes (decimal)` \**         |
+| `string (uuid)` \**                         | [UUID](/docs/en/sql-reference/data-types/uuid.md)                                                                            | `string (uuid)` \**           |
+
 
 \* `bytes` is default, controlled by [output_format_avro_string_column_pattern](/docs/en/operations/settings/settings-formats.md/#output_format_avro_string_column_pattern)
 \** [Avro logical types](https://avro.apache.org/docs/current/spec.html#Logical+Types)
@@ -1975,7 +1978,7 @@ To exchange data with Hadoop, you can use [HDFS table engine](/docs/en/engines/t
 
 - [output_format_parquet_row_group_size](/docs/en/operations/settings/settings-formats.md/#output_format_parquet_row_group_size) - row group size in rows while data output. Default value - `1000000`.
 - [output_format_parquet_string_as_string](/docs/en/operations/settings/settings-formats.md/#output_format_parquet_string_as_string) - use Parquet String type instead of Binary for String columns. Default value - `false`.
-- [input_format_parquet_import_nested](/docs/en/operations/settings/settings-formats.md/#input_format_parquet_import_nested) - allow inserting array of structs into [Nested](/docs/en/sql-reference/data-types/nested-data-structures/nested.md) table in Parquet input format. Default value - `false`.
+- [input_format_parquet_import_nested](/docs/en/operations/settings/settings-formats.md/#input_format_parquet_import_nested) - allow inserting array of structs into [Nested](/docs/en/sql-reference/data-types/nested-data-structures/index.md) table in Parquet input format. Default value - `false`.
 - [input_format_parquet_case_insensitive_column_matching](/docs/en/operations/settings/settings-formats.md/#input_format_parquet_case_insensitive_column_matching) - ignore case when matching Parquet columns with ClickHouse columns. Default value - `false`.
 - [input_format_parquet_allow_missing_columns](/docs/en/operations/settings/settings-formats.md/#input_format_parquet_allow_missing_columns) - allow missing columns while reading Parquet data. Default value - `false`.
 - [input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference](/docs/en/operations/settings/settings-formats.md/#input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference) - allow skipping columns with unsupported types while schema inference for Parquet format. Default value - `false`.

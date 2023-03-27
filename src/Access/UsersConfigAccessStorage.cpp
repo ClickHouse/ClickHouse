@@ -233,10 +233,10 @@ namespace
             user->access.revokeGrantOption(AccessType::ALL);
         }
 
-        bool show_named_collections = config.getBool(user_config + ".show_named_collections", false);
-        if (!show_named_collections)
+        bool named_collection_control = config.getBool(user_config + ".named_collection_control", false);
+        if (!named_collection_control)
         {
-            user->access.revoke(AccessType::SHOW_NAMED_COLLECTIONS);
+            user->access.revoke(AccessType::NAMED_COLLECTION_CONTROL);
         }
 
         bool show_named_collections_secrets = config.getBool(user_config + ".show_named_collections_secrets", false);

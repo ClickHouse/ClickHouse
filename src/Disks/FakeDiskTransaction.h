@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Disks/IDiskTransaction.h>
+#include <IO/WriteBufferFromFileBase.h>
 
 namespace DB
 {
