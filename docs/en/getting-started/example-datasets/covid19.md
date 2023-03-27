@@ -143,7 +143,7 @@ SELECT
 FROM covid19;
 ```
 
-8. This query determines the latest values for each location. We can't use `max(date)` because not all countries reported every day, so we grab the last row use the row number:
+8. This query determines the latest values for each location. We can't use `max(date)` because not all countries reported every day, so we grab the last row using `ROW_NUMBER`:
 
 ```sql
 WITH latest_deaths_data AS
