@@ -17,11 +17,11 @@ Columns:
 
 **Example**
 
-The following example shows how to get information about marked_dropped_tables.
+The following example shows how to get information about dropped_tables.
 
 ``` sql
 SELECT *
-FROM system.marked_dropped_tables\G
+FROM system.dropped_tables\G
 ```
 
 ``` text
