@@ -706,7 +706,6 @@ def test_abrupt_connection_loss_while_heavy_replication(started_cluster):
 
 
 def test_abrupt_server_restart_while_heavy_replication(started_cluster):
-
     # FIXME (kssenii) temporary disabled
     if instance.is_built_with_sanitizer():
         pytest.skip("Temporary disabled (FIXME)")

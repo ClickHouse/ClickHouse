@@ -107,6 +107,11 @@ void MySQLWithFailoverSource::onStart()
                 throw;
             }
         }
+        catch (const mysqlxx::BadQuery & e)
+        {
+            LOG_ERROR(log, "Error processing query '{}': {}", query_str, e.displayText());
+            throw;
+        }
     }
 
     initPositionMappingFromQueryResultStructure();
