@@ -1,5 +1,9 @@
 #pragma once
 
+
+#include <Common/logger_useful.h>
+#include <Poco/Logger.h>
+
 #include <Core/Types.h>
 #include <Core/DecimalFunctions.h>
 #include <Functions/IFunction.h>
@@ -96,13 +100,19 @@ struct Processor
     void vectorConstant(const FirstArgVectorType & vec_from, const UInt8 value_precision,
                         ColumnString::Chars & vec_to, ColumnString::Offsets & result_offsets, const UInt8 from_scale) const
     {
+        /// There are no more than 77 meaning digits (as it is the max length of UInt256). So we can limit it with 77.
+        constexpr size_t max_digits = std::numeric_limits<UInt256>::digits10;
+        if (value_precision > max_digits)
+            throw DB::Exception(DB::ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER,
+                                "Too many fractional symbols requested for Decimal, must be 77 or less");
+
         WriteBufferFromVector<ColumnString::Chars> buf_to(vec_to);
         size_t input_rows_count = vec_from.size();
         result_offsets.resize(input_rows_count);
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            writeText(vec_from[i], from_scale, buf_to, true, true, static_cast<UInt32>(value_precision));
+            writeText(vec_from[i], from_scale, buf_to, true, true, value_precision);
             writeChar(0, buf_to);
             result_offsets[i] = buf_to.count();
         }
@@ -113,13 +123,17 @@ struct Processor
     void vectorVector(const FirstArgVectorType & vec_from, const ColumnVector<UInt8>::Container & vec_precision,
                       ColumnString::Chars & vec_to, ColumnString::Offsets & result_offsets, const UInt8 from_scale) const
     {
+        constexpr size_t max_digits = std::numeric_limits<UInt256>::digits10;
         WriteBufferFromVector<ColumnString::Chars> buf_to(vec_to);
         size_t input_rows_count = vec_from.size();
         result_offsets.resize(input_rows_count);
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            writeText(vec_from[i], from_scale, buf_to, true, true, static_cast<UInt32>(vec_precision[i]));
+            if (vec_precision[i] > max_digits)
+                throw DB::Exception(DB::ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER,
+                                    "Too many fractional symbols requested for Decimal, must be 77 or less");
+            writeText(vec_from[i], from_scale, buf_to, true, true, vec_precision[i]);
             writeChar(0, buf_to);
             result_offsets[i] = buf_to.count();
         }
@@ -130,13 +144,17 @@ struct Processor
     void constantVector(const FirstArgType & value_from, const ColumnVector<UInt8>::Container & vec_precision,
                         ColumnString::Chars & vec_to, ColumnString::Offsets & result_offsets, const UInt8 from_scale) const
     {
+        constexpr size_t max_digits = std::numeric_limits<UInt256>::digits10;
         WriteBufferFromVector<ColumnString::Chars> buf_to(vec_to);
         size_t input_rows_count = vec_precision.size();
         result_offsets.resize(input_rows_count);
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            writeText(value_from, from_scale, buf_to, true, true, static_cast<UInt32>(vec_precision[i]));
+            if (vec_precision[i] > max_digits)
+                throw DB::Exception(DB::ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER,
+                                    "Too many fractional symbols requested for Decimal, must be 77 or less");
+            writeText(value_from, from_scale, buf_to, true, true, vec_precision[i]);
             writeChar(0, buf_to);
             result_offsets[i] = buf_to.count();
         }
