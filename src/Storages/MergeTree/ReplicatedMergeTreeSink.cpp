@@ -495,13 +495,12 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
             std::move(part_counters) /// profile_events_scope must be reset here.
         ));
     }
-    finishDelayedChunk(zookeeper);
     delayed_chunk = std::make_unique<ReplicatedMergeTreeSinkImpl::DelayedChunk>();
     delayed_chunk->partitions = std::move(partitions);
+    finishDelayedChunk(zookeeper);
 
     if (streams > 0 && streams <= max_insert_delayed_streams_for_parallel_write)
     {
-        finishDelayedChunk(zookeeper);
         delayed_chunk = std::make_unique<ReplicatedMergeTreeSinkImpl::DelayedChunk>();
     }
 
