@@ -1,5 +1,4 @@
-#include <Functions/FunctionFactory.h>
-
+#pragma once
 #include "FunctionArrayMapped.h"
 
 
@@ -34,11 +33,4 @@ struct ArrayMapImpl
 struct NameArrayMap { static constexpr auto name = "arrayMap"; };
 using FunctionArrayMap = FunctionArrayMapped<ArrayMapImpl, NameArrayMap>;
 
-REGISTER_FUNCTION(ArrayMap)
-{
-    factory.registerFunction<FunctionArrayMap>();
 }
-
-}
-
-

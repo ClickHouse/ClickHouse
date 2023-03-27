@@ -1,7 +1,7 @@
+#pragma once
+
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Functions/FunctionFactory.h>
-
 #include "FunctionArrayMapped.h"
 
 
@@ -74,11 +74,4 @@ struct ArrayFilterImpl
 struct NameArrayFilter { static constexpr auto name = "arrayFilter"; };
 using FunctionArrayFilter = FunctionArrayMapped<ArrayFilterImpl, NameArrayFilter>;
 
-REGISTER_FUNCTION(ArrayFilter)
-{
-    factory.registerFunction<FunctionArrayFilter>();
 }
-
-}
-
-

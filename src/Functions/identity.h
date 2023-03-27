@@ -1,20 +1,16 @@
+#pragma once
 #include <Functions/IFunction.h>
-#include <Functions/FunctionFactory.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
-{
-namespace
 {
 
 class FunctionIdentity : public IFunction
 {
 public:
     static constexpr auto name = "identity";
-    static FunctionPtr create(ContextPtr)
-    {
-        return std::make_shared<FunctionIdentity>();
-    }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIdentity>(); }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
@@ -31,12 +27,5 @@ public:
         return arguments.front().column;
     }
 };
-
-}
-
-REGISTER_FUNCTION(Identity)
-{
-    factory.registerFunction<FunctionIdentity>();
-}
 
 }
