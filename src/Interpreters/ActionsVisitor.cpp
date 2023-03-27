@@ -467,10 +467,6 @@ SetPtr makeExplicitSet(
     return set;
 }
 
-ScopeStack::Level::~Level() = default;
-ScopeStack::Level::Level() = default;
-ScopeStack::Level::Level(Level &&) noexcept = default;
-
 class ScopeStack::Index
 {
     /// Map column name -> Node.
@@ -523,6 +519,10 @@ public:
         return result;
     }
 };
+
+ScopeStack::Level::~Level() = default;
+ScopeStack::Level::Level() = default;
+ScopeStack::Level::Level(Level &&) noexcept = default;
 
 ActionsMatcher::Data::Data(
     ContextPtr context_,

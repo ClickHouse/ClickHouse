@@ -27,6 +27,7 @@ public:
         bool memory_bound_merging_of_aggregation_results_enabled_);
 
     String getName() const override { return "MergingAggregated"; }
+    const Aggregator::Params & getParams() const { return params; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 

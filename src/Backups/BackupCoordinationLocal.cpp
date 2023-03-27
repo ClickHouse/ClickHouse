@@ -13,20 +13,20 @@ using FileInfo = IBackupCoordination::FileInfo;
 BackupCoordinationLocal::BackupCoordinationLocal() = default;
 BackupCoordinationLocal::~BackupCoordinationLocal() = default;
 
-void BackupCoordinationLocal::setStage(const String &, const String &, const String &)
+void BackupCoordinationLocal::setStage(const String &, const String &)
 {
 }
 
-void BackupCoordinationLocal::setError(const String &, const Exception &)
+void BackupCoordinationLocal::setError(const Exception &)
 {
 }
 
-Strings BackupCoordinationLocal::waitForStage(const Strings &, const String &)
+Strings BackupCoordinationLocal::waitForStage(const String &)
 {
     return {};
 }
 
-Strings BackupCoordinationLocal::waitForStage(const Strings &, const String &, std::chrono::milliseconds)
+Strings BackupCoordinationLocal::waitForStage(const String &, std::chrono::milliseconds)
 {
     return {};
 }
@@ -70,16 +70,29 @@ Strings BackupCoordinationLocal::getReplicatedDataPaths(const String & table_sha
 }
 
 
-void BackupCoordinationLocal::addReplicatedAccessFilePath(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id, const String & file_path)
+void BackupCoordinationLocal::addReplicatedAccessFilePath(const String & access_zk_path, AccessEntityType access_entity_type, const String & file_path)
 {
     std::lock_guard lock{mutex};
-    replicated_access.addFilePath(access_zk_path, access_entity_type, host_id, file_path);
+    replicated_access.addFilePath(access_zk_path, access_entity_type, "", file_path);
 }
 
-Strings BackupCoordinationLocal::getReplicatedAccessFilePaths(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id) const
+Strings BackupCoordinationLocal::getReplicatedAccessFilePaths(const String & access_zk_path, AccessEntityType access_entity_type) const
 {
     std::lock_guard lock{mutex};
-    return replicated_access.getFilePaths(access_zk_path, access_entity_type, host_id);
+    return replicated_access.getFilePaths(access_zk_path, access_entity_type, "");
+}
+
+
+void BackupCoordinationLocal::addReplicatedSQLObjectsDir(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & dir_path)
+{
+    std::lock_guard lock{mutex};
+    replicated_sql_objects.addDirectory(loader_zk_path, object_type, "", dir_path);
+}
+
+Strings BackupCoordinationLocal::getReplicatedSQLObjectsDirs(const String & loader_zk_path, UserDefinedSQLObjectType object_type) const
+{
+    std::lock_guard lock{mutex};
+    return replicated_sql_objects.getDirectories(loader_zk_path, object_type, "");
 }
 
 

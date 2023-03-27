@@ -58,6 +58,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
+    extern const int ABORTED;
 }
 
 static Block adoptBlock(const Block & header, const Block & block, Poco::Logger * log)
@@ -210,6 +211,10 @@ std::string DistributedSink::getCurrentStateDescription()
 }
 
 
+DistributedSink::JobReplica::JobReplica(size_t shard_index_, size_t replica_index_, bool is_local_job_, const Block & sample_block)
+    : shard_index(shard_index_), replica_index(replica_index_), is_local_job(is_local_job_), current_shard_block(sample_block.cloneEmpty()) {}
+
+
 void DistributedSink::initWritingJobs(const Block & first_block, size_t start, size_t end)
 {
     const Settings & settings = context->getSettingsRef();
@@ -291,14 +296,18 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
     auto thread_group = CurrentThread::getGroup();
     return [this, thread_group, &job, &current_block, num_shards]()
     {
+        /// Avoid Logical error: 'Pipeline for PushingPipelineExecutor was finished before all data was inserted' (whatever it means)
+        if (isCancelled())
+            throw Exception(ErrorCodes::ABORTED, "Writing job was cancelled");
+
         SCOPE_EXIT_SAFE(
             if (thread_group)
-                CurrentThread::detachQueryIfNotDetached();
+                CurrentThread::detachFromGroupIfNotDetached();
         );
         OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
 
         if (thread_group)
-            CurrentThread::attachToIfDetached(thread_group);
+            CurrentThread::attachToGroupIfDetached(thread_group);
         setThreadName("DistrOutStrProc");
 
         ++job.blocks_started;

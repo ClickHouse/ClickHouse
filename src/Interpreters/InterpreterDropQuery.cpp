@@ -282,11 +282,6 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
             else if (kind == ASTDropQuery::Kind::Drop)
             {
                 context_handle->removeExternalTable(table_name);
-                table->flushAndShutdown();
-                auto table_lock = table->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
-                /// Delete table data
-                table->drop();
-                table->is_dropped = true;
             }
             else if (kind == ASTDropQuery::Kind::Detach)
             {
