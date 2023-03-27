@@ -11,11 +11,19 @@ namespace DB
 namespace Stage = BackupCoordinationStage;
 
 RestoreCoordinationRemote::RestoreCoordinationRemote(
-    const String & root_zookeeper_path_, const String & restore_uuid_, zkutil::GetZooKeeper get_zookeeper_, bool is_internal_)
-    : root_zookeeper_path(root_zookeeper_path_)
-    , zookeeper_path(root_zookeeper_path_ + "/restore-" + restore_uuid_)
+    zkutil::GetZooKeeper get_zookeeper_,
+    const String & root_zookeeper_path_,
+    const String & restore_uuid_,
+    const Strings & all_hosts_,
+    const String & current_host_,
+    bool is_internal_)
+    : get_zookeeper(get_zookeeper_)
+    , root_zookeeper_path(root_zookeeper_path_)
     , restore_uuid(restore_uuid_)
-    , get_zookeeper(get_zookeeper_)
+    , zookeeper_path(root_zookeeper_path_ + "/restore-" + restore_uuid_)
+    , all_hosts(all_hosts_)
+    , current_host(current_host_)
+    , current_host_index(BackupCoordinationRemote::findCurrentHostIndex(all_hosts, current_host))
     , is_internal(is_internal_)
 {
     createRootNodes();
@@ -63,22 +71,22 @@ void RestoreCoordinationRemote::createRootNodes()
 }
 
 
-void RestoreCoordinationRemote::setStage(const String & current_host, const String & new_stage, const String & message)
+void RestoreCoordinationRemote::setStage(const String & new_stage, const String & message)
 {
     stage_sync->set(current_host, new_stage, message);
 }
 
-void RestoreCoordinationRemote::setError(const String & current_host, const Exception & exception)
+void RestoreCoordinationRemote::setError(const Exception & exception)
 {
     stage_sync->setError(current_host, exception);
 }
 
-Strings RestoreCoordinationRemote::waitForStage(const Strings & all_hosts, const String & stage_to_wait)
+Strings RestoreCoordinationRemote::waitForStage(const String & stage_to_wait)
 {
     return stage_sync->wait(all_hosts, stage_to_wait);
 }
 
-Strings RestoreCoordinationRemote::waitForStage(const Strings & all_hosts, const String & stage_to_wait, std::chrono::milliseconds timeout)
+Strings RestoreCoordinationRemote::waitForStage(const String & stage_to_wait, std::chrono::milliseconds timeout)
 {
     return stage_sync->waitFor(all_hosts, stage_to_wait, timeout);
 }
