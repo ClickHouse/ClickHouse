@@ -17,6 +17,12 @@ struct RestoreSettings;
 struct BackupInfo;
 class IBackupCoordination;
 class IRestoreCoordination;
+class IBackup;
+using BackupMutablePtr = std::shared_ptr<IBackup>;
+using BackupPtr = std::shared_ptr<const IBackup>;
+class IBackupEntry;
+using BackupEntries = std::vector<std::pair<String, std::shared_ptr<const IBackupEntry>>>;
+using DataRestoreTasks = std::vector<std::function<void()>>;
 
 /// Manager of backups and restores: executes backups and restores' threads in the background.
 /// Keeps information about backups and restores started in this session.
@@ -99,6 +105,9 @@ private:
         ContextMutablePtr mutable_context,
         bool called_async);
 
+    /// Write backup entries to an opened backup.
+    void writeBackupEntries(const OperationID & backup_id, BackupMutablePtr backup, BackupEntries && backup_entries, ThreadPool & thread_pool, bool internal);
+
     OperationID startRestoring(const ASTPtr & query, ContextMutablePtr context);
 
     void doRestore(
@@ -110,6 +119,9 @@ private:
         std::shared_ptr<IRestoreCoordination> restore_coordination,
         ContextMutablePtr context,
         bool called_async);
+
+    /// Run data restoring tasks which insert data to tables.
+    void restoreTablesData(const OperationID & restore_id, BackupPtr backup, DataRestoreTasks && tasks, ThreadPool & thread_pool);
 
     void addInfo(const OperationID & id, const String & name, bool internal, BackupStatus status);
     void setStatus(const OperationID & id, BackupStatus status, bool throw_if_error = true);
