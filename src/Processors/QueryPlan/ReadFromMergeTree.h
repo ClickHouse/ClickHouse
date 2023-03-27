@@ -91,6 +91,8 @@ public:
         UInt64 selected_marks_pk = 0;
         UInt64 total_marks_pk = 0;
         UInt64 selected_rows = 0;
+
+        void checkLimits(const Settings & settings, const SelectQueryInfo & query_info_) const;
     };
 
     ReadFromMergeTree(
@@ -121,7 +123,11 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeIndexes(JSONBuilder::JSONMap & map) const override;
 
+    const Names & getRealColumnNames() const { return real_column_names; }
+    const Names & getVirtualColumnNames() const { return virt_column_names; }
+
     StorageID getStorageID() const { return data.getStorageID(); }
+    const StorageSnapshotPtr & getStorageSnapshot() const { return storage_snapshot; }
     UInt64 getSelectedParts() const { return selected_parts; }
     UInt64 getSelectedRows() const { return selected_rows; }
     UInt64 getSelectedMarks() const { return selected_marks; }
@@ -141,19 +147,35 @@ public:
         bool sample_factor_column_queried,
         Poco::Logger * log);
 
+    MergeTreeDataSelectAnalysisResultPtr selectRangesToRead(MergeTreeData::DataPartsVector parts) const;
+
     ContextPtr getContext() const { return context; }
     const SelectQueryInfo & getQueryInfo() const { return query_info; }
     StorageMetadataPtr getStorageMetadata() const { return metadata_for_reading; }
-    const PrewhereInfo * getPrewhereInfo() const { return prewhere_info.get(); }
+    const PrewhereInfoPtr & getPrewhereInfo() const { return prewhere_info; }
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
 
+    void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value);
+
     static bool isFinal(const SelectQueryInfo & query_info);
+    bool isQueryWithFinal() const;
+    bool isQueryWithSampling() const;
 
     /// Returns true if the optimisation is applicable (and applies it then).
     bool requestOutputEachPartitionThroughSeparatePort();
     bool willOutputEachPartitionThroughSeparatePort() const { return output_each_partition_through_separate_port; }
+
+    bool hasAnalyzedResult() const { return analyzed_result_ptr != nullptr; }
+    void setAnalyzedResult(MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
+    void resetParts(MergeTreeData::DataPartsVector parts) { prepared_parts = std::move(parts); }
+
+    const MergeTreeData::DataPartsVector & getParts() const { return prepared_parts; }
+    const MergeTreeData & getMergeTreeData() const { return data; }
+    size_t getMaxBlockSize() const { return max_block_size; }
+    size_t getNumStreams() const { return requested_num_streams; }
+    bool isParallelReadingEnabled() const { return read_task_callback != std::nullopt; }
 
 private:
     static MergeTreeDataSelectAnalysisResultPtr selectRangesToReadImpl(
@@ -168,8 +190,6 @@ private:
         const Names & real_column_names,
         bool sample_factor_column_queried,
         Poco::Logger * log);
-
-    bool isQueryWithFinal() const;
 
     int getSortDirection() const
     {
@@ -238,7 +258,6 @@ private:
     Pipe spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts, size_t num_streams, const Names & column_names, ActionsDAGPtr & out_projection);
 
-    MergeTreeDataSelectAnalysisResultPtr selectRangesToRead(MergeTreeData::DataPartsVector parts) const;
     ReadFromMergeTree::AnalysisResult getAnalysisResult() const;
     MergeTreeDataSelectAnalysisResultPtr analyzed_result_ptr;
 
