@@ -1521,21 +1521,27 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         for (const auto & disk_ptr : disks)
         {
             defined_disk_names.insert(disk_ptr->getName());
+        }
 
+        /// In case of delegate disks it is not enough to traverse `disks`,
+        /// because for example cache or encrypted disk which wrap s3 disk and s3 disk itself can be put into different storage policies.
+        /// But disk->exists returns the same thing for both disks.
+        for (const auto & [disk_name, disk] : getContext()->getDisksMap())
+        {
             /// As encrypted disk can use the same path of its nested disk,
             /// we need to take it into account here.
-            const auto & delegate = disk_ptr->getDelegateDiskIfExists();
-            if (delegate && disk_ptr->getPath() == delegate->getPath())
+            const auto & delegate = disk->getDelegateDiskIfExists();
+            if (delegate && disk->getPath() == delegate->getPath())
                 defined_disk_names.insert(delegate->getName());
 
-            /// As cache is implemented on object storage layer, not on disk level, e.g.
-            /// we have such structure:
-            /// DiskObjectStorage(CachedObjectStorage(...(CachedObjectStored(ObjectStorage)...)))
-            /// and disk_ptr->getName() here is the name of last delegate - ObjectStorage.
-            /// So now we need to add cache layers to defined disk names.
-            if (disk_ptr->supportsCache())
+            if (disk->supportsCache())
             {
-                auto caches = disk_ptr->getCacheLayersNames();
+                /// As cache is implemented on object storage layer, not on disk level, e.g.
+                /// we have such structure:
+                /// DiskObjectStorage(CachedObjectStorage(...(CachedObjectStored(ObjectStorage)...)))
+                /// and disk_ptr->getName() here is the name of last delegate - ObjectStorage.
+                /// So now we need to add cache layers to defined disk names.
+                auto caches = disk->getCacheLayersNames();
                 defined_disk_names.insert(caches.begin(), caches.end());
             }
         }
