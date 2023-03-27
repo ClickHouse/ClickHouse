@@ -761,6 +761,86 @@ NameSet ActionsDAG::foldActionsByProjection(
     return next_required_columns;
 }
 
+
+ActionsDAGPtr ActionsDAG::foldActionsByProjection(const std::unordered_map<const Node *, std::string> & new_inputs, const NodeRawConstPtrs & required_outputs)
+{
+    auto dag = std::make_unique<ActionsDAG>();
+    std::unordered_map<const Node *, size_t> new_input_to_pos;
+
+    std::unordered_map<const Node *, const Node *> mapping;
+    struct Frame
+    {
+        const Node * node;
+        size_t next_child = 0;
+    };
+
+    std::vector<Frame> stack;
+    for (const auto * output : required_outputs)
+    {
+        if (mapping.contains(output))
+            continue;
+
+        stack.push_back({.node = output});
+        while (!stack.empty())
+        {
+            auto & frame = stack.back();
+
+            if (frame.next_child == 0)
+            {
+                auto it = new_inputs.find(frame.node);
+                if (it != new_inputs.end())
+                {
+                    const auto & [new_input, rename] = *it;
+
+                    auto & node = mapping[frame.node];
+
+                    if (!node)
+                    {
+                        bool should_rename = !rename.empty() && new_input->result_name != rename;
+                        const auto & input_name = should_rename ? rename : new_input->result_name;
+                        node = &dag->addInput(input_name, new_input->result_type);
+                        if (should_rename)
+                            node = &dag->addAlias(*node, new_input->result_name);
+                    }
+
+                    stack.pop_back();
+                    continue;
+                }
+            }
+
+            const auto & children = frame.node->children;
+
+            while (frame.next_child < children.size() && !mapping.emplace(children[frame.next_child], nullptr).second)
+                ++frame.next_child;
+
+            if (frame.next_child < children.size())
+            {
+                const auto * child = children[frame.next_child];
+                ++frame.next_child;
+                stack.push_back({.node = child});
+                continue;
+            }
+
+            if (frame.node->type == ActionType::INPUT)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Cannot fold actions for projection. Node {} requires input {} which does not belong to projection",
+                    stack.front().node->result_name, frame.node->result_name);
+
+            auto & node = dag->nodes.emplace_back(*frame.node);
+            for (auto & child : node.children)
+                child = mapping[child];
+
+            mapping[frame.node] = &node;
+            stack.pop_back();
+        }
+    }
+
+    for (const auto * output : required_outputs)
+        dag->outputs.push_back(mapping[output]);
+
+    return dag;
+}
+
 void ActionsDAG::reorderAggregationKeysForProjection(const std::unordered_map<std::string_view, size_t> & key_names_pos_map)
 {
     ::sort(outputs.begin(), outputs.end(), [&key_names_pos_map](const Node * lhs, const Node * rhs)
