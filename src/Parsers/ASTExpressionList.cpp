@@ -56,7 +56,7 @@ void ASTExpressionList::formatImplMultiline(FormattingBuffer out) const
 
         if (children.size() > 1 || out.getExpressionListAlwaysStartsOnNewLine())
         {
-            out.ostr << '\n';
+            out.nlOrWs();
             out.writeIndent();
         }
 
