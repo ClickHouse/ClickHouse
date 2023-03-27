@@ -110,8 +110,10 @@ private:
 class PushNotVisitor
 {
 public:
-    explicit PushNotVisitor(ContextPtr context)
-        : current_context(std::move(context))
+    explicit PushNotVisitor(const ContextPtr & context)
+        : not_function_resolver(FunctionFactory::instance().get("not", context))
+        , or_function_resolver(FunctionFactory::instance().get("or", context))
+        , and_function_resolver(FunctionFactory::instance().get("and", context))
     {}
 
     void visit(QueryTreeNodePtr & node, bool add_negation)
@@ -123,7 +125,7 @@ public:
         if (!function_node || !isLogicalFunction(*function_node))
         {
             if (add_negation)
-                node = createFunctionNode(FunctionFactory::instance().get("not", current_context), std::move(node));
+                node = createFunctionNode(not_function_resolver, std::move(node));
             return;
         }
 
@@ -132,8 +134,10 @@ public:
         {
             if (add_negation)
             {
-                auto function_resolver = FunctionFactory::instance().get(function_name == "and" ? "or" : "and", current_context);
-                function_node->resolveAsFunction(function_resolver);
+                if (function_name == "and")
+                    function_node->resolveAsFunction(or_function_resolver);
+                else
+                    function_node->resolveAsFunction(and_function_resolver);
             }
 
             auto & arguments = function_node->getArguments().getNodes();
@@ -150,7 +154,9 @@ public:
     }
 
 private:
-    ContextPtr current_context;
+    const FunctionOverloadResolverPtr not_function_resolver;
+    const FunctionOverloadResolverPtr or_function_resolver;
+    const FunctionOverloadResolverPtr and_function_resolver;
 };
 
 class PushOrVisitor
@@ -303,9 +309,10 @@ bool CNF::AtomicFormula::operator==(const AtomicFormula & rhs) const
 
 bool CNF::AtomicFormula::operator<(const AtomicFormula & rhs) const
 {
-    return node_with_hash.hash == rhs.node_with_hash.hash
-        ? negative < rhs.negative
-        : node_with_hash.hash < rhs.node_with_hash.hash;
+    if (node_with_hash.hash > rhs.node_with_hash.hash)
+        return false;
+
+    return node_with_hash.hash < rhs.node_with_hash.hash || negative < rhs.negative;
 }
 
 std::string CNF::dump() const

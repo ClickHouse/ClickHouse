@@ -4,8 +4,8 @@
 #include <Interpreters/TreeCNFConverter.h>
 
 #include <Analyzer/Passes/CNF.h>
-#include "Analyzer/HashUtils.h"
-#include "Analyzer/IQueryTreeNode.h"
+#include <Analyzer/HashUtils.h>
+#include <Analyzer/IQueryTreeNode.h>
 
 #include <type_traits>
 #include <unordered_map>
