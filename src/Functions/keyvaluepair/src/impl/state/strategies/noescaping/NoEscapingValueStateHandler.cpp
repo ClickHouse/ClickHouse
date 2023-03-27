@@ -12,11 +12,12 @@ NoEscapingValueStateHandler::NoEscapingValueStateHandler(Configuration extractor
     read_quoted_needles = NeedleFactory::getReadQuotedNeedles(extractor_configuration);
 }
 
-NextState NoEscapingValueStateHandler::wait(std::string_view file, size_t pos) const
+NextState NoEscapingValueStateHandler::wait(std::string_view file) const
 {
     const auto & [key_value_delimiter, quoting_character, pair_delimiters]
         = extractor_configuration;
 
+    size_t pos = 0;
     if (pos < file.size())
     {
         const auto current_character = file[pos];
@@ -38,8 +39,9 @@ NextState NoEscapingValueStateHandler::wait(std::string_view file, size_t pos) c
     return {file.size(), State::READING_VALUE};
 }
 
-NextState NoEscapingValueStateHandler::read(std::string_view file, size_t pos, ElementType & value) const
+NextState NoEscapingValueStateHandler::read(std::string_view file, ElementType & value) const
 {
+    size_t pos = 0;
     auto start_index = pos;
 
     value = {};
@@ -74,8 +76,9 @@ NextState NoEscapingValueStateHandler::read(std::string_view file, size_t pos, E
     return {file.size(), State::FLUSH_PAIR};
 }
 
-NextState NoEscapingValueStateHandler::readQuoted(std::string_view file, size_t pos, ElementType & value) const
+NextState NoEscapingValueStateHandler::readQuoted(std::string_view file, ElementType & value) const
 {
+    size_t pos = 0;
     auto start_index = pos;
 
     value = {};
@@ -94,6 +97,7 @@ NextState NoEscapingValueStateHandler::readQuoted(std::string_view file, size_t 
         {
             value = createElement(file, start_index, character_position);
 
+            std::cerr << "NoEscapingValueStateHandler::readQuoted Going to consume up to: «" << fancyQuote(file.substr(0, next_pos)) << " to " << fancyQuote(file.substr(next_pos)) << std::endl;
             return {next_pos, State::FLUSH_PAIR};
         }
 

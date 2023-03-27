@@ -1,5 +1,4 @@
 #include "NeedleFactory.h"
-#include "EscapedCharacterReader.h"
 
 namespace DB
 {
@@ -54,7 +53,7 @@ std::vector<char> EscapingNeedleFactory::getWaitNeedles(const DB::Configuration 
 {
     auto needles = NeedleFactory::getWaitNeedles(extractor_configuration);
 
-    needles.push_back(EscapedCharacterReader::ESCAPE_CHARACTER);
+    needles.push_back('\\');
 
     return needles;
 }
@@ -63,7 +62,7 @@ std::vector<char> EscapingNeedleFactory::getReadNeedles(const Configuration & ex
 {
     auto needles = NeedleFactory::getReadNeedles(extractor_configuration);
 
-    needles.push_back(EscapedCharacterReader::ESCAPE_CHARACTER);
+    needles.push_back('\\');
 
     return needles;
 }
@@ -72,7 +71,7 @@ std::vector<char> EscapingNeedleFactory::getReadQuotedNeedles(const Configuratio
 {
     auto needles = NeedleFactory::getReadQuotedNeedles(extractor_configuration);
 
-    needles.push_back(EscapedCharacterReader::ESCAPE_CHARACTER);
+    needles.push_back('\\');
 
     return needles;
 }

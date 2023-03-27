@@ -6,7 +6,7 @@ namespace DB
 
 void test_wait(const auto & handler, std::string_view input, std::size_t expected_pos, State expected_state)
 {
-    auto next_state = handler.wait(input, 0u);
+    auto next_state = handler.wait(input);
 
     ASSERT_EQ(next_state.position_in_string, expected_pos);
     ASSERT_EQ(next_state.state, expected_state);
@@ -21,11 +21,11 @@ void test_read(const auto & handler, std::string_view input, std::string_view ex
 
     if constexpr (quoted)
     {
-        next_state = handler.readQuoted(input, 0u, element);
+        next_state = handler.readQuoted(input, element);
     }
     else
     {
-        next_state = handler.read(input, 0u, element);
+        next_state = handler.read(input, element);
     }
 
     ASSERT_EQ(next_state.position_in_string, expected_pos);
@@ -45,7 +45,7 @@ void test_read_quoted(const auto & handler, std::string_view input, std::string_
     test_read<true>(handler, input, expected_element, expected_pos, expected_state);
 }
 
-TEST(NoEscapingKeyStateHandler, Wait)
+TEST(extractKVPair_NoEscapingKeyStateHandler, Wait)
 {
     auto pair_delimiters = std::vector<char>{',', ' ', '$'};
 
@@ -64,7 +64,7 @@ TEST(NoEscapingKeyStateHandler, Wait)
     test_wait(handler, "", 0u, END);
 }
 
-TEST(NoEscapingKeyStateHandler, Read)
+TEST(extractKVPair_NoEscapingKeyStateHandler, Read)
 {
     auto pair_delimiters = std::vector<char>{',', ' '};
 

@@ -36,7 +36,7 @@ void test_find_first_not(const CharacterFinder& finder, const std::string_view& 
     }
 }
 
-TEST(CharacterFinderTest, FindFirst)
+TEST(extractKVPair_CharacterFinderTest, FindFirst)
 {
     CharacterFinder finder;
 
@@ -66,7 +66,7 @@ TEST(CharacterFinderTest, FindFirst)
     test_find_first(finder, special_needle, special_needles, std::make_optional<std::pair<char, CharacterFinder::Position>>('=', 4));
 }
 
-TEST(CharacterFinderTest, FindFirstNot)
+TEST(extractKVPair_CharacterFinderTest, FindFirstNot)
 {
     CharacterFinder finder;
 

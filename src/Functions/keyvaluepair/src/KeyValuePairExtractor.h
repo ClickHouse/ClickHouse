@@ -1,7 +1,9 @@
 #pragma once
 
-#include <string>
 #include <Columns/ColumnString.h>
+
+#include <string>
+#include <string_view>
 
 namespace DB
 {
