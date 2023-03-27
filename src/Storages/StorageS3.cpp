@@ -62,6 +62,8 @@
 #include <QueryPipeline/Pipe.h>
 #include <filesystem>
 
+#include <boost/algorithm/string.hpp>
+
 namespace fs = std::filesystem;
 
 
@@ -1265,9 +1267,13 @@ void StorageS3::updateConfiguration(ContextPtr ctx, StorageS3::Configuration & u
         credentials.GetAWSSecretKey(),
         upd.auth_settings.server_side_encryption_customer_key_base64,
         std::move(headers),
-        upd.auth_settings.use_environment_credentials.value_or(ctx->getConfigRef().getBool("s3.use_environment_credentials", false)),
-        upd.auth_settings.use_insecure_imds_request.value_or(ctx->getConfigRef().getBool("s3.use_insecure_imds_request", false)),
-        upd.auth_settings.expiration_window_seconds.value_or(ctx->getConfigRef().getUInt64("s3.expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS)));
+        S3::CredentialsConfiguration{
+            upd.auth_settings.use_environment_credentials.value_or(ctx->getConfigRef().getBool("s3.use_environment_credentials", false)),
+            upd.auth_settings.use_insecure_imds_request.value_or(ctx->getConfigRef().getBool("s3.use_insecure_imds_request", false)),
+            upd.auth_settings.expiration_window_seconds.value_or(
+                ctx->getConfigRef().getUInt64("s3.expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS)),
+            upd.auth_settings.no_sign_request.value_or(ctx->getConfigRef().getBool("s3.no_sign_request", false)),
+        });
 }
 
 void StorageS3::processNamedCollectionResult(StorageS3::Configuration & configuration, const NamedCollection & collection)
@@ -1306,6 +1312,9 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, Context
         /// S3('url')
         /// S3('url', 'format')
         /// S3('url', 'format', 'compression')
+        /// S3('url', NOSIGN)
+        /// S3('url', NOSIGN, 'format')
+        /// S3('url', NOSIGN, 'format', 'compression')
         /// S3('url', 'aws_access_key_id', 'aws_secret_access_key')
         /// S3('url', 'aws_access_key_id', 'aws_secret_access_key', 'format')
         /// S3('url', 'aws_access_key_id', 'aws_secret_access_key', 'format', 'compression')
@@ -1314,7 +1323,7 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, Context
         if (engine_args.empty() || engine_args.size() > 5)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                             "Storage S3 requires 1 to 5 arguments: "
-                            "url, [access_key_id, secret_access_key], name of used format and [compression_method]");
+                            "url, [NOSIGN | access_key_id, secret_access_key], name of used format and [compression_method]");
 
         auto * header_it = StorageURL::collectHeaders(engine_args, configuration.headers_from_ast, local_context);
         if (header_it != engine_args.end())
@@ -1327,23 +1336,56 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, Context
         static std::unordered_map<size_t, std::unordered_map<std::string_view, size_t>> size_to_engine_args
         {
             {1, {{}}},
-            {2, {{"format", 1}}},
-            {4, {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}}},
             {5, {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}, {"compression_method", 4}}}
         };
 
         std::unordered_map<std::string_view, size_t> engine_args_to_idx;
-        /// For 3 arguments we support 2 possible variants:
-        /// s3(source, format, compression_method) and s3(source, access_key_id, access_key_id)
-        /// We can distinguish them by looking at the 2-nd argument: check if it's a format name or not.
-        if (engine_args.size() == 3)
-        {
-            auto second_arg = checkAndGetLiteralArgument<String>(engine_args[1], "format/access_key_id");
-            if (second_arg == "auto" || FormatFactory::instance().getAllFormats().contains(second_arg))
-                engine_args_to_idx = {{"format", 1}, {"compression_method", 2}};
+        bool no_sign_request = false;
 
+        /// For 2 arguments we support 2 possible variants:
+        /// - s3(source, format)
+        /// - s3(source, NOSIGN)
+        /// We can distinguish them by looking at the 2-nd argument: check if it's NOSIGN or not.
+        if (engine_args.size() == 2)
+        {
+            auto second_arg = checkAndGetLiteralArgument<String>(engine_args[1], "format/NOSIGN");
+            if (boost::iequals(second_arg, "NOSIGN"))
+                no_sign_request = true;
+            else
+                engine_args_to_idx = {{"format", 1}};
+        }
+        /// For 3 arguments we support 2 possible variants:
+        /// - s3(source, format, compression_method)
+        /// - s3(source, access_key_id, access_key_id)
+        /// - s3(source, NOSIGN, format)
+        /// We can distinguish them by looking at the 2-nd argument: check if it's NOSIGN or format name.
+        else if (engine_args.size() == 3)
+        {
+            auto second_arg = checkAndGetLiteralArgument<String>(engine_args[1], "format/access_key_id/NOSIGN");
+            if (boost::iequals(second_arg, "NOSIGN"))
+            {
+                no_sign_request = true;
+                engine_args_to_idx = {{"format", 2}};
+            }
+            else if (second_arg == "auto" || FormatFactory::instance().getAllFormats().contains(second_arg))
+                engine_args_to_idx = {{"format", 1}, {"compression_method", 2}};
             else
                 engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}};
+        }
+        /// For 4 arguments we support 2 possible variants:
+        /// - s3(source, access_key_id, secret_access_key, format)
+        /// - s3(source, NOSIGN, format, compression_method)
+        /// We can distinguish them by looking at the 2-nd argument: check if it's a NOSIGN or not.
+        else if (engine_args.size() == 4)
+        {
+            auto second_arg = checkAndGetLiteralArgument<String>(engine_args[1], "access_key_id/NOSIGN");
+            if (boost::iequals(second_arg, "NOSIGN"))
+            {
+                no_sign_request = true;
+                engine_args_to_idx = {{"format", 2}, {"compression_method", 3}};
+            }
+            else
+                engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}};
         }
         else
         {
@@ -1364,6 +1406,8 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, Context
 
         if (engine_args_to_idx.contains("secret_access_key"))
             configuration.auth_settings.secret_access_key = checkAndGetLiteralArgument<String>(engine_args[engine_args_to_idx["secret_access_key"]], "secret_access_key");
+
+        configuration.auth_settings.no_sign_request = no_sign_request;
     }
 
     configuration.static_configuration = !configuration.auth_settings.access_key_id.empty();

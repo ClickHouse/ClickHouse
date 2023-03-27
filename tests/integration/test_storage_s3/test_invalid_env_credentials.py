@@ -105,25 +105,27 @@ def started_cluster():
 
 
 def test_with_invalid_environment_credentials(started_cluster):
-    auth = "'minio','minio123'"
-    bucket = started_cluster.minio_restricted_bucket
-
     instance = started_cluster.instances["s3_with_invalid_environment_credentials"]
-    instance.query(
-        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache4.jsonl', {auth}) select * from numbers(100) settings s3_truncate_on_insert=1"
-    )
 
-    with pytest.raises(helpers.client.QueryRuntimeException) as ei:
+    for (bucket, auth) in [
+        (started_cluster.minio_restricted_bucket, "'minio', 'minio123'"),
+        (started_cluster.minio_bucket, "NOSIGN"),
+    ]:
         instance.query(
-            f"select count() from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache4.jsonl')"
+            f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache4.jsonl', {auth}) select * from numbers(100) settings s3_truncate_on_insert=1"
         )
 
-        assert ei.value.returncode == 243
-        assert "HTTP response code: 403" in ei.value.stderr
+        with pytest.raises(helpers.client.QueryRuntimeException) as ei:
+            instance.query(
+                f"select count() from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache4.jsonl')"
+            )
 
-    assert (
-        "100"
-        == instance.query(
-            f"select count() from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache4.jsonl', {auth})"
-        ).strip()
-    )
+            assert ei.value.returncode == 243
+            assert "HTTP response code: 403" in ei.value.stderr
+
+        assert (
+            "100"
+            == instance.query(
+                f"select count() from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache4.jsonl', {auth})"
+            ).strip()
+        )
