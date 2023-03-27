@@ -344,24 +344,8 @@ ZooKeeper::ZooKeeper(
         default_acls.emplace_back(std::move(acl));
     }
 
-    /// It makes sense (especially, for async requests) to inject a fault in two places:
-    /// pushRequest (before request is sent) and receiveEvent (after request was executed).
-    if (0 < args.send_fault_probability && args.send_fault_probability <= 1)
-    {
-        send_inject_fault.emplace(args.send_fault_probability);
-    }
-    if (0 < args.recv_fault_probability && args.recv_fault_probability <= 1)
-    {
-        recv_inject_fault.emplace(args.recv_fault_probability);
-    }
-    if (0 < args.send_sleep_probability && args.send_sleep_probability <= 1)
-    {
-        send_inject_sleep.emplace(args.send_sleep_probability);
-    }
-    if (0 < args.recv_sleep_probability && args.recv_sleep_probability <= 1)
-    {
-        recv_inject_sleep.emplace(args.recv_sleep_probability);
-    }
+    if (args.enable_fault_injections_during_startup)
+        setupFaultDistributions();
 
     connect(nodes, args.connection_timeout_ms * 1000);
 
@@ -1413,31 +1397,61 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr &, const ZooKeepe
 {}
 #endif
 
+
+void ZooKeeper::setServerCompletelyStarted()
+{
+    if (!args.enable_fault_injections_during_startup)
+        setupFaultDistributions();
+}
+
+void ZooKeeper::setupFaultDistributions()
+{
+    /// It makes sense (especially, for async requests) to inject a fault in two places:
+    /// pushRequest (before request is sent) and receiveEvent (after request was executed).
+    if (0 < args.send_fault_probability && args.send_fault_probability <= 1)
+    {
+        LOG_INFO(log, "ZK send fault: {}%", args.send_fault_probability * 100);
+        send_inject_fault.emplace(args.send_fault_probability);
+    }
+    if (0 < args.recv_fault_probability && args.recv_fault_probability <= 1)
+    {
+        LOG_INFO(log, "ZK recv fault: {}%", args.recv_fault_probability * 100);
+        recv_inject_fault.emplace(args.recv_fault_probability);
+    }
+    if (0 < args.send_sleep_probability && args.send_sleep_probability <= 1)
+    {
+        LOG_INFO(log, "ZK send sleep: {}% -> {}ms", args.send_sleep_probability * 100, args.send_sleep_ms);
+        send_inject_sleep.emplace(args.send_sleep_probability);
+    }
+    if (0 < args.recv_sleep_probability && args.recv_sleep_probability <= 1)
+    {
+        LOG_INFO(log, "ZK recv sleep: {}% -> {}ms", args.recv_sleep_probability * 100, args.recv_sleep_ms);
+        recv_inject_sleep.emplace(args.recv_sleep_probability);
+    }
+    inject_setup.test_and_set();
+}
+
 void ZooKeeper::maybeInjectSendFault()
 {
-    if (unlikely(send_inject_fault) && send_inject_fault.value()(thread_local_rng)
-        && (args.enable_fault_injections_during_startup || Context::getGlobalContextInstance()->isServerCompletelyStarted()))
+    if (unlikely(inject_setup.test() && send_inject_fault && send_inject_fault.value()(thread_local_rng)))
         throw Exception(Error::ZSESSIONEXPIRED, "Session expired (fault injected on recv)");
 }
 
 void ZooKeeper::maybeInjectRecvFault()
 {
-    if (unlikely(recv_inject_fault) && recv_inject_fault.value()(thread_local_rng)
-        && (args.enable_fault_injections_during_startup || Context::getGlobalContextInstance()->isServerCompletelyStarted()))
+    if (unlikely(inject_setup.test() && recv_inject_fault && recv_inject_fault.value()(thread_local_rng)))
         throw Exception(Error::ZSESSIONEXPIRED, "Session expired (fault injected on recv)");
 }
 
 void ZooKeeper::maybeInjectSendSleep()
 {
-    if (unlikely(send_inject_sleep) && send_inject_sleep.value()(thread_local_rng)
-        && (args.enable_fault_injections_during_startup || Context::getGlobalContextInstance()->isServerCompletelyStarted()))
+    if (unlikely(inject_setup.test() && send_inject_sleep && send_inject_sleep.value()(thread_local_rng)))
         sleepForMilliseconds(args.send_sleep_ms);
 }
 
 void ZooKeeper::maybeInjectRecvSleep()
 {
-    if (unlikely(recv_inject_sleep) && recv_inject_sleep.value()(thread_local_rng)
-        && (args.enable_fault_injections_during_startup || Context::getGlobalContextInstance()->isServerCompletelyStarted()))
+    if (unlikely(inject_setup.test() && recv_inject_sleep && recv_inject_sleep.value()(thread_local_rng)))
         sleepForMilliseconds(args.recv_sleep_ms);
 }
 }
