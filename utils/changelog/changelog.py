@@ -256,6 +256,14 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
         category = "NOT FOR CHANGELOG / INSIGNIFICANT"
         return Description(item.number, item.user, item.html_url, item.title, category)
 
+    # Normalize bug fixes
+    if re.match(
+        r"(?i)bug\Wfix",
+        category,
+    ):
+        category = "Bug Fix (user-visible misbehavior in an official stable release)"
+        return Description(item.number, item.user, item.html_url, item.title, category)
+
     # Filter out documentations changelog
     if re.match(
         r"(?i)doc",
