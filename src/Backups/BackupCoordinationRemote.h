@@ -27,17 +27,20 @@ public:
     };
 
     BackupCoordinationRemote(
-        const BackupKeeperSettings & keeper_settings_,
-        const String & root_zookeeper_path_,
-        const String & backup_uuid_,
         zkutil::GetZooKeeper get_zookeeper_,
+        const String & root_zookeeper_path_,
+        const BackupKeeperSettings & keeper_settings_,
+        const String & backup_uuid_,
+        const Strings & all_hosts_,
+        const String & current_host_,
         bool is_internal_);
+
     ~BackupCoordinationRemote() override;
 
-    void setStage(const String & current_host, const String & new_stage, const String & message) override;
-    void setError(const String & current_host, const Exception & exception) override;
-    Strings waitForStage(const Strings & all_hosts, const String & stage_to_wait) override;
-    Strings waitForStage(const Strings & all_hosts, const String & stage_to_wait, std::chrono::milliseconds timeout) override;
+    void setStage(const String & new_stage, const String & message) override;
+    void setError(const Exception & exception) override;
+    Strings waitForStage(const String & stage_to_wait) override;
+    Strings waitForStage(const String & stage_to_wait, std::chrono::milliseconds timeout) override;
 
     void addReplicatedPartNames(
         const String & table_shared_id,
@@ -58,11 +61,11 @@ public:
     void addReplicatedDataPath(const String & table_shared_id, const String & data_path) override;
     Strings getReplicatedDataPaths(const String & table_shared_id) const override;
 
-    void addReplicatedAccessFilePath(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id, const String & file_path) override;
-    Strings getReplicatedAccessFilePaths(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id) const override;
+    void addReplicatedAccessFilePath(const String & access_zk_path, AccessEntityType access_entity_type, const String & file_path) override;
+    Strings getReplicatedAccessFilePaths(const String & access_zk_path, AccessEntityType access_entity_type) const override;
 
-    void addReplicatedSQLObjectsDir(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & host_id, const String & dir_path) override;
-    Strings getReplicatedSQLObjectsDirs(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & host_id) const override;
+    void addReplicatedSQLObjectsDir(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & dir_path) override;
+    Strings getReplicatedSQLObjectsDirs(const String & loader_zk_path, UserDefinedSQLObjectType object_type) const override;
 
     void addFileInfo(const FileInfo & file_info, bool & is_data_file_required) override;
     void updateFileInfo(const FileInfo & file_info) override;
@@ -78,6 +81,8 @@ public:
 
     bool hasConcurrentBackups(const std::atomic<size_t> & num_active_backups) const override;
 
+    static size_t findCurrentHostIndex(const Strings & all_hosts, const String & current_host);
+
 private:
     zkutil::ZooKeeperPtr getZooKeeper() const;
     zkutil::ZooKeeperPtr getZooKeeperNoLock() const;
@@ -91,11 +96,14 @@ private:
     void prepareReplicatedAccess() const;
     void prepareReplicatedSQLObjects() const;
 
-    const BackupKeeperSettings keeper_settings;
+    const zkutil::GetZooKeeper get_zookeeper;
     const String root_zookeeper_path;
     const String zookeeper_path;
+    const BackupKeeperSettings keeper_settings;
     const String backup_uuid;
-    const zkutil::GetZooKeeper get_zookeeper;
+    const Strings all_hosts;
+    const String current_host;
+    const size_t current_host_index;
     const bool is_internal;
 
     mutable ZooKeeperRetriesInfo zookeeper_retries_info;
