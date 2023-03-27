@@ -1,4 +1,4 @@
-#include <Functions/keyvaluepair/src/impl/state/strategies/escaping/InlineEscapingKeyStateHandler.h>
+#include <Functions/keyvaluepair/src/impl/state/strategies/escaping/InlineEscapingStateHandler.h>
 #include <gtest/gtest.h>
 
 namespace DB
@@ -6,7 +6,7 @@ namespace DB
 
 void test_wait(const InlineEscapingKeyStateHandler & handler, std::string_view input, std::size_t expected_pos, State expected_state)
 {
-    auto next_state = handler.wait(input, 0u);
+    auto next_state = handler.wait(input);
 
     ASSERT_EQ(next_state.position_in_string, expected_pos);
     ASSERT_EQ(next_state.state, expected_state);
@@ -21,11 +21,11 @@ void test_read(const InlineEscapingKeyStateHandler & handler, std::string_view i
 
     if constexpr (quoted)
     {
-        next_state = handler.readQuoted(input, 0u, element);
+        next_state = handler.readQuoted(input, element);
     }
     else
     {
-        next_state = handler.read(input, 0u, element);
+        next_state = handler.read(input, element);
     }
 
     ASSERT_EQ(next_state.position_in_string, expected_pos);
@@ -45,7 +45,7 @@ void test_read_quoted(const InlineEscapingKeyStateHandler & handler, std::string
     test_read<true>(handler, input, expected_element, expected_pos, expected_state);
 }
 
-TEST(InlineEscapingKeyStateHandler, Wait)
+TEST(extractKVPair_InlineEscapingKeyStateHandler, Wait)
 {
     auto pair_delimiters = std::vector<char>{',', ' '};
 
@@ -61,7 +61,7 @@ TEST(InlineEscapingKeyStateHandler, Wait)
     test_wait(handler, "\\\\", 2u, END);
 }
 
-TEST(InlineEscapingKeyStateHandler, Read)
+TEST(extractKVPair_InlineEscapingKeyStateHandler, Read)
 {
     auto pair_delimiters = std::vector<char>{',', ' '};
 
@@ -86,7 +86,7 @@ TEST(InlineEscapingKeyStateHandler, Read)
     test_read(handler, "", "", 0u, END);
 }
 
-TEST(InlineEscapingKeyStateHandler, ReadEnclosed)
+TEST(extractKVPair_InlineEscapingKeyStateHandler, ReadEnclosed)
 {
     auto pair_delimiters = std::vector<char>{',', ' '};
 

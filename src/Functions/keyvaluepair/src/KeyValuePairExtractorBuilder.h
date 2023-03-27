@@ -3,10 +3,14 @@
 #include "Functions/keyvaluepair/src/impl/state/strategies/noescaping/NoEscapingKeyStateHandler.h"
 #include "Functions/keyvaluepair/src/impl/state/strategies/noescaping/NoEscapingValueStateHandler.h"
 #include "KeyValuePairExtractor.h"
-#include "impl/CHKeyValuePairExtractor.h"
+//#include "impl/CHKeyValuePairExtractor.h"
+
+#include <vector>
 
 namespace DB
 {
+
+struct KeyValuePairExtractor;
 
 class KeyValuePairExtractorBuilder
 {

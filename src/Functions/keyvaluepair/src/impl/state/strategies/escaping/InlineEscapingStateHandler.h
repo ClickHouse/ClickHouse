@@ -16,13 +16,13 @@ public:
 
     explicit InlineEscapingKeyStateHandler(Configuration configuration_);
 
-    [[nodiscard]] NextState wait(std::string_view file, size_t pos) const;
+    [[nodiscard]] NextState wait(std::string_view file) const;
 
-    [[nodiscard]] NextState read(std::string_view file, size_t pos, ElementType & key) const;
+    [[nodiscard]] NextState read(std::string_view file, ElementType & key) const;
 
-    [[nodiscard]] NextState readQuoted(std::string_view file, size_t pos, ElementType & key) const;
+    [[nodiscard]] NextState readQuoted(std::string_view file, ElementType & key) const;
 
-    [[nodiscard]] NextState readKeyValueDelimiter(std::string_view file, size_t pos) const;
+    [[nodiscard]] NextState readKeyValueDelimiter(std::string_view file) const;
 
 private:
     Configuration extractor_configuration;
@@ -40,11 +40,11 @@ public:
 
     explicit InlineEscapingValueStateHandler(Configuration extractor_configuration_);
 
-    [[nodiscard]] NextState wait(std::string_view file, size_t pos) const;
+    [[nodiscard]] NextState wait(std::string_view file) const;
 
-    [[nodiscard]] NextState read(std::string_view file, size_t pos, ElementType & value) const;
+    [[nodiscard]] NextState read(std::string_view file, ElementType & value) const;
 
-    [[nodiscard]] NextState readQuoted(std::string_view file, size_t pos, ElementType & value) const;
+    [[nodiscard]] NextState readQuoted(std::string_view file, ElementType & value) const;
 
 private:
     Configuration extractor_configuration;

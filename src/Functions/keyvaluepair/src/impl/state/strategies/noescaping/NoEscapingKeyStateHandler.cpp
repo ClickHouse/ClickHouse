@@ -13,12 +13,12 @@ NoEscapingKeyStateHandler::NoEscapingKeyStateHandler(Configuration extractor_con
     read_quoted_needles = NeedleFactory::getReadQuotedNeedles(extractor_configuration);
 }
 
-NextState NoEscapingKeyStateHandler::wait(std::string_view file, size_t pos) const
+NextState NoEscapingKeyStateHandler::wait(std::string_view file) const
 {
     BoundsSafeCharacterFinder finder;
 
     const auto quoting_character = extractor_configuration.quoting_character;
-
+    size_t pos = 0;
     while (auto character_position_opt = finder.findFirstNot(file, pos, wait_needles))
     {
         auto character_position = *character_position_opt;
@@ -37,7 +37,7 @@ NextState NoEscapingKeyStateHandler::wait(std::string_view file, size_t pos) con
     return {file.size(), State::END};
 }
 
-NextState NoEscapingKeyStateHandler::read(std::string_view file, size_t pos, ElementType & key) const
+NextState NoEscapingKeyStateHandler::read(std::string_view file, ElementType & key) const
 {
     BoundsSafeCharacterFinder finder;
 
@@ -46,6 +46,7 @@ NextState NoEscapingKeyStateHandler::read(std::string_view file, size_t pos, Ele
 
     key = {};
 
+    size_t pos = 0;
     auto start_index = pos;
 
     while (auto character_position_opt = finder.findFirst(file, pos, read_needles))
@@ -76,7 +77,7 @@ NextState NoEscapingKeyStateHandler::read(std::string_view file, size_t pos, Ele
     return {file.size(), State::END};
 }
 
-NextState NoEscapingKeyStateHandler::readQuoted(std::string_view file, size_t pos, ElementType & key) const
+NextState NoEscapingKeyStateHandler::readQuoted(std::string_view file, ElementType & key) const
 {
     BoundsSafeCharacterFinder finder;
 
@@ -84,6 +85,7 @@ NextState NoEscapingKeyStateHandler::readQuoted(std::string_view file, size_t po
 
     key = {};
 
+    size_t pos = 0;
     auto start_index = pos;
 
     while (auto character_position_opt = finder.findFirst(file, pos, read_quoted_needles))
@@ -110,17 +112,20 @@ NextState NoEscapingKeyStateHandler::readQuoted(std::string_view file, size_t po
     return {file.size(), State::END};
 }
 
-NextState NoEscapingKeyStateHandler::readKeyValueDelimiter(std::string_view file, size_t pos) const
+NextState NoEscapingKeyStateHandler::readKeyValueDelimiter(std::string_view file) const
 {
-    if (pos == file.size())
+    if (file.size() == 0)
     {
-        return {pos, State::END};
+        return {0, State::END};
     }
-    else
+
+    const auto current_character = file[0];
+    if (current_character == extractor_configuration.key_value_delimiter)
     {
-        const auto current_character = file[pos++];
-        return {pos, extractor_configuration.key_value_delimiter == current_character ? State::WAITING_VALUE : State::WAITING_KEY};
+        return {1, State::WAITING_VALUE};
     }
+
+    return {0, State::WAITING_KEY};
 }
 
 }

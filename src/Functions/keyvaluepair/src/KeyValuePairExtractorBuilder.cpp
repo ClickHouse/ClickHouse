@@ -1,6 +1,6 @@
 #include "KeyValuePairExtractorBuilder.h"
-#include "Functions/keyvaluepair/src/impl/state/strategies/escaping/InlineEscapingKeyStateHandler.h"
-#include "Functions/keyvaluepair/src/impl/state/strategies/escaping/InlineEscapingValueStateHandler.h"
+
+#include "Functions/keyvaluepair/src/impl/state/strategies/escaping/InlineEscapingStateHandler.h"
 #include "Functions/keyvaluepair/src/impl/state/strategies/noescaping/NoEscapingKeyStateHandler.h"
 #include "Functions/keyvaluepair/src/impl/state/strategies/noescaping/NoEscapingValueStateHandler.h"
 #include "impl/CHKeyValuePairExtractor.h"

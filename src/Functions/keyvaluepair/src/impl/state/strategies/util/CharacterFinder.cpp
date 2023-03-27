@@ -30,10 +30,10 @@ std::optional<CharacterFinder::Position> CharacterFinder::findFirst(std::string_
 
 std::optional<CharacterFinder::Position> CharacterFinder::findFirstNot(std::string_view haystack, const std::vector<char> & needles)
 {
-    if (needles.empty())
-    {
-        return 0u;
-    }
+//    if (needles.empty())
+//    {
+//        return 0u;
+//    }
 
     if (const auto * ptr = find_first_not_symbols_or_null(haystack, {needles.begin(), needles.end()}))
     {

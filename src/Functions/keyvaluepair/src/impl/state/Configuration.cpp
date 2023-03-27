@@ -1,8 +1,6 @@
 #include "Configuration.h"
 #include <Common/Exception.h>
 
-#include <Functions/keyvaluepair/src/impl/state/strategies/util/EscapedCharacterReader.h>
-
 namespace DB
 {
 
@@ -25,14 +23,15 @@ Configuration ConfigurationFactory::createWithoutEscaping(char key_value_delimit
 
 Configuration ConfigurationFactory::createWithEscaping(char key_value_delimiter, char quoting_character, std::vector<char> pair_delimiters)
 {
-    if (key_value_delimiter == EscapedCharacterReader::ESCAPE_CHARACTER
-        || quoting_character == EscapedCharacterReader::ESCAPE_CHARACTER
-        || std::find(pair_delimiters.begin(), pair_delimiters.end(), EscapedCharacterReader::ESCAPE_CHARACTER) != pair_delimiters.end())
+    constexpr char ESCAPE_CHARACTER = '\\';
+    if (key_value_delimiter == ESCAPE_CHARACTER
+        || quoting_character == ESCAPE_CHARACTER
+        || std::find(pair_delimiters.begin(), pair_delimiters.end(), ESCAPE_CHARACTER) != pair_delimiters.end())
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Invalid arguments, {} is reserved for the escaping character",
-            EscapedCharacterReader::ESCAPE_CHARACTER);
+            ESCAPE_CHARACTER);
     }
 
     return createWithoutEscaping(key_value_delimiter, quoting_character, pair_delimiters);

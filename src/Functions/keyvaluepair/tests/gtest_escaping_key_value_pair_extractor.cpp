@@ -11,7 +11,7 @@ void assert_byte_equality(StringRef lhs, const std::vector<uint8_t> & rhs)
     ASSERT_EQ(lhs_vector, rhs);
 }
 
-TEST(EscapingKeyValuePairExtractor, EscapeSequences)
+TEST(extractKVPair_EscapingKeyValuePairExtractor, EscapeSequences)
 {
     using namespace std::literals;
 
