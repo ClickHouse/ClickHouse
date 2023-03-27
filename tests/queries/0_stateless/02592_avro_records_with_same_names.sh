@@ -2,7 +2,6 @@
 # Tags: no-fasttest
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-SCHEMADIR=$CURDIR/format_schemas
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
