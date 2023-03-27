@@ -20,6 +20,7 @@ parser.add_argument(
 )
 args = parser.parse_args()
 
+
 # This function mirrors the PR description checks in ClickhousePullRequestTrigger.
 # Returns False if the PR should not be mentioned changelog.
 def parse_one_pull_request(item):

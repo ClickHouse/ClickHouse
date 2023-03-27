@@ -3,6 +3,7 @@
 #include <Core/Names.h>
 #include <Core/Defines.h>
 #include <base/types.h>
+#include <base/unit.h>
 
 
 namespace DB
@@ -81,7 +82,8 @@ struct FormatSettings
     UInt64 input_allow_errors_num = 0;
     Float32 input_allow_errors_ratio = 0;
 
-    UInt64 max_binary_string_size = 0;
+    UInt64 max_binary_string_size = 1_GiB;
+    UInt64 max_binary_array_size = 1_GiB;
     UInt64 client_protocol_version = 0;
 
     UInt64 max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH;

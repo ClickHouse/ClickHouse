@@ -166,7 +166,7 @@ def main(args):
     keeper_bench_path = args.keeper_bench_path
 
     keepers = []
-    for (port, server_id) in zip(PORTS, SERVER_IDS):
+    for port, server_id in zip(PORTS, SERVER_IDS):
         keepers.append(
             Keeper(
                 keeper_binary_path, server_id, port, workdir, args.with_thread_fuzzer
