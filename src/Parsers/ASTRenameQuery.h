@@ -116,9 +116,9 @@ protected:
 
             if (it->if_exists)
                 out.writeKeyword("IF EXISTS ");
-            out.ostr << (!it->from.database ? backQuoteIfNeed(it->from.getDatabase()) + "." : "") << backQuoteIfNeed(it->from.getTable());
+            out.ostr << (it->from.database ? backQuoteIfNeed(it->from.getDatabase()) + "." : "") << backQuoteIfNeed(it->from.getTable());
             out.writeKeyword(exchange ? " AND " : " TO ");
-            out.ostr << (!it->to.database ? backQuoteIfNeed(it->to.getDatabase()) + "." : "") << backQuoteIfNeed(it->to.getTable());
+            out.ostr << (it->to.database ? backQuoteIfNeed(it->to.getDatabase()) + "." : "") << backQuoteIfNeed(it->to.getTable());
         }
 
         formatOnCluster(out);
