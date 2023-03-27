@@ -28,7 +28,6 @@
 #include <random>
 #include <cstdlib>
 #include <string>
-#include <magic_enum.hpp>
 
 
 namespace
@@ -117,15 +116,6 @@ MemoryTracker::~MemoryTracker()
             /// Exception in Logger, intentionally swallow.
         }
     }
-}
-
-String MemoryTracker::getDebugLog() const
-{
-    return fmt::format("MemoryTracker(addr {} level {} peak {} amount {})",
-                       size_t(this),
-                       magic_enum::enum_name(level),
-                       ReadableSize(getPeak()),
-                       ReadableSize(get()));
 }
 
 void MemoryTracker::logPeakMemoryUsage()

@@ -34,7 +34,7 @@ bool MergePlainMergeTreeTask::executeStep()
     /// Make out memory tracker a parent of current thread memory tracker
     std::optional<ThreadGroupSwitcher> switcher;
     if (merge_list_entry)
-        switcher = ThreadGroupSwitcher((*merge_list_entry)->thread_group);
+        switcher.emplace((*merge_list_entry)->thread_group);
 
     switch (state)
     {
@@ -81,11 +81,10 @@ void MergePlainMergeTreeTask::prepare()
     future_part = merge_mutate_entry->future_part;
     stopwatch_ptr = std::make_unique<Stopwatch>();
 
-    const Settings & settings = storage.getContext()->getSettingsRef();
     merge_list_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
         future_part,
-        settings);
+        storage.getContext());
 
     write_part_log = [this] (const ExecutionStatus & execution_status)
     {

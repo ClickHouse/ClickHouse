@@ -105,6 +105,8 @@ public:
     /// When new query starts, new thread group is created for it, current thread becomes master thread of the query
     static ThreadGroupStatusPtr createForQuery(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
 
+    static ThreadGroupStatusPtr createForBackgroundProcess(ContextPtr storage_context, const char * description);
+
     std::vector<UInt64> getInvolvedThreadIds() const;
     void linkThread(UInt64 thread_it);
 

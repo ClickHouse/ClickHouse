@@ -69,20 +69,7 @@ struct Settings;
 class ThreadGroupSwitcher : private boost::noncopyable
 {
 public:
-    ThreadGroupSwitcher() noexcept = default;
     explicit ThreadGroupSwitcher(ThreadGroupStatusPtr thread_group);
-    ThreadGroupSwitcher(ThreadGroupSwitcher && other) noexcept
-        : prev_thread_group(std::move(other.prev_thread_group))
-    {
-        other.prev_thread_group = nullptr;
-    }
-    ThreadGroupSwitcher & operator=(ThreadGroupSwitcher && other) noexcept
-    {
-        chassert(this != &other);
-        prev_thread_group = std::move(other.prev_thread_group);
-        other.prev_thread_group = nullptr;
-        return *this;
-    }
     ~ThreadGroupSwitcher();
 
 private:
@@ -137,7 +124,7 @@ struct MergeListElement : boost::noncopyable
     MergeListElement(
         const StorageID & table_id_,
         FutureMergedMutatedPartPtr future_part,
-        const Settings & settings);
+        const ContextPtr & context);
 
     MergeInfo getInfo() const;
 

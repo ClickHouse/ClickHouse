@@ -15,9 +15,8 @@ ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupStatusPtr thread_group)
 {
     chassert(thread_group);
 
+    /// might be nullptr
     prev_thread_group = CurrentThread::getGroup();
-    if (!prev_thread_group)
-        return;
 
     CurrentThread::detachFromGroupIfNotDetached();
     CurrentThread::attachToGroup(thread_group);
@@ -25,17 +24,15 @@ ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupStatusPtr thread_group)
 
 ThreadGroupSwitcher::~ThreadGroupSwitcher()
 {
-    if (!prev_thread_group)
-        return;
-
     CurrentThread::detachFromGroupIfNotDetached();
-    CurrentThread::attachToGroup(prev_thread_group);
+    if (prev_thread_group)
+        CurrentThread::attachToGroup(prev_thread_group);
 }
 
 MergeListElement::MergeListElement(
     const StorageID & table_id_,
     FutureMergedMutatedPartPtr future_part,
-    const Settings & settings)
+    const ContextPtr & context)
     : table_id{table_id_}
     , partition_id{future_part->part_info.partition_id}
     , result_part_name{future_part->name}
@@ -64,44 +61,7 @@ MergeListElement::MergeListElement(
         is_mutation = (result_part_info.getDataVersion() != source_data_version);
     }
 
-    thread_group = ThreadGroupStatus::createForQuery(CurrentThread::get().getQueryContext(), {});
-
-    auto * p_counters = CurrentThread::get().current_performance_counters;
-    while (p_counters && p_counters->level != VariableContext::Process)
-        p_counters = p_counters->getParent();
-    thread_group->performance_counters.setParent(p_counters);
-
-    auto & memory_tracker = thread_group->memory_tracker;
-
-    memory_tracker.setDescription(description.c_str());
-    /// MemoryTracker settings should be set here, because
-    /// later (see MemoryTrackerThreadSwitcher)
-    /// parent memory tracker will be changed, and if merge executed from the
-    /// query (OPTIMIZE TABLE), all settings will be lost (since
-    /// current_thread::memory_tracker will have Thread level MemoryTracker,
-    /// which does not have any settings itself, it relies on the settings of the
-    /// thread_group::memory_tracker, but MemoryTrackerThreadSwitcher will reset parent).
-    memory_tracker.setProfilerStep(settings.memory_profiler_step);
-    memory_tracker.setSampleProbability(settings.memory_profiler_sample_probability);
-    memory_tracker.setSoftLimit(settings.memory_overcommit_ratio_denominator);
-    if (settings.memory_tracker_fault_probability > 0.0)
-        memory_tracker.setFaultProbability(settings.memory_tracker_fault_probability);
-
-    /// Let's try to copy memory related settings from the query,
-    /// since settings that we have here is not from query, but global, from the table.
-    ///
-    /// NOTE: Remember, that Thread level MemoryTracker does not have any settings,
-    /// so it's parent is required.
-    MemoryTracker * cur_memory_tracker = CurrentThread::getMemoryTracker();
-
-    if (cur_memory_tracker->level == VariableContext::Thread)
-    {
-        MemoryTracker * query_memory_tracker = cur_memory_tracker->getParent();
-        if (query_memory_tracker != &total_memory_tracker)
-        {
-            memory_tracker.setOrRaiseHardLimit(query_memory_tracker->getHardLimit());
-        }
-    }
+    thread_group = ThreadGroupStatus::createForBackgroundProcess(context, description.c_str());
 }
 
 MergeInfo MergeListElement::getInfo() const
