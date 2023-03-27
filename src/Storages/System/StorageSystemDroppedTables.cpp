@@ -1,4 +1,4 @@
-#include <Storages/System/StorageSystemMarkedDroppedTables.h>
+#include <Storages/System/StorageSystemDroppedTables.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -13,7 +13,7 @@
 namespace DB
 {
 
-NamesAndTypesList StorageSystemMarkedDroppedTables::getNamesAndTypes()
+NamesAndTypesList StorageSystemDroppedTables::getNamesAndTypes()
 {
     NamesAndTypesList names_and_types{
         {"index", std::make_shared<DataTypeUInt32>()},
@@ -28,7 +28,7 @@ NamesAndTypesList StorageSystemMarkedDroppedTables::getNamesAndTypes()
 }
 
 
-void StorageSystemMarkedDroppedTables::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
+void StorageSystemDroppedTables::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
 {
     auto tables_mark_dropped = DatabaseCatalog::instance().getTablesMarkedDropped();
 
