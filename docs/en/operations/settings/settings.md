@@ -988,6 +988,17 @@ The interval in microseconds for checking whether request execution has been can
 
 Default value: 100,000 (checks for cancelling and sends the progress ten times per second).
 
+## idle_connection_timeout {#idle_connection_timeout}
+
+Timeout to close idle TCP connections after specified number of seconds.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Never.
+
+Default value: 3600.
+
 ## connect_timeout, receive_timeout, send_timeout {#connect-timeout-receive-timeout-send-timeout}
 
 Timeouts in seconds on the socket used for communicating with the client.
