@@ -391,7 +391,7 @@ def parse_args() -> argparse.Namespace:
         help="ccache or sccache for objects caching; sccache uses only S3 buckets",
     )
     parser.add_argument(
-        "--ccache_dir",
+        "--ccache-dir",
         default=Path.home() / ".ccache",
         type=dir_name,
         help="a directory with ccache",
