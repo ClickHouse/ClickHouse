@@ -14,7 +14,6 @@
 #include <Functions/array/arrayConcat.h>
 #include <Functions/array/arrayFilter.h>
 #include <Functions/array/arrayMap.h>
-#include <Functions/array/arrayExists.h>
 #include <Functions/array/arraySort.h>
 #include <Functions/array/arrayIndex.h>
 #include <Functions/array/arrayExists.h>
@@ -23,6 +22,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
 
 template <typename Impl, typename Adapter, typename Name>
 class FunctionMapToArrayAdapter : public IFunction
