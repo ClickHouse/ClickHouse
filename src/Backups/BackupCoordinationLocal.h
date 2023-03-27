@@ -5,8 +5,8 @@
 #include <Backups/BackupCoordinationReplicatedSQLObjects.h>
 #include <Backups/BackupCoordinationReplicatedTables.h>
 #include <base/defines.h>
-#include <map>
 #include <mutex>
+#include <set>
 
 
 namespace Poco { class Logger; }
@@ -18,7 +18,7 @@ namespace DB
 class BackupCoordinationLocal : public IBackupCoordination
 {
 public:
-    BackupCoordinationLocal();
+    BackupCoordinationLocal(bool plain_backup_);
     ~BackupCoordinationLocal() override;
 
     void setStage(const String & new_stage, const String & message) override;
@@ -44,24 +44,19 @@ public:
     Strings getReplicatedSQLObjectsDirs(const String & loader_zk_path, UserDefinedSQLObjectType object_type) const override;
 
     void addFileInfo(const FileInfo & file_info, bool & is_data_file_required) override;
-
     std::vector<FileInfo> getAllFileInfos() const override;
-    Strings listFiles(const String & directory, bool recursive) const override;
-    bool hasFiles(const String & directory) const override;
-
-    std::optional<FileInfo> getFileInfo(const String & file_name) const override;
-    std::optional<FileInfo> getFileInfo(const SizeAndChecksum & size_and_checksum) const override;
 
     bool hasConcurrentBackups(const std::atomic<size_t> & num_active_backups) const override;
 
 private:
+    const bool plain_backup = false;
     mutable std::mutex mutex;
     BackupCoordinationReplicatedTables replicated_tables TSA_GUARDED_BY(mutex);
     BackupCoordinationReplicatedAccess replicated_access TSA_GUARDED_BY(mutex);
     BackupCoordinationReplicatedSQLObjects replicated_sql_objects TSA_GUARDED_BY(mutex);
 
-    std::map<String /* file_name */, SizeAndChecksum> file_names TSA_GUARDED_BY(mutex); /// Should be ordered alphabetically, see listFiles(). For empty files we assume checksum = 0.
-    std::map<SizeAndChecksum, FileInfo> file_infos TSA_GUARDED_BY(mutex); /// Information about files. Without empty files.
+    /// Information about files.
+    std::multiset<FileInfo, FileInfo::LessBySizeOrChecksum> file_infos TSA_GUARDED_BY(mutex);
 };
 
 }

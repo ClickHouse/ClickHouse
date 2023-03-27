@@ -100,26 +100,32 @@ public:
             result += fmt::format("data_file_name: {};\n", data_file_name);
             return result;
         }
+
+        struct LessByFileName
+        {
+            bool operator()(const FileInfo & lhs, const FileInfo & rhs) const { return (lhs.file_name < rhs.file_name); }
+        };
+
+        struct EqualByFileName
+        {
+            bool operator()(const FileInfo & lhs, const FileInfo & rhs) const { return (lhs.file_name == rhs.file_name); }
+        };
+
+        struct LessBySizeOrChecksum
+        {
+            bool operator()(const FileInfo & lhs, const FileInfo & rhs) const
+            {
+                return (lhs.size < rhs.size) || (lhs.size == rhs.size && lhs.checksum < rhs.checksum);
+            }
+        };
+
+        using SizeAndChecksum = std::pair<UInt64, UInt128>;
     };
 
     /// Adds file information.
     /// If specified checksum+size are new for this IBackupContentsInfo the function sets `is_data_file_required`.
     virtual void addFileInfo(const FileInfo & file_info, bool & is_data_file_required) = 0;
-
-    void addFileInfo(const FileInfo & file_info)
-    {
-        bool is_data_file_required;
-        addFileInfo(file_info, is_data_file_required);
-    }
-
     virtual std::vector<FileInfo> getAllFileInfos() const = 0;
-    virtual Strings listFiles(const String & directory, bool recursive) const = 0;
-    virtual bool hasFiles(const String & directory) const = 0;
-
-    using SizeAndChecksum = std::pair<UInt64, UInt128>;
-
-    virtual std::optional<FileInfo> getFileInfo(const String & file_name) const = 0;
-    virtual std::optional<FileInfo> getFileInfo(const SizeAndChecksum & size_and_checksum) const = 0;
 
     /// This function is used to check if concurrent backups are running
     /// other than the backup passed to the function

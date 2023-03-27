@@ -33,6 +33,7 @@ public:
         const String & backup_uuid_,
         const Strings & all_hosts_,
         const String & current_host_,
+        bool plain_backup_,
         bool is_internal_);
 
     ~BackupCoordinationRemote() override;
@@ -68,12 +69,7 @@ public:
     Strings getReplicatedSQLObjectsDirs(const String & loader_zk_path, UserDefinedSQLObjectType object_type) const override;
 
     void addFileInfo(const FileInfo & file_info, bool & is_data_file_required) override;
-
     std::vector<FileInfo> getAllFileInfos() const override;
-    Strings listFiles(const String & directory, bool recursive) const override;
-    bool hasFiles(const String & directory) const override;
-    std::optional<FileInfo> getFileInfo(const String & file_name) const override;
-    std::optional<FileInfo> getFileInfo(const SizeAndChecksum & size_and_checksum) const override;
 
     bool hasConcurrentBackups(const std::atomic<size_t> & num_active_backups) const override;
 
@@ -100,6 +96,7 @@ private:
     const Strings all_hosts;
     const String current_host;
     const size_t current_host_index;
+    const bool plain_backup;
     const bool is_internal;
 
     mutable ZooKeeperRetriesInfo zookeeper_retries_info;

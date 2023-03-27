@@ -85,7 +85,6 @@ public:
 
 private:
     using FileInfo = IBackupCoordination::FileInfo;
-    class BackupEntryFromBackupImpl;
 
     void open(const ContextPtr & context);
     void close();
@@ -94,8 +93,8 @@ private:
     void closeArchive();
 
     /// Writes the file ".backup" containing backup's metadata.
-    void writeBackupMetadata();
-    void readBackupMetadata();
+    void writeBackupMetadata() TSA_REQUIRES(mutex);
+    void readBackupMetadata() TSA_REQUIRES(mutex);
 
     /// Checks that a new backup doesn't exist yet.
     void checkBackupDoesntExist() const;
@@ -121,6 +120,9 @@ private:
     std::shared_ptr<IBackupCoordination> coordination;
 
     mutable std::mutex mutex;
+    std::map<String /* file_name */, SizeAndChecksum> file_names TSA_GUARDED_BY(mutex); /// Should be ordered alphabetically, see listFiles(). For empty files we assume checksum = 0.
+    std::map<SizeAndChecksum, FileInfo> file_infos TSA_GUARDED_BY(mutex); /// Information about files. Without empty files.
+
     std::optional<UUID> uuid;
     time_t timestamp = 0;
     size_t num_files = 0;
@@ -138,6 +140,7 @@ private:
     std::shared_ptr<IArchiveReader> archive_reader;
     std::shared_ptr<IArchiveWriter> archive_writer;
     String lock_file_name;
+
     bool writing_finalized = false;
     bool deduplicate_files = true;
     const Poco::Logger * log;

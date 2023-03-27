@@ -3,10 +3,9 @@
 #include <Backups/BackupEntryFromMemory.h>
 #include <Backups/BackupIO.h>
 #include <Backups/IBackupEntry.h>
-#include <Backups/BackupCoordinationLocal.h>
-#include <Backups/BackupCoordinationRemote.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <base/hex.h>
+#include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/XMLUtils.h>
 #include <Interpreters/Context.h>
@@ -91,7 +90,6 @@ BackupImpl::BackupImpl(
     , open_mode(OpenMode::READ)
     , reader(std::move(reader_))
     , is_internal_backup(false)
-    , coordination(std::make_shared<BackupCoordinationLocal>())
     , version(INITIAL_BACKUP_VERSION)
     , base_backup_info(base_backup_info_)
 {
@@ -298,6 +296,9 @@ void BackupImpl::writeBackupMetadata()
 
     auto all_file_infos = coordination->getAllFileInfos();
 
+    if (all_file_infos.empty())
+        throw Exception(ErrorCodes::BACKUP_IS_EMPTY, "Backup must not be empty");
+
     if (base_backup_info)
     {
         bool base_backup_in_use = false;
@@ -448,7 +449,9 @@ void BackupImpl::readBackupMetadata()
                 }
             }
 
-            coordination->addFileInfo(info);
+            file_names.emplace(info.file_name, std::pair{info.size, info.checksum});
+            if (info.size)
+                file_infos.try_emplace(std::pair{info.size, info.checksum}, info);
 
             ++num_files;
             total_size += info.size;
@@ -531,69 +534,91 @@ void BackupImpl::removeLockFile()
 
 Strings BackupImpl::listFiles(const String & directory, bool recursive) const
 {
+    if (open_mode != OpenMode::READ)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for reading");
+
+    String prefix = removeLeadingSlash(directory);
+    if (!prefix.empty() && !prefix.ends_with('/'))
+        prefix += '/';
+    String terminator = recursive ? "" : "/";
+    Strings elements;
+
     std::lock_guard lock{mutex};
-    auto adjusted_dir = removeLeadingSlash(directory);
-    return coordination->listFiles(adjusted_dir, recursive);
+    for (auto it = file_names.lower_bound(prefix); it != file_names.end(); ++it)
+    {
+        const String & name = it->first;
+        if (!name.starts_with(prefix))
+            break;
+        size_t start_pos = prefix.length();
+        size_t end_pos = String::npos;
+        if (!terminator.empty())
+            end_pos = name.find(terminator, start_pos);
+        std::string_view new_element = std::string_view{name}.substr(start_pos, end_pos - start_pos);
+        if (!elements.empty() && (elements.back() == new_element))
+            continue;
+        elements.push_back(String{new_element});
+    }
+
+    return elements;
 }
 
 bool BackupImpl::hasFiles(const String & directory) const
 {
+    if (open_mode != OpenMode::READ)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for reading");
+
+    String prefix = removeLeadingSlash(directory);
+    if (!prefix.empty() && !prefix.ends_with('/'))
+        prefix += '/';
+
     std::lock_guard lock{mutex};
-    auto adjusted_dir = removeLeadingSlash(directory);
-    return coordination->hasFiles(adjusted_dir);
+    auto it = file_names.lower_bound(prefix);
+    if (it == file_names.end())
+        return false;
+
+    const String & name = it->first;
+    return name.starts_with(prefix);
 }
 
 bool BackupImpl::fileExists(const String & file_name) const
 {
-    std::lock_guard lock{mutex};
+    if (open_mode != OpenMode::READ)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for reading");
+
     auto adjusted_path = removeLeadingSlash(file_name);
-    return coordination->getFileInfo(adjusted_path).has_value();
+    std::lock_guard lock{mutex};
+    return file_names.contains(adjusted_path);
 }
 
 bool BackupImpl::fileExists(const SizeAndChecksum & size_and_checksum) const
 {
+    if (open_mode != OpenMode::READ)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for reading");
+
     std::lock_guard lock{mutex};
-    return coordination->getFileInfo(size_and_checksum).has_value();
+    return file_infos.contains(size_and_checksum);
 }
 
 UInt64 BackupImpl::getFileSize(const String & file_name) const
 {
-    std::lock_guard lock{mutex};
-    auto adjusted_path = removeLeadingSlash(file_name);
-    auto info = coordination->getFileInfo(adjusted_path);
-    if (!info)
-    {
-        throw Exception(
-            ErrorCodes::BACKUP_ENTRY_NOT_FOUND,
-            "Backup {}: Entry {} not found in the backup",
-            backup_name_for_logging,
-            quoteString(file_name));
-    }
-    return info->size;
+    return getFileSizeAndChecksum(file_name).first;
 }
 
 UInt128 BackupImpl::getFileChecksum(const String & file_name) const
 {
-    std::lock_guard lock{mutex};
-    auto adjusted_path = removeLeadingSlash(file_name);
-    auto info = coordination->getFileInfo(adjusted_path);
-    if (!info)
-    {
-        throw Exception(
-            ErrorCodes::BACKUP_ENTRY_NOT_FOUND,
-            "Backup {}: Entry {} not found in the backup",
-            backup_name_for_logging,
-            quoteString(file_name));
-    }
-    return info->checksum;
+    return getFileSizeAndChecksum(file_name).second;
 }
 
 SizeAndChecksum BackupImpl::getFileSizeAndChecksum(const String & file_name) const
 {
-    std::lock_guard lock{mutex};
+    if (open_mode != OpenMode::READ)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for reading");
+
     auto adjusted_path = removeLeadingSlash(file_name);
-    auto info = coordination->getFileInfo(adjusted_path);
-    if (!info)
+
+    std::lock_guard lock{mutex};
+    auto it = file_names.find(adjusted_path);
+    if (it == file_names.end())
     {
         throw Exception(
             ErrorCodes::BACKUP_ENTRY_NOT_FOUND,
@@ -601,7 +626,8 @@ SizeAndChecksum BackupImpl::getFileSizeAndChecksum(const String & file_name) con
             backup_name_for_logging,
             quoteString(file_name));
     }
-    return {info->size, info->checksum};
+
+    return it->second;
 }
 
 std::unique_ptr<SeekableReadBuffer> BackupImpl::readFile(const String & file_name) const
@@ -622,17 +648,20 @@ std::unique_ptr<SeekableReadBuffer> BackupImpl::readFile(const SizeAndChecksum &
         return std::make_unique<ReadBufferFromMemory>(static_cast<char *>(nullptr), 0);
     }
 
-    auto info_opt = coordination->getFileInfo(size_and_checksum);
-    if (!info_opt)
+    FileInfo info;
     {
-        throw Exception(
-            ErrorCodes::BACKUP_ENTRY_NOT_FOUND,
-            "Backup {}: Entry {} not found in the backup",
-            backup_name_for_logging,
-            formatSizeAndChecksum(size_and_checksum));
+        std::lock_guard lock{mutex};
+        auto it = file_infos.find(size_and_checksum);
+        if (it == file_infos.end())
+        {
+            throw Exception(
+                ErrorCodes::BACKUP_ENTRY_NOT_FOUND,
+                "Backup {}: Entry {} not found in the backup",
+                backup_name_for_logging,
+                formatSizeAndChecksum(size_and_checksum));
+        }
+        info = it->second;
     }
-
-    const auto & info = *info_opt;
 
     std::unique_ptr<SeekableReadBuffer> read_buffer;
     std::unique_ptr<SeekableReadBuffer> base_read_buffer;
@@ -719,17 +748,20 @@ size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum, Dis
         return 0;
     }
 
-    auto info_opt = coordination->getFileInfo(size_and_checksum);
-    if (!info_opt)
+    FileInfo info;
     {
-        throw Exception(
-            ErrorCodes::BACKUP_ENTRY_NOT_FOUND,
-            "Backup {}: Entry {} not found in the backup",
-            backup_name_for_logging,
-            formatSizeAndChecksum(size_and_checksum));
+        std::lock_guard lock{mutex};
+        auto it = file_infos.find(size_and_checksum);
+        if (it == file_infos.end())
+        {
+            throw Exception(
+                ErrorCodes::BACKUP_ENTRY_NOT_FOUND,
+                "Backup {}: Entry {} not found in the backup",
+                backup_name_for_logging,
+                formatSizeAndChecksum(size_and_checksum));
+        }
+        info = it->second;
     }
-
-    const auto & info = *info_opt;
 
     bool file_copied = false;
 
@@ -860,19 +892,13 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
 
     auto adjusted_path = removeLeadingSlash(file_name);
 
-    if (coordination->getFileInfo(adjusted_path))
-    {
-        throw Exception(
-                        ErrorCodes::BACKUP_ENTRY_ALREADY_EXISTS, "Backup {}: Entry {} already exists",
-                        backup_name_for_logging, quoteString(file_name));
-    }
-
     FileInfo info
     {
         .file_name = adjusted_path,
         .size = entry->getSize(),
         .base_size = 0,
         .base_checksum = 0,
+        .data_file_name = adjusted_path,
     };
 
     {
@@ -881,14 +907,11 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
         total_size += info.size;
     }
 
-    /// Empty file, nothing to backup
-    if (info.size == 0 && deduplicate_files)
+    std::optional<SizeAndChecksum> base_backup_file_info;
+    if (info.size && deduplicate_files)
     {
-        coordination->addFileInfo(info);
-        return;
+        base_backup_file_info = getInfoAboutFileFromBaseBackupIfExists(base_backup, adjusted_path);
     }
-
-    std::optional<SizeAndChecksum> base_backup_file_info = getInfoAboutFileFromBaseBackupIfExists(base_backup, adjusted_path);
 
     /// We have info about this file in base backup
     /// If file has no checksum -- calculate and fill it.
@@ -950,35 +973,22 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
         info.checksum = checksums.full_checksum;
     }
 
-    /// Maybe we have a copy of this file in the backup already.
-    if (coordination->getFileInfo(std::pair{info.size, info.checksum}) && deduplicate_files)
-    {
-        LOG_TRACE(log, "File {} already exist in current backup, adding reference", adjusted_path);
-        coordination->addFileInfo(info);
-        return;
-    }
-
     /// On the previous lines we checked that backup for file with adjusted_name exist in previous backup.
     /// However file can be renamed, but has the same size and checksums, let's check for this case.
     if (base_backup && base_backup->fileExists(std::pair{info.size, info.checksum}))
     {
-
-        LOG_TRACE(log, "File {} doesn't exist in current backup, but we have file with same size and checksum", adjusted_path);
+        LOG_TRACE(log, "Found a file with the same size and checksum as {} in the base backup", adjusted_path);
         info.base_size = info.size;
         info.base_checksum = info.checksum;
-
-        coordination->addFileInfo(info);
-        return;
     }
 
     /// All "short paths" failed. We don't have this file in previous or existing backup
     /// or have only prefix of it in previous backup. Let's go long path.
 
-    info.data_file_name = info.file_name;
-
     bool is_data_file_required;
     coordination->addFileInfo(info, is_data_file_required);
-    if (!is_data_file_required && deduplicate_files)
+
+    if (!is_data_file_required)
     {
         LOG_TRACE(log, "File {} doesn't exist in current backup, but we have file with same size and checksum", adjusted_path);
         return; /// We copy data only if it's a new combination of size & checksum.
@@ -1046,9 +1056,6 @@ void BackupImpl::finalizeWriting()
 
     if (writing_finalized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is already finalized");
-
-    if (!coordination->hasFiles(""))
-        throw Exception(ErrorCodes::BACKUP_IS_EMPTY, "Backup must not be empty");
 
     if (!is_internal_backup)
     {

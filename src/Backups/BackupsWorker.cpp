@@ -65,11 +65,12 @@ namespace
                 toString(*backup_settings.backup_uuid),
                 all_hosts,
                 backup_settings.host_id,
+                !backup_settings.deduplicate_files,
                 backup_settings.internal);
         }
         else
         {
-            return std::make_shared<BackupCoordinationLocal>();
+            return std::make_shared<BackupCoordinationLocal>(!backup_settings.deduplicate_files);
         }
     }
 

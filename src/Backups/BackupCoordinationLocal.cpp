@@ -1,16 +1,24 @@
 #include <Backups/BackupCoordinationLocal.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <fmt/format.h>
 
 
 namespace DB
 {
 
-using SizeAndChecksum = IBackupCoordination::SizeAndChecksum;
+namespace ErrorCodes
+{
+    extern const int BACKUP_ENTRY_ALREADY_EXISTS;
+}
+
 using FileInfo = IBackupCoordination::FileInfo;
 
-BackupCoordinationLocal::BackupCoordinationLocal() = default;
+BackupCoordinationLocal::BackupCoordinationLocal(bool plain_backup_) : plain_backup(plain_backup_)
+{
+}
+
 BackupCoordinationLocal::~BackupCoordinationLocal() = default;
 
 void BackupCoordinationLocal::setStage(const String &, const String &)
@@ -98,98 +106,61 @@ Strings BackupCoordinationLocal::getReplicatedSQLObjectsDirs(const String & load
 
 void BackupCoordinationLocal::addFileInfo(const FileInfo & file_info, bool & is_data_file_required)
 {
+    FileInfo inserting_info = file_info;
+
     std::lock_guard lock{mutex};
-    file_names.emplace(file_info.file_name, std::pair{file_info.size, file_info.checksum});
-    if (!file_info.size)
+
+    if (plain_backup)
     {
-        is_data_file_required = false;
-        return;
+        /// Plain backups don't use base backups and store each file as is.
+        inserting_info.base_checksum = 0;
+        inserting_info.base_size = 0;
+        is_data_file_required = true;
     }
-    bool inserted_file_info = file_infos.try_emplace(std::pair{file_info.size, file_info.checksum}, file_info).second;
-    is_data_file_required = inserted_file_info && (file_info.size > file_info.base_size);
+    else if (file_info.size == file_info.base_size)
+    {
+        /// The file is either empty or is taken from the base backup as a whole.
+        inserting_info.data_file_name = "";
+        is_data_file_required = false;
+    }
+    else if (auto it = file_infos.find(file_info); it != file_infos.end())
+    {
+        /// The file is a duplicate of another file in this backup.
+        inserting_info.data_file_name = it->data_file_name;
+        is_data_file_required = false;
+    }
+    else
+    {
+        /// The file is not empty, not a duplicate, and doesn't exist in the base backup as a whole,
+        /// so it must be written to this backup.
+        is_data_file_required = true;
+    }
+
+    file_infos.emplace(std::move(inserting_info));
 }
 
 std::vector<FileInfo> BackupCoordinationLocal::getAllFileInfos() const
 {
-    std::lock_guard lock{mutex};
+    /// File infos are almost ready, we just need to sort them and check for duplicates.
     std::vector<FileInfo> res;
-    for (const auto & [file_name, size_and_checksum] : file_names)
     {
-        FileInfo info;
-        UInt64 size = size_and_checksum.first;
-        if (size) /// we don't keep FileInfos for empty files
-            info = file_infos.at(size_and_checksum);
-        info.file_name = file_name;
-        res.push_back(std::move(info));
+        std::lock_guard lock{mutex};
+        res.reserve(file_infos.size());
+        std::copy(file_infos.begin(), file_infos.end(), std::back_inserter(res));
     }
+
+    /// Sort file infos alphabetically and check there are no duplicates.
+    std::sort(res.begin(), res.end(), FileInfo::LessByFileName{});
+
+    if (auto adjacent_it = std::adjacent_find(res.begin(), res.end(), FileInfo::EqualByFileName{}); adjacent_it != res.end())
+    {
+        throw Exception(
+            ErrorCodes::BACKUP_ENTRY_ALREADY_EXISTS, "Entry {} added multiple times to backup", quoteString(adjacent_it->file_name));
+    }
+
     return res;
 }
 
-Strings BackupCoordinationLocal::listFiles(const String & directory, bool recursive) const
-{
-    std::lock_guard lock{mutex};
-    String prefix = directory;
-    if (!prefix.empty() && !prefix.ends_with('/'))
-        prefix += '/';
-    String terminator = recursive ? "" : "/";
-
-    Strings elements;
-    for (auto it = file_names.lower_bound(prefix); it != file_names.end(); ++it)
-    {
-        const String & name = it->first;
-        if (!name.starts_with(prefix))
-            break;
-        size_t start_pos = prefix.length();
-        size_t end_pos = String::npos;
-        if (!terminator.empty())
-            end_pos = name.find(terminator, start_pos);
-        std::string_view new_element = std::string_view{name}.substr(start_pos, end_pos - start_pos);
-        if (!elements.empty() && (elements.back() == new_element))
-            continue;
-        elements.push_back(String{new_element});
-    }
-
-    return elements;
-}
-
-bool BackupCoordinationLocal::hasFiles(const String & directory) const
-{
-    std::lock_guard lock{mutex};
-    String prefix = directory;
-    if (!prefix.empty() && !prefix.ends_with('/'))
-        prefix += '/';
-
-    auto it = file_names.lower_bound(prefix);
-    if (it == file_names.end())
-        return false;
-
-    const String & name = it->first;
-    return name.starts_with(prefix);
-}
-
-std::optional<FileInfo> BackupCoordinationLocal::getFileInfo(const String & file_name) const
-{
-    std::lock_guard lock{mutex};
-    auto it = file_names.find(file_name);
-    if (it == file_names.end())
-        return std::nullopt;
-    const auto & size_and_checksum = it->second;
-    UInt64 size = size_and_checksum.first;
-    FileInfo info;
-    if (size) /// we don't keep FileInfos for empty files
-        info = file_infos.at(size_and_checksum);
-    info.file_name = file_name;
-    return info;
-}
-
-std::optional<FileInfo> BackupCoordinationLocal::getFileInfo(const SizeAndChecksum & size_and_checksum) const
-{
-    std::lock_guard lock{mutex};
-    auto it = file_infos.find(size_and_checksum);
-    if (it == file_infos.end())
-        return std::nullopt;
-    return it->second;
-}
 
 bool BackupCoordinationLocal::hasConcurrentBackups(const std::atomic<size_t> & num_active_backups) const
 {
