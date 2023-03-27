@@ -954,8 +954,10 @@ bool StorageRabbitMQ::checkDependencies(const StorageID & table_id)
 {
     // Check if all dependencies are attached
     auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
+    LOG_TEST(log, "Number of attached views {} for {}", view_ids.size(), table_id.getNameForLogs());
+
     if (view_ids.empty())
-        return true;
+        return false;
 
     // Check the dependencies are ready?
     for (const auto & view_id : view_ids)
@@ -967,10 +969,6 @@ bool StorageRabbitMQ::checkDependencies(const StorageID & table_id)
         // If it materialized view, check it's target table
         auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
         if (materialized_view && !materialized_view->tryGetTargetTable())
-            return false;
-
-        // Check all its dependencies
-        if (!checkDependencies(view_id))
             return false;
     }
 
@@ -1017,27 +1015,19 @@ void StorageRabbitMQ::streamingToViewsFunc()
 
                     LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
 
-                    if (streamToViews())
-                    {
-                        /// Reschedule with backoff.
-                        if (milliseconds_to_wait < rabbitmq_settings->rabbitmq_empty_queue_backoff_end_ms)
-                            milliseconds_to_wait += rabbitmq_settings->rabbitmq_empty_queue_backoff_step_ms;
-                        stopLoopIfNoReaders();
+                    bool continue_reading = !streamToViews();
+                    if (!continue_reading)
                         break;
-                    }
-                    else
-                    {
-                        milliseconds_to_wait = rabbitmq_settings->rabbitmq_empty_queue_backoff_start_ms;
-                    }
 
                     auto end_time = std::chrono::steady_clock::now();
                     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
                     if (duration.count() > MAX_THREAD_WORK_DURATION_MS)
                     {
-                        stopLoopIfNoReaders();
                         LOG_TRACE(log, "Reschedule streaming. Thread work duration limit exceeded.");
                         break;
                     }
+
+                    milliseconds_to_wait = rabbitmq_settings->rabbitmq_empty_queue_backoff_start_ms;
                 }
             }
         }
@@ -1055,7 +1045,13 @@ void StorageRabbitMQ::streamingToViewsFunc()
         stopLoopIfNoReaders();
 
     if (!shutdown_called)
+    {
+        /// Reschedule with backoff.
+        if (milliseconds_to_wait < rabbitmq_settings->rabbitmq_empty_queue_backoff_end_ms)
+            milliseconds_to_wait += rabbitmq_settings->rabbitmq_empty_queue_backoff_step_ms;
+
         streaming_task->scheduleAfter(milliseconds_to_wait);
+    }
 }
 
 
@@ -1116,6 +1112,13 @@ bool StorageRabbitMQ::streamToViews()
      */
     deactivateTask(looping_task, false, true);
     size_t queue_empty = 0;
+
+    if (!checkDependencies(getStorageID()))
+    {
+        /// Do not commit to rabbitmq if the dependency was removed.
+        LOG_TRACE(log, "No dependencies, reschedule");
+        return true;
+    }
 
     if (!connection->isConnected())
     {
