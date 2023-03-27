@@ -1136,66 +1136,16 @@ void Planner::buildPlanForQueryNode()
     collectTableExpressionData(query_tree, planner_context);
 
     const auto & settings = query_context->getSettingsRef();
-    const auto & table_expression_data = planner_context->getTableExpressionNodeToData();
 
-    auto & mutable_context = planner_context->getMutableQueryContext();
-
-    QueryTreeNodePtr parallel_replicas_custom_filter_node{nullptr};
-    if (table_expression_data.size() > 1 && (!settings.parallel_replicas_custom_key.value.empty() || settings.allow_experimental_parallel_reading_from_replicas))
+    if (planner_context->getTableExpressionNodeToData().size() > 1
+        && (!settings.parallel_replicas_custom_key.value.empty() || settings.allow_experimental_parallel_reading_from_replicas))
     {
-        LOG_WARNING(&Poco::Logger::get("Planner"), "Joins are not supported with parallel replicas. Query will be executed without using them.");
+        LOG_WARNING(
+            &Poco::Logger::get("Planner"), "Joins are not supported with parallel replicas. Query will be executed without using them.");
+
+        auto & mutable_context = planner_context->getMutableQueryContext();
         mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", false);
         mutable_context->setSetting("parallel_replicas_custom_key", String{""});
-    }
-    else if (table_expression_data.size() == 1 && !settings.parallel_replicas_custom_key.value.empty())
-    {
-        const auto & table_expression = (*table_expression_data.begin()).first;
-
-        StoragePtr storage{nullptr};
-        if (const auto * table_node = table_expression->as<TableNode>())
-            storage = table_node->getStorage();
-        else if (const auto * table_function_node = table_expression->as<TableFunctionNode>())
-            storage = table_function_node->getStorage();
-
-        std::cout << "COUNT: " << settings.parallel_replicas_count << std::endl;
-        if (settings.parallel_replicas_count > 1)
-        {
-            if (auto custom_key_ast = parseCustomKeyForTable(settings.parallel_replicas_custom_key, *query_context))
-            {
-                LOG_TRACE(&Poco::Logger::get("Planner"), "Processing query on a replica using custom_key '{}'", settings.parallel_replicas_custom_key.value);
-                if (!storage)
-                    throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Storage is unknown when trying to parse custom key for parallel replica");
-
-                auto parallel_replicas_custom_filter_ast = getCustomKeyFilterForParallelReplica(
-                    settings.parallel_replicas_count,
-                    settings.parallel_replica_offset,
-                    std::move(custom_key_ast),
-                    settings.parallel_replicas_custom_key_filter_type,
-                    *storage,
-                    query_context);
-
-                parallel_replicas_custom_filter_node = buildQueryTree(parallel_replicas_custom_filter_ast, query_context);
-                QueryAnalysisPass pass(table_expression);
-                pass.run(parallel_replicas_custom_filter_node, query_context);
-            }
-            else if (settings.parallel_replica_offset > 0)
-            {
-                throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Parallel replicas processing with custom_key has been requested "
-                        "(setting 'max_parallel_replicas') but the table does not have custom_key defined for it "
-                        "or it's invalid (settings `parallel_replicas_custom_key`)");
-            }
-        }
-        else if (storage)
-        {
-            if (auto * distributed = dynamic_cast<StorageDistributed *>(storage.get());
-                distributed && canUseCustomKey(settings, *distributed->getCluster(), *query_context))
-            {
-                select_query_info.use_custom_key = true;
-                mutable_context->setSetting("distributed_group_by_no_merge", 2);
-            }
-        }
     }
 
     auto top_level_identifiers = collectTopLevelColumnIdentifiers(query_tree, planner_context);
@@ -1215,15 +1165,6 @@ void Planner::buildPlanForQueryNode()
 
     if (select_query_options.to_stage == QueryProcessingStage::FetchColumns)
         return;
-
-    std::optional<FilterAnalysisResult> parallel_replicas_custom_filter_info;
-    if (parallel_replicas_custom_filter_node)
-    {
-        ActionsChain chain;
-        parallel_replicas_custom_filter_info = analyzeFilter(parallel_replicas_custom_filter_node, query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(), planner_context, chain);
-        parallel_replicas_custom_filter_info->remove_filter_column = true;
-        select_query_info.filter_asts.push_back(parallel_replicas_custom_filter_node->toAST());
-    }
 
     PlannerQueryProcessingInfo query_processing_info(from_stage, select_query_options.to_stage);
     QueryAnalysisResult query_analysis_result(query_tree, query_processing_info, planner_context);
@@ -1261,9 +1202,6 @@ void Planner::buildPlanForQueryNode()
     {
         if (expression_analysis_result.hasWhere())
             addFilterStep(query_plan, expression_analysis_result.getWhere(), "WHERE", result_actions_to_execute);
-
-        if (parallel_replicas_custom_filter_info)
-            addFilterStep(query_plan, *parallel_replicas_custom_filter_info, "Parallel replica custom key filter", result_actions_to_execute);
 
         if (expression_analysis_result.hasAggregation())
         {
