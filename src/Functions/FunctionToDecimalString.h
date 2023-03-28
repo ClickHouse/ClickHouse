@@ -192,7 +192,8 @@ private:
             throw DB::Exception(DB::ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER,
                                 "Too many fractional symbols requested, shall not be more than {}", max_digits);
         writeText(value, out);
-        if (likely(precision > 0)){
+        if (likely(precision > 0))
+        {
             writeChar('.', out);
             for (int i = 0; i < precision; ++i)
                 writeChar('0', out);
