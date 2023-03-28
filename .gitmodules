@@ -335,3 +335,6 @@
 [submodule "contrib/liburing"]
 	path = contrib/liburing
 	url = https://github.com/axboe/liburing
+[submodule "docs/extras/clickhouse-docs"]
+	path = docs/extras/clickhouse-docs
+	url = git@github.com:ClickHouse/clickhouse-docs.git
