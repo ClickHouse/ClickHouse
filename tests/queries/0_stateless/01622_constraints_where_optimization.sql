@@ -15,6 +15,8 @@ EXPLAIN SYNTAX SELECT count() FROM t_constraints_where WHERE b < 2; -- assumptio
 EXPLAIN QUERY TREE SELECT count() FROM t_constraints_where WHERE b < 2; -- assumption -> 0
 EXPLAIN SYNTAX SELECT count() FROM t_constraints_where WHERE b > 20 OR b < 8; -- assumption -> remove (b < 20)
 EXPLAIN QUERY TREE SELECT count() FROM t_constraints_where WHERE b > 20 OR b < 8; -- assumption -> remove (b < 20)
+EXPLAIN SYNTAX SELECT count() FROM t_constraints_where PREWHERE b > 20 OR b < 8; -- assumption -> remove (b < 20)
+EXPLAIN QUERY TREE SELECT count() FROM t_constraints_where PREWHERE b > 20 OR b < 8; -- assumption -> remove (b < 20)
 
 DROP TABLE t_constraints_where;
 
