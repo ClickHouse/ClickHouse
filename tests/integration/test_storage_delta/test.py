@@ -30,7 +30,6 @@ from helpers.s3_tools import prepare_s3_bucket, upload_directory, get_file_conte
 
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-TABLE_NAME = "test_delta_table"
 USER_FILES_PATH = os.path.join(SCRIPT_DIR, "./_instances/node1/database/user_files")
 
 
@@ -86,8 +85,12 @@ def generate_data(spark, start, end):
     b = spark.range(start + 1, end + 1, 1).toDF("b")
     b = b.withColumn("b", b["b"].cast(StringType()))
 
-    a = a.withColumn('row_index', row_number().over(Window.orderBy(monotonically_increasing_id())))
-    b = b.withColumn('row_index', row_number().over(Window.orderBy(monotonically_increasing_id())))
+    a = a.withColumn(
+        "row_index", row_number().over(Window.orderBy(monotonically_increasing_id()))
+    )
+    b = b.withColumn(
+        "row_index", row_number().over(Window.orderBy(monotonically_increasing_id()))
+    )
 
     df = a.join(b, on=["row_index"]).drop("row_index")
     return df
@@ -129,6 +132,7 @@ def test_single_log_file(started_cluster):
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
     spark = get_spark()
+    TABLE_NAME = "test_single_log_file"
 
     inserted_data = "SELECT number, toString(number + 1) FROM numbers(100)"
     parquet_data_path = create_initial_data_file(instance, inserted_data, TABLE_NAME)
@@ -150,8 +154,11 @@ def test_multiple_log_files(started_cluster):
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
     spark = get_spark()
+    TABLE_NAME = "test_multiple_log_files"
 
-    write_delta_from_df(spark, generate_data(spark, 0, 100), f"/{TABLE_NAME}", mode="append")
+    write_delta_from_df(
+        spark, generate_data(spark, 0, 100), f"/{TABLE_NAME}", mode="overwrite"
+    )
     files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
     assert len(files) == 1
 
@@ -163,7 +170,9 @@ def test_multiple_log_files(started_cluster):
     create_delta_table(instance, TABLE_NAME)
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
-    write_delta_from_df(spark, generate_data(spark, 100, 200), f"/{TABLE_NAME}", mode="append")
+    write_delta_from_df(
+        spark, generate_data(spark, 100, 200), f"/{TABLE_NAME}", mode="append"
+    )
     files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
     assert len(files) == 2
 
@@ -173,7 +182,7 @@ def test_multiple_log_files(started_cluster):
     assert len(s3_objects) == 2
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 200
-    assert instance.query(f"SELECT * FROM {TABLE_NAME}") == instance.query(
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY 1") == instance.query(
         "SELECT number, toString(number + 1) FROM numbers(200)"
     )
 
@@ -183,6 +192,7 @@ def test_metadata(started_cluster):
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
     spark = get_spark()
+    TABLE_NAME = "test_metadata"
 
     parquet_data_path = create_initial_data_file(
         instance, "SELECT number, toString(number) FROM numbers(100)", TABLE_NAME
@@ -209,7 +219,9 @@ def test_metadata(started_cluster):
 
 def test_types(started_cluster):
     spark = get_spark()
+    TABLE_NAME = "test_types"
     result_file = f"{TABLE_NAME}_result_2"
+
     delta_table = (
         DeltaTable.create(spark)
         .tableName(TABLE_NAME)

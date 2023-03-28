@@ -1,11 +1,11 @@
-#include <Storages/IStorageDataLake.h>
+#include <Storages/DataLakes/IStorageDataLake.h>
 #include "config.h"
 
 #if USE_AWS_S3
 
-#include <Storages/StorageHudi.h>
-#include <Storages/StorageDeltaLake.h>
-#include <Storages/StorageIceberg.h>
+#include <Storages/DataLakes/StorageDeltaLake.h>
+#include <Storages/DataLakes/StorageIceberg.h>
+#include <Storages/DataLakes/StorageHudi.h>
 
 
 namespace DB
@@ -27,17 +27,17 @@ namespace DB
 
 void registerStorageDeltaLake(StorageFactory & factory)
 {
-    REGISTER_DATA_LAKE_STORAGE(StorageDeltaLake, StorageDeltaLakeName::name)
+    REGISTER_DATA_LAKE_STORAGE(StorageDeltaLakeS3, StorageDeltaLakeName::name)
 }
 
 void registerStorageIceberg(StorageFactory & factory)
 {
-    REGISTER_DATA_LAKE_STORAGE(StorageIceberg, StorageIcebergName::name)
+    REGISTER_DATA_LAKE_STORAGE(StorageIcebergS3, StorageIcebergName::name)
 }
 
 void registerStorageHudi(StorageFactory & factory)
 {
-    REGISTER_DATA_LAKE_STORAGE(StorageHudi, StorageHudiName::name)
+    REGISTER_DATA_LAKE_STORAGE(StorageHudiS3, StorageHudiName::name)
 }
 
 }

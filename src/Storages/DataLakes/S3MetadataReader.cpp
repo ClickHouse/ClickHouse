@@ -2,13 +2,13 @@
 
 #if USE_AWS_S3
 
-#    include <IO/ReadBufferFromS3.h>
-#    include <IO/S3/Requests.h>
-#    include <Interpreters/Context.h>
-#    include <Storages/S3DataLakeMetadataReadHelper.h>
-#    include <aws/core/auth/AWSCredentials.h>
-#    include <aws/s3/S3Client.h>
-#    include <aws/s3/model/ListObjectsV2Request.h>
+#include <IO/ReadBufferFromS3.h>
+#include <IO/S3/Requests.h>
+#include <Interpreters/Context.h>
+#include <Storages/DataLakes/S3MetadataReader.h>
+#include <aws/core/auth/AWSCredentials.h>
+#include <aws/s3/S3Client.h>
+#include <aws/s3/model/ListObjectsV2Request.h>
 
 
 namespace DB
