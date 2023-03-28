@@ -68,7 +68,8 @@ public:
         String timezone;
         if (arguments.size() == 2)
         {
-            timezone = extractTimeZoneNameFromColumn(*arguments[1].column);
+            if (arguments[1].column)
+                timezone = extractTimeZoneNameFromColumn(*arguments[1].column);
 
             if (timezone.empty())
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -120,8 +121,14 @@ public:
                 DateTime64 time = 0;
 
                 size_t string_size = offsets_src[i] - src_offset;
-                if (string_size == ULID_LENGTH + 1)
-                    time = decode(vec_src.data() + src_offset);
+                if (string_size != ULID_LENGTH + 1)
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_COLUMN,
+                        "Illegal column {} of argument of function {}, ULID must be {} characters long",
+                        arguments[0].name, getName(), ULID_LENGTH
+                    );
+
+                time = decode(vec_src.data() + src_offset);
 
                 src_offset += string_size;
                 vec_res[i] = time;

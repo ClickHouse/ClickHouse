@@ -60,7 +60,7 @@ ULIDStringToDateTime(ulid[, timezone])
 
 **Arguments**
 
--   `ulid` — Input UUID. [String](/docs/en/sql-reference/data-types/string.md) or [FixedString(26)](/docs/en/sql-reference/data-types/fixedstring.md).
+-   `ulid` — Input ULID. [String](/docs/en/sql-reference/data-types/string.md) or [FixedString(26)](/docs/en/sql-reference/data-types/fixedstring.md).
 -   `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) for the returned value (optional). [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
