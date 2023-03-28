@@ -396,3 +396,77 @@ The query takes a couple of minutes, but the results are a fun read:
 50 rows in set. Elapsed: 60.052 sec. Processed 150.96 million rows, 68.93 GB (2.51 million rows/s., 1.15 GB/s.)
 ```
 
+12. We can run the same query again, except this time we search for **awesome** in the reviews:
+
+```sql
+SELECT
+    product_id,
+    any(product_title),
+    avg(star_rating),
+    count() AS count
+FROM amazon_reviews
+WHERE position(review_body, 'awesome') > 0
+GROUP BY product_id
+ORDER BY count DESC
+LIMIT 50;
+```
+
+It runs quite a bit faster - which means the cache is helping us out here:
+
+```response
+
+┌─product_id─┬─any(product_title)────────────────────────────────────────────────────┬───avg(star_rating)─┬─count─┐
+│ B00992CF6W │ Minecraft                                                             │  4.848130353039482 │  4787 │
+│ B009UX2YAC │ Subway Surfers                                                        │  4.866720955483171 │  3684 │
+│ B00QW8TYWO │ Crossy Road                                                           │  4.935217903415784 │  2547 │
+│ B00DJFIMW6 │ Minion Rush: Despicable Me Official Game                              │  4.850450450450451 │  2220 │
+│ B00AREIAI8 │ My Horse                                                              │  4.865313653136531 │  2168 │
+│ B00I8Q77Y0 │ Flappy Wings (not Flappy Bird)                                        │ 4.8246561886051085 │  2036 │
+│ B0054JZC6E │ 101-in-1 Games                                                        │  4.792542016806722 │  1904 │
+│ B00G5LQ5MU │ Escape The Titanic                                                    │  4.724673710379117 │  1609 │
+│ B0086700CM │ Temple Run                                                            │   4.87636130685458 │  1561 │
+│ B009HKL4B8 │ The Sims Freeplay                                                     │  4.763942931258106 │  1542 │
+│ B00I6IKSZ0 │ Pixel Gun 3D (Pocket Edition) - multiplayer shooter with skin creator │  4.849894291754757 │  1419 │
+│ B006OC2ANS │ BLOOD & GLORY                                                         │ 4.8561538461538465 │  1300 │
+│ B00FATEJYE │ Injustice: Gods Among Us (Kindle Tablet Edition)                      │  4.789265982636149 │  1267 │
+│ B00B2V66VS │ Temple Run 2                                                          │  4.764705882352941 │  1173 │
+│ B00JOT3HQ2 │ Geometry Dash Lite                                                    │  4.909747292418772 │  1108 │
+│ B00DUGCLY4 │ Guess The Emoji                                                       │  4.813606710158434 │  1073 │
+│ B00DR0PDNE │ Google Chromecast HDMI Streaming Media Player                         │  4.607276119402985 │  1072 │
+│ B00FAPF5U0 │ Candy Crush Saga                                                      │  4.825757575757576 │  1056 │
+│ B0051VVOB2 │ Kindle Fire (Previous Generation - 1st)                               │  4.600407747196738 │   981 │
+│ B007JPG04E │ FRONTLINE COMMANDO                                                    │             4.8125 │   912 │
+│ B00PTB7B34 │ Call of Duty®: Heroes                                                 │  4.876404494382022 │   890 │
+│ B00846GKTW │ Style Me Girl - Free 3D Fashion Dressup                               │  4.785714285714286 │   882 │
+│ B004S8F7QM │ Cards Against Humanity                                                │  4.931034482758621 │   754 │
+│ B00FAX6XQC │ DEER HUNTER CLASSIC                                                   │  4.700272479564033 │   734 │
+│ B00PSGW79I │ Buddyman: Kick                                                        │  4.888736263736264 │   728 │
+│ B00CTQ6SIG │ The Simpsons: Tapped Out                                              │  4.793948126801153 │   694 │
+│ B008JK6W5K │ Logo Quiz                                                             │  4.782106782106782 │   693 │
+│ B00EDTSKLU │ Geometry Dash                                                         │  4.942028985507246 │   690 │
+│ B00CSR2J9I │ Hill Climb Racing                                                     │  4.880059970014993 │   667 │
+│ B005ZXWMUS │ Netflix                                                               │  4.722306525037936 │   659 │
+│ B00CRFAAYC │ Fab Tattoo Artist FREE                                                │  4.907435508345979 │   659 │
+│ B00DHQHQCE │ Battle Beach                                                          │  4.863287250384024 │   651 │
+│ B00BGA9WK2 │ PlayStation 4 500GB Console [Old Model]                               │  4.688751926040061 │   649 │
+│ B008Y7SMQU │ Logo Quiz - Fun Plus Free                                             │             4.7888 │   625 │
+│ B0083PWAPW │ Kindle Fire HD 7", Dolby Audio, Dual-Band Wi-Fi                       │  4.593900481540931 │   623 │
+│ B008XG1X18 │ Pinterest                                                             │ 4.8148760330578515 │   605 │
+│ B007SYWFRM │ Ice Age Village                                                       │ 4.8566666666666665 │   600 │
+│ B00K7WGUKA │ Don't Tap The White Tile (Piano Tiles)                                │  4.922689075630252 │   595 │
+│ B00BWYQ9YE │ Kindle Fire HDX 7", HDX Display (Previous Generation - 3rd)           │  4.649913344887349 │   577 │
+│ B00IZLM8MY │ High School Story                                                     │  4.840425531914893 │   564 │
+│ B004MC8CA2 │ Bible                                                                 │  4.884476534296029 │   554 │
+│ B00KNWYDU8 │ Dragon City                                                           │  4.861111111111111 │   540 │
+│ B009ZKSPDK │ Survivalcraft                                                         │  4.738317757009346 │   535 │
+│ B00A4O6NMG │ My Singing Monsters                                                   │  4.845559845559846 │   518 │
+│ B002MQYOFW │ The Hunger Games (Hunger Games Trilogy, Book 1)                       │  4.846899224806202 │   516 │
+│ B005ZFOOE8 │ iHeartRadio – Free Music & Internet Radio                             │  4.837301587301587 │   504 │
+│ B00AIUUXHC │ Hungry Shark Evolution                                                │  4.846311475409836 │   488 │
+│ B00E8KLWB4 │ The Secret Society® - Hidden Mystery                                  │  4.669438669438669 │   481 │
+│ B006D1ONE4 │ Where's My Water?                                                     │  4.916317991631799 │   478 │
+│ B00G6ZTM3Y │ Terraria                                                              │  4.728421052631579 │   475 │
+└────────────┴───────────────────────────────────────────────────────────────────────┴────────────────────┴───────┘
+
+50 rows in set. Elapsed: 33.954 sec. Processed 150.96 million rows, 68.95 GB (4.45 million rows/s., 2.03 GB/s.)
+```
