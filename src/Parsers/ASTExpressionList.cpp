@@ -22,7 +22,7 @@ void ASTExpressionList::formatImpl(FormattingBuffer out) const
         if (it != children.begin())
         {
             if (separator)
-                out.writeKeyword(std::string(1, separator));
+                out.ostr << separator;
             out.ostr << ' ';
         }
 
@@ -51,7 +51,7 @@ void ASTExpressionList::formatImplMultiline(FormattingBuffer out) const
         if (it != children.begin())
         {
             if (separator)
-                out.writeKeyword(std::string(1, separator));
+                out.ostr << separator;
         }
 
         if (children.size() > 1 || out.getExpressionListAlwaysStartsOnNewLine())
