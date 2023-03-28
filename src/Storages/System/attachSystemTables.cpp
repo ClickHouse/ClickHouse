@@ -79,7 +79,7 @@
 #include <Storages/System/StorageSystemRemoteDataPaths.h>
 #include <Storages/System/StorageSystemCertificates.h>
 #include <Storages/System/StorageSystemSchemaInferenceCache.h>
-#include <Storages/System/StorageSystemMarkedDroppedTables.h>
+#include <Storages/System/StorageSystemDroppedTables.h>
 
 #ifdef OS_LINUX
 #include <Storages/System/StorageSystemStackTrace.h>
@@ -141,7 +141,7 @@ void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
     attach<StorageSystemTimeZones>(context, system_database, "time_zones");
     attach<StorageSystemBackups>(context, system_database, "backups");
     attach<StorageSystemSchemaInferenceCache>(context, system_database, "schema_inference_cache");
-    attach<StorageSystemMarkedDroppedTables>(context, system_database, "marked_dropped_tables");
+    attach<StorageSystemDroppedTables>(context, system_database, "dropped_tables");
 #ifdef OS_LINUX
     attach<StorageSystemStackTrace>(context, system_database, "stack_trace");
 #endif
