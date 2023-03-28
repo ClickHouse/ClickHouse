@@ -402,7 +402,6 @@ private:
     /// Temporary data for query execution accounting.
     TemporaryDataOnDiskScopePtr temp_data_on_disk;
 
-    bool in_ddl_guard = false;
 public:
     /// Some counters for current query execution.
     /// Most of them are workarounds and should be removed in the future.
@@ -1014,9 +1013,6 @@ public:
 
     bool isInternalQuery() const { return is_internal_query; }
     void setInternalQuery(bool internal) { is_internal_query = internal; }
-
-    bool isInDDLGuard() const { return in_ddl_guard; }
-    void setInDDLGuard(bool ddl_guard) { in_ddl_guard = ddl_guard; }
 
     ActionLocksManagerPtr getActionLocksManager() const;
 

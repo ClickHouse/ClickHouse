@@ -110,16 +110,6 @@ StoragePtr DatabaseAtomic::detachTable(ContextPtr /* context */, const String & 
     return table;
 }
 
-void DatabaseAtomic::undropTable(ContextPtr /* context_ */, const String & table_name, const StoragePtr & table, const String & relative_table_path)
-{
-    std::lock_guard lock(mutex);
-    String table_metadata_path = getObjectMetadataPath(table_name);
-    String table_metadata_path_drop = DatabaseCatalog::instance().getPathForDroppedMetadata(table->getStorageID());
-    renameNoReplace(table_metadata_path_drop, table_metadata_path);
-    DatabaseOrdinary::attachTableUnlocked(table_name, table);
-    table_name_to_path.emplace(std::make_pair(table_name, relative_table_path));
-}
-
 void DatabaseAtomic::dropTable(ContextPtr local_context, const String & table_name, bool sync)
 {
     auto table = tryGetTable(table_name, local_context);

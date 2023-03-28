@@ -216,11 +216,6 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no DETACH TABLE query for Database{}", getEngineName());
     }
 
-    virtual void undropTable(ContextPtr /* context */, const String & /*name*/, const StoragePtr & /*table*/, [[maybe_unused]] const String & relative_table_path = {}) /// NOLINT
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "There is no UNDROP TABLE query for Database{}", getEngineName());
-    }
-
     /// Forget about the table without deleting it's data, but rename metadata file to prevent reloading it
     /// with next restart. The database may not support this method.
     virtual void detachTablePermanently(ContextPtr /*context*/, const String & /*name*/)
