@@ -29,10 +29,11 @@ void MutatePlainMergeTreeTask::prepare()
 {
     future_part = merge_mutate_entry->future_part;
 
+    fake_query_context = createFakeQueryContext();
     merge_list_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
         future_part,
-        storage.getContext());
+        fake_query_context);
 
     stopwatch = std::make_unique<Stopwatch>();
 
@@ -50,10 +51,6 @@ void MutatePlainMergeTreeTask::prepare()
             merge_list_entry.get(),
             std::move(profile_counters_snapshot));
     };
-
-    fake_query_context = Context::createCopy(storage.getContext());
-    fake_query_context->makeQueryContext();
-    fake_query_context->setCurrentQueryId("");
 
     mutate_task = storage.merger_mutator.mutatePartToTemporaryPart(
             future_part, metadata_snapshot, merge_mutate_entry->commands, merge_list_entry.get(),
@@ -127,6 +124,15 @@ bool MutatePlainMergeTreeTask::executeStep()
     }
 
     return false;
+}
+
+ContextMutablePtr MutatePlainMergeTreeTask::createFakeQueryContext() const
+{
+    auto context = Context::createCopy(storage.getContext());
+    context->makeQueryContext();
+    auto queryId = storage.getStorageID().getShortName() + "::" + future_part->name;
+    context->setCurrentQueryId(std::move(queryId));
+    return context;
 }
 
 }

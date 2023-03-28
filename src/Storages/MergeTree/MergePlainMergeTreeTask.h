@@ -87,6 +87,10 @@ private:
     MergeTreeTransactionPtr txn;
 
     ProfileEvents::Counters profile_counters;
+
+    ContextMutablePtr fake_query_context;
+
+    ContextMutablePtr createFakeQueryContext() const;
 };
 
 

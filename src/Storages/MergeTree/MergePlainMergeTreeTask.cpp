@@ -34,7 +34,10 @@ bool MergePlainMergeTreeTask::executeStep()
     /// Make out memory tracker a parent of current thread memory tracker
     std::optional<ThreadGroupSwitcher> switcher;
     if (merge_list_entry)
+    {
         switcher.emplace((*merge_list_entry)->thread_group);
+
+    }
 
     switch (state)
     {
@@ -81,10 +84,11 @@ void MergePlainMergeTreeTask::prepare()
     future_part = merge_mutate_entry->future_part;
     stopwatch_ptr = std::make_unique<Stopwatch>();
 
+    fake_query_context = createFakeQueryContext();
     merge_list_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
         future_part,
-        storage.getContext());
+        fake_query_context);
 
     write_part_log = [this] (const ExecutionStatus & execution_status)
     {
@@ -128,6 +132,15 @@ void MergePlainMergeTreeTask::finish()
 
     write_part_log({});
     storage.incrementMergedPartsProfileEvent(new_part->getType());
+}
+
+ContextMutablePtr MergePlainMergeTreeTask::createFakeQueryContext() const
+{
+    auto context = Context::createCopy(storage.getContext());
+    context->makeQueryContext();
+    auto queryId = storage.getStorageID().getShortName() + "::" + future_part->name;
+    context->setCurrentQueryId(std::move(queryId));
+    return context;
 }
 
 }
