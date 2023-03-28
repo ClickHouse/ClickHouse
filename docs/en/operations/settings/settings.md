@@ -460,7 +460,7 @@ Possible values:
 
 Changes the behaviour of join operations with `ANY` strictness.
 
-:::warning
+:::note
 This setting applies only for `JOIN` operations with [Join](../../engines/table-engines/special/join.md) engine tables.
 :::
 
@@ -550,7 +550,7 @@ Default value: 64.
 
 Enables legacy ClickHouse server behaviour in `ANY INNER|LEFT JOIN` operations.
 
-:::warning
+:::note
 Use this setting only for backward compatibility if your use cases depend on legacy `JOIN` behaviour.
 :::
 
@@ -942,7 +942,7 @@ Higher values will lead to higher memory usage.
 
 The maximum size of blocks of uncompressed data before compressing for writing to a table. By default, 1,048,576 (1 MiB). Specifying a smaller block size generally leads to slightly reduced compression ratio, the compression and decompression speed increases slightly due to cache locality, and memory consumption is reduced.
 
-:::warning
+:::note
 This is an expert-level setting, and you shouldn't change it if you're just getting started with ClickHouse.
 :::
 
@@ -960,7 +960,7 @@ We are writing a UInt32-type column (4 bytes per value). When writing 8192 rows,
 
 We are writing a URL column with the String type (average size of 60 bytes per value). When writing 8192 rows, the average will be slightly less than 500 KB of data. Since this is more than 65,536, a compressed block will be formed for each mark. In this case, when reading data from the disk in the range of a single mark, extra data won’t be decompressed.
 
-:::warning
+:::note
 This is an expert-level setting, and you shouldn't change it if you're just getting started with ClickHouse.
 :::
 
@@ -987,6 +987,16 @@ Default value: 1000.
 The interval in microseconds for checking whether request execution has been canceled and sending the progress.
 
 Default value: 100,000 (checks for cancelling and sends the progress ten times per second).
+
+## idle_connection_timeout {#idle_connection_timeout}
+
+Timeout to close idle TCP connections after specified number of seconds.
+
+Possible values:
+
+-   Positive integer (0 - close immediatly, after 0 seconds).
+
+Default value: 3600.
 
 ## connect_timeout, receive_timeout, send_timeout {#connect-timeout-receive-timeout-send-timeout}
 
@@ -1247,7 +1257,7 @@ Possible values:
 
 Default value: 1.
 
-:::warning
+:::note
 Disable this setting if you use [max_parallel_replicas](#settings-max_parallel_replicas) without [parallel_replicas_custom_key](#settings-parallel_replicas_custom_key).
 If [parallel_replicas_custom_key](#settings-parallel_replicas_custom_key) is set, disable this setting only if it's used on a cluster with multiple shards containing multiple replicas.
 If it's used on a cluster with a single shard and multiple replicas, disabling this setting will have negative effects.
@@ -1277,7 +1287,7 @@ Default value: `1`.
 
 This options will produce different results depending on the settings used.
 
-:::warning
+:::note
 This setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain requirements. See [Distributed Subqueries and max_parallel_replicas](../../sql-reference/operators/in.md/#max_parallel_replica-subqueries) for more details.
 :::
 
@@ -2186,7 +2196,7 @@ Default value: 0.
 This setting also affects broken batches (that may appears because of abnormal server (machine) termination and no `fsync_after_insert`/`fsync_directories` for [Distributed](../../engines/table-engines/special/distributed.md) table engine).
 :::
 
-:::warning
+:::note
 You should not rely on automatic batch splitting, since this may hurt performance.
 :::
 
@@ -2194,7 +2204,7 @@ You should not rely on automatic batch splitting, since this may hurt performanc
 
 Sets the priority ([nice](https://en.wikipedia.org/wiki/Nice_(Unix))) for threads that execute queries. The OS scheduler considers this priority when choosing the next thread to run on each available CPU core.
 
-:::warning
+:::note
 To use this setting, you need to set the `CAP_SYS_NICE` capability. The `clickhouse-server` package sets it up during installation. Some virtual environments do not allow you to set the `CAP_SYS_NICE` capability. In this case, `clickhouse-server` shows a message about it at the start.
 :::
 
@@ -2858,11 +2868,11 @@ Possible values:
 
 Default value: `0`.
 
-:::warning
+:::note
 Nullable primary key usually indicates bad design. It is forbidden in almost all main stream DBMS. The feature is mainly for [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) and is not heavily tested. Use with care.
 :::
 
-:::warning
+:::note
 Do not enable this feature in version `<= 21.8`. It's not properly implemented and may lead to server crash.
 :::
 
@@ -3438,7 +3448,7 @@ Default value: `throw`.
 
 ## flatten_nested {#flatten-nested}
 
-Sets the data format of a [nested](../../sql-reference/data-types/nested-data-structures/nested.md) columns.
+Sets the data format of a [nested](../../sql-reference/data-types/nested-data-structures/index.md) columns.
 
 Possible values:
 
@@ -4049,3 +4059,32 @@ Possible values:
 - 1 - enabled
 
 Default value: `0`.
+
+## stop_reading_on_first_cancel {#stop_reading_on_first_cancel}
+When set to `true` and the user wants to interrupt a query (for example using `Ctrl+C` on the client), then the query continues execution only on data that was already read from the table. Afterward, it will return a partial result of the query for the part of the table that was read. To fully stop the execution of a query without a partial result, the user should send 2 cancel requests.
+
+**Example without setting on Ctrl+C**
+```sql
+SELECT sum(number) FROM numbers(10000000000)
+
+Cancelling query.
+Ok.
+Query was cancelled.
+
+0 rows in set. Elapsed: 1.334 sec. Processed 52.65 million rows, 421.23 MB (39.48 million rows/s., 315.85 MB/s.)
+```
+
+**Example with setting on Ctrl+C**
+```sql
+SELECT sum(number) FROM numbers(10000000000) SETTINGS stop_reading_on_first_cancel=true
+
+┌──────sum(number)─┐
+│ 1355411451286266 │
+└──────────────────┘
+
+1 row in set. Elapsed: 1.331 sec. Processed 52.13 million rows, 417.05 MB (39.17 million rows/s., 313.33 MB/s.)
+```
+
+Possible values: `true`, `false`
+
+Default value: `false`

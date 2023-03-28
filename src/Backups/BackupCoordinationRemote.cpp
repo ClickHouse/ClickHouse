@@ -166,17 +166,30 @@ namespace
     }
 }
 
+size_t BackupCoordinationRemote::findCurrentHostIndex(const Strings & all_hosts, const String & current_host)
+{
+    auto it = std::find(all_hosts.begin(), all_hosts.end(), current_host);
+    if (it == all_hosts.end())
+        return 0;
+    return it - all_hosts.begin();
+}
+
 BackupCoordinationRemote::BackupCoordinationRemote(
-    const BackupKeeperSettings & keeper_settings_,
-    const String & root_zookeeper_path_,
-    const String & backup_uuid_,
     zkutil::GetZooKeeper get_zookeeper_,
+    const String & root_zookeeper_path_,
+    const BackupKeeperSettings & keeper_settings_,
+    const String & backup_uuid_,
+    const Strings & all_hosts_,
+    const String & current_host_,
     bool is_internal_)
-    : keeper_settings(keeper_settings_)
+    : get_zookeeper(get_zookeeper_)
     , root_zookeeper_path(root_zookeeper_path_)
     , zookeeper_path(root_zookeeper_path_ + "/backup-" + backup_uuid_)
+    , keeper_settings(keeper_settings_)
     , backup_uuid(backup_uuid_)
-    , get_zookeeper(get_zookeeper_)
+    , all_hosts(all_hosts_)
+    , current_host(current_host_)
+    , current_host_index(findCurrentHostIndex(all_hosts, current_host))
     , is_internal(is_internal_)
 {
     zookeeper_retries_info = ZooKeeperRetriesInfo(
@@ -251,22 +264,22 @@ void BackupCoordinationRemote::removeAllNodes()
 }
 
 
-void BackupCoordinationRemote::setStage(const String & current_host, const String & new_stage, const String & message)
+void BackupCoordinationRemote::setStage(const String & new_stage, const String & message)
 {
     stage_sync->set(current_host, new_stage, message);
 }
 
-void BackupCoordinationRemote::setError(const String & current_host, const Exception & exception)
+void BackupCoordinationRemote::setError(const Exception & exception)
 {
     stage_sync->setError(current_host, exception);
 }
 
-Strings BackupCoordinationRemote::waitForStage(const Strings & all_hosts, const String & stage_to_wait)
+Strings BackupCoordinationRemote::waitForStage(const String & stage_to_wait)
 {
     return stage_sync->wait(all_hosts, stage_to_wait);
 }
 
-Strings BackupCoordinationRemote::waitForStage(const Strings & all_hosts, const String & stage_to_wait, std::chrono::milliseconds timeout)
+Strings BackupCoordinationRemote::waitForStage(const String & stage_to_wait, std::chrono::milliseconds timeout)
 {
     return stage_sync->waitFor(all_hosts, stage_to_wait, timeout);
 }
@@ -403,7 +416,7 @@ void BackupCoordinationRemote::prepareReplicatedTables() const
 }
 
 
-void BackupCoordinationRemote::addReplicatedAccessFilePath(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id, const String & file_path)
+void BackupCoordinationRemote::addReplicatedAccessFilePath(const String & access_zk_path, AccessEntityType access_entity_type, const String & file_path)
 {
     {
         std::lock_guard lock{mutex};
@@ -416,15 +429,15 @@ void BackupCoordinationRemote::addReplicatedAccessFilePath(const String & access
     zk->createIfNotExists(path, "");
     path += "/" + AccessEntityTypeInfo::get(access_entity_type).name;
     zk->createIfNotExists(path, "");
-    path += "/" + host_id;
+    path += "/" + current_host;
     zk->createIfNotExists(path, file_path);
 }
 
-Strings BackupCoordinationRemote::getReplicatedAccessFilePaths(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id) const
+Strings BackupCoordinationRemote::getReplicatedAccessFilePaths(const String & access_zk_path, AccessEntityType access_entity_type) const
 {
     std::lock_guard lock{mutex};
     prepareReplicatedAccess();
-    return replicated_access->getFilePaths(access_zk_path, access_entity_type, host_id);
+    return replicated_access->getFilePaths(access_zk_path, access_entity_type, current_host);
 }
 
 void BackupCoordinationRemote::prepareReplicatedAccess() const
@@ -453,7 +466,7 @@ void BackupCoordinationRemote::prepareReplicatedAccess() const
     }
 }
 
-void BackupCoordinationRemote::addReplicatedSQLObjectsDir(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & host_id, const String & dir_path)
+void BackupCoordinationRemote::addReplicatedSQLObjectsDir(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & dir_path)
 {
     {
         std::lock_guard lock{mutex};
@@ -474,15 +487,15 @@ void BackupCoordinationRemote::addReplicatedSQLObjectsDir(const String & loader_
     }
 
     zk->createIfNotExists(path, "");
-    path += "/" + host_id;
+    path += "/" + current_host;
     zk->createIfNotExists(path, dir_path);
 }
 
-Strings BackupCoordinationRemote::getReplicatedSQLObjectsDirs(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & host_id) const
+Strings BackupCoordinationRemote::getReplicatedSQLObjectsDirs(const String & loader_zk_path, UserDefinedSQLObjectType object_type) const
 {
     std::lock_guard lock{mutex};
     prepareReplicatedSQLObjects();
-    return replicated_sql_objects->getDirectories(loader_zk_path, object_type, host_id);
+    return replicated_sql_objects->getDirectories(loader_zk_path, object_type, current_host);
 }
 
 void BackupCoordinationRemote::prepareReplicatedSQLObjects() const
@@ -826,6 +839,5 @@ bool BackupCoordinationRemote::hasConcurrentBackups(const std::atomic<size_t> &)
 
     return false;
 }
-
 
 }
