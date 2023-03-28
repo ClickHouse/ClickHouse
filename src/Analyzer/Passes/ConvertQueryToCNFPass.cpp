@@ -705,7 +705,7 @@ public:
             if (filter_node == nullptr)
                 return;
 
-            optimizeNode(query_node->getWhere(), table_expressions, context);
+            optimizeNode(filter_node, table_expressions, context);
             has_filter = true;
         };
 
