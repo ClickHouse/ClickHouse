@@ -37,8 +37,6 @@ public:
     std::unique_ptr<SortingStep> createSorting(JoinTableSide join_side);
 
 private:
-    FullSortingMergeJoin * getSortingJoin();
-
     JoinPtr join;
     size_t max_block_size;
     size_t max_streams;

@@ -350,11 +350,16 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
 
     left->pipe.dropExtremes();
     right->pipe.dropExtremes();
+
     if (left->getNumStreams() != 1 || right->getNumStreams() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Join is supported only for pipelines with one output port");
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Sorting join algorithm is supported only for pipelines with one output port, got: {}, {}",
+                        left->getNumStreams(), right->getNumStreams());
+    }
 
     if (left->hasTotals() || right->hasTotals())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Current join algorithm is supported only for pipelines without totals");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Sorting join algorithm is supported only for pipelines without totals");
 
     Blocks inputs = {left->getHeader(), right->getHeader()};
 

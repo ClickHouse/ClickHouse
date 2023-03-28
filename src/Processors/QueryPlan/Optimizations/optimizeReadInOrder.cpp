@@ -39,12 +39,6 @@
 namespace DB::QueryPlanOptimizations
 {
 
-static Poco::Logger * getLogger()
-{
-    static Poco::Logger & logger = Poco::Logger::get("QueryPlanOptimizations");
-    return &logger;
-}
-
 using Positions = std::set<size_t>;
 using Permutation = std::vector<size_t>;
 
@@ -85,7 +79,7 @@ static ISourceStep * checkSupportedReadingStep(IQueryPlanStep * step)
 
 using StepStack = std::vector<IQueryPlanStep *>;
 
-static QueryPlan::Node * findReadingStep(QueryPlan::Node & node, StepStack & backward_path)
+QueryPlan::Node * findReadingStep(QueryPlan::Node & node, StepStack & backward_path)
 {
     IQueryPlanStep * step = node.step.get();
     if (auto * reading = checkSupportedReadingStep(step))

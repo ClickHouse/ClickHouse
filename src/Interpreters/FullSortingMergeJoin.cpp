@@ -27,8 +27,9 @@ void FullSortingMergeJoin::permuteKeys(const std::vector<size_t> & permutation)
 {
     auto & join_on = table_join->getOnlyClause();
 
-    assert(permutation.size() == join_on.key_names_left.size() &&
-           permutation.size() == join_on.key_names_right.size());
+    if (permutation.size() != join_on.key_names_left.size() || permutation.size() != join_on.key_names_right.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Permutation size ({}) is not equal to number of keys ({}, {})",
+            permutation.size(), join_on.key_names_left.size(), join_on.key_names_right.size());
 
     assertIsPermutation(permutation);
 

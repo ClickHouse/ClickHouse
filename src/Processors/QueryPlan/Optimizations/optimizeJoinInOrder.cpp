@@ -138,17 +138,17 @@ static Permutation findCommonOrderInfo(StepInputOrder & left_order_info, StepInp
 
 static bool optimizeJoinInOrder(QueryPlan::Node & node, const std::shared_ptr<FullSortingMergeJoin> & join_ptr)
 {
-    const auto & key_names_left = join_ptr->getKeyNames(JoinTableSide::Left);
     auto * left_child_node = node.children[0];
+    auto * right_child_node = node.children[1];
+    if (left_child_node->children.size() != 1 || right_child_node->children.size() != 1)
+        return false;
 
+    const auto & key_names_left = join_ptr->getKeyNames(JoinTableSide::Left);
     StepStack steps_to_update_left;
-
     QueryPlan::Node * left_reading_node = findReadingStep(*left_child_node->children.front(), steps_to_update_left);
     auto left_order_info = buildInputOrderInfo(key_names_left, *left_child_node, left_reading_node);
 
     const auto & key_names_right = join_ptr->getKeyNames(JoinTableSide::Right);
-    auto * right_child_node = node.children[1];
-
     StepStack steps_to_update_right;
     QueryPlan::Node * right_reading_node = findReadingStep(*right_child_node->children.front(), steps_to_update_right);
     auto right_order_info = buildInputOrderInfo(key_names_right, *right_child_node, right_reading_node);
@@ -179,7 +179,7 @@ static bool optimizeJoinInOrder(QueryPlan::Node & node, const std::shared_ptr<Fu
 
 void applyOrderForJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
-    if (node.children.size() != 2 || node.children[0]->children.size() != 1 || node.children[1]->children.size() != 1)
+    if (node.children.size() != 2)
         return;
 
     auto * join_step = typeid_cast<JoinStep *>(node.step.get());
@@ -191,7 +191,7 @@ void applyOrderForJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const Q
         return;
 
     bool is_read_in_order_optimized = false;
-    if (optimization_settings.read_in_order && optimization_settings.join_in_order)
+    if (optimization_settings.join_in_order)
         is_read_in_order_optimized = optimizeJoinInOrder(node, join_ptr);
 
     auto insert_pre_step = [&nodes, &node](size_t idx, auto step)
@@ -248,7 +248,6 @@ void applyOrderForJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const Q
         if (isInnerOrRight(join_kind))
             left_set->setFiltering(right_set->getSet());
     }
-
     for (size_t i = 0; i < 2; ++i)
     {
         insert_pre_step(i, join_step->createSorting(JoinTableSide(i)));

@@ -98,14 +98,9 @@ void JoinStep::updateInputStream(const DataStream & new_input_stream_, size_t id
     }
 }
 
-FullSortingMergeJoin * JoinStep::getSortingJoin()
-{
-    return dynamic_cast<FullSortingMergeJoin *>(join.get());
-}
-
 std::unique_ptr<SortingStep> JoinStep::createSorting(JoinTableSide join_side)
 {
-    const auto * sorting_join = getSortingJoin();
+    const auto * sorting_join = dynamic_cast<FullSortingMergeJoin *>(join.get());
     if (!sorting_join)
         return nullptr;
 
@@ -122,15 +117,7 @@ std::unique_ptr<SortingStep> JoinStep::createSorting(JoinTableSide join_side)
     const SortDescription & prefix_sort_description = sorting_join->getPrefixSortDesctiption(join_side);
     if (!prefix_sort_description.empty())
     {
-        LOG_DEBUG(&Poco::Logger::get("JoinStep"), "Finish sort {} side of JOIN by [{}] with prefix [{}]",
-            join_side, dumpSortDescription(sort_description), dumpSortDescription(prefix_sort_description));
-
         sorting_step->convertToFinishSorting(prefix_sort_description);
-    }
-    else
-    {
-        LOG_DEBUG(&Poco::Logger::get("JoinStep"), "Sort {} side of JOIN by [{}]",
-            join_side, dumpSortDescription(sort_description));
     }
 
     sorting_step->setStepDescription(fmt::format(
