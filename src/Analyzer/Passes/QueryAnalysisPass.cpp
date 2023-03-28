@@ -3,6 +3,7 @@
 #include <Common/checkStackSize.h>
 #include <Common/NamePrompter.h>
 #include <Common/ProfileEvents.h>
+#include "Analyzer/Identifier.h"
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -6108,8 +6109,9 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                 table_function_name);
     }
 
+    unsigned long use_structure_from_insertion_table_in_table_functions = scope_context->getSettingsRef().use_structure_from_insertion_table_in_table_functions;
     if (!nested_table_function &&
-        scope_context->getSettingsRef().use_structure_from_insertion_table_in_table_functions &&
+        use_structure_from_insertion_table_in_table_functions &&
         scope_context->hasInsertionTable() &&
         table_function_ptr->needStructureHint())
     {
@@ -6119,11 +6121,29 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             const auto & insert_structure = DatabaseCatalog::instance().getTable(insertion_table, scope_context)->getInMemoryMetadataPtr()->getColumns();
             DB::ColumnsDescription structure_hint;
 
+            bool use_columns_from_insert_query = true;
+
+            auto find_identifier = [](const FunctionNode & function) -> bool
+            {
+                auto find_identifier_impl = [](const FunctionNode & function, auto && self) -> bool
+                {
+                    for (const auto & argument : function.getArguments())
+                    {
+                        if (argument->as<IdentifierNode>())
+                            return true;
+                        if (const auto * f = argument->as<FunctionNode>(); f && self(*f, self))
+                            return true;
+                    }
+                    return false;
+                };
+                return find_identifier_impl(function, find_identifier_impl);
+            };
+
             /// Insert table matches columns against SELECT expression by position, so we want to map
             /// insert table columns to table function columns through names from SELECT expression.
 
             auto insert_column = insert_structure.begin();
-            auto insert_structure_end = insert_structure.end();
+            auto insert_structure_end = insert_structure.end();  /// end iterator of the range covered by possible asterisk
             auto virtual_column_names = table_function_ptr->getVirtualsToCheckBeforeUsingStructureHint();
             bool asterisk = false;
             const auto & expression_list = scope.scope_node->as<QueryNode &>().getProjection();
@@ -6133,10 +6153,17 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             {
                 if (auto * identifier_node = (*expression)->as<IdentifierNode>())
                 {
+
                     if (!virtual_column_names.contains(identifier_node->getIdentifier().getFullName()))
                     {
                         if (asterisk)
-                            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Asterisk cannot be mixed with column list in INSERT SELECT query.");
+                        {
+                            if (use_structure_from_insertion_table_in_table_functions == 1)
+                                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Asterisk cannot be mixed with column list in INSERT SELECT query.");
+
+                            use_columns_from_insert_query = false;
+                            break;
+                        }
 
                         structure_hint.add({ identifier_node->getIdentifier().getFullName(), insert_column->type });
                     }
@@ -6149,11 +6176,36 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                 else if (auto * matcher_node = (*expression)->as<MatcherNode>(); matcher_node && matcher_node->getMatcherType() == MatcherNodeType::ASTERISK)
                 {
                     if (asterisk)
-                        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Only one asterisk can be used in INSERT SELECT query.");
+                    {
+                        if (use_structure_from_insertion_table_in_table_functions == 1)
+                            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Only one asterisk can be used in INSERT SELECT query.");
+
+                        use_columns_from_insert_query = false;
+                        break;
+                    }
                     if (!structure_hint.empty())
-                        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Asterisk cannot be mixed with column list in INSERT SELECT query.");
+                    {
+                        if (use_structure_from_insertion_table_in_table_functions == 1)
+                            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Asterisk cannot be mixed with column list in INSERT SELECT query.");
+
+                        use_columns_from_insert_query = false;
+                        break;
+                    }
 
                     asterisk = true;
+                }
+                else if (auto * function = (*expression)->as<FunctionNode>())
+                {
+                    if (use_structure_from_insertion_table_in_table_functions == 2 && find_identifier(*function))
+                    {
+                        use_columns_from_insert_query = false;
+                        break;
+                    }
+
+                    if (asterisk)
+                        --insert_structure_end;
+                    else
+                        ++insert_column;
                 }
                 else
                 {
@@ -6164,17 +6216,22 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                 }
             }
 
-            if (expression != expression_list.end())
-                throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH, "Number of columns in insert table less than required by SELECT expression.");
-
-            if (asterisk)
+            if (use_columns_from_insert_query)
             {
-                for (; insert_column != insert_structure_end; ++insert_column)
-                    structure_hint.add({ insert_column->name, insert_column->type });
-            }
+                if (expression == expression_list.end())
+                {
+                    if (asterisk)
+                    {
+                        for (; insert_column != insert_structure_end; ++insert_column)
+                            structure_hint.add({ insert_column->name, insert_column->type });
+                    }
 
-            if (!structure_hint.empty())
-                table_function_ptr->setStructureHint(structure_hint);
+                    if (!structure_hint.empty())
+                        table_function_ptr->setStructureHint(structure_hint);
+
+                } else if (use_structure_from_insertion_table_in_table_functions == 1)
+                    throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH, "Number of columns in insert table less than required by SELECT expression.");
+            }
         }
     }
 
