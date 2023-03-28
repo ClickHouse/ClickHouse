@@ -20,6 +20,8 @@
 #include <Functions/identity.h>
 #include <Functions/FunctionFactory.h>
 
+#include <base/map.h>
+
 namespace DB
 {
 
@@ -217,7 +219,7 @@ private:
 template <typename Name, bool returns_map>
 struct MapKeyLikeAdapter
 {
-    static void extractNestedTypes(DataTypes & types)
+    static void checkTypes(const DataTypes & types)
     {
         if (types.size() != 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -233,8 +235,13 @@ struct MapKeyLikeAdapter
 
         if (!isStringOrFixedString(map_type->getKeyType()))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Key type of map for function {} must be String or FixedString", Name::name);
+    }
 
-        DataTypes argument_types{map_type->getKeyType(), map_type->getValueType()};
+    static void extractNestedTypes(DataTypes & types)
+    {
+        checkTypes(types);
+        const auto & map_type = assert_cast<const DataTypeMap &>(*types[0]);
+        DataTypes argument_types{map_type.getKeyType(), map_type.getValueType()};
         auto function_type = std::make_shared<DataTypeFunction>(argument_types, std::make_shared<DataTypeUInt8>());
 
         types = {function_type, types[0]};
@@ -243,6 +250,8 @@ struct MapKeyLikeAdapter
 
     static void extractNestedTypesAndColumns(ColumnsWithTypeAndName & arguments)
     {
+        checkTypes(collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }));
+
         const auto & map_type = assert_cast<const DataTypeMap &>(*arguments[0].type);
         const auto & pattern_arg = arguments[1];
 
