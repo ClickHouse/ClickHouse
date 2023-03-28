@@ -223,11 +223,6 @@ void compare(const String & query, const String & expected)
     ASSERT_PRED2(are_equal_with_hilites, expected, write_buffer.str());
 }
 
-void compare(const String & query, const std::stringstream & expected)
-{
-    return compare(query, expected.str());
-}
-
 TEST(FormatHiliting, SimpleSelect)
 {
     String query = "select * from table";
