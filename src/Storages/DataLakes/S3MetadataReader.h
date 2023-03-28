@@ -4,7 +4,7 @@
 
 #if USE_AWS_S3
 
-#    include <Storages/StorageS3.h>
+#include <Storages/StorageS3.h>
 
 class ReadBuffer;
 

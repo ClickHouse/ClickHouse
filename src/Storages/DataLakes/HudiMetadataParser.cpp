@@ -1,41 +1,31 @@
-#pragma once
-
+#include <Storages/DataLakes/HudiMetadataParser.h>
+#include <Storages/DataLakes/S3MetadataReader.h>
+#include <Common/logger_useful.h>
+#include <ranges>
 #include "config.h"
 
 #if USE_AWS_S3
-
-#include <Storages/IStorage.h>
-#include <Storages/IStorageDataLake.h>
-#include <Storages/S3DataLakeMetadataReadHelper.h>
+#include <Storages/DataLakes/S3MetadataReader.h>
 #include <Storages/StorageS3.h>
-#include <Common/logger_useful.h>
-#include <ranges>
+#endif
 
+namespace DB
+{
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
 
-namespace DB
+namespace
 {
-
-template <typename Configuration, typename MetadataReadHelper>
-class HudiMetadataParser
-{
-public:
-    HudiMetadataParser(const Configuration & configuration_, ContextPtr context_)
-        : configuration(configuration_), context(context_), log(&Poco::Logger::get("StorageHudi")) {}
-
-    Strings getFiles() const { return MetadataReadHelper::listFiles(configuration); }
-
     /** Apache Hudi store parts of data in different files.
       * Every part file has timestamp in it.
       * Every partition(directory) in Apache Hudi has different versions of part.
       * To find needed parts we need to find out latest part file for every partition.
       * Part format is usually parquet, but can differ.
       */
-    static String generateQueryFromKeys(const std::vector<String> & keys, const String & format)
+    Strings processMetadataFiles(const std::vector<String> & keys, const String & format)
     {
         auto * log = &Poco::Logger::get("HudiMetadataParser");
 
@@ -76,35 +66,23 @@ public:
 
         LOG_TRACE(log, "Having {} result partitions", latest_parts.size());
 
-        std::string list_of_keys;
-        for (const auto & [directory, file_info] : latest_parts)
-        {
-            if (!list_of_keys.empty())
-                list_of_keys += ",";
-
-            LOG_TEST(log, "Partition: {}, file: {}, timestamp: {}", directory, file_info.filename, file_info.timestamp);
-            list_of_keys += file_info.filename;
-        }
-
-        if (latest_parts.size() == 1)
-            return list_of_keys;
-
-        return "{" + list_of_keys + "}";
+        Strings result;
+        for (const auto & [_, file_info] : latest_parts)
+            result.push_back(file_info.filename);
+        return result;
     }
-
-private:
-    Configuration configuration;
-    ContextPtr context;
-    Poco::Logger * log;
-};
-
-struct StorageHudiName
-{
-    static constexpr auto name = "Hudi";
-};
-
-using StorageHudi
-    = IStorageDataLake<StorageS3, StorageHudiName, HudiMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>>;
 }
 
+template <typename Configuration, typename MetadataReadHelper>
+Strings HudiMetadataParser<Configuration, MetadataReadHelper>::getFiles(const Configuration & configuration, ContextPtr)
+{
+    const Strings files = MetadataReadHelper::listFiles(configuration);
+    return processMetadataFiles(files, "parquet");
+}
+
+#if USE_AWS_S3
+template Strings HudiMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::getFiles(
+    const StorageS3::Configuration & configuration, ContextPtr);
 #endif
+
+}
