@@ -80,17 +80,19 @@ public:
 
 private:
     zkutil::ZooKeeperPtr getZooKeeper() const;
-    zkutil::ZooKeeperPtr getZooKeeperNoLock() const;
     void createRootNodes();
     void removeAllNodes();
+
+    void serializeToMultipleZooKeeperNodes(const String & path, const String & value, const String & logging_name);
+    String deserializeFromMultipleZooKeeperNodes(const String & path, const String & logging_name) const;
 
     /// Reads data of all objects from ZooKeeper that replicas have added to backup and add it to the corresponding
     /// BackupCoordinationReplicated* objects.
     /// After that, calling addReplicated* functions is not allowed and throws an exception.
-    void prepareReplicatedTables() const;
-    void prepareReplicatedAccess() const;
-    void prepareReplicatedSQLObjects() const;
-    void prepareFileInfos() const;
+    void prepareReplicatedTables() const TSA_REQUIRES(replicated_tables_mutex);
+    void prepareReplicatedAccess() const TSA_REQUIRES(replicated_access_mutex);
+    void prepareReplicatedSQLObjects() const TSA_REQUIRES(replicated_sql_objects_mutex);
+    void prepareFileInfos() const TSA_REQUIRES(file_infos_mutex);
 
     const zkutil::GetZooKeeper get_zookeeper;
     const String root_zookeeper_path;
@@ -106,12 +108,17 @@ private:
     mutable ZooKeeperRetriesInfo zookeeper_retries_info;
     std::optional<BackupCoordinationStageSync> stage_sync;
 
-    mutable std::mutex mutex;
-    mutable zkutil::ZooKeeperPtr zookeeper;
-    mutable std::optional<BackupCoordinationReplicatedTables> replicated_tables;
-    mutable std::optional<BackupCoordinationReplicatedAccess> replicated_access;
-    mutable std::optional<BackupCoordinationReplicatedSQLObjects> replicated_sql_objects;
-    mutable std::optional<BackupCoordinationFileInfos> file_infos;
+    mutable zkutil::ZooKeeperPtr TSA_GUARDED_BY(zookeeper_mutex) zookeeper;
+    mutable std::optional<BackupCoordinationReplicatedTables> TSA_GUARDED_BY(replicated_tables_mutex) replicated_tables;
+    mutable std::optional<BackupCoordinationReplicatedAccess> TSA_GUARDED_BY(replicated_access_mutex) replicated_access;
+    mutable std::optional<BackupCoordinationReplicatedSQLObjects> TSA_GUARDED_BY(replicated_sql_objects_mutex) replicated_sql_objects;
+    mutable std::optional<BackupCoordinationFileInfos> TSA_GUARDED_BY(file_infos_mutex) file_infos;
+
+    mutable std::mutex zookeeper_mutex;
+    mutable std::mutex replicated_tables_mutex;
+    mutable std::mutex replicated_access_mutex;
+    mutable std::mutex replicated_sql_objects_mutex;
+    mutable std::mutex file_infos_mutex;
 };
 
 }

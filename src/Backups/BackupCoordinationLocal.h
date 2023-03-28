@@ -52,12 +52,17 @@ public:
     bool hasConcurrentBackups(const std::atomic<size_t> & num_active_backups) const override;
 
 private:
-    mutable std::mutex mutex;
-    BackupCoordinationReplicatedTables replicated_tables TSA_GUARDED_BY(mutex);
-    BackupCoordinationReplicatedAccess replicated_access TSA_GUARDED_BY(mutex);
-    BackupCoordinationReplicatedSQLObjects replicated_sql_objects TSA_GUARDED_BY(mutex);
-    BackupCoordinationFileInfos file_infos TSA_GUARDED_BY(mutex);
-    std::unordered_set<size_t> writing_files TSA_GUARDED_BY(mutex);
+    BackupCoordinationReplicatedTables TSA_GUARDED_BY(replicated_tables_mutex) replicated_tables;
+    BackupCoordinationReplicatedAccess TSA_GUARDED_BY(replicated_access_mutex) replicated_access;
+    BackupCoordinationReplicatedSQLObjects TSA_GUARDED_BY(replicated_sql_objects_mutex) replicated_sql_objects;
+    BackupCoordinationFileInfos TSA_GUARDED_BY(file_infos_mutex) file_infos;
+    std::unordered_set<size_t> TSA_GUARDED_BY(writing_files_mutex) writing_files;
+
+    mutable std::mutex replicated_tables_mutex;
+    mutable std::mutex replicated_access_mutex;
+    mutable std::mutex replicated_sql_objects_mutex;
+    mutable std::mutex file_infos_mutex;
+    mutable std::mutex writing_files_mutex;
 };
 
 }
