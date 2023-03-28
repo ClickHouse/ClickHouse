@@ -20,5 +20,3 @@ second argument is the desired number of digits in fractional part. Returns Stri
 }
 
 }
-
-
