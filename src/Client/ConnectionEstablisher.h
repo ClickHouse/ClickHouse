@@ -94,6 +94,8 @@ private:
         void run(AsyncCallback async_callback, ResumeCallback suspend_callback) override;
     };
 
+    void cancelAfter() override;
+
     /// When epoll file descriptor is ready, check if it's an expired timeout.
     /// Return false if receive timeout expired and socket is not ready, return true otherwise.
     bool checkTimeout();

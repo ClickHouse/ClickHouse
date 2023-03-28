@@ -38,8 +38,9 @@ void AsyncTaskExecutor::cancel()
 {
     std::lock_guard guard(fiber_lock);
     is_cancelled = true;
-    cancelImpl();
+    cancelBefore();
     destroyFiber();
+    cancelAfter();
 }
 
 void AsyncTaskExecutor::restart()

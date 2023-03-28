@@ -104,7 +104,7 @@ bool RemoteQueryExecutorReadContext::checkTimeout(bool blocking)
     return true;
 }
 
-void RemoteQueryExecutorReadContext::cancelImpl()
+void RemoteQueryExecutorReadContext::cancelBefore()
 {
     /// One should not try to wait for the current packet here in case of
     /// timeout because this will exceed the timeout.

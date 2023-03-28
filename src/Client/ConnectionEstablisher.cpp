@@ -152,6 +152,12 @@ bool ConnectionEstablisherAsync::checkBeforeTaskResume()
     return checkTimeout();
 }
 
+void ConnectionEstablisherAsync::cancelAfter()
+{
+    if (!is_finished)
+        reset();
+}
+
 bool ConnectionEstablisherAsync::checkTimeout()
 {
     bool is_socket_ready = false;
