@@ -38,7 +38,6 @@
 #include <Storages/IStorage.h>
 
 #include <Analyzer/Utils.h>
-#include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/SortNode.h>
@@ -69,10 +68,6 @@
 #include <Planner/PlannerExpressionAnalysis.h>
 #include <Planner/CollectColumnIdentifiers.h>
 #include <Planner/PlannerQueryProcessingInfo.h>
-
-#include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
-
-#include <Storages/StorageDistributed.h>
 
 namespace DB
 {
