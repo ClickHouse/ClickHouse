@@ -143,15 +143,13 @@ NextState InlineEscapingKeyStateHandler::readQuoted(std::string_view file, Eleme
 
 NextState InlineEscapingKeyStateHandler::readKeyValueDelimiter(std::string_view file) const
 {
-    if (file.size() == 0)
+    const auto current_character = file[0];
+    if (current_character == extractor_configuration.key_value_delimiter)
     {
-        return {0, State::END};
+        return {1, WAITING_VALUE};
     }
-    else
-    {
-        const auto current_character = file[0];
-        return {0, extractor_configuration.key_value_delimiter == current_character ? State::WAITING_VALUE : State::WAITING_KEY};
-    }
+
+    return {0, State::WAITING_KEY};
 }
 
 

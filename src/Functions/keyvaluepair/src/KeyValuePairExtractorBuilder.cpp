@@ -33,7 +33,7 @@ KeyValuePairExtractorBuilder & KeyValuePairExtractorBuilder::withEscaping()
     return *this;
 }
 
-std::shared_ptr<KeyValuePairExtractor> KeyValuePairExtractorBuilder::build()
+std::shared_ptr<KeyValuePairExtractor> KeyValuePairExtractorBuilder::build() const
 {
     if (with_escaping)
     {
@@ -43,7 +43,7 @@ std::shared_ptr<KeyValuePairExtractor> KeyValuePairExtractorBuilder::build()
     return buildWithoutEscaping();
 }
 
-std::shared_ptr<KeyValuePairExtractor> KeyValuePairExtractorBuilder::buildWithoutEscaping()
+std::shared_ptr<KeyValuePairExtractor> KeyValuePairExtractorBuilder::buildWithoutEscaping() const
 {
     auto configuration = ConfigurationFactory::createWithoutEscaping(key_value_pair_delimiter, quoting_character, item_delimiters);
 
@@ -58,7 +58,7 @@ std::shared_ptr<KeyValuePairExtractor> KeyValuePairExtractorBuilder::buildWithou
     return std::make_shared<CHKeyValuePairExtractor<NoEscapingKeyStateHandler, NoEscapingValueStateHandler>>(key_state_handler, value_state_handler);
 }
 
-std::shared_ptr<KeyValuePairExtractor> KeyValuePairExtractorBuilder::buildWithEscaping()
+std::shared_ptr<KeyValuePairExtractor> KeyValuePairExtractorBuilder::buildWithEscaping() const
 {
     auto configuration = ConfigurationFactory::createWithEscaping(key_value_pair_delimiter, quoting_character, item_delimiters);
 

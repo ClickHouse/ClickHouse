@@ -24,7 +24,7 @@ public:
 
     KeyValuePairExtractorBuilder & withEscaping();
 
-    std::shared_ptr<KeyValuePairExtractor> build();
+    std::shared_ptr<KeyValuePairExtractor> build() const;
 
 private:
     bool with_escaping = false;
@@ -32,9 +32,9 @@ private:
     char quoting_character = '"';
     std::vector<char> item_delimiters = {' ', ',', ';'};
 
-    std::shared_ptr<KeyValuePairExtractor> buildWithEscaping();
+    std::shared_ptr<KeyValuePairExtractor> buildWithEscaping() const;
 
-    std::shared_ptr<KeyValuePairExtractor> buildWithoutEscaping();
+    std::shared_ptr<KeyValuePairExtractor> buildWithoutEscaping() const;
 };
 
 }

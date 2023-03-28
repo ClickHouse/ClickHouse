@@ -1,6 +1,7 @@
 #include "NoEscapingKeyStateHandler.h"
 #include <Functions/keyvaluepair/src/impl/state/strategies/util/CharacterFinder.h>
 #include <Functions/keyvaluepair/src/impl/state/strategies/util/NeedleFactory.h>
+#include "Functions/keyvaluepair/src/impl/state/State.h"
 
 namespace DB
 {
@@ -114,15 +115,10 @@ NextState NoEscapingKeyStateHandler::readQuoted(std::string_view file, ElementTy
 
 NextState NoEscapingKeyStateHandler::readKeyValueDelimiter(std::string_view file) const
 {
-    if (file.size() == 0)
-    {
-        return {0, State::END};
-    }
-
     const auto current_character = file[0];
     if (current_character == extractor_configuration.key_value_delimiter)
     {
-        return {1, State::WAITING_VALUE};
+        return {1, WAITING_VALUE};
     }
 
     return {0, State::WAITING_KEY};

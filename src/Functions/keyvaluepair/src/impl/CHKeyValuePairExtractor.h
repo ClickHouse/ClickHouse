@@ -76,12 +76,13 @@ public:
             data.remove_prefix(next_state.position_in_string);
             state =  next_state.state;
 
+            // No state expects empty input
             if (data.size() == 0)
-                state = State::END;
+                break;
         }
 
         // if break occured earlier, consume previously generated pair
-        if (next_state.state == State::FLUSH_PAIR || !(key.empty() && value.empty()))
+        if (state == State::FLUSH_PAIR || !(key.empty() && value.empty()))
             flushPair(data, key, value, keys, values, row_offset);
 
         return row_offset;
