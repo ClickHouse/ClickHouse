@@ -5,7 +5,7 @@ sidebar_label: Amazon customer reviews
 
 # Amazon customer reviews dataset
 
-**Amazon Customer Reviews** (a.k.a. Product Reviews) is one of Amazon’s iconic products. In a period of over two decades since the first review in 1995, millions of Amazon customers have contributed over a hundred million reviews to express opinions and describe their experiences regarding products on the Amazon.com website. This makes Amazon Customer Reviews a rich source of information for academic researchers in the fields of Natural Language Processing (NLP), Information Retrieval (IR), and Machine Learning (ML), amongst others.
+[**Amazon Customer Reviews**](https://s3.amazonaws.com/amazon-reviews-pds/readme.html) (a.k.a. Product Reviews) is one of Amazon’s iconic products. In a period of over two decades since the first review in 1995, millions of Amazon customers have contributed over a hundred million reviews to express opinions and describe their experiences regarding products on the Amazon.com website. This makes Amazon Customer Reviews a rich source of information for academic researchers in the fields of Natural Language Processing (NLP), Information Retrieval (IR), and Machine Learning (ML), amongst others. By accessing the dataset, you agree to the [license terms](https://s3.amazonaws.com/amazon-reviews-pds/license.txt).
 
 The data is in a tab-separated format in gzipped files are up in AWS S3. Let's walk through the steps to insert it into ClickHouse.
 
