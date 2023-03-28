@@ -17,8 +17,8 @@ namespace DB
  *
  * ClickHouse type         | BSON Type
  * Bool                    | \x08 boolean
- * Int8/UInt8              | \x10 int32
- * Int16UInt16             | \x10 int32
+ * Int8/UInt8/Enum8        | \x10 int32
+ * Int16UInt16/Enum16      | \x10 int32
  * Int32                   | \x10 int32
  * UInt32                  | \x12 int64
  * Int64                   | \x12 int64
@@ -38,7 +38,7 @@ namespace DB
  * Array                   | \x04 array
  * Tuple                   | \x04 array
  * Named Tuple             | \x03 document
- * Map (with String keys)  | \x03 document
+ * Map                     | \x03 document
  *
  * Note: on Big-Endian platforms this format will not work properly.
  */

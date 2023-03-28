@@ -39,7 +39,8 @@ static String toValidUTF8String(const String & name)
     WriteBufferValidUTF8 validating_buf(buf);
     writeString(name, validating_buf);
     validating_buf.finalize();
-    return buf.str();
+    /// Return value without quotes
+    return buf.str().substr(1, buf.str().size() - 2);
 }
 
 BSONEachRowRowOutputFormat::BSONEachRowRowOutputFormat(
