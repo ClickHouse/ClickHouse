@@ -1,7 +1,6 @@
 #include <Planner/PlannerJoinTree.h>
 
 #include <Common/scope_guard_safe.h>
-#include "Storages/SelectQueryInfo.h"
 
 #include <Columns/ColumnAggregateFunction.h>
 
@@ -439,8 +438,8 @@ FilterDAGInfo buildRowPolicyFilterIfNeeded(const StoragePtr & storage,
 }
 
 FilterDAGInfo buildCustomKeyFilterIfNeeded(const StoragePtr & storage,
-        SelectQueryInfo & table_expression_query_info,
-        PlannerContextPtr & planner_context)
+    SelectQueryInfo & table_expression_query_info,
+    PlannerContextPtr & planner_context)
 {
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
@@ -688,7 +687,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     }
                     else
                     {
-                        if (auto * distributed = dynamic_cast<StorageDistributed *>(storage.get());
+                        if (auto * distributed = typeid_cast<StorageDistributed *>(storage.get());
                             distributed && canUseCustomKey(settings, *distributed->getCluster(), *query_context))
                         {
                             table_expression_query_info.use_custom_key = true;
