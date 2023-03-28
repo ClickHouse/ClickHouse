@@ -733,9 +733,6 @@ bool FileCache::tryReserveImpl(
 void FileCache::removeKeyIfExists(const Key & key)
 {
     assertInitialized();
-#ifndef NDEBUG
-    assertCacheCorrectness();
-#endif
 
     auto lock = cache_guard.lock();
     auto locked_key = lockKeyMetadata(key, KeyNotFoundPolicy::RETURN_NULL);
@@ -767,9 +764,6 @@ void FileCache::removeKeyIfExists(const Key & key)
 void FileCache::removeAllReleasable()
 {
     assertInitialized();
-#ifndef NDEBUG
-    assertCacheCorrectness();
-#endif
 
     using QueueEntry = IFileCachePriority::Entry;
     using IterationResult = IFileCachePriority::IterationResult;
@@ -1048,6 +1042,10 @@ void FileCache::cleanup()
 
 void FileCache::cleanupThreadFunc()
 {
+#ifndef NDEBUG
+    assertCacheCorrectness();
+#endif
+
     try
     {
         cleanup();
