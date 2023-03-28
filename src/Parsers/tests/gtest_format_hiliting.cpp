@@ -8,11 +8,7 @@
 
 String hilite(const String & s, const char * hilite_type)
 {
-    std::stringstream ss;
-    ss << hilite_type;
-    ss << s;
-    ss << DB::IAST::hilite_none;
-    return ss.str();
+    return hilite_type + s + DB::IAST::hilite_none;
 }
 
 String keyword(const String & s)
@@ -80,13 +76,13 @@ std::vector<const char *> HILITES =
 String remove_hilites(std::string_view string)
 {
     const char * ptr = string.begin();
-    std::stringstream ss;
+    String string_without_hilites;
     while (true)
     {
         consume_hilites(&ptr);
         if (ptr == string.end())
-            return ss.str();
-        ss << *(ptr++);
+            return string_without_hilites;
+        string_without_hilites += *(ptr++);
     }
 }
 
@@ -148,18 +144,18 @@ bool are_equal_with_hilites(std::string_view left, std::string_view right)
 TEST(FormatHiliting, MetaTestConsumeHilites)
 {
     using namespace DB;
-    std::stringstream ss;
     // The order is different from the order in HILITES on purpose.
-    ss << IAST::hilite_keyword
-       << IAST::hilite_alias
-       << IAST::hilite_identifier
-       << IAST::hilite_none
-       << IAST::hilite_operator
-       << IAST::hilite_substitution
-       << IAST::hilite_function
-       << "test" << IAST::hilite_keyword;
-    String string = ss.str();
-    const char * ptr = string.c_str();
+    String s;
+    s += IAST::hilite_keyword;
+    s += IAST::hilite_alias;
+    s += IAST::hilite_identifier;
+    s += IAST::hilite_none;
+    s += IAST::hilite_operator;
+    s += IAST::hilite_substitution;
+    s += IAST::hilite_function;
+    s += "test";
+    s += IAST::hilite_keyword;
+    const char * ptr = s.c_str();
     const char * expected_ptr = strchr(ptr, 't');
     const char * last_hilite = consume_hilites(&ptr);
     ASSERT_EQ(expected_ptr, ptr);
@@ -170,16 +166,23 @@ TEST(FormatHiliting, MetaTestConsumeHilites)
 TEST(FormatHiliting, MetaTestRemoveHilites)
 {
     using namespace DB;
-    std::stringstream ss;
-    ss << IAST::hilite_keyword
-       << "te" << IAST::hilite_alias << IAST::hilite_identifier
-       << "s" << IAST::hilite_none
-       << "t" << IAST::hilite_operator << IAST::hilite_substitution << IAST::hilite_function;
-    ASSERT_EQ("test", remove_hilites(ss.str()));
+    String s;
+    s += IAST::hilite_keyword;
+    s += "te";
+    s += IAST::hilite_alias;
+    s += IAST::hilite_identifier;
+    s += "s";
+    s += IAST::hilite_none;
+    s += "t";
+    s += IAST::hilite_operator;
+    s += IAST::hilite_substitution;
+    s += IAST::hilite_function;
+    ASSERT_EQ("test", remove_hilites(s));
 }
 
 TEST(FormatHiliting, MetaTestAreEqualWithHilites)
 {
+    using namespace DB;
     ASSERT_PRED2(are_equal_with_hilites, "", "");
 
     for (const char * hilite : HILITES)
@@ -189,23 +192,37 @@ TEST(FormatHiliting, MetaTestAreEqualWithHilites)
     }
 
     {
-        std::stringstream ss;
-        ss << DB::IAST::hilite_none << "select" << DB::IAST::hilite_none;
-        ASSERT_PRED2(are_equal_with_hilites, ss.str(), "select");
+        String s;
+        s += IAST::hilite_none;
+        s += "select";
+        s += IAST::hilite_none;
+        ASSERT_PRED2(are_equal_with_hilites, s, "select");
     }
 
     {
-        std::stringstream ss;
-        ss << DB::IAST::hilite_none << "\n " << "sel" << DB::IAST::hilite_none << "ect" << DB::IAST::hilite_none;
-        ASSERT_PRED2(are_equal_with_hilites, ss.str(), "\n select");
+        String s;
+        s += DB::IAST::hilite_none;
+        s += "\n sel";
+        s += DB::IAST::hilite_none;
+        s += "ect";
+        s += DB::IAST::hilite_none;
+        ASSERT_PRED2(are_equal_with_hilites, s, "\n select");
     }
 
     {
-        std::stringstream left;
-        left << DB::IAST::hilite_keyword << "keyword" << " long" << DB::IAST::hilite_none;
-        std::stringstream right;
-        right << DB::IAST::hilite_keyword << "keyword" << DB::IAST::hilite_none << " " << DB::IAST::hilite_keyword << "long";
-        ASSERT_PRED2(are_equal_with_hilites, left.str(), right.str());
+        String left;
+        left += DB::IAST::hilite_keyword;
+        left += "keyword long";
+        left += DB::IAST::hilite_none;
+
+        String right;
+        right += DB::IAST::hilite_keyword;
+        right += "keyword";
+        right += DB::IAST::hilite_none;
+        right += " ";
+        right += DB::IAST::hilite_keyword;
+        right += "long";
+        ASSERT_PRED2(are_equal_with_hilites, left, right);
     }
 }
 
