@@ -2,6 +2,7 @@
 slug: /en/operations/server-configuration-parameters/settings
 sidebar_position: 57
 sidebar_label: Server Settings
+description: This section contains descriptions of server settings that cannot be changed at the session or query level.
 ---
 
 # Server Settings
@@ -24,7 +25,7 @@ Default value: 3600.
 
 Data compression settings for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)-engine tables.
 
-:::warning
+:::note
 Don’t use it if you have just started using ClickHouse.
 :::
 
@@ -275,7 +276,7 @@ Path:
 -   Specify the absolute path or the path relative to the server config file.
 -   The path can contain wildcards \* and ?.
 
-See also “[Dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md)”.
+See also “[Dictionaries](../../sql-reference/dictionaries/index.md)”.
 
 **Example**
 
@@ -765,7 +766,7 @@ Default value: `0`.
 
 ## concurrent_threads_soft_limit_ratio_to_cores {#concurrent_threads_soft_limit_ratio_to_cores}
 The maximum number of query processing threads as multiple of number of logical cores.
-More details: [concurrent_threads_soft_limit_num](#concurrent-threads-soft-limit-num).
+More details: [concurrent_threads_soft_limit_num](#concurrent_threads_soft_limit_num).
 
 Possible values:
 
@@ -1025,7 +1026,7 @@ If the number of **idle** threads in the Backups IO Thread pool exceeds `max_bac
 Possible values:
 
 -   Positive integer.
--   Zero. 
+-   Zero.
 
 Default value: `0`.
 
@@ -1360,15 +1361,15 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
 
 The following settings are available:
 
--   `size`: The maximum cache size in bytes. 0 means the query cache is disabled. Default value: `1073741824` (1 GiB).
+-   `max_size`: The maximum cache size in bytes. 0 means the query cache is disabled. Default value: `1073741824` (1 GiB).
 -   `max_entries`: The maximum number of `SELECT` query results stored in the cache. Default value: `1024`.
 -   `max_entry_size`: The maximum size in bytes `SELECT` query results may have to be saved in the cache. Default value: `1048576` (1 MiB).
 -   `max_entry_rows`: The maximum number of rows `SELECT` query results may have to be saved in the cache. Default value: `30000000` (30 mil).
 
 Changed settings take effect immediately.
 
-:::warning
-Data for the query cache is allocated in DRAM. If memory is scarce, make sure to set a small value for `size` or disable the query cache altogether.
+:::note
+Data for the query cache is allocated in DRAM. If memory is scarce, make sure to set a small value for `max_size` or disable the query cache altogether.
 :::
 
 **Example**
@@ -1881,6 +1882,16 @@ The update is performed asynchronously, in a separate system thread.
 Manage executing [distributed ddl queries](../../sql-reference/distributed-ddl.md)  (CREATE, DROP, ALTER, RENAME) on cluster.
 Works only if [ZooKeeper](#server-settings_zookeeper) is enabled.
 
+The configurable settings within `<distributed_ddl>` include:
+
+- **path**: the path in Keeper for the `task_queue` for DDL queries
+- **profile**: the profile used to execute the DDL queries
+- **pool_size**: how many `ON CLUSTER` queries can be run simultaneously
+- **max_tasks_in_queue**: the maximum number of tasks that can be in the queue. Default is 1,000
+- **task_max_lifetime**: delete node if its age is greater than this value. Default is `7 * 24 * 60 * 60` (a week in seconds)
+- **cleanup_delay_period**:  cleaning starts after new node event is received if the last cleaning wasn't made sooner than `cleanup_delay_period` seconds ago. Default is 60 seconds
+
+
 **Example**
 
 ```xml
@@ -1917,7 +1928,7 @@ Default value: `/var/lib/clickhouse/access/`.
 
 **See also**
 
-- [Access Control and Account Management](../../operations/access-rights.md#access-control)
+- [Access Control and Account Management](../../guides/sre/user-management/index.md#access-control)
 
 ## user_directories {#user_directories}
 

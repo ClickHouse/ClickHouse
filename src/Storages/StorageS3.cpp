@@ -1266,7 +1266,8 @@ void StorageS3::updateConfiguration(ContextPtr ctx, StorageS3::Configuration & u
         upd.auth_settings.server_side_encryption_customer_key_base64,
         std::move(headers),
         upd.auth_settings.use_environment_credentials.value_or(ctx->getConfigRef().getBool("s3.use_environment_credentials", false)),
-        upd.auth_settings.use_insecure_imds_request.value_or(ctx->getConfigRef().getBool("s3.use_insecure_imds_request", false)));
+        upd.auth_settings.use_insecure_imds_request.value_or(ctx->getConfigRef().getBool("s3.use_insecure_imds_request", false)),
+        upd.auth_settings.expiration_window_seconds.value_or(ctx->getConfigRef().getUInt64("s3.expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS)));
 }
 
 void StorageS3::processNamedCollectionResult(StorageS3::Configuration & configuration, const NamedCollection & collection)
@@ -1294,7 +1295,7 @@ StorageS3::Configuration StorageS3::getConfiguration(ASTs & engine_args, Context
 {
     StorageS3::Configuration configuration;
 
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
     {
         processNamedCollectionResult(configuration, *named_collection);
     }
