@@ -40,8 +40,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnMap.h>
 
-#include <IO/ReadBufferFromString.h>
-
 #include <Compiler.hh>
 #include <DataFile.hh>
 #include <Decoder.hh>
@@ -210,7 +208,7 @@ static std::string nodeName(avro::NodePtr node)
         return avro::toString(node->type());
 }
 
-static bool canBeDeserializedFromFixed( const DataTypePtr & target_type, size_t fixed_size)
+static bool canBeDeserializedFromFixed(const DataTypePtr & target_type, size_t fixed_size)
 {
     switch (target_type->getTypeId())
     {
