@@ -33,7 +33,7 @@ void ASTShowColumnsQuery::formatQueryImpl(const FormatSettings & settings, Forma
     if (!like.empty())
         settings.ostr << (settings.hilite ? hilite_keyword : "")
                       << (not_like ? " NOT " : "")
-                      << (case_insensitive_like ? " ILIKE " : " LIKE" )
+                      << (case_insensitive_like ? " ILIKE " : " LIKE")
                       << (settings.hilite ? hilite_none : "")
                       << DB::quote << like;
 
