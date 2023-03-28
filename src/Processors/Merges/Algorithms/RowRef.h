@@ -28,6 +28,7 @@ struct SharedChunk : Chunk
 {
     ColumnRawPtrs all_columns;
     ColumnRawPtrs sort_columns;
+    MutableColumnPtr filter_column;
 
     using Chunk::Chunk;
     using Chunk::operator=;
@@ -139,6 +140,20 @@ struct RowRef
         row_num = cursor.impl->getRow();
     }
 
+    void setLast(SortCursorImpl & cursor)
+    {
+        sort_columns = cursor.sort_columns.data();
+        num_columns = cursor.sort_columns.size();
+        row_num = cursor.getSize() - 1;
+    }
+
+    void setCur(SortCursorImpl & cursor)
+    {
+        sort_columns = cursor.sort_columns.data();
+        num_columns = cursor.sort_columns.size();
+        row_num = cursor.getRow();
+    }
+
     static bool checkEquals(size_t size, const IColumn ** lhs, size_t lhs_row, const IColumn ** rhs, size_t rhs_row)
     {
         for (size_t col_number = 0; col_number < size; ++col_number)
@@ -156,6 +171,28 @@ struct RowRef
     bool hasEqualSortColumnsWith(const RowRef & other) const
     {
         return checkEquals(num_columns, sort_columns, row_num, other.sort_columns, other.row_num);
+    }
+
+    static bool checkLess(size_t size, const IColumn ** lhs, size_t lhs_row, const IColumn ** rhs, size_t rhs_row)
+    {
+        for (size_t col_number = 0; col_number < size; ++col_number)
+        {
+            auto & cur_column = lhs[col_number];
+            auto & other_column = rhs[col_number];
+
+            auto comp = cur_column->compareAt(lhs_row, rhs_row, *other_column, 1);
+            if (comp < 0)
+                return true;
+            if (comp > 0)
+                return false;
+        }
+
+        return false;
+    }
+
+    bool hasLowerSortColumnsWith(const RowRef & other) const
+    {
+        return checkLess(num_columns, sort_columns, row_num, other.sort_columns, other.row_num);
     }
 };
 
@@ -197,10 +234,23 @@ struct RowRefWithOwnedChunk
         sort_columns = &owned_chunk->sort_columns;
     }
 
+    void setLast(SortCursor & cursor, SharedChunkPtr chunk)
+    {
+        owned_chunk = std::move(chunk);
+        row_num = cursor.impl->getSize() - 1;
+        all_columns = &owned_chunk->all_columns;
+        sort_columns = &owned_chunk->sort_columns;
+    }
+
     bool hasEqualSortColumnsWith(const RowRefWithOwnedChunk & other) const
     {
         return RowRef::checkEquals(sort_columns->size(), sort_columns->data(), row_num,
                                    other.sort_columns->data(), other.row_num);
+    }
+
+    bool hasLowerSortColumnsWith(const RowRefWithOwnedChunk & other) const
+    {
+        return RowRef::checkLess(sort_columns->size(), sort_columns->data(), row_num, other.sort_columns->data(), other.row_num);
     }
 };
 

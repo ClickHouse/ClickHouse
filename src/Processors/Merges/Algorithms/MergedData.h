@@ -4,6 +4,7 @@
 #include <Core/Types.h>
 #include <Columns/IColumn.h>
 #include <Processors/Chunk.h>
+#include <Processors/Merges/Algorithms/RowRef.h>
 
 
 namespace DB
@@ -73,6 +74,26 @@ public:
             else
                 columns[i] = std::move(chunk_columns[i]);
         }
+
+        if (rows_size < num_rows)
+        {
+            size_t pop_size = num_rows - rows_size;
+            for (auto & column : columns)
+                column->popBack(pop_size);
+        }
+
+        need_flush = true;
+        total_merged_rows += rows_size;
+        merged_rows = rows_size;
+    }
+
+    void insertChunkPtr(detail::SharedChunkPtr &chunk, size_t rows_size)
+    {
+        if (merged_rows)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot insert to MergedData from Chunk because MergedData is not empty.");
+
+        UInt64 num_rows = chunk->getNumRows();
+        columns = chunk->mutateColumns();
 
         if (rows_size < num_rows)
         {

@@ -13,6 +13,7 @@
 #include <Processors/Merges/GraphiteRollupSortedTransform.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Merges/ReplacingSortedTransform.h>
+#include <Processors/Merges/ReplacingSortedSkipTransform.h>
 #include <Processors/Merges/SummingSortedTransform.h>
 #include <Processors/Merges/VersionedCollapsingTransform.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
@@ -896,6 +897,30 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     return Pipe::unitePipes(std::move(pipes));
 }
 
+static void addSkipReplacingFinal(
+    Pipe & pipe,
+    const SortDescription & sort_description,
+    MergeTreeData::MergingParams merging_params,
+    size_t max_block_size)
+{
+    const auto & header = pipe.getHeader();
+    size_t num_outputs = pipe.numOutputPorts();
+
+    const Block output_header = ReplacingSortedSkipTransform::transformHeader(header);
+
+    pipe.addTransform(
+        std::make_shared<ReplacingSortedSkipTransform>(header, output_header, num_outputs,
+                       sort_description, merging_params.version_column, max_block_size)
+    );
+
+    pipe.addSimpleTransform([&](const Block & input_header)
+    {
+        return std::make_shared<FilterTransform>(
+            input_header, nullptr, "internal_filter_final_flags", true);
+    });
+}
+
+
 static void addMergingFinal(
     Pipe & pipe,
     const SortDescription & sort_description,
@@ -903,9 +928,9 @@ static void addMergingFinal(
     Names partition_key_columns,
     size_t max_block_size)
 {
+
     const auto & header = pipe.getHeader();
     size_t num_outputs = pipe.numOutputPorts();
-
     auto now = time(nullptr);
 
     auto get_merging_processor = [&]() -> MergingTransformPtr
@@ -923,7 +948,6 @@ static void addMergingFinal(
             case MergeTreeData::MergingParams::Summing:
                 return std::make_shared<SummingSortedTransform>(header, num_outputs,
                             sort_description, merging_params.columns_to_sum, partition_key_columns, max_block_size);
-
             case MergeTreeData::MergingParams::Aggregating:
                 return std::make_shared<AggregatingSortedTransform>(header, num_outputs,
                             sort_description, max_block_size);
@@ -949,7 +973,7 @@ static void addMergingFinal(
 
 
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
-    RangesInDataParts && parts_with_ranges, size_t num_streams, const Names & column_names, ActionsDAGPtr & out_projection)
+    RangesInDataParts && parts_with_ranges, size_t num_streams, const Names & column_names, ActionsDAGPtr & out_projection, const InputOrderInfoPtr & input_order_info)
 {
     const auto & settings = context->getSettingsRef();
     const auto data_settings = data.getSettings();
@@ -1080,13 +1104,27 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         for (size_t i = 0; i < sort_columns_size; ++i)
             sort_description.emplace_back(sort_columns[i], 1, 1);
 
-        for (auto & pipe : pipes)
-            addMergingFinal(
-                pipe,
-                sort_description,
-                data.merging_params,
-                partition_key_columns,
-                max_block_size);
+        if (MergeTreeData::MergingParams::Replacing == data.merging_params.mode
+            && settings.use_skip_replacing_final
+            && !input_order_info)
+        {
+            for (auto & pipe : pipes)
+                addSkipReplacingFinal(
+                    pipe,
+                    sort_description,
+                    data.merging_params,
+                    max_block_size);
+        }
+        else
+        {
+            for (auto & pipe : pipes)
+                addMergingFinal(
+                    pipe,
+                    sort_description,
+                    data.merging_params,
+                    partition_key_columns,
+                    max_block_size);
+        }
 
         partition_pipes.emplace_back(Pipe::unitePipes(std::move(pipes)));
     }
@@ -1583,7 +1621,7 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
         ::sort(column_names_to_read.begin(), column_names_to_read.end());
         column_names_to_read.erase(std::unique(column_names_to_read.begin(), column_names_to_read.end()), column_names_to_read.end());
 
-        return spreadMarkRangesAmongStreamsFinal(std::move(parts_with_ranges), num_streams, column_names_to_read, result_projection);
+        return spreadMarkRangesAmongStreamsFinal(std::move(parts_with_ranges), num_streams, column_names_to_read, result_projection, input_order_info);
     }
     else if (input_order_info)
     {
