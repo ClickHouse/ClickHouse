@@ -435,10 +435,6 @@ struct ContextSharedPart : boost::noncopyable
             }
         }
 
-        const auto & caches = FileCacheFactory::instance().getAll();
-        for (const auto & [_, cache] : caches)
-            cache->cache->deactivateBackgroundOperations();
-
         try
         {
             shutdown();
@@ -516,6 +512,12 @@ struct ContextSharedPart : boost::noncopyable
         /// DDLWorker should be deleted without lock, cause its internal thread can
         /// take it as well, which will cause deadlock.
         delete_ddl_worker.reset();
+
+        /// Background operations in cache use background schedule pool.
+        /// Deactivate them before destructing it.
+        const auto & caches = FileCacheFactory::instance().getAll();
+        for (const auto & [_, cache] : caches)
+            cache->cache->deactivateBackgroundOperations();
 
         {
             auto lock = std::lock_guard(mutex);
