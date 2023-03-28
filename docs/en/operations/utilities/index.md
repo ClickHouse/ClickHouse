@@ -1,7 +1,7 @@
 ---
 slug: /en/operations/utilities/
 sidebar_position: 56
-sidebar_label: Utilities
+sidebar_label: List of tools and utilities
 pagination_next: 'en/operations/utilities/clickhouse-copier'
 ---
 
