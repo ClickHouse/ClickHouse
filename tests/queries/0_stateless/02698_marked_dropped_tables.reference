@@ -1,4 +1,4 @@
-25400_marked_dropped_tables	MergeTree
+25400_dropped_tables	MergeTree
 index	UInt32					
 database	String					
 table	String					
