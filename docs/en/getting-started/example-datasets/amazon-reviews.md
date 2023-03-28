@@ -333,12 +333,13 @@ FROM amazon_reviews
 WHERE position(review_body, 'awful') > 0
 GROUP BY product_id
 ORDER BY count DESC
-LIMIT 20;
+LIMIT 50;
 ```
 
-The query takes over minutes:
+The query takes a couple of minutes, but the results are a fun read:
 
 ```response
+
 ┌─product_id─┬─any(product_title)───────────────────────────────────────────────────────────────────────┬───avg(star_rating)─┬─count─┐
 │ 0345803485 │ Fifty Shades of Grey: Book One of the Fifty Shades Trilogy (Fifty Shades of Grey Series) │ 1.3870967741935485 │   248 │
 │ B007J4T2G8 │ Fifty Shades of Grey (Fifty Shades, Book 1)                                              │ 1.4439834024896265 │   241 │
@@ -360,13 +361,38 @@ The query takes over minutes:
 │ 0439023513 │ Mockingjay (The Hunger Games)                                                            │ 2.6417910447761193 │    67 │
 │ B00178630A │ Diablo III - PC/Mac                                                                      │           1.671875 │    64 │
 │ B000OCEWGW │ Liquid Ass                                                                               │             4.8125 │    64 │
+│ B005ZOBNOI │ The Fault in Our Stars                                                                   │  4.316666666666666 │    60 │
+│ B00L9B7IKE │ The Girl on the Train: A Novel                                                           │ 2.0677966101694913 │    59 │
+│ B007S6Y6VS │ Garden of Life Raw Organic Meal                                                          │ 2.8793103448275863 │    58 │
+│ B0064X7B4A │ Words With Friends                                                                       │ 2.2413793103448274 │    58 │
+│ B003WUYPPG │ Unbroken: A World War II Story of Survival, Resilience, and Redemption                   │  4.620689655172414 │    58 │
+│ B00006HBUJ │ Star Wars: Episode II - Attack of the Clones (Widescreen Edition)                        │ 2.2982456140350878 │    57 │
+│ B000XUBFE2 │ The Book Thief                                                                           │  4.526315789473684 │    57 │
+│ B0006399FS │ How to Dismantle an Atomic Bomb                                                          │ 1.9821428571428572 │    56 │
+│ B003ZSJ212 │ Star Wars: The Complete Saga (Episodes I-VI) (Packaging May Vary) [Blu-ray]              │  2.309090909090909 │    55 │
+│ 193700788X │ Dead Ever After (Sookie Stackhouse/True Blood)                                           │ 1.5185185185185186 │    54 │
+│ B004FYEZMQ │ Mass Effect 3                                                                            │  2.056603773584906 │    53 │
+│ B000CFYAMC │ The Room                                                                                 │ 3.9615384615384617 │    52 │
+│ B0031JK95S │ Garden of Life Raw Organic Meal                                                          │ 3.3137254901960786 │    51 │
+│ B0012JY4G4 │ Color Oops Hair Color Remover Extra Strength 1 Each                                      │ 3.9019607843137254 │    51 │
+│ B007VTVRFA │ SimCity - Limited Edition                                                                │ 1.2040816326530612 │    49 │
+│ B00CE18P0K │ Pilot                                                                                    │ 1.7142857142857142 │    49 │
+│ 0316015849 │ Twilight (The Twilight Saga, Book 1)                                                     │ 1.8979591836734695 │    49 │
+│ B00DR0PDNE │ Google Chromecast HDMI Streaming Media Player                                            │ 2.5416666666666665 │    48 │
+│ B000056OWC │ The First Years: 4-Stage Bath System                                                     │ 1.2127659574468086 │    47 │
+│ B007IXWKUK │ Fifty Shades Darker (Fifty Shades, Book 2)                                               │ 1.6304347826086956 │    46 │
+│ 1892112000 │ To Train Up a Child                                                                      │ 1.4130434782608696 │    46 │
+│ 043935806X │ Harry Potter and the Order of the Phoenix (Book 5)                                       │  3.977272727272727 │    44 │
+│ B00BGO0Q9O │ Fitbit Flex Wireless Wristband with Sleep Function, Black                                │ 1.9318181818181819 │    44 │
+│ B003XF1XOQ │ Mockingjay (Hunger Games Trilogy, Book 3)                                                │  2.772727272727273 │    44 │
+│ B00DD2B52Y │ Spring Breakers                                                                          │ 1.2093023255813953 │    43 │
+│ B0064X7FVE │ The Weather Channel: Forecast, Radar & Alerts                                            │ 1.5116279069767442 │    43 │
+│ B0083PWAPW │ Kindle Fire HD 7", Dolby Audio, Dual-Band Wi-Fi                                          │  2.627906976744186 │    43 │
+│ B00192KCQ0 │ Death Magnetic                                                                           │ 3.5714285714285716 │    42 │
+│ B007S6Y74O │ Garden of Life Raw Organic Meal                                                          │  3.292682926829268 │    41 │
+│ B0052QYLUM │ Infant Optics DXR-5 Portable Video Baby Monitor                                          │ 2.1463414634146343 │    41 │
 └────────────┴──────────────────────────────────────────────────────────────────────────────────────────┴────────────────────┴───────┘
 
-20 rows in set. Elapsed: 139.580 sec. Processed 150.96 million rows, 68.93 GB (1.08 million rows/s., 493.86 MB/s.)
+50 rows in set. Elapsed: 60.052 sec. Processed 150.96 million rows, 68.93 GB (2.51 million rows/s., 1.15 GB/s.)
 ```
 
-12. Let's try and improve that string search by adding an inverted index to `amazon_reviews`. (It's an experimental setting so it won't work in a Production instance of ClickHouse Cloud). We create the index on the `review_body` column:
-
-```sql
-
-```
