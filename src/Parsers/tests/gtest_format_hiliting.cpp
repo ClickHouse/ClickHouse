@@ -220,6 +220,7 @@ void compare(const String & query, const String & expected)
     settings.hilite = true;
     ast->format(settings);
 
+    ASSERT_PRED2(are_equal_with_hilites_removed, expected, write_buffer.str());
     ASSERT_PRED2(are_equal_with_hilites, expected, write_buffer.str());
 }
 
@@ -306,8 +307,8 @@ TEST(FormatHiliting, ASTCreateQuery)
     // The misplaced space around ( is on purpose, as this bug will fixed in a separate PR.
     String query = "CREATE TABLE name AS( SELECT *) COMMENT 'hello'";
 
-    String expected = keyword("CREATE TABLE ") + identifier("name ") + keyword("AS( SELECT ") + "*" + keyword(")")
-            + keyword("COMMENT") + "'hello'";
+    String expected = keyword("CREATE TABLE ") + "name " + keyword("AS( SELECT ") + "*" + keyword(") ")
+            + keyword("COMMENT ") + "'hello'";
 
     compare(query, expected);
 }
