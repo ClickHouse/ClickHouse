@@ -229,4 +229,7 @@ select parseDateTimeInJodaSyntax('60', 's', 'UTC'); -- { serverError CANNOT_PARS
 select parseDateTimeInJodaSyntax('-1', 's', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
 select parseDateTimeInJodaSyntax('123456789', 's', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
 
+-- integer overflow in AST Fuzzer
+select parseDateTimeInJodaSyntax('19191919191919191919191919191919', 'CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC', 'UTC'); -- { serverError CANNOT_PARSE_DATETIME }
+
 -- { echoOff }
