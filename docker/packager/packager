@@ -285,7 +285,8 @@ def parse_env_variables(
     if clang_tidy:
         # `CTCACHE_DIR` has the same purpose as the `CCACHE_DIR` above.
         # It's there to have the clang-tidy cache embedded into our standard `CCACHE_DIR`
-        result.append("CTCACHE_DIR=/ccache/clang-tidy-cache")
+        if cache == "ccache":
+            result.append("CTCACHE_DIR=/ccache/clang-tidy-cache")
         if s3_bucket:
             # see https://github.com/matus-chochlik/ctcache#environment-variables
             ctcache_dir = "clang-tidy-cache"
