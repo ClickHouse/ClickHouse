@@ -1204,7 +1204,6 @@ void StorageS3::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &,
 
 void StorageS3::updateConfigurationIfChanged(ContextPtr local_context)
 {
-    std::cerr << "\n\nkssenii fff\n\n";
     configuration.update(local_context);
 }
 
@@ -1215,8 +1214,6 @@ void StorageS3::useConfiguration(const Configuration & new_configuration)
 
 bool StorageS3::Configuration::update(ContextPtr context)
 {
-    std::cerr << "\n\nupdating configuration!\n\n";
-
     auto s3_settings = context->getStorageS3Settings().getSettings(url.uri.toString());
     request_settings = s3_settings.request_settings;
     request_settings.updateFromSettings(context->getSettings());

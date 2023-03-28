@@ -1,5 +1,4 @@
 #include <Storages/DataLakes/HudiMetadataParser.h>
-#include <Storages/DataLakes/S3MetadataReader.h>
 #include <Common/logger_useful.h>
 #include <ranges>
 #include "config.h"
