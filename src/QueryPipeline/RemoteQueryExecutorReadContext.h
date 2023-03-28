@@ -50,7 +50,7 @@ private:
     void processAsyncEvent(int fd, Poco::Timespan socket_timeout, AsyncEventTimeoutType type, const std::string & description, uint32_t events) override;
     void clearAsyncEvent() override;
 
-    void cancelImpl() override;
+    void cancelBefore() override;
 
     struct Task : public AsyncTask
     {

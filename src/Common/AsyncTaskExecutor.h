@@ -93,10 +93,12 @@ protected:
     virtual void processException(std::exception_ptr e) { std::rethrow_exception(e); }
 
     /// Method that is called in cancel() before fiber destruction.
-    virtual void cancelImpl() { }
+    virtual void cancelBefore() { }
+    /// Method that is called in cancel() after fiber destruction.
+    virtual void cancelAfter() { }
 
     /// Resume fiber explicitly without mutex locking.
-    /// Can be called in cancelImpl().
+    /// Can be called in cancelBefore().
     void resumeUnlocked();
 
 private:
