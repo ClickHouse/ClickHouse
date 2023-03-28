@@ -12,11 +12,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int SYNTAX_ERROR;
-}
-
 
 InterpreterShowColumnsQuery::InterpreterShowColumnsQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
     : WithMutableContext(context_)
