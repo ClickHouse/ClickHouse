@@ -104,7 +104,6 @@ static ColumnWithTypeAndName readColumnWithNumericData(std::shared_ptr<arrow::Ch
 template <typename ArrowArray>
 static ColumnWithTypeAndName readColumnWithStringData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
 {
-    readColumnWithNumericData<Int128>(arrow_column, column_name);
     auto internal_type = std::make_shared<DataTypeString>();
     auto internal_column = internal_type->createColumn();
     PaddedPODArray<UInt8> & column_chars_t = assert_cast<ColumnString &>(*internal_column).getChars();
