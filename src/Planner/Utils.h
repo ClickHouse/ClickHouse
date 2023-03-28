@@ -17,6 +17,8 @@
 
 #include <Planner/PlannerContext.h>
 
+#include <Storages/SelectQueryInfo.h>
+
 namespace DB
 {
 
@@ -73,5 +75,7 @@ QueryTreeNodePtr replaceTablesAndTableFunctionsWithDummyTables(const QueryTreeNo
 QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
     const QueryTreeNodePtr & table_expression,
     const ContextPtr & context);
+
+SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const PlannerContextPtr & planner_context);
 
 }
