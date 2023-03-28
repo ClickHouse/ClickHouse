@@ -398,4 +398,4 @@ To disallow concurrent backup/restore, you can use these settings respectively.
 ```
 
 The default value for both is true, so by default concurrent backup/restores are allowed.
-When this setting is used on a cluster, only 1 backup/restore is allowed to run on a cluster at a time.
+When these setting are true on a cluster, only 1 backup/restore is allowed to run on a cluster at a time.
