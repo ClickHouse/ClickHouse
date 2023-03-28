@@ -6,6 +6,9 @@
 
 #include <Storages/IStorage.h>
 #include <Common/logger_useful.h>
+#include <Storages/StorageFactory.h>
+#include <Formats/FormatFactory.h>
+#include <filesystem>
 
 
 namespace DB
@@ -15,77 +18,87 @@ template <typename Storage, typename Name, typename MetadataParser>
 class IStorageDataLake : public Storage
 {
 public:
-    using IConfiguration = typename Storage::Configuration;
-    using ConfigurationPtr = std::unique_ptr<IConfiguration>;
+    static constexpr auto name = Name::name;
+    using Configuration = typename Storage::Configuration;
 
     template <class ...Args>
-    explicit IStorageDataLake(
-        ConfigurationPtr configuration_,
-        ContextPtr context_,
-        Args && ...args)
-        : Storage(createConfigurationForDataRead(context_, *configuration_), context_, std::forward<Args>(args)...)
-        , base_configuration(std::move(configuration_))
-        , log(&Poco::Logger::get(getName()))
-    {
-    }
+    explicit IStorageDataLake(const Configuration & configuration_, ContextPtr context_, Args && ...args)
+        : Storage(getConfigurationForDataRead(configuration_, context_), context_, std::forward<Args>(args)...)
+        , base_configuration(configuration_)
+        , log(&Poco::Logger::get(getName())) {}
 
-    struct Configuration : public Storage::Configuration
-    {
-        template <class ...Args>
-        explicit Configuration(Args && ...args) : Storage::Configuration(std::forward<Args>(args)...) {}
-
-        bool update(ContextPtr /* context */) override
-        {
-            return false;
-        }
-    };
-
-    static constexpr auto name = Name::name;
     String getName() const override { return name; }
 
-    static ConfigurationPtr getConfiguration(ASTs & engine_args, ContextPtr local_context)
+    static ColumnsDescription getTableStructureFromData(
+        Configuration & base_configuration,
+        const std::optional<FormatSettings> & format_settings,
+        ContextPtr local_context)
     {
-        auto configuration = Storage::getConfiguration(engine_args, local_context, false /* get_format_from_file */);
-        /// Data lakes have default format as parquet.
-        if (configuration->format == "auto")
-            configuration->format = "Parquet";
+        auto configuration = getConfigurationForDataRead(base_configuration, local_context);
+        return Storage::getTableStructureFromData(configuration, format_settings, local_context);
+    }
+
+    static Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context)
+    {
+        return Storage::getConfiguration(engine_args, local_context, /* get_format_from_file */false);
+    }
+
+    void updateConfigurationIfChanged(ContextPtr local_context) override
+    {
+        const bool updated = base_configuration.update(local_context);
+        auto new_keys = getDataFiles(base_configuration, local_context);
+
+        if (!updated && new_keys == Storage::getConfiguration().keys)
+            return;
+
+        Storage::useConfiguration(getConfigurationForDataRead(base_configuration, local_context, new_keys));
+    }
+
+private:
+    static Configuration getConfigurationForDataRead(
+        const Configuration & base_configuration, ContextPtr local_context, const Strings & keys = {})
+    {
+        auto configuration{base_configuration};
+        configuration.update(local_context);
+        configuration.static_configuration = true;
+
+        if (keys.empty())
+            configuration.keys = getDataFiles(configuration, local_context);
+        else
+            configuration.keys = keys;
+
+        LOG_TRACE(&Poco::Logger::get("DataLake"), "New configuration path: {}", configuration.getPath());
+
+        configuration.connect(local_context);
         return configuration;
     }
 
-    static ColumnsDescription getTableStructureFromData(
-        IConfiguration & base_configuration, const std::optional<FormatSettings> & format_settings, ContextPtr local_context)
+    static Strings getDataFiles(const Configuration & configuration, ContextPtr local_context)
     {
-        auto configuration = createConfigurationForDataRead(local_context, base_configuration);
-        return Storage::getTableStructureFromData(*configuration, format_settings, local_context, /*object_infos*/ nullptr);
+        auto files =  MetadataParser(configuration, local_context).getFiles();
+        for (auto & file : files)
+            file = std::filesystem::path(configuration.getPath()) / file;
+        return files;
     }
 
-    // void updateConfiguration(ContextPtr local_context, Configuration & configuration) override
-    // {
-    //     configuration = createConfigurationForDataRead(local_context, base_configuration);
-    // }
-
-private:
-    static ConfigurationPtr createConfigurationForDataRead(ContextPtr local_context, const IConfiguration & base_configuration)
-    {
-        Poco::Logger * log = &Poco::Logger::get("IStorageDataLake");
-
-        auto new_configuration = std::make_unique<Configuration>(base_configuration);
-        new_configuration->update(local_context);
-
-        MetadataParser parser{*new_configuration, local_context};
-        auto keys = parser.getFiles();
-        auto files = MetadataParser::generateQueryFromKeys(keys, new_configuration->format);
-
-        LOG_TEST(log, "FILES: {}, ", fmt::join(files, ", "));
-        new_configuration->appendToPath(files);
-
-        LOG_DEBUG(log, "URL for read: {}", new_configuration->getPath());
-        return new_configuration;
-    }
-
-    ConfigurationPtr base_configuration;
+    Configuration base_configuration;
     Poco::Logger * log;
 };
+
+
+template <typename DataLake>
+static StoragePtr createDataLakeStorage(const StorageFactory::Arguments & args)
+{
+    auto configuration = DataLake::getConfiguration(args.engine_args, args.getLocalContext());
+
+    /// Data lakes use parquet format, no need for schema inference.
+    if (configuration.format == "auto")
+        configuration.format = "Parquet";
+
+    return std::make_shared<DataLake>(
+        configuration, args.getContext(), args.table_id, args.columns, args.constraints,
+        args.comment, getFormatSettings(args.getContext()));
+}
 
 }
 

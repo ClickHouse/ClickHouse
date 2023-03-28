@@ -49,6 +49,7 @@ StorageS3Cluster::StorageS3Cluster(
     ContextPtr context_,
     bool structure_argument_was_provided_)
     : IStorageCluster(table_id_)
+    , log(&Poco::Logger::get("StorageS3Cluster (" + table_id_.table_name + ")"))
     , s3_configuration{configuration_}
     , cluster_name(configuration_.cluster_name)
     , format_name(configuration_.format)
@@ -57,7 +58,7 @@ StorageS3Cluster::StorageS3Cluster(
 {
     context_->getGlobalContext()->getRemoteHostFilter().checkURL(configuration_.url.uri);
     StorageInMemoryMetadata storage_metadata;
-    s3_configuration.update(context_);
+    updateConfigurationIfChanged(context_);
 
     if (columns_.empty())
     {
@@ -83,6 +84,11 @@ StorageS3Cluster::StorageS3Cluster(
         virtual_block.insert({column.type->createColumn(), column.type, column.name});
 }
 
+void StorageS3Cluster::updateConfigurationIfChanged(ContextPtr local_context)
+{
+    s3_configuration.update(local_context);
+}
+
 /// The code executes on initiator
 Pipe StorageS3Cluster::read(
     const Names & column_names,
@@ -93,7 +99,7 @@ Pipe StorageS3Cluster::read(
     size_t /*max_block_size*/,
     size_t /*num_streams*/)
 {
-    s3_configuration.update(context);
+    updateConfigurationIfChanged(context);
 
     auto cluster = getCluster(context);
     auto extension = getTaskIteratorExtension(query_info.query, context);
@@ -152,6 +158,7 @@ Pipe StorageS3Cluster::read(
                     processed_stage,
                     extension);
 
+            remote_query_executor->setLogger(log);
             pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, add_agg_info, false));
         }
     }

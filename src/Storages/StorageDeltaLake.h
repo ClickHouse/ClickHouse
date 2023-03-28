@@ -61,7 +61,7 @@ private:
         static constexpr auto deltalake_metadata_directory = "_delta_log";
         static constexpr auto metadata_file_suffix = ".json";
 
-        return MetadataReadHelper::listFilesMatchSuffix(
+        return MetadataReadHelper::listFiles(
             storage_configuration, deltalake_metadata_directory, metadata_file_suffix);
     }
 

@@ -241,11 +241,10 @@ public:
     struct Configuration : public StatelessTableEngineConfiguration
     {
         Configuration() = default;
-        virtual ~Configuration() = default;
-        Configuration(const Configuration &) = default;
 
         S3::URI url;
         std::shared_ptr<const S3::Client> client;
+        std::vector<String> keys;
         S3::AuthSettings auth_settings;
         S3Settings::RequestSettings request_settings;
         /// If s3 configuration was passed from ast, then it is static.
@@ -254,21 +253,29 @@ public:
         /// Headers from ast is a part of static configuration.
         HTTPHeaderEntries headers_from_ast;
 
-        String getPath() const { return url.uri.toString(); } /// For logging
-
-        bool withGlobs() const { return url.key.find_first_of("*?{") != std::string::npos; }
+        String getPath() const { return url.key; }
 
         void appendToPath(const String & suffix)
         {
             url = S3::URI{std::filesystem::path(url.uri.toString()) / suffix};
         }
 
-        virtual bool update(ContextPtr context);
+        bool update(ContextPtr context);
+
+        void connect(ContextPtr context);
+
+        bool withGlobs() const { return url.key.find_first_of("*?{") != std::string::npos; }
+
+        bool withWildcard() const
+        {
+            static const String PARTITION_ID_WILDCARD = "{_partition_id}";
+            return url.bucket.find(PARTITION_ID_WILDCARD) != String::npos
+                || keys.back().find(PARTITION_ID_WILDCARD) != String::npos;
+        }
     };
-    using ConfigurationPtr = std::unique_ptr<Configuration>;
 
     StorageS3(
-        StorageS3::ConfigurationPtr configuration_,
+        const Configuration & configuration_,
         ContextPtr context_,
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
@@ -306,7 +313,7 @@ public:
 
     static SchemaCache & getSchemaCache(const ContextPtr & ctx);
 
-    static StorageS3::ConfigurationPtr getConfiguration(ASTs & engine_args, ContextPtr local_context, bool get_format_from_file = true);
+    static StorageS3::Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context, bool get_format_from_file = true);
 
     static ColumnsDescription getTableStructureFromData(
         StorageS3::Configuration & configuration,
@@ -314,12 +321,18 @@ public:
         ContextPtr ctx,
         ObjectInfos * object_infos = nullptr);
 
+protected:
+    virtual void updateConfigurationIfChanged(ContextPtr local_context);
+
+    void useConfiguration(const Configuration & new_configuration);
+
+    const Configuration & getConfiguration() { return configuration; }
+
 private:
     friend class StorageS3Cluster;
     friend class TableFunctionS3Cluster;
 
-    const ConfigurationPtr s3_configuration;
-    std::vector<String> keys;
+    Configuration configuration;
     NamesAndTypesList virtual_columns;
     Block virtual_block;
 
@@ -331,8 +344,7 @@ private:
     ObjectInfos object_infos;
 
     static std::shared_ptr<StorageS3Source::IIterator> createFileIterator(
-        const Configuration & s3_configuration,
-        const std::vector<String> & keys,
+        const Configuration & configuration,
         bool distributed_processing,
         ContextPtr local_context,
         ASTPtr query,
@@ -341,7 +353,7 @@ private:
         Strings * read_keys = nullptr);
 
     static ColumnsDescription getTableStructureFromDataImpl(
-        const Configuration & s3_configuration,
+        const Configuration & configuration,
         const std::optional<FormatSettings> & format_settings,
         ContextPtr ctx,
         ObjectInfos * object_infos = nullptr);
@@ -353,14 +365,14 @@ private:
     static std::optional<ColumnsDescription> tryGetColumnsFromCache(
         const Strings::const_iterator & begin,
         const Strings::const_iterator & end,
-        const Configuration & s3_configuration,
+        const Configuration & configuration,
         ObjectInfos * object_infos,
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & ctx);
 
     static void addColumnsToCache(
         const Strings & keys,
-        const Configuration & s3_configuration,
+        const Configuration & configuration,
         const ColumnsDescription & columns,
         const String & format_name,
         const std::optional<FormatSettings> & format_settings,
