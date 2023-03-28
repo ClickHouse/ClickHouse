@@ -1,7 +1,6 @@
 ---
 slug: /en/getting-started/example-datasets/amazon-reviews
 sidebar_label: Amazon customer reviews
-description:
 ---
 
 # Amazon customer reviews dataset
@@ -18,24 +17,26 @@ The queries below were executed on a **Production** instance of [ClickHouse Clou
 1. Without inserting the data into ClickHouse, we can query it in place. Let's grab some rows so we can see what they look like:
 
 ```sql
-SELECT * FROM s3('https://s3.amazonaws.com/amazon-reviews-pds/tsv/amazon_reviews_us_Wireless_v1_00.tsv.gz',
-                        'TabSeparatedWithNames',
-                        'marketplace String,
-                        customer_id Int64,
-                        review_id String,
-                        product_id String,
-                        product_parent Int64,
-                        product_title String,
-                        product_category String,
-                        star_rating Int64,
-                        helpful_votes Int64,
-                        total_votes Int64,
-                        vine Bool,
-                        verified_purchase Bool,
-                        review_headline String,
-                        review_body String,
-                        review_date Date')
-                    LIMIT 10;
+SELECT *
+FROM s3('https://s3.amazonaws.com/amazon-reviews-pds/tsv/amazon_reviews_us_Wireless_v1_00.tsv.gz',
+    'TabSeparatedWithNames',
+    'marketplace String,
+    customer_id Int64,
+    review_id String,
+    product_id String,
+    product_parent Int64,
+    product_title String,
+    product_category String,
+    star_rating Int64,
+    helpful_votes Int64,
+    total_votes Int64,
+    vine Bool,
+    verified_purchase Bool,
+    review_headline String,
+    review_body String,
+    review_date Date'
+)
+LIMIT 10;
 ```
 
 The rows look like:
@@ -131,4 +132,241 @@ FROM amazon_reviews
 └─────────────────────────────────┘
 ```
 
-6. Let's run some queries...
+6. Let's see how much space our data is using:
+
+```sql
+SELECT
+    disk_name,
+    formatReadableSize(sum(data_compressed_bytes) AS size) AS compressed,
+    formatReadableSize(sum(data_uncompressed_bytes) AS usize) AS uncompressed,
+    round(usize / size, 2) AS compr_rate,
+    sum(rows) AS rows,
+    count() AS part_count
+FROM system.parts
+WHERE (active = 1) AND (table = 'amazon_reviews')
+GROUP BY disk_name
+ORDER BY size DESC;
+```
+The original data was about 70G, but compressed in ClickHouse it takes up about 30G:
+
+```response
+┌─disk_name─┬─compressed─┬─uncompressed─┬─compr_rate─┬──────rows─┬─part_count─┐
+│ s3disk    │ 30.00 GiB  │ 70.61 GiB    │       2.35 │ 150957260 │          9 │
+└───────────┴────────────┴──────────────┴────────────┴───────────┴────────────┘
+```
+
+7. Let's run some queries...here are the top 10 most-helpful reviews on Amazon:
+
+```sql
+SELECT
+    product_title,
+    review_headline
+FROM amazon_reviews
+ORDER BY helpful_votes DESC
+LIMIT 10;
+```
+
+Notice the query has to process all 151M rows, and it takes about 17 seconds:
+
+```response
+┌─product_title────────────────────────────────────────────────────────────────────────────┬─review_headline───────────────────────────────────────────────────────┐
+│ Kindle: Amazon's Original Wireless Reading Device (1st generation)                       │ Why and how the Kindle changes everything                             │
+│ BIC Cristal For Her Ball Pen, 1.0mm, Black, 16ct (MSLP16-Blk)                            │ FINALLY!                                                              │
+│ The Mountain Kids 100% Cotton Three Wolf Moon T-Shirt                                    │ Dual Function Design                                                  │
+│ Kindle Keyboard 3G, Free 3G + Wi-Fi, 6" E Ink Display                                    │ Kindle vs. Nook (updated)                                             │
+│ Kindle Fire HD 7", Dolby Audio, Dual-Band Wi-Fi                                          │ You Get What You Pay For                                              │
+│ Kindle Fire (Previous Generation - 1st)                                                  │ A great device WHEN you consider price and function, with a few flaws │
+│ Fifty Shades of Grey: Book One of the Fifty Shades Trilogy (Fifty Shades of Grey Series) │ Did a teenager write this???                                          │
+│ Wheelmate Laptop Steering Wheel Desk                                                     │ Perfect for an Starfleet Helmsman                                     │
+│ Kindle Wireless Reading Device (6" Display, U.S. Wireless)                               │ BEWARE of the SIGNIFICANT DIFFERENCES between Kindle 1 and Kindle 2!  │
+│ Tuscan Dairy Whole Vitamin D Milk, Gallon, 128 oz                                        │ Make this your only stock and store                                   │
+└──────────────────────────────────────────────────────────────────────────────────────────┴───────────────────────────────────────────────────────────────────────┘
+
+10 rows in set. Elapsed: 17.595 sec. Processed 150.96 million rows, 15.36 GB (8.58 million rows/s., 872.89 MB/s.)
+```
+
+8. Here are the top 10 products in Amazon with the most reviews:
+
+```sql
+SELECT
+    any(product_title),
+    count()
+FROM amazon_reviews
+GROUP BY product_id
+ORDER BY 2 DESC
+LIMIT 10;
+```
+
+```response
+┌─any(product_title)────────────────────────────┬─count()─┐
+│ Candy Crush Saga                              │   50051 │
+│ The Secret Society® - Hidden Mystery          │   41255 │
+│ Google Chromecast HDMI Streaming Media Player │   35977 │
+│ Minecraft                                     │   35129 │
+│ Bosch Season 1                                │   33610 │
+│ Gone Girl: A Novel                            │   33240 │
+│ Subway Surfers                                │   32328 │
+│ The Fault in Our Stars                        │   30149 │
+│ Amazon.com eGift Cards                        │   28879 │
+│ Crossy Road                                   │   28111 │
+└───────────────────────────────────────────────┴─────────┘
+
+10 rows in set. Elapsed: 16.684 sec. Processed 195.05 million rows, 20.86 GB (11.69 million rows/s., 1.25 GB/s.)
+```
+
+9. Here are the average review ratings per month for each product (an actual [Amazon job interview question](https://datalemur.com/questions/sql-avg-review-ratings)!):
+
+```sql
+SELECT
+    toYYYYMM(review_date) AS month,
+    any(product_title),
+    avg(star_rating) AS avg_stars
+FROM amazon_reviews
+GROUP BY
+    month,
+    product_id
+ORDER BY
+    month DESC,
+    product_id ASC
+LIMIT 20;
+```
+
+It calculates all the monthly averages for each product, but we only returned 20 rows:
+
+```response
+┌──month─┬─any(product_title)──────────────────────────────────────────────────────────────────────┬─avg_stars─┐
+│ 201508 │ Mystiqueshapes Girls Ballet Tutu Neon Lime Green                                        │         4 │
+│ 201508 │ Adult Ballet Tutu Yellow                                                                │         5 │
+│ 201508 │ The Way Things Work: An Illustrated Encyclopedia of Technology                          │         5 │
+│ 201508 │ Hilda Boswell's Treasury of Poetry                                                      │         5 │
+│ 201508 │ Treasury of Poetry                                                                      │         5 │
+│ 201508 │ Uncle Remus Stories                                                                     │         5 │
+│ 201508 │ The Book of Daniel                                                                      │         5 │
+│ 201508 │ Berenstains' B Book                                                                     │         5 │
+│ 201508 │ The High Hills (Brambly Hedge)                                                          │       4.5 │
+│ 201508 │ Fuzzypeg Goes to School (The Little Grey Rabbit library)                                │         5 │
+│ 201508 │ Dictionary in French: The Cat in the Hat (Beginner Series)                              │         5 │
+│ 201508 │ Windfallen                                                                              │         5 │
+│ 201508 │ The Monk Who Sold His Ferrari: A Remarkable Story About Living Your Dreams              │         5 │
+│ 201508 │ Illustrissimi: The Letters of Pope John Paul I                                          │         5 │
+│ 201508 │ Social Contract: A Personal Inquiry into the Evolutionary Sources of Order and Disorder │         5 │
+│ 201508 │ Mexico The Beautiful Cookbook: Authentic Recipes from the Regions of Mexico             │       4.5 │
+│ 201508 │ Alanbrooke                                                                              │         5 │
+│ 201508 │ Back to Cape Horn                                                                       │         4 │
+│ 201508 │ Ovett: An Autobiography (Willow books)                                                  │         5 │
+│ 201508 │ The Birds of West Africa (Collins Field Guides)                                         │         4 │
+└────────┴─────────────────────────────────────────────────────────────────────────────────────────┴───────────┘
+
+20 rows in set. Elapsed: 55.529 sec. Processed 252.02 million rows, 35.58 GB (4.54 million rows/s., 640.79 MB/s.)
+```
+
+10. Here are the total number of votes per product category. This query is fast because `product_category` is in the primary key:
+
+```sql
+SELECT
+    sum(total_votes),
+    product_category
+FROM amazon_reviews
+GROUP BY product_category
+ORDER BY 1 DESC;
+```
+
+```response
+┌─sum(total_votes)─┬─product_category─────────┐
+│        103877874 │ Books                    │
+│         25330411 │ Digital_Ebook_Purchase   │
+│         23065953 │ Video DVD                │
+│         18048069 │ Music                    │
+│         17292294 │ Mobile_Apps              │
+│         15977124 │ Health & Personal Care   │
+│         13554090 │ PC                       │
+│         13065746 │ Kitchen                  │
+│         12537926 │ Home                     │
+│         11067538 │ Beauty                   │
+│         10418643 │ Wireless                 │
+│          9089085 │ Toys                     │
+│          9071484 │ Sports                   │
+│          7335647 │ Electronics              │
+│          6885504 │ Apparel                  │
+│          6710085 │ Video Games              │
+│          6556319 │ Camera                   │
+│          6305478 │ Lawn and Garden          │
+│          5954422 │ Office Products          │
+│          5339437 │ Home Improvement         │
+│          5284343 │ Outdoors                 │
+│          5125199 │ Pet Products             │
+│          4733251 │ Grocery                  │
+│          4697750 │ Shoes                    │
+│          4666487 │ Automotive               │
+│          4361518 │ Digital_Video_Download   │
+│          4033550 │ Tools                    │
+│          3559010 │ Baby                     │
+│          3317662 │ Home Entertainment       │
+│          2559501 │ Video                    │
+│          2204328 │ Furniture                │
+│          2157587 │ Musical Instruments      │
+│          1881662 │ Software                 │
+│          1676081 │ Jewelry                  │
+│          1499945 │ Watches                  │
+│          1224071 │ Digital_Music_Purchase   │
+│           847918 │ Luggage                  │
+│           503939 │ Major Appliances         │
+│           392001 │ Digital_Video_Games      │
+│           348990 │ Personal_Care_Appliances │
+│           321372 │ Digital_Software         │
+│           169585 │ Mobile_Electronics       │
+│            72970 │ Gift Card                │
+└──────────────────┴──────────────────────────┘
+
+43 rows in set. Elapsed: 0.423 sec. Processed 150.96 million rows, 756.20 MB (356.70 million rows/s., 1.79 GB/s.)
+```
+
+11. Let's find the products with the word **"awful"** occurring most frequently in the review. This is a big task - over 151M strings have to be parsed looking for a single word:
+
+```sql
+SELECT
+    product_id,
+    any(product_title),
+    avg(star_rating),
+    count() AS count
+FROM amazon_reviews
+WHERE position(review_body, 'awful') > 0
+GROUP BY product_id
+ORDER BY count DESC
+LIMIT 20;
+```
+
+The query takes over minutes:
+
+```response
+┌─product_id─┬─any(product_title)───────────────────────────────────────────────────────────────────────┬───avg(star_rating)─┬─count─┐
+│ 0345803485 │ Fifty Shades of Grey: Book One of the Fifty Shades Trilogy (Fifty Shades of Grey Series) │ 1.3870967741935485 │   248 │
+│ B007J4T2G8 │ Fifty Shades of Grey (Fifty Shades, Book 1)                                              │ 1.4439834024896265 │   241 │
+│ B006LSZECO │ Gone Girl: A Novel                                                                       │ 2.2986425339366514 │   221 │
+│ B00008OWZG │ St. Anger                                                                                │ 1.6565656565656566 │   198 │
+│ B00BD99JMW │ Allegiant (Divergent Trilogy, Book 3)                                                    │ 1.8342541436464088 │   181 │
+│ B0000YUXI0 │ Mavala Switzerland Mavala Stop Nail Biting                                               │  4.473684210526316 │   171 │
+│ B004S8F7QM │ Cards Against Humanity                                                                   │  4.753012048192771 │   166 │
+│ 031606792X │ Breaking Dawn (The Twilight Saga, Book 4)                                                │           1.796875 │   128 │
+│ 006202406X │ Allegiant (Divergent Series)                                                             │ 1.4242424242424243 │    99 │
+│ B0051VVOB2 │ Kindle Fire (Previous Generation - 1st)                                                  │ 2.7448979591836733 │    98 │
+│ B00I3MP3SG │ Pilot                                                                                    │ 1.8762886597938144 │    97 │
+│ 030758836X │ Gone Girl                                                                                │            2.15625 │    96 │
+│ B0009X29WK │ Precious Cat Ultra Premium Clumping Cat Litter                                           │ 3.0759493670886076 │    79 │
+│ B00JB3MVCW │ Noah                                                                                     │ 1.2027027027027026 │    74 │
+│ B00BAXFECK │ The Goldfinch: A Novel (Pulitzer Prize for Fiction)                                      │  2.643835616438356 │    73 │
+│ B00N28818A │ Amazon Prime Video                                                                       │ 1.4305555555555556 │    72 │
+│ B007FTE2VW │ SimCity - Limited Edition                                                                │ 1.2794117647058822 │    68 │
+│ 0439023513 │ Mockingjay (The Hunger Games)                                                            │ 2.6417910447761193 │    67 │
+│ B00178630A │ Diablo III - PC/Mac                                                                      │           1.671875 │    64 │
+│ B000OCEWGW │ Liquid Ass                                                                               │             4.8125 │    64 │
+└────────────┴──────────────────────────────────────────────────────────────────────────────────────────┴────────────────────┴───────┘
+
+20 rows in set. Elapsed: 139.580 sec. Processed 150.96 million rows, 68.93 GB (1.08 million rows/s., 493.86 MB/s.)
+```
+
+12. Let's try and improve that string search by adding an inverted index to `amazon_reviews`. (It's an experimental setting so it won't work in a Production instance of ClickHouse Cloud). We create the index on the `review_body` column:
+
+```sql
+
+```
