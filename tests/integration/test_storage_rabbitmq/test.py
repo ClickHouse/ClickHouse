@@ -2710,7 +2710,6 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
             exchange="mv", routing_key="", body=json.dumps({"key": i, "value": i})
         )
 
-    start = time.time()
     while True:
         res = instance.query("SELECT COUNT(*) FROM test.view")
         print(f"Current count (1): {res}")
