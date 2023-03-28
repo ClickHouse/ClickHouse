@@ -1,8 +1,5 @@
 #pragma once
 
-#include <Common/logger_useful.h>
-#include <Poco/Logger.h>
-
 #include <Core/Types.h>
 #include <Core/DecimalFunctions.h>
 #include <Functions/IFunction.h>
