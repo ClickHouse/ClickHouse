@@ -1,14 +1,13 @@
 #pragma once
 
-#include <optional>
-#include <fmt/format.h>
-#include <base/hex.h>
 #include <Core/Types.h>
 
 
 namespace DB
 {
 class Exception;
+struct BackupFileInfo;
+using BackupFileInfos = std::vector<BackupFileInfo>;
 enum class AccessEntityType;
 enum class UserDefinedSQLObjectType;
 
@@ -73,59 +72,14 @@ public:
     virtual void addReplicatedSQLObjectsDir(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & dir_path) = 0;
     virtual Strings getReplicatedSQLObjectsDirs(const String & loader_zk_path, UserDefinedSQLObjectType object_type) const = 0;
 
-    struct FileInfo
-    {
-        String file_name;
-
-        UInt64 size = 0;
-        UInt128 checksum{0};
-
-        /// for incremental backups
-        UInt64 base_size = 0;
-        UInt128 base_checksum{0};
-
-        /// Name of the data file.
-        String data_file_name;
-
-        /// Note: this format doesn't allow to parse data back
-        /// It is useful only for debugging purposes
-        [[ maybe_unused ]] String describe()
-        {
-            String result;
-            result += fmt::format("file_name: {};\n", file_name);
-            result += fmt::format("size: {};\n", size);
-            result += fmt::format("checksum: {};\n", getHexUIntLowercase(checksum));
-            result += fmt::format("base_size: {};\n", base_size);
-            result += fmt::format("base_checksum: {};\n", getHexUIntLowercase(checksum));
-            result += fmt::format("data_file_name: {};\n", data_file_name);
-            return result;
-        }
-
-        struct LessByFileName
-        {
-            bool operator()(const FileInfo & lhs, const FileInfo & rhs) const { return (lhs.file_name < rhs.file_name); }
-        };
-
-        struct EqualByFileName
-        {
-            bool operator()(const FileInfo & lhs, const FileInfo & rhs) const { return (lhs.file_name == rhs.file_name); }
-        };
-
-        struct LessBySizeOrChecksum
-        {
-            bool operator()(const FileInfo & lhs, const FileInfo & rhs) const
-            {
-                return (lhs.size < rhs.size) || (lhs.size == rhs.size && lhs.checksum < rhs.checksum);
-            }
-        };
-
-        using SizeAndChecksum = std::pair<UInt64, UInt128>;
-    };
-
     /// Adds file information.
     /// If specified checksum+size are new for this IBackupContentsInfo the function sets `is_data_file_required`.
-    virtual void addFileInfo(const FileInfo & file_info, bool & is_data_file_required) = 0;
-    virtual std::vector<FileInfo> getAllFileInfos() const = 0;
+    virtual void addFileInfos(BackupFileInfos && file_infos) = 0;
+    virtual BackupFileInfos getFileInfos() const = 0;
+    virtual BackupFileInfos getFileInfosForAllHosts() const = 0;
+
+    /// Starts writing a specified file, the function returns false if that file is already being written concurrently.
+    virtual bool startWritingFile(size_t data_file_index) = 0;
 
     /// This function is used to check if concurrent backups are running
     /// other than the backup passed to the function

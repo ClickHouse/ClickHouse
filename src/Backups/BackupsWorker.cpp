@@ -32,6 +32,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int CONCURRENT_ACCESS_NOT_SUPPORTED;
+    extern const int FAILED_TO_SYNC_BACKUP_OR_RESTORE;
 }
 
 using OperationID = BackupsWorker::OperationID;
@@ -351,7 +352,8 @@ void BackupsWorker::doBackup(
             }
 
             /// Write the backup entries to the backup.
-            writeBackupEntries(backup_id, backup, std::move(backup_entries), backups_thread_pool, backup_settings.internal);
+            buildFileInfosForBackupEntries(backup, backup_entries, backup_coordination);
+            writeBackupEntries(backup, std::move(backup_entries), backup_id, backup_coordination, backup_settings.internal);
 
             /// We have written our backup entries, we need to tell other hosts (they could be waiting for it).
             backup_coordination->setStage(Stage::COMPLETED, "");
@@ -400,8 +402,25 @@ void BackupsWorker::doBackup(
 }
 
 
-void BackupsWorker::writeBackupEntries(const OperationID & backup_id, BackupMutablePtr backup, BackupEntries && backup_entries, ThreadPool & thread_pool, bool internal)
+void BackupsWorker::buildFileInfosForBackupEntries(const BackupPtr & backup, const BackupEntries & backup_entries, std::shared_ptr<IBackupCoordination> backup_coordination)
 {
+    LOG_TRACE(log, "{}", Stage::BUILDING_FILE_INFOS);
+    backup_coordination->setStage(Stage::BUILDING_FILE_INFOS, "");
+    backup_coordination->waitForStage(Stage::BUILDING_FILE_INFOS);
+    backup_coordination->addFileInfos(::DB::buildFileInfosForBackupEntries(backup_entries, backup->getBaseBackup(), backups_thread_pool));
+}
+
+
+void BackupsWorker::writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries, const OperationID & backup_id, std::shared_ptr<IBackupCoordination> backup_coordination, bool internal)
+{
+    LOG_TRACE(log, "{}, num backup entries={}", Stage::WRITING_BACKUP, backup_entries.size());
+    backup_coordination->setStage(Stage::WRITING_BACKUP, "");
+    backup_coordination->waitForStage(Stage::WRITING_BACKUP);
+
+    auto file_infos = backup_coordination->getFileInfos();
+    if (file_infos.size() != backup_entries.size())
+        throw Exception(ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE, "Number of file infos doesn't match the number of backup entries");
+
     size_t num_active_jobs = 0;
     std::mutex mutex;
     std::condition_variable event;
@@ -410,10 +429,10 @@ void BackupsWorker::writeBackupEntries(const OperationID & backup_id, BackupMuta
     bool always_single_threaded = !backup->supportsWritingInMultipleThreads();
     auto thread_group = CurrentThread::getGroup();
 
-    for (auto & name_and_entry : backup_entries)
+    for (size_t i = 0; i != backup_entries.size(); ++i)
     {
-        auto & name = name_and_entry.first;
-        auto & entry = name_and_entry.second;
+        auto & entry = backup_entries[i].second;
+        const auto & file_info = file_infos[i];
 
         {
             std::unique_lock lock{mutex};
@@ -446,7 +465,7 @@ void BackupsWorker::writeBackupEntries(const OperationID & backup_id, BackupMuta
                         return;
                 }
 
-                backup->writeFile(name, std::move(entry));
+                backup->writeFile(file_info, std::move(entry));
                 // Update metadata
                 if (!internal)
                 {
@@ -469,7 +488,7 @@ void BackupsWorker::writeBackupEntries(const OperationID & backup_id, BackupMuta
             }
         };
 
-        if (always_single_threaded || !thread_pool.trySchedule([job] { job(true); }))
+        if (always_single_threaded || !backups_thread_pool.trySchedule([job] { job(true); }))
             job(false);
     }
 

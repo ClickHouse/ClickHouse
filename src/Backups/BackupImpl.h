@@ -3,8 +3,8 @@
 #include <Backups/IBackup.h>
 #include <Backups/IBackupCoordination.h>
 #include <Backups/BackupInfo.h>
+#include <map>
 #include <mutex>
-#include <unordered_map>
 
 
 namespace DB
@@ -58,6 +58,7 @@ public:
     OpenMode getOpenMode() const override { return open_mode; }
     time_t getTimestamp() const override { return timestamp; }
     UUID getUUID() const override { return *uuid; }
+    BackupPtr getBaseBackup() const override { return base_backup; }
     size_t getNumFiles() const override;
     UInt64 getTotalSize() const override;
     size_t getNumEntries() const override;
@@ -79,13 +80,11 @@ public:
                           WriteMode write_mode, const WriteSettings & write_settings) const override;
     size_t copyFileToDisk(const SizeAndChecksum & size_and_checksum, DiskPtr destination_disk, const String & destination_path,
                           WriteMode write_mode, const WriteSettings & write_settings) const override;
-    void writeFile(const String & file_name, BackupEntryPtr entry) override;
+    void writeFile(const BackupFileInfo & info, BackupEntryPtr entry) override;
     void finalizeWriting() override;
     bool supportsWritingInMultipleThreads() const override { return !use_archive; }
 
 private:
-    using FileInfo = IBackupCoordination::FileInfo;
-
     void open(const ContextPtr & context);
     void close();
 
@@ -120,8 +119,10 @@ private:
     std::shared_ptr<IBackupCoordination> coordination;
 
     mutable std::mutex mutex;
+
+    using SizeAndChecksum = std::pair<UInt64, UInt128>;
     std::map<String /* file_name */, SizeAndChecksum> file_names TSA_GUARDED_BY(mutex); /// Should be ordered alphabetically, see listFiles(). For empty files we assume checksum = 0.
-    std::map<SizeAndChecksum, FileInfo> file_infos TSA_GUARDED_BY(mutex); /// Information about files. Without empty files.
+    std::map<SizeAndChecksum, BackupFileInfo> file_infos TSA_GUARDED_BY(mutex); /// Information about files. Without empty files.
 
     std::optional<UUID> uuid;
     time_t timestamp = 0;

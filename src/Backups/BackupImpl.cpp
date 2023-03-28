@@ -1,6 +1,6 @@
 #include <Backups/BackupImpl.h>
 #include <Backups/BackupFactory.h>
-#include <Backups/BackupEntryFromMemory.h>
+#include <Backups/BackupFileInfo.h>
 #include <Backups/BackupIO.h>
 #include <Backups/IBackupEntry.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -14,7 +14,6 @@
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/Archives/createArchiveWriter.h>
 #include <IO/ConcatSeekableReadBuffer.h>
-#include <IO/HashingReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WriteBufferFromFileBase.h>
@@ -48,7 +47,6 @@ namespace
     const int CURRENT_BACKUP_VERSION = 1;
 
     using SizeAndChecksum = IBackup::SizeAndChecksum;
-    using FileInfo = IBackupCoordination::FileInfo;
 
     String hexChecksum(UInt128 checksum)
     {
@@ -294,7 +292,7 @@ void BackupImpl::writeBackupMetadata()
     *out << "<timestamp>" << toString(LocalDateTime{timestamp}) << "</timestamp>";
     *out << "<uuid>" << toString(*uuid) << "</uuid>";
 
-    auto all_file_infos = coordination->getAllFileInfos();
+    auto all_file_infos = coordination->getFileInfosForAllHosts();
 
     if (all_file_infos.empty())
         throw Exception(ErrorCodes::BACKUP_IS_EMPTY, "Backup must not be empty");
@@ -414,7 +412,7 @@ void BackupImpl::readBackupMetadata()
         if (child->nodeName() == "file")
         {
             const Poco::XML::Node * file_config = child;
-            FileInfo info;
+            BackupFileInfo info;
             info.file_name = getString(file_config, "name");
             info.size = getUInt64(file_config, "size");
             if (info.size)
@@ -648,7 +646,7 @@ std::unique_ptr<SeekableReadBuffer> BackupImpl::readFile(const SizeAndChecksum &
         return std::make_unique<ReadBufferFromMemory>(static_cast<char *>(nullptr), 0);
     }
 
-    FileInfo info;
+    BackupFileInfo info;
     {
         std::lock_guard lock{mutex};
         auto it = file_infos.find(size_and_checksum);
@@ -748,7 +746,7 @@ size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum, Dis
         return 0;
     }
 
-    FileInfo info;
+    BackupFileInfo info;
     {
         std::lock_guard lock{mutex};
         auto it = file_infos.find(size_and_checksum);
@@ -800,84 +798,7 @@ size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum, Dis
 }
 
 
-namespace
-{
-
-std::optional<SizeAndChecksum> getInfoAboutFileFromBaseBackupIfExists(std::shared_ptr<const IBackup> base_backup, const std::string & file_path)
-{
-    if (base_backup && base_backup->fileExists(file_path))
-        return std::pair{base_backup->getFileSize(file_path), base_backup->getFileChecksum(file_path)};
-
-    return std::nullopt;
-}
-
-enum class CheckBackupResult
-{
-    HasPrefix,
-    HasFull,
-    HasNothing,
-};
-
-CheckBackupResult checkBaseBackupForFile(const SizeAndChecksum & base_backup_info, const FileInfo & new_entry_info)
-{
-    /// We cannot reuse base backup because our file is smaller
-    /// than file stored in previous backup
-    if (new_entry_info.size < base_backup_info.first)
-        return CheckBackupResult::HasNothing;
-
-    if (base_backup_info.first == new_entry_info.size)
-        return CheckBackupResult::HasFull;
-
-    return CheckBackupResult::HasPrefix;
-
-}
-
-struct ChecksumsForNewEntry
-{
-    UInt128 full_checksum;
-    UInt128 prefix_checksum;
-};
-
-/// Calculate checksum for backup entry if it's empty.
-/// Also able to calculate additional checksum of some prefix.
-ChecksumsForNewEntry calculateNewEntryChecksumsIfNeeded(BackupEntryPtr entry, size_t prefix_size)
-{
-    if (prefix_size > 0)
-    {
-        auto read_buffer = entry->getReadBuffer();
-        HashingReadBuffer hashing_read_buffer(*read_buffer);
-        hashing_read_buffer.ignore(prefix_size);
-        auto prefix_checksum = hashing_read_buffer.getHash();
-        if (entry->getChecksum() == std::nullopt)
-        {
-            hashing_read_buffer.ignoreAll();
-            auto full_checksum = hashing_read_buffer.getHash();
-            return ChecksumsForNewEntry{full_checksum, prefix_checksum};
-        }
-        else
-        {
-            return ChecksumsForNewEntry{*(entry->getChecksum()), prefix_checksum};
-        }
-    }
-    else
-    {
-        if (entry->getChecksum() == std::nullopt)
-        {
-            auto read_buffer = entry->getReadBuffer();
-            HashingReadBuffer hashing_read_buffer(*read_buffer);
-            hashing_read_buffer.ignoreAll();
-            return ChecksumsForNewEntry{hashing_read_buffer.getHash(), 0};
-        }
-        else
-        {
-            return ChecksumsForNewEntry{*(entry->getChecksum()), 0};
-        }
-    }
-}
-
-}
-
-void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
+void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
 {
     if (open_mode != OpenMode::WRITE)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for writing");
@@ -888,18 +809,6 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
     std::string from_file_name = "memory buffer";
     if (auto fname = entry->getFilePath(); !fname.empty())
         from_file_name = "file " + fname;
-    LOG_TRACE(log, "Writing backup for file {} from {}", file_name, from_file_name);
-
-    auto adjusted_path = removeLeadingSlash(file_name);
-
-    FileInfo info
-    {
-        .file_name = adjusted_path,
-        .size = entry->getSize(),
-        .base_size = 0,
-        .base_checksum = 0,
-        .data_file_name = adjusted_path,
-    };
 
     {
         std::lock_guard lock{mutex};
@@ -907,92 +816,19 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
         total_size += info.size;
     }
 
-    std::optional<SizeAndChecksum> base_backup_file_info;
-    if (info.size && deduplicate_files)
+    if (info.data_file_name.empty())
     {
-        base_backup_file_info = getInfoAboutFileFromBaseBackupIfExists(base_backup, adjusted_path);
+        LOG_TRACE(log, "Writing backup for file {} from {}: skipped, {}", info.data_file_name, from_file_name, !info.size ? "empty" : "base backup has it");
+        return;
     }
 
-    /// We have info about this file in base backup
-    /// If file has no checksum -- calculate and fill it.
-    if (base_backup_file_info.has_value())
+    if (!coordination->startWritingFile(info.data_file_index))
     {
-        LOG_TRACE(log, "File {} found in base backup, checking for equality", adjusted_path);
-        CheckBackupResult check_base = checkBaseBackupForFile(*base_backup_file_info, info);
-
-        /// File with the same name but smaller size exist in previous backup
-        if (check_base == CheckBackupResult::HasPrefix)
-        {
-            auto checksums = calculateNewEntryChecksumsIfNeeded(entry, base_backup_file_info->first);
-            info.checksum = checksums.full_checksum;
-
-            /// We have prefix of this file in backup with the same checksum.
-            /// In ClickHouse this can happen for StorageLog for example.
-            if (checksums.prefix_checksum == base_backup_file_info->second)
-            {
-                LOG_TRACE(log, "File prefix of {} in base backup, will write rest part of file to current backup", adjusted_path);
-                info.base_size = base_backup_file_info->first;
-                info.base_checksum = base_backup_file_info->second;
-            }
-            else
-            {
-                LOG_TRACE(log, "Prefix checksum of file {} doesn't match with checksum in base backup", adjusted_path);
-            }
-        }
-        else
-        {
-            /// We have full file or have nothing, first of all let's get checksum
-            /// of current file
-            auto checksums = calculateNewEntryChecksumsIfNeeded(entry, 0);
-            info.checksum = checksums.full_checksum;
-
-            if (info.checksum == base_backup_file_info->second)
-            {
-                LOG_TRACE(log, "Found whole file {} in base backup", adjusted_path);
-                assert(check_base == CheckBackupResult::HasFull);
-                assert(info.size == base_backup_file_info->first);
-
-                info.base_size = base_backup_file_info->first;
-                info.base_checksum = base_backup_file_info->second;
-                /// Actually we can add this info to coordination and exist,
-                /// but we intentionally don't do it, otherwise control flow
-                /// of this function will be very complex.
-            }
-            else
-            {
-                LOG_TRACE(log, "Whole file {} in base backup doesn't match by checksum", adjusted_path);
-            }
-        }
-    }
-    else /// We don't have info about this file_name (sic!) in base backup,
-         /// however file could be renamed, so we will check one more time using size and checksum
-    {
-
-        LOG_TRACE(log, "Nothing found for file {} in base backup", adjusted_path);
-        auto checksums = calculateNewEntryChecksumsIfNeeded(entry, 0);
-        info.checksum = checksums.full_checksum;
+        LOG_TRACE(log, "Writing backup for file {} from {}: skipped, data file #{} is already being written", info.data_file_name, from_file_name, info.data_file_index);
+        return;
     }
 
-    /// On the previous lines we checked that backup for file with adjusted_name exist in previous backup.
-    /// However file can be renamed, but has the same size and checksums, let's check for this case.
-    if (base_backup && base_backup->fileExists(std::pair{info.size, info.checksum}))
-    {
-        LOG_TRACE(log, "Found a file with the same size and checksum as {} in the base backup", adjusted_path);
-        info.base_size = info.size;
-        info.base_checksum = info.checksum;
-    }
-
-    /// All "short paths" failed. We don't have this file in previous or existing backup
-    /// or have only prefix of it in previous backup. Let's go long path.
-
-    bool is_data_file_required;
-    coordination->addFileInfo(info, is_data_file_required);
-
-    if (!is_data_file_required)
-    {
-        LOG_TRACE(log, "File {} doesn't exist in current backup, but we have file with same size and checksum", adjusted_path);
-        return; /// We copy data only if it's a new combination of size & checksum.
-    }
+    LOG_TRACE(log, "Writing backup for file {} from {}: data file #{}", info.data_file_name, from_file_name, info.data_file_index);
 
     auto writer_description = writer->getDataSourceDescription();
     auto reader_description = entry->getDataSourceDescription();
@@ -1002,7 +838,7 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
     if (!use_archive && writer->supportNativeCopy(reader_description))
     {
         /// Should be much faster than writing data through server.
-        LOG_TRACE(log, "Will copy file {} using native copy", adjusted_path);
+        LOG_TRACE(log, "Will copy file {} using native copy", info.data_file_name);
 
         /// NOTE: `mutex` must be unlocked here otherwise writing will be in one thread maximum and hence slow.
 
@@ -1010,8 +846,6 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
     }
     else
     {
-        LOG_TRACE(log, "Will copy file {}", adjusted_path);
-
         bool has_entries = false;
         {
             std::lock_guard lock{mutex};
@@ -1022,7 +856,7 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
 
         if (use_archive)
         {
-            LOG_TRACE(log, "Adding file {} to archive", adjusted_path);
+            LOG_TRACE(log, "Adding file {} to archive", info.data_file_name);
             auto out = archive_writer->writeFile(info.data_file_name);
             auto read_buffer = entry->getReadBuffer();
             if (info.base_size != 0)
@@ -1032,6 +866,7 @@ void BackupImpl::writeFile(const String & file_name, BackupEntryPtr entry)
         }
         else
         {
+            LOG_TRACE(log, "Will copy file {}", info.data_file_name);
             auto create_read_buffer = [entry] { return entry->getReadBuffer(); };
 
             /// NOTE: `mutex` must be unlocked here otherwise writing will be in one thread maximum and hence slow.
@@ -1097,7 +932,7 @@ void BackupImpl::removeAllFilesAfterFailure()
         else
         {
             files_to_remove.push_back(".backup");
-            for (const auto & file_info : coordination->getAllFileInfos())
+            for (const auto & file_info : coordination->getFileInfosForAllHosts())
                 files_to_remove.push_back(file_info.data_file_name);
         }
 
