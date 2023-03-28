@@ -67,7 +67,7 @@ SELECT
     x;
 
 -- invalid escape sequence, should be discarded
--- expected output: {'valid_key':'valid_value'}
+-- expected output: {'key':'invalid_val','valid_key':'valid_value'}
 WITH
     extractKeyValuePairs('valid_key:valid_value key:invalid_val\\') AS s_map,
     CAST(
