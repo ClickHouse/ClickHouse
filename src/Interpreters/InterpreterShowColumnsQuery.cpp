@@ -53,11 +53,11 @@ String InterpreterShowColumnsQuery::getRewrittenQuery()
     {
         /// FROM <db>.<table> (abbreviated form)
         chassert(query.from_database.empty());
-        std::vector<String> splitted;
-        boost::split(splitted, query.from_table, boost::is_any_of("."));
-        chassert(splitted.size() == 2);
-        database = splitted[0];
-        table = splitted[1];
+        std::vector<String> split;
+        boost::split(split, query.from_table, boost::is_any_of("."));
+        chassert(split.size() == 2);
+        database = split[0];
+        table = split[1];
     }
     else if (query.from_database.empty())
     {
