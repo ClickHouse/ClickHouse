@@ -6,7 +6,7 @@
 namespace DB
 {
 
-class StorageSystemMarkedDroppedTables final : public IStorageSystemOneBlock<StorageSystemMarkedDroppedTables>
+class StorageSystemDroppedTables final : public IStorageSystemOneBlock<StorageSystemDroppedTables>
 {
 public:
     std::string getName() const override { return "SystemMarkedDroppedTables"; }
