@@ -213,15 +213,12 @@ struct FormatSettings
         std::unordered_set<int> skip_row_groups = {};
         bool output_string_as_string = false;
         bool output_fixed_string_as_fixed_byte_array = true;
-        // TODO: This should probably be shared among all formats, and interact with
+        // TODO: This should probably be shared among all formats and with
         //       https://github.com/ClickHouse/ClickHouse/issues/38755
         bool preserve_order = false;
         UInt64 max_block_size = 8192;
         ParquetVersion output_version;
         ParquetCompression output_compression_method = ParquetCompression::SNAPPY;
-        // Limit on read size, but not on memory usage; many reads can be buffered at once.
-        // TODO: Remove and use max_download_buffer_size instead.
-        size_t max_bytes_to_read_at_once = 128 * 1024 * 1024;
     } parquet;
 
     struct Pretty

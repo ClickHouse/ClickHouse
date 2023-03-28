@@ -57,7 +57,8 @@ public:
         bool use_external_buffer = false,
         size_t offset_ = 0,
         size_t read_until_position_ = 0,
-        bool restricted_seek_ = false);
+        bool restricted_seek_ = false,
+        std::optional<size_t> file_size = std::nullopt);
 
     bool nextImpl() override;
 
@@ -110,10 +111,7 @@ public:
         , read_settings(read_settings_)
         , object_size(object_size_)
         , request_settings(request_settings_)
-    {
-        assert(range_step > 0);
-        assert(range_step < object_size);
-    }
+    {}
 
     std::unique_ptr<SeekableReadBuffer> getReader() override;
 

@@ -5,6 +5,7 @@
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
+#include <IO/IOThreadPool.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
@@ -113,6 +114,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.parquet.output_version = settings.output_format_parquet_version;
     format_settings.parquet.import_nested = settings.input_format_parquet_import_nested;
     format_settings.parquet.case_insensitive_column_matching = settings.input_format_parquet_case_insensitive_column_matching;
+    format_settings.parquet.preserve_order = settings.input_format_parquet_preserve_order;
     format_settings.parquet.allow_missing_columns = settings.input_format_parquet_allow_missing_columns;
     format_settings.parquet.skip_columns_with_unsupported_types_in_schema_inference = settings.input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference;
     format_settings.parquet.output_string_as_string = settings.output_format_parquet_string_as_string;
@@ -233,13 +235,12 @@ InputFormatPtr FormatFactory::getInput(
         max_block_size,
         /* is_remote_fs */ false,
         CompressionMethod::None,
-        /* io_schedule */ nullptr,
         format_settings,
         /* max_download_threads */ 1,
         max_parsing_threads);
 }
 
-InputFormatPtr FormatFactory::getInputMultistream(
+InputFormatPtr FormatFactory::getInputRandomAccess(
     const String & name,
     SeekableReadBufferFactoryPtr buf_factory,
     const Block & sample,
@@ -247,7 +248,6 @@ InputFormatPtr FormatFactory::getInputMultistream(
     UInt64 max_block_size,
     bool is_remote_fs,
     CompressionMethod compression,
-    ThreadPoolCallbackRunner<void> io_schedule,
     const std::optional<FormatSettings> & format_settings,
     std::optional<size_t> max_download_threads,
     std::optional<size_t> max_parsing_threads) const
@@ -261,7 +261,6 @@ InputFormatPtr FormatFactory::getInputMultistream(
         max_block_size,
         is_remote_fs,
         compression,
-        io_schedule,
         format_settings,
         max_download_threads,
         max_parsing_threads);
@@ -277,64 +276,19 @@ InputFormatPtr FormatFactory::getInputImpl(
     UInt64 max_block_size,
     bool is_remote_fs,
     CompressionMethod compression,
-    ThreadPoolCallbackRunner<void> io_schedule,
     const std::optional<FormatSettings> & _format_settings,
     std::optional<size_t> _max_download_threads,
     std::optional<size_t> _max_parsing_threads) const
 {
     chassert((!_buf) != (!buf_factory));
-    auto& creators = getCreators(name);
-    if (!creators.input_creator)
+    const auto& creators = getCreators(name);
+    if (!creators.input_creator && !creators.random_access_input_creator)
         throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT, "Format {} is not suitable for input", name);
 
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
     const Settings & settings = context->getSettingsRef();
-    const auto & file_segmentation_engine = creators.file_segmentation_engine;
     size_t max_parsing_threads = _max_parsing_threads.value_or(settings.max_threads);
     size_t max_download_threads = _max_download_threads.value_or(settings.max_download_threads);
-    std::unique_ptr<ReadBuffer> owned_buf;
-
-    if (context->hasQueryContext() && settings.log_queries)
-        context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Format, name);
-
-    // Prepare a read buffer.
-
-    bool parallel_read = max_download_threads > 1 && buf_factory && format_settings.seekable_read
-        && (!creators.multistream_input_creator || compression != CompressionMethod::None);
-    if (parallel_read)
-        owned_buf = std::make_unique<ParallelReadBuffer>(
-            std::move(buf_factory),
-            std::move(io_schedule),
-            max_download_threads,
-            settings.max_download_buffer_size);
-
-    if (compression != CompressionMethod::None)
-    {
-        chassert(buf_factory);
-        if (!owned_buf)
-            owned_buf = buf_factory->getReader();
-        owned_buf = wrapReadBufferWithCompressionMethod(std::move(owned_buf), compression, static_cast<int>(settings.zstd_window_log_max));
-    }
-
-    if (!creators.multistream_input_creator && buf_factory && !owned_buf)
-        owned_buf = buf_factory->getReader();
-
-    auto buf = owned_buf ? owned_buf.get() : _buf;
-
-    // Return parallel parser if needed.
-
-    bool parallel_parsing = max_parsing_threads > 1 && settings.input_format_parallel_parsing && creators.file_segmentation_engine;
-    if (settings.max_memory_usage && settings.min_chunk_bytes_for_parallel_parsing * max_parsing_threads * 2 > settings.max_memory_usage)
-        parallel_parsing = false;
-    if (settings.max_memory_usage_for_user && settings.min_chunk_bytes_for_parallel_parsing * max_parsing_threads * 2 > settings.max_memory_usage_for_user)
-        parallel_parsing = false;
-    if (parallel_parsing)
-    {
-        const auto & non_trivial_prefix_and_suffix_checker = getCreators(name).non_trivial_prefix_and_suffix_checker;
-        /// Disable parallel parsing for input formats with non-trivial readPrefix() and readSuffix().
-        if (non_trivial_prefix_and_suffix_checker && non_trivial_prefix_and_suffix_checker(*buf))
-            parallel_parsing = false;
-    }
 
     RowInputFormatParams row_input_format_params;
     row_input_format_params.max_block_size = max_block_size;
@@ -342,6 +296,37 @@ InputFormatPtr FormatFactory::getInputImpl(
     row_input_format_params.allow_errors_ratio = format_settings.input_allow_errors_ratio;
     row_input_format_params.max_execution_time = settings.max_execution_time;
     row_input_format_params.timeout_overflow_mode = settings.timeout_overflow_mode;
+
+    if (context->hasQueryContext() && settings.log_queries)
+        context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Format, name);
+
+    // Prepare a read buffer.
+
+    std::unique_ptr<ReadBuffer> owned_buf;
+    if (buf_factory)
+        owned_buf = prepareReadBuffer(buf_factory, compression, creators, format_settings, settings, max_download_threads);
+    auto * buf = owned_buf ? owned_buf.get() : _buf;
+
+    // Decide whether to use parallel ParallelParsingInputFormat.
+
+    bool parallel_parsing = max_parsing_threads > 1 && settings.input_format_parallel_parsing && creators.file_segmentation_engine && !creators.random_access_input_creator;
+
+    if (settings.max_memory_usage && settings.min_chunk_bytes_for_parallel_parsing * max_parsing_threads * 2 > settings.max_memory_usage)
+        parallel_parsing = false;
+    if (settings.max_memory_usage_for_user && settings.min_chunk_bytes_for_parallel_parsing * max_parsing_threads * 2 > settings.max_memory_usage_for_user)
+        parallel_parsing = false;
+
+    if (parallel_parsing)
+    {
+        const auto & non_trivial_prefix_and_suffix_checker = creators.non_trivial_prefix_and_suffix_checker;
+        /// Disable parallel parsing for input formats with non-trivial readPrefix() and readSuffix().
+        if (non_trivial_prefix_and_suffix_checker && non_trivial_prefix_and_suffix_checker(*buf))
+            parallel_parsing = false;
+    }
+
+    // Create the InputFormat in one of 3 ways.
+
+    InputFormatPtr format;
 
     if (parallel_parsing)
     {
@@ -353,45 +338,27 @@ InputFormatPtr FormatFactory::getInputImpl(
             { return input_getter(input, sample, row_input_format_params, format_settings); };
 
         ParallelParsingInputFormat::Params params{
-            *buf, sample, parser_creator, file_segmentation_engine, name, max_parsing_threads,
+            *buf, sample, parser_creator, creators.file_segmentation_engine, name, max_parsing_threads,
             settings.min_chunk_bytes_for_parallel_parsing, max_block_size, context->getApplicationType() == Context::ApplicationType::SERVER};
 
-        auto format = std::make_shared<ParallelParsingInputFormat>(params);
-
-        if (owned_buf)
-            format->addBuffer(std::move(owned_buf));
-        if (!settings.input_format_record_errors_file_path.toString().empty())
-            format->setErrorsLogger(std::make_shared<ParallelInputFormatErrorsLogger>(context));
-
-        return format;
+        format = std::make_shared<ParallelParsingInputFormat>(params);
     }
-
-    // Return multistream parser if needed.
-
-    if (creators.multistream_input_creator && !buf)
+    else if (creators.random_access_input_creator)
     {
-        auto format = creators.multistream_input_creator(
+        format = creators.random_access_input_creator(
+            buf,
             std::move(buf_factory),
             sample,
             format_settings,
             context->getReadSettings(),
             is_remote_fs,
-            io_schedule,
             max_download_threads,
             max_parsing_threads);
-
-        if (!settings.input_format_record_errors_file_path.toString().empty())
-            format->setErrorsLogger(std::make_shared<ParallelInputFormatErrorsLogger>(context));
-
-        return format;
     }
-
-    // TODO: What about the case `creators.multistream_input_creator && buf`? Currently it'll be parsed in one thread. Lame. Need to change the interface to allow making it parallel.
-    //       Maybe the read parallelization should be taken out of the format and into a new interface RangeSetReader (or whatever), which would support both a single buffer and a factory. The logic from asArrowFile() would move there. Check if this works for ORC and Arrow formats.
-
-    // Basic parser from one ReadBuffer.
-
-    auto format = creators.input_creator(*buf, sample, row_input_format_params, format_settings);
+    else
+    {
+        format = creators.input_creator(*buf, sample, row_input_format_params, format_settings);
+    }
 
     if (owned_buf)
         format->addBuffer(std::move(owned_buf));
@@ -399,11 +366,71 @@ InputFormatPtr FormatFactory::getInputImpl(
         format->setErrorsLogger(std::make_shared<ParallelInputFormatErrorsLogger>(context));
 
     /// It's a kludge. Because I cannot remove context from values format.
-    /// (This is not needed in the parallel_parsing and multistream cases above because VALUES format doesn't support them.)
+    /// (Not needed in the parallel_parsing case above because VALUES format doesn't support it.)
     if (auto * values = typeid_cast<ValuesBlockInputFormat *>(format.get()))
         values->setContext(context);
 
     return format;
+}
+
+std::unique_ptr<ReadBuffer> FormatFactory::prepareReadBuffer(
+    SeekableReadBufferFactoryPtr & buf_factory,
+    CompressionMethod compression,
+    const Creators & creators,
+    const FormatSettings & format_settings,
+    const Settings & settings,
+    size_t max_download_threads) const
+{
+    std::unique_ptr<ReadBuffer> res;
+
+    bool parallel_read = max_download_threads > 1 && buf_factory && format_settings.seekable_read;
+    if (creators.random_access_input_creator)
+        parallel_read &= compression != CompressionMethod::None;
+
+    if (parallel_read)
+    {
+        try
+        {
+            parallel_read = buf_factory->checkIfActuallySeekable()
+                         && buf_factory->getFileSize() >= 2 * settings.max_download_buffer_size;
+        }
+        catch (const Poco::Exception & e)
+        {
+            parallel_read = false;
+            LOG_TRACE(
+                &Poco::Logger::get("FormatFactory"),
+                "Failed to setup ParallelReadBuffer because of an exception:\n{}.\n"
+                "Falling back to the single-threaded buffer",
+                e.displayText());
+        }
+    }
+
+    if (parallel_read)
+    {
+        LOG_TRACE(
+            &Poco::Logger::get("FormatFactory"),
+            "Using ParallelReadBuffer with {} workers with chunks of {} bytes",
+            max_download_threads,
+            settings.max_download_buffer_size);
+
+        res = std::make_unique<ParallelReadBuffer>(
+            std::move(buf_factory),
+            threadPoolCallbackRunner<void>(IOThreadPool::get(), "ParallelRead"),
+            max_download_threads,
+            settings.max_download_buffer_size);
+    }
+
+    if (compression != CompressionMethod::None)
+    {
+        if (!res)
+            res = buf_factory->getReader(); // NOLINT
+        res = wrapReadBufferWithCompressionMethod(std::move(res), compression, static_cast<int>(settings.zstd_window_log_max));
+    }
+
+    if (!creators.random_access_input_creator && !res)
+        res = buf_factory->getReader();
+
+    return res;
 }
 
 static void addExistingProgressToOutputFormat(OutputFormatPtr format, ContextPtr context)
@@ -540,14 +567,24 @@ ExternalSchemaReaderPtr FormatFactory::getExternalSchemaReader(
     return external_schema_reader_creator(format_settings);
 }
 
-void FormatFactory::registerInputFormat(const String & name, InputCreator input_creator, MultistreamInputCreator multistream_input_creator)
+void FormatFactory::registerInputFormat(const String & name, InputCreator input_creator)
 {
     chassert(input_creator);
     auto & creators = dict[name];
-    if (creators.input_creator)
+    if (creators.input_creator || creators.random_access_input_creator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Input format {} is already registered", name);
     creators.input_creator = std::move(input_creator);
-    creators.multistream_input_creator = std::move(multistream_input_creator);
+    registerFileExtension(name, name);
+    KnownFormatNames::instance().add(name);
+}
+
+void FormatFactory::registerRandomAccessInputFormat(const String & name, RandomAccessInputCreator input_creator)
+{
+    chassert(input_creator);
+    auto & creators = dict[name];
+    if (creators.input_creator || creators.random_access_input_creator)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Input format {} is already registered", name);
+    creators.random_access_input_creator = std::move(input_creator);
     registerFileExtension(name, name);
     KnownFormatNames::instance().add(name);
 }
@@ -731,7 +768,7 @@ String FormatFactory::getAdditionalInfoForSchemaCache(const String & name, Conte
 bool FormatFactory::isInputFormat(const String & name) const
 {
     auto it = dict.find(name);
-    return it != dict.end() && it->second.input_creator;
+    return it != dict.end() && (it->second.input_creator || it->second.random_access_input_creator);
 }
 
 bool FormatFactory::isOutputFormat(const String & name) const

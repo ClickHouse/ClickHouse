@@ -1143,9 +1143,16 @@ void CachedOnDiskReadBufferFromFile::setReadUntilPosition(size_t position)
     if (!allow_seeks_after_first_read)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Method `setReadUntilPosition()` not allowed");
 
-    read_until_position = position;
-    initialized = false;
+    if (read_until_position == position)
+        return;
+
+    file_offset_of_buffer_end = getPosition();
+    resetWorkingBuffer();
+    file_segments_holder.reset();
     implementation_buffer.reset();
+    initialized = false;
+
+    read_until_position = position;
 }
 
 void CachedOnDiskReadBufferFromFile::setReadUntilEnd()
