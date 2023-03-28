@@ -2,8 +2,10 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <Functions/IFunction.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+
+#include <Functions/IFunction.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/TransformDateTime64.h>
@@ -59,6 +61,9 @@ public:
                 return is_not_monotonic;
 
             const auto * type_ptr = &type;
+
+            if (const auto * lc_type = checkAndGetDataType<DataTypeLowCardinality>(type_ptr))
+                type_ptr = lc_type->getDictionaryType().get();
 
             if (const auto * nullable_type = checkAndGetDataType<DataTypeNullable>(type_ptr))
                 type_ptr = nullable_type->getNestedType().get();

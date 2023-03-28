@@ -19,7 +19,6 @@ MINIO_INTERNAL_PORT = 9001
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
-
 def put_s3_file_content(started_cluster, bucket, filename, data):
     buf = io.BytesIO(data)
     started_cluster.minio_client.put_object(bucket, filename, buf, len(data))

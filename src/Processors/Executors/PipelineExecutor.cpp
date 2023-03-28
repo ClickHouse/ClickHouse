@@ -74,6 +74,15 @@ void PipelineExecutor::cancel()
     graph->cancel();
 }
 
+void PipelineExecutor::cancelReading()
+{
+    if (!cancelled_reading)
+    {
+        cancelled_reading = true;
+        graph->cancel(/*cancel_all_processors*/ false);
+    }
+}
+
 void PipelineExecutor::finish()
 {
     tasks.finish();
@@ -148,6 +157,7 @@ bool PipelineExecutor::checkTimeLimitSoft()
         // so that the "break" is faster and doesn't wait for long events
         if (!continuing)
             cancel();
+
         return continuing;
     }
 
@@ -308,12 +318,12 @@ void PipelineExecutor::spawnThreads()
 
             SCOPE_EXIT_SAFE(
                 if (thread_group)
-                    CurrentThread::detachQueryIfNotDetached();
+                    CurrentThread::detachFromGroupIfNotDetached();
             );
             setThreadName("QueryPipelineEx");
 
             if (thread_group)
-                CurrentThread::attachTo(thread_group);
+                CurrentThread::attachToGroup(thread_group);
 
             try
             {
