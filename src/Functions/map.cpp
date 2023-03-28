@@ -663,6 +663,12 @@ public:
 
         auto result_keys = keys_data_left.cloneEmpty();
         auto result_values = values_data_left.cloneEmpty();
+
+        size_t size_to_reserve = keys_data_right.size() + (keys_data_left.size() - keys_data_right.size());
+
+        result_keys->reserve(size_to_reserve);
+        result_values->reserve(size_to_reserve);
+
         auto result_offsets = ColumnVector<IColumn::Offset>::create(input_rows_count);
         auto & result_offsets_data = result_offsets->getData();
 
