@@ -53,7 +53,7 @@ SELECT '---';
 
 -- Create a table in a different database. Intentionally useing the same table/column names as above so
 -- we notice if something is buggy in the implementation of SHOW COLUMNS.
-DROP DATABASE database_123456789abcde;
+DROP DATABASE IF EXISTS database_123456789abcde;
 CREATE DATABASE database_123456789abcde; -- pseudo-random database name
 
 CREATE OR REPLACE TABLE database_123456789abcde.tab
@@ -75,6 +75,6 @@ SELECT '---';
 
 SHOW COLUMNS FROM database_123456789abcde.tab;
 
-DROP DATABASE database_123456789abc;
+DROP DATABASE database_123456789abcde;
 
 DROP TABLE tab;
