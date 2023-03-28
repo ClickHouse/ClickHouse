@@ -950,7 +950,7 @@ RabbitMQConsumerPtr StorageRabbitMQ::createConsumer()
         unique_strbase, log, queue_size, shutdown_called);
 }
 
-bool StorageRabbitMQ::checkDependencies(const StorageID & table_id)
+bool StorageRabbitMQ::hasDependencies(const StorageID & table_id)
 {
     // Check if all dependencies are attached
     auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
@@ -1010,12 +1010,12 @@ void StorageRabbitMQ::streamingToViewsFunc()
                 // Keep streaming as long as there are attached views and streaming is not cancelled
                 while (!shutdown_called && num_created_consumers > 0)
                 {
-                    if (!checkDependencies(table_id))
+                    if (!hasDependencies(table_id))
                         break;
 
                     LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
 
-                    bool continue_reading = !streamToViews();
+                    bool continue_reading = tryStreamToViews();
                     if (!continue_reading)
                         break;
 
@@ -1055,7 +1055,7 @@ void StorageRabbitMQ::streamingToViewsFunc()
 }
 
 
-bool StorageRabbitMQ::streamToViews()
+bool StorageRabbitMQ::tryStreamToViews()
 {
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
@@ -1113,17 +1113,17 @@ bool StorageRabbitMQ::streamToViews()
     deactivateTask(looping_task, false, true);
     size_t queue_empty = 0;
 
-    if (!checkDependencies(getStorageID()))
+    if (!hasDependencies(getStorageID()))
     {
         /// Do not commit to rabbitmq if the dependency was removed.
         LOG_TRACE(log, "No dependencies, reschedule");
-        return true;
+        return false;
     }
 
     if (!connection->isConnected())
     {
         if (shutdown_called)
-            return true;
+            return false;
 
         if (connection->reconnect())
         {
@@ -1134,7 +1134,7 @@ bool StorageRabbitMQ::streamToViews()
         else
         {
             LOG_TRACE(log, "Reschedule streaming. Unable to restore connection.");
-            return true;
+            return false;
         }
     }
     else
@@ -1180,7 +1180,7 @@ bool StorageRabbitMQ::streamToViews()
         connection->heartbeat();
         read_attempts = 0;
         LOG_TRACE(log, "Reschedule streaming. Queues are empty.");
-        return true;
+        return false;
     }
     else
     {
@@ -1188,7 +1188,7 @@ bool StorageRabbitMQ::streamToViews()
     }
 
     /// Do not reschedule, do not stop event loop.
-    return false;
+    return true;
 }
 
 
