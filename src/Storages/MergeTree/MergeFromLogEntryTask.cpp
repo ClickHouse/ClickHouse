@@ -260,11 +260,15 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 
     auto table_id = storage.getStorageID();
 
+    fake_query_context = Context::createCopy(storage.getContext());
+    fake_query_context->makeQueryContext();
+    fake_query_context->setCurrentQueryId("");
+
     /// Add merge to list
     merge_mutate_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
         future_merged_part,
-        storage.getContext());
+        fake_query_context);
 
     transaction_ptr = std::make_unique<MergeTreeData::Transaction>(storage, NO_TRANSACTION_RAW);
     stopwatch_ptr = std::make_unique<Stopwatch>();

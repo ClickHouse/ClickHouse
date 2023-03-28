@@ -39,11 +39,9 @@ MergeListElement::MergeListElement(
     , result_part_path{future_part->path}
     , result_part_info{future_part->part_info}
     , num_parts{future_part->parts.size()}
-    , query_id(table_id.getShortName() + "::" + result_part_name)
     , thread_id{getThreadId()}
     , merge_type{future_part->merge_type}
     , merge_algorithm{MergeAlgorithm::Undecided}
-    , description{"to apply mutate/merge in " + query_id}
 {
     for (const auto & source_part : future_part->parts)
     {
@@ -61,7 +59,7 @@ MergeListElement::MergeListElement(
         is_mutation = (result_part_info.getDataVersion() != source_data_version);
     }
 
-    thread_group = ThreadGroupStatus::createForBackgroundProcess(context, description.c_str());
+    thread_group = ThreadGroupStatus::createForBackgroundProcess(context);
 }
 
 MergeInfo MergeListElement::getInfo() const

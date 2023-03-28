@@ -62,6 +62,7 @@ protected:
     StorageReplicatedMergeTree & storage;
     /// ProfileEvents for current part will be stored here
     ProfileEvents::Counters profile_counters;
+    ContextMutablePtr fake_query_context;
 
 private:
     enum class CheckExistingPartResult
