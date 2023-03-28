@@ -218,7 +218,7 @@
 	url = https://github.com/ClickHouse/libpqxx
 [submodule "contrib/sqlite-amalgamation"]
 	path = contrib/sqlite-amalgamation
-	url = https://github.com/ClickHouse/sqlite-amalgamation
+	url = https://github.com/evillique/sqlite-amalgamation
 [submodule "contrib/s2geometry"]
 	path = contrib/s2geometry
 	url = https://github.com/ClickHouse/s2geometry
