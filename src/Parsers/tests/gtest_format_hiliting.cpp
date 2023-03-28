@@ -56,7 +56,7 @@ std::vector<const char *> HILITES =
         DB::IAST::hilite_none
     };
 
-[[maybe_unused]] const char * consume_hilites(const char ** it)
+[[maybe_unused]] const char * consume_hilites(const char ** ptr_ptr)
 {
     const char * last_hilite = nullptr;
     while (true)
@@ -64,9 +64,9 @@ std::vector<const char *> HILITES =
         bool changed_hilite = false;
         for (const char * hilite : HILITES)
         {
-            if (std::string_view(*it).starts_with(hilite))
+            if (std::string_view(*ptr_ptr).starts_with(hilite))
             {
-                *it += strlen(hilite);
+                *ptr_ptr += strlen(hilite);
                 changed_hilite = true;
                 last_hilite = hilite;
             }
@@ -79,14 +79,14 @@ std::vector<const char *> HILITES =
 
 String remove_hilites(std::string_view string)
 {
-    const char * it = string.begin();
+    const char * ptr = string.begin();
     std::stringstream ss;
     while (true)
     {
-        consume_hilites(&it);
-        if (it == string.end())
+        consume_hilites(&ptr);
+        if (ptr == string.end())
             return ss.str();
-        ss << *(it++);
+        ss << *(ptr++);
     }
 }
 
@@ -159,10 +159,10 @@ TEST(FormatHiliting, MetaTestConsumeHilites)
        << IAST::hilite_function
        << "test" << IAST::hilite_keyword;
     String string = ss.str();
-    const char * it = string.c_str();
-    const char * expected_it = strchr(it, 't');
-    const char * last_hilite = consume_hilites(&it);
-    ASSERT_EQ(expected_it, it);
+    const char * ptr = string.c_str();
+    const char * expected_ptr = strchr(ptr, 't');
+    const char * last_hilite = consume_hilites(&ptr);
+    ASSERT_EQ(expected_ptr, ptr);
     ASSERT_TRUE(last_hilite != nullptr);
     ASSERT_EQ(IAST::hilite_function, last_hilite);
 }
@@ -286,7 +286,7 @@ TEST(FormatHiliting, ASTDictionaryAttributeDeclaration)
     compare(query, expected);
 }
 
-TEST(FormatHiliting, ASTDictionary_Source)
+TEST(FormatHiliting, ASTDictionaryClassSourceKeyword)
 {
     String query = "CREATE DICTIONARY name (`Name` ClickHouseDataType DEFAULT '' EXPRESSION rand64() IS_OBJECT_ID) "
                         "SOURCE(FILE(PATH 'path'))";
