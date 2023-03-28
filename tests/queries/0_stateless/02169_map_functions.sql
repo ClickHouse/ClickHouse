@@ -15,6 +15,11 @@ SELECT mapApply((x, y) -> (x, x + 1), materialize(map(1, 0, 2, 0)));
 SELECT mapApply((x, y) -> ('x', 'y'), map(1, 0, 2, 0));
 SELECT mapApply((x, y) -> ('x', 'y'), materialize(map(1, 0, 2, 0)));
 
+SELECT mapUpdate(map('k1', 1, 'k2', 2), map('k1', 11, 'k2', 22));
+SELECT mapUpdate(materialize(map('k1', 1, 'k2', 2)), map('k1', 11, 'k2', 22));
+SELECT mapUpdate(map('k1', 1, 'k2', 2), materialize(map('k1', 11, 'k2', 22)));
+SELECT mapUpdate(materialize(map('k1', 1, 'k2', 2)), materialize(map('k1', 11, 'k2', 22)));
+
 SELECT mapApply(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT mapApply((x, y) -> (x), map(1, 0, 2, 0)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT mapApply((x, y) -> ('x'), map(1, 0, 2, 0)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
