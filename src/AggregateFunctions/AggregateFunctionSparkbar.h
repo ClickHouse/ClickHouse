@@ -43,7 +43,16 @@ struct AggregateFunctionSparkbarData
 
         auto [it, inserted] = points.insert({x, y});
         if (!inserted)
-            it->getMapped() += y;
+        {
+            if (std::numeric_limits<Y>::max() - it->getMapped() > y)
+            {
+                it->getMapped() += y;
+            }
+            else
+            {
+                it->getMapped() = std::numeric_limits<Y>::max();
+            }
+        }
         return it->getMapped();
     }
 
@@ -117,6 +126,7 @@ class AggregateFunctionSparkbar final
 {
 
 private:
+    static constexpr size_t BAR_LEVELS = 8;
     const size_t width = 0;
 
     /// Range for x specified in parameters.
@@ -126,8 +136,8 @@ private:
 
     size_t updateFrame(ColumnString::Chars & frame, Y value) const
     {
-        static constexpr std::array<std::string_view, 9> bars{" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"};
-        const auto & bar = (isNaN(value) || value < 1 || 8 < value) ? bars[0] : bars[static_cast<UInt8>(value)];
+        static constexpr std::array<std::string_view, BAR_LEVELS + 1> bars{" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"};
+        const auto & bar = (isNaN(value) || value < 1 || static_cast<Y>(BAR_LEVELS) < value) ? bars[0] : bars[static_cast<UInt8>(value)];
         frame.insert(bar.begin(), bar.end());
         return bar.size();
     }
@@ -211,10 +221,22 @@ private:
 
         for (auto & y : histogram)
         {
+            constexpr auto bucket_num = static_cast<Y>(BAR_LEVELS - 1);
+
             if (isNaN(y) || y <= 0)
+            {
                 y = 0;
+                continue;
+            }
+
+            /// handle potential overflow
+            if (y_max > bucket_num && y >= std::numeric_limits<Y>::max() / bucket_num)
+                y = y / (y_max / bucket_num);
             else
-                y = y * 7 / y_max + 1;
+                y = y * bucket_num / y_max;
+
+            if (y < std::numeric_limits<Y>::max())
+                y += 1;
         }
 
         size_t sz = 0;
