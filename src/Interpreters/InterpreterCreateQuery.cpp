@@ -1107,7 +1107,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
         /// For short syntax of ATTACH query we have to lock table name here, before reading metadata
         /// and hold it until table is attached
-        if (!getContext()->isInDDLGuard())
+        if (likely(need_ddl_guard))
             ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.getTable());
 
         bool if_not_exists = create.if_not_exists;
@@ -1313,7 +1313,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         return true;
     }
 
-    if (!ddl_guard && !getContext()->isInDDLGuard())
+    if (!ddl_guard && likely(need_ddl_guard))
         ddl_guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable());
 
     String data_path;

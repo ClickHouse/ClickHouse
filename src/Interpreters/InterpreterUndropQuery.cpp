@@ -57,9 +57,11 @@ BlockIO InterpreterUndropQuery::executeToTable(ASTUndropQuery & query)
     auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name);
 
     auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
+    if (database->getEngineName() == "Replicated")
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Replicated database does not support UNDROP query");
     if (database->isTableExist(table_id.table_name, getContext()))
         throw Exception(
-            ErrorCodes::TABLE_ALREADY_EXISTS, "Cannot Undrop table, {} already exists", table_id);
+            ErrorCodes::TABLE_ALREADY_EXISTS, "Cannot undrop table, {} already exists", table_id);
 
     database->checkMetadataFilenameAvailability(table_id.table_name);
 

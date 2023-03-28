@@ -993,48 +993,30 @@ void DatabaseCatalog::dequeueDroppedTableCleanup(StorageID table_id)
         CurrentMetrics::sub(CurrentMetrics::TablesToDropQueueSize, 1);
     }
 
-    LOG_INFO(log, "Trying Undrop table {} from {}", dropped_table.table_id.getNameForLogs(), latest_metadata_dropped_path);
+    LOG_INFO(log, "Attaching undropped table {} (metadata moved from {})",
+             dropped_table.table_id.getNameForLogs(), latest_metadata_dropped_path);
 
-    try
-    {
-        auto wait_dropped_table_not_in_use = [&]()
-        {
-            while (true)
-            {
-                {
-                    std::lock_guard lock(tables_marked_dropped_mutex);
-                    if (dropped_table.table.unique())
-                        return;
-                }
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            }
-        };
-        wait_dropped_table_not_in_use();
+    /// It's unsafe to create another instance while the old one exists
+    /// We cannot wait on shared_ptr's refcount, so it's busy wait
+    while (!dropped_table.table.unique())
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    dropped_table.table.reset();
 
-        auto ast_attach = std::make_shared<ASTCreateQuery>();
-        ast_attach->attach = true;
-        ast_attach->setDatabase(dropped_table.table_id.database_name);
-        ast_attach->setTable(dropped_table.table_id.table_name);
+    auto ast_attach = std::make_shared<ASTCreateQuery>();
+    ast_attach->attach = true;
+    ast_attach->setDatabase(dropped_table.table_id.database_name);
+    ast_attach->setTable(dropped_table.table_id.table_name);
 
-        auto query_context = Context::createCopy(getContext());
-        /// Attach table needs to acquire ddl guard, that has already been acquired in undrop table,
-        /// and cannot be acquired in the attach table again.
-        query_context->setInDDLGuard(true);
-        InterpreterCreateQuery interpreter(ast_attach, query_context);
-        interpreter.setForceAttach(true);
-        interpreter.setForceRestoreData(true);
-        interpreter.execute();
+    auto query_context = Context::createCopy(getContext());
+    /// Attach table needs to acquire ddl guard, that has already been acquired in undrop table,
+    /// and cannot be acquired in the attach table again.
+    InterpreterCreateQuery interpreter(ast_attach, query_context);
+    interpreter.setForceAttach(true);
+    interpreter.setForceRestoreData(true);
+    interpreter.setDontNeedDDLGuard();  /// It's already locked by caller
+    interpreter.execute();
 
-        LOG_INFO(log, "Table {} was successfully Undropped.", dropped_table.table_id.getNameForLogs());
-    }
-    catch (...)
-    {
-        throw Exception(
-            ErrorCodes::FS_METADATA_ERROR,
-            "Cannot undrop table {} from {}",
-            dropped_table.table_id.getNameForLogs(),
-            latest_metadata_dropped_path);
-    }
+    LOG_INFO(log, "Table {} was successfully undropped.", dropped_table.table_id.getNameForLogs());
 }
 
 void DatabaseCatalog::dropTableDataTask()
