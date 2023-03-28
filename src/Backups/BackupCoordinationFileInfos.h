@@ -4,7 +4,7 @@
 #include <memory>
 #include <unordered_map>
 #include <unordered_set>
-#include <Backups/BackupFileInfo.h> 
+#include <Backups/BackupFileInfo.h>
 
 
 namespace DB
@@ -29,6 +29,9 @@ public:
 
     /// Returns file infos for all hosts after preparation.
     BackupFileInfos getFileInfosForAllHosts() const;
+
+    /// Returns a file info by data file index (see BackupFileInfo::data_file_index).
+    BackupFileInfo getFileInfoByDataFileIndex(size_t data_file_index) const;
 
     /// Returns the number of files after deduplication and excluding empty files.
     size_t getNumFiles() const;

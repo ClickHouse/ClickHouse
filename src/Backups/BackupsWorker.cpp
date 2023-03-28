@@ -32,7 +32,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int CONCURRENT_ACCESS_NOT_SUPPORTED;
-    extern const int FAILED_TO_SYNC_BACKUP_OR_RESTORE;
 }
 
 using OperationID = BackupsWorker::OperationID;
@@ -53,7 +52,7 @@ namespace
                 .keeper_max_retries = context->getSettingsRef().backup_keeper_max_retries,
                 .keeper_retry_initial_backoff_ms = context->getSettingsRef().backup_keeper_retry_initial_backoff_ms,
                 .keeper_retry_max_backoff_ms = context->getSettingsRef().backup_keeper_retry_max_backoff_ms,
-                .batch_size_for_keeper_multiread = context->getSettingsRef().backup_batch_size_for_keeper_multiread,
+                .keeper_value_max_size = context->getSettingsRef().backup_keeper_value_max_size,
             };
 
             auto all_hosts = BackupSettings::Util::filterHostIDs(
@@ -419,7 +418,13 @@ void BackupsWorker::writeBackupEntries(BackupMutablePtr backup, BackupEntries &&
 
     auto file_infos = backup_coordination->getFileInfos();
     if (file_infos.size() != backup_entries.size())
-        throw Exception(ErrorCodes::FAILED_TO_SYNC_BACKUP_OR_RESTORE, "Number of file infos doesn't match the number of backup entries");
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Number of file infos ({}) doesn't match the number of backup entries ({})",
+            file_infos.size(),
+            backup_entries.size());
+    }
 
     size_t num_active_jobs = 0;
     std::mutex mutex;

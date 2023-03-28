@@ -34,7 +34,6 @@ namespace ErrorCodes
     extern const int BACKUP_DAMAGED;
     extern const int NO_BASE_BACKUP;
     extern const int WRONG_BASE_BACKUP;
-    extern const int BACKUP_ENTRY_ALREADY_EXISTS;
     extern const int BACKUP_ENTRY_NOT_FOUND;
     extern const int BACKUP_IS_EMPTY;
     extern const int FAILED_TO_SYNC_BACKUP_OR_RESTORE;

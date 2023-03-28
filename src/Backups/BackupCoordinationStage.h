@@ -23,7 +23,7 @@ namespace BackupCoordinationStage
     /// Running special tasks for replicated tables which can also prepare some backup entries.
     constexpr const char * RUNNING_POST_TASKS = "running post-tasks";
 
-    /// Building file informations about all backup entries in the future backup.
+    /// Building information about all files which will be written to a backup.
     constexpr const char * BUILDING_FILE_INFOS = "building file infos";
 
     /// Writing backup entries to the backup and removing temporary hard links.

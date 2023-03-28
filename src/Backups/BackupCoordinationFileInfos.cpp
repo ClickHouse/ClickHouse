@@ -8,6 +8,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BACKUP_ENTRY_ALREADY_EXISTS;
+    extern const int LOGICAL_ERROR;
 }
 
 using SizeAndChecksum = std::pair<UInt64, UInt128>;
@@ -37,6 +38,14 @@ BackupFileInfos BackupCoordinationFileInfos::getFileInfosForAllHosts() const
     for (const auto * file_info : file_infos_for_all_hosts)
         res.emplace_back(*file_info);
     return res;
+}
+
+BackupFileInfo BackupCoordinationFileInfos::getFileInfoByDataFileIndex(size_t data_file_index) const
+{
+    prepare();
+    if (data_file_index == static_cast<size_t>(-1))
+        return {};
+    return *(file_infos_for_all_hosts[data_file_index]);
 }
 
 void BackupCoordinationFileInfos::prepare() const

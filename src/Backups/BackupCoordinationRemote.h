@@ -24,7 +24,7 @@ public:
         UInt64 keeper_max_retries;
         UInt64 keeper_retry_initial_backoff_ms;
         UInt64 keeper_retry_max_backoff_ms;
-        UInt64 batch_size_for_keeper_multiread;
+        UInt64 keeper_value_max_size;
     };
 
     BackupCoordinationRemote(

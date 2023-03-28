@@ -17,9 +17,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
     extern const int LOGICAL_ERROR;
-    extern const int BACKUP_ENTRY_ALREADY_EXISTS;
 }
 
 namespace Stage = BackupCoordinationStage;
@@ -137,6 +135,30 @@ namespace
             return res;
         }
     };
+
+    Strings splitKeeperValueIntoParts(String && value, size_t max_part_size)
+    {
+        if (!max_part_size)
+            max_part_size = value.length();
+
+        Strings res;
+        if (value.length() <= max_part_size)
+        {
+            res.emplace_back(std::move(value));
+        }
+        else
+        {
+            size_t num_parts = (value.size() + max_part_size - 1) / max_part_size; /// round up
+            res.reserve(num_parts);
+            for (size_t i = 0; i != num_parts; ++i)
+            {
+                size_t begin = i * max_part_size;
+                size_t end = std::min(begin + max_part_size, value.length());
+                res.emplace_back(value.substr(begin, end - begin));
+            }
+        }
+        return res;
+    }
 }
 
 size_t BackupCoordinationRemote::findCurrentHostIndex(const Strings & all_hosts, const String & current_host)
@@ -507,15 +529,33 @@ void BackupCoordinationRemote::addFileInfos(BackupFileInfos && file_infos_)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "addFileInfos() must not be called after preparing");
     }
 
-    String full_path = zookeeper_path + "/file_infos/" + current_host;
+    /// Serialize the passed `file_infos_` as a string.
     String serialized_file_infos = FileInfos::serialize(file_infos_);
 
-    ZooKeeperRetriesControl retries_ctl("addFileInfos", zookeeper_retries_info);
-    retries_ctl.retryLoop([&]
+    /// `serialized_file_infos` can be a long string. So we'll split `serialized_file_infos` into parts.
+    Strings parts = splitKeeperValueIntoParts(std::move(serialized_file_infos), keeper_settings.keeper_value_max_size);
+
+    String host_path = zookeeper_path + "/file_infos/" + current_host;
+
     {
-        auto zk = getZooKeeper();
-        zk->createIfNotExists(full_path, serialized_file_infos);
-    });
+        ZooKeeperRetriesControl retries_ctl("addFileInfos::add_host", zookeeper_retries_info);
+        retries_ctl.retryLoop([&]
+        {
+            auto zk = getZooKeeper();
+            zk->createIfNotExists(host_path, "");
+        });
+    }
+
+    for (size_t i = 0; i != parts.size(); ++i)
+    {
+        String part_path = fmt::format("{}/{:06}", host_path, i);
+        ZooKeeperRetriesControl retries_ctl("addFileInfos::add_parts", zookeeper_retries_info);
+        retries_ctl.retryLoop([&]
+        {
+            auto zk = getZooKeeper();
+            zk->createIfNotExists(part_path, parts[i]);
+        });
+    }
 }
 
 BackupFileInfos BackupCoordinationRemote::getFileInfos() const
@@ -541,23 +581,42 @@ void BackupCoordinationRemote::prepareFileInfos() const
 
     Strings hosts_with_file_infos;
     {
-        String full_path = zookeeper_path + "/file_infos";
-        ZooKeeperRetriesControl retries_ctl("prepareFileInfos::getHosts", zookeeper_retries_info);
+        ZooKeeperRetriesControl retries_ctl("prepareFileInfos::get_hosts", zookeeper_retries_info);
         retries_ctl.retryLoop([&]{
             auto zk = getZooKeeperNoLock();
-            hosts_with_file_infos = zk->getChildren(full_path);
+            hosts_with_file_infos = zk->getChildren(zookeeper_path + "/file_infos");
         });
     }
 
     for (const String & host : hosts_with_file_infos)
     {
-        String full_path = zookeeper_path + "/file_infos/" + host;
-        BackupFileInfos deserialized_file_infos;
-        ZooKeeperRetriesControl retries_ctl("prepareFileInfos::getFileInfos", zookeeper_retries_info);
-        retries_ctl.retryLoop([&]{
-            auto zk = getZooKeeperNoLock();
-            deserialized_file_infos = FileInfos::deserialize(zk->get(full_path)).file_infos;
-        });
+        String host_path = zookeeper_path + "/file_infos/" + host;
+        Strings part_names;
+
+        {
+            ZooKeeperRetriesControl retries_ctl("prepareFileInfos::get_part_names", zookeeper_retries_info);
+            retries_ctl.retryLoop([&]{
+                auto zk = getZooKeeperNoLock();
+                part_names = zk->getChildren(host_path);
+                std::sort(part_names.begin(), part_names.end());
+            });
+        }
+
+        String serialized_file_infos;
+        for (const String & part_name : part_names)
+        {
+            String part;
+            String part_path = host_path + "/" + part_name;
+            ZooKeeperRetriesControl retries_ctl("prepareFileInfos::get_part", zookeeper_retries_info);
+            retries_ctl.retryLoop([&]
+            {
+                auto zk = getZooKeeperNoLock();
+                part = zk->get(part_path);
+            });
+            serialized_file_infos += part;
+        }
+
+        auto deserialized_file_infos = FileInfos::deserialize(serialized_file_infos).file_infos;
         file_infos->addFileInfos(std::move(deserialized_file_infos), host);
     }
 }
