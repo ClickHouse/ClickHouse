@@ -209,7 +209,7 @@ TEST(FormatHiliting, MetaTestAreEqualWithHilites)
     }
 }
 
-void compare(const String & query, const std::stringstream & expected)
+void compare(const String & query, const String & expected)
 {
     using namespace DB;
     ParserQuery parser(query.data() + query.size());
@@ -220,7 +220,12 @@ void compare(const String & query, const std::stringstream & expected)
     settings.hilite = true;
     ast->format(settings);
 
-    ASSERT_PRED2(are_equal_with_hilites, expected.str(), write_buffer.str());
+    ASSERT_PRED2(are_equal_with_hilites, expected, write_buffer.str());
+}
+
+void compare(const String & query, const std::stringstream & expected)
+{
+    return compare(query, expected.str());
 }
 
 TEST(FormatHiliting, SimpleSelect)
