@@ -28,8 +28,8 @@ SELECT toDecimalString('-128.789323123321329854641231237893231233213298546'::Dec
 
 -- Max number of decimal fractional digits is defined as 77 for Int/UInt/Decimal and 60 for Float.
 -- These values shall work OK.
-SELECT toDecimalString('32.32'::Float32, 61); -- {serverError 28}
-SELECT toDecimalString('64.64'::Float64, 61); -- {serverError 28}
-SELECT toDecimalString('88'::UInt8, 78); -- {serverError 28}
-SELECT toDecimalString('646464'::Int256, 78); -- {serverError 28}
-SELECT toDecimalString('-128.789323123321329854641231237893231233213298546'::Decimal256(45), 78); -- {serverError 28}
+SELECT toDecimalString('32.32'::Float32, 61); -- {serverError CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER}
+SELECT toDecimalString('64.64'::Float64, 61); -- {serverError CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER}
+SELECT toDecimalString('88'::UInt8, 78); -- {serverError CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER}
+SELECT toDecimalString('646464'::Int256, 78); -- {serverError CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER}
+SELECT toDecimalString('-128.789323123321329854641231237893231233213298546'::Decimal256(45), 78); -- {serverError CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER}
