@@ -91,7 +91,7 @@ void ZooKeeperArgs::initFromKeeperServerSection(const Poco::Util::AbstractConfig
 
         if (auto session_timeout_key = coordination_key + ".session_timeout_ms";
             config.has(session_timeout_key))
-            session_timeout_key = config.getInt(session_timeout_key);
+            session_timeout_ms = config.getInt(session_timeout_key);
     }
 
     Poco::Util::AbstractConfiguration::Keys keys;
