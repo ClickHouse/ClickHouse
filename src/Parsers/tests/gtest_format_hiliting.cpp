@@ -102,7 +102,7 @@ bool are_equal_with_hilites_removed(std::string_view left, std::string_view righ
  *      a. hilite_keyword foo hilite_none hilite_operator +
  *      b. hilite_keyword foo hilite_operator +
  */
-bool are_equal_with_hilites(const std::string_view & left, std::string_view right)
+bool are_equal_with_hilites(std::string_view left, std::string_view right)
 {
     if (!are_equal_with_hilites_removed(left, right))
         return false;
