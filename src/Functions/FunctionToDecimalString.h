@@ -302,7 +302,7 @@ private:
             else if (from_col_const)
                 constantVector(from_col_const->template getValue<T>(), precision_col->getData(), result_chars, result_offsets);
             else
-                throw Exception( ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function formatDecimal", arguments[0].column->getName());
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function formatDecimal", arguments[0].column->getName());
         }
 
         return result_col;
