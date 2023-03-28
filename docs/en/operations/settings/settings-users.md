@@ -118,7 +118,7 @@ To open access for user from any network, specify:
 <ip>::/0</ip>
 ```
 
-:::warning
+:::note
 It’s insecure to open access from any network unless you have a firewall properly configured or the server is not directly connected to Internet.
 :::
 
