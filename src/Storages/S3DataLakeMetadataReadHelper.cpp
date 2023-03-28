@@ -33,8 +33,8 @@ S3DataLakeMetadataReadHelper::createReadBuffer(const String & key, ContextPtr co
         context->getReadSettings());
 }
 
-std::vector<String> S3DataLakeMetadataReadHelper::listFilesMatchSuffix(
-    const StorageS3::Configuration & base_configuration, const String & directory, const String & suffix)
+std::vector<String> S3DataLakeMetadataReadHelper::listFiles(
+    const StorageS3::Configuration & base_configuration, const String & prefix, const String & suffix)
 {
     const auto & table_path = base_configuration.url.key;
     const auto & bucket = base_configuration.url.bucket;
@@ -48,7 +48,7 @@ std::vector<String> S3DataLakeMetadataReadHelper::listFilesMatchSuffix(
 
     request.SetBucket(bucket);
 
-    request.SetPrefix(std::filesystem::path(table_path) / directory);
+    request.SetPrefix(std::filesystem::path(table_path) / prefix);
 
     while (!is_finished)
     {
@@ -72,54 +72,13 @@ std::vector<String> S3DataLakeMetadataReadHelper::listFilesMatchSuffix(
         }
 
         request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
-
         is_finished = !outcome.GetResult().GetIsTruncated();
     }
+
+    LOG_TRACE(&Poco::Logger::get("S3DataLakeMetadataReadHelper"), "Listed {} files", res.size());
 
     return res;
 }
 
-std::vector<String> S3DataLakeMetadataReadHelper::listFiles(const StorageS3::Configuration & configuration)
-{
-    const auto & client = configuration.client;
-    const auto & table_path = configuration.url.key;
-    const auto & bucket = configuration.url.bucket;
-
-    std::vector<std::string> keys;
-    S3::ListObjectsV2Request request;
-    Aws::S3::Model::ListObjectsV2Outcome outcome;
-
-    bool is_finished{false};
-
-    request.SetBucket(bucket);
-    request.SetPrefix(table_path);
-
-    while (!is_finished)
-    {
-        outcome = client->ListObjectsV2(request);
-        if (!outcome.IsSuccess())
-            throw Exception(
-                ErrorCodes::S3_ERROR,
-                "Could not list objects in bucket {} with key {}, S3 exception: {}, message: {}",
-                quoteString(bucket),
-                quoteString(table_path),
-                backQuote(outcome.GetError().GetExceptionName()),
-                quoteString(outcome.GetError().GetMessage()));
-
-        const auto & result_batch = outcome.GetResult().GetContents();
-        for (const auto & obj : result_batch)
-        {
-            const auto & filename = obj.GetKey().substr(table_path.size()); /// Object name without tablepath prefix.
-            keys.push_back(filename);
-        }
-
-        request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
-        is_finished = !outcome.GetResult().GetIsTruncated();
-    }
-
-    LOG_TRACE(&Poco::Logger::get("S3DataLakeMetadataReadHelper"), "Listed {} files", keys.size());
-
-    return keys;
-}
 }
 #endif

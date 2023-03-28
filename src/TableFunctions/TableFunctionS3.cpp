@@ -32,7 +32,7 @@ namespace ErrorCodes
 void TableFunctionS3::parseArgumentsImpl(
     const String & error_message, ASTs & args, ContextPtr context, StorageS3::Configuration & s3_configuration, bool get_format_from_file)
 {
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(args))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context))
     {
         StorageS3::processNamedCollectionResult(s3_configuration, *named_collection);
     }
@@ -152,9 +152,8 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, Context
     else if (!structure_hint.empty())
         columns = structure_hint;
 
-    auto storage_configuration = std::make_unique<StorageS3::Configuration>(configuration);
     StoragePtr storage = std::make_shared<StorageS3>(
-        std::move(storage_configuration),
+        configuration,
         context,
         StorageID(getDatabaseName(), table_name),
         columns,

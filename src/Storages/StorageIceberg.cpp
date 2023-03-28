@@ -60,7 +60,7 @@ String IcebergMetadataParser<Configuration, MetadataReadHelper>::fetchMetadataFi
     /// newest version has the max version name, so we should list all of them,
     /// then find the newest metadata.
     static constexpr auto meta_file_suffix = ".json";
-    auto metadata_files = MetadataReadHelper::listFilesMatchSuffix(base_configuration, metadata_directory, meta_file_suffix);
+    auto metadata_files = MetadataReadHelper::listFiles(base_configuration, metadata_directory, meta_file_suffix);
 
     if (metadata_files.empty())
         throw Exception(
@@ -242,24 +242,6 @@ IcebergMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::g
 
 template std::vector<String>
 IcebergMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::getFilesForRead(const std::vector<String> & manifest_files) const;
-
-void registerStorageIceberg(StorageFactory & factory)
-{
-    factory.registerStorage(
-        "Iceberg",
-        [](const StorageFactory::Arguments & args)
-        {
-            auto configuration = StorageIceberg::getConfiguration(args.engine_args, args.getLocalContext());
-            auto format_settings = getFormatSettings(args.getContext());
-            return std::make_shared<StorageIceberg>(
-                std::move(configuration), args.getContext(), args.table_id, args.columns, args.constraints, args.comment, format_settings);
-        },
-        {
-            .supports_settings = false,
-            .supports_schema_inference = true,
-            .source_access_type = AccessType::S3,
-        });
-}
 
 }
 
