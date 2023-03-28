@@ -398,10 +398,15 @@ CancellationCode QueryStatus::cancelQuery(int code, const String & msg)
 
     is_killed.store(true);
 
-    // Cancel threads to resolve possible deadlocks that can occur due to waiting on cancelable synchronization primitives (e.g. CancelableSharedMutex).
-    // Every cancelable wait will finish and throw an exception. Any further attempt to wait on any cancelable primitive will also result in exception
+    // Cancel threads to resolve possible deadlocks that can occur due to mutex lock inversions.
+    // Every cancelable wait (e.g. on `CancelableSharedMutex`) will finish and throw an exception.
+    // Any further attempt to wait on any cancelable primitive will also result in exception
     // (unless waiting is done inside `NonCancellable` scope).
-    // Note that deadlocks are possible in the first place due to non-deterministic locking order when OvercommitTracker tries to cancel query.
+    // Note that deadlocks are possible in the first place due to non-deterministic locking order.
+    // Example of this is:
+    // T1: OvercommitTracker trying to cancel another query with thread (T2) from an allocation that is done under mutex (M1).
+    // T2: Waiting on the same mutex (M1), so not cancellable.
+    // In such a scenario consider changing mutex (M1) type to be `Cancellable*`
     thread_group->cancelGroup(code, msg);
 
     std::vector<ExecutorHolderPtr> executors_snapshot;

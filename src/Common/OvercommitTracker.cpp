@@ -4,6 +4,7 @@
 #include <mutex>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Interpreters/ProcessList.h>
 #include <fmt/core.h>
 
@@ -56,16 +57,19 @@ OvercommitResult OvercommitTracker::needToStopQuery(MemoryTracker * exhausted, M
     if (max_wait_time == ZERO_MICROSEC)
         return OvercommitResult::DISABLED;
 
-    CancelQuery cancel_query;
     if (cancellation_state == QueryCancellationState::NONE)
     {
-        cancel_query = pickQueryToExclude(exhausted);
+        MemoryTrackerBlockerInThread untrack_lock; // Avoid recursion because we are already under locks
+        CancelQuery cancel_query = pickQueryToExclude(exhausted);
         cancellation_state = QueryCancellationState::SELECTED;
+        global_lock.unlock(); // Release global lock before query cancelling
+        if (cancel_query)
+            cancel_query();
     }
-    global_lock.unlock();
-
-    if (cancel_query)
-        cancel_query();
+    else
+    {
+        global_lock.unlock();
+    }
 
     // If no query was chosen we need to stop current query.
     // This may happen if no soft limit is set.
