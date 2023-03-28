@@ -655,7 +655,7 @@ QueryPipelineBuilderPtr ReadFromMerge::createSources(
         if (real_column_names.empty())
             real_column_names.push_back(ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical()).name);
 
-        QueryPlan plan;
+        QueryPlan & plan = child_plans.emplace_back();
 
         StorageView * view = dynamic_cast<StorageView *>(storage.get());
         if (!view || allow_experimental_analyzer)

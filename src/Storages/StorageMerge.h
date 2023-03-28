@@ -159,6 +159,8 @@ private:
     StoragePtr storage_merge;
     StorageSnapshotPtr merge_storage_snapshot;
 
+    std::vector<QueryPlan> child_plans;
+
     SelectQueryInfo query_info;
     ContextMutablePtr context;
     QueryProcessingStage::Enum common_processed_stage;
