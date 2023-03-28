@@ -344,8 +344,7 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
                 if (isInteger(nested_init_type)
                     || isDate(nested_init_type)
                     || isDateTime(nested_init_type)
-                    || isDateTime64(nested_init_type)
-                    || isDecimal(nested_init_type))
+                    || isDateTime64(nested_init_type))
                 {
                     /// Compare original and casted columns. It seem to be the easiest way.
                     auto overflow_mask = callFunctionNotEquals(
