@@ -530,6 +530,10 @@ parseDateTimeBestEffortUS
 parseDateTimeBestEffortUSOrNull
 parseDateTimeBestEffortUSOrZero
 parseDateTimeInJodaSyntax
+parseDateTimeInJodaSyntaxOrNull
+parseDateTimeInJodaSyntaxOrZero
+parseDateTimeOrNull
+parseDateTimeOrZero
 parseTimeDelta
 partitionId
 path
