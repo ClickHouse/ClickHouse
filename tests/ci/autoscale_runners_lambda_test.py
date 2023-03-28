@@ -70,6 +70,9 @@ class TestSetCapacity(unittest.TestCase):
             TestCase("w/reserve", 1, 13, 20, [Queue("queued", 17, "w/reserve")], -1),
             # Increase capacity
             TestCase("increase", 1, 13, 20, [Queue("queued", 23, "increase")], 15),
+            TestCase(
+                "style-checker", 1, 13, 20, [Queue("queued", 33, "style-checker")], 15
+            ),
             TestCase("increase", 1, 13, 20, [Queue("queued", 18, "increase")], 14),
             TestCase("increase", 1, 13, 20, [Queue("queued", 183, "increase")], 20),
             TestCase(
@@ -85,10 +88,20 @@ class TestSetCapacity(unittest.TestCase):
             ),
             TestCase("lower-min", 10, 5, 20, [Queue("queued", 5, "lower-min")], 10),
             # Decrease capacity
-            TestCase("w/reserve", 1, 13, 20, [Queue("queued", 5, "w/reserve")], 11),
+            TestCase("w/reserve", 1, 13, 20, [Queue("queued", 5, "w/reserve")], 9),
+            TestCase(
+                "style-checker", 1, 13, 20, [Queue("queued", 5, "style-checker")], 5
+            ),
             TestCase("w/reserve", 1, 23, 20, [Queue("queued", 17, "w/reserve")], 20),
-            TestCase("decrease", 1, 13, 20, [Queue("in_progress", 3, "decrease")], 10),
-            TestCase("decrease", 1, 13, 20, [Queue("in_progress", 5, "decrease")], 11),
+            TestCase("decrease", 1, 13, 20, [Queue("in_progress", 3, "decrease")], 8),
+            TestCase(
+                "style-checker",
+                1,
+                13,
+                20,
+                [Queue("in_progress", 5, "style-checker")],
+                5,
+            ),
         )
         for t in test_cases:
             self.client.data_helper(t.name, t.min_size, t.desired_capacity, t.max_size)
