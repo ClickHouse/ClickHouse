@@ -50,9 +50,21 @@ public:
     virtual bool supportsRightBoundedReads() const { return false; }
 
     virtual bool isIntegratedWithFilesystemCache() const { return false; }
+
+    // Returns true if seek() actually works, false if seek() will always throw (or make subsequent
+    // nextImpl() calls throw).
+    //
+    // This is needed because:
+    //  * Sometimes there's no cheap way to know in advance whether the buffer is really seekable.
+    //    Specifically, HTTP read buffer needs to send a request to check whether the server
+    //    supports byte ranges.
+    //  * Sometimes when we create such buffer we don't know in advance whether we'll need it to be
+    //    seekable or not. So we don't want to pay the price for this check in advance.
+    virtual bool checkIfActuallySeekable() { return true; }
 };
 
 // Useful for reading in parallel.
+// The created read buffers may outlive the factory.
 class SeekableReadBufferFactory : public WithFileSize
 {
 public:
@@ -62,6 +74,8 @@ public:
     // So it's recommended that the returned implementation be lazy, i.e. don't start reading
     // before the first call to nextImpl().
     virtual std::unique_ptr<SeekableReadBuffer> getReader() = 0;
+
+    virtual bool checkIfActuallySeekable() { return true; }
 };
 
 using SeekableReadBufferPtr = std::shared_ptr<SeekableReadBuffer>;

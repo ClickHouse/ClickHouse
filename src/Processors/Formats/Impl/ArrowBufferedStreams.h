@@ -142,6 +142,13 @@ std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(
     // (ReadBuffer is not a good abstraction in this case, but it works.)
     bool avoid_buffering = false);
 
+// Reads the whole file into a memory buffer, owned by the returned RandomAccessFile.
+std::shared_ptr<arrow::io::RandomAccessFile> asArrowFileLoadIntoMemory(
+    ReadBuffer & in,
+    std::atomic<int> & is_cancelled,
+    const std::string & format_name,
+    const std::string & magic_bytes);
+
 }
 
 #endif

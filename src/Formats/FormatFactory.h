@@ -72,46 +72,37 @@ public:
         size_t max_rows)>;
 
 private:
+    // On the input side, there are two kinds of formats:
+    //  * InputCreator - formats parsed sequentially, e.g. CSV. Almost all formats are like this.
+    //    FormatFactory uses ParallelReadBuffer to read in parallel, and ParallelParsingInputFormat
+    //    to parse in parallel; the formats mostly don't need to worry about it.
+    //  * RandomAccessInputCreator - column-oriented formats that require seeking back and forth in
+    //    the file when reading. E.g. Parquet has metadata at the end of the file (needs to be read
+    //    before we can parse any data), can skip columns by seeking in the file, and often reads
+    //    many short byte ranges from the file. ParallelReadBuffer and ParallelParsingInputFormat
+    //    are a poor fit. Instead, the format implementation is in charge of parallelizing both
+    //    reading and parsing.
+
     using InputCreator = std::function<InputFormatPtr(
             ReadBuffer & buf,
             const Block & header,
             const RowInputFormatParams & params,
             const FormatSettings & settings)>;
 
-    // Advanced interface for the few more structured formats, like Parquet, which want more precise
-    // control over reading. The format is responsible for parallelizing reading+parsing.
-    // The motivating use case is ParquetBlockInputFormat, see comment there.
-    //
-    // Formats implementing this must implement InputCreator too, for cases when there's only one
-    // read buffer available (e.g. stdin or incoming HTTP request).
-    //
-    // When created this way, the IInputFormat doesn't support resetParser() and setReadBuffer().
     // Incompatible with FileSegmentationEngine.
+    // When created using SeekableReadBufferFactoryPtr, the IInputFormat doesn't support
+    // resetParser() and setReadBuffer().
     //
     // In future we may also want to pass some information about WHERE conditions (SelectQueryInfo?)
     // and get some information about projections (min/max/count per column per row group).
-    //
-    // TODO: This doesn't seem good. Rethink.
-    //        * Rename multistream to random-access.
-    //        * Pass max_parsing_threads to InputCreator too. Or require random-access formats to be
-    //          created with this function, not InputCreator, and add a ReadBuf* param here.
-    //        * Pass max_download_buffer_size to both creators. Maybe it should be in ReadSettings?
-    //        * Do something about the seekable_read situation in StorageURL.
-    //          Probably add something like checkIfActuallySeekable() in SeekableReadBuffer or in
-    //          SeekableReadBufferFactory.
-    //          (There's also the problem that if the http server doesn't support ranges, we'll read
-    //          the file twice: for schema, then for data. But I think we should ignore that, even
-    //          if we end up solving the related problem of caching metadata.)
-    //        * Would be good to distinguish between max_download_threads = 0 vs 1. 0 would mean
-    //          read inline, on normal threads. 1 would mean read from one IO thread, so that IO can
-    //          overlap with processing.
-    using MultistreamInputCreator = std::function<InputFormatPtr(
+    using RandomAccessInputCreator = std::function<InputFormatPtr(
+            // exactly one of these two is nullptr
+            ReadBuffer * buf,
             SeekableReadBufferFactoryPtr buf_factory,
             const Block & header,
             const FormatSettings & settings,
             const ReadSettings& read_settings,
             bool is_remote_fs,
-            ThreadPoolCallbackRunner<void> io_schedule,
             size_t max_download_threads,
             size_t max_parsing_threads)>;
 
@@ -142,7 +133,7 @@ private:
     struct Creators
     {
         InputCreator input_creator;
-        MultistreamInputCreator multistream_input_creator;
+        RandomAccessInputCreator random_access_input_creator;
         OutputCreator output_creator;
         FileSegmentationEngine file_segmentation_engine;
         SchemaReaderCreator schema_reader_creator;
@@ -175,7 +166,7 @@ public:
     // Format parser from a random-access source (factory of seekable read buffers).
     // Parallelizes both parsing and reading when possible.
     // Prefer this over getInput() when reading from random-access source like file or HTTP.
-    InputFormatPtr getInputMultistream(
+    InputFormatPtr getInputRandomAccess(
         const String & name,
         SeekableReadBufferFactoryPtr buf_factory,
         const Block & sample,
@@ -183,7 +174,6 @@ public:
         UInt64 max_block_size,
         bool is_remote_fs,
         CompressionMethod compression,
-        ThreadPoolCallbackRunner<void> io_schedule,
         // if nullopt, getFormatSettings(context) is used
         const std::optional<FormatSettings> & format_settings = std::nullopt,
         std::optional<size_t> max_download_threads = std::nullopt,
@@ -233,7 +223,8 @@ public:
     bool checkIfFormatSupportAppend(const String & name, ContextPtr context, const std::optional<FormatSettings> & format_settings_ = std::nullopt);
 
     /// Register format by its name.
-    void registerInputFormat(const String & name, InputCreator input_creator, MultistreamInputCreator multistream_input_creator = nullptr);
+    void registerInputFormat(const String & name, InputCreator input_creator);
+    void registerRandomAccessInputFormat(const String & name, RandomAccessInputCreator input_creator);
     void registerOutputFormat(const String & name, OutputCreator output_creator);
 
     /// Register file extension for format
@@ -286,10 +277,19 @@ private:
         UInt64 max_block_size,
         bool is_remote_fs,
         CompressionMethod compression,
-        ThreadPoolCallbackRunner<void> io_schedule,
         const std::optional<FormatSettings> & format_settings,
         std::optional<size_t> max_download_threads,
         std::optional<size_t> max_parsing_threads) const;
+
+    // Creates a ReadBuffer to give to an input format.
+    // Returns nullptr if we should give it the whole factory.
+    std::unique_ptr<ReadBuffer> prepareReadBuffer(
+        SeekableReadBufferFactoryPtr & buf_factory,
+        CompressionMethod compression,
+        const Creators & creators,
+        const FormatSettings & format_settings,
+        const Settings & settings,
+        size_t max_download_threads) const;
 };
 
 }

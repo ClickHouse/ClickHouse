@@ -90,6 +90,15 @@ namespace detail
     template <typename UpdatableSessionPtr>
     class ReadWriteBufferFromHTTPBase : public SeekableReadBuffer, public WithFileName, public WithFileSize
     {
+    public:
+        struct FileInfo
+        {
+            // nullopt if the server doesn't report it.
+            std::optional<size_t> file_size;
+            std::optional<time_t> last_modified;
+            bool seekable = false;
+        };
+
     protected:
         /// HTTP range, including right bound [begin, end].
         struct Range
@@ -117,7 +126,7 @@ namespace detail
 
         size_t offset_from_begin_pos = 0;
         Range read_range;
-        std::optional<size_t> file_size;
+        std::optional<FileInfo> file_info;
 
         /// Delayed exception in case retries with partial content are not satisfiable.
         std::exception_ptr exception;
@@ -133,7 +142,7 @@ namespace detail
         bool withPartialContent(const Range & range) const
         {
             /**
-             * Add range header if we have some passed range (for disk web)
+             * Add range header if we have some passed range
              * or if we want to retry GET request on purpose.
              */
             return range.begin || range.end || retry_with_range_header;
@@ -162,12 +171,7 @@ namespace detail
                 request.set(header, value);
 
             std::optional<Range> range;
-            if constexpr (for_object_info)
-            {
-                if (withPartialContent(Range{}))
-                    range = Range{0, std::nullopt};
-            }
-            else
+            if constexpr (!for_object_info)
             {
                 if (withPartialContent(read_range))
                     range = Range{getOffset(), read_range.end};
@@ -218,19 +222,20 @@ namespace detail
 
         size_t getFileSize() override
         {
-            if (file_size)
-                return *file_size;
+            if (!file_info)
+                file_info = getFileInfo();
 
-            Poco::Net::HTTPResponse response;
-            getHeadResponse(response);
-
-            if (response.hasContentLength())
-            {
-                file_size = response.getContentLength();
-                return *file_size;
-            }
+            if (file_info->file_size)
+                return *file_info->file_size;
 
             throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot find out file size for: {}", uri.toString());
+        }
+
+        bool checkIfActuallySeekable() override
+        {
+            if (!file_info)
+                file_info = getFileInfo();
+            return file_info->seekable;
         }
 
         String getFileName() const override { return uri.toString(); }
@@ -297,7 +302,8 @@ namespace detail
             const RemoteHostFilter * remote_host_filter_ = nullptr,
             bool delay_initialization = false,
             bool use_external_buffer_ = false,
-            bool http_skip_not_found_url_ = false)
+            bool http_skip_not_found_url_ = false,
+            std::optional<FileInfo> file_info_ = std::nullopt)
             : SeekableReadBuffer(nullptr, 0)
             , uri {uri_}
             , method {!method_.empty() ? method_ : out_stream_callback_ ? Poco::Net::HTTPRequest::HTTP_POST : Poco::Net::HTTPRequest::HTTP_GET}
@@ -308,6 +314,7 @@ namespace detail
             , remote_host_filter {remote_host_filter_}
             , buffer_size {buffer_size_}
             , use_external_buffer {use_external_buffer_}
+            , file_info(file_info_)
             , http_skip_not_found_url(http_skip_not_found_url_)
             , settings {settings_}
             , log(&Poco::Logger::get("ReadWriteBufferFromHTTP"))
@@ -497,13 +504,17 @@ namespace detail
 
                     return;
                 }
-                else if (read_range.end && file_size && *read_range.end + 1 < *file_size)
+                else if (read_range.end)
                 {
                     /// We could have range.begin == 0 and range.end != 0 in case of DiskWeb and failing to read with partial content
                     /// will affect only performance, so a warning is enough.
                     LOG_WARNING(log, "Unable to read with range header: [{}, {}]", getRangeBegin(), *read_range.end);
                 }
             }
+
+            // Remember file size. It'll be used to report eof in next nextImpl() call.
+            if (!read_range.end && response.hasContentLength())
+                file_info = parseFileInfo(response, withPartialContent(read_range) ? getOffset() : 0);
 
             try
             {
@@ -533,7 +544,8 @@ namespace detail
             if (next_callback)
                 next_callback(count());
 
-            if (read_range.end && getOffset() > read_range.end.value())
+            if ((read_range.end && getOffset() > read_range.end.value()) ||
+                (file_info && file_info->file_size && getOffset() >= file_info->file_size.value()))
                 return false;
 
             if (impl)
@@ -680,12 +692,13 @@ namespace detail
             {
                 pos = working_buffer.end() - (current_offset - offset_);
                 assert(pos >= working_buffer.begin());
-                assert(pos <= working_buffer.end());
+                assert(pos < working_buffer.end());
 
                 return getPosition();
             }
 
-            if (impl) {
+            if (impl)
+            {
                 auto position = getPosition();
                 if (offset_ > position)
                 {
@@ -714,40 +727,43 @@ namespace detail
             until = std::max(until, 1ul);
             if (read_range.end && *read_range.end + 1 == until)
                 return;
-            if (impl) {
+            read_range.end = until - 1;
+            read_range.begin = getPosition();
+            resetWorkingBuffer();
+            if (impl)
+            {
                 if (!atEndOfRequestedRangeGuess())
                     ProfileEvents::increment(ProfileEvents::ReadBufferSeekCancelConnection);
                 impl.reset();
             }
-            read_range.end = until - 1;
-            read_range.begin = getPosition();
-            resetWorkingBuffer();
         }
 
         void setReadUntilEnd() override
         {
             if (!read_range.end)
                 return;
-            if (impl) {
+            read_range.end.reset();
+            read_range.begin = getPosition();
+            resetWorkingBuffer();
+            if (impl)
+            {
                 if (!atEndOfRequestedRangeGuess())
                     ProfileEvents::increment(ProfileEvents::ReadBufferSeekCancelConnection);
                 impl.reset();
             }
-            read_range.end.reset();
-            read_range.begin = getPosition();
-            resetWorkingBuffer();
         }
 
         bool supportsRightBoundedReads() const override { return true; }
 
         // If true, if we destroy impl now, no work was wasted. Just for metrics.
-        bool atEndOfRequestedRangeGuess() {
+        bool atEndOfRequestedRangeGuess()
+        {
             if (!impl)
                 return true;
             if (read_range.end)
                 return getPosition() > static_cast<off_t>(*read_range.end);
-            if (file_size)
-                return getPosition() >= static_cast<off_t>(*file_size);
+            if (file_info && file_info->file_size)
+                return getPosition() >= static_cast<off_t>(*file_info->file_size);
             return false;
         }
 
@@ -774,18 +790,45 @@ namespace detail
 
         std::optional<time_t> getLastModificationTime()
         {
+            return getFileInfo().last_modified;
+        }
+
+        FileInfo getFileInfo()
+        {
             Poco::Net::HTTPResponse response;
             getHeadResponse(response);
-            if (!response.has("Last-Modified"))
-                return std::nullopt;
+            return parseFileInfo(response, 0);
+        }
 
-            String date_str = response.get("Last-Modified");
-            struct tm info;
-            char * res = strptime(date_str.data(), "%a, %d %b %Y %H:%M:%S %Z", &info);
-            if (!res || res != date_str.data() + date_str.size())
-                return std::nullopt;
+        FileInfo parseFileInfo(const Poco::Net::HTTPResponse & response, size_t requested_range_begin)
+        {
+            FileInfo res;
 
-            return timegm(&info);
+            if (response.hasContentLength())
+            {
+                res.file_size = response.getContentLength();
+
+                if (response.getStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_PARTIAL_CONTENT)
+                {
+                    *res.file_size += requested_range_begin;
+                    res.seekable = true;
+                }
+                else
+                {
+                    res.seekable = response.has("Accept-Ranges") && response.get("Accept-Ranges") == "bytes";
+                }
+            }
+
+            if (response.has("Last-Modified"))
+            {
+                String date_str = response.get("Last-Modified");
+                struct tm info;
+                char * end = strptime(date_str.data(), "%a, %d %b %Y %H:%M:%S %Z", &info);
+                if (end == date_str.data() + date_str.size())
+                    res.last_modified = timegm(&info);
+            }
+
+            return res;
         }
     };
 }
@@ -823,7 +866,8 @@ public:
         const RemoteHostFilter * remote_host_filter_ = nullptr,
         bool delay_initialization_ = true,
         bool use_external_buffer_ = false,
-        bool skip_not_found_url_ = false)
+        bool skip_not_found_url_ = false,
+        std::optional<FileInfo> file_info_ = std::nullopt)
         : Parent(
             std::make_shared<SessionType>(uri_, max_redirects, std::make_shared<SessionFactory>(timeouts)),
             uri_,
@@ -836,7 +880,8 @@ public:
             remote_host_filter_,
             delay_initialization_,
             use_external_buffer_,
-            skip_not_found_url_)
+            skip_not_found_url_,
+            file_info_)
     {
     }
 };
@@ -847,7 +892,6 @@ class RangedReadWriteBufferFromHTTPFactory : public SeekableReadBufferFactory, p
 
 public:
     RangedReadWriteBufferFromHTTPFactory(
-        size_t total_object_size_,
         Poco::URI uri_,
         std::string method_,
         OutStreamCallback out_stream_callback_,
@@ -861,8 +905,7 @@ public:
         bool delay_initialization_ = true,
         bool use_external_buffer_ = false,
         bool skip_not_found_url_ = false)
-        : total_object_size(total_object_size_)
-        , uri(uri_)
+        : uri(uri_)
         , method(std::move(method_))
         , out_stream_callback(out_stream_callback_)
         , timeouts(std::move(timeouts_))
@@ -893,15 +936,33 @@ public:
             remote_host_filter,
             delay_initialization,
             use_external_buffer,
-            skip_not_found_url);
+            skip_not_found_url,
+            file_info);
     }
 
-    size_t getFileSize() override { return total_object_size; }
+    size_t getFileSize() override
+    {
+        auto s = getFileInfo().file_size;
+        if (!s)
+            throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot find out file size for: {}", uri.toString());
+        return *s;
+    }
+
+    bool checkIfActuallySeekable() override
+    {
+        return getFileInfo().seekable;
+    }
+
+    ReadWriteBufferFromHTTP::FileInfo getFileInfo()
+    {
+        if (!file_info)
+            file_info = static_cast<ReadWriteBufferFromHTTP*>(getReader().get())->getFileInfo();
+        return *file_info;
+    }
 
     String getFileName() const override { return uri.toString(); }
 
 private:
-    size_t total_object_size;
     Poco::URI uri;
     std::string method;
     OutStreamCallback out_stream_callback;
@@ -912,6 +973,7 @@ private:
     ReadSettings settings;
     HTTPHeaderEntries http_header_entries;
     const RemoteHostFilter * remote_host_filter;
+    std::optional<ReadWriteBufferFromHTTP::FileInfo> file_info;
     bool delay_initialization;
     bool use_external_buffer;
     bool skip_not_found_url;

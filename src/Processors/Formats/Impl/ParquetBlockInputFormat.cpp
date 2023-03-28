@@ -3,6 +3,7 @@
 
 #if USE_PARQUET
 
+#include <Common/ThreadPool.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -16,6 +17,7 @@
 #include "ArrowBufferedStreams.h"
 #include "ArrowColumnToCHColumn.h"
 #include "ArrowFieldIndexUtil.h"
+#include <base/scope_guard.h>
 #include <DataTypes/NestedUtils.h>
 
 namespace CurrentMetrics
@@ -47,28 +49,39 @@ ParquetBlockInputFormat::ParquetBlockInputFormat(
     const FormatSettings & format_settings_,
     size_t max_decoding_threads_,
     size_t min_bytes_for_seek_)
-    : IInputFormat(std::move(header_), buf)
+    : IInputFormat(header_, buf)
     , buf_factory(std::move(buf_factory_))
     , format_settings(format_settings_)
     , skip_row_groups(format_settings.parquet.skip_row_groups)
     , max_decoding_threads(max_decoding_threads_)
     , min_bytes_for_seek(min_bytes_for_seek_)
-    , to_deliver(ChunkToDeliver::Compare { .row_group_first = format_settings_.parquet.preserve_order })
+    , pending_chunks(PendingChunk::Compare { .row_group_first = format_settings_.parquet.preserve_order })
 {
     if (max_decoding_threads > 1)
-        pool.emplace(CurrentMetrics::ParquetDecoderThreads, CurrentMetrics::ParquetDecoderThreadsActive, max_decoding_threads);
+        pool = std::make_unique<ThreadPool>(CurrentMetrics::ParquetDecoderThreads, CurrentMetrics::ParquetDecoderThreadsActive, max_decoding_threads);
 }
 
 ParquetBlockInputFormat::~ParquetBlockInputFormat() = default;
 
-void ParquetBlockInputFormat::initializeIfNeeded() {
+void ParquetBlockInputFormat::initializeIfNeeded()
+{
     if (std::exchange(is_initialized, true))
         return;
 
+    // Create arrow file adapter.
+    // TODO: Make the adapter do prefetching on IO threads, based on the full set of ranges that
+    //       we'll need to read (which we know in advance). Use max_download_threads for that.
     if (buf_factory)
-        arrow_file = std::make_shared<RandomAccessFileFromManyReadBuffers>(*buf_factory);
+    {
+        if (format_settings.seekable_read && buf_factory->checkIfActuallySeekable())
+            arrow_file = std::make_shared<RandomAccessFileFromManyReadBuffers>(*buf_factory);
+        else
+            arrow_file = asArrowFileLoadIntoMemory(*buf_factory->getReader(), is_stopped, "Parquet", PARQUET_MAGIC_BYTES);
+    }
     else
+    {
         arrow_file = asArrowFile(*in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true);
+    }
 
     if (is_stopped)
         return;
@@ -86,7 +99,8 @@ void ParquetBlockInputFormat::initializeIfNeeded() {
     column_indices = field_util.findRequiredIndices(getPort().getHeader(), *schema);
 }
 
-void ParquetBlockInputFormat::prepareRowGroupReader(size_t row_group_idx) {
+void ParquetBlockInputFormat::initializeRowGroupReader(size_t row_group_idx)
+{
     auto & row_group = row_groups[row_group_idx];
 
     parquet::ArrowReaderProperties properties;
@@ -94,9 +108,8 @@ void ParquetBlockInputFormat::prepareRowGroupReader(size_t row_group_idx) {
     properties.set_batch_size(format_settings.parquet.max_block_size);
 
     // When reading a row group, arrow will:
-    //  1. Before reading anything, look at all the byte ranges it'll need to read from the file
-    //     (typically one per requested column in the row group). This information is in file
-    //     metadata.
+    //  1. Look at `metadata` to get all byte ranges it'll need to read from the file (typically one
+    //     per requested column in the row group).
     //  2. Coalesce ranges that are close together, trading off seeks vs read amplification.
     //     This is controlled by CacheOptions.
     //  3. Process the columns one by one, issuing the corresponding (coalesced) range reads as
@@ -113,8 +126,21 @@ void ParquetBlockInputFormat::prepareRowGroupReader(size_t row_group_idx) {
     properties.set_pre_buffer(true);
     auto cache_options = arrow::io::CacheOptions::LazyDefaults();
     cache_options.hole_size_limit = min_bytes_for_seek;
-    cache_options.range_size_limit = format_settings.parquet.max_bytes_to_read_at_once;
+    cache_options.range_size_limit = 1l << 40; // reading the whole row group at once is fine
     properties.set_cache_options(cache_options);
+
+    // Workaround for a workaround in the parquet library.
+    //
+    // From ComputeColumnChunkRange() in contrib/arrow/cpp/src/parquet/file_reader.cc:
+    //  > The Parquet MR writer had a bug in 1.2.8 and below where it didn't include the
+    //  > dictionary page header size in total_compressed_size and total_uncompressed_size
+    //  > (see IMPALA-694). We add padding to compensate.
+    //
+    // That padding breaks the pre-buffered mode because the padded read ranges may overlap each
+    // other, failing an assert. So we disable pre-buffering in this case.
+    // That version is >10 years old, so this is not very important.
+    if (metadata->writer_version().VersionLt(parquet::ApplicationVersion::PARQUET_816_FIXED_VERSION()))
+        properties.set_pre_buffer(false);
 
     parquet::arrow::FileReaderBuilder builder;
     THROW_ARROW_NOT_OK(
@@ -138,9 +164,11 @@ void ParquetBlockInputFormat::prepareRowGroupReader(size_t row_group_idx) {
 void ParquetBlockInputFormat::scheduleRowGroup(size_t row_group_idx)
 {
     chassert(!mutex.try_lock());
-    chassert(!row_groups[row_group_idx].running);
 
-    row_groups[row_group_idx].running = true;
+    auto & status = row_groups[row_group_idx].status;
+    chassert(status == RowGroupState::Status::NotStarted || status == RowGroupState::Status::Paused);
+
+    status = RowGroupState::Status::Running;
 
     pool->scheduleOrThrowOnError(
         [this, row_group_idx, thread_group = CurrentThread::getGroup()]()
@@ -169,36 +197,42 @@ void ParquetBlockInputFormat::threadFunction(size_t row_group_idx)
     std::unique_lock lock(mutex);
 
     auto & row_group = row_groups[row_group_idx];
-    chassert(!row_group.done);
+    chassert(row_group.status == RowGroupState::Status::Running);
 
-    while (row_group.chunks_decoded - row_group.chunks_delivered < max_pending_chunks_per_row_group && !is_stopped)
+    while (true)
     {
-        if (!decodeOneChunk(row_group_idx, lock))
-            break;
-    }
+        if (is_stopped || row_group.num_pending_chunks >= max_pending_chunks_per_row_group)
+        {
+            row_group.status = RowGroupState::Status::Paused;
+            return;
+        }
 
-    row_group.running = false;
+        decodeOneChunk(row_group_idx, lock);
+
+        if (row_group.status == RowGroupState::Status::Done)
+            return;
+    }
 }
 
-bool ParquetBlockInputFormat::decodeOneChunk(size_t row_group_idx, std::unique_lock<std::mutex> & lock)
+void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_idx, std::unique_lock<std::mutex> & lock)
 {
-    // TODO: Do most reading on IO threads. Separate max_download_threads from max_parsing_threads.
-
     auto & row_group = row_groups[row_group_idx];
-    chassert(!row_group.done);
+    chassert(row_group.status != RowGroupState::Status::Done);
     chassert(lock.owns_lock());
+    SCOPE_EXIT({ chassert(lock.owns_lock() || std::uncaught_exceptions()); });
 
     lock.unlock();
 
     auto end_of_row_group = [&] {
-        lock.lock();
-        row_group.done = true;
         row_group.arrow_column_to_ch_column.reset();
         row_group.record_batch_reader.reset();
         row_group.file_reader.reset();
 
+        lock.lock();
+        row_group.status = RowGroupState::Status::Done;
+
         // We may be able to schedule more work now, but can't call scheduleMoreWorkIfNeeded() right
-        // here because we're running on the same thread pool, so it may deadlock if thread limit is
+        // here because we're running on the same thread pool, so it'll deadlock if thread limit is
         // reached. Wake up generate() instead.
         condvar.notify_all();
     };
@@ -208,17 +242,16 @@ bool ParquetBlockInputFormat::decodeOneChunk(size_t row_group_idx, std::unique_l
         if (skip_row_groups.contains(static_cast<int>(row_group_idx)))
         {
             // Pretend that the row group is empty.
-            // (This happens kind of late. We could avoid scheduling the row group on a thread in
-            // the first place. But the skip_row_groups feature is mostly unused, so it's better to
-            // be a little inefficient than to add a bunch of extra mostly-dead code for this.)
+            // (We could avoid scheduling the row group on a thread in the first place. But the
+            // skip_row_groups feature is mostly unused, so it's better to be a little inefficient
+            // than to add a bunch of extra mostly-dead code for this.)
             end_of_row_group();
-            return false;
+            return;
         }
-        else
-        {
-            prepareRowGroupReader(row_group_idx);
-        }
+
+        initializeRowGroupReader(row_group_idx);
     }
+
 
     auto batch = row_group.record_batch_reader->Next();
     if (!batch.ok())
@@ -227,12 +260,12 @@ bool ParquetBlockInputFormat::decodeOneChunk(size_t row_group_idx, std::unique_l
     if (!*batch)
     {
         end_of_row_group();
-        return false;
+        return;
     }
 
     auto tmp_table = arrow::Table::FromRecordBatches({*batch});
 
-    ChunkToDeliver res = {.chunk_idx = row_group.chunks_decoded, .row_group_idx = row_group_idx};
+    PendingChunk res = {.chunk_idx = row_group.next_chunk_idx, .row_group_idx = row_group_idx};
 
     /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
     /// Otherwise fill the missing columns with zero values of its type.
@@ -241,32 +274,33 @@ bool ParquetBlockInputFormat::decodeOneChunk(size_t row_group_idx, std::unique_l
 
     lock.lock();
 
-    ++row_group.chunks_decoded;
-    to_deliver.push(std::move(res));
+    ++row_group.next_chunk_idx;
+    ++row_group.num_pending_chunks;
+    pending_chunks.push(std::move(res));
     condvar.notify_all();
-
-    return true;
 }
 
 void ParquetBlockInputFormat::scheduleMoreWorkIfNeeded(std::optional<size_t> row_group_touched)
 {
-    while (row_groups_retired < row_groups.size())
+    while (row_groups_completed < row_groups.size())
     {
-        auto & row_group = row_groups[row_groups_retired];
-        if (!row_group.done || row_group.chunks_delivered < row_group.chunks_decoded)
+        auto & row_group = row_groups[row_groups_completed];
+        if (row_group.status != RowGroupState::Status::Done || row_group.num_pending_chunks != 0)
             break;
-        ++row_groups_retired;
+        ++row_groups_completed;
     }
 
     if (pool)
     {
-        while (row_groups_started - row_groups_retired < max_decoding_threads && row_groups_started < row_groups.size())
+        while (row_groups_started - row_groups_completed < max_decoding_threads &&
+               row_groups_started < row_groups.size())
             scheduleRowGroup(row_groups_started++);
 
         if (row_group_touched)
         {
             auto & row_group = row_groups[*row_group_touched];
-            if (!row_group.done && !row_group.running && row_group.chunks_decoded - row_group.chunks_delivered < max_pending_chunks_per_row_group)
+            if (row_group.status == RowGroupState::Status::Paused &&
+                row_group.num_pending_chunks < max_pending_chunks_per_row_group)
                 scheduleRowGroup(*row_group_touched);
         }
     }
@@ -290,29 +324,31 @@ Chunk ParquetBlockInputFormat::generate()
 
         scheduleMoreWorkIfNeeded();
 
-        if (!to_deliver.empty() && (!format_settings.parquet.preserve_order || to_deliver.top().row_group_idx == row_groups_retired))
+        if (!pending_chunks.empty() &&
+            (!format_settings.parquet.preserve_order ||
+             pending_chunks.top().row_group_idx == row_groups_completed))
         {
-            ChunkToDeliver chunk = std::move(const_cast<ChunkToDeliver&>(to_deliver.top()));
-            to_deliver.pop();
-
-            previous_block_missing_values = chunk.block_missing_values;
+            PendingChunk chunk = std::move(const_cast<PendingChunk&>(pending_chunks.top()));
+            pending_chunks.pop();
 
             auto & row_group = row_groups[chunk.row_group_idx];
-            chassert(chunk.chunk_idx == row_group.chunks_delivered);
-            ++row_group.chunks_delivered;
+            chassert(row_group.num_pending_chunks != 0);
+            chassert(chunk.chunk_idx == row_group.next_chunk_idx - row_group.num_pending_chunks);
+            --row_group.num_pending_chunks;
 
             scheduleMoreWorkIfNeeded(chunk.row_group_idx);
 
+            previous_block_missing_values = std::move(chunk.block_missing_values);
             return std::move(chunk.chunk);
         }
 
-        if (row_groups_retired == row_groups.size())
+        if (row_groups_completed == row_groups.size())
             return {};
 
         if (pool)
             condvar.wait(lock);
         else
-            decodeOneChunk(row_groups_retired, lock);
+            decodeOneChunk(row_groups_completed, lock);
     }
 }
 
@@ -326,9 +362,9 @@ void ParquetBlockInputFormat::resetParser()
     metadata.reset();
     column_indices.clear();
     row_groups.clear();
-    while (!to_deliver.empty())
-        to_deliver.pop();
-    row_groups_retired = 0;
+    while (!pending_chunks.empty())
+        pending_chunks.pop();
+    row_groups_completed = 0;
     previous_block_missing_values.clear();
     row_groups_started = 0;
     background_exception = nullptr;
@@ -368,28 +404,20 @@ NamesAndTypesList ParquetSchemaReader::readSchema()
 
 void registerInputFormatParquet(FormatFactory & factory)
 {
-    factory.registerInputFormat(
+    factory.registerRandomAccessInputFormat(
             "Parquet",
-            [](ReadBuffer & buf,
-               const Block & sample,
-               const RowInputFormatParams &,
-               const FormatSettings & settings)
-            {
-                // TODO: Propagate the last two from settings.
-                return std::make_shared<ParquetBlockInputFormat>(&buf, nullptr, sample, settings, 1, 4 * DBMS_DEFAULT_BUFFER_SIZE);
-            },
-            [](SeekableReadBufferFactoryPtr buf_factory,
+            [](ReadBuffer * buf,
+               SeekableReadBufferFactoryPtr buf_factory,
                const Block & sample,
                const FormatSettings & settings,
                const ReadSettings& read_settings,
                bool is_remote_fs,
-               ThreadPoolCallbackRunner<void> /* io_schedule */,
                size_t /* max_download_threads */,
                size_t max_parsing_threads)
             {
                 size_t min_bytes_for_seek = is_remote_fs ? read_settings.remote_read_min_bytes_for_seek : 8 * 1024;
                 return std::make_shared<ParquetBlockInputFormat>(
-                    nullptr,
+                    buf,
                     std::move(buf_factory),
                     sample,
                     settings,

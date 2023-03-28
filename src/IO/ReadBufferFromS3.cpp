@@ -53,8 +53,9 @@ ReadBufferFromS3::ReadBufferFromS3(
     bool use_external_buffer_,
     size_t offset_,
     size_t read_until_position_,
-    bool restricted_seek_)
-    : ReadBufferFromFileBase(use_external_buffer_ ? 0 : settings_.remote_fs_buffer_size, nullptr, 0)
+    bool restricted_seek_,
+    std::optional<size_t> file_size_)
+    : ReadBufferFromFileBase(use_external_buffer_ ? 0 : settings_.remote_fs_buffer_size, nullptr, 0, file_size_)
     , client_ptr(std::move(client_ptr_))
     , bucket(bucket_)
     , key(key_)
@@ -177,6 +178,7 @@ bool ReadBufferFromS3::nextImpl()
             sleep_time_with_backoff_milliseconds *= 2;
 
             /// Try to reinitialize `impl`.
+            resetWorkingBuffer();
             impl.reset();
         }
     }
@@ -197,15 +199,15 @@ bool ReadBufferFromS3::nextImpl()
 
 off_t ReadBufferFromS3::seek(off_t offset_, int whence)
 {
-    if (offset_ == offset && whence == SEEK_SET)
-        return offset;
+    if (offset_ == getPosition() && whence == SEEK_SET)
+        return offset_;
 
     if (impl && restricted_seek)
         throw Exception(
                         ErrorCodes::CANNOT_SEEK_THROUGH_FILE,
                         "Seek is allowed only before first read attempt from the buffer (current offset: "
                         "{}, new offset: {}, reading until position: {}, available: {})",
-                        offset, offset_, read_until_position, available());
+                        getPosition(), offset_, read_until_position, available());
 
     if (whence != SEEK_SET)
         throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET mode is allowed.");
@@ -221,7 +223,7 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
         {
             pos = working_buffer.end() - (offset - offset_);
             assert(pos >= working_buffer.begin());
-            assert(pos <= working_buffer.end());
+            assert(pos < working_buffer.end());
 
             return getPosition();
         }
@@ -274,6 +276,8 @@ void ReadBufferFromS3::setReadUntilPosition(size_t position)
         {
             if (!atEndOfRequestedRangeGuess())
                 ProfileEvents::increment(ProfileEvents::ReadBufferSeekCancelConnection);
+            offset = getPosition();
+            resetWorkingBuffer();
             impl.reset();
         }
         read_until_position = position;
@@ -289,12 +293,15 @@ void ReadBufferFromS3::setReadUntilEnd()
         {
             if (!atEndOfRequestedRangeGuess())
                 ProfileEvents::increment(ProfileEvents::ReadBufferSeekCancelConnection);
+            offset = getPosition();
+            resetWorkingBuffer();
             impl.reset();
         }
     }
 }
 
-bool ReadBufferFromS3::atEndOfRequestedRangeGuess() {
+bool ReadBufferFromS3::atEndOfRequestedRangeGuess()
+{
     if (!impl)
         return true;
     if (read_until_position)

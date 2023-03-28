@@ -147,7 +147,6 @@ off_t ParallelReadBuffer::seek(off_t offset, int whence)
                 return offset;
             }
         }
-        chassert(false);
     }
 
     finishAndWait();
