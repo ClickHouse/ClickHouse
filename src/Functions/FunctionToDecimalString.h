@@ -194,11 +194,11 @@ private:
     template <is_floating_point T>
     static void format(T value, DB::WriteBuffer & out, UInt8 precision)
     {
-        /// Maximum is hard-coded in 'contrib/double-conversion' for floating point values,
+        /// Maximum of 60 is hard-coded in 'double-conversion/double-conversion.h' for floating point values,
         /// Catch this here to give user a more reasonable error.
-        if (precision > double_conversion::DoubleToStringConverter::kMaxFixedDigitsAfterPoint)
+        if (precision > 60)
             throw DB::Exception(DB::ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER,
-                                "Too many fractional digits requested for Float, must not be more than {}", double_conversion::DoubleToStringConverter::kMaxFixedDigitsAfterPoint);
+                                "Too high precision requested for Float, must not be more than 60, got {}", Int8(precision));
 
         DB::DoubleConverter<false>::BufferType buffer;
         double_conversion::StringBuilder builder{buffer, sizeof(buffer)};

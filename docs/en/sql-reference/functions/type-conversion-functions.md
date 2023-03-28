@@ -751,6 +751,8 @@ toDecimalString(number, scale)
 
 -   `number` — Value to be represented as String, [Int, UInt](/docs/en/sql-reference/data-types/int-uint.md), [Float](/docs/en/sql-reference/data-types/float.md), [Decimal](/docs/en/sql-reference/data-types/decimal.md),
 -   `scale` — Number of fractional digits, [UInt8](/docs/en/sql-reference/data-types/int-uint.md).
+    * Maximum scale for [Decimal](/docs/en/sql-reference/data-types/decimal.md) and [Int, UInt](/docs/en/sql-reference/data-types/int-uint.md) types is 77 (it is the maximum possible number of significant digits for Decimal),
+    * Maximum scale for [Float](/docs/en/sql-reference/data-types/float.md) is 60.
 
 **Returned value**
 
