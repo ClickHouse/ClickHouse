@@ -16,7 +16,6 @@ cluster = ClickHouseCluster(__file__)
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
-
         cluster.add_instance(
             "node1",
             main_configs=["configs/storage_conf.xml"],

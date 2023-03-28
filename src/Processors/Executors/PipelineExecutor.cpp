@@ -74,6 +74,15 @@ void PipelineExecutor::cancel()
     graph->cancel();
 }
 
+void PipelineExecutor::cancelReading()
+{
+    if (!cancelled_reading)
+    {
+        cancelled_reading = true;
+        graph->cancel(/*cancel_all_processors*/ false);
+    }
+}
+
 void PipelineExecutor::finish()
 {
     tasks.finish();
@@ -148,6 +157,7 @@ bool PipelineExecutor::checkTimeLimitSoft()
         // so that the "break" is faster and doesn't wait for long events
         if (!continuing)
             cancel();
+
         return continuing;
     }
 

@@ -63,6 +63,7 @@ DEFAULT_ENV_NAME = ".env"
 
 SANITIZER_SIGN = "=================="
 
+
 # to create docker-compose env file
 def _create_env_file(path, variables):
     logging.debug(f"Env {variables} stored in {path}")
@@ -1454,7 +1455,6 @@ class ClickHouseCluster:
         config_root_name="clickhouse",
         extra_configs=[],
     ) -> "ClickHouseInstance":
-
         """Add an instance to the cluster.
 
         name - the name of the instance directory and the value of the 'instance' macro in ClickHouse.
@@ -3089,7 +3089,6 @@ class ClickHouseInstance:
         config_root_name="clickhouse",
         extra_configs=[],
     ):
-
         self.name = name
         self.base_cmd = cluster.base_cmd
         self.docker_id = cluster.get_instance_docker_id(self.name)
