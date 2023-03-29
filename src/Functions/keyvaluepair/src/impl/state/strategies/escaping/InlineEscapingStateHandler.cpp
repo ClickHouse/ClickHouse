@@ -121,11 +121,7 @@ NextState InlineEscapingKeyStateHandler::readQuoted(std::string_view file, Eleme
         }
         else if (*p == quoting_character)
         {
-            // todo try to optimize with resize and memcpy
-            for (size_t i = pos; i < character_position; ++i)
-            {
-                key.push_back(file[i]);
-            }
+            key.insert(key.end(), file.begin() + pos, file.begin() + character_position);
 
             if (key.empty())
             {
