@@ -22,7 +22,6 @@
 #include <IO/ReadBufferFromString.h>
 
 #include <Functions/GatherUtils/GatherUtils.h>
-#include <vector>
 
 
 namespace DB
@@ -364,21 +363,14 @@ static MutableColumns scatterString(
         auto & shard_offsets = shard_string.getOffsets();
         auto & shard_chars = shard_string.getChars();
 
+        /// Shortcut for empty string
         if (size == 1)
-        {
-            /// shortcut for empty string
             shard_chars[chars_positions[pos]++] = 0;
-            shard_offsets[offsets_positions[pos]++] = shard_chars.size();
-        }
         else
-        {
-            const size_t src_offset = src_offsets[i - 1];
+            memcpySmallAllowReadWriteOverflow15(shard_chars.data() + chars_positions[pos], &src_chars[src_offsets[i - 1]], size);
 
-            memcpySmallAllowReadWriteOverflow15(shard_chars.data() + chars_positions[pos], &src_chars[src_offset], size);
-
-            chars_positions[pos] += size;
-            shard_offsets[offsets_positions[pos]++] = chars_positions[pos];
-        }
+        chars_positions[pos] += size;
+        shard_offsets[offsets_positions[pos]++] = chars_positions[pos];
     }
 
     return scattered_columns;
@@ -426,12 +418,12 @@ static std::vector<ColumnPtr> scatterToShards(const IColumn & column, size_t num
         shards_offsets.back()->resize(column_map.size());
     }
 
-    UInt64 prev_offset = 0;
     auto & selector = hash.getData();
     std::vector<UInt64> current_shard_array_offset(num_shards);
 
     auto fill_selector = [&](auto && sharder)
     {
+        UInt64 prev_offset = 0;
         for (size_t i = 0; i < map_offsets.size(); ++i)
         {
             UInt64 map_size = map_offsets[i] - prev_offset;
