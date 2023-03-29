@@ -84,6 +84,7 @@ Pipe StorageMySQL::read(
     storage_snapshot->check(column_names_);
     String query = transformQueryForExternalDatabase(
         query_info_,
+        column_names_,
         storage_snapshot->metadata->getColumns().getOrdinary(),
         IdentifierQuotingStyle::BackticksMySQL,
         remote_database_name,
