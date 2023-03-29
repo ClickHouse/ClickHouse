@@ -6,6 +6,7 @@ import string
 import time
 
 from multiprocessing.dummy import Pool
+
 import pytest
 from helpers.cluster import ClickHouseCluster
 
@@ -179,3 +180,4 @@ SETTINGS index_granularity = 8192, storage_policy = 's3'"""
         )
     )
     assert all([value == "s3" for value in part_to_disk.values()])
+
