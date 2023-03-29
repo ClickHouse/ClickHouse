@@ -1,5 +1,5 @@
 ### Table of Contents
-**[ClickHouse release v23.3, 2023-03-30](#233)**<br/>
+**[ClickHouse release v23.3 LTS, 2023-03-30](#233)**<br/>
 **[ClickHouse release v23.2, 2023-02-23](#232)**<br/>
 **[ClickHouse release v23.1, 2023-01-25](#231)**<br/>
 **[Changelog for 2022](https://clickhouse.com/docs/en/whats-new/changelog/2022/)**<br/>
