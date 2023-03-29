@@ -40,7 +40,7 @@ std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr &
 /** Add table expression in tables in select query children.
   * If table expression node is not of identifier node, table node, query node, table function node, join node or array join node type throws logical error exception.
   */
-void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_query_ast, const QueryTreeNodePtr & table_expression);
+void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_query_ast, const QueryTreeNodePtr & table_expression, const IQueryTreeNode::ConvertToASTOptions & convert_to_ast_options);
 
 /// Extract table, table function, query, union from join tree
 QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node);
@@ -59,14 +59,6 @@ QueryTreeNodePtr extractLeftTableExpression(const QueryTreeNodePtr & join_tree_n
   * 5. t1
   */
 QueryTreeNodes buildTableExpressionsStack(const QueryTreeNodePtr & join_tree_node);
-
-/** Returns true if nested identifier can be resolved from compound type.
-  * Compound type can be tuple or array of tuples.
-  *
-  * Example: Compound type: Tuple(nested_path Tuple(nested_path_2 UInt64)). Nested identifier: nested_path_1.nested_path_2.
-  * Result: true.
-  */
-bool nestedIdentifierCanBeResolved(const DataTypePtr & compound_type, IdentifierView nested_identifier);
 
 /** Assert that there are no function nodes with specified function name in node children.
   * Do not visit subqueries.
