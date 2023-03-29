@@ -1,4 +1,5 @@
-#include "Configuration.h"
+#include <Functions/keyvaluepair/impl/Configuration.h>
+
 #include <Common/Exception.h>
 
 namespace DB
@@ -8,6 +9,9 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
+
+namespace extractKV
+{
 
 Configuration::Configuration(char key_value_delimiter_, char quoting_character_, std::vector<char> pair_delimiters_)
     : key_value_delimiter(key_value_delimiter_), quoting_character(quoting_character_), pair_delimiters(std::move(pair_delimiters_))
@@ -71,6 +75,8 @@ void ConfigurationFactory::validate(char key_value_delimiter, char quoting_chara
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid arguments, quoting_character conflicts with pair delimiters");
     }
+}
+
 }
 
 }

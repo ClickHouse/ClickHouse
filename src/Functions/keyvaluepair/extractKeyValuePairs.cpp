@@ -1,59 +1,24 @@
-#include "extractKeyValuePairs.h"
+#include <Functions/keyvaluepair/extractKeyValuePairs.h>
+
+#include <Functions/keyvaluepair/impl/KeyValuePairExtractor.h>
+#include <Functions/keyvaluepair/impl/KeyValuePairExtractorBuilder.h>
+#include <Functions/keyvaluepair/ArgumentExtractor.h>
 
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeString.h>
+#include <Functions/FunctionFactory.h>
 
 #include <Common/assert_cast.h>
 
-#include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeString.h>
 
-#include <Functions/keyvaluepair/src/KeyValuePairExtractorBuilder.h>
-
-namespace DB
+namespace
 {
+using namespace DB;
 
-ExtractKeyValuePairs::ExtractKeyValuePairs()
-    : return_type(std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()))
-{
-}
-
-String ExtractKeyValuePairs::getName() const
-{
-    return name;
-}
-
-FunctionPtr ExtractKeyValuePairs::create(ContextPtr)
-{
-    return std::make_shared<ExtractKeyValuePairs>();
-}
-
-static ColumnPtr extract(ColumnPtr data_column, std::shared_ptr<KeyValuePairExtractor> extractor)
-{
-    auto offsets = ColumnUInt64::create();
-
-    auto keys = ColumnString::create();
-    auto values = ColumnString::create();
-
-    uint64_t offset = 0u;
-
-    for (auto i = 0u; i < data_column->size(); i++)
-    {
-        auto row = data_column->getDataAt(i).toView();
-
-        auto pairs_count = extractor->extract(row, keys, values);
-
-        offset += pairs_count;
-
-        offsets->insert(offset);
-    }
-
-    ColumnPtr keys_ptr = std::move(keys);
-
-    return ColumnMap::create(keys_ptr, std::move(values), std::move(offsets));
-}
-
-auto ExtractKeyValuePairs::getExtractor(const ArgumentExtractor::ParsedArguments & parsed_arguments)
+auto getExtractor(const ArgumentExtractor::ParsedArguments & parsed_arguments)
 {
     auto builder = KeyValuePairExtractorBuilder();
 
@@ -80,6 +45,46 @@ auto ExtractKeyValuePairs::getExtractor(const ArgumentExtractor::ParsedArguments
     return builder.build();
 }
 
+ColumnPtr extract(ColumnPtr data_column, std::shared_ptr<KeyValuePairExtractor> extractor)
+{
+    auto offsets = ColumnUInt64::create();
+
+    auto keys = ColumnString::create();
+    auto values = ColumnString::create();
+
+    uint64_t offset = 0u;
+
+    for (auto i = 0u; i < data_column->size(); i++)
+    {
+        auto row = data_column->getDataAt(i).toView();
+
+        auto pairs_count = extractor->extract(row, keys, values);
+
+        offset += pairs_count;
+
+        offsets->insert(offset);
+    }
+
+    ColumnPtr keys_ptr = std::move(keys);
+
+    return ColumnMap::create(keys_ptr, std::move(values), std::move(offsets));
+}
+
+
+}
+
+namespace DB
+{
+
+ExtractKeyValuePairs::ExtractKeyValuePairs()
+{
+}
+
+DataTypePtr ExtractKeyValuePairs::getReturnTypeImpl(const DataTypes &) const
+{
+    return std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>());
+}
+
 ColumnPtr ExtractKeyValuePairs::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const
 {
     auto parsed_arguments = ArgumentExtractor::extract(arguments);
@@ -87,31 +92,6 @@ ColumnPtr ExtractKeyValuePairs::executeImpl(const ColumnsWithTypeAndName & argum
     auto extractor_without_escaping = getExtractor(parsed_arguments);
 
     return extract(parsed_arguments.data_column, extractor_without_escaping);
-}
-
-bool ExtractKeyValuePairs::isVariadic() const
-{
-    return true;
-}
-
-bool ExtractKeyValuePairs::isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const
-{
-    return false;
-}
-
-std::size_t ExtractKeyValuePairs::getNumberOfArguments() const
-{
-    return 0u;
-}
-
-DataTypePtr ExtractKeyValuePairs::getReturnTypeImpl(const DataTypes &) const
-{
-    return return_type;
-}
-
-ColumnNumbers ExtractKeyValuePairs::getArgumentsThatAreAlwaysConstant() const
-{
-    return {1, 2, 3, 4, 5};
 }
 
 REGISTER_FUNCTION(ExtractKeyValuePairs)

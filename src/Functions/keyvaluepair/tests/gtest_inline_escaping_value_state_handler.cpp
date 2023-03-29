@@ -1,4 +1,4 @@
-#include <Functions/keyvaluepair/src/impl/state/strategies/escaping/InlineEscapingStateHandler.h>
+#include <Functions/keyvaluepair/impl/InlineEscapingStateHandler.h>
 #include <gtest/gtest.h>
 
 namespace DB

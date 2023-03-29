@@ -1,9 +1,12 @@
-#include "NeedleFactory.h"
+#include <Functions/keyvaluepair/impl/NeedleFactory.h>
 
 namespace DB
 {
 
-std::vector<char> NeedleFactory::getWaitNeedles(const DB::Configuration & extractor_configuration)
+namespace extractKV
+{
+
+std::vector<char> NeedleFactory::getWaitNeedles(const Configuration & extractor_configuration)
 {
     const auto & [key_value_delimiter, quoting_character, pair_delimiters]
         = extractor_configuration;
@@ -49,7 +52,7 @@ std::vector<char> NeedleFactory::getReadQuotedNeedles(const Configuration & extr
     return needles;
 }
 
-std::vector<char> EscapingNeedleFactory::getWaitNeedles(const DB::Configuration & extractor_configuration)
+std::vector<char> EscapingNeedleFactory::getWaitNeedles(const Configuration & extractor_configuration)
 {
     auto needles = NeedleFactory::getWaitNeedles(extractor_configuration);
 
@@ -74,6 +77,8 @@ std::vector<char> EscapingNeedleFactory::getReadQuotedNeedles(const Configuratio
     needles.push_back('\\');
 
     return needles;
+}
+
 }
 
 }

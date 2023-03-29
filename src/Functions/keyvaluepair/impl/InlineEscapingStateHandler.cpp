@@ -1,6 +1,5 @@
-#include "InlineEscapingStateHandler.h"
-#include <Functions/keyvaluepair/src/impl/state/strategies/util/CharacterFinder.h>
-#include <Functions/keyvaluepair/src/impl/state/strategies/util/NeedleFactory.h>
+#include <Functions/keyvaluepair/impl/InlineEscapingStateHandler.h>
+#include <Functions/keyvaluepair/impl/NeedleFactory.h>
 
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
@@ -17,27 +16,32 @@ size_t consumeWithEscapeSequence(std::string_view file, size_t start_pos, size_t
 
     return buf.getPosition();
 }
+
+using NextState = DB::extractKV::StateHandler::NextState;
+
 }
 
 namespace DB
 {
 
-InlineEscapingKeyStateHandler::InlineEscapingKeyStateHandler(Configuration configuration_)
-    : extractor_configuration(std::move(configuration_))
+namespace extractKV
+{
+
+InlineEscapingStateHandler::InlineEscapingStateHandler(Configuration extractor_configuration_)
+    : extractor_configuration(std::move(extractor_configuration_))
 {
     wait_needles = EscapingNeedleFactory::getWaitNeedles(extractor_configuration);
     read_needles = EscapingNeedleFactory::getReadNeedles(extractor_configuration);
     read_quoted_needles = EscapingNeedleFactory::getReadQuotedNeedles(extractor_configuration);
 }
 
-NextState InlineEscapingKeyStateHandler::wait(std::string_view file) const
+NextState InlineEscapingStateHandler::waitKey(std::string_view file) const
 {
     const auto quoting_character = extractor_configuration.quoting_character;
-    size_t pos = 0;
-    while (const auto * p = find_first_not_symbols_or_null({file.begin() + pos, file.end()}, wait_needles))
+
+    if (const auto * p = find_first_not_symbols_or_null(file, wait_needles))
     {
         const size_t character_position = p - file.begin();
-
         if (*p == quoting_character)
         {
             return {character_position + 1u, State::READING_QUOTED_KEY};
@@ -57,7 +61,7 @@ NextState InlineEscapingKeyStateHandler::wait(std::string_view file) const
  * If I find a key value delimiter and that is empty, I do not need to copy? hm,m hm hm
  * */
 
-NextState InlineEscapingKeyStateHandler::read(std::string_view file, ElementType & key) const
+NextState InlineEscapingStateHandler::readKey(std::string_view file, KeyType & key) const
 {
     const auto & [key_value_delimiter, quoting_character, pair_delimiters] = extractor_configuration;
 
@@ -97,7 +101,7 @@ NextState InlineEscapingKeyStateHandler::read(std::string_view file, ElementType
     return {file.size(), State::END};
 }
 
-NextState InlineEscapingKeyStateHandler::readQuoted(std::string_view file, ElementType & key) const
+NextState InlineEscapingStateHandler::readQuotedKey(std::string_view file, KeyType & key) const
 {
     const auto quoting_character = extractor_configuration.quoting_character;
 
@@ -137,7 +141,7 @@ NextState InlineEscapingKeyStateHandler::readQuoted(std::string_view file, Eleme
     return {file.size(), State::END};
 }
 
-NextState InlineEscapingKeyStateHandler::readKeyValueDelimiter(std::string_view file) const
+NextState InlineEscapingStateHandler::readKeyValueDelimiter(std::string_view file) const
 {
     const auto current_character = file[0];
     if (current_character == extractor_configuration.key_value_delimiter)
@@ -148,50 +152,35 @@ NextState InlineEscapingKeyStateHandler::readKeyValueDelimiter(std::string_view 
     return {0, State::WAITING_KEY};
 }
 
-
-InlineEscapingValueStateHandler::InlineEscapingValueStateHandler(Configuration extractor_configuration_)
-    : extractor_configuration(std::move(extractor_configuration_))
+NextState InlineEscapingStateHandler::waitValue(std::string_view file) const
 {
-    read_needles = EscapingNeedleFactory::getReadNeedles(extractor_configuration);
-    read_quoted_needles = EscapingNeedleFactory::getReadQuotedNeedles(extractor_configuration);
-}
-
-NextState InlineEscapingValueStateHandler::wait(std::string_view file) const
-{
-    const auto & [key_value_delimiter, quoting_character, pair_delimiters] = extractor_configuration;
+    const auto & [key_value_delimiter, quoting_character, _] = extractor_configuration;
 
     size_t pos = 0;
-    if (pos < file.size())
-    {
-        const auto current_character = file[pos];
+    const auto current_character = file[pos];
 
-        if (quoting_character == current_character)
-        {
-            return {pos + 1u, State::READING_QUOTED_VALUE};
-        }
-        else if (key_value_delimiter == current_character)
-        {
-            return {pos, State::WAITING_KEY};
-        }
-        else
-        {
-            return {pos, State::READING_VALUE};
-        }
+    if (current_character == quoting_character)
+    {
+        return {pos + 1u, State::READING_QUOTED_VALUE};
+    }
+    else if (current_character == key_value_delimiter)
+    {
+        return {pos, State::WAITING_KEY};
     }
 
     return {pos, State::READING_VALUE};
 }
 
-NextState InlineEscapingValueStateHandler::read(std::string_view file, ElementType & value) const
+NextState InlineEscapingStateHandler::readValue(std::string_view file, ValueType & value) const
 {
-    const auto & [key_value_delimiter, quoting_character, pair_delimiters] = extractor_configuration;
+    const auto & [key_value_delimiter, _, pair_delimiters] = extractor_configuration;
 
     value.clear();
 
     size_t pos = 0;
     while (const auto * p = find_first_symbols_or_null({file.begin() + pos, file.end()}, read_needles))
     {
-        auto character_position = p - file.begin();
+        const size_t character_position = p - file.begin();
         size_t next_pos = character_position + 1u;
 
         if (*p == '\\')
@@ -221,21 +210,20 @@ NextState InlineEscapingValueStateHandler::read(std::string_view file, ElementTy
 
     // Reached end of input, consume rest of the file as value and make sure KV pair is produced.
     value.insert(value.end(), file.begin() + pos, file.end());
-
     return {pos, State::FLUSH_PAIR};
 }
 
-NextState InlineEscapingValueStateHandler::readQuoted(std::string_view file, ElementType & value) const
+NextState InlineEscapingStateHandler::readQuotedValue(std::string_view file, ValueType & value) const
 {
     const auto quoting_character = extractor_configuration.quoting_character;
-    const std::string_view needles{read_quoted_needles.begin(), read_quoted_needles.end()};
+
+    size_t pos = 0;
 
     value.clear();
 
-    size_t pos = 0;
-    while (const auto * p = find_first_symbols_or_null({file.begin() + pos, file.end()}, needles))
+    while (const auto * p = find_first_symbols_or_null({file.begin() + pos, file.end()}, read_quoted_needles))
     {
-        auto character_position = p - file.begin();
+        const size_t character_position = p - file.begin();
         size_t next_pos = character_position + 1u;
 
         if (*p == '\\')
@@ -258,6 +246,8 @@ NextState InlineEscapingValueStateHandler::readQuoted(std::string_view file, Ele
     }
 
     return {pos, State::END};
+}
+
 }
 
 }
