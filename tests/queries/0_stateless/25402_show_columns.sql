@@ -3,7 +3,8 @@
 
 -- Create a test table and verify that the output of SHOW COLUMNS is sane.
 -- The matching of actual/expected results relies on the fact that the output of SHOW COLUMNS is sorted.
-CREATE OR REPLACE TABLE tab
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab
 (
     `uint64` UInt64,
     `int32` Nullable(Int32) COMMENT 'example comment',
@@ -56,7 +57,8 @@ SELECT '---';
 DROP DATABASE IF EXISTS database_123456789abcde;
 CREATE DATABASE database_123456789abcde; -- pseudo-random database name
 
-CREATE OR REPLACE TABLE database_123456789abcde.tab
+DROP TABLE IF EXISTS database_123456789abcde.tab;
+CREATE TABLE database_123456789abcde.tab
 (
     `uint64` UInt64,
     `int32` Int32,
