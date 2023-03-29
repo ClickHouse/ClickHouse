@@ -67,7 +67,7 @@ public:
         size_t max_block_size,
         size_t num_streams) override
     {
-        query_plan = std::move(*MergeTreeDataSelectExecutor(storage)
+        query_plan.addStep(MergeTreeDataSelectExecutor(storage)
                                               .readFromParts(
                                                   parts,
                                                   column_names,

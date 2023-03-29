@@ -113,9 +113,14 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartSizeForMutation() const
     const auto data_settings = data.getSettings();
     size_t occupied = CurrentMetrics::values[CurrentMetrics::BackgroundMergesAndMutationsPoolTask].load(std::memory_order_relaxed);
 
+    if (data_settings->max_number_of_mutations_for_replica > 0 &&
+        occupied >= data_settings->max_number_of_mutations_for_replica)
+        return 0;
+
     /// DataPart can be store only at one disk. Get maximum reservable free space at all disks.
     UInt64 disk_space = data.getStoragePolicy()->getMaxUnreservedFreeSpace();
     auto max_tasks_count = data.getContext()->getMergeMutateExecutor()->getMaxTasksCount();
+
     /// Allow mutations only if there are enough threads, leave free threads for merges else
     if (occupied <= 1
         || max_tasks_count - occupied >= data_settings->number_of_free_entries_in_pool_to_execute_mutation)
