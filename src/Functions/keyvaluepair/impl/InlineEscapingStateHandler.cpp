@@ -44,6 +44,7 @@ NextState InlineEscapingStateHandler::waitKey(std::string_view file) const
         const size_t character_position = p - file.begin();
         if (*p == quoting_character)
         {
+            // +1 to skip quoting character
             return {character_position + 1u, State::READING_QUOTED_KEY};
         }
         else
@@ -63,7 +64,7 @@ NextState InlineEscapingStateHandler::waitKey(std::string_view file) const
 
 NextState InlineEscapingStateHandler::readKey(std::string_view file, KeyType & key) const
 {
-    const auto & [key_value_delimiter, quoting_character, pair_delimiters] = extractor_configuration;
+    const auto & [key_value_delimiter, _, pair_delimiters] = extractor_configuration;
 
     key.clear();
 
