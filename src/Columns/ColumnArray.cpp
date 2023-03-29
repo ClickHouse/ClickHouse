@@ -953,6 +953,11 @@ double ColumnArray::getRatioOfDefaultRows(double sample_ratio) const
     return getRatioOfDefaultRowsImpl<ColumnArray>(sample_ratio);
 }
 
+UInt64 ColumnArray::getNumberOfDefaultRows() const
+{
+    return getNumberOfDefaultRowsImpl<ColumnArray>();
+}
+
 void ColumnArray::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const
 {
     return getIndicesOfNonDefaultRowsImpl<ColumnArray>(indices, from, limit);

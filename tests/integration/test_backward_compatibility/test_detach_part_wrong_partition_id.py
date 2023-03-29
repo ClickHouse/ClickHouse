@@ -24,7 +24,6 @@ def start_cluster():
 
 
 def test_detach_part_wrong_partition_id(start_cluster):
-
     # Here we create table with partition by UUID.
     node_21_6.query(
         "create table tab (id UUID, value UInt32) engine = MergeTree PARTITION BY (id) order by tuple()"

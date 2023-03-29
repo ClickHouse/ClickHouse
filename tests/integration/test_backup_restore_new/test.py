@@ -648,24 +648,15 @@ def test_async_backups_to_same_destination(interface):
         "",
     )
 
-    ids_succeeded = (
-        instance.query(
-            f"SELECT id FROM system.backups WHERE id IN {ids_for_query} AND status == 'BACKUP_CREATED'"
-        )
-        .rstrip("\n")
-        .split("\n")
-    )
+    ids_succeeded = instance.query(
+        f"SELECT id FROM system.backups WHERE id IN {ids_for_query} AND status == 'BACKUP_CREATED'"
+    ).splitlines()
 
-    ids_failed = (
-        instance.query(
-            f"SELECT id FROM system.backups WHERE id IN {ids_for_query} AND status == 'BACKUP_FAILED'"
-        )
-        .rstrip("\n")
-        .split("\n")
-    )
+    ids_failed = instance.query(
+        f"SELECT id FROM system.backups WHERE id IN {ids_for_query} AND status == 'BACKUP_FAILED'"
+    ).splitlines()
 
     assert len(ids_succeeded) == 1
-    assert len(ids_failed) <= 1
     assert set(ids_succeeded + ids_failed) == set(ids)
 
     # Check that the first backup is all right.

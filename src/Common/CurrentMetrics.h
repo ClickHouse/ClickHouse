@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <utility>
 #include <atomic>
+#include <cassert>
 #include <base/types.h>
 
 /** Allows to count number of simultaneously happening processes or current value of some metric.
@@ -73,7 +74,10 @@ namespace CurrentMetrics
 
     public:
         explicit Increment(Metric metric, Value amount_ = 1)
-            : Increment(&values[metric], amount_) {}
+            : Increment(&values[metric], amount_)
+        {
+            assert(metric < CurrentMetrics::end());
+        }
 
         ~Increment()
         {

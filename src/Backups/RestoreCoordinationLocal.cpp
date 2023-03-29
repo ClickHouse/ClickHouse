@@ -7,20 +7,20 @@ namespace DB
 RestoreCoordinationLocal::RestoreCoordinationLocal() = default;
 RestoreCoordinationLocal::~RestoreCoordinationLocal() = default;
 
-void RestoreCoordinationLocal::setStage(const String &, const String &, const String &)
+void RestoreCoordinationLocal::setStage(const String &, const String &)
 {
 }
 
-void RestoreCoordinationLocal::setError(const String &, const Exception &)
+void RestoreCoordinationLocal::setError(const Exception &)
 {
 }
 
-Strings RestoreCoordinationLocal::waitForStage(const Strings &, const String &)
+Strings RestoreCoordinationLocal::waitForStage(const String &)
 {
     return {};
 }
 
-Strings RestoreCoordinationLocal::waitForStage(const Strings &, const String &, std::chrono::milliseconds)
+Strings RestoreCoordinationLocal::waitForStage(const String &, std::chrono::milliseconds)
 {
     return {};
 }
@@ -38,6 +38,11 @@ bool RestoreCoordinationLocal::acquireInsertingDataIntoReplicatedTable(const Str
 }
 
 bool RestoreCoordinationLocal::acquireReplicatedAccessStorage(const String &)
+{
+    return true;
+}
+
+bool RestoreCoordinationLocal::acquireReplicatedSQLObjects(const String &, UserDefinedSQLObjectType)
 {
     return true;
 }

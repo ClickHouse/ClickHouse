@@ -18,9 +18,7 @@
 
 #if defined(__aarch64__) && defined(__ARM_NEON)
 #    include <arm_neon.h>
-#    ifdef HAS_RESERVED_IDENTIFIER
-#        pragma clang diagnostic ignored "-Wreserved-identifier"
-#    endif
+#      pragma clang diagnostic ignored "-Wreserved-identifier"
 #endif
 
 namespace DB
@@ -1076,7 +1074,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
 
     read_result.checkInternalConsistency();
 
-    if (!read_result.can_return_prewhere_column_without_filtering)
+    if (!read_result.can_return_prewhere_column_without_filtering && last_reader_in_chain)
     {
         if (!read_result.filterWasApplied())
         {
@@ -1380,17 +1378,14 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
         current_step_filter = result.columns[prewhere_column_pos];
     }
 
+    /// In case when we are returning prewhere column the caller expects it to serve as a final filter:
+    /// it must contain 0s not only from the current step but also from all the previous steps.
+    /// One way to achieve this is to apply the final_filter if we know that the final_filter was not applied at
+    /// several previous steps but was accumulated instead.
+    result.can_return_prewhere_column_without_filtering = result.filterWasApplied();
+
     if (prewhere_info->remove_column)
         result.columns.erase(result.columns.begin() + prewhere_column_pos);
-    else
-    {
-        /// In case when we are not removing prewhere column the caller expects it to serve as a final filter:
-        /// it must contain 0s not only from the current step but also from all the previous steps.
-        /// One way to achieve this is to apply the final_filter if we know that the final _filter was not applied at
-        /// several previous steps but was accumulated instead.
-        result.can_return_prewhere_column_without_filtering =
-            (!result.final_filter.present() || result.final_filter.countBytesInFilter() == result.num_rows);
-    }
 
     FilterWithCachedCount current_filter(current_step_filter);
 
@@ -1426,6 +1421,16 @@ std::string PrewhereExprInfo::dump() const
             << "  REMOVE_COLUMN: " << steps[i].remove_column << "\n"
             << "  NEED_FILTER: " << steps[i].need_filter << "\n\n";
     }
+
+    return s.str();
+}
+
+std::string PrewhereExprInfo::dumpConditions() const
+{
+    WriteBufferFromOwnString s;
+
+    for (size_t i = 0; i < steps.size(); ++i)
+        s << (i == 0 ? "\"" : ", \"") << steps[i].column_name << "\"";
 
     return s.str();
 }

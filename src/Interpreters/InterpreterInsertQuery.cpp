@@ -540,7 +540,11 @@ BlockIO InterpreterInsertQuery::execute()
         if (query.hasInlinedData() && !async_insert)
         {
             /// can execute without additional data
-            auto pipe = getSourceFromASTInsertQuery(query_ptr, true, query_sample_block, getContext(), nullptr);
+            auto format = getInputFormatFromASTInsertQuery(query_ptr, true, query_sample_block, getContext(), nullptr);
+            for (auto && buffer : owned_buffers)
+                format->addBuffer(std::move(buffer));
+
+            auto pipe = getSourceFromInputFormat(query_ptr, std::move(format), getContext(), nullptr);
             res.pipeline.complete(std::move(pipe));
         }
     }

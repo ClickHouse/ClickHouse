@@ -15,7 +15,7 @@ SELECT intDiv(b, c) FROM test_filter PREWHERE c != 0;
 SELECT intDiv(b, c) FROM test_filter PREWHERE c != 0 WHERE b%2 != 0;
 
 
-SET mutations_sync = 2, allow_experimental_lightweight_delete = 1;
+SET mutations_sync = 2;
 
 -- Delete all rows where division by zero could occur
 DELETE FROM test_filter WHERE c = 0;
