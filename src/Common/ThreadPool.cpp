@@ -11,6 +11,7 @@
 
 #include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>
+#include <base/demangle.h>
 
 namespace DB
 {
@@ -29,6 +30,7 @@ namespace CurrentMetrics
     extern const Metric LocalThreadActive;
 }
 
+static constexpr auto DEFAULT_THREAD_NAME = "ThreadPool";
 
 template <typename Thread>
 ThreadPoolImpl<Thread>::ThreadPoolImpl()
@@ -342,7 +344,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
     while (true)
     {
         /// This is inside the loop to also reset previous thread names set inside the jobs.
-        setThreadName("ThreadPool");
+        setThreadName(DEFAULT_THREAD_NAME);
 
         /// A copy of parent trace context
         DB::OpenTelemetry::TracingContextOnThread parent_thead_trace_context;
@@ -389,10 +391,17 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
                 if (thread_trace_context.root_span.isTraceEnabled())
                 {
                     /// Use the thread name as operation name so that the tracing log will be more clear.
-                    /// The thread name is usually set in the jobs, we can only get the name after the job finishes
+                    /// The thread name is usually set in jobs, we can only get the name after the job finishes
                     std::string thread_name = getThreadName();
-                    if (!thread_name.empty())
+                    if (!thread_name.empty() && thread_name != DEFAULT_THREAD_NAME)
+                    {
                         thread_trace_context.root_span.operation_name = thread_name;
+                    }
+                    else
+                    {
+                        /// If the thread name is not set, use the type name of the job instead
+                        thread_trace_context.root_span.operation_name = demangle(job.target_type().name());
+                    }
                 }
 
                 /// job should be reset before decrementing scheduled_jobs to
