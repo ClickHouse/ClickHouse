@@ -62,7 +62,7 @@ namespace
 
             LOG_TEST(log, "Having path {}", file_path);
 
-            const auto [it, inserted] = latest_parts.emplace(/* partition_path */fs::path(key).parent_path(), FileInfo{});
+            const auto [it, inserted] = latest_parts.emplace(/* partition_path */std::filesystem::path(key).parent_path(), FileInfo{});
             if (inserted)
                 it->second = FileInfo{file_path, timestamp};
             else if (it->second.timestamp < timestamp)
