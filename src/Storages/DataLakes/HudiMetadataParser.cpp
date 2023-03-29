@@ -1,7 +1,9 @@
 #include <Storages/DataLakes/HudiMetadataParser.h>
 #include <Common/logger_useful.h>
 #include <ranges>
+#include <Poco/String.h>
 #include "config.h"
+#include <filesystem>
 
 #if USE_AWS_S3
 #include <Storages/DataLakes/S3MetadataReader.h>
@@ -43,7 +45,7 @@ namespace
         /// For each partition path take only latest file.
         for (const auto & key : keys | std::views::filter(keys_filter))
         {
-            const auto key_path = fs::path(key);
+            const auto key_path = std::filesystem::path(key);
 
             /// Every filename contains metadata split by "_", timestamp is after last "_".
             const auto delim = key.find_last_of('_') + 1;

@@ -1,6 +1,7 @@
 #include <Storages/DataLakes/DeltaLakeMetadataParser.h>
 #include <base/JSON.h>
 #include "config.h"
+#include <set>
 
 #if USE_AWS_S3
 #include <Storages/DataLakes/S3MetadataReader.h>
@@ -47,20 +48,15 @@ namespace
      *     {"commitInfo":{
      *         "timestamp":1679424650713,
      *         "operation":"WRITE",
-     *         "operationParameters":{"mode":"Overwrite","partitionBy":"[]"},
-     *         "isolationLevel":"Serializable",
-     *         "isBlindAppend":false,
      *         "operationMetrics":{"numFiles":"1","numOutputRows":"100","numOutputBytes":"2560"},
-     *         "engineInfo":"Apache-Spark/3.3.2 Delta-Lake/2.2.0",
-     *         "txnId":"8cb5814d-1009-46ad-a2f8-f1e7fdf4da56"}}
+     *         ...}
      *     {"protocol":{"minReaderVersion":2,"minWriterVersion":5}}
      *     {"metaData":{
      *         "id":"bd11ad96-bc2c-40b0-be1f-6fdd90d04459",
      *         "format":{"provider":"parquet","options":{}},
-     *         "schemaString":"{
-     *             \"type\":\"struct\",\"fields\":[{\"name\":\"number\",\"type\":\"decimal(20,0)\",\"nullable\":true,\"metadata\":{\"delta.columnMapping.id\":1,\"delta.columnMapping.physicalName\":\"col-6c990940-59bb-4709-8f2e-17083a82c01a\"}},{\"name\":\"toString(number)\",\"type\":\"binary\",\"nullable\":true,\"metadata\":{\"delta.columnMapping.id\":2,\"delta.columnMapping.physicalName\":\"col-763cd7e2-7627-4d8e-9fb7-9e85d0c8845b\"}}]}",
+     *         "schemaString":"{...}",
      *         "partitionColumns":[],
-     *         "configuration":{"delta.columnMapping.mode":"name","delta.columnMapping.maxColumnId":"2"},
+     *         "configuration":{...},
      *         "createdTime":1679424648640}}
      *     {"add":{
      *         "path":"part-00000-ecf8ed08-d04a-4a71-a5ec-57d8bb2ab4ee-c000.parquet",
