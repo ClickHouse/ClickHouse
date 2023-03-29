@@ -50,7 +50,7 @@ function test_query {
     result=$( $CLICKHOUSE_CLIENT $CLIENT_ARGS -q "EXPLAIN PIPELINE ${query_str}" )
     read_in_order_count=$( echo "$result" | grep 'MergeTreeInOrder' | wc -l )
 
-    test "$read_in_order_count" -eq "$expected_result" || echo "fail ${BASH_LINENO[0]}: expected: $expected_result, got: $sort_count in '${query_str}'"
+    test "$read_in_order_count" -eq "$expected_result" || echo "fail ${BASH_LINENO[0]}: expected: $expected_result, got: $read_in_order_count in '${query_str}'"
 
     echo "$result" | grep -q 'FilterOnTheFly' && echo "fail ${BASH_LINENO[0]}: step FilterOnTheFly should not be present for read in order"
 }
