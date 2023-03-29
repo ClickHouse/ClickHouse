@@ -31,6 +31,13 @@ protected:
     {
         throw Exception("Method formatImpl is not supported by MySQLParser::ASTCreateDefines.", ErrorCodes::NOT_IMPLEMENTED);
     }
+
+    void forEachPointerToChild(std::function<void(void**)> f) override
+    {
+        f(reinterpret_cast<void **>(&columns));
+        f(reinterpret_cast<void **>(&indices));
+        f(reinterpret_cast<void **>(&constraints));
+    }
 };
 
 class ParserCreateDefines : public IParserBase
@@ -44,4 +51,3 @@ protected:
 }
 
 }
-

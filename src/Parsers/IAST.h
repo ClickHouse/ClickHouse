@@ -175,6 +175,16 @@ public:
         field = nullptr;
     }
 
+    /// After changing one of `children` elements, update the corresponding member pointer if needed.
+    void updatePointerToChild(void * old_ptr, void * new_ptr)
+    {
+        forEachPointerToChild([old_ptr, new_ptr](void ** ptr) mutable
+        {
+            if (*ptr == old_ptr)
+                *ptr = new_ptr;
+        });
+    }
+
     /// Convert to a string.
 
     /// Format settings.
@@ -271,6 +281,10 @@ public:
     static const char * hilite_alias;
     static const char * hilite_substitution;
     static const char * hilite_none;
+
+    /// Some AST classes have naked pointers to children elements as members.
+    /// This method allows to iterate over them.
+    virtual void forEachPointerToChild(std::function<void(void**)>) {}
 
 private:
     size_t checkDepthImpl(size_t max_depth, size_t level) const;

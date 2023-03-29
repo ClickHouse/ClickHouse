@@ -31,6 +31,11 @@ public:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
     void updateTreeHashImpl(SipHash & hash_state) const override;
+
+    void forEachPointerToChild(std::function<void(void**)> f) override
+    {
+        f(reinterpret_cast<void **>(&second));
+    }
 };
 
 
