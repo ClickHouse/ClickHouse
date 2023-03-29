@@ -660,6 +660,46 @@ Result:
 └──────────────────────┴─────────────────────┘
 ```
 
+
+## kafkaMurmurHash
+
+Calculates a 32-bit [MurmurHash2](https://github.com/aappleby/smhasher) hash value using the same hash seed as [Kafka](https://github.com/apache/kafka/blob/461c5cfe056db0951d9b74f5adc45973670404d7/clients/src/main/java/org/apache/kafka/common/utils/Utils.java#L482).
+
+**Syntax**
+
+```sql
+MurmurHash(par1, ...)
+```
+
+**Arguments**
+
+-   `par1, ...` — A variable number of parameters that can be any of the [supported data types](/docs/en/sql-reference/data-types/index.md/#data_types).
+
+**Returned value**
+
+-   Calculated hash value.
+
+Type: [Int32](/docs/en/sql-reference/data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+    kafkaMurmurHash('foobar') AS res1,
+    kafkaMurmurHash(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS res2,
+    toTypeName(res1) AS type;
+```
+
+Result:
+
+```response
+┌───────res1─┬─────res2─┬─type──┐
+│ -790332482 │ 16984959 │ Int32 │
+└────────────┴──────────┴───────┘
+```
+
 ## murmurHash3_32, murmurHash3_64
 
 Produces a [MurmurHash3](https://github.com/aappleby/smhasher) hash value.
