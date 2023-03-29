@@ -153,6 +153,20 @@ We can create a chart in the SQL Console to visualize the results:
 
 ![Number of events per day](./images/sensors_01.png)
 
-6.
+6. This query counts the number of overly hot and humid days:
+
+```sql
+WITH
+    toYYYYMMDD(timestamp) AS day
+SELECT day, count() FROM sensors
+WHERE temperature >= 40 and temperature <= 50
+and humidity >= 90
+GROUP BY day
+ORDER BY day asc;
+```
+
+Here's a visualization of the result:
+
+![Hot and humid days](./images/sensors_02.png)
 
 7.
