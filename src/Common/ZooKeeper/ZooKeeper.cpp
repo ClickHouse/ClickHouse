@@ -1163,6 +1163,12 @@ void ZooKeeper::setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_)
         zk->setZooKeeperLog(zk_log);
 }
 
+void ZooKeeper::setServerCompletelyStarted()
+{
+    if (auto * zk = dynamic_cast<Coordination::ZooKeeper *>(impl.get()))
+        zk->setServerCompletelyStarted();
+}
+
 
 size_t getFailedOpIndex(Coordination::Error exception_code, const Coordination::Responses & responses)
 {
