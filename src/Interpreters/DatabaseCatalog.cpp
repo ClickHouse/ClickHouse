@@ -53,7 +53,6 @@ namespace ErrorCodes
     extern const int DATABASE_ACCESS_DENIED;
     extern const int LOGICAL_ERROR;
     extern const int HAVE_DEPENDENT_OBJECTS;
-    extern const int FS_METADATA_ERROR;
 }
 
 TemporaryTableHolder::TemporaryTableHolder(ContextPtr context_, const TemporaryTableHolder::Creator & creator, const ASTPtr & query)
