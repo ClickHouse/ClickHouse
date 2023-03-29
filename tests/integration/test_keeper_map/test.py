@@ -123,7 +123,7 @@ def test_create_drop_keeper_map_concurrent(started_cluster):
     manager = multiprocessing.Manager()
     stop_event = manager.Event()
     results = []
-    for i in range(multiprocessing.cpu_count()):
+    for i in range(8):
         sleep(0.2)
         results.append(
             pool.apply_async(
