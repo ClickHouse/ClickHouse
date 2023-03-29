@@ -257,12 +257,10 @@ def parse_env_variables(
         result.append("BUILD_TYPE=None")
 
     if not cache:
-        cmake_flags.append("-DENABLE_CCACHE=OFF")
-        cmake_flags.append("-DFORCE_SCCACHE=OFF")
+        cmake_flags.append("-DCOMPILER_CACHE=disabled")
 
     if cache == "ccache":
-        cmake_flags.append("-DENABLE_CCACHE=ON")
-        cmake_flags.append("-DFORCE_SCCACHE=OFF")
+        cmake_flags.append("-DCOMPILER_CACHE=ccache")
         result.append("CCACHE_DIR=/ccache")
         result.append("CCACHE_COMPRESSLEVEL=5")
         result.append("CCACHE_BASEDIR=/build")
@@ -271,8 +269,7 @@ def parse_env_variables(
         result.append("CCACHE_MAXSIZE=15G")
 
     if cache == "sccache":
-        cmake_flags.append("-DENABLE_CCACHE=OFF")
-        cmake_flags.append("-DFORCE_SCCACHE=ON")
+        cmake_flags.append("-DCOMPILER_CACHE=sccache")
         # see https://github.com/mozilla/sccache/blob/main/docs/S3.md
         result.append(f"SCCACHE_BUCKET={s3_bucket}")
         sccache_dir = "sccache"

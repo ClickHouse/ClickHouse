@@ -1,5 +1,6 @@
 # Setup integration with ccache to speed up builds, see https://ccache.dev/
 
+# Matches both ccache and sccache
 if (CMAKE_CXX_COMPILER_LAUNCHER MATCHES "ccache" OR CMAKE_C_COMPILER_LAUNCHER MATCHES "ccache")
     # custom compiler launcher already defined, most likely because cmake was invoked with like "-DCMAKE_CXX_COMPILER_LAUNCHER=ccache" or
     # via environment variable --> respect setting and trust that the launcher was specified correctly
@@ -8,24 +9,32 @@ if (CMAKE_CXX_COMPILER_LAUNCHER MATCHES "ccache" OR CMAKE_C_COMPILER_LAUNCHER MA
     return()
 endif()
 
-option(ENABLE_CCACHE "Speedup re-compilations using ccache (default) or sccache (external tools)" ON)
-option(FORCE_SCCACHE "Use sccache by default" OFF)
-
-if (NOT ENABLE_CCACHE AND NOT FORCE_SCCACHE)
-    message(STATUS "Using *ccache: no (disabled via configuration)")
-    return()
+set(ENABLE_CCACHE "default" CACHE STRING "Deprecated, use COMPILER_CACHE=(auto|ccache|sccache|disabled)")
+if (NOT ENABLE_CCACHE STREQUAL "default")
+    message(WARNING "The -DENABLE_CCACHE is deprecated in favor of -DCOMPILER_CACHE")
 endif()
 
-# We support ccache and sccache
-if (FORCE_SCCACHE)
+set(COMPILER_CACHE "auto" CACHE STRING "Speedup re-compilations using the caching tools; valid options are 'auto' (ccache, then sccache), 'ccache', 'sccache', or 'disabled'")
+
+# It has pretty complex logic, because the ENABLE_CCACHE is deprecated, but still should
+# control the COMPILER_CACHE
+# After it will be completely removed, the following block will be much simpler
+if (COMPILER_CACHE STREQUAL "ccache" OR (ENABLE_CCACHE AND NOT ENABLE_CCACHE STREQUAL "default"))
+    find_program (CCACHE_EXECUTABLE ccache)
+elseif(COMPILER_CACHE STREQUAL "disabled" OR NOT ENABLE_CCACHE STREQUAL "default")
+    message(STATUS "Using *ccache: no (disabled via configuration)")
+    return()
+elseif(COMPILER_CACHE STREQUAL "auto")
+    find_program (CCACHE_EXECUTABLE ccache sccache)
+elseif(COMPILER_CACHE STREQUAL "sccache")
     find_program (CCACHE_EXECUTABLE sccache)
 else()
-    find_program (CCACHE_EXECUTABLE ccache sccache)
+    message(${RECONFIGURE_MESSAGE_LEVEL} "The COMPILER_CACHE must be one of (auto|ccache|sccache|disabled), given '${COMPILER_CACHE}'")
 endif()
 
 
 if (NOT CCACHE_EXECUTABLE)
-    message(${RECONFIGURE_MESSAGE_LEVEL} "Using *ccache: no (Could not find find ccache or sccache. To significantly reduce compile times for the 2nd, 3rd, etc. build, it is highly recommended to install one of them. To suppress this message, run cmake with -DENABLE_CCACHE=0)")
+    message(${RECONFIGURE_MESSAGE_LEVEL} "Using *ccache: no (Could not find find ccache or sccache. To significantly reduce compile times for the 2nd, 3rd, etc. build, it is highly recommended to install one of them. To suppress this message, run cmake with -DCOMPILER_CACHE=disabled)")
     return()
 endif()
 
