@@ -112,7 +112,7 @@ void TableFunctionS3::parseArgumentsImpl(
         /// For 5 arguments we support 2 possible variants:
         /// - s3(source, access_key_id, access_key_id, format, structure)
         /// - s3(source, NOSIGN, format, structure, compression_method)
-        /// We can distinguish them by looking at the 2-nd argument: check if it's a format name or not.
+        /// We can distinguish them by looking at the 2-nd argument: check if it's a NOSIGN keyword name or not.
         else if (args.size() == 5)
         {
             auto second_arg = checkAndGetLiteralArgument<String>(args[1], "NOSIGN/access_key_id");

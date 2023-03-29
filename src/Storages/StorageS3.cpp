@@ -96,6 +96,8 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
     "upload_part_size_multiply_parts_count_threshold",
     "max_single_part_upload_size",
     "max_connections",
+    "expiration_window_seconds",
+    "no_sign_request"
 };
 
 namespace ErrorCodes
@@ -1289,6 +1291,8 @@ void StorageS3::processNamedCollectionResult(StorageS3::Configuration & configur
     configuration.auth_settings.access_key_id = collection.getOrDefault<String>("access_key_id", "");
     configuration.auth_settings.secret_access_key = collection.getOrDefault<String>("secret_access_key", "");
     configuration.auth_settings.use_environment_credentials = collection.getOrDefault<UInt64>("use_environment_credentials", 0);
+    configuration.auth_settings.no_sign_request = collection.getOrDefault<bool>("no_sign_request", 0);
+    configuration.auth_settings.expiration_window_seconds = collection.getOrDefault<UInt64>("expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS);
 
     configuration.format = collection.getOrDefault<String>("format", "auto");
     configuration.compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
