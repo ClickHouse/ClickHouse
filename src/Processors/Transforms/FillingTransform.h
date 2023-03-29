@@ -16,7 +16,11 @@ namespace DB
 class FillingTransform : public ISimpleTransform
 {
 public:
-    FillingTransform(const Block & header_, const SortDescription & sort_description_, InterpolateDescriptionPtr interpolate_description_);
+    FillingTransform(
+        const Block & header_,
+        const SortDescription & sort_description_,
+        const SortDescription & fill_description_,
+        InterpolateDescriptionPtr interpolate_description_);
 
     String getName() const override { return "FillingTransform"; }
 
@@ -42,7 +46,8 @@ private:
         MutableColumnRawPtrs & output_interpolate_columns,
         MutableColumnRawPtrs & output_other_columns);
 
-    const SortDescription sort_description; /// Contains only columns with WITH FILL.
+    const SortDescription sort_description;
+    const SortDescription fill_description; /// Contains all columns with WITH FILL
     const InterpolateDescriptionPtr interpolate_description; /// Contains INTERPOLATE columns
 
     FillingRow filling_row; /// Current row, which is used to fill gaps.

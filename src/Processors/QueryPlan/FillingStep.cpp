@@ -27,9 +27,9 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
-FillingStep::FillingStep(const DataStream & input_stream_, SortDescription sort_description_, InterpolateDescriptionPtr interpolate_description_)
+FillingStep::FillingStep(const DataStream & input_stream_, SortDescription sort_description_, SortDescription filling_description_, InterpolateDescriptionPtr interpolate_description_)
     : ITransformingStep(input_stream_, FillingTransform::transformHeader(input_stream_.header, sort_description_), getTraits())
-    , sort_description(std::move(sort_description_)), interpolate_description(interpolate_description_)
+    , sort_description(std::move(sort_description_)), filling_description(std::move(filling_description_)), interpolate_description(interpolate_description_)
 {
     if (!input_stream_.has_single_port)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FillingStep expects single input");
@@ -42,7 +42,7 @@ void FillingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         if (stream_type == QueryPipelineBuilder::StreamType::Totals)
             return std::make_shared<FillingNoopTransform>(header, sort_description);
 
-        return std::make_shared<FillingTransform>(header, sort_description, std::move(interpolate_description));
+        return std::make_shared<FillingTransform>(header, sort_description, filling_description, std::move(interpolate_description));
     });
 }
 

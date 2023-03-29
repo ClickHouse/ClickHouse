@@ -8,7 +8,7 @@
 #include <Functions/FunctionDateOrDateTimeAddInterval.h>
 #include <Common/FieldVisitorSum.h>
 #include <Common/FieldVisitorToString.h>
-
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -30,6 +30,23 @@ Block FillingTransform::transformHeader(Block header, const SortDescription & so
             column.column = column.column->convertToFullColumnIfConst();
 
     return header;
+}
+
+constexpr bool debug_logging_enabled = true;
+
+template <typename T>
+void logDebug(String key, const T & value, const char * separator = " : ")
+{
+    if constexpr (debug_logging_enabled)
+    {
+        WriteBufferFromOwnString ss;
+        if constexpr (std::is_pointer_v<T>)
+            ss << *value;
+        else
+            ss << value;
+
+        LOG_DEBUG(&Poco::Logger::get("FillingTransform"), "{}{}{}", key, separator, ss.str());
+    }
 }
 
 template <typename T>
@@ -169,25 +186,31 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
 }
 
 FillingTransform::FillingTransform(
-        const Block & header_, const SortDescription & sort_description_, InterpolateDescriptionPtr interpolate_description_)
-        : ISimpleTransform(header_, transformHeader(header_, sort_description_), true)
-        , sort_description(sort_description_)
-        , interpolate_description(interpolate_description_)
-        , filling_row(sort_description_)
-        , next_row(sort_description_)
+    const Block & header_,
+    const SortDescription & sort_description_,
+    const SortDescription & fill_description_,
+    InterpolateDescriptionPtr interpolate_description_)
+    : ISimpleTransform(header_, transformHeader(header_, fill_description_), true)
+    , sort_description(sort_description_)
+    , fill_description(fill_description_)
+    , interpolate_description(interpolate_description_)
+    , filling_row(fill_description_)
+    , next_row(fill_description_)
 {
+    logDebug("filling sort desc", dumpSortDescription(sort_description_));
+
     if (interpolate_description)
         interpolate_actions = std::make_shared<ExpressionActions>(interpolate_description->actions);
 
     std::vector<bool> is_fill_column(header_.columns());
-    for (size_t i = 0, size = sort_description.size(); i < size; ++i)
+    for (size_t i = 0, size = fill_description.size(); i < size; ++i)
     {
-        if (interpolate_description && interpolate_description->result_columns_set.contains(sort_description[i].column_name))
+        if (interpolate_description && interpolate_description->result_columns_set.contains(fill_description[i].column_name))
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                 "Column '{}' is participating in ORDER BY ... WITH FILL expression and can't be INTERPOLATE output",
-                sort_description[i].column_name);
+                fill_description[i].column_name);
 
-        size_t block_position = header_.getPositionByName(sort_description[i].column_name);
+        size_t block_position = header_.getPositionByName(fill_description[i].column_name);
         is_fill_column[block_position] = true;
         fill_column_positions.push_back(block_position);
 
