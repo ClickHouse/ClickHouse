@@ -59,7 +59,7 @@ public:
 
         auto new_configuration = getAdjustedConfiguration(ctx, configuration, &Poco::Logger::get("Storage" + String(name)));
 
-        return Storage::getTableStructureFromData(new_configuration, format_settings, ctx, /*object_infos*/ nullptr);
+        return Storage::getTableStructureFromData(new_configuration, format_settings, ctx);
     }
 
     static Configuration
