@@ -107,10 +107,10 @@ SETTINGS
     parallel_distributed_insert_select = 1;
 ```
 
-Here is the response - showing the number of rows and the speed of processing. It is input at a rate of about 6.5M rows per second!
+Here is the response - showing the number of rows and the speed of processing. It is input at a rate of over 6M rows per second!
 
 ```response
-
+0 rows in set. Elapsed: 3419.330 sec. Processed 20.69 billion rows, 1.67 TB (6.05 million rows/s., 488.52 MB/s.)
 ```
 
 4. Let's see how much storage disk is needed for the `sensors` table:
@@ -130,6 +130,14 @@ GROUP BY
 ORDER BY size DESC;
 ```
 
+The 1.67T is compressed down to 1.30T, and there are 20.69 billion rows:
+
+```response
+┌─disk_name─┬─compressed─┬─uncompressed─┬─compr_rate─┬────────rows─┬─part_count─┐
+│ s3disk    │ 310.21 GiB │ 1.30 TiB     │       4.29 │ 20693971809 │        472 │
+└───────────┴────────────┴──────────────┴────────────┴─────────────┴────────────┘
+```
+
 5. Let's analyze the data now that it's in ClickHouse. Notice the quantity of data increases over time as more sensors are deployed:
 
 ```sql
@@ -143,7 +151,7 @@ ORDER BY date ASC;
 
 We can create a chart in the SQL Console to visualize the results:
 
-// ![Number of events per day](@site/docs/en/getting-started/images/sensors_01.png)
+![Number of events per day](./images/sensors_01.png)
 
 6.
 
