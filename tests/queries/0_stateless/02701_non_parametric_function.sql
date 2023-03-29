@@ -4,4 +4,4 @@ CREATE FUNCTION IF NOT EXISTS sum_udf as (x, y) -> (x + y);
 
 SELECT sum_udf(1)(1, 2); -- { serverError 309 }
 
-DROP FUNCTION sum_udf;
+DROP FUNCTION IF EXISTS sum_udf;
