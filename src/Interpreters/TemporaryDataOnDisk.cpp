@@ -45,6 +45,15 @@ void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssiz
     stat.uncompressed_size += uncompressed_delta;
 }
 
+TemporaryDataOnDisk::TemporaryDataOnDisk(TemporaryDataOnDiskScopePtr parent_)
+    : TemporaryDataOnDiskScope(std::move(parent_), /* limit_ = */ 0)
+{}
+
+TemporaryDataOnDisk::TemporaryDataOnDisk(TemporaryDataOnDiskScopePtr parent_, CurrentMetrics::Value metric_scope)
+    : TemporaryDataOnDiskScope(std::move(parent_), /* limit_ = */ 0)
+    , current_metric_scope(metric_scope)
+{}
+
 TemporaryFileStream & TemporaryDataOnDisk::createStream(const Block & header, size_t max_file_size)
 {
     if (file_cache)

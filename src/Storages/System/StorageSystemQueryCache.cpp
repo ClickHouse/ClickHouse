@@ -33,11 +33,11 @@ void StorageSystemQueryCache::fillData(MutableColumns & res_columns, ContextPtr 
     if (!query_cache)
         return;
 
+    std::vector<QueryCache::Cache::KeyMapped> content = query_cache->dump();
+
     const String & username = context->getUserName();
 
-    std::lock_guard lock(query_cache->mutex);
-
-    for (const auto & [key, result] : query_cache->cache)
+    for (const auto & [key, query_result] : content)
     {
         /// Showing other user's queries is considered a security risk
         if (key.username.has_value() && key.username != username)
@@ -48,7 +48,7 @@ void StorageSystemQueryCache::fillData(MutableColumns & res_columns, ContextPtr 
         res_columns[2]->insert(std::chrono::system_clock::to_time_t(key.expires_at));
         res_columns[3]->insert(key.expires_at < std::chrono::system_clock::now());
         res_columns[4]->insert(!key.username.has_value());
-        res_columns[5]->insert(result.sizeInBytes());
+        res_columns[5]->insert(QueryCache::QueryResultWeight()(*query_result));
     }
 }
 

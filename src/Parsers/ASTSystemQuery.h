@@ -108,6 +108,8 @@ public:
 
     String schema_cache_storage;
 
+    bool strict_sync = false;
+
     String getID(char) const override { return "SYSTEM query"; }
 
     ASTPtr clone() const override
