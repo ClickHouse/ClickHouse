@@ -118,6 +118,7 @@ BackupFileInfos BackupCoordinationLocal::getFileInfosForAllHosts() const
 bool BackupCoordinationLocal::startWritingFile(size_t data_file_index)
 {
     std::lock_guard lock{writing_files_mutex};
+    /// Return false if this function was already called with this `data_file_index`.
     return writing_files.emplace(data_file_index).second;
 }
 

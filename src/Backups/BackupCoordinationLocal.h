@@ -7,7 +7,7 @@
 #include <Backups/BackupCoordinationReplicatedTables.h>
 #include <base/defines.h>
 #include <mutex>
-#include <set>
+#include <unordered_set>
 
 
 namespace Poco { class Logger; }

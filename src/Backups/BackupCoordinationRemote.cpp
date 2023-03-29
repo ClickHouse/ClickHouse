@@ -7,8 +7,6 @@
 #include <IO/WriteHelpers.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/escapeForFileName.h>
-#include <Common/quoteString.h>
-#include <base/hex.h>
 #include <Backups/BackupCoordinationStage.h>
 
 
@@ -112,6 +110,8 @@ namespace
                 writeBinary(info.checksum, out);
                 writeBinary(info.base_size, out);
                 writeBinary(info.base_checksum, out);
+                /// We don't store `info.data_file_name` and `info.data_file_index` because they're determined automalically
+                /// after reading file infos for all the hosts (see the class BackupCoordinationFileInfos).
             }
             return out.str();
         }
@@ -268,14 +268,14 @@ void BackupCoordinationRemote::serializeToMultipleZooKeeperNodes(const String & 
 
     size_t max_part_size = keeper_settings.keeper_value_max_size;
     if (!max_part_size)
-        max_part_size = value.length();
+        max_part_size = value.size();
 
     size_t num_parts = (value.size() + max_part_size - 1) / max_part_size; /// round up
 
     for (size_t i = 0; i != num_parts; ++i)
     {
         size_t begin = i * max_part_size;
-        size_t end = std::min(begin + max_part_size, value.length());
+        size_t end = std::min(begin + max_part_size, value.size());
         String part = value.substr(begin, end - begin);
         String part_path = fmt::format("{}/{:06}", path, i);
 
@@ -622,9 +622,9 @@ bool BackupCoordinationRemote::startWritingFile(size_t data_file_index)
         auto code = zk->tryCreate(full_path, host_index_str, zkutil::CreateMode::Persistent);
 
         if (code == Coordination::Error::ZOK)
-            acquired_writing = true;
+            acquired_writing = true; /// If we've just created this ZooKeeper's node, the writing is acquired, i.e. we should write this data file.
         else if (code == Coordination::Error::ZNODEEXISTS)
-            acquired_writing = (zk->get(full_path) == host_index_str);
+            acquired_writing = (zk->get(full_path) == host_index_str); /// The previous retry could write this ZooKeeper's node and then fail.
         else
             throw zkutil::KeeperException(code, full_path);
     });

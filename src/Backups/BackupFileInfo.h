@@ -27,16 +27,17 @@ struct BackupFileInfo
     UInt128 base_checksum{0};
 
     /// Name of the data file. An empty string means there is no data file (that can happen if the file is empty or was taken from the base backup as a whole).
-    /// This field can be adjusted during backup coordination.
+    /// This field is set during backup coordination (see the class BackupCoordinationFileInfos).
     String data_file_name;
 
     /// Index of the data file. -1 means there is no data file.
-    /// This field is adjusted during backup coordination.
+    /// This field is set during backup coordination (see the class BackupCoordinationFileInfos).
     size_t data_file_index = static_cast<size_t>(-1);
 
     struct LessByFileName
     {
         bool operator()(const BackupFileInfo & lhs, const BackupFileInfo & rhs) const { return (lhs.file_name < rhs.file_name); }
+        bool operator()(const BackupFileInfo * lhs, const BackupFileInfo * rhs) const { return (lhs->file_name < rhs->file_name); }
     };
 
     struct EqualByFileName

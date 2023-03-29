@@ -120,8 +120,10 @@ BackupFileInfo buildFileInfoForBackupEntry(const String & file_name, const Backu
 
     BackupFileInfo info;
     info.file_name = adjusted_path;
-    info.data_file_name = info.file_name;
     info.size = backup_entry->getSize();
+
+    /// We don't set `info.data_file_name` and `info.data_file_index` in this function because they're set during backup coordination
+    /// (see the class BackupCoordinationFileInfos).
 
     if (!info.size)
     {
@@ -256,7 +258,6 @@ BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entr
                 }
 
                 infos[i] = buildFileInfoForBackupEntry(name, entry, base_backup, log);
-                infos[i].data_file_index = i;
             }
             catch (...)
             {

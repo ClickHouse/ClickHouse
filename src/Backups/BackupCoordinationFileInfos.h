@@ -10,10 +10,10 @@
 namespace DB
 {
 
-/// Replicas use this class to coordinate lists of files they are going to write to a backup.
-/// Because different replicas shouldn't write the same file twice and or even files with different names but with the same checksum.
-/// Also the initiator of the BACKUP query uses this class to get a whole list of files written by other replica to write that list
-/// as a part of the .backup file (the backup metadata file).
+/// Hosts use this class to coordinate lists of files they are going to write to a backup.
+/// Because different hosts shouldn't write the same file twice and or even files with different names but with the same checksum.
+/// Also the initiator of the BACKUP query uses this class to get a whole list of files written by all hosts to write that list
+/// as a part of the contents of the .backup file (the backup metadata file).
 class BackupCoordinationFileInfos
 {
 public:
