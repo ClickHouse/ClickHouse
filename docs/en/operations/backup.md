@@ -383,3 +383,19 @@ Data can be restored from backup using the `ALTER TABLE ... ATTACH PARTITION ...
 For more information about queries related to partition manipulations, see the [ALTER documentation](../sql-reference/statements/alter/partition.md#alter_manipulations-with-partitions).
 
 A third-party tool is available to automate this approach: [clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup).
+
+## Settings to disallow concurrent backup/restore
+
+To disallow concurrent backup/restore, you can use these settings respectively.
+
+```xml
+<clickhouse>
+    <backups>
+        <allow_concurrent_backups>false</allow_concurrent_backups>
+        <allow_concurrent_restores>false</allow_concurrent_restores>
+    </backups>
+</clickhouse>
+```
+
+The default value for both is true, so by default concurrent backup/restores are allowed.
+When these settings are false on a cluster, only 1 backup/restore is allowed to run on a cluster at a time.
