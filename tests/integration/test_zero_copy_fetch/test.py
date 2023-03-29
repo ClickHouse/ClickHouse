@@ -5,6 +5,7 @@ import random
 import string
 import time
 
+
 from multiprocessing.dummy import Pool
 import pytest
 from helpers.cluster import ClickHouseCluster
@@ -103,7 +104,6 @@ SETTINGS index_granularity = 8192, storage_policy = 's3'"""
     assert part_to_disk["20230102_0_0_0"] == "s3"
     assert part_to_disk["20230109_0_0_0"] == "s3"
     assert part_to_disk["20230116_0_0_0"] == "default"
-
 
 def test_concurrent_move_to_s3(started_cluster):
     node1 = cluster.instances["node1"]
