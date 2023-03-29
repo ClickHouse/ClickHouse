@@ -131,7 +131,7 @@ ContextMutablePtr MutatePlainMergeTreeTask::createFakeQueryContext() const
     auto context = Context::createCopy(storage.getContext());
     context->makeQueryContext();
     auto queryId = storage.getStorageID().getShortName() + "::" + future_part->name;
-    context->setCurrentQueryId(std::move(queryId));
+    context->setCurrentQueryId(queryId);
     return context;
 }
 

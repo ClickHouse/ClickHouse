@@ -108,17 +108,11 @@ struct MergeListElement : boost::noncopyable
     /// Updated only for Vertical algorithm
     std::atomic<UInt64> columns_written{};
 
-    /// Used for identifying mutations/merges in trace_log
-    std::string query_id;
-
     UInt64 thread_id;
     MergeType merge_type;
     /// Detected after merge already started
     std::atomic<MergeAlgorithm> merge_algorithm;
 
-    /// Description used for logging
-    /// Needs to outlive memory_tracker since it's used in its destructor
-    const String description{"Mutate/Merge"};
     ThreadGroupStatusPtr thread_group;
 
     MergeListElement(
