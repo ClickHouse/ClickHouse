@@ -23,11 +23,11 @@ wait_for_number_of_parts() {
 
 $CLICKHOUSE_CLIENT -nmq "
 DROP TABLE IF EXISTS test_without_merge;
-DROP TABLE IF EXISTS test_with_merge;
+DROP TABLE IF EXISTS test_replicated;
 
 SELECT 'Without merge';
 
-CREATE TABLE test_without_merge (i Int64) ENGINE = MergeTree ORDER BY i SETTINGS merge_selecting_sleep_ms=1000;
+CREATE TABLE test_without_merge (i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test02676_without_merge', 'node') ORDER BY i SETTINGS merge_selecting_sleep_ms=1000;
 INSERT INTO test_without_merge SELECT 1;
 INSERT INTO test_without_merge SELECT 2;
 INSERT INTO test_without_merge SELECT 3;"
@@ -37,31 +37,31 @@ wait_for_number_of_parts 'test_without_merge' 1 10
 $CLICKHOUSE_CLIENT -nmq "
 DROP TABLE test_without_merge;
 
-SELECT 'With merge any part range';
+SELECT 'With merge replicated any part range';
 
-CREATE TABLE test_with_merge (i Int64) ENGINE = MergeTree ORDER BY i
+CREATE TABLE test_replicated (i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test02676', 'node')  ORDER BY i
 SETTINGS min_age_to_force_merge_seconds=1, merge_selecting_sleep_ms=1000, min_age_to_force_merge_on_partition_only=false;
-INSERT INTO test_with_merge SELECT 1;
-INSERT INTO test_with_merge SELECT 2;
-INSERT INTO test_with_merge SELECT 3;"
+INSERT INTO test_replicated SELECT 1;
+INSERT INTO test_replicated SELECT 2;
+INSERT INTO test_replicated SELECT 3;"
 
-wait_for_number_of_parts 'test_with_merge' 1 100
+wait_for_number_of_parts 'test_replicated' 1 100
 
 $CLICKHOUSE_CLIENT -nmq "
-DROP TABLE test_with_merge;
+DROP TABLE test_replicated;
 
-SELECT 'With merge partition only';
+SELECT 'With merge replicated partition only';
 
-CREATE TABLE test_with_merge (i Int64) ENGINE = MergeTree ORDER BY i
+CREATE TABLE test_replicated (i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test02676_partition_only', 'node')  ORDER BY i
 SETTINGS min_age_to_force_merge_seconds=1, merge_selecting_sleep_ms=1000, min_age_to_force_merge_on_partition_only=true;
-INSERT INTO test_with_merge SELECT 1;
-INSERT INTO test_with_merge SELECT 2;
-INSERT INTO test_with_merge SELECT 3;"
+INSERT INTO test_replicated SELECT 1;
+INSERT INTO test_replicated SELECT 2;
+INSERT INTO test_replicated SELECT 3;"
 
-wait_for_number_of_parts 'test_with_merge' 1 100
+wait_for_number_of_parts 'test_replicated' 1 100
 
 $CLICKHOUSE_CLIENT -nmq "
 SELECT sleepEachRow(1) FROM numbers(9) FORMAT Null; -- Sleep for 9 seconds and verify that we keep the old part because it's the only one
-SELECT (now() - modification_time) > 5 FROM system.parts WHERE database = currentDatabase() AND table='test_with_merge' AND active;
+SELECT (now() - modification_time) > 5 FROM system.parts WHERE database = currentDatabase() AND table='test_replicated' AND active;
 
-DROP TABLE test_with_merge;"
+DROP TABLE test_replicated;"
