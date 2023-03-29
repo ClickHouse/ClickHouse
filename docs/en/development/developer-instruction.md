@@ -42,6 +42,12 @@ In the command line terminal run:
     git clone --recursive --shallow-submodules git@github.com:your_github_username/ClickHouse.git
     cd ClickHouse
 
+Or (if you'd like to use sparse checkout for submodules and avoid checking out unneeded files):
+
+    git clone git@github.com:your_github_username/ClickHouse.git
+    cd ClickHouse
+    ./contrib/update-submodules.sh
+
 Note: please, substitute *your_github_username* with what is appropriate!
 
 This command will create a directory `ClickHouse` containing the working copy of the project.
