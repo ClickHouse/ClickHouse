@@ -19,6 +19,7 @@
 #include <Coordination/KeeperDispatcher.h>
 #include <Compression/ICompressionCodec.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Core/ServerSettings.h>
 #include <Formats/FormatFactory.h>
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
@@ -276,6 +277,7 @@ struct ContextSharedPart : boost::noncopyable
 
     mutable ThrottlerPtr replicated_fetches_throttler;      /// A server-wide throttler for replicated fetches
     mutable ThrottlerPtr replicated_sends_throttler;        /// A server-wide throttler for replicated sends
+
     mutable ThrottlerPtr remote_read_throttler;             /// A server-wide throttler for remote IO reads
     mutable ThrottlerPtr remote_write_throttler;            /// A server-wide throttler for remote IO writes
 
@@ -287,6 +289,8 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::shared_ptr<const DiskSelector> merge_tree_disk_selector;
     /// Storage policy chooser for MergeTree engines
     mutable std::shared_ptr<const StoragePolicySelector> merge_tree_storage_policy_selector;
+
+    ServerSettings server_settings;
 
     std::optional<MergeTreeSettings> merge_tree_settings;   /// Settings of MergeTree* engines.
     std::optional<MergeTreeSettings> replicated_merge_tree_settings;   /// Settings of ReplicatedMergeTree* engines.
@@ -352,6 +356,9 @@ struct ContextSharedPart : boost::noncopyable
             std::cerr.flush();
             std::terminate();
         }
+
+        const Poco::Util::AbstractConfiguration & configuration = config ? *config : Poco::Util::Application::instance().config();
+        server_settings.loadSettingsFromConfig(configuration);
     }
 
 
@@ -2308,22 +2315,42 @@ ThrottlerPtr Context::getReplicatedSendsThrottler() const
 
 ThrottlerPtr Context::getRemoteReadThrottler() const
 {
-    auto lock = getLock();
-    if (!shared->remote_read_throttler)
-        shared->remote_read_throttler = std::make_shared<Throttler>(
-            settings.max_remote_read_network_bandwidth_for_server);
+    ThrottlerPtr throttler;
 
-    return shared->remote_read_throttler;
+    const auto & query_settings = getSettingsRef();
+    UInt64 bandwidth_for_server = std::max(
+        query_settings.max_remote_read_network_bandwidth_for_server,
+        /// compatibility
+        shared->server_settings.max_remote_read_network_bandwidth_for_server);
+    if (bandwidth_for_server)
+    {
+        auto lock = getLock();
+        if (!shared->remote_read_throttler)
+            shared->remote_read_throttler = std::make_shared<Throttler>(bandwidth_for_server);
+        throttler = shared->remote_read_throttler;
+    }
+
+    return throttler;
 }
 
 ThrottlerPtr Context::getRemoteWriteThrottler() const
 {
-    auto lock = getLock();
-    if (!shared->remote_write_throttler)
-        shared->remote_write_throttler = std::make_shared<Throttler>(
-            settings.max_remote_write_network_bandwidth_for_server);
+    ThrottlerPtr throttler;
 
-    return shared->remote_write_throttler;
+    const auto & query_settings = getSettingsRef();
+    UInt64 bandwidth_for_server = std::max(
+        query_settings.max_remote_write_network_bandwidth_for_server,
+        /// compatibility
+        shared->server_settings.max_remote_write_network_bandwidth_for_server);
+    if (bandwidth_for_server)
+    {
+        auto lock = getLock();
+        if (!shared->remote_write_throttler)
+            shared->remote_write_throttler = std::make_shared<Throttler>(bandwidth_for_server);
+        throttler = shared->remote_write_throttler;
+    }
+
+    return throttler;
 }
 
 bool Context::hasDistributedDDL() const

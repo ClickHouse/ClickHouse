@@ -6,6 +6,7 @@
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/ThreadPool.h>
+#include <Common/Throttler_fwd.h>
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
@@ -162,9 +163,6 @@ struct BackgroundTaskSchedulingSettings;
     class SynonymsExtensions;
     class Lemmatizers;
 #endif
-
-class Throttler;
-using ThrottlerPtr = std::shared_ptr<Throttler>;
 
 class ZooKeeperMetadataTransaction;
 using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransaction>;
@@ -916,11 +914,6 @@ public:
     BackgroundSchedulePool & getMessageBrokerSchedulePool() const;
     BackgroundSchedulePool & getDistributedSchedulePool() const;
 
-    ThrottlerPtr getReplicatedFetchesThrottler() const;
-    ThrottlerPtr getReplicatedSendsThrottler() const;
-    ThrottlerPtr getRemoteReadThrottler() const;
-    ThrottlerPtr getRemoteWriteThrottler() const;
-
     /// Has distributed_ddl configuration or not.
     bool hasDistributedDDL() const;
     void setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker);
@@ -1152,6 +1145,14 @@ private:
     DiskSelectorPtr getDiskSelector(std::lock_guard<std::mutex> & lock) const;
 
     DisksMap getDisksMap(std::lock_guard<std::mutex> & lock) const;
+
+    /// Throttling
+public:
+    ThrottlerPtr getReplicatedFetchesThrottler() const;
+    ThrottlerPtr getReplicatedSendsThrottler() const;
+
+    ThrottlerPtr getRemoteReadThrottler() const;
+    ThrottlerPtr getRemoteWriteThrottler() const;
 };
 
 struct HTTPContext : public IHTTPContext
