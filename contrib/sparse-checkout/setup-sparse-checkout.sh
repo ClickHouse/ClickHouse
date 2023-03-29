@@ -1,5 +1,7 @@
 #!/bin/sh
 
+set -e
+
 git config submodule."contrib/llvm-project".update '!../sparse-checkout/update-llvm-project.sh'
 git config submodule."contrib/croaring".update '!../sparse-checkout/update-croaring.sh'
 git config submodule."contrib/aws".update '!../sparse-checkout/update-aws.sh'
