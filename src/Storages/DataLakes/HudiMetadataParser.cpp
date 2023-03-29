@@ -4,6 +4,7 @@
 #include <Poco/String.h>
 #include "config.h"
 #include <filesystem>
+#include <IO/ReadHelpers.h>
 
 #if USE_AWS_S3
 #include <Storages/DataLakes/S3MetadataReader.h>
@@ -20,9 +21,21 @@ namespace ErrorCodes
 
 namespace
 {
-    /** Apache Hudi store parts of data in different files.
-      * Every part file has timestamp in it.
-      * Every partition(directory) in Apache Hudi has different versions of part.
+    /**
+     * Documentation links:
+     * - https://hudi.apache.org/tech-specs/
+     */
+
+    /**
+      * Hudi tables store metadata files and data files.
+      * Metadata files are stored in .hoodie/metadata directory.
+      * There can be two types of data files
+      * 1. base files (columnar file formats like Apache Parquet/Orc)
+      * 2. log files
+      * Currently we support reading only `base files`.
+      * Data file name format:
+      * [File Id]_[File Write Token]_[Transaction timestamp].[File Extension]
+      *
       * To find needed parts we need to find out latest part file for every partition.
       * Part format is usually parquet, but can differ.
       */
