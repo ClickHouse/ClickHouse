@@ -91,6 +91,9 @@ ORDER BY (marketplace, review_date, product_category);
 
 ```sql
 INSERT INTO amazon_reviews
+WITH
+   transform(vine, ['Y','N'],[true, false]) AS vine,
+   transform(verified_purchase, ['Y','N'],[true, false]) AS verified_purchase
 SELECT
    *
 FROM s3Cluster(
@@ -108,8 +111,8 @@ FROM s3Cluster(
     star_rating UInt8,
     helpful_votes UInt32,
     total_votes UInt32,
-    vine FixedString(1),
-    verified_purchase FixedString(1),
+    vine Bool,
+    verified_purchase Bool,
     review_headline String,
     review_body String'
     );
