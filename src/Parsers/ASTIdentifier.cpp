@@ -101,7 +101,8 @@ const String & ASTIdentifier::name() const
 void ASTIdentifier::formatImplWithoutAlias(FormattingBuffer out) const
 {
     auto format_element = [&](const String & elem_name)
-    { out.writeIdentifier(elem_name);
+    {
+        out.writeIdentifier(elem_name);
     };
 
     if (compound())
