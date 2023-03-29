@@ -50,6 +50,9 @@ public:
     /// Cancel execution. May be called from another thread.
     void cancel();
 
+    /// Cancel processors which only read data from source. May be called from another thread.
+    void cancelReading();
+
     /// Checks the query time limits (cancelled or timeout). Throws on cancellation or when time limit is reached and the query uses "break"
     bool checkTimeLimit();
     /// Same as checkTimeLimit but it never throws. It returns false on cancellation or time limit reached
@@ -78,6 +81,7 @@ private:
     bool trace_processors = false;
 
     std::atomic_bool cancelled = false;
+    std::atomic_bool cancelled_reading = false;
 
     Poco::Logger * log = &Poco::Logger::get("PipelineExecutor");
 
