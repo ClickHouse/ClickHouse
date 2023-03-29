@@ -247,7 +247,7 @@ void LockedKeyMetadata::shrinkFileSegmentToDownloadedSize(
             file_segment->getInfoForLogUnlocked(segment_lock));
     }
 
-    auto & entry = *LockedCachePriorityIterator(cache_lock, file_segment_metadata->queue_iterator);
+    auto & entry = LockedCachePriorityIterator(cache_lock, file_segment_metadata->queue_iterator).getEntry();
     assert(file_segment->downloaded_size <= file_segment->reserved_size);
     assert(entry.size == file_segment->reserved_size);
     assert(entry.size >= file_segment->downloaded_size);
