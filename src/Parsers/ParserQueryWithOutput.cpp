@@ -6,6 +6,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserDescribeTableQuery.h>
 #include <Parsers/ParserDropQuery.h>
+#include <Parsers/ParserUndropQuery.h>
 #include <Parsers/ParserExplainQuery.h>
 #include <Parsers/ParserKillQueryQuery.h>
 #include <Parsers/ParserOptimizeQuery.h>
@@ -44,6 +45,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserAlterQuery alter_p;
     ParserRenameQuery rename_p;
     ParserDropQuery drop_p;
+    ParserUndropQuery undrop_p;
     ParserCheckQuery check_p;
     ParserOptimizeQuery optimize_p;
     ParserKillQueryQuery kill_query_p;
@@ -71,6 +73,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         || alter_p.parse(pos, query, expected)
         || rename_p.parse(pos, query, expected)
         || drop_p.parse(pos, query, expected)
+        || undrop_p.parse(pos, query, expected)
         || check_p.parse(pos, query, expected)
         || kill_query_p.parse(pos, query, expected)
         || optimize_p.parse(pos, query, expected)
