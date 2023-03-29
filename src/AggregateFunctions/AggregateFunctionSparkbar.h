@@ -171,7 +171,7 @@ private:
         }
 
         PaddedPODArray<Y> histogram(width, 0);
-        PaddedPODArray<UInt64> fhistogram(width, 0);
+        PaddedPODArray<UInt64> count_histogram(width, 0); /// The number of points in each bucket
 
         for (const auto & point : data.points)
         {
@@ -189,7 +189,7 @@ private:
             if (std::numeric_limits<Y>::max() - histogram[index] > point.getMapped())
             {
                 histogram[index] += point.getMapped();
-                fhistogram[index] += 1;
+                count_histogram[index] += 1;
             }
             else
             {
@@ -200,8 +200,8 @@ private:
 
         for (size_t i = 0; i < histogram.size(); ++i)
         {
-            if (fhistogram[i] > 0)
-                histogram[i] /= fhistogram[i];
+            if (count_histogram[i] > 0)
+                histogram[i] /= count_histogram[i];
         }
 
         Y y_max = 0;
@@ -219,24 +219,21 @@ private:
             return;
         }
 
+        /// Scale the histogram to the range [0, BAR_LEVELS]
         for (auto & y : histogram)
         {
-            constexpr auto bucket_num = static_cast<Y>(BAR_LEVELS - 1);
-
             if (isNaN(y) || y <= 0)
             {
                 y = 0;
                 continue;
             }
 
+            constexpr auto levels_num = static_cast<Y>(BAR_LEVELS - 1);
             /// handle potential overflow
-            if (y_max > bucket_num && y >= std::numeric_limits<Y>::max() / bucket_num)
-                y = y / (y_max / bucket_num);
+            if (y_max > levels_num && y >= std::numeric_limits<Y>::max() / levels_num)
+                y = y / (y_max / levels_num) + 1;
             else
-                y = y * bucket_num / y_max;
-
-            if (y < std::numeric_limits<Y>::max())
-                y += 1;
+                y = y * levels_num / y_max + 1;
         }
 
         size_t sz = 0;
