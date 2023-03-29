@@ -13,6 +13,7 @@ cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
     main_configs=["configs/backups_disk.xml"],
+    user_configs=["configs/zookeeper_retries.xml"],
     external_dirs=["/backups/"],
 )
 

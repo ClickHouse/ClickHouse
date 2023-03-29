@@ -18,6 +18,7 @@ main_configs = [
 
 user_configs = [
     "configs/allow_database_types.xml",
+    "configs/zookeeper_retries.xml",
 ]
 
 node1 = cluster.add_instance(

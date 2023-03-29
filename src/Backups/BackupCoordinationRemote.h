@@ -6,7 +6,7 @@
 #include <Backups/BackupCoordinationReplicatedSQLObjects.h>
 #include <Backups/BackupCoordinationReplicatedTables.h>
 #include <Backups/BackupCoordinationStageSync.h>
-#include <Storages/MergeTree/ZooKeeperRetries.h>
+#include <Backups/WithRetries.h>
 
 
 namespace DB
@@ -19,13 +19,7 @@ constexpr size_t MAX_ZOOKEEPER_ATTEMPTS = 10;
 class BackupCoordinationRemote : public IBackupCoordination
 {
 public:
-    struct BackupKeeperSettings
-    {
-        UInt64 keeper_max_retries;
-        UInt64 keeper_retry_initial_backoff_ms;
-        UInt64 keeper_retry_max_backoff_ms;
-        UInt64 keeper_value_max_size;
-    };
+    using BackupKeeperSettings = WithRetries::KeeperSettings;
 
     BackupCoordinationRemote(
         zkutil::GetZooKeeper get_zookeeper_,
@@ -79,7 +73,6 @@ public:
     static size_t findCurrentHostIndex(const Strings & all_hosts, const String & current_host);
 
 private:
-    zkutil::ZooKeeperPtr getZooKeeper() const;
     void createRootNodes();
     void removeAllNodes();
 
@@ -89,12 +82,11 @@ private:
     /// Reads data of all objects from ZooKeeper that replicas have added to backup and add it to the corresponding
     /// BackupCoordinationReplicated* objects.
     /// After that, calling addReplicated* functions is not allowed and throws an exception.
-    void prepareReplicatedTables() const TSA_REQUIRES(replicated_tables_mutex);
-    void prepareReplicatedAccess() const TSA_REQUIRES(replicated_access_mutex);
-    void prepareReplicatedSQLObjects() const TSA_REQUIRES(replicated_sql_objects_mutex);
+    void prepareReplicatedTables(const std::lock_guard<std::mutex> & loc) const TSA_REQUIRES(replicated_tables_mutex);
+    void prepareReplicatedAccess(const std::lock_guard<std::mutex> & loc) const TSA_REQUIRES(replicated_access_mutex);
+    void prepareReplicatedSQLObjects(const std::lock_guard<std::mutex> & loc) const TSA_REQUIRES(replicated_sql_objects_mutex);
     void prepareFileInfos() const TSA_REQUIRES(file_infos_mutex);
 
-    const zkutil::GetZooKeeper get_zookeeper;
     const String root_zookeeper_path;
     const String zookeeper_path;
     const BackupKeeperSettings keeper_settings;
@@ -104,15 +96,16 @@ private:
     const size_t current_host_index;
     const bool plain_backup;
     const bool is_internal;
+    Poco::Logger * log;
 
-    mutable ZooKeeperRetriesInfo zookeeper_retries_info;
+    /// The order of these two fields matters, because stage_sync holds a reference to with_retries object
+    mutable WithRetries with_retries;
     std::optional<BackupCoordinationStageSync> stage_sync;
 
-    mutable zkutil::ZooKeeperPtr TSA_GUARDED_BY(zookeeper_mutex) zookeeper;
-    mutable std::optional<BackupCoordinationReplicatedTables> TSA_GUARDED_BY(replicated_tables_mutex) replicated_tables;
-    mutable std::optional<BackupCoordinationReplicatedAccess> TSA_GUARDED_BY(replicated_access_mutex) replicated_access;
-    mutable std::optional<BackupCoordinationReplicatedSQLObjects> TSA_GUARDED_BY(replicated_sql_objects_mutex) replicated_sql_objects;
-    mutable std::optional<BackupCoordinationFileInfos> TSA_GUARDED_BY(file_infos_mutex) file_infos;
+    mutable std::optional<BackupCoordinationReplicatedTables> replicated_tables;  // TSA_GUARDED_BY(replicated_tables_mutex) replicated_tables;
+    mutable std::optional<BackupCoordinationReplicatedAccess> replicated_access; // TSA_GUARDED_BY(replicated_access_mutex) replicated_access;
+    mutable std::optional<BackupCoordinationReplicatedSQLObjects> replicated_sql_objects; // TSA_GUARDED_BY(replicated_sql_objects_mutex) replicated_sql_objects;
+    mutable std::optional<BackupCoordinationFileInfos> file_infos; // TSA_GUARDED_BY(file_infos_mutex) file_infos;
 
     mutable std::mutex zookeeper_mutex;
     mutable std::mutex replicated_tables_mutex;

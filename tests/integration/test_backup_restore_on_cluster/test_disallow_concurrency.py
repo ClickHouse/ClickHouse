@@ -50,7 +50,7 @@ def generate_cluster_def():
 
 
 main_configs = ["configs/disallow_concurrency.xml", generate_cluster_def()]
-user_configs = ["configs/allow_database_types.xml"]
+user_configs = ["configs/allow_database_types.xml", "configs/zookeeper_retries.xml"]
 
 nodes = []
 for i in range(num_nodes):
