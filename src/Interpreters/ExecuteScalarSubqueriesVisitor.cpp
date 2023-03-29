@@ -98,6 +98,7 @@ static auto getQueryInterpreter(const ASTSubquery & subquery, ExecuteScalarSubqu
     ASTPtr subquery_select = subquery.children.at(0);
 
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, data.subquery_depth + 1, true);
+    options.is_create_parameterized_view = data.is_create_parameterized_view;
     options.analyze(data.only_analyze);
 
     return std::make_unique<InterpreterSelectWithUnionQuery>(subquery_select, subquery_context, options);
