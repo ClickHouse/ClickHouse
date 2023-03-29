@@ -33,6 +33,14 @@ void writeVarUInt(UInt64 x, WriteBuffer & ostr);
 char * writeVarUInt(UInt64 x, char * ostr);
 
 
+/** Write UInt64 in variable length format, wrap the value to VAR_UINT_MAX if it exceed VAR_UINT_MAX (to bypass sanity check) */
+template <typename ...Args>
+auto writeVarUIntOverflow(UInt64 x, Args && ... args)
+{
+    return writeVarUInt(std::min(x, VAR_UINT_MAX), std::forward<Args>(args)...);
+}
+
+
 /** Read UInt64, written in variable length format (base128) */
 void readVarUInt(UInt64 & x, std::istream & istr);
 void readVarUInt(UInt64 & x, ReadBuffer & istr);
