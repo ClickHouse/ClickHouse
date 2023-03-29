@@ -93,7 +93,13 @@ const ActionsDAG::Node & addClonedDAGToDAG(const ActionsDAG::Node * original_dag
         return new_node;
     }
 
-    /// TODO: Do we need to handle ALIAS nodes in cloning?
+    if (original_dag_node->type == ActionsDAG::ActionType::ALIAS)
+    {
+        const auto & alias_child = addClonedDAGToDAG(original_dag_node->children[0], new_dag, node_remap);
+        const auto & new_node = new_dag->addAlias(alias_child, original_dag_node->result_name);
+        node_remap[node_name] = {new_dag, &new_node};
+        return new_node;
+    }
 
     /// If the node is a function, add it as a function and add its children
     if (original_dag_node->type == ActionsDAG::ActionType::FUNCTION)
@@ -196,10 +202,6 @@ bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionAction
 {
     if (!prewhere_info || !prewhere_info->prewhere_actions)
         return true;
-
-    Poco::Logger * log = &Poco::Logger::get("tryBuildPrewhereSteps");
-
-    LOG_TRACE(log, "Original PREWHERE DAG:\n{}", prewhere_info->prewhere_actions->dumpDAG());
 
     /// 1. List all condition nodes that are combined with AND into PREWHERE condition
     const auto & condition_root = prewhere_info->prewhere_actions->findInOutputs(prewhere_info->prewhere_column_name);
@@ -338,8 +340,6 @@ bool tryBuildPrewhereSteps(PrewhereInfoPtr prewhere_info, const ExpressionAction
         }
         prewhere.steps.back().need_filter = prewhere_info->need_filter;
     }
-
-    LOG_TRACE(log, "Resulting PREWHERE:\n{}", prewhere.dump());
 
     return true;
 }

@@ -64,15 +64,13 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
     return source;
 }
 
-Pipe getSourceFromASTInsertQuery(
+Pipe getSourceFromInputFormat(
     const ASTPtr & ast,
-    bool with_buffers,
-    const Block & header,
+    InputFormatPtr format,
     ContextPtr context,
     const ASTPtr & input_function)
 {
-    auto source = getInputFormatFromASTInsertQuery(ast, with_buffers, header, context, input_function);
-    Pipe pipe(source);
+    Pipe pipe(format);
 
     const auto * ast_insert_query = ast->as<ASTInsertQuery>();
     if (context->getSettingsRef().input_format_defaults_for_omitted_fields && ast_insert_query->table_id && !input_function)
@@ -84,12 +82,23 @@ Pipe getSourceFromASTInsertQuery(
         {
             pipe.addSimpleTransform([&](const Block & cur_header)
             {
-                return std::make_shared<AddingDefaultsTransform>(cur_header, columns, *source, context);
+                return std::make_shared<AddingDefaultsTransform>(cur_header, columns, *format, context);
             });
         }
     }
 
     return pipe;
+}
+
+Pipe getSourceFromASTInsertQuery(
+    const ASTPtr & ast,
+    bool with_buffers,
+    const Block & header,
+    ContextPtr context,
+    const ASTPtr & input_function)
+{
+    auto format = getInputFormatFromASTInsertQuery(ast, with_buffers, header, context, input_function);
+    return getSourceFromInputFormat(ast, std::move(format), std::move(context), input_function);
 }
 
 std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast)

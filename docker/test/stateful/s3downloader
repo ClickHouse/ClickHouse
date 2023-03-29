@@ -10,31 +10,38 @@ import requests
 import tempfile
 
 
-DEFAULT_URL = 'https://clickhouse-datasets.s3.amazonaws.com'
+DEFAULT_URL = "https://clickhouse-datasets.s3.amazonaws.com"
 
 AVAILABLE_DATASETS = {
-    'hits': 'hits_v1.tar',
-    'visits': 'visits_v1.tar',
+    "hits": "hits_v1.tar",
+    "visits": "visits_v1.tar",
 }
 
 RETRIES_COUNT = 5
 
+
 def _get_temp_file_name():
-    return os.path.join(tempfile._get_default_tempdir(), next(tempfile._get_candidate_names()))
+    return os.path.join(
+        tempfile._get_default_tempdir(), next(tempfile._get_candidate_names())
+    )
+
 
 def build_url(base_url, dataset):
-    return os.path.join(base_url, dataset, 'partitions', AVAILABLE_DATASETS[dataset])
+    return os.path.join(base_url, dataset, "partitions", AVAILABLE_DATASETS[dataset])
+
 
 def dowload_with_progress(url, path):
     logging.info("Downloading from %s to temp path %s", url, path)
     for i in range(RETRIES_COUNT):
         try:
-            with open(path, 'wb') as f:
+            with open(path, "wb") as f:
                 response = requests.get(url, stream=True)
                 response.raise_for_status()
-                total_length = response.headers.get('content-length')
+                total_length = response.headers.get("content-length")
                 if total_length is None or int(total_length) == 0:
-                    logging.info("No content-length, will download file without progress")
+                    logging.info(
+                        "No content-length, will download file without progress"
+                    )
                     f.write(response.content)
                 else:
                     dl = 0
@@ -46,7 +53,11 @@ def dowload_with_progress(url, path):
                         if sys.stdout.isatty():
                             done = int(50 * dl / total_length)
                             percent = int(100 * float(dl) / total_length)
-                            sys.stdout.write("\r[{}{}] {}%".format('=' * done, ' ' * (50-done), percent))
+                            sys.stdout.write(
+                                "\r[{}{}] {}%".format(
+                                    "=" * done, " " * (50 - done), percent
+                                )
+                            )
                             sys.stdout.flush()
             break
         except Exception as ex:
@@ -56,14 +67,21 @@ def dowload_with_progress(url, path):
             if os.path.exists(path):
                 os.remove(path)
     else:
-        raise Exception("Cannot download dataset from {}, all retries exceeded".format(url))
+        raise Exception(
+            "Cannot download dataset from {}, all retries exceeded".format(url)
+        )
 
     sys.stdout.write("\n")
     logging.info("Downloading finished")
 
+
 def unpack_to_clickhouse_directory(tar_path, clickhouse_path):
-    logging.info("Will unpack data from temp path %s to clickhouse db %s", tar_path, clickhouse_path)
-    with tarfile.open(tar_path, 'r') as comp_file:
+    logging.info(
+        "Will unpack data from temp path %s to clickhouse db %s",
+        tar_path,
+        clickhouse_path,
+    )
+    with tarfile.open(tar_path, "r") as comp_file:
         comp_file.extractall(path=clickhouse_path)
     logging.info("Unpack finished")
 
@@ -72,15 +90,21 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
     parser = argparse.ArgumentParser(
-        description="Simple tool for dowloading datasets for clickhouse from S3")
+        description="Simple tool for dowloading datasets for clickhouse from S3"
+    )
 
-    parser.add_argument('--dataset-names', required=True, nargs='+', choices=list(AVAILABLE_DATASETS.keys()))
-    parser.add_argument('--url-prefix', default=DEFAULT_URL)
-    parser.add_argument('--clickhouse-data-path', default='/var/lib/clickhouse/')
+    parser.add_argument(
+        "--dataset-names",
+        required=True,
+        nargs="+",
+        choices=list(AVAILABLE_DATASETS.keys()),
+    )
+    parser.add_argument("--url-prefix", default=DEFAULT_URL)
+    parser.add_argument("--clickhouse-data-path", default="/var/lib/clickhouse/")
 
     args = parser.parse_args()
     datasets = args.dataset_names
-    logging.info("Will fetch following datasets: %s", ', '.join(datasets))
+    logging.info("Will fetch following datasets: %s", ", ".join(datasets))
     for dataset in datasets:
         logging.info("Processing %s", dataset)
         temp_archive_path = _get_temp_file_name()
@@ -92,10 +116,11 @@ if __name__ == "__main__":
             logging.info("Some exception occured %s", str(ex))
             raise
         finally:
-            logging.info("Will remove downloaded file %s from filesystem if it exists", temp_archive_path)
+            logging.info(
+                "Will remove downloaded file %s from filesystem if it exists",
+                temp_archive_path,
+            )
             if os.path.exists(temp_archive_path):
                 os.remove(temp_archive_path)
         logging.info("Processing of %s finished", dataset)
     logging.info("Fetch finished, enjoy your tables!")
-
-

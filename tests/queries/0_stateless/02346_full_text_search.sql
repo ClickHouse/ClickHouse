@@ -2,7 +2,7 @@ SET allow_experimental_inverted_index = 1;
 SET log_queries = 1;
 
 ----------------------------------------------------
--- Test inverted(2)
+SELECT 'Test inverted(2)';
 
 DROP TABLE IF EXISTS tab;
 
@@ -14,6 +14,9 @@ INSERT INTO tab VALUES (101, 'Alick a01'), (102, 'Blick a02'), (103, 'Click a03'
 
 -- check inverted index was created
 SELECT name, type FROM system.data_skipping_indices WHERE table =='tab' AND database = currentDatabase() LIMIT 1;
+
+-- throw in a random consistency check
+CHECK TABLE tab;
 
 -- search inverted index with ==
 SELECT * FROM tab WHERE s == 'Alick a01';
@@ -55,7 +58,7 @@ SELECT read_rows==8 from system.query_log
         LIMIT 1;
 
 ----------------------------------------------------
--- Test inverted()
+SELECT 'Test inverted()';
 
 DROP TABLE IF EXISTS tab_x;
 
@@ -108,7 +111,7 @@ SELECT read_rows==4 from system.query_log
     LIMIT 1;
 
 ----------------------------------------------------
--- Test on array columns
+SELECT 'Test on array columns';
 
 DROP TABLE IF EXISTS tab;
 
@@ -135,7 +138,7 @@ SELECT read_rows==2 from system.query_log
     LIMIT 1;
 
 ----------------------------------------------------
--- Test on map columns
+SELECT 'Test on map columns';
 
 DROP TABLE IF EXISTS tab;
 
@@ -175,7 +178,8 @@ SELECT read_rows==8 from system.query_log
     LIMIT 1;
 
 ----------------------------------------------------
--- Test inverted(2) on a column with two parts
+SELECT 'Test inverted(2) on a column with two parts';
+
 
 DROP TABLE IF EXISTS tab;
 
@@ -203,7 +207,7 @@ SELECT read_rows==6 from system.query_log
     LIMIT 1;
 
 ----------------------------------------------------
--- Test inverted(2) on UTF-8 data
+SELECT 'Test inverted(2) on UTF-8 data';
 
 DROP TABLE IF EXISTS tab;
 
@@ -231,7 +235,7 @@ SELECT read_rows==2 from system.query_log
     LIMIT 1;
 
 ----------------------------------------------------
--- Test max_digestion_size_per_segment
+SELECT 'Test max_digestion_size_per_segment';
 
 DROP TABLE IF EXISTS tab;
 
@@ -262,7 +266,7 @@ SELECT read_rows==256 from system.query_log
         LIMIT 1;
 
 ----------------------------------------------------
--- Test density==1
+SELECT 'Test density==1';
 
 DROP TABLE IF EXISTS tab;
 
@@ -291,7 +295,7 @@ SELECT read_rows==0 from system.query_log
         LIMIT 1;
 
 ----------------------------------------------------
--- Test density==0.1
+SELECT 'Test density==0.1';
 
 DROP TABLE IF EXISTS tab;
 
