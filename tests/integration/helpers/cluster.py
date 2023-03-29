@@ -63,6 +63,7 @@ DEFAULT_ENV_NAME = ".env"
 
 SANITIZER_SIGN = "=================="
 
+
 # to create docker-compose env file
 def _create_env_file(path, variables):
     logging.debug(f"Env {variables} stored in {path}")
@@ -1454,7 +1455,6 @@ class ClickHouseCluster:
         config_root_name="clickhouse",
         extra_configs=[],
     ) -> "ClickHouseInstance":
-
         """Add an instance to the cluster.
 
         name - the name of the instance directory and the value of the 'instance' macro in ClickHouse.
@@ -3089,7 +3089,6 @@ class ClickHouseInstance:
         config_root_name="clickhouse",
         extra_configs=[],
     ):
-
         self.name = name
         self.base_cmd = cluster.base_cmd
         self.docker_id = cluster.get_instance_docker_id(self.name)
@@ -3264,7 +3263,7 @@ class ClickHouseInstance:
         sleep_time=0.5,
         check_callback=lambda x: True,
     ):
-        logging.debug(f"Executing query {sql} on {self.name}")
+        # logging.debug(f"Executing query {sql} on {self.name}")
         result = None
         for i in range(retry_count):
             try:
@@ -3283,7 +3282,7 @@ class ClickHouseInstance:
                     return result
                 time.sleep(sleep_time)
             except Exception as ex:
-                logging.debug("Retry {} got exception {}".format(i + 1, ex))
+                # logging.debug("Retry {} got exception {}".format(i + 1, ex))
                 time.sleep(sleep_time)
 
         if result is not None:
@@ -4402,6 +4401,17 @@ class ClickHouseInstance:
             if path:
                 objects = objects + self.get_s3_data_objects(path)
         return objects
+
+    def create_format_schema(self, file_name, content):
+        self.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "echo '{}' > {}".format(
+                    content, "/var/lib/clickhouse/format_schemas/" + file_name
+                ),
+            ]
+        )
 
 
 class ClickHouseKiller(object):

@@ -166,6 +166,8 @@
     \
     M(WaitMarksLoadMicroseconds, "Time spent loading marks") \
     M(BackgroundLoadingMarksTasks, "Number of background tasks for loading marks") \
+    M(LoadedMarksCount, "Number of marks loaded (total across columns).") \
+    M(LoadedMarksMemoryBytes, "Size of in-memory representations of loaded marks.") \
     \
     M(Merge, "Number of launched background merges.") \
     M(MergedRows, "Rows read for background merges. This is the number of rows before merge.") \
@@ -347,12 +349,14 @@ The server successfully detected this situation and will download merged part fr
     M(DiskS3PutObject, "Number of DiskS3 API PutObject calls.") \
     M(DiskS3GetObject, "Number of DiskS3 API GetObject calls.") \
     \
-    M(ReadBufferFromS3Microseconds, "Time spend in reading from S3.") \
-    M(ReadBufferFromS3InitMicroseconds, "Time spend initializing connection to S3.") \
+    M(ReadBufferFromS3Microseconds, "Time spent on reading from S3.") \
+    M(ReadBufferFromS3InitMicroseconds, "Time spent initializing connection to S3.") \
     M(ReadBufferFromS3Bytes, "Bytes read from S3.") \
     M(ReadBufferFromS3RequestsErrors, "Number of exceptions while reading from S3.") \
     \
+    M(WriteBufferFromS3Microseconds, "Time spent on writing to S3.") \
     M(WriteBufferFromS3Bytes, "Bytes written to S3.") \
+    M(WriteBufferFromS3RequestsErrors, "Number of exceptions while writing to S3.") \
     \
     M(QueryMemoryLimitExceeded, "Number of times when memory limit exceeded for query.") \
     \

@@ -66,6 +66,7 @@ Pipe StorageDuckDB::read(
 
     String query = transformQueryForExternalDatabase(
         query_info,
+        column_names,
         storage_snapshot->metadata->getColumns().getOrdinary(),
         IdentifierQuotingStyle::DoubleQuotes,
         "",

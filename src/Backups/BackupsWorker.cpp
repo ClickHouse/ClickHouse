@@ -21,6 +21,7 @@
 #include <Common/Macros.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Common/scope_guard_safe.h>
 
 
 namespace DB
@@ -38,12 +39,33 @@ namespace Stage = BackupCoordinationStage;
 
 namespace
 {
-    std::shared_ptr<IBackupCoordination> makeBackupCoordination(const String & root_zk_path, const String & backup_uuid, const ContextPtr & context, bool is_internal_backup)
+    std::shared_ptr<IBackupCoordination> makeBackupCoordination(const ContextPtr & context, const BackupSettings & backup_settings, bool remote)
     {
-        if (!root_zk_path.empty())
+        if (remote)
         {
+            String root_zk_path = context->getConfigRef().getString("backups.zookeeper_path", "/clickhouse/backups");
+
             auto get_zookeeper = [global_context = context->getGlobalContext()] { return global_context->getZooKeeper(); };
-            return std::make_shared<BackupCoordinationRemote>(root_zk_path, backup_uuid, get_zookeeper, is_internal_backup);
+
+            BackupCoordinationRemote::BackupKeeperSettings keeper_settings
+            {
+                .keeper_max_retries = context->getSettingsRef().backup_keeper_max_retries,
+                .keeper_retry_initial_backoff_ms = context->getSettingsRef().backup_keeper_retry_initial_backoff_ms,
+                .keeper_retry_max_backoff_ms = context->getSettingsRef().backup_keeper_retry_max_backoff_ms,
+                .batch_size_for_keeper_multiread = context->getSettingsRef().backup_batch_size_for_keeper_multiread,
+            };
+
+            auto all_hosts = BackupSettings::Util::filterHostIDs(
+                backup_settings.cluster_host_ids, backup_settings.shard_num, backup_settings.replica_num);
+
+            return std::make_shared<BackupCoordinationRemote>(
+                get_zookeeper,
+                root_zk_path,
+                keeper_settings,
+                toString(*backup_settings.backup_uuid),
+                all_hosts,
+                backup_settings.host_id,
+                backup_settings.internal);
         }
         else
         {
@@ -51,12 +73,19 @@ namespace
         }
     }
 
-    std::shared_ptr<IRestoreCoordination> makeRestoreCoordination(const String & root_zk_path, const String & restore_uuid, const ContextPtr & context, bool is_internal_backup)
+    std::shared_ptr<IRestoreCoordination>
+    makeRestoreCoordination(const ContextPtr & context, const RestoreSettings & restore_settings, bool remote)
     {
-        if (!root_zk_path.empty())
+        if (remote)
         {
+            String root_zk_path = context->getConfigRef().getString("backups.zookeeper_path", "/clickhouse/backups");
+
             auto get_zookeeper = [global_context = context->getGlobalContext()] { return global_context->getZooKeeper(); };
-            return std::make_shared<RestoreCoordinationRemote>(root_zk_path, restore_uuid, get_zookeeper, is_internal_backup);
+
+            auto all_hosts = BackupSettings::Util::filterHostIDs(
+                restore_settings.cluster_host_ids, restore_settings.shard_num, restore_settings.replica_num);
+
+            return std::make_shared<RestoreCoordinationRemote>(get_zookeeper, root_zk_path, toString(*restore_settings.restore_uuid), all_hosts, restore_settings.host_id, restore_settings.internal);
         }
         else
         {
@@ -66,12 +95,12 @@ namespace
 
     /// Sends information about an exception to IBackupCoordination or IRestoreCoordination.
     template <typename CoordinationType>
-    void sendExceptionToCoordination(std::shared_ptr<CoordinationType> coordination, const String & current_host, const Exception & exception)
+    void sendExceptionToCoordination(std::shared_ptr<CoordinationType> coordination, const Exception & exception)
     {
         try
         {
             if (coordination)
-                coordination->setError(current_host, exception);
+                coordination->setError(exception);
         }
         catch (...)
         {
@@ -80,7 +109,7 @@ namespace
 
     /// Sends information about the current exception to IBackupCoordination or IRestoreCoordination.
     template <typename CoordinationType>
-    void sendCurrentExceptionToCoordination(std::shared_ptr<CoordinationType> coordination, const String & current_host)
+    void sendCurrentExceptionToCoordination(std::shared_ptr<CoordinationType> coordination)
     {
         try
         {
@@ -88,12 +117,12 @@ namespace
         }
         catch (const Exception & e)
         {
-            sendExceptionToCoordination(coordination, current_host, e);
+            sendExceptionToCoordination(coordination, e);
         }
         catch (...)
         {
             if (coordination)
-                coordination->setError(current_host, Exception(getCurrentExceptionMessageAndPattern(true, true), getCurrentExceptionCode()));
+                coordination->setError(Exception(getCurrentExceptionMessageAndPattern(true, true), getCurrentExceptionCode()));
         }
     }
 
@@ -160,16 +189,13 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
     else
         backup_id = toString(*backup_settings.backup_uuid);
 
-    String root_zk_path;
-
     std::shared_ptr<IBackupCoordination> backup_coordination;
     if (backup_settings.internal)
     {
         /// The following call of makeBackupCoordination() is not essential because doBackup() will later create a backup coordination
         /// if it's not created here. However to handle errors better it's better to make a coordination here because this way
         /// if an exception will be thrown in startMakingBackup() other hosts will know about that.
-        root_zk_path = context->getConfigRef().getString("backups.zookeeper_path", "/clickhouse/backups");
-        backup_coordination = makeBackupCoordination(root_zk_path, toString(*backup_settings.backup_uuid), context, backup_settings.internal);
+        backup_coordination = makeBackupCoordination(context, backup_settings, /* remote= */ true);
     }
 
     auto backup_info = BackupInfo::fromAST(*backup_query->backup_name);
@@ -228,7 +254,7 @@ OperationID BackupsWorker::startMakingBackup(const ASTPtr & query, const Context
         tryLogCurrentException(log, fmt::format("Failed to start {} {}", (backup_settings.internal ? "internal backup" : "backup"), backup_name_for_logging));
         /// Something bad happened, the backup has not built.
         setStatusSafe(backup_id, BackupStatus::BACKUP_FAILED);
-        sendCurrentExceptionToCoordination(backup_coordination, backup_settings.host_id);
+        sendCurrentExceptionToCoordination(backup_coordination);
         throw;
     }
 }
@@ -264,12 +290,9 @@ void BackupsWorker::doBackup(
         if (!on_cluster)
             context->checkAccess(required_access);
 
-        String root_zk_path;
-
         ClusterPtr cluster;
         if (on_cluster)
         {
-            root_zk_path = context->getConfigRef().getString("backups.zookeeper_path", "/clickhouse/backups");
             backup_query->cluster = context->getMacros()->expand(backup_query->cluster);
             cluster = context->getCluster(backup_query->cluster);
             backup_settings.cluster_host_ids = cluster->getHostIDs();
@@ -277,7 +300,7 @@ void BackupsWorker::doBackup(
 
         /// Make a backup coordination.
         if (!backup_coordination)
-            backup_coordination = makeBackupCoordination(root_zk_path, toString(*backup_settings.backup_uuid), context, backup_settings.internal);
+            backup_coordination = makeBackupCoordination(context, backup_settings, /* remote= */ on_cluster);
 
         if (!allow_concurrent_backups && backup_coordination->hasConcurrentBackups(std::ref(num_active_backups)))
             throw Exception(ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED, "Concurrent backups not supported, turn on setting 'allow_concurrent_backups'");
@@ -313,9 +336,7 @@ void BackupsWorker::doBackup(
             executeDDLQueryOnCluster(backup_query, mutable_context, params);
 
             /// Wait until all the hosts have written their backup entries.
-            auto all_hosts = BackupSettings::Util::filterHostIDs(
-                backup_settings.cluster_host_ids, backup_settings.shard_num, backup_settings.replica_num);
-            backup_coordination->waitForStage(all_hosts, Stage::COMPLETED);
+            backup_coordination->waitForStage(Stage::COMPLETED);
         }
         else
         {
@@ -329,10 +350,10 @@ void BackupsWorker::doBackup(
             }
 
             /// Write the backup entries to the backup.
-            writeBackupEntries(backup, std::move(backup_entries), backups_thread_pool);
+            writeBackupEntries(backup_id, backup, std::move(backup_entries), backups_thread_pool, backup_settings.internal);
 
             /// We have written our backup entries, we need to tell other hosts (they could be waiting for it).
-            backup_coordination->setStage(backup_settings.host_id, Stage::COMPLETED, "");
+            backup_coordination->setStage(Stage::COMPLETED, "");
         }
 
         size_t num_files = 0;
@@ -357,6 +378,7 @@ void BackupsWorker::doBackup(
 
         LOG_INFO(log, "{} {} was created successfully", (backup_settings.internal ? "Internal backup" : "Backup"), backup_name_for_logging);
         setStatus(backup_id, BackupStatus::BACKUP_CREATED);
+        /// NOTE: we need to update metadata again after backup->finalizeWriting(), because backup metadata is written there.
         setNumFilesAndSize(backup_id, num_files, total_size, num_entries, uncompressed_size, compressed_size, 0, 0);
     }
     catch (...)
@@ -366,13 +388,95 @@ void BackupsWorker::doBackup(
         {
             tryLogCurrentException(log, fmt::format("Failed to make {} {}", (backup_settings.internal ? "internal backup" : "backup"), backup_name_for_logging));
             setStatusSafe(backup_id, BackupStatus::BACKUP_FAILED);
-            sendCurrentExceptionToCoordination(backup_coordination, backup_settings.host_id);
+            sendCurrentExceptionToCoordination(backup_coordination);
         }
         else
         {
             /// setStatus() and sendCurrentExceptionToCoordination() will be called by startMakingBackup().
             throw;
         }
+    }
+}
+
+
+void BackupsWorker::writeBackupEntries(const OperationID & backup_id, BackupMutablePtr backup, BackupEntries && backup_entries, ThreadPool & thread_pool, bool internal)
+{
+    size_t num_active_jobs = 0;
+    std::mutex mutex;
+    std::condition_variable event;
+    std::exception_ptr exception;
+
+    bool always_single_threaded = !backup->supportsWritingInMultipleThreads();
+    auto thread_group = CurrentThread::getGroup();
+
+    for (auto & name_and_entry : backup_entries)
+    {
+        auto & name = name_and_entry.first;
+        auto & entry = name_and_entry.second;
+
+        {
+            std::unique_lock lock{mutex};
+            if (exception)
+                break;
+            ++num_active_jobs;
+        }
+
+        auto job = [&](bool async)
+        {
+            SCOPE_EXIT_SAFE(
+                std::lock_guard lock{mutex};
+                if (!--num_active_jobs)
+                    event.notify_all();
+                if (async)
+                    CurrentThread::detachFromGroupIfNotDetached();
+            );
+
+            try
+            {
+                if (async && thread_group)
+                    CurrentThread::attachToGroup(thread_group);
+
+                if (async)
+                    setThreadName("BackupWorker");
+
+                {
+                    std::lock_guard lock{mutex};
+                    if (exception)
+                        return;
+                }
+
+                backup->writeFile(name, std::move(entry));
+                // Update metadata
+                if (!internal)
+                {
+                    setNumFilesAndSize(
+                            backup_id,
+                            backup->getNumFiles(),
+                            backup->getTotalSize(),
+                            backup->getNumEntries(),
+                            backup->getUncompressedSize(),
+                            backup->getCompressedSize(),
+                            0, 0);
+                }
+
+            }
+            catch (...)
+            {
+                std::lock_guard lock{mutex};
+                if (!exception)
+                    exception = std::current_exception();
+            }
+        };
+
+        if (always_single_threaded || !thread_pool.trySchedule([job] { job(true); }))
+            job(false);
+    }
+
+    {
+        std::unique_lock lock{mutex};
+        event.wait(lock, [&] { return !num_active_jobs; });
+        if (exception)
+            std::rethrow_exception(exception);
     }
 }
 
@@ -400,8 +504,7 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
         /// The following call of makeRestoreCoordination() is not essential because doRestore() will later create a restore coordination
         /// if it's not created here. However to handle errors better it's better to make a coordination here because this way
         /// if an exception will be thrown in startRestoring() other hosts will know about that.
-        auto root_zk_path = context->getConfigRef().getString("backups.zookeeper_path", "/clickhouse/backups");
-        restore_coordination = makeRestoreCoordination(root_zk_path, toString(*restore_settings.restore_uuid), context, restore_settings.internal);
+        restore_coordination = makeRestoreCoordination(context, restore_settings, /* remote= */ true);
     }
 
     try
@@ -424,7 +527,7 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
 
         if (restore_settings.async)
         {
-            backups_thread_pool.scheduleOrThrowOnError(
+            restores_thread_pool.scheduleOrThrowOnError(
                 [this, restore_query, restore_id, backup_name_for_logging, backup_info, restore_settings, restore_coordination, context_in_use]
                 {
                     doRestore(
@@ -457,7 +560,7 @@ OperationID BackupsWorker::startRestoring(const ASTPtr & query, ContextMutablePt
     {
         /// Something bad happened, the backup has not built.
         setStatusSafe(restore_id, BackupStatus::RESTORE_FAILED);
-        sendCurrentExceptionToCoordination(restore_coordination, restore_settings.host_id);
+        sendCurrentExceptionToCoordination(restore_coordination);
         throw;
     }
 }
@@ -492,14 +595,12 @@ void BackupsWorker::doRestore(
         BackupPtr backup = BackupFactory::instance().createBackup(backup_open_params);
 
         String current_database = context->getCurrentDatabase();
-        String root_zk_path;
         /// Checks access rights if this is ON CLUSTER query.
         /// (If this isn't ON CLUSTER query RestorerFromBackup will check access rights later.)
         ClusterPtr cluster;
         bool on_cluster = !restore_query->cluster.empty();
         if (on_cluster)
         {
-            root_zk_path = context->getConfigRef().getString("backups.zookeeper_path", "/clickhouse/backups");
             restore_query->cluster = context->getMacros()->expand(restore_query->cluster);
             cluster = context->getCluster(restore_query->cluster);
             restore_settings.cluster_host_ids = cluster->getHostIDs();
@@ -522,7 +623,7 @@ void BackupsWorker::doRestore(
 
         /// Make a restore coordination.
         if (!restore_coordination)
-            restore_coordination = makeRestoreCoordination(root_zk_path, toString(*restore_settings.restore_uuid), context, restore_settings.internal);
+            restore_coordination = makeRestoreCoordination(context, restore_settings, /* remote= */ on_cluster);
 
         if (!allow_concurrent_restores && restore_coordination->hasConcurrentRestores(std::ref(num_active_restores)))
             throw Exception(ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED, "Concurrent restores not supported, turn on setting 'allow_concurrent_restores'");
@@ -544,9 +645,7 @@ void BackupsWorker::doRestore(
             executeDDLQueryOnCluster(restore_query, context, params);
 
             /// Wait until all the hosts have written their backup entries.
-            auto all_hosts = BackupSettings::Util::filterHostIDs(
-                restore_settings.cluster_host_ids, restore_settings.shard_num, restore_settings.replica_num);
-            restore_coordination->waitForStage(all_hosts, Stage::COMPLETED);
+            restore_coordination->waitForStage(Stage::COMPLETED);
         }
         else
         {
@@ -561,23 +660,14 @@ void BackupsWorker::doRestore(
             }
 
             /// Execute the data restoring tasks.
-            restoreTablesData(std::move(data_restore_tasks), restores_thread_pool);
+            restoreTablesData(restore_id, backup, std::move(data_restore_tasks), restores_thread_pool);
 
             /// We have restored everything, we need to tell other hosts (they could be waiting for it).
-            restore_coordination->setStage(restore_settings.host_id, Stage::COMPLETED, "");
+            restore_coordination->setStage(Stage::COMPLETED, "");
         }
 
         LOG_INFO(log, "Restored from {} {} successfully", (restore_settings.internal ? "internal backup" : "backup"), backup_name_for_logging);
         setStatus(restore_id, BackupStatus::RESTORED);
-        setNumFilesAndSize(
-            restore_id,
-            backup->getNumFiles(),
-            backup->getTotalSize(),
-            backup->getNumEntries(),
-            backup->getUncompressedSize(),
-            backup->getCompressedSize(),
-            backup->getNumReadFiles(),
-            backup->getNumReadBytes());
     }
     catch (...)
     {
@@ -586,13 +676,87 @@ void BackupsWorker::doRestore(
         {
             tryLogCurrentException(log, fmt::format("Failed to restore from {} {}", (restore_settings.internal ? "internal backup" : "backup"), backup_name_for_logging));
             setStatusSafe(restore_id, BackupStatus::RESTORE_FAILED);
-            sendCurrentExceptionToCoordination(restore_coordination, restore_settings.host_id);
+            sendCurrentExceptionToCoordination(restore_coordination);
         }
         else
         {
             /// setStatus() and sendCurrentExceptionToCoordination() will be called by startRestoring().
             throw;
         }
+    }
+}
+
+
+void BackupsWorker::restoreTablesData(const OperationID & restore_id, BackupPtr backup, DataRestoreTasks && tasks, ThreadPool & thread_pool)
+{
+    size_t num_active_jobs = 0;
+    std::mutex mutex;
+    std::condition_variable event;
+    std::exception_ptr exception;
+
+    auto thread_group = CurrentThread::getGroup();
+
+    for (auto & task : tasks)
+    {
+        {
+            std::unique_lock lock{mutex};
+            if (exception)
+                break;
+            ++num_active_jobs;
+        }
+
+        auto job = [&](bool async)
+        {
+            SCOPE_EXIT_SAFE(
+                std::lock_guard lock{mutex};
+                if (!--num_active_jobs)
+                    event.notify_all();
+                if (async)
+                    CurrentThread::detachFromGroupIfNotDetached();
+            );
+
+            try
+            {
+                if (async && thread_group)
+                    CurrentThread::attachToGroup(thread_group);
+
+                if (async)
+                    setThreadName("RestoreWorker");
+
+                {
+                    std::lock_guard lock{mutex};
+                    if (exception)
+                        return;
+                }
+
+                std::move(task)();
+                setNumFilesAndSize(
+                    restore_id,
+                    backup->getNumFiles(),
+                    backup->getTotalSize(),
+                    backup->getNumEntries(),
+                    backup->getUncompressedSize(),
+                    backup->getCompressedSize(),
+                    backup->getNumReadFiles(),
+                    backup->getNumReadBytes());
+            }
+            catch (...)
+            {
+                std::lock_guard lock{mutex};
+                if (!exception)
+                    exception = std::current_exception();
+            }
+        };
+
+        if (!thread_pool.trySchedule([job] { job(true); }))
+            job(false);
+    }
+
+    {
+        std::unique_lock lock{mutex};
+        event.wait(lock, [&] { return !num_active_jobs; });
+        if (exception)
+            std::rethrow_exception(exception);
     }
 }
 

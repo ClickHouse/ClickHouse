@@ -172,6 +172,21 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, co
     return select;
 }
 
+QueryTreeNodePtr prepareQueryAffectedQueryTree(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context)
+{
+    auto ast = prepareQueryAffectedAST(commands, storage, context);
+    auto query_tree = buildQueryTree(ast, context);
+
+    auto & query_node = query_tree->as<QueryNode &>();
+    query_node.getJoinTree() = std::make_shared<TableNode>(storage, context);
+
+    QueryTreePassManager query_tree_pass_manager(context);
+    addQueryTreePasses(query_tree_pass_manager);
+    query_tree_pass_manager.run(query_tree);
+
+    return query_tree;
+}
+
 ColumnDependencies getAllColumnDependencies(const StorageMetadataPtr & metadata_snapshot, const NameSet & updated_columns)
 {
     NameSet new_updated_columns = updated_columns;
@@ -231,18 +246,15 @@ bool isStorageTouchedByMutations(
     std::optional<InterpreterSelectQuery> interpreter_select_query;
     BlockIO io;
 
-    ASTPtr select_query = prepareQueryAffectedAST(commands, storage.shared_from_this(), context);
-
     if (context->getSettingsRef().allow_experimental_analyzer)
     {
-        InterpreterSelectQueryAnalyzer interpreter(select_query,
-            context,
-            storage_from_part,
-            SelectQueryOptions().ignoreLimits().ignoreProjections());
+        auto select_query_tree = prepareQueryAffectedQueryTree(commands, storage.shared_from_this(), context);
+        InterpreterSelectQueryAnalyzer interpreter(select_query_tree, context, SelectQueryOptions().ignoreLimits().ignoreProjections());
         io = interpreter.execute();
     }
     else
     {
+        ASTPtr select_query = prepareQueryAffectedAST(commands, storage.shared_from_this(), context);
         /// Interpreter must be alive, when we use result of execute() method.
         /// For some reason it may copy context and give it into ExpressionTransform
         /// after that we will use context from destroyed stack frame in our stream.

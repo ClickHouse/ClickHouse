@@ -155,7 +155,7 @@ void MySQLHandler::run()
             payload.readStrict(command);
 
             // For commands which are executed without MemoryTracker.
-            LimitReadBuffer limited_payload(payload, 10000, true, "too long MySQL packet.");
+            LimitReadBuffer limited_payload(payload, 10000, /* trow_exception */ true, /* exact_limit */ {}, "too long MySQL packet.");
 
             LOG_DEBUG(log, "Received command: {}. Connection id: {}.",
                 static_cast<int>(static_cast<unsigned char>(command)), connection_id);
@@ -352,11 +352,15 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
         format_settings.mysql_wire.max_packet_size = max_packet_size;
         format_settings.mysql_wire.sequence_id = &sequence_id;
 
-        auto set_result_details = [&with_output](const String &, const String &, const String &format, const String &)
+        auto set_result_details = [&with_output](const QueryResultDetails & details)
         {
-            if (format != "MySQLWire")
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "MySQL protocol does not support custom output formats");
-            with_output = true;
+            if (details.format)
+            {
+                if (*details.format != "MySQLWire")
+                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "MySQL protocol does not support custom output formats");
+
+                with_output = true;
+            }
         };
 
         executeQuery(should_replace ? replacement : payload, *out, false, query_context, set_result_details, format_settings);

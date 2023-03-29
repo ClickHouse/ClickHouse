@@ -173,6 +173,7 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
             writeUUIDText(part->uuid, out);
 
         String remote_fs_metadata = parse<String>(params.get("remote_fs_metadata", ""));
+
         std::regex re("\\s*,\\s*");
         Strings capability(
             std::sregex_token_iterator(remote_fs_metadata.begin(), remote_fs_metadata.end(), re, -1),
@@ -477,6 +478,22 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
 
     int server_protocol_version = parse<int>(in->getResponseCookie("server_protocol_version", "0"));
 
+    String remote_fs_metadata = parse<String>(in->getResponseCookie("remote_fs_metadata", ""));
+
+    DiskPtr preffered_disk = disk;
+
+    if (!preffered_disk)
+    {
+        for (const auto & disk_candidate : data.getDisks())
+        {
+            if (toString(disk_candidate->getDataSourceDescription().type) == remote_fs_metadata)
+            {
+                preffered_disk = disk_candidate;
+                break;
+            }
+        }
+    }
+
     ReservationPtr reservation;
     size_t sum_files_size = 0;
     if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE)
@@ -493,31 +510,32 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
 
             if (!disk)
             {
-                LOG_TRACE(log, "Disk for fetch is not provided, reserving space using storage balanced reservation");
+                LOG_TEST(log, "Disk for fetch is not provided, reserving space using storage balanced reservation");
                 reservation
                     = data.balancedReservation(metadata_snapshot, sum_files_size, 0, part_name, part_info, {}, tagger_ptr, &ttl_infos, true);
+
                 if (!reservation)
                 {
-                    LOG_TRACE(log, "Disk for fetch is not provided, reserving space using TTL rules");
+                    LOG_TEST(log, "Disk for fetch is not provided, reserving space using TTL rules");
                     reservation
-                        = data.reserveSpacePreferringTTLRules(metadata_snapshot, sum_files_size, ttl_infos, std::time(nullptr), 0, true);
+                        = data.reserveSpacePreferringTTLRules(metadata_snapshot, sum_files_size, ttl_infos, std::time(nullptr), 0, true, preffered_disk);
                 }
             }
         }
         else if (!disk)
         {
-            LOG_TRACE(log, "Making balanced reservation");
+            LOG_TEST(log, "Making balanced reservation");
             reservation = data.balancedReservation(metadata_snapshot, sum_files_size, 0, part_name, part_info, {}, tagger_ptr, nullptr);
             if (!reservation)
             {
-                LOG_TRACE(log, "Making simple reservation");
+                LOG_TEST(log, "Making simple reservation");
                 reservation = data.reserveSpace(sum_files_size);
             }
         }
     }
     else if (!disk)
     {
-        LOG_TRACE(log, "Making reservation on the largest disk");
+        LOG_TEST(log, "Making reservation on the largest disk");
         /// We don't know real size of part because sender server version is too old
         reservation = data.makeEmptyReservationOnLargestDisk();
     }
@@ -525,11 +543,11 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
     if (!disk)
     {
         disk = reservation->getDisk();
-        LOG_INFO(log, "Disk for fetch is not provided, getting disk from reservation {} with type {}", disk->getName(), toString(disk->getDataSourceDescription().type));
+        LOG_TRACE(log, "Disk for fetch is not provided, getting disk from reservation {} with type '{}'", disk->getName(), toString(disk->getDataSourceDescription().type));
     }
     else
     {
-        LOG_INFO(log, "Disk for fetch is disk {} with type {}", disk->getName(), toString(disk->getDataSourceDescription().type));
+        LOG_TEST(log, "Disk for fetch is disk {} with type {}", disk->getName(), toString(disk->getDataSourceDescription().type));
     }
 
     UInt64 revision = parse<UInt64>(in->getResponseCookie("disk_revision", "0"));
@@ -551,8 +569,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchSelectedPart(
     UUID part_uuid = UUIDHelpers::Nil;
     if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_UUID)
         readUUIDText(part_uuid, *in);
-
-    String remote_fs_metadata = parse<String>(in->getResponseCookie("remote_fs_metadata", ""));
 
     size_t projections = 0;
     if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION)

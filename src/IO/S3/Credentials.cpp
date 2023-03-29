@@ -21,6 +21,21 @@
 namespace DB::S3
 {
 
+namespace
+{
+
+bool areCredentialsEmptyOrExpired(const Aws::Auth::AWSCredentials & credentials, uint64_t expiration_window_seconds)
+{
+    if (credentials.IsEmpty())
+        return true;
+
+    const Aws::Utils::DateTime now = Aws::Utils::DateTime::Now();
+    return now >= credentials.GetExpiration() - std::chrono::seconds(expiration_window_seconds);
+}
+
+
+}
+
 AWSEC2MetadataClient::AWSEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration, const char * endpoint_)
     : Aws::Internal::AWSHttpResourceClient(client_configuration)
     , endpoint(endpoint_)
@@ -270,8 +285,10 @@ void AWSInstanceProfileCredentialsProvider::refreshIfExpired()
     Reload();
 }
 
-AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider(DB::S3::PocoHTTPClientConfiguration & aws_client_configuration)
+AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider(
+    DB::S3::PocoHTTPClientConfiguration & aws_client_configuration, uint64_t expiration_window_seconds_)
     : logger(&Poco::Logger::get("AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider"))
+    , expiration_window_seconds(expiration_window_seconds_)
 {
     // check environment variables
     String tmp_region = Aws::Environment::GetEnv("AWS_DEFAULT_REGION");
@@ -388,16 +405,12 @@ void AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::Reload()
 void AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::refreshIfExpired()
 {
     Aws::Utils::Threading::ReaderLockGuard guard(m_reloadLock);
-    if (!credentials.IsExpiredOrEmpty())
-    {
+    if (!areCredentialsEmptyOrExpired(credentials, expiration_window_seconds))
         return;
-    }
 
     guard.UpgradeToWriterLock();
-    if (!credentials.IsExpiredOrEmpty()) // double-checked lock to avoid refreshing twice
-    {
+    if (!areCredentialsEmptyOrExpired(credentials, expiration_window_seconds)) // double-checked lock to avoid refreshing twice
         return;
-    }
 
     Reload();
 }
@@ -406,7 +419,8 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
         const DB::S3::PocoHTTPClientConfiguration & configuration,
         const Aws::Auth::AWSCredentials & credentials,
         bool use_environment_credentials,
-        bool use_insecure_imds_request)
+        bool use_insecure_imds_request,
+        uint64_t expiration_window_seconds)
 {
     auto * logger = &Poco::Logger::get("S3CredentialsProviderChain");
 
@@ -439,7 +453,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
                 configuration.for_disk_s3,
                 configuration.get_request_throttler,
                 configuration.put_request_throttler);
-            AddProvider(std::make_shared<AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider>(aws_client_configuration));
+            AddProvider(std::make_shared<AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider>(aws_client_configuration, expiration_window_seconds));
         }
 
         AddProvider(std::make_shared<Aws::Auth::EnvironmentAWSCredentialsProvider>());
