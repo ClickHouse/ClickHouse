@@ -34,8 +34,7 @@ def started_cluster():
         yield cluster
     finally:
         cluster.shutdown()
-
-
+        
 def test_fetch_correct_volume(started_cluster):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances["node2"]
