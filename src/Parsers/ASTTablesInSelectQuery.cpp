@@ -208,7 +208,7 @@ void ASTTableJoin::formatImplBeforeTable(FormattingBuffer out) const
             out.writeKeyword("CROSS JOIN");
             break;
         case JoinKind::Comma:
-            out.ostr << ",";
+            out.writeKeyword(",");
             break;
     }
 }
