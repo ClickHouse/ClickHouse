@@ -9,13 +9,13 @@ set use_structure_from_insertion_table_in_table_functions=2;
 insert into test select * from file(02458_data.jsonl);
 insert into test select x, 1 from file(02458_data.jsonl);
 insert into test select x, y from file(02458_data.jsonl);
-insert into test select x + 1, y from file(02458_data.jsonl); -- {serverError UNKNOWN_IDENTIFIER}
+insert into test select x + 1, y from file(02458_data.jsonl); -- {serverError ONLY_NULLS_WHILE_READING_SCHEMA}
 insert into test select x, z from file(02458_data.jsonl);
 
 insert into test select * from file(02458_data.jsoncompacteachrow);
 insert into test select x, 1 from file(02458_data.jsoncompacteachrow); -- {serverError CANNOT_PARSE_INPUT_ASSERTION_FAILED}
 insert into test select x, y from file(02458_data.jsoncompacteachrow);
-insert into test select x + 1, y from file(02458_data.jsoncompacteachrow); -- {serverError UNKNOWN_IDENTIFIER}
+insert into test select x + 1, y from file(02458_data.jsoncompacteachrow); -- {serverError ONLY_NULLS_WHILE_READING_SCHEMA}
 insert into test select x, z from file(02458_data.jsoncompacteachrow);
 
 insert into test select * from input() format CSV 1,2
