@@ -159,8 +159,7 @@ We can create a chart in the SQL Console to visualize the results:
 WITH
     toYYYYMMDD(timestamp) AS day
 SELECT day, count() FROM sensors
-WHERE temperature >= 40 and temperature <= 50
-and humidity >= 90
+WHERE temperature >= 40 AND temperature <= 50 AND humidity >= 90
 GROUP BY day
 ORDER BY day asc;
 ```
@@ -169,4 +168,3 @@ Here's a visualization of the result:
 
 ![Hot and humid days](./images/sensors_02.png)
 
-7.
