@@ -37,7 +37,7 @@ else
   fi
 
   if [ "$set_git_hook" = "y" ]; then
-    hook_command="$(pwd)/pull-clickhouse-docs-hook.sh $UPDATE_PERIOD_HOURS"
+    hook_command="$(pwd)/pull-clickhouse-docs-hook.sh $UPDATE_PERIOD_HOURS ||:"
     hook_file=$(realpath "$(pwd)/../.git/hooks/post-checkout")
     if grep -Faq "pull-clickhouse-docs-hook.sh" "$hook_file" 2>/dev/null; then
       echo "Looks like the update hook already exists, will not add another one"
