@@ -76,8 +76,8 @@ CREATE TABLE amazon_reviews
     star_rating UInt8,
     helpful_votes UInt32,
     total_votes UInt32,
-    vine FixedString(1),
-    verified_purchase FixedString(1),
+    vine Bool,
+    verified_purchase Bool,
     review_headline String,
     review_body String
 )
@@ -111,11 +111,12 @@ FROM s3Cluster(
     star_rating UInt8,
     helpful_votes UInt32,
     total_votes UInt32,
-    vine Bool,
-    verified_purchase Bool,
+    vine FixedString(1),
+    verified_purchase FixedString(1),
     review_headline String,
     review_body String'
-    );
+    )
+SETTINGS input_format_allow_errors_num = 1000000;
 ```
 
 :::tip
