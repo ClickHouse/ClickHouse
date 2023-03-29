@@ -53,8 +53,7 @@ NextState NoEscapingStateHandler::waitKey(std::string_view file) const
 
 NextState NoEscapingStateHandler::readKey(std::string_view file, KeyType & key) const
 {
-    const auto & [key_value_delimiter, quoting_character, pair_delimiters]
-        = extractor_configuration;
+    const auto & [key_value_delimiter, _, pair_delimiters] = extractor_configuration;
 
     key = {};
 
@@ -156,7 +155,7 @@ NextState NoEscapingStateHandler::waitValue(std::string_view file) const
 
 NextState NoEscapingStateHandler::readValue(std::string_view file, ValueType & value) const
 {
-    const auto & [key_value_delimiter, quoting_character, pair_delimiters] = extractor_configuration;
+    const auto & [key_value_delimiter, _, pair_delimiters] = extractor_configuration;
 
     value = {};
 
