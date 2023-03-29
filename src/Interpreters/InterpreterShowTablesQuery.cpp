@@ -71,11 +71,11 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
                 << DB::quote << query.like;
         }
 
-        if (query.limit_length)
-            rewritten_query << " LIMIT " << query.limit_length;
-
         /// (*)
         rewritten_query << " ORDER BY cluster";
+
+        if (query.limit_length)
+            rewritten_query << " LIMIT " << query.limit_length;
 
         return rewritten_query.str();
     }
