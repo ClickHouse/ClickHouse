@@ -123,7 +123,6 @@ BackupEntries BackupEntriesCollector::run()
     runPostTasks();
 
     /// No more backup entries or tasks are allowed after this point.
-    setStage(Stage::WRITING_BACKUP);
 
     return std::move(backup_entries);
 }

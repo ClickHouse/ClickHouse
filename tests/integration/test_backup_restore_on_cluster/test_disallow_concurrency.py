@@ -204,18 +204,36 @@ def test_concurrent_restores_on_same_node():
             "distributed_ddl_task_timeout": 360,
         },
     )
+
     restore_id = (
         nodes[0]
         .query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name} ASYNC")
         .split("\t")[0]
     )
+
+    status = (
+        nodes[0]
+        .query(f"SELECT status FROM system.backups WHERE id == '{restore_id}'")
+        .rstrip("\n")
+    )
+    assert status in ["RESTORING", "RESTORED"]
+
+    concurrent_error = nodes[0].query_and_get_error(
+        f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}"
+    )
+
+    expected_errors = [
+        "Concurrent restores not supported",
+        "Cannot restore the table default.tbl because it already contains some data",
+    ]
+    assert any(
+        [expected_error in concurrent_error for expected_error in expected_errors]
+    )
+
     assert_eq_with_retry(
         nodes[0],
-        f"SELECT status FROM system.backups WHERE status == 'RESTORING' AND id == '{restore_id}'",
-        "RESTORING",
-    )
-    assert "Concurrent restores not supported" in nodes[0].query_and_get_error(
-        f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}"
+        f"SELECT status FROM system.backups WHERE id == '{restore_id}'",
+        "RESTORED",
     )
 
 
@@ -247,22 +265,34 @@ def test_concurrent_restores_on_different_node():
             "distributed_ddl_task_timeout": 360,
         },
     )
+
     restore_id = (
         nodes[0]
         .query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name} ASYNC")
         .split("\t")[0]
     )
-    assert_eq_with_retry(
-        nodes[0],
-        f"SELECT status FROM system.backups WHERE status == 'RESTORING'",
-        "RESTORING",
+
+    status = (
+        nodes[0]
+        .query(f"SELECT status FROM system.backups WHERE id == '{restore_id}'")
+        .rstrip("\n")
     )
-    assert "Concurrent restores not supported" in nodes[1].query_and_get_error(
+    assert status in ["RESTORING", "RESTORED"]
+
+    concurrent_error = nodes[1].query_and_get_error(
         f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}"
+    )
+
+    expected_errors = [
+        "Concurrent restores not supported",
+        "Cannot restore the table default.tbl because it already contains some data",
+    ]
+    assert any(
+        [expected_error in concurrent_error for expected_error in expected_errors]
     )
 
     assert_eq_with_retry(
         nodes[0],
-        f"SELECT status FROM system.backups WHERE status == 'RESTORED' AND id == '{restore_id}'",
+        f"SELECT status FROM system.backups WHERE id == '{restore_id}'",
         "RESTORED",
     )
