@@ -29,7 +29,8 @@ def generate_cluster_def():
 
 
 main_configs = ["configs/backups_disk.xml", generate_cluster_def()]
-user_configs = ["configs/allow_database_types.xml", "configs/zookeeper_retries.xml"]
+# No [Zoo]Keeper retries for tests with concurrency
+user_configs = ["configs/allow_database_types.xml"]
 
 nodes = []
 for i in range(num_nodes):

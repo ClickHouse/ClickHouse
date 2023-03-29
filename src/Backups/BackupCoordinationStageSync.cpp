@@ -35,11 +35,11 @@ void BackupCoordinationStageSync::createRootNodes()
     auto holder = with_retries.createRetriesControlHolder("createRootNodes");
     holder.retries_ctl.retryLoop(
         [&, &zookeeper = holder.faulty_zookeeper]()
-        {
-            with_retries.renewZooKeeper(zookeeper);
-            zookeeper->createAncestors(zookeeper_path);
-            zookeeper->createIfNotExists(zookeeper_path, "");
-        });
+    {
+        with_retries.renewZooKeeper(zookeeper);
+        zookeeper->createAncestors(zookeeper_path);
+        zookeeper->createIfNotExists(zookeeper_path, "");
+    });
 }
 
 void BackupCoordinationStageSync::set(const String & current_host, const String & new_stage, const String & message)
@@ -47,18 +47,18 @@ void BackupCoordinationStageSync::set(const String & current_host, const String 
     auto holder = with_retries.createRetriesControlHolder("set");
     holder.retries_ctl.retryLoop(
         [&, &zookeeper = holder.faulty_zookeeper]()
-        {
-            with_retries.renewZooKeeper(zookeeper);
+    {
+        with_retries.renewZooKeeper(zookeeper);
 
-            /// Make an ephemeral node so the initiator can track if the current host is still working.
-            String alive_node_path = zookeeper_path + "/alive|" + current_host;
-            auto code = zookeeper->tryCreate(alive_node_path, "", zkutil::CreateMode::Ephemeral);
-            if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
-                throw zkutil::KeeperException(code, alive_node_path);
+        /// Make an ephemeral node so the initiator can track if the current host is still working.
+        String alive_node_path = zookeeper_path + "/alive|" + current_host;
+        auto code = zookeeper->tryCreate(alive_node_path, "", zkutil::CreateMode::Ephemeral);
+        if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
+            throw zkutil::KeeperException(code, alive_node_path);
 
-            zookeeper->createIfNotExists(zookeeper_path + "/started|" + current_host, "");
-            zookeeper->createIfNotExists(zookeeper_path + "/current|" + current_host + "|" + new_stage, message);
-        });
+        zookeeper->createIfNotExists(zookeeper_path + "/started|" + current_host, "");
+        zookeeper->createIfNotExists(zookeeper_path + "/current|" + current_host + "|" + new_stage, message);
+    });
 }
 
 void BackupCoordinationStageSync::setError(const String & current_host, const Exception & exception)
@@ -66,14 +66,14 @@ void BackupCoordinationStageSync::setError(const String & current_host, const Ex
     auto holder = with_retries.createRetriesControlHolder("setError");
     holder.retries_ctl.retryLoop(
         [&, &zookeeper = holder.faulty_zookeeper]()
-        {
-            with_retries.renewZooKeeper(zookeeper);
+    {
+        with_retries.renewZooKeeper(zookeeper);
 
-            WriteBufferFromOwnString buf;
-            writeStringBinary(current_host, buf);
-            writeException(exception, buf, true);
-            zookeeper->createIfNotExists(zookeeper_path + "/error", buf.str());
-        });
+        WriteBufferFromOwnString buf;
+        writeStringBinary(current_host, buf);
+        writeException(exception, buf, true);
+        zookeeper->createIfNotExists(zookeeper_path + "/error", buf.str());
+    });
 }
 
 Strings BackupCoordinationStageSync::wait(const Strings & all_hosts, const String & stage_to_wait)
@@ -149,19 +149,19 @@ BackupCoordinationStageSync::State BackupCoordinationStageSync::readCurrentState
                 auto holder = with_retries.createRetriesControlHolder("readCurrentState::checkAliveNode");
                 holder.retries_ctl.retryLoop(
                     [&, &zookeeper = holder.faulty_zookeeper]()
+                {
+                    with_retries.renewZooKeeper(zookeeper);
+
+                    if (zookeeper->existsNoFailureInjection(alive_node_path))
                     {
-                        with_retries.renewZooKeeper(zookeeper);
+                        unready_host_state.alive = true;
+                        return;
+                    }
 
-                        if (zookeeper->existsNoFailureInjection(alive_node_path))
-                        {
-                            unready_host_state.alive = true;
-                            return;
-                        }
-
-                        // Retry with backoff. We also check whether it is last retry or no, because we won't to rethrow an exception.
-                        if (!holder.retries_ctl.isLastRetry())
-                            holder.retries_ctl.setKeeperError(Coordination::Error::ZNONODE, "There is no alive node for host {}. Will retry", host);
-                    });
+                    // Retry with backoff. We also check whether it is last retry or no, because we won't to rethrow an exception.
+                    if (!holder.retries_ctl.isLastRetry())
+                        holder.retries_ctl.setKeeperError(Coordination::Error::ZNONODE, "There is no alive node for host {}. Will retry", host);
+                });
             }
             LOG_TRACE(log, "Host ({}) appeared to be {}", host, unready_host_state.alive ? "alive" : "dead");
 
@@ -177,15 +177,15 @@ BackupCoordinationStageSync::State BackupCoordinationStageSync::readCurrentState
     auto holder = with_retries.createRetriesControlHolder("waitImpl::collectStagesToWait");
     holder.retries_ctl.retryLoop(
         [&, &zookeeper = holder.faulty_zookeeper]()
-        {
-            with_retries.renewZooKeeper(zookeeper);
-            Strings results;
+    {
+        with_retries.renewZooKeeper(zookeeper);
+        Strings results;
 
-            for (const auto & host : all_hosts)
-                results.emplace_back(zookeeper->get(zookeeper_path + "/current|" + host + "|" + stage_to_wait));
+        for (const auto & host : all_hosts)
+            results.emplace_back(zookeeper->get(zookeeper_path + "/current|" + host + "|" + stage_to_wait));
 
-            state.results = std::move(results);
-        });
+        state.results = std::move(results);
+    });
 
     return state;
 }
@@ -214,12 +214,12 @@ Strings BackupCoordinationStageSync::waitImpl(
             auto holder = with_retries.createRetriesControlHolder("waitImpl::getChildren");
             holder.retries_ctl.retryLoop(
                 [&, &zookeeper = holder.faulty_zookeeper]()
-                {
-                    with_retries.renewZooKeeper(zookeeper);
-                    watch->reset();
-                    /// Get zk nodes and subscribe on their changes.
-                    zk_nodes = zookeeper->getChildren(zookeeper_path, nullptr, watch);
-                });
+            {
+                with_retries.renewZooKeeper(zookeeper);
+                watch->reset();
+                /// Get zk nodes and subscribe on their changes.
+                zk_nodes = zookeeper->getChildren(zookeeper_path, nullptr, watch);
+            });
         }
 
         /// Read and analyze the current state of zk nodes.

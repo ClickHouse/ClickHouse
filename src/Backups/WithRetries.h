@@ -7,6 +7,10 @@
 namespace DB
 {
 
+/// In backups every request to [Zoo]Keeper should be retryable
+/// and this tiny class encapsulates all the machinery for make it possible -
+/// a [Zoo]Keeper client which injects faults with configurable probability
+/// and a retries controller which performs retries with growing backoff.
 class WithRetries
 {
 public:
@@ -24,6 +28,14 @@ public:
         UInt64 keeper_value_max_size{1048576};
     };
 
+    /// For simplicity a separate ZooKeeperRetriesInfo and a faulty [Zoo]Keeper client
+    /// are stored in one place.
+    /// This helps to avoid writing too much boilerplate each time we need to
+    /// execute some operation (a set of requests) over [Zoo]Keeper with retries.
+    /// Why ZooKeeperRetriesInfo is separate for each operation?
+    /// The reason is that backup usually takes long time to finish and it makes no sense
+    /// to limit the overall number of retries (for example 1000) for the whole backup
+    /// and have a continiously growing backoff.
     class RetriesControlHolder
     {
     public:
@@ -39,15 +51,23 @@ public:
     RetriesControlHolder createRetriesControlHolder(const String & name);
     WithRetries(Poco::Logger * log, zkutil::GetZooKeeper get_zookeeper_, const KeeperSettings & settings, RenewerCallback callback);
 
-    /// This will provide a special wrapper which is useful for testing
-    FaultyKeeper getFaultyZooKeeper() const;
     /// Used to re-establish new connection inside a retry loop.
     void renewZooKeeper(FaultyKeeper my_faulty_zookeeper) const;
-
 private:
+    /// This will provide a special wrapper which is useful for testing
+    FaultyKeeper getFaultyZooKeeper() const;
+
     Poco::Logger * log;
     zkutil::GetZooKeeper get_zookeeper;
     KeeperSettings settings;
+    /// This callback is called each time when a new [Zoo]Keeper session is created.
+    /// In backups it is primarily used to re-create an ephemeral node to signal the coordinator
+    /// that the host is alive and able to continue writing the backup.
+    /// Coordinator (or an initiator) of the backup also retries when it doesn't find an ephemeral node
+    /// for a particular host.
+    /// Again, this schema is not ideal. False-positives are still possible, but in worst case scenario
+    /// it could lead just to a failed backup which could possibly be successful
+    /// if there were a little bit more retries.
     RenewerCallback callback;
     ZooKeeperRetriesInfo global_zookeeper_retries_info;
 
