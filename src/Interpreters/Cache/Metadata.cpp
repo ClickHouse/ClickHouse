@@ -116,6 +116,120 @@ void KeyMetadata::removeFromCleanupQueue(const FileCacheKey & key, const KeyGuar
     cleanup_state = CleanupState::NOT_SUBMITTED;
 }
 
+String CacheMetadata::getPathInLocalCache(const Key & key, size_t offset, FileSegmentKind segment_kind) const
+{
+    String file_suffix;
+    switch (segment_kind)
+    {
+        case FileSegmentKind::Persistent:
+            file_suffix = "_persistent";
+            break;
+        case FileSegmentKind::Temporary:
+            file_suffix = "_temporary";
+            break;
+        case FileSegmentKind::Regular:
+            file_suffix = "";
+            break;
+    }
+
+    auto key_str = key.toString();
+    return fs::path(base_directory)
+        / key_str.substr(0, 3)
+        / key_str
+        / (std::to_string(offset) + file_suffix);
+}
+
+String CacheMetadata::getPathInLocalCache(const Key & key) const
+{
+    auto key_str = key.toString();
+    return fs::path(base_directory) / key_str.substr(0, 3) / key_str;
+}
+
+LockedKeyMetadataPtr CacheMetadata::lockKeyMetadata(const FileCacheKey & key, KeyNotFoundPolicy key_not_found_policy, bool is_initial_load)
+{
+    KeyMetadataPtr key_metadata;
+    {
+        auto lock = guard.lock();
+
+        auto it = find(key);
+        if (it == end())
+        {
+            if (key_not_found_policy == KeyNotFoundPolicy::THROW)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "No such key `{}` in cache", key.toString());
+            else if (key_not_found_policy == KeyNotFoundPolicy::RETURN_NULL)
+                return nullptr;
+
+            it = emplace(
+                key,
+                std::make_shared<KeyMetadata>(/* base_directory_already_exists */is_initial_load, cleanup_queue)).first;
+        }
+
+        key_metadata = it->second;
+    }
+
+    {
+        auto key_lock = key_metadata->lock();
+
+        const auto cleanup_state = key_metadata->getCleanupState(key_lock);
+
+        if (cleanup_state == KeyMetadata::CleanupState::NOT_SUBMITTED)
+        {
+            return std::make_unique<LockedKeyMetadata>(key, key_metadata, std::move(key_lock), getPathInLocalCache(key));
+        }
+
+        if (key_not_found_policy == KeyNotFoundPolicy::THROW)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No such key `{}` in cache", key.toString());
+        else if (key_not_found_policy == KeyNotFoundPolicy::RETURN_NULL)
+            return nullptr;
+
+        if (cleanup_state == KeyMetadata::CleanupState::SUBMITTED_TO_CLEANUP_QUEUE)
+        {
+            key_metadata->removeFromCleanupQueue(key, key_lock);
+            return std::make_unique<LockedKeyMetadata>(key, key_metadata, std::move(key_lock), getPathInLocalCache(key));
+        }
+
+        chassert(cleanup_state == KeyMetadata::CleanupState::CLEANED_BY_CLEANUP_THREAD);
+        chassert(key_not_found_policy == KeyNotFoundPolicy::CREATE_EMPTY);
+    }
+
+    /// Not we are at a case:
+    /// cleanup_state == KeyMetadata::CleanupState::CLEANED_BY_CLEANUP_THREAD
+    /// and KeyNotFoundPolicy == CREATE_EMPTY
+    /// Retry.
+    return lockKeyMetadata(key, key_not_found_policy);
+}
+
+LockedKeyMetadataPtr CacheMetadata::lockKeyMetadata(
+    const FileCacheKey & key, KeyMetadataPtr key_metadata, bool return_null_if_in_cleanup_queue) const
+{
+    auto key_lock = key_metadata->lock();
+
+    auto cleanup_state = key_metadata->getCleanupState(key_lock);
+    if (cleanup_state != KeyMetadata::CleanupState::NOT_SUBMITTED)
+    {
+        if (return_null_if_in_cleanup_queue
+            && cleanup_state == KeyMetadata::CleanupState::SUBMITTED_TO_CLEANUP_QUEUE)
+            return nullptr;
+
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot lock key: it was removed from cache");
+    }
+
+    return std::make_unique<LockedKeyMetadata>(key, key_metadata, std::move(key_lock), getPathInLocalCache(key));
+}
+
+void CacheMetadata::iterate(IterateCacheMetadataFunc && func)
+{
+    auto lock = guard.lock();
+    for (const auto & [key, key_metadata] : *this)
+    {
+        auto locked_key = lockKeyMetadata(key, key_metadata, /* return_null_if_in_cleanup_queue */true);
+        if (!locked_key)
+            continue;
+
+        func(*locked_key);
+    }
+}
+
 void CacheMetadata::doCleanup()
 {
     auto lock = guard.lock();
@@ -136,6 +250,7 @@ void CacheMetadata::doCleanup()
 
         auto key_metadata = it->second;
         auto key_lock = key_metadata->lock();
+
         /// As in lockKeyMetadata we extract key metadata from cache metadata under
         /// CacheMetadataGuard::Lock, but take KeyGuard::Lock only after we released
         /// cache CacheMetadataGuard::Lock (because CacheMetadataGuard::Lock must be lightweight).
@@ -144,11 +259,12 @@ void CacheMetadata::doCleanup()
         if (key_metadata->getCleanupState(key_lock) == KeyMetadata::CleanupState::NOT_SUBMITTED)
             continue;
 
+        key_metadata->cleanup_state = KeyMetadata::CleanupState::CLEANED_BY_CLEANUP_THREAD;
         erase(it);
 
         try
         {
-            const fs::path key_directory = FileCache::getPathInLocalCache(base_directory, cleanup_key);
+            const fs::path key_directory = getPathInLocalCache(cleanup_key);
             if (fs::exists(key_directory))
                 fs::remove_all(key_directory);
 
@@ -261,6 +377,15 @@ void LockedKeyMetadata::shrinkFileSegmentToDownloadedSize(
 
     assert(file_segment->reserved_size == downloaded_size);
     assert(file_segment_metadata->size() == entry.size);
+}
+
+void LockedKeyMetadata::assertFileSegmentCorrectness(const FileSegment & file_segment) const
+{
+    if (file_segment.key() != key)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected {} = {}", file_segment.key().toString(), key.toString());
+
+    const auto & file_segment_metadata = *key_metadata->getByOffset(file_segment.offset());
+    file_segment.assertCorrectnessUnlocked(file_segment_metadata, lock);
 }
 
 void CleanupQueue::add(const FileCacheKey & key)

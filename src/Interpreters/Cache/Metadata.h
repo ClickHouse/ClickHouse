@@ -3,12 +3,14 @@
 #include <Interpreters/Cache/Guards.h>
 #include <Interpreters/Cache/IFileCachePriority.h>
 #include <Interpreters/Cache/FileCacheKey.h>
+#include <Interpreters/Cache/FileSegment.h>
 
 namespace DB
 {
 class FileSegment;
 using FileSegmentPtr = std::shared_ptr<FileSegment>;
 struct LockedKeyMetadata;
+using LockedKeyMetadataPtr = std::shared_ptr<LockedKeyMetadata>;
 class LockedCachePriority;
 struct KeysQueue;
 struct CleanupQueue;
@@ -40,6 +42,7 @@ struct FileSegmentMetadata : private boost::noncopyable
 struct KeyMetadata : public std::map<size_t, FileSegmentMetadata>, private boost::noncopyable
 {
     friend struct LockedKeyMetadata;
+    friend struct CacheMetadata;
 public:
     explicit KeyMetadata(bool created_base_directory_, CleanupQueue & cleanup_queue_)
         : created_base_directory(created_base_directory_), cleanup_queue(cleanup_queue_) {}
@@ -96,17 +99,32 @@ private:
 struct CacheMetadata : public std::unordered_map<FileCacheKey, KeyMetadataPtr>, private boost::noncopyable
 {
 public:
+    using Key = FileCacheKey;
+
     explicit CacheMetadata(const std::string & base_directory_) : base_directory(base_directory_) {}
 
-    CacheMetadataGuard::Lock lock() { return guard.lock(); }
+    String getPathInLocalCache(const Key & key, size_t offset, FileSegmentKind segment_kind) const;
+
+    String getPathInLocalCache(const Key & key) const;
+
+    enum class KeyNotFoundPolicy
+    {
+        THROW,
+        CREATE_EMPTY,
+        RETURN_NULL,
+    };
+    LockedKeyMetadataPtr lockKeyMetadata(const Key & key, KeyNotFoundPolicy key_not_found_policy, bool is_initial_load = false);
+
+    LockedKeyMetadataPtr lockKeyMetadata(const Key & key, KeyMetadataPtr key_metadata, bool return_null_if_in_cleanup_queue = false) const;
+
+    using IterateCacheMetadataFunc = std::function<void(const LockedKeyMetadata &)>;
+    void iterate(IterateCacheMetadataFunc && func);
 
     void doCleanup();
 
-    CleanupQueue & getCleanupQueue() { return cleanup_queue; }
-
 private:
-    void addToCleanupQueue(const FileCacheKey & key, const KeyGuard::Lock &);
-    void removeFromCleanupQueue(const FileCacheKey & key, const KeyGuard::Lock &);
+    void addToCleanupQueue(const Key & key, const KeyGuard::Lock &);
+    void removeFromCleanupQueue(const Key & key, const KeyGuard::Lock &);
 
     const std::string base_directory;
     CacheMetadataGuard guard;
@@ -147,6 +165,10 @@ struct LockedKeyMetadata : private boost::noncopyable
     void shrinkFileSegmentToDownloadedSize(size_t offset, const FileSegmentGuard::Lock &, const CacheGuard::Lock &);
 
     bool isLastOwnerOfFileSegment(size_t offset) const;
+
+    void assertFileSegmentCorrectness(const FileSegment & file_segment) const;
+
+    KeyMetadata::CleanupState getCleanupState() const { return key_metadata->cleanup_state; }
 
 private:
     const FileCacheKey key;
