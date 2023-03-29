@@ -6,6 +6,7 @@
 #include <Analyzer/QueryTreePassManager.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Interpreters/Context_fwd.h>
+#include <Storages/SelectQueryInfo.h>
 
 namespace DB
 {
@@ -50,7 +51,14 @@ public:
         return std::move(query_plan);
     }
 
+    SelectQueryInfo buildSelectQueryInfo() const;
+
     void addStorageLimits(const StorageLimitsList & limits);
+
+    PlannerContextPtr getPlannerContext() const
+    {
+        return planner_context;
+    }
 
 private:
     void buildPlanForUnionNode();

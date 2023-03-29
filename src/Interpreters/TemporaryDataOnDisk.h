@@ -83,14 +83,9 @@ class TemporaryDataOnDisk : private TemporaryDataOnDiskScope
 public:
     using TemporaryDataOnDiskScope::StatAtomic;
 
-    explicit TemporaryDataOnDisk(TemporaryDataOnDiskScopePtr parent_)
-        : TemporaryDataOnDiskScope(std::move(parent_), /* limit_ = */ 0)
-    {}
+    explicit TemporaryDataOnDisk(TemporaryDataOnDiskScopePtr parent_);
 
-    explicit TemporaryDataOnDisk(TemporaryDataOnDiskScopePtr parent_, CurrentMetrics::Value metric_scope)
-        : TemporaryDataOnDiskScope(std::move(parent_), /* limit_ = */ 0)
-        , current_metric_scope(metric_scope)
-    {}
+    explicit TemporaryDataOnDisk(TemporaryDataOnDiskScopePtr parent_, CurrentMetrics::Value metric_scope);
 
     /// If max_file_size > 0, then check that there's enough space on the disk and throw an exception in case of lack of free space
     TemporaryFileStream & createStream(const Block & header, size_t max_file_size = 0);
