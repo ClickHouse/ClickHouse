@@ -44,12 +44,10 @@ std::vector<String> S3DataLakeMetadataReadHelper::listFiles(
     S3::ListObjectsV2Request request;
     Aws::S3::Model::ListObjectsV2Outcome outcome;
 
-    bool is_finished{false};
-
     request.SetBucket(bucket);
-
     request.SetPrefix(std::filesystem::path(table_path) / prefix);
 
+    bool is_finished{false};
     while (!is_finished)
     {
         outcome = client->ListObjectsV2(request);
@@ -66,8 +64,7 @@ std::vector<String> S3DataLakeMetadataReadHelper::listFiles(
         for (const auto & obj : result_batch)
         {
             const auto & filename = obj.GetKey();
-
-            if (std::filesystem::path(filename).extension() == suffix)
+            if (filename.ends_with(suffix))
                 res.push_back(filename);
         }
 

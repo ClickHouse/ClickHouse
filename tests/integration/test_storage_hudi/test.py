@@ -9,9 +9,23 @@ from helpers.test_tools import TSV
 from helpers.s3_tools import prepare_s3_bucket, upload_directory, get_file_contents
 
 import pyspark
+from pyspark.sql.types import (
+    StructType,
+    StructField,
+    StringType,
+    IntegerType,
+    DateType,
+    TimestampType,
+    BooleanType,
+    ArrayType,
+)
+from pyspark.sql.functions import current_timestamp
+from datetime import datetime
+from pyspark.sql.functions import monotonically_increasing_id, row_number
+from pyspark.sql.window import Window
+
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-TABLE_NAME = "test_hudi_table"
 USER_FILES_PATH = os.path.join(SCRIPT_DIR, "./_instances/node1/database/user_files")
 
 
@@ -19,7 +33,11 @@ USER_FILES_PATH = os.path.join(SCRIPT_DIR, "./_instances/node1/database/user_fil
 def started_cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        cluster.add_instance("node1", with_minio=True)
+        cluster.add_instance(
+            "node1",
+            main_configs=["configs/config.d/named_collections.xml"],
+            with_minio=True,
+        )
 
         logging.info("Starting cluster...")
         cluster.start()
@@ -63,18 +81,20 @@ def get_spark():
     return builder.master("local").getOrCreate()
 
 
-def write_hudi(spark, path, result_path):
-    spark.conf.set("spark.sql.debug.maxToStringFields", 100000)
-    spark.read.load(f"file://{path}").write.mode("overwrite").option(
+def write_hudi_from_df(spark, table_name, df, result_path, mode="overwrite"):
+    if mode is "overwrite":
+        hudi_write_mode = "insert_overwrite"
+    else:
+        hudi_write_mode = "upsert"
+
+    df.write.mode(mode).option("compression", "none").option(
         "compression", "none"
-    ).option("compression", "none").format("hudi").option(
-        "hoodie.table.name", TABLE_NAME
-    ).option(
+    ).format("hudi").option("hoodie.table.name", table_name).option(
         "hoodie.datasource.write.partitionpath.field", "partitionpath"
     ).option(
-        "hoodie.datasource.write.table.name", TABLE_NAME
+        "hoodie.datasource.write.table.name", table_name
     ).option(
-        "hoodie.datasource.write.operation", "insert_overwrite"
+        "hoodie.datasource.write.operation", hudi_write_mode
     ).option(
         "hoodie.parquet.compression.codec", "snappy"
     ).option(
@@ -88,32 +108,161 @@ def write_hudi(spark, path, result_path):
     )
 
 
-def test_basic(started_cluster):
-    instance = started_cluster.instances["node1"]
+def write_hudi_from_file(spark, table_name, path, result_path):
+    spark.conf.set("spark.sql.debug.maxToStringFields", 100000)
+    df = spark.read.load(f"file://{path}")
+    write_hudi_from_df(spark, table_name, df, result_path)
 
-    data_path = f"/var/lib/clickhouse/user_files/{TABLE_NAME}.parquet"
-    inserted_data = "SELECT number, toString(number) FROM numbers(100)"
-    instance.query(
-        f"INSERT INTO TABLE FUNCTION file('{data_path}', 'Parquet', 'a Int32, b String') SETTINGS output_format_parquet_compression_method='none' {inserted_data} FORMAT Parquet"
+
+def generate_data(spark, start, end):
+    a = spark.range(start, end, 1).toDF("a")
+    b = spark.range(start + 1, end + 1, 1).toDF("b")
+    b = b.withColumn("b", b["b"].cast(StringType()))
+
+    a = a.withColumn(
+        "row_index", row_number().over(Window.orderBy(monotonically_increasing_id()))
+    )
+    b = b.withColumn(
+        "row_index", row_number().over(Window.orderBy(monotonically_increasing_id()))
     )
 
-    data_path = f"{USER_FILES_PATH}/{TABLE_NAME}.parquet"
-    result_path = f"/{TABLE_NAME}_result"
+    df = a.join(b, on=["row_index"]).drop("row_index")
+    return df
 
-    spark = get_spark()
-    write_hudi(spark, data_path, result_path)
 
+def create_hudi_table(node, table_name):
+    node.query(
+        f"""
+        DROP TABLE IF EXISTS {table_name};
+        CREATE TABLE {table_name}
+        ENGINE=Hudi(s3, filename = '{table_name}/')"""
+    )
+
+
+def create_initial_data_file(node, query, table_name, compression_method="none"):
+    node.query(
+        f"""
+        INSERT INTO TABLE FUNCTION
+            file('{table_name}.parquet')
+        SETTINGS
+            output_format_parquet_compression_method='{compression_method}',
+            s3_truncate_on_insert=1 {query}
+        FORMAT Parquet"""
+    )
+    result_path = f"{USER_FILES_PATH}/{table_name}.parquet"
+    return result_path
+
+
+def test_single_hudi_file(started_cluster):
+    instance = started_cluster.instances["node1"]
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    paths = upload_directory(minio_client, bucket, result_path, "")
-    assert len(paths) == 1
-    assert paths[0].endswith(".parquet")
+    spark = get_spark()
+    TABLE_NAME = "test_single_hudi_file"
 
-    instance.query(
-        f"""
-        DROP TABLE IF EXISTS {TABLE_NAME};
-        CREATE TABLE {TABLE_NAME} ENGINE=Hudi('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{TABLE_NAME}_result/__HIVE_DEFAULT_PARTITION__/', 'minio', 'minio123')"""
-    )
+    inserted_data = "SELECT number as a, toString(number) as b FROM numbers(100)"
+    parquet_data_path = create_initial_data_file(instance, inserted_data, TABLE_NAME)
+
+    write_hudi_from_file(spark, TABLE_NAME, parquet_data_path, f"/{TABLE_NAME}")
+    files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    assert len(files) == 1
+    assert files[0].endswith(".parquet")
+
+    create_hudi_table(instance, TABLE_NAME)
     assert instance.query(f"SELECT a, b FROM {TABLE_NAME}") == instance.query(
         inserted_data
     )
+
+
+def test_multiple_hudi_files(started_cluster):
+    instance = started_cluster.instances["node1"]
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    spark = get_spark()
+    TABLE_NAME = "test_multiple_hudi_files"
+
+    write_hudi_from_df(spark, TABLE_NAME, generate_data(spark, 0, 100), f"/{TABLE_NAME}")
+    files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    assert len(files) == 1
+
+    create_hudi_table(instance, TABLE_NAME)
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+
+    write_hudi_from_df(
+        spark, TABLE_NAME, generate_data(spark, 100, 200), f"/{TABLE_NAME}", mode="append"
+    )
+    files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    assert len(files) == 2
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 200
+    assert instance.query(f"SELECT a, b FROM {TABLE_NAME} ORDER BY 1") == instance.query(
+        "SELECT number, toString(number + 1) FROM numbers(200)"
+    )
+
+    write_hudi_from_df(
+        spark, TABLE_NAME, generate_data(spark, 100, 300), f"/{TABLE_NAME}", mode="append"
+    )
+    files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    #assert len(files) == 3
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 300
+    assert instance.query(f"SELECT a, b FROM {TABLE_NAME} ORDER BY 1") == instance.query(
+        "SELECT number, toString(number + 1) FROM numbers(300)"
+    )
+
+
+def test_types(started_cluster):
+    instance = started_cluster.instances["node1"]
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    spark = get_spark()
+    TABLE_NAME = "test_types"
+
+    data = [
+        (
+            123,
+            "string",
+            datetime.strptime("2000-01-01", "%Y-%m-%d"),
+            ["str1", "str2"],
+            True,
+        )
+    ]
+    schema = StructType(
+        [
+            StructField("a", IntegerType()),
+            StructField("b", StringType()),
+            StructField("c", DateType()),
+            StructField("d", ArrayType(StringType())),
+            StructField("e", BooleanType()),
+        ]
+    )
+    df = spark.createDataFrame(data=data, schema=schema)
+    df.printSchema()
+    write_hudi_from_df(
+        spark, TABLE_NAME, df, f"/{TABLE_NAME}", mode="overwrite"
+    )
+
+    upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+
+    create_hudi_table(instance, TABLE_NAME)
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 1
+    assert (
+        instance.query(f"SELECT * FROM {TABLE_NAME}").strip()
+        == "123\tstring\t2000-01-01\t['str1','str2']\ttrue"
+    )
+
+    #table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{TABLE_NAME}/', 'minio', 'minio123')"
+    #assert (
+    #    instance.query(f"SELECT * FROM {table_function}").strip()
+    #    == "123\tstring\t2000-01-01\t['str1','str2']\ttrue"
+    #)
+
+    #assert instance.query(f"DESCRIBE {table_function} FORMAT TSV") == TSV(
+    #    [
+    #        ["a", "Nullable(Int32)"],
+    #        ["b", "Nullable(String)"],
+    #        ["c", "Nullable(Date32)"],
+    #        ["d", "Array(Nullable(String))"],
+    #        ["e", "Nullable(Bool)"],
+    #    ]
+    #)

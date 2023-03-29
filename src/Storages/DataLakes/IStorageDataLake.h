@@ -67,7 +67,10 @@ private:
         else
             configuration.keys = keys;
 
-        LOG_TRACE(&Poco::Logger::get("DataLake"), "New configuration path: {}", configuration.getPath());
+        LOG_TRACE(
+            &Poco::Logger::get("DataLake"),
+            "New configuration path: {}, keys: {}",
+            configuration.getPath(), fmt::join(keys, ", "));
 
         configuration.connect(local_context);
         return configuration;

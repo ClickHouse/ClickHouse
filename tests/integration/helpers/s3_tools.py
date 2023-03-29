@@ -18,12 +18,13 @@ def upload_directory(minio_client, bucket_name, local_path, s3_path):
             )
             result_files.append(result_s3_path)
         else:
-            upload_directory(
+            files = upload_directory(
                 minio_client,
                 bucket_name,
                 os.path.join(local_path, local_file),
                 os.path.join(s3_path, local_file),
             )
+            result_files.extend(files)
     return result_files
 
 
