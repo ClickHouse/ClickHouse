@@ -1184,6 +1184,53 @@ def test_restore_partition():
     )
 
 
+def test_backup_all():
+    create_and_fill_table()
+
+    session_id = new_session_id()
+    instance.http_query(
+        "CREATE TEMPORARY TABLE temp_tbl(s String)", params={"session_id": session_id}
+    )
+    instance.http_query(
+        "INSERT INTO temp_tbl VALUES ('q'), ('w'), ('e')",
+        params={"session_id": session_id},
+    )
+
+    instance.query("CREATE FUNCTION two_and_half AS (x) -> x * 2.5")
+
+    instance.query("CREATE USER u1 IDENTIFIED BY 'qwe123' SETTINGS custom_a = 1")
+
+    backup_name = new_backup_name()
+    instance.http_query(
+        f"BACKUP ALL TO {backup_name}",
+        params={"session_id": session_id},
+    )
+
+    instance.query("DROP TABLE test.table")
+    instance.query("DROP FUNCTION two_and_half")
+    instance.query("DROP USER u1")
+
+    session_id = new_session_id()
+    instance.http_query(
+        f"RESTORE ALL FROM {backup_name}",
+        params={"session_id": session_id},
+        method="POST",
+    )
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+
+    assert instance.http_query(
+        "SELECT * FROM temp_tbl ORDER BY s", params={"session_id": session_id}
+    ) == TSV([["e"], ["q"], ["w"]])
+
+    assert instance.query("SELECT two_and_half(6)") == "15\n"
+
+    assert (
+        instance.query("SHOW CREATE USER u1")
+        == "CREATE USER u1 IDENTIFIED WITH sha256_password SETTINGS custom_a = 1\n"
+    )
+
+
 def test_operation_id():
     create_and_fill_table(n=30)
 
