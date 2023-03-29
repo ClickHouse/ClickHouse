@@ -222,7 +222,7 @@ public:
     /// Completed states: DOWNALODED, DETACHED.
     bool isCompleted(bool sync = false) const;
 
-    void assertCorrectness() const;
+    bool assertCorrectness() const;
 
     /**
      * ========== Methods for _only_ file segment's `downloader` ==================
@@ -282,7 +282,7 @@ private:
     void assertNotDetached() const;
     void assertNotDetachedUnlocked(const FileSegmentGuard::Lock &) const;
     void assertIsDownloaderUnlocked(const std::string & operation, const FileSegmentGuard::Lock &) const;
-    void assertCorrectnessUnlocked(const FileSegmentGuard::Lock &) const;
+    bool assertCorrectnessUnlocked(const FileSegmentGuard::Lock &) const;
 
     LockedKeyMetadataPtr lockKeyMetadata(bool assert_exists = true) const;
     KeyMetadataPtr getKeyMetadata() const;

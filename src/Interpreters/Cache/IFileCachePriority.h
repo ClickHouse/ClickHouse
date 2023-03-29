@@ -61,9 +61,10 @@ public:
     public:
         virtual ~IIterator() = default;
 
+        virtual const Entry & getEntry() const = 0;
+
     protected:
-        virtual Entry & operator *() = 0;
-        virtual const Entry & operator *() const = 0;
+        virtual Entry & getEntry() = 0;
 
         virtual size_t use() = 0;
 

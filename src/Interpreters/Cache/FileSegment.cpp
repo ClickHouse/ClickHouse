@@ -466,6 +466,7 @@ bool FileSegment::reserve(size_t size_to_reserve)
             /// It is made atomic because of getInfoForLog.
             reserved_size += size_to_reserve;
         }
+        chassert(assertCorrectness());
     }
 
     return reserved;
@@ -689,18 +690,36 @@ String FileSegment::stateToString(FileSegment::State state)
     UNREACHABLE();
 }
 
-void FileSegment::assertCorrectness() const
+bool FileSegment::assertCorrectness() const
 {
     auto lock = segment_guard.lock();
     assertCorrectnessUnlocked(lock);
+    return true;
 }
 
-void FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock) const
+bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock) const
 {
     auto current_downloader = getDownloaderUnlocked(lock);
     chassert(current_downloader.empty() == (download_state != FileSegment::State::DOWNLOADING));
     chassert(!current_downloader.empty() == (download_state == FileSegment::State::DOWNLOADING));
     chassert(download_state != FileSegment::State::DOWNLOADED || std::filesystem::file_size(file_path) > 0);
+
+    auto locked_key = lockKeyMetadata(true);
+
+    const auto & file_segment_metadata = locked_key->getKeyMetadata()->tryGetByOffset(offset());
+    chassert(reserved_size == 0 || file_segment_metadata->queue_iterator);
+
+    if (file_segment_metadata->queue_iterator)
+    {
+        const auto & entry = *file_segment_metadata->queue_iterator;
+        if (isCompleted(false))
+            chassert(reserved_size == entry.getEntry().size);
+        else
+            /// We cannot check == here because reserved_size is not
+            /// guarded by any mutex, it is just an atomic.
+            chassert(reserved_size <= entry.getEntry().size);
+    }
+    return true;
 }
 
 void FileSegment::throwIfDetachedUnlocked(const FileSegmentGuard::Lock & lock) const
