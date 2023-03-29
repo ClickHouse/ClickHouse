@@ -92,10 +92,14 @@ namespace
         return {};
     }
 
-    MutableColumns parseAvro(const std::unique_ptr<avro::DataFileReaderBase> & file_reader, const DataTypePtr & data_type, const String & field_name)
+    MutableColumns parseAvro(
+        const std::unique_ptr<avro::DataFileReaderBase> & file_reader,
+        const DataTypePtr & data_type,
+        const String & field_name,
+        const FormatSettings & settings)
     {
         auto deserializer = std::make_unique<AvroDeserializer>(
-            Block{{data_type->createColumn(), data_type, field_name}}, file_reader->dataSchema(), true, true);
+            Block{{data_type->createColumn(), data_type, field_name}}, file_reader->dataSchema(), true, true, settings);
         file_reader->init();
         MutableColumns columns;
         columns.emplace_back(data_type->createColumn());
@@ -122,7 +126,7 @@ namespace
         /// And its have String data type
         /// {'manifest_path': 'xxx', ...}
         auto data_type = AvroSchemaReader::avroNodeToDataType(file_reader->dataSchema().root()->leafAt(0));
-        auto columns = parseAvro(file_reader, data_type, manifest_path);
+        auto columns = parseAvro(file_reader, data_type, manifest_path, getFormatSettings(context));
         auto & col = columns.at(0);
 
         std::vector<String> res;
@@ -163,7 +167,7 @@ namespace
             /// {'status': xx, 'snapshot_id': xx, 'data_file': {'file_path': 'xxx', ...}, ...}
             /// and it's also a nested record, so its result type is a nested Tuple
             auto data_type = AvroSchemaReader::avroNodeToDataType(file_reader->dataSchema().root()->leafAt(2));
-            auto columns = parseAvro(file_reader, data_type, manifest_path);
+            auto columns = parseAvro(file_reader, data_type, manifest_path, getFormatSettings(context));
             auto & col = columns.at(0);
 
             if (col->getDataType() == TypeIndex::Tuple)

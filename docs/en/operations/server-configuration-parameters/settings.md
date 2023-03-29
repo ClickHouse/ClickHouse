@@ -25,7 +25,7 @@ Default value: 3600.
 
 Data compression settings for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)-engine tables.
 
-:::warning
+:::note
 Don’t use it if you have just started using ClickHouse.
 :::
 
@@ -1368,7 +1368,7 @@ The following settings are available:
 
 Changed settings take effect immediately.
 
-:::warning
+:::note
 Data for the query cache is allocated in DRAM. If memory is scarce, make sure to set a small value for `max_size` or disable the query cache altogether.
 :::
 
