@@ -504,7 +504,6 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk chunk)
         delayed_chunk = std::make_unique<ReplicatedMergeTreeSinkImpl::DelayedChunk>();
     }
 
-
     /// If deduplicated data should not be inserted into MV, we need to set proper
     /// value for `last_block_is_duplicate`, which is possible only after the part is committed.
     /// Othervide we can delay commit.
