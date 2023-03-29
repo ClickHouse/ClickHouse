@@ -120,8 +120,6 @@ public:
 private:
     FileCache::Key getCacheKey(const std::string & path) const;
 
-    String getCachePath(const std::string & path) const;
-
     ReadSettings patchSettings(const ReadSettings & read_settings) const override;
 
     ObjectStoragePtr object_storage;

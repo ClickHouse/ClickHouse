@@ -46,12 +46,6 @@ FileCache::Key CachedObjectStorage::getCacheKey(const std::string & path) const
     return cache->createKeyForPath(path);
 }
 
-String CachedObjectStorage::getCachePath(const std::string & path) const
-{
-    FileCache::Key cache_key = getCacheKey(path);
-    return cache->getPathInLocalCache(cache_key);
-}
-
 std::string CachedObjectStorage::generateBlobNameForPath(const std::string & path)
 {
     return object_storage->generateBlobNameForPath(path);
@@ -192,7 +186,6 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
     if (cache_on_write)
     {
         auto key = getCacheKey(path_key_for_cache);
-        LOG_TEST(log, "Caching file `{}` to `{}` with key {}", object.absolute_path, getCachePath(path_key_for_cache), key.toString());
 
         return std::make_unique<CachedOnDiskWriteBufferFromFile>(
             std::move(implementation_buffer),

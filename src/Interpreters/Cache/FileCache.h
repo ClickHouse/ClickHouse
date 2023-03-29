@@ -90,8 +90,6 @@ public:
 
     String getPathInLocalCache(const Key & key) const;
 
-    static String getPathInLocalCache(const std::string & base_directory, const Key & key);
-
     std::vector<String> tryGetCachePaths(const Key & key);
 
     size_t getUsedCacheSize() const;
@@ -112,11 +110,11 @@ public:
 
     CacheGuard::Lock cacheLock() { return cache_guard.lock(); }
 
-    LockedKeyMetadataPtr lockKeyMetadata(const Key & key, KeyMetadataPtr key_metadata) const;
-
     void cleanup();
 
     void deactivateBackgroundOperations();
+
+    LockedKeyMetadataPtr lockKeyMetadata(const Key & key, KeyMetadataPtr key_metadata, bool return_null_if_in_cleanup_queue = true) const;
 
     /// For per query cache limit.
     struct QueryContextHolder : private boost::noncopyable
@@ -150,15 +148,6 @@ private:
     mutable std::mutex init_mutex;
 
     CacheMetadata metadata;
-
-    enum class KeyNotFoundPolicy
-    {
-        THROW,
-        CREATE_EMPTY,
-        RETURN_NULL,
-    };
-
-    LockedKeyMetadataPtr lockKeyMetadata(const Key & key, KeyNotFoundPolicy key_not_found_policy, bool is_initial_load = false);
 
     FileCachePriorityPtr main_priority;
     mutable CacheGuard cache_guard;
@@ -234,9 +223,6 @@ private:
         LockedCachePriority & priority,
         IterateAndCollectLocksFunc && func,
         LockedKeyMetadataMap & locked_map) const;
-
-    void iterateCacheMetadata(
-        const CacheMetadataGuard::Lock &, std::function<void(KeyMetadata &)> && func);
 
     void assertCacheCorrectness();
 

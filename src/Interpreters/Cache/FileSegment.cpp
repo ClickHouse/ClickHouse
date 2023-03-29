@@ -692,26 +692,24 @@ String FileSegment::stateToString(FileSegment::State state)
 
 bool FileSegment::assertCorrectness() const
 {
-    auto lock = segment_guard.lock();
-    assertCorrectnessUnlocked(lock);
+    auto key_lock = lockKeyMetadata(true);
+    key_lock->assertFileSegmentCorrectness(*this);
     return true;
 }
 
-bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock) const
+bool FileSegment::assertCorrectnessUnlocked(const FileSegmentMetadata & metadata, const KeyGuard::Lock &) const
 {
+    auto lock = segment_guard.lock();
+
     auto current_downloader = getDownloaderUnlocked(lock);
     chassert(current_downloader.empty() == (download_state != FileSegment::State::DOWNLOADING));
     chassert(!current_downloader.empty() == (download_state == FileSegment::State::DOWNLOADING));
     chassert(download_state != FileSegment::State::DOWNLOADED || std::filesystem::file_size(file_path) > 0);
 
-    auto locked_key = lockKeyMetadata(true);
-
-    const auto & file_segment_metadata = locked_key->getKeyMetadata()->tryGetByOffset(offset());
-    chassert(reserved_size == 0 || file_segment_metadata->queue_iterator);
-
-    if (file_segment_metadata->queue_iterator)
+    chassert(reserved_size == 0 || metadata.queue_iterator);
+    if (metadata.queue_iterator)
     {
-        const auto & entry = *file_segment_metadata->queue_iterator;
+        const auto & entry = *metadata.queue_iterator;
         if (isCompleted(false))
             chassert(reserved_size == entry.getEntry().size);
         else
