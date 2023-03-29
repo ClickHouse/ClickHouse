@@ -3,25 +3,28 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include "Functions/keyvaluepair/src/impl/state/State.h"
-#include "fmt/core.h"
-#include "state/StateHandler.h"
-#include "../KeyValuePairExtractor.h"
 
+#include <Functions/keyvaluepair/impl/StateHandler.h>
+#include <Functions/keyvaluepair/impl/KeyValuePairExtractor.h>
+
+#include <fmt/core.h>
 #include <magic_enum.hpp>
 
 namespace DB
 {
 
-template <CKeyStateHandler KeyStateHandler, CValueStateHandler ValueStateHandler>
+template <typename StateHandler>
 class CHKeyValuePairExtractor : public KeyValuePairExtractor
 {
-    using Key = typename KeyStateHandler::ElementType;
-    using Value = typename ValueStateHandler::ElementType;
+    using Key = typename StateHandler::KeyType;
+    using Value = typename StateHandler::ValueType;
+
+    using State = typename DB::extractKV::StateHandler::State;
+    using NextState = DB::extractKV::StateHandler::NextState;
 
 public:
-    CHKeyValuePairExtractor(KeyStateHandler key_state_handler_, ValueStateHandler value_state_handler_)
-        : key_state_handler(std::move(key_state_handler_)), value_state_handler(std::move(value_state_handler_))
+    CHKeyValuePairExtractor(StateHandler state_handler_)
+        : state_handler(std::move(state_handler_))
     {}
 
     uint64_t extract(const std::string & data, ColumnString::MutablePtr & keys, ColumnString::MutablePtr & values) override
@@ -38,10 +41,9 @@ public:
         Value value;
 
         uint64_t row_offset = 0;
-        const auto & config = key_state_handler.extractor_configuration;
+        const auto & config = state_handler.extractor_configuration;
         std::cerr << "CHKeyValuePairExtractor::extract with "
-                  << typeid(key_state_handler).name() << " \\ "
-                  << typeid(value_state_handler).name()
+                  << typeid(state_handler).name()
                   << "\nConfiguration"
                   << "\n\tKV delimiter: '" << config.key_value_delimiter << "'"
                   << "\n\tquote char  : '" << config.quoting_character << "'"
@@ -97,40 +99,41 @@ private:
         switch (state)
         {
             case State::WAITING_KEY:
-                return key_state_handler.wait(file);
+                return state_handler.waitKey(file);
             case State::READING_KEY:
             {
-                auto result =  key_state_handler.read(file, key);
+                auto result =  state_handler.readKey(file, key);
                 std::cerr << "CHKeyValuePairExtractor::processState key: " << fancyQuote(key) << std::endl;
                 return result;
             }
             case State::READING_QUOTED_KEY:
             {
-                auto result =  key_state_handler.readQuoted(file, key);
+                auto result =  state_handler.readQuotedKey(file, key);
                 std::cerr << "CHKeyValuePairExtractor::processState key: " << fancyQuote(key) << std::endl;
                 return result;
             }
             case State::READING_KV_DELIMITER:
-                return key_state_handler.readKeyValueDelimiter(file);
+                return state_handler.readKeyValueDelimiter(file);
             case State::WAITING_VALUE:
             {
-                return value_state_handler.wait(file);
+                return state_handler.waitValue(file);
             }
             case State::READING_VALUE:
             {
-                auto result =  value_state_handler.read(file, value);
+                auto result =  state_handler.readValue(file, value);
                 std::cerr << "CHKeyValuePairExtractor::processState value: " << fancyQuote(value) << std::endl;
                 return result;
             }
             case State::READING_QUOTED_VALUE:
             {
-                auto result =  value_state_handler.readQuoted(file, value);
+                auto result =  state_handler.readQuotedValue(file, value);
                 std::cerr << "CHKeyValuePairExtractor::processState value: " << fancyQuote(value) << std::endl;
                 return result;
             }
             case State::FLUSH_PAIR:
                 return flushPair(file, key, value, keys, values, row_offset);
-            case END:
+
+            case State::END:
                 return {0, state};
         }
     }
@@ -152,8 +155,7 @@ private:
         return {0, file.size() == 0 ? State::END : State::WAITING_KEY};
     }
 
-    KeyStateHandler key_state_handler;
-    ValueStateHandler value_state_handler;
+    StateHandler state_handler;
 };
 
 }

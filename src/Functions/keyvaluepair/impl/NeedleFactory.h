@@ -1,10 +1,13 @@
 #pragma once
 
+#include <Functions/keyvaluepair/impl/Configuration.h>
+
 #include <vector>
 
-#include <Functions/keyvaluepair/src/impl/state/Configuration.h>
-
 namespace DB
+{
+
+namespace extractKV
 {
 
 /*
@@ -29,5 +32,7 @@ public:
     static std::vector<char> getReadNeedles(const Configuration & extractor_configuration);
     static std::vector<char> getReadQuotedNeedles(const Configuration & extractor_configuration);
 };
+
+}
 
 }
