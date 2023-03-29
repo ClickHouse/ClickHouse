@@ -449,8 +449,18 @@ namespace DB
         auto & builder = assert_cast<arrow::UInt32Builder &>(*array_builder);
         arrow::Status status;
 
-        PaddedPODArray<UInt8> arrow_null_bytemap = revertNullByteMap(null_bytemap, start, end);
-        const UInt8 * arrow_null_bytemap_raw_ptr = arrow_null_bytemap.empty() ? nullptr : arrow_null_bytemap.data();
+        const UInt8 * arrow_null_bytemap_raw_ptr = nullptr;
+        PaddedPODArray<UInt8> arrow_null_bytemap;
+        if (null_bytemap)
+        {
+            /// Invert values since Arrow interprets 1 as a non-null value, while CH as a null
+            arrow_null_bytemap.reserve(end - start);
+            for (size_t i = start; i < end; ++i)
+                arrow_null_bytemap.template emplace_back(!(*null_bytemap)[i]);
+
+            arrow_null_bytemap_raw_ptr = arrow_null_bytemap.data();
+        }
+        
         status = builder.AppendValues(&(internal_data.data() + start)->toUnderType(), end - start, reinterpret_cast<const uint8_t *>(arrow_null_bytemap_raw_ptr));
         checkStatus(status, write_column->getName(), format_name);
     }
