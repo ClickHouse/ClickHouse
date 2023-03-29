@@ -24,7 +24,8 @@ namespace
      */
 
     /**
-     * Delta files are stored as JSON in a directory at the root of the table named _delta_log,
+     * DeltaLake tables store metadata files and data files.
+     * Metadata files are stored as JSON in a directory at the root of the table named _delta_log,
      * and together with checkpoints make up the log of all changes that have occurred to a table.
      *
      * Delta files are the unit of atomicity for a table,
