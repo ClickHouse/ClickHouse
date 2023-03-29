@@ -181,7 +181,9 @@ def test_multiple_hudi_files(started_cluster):
     spark = get_spark()
     TABLE_NAME = "test_multiple_hudi_files"
 
-    write_hudi_from_df(spark, TABLE_NAME, generate_data(spark, 0, 100), f"/{TABLE_NAME}")
+    write_hudi_from_df(
+        spark, TABLE_NAME, generate_data(spark, 0, 100), f"/{TABLE_NAME}"
+    )
     files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
     assert len(files) == 1
 
@@ -189,26 +191,34 @@ def test_multiple_hudi_files(started_cluster):
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
     write_hudi_from_df(
-        spark, TABLE_NAME, generate_data(spark, 100, 200), f"/{TABLE_NAME}", mode="append"
+        spark,
+        TABLE_NAME,
+        generate_data(spark, 100, 200),
+        f"/{TABLE_NAME}",
+        mode="append",
     )
     files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
     assert len(files) == 2
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 200
-    assert instance.query(f"SELECT a, b FROM {TABLE_NAME} ORDER BY 1") == instance.query(
-        "SELECT number, toString(number + 1) FROM numbers(200)"
-    )
+    assert instance.query(
+        f"SELECT a, b FROM {TABLE_NAME} ORDER BY 1"
+    ) == instance.query("SELECT number, toString(number + 1) FROM numbers(200)")
 
     write_hudi_from_df(
-        spark, TABLE_NAME, generate_data(spark, 100, 300), f"/{TABLE_NAME}", mode="append"
+        spark,
+        TABLE_NAME,
+        generate_data(spark, 100, 300),
+        f"/{TABLE_NAME}",
+        mode="append",
     )
     files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
-    #assert len(files) == 3
+    # assert len(files) == 3
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 300
-    assert instance.query(f"SELECT a, b FROM {TABLE_NAME} ORDER BY 1") == instance.query(
-        "SELECT number, toString(number + 1) FROM numbers(300)"
-    )
+    assert instance.query(
+        f"SELECT a, b FROM {TABLE_NAME} ORDER BY 1"
+    ) == instance.query("SELECT number, toString(number + 1) FROM numbers(300)")
 
 
 def test_types(started_cluster):
@@ -238,9 +248,7 @@ def test_types(started_cluster):
     )
     df = spark.createDataFrame(data=data, schema=schema)
     df.printSchema()
-    write_hudi_from_df(
-        spark, TABLE_NAME, df, f"/{TABLE_NAME}", mode="overwrite"
-    )
+    write_hudi_from_df(spark, TABLE_NAME, df, f"/{TABLE_NAME}", mode="overwrite")
 
     upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
 
@@ -251,13 +259,13 @@ def test_types(started_cluster):
         == "123\tstring\t2000-01-01\t['str1','str2']\ttrue"
     )
 
-    #table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{TABLE_NAME}/', 'minio', 'minio123')"
-    #assert (
+    # table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{TABLE_NAME}/', 'minio', 'minio123')"
+    # assert (
     #    instance.query(f"SELECT * FROM {table_function}").strip()
     #    == "123\tstring\t2000-01-01\t['str1','str2']\ttrue"
-    #)
+    # )
 
-    #assert instance.query(f"DESCRIBE {table_function} FORMAT TSV") == TSV(
+    # assert instance.query(f"DESCRIBE {table_function} FORMAT TSV") == TSV(
     #    [
     #        ["a", "Nullable(Int32)"],
     #        ["b", "Nullable(String)"],
@@ -265,4 +273,4 @@ def test_types(started_cluster):
     #        ["d", "Array(Nullable(String))"],
     #        ["e", "Nullable(Bool)"],
     #    ]
-    #)
+    # )
