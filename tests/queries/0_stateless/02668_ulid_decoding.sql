@@ -1,7 +1,7 @@
 -- Tags: no-fasttest
 
 SELECT dateDiff('s', ULIDStringToDateTime(generateULID()), now()) = 0;
-SELECT ULIDStringToDateTime('01GWJWKW30MFPQJRYEAF4XFZ9E');
+SELECT toTimezone(ULIDStringToDateTime('01GWJWKW30MFPQJRYEAF4XFZ9E'), 'America/Costa_Rica');
 SELECT ULIDStringToDateTime('01GWJWKW30MFPQJRYEAF4XFZ9E', 'America/Costa_Rica');
 SELECT ULIDStringToDateTime('01GWJWKW30MFPQJRYEAF4XFZ9', 'America/Costa_Rica'); -- { serverError ILLEGAL_COLUMN }
 SELECT ULIDStringToDateTime('01GWJWKW30MFPQJRYEAF4XFZ9E', 'America/Costa_Ric'); -- { serverError POCO_EXCEPTION }
