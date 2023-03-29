@@ -39,7 +39,7 @@ namespace
       * To find needed parts we need to find out latest part file for every partition.
       * Part format is usually parquet, but can differ.
       */
-    Strings processMetadataFiles(const std::vector<String> & keys, const String & format)
+    Strings processMetadataFiles(const std::vector<String> & keys, const std::string & base_directory)
     {
         auto * log = &Poco::Logger::get("HudiMetadataParser");
 
@@ -50,32 +50,23 @@ namespace
         };
         std::unordered_map<String, FileInfo> latest_parts; /// Partition path (directory) -> latest part file info.
 
-        /// Make format lowercase.
-        const auto expected_extension= "." + Poco::toLower(format);
-        /// Filter only files with specific format.
-        auto keys_filter = [&](const String & key) { return std::filesystem::path(key).extension() == expected_extension; };
-
         /// For each partition path take only latest file.
-        for (const auto & key : keys | std::views::filter(keys_filter))
+        for (const auto & key : keys)
         {
-            const auto key_path = std::filesystem::path(key);
-
-            /// Every filename contains metadata split by "_", timestamp is after last "_".
             const auto delim = key.find_last_of('_') + 1;
             if (delim == std::string::npos)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected format of metadata files");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected format for file: {}", key);
 
             const auto timestamp = parse<UInt64>(key.substr(delim + 1));
+            const auto file_path = key.substr(base_directory.size());
 
-            const auto [it, inserted] = latest_parts.emplace(/* partition_path */key_path.parent_path(), FileInfo{});
+            LOG_TEST(log, "Having path {}", file_path);
+
+            const auto [it, inserted] = latest_parts.emplace(/* partition_path */fs::path(key).parent_path(), FileInfo{});
             if (inserted)
-            {
-                it->second = FileInfo{key_path.filename(), timestamp};
-            }
+                it->second = FileInfo{file_path, timestamp};
             else if (it->second.timestamp < timestamp)
-            {
-                it->second = {key_path.filename(), timestamp};
-            }
+                it->second = {file_path, timestamp};
         }
 
         LOG_TRACE(log, "Having {} result partitions", latest_parts.size());
@@ -90,8 +81,8 @@ namespace
 template <typename Configuration, typename MetadataReadHelper>
 Strings HudiMetadataParser<Configuration, MetadataReadHelper>::getFiles(const Configuration & configuration, ContextPtr)
 {
-    const Strings files = MetadataReadHelper::listFiles(configuration);
-    return processMetadataFiles(files, "parquet");
+    const Strings files = MetadataReadHelper::listFiles(configuration, "", Poco::toLower(configuration.format));
+    return processMetadataFiles(files, configuration.getPath());
 }
 
 #if USE_AWS_S3
