@@ -136,13 +136,13 @@ void AuthSettings::updateFrom(const AuthSettings & from)
     region = from.region;
     server_side_encryption_customer_key_base64 = from.server_side_encryption_customer_key_base64;
 
-    if (from.use_environment_credentials)
+    if (from.use_environment_credentials.has_value())
         use_environment_credentials = from.use_environment_credentials;
 
-    if (from.use_insecure_imds_request)
+    if (from.use_insecure_imds_request.has_value())
         use_insecure_imds_request = from.use_insecure_imds_request;
 
-    if (from.expiration_window_seconds)
+    if (from.expiration_window_seconds.has_value())
         expiration_window_seconds = from.expiration_window_seconds;
 
     if (from.no_sign_request.has_value())
