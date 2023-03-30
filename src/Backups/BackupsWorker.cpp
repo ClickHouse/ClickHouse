@@ -20,9 +20,18 @@
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/logger_useful.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/setThreadName.h>
 #include <Common/scope_guard_safe.h>
 
+
+namespace CurrentMetrics
+{
+    extern const Metric BackupsThreads;
+    extern const Metric BackupsThreadsActive;
+    extern const Metric RestoreThreads;
+    extern const Metric RestoreThreadsActive;
+}
 
 namespace DB
 {
@@ -52,7 +61,7 @@ namespace
                 .keeper_max_retries = context->getSettingsRef().backup_keeper_max_retries,
                 .keeper_retry_initial_backoff_ms = context->getSettingsRef().backup_keeper_retry_initial_backoff_ms,
                 .keeper_retry_max_backoff_ms = context->getSettingsRef().backup_keeper_retry_max_backoff_ms,
-                .batch_size_for_keeper_multiread = context->getSettingsRef().backup_batch_size_for_keeper_multiread,
+                .keeper_value_max_size = context->getSettingsRef().backup_keeper_value_max_size,
             };
 
             auto all_hosts = BackupSettings::Util::filterHostIDs(
@@ -65,11 +74,12 @@ namespace
                 toString(*backup_settings.backup_uuid),
                 all_hosts,
                 backup_settings.host_id,
+                !backup_settings.deduplicate_files,
                 backup_settings.internal);
         }
         else
         {
-            return std::make_shared<BackupCoordinationLocal>();
+            return std::make_shared<BackupCoordinationLocal>(!backup_settings.deduplicate_files);
         }
     }
 
@@ -152,8 +162,8 @@ namespace
 
 
 BackupsWorker::BackupsWorker(size_t num_backup_threads, size_t num_restore_threads, bool allow_concurrent_backups_, bool allow_concurrent_restores_)
-    : backups_thread_pool(num_backup_threads, /* max_free_threads = */ 0, num_backup_threads)
-    , restores_thread_pool(num_restore_threads, /* max_free_threads = */ 0, num_restore_threads)
+    : backups_thread_pool(CurrentMetrics::BackupsThreads, CurrentMetrics::BackupsThreadsActive, num_backup_threads, /* max_free_threads = */ 0, num_backup_threads)
+    , restores_thread_pool(CurrentMetrics::RestoreThreads, CurrentMetrics::RestoreThreadsActive, num_restore_threads, /* max_free_threads = */ 0, num_restore_threads)
     , log(&Poco::Logger::get("BackupsWorker"))
     , allow_concurrent_backups(allow_concurrent_backups_)
     , allow_concurrent_restores(allow_concurrent_restores_)
@@ -350,7 +360,8 @@ void BackupsWorker::doBackup(
             }
 
             /// Write the backup entries to the backup.
-            writeBackupEntries(backup_id, backup, std::move(backup_entries), backups_thread_pool, backup_settings.internal);
+            buildFileInfosForBackupEntries(backup, backup_entries, backup_coordination);
+            writeBackupEntries(backup, std::move(backup_entries), backup_id, backup_coordination, backup_settings.internal);
 
             /// We have written our backup entries, we need to tell other hosts (they could be waiting for it).
             backup_coordination->setStage(Stage::COMPLETED, "");
@@ -399,8 +410,31 @@ void BackupsWorker::doBackup(
 }
 
 
-void BackupsWorker::writeBackupEntries(const OperationID & backup_id, BackupMutablePtr backup, BackupEntries && backup_entries, ThreadPool & thread_pool, bool internal)
+void BackupsWorker::buildFileInfosForBackupEntries(const BackupPtr & backup, const BackupEntries & backup_entries, std::shared_ptr<IBackupCoordination> backup_coordination)
 {
+    LOG_TRACE(log, "{}", Stage::BUILDING_FILE_INFOS);
+    backup_coordination->setStage(Stage::BUILDING_FILE_INFOS, "");
+    backup_coordination->waitForStage(Stage::BUILDING_FILE_INFOS);
+    backup_coordination->addFileInfos(::DB::buildFileInfosForBackupEntries(backup_entries, backup->getBaseBackup(), backups_thread_pool));
+}
+
+
+void BackupsWorker::writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries, const OperationID & backup_id, std::shared_ptr<IBackupCoordination> backup_coordination, bool internal)
+{
+    LOG_TRACE(log, "{}, num backup entries={}", Stage::WRITING_BACKUP, backup_entries.size());
+    backup_coordination->setStage(Stage::WRITING_BACKUP, "");
+    backup_coordination->waitForStage(Stage::WRITING_BACKUP);
+
+    auto file_infos = backup_coordination->getFileInfos();
+    if (file_infos.size() != backup_entries.size())
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Number of file infos ({}) doesn't match the number of backup entries ({})",
+            file_infos.size(),
+            backup_entries.size());
+    }
+
     size_t num_active_jobs = 0;
     std::mutex mutex;
     std::condition_variable event;
@@ -409,10 +443,10 @@ void BackupsWorker::writeBackupEntries(const OperationID & backup_id, BackupMuta
     bool always_single_threaded = !backup->supportsWritingInMultipleThreads();
     auto thread_group = CurrentThread::getGroup();
 
-    for (auto & name_and_entry : backup_entries)
+    for (size_t i = 0; i != backup_entries.size(); ++i)
     {
-        auto & name = name_and_entry.first;
-        auto & entry = name_and_entry.second;
+        auto & entry = backup_entries[i].second;
+        const auto & file_info = file_infos[i];
 
         {
             std::unique_lock lock{mutex};
@@ -445,7 +479,7 @@ void BackupsWorker::writeBackupEntries(const OperationID & backup_id, BackupMuta
                         return;
                 }
 
-                backup->writeFile(name, std::move(entry));
+                backup->writeFile(file_info, std::move(entry));
                 // Update metadata
                 if (!internal)
                 {
@@ -468,7 +502,7 @@ void BackupsWorker::writeBackupEntries(const OperationID & backup_id, BackupMuta
             }
         };
 
-        if (always_single_threaded || !thread_pool.trySchedule([job] { job(true); }))
+        if (always_single_threaded || !backups_thread_pool.trySchedule([job] { job(true); }))
             job(false);
     }
 

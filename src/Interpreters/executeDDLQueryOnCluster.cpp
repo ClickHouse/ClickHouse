@@ -92,6 +92,9 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
 
     span.addAttribute("clickhouse.cluster", query->cluster);
 
+    if (!cluster->areDistributedDDLQueriesAllowed())
+        throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Distributed DDL queries are prohibited for the cluster");
+
     /// TODO: support per-cluster grant
     context->checkAccess(AccessType::CLUSTER);
 
