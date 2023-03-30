@@ -39,7 +39,7 @@ public:
         std::optional<FormatSettings> format_settings_)
         : Storage(
             getAdjustedConfiguration(
-                context_, Storage::updateConfiguration(context_, configuration_), &Poco::Logger::get("Storage" + String(name))),
+                context_, Storage::copyAndUpdateConfiguration(context_, configuration_), &Poco::Logger::get("Storage" + String(name))),
             table_id_,
             columns_,
             constraints_,

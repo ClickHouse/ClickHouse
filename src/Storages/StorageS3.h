@@ -293,13 +293,13 @@ public:
     static StorageS3::Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context, bool get_format_from_file = true);
 
     static ColumnsDescription getTableStructureFromData(
-        StorageS3::Configuration & configuration,
+        const StorageS3::Configuration & configuration,
         const std::optional<FormatSettings> & format_settings,
         ContextPtr ctx);
 
 protected:
-    static StorageS3::Configuration updateConfiguration(ContextPtr local_context, const Configuration & configuration);
-    static void updateConfiguration(ContextPtr, Configuration &);
+    static StorageS3::Configuration copyAndUpdateConfiguration(ContextPtr local_context, const Configuration & configuration);
+    static void updateConfiguration(ContextPtr local_context, Configuration & configuration);
 
 private:
     friend class StorageS3Cluster;
