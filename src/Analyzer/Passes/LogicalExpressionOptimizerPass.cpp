@@ -153,9 +153,11 @@ private:
                 }
             };
 
-            if (const auto * lhs_literal = lhs->as<ConstantNode>())
+            if (const auto * lhs_literal = lhs->as<ConstantNode>();
+                lhs_literal && !lhs_literal->getValue().isNull())
                 add_equals_function_if_not_present(rhs, lhs_literal);
-            else if (const auto * rhs_literal = rhs->as<ConstantNode>())
+            else if (const auto * rhs_literal = rhs->as<ConstantNode>();
+                     rhs_literal && !rhs_literal->getValue().isNull())
                 add_equals_function_if_not_present(lhs, rhs_literal);
             else
                 or_operands.push_back(argument);
