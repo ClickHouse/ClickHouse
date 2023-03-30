@@ -100,6 +100,7 @@ void InitialAllRangesAnnouncement::serialize(WriteBuffer & out) const
     /// Must be the first
     writeIntBinary(version, out);
 
+    writeIntBinary(mode, out);
     description.serialize(out);
     writeIntBinary(replica_num, out);
 }
@@ -122,6 +123,7 @@ void InitialAllRangesAnnouncement::deserialize(ReadBuffer & in)
             "from replicas differ. Got: {}, supported version: {}",
             version, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
 
+    readIntBinary(mode, in);
     description.deserialize(in);
     readIntBinary(replica_num, in);
 }

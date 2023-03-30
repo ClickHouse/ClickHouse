@@ -64,6 +64,7 @@ struct ParallelReadResponse
 
 struct InitialAllRangesAnnouncement
 {
+    CoordinationMode mode;
     RangesInDataPartsDescription description;
     size_t replica_num;
 

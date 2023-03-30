@@ -9,6 +9,7 @@
 
 #include <consistent_hashing.h>
 
+#include "Common/Exception.h"
 #include <Common/logger_useful.h>
 #include <Common/SipHash.h>
 #include <Common/thread_local_rng.h>
@@ -223,6 +224,10 @@ void DefaultCoordinator::handleInitialAllRangesAnnouncement(InitialAllRangesAnno
     std::lock_guard lock(mutex);
 
     updateReadingState(announcement);
+
+    if (announcement.replica_num >= stats.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Replica number ({}) is bigger than total replicas count ({})", announcement.replica_num, stats.size());
+
     stats[announcement.replica_num].number_of_requests +=1;
 
     ++sent_initial_requests;
@@ -480,7 +485,11 @@ ParallelReadResponse InOrderCoordinator<mode>::handleRequest(ParallelReadRequest
 void ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
 {
     if (!pimpl)
+    {
+        setMode(announcement.mode);
         initialize();
+    }
+
 
     return pimpl->handleInitialAllRangesAnnouncement(announcement);
 }
@@ -488,7 +497,10 @@ void ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(Init
 ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelReadRequest request)
 {
     if (!pimpl)
+    {
+        setMode(request.mode);
         initialize();
+    }
 
     return pimpl->handleRequest(std::move(request));
 }
