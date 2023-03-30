@@ -15,3 +15,9 @@ SELECT mapContainsKeyLike(map('aa', 1, 'bb', 2), 'a%');
 SELECT mapContainsKeyLike(map('aa', 1, 'bb', 2), materialize('a%'));
 SELECT mapContainsKeyLike(materialize(map('aa', 1, 'bb', 2)), 'a%');
 SELECT mapContainsKeyLike(materialize(map('aa', 1, 'bb', 2)), materialize('a%'));
+
+SELECT mapContainsKeyLike(map('aa', NULL, 'bb', NULL), 'a%');
+SELECT mapContainsKeyLike(map('aa', NULL, 'bb', NULL), 'q%');
+
+SELECT mapExtractKeyLike(map('aa', NULL, 'bb', NULL), 'a%');
+SELECT mapExtractKeyLike(map('aa', NULL, 'bb', NULL), 'q%');
