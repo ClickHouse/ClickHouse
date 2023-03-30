@@ -173,23 +173,31 @@ public:
                 getName(),
                 arguments.size());
 
-        const auto * keys_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
-        if (!keys_type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be an Array", getName());
+        /// The first argument should always be Array.
+        /// Because key type can not be nested type of Map, which is Tuple
+        DataTypePtr key_type;
+        if (const auto * keys_type = checkAndGetDataType<DataTypeArray>(arguments[0].get()))
+            key_type = keys_type->getNestedType();
+        else
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be Array or Map", getName());
 
-        const auto * values_type = checkAndGetDataType<DataTypeArray>(arguments[1].get());
-        if (!values_type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument for function {} must be an Array", getName());
+        DataTypePtr value_type;
+        if (const auto * value_array_type = checkAndGetDataType<DataTypeArray>(arguments[1].get()))
+            value_type = value_array_type->getNestedType();
+        else if (const auto * value_map_type = checkAndGetDataType<DataTypeMap>(arguments[1].get()))
+            value_type = value_map_type->getValueType();
+        else
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument for function {} must be Array or Map", getName());
 
-        DataTypes key_value_types{keys_type->getNestedType(), values_type->getNestedType()};
+        DataTypes key_value_types{key_type, value_type};
         return std::make_shared<DataTypeMap>(key_value_types);
     }
 
     ColumnPtr executeImpl(
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t /* input_rows_count */) const override
     {
-        ColumnPtr holder_keys;
         bool is_keys_const = isColumnConst(*arguments[0].column);
+        ColumnPtr holder_keys;
         const ColumnArray * col_keys;
         if (is_keys_const)
         {
@@ -201,24 +209,26 @@ public:
             col_keys = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
         }
 
-        ColumnPtr holder_values;
-        bool is_values_const = isColumnConst(*arguments[1].column);
-        const ColumnArray * col_values;
-        if (is_values_const)
-        {
-            holder_values = arguments[1].column->convertToFullColumnIfConst();
-            col_values = checkAndGetColumn<ColumnArray>(holder_values.get());
-        }
-        else
-        {
-            col_values = checkAndGetColumn<ColumnArray>(arguments[1].column.get());
-        }
+        if (!col_keys)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The first argument of function {} must be Array", getName());
 
-        if (!col_keys || !col_values)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Arguments of function {} must be array", getName());
+        bool is_values_const = isColumnConst(*arguments[1].column);
+        ColumnPtr holder_values;
+        if (is_values_const)
+            holder_values = arguments[1].column->convertToFullColumnIfConst();
+        else
+            holder_values = arguments[1].column;
+
+        const ColumnArray * col_values;
+        if (const auto * col_values_array = checkAndGetColumn<ColumnArray>(holder_values.get()))
+            col_values = col_values_array;
+        else if (const auto * col_values_map = checkAndGetColumn<ColumnMap>(holder_values.get()))
+            col_values = &col_values_map->getNestedColumn();
+        else
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The second arguments of function {} must be Array or Map", getName());
 
         if (!col_keys->hasEqualOffsets(*col_values))
-            throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Array arguments for function {} must have equal sizes", getName());
+            throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Two arguments for function {} must have equal sizes", getName());
 
         const auto & data_keys = col_keys->getDataPtr();
         const auto & data_values = col_values->getDataPtr();
