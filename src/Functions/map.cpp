@@ -185,7 +185,7 @@ public:
         if (const auto * value_array_type = checkAndGetDataType<DataTypeArray>(arguments[1].get()))
             value_type = value_array_type->getNestedType();
         else if (const auto * value_map_type = checkAndGetDataType<DataTypeMap>(arguments[1].get()))
-            value_type = value_map_type->getValueType();
+            value_type = std::make_shared<DataTypeTuple>(value_map_type->getKeyValueTypes());
         else
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument for function {} must be Array or Map", getName());
 
