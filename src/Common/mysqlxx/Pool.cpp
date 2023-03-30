@@ -33,9 +33,12 @@ void Pool::Entry::incrementRefCount()
 {
     if (!data)
         return;
+
     /// First reference, initialize thread
     if (data->ref_count.fetch_add(1) == 0)
         mysql_thread_init();
+
+    chassert(!data->removed_from_pool);
 }
 
 
@@ -44,9 +47,20 @@ void Pool::Entry::decrementRefCount()
     if (!data)
         return;
 
-    /// We were the last user of this thread, deinitialize it
-    if (data->ref_count.fetch_sub(1) == 1)
+    const auto ref_count = data->ref_count.fetch_sub(1);
+    if (ref_count == 1)
+    {
+        /// We were the last user of this thread, deinitialize it
         mysql_thread_end();
+    }
+    else if (data->removed_from_pool)
+    {
+        /// data->ref_count == 0 in case we removed connection from pool (see Pool::removeConnection).
+        chassert(ref_count == 0);
+        /// In Pool::Entry::disconnect() we remove connection from the list of pool's connections.
+        /// So now we must deallocate the memory.
+        ::delete data;
+    }
 }
 
 
@@ -238,6 +252,7 @@ void Pool::removeConnection(Connection* connection)
             connection->ref_count = 0;
         }
         connections.remove(connection);
+        connection->removed_from_pool = true;
     }
 }
 

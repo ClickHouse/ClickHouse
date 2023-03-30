@@ -16,7 +16,7 @@ public:
         const Block & header, size_t num_inputs,
         SortDescription description_, size_t max_block_size)
         : IMergingTransform(
-            num_inputs, header, header, /*have_all_inputs_=*/ true, /*limit_hint_=*/ 0,
+            num_inputs, header, header, /*have_all_inputs_=*/ true, /*limit_hint_=*/ 0, /*always_read_till_end_=*/ false,
             header,
             num_inputs,
             std::move(description_),
