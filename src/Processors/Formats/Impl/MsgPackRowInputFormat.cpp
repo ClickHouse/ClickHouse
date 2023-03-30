@@ -412,8 +412,10 @@ bool MsgPackVisitor::end_array_item() // NOLINT
         info_stack.pop();
     else
     {
-        --(*info_stack.top().array_size);
-        if (*info_stack.top().array_size == 0)
+        assert(info_stack.top().array_size.has_value());
+        auto & current_array_size = *info_stack.top().array_size;
+        --current_array_size;
+        if (current_array_size == 0)
             info_stack.pop();
     }
     return true;
