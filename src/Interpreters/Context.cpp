@@ -1767,6 +1767,12 @@ ContextMutablePtr Context::getBufferContext() const
 void Context::makeQueryContext()
 {
     query_context = shared_from_this();
+
+    /// Create throttlers, to inherit the ThrottlePtr in the context copies.
+    {
+        getRemoteReadThrottler();
+        getRemoteWriteThrottler();
+    }
 }
 
 void Context::makeSessionContext()
@@ -2345,6 +2351,14 @@ ThrottlerPtr Context::getRemoteReadThrottler() const
         throttler = shared->remote_read_throttler;
     }
 
+    if (query_settings.max_remote_read_network_bandwidth)
+    {
+        auto lock = getLock();
+        if (!remote_read_query_throttler)
+            remote_read_query_throttler = std::make_shared<Throttler>(query_settings.max_remote_read_network_bandwidth, throttler);
+        throttler = remote_read_query_throttler;
+    }
+
     return throttler;
 }
 
@@ -2363,6 +2377,14 @@ ThrottlerPtr Context::getRemoteWriteThrottler() const
         if (!shared->remote_write_throttler)
             shared->remote_write_throttler = std::make_shared<Throttler>(bandwidth_for_server);
         throttler = shared->remote_write_throttler;
+    }
+
+    if (query_settings.max_remote_write_network_bandwidth)
+    {
+        auto lock = getLock();
+        if (!remote_write_query_throttler)
+            remote_write_query_throttler = std::make_shared<Throttler>(query_settings.max_remote_write_network_bandwidth, throttler);
+        throttler = remote_write_query_throttler;
     }
 
     return throttler;
