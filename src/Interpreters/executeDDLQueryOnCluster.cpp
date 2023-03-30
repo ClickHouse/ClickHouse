@@ -445,7 +445,8 @@ Chunk DDLQueryStatusSource::generate()
         Strings tmp_hosts;
         Strings tmp_active_hosts;
 
-        getRetriesForDistributedDDL().ctl.retryLoop([&](){
+        getRetriesForDistributedDDL().ctl.retryLoop([&]()
+        {
             auto zookeeper = context->getZooKeeper();
             node_exists = zookeeper->exists(node_path);
             tmp_hosts = getChildrenAllowNoNode(zookeeper, fs::path(node_path) / node_to_wait);
@@ -480,7 +481,8 @@ Chunk DDLQueryStatusSource::generate()
             {
                 String status_data;
                 bool finished_exists = false;
-                getRetriesForDistributedDDL().ctl.retryLoop([&](){
+                getRetriesForDistributedDDL().ctl.retryLoop([&]()
+                {
                     finished_exists = context->getZooKeeper()->tryGet(fs::path(node_path) / "finished" / host_id, status_data);
                 });
                 if (finished_exists)
