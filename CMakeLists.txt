@@ -591,7 +591,7 @@ if (NATIVE_BUILD_TARGETS
         COMMAND ${CMAKE_COMMAND}
             "-DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}"
             "-DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
-            "-DENABLE_CCACHE=${ENABLE_CCACHE}"
+            "-DCOMPILER_CACHE=${COMPILER_CACHE}"
             # Avoid overriding .cargo/config.toml with native toolchain.
             "-DENABLE_RUST=OFF"
             "-DENABLE_CLICKHOUSE_SELF_EXTRACTING=${ENABLE_CLICKHOUSE_SELF_EXTRACTING}"
