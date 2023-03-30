@@ -85,7 +85,7 @@ The build requires the following components:
 -   Git (is used only to checkout the sources, it’s not needed for the build)
 -   CMake 3.15 or newer
 -   Ninja
--   C++ compiler: clang-14 or newer
+-   C++ compiler: clang-15 or newer
 -   Linker: lld
 -   Yasm
 -   Gawk
