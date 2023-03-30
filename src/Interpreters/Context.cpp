@@ -754,15 +754,17 @@ VolumePtr Context::getTemporaryVolume() const
 
 TemporaryDataOnDiskScopePtr Context::getTempDataOnDisk() const
 {
-    auto lock = getLock();
     if (this->temp_data_on_disk)
         return this->temp_data_on_disk;
+
+    auto lock = getLock();
     return shared->temp_data_on_disk;
 }
 
 void Context::setTempDataOnDisk(TemporaryDataOnDiskScopePtr temp_data_on_disk_)
 {
-    auto lock = getLock();
+    /// It's set from `ProcessList::insert` in `executeQueryImpl` before query execution
+    /// so no races with `getTempDataOnDisk` which is called from query execution.
     this->temp_data_on_disk = std::move(temp_data_on_disk_);
 }
 
@@ -846,7 +848,7 @@ void Context::setTemporaryStoragePolicy(const String & policy_name, size_t max_s
 {
     std::lock_guard lock(shared->storage_policies_mutex);
 
-     StoragePolicyPtr tmp_policy = getStoragePolicySelector(lock)->get(policy_name);
+    StoragePolicyPtr tmp_policy = getStoragePolicySelector(lock)->get(policy_name);
     if (tmp_policy->getVolumes().size() != 1)
             throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
             "Policy '{}' is used temporary files, such policy should have exactly one volume", policy_name);
