@@ -43,7 +43,6 @@ namespace
             {
                 if (!str.empty())
                     str += " ";
-                std::string_view word{pos->begin, pos->size()};
                 str += std::string_view(pos->begin, pos->size());
                 ++pos;
             }
@@ -284,8 +283,18 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     AccessRightsElements elements;
     std::shared_ptr<ASTRolesOrUsersSet> roles;
-    if (!parseElementsWithoutOptions(pos, expected, elements) && !parseRoles(pos, expected, is_revoke, attach_mode, roles))
-        return false;
+
+    bool current_grants = false;
+    if (!is_revoke && ParserKeyword{"CURRENT GRANTS"}.ignore(pos, expected))
+    {
+        current_grants = true;
+        elements.emplace_back(AccessType::ALL);
+    }
+    else
+    {
+        if (!parseElementsWithoutOptions(pos, expected, elements) && !parseRoles(pos, expected, is_revoke, attach_mode, roles))
+            return false;
+    }
 
     if (cluster.empty())
         parseOnCluster(pos, expected, cluster);
@@ -353,6 +362,7 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->admin_option = admin_option;
     query->replace_access = replace_access;
     query->replace_granted_roles = replace_role;
+    query->current_grants = current_grants;
 
     return true;
 }
