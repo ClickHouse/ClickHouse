@@ -77,7 +77,7 @@ def trim_for_log(s):
         return s
     lines = s.splitlines()
     if len(lines) > 10000:
-        separator = "-" * 40 + str(len(lines) - 10000) + " lines are hidden" +  "-" * 40
+        separator = "-" * 40 + str(len(lines) - 10000) + " lines are hidden" + "-" * 40
         return "\n".join(lines[:5000] + [] + [separator] + [] + lines[-5000:])
     else:
         return "\n".join(lines)
@@ -95,7 +95,13 @@ class HTTPError(Exception):
 
 # Helpers to execute queries via HTTP interface.
 def clickhouse_execute_http(
-    base_args, query, timeout=30, settings=None, default_format=None, max_http_retries=5, retry_error_codes=False
+    base_args,
+    query,
+    timeout=30,
+    settings=None,
+    default_format=None,
+    max_http_retries=5,
+    retry_error_codes=False,
 ):
     if args.secure:
         client = http.client.HTTPSConnection(
@@ -146,12 +152,36 @@ def clickhouse_execute_http(
 
     return data
 
-def clickhouse_execute(base_args, query, timeout=30, settings=None, max_http_retries=5, retry_error_codes=False):
-    return clickhouse_execute_http(base_args, query, timeout, settings, max_http_retries=max_http_retries, retry_error_codes=retry_error_codes).strip()
+
+def clickhouse_execute(
+    base_args,
+    query,
+    timeout=30,
+    settings=None,
+    max_http_retries=5,
+    retry_error_codes=False,
+):
+    return clickhouse_execute_http(
+        base_args,
+        query,
+        timeout,
+        settings,
+        max_http_retries=max_http_retries,
+        retry_error_codes=retry_error_codes,
+    ).strip()
 
 
-def clickhouse_execute_json(base_args, query, timeout=60, settings=None, max_http_retries=5):
-    data = clickhouse_execute_http(base_args, query, timeout, settings, "JSONEachRow", max_http_retries=max_http_retries)
+def clickhouse_execute_json(
+    base_args, query, timeout=60, settings=None, max_http_retries=5
+):
+    data = clickhouse_execute_http(
+        base_args,
+        query,
+        timeout,
+        settings,
+        "JSONEachRow",
+        max_http_retries=max_http_retries,
+    )
     if not data:
         return None
     rows = []
@@ -528,6 +558,9 @@ class SettingsRandomizer:
         "enable_memory_bound_merging_of_aggregation_results": lambda: random.randint(
             0, 1
         ),
+        "min_count_to_compile_expression": lambda: random.choice([0, 3]),
+        "min_count_to_compile_aggregate_expression": lambda: random.choice([0, 3]),
+        "min_count_to_compile_sort_description": lambda: random.choice([0, 3]),
     }
 
     @staticmethod
@@ -648,7 +681,9 @@ class TestCase:
 
             clickhouse_execute(
                 args,
-                "CREATE DATABASE IF NOT EXISTS " + database + get_db_engine(testcase_args, database),
+                "CREATE DATABASE IF NOT EXISTS "
+                + database
+                + get_db_engine(testcase_args, database),
                 settings=get_create_database_settings(args, testcase_args),
             )
 
@@ -831,7 +866,8 @@ class TestCase:
 
         # TODO: remove checking "no-upgrade-check" after 23.1
         elif args.upgrade_check and (
-                "no-upgrade-check" in tags or "no-upgrade-check" in tags):
+            "no-upgrade-check" in tags or "no-upgrade-check" in tags
+        ):
             return FailureReason.NO_UPGRADE_CHECK
 
         elif tags and ("no-s3-storage" in tags) and args.s3_storage:
@@ -1051,7 +1087,11 @@ class TestCase:
     @staticmethod
     def send_test_name_failed(suite: str, case: str):
         pid = os.getpid()
-        clickhouse_execute(args, f"SELECT 'Running test {suite}/{case} from pid={pid}'", retry_error_codes=True)
+        clickhouse_execute(
+            args,
+            f"SELECT 'Running test {suite}/{case} from pid={pid}'",
+            retry_error_codes=True,
+        )
 
     def run_single_test(
         self, server_logs_level, client_options
@@ -2217,6 +2257,7 @@ def find_binary(name):
 
     raise Exception(f"{name} was not found in PATH")
 
+
 def find_clickhouse_command(binary, command):
     symlink = binary + "-" + command
     if os.access(symlink, os.X_OK):
@@ -2224,6 +2265,7 @@ def find_clickhouse_command(binary, command):
 
     # To avoid requiring symlinks (in case you download binary from CI)
     return binary + " " + command
+
 
 def get_additional_client_options(args):
     if args.client_option:
@@ -2566,7 +2608,9 @@ if __name__ == "__main__":
             "WARNING: --extract_from_config option is deprecated and will be removed the the future",
             file=sys.stderr,
         )
-    args.extract_from_config = find_clickhouse_command(args.binary, "extract-from-config")
+    args.extract_from_config = find_clickhouse_command(
+        args.binary, "extract-from-config"
+    )
 
     if args.configclient:
         args.client += " --config-file=" + args.configclient
