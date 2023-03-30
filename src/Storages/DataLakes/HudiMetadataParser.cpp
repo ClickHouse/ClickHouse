@@ -18,7 +18,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace
+template <typename Configuration, typename MetadataReadHelper>
+struct HudiMetadataParser<Configuration, MetadataReadHelper>::Impl
 {
     /**
      * Useful links:
@@ -28,7 +29,10 @@ namespace
 
     /**
       * Hudi tables store metadata files and data files.
-      * Metadata files are stored in .hoodie/metadata directory.
+      * Metadata files are stored in .hoodie/metadata directory. Though unlike DeltaLake and Iceberg,
+      * metadata is not required in order to understand which files we need to read, moreover,
+      * for Hudi metadata does not always exist.
+      *
       * There can be two types of data files
       * 1. base files (columnar file formats like Apache Parquet/Orc)
       * 2. log files
@@ -86,15 +90,22 @@ namespace
         }
         return result;
     }
+};
+
+
+template <typename Configuration, typename MetadataReadHelper>
+HudiMetadataParser<Configuration, MetadataReadHelper>::HudiMetadataParser() : impl(std::make_unique<Impl>())
+{
 }
 
 template <typename Configuration, typename MetadataReadHelper>
 Strings HudiMetadataParser<Configuration, MetadataReadHelper>::getFiles(const Configuration & configuration, ContextPtr)
 {
     const Strings files = MetadataReadHelper::listFiles(configuration, "", Poco::toLower(configuration.format));
-    return processMetadataFiles(files, configuration.getPath());
+    return impl->processMetadataFiles(files, configuration.getPath());
 }
 
+template HudiMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::HudiMetadataParser();
 template Strings HudiMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::getFiles(
     const StorageS3::Configuration & configuration, ContextPtr);
 

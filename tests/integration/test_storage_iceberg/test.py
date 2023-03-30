@@ -12,7 +12,6 @@ import time
 from helpers.s3_tools import prepare_s3_bucket, upload_directory, get_file_contents
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-TABLE_NAME = "test_iceberg_table"
 USER_FILES_PATH = os.path.join(SCRIPT_DIR, "./_instances/node1/database/user_files")
 
 
@@ -20,7 +19,11 @@ USER_FILES_PATH = os.path.join(SCRIPT_DIR, "./_instances/node1/database/user_fil
 def started_cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        cluster.add_instance("node1", with_minio=True)
+        cluster.add_instance(
+            "node1",
+            main_configs=["configs/config.d/named_collections.xml"],
+            with_minio=True,
+        )
 
         logging.info("Starting cluster...")
         cluster.start()
@@ -63,38 +66,61 @@ def get_spark():
     return builder.master("local").getOrCreate()
 
 
-def test_basic(started_cluster):
+def write_iceberg_from_file(spark, path, table_name, mode="overwrite"):
+    spark.read.load(f"file://{path}").writeTo(table_name).using("iceberg").create()
+
+
+def write_iceberg_from_df(spark, df, table_name, mode="overwrite"):
+    df.writeTo(table_name).using("iceberg").create()
+
+
+def create_iceberg_table(node, table_name):
+    node.query(
+        f"""
+        DROP TABLE IF EXISTS {table_name};
+        CREATE TABLE {table_name}
+        ENGINE=Iceberg(s3, filename = '{table_name}/')"""
+    )
+
+
+def create_initial_data_file(node, query, table_name, compression_method="none"):
+    node.query(
+        f"""
+        INSERT INTO TABLE FUNCTION
+            file('{table_name}.parquet')
+        SETTINGS
+            output_format_parquet_compression_method='{compression_method}',
+            s3_truncate_on_insert=1 {query}
+        FORMAT Parquet"""
+    )
+    result_path = f"{USER_FILES_PATH}/{table_name}.parquet"
+    return result_path
+
+
+def test_single_iceberg_file(started_cluster):
     instance = started_cluster.instances["node1"]
-
-    data_path = f"/var/lib/clickhouse/user_files/{TABLE_NAME}.parquet"
-    inserted_data = "SELECT number, toString(number) FROM numbers(100)"
-    instance.query(
-        f"INSERT INTO TABLE FUNCTION file('{data_path}') {inserted_data} FORMAT Parquet"
-    )
-
-    instance.exec_in_container(
-        ["bash", "-c", "chmod 777 -R /var/lib/clickhouse/user_files"],
-        user="root",
-    )
-
-    spark = get_spark()
-    result_path = f"/{TABLE_NAME}_result"
-
-    spark.read.load(f"file://{USER_FILES_PATH}/{TABLE_NAME}.parquet").writeTo(
-        TABLE_NAME
-    ).using("iceberg").create()
-
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
-    upload_directory(
-        minio_client, bucket, "/iceberg_data/default/test_iceberg_table", ""
+    spark = get_spark()
+    TABLE_NAME = "test_single_iceberg_file"
+
+    inserted_data = "SELECT number, toString(number) FROM numbers(100)"
+    parquet_data_path = create_initial_data_file(instance, inserted_data, TABLE_NAME)
+    write_iceberg_from_file(spark, parquet_data_path, TABLE_NAME)
+
+    files = upload_directory(
+        minio_client, bucket, f"/iceberg_data/default/{TABLE_NAME}/", ""
     )
 
-    instance.query(
-        f"""
-        DROP TABLE IF EXISTS {TABLE_NAME};
-        CREATE TABLE {TABLE_NAME} ENGINE=Iceberg('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/iceberg_data/default/test_iceberg_table/', 'minio', 'minio123')"""
-    )
+    create_iceberg_table(instance, TABLE_NAME)
     assert instance.query(f"SELECT * FROM {TABLE_NAME}") == instance.query(
         inserted_data
     )
+
+
+def test_multiple_iceberg_files(started_cluster):
+    instance = started_cluster.instances["node1"]
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    spark = get_spark()
+    TABLE_NAME = "test_multiple_iceberg_files"

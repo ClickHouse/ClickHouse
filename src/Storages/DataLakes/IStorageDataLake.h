@@ -78,7 +78,7 @@ private:
 
     static Strings getDataFiles(const Configuration & configuration, ContextPtr local_context)
     {
-        auto files =  MetadataParser::getFiles(configuration, local_context);
+        auto files =  MetadataParser().getFiles(configuration, local_context);
         for (auto & file : files)
             file = std::filesystem::path(configuration.getPath()) / file;
         return files;

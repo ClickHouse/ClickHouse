@@ -15,7 +15,8 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-namespace
+template <typename Configuration, typename MetadataReadHelper>
+struct DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::Impl
 {
     /**
      * Useful links:
@@ -32,7 +33,6 @@ namespace
      * For example:
      *     ./_delta_log/00000000000000000000.json
      */
-    template <typename Configuration, typename MetadataReadHelper>
     std::vector<String> getMetadataFiles(const Configuration & configuration)
     {
         /// DeltaLake format stores all metadata json files in _delta_log directory
@@ -94,11 +94,10 @@ namespace
      * previous table state (n-1.json) in order to the construct nth snapshot of the table.
      * An action changes one aspect of the table's state, for example, adding or removing a file.
      */
-    template <typename Configuration, typename MetadataReadHelper>
     std::set<String> processMetadataFiles(const Configuration & configuration, ContextPtr context)
     {
         std::set<String> result;
-        const auto keys = getMetadataFiles<Configuration, MetadataReadHelper>(configuration);
+        const auto keys = getMetadataFiles(configuration);
         for (const String & key : keys)
         {
             auto buf = MetadataReadHelper::createReadBuffer(key, context, configuration);
@@ -125,15 +124,22 @@ namespace
         }
         return result;
     }
+};
+
+
+template <typename Configuration, typename MetadataReadHelper>
+DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::DeltaLakeMetadataParser() : impl(std::make_unique<Impl>())
+{
 }
 
 template <typename Configuration, typename MetadataReadHelper>
 Strings DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::getFiles(const Configuration & configuration, ContextPtr context)
 {
-    auto data_files = processMetadataFiles<Configuration, MetadataReadHelper>(configuration, context);
+    auto data_files = impl->processMetadataFiles(configuration, context);
     return Strings(data_files.begin(), data_files.end());
 }
 
+template DeltaLakeMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::DeltaLakeMetadataParser();
 template Strings DeltaLakeMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::getFiles(
     const StorageS3::Configuration & configuration, ContextPtr);
 }
