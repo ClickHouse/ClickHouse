@@ -565,6 +565,11 @@ void AvroRowOutputFormat::write(const Columns & columns, size_t row_num)
 
 void AvroRowOutputFormat::finalizeImpl()
 {
+    /// If file writer weren't created, we should create it here to write file prefix/suffix
+    /// even without actual data so the file will be valid Avro file
+    if (!file_writer_ptr)
+        createFileWriter();
+
     file_writer_ptr->close();
 }
 
