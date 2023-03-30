@@ -1,7 +1,6 @@
-#include "Configuration.h"
-#include <Common/Exception.h>
+#include <Functions/keyvaluepair/impl/Configuration.h>
 
-#include <Functions/keyvaluepair/src/impl/state/strategies/util/EscapedCharacterReader.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
@@ -10,6 +9,9 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
+
+namespace extractKV
+{
 
 Configuration::Configuration(char key_value_delimiter_, char quoting_character_, std::vector<char> pair_delimiters_)
     : key_value_delimiter(key_value_delimiter_), quoting_character(quoting_character_), pair_delimiters(std::move(pair_delimiters_))
@@ -25,14 +27,15 @@ Configuration ConfigurationFactory::createWithoutEscaping(char key_value_delimit
 
 Configuration ConfigurationFactory::createWithEscaping(char key_value_delimiter, char quoting_character, std::vector<char> pair_delimiters)
 {
-    if (key_value_delimiter == EscapedCharacterReader::ESCAPE_CHARACTER
-        || quoting_character == EscapedCharacterReader::ESCAPE_CHARACTER
-        || std::find(pair_delimiters.begin(), pair_delimiters.end(), EscapedCharacterReader::ESCAPE_CHARACTER) != pair_delimiters.end())
+    constexpr char ESCAPE_CHARACTER = '\\';
+    if (key_value_delimiter == ESCAPE_CHARACTER
+        || quoting_character == ESCAPE_CHARACTER
+        || std::find(pair_delimiters.begin(), pair_delimiters.end(), ESCAPE_CHARACTER) != pair_delimiters.end())
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Invalid arguments, {} is reserved for the escaping character",
-            EscapedCharacterReader::ESCAPE_CHARACTER);
+            ESCAPE_CHARACTER);
     }
 
     return createWithoutEscaping(key_value_delimiter, quoting_character, pair_delimiters);
@@ -72,6 +75,8 @@ void ConfigurationFactory::validate(char key_value_delimiter, char quoting_chara
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid arguments, quoting_character conflicts with pair delimiters");
     }
+}
+
 }
 
 }

@@ -1,12 +1,12 @@
 #pragma once
 
-#include "Functions/keyvaluepair/src/impl/state/strategies/noescaping/NoEscapingKeyStateHandler.h"
-#include "Functions/keyvaluepair/src/impl/state/strategies/noescaping/NoEscapingValueStateHandler.h"
-#include "KeyValuePairExtractor.h"
-#include "impl/CHKeyValuePairExtractor.h"
+#include <memory>
+#include <vector>
 
 namespace DB
 {
+
+struct KeyValuePairExtractor;
 
 class KeyValuePairExtractorBuilder
 {
@@ -20,7 +20,7 @@ public:
 
     KeyValuePairExtractorBuilder & withEscaping();
 
-    std::shared_ptr<KeyValuePairExtractor> build();
+    std::shared_ptr<KeyValuePairExtractor> build() const;
 
 private:
     bool with_escaping = false;
@@ -28,9 +28,9 @@ private:
     char quoting_character = '"';
     std::vector<char> item_delimiters = {' ', ',', ';'};
 
-    std::shared_ptr<KeyValuePairExtractor> buildWithEscaping();
+    std::shared_ptr<KeyValuePairExtractor> buildWithEscaping() const;
 
-    std::shared_ptr<KeyValuePairExtractor> buildWithoutEscaping();
+    std::shared_ptr<KeyValuePairExtractor> buildWithoutEscaping() const;
 };
 
 }

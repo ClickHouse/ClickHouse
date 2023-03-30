@@ -1,4 +1,4 @@
-//#include <Functions/keyvaluepair/src/KeyValuePairExtractorBuilder.h>
+//#include <Functions/keyvaluepair/impl/KeyValuePairExtractorBuilder.h>
 //#include <gtest/gtest.h>
 
 //
@@ -17,11 +17,11 @@
 //    return ostr << test_case.input;
 //}
 //
-//struct KeyValuePairExtractorTest : public ::testing::TestWithParam<LazyKeyValuePairExtractorTestCase>
+//struct extractKVPair_KeyValuePairExtractorTest : public ::testing::TestWithParam<LazyKeyValuePairExtractorTestCase>
 //{
 //};
 //
-//TEST_P(KeyValuePairExtractorTest, KeyValuePairExtractorTests)
+//TEST(extractKVPair_KeyValuePairExtractorTest, KeyValuePairExtractorTests)
 //{
 //    const auto & [input, expected_output, extractor] = GetParam();
 //
@@ -32,7 +32,7 @@
 //
 //INSTANTIATE_TEST_SUITE_P(
 //    ValuesCanBeEmptyString,
-//    KeyValuePairExtractorTest,
+//    extractKVPair_KeyValuePairExtractorTest,
 //    ::testing::ValuesIn(std::initializer_list<LazyKeyValuePairExtractorTestCase>{
 //        {
 //            "age:",
@@ -56,7 +56,7 @@
 //
 //INSTANTIATE_TEST_SUITE_P(
 //    MixString,
-//    KeyValuePairExtractorTest,
+//    extractKVPair_KeyValuePairExtractorTest,
 //    ::testing::ValuesIn(std::initializer_list<LazyKeyValuePairExtractorTestCase>{
 //        {
 //            R"(9 ads =nm, no\:me: neymar, age: 30, daojmskdpoa and a height: 1.75, school: lupe\ picasso, team: psg,)",
@@ -95,7 +95,7 @@
 //
 //INSTANTIATE_TEST_SUITE_P(
 //    Escaping,
-//    KeyValuePairExtractorTest,
+//    extractKVPair_KeyValuePairExtractorTest,
 //    ::testing::ValuesIn(std::initializer_list<LazyKeyValuePairExtractorTestCase>{
 //        {
 //            "na,me,: neymar, age:30",
@@ -135,7 +135,7 @@
 //
 //INSTANTIATE_TEST_SUITE_P(
 //    EnclosedElements,
-//    KeyValuePairExtractorTest,
+//    extractKVPair_KeyValuePairExtractorTest,
 //    ::testing::ValuesIn(std::initializer_list<LazyKeyValuePairExtractorTestCase>{
 //        {
 //            R"("name": "Neymar", "age": 30, team: "psg", "favorite_movie": "", height: 1.75)",

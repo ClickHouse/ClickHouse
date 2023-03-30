@@ -4,7 +4,8 @@
 
 namespace DB
 {
-
+namespace extractKV
+{
 struct ConfigurationFactory;
 
 class Configuration
@@ -35,5 +36,6 @@ private:
 
     static constexpr auto MAX_NUMBER_OF_PAIR_DELIMITERS = 8u;
 };
+}
 
 }
