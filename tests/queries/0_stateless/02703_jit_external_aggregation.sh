@@ -9,7 +9,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 for _ in {1..5}
 do
-    $CLICKHOUSE_CLIENT --query "
+    $CLICKHOUSE_CLIENT --compile_aggregate_expressions 0 --query "
 SELECT
     COUNT() AS c,
     group_key,
