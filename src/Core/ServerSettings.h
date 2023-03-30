@@ -29,7 +29,6 @@ namespace DB
     M(Int32, max_connections, 1024, "Max server connections.", 0) \
     M(UInt32, asynchronous_metrics_update_period_s, 1, "Period in seconds for updating asynchronous metrics.", 0) \
     M(UInt32, asynchronous_heavy_metrics_update_period_s, 120, "Period in seconds for updating asynchronous metrics.", 0) \
-    M(UInt32, max_threads_for_connection_collector, 10, "The maximum number of threads that will be used for draining connections asynchronously in a background upon finishing executing distributed queries.", 0) \
     M(String, default_database, "default", "Default database name.", 0) \
     M(String, tmp_policy, "", "Policy for storage with temporary data.", 0) \
     M(UInt64, max_temporary_data_on_disk_size, 0, "The maximum amount of storage that could be used for external aggregation, joins or sorting., ", 0) \
