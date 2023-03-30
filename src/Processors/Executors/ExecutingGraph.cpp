@@ -122,7 +122,7 @@ bool ExecutingGraph::expandPipeline(std::stack<uint64_t> & stack, uint64_t pid)
         }
         processors->insert(processors->end(), new_processors.begin(), new_processors.end());
 
-        // Do not consider sources added during pipeline expansion as cancelable to avoid tricky corner cases (e.g. ConvertingAggregatedToChunksWithMergingSource cancelation)
+        // Do not consider sources added during pipeline expansion as cancelable to avoid tricky corner cases (e.g. ConvertingAggregatedToChunksWithMergingSource cancellation)
         source_processors.resize(source_processors.size() + new_processors.size(), false);
     }
 
