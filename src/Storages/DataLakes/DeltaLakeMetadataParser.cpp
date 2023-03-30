@@ -6,7 +6,6 @@
 #if USE_AWS_S3
 #include <Storages/DataLakes/S3MetadataReader.h>
 #include <Storages/StorageS3.h>
-#endif
 
 namespace DB
 {
@@ -135,8 +134,8 @@ Strings DeltaLakeMetadataParser<Configuration, MetadataReadHelper>::getFiles(con
     return Strings(data_files.begin(), data_files.end());
 }
 
-#if USE_AWS_S3
 template Strings DeltaLakeMetadataParser<StorageS3::Configuration, S3DataLakeMetadataReadHelper>::getFiles(
     const StorageS3::Configuration & configuration, ContextPtr);
-#endif
 }
+
+#endif
