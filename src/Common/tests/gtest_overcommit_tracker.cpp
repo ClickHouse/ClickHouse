@@ -24,11 +24,10 @@ struct OvercommitTrackerForTest : BaseTracker
     }
 
 protected:
-    CancelQuery pickQueryToExclude(MemoryTracker * exhausted) override
+    void pickQueryToExclude(MemoryTracker * exhausted) override
     {
         UNUSED(exhausted);
         BaseTracker::picked_tracker = tracker;
-        return {};
     }
 
     MemoryTracker * tracker;

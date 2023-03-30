@@ -81,7 +81,21 @@ struct GlobalOvercommitTracker : OvercommitTracker
     ~GlobalOvercommitTracker() override = default;
 
 protected:
-    CancelQuery pickQueryToExclude(MemoryTracker * exhausted) override;
+    void pickQueryToExclude(MemoryTracker * exhausted) override;
+};
+
+
+/// Memory overcommit tracker per user
+struct UserOvercommitTracker : OvercommitTracker
+{
+    explicit UserOvercommitTracker(ProcessList * process_list_, ProcessListForUser * user_process_list_);
+    ~UserOvercommitTracker() override = default;
+
+protected:
+    void pickQueryToExclude(MemoryTracker * exhausted) override;
+
+private:
+    ProcessListForUser * user_process_list;
 };
 
 
@@ -262,20 +276,6 @@ struct ProcessListForUserInfo
 };
 
 
-/// Memory overcommit tracker per user
-struct UserOvercommitTracker : OvercommitTracker
-{
-    explicit UserOvercommitTracker(ProcessList * process_list_, ProcessListForUser * user_process_list_);
-    ~UserOvercommitTracker() override = default;
-
-protected:
-    CancelQuery pickQueryToExclude(MemoryTracker * exhausted) override;
-
-private:
-    ProcessListForUser * user_process_list;
-};
-
-
 /// Data about queries for one user.
 struct ProcessListForUser
 {
@@ -352,6 +352,36 @@ protected:
     Lock unsafeLock() const noexcept { return std::unique_lock{mutex}; }
 };
 
+// Encapsulate a thread that do query cancellations.
+// This is needed to perform asynchronously cancel of a query from context where allocations are not possible,
+// such as OvercommitTracker.
+class Canceler
+{
+public:
+    explicit Canceler(ProcessList * process_list);
+    ~Canceler();
+
+    // Cancel query asynchronously. Implementation do not allocate memory.
+    void cancelQueryDueToMemoryLimitExceeded(const QueryStatusPtr & query, MemoryTracker * exhausted);
+
+private:
+    void threadFunc();
+
+    ProcessList * process_list;
+
+    std::atomic<bool> stop_flag = false;
+    ThreadFromGlobalPool thread;
+
+    std::mutex mutex;
+    std::condition_variable cv;
+    QueryStatusPtr query_to_cancel;
+
+    // Cancel reason and details
+    int code;
+    const char * description;
+    Int64 memory_current;
+    Int64 memory_limit;
+};
 
 class ProcessList : public ProcessListBase
 {
@@ -380,8 +410,12 @@ protected:
 
     /// List of queries
     Container processes;
+
     /// Notify about cancelled queries (done with ProcessListBase::mutex acquired).
     mutable std::condition_variable cancelled_cv;
+
+    /// Thread for async query cancellation from OvercommitTracker to avoid allocations
+    Canceler canceler{this};
 
     size_t max_size = 0;        /// 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
 
@@ -449,6 +483,8 @@ public:
 
     /// Try call cancel() for input and output streams of query with specified id and user
     CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user, int code, const String & msg);
+    CancellationCode sendCancelToQuery(const QueryStatusPtr & elem, int code, const String & msg);
+    Canceler & getCanceler() { return canceler; }
 
     void killAllQueries();
 };

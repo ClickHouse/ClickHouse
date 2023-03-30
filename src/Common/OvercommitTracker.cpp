@@ -59,17 +59,10 @@ OvercommitResult OvercommitTracker::needToStopQuery(MemoryTracker * exhausted, M
 
     if (cancellation_state == QueryCancellationState::NONE)
     {
-        MemoryTrackerBlockerInThread untrack_lock; // Avoid recursion because we are already under locks
-        CancelQuery cancel_query = pickQueryToExclude(exhausted);
+        pickQueryToExclude(exhausted);
         cancellation_state = QueryCancellationState::SELECTED;
-        global_lock.unlock(); // Release global lock before query cancelling
-        if (cancel_query)
-            cancel_query();
     }
-    else
-    {
-        global_lock.unlock();
-    }
+    global_lock.unlock();
 
     // If no query was chosen we need to stop current query.
     // This may happen if no soft limit is set.

@@ -60,9 +60,6 @@ enum class QueryCancellationState
     RUNNING  = 2,  // Hard limit is reached, selected query has started the process of cancellation.
 };
 
-// Callback to cancel query picked to be excluded.
-using CancelQuery = std::function<void()>;
-
 // Usually it's hard to set some reasonable hard memory limit
 // (especially, the default value). This class introduces new
 // mechanism for the limiting of memory usage.
@@ -84,8 +81,7 @@ protected:
     explicit OvercommitTracker(DB::ProcessList * process_list_);
 
     // Pick query to be canceled due to memory limit exceeded in `exhausted` memory tracker.
-    // Returns callback to cancel that query. Callback is called after unlock of ProcessList mutex.
-    virtual CancelQuery pickQueryToExclude(MemoryTracker * exhausted) = 0;
+    virtual void pickQueryToExclude(MemoryTracker * exhausted) = 0;
 
     // This mutex is used to disallow concurrent access
     // to picked_tracker and cancellation_state variables.
