@@ -29,7 +29,6 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/StorageURL.h>
 #include <Storages/NamedCollectionsHelpers.h>
-#include <Common/NamedCollections/NamedCollections.h>
 #include <Storages/ReadFromStorageProgress.h>
 
 #include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
@@ -53,8 +52,10 @@
 
 #include <aws/core/auth/AWSCredentials.h>
 
+#include <Common/NamedCollections/NamedCollections.h>
 #include <Common/parseGlobs.h>
 #include <Common/quoteString.h>
+#include <Common/CurrentMetrics.h>
 #include <re2/re2.h>
 
 #include <Processors/ISource.h>
@@ -64,6 +65,12 @@
 
 namespace fs = std::filesystem;
 
+
+namespace CurrentMetrics
+{
+    extern const Metric StorageS3Threads;
+    extern const Metric StorageS3ThreadsActive;
+}
 
 namespace ProfileEvents
 {
@@ -148,7 +155,7 @@ public:
         , virtual_header(virtual_header_)
         , read_keys(read_keys_)
         , request_settings(request_settings_)
-        , list_objects_pool(1)
+        , list_objects_pool(CurrentMetrics::StorageS3Threads, CurrentMetrics::StorageS3ThreadsActive, 1)
         , list_objects_scheduler(threadPoolCallbackRunner<ListObjectsOutcome>(list_objects_pool, "ListObjects"))
     {
         if (globbed_uri.bucket.find_first_of("*?{") != globbed_uri.bucket.npos)
@@ -550,7 +557,7 @@ StorageS3Source::StorageS3Source(
     , requested_virtual_columns(requested_virtual_columns_)
     , file_iterator(file_iterator_)
     , download_thread_num(download_thread_num_)
-    , create_reader_pool(1)
+    , create_reader_pool(CurrentMetrics::StorageS3Threads, CurrentMetrics::StorageS3ThreadsActive, 1)
     , create_reader_scheduler(threadPoolCallbackRunner<ReaderHolder>(create_reader_pool, "CreateS3Reader"))
 {
     reader = createReader();
