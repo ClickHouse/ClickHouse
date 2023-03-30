@@ -754,7 +754,7 @@ void FileCache::removeKeyIfExists(const Key & key)
     if (!locked_key)
         return;
 
-    auto & key_metadata = *locked_key->getKeyMetadata();
+    const auto & key_metadata = *locked_key->getKeyMetadata();
     if (!key_metadata.empty())
     {
         std::vector<const FileSegmentMetadata *> file_segments_metadata_to_remove;

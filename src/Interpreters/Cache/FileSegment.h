@@ -275,7 +275,7 @@ private:
     void setDownloadedUnlocked(const FileSegmentGuard::Lock &);
     void setDownloadFailedUnlocked(const FileSegmentGuard::Lock &);
 
-    bool isDetached(const FileSegmentGuard::Lock &) const { return download_state == State::DETACHED; }
+    // bool isDetached(const FileSegmentGuard::Lock &) const { return download_state == State::DETACHED; }
     void detachAssumeStateFinalized(const FileSegmentGuard::Lock &);
     [[noreturn]] void throwIfDetachedUnlocked(const FileSegmentGuard::Lock &) const;
 
