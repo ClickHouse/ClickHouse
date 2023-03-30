@@ -41,8 +41,14 @@ class JoinUsedFlags
     using RawBlockPtr = const Block *;
     using UsedFlagsForBlock = std::vector<std::atomic_bool>;
 
-    /// For multiple dijuncts each empty in hashmap stores flags for particular block
-    /// For single dicunct we store all flags in `nullptr` entry, index is the offset in FindResult
+    /*
+     * For simple cases we store all flags in `nullptr` entry.
+     * Index is the offset from FindResult (corresponds to internal offset in hashmap)
+     * For more complex cases (multiple disjuncts, complex conditions in JOIN ON, etc) we store flags for each row in block.
+     * Index corresponds to row number in particular block.
+     *
+     * Behaviour is controlled by `flag_per_row` template parameter.
+     */
     std::unordered_map<RawBlockPtr, UsedFlagsForBlock> flags;
 
     bool need_flags;
@@ -60,16 +66,16 @@ public:
     bool getUsedSafe(size_t i) const;
     bool getUsedSafe(const Block * block_ptr, size_t row_idx) const;
 
-    template <bool use_flags, bool multiple_disjuncts, typename T>
+    template <bool use_flags, bool flag_per_row, typename T>
     void setUsed(const T & f);
 
-    template <bool use_flags, bool multiple_disjunct>
+    template <bool use_flags, bool flag_per_row>
     void setUsed(const Block * block, size_t row_num, size_t offset);
 
-    template <bool use_flags, bool multiple_disjuncts, typename T>
+    template <bool use_flags, bool flag_per_row, typename T>
     bool getUsed(const T & f);
 
-    template <bool use_flags, bool multiple_disjuncts, typename T>
+    template <bool use_flags, bool flag_per_row, typename T>
     bool setUsedOnce(const T & f);
 };
 
@@ -146,7 +152,10 @@ public:
 class HashJoin : public IJoin
 {
 public:
-    HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block, bool any_take_last_row_ = false);
+    HashJoin(std::shared_ptr<TableJoin> table_join_,
+             const Block & right_sample_block,
+             bool any_take_last_row_ = false,
+             ExpressionActionsPtr additional_condition_expression = nullptr);
 
     ~HashJoin() override;
 
@@ -403,6 +412,8 @@ private:
     /// Left table column names that are sources for required_right_keys columns
     std::vector<String> required_right_keys_sources;
 
+    ExpressionActionsPtr additional_condition_expression_actions = nullptr;
+
     Poco::Logger * log;
 
     /// Should be set via setLock to protect hash table from modification from StorageJoin
@@ -425,6 +436,8 @@ private:
     static Type chooseMethod(JoinKind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes);
 
     bool empty() const;
+
+    void validateAdditionalFilterExpression(ExpressionActionsPtr additional_condition_expression_actions_);
 };
 
 }

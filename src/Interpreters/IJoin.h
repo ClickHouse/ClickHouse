@@ -7,6 +7,8 @@
 #include <Core/Block.h>
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
+#include <Interpreters/ExpressionActions.h>
 
 namespace DB
 {

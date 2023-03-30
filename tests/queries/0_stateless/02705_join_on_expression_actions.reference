@@ -1,0 +1,94 @@
+-- { echoOn }
+
+SELECT t1.attr, t2.attr FROM t1 LEFT  JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY (t1.attr, t2.attr);
+a	A
+a	B
+a	C
+a	D
+a2	
+b	B
+b	C
+b	D
+c	C
+c	D
+d	D
+e	
+SELECT t1.attr, t2.attr FROM t1 INNER JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY (t1.attr, t2.attr);
+a	A
+a	B
+a	C
+a	D
+b	B
+b	C
+b	D
+c	C
+c	D
+d	D
+SELECT t1.attr, t2.attr FROM t11 as t1 INNER JOIN t2 ON (t1.a < t2.a OR lower(t1.attr) == lower(t2.attr)) AND t1.key = t2.key ORDER BY (t1.attr, t2.attr);
+a	A
+a	B
+a	C
+a	D
+b	B
+b	C
+b	D
+c	C
+c	D
+d	D
+SELECT t1.attr, t2.attr FROM t1 LEFT  JOIN t2 ON t1.key = t2.key AND t1.b + t2.b == t1.c + t2.c ORDER BY t1.attr, t2.attr;
+a	A
+a2	
+b	B
+b	C
+c	B
+c	C
+d	D
+e	
+SELECT t1.attr, t2.attr FROM t1 INNER JOIN t2 ON t1.key = t2.key AND t1.b + t2.b == t1.c + t2.c ORDER BY t1.attr, t2.attr;
+a	A
+b	B
+b	C
+c	B
+c	C
+d	D
+SELECT t1.attr, t2.attr FROM t11 as t1 INNER JOIN t2 ON t1.key = t2.key AND t1.b + t2.b == t1.c + t2.c ORDER BY t1.attr, t2.attr;
+a	A
+b	B
+b	C
+c	B
+c	C
+d	D
+SELECT count() FROM t1 JOIN t2 ON t1.key = t2.key AND t1.a < t2.a;
+6
+SELECT count() FROM t1 JOIN t2 ON 1 = 0 AND t1.a < t2.a;
+0
+---
+1
+1	1
+1
+1	1
+1
+1	1
+1
+1	1
+1
+1	1
+1
+1	1
+8	4	30	86	8	16	53	28
+10	2	65	74	10	50	63	12
+10	2	114	101	10	50	63	12
+10	4	55	82	10	25	69	30
+12	2	31	113	12	72	0	112
+12	2	31	113	12	72	6	46
+12	2	49	87	12	72	6	46
+12	6	79	79	12	24	30	12
+12	8	60	75	12	18	73	58
+14	2	45	121	14	98	30	104
+16	8	90	84	16	32	25	2
+16	8	90	84	16	32	49	12
+20	10	103	125	20	40	120	90
+22	11	93	101	22	44	69	68
+30	12	81	91	30	75	84	30
+---
+20	10	103	125	20	40	120	90
