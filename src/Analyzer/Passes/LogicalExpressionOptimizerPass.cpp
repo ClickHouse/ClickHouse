@@ -219,7 +219,6 @@ private:
             /// we can replace OR with the operand
             if (or_operands[0]->getResultType()->equals(*function_node.getResultType()))
             {
-                assert(!function_node.getResultType()->isNullable());
                 node = std::move(or_operands[0]);
                 return;
             }
