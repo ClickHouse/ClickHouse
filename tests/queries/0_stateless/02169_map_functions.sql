@@ -9,6 +9,16 @@ SELECT mapApply((k, v) -> (k, v + 1), col) FROM table_map ORDER BY id;
 SELECT mapFilter((k, v) -> 0, col) from table_map;
 SELECT mapApply((k, v) -> tuple(v + 9223372036854775806), col) FROM table_map; -- { serverError BAD_ARGUMENTS }
 
+SELECT mapConcat(col, map('key5', 500), map('key6', 600)) FROM table_map ORDER BY id;
+SELECT mapConcat(col, materialize(map('key5', 500)), map('key6', 600)) FROM table_map ORDER BY id;
+
+SELECT mapExists((k, v) -> k LIKE '%3', col) FROM table_map ORDER BY id;
+SELECT mapExists((k, v) -> k LIKE '%2' AND v < 1000, col) FROM table_map ORDER BY id;
+
+SELECT mapSort(col) FROM table_map ORDER BY id;
+SELECT mapSort((k, v) -> v, col) FROM table_map ORDER BY id;
+SELECT mapPartialSort((k, v) -> k, 2, col) FROM table_map ORDER BY id;
+
 SELECT mapUpdate(map(1, 3, 3, 2), map(1, 0, 2, 0));
 SELECT mapApply((x, y) -> (x, x + 1), map(1, 0, 2, 0));
 SELECT mapApply((x, y) -> (x, x + 1), materialize(map(1, 0, 2, 0)));
@@ -32,6 +42,9 @@ SELECT mapFilter((x, y) -> (x, 1, 2), map(1, 0, 2, 0)); -- { serverError ILLEGAL
 SELECT mapFilter((x, y) -> (x, x + 1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT mapFilter(map(1, 0, 2, 0), (x, y) -> (x > 0)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT mapFilter((x, y) -> (x, x + 1), map(1, 0, 2, 0), map(1, 0, 2, 0)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT mapConcat([1, 2], map(1, 2)); -- { serverError NO_COMMON_TYPE }
+SELECT mapSort(map(1, 2), map(3, 4)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT mapUpdate(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT mapUpdate(map(1, 3, 3, 2), map(1, 0, 2, 0),  map(1, 0, 2, 0)); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
