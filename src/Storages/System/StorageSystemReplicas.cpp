@@ -7,18 +7,11 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/ContextAccess.h>
+#include <Common/typeid_cast.h>
 #include <Databases/IDatabase.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Common/typeid_cast.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 
-
-namespace CurrentMetrics
-{
-    extern const Metric SystemReplicasThreads;
-    extern const Metric SystemReplicasThreadsActive;
-}
 
 namespace DB
 {
@@ -167,7 +160,7 @@ Pipe StorageSystemReplicas::read(
     if (settings.max_threads != 0)
         thread_pool_size = std::min(thread_pool_size, static_cast<size_t>(settings.max_threads));
 
-    ThreadPool thread_pool(CurrentMetrics::SystemReplicasThreads, CurrentMetrics::SystemReplicasThreadsActive, thread_pool_size);
+    ThreadPool thread_pool(thread_pool_size);
 
     for (size_t i = 0; i < tables_size; ++i)
     {

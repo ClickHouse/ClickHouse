@@ -217,7 +217,7 @@ private:
         const IColumn * col = arguments[parameter_number].column.get();
 
         if (!isColumnConst(*col))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Parameter number {} of function {} must be constant.", parameter_number, getName());
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Parameter number {} of function must be constant.", parameter_number, getName());
 
         auto parameter = applyVisitor(FieldVisitorConvertToNumber<ResultType>(), assert_cast<const ColumnConst &>(*col).getField());
 

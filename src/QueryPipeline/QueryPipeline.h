@@ -31,7 +31,7 @@ class SinkToStorage;
 class ISource;
 class ISink;
 class ReadProgressCallback;
-class StreamInQueryCacheTransform;
+class StreamInQueryResultCacheTransform;
 
 struct ColumnWithTypeAndName;
 using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
@@ -105,8 +105,8 @@ public:
     void setLimitsAndQuota(const StreamLocalLimits & limits, std::shared_ptr<const EnabledQuota> quota_);
     bool tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & result_bytes) const;
 
-    void streamIntoQueryCache(std::shared_ptr<StreamInQueryCacheTransform> transform);
-    void finalizeWriteInQueryCache();
+    void streamIntoQueryResultCache(std::shared_ptr<StreamInQueryResultCacheTransform> transform);
+    void finalizeWriteInQueryResultCache();
 
     void setQuota(std::shared_ptr<const EnabledQuota> quota_);
 

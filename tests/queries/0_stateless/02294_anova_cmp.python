@@ -7,7 +7,7 @@ import pandas as pd
 import numpy as np
 
 CURDIR = os.path.dirname(os.path.realpath(__file__))
-sys.path.insert(0, os.path.join(CURDIR, "helpers"))
+sys.path.insert(0, os.path.join(CURDIR, 'helpers'))
 
 from pure_http_client import ClickHouseClient
 
@@ -22,22 +22,15 @@ def test_and_check(rvs, n_groups, f_stat, p_value, precision=1e-2):
     client.query("DROP TABLE IF EXISTS anova;")
     client.query("CREATE TABLE anova (left Float64, right UInt64) ENGINE = Memory;")
     for group in range(n_groups):
-        client.query(
-            f"""INSERT INTO anova VALUES {", ".join([f'({i},{group})' for i in rvs[group]])};"""
-        )
+        client.query(f'''INSERT INTO anova VALUES {", ".join([f'({i},{group})' for i in rvs[group]])};''')
 
     real = client.query_return_df(
-        """SELECT roundBankers(a.1, 16) as f_stat, roundBankers(a.2, 16) as p_value FROM (SELECT anova(left, right) as a FROM anova) FORMAT TabSeparatedWithNames;"""
-    )
+        '''SELECT roundBankers(a.1, 16) as f_stat, roundBankers(a.2, 16) as p_value FROM (SELECT anova(left, right) as a FROM anova) FORMAT TabSeparatedWithNames;''')
 
-    real_f_stat = real["f_stat"][0]
-    real_p_value = real["p_value"][0]
-    assert (
-        abs(real_f_stat - np.float64(f_stat)) < precision
-    ), f"clickhouse_f_stat {real_f_stat}, py_f_stat {f_stat}"
-    assert (
-        abs(real_p_value - np.float64(p_value)) < precision
-    ), f"clickhouse_p_value {real_p_value}, py_p_value {p_value}"
+    real_f_stat = real['f_stat'][0]
+    real_p_value = real['p_value'][0]
+    assert(abs(real_f_stat - np.float64(f_stat)) < precision), f"clickhouse_f_stat {real_f_stat}, py_f_stat {f_stat}"
+    assert(abs(real_p_value - np.float64(p_value)) < precision), f"clickhouse_p_value {real_p_value}, py_p_value {p_value}"
     client.query("DROP TABLE IF EXISTS anova;")
 
 

@@ -62,10 +62,10 @@ public:
         , replacement(replacement_string)
     {
         if (!regexp.ok())
-            throw DB::Exception(DB::ErrorCodes::CANNOT_COMPILE_REGEXP,
-                "SensitiveDataMasker: cannot compile re2: {}, error: {}. "
-                "Look at https://github.com/google/re2/wiki/Syntax for reference.",
-                regexp_string_, regexp.error());
+            throw DB::Exception(
+                "SensitiveDataMasker: cannot compile re2: " + regexp_string_ + ", error: " + regexp.error()
+                    + ". Look at https://github.com/google/re2/wiki/Syntax for reference.",
+                DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
     }
 
     uint64_t apply(std::string & data) const
@@ -202,16 +202,8 @@ std::string wipeSensitiveDataAndCutToLength(const std::string & str, size_t max_
     if (auto * masker = SensitiveDataMasker::getInstance())
         masker->wipeSensitiveData(res);
 
-    size_t length = res.length();
-    if (max_length && (length > max_length))
-    {
-        constexpr size_t max_extra_msg_len = sizeof("... (truncated 18446744073709551615 characters)");
-        if (max_length < max_extra_msg_len)
-            return "(removed " + std::to_string(length) + " characters)";
-        max_length -= max_extra_msg_len;
+    if (max_length && (res.length() > max_length))
         res.resize(max_length);
-        res.append("... (truncated " + std::to_string(length - max_length) +  " characters)");
-    }
 
     return res;
 }

@@ -4,7 +4,6 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/AsynchronousReader.h>
 #include <IO/ReadSettings.h>
-#include <Interpreters/FilesystemReadPrefetchesLog.h>
 #include <utility>
 
 namespace Poco { class Logger; }
@@ -44,7 +43,7 @@ public:
 
     String getFileName() const override;
 
-    void prefetch(int64_t priority) override;
+    void prefetch() override;
 
     void setReadUntilPosition(size_t position) override; /// [..., position).
 
@@ -63,17 +62,22 @@ private:
 
     bool hasPendingDataToRead();
 
-    void appendToPrefetchLog(FilesystemPrefetchState state, int64_t size, const std::unique_ptr<Stopwatch> & execution_watch);
+    std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size);
 
-    std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size, int64_t priority);
-
+    enum class FilesystemPrefetchState
+    {
+        USED,
+        CANCELLED_WITH_SEEK,
+        CANCELLED_WITH_RANGE_CHANGE,
+        UNNEEDED,
+    };
     void resetPrefetch(FilesystemPrefetchState state);
 
     ReadSettings read_settings;
 
     IAsynchronousReader & reader;
 
-    int64_t base_priority;
+    Int64 priority;
 
     std::shared_ptr<ReadBufferFromRemoteFSGather> impl;
 
@@ -85,22 +89,11 @@ private:
 
     size_t min_bytes_for_seek;
 
-    std::string query_id;
-
-    std::string current_reader_id;
-
     size_t bytes_to_ignore = 0;
 
     std::optional<size_t> read_until_position;
 
     Poco::Logger * log;
-
-    struct LastPrefetchInfo
-    {
-        UInt64 submit_time = 0;
-        size_t priority = 0;
-    };
-    LastPrefetchInfo last_prefetch_info;
 };
 
 }

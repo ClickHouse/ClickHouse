@@ -32,7 +32,7 @@ namespace ErrorCodes
     do                                                                 \
     {                                                                  \
         if (const ::arrow::Status & _s = (status); !_s.ok())                   \
-            throw Exception::createDeprecated(_s.ToString(), ErrorCodes::BAD_ARGUMENTS); \
+            throw Exception(_s.ToString(), ErrorCodes::BAD_ARGUMENTS); \
     } while (false)
 
 

@@ -8,7 +8,7 @@ namespace DB
 
 bool hasNullable(const DataTypePtr & type)
 {
-    if (isNullableOrLowCardinalityNullable(type))
+    if (type->isNullable() || type->isLowCardinalityNullable())
         return true;
 
     if (const DataTypeArray * type_array = typeid_cast<const DataTypeArray *>(type.get()))

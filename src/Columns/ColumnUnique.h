@@ -146,11 +146,6 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getRatioOfDefaultRows' not implemented for ColumnUnique");
     }
 
-    UInt64 getNumberOfDefaultRows() const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getNumberOfDefaultRows' not implemented for ColumnUnique");
-    }
-
     void getIndicesOfNonDefaultRows(IColumn::Offsets &, size_t, size_t) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getIndicesOfNonDefaultRows' not implemented for ColumnUnique");
@@ -336,14 +331,46 @@ size_t ColumnUnique<ColumnType>::getNullValueIndex() const
 template <typename ColumnType>
 size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
 {
+    class FieldVisitorGetData : public StaticVisitor<>
+    {
+    public:
+        StringRef res;
+
+        [[noreturn]] static void throwUnsupported()
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported field type");
+        }
+
+        [[noreturn]] void operator() (const Null &) { throwUnsupported(); }
+        [[noreturn]] void operator() (const Array &) { throwUnsupported(); }
+        [[noreturn]] void operator() (const Tuple &) { throwUnsupported(); }
+        [[noreturn]] void operator() (const Map &) { throwUnsupported(); }
+        [[noreturn]] void operator() (const Object &) { throwUnsupported(); }
+        [[noreturn]] void operator() (const AggregateFunctionStateData &) { throwUnsupported(); }
+        void operator() (const String & x) { res = {x.data(), x.size()}; }
+        void operator() (const UInt64 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const UInt128 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const UInt256 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const Int64 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const Int128 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const Int256 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const UUID & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const IPv4 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const IPv6 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const Float64 & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const DecimalField<Decimal32> & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const DecimalField<Decimal64> & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const DecimalField<Decimal128> & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const DecimalField<Decimal256> & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+        void operator() (const bool & x) { res = {reinterpret_cast<const char *>(&x), sizeof(x)}; }
+    };
+
     if (x.isNull())
         return getNullValueIndex();
 
-    auto single_value_column = column_holder->cloneEmpty();
-    single_value_column->insert(x);
-    auto single_value_data = single_value_column->getDataAt(0);
-
-    return uniqueInsertData(single_value_data.data, single_value_data.size);
+    FieldVisitorGetData visitor;
+    applyVisitor(visitor, x);
+    return uniqueInsertData(visitor.res.data, visitor.res.size);
 }
 
 template <typename ColumnType>

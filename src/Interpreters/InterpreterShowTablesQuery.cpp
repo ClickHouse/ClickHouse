@@ -28,6 +28,7 @@ InterpreterShowTablesQuery::InterpreterShowTablesQuery(const ASTPtr & query_ptr_
 {
 }
 
+
 String InterpreterShowTablesQuery::getRewrittenQuery()
 {
     const auto & query = query_ptr->as<ASTShowTablesQuery &>();
@@ -50,9 +51,6 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
         if (query.limit_length)
             rewritten_query << " LIMIT " << query.limit_length;
 
-        /// (*)
-        rewritten_query << " ORDER BY name";
-
         return rewritten_query.str();
     }
 
@@ -71,9 +69,6 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
                 << DB::quote << query.like;
         }
 
-        /// (*)
-        rewritten_query << " ORDER BY cluster";
-
         if (query.limit_length)
             rewritten_query << " LIMIT " << query.limit_length;
 
@@ -85,9 +80,6 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
         rewritten_query << "SELECT * FROM system.clusters";
 
         rewritten_query << " WHERE cluster = " << DB::quote << query.cluster_str;
-
-        /// (*)
-        rewritten_query << " ORDER BY cluster";
 
         return rewritten_query.str();
     }
@@ -108,9 +100,6 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
                 << (query.case_insensitive_like ? "ILIKE " : "LIKE ")
                 << DB::quote << query.like;
         }
-
-        /// (*)
-        rewritten_query << " ORDER BY name, type, value ";
 
         return rewritten_query.str();
     }
@@ -157,9 +146,6 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     else if (query.where_expression)
         rewritten_query << " AND (" << query.where_expression << ")";
 
-        /// (*)
-    rewritten_query << " ORDER BY name ";
-
     if (query.limit_length)
         rewritten_query << " LIMIT " << query.limit_length;
 
@@ -190,8 +176,5 @@ BlockIO InterpreterShowTablesQuery::execute()
     return executeQuery(getRewrittenQuery(), getContext(), true);
 }
 
-/// (*) Sorting is strictly speaking not necessary but 1. it is convenient for users, 2. SQL currently does not allow to
-///     sort the output of SHOW <INFO> otherwise (SELECT * FROM (SHOW <INFO> ...) ORDER BY ...) is rejected) and 3. some
-///     SQL tests can take advantage of this.
 
 }

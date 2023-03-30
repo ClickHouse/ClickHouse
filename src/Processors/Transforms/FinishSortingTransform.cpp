@@ -109,7 +109,6 @@ void FinishSortingTransform::generate()
         generated_prefix = true;
     }
 
-    // TODO: Here we should also consider LIMIT optimization.
     generated_chunk = merge_sorter->read();
 
     if (!generated_chunk)

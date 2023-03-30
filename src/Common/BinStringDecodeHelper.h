@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/hex.h>
+#include <Common/hex.h>
 
 namespace DB
 {

@@ -12,7 +12,9 @@
 #include <Interpreters/Context.h>
 
 
+#ifdef HAS_RESERVED_IDENTIFIER
 #pragma clang diagnostic ignored "-Wreserved-identifier"
+#endif
 
 namespace ProfileEvents
 {
@@ -116,7 +118,7 @@ bool ReadBufferFromFileDescriptor::nextImpl()
 }
 
 
-void ReadBufferFromFileDescriptor::prefetch(int64_t)
+void ReadBufferFromFileDescriptor::prefetch()
 {
 #if defined(POSIX_FADV_WILLNEED)
     /// For direct IO, loading data into page cache is pointless.

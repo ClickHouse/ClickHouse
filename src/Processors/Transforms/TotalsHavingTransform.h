@@ -42,8 +42,6 @@ public:
     Status prepare() override;
     void work() override;
 
-    bool hasFilter() const { return !filter_column_name.empty(); }
-
     static Block transformHeader(Block block, const ActionsDAG * expression, const std::string & filter_column_name, bool remove_filter, bool final, const ColumnsMask & aggregates_mask);
 
 protected:

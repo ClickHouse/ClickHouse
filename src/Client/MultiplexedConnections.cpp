@@ -20,7 +20,7 @@ namespace ErrorCodes
 
 
 MultiplexedConnections::MultiplexedConnections(Connection & connection, const Settings & settings_, const ThrottlerPtr & throttler)
-    : settings(settings_)
+    : settings(settings_), drain_timeout(settings.drain_timeout), receive_timeout(settings.receive_timeout)
 {
     connection.setThrottler(throttler);
 
@@ -33,7 +33,7 @@ MultiplexedConnections::MultiplexedConnections(Connection & connection, const Se
 
 
 MultiplexedConnections::MultiplexedConnections(std::shared_ptr<Connection> connection_ptr_, const Settings & settings_, const ThrottlerPtr & throttler)
-    : settings(settings_)
+    : settings(settings_), drain_timeout(settings.drain_timeout), receive_timeout(settings.receive_timeout)
     , connection_ptr(connection_ptr_)
 {
     connection_ptr->setThrottler(throttler);
@@ -46,9 +46,8 @@ MultiplexedConnections::MultiplexedConnections(std::shared_ptr<Connection> conne
 }
 
 MultiplexedConnections::MultiplexedConnections(
-        std::vector<IConnectionPool::Entry> && connections,
-        const Settings & settings_, const ThrottlerPtr & throttler)
-    : settings(settings_)
+    std::vector<IConnectionPool::Entry> && connections, const Settings & settings_, const ThrottlerPtr & throttler)
+    : settings(settings_), drain_timeout(settings.drain_timeout), receive_timeout(settings.receive_timeout)
 {
     /// If we didn't get any connections from pool and getMany() did not throw exceptions, this means that
     /// `skip_unavailable_shards` was set. Then just return.
@@ -134,11 +133,16 @@ void MultiplexedConnections::sendQuery(
             modified_settings.group_by_two_level_threshold_bytes = 0;
         }
 
-        if (replica_info)
+        bool parallel_reading_from_replicas = settings.max_parallel_replicas > 1
+            && settings.allow_experimental_parallel_reading_from_replicas
+            /// To avoid trying to coordinate with clickhouse-benchmark,
+            /// since it uses the same code.
+            && client_info.query_kind != ClientInfo::QueryKind::INITIAL_QUERY;
+        if (parallel_reading_from_replicas)
         {
             client_info.collaborate_with_initiator = true;
-            client_info.count_participating_replicas = replica_info->all_replicas_count;
-            client_info.number_of_current_replica = replica_info->number_of_current_replica;
+            client_info.count_participating_replicas = replica_info.all_replicas_count;
+            client_info.number_of_current_replica = replica_info.number_of_current_replica;
         }
     }
 
@@ -195,7 +199,7 @@ void MultiplexedConnections::sendReadTaskResponse(const String & response)
 }
 
 
-void MultiplexedConnections::sendMergeTreeReadTaskResponse(const ParallelReadResponse & response)
+void MultiplexedConnections::sendMergeTreeReadTaskResponse(PartitionReadResponse response)
 {
     std::lock_guard lock(cancel_mutex);
     if (cancelled)
@@ -207,7 +211,7 @@ void MultiplexedConnections::sendMergeTreeReadTaskResponse(const ParallelReadRes
 Packet MultiplexedConnections::receivePacket()
 {
     std::lock_guard lock(cancel_mutex);
-    Packet packet = receivePacketUnlocked({});
+    Packet packet = receivePacketUnlocked({}, false /* is_draining */);
     return packet;
 }
 
@@ -255,11 +259,10 @@ Packet MultiplexedConnections::drain()
 
     while (hasActiveConnections())
     {
-        Packet packet = receivePacketUnlocked({});
+        Packet packet = receivePacketUnlocked(DrainCallback{drain_timeout}, true /* is_draining */);
 
         switch (packet.type)
         {
-            case Protocol::Server::MergeTreeAllRangesAnnounecement:
             case Protocol::Server::MergeTreeReadTaskRequest:
             case Protocol::Server::ReadTaskRequest:
             case Protocol::Server::PartUUIDs:
@@ -305,14 +308,14 @@ std::string MultiplexedConnections::dumpAddressesUnlocked() const
     return buf.str();
 }
 
-Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callback)
+Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callback, bool is_draining)
 {
     if (!sent_query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot receive packets: no query sent.");
     if (!hasActiveConnections())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No more packets are available.");
 
-    ReplicaState & state = getReplicaForReading();
+    ReplicaState & state = getReplicaForReading(is_draining);
     current_connection = state.connection;
     if (current_connection == nullptr)
         throw Exception(ErrorCodes::NO_AVAILABLE_REPLICA, "Logical error: no available replica");
@@ -340,7 +343,6 @@ Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callbac
 
     switch (packet.type)
     {
-        case Protocol::Server::MergeTreeAllRangesAnnounecement:
         case Protocol::Server::MergeTreeReadTaskRequest:
         case Protocol::Server::ReadTaskRequest:
         case Protocol::Server::PartUUIDs:
@@ -367,9 +369,10 @@ Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callbac
     return packet;
 }
 
-MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForReading()
+MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForReading(bool is_draining)
 {
-    if (replica_states.size() == 1)
+    /// Fast path when we only focus on one replica and are not draining the connection.
+    if (replica_states.size() == 1 && !is_draining)
         return replica_states[0];
 
     Poco::Net::Socket::SocketList read_list;
@@ -390,7 +393,7 @@ MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForRead
         Poco::Net::Socket::SocketList write_list;
         Poco::Net::Socket::SocketList except_list;
 
-        auto timeout = settings.receive_timeout;
+        auto timeout = is_draining ? drain_timeout : receive_timeout;
         int n = 0;
 
         /// EINTR loop
@@ -417,7 +420,9 @@ MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForRead
             break;
         }
 
-        if (n == 0)
+        /// We treat any error as timeout for simplicity.
+        /// And we also check if read_list is still empty just in case.
+        if (n <= 0 || read_list.empty())
         {
             const auto & addresses = dumpAddressesUnlocked();
             for (ReplicaState & state : replica_states)
@@ -436,9 +441,7 @@ MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForRead
         }
     }
 
-    /// TODO Absolutely wrong code: read_list could be empty; motivation of rand is unclear.
-    /// This code path is disabled by default.
-
+    /// TODO Motivation of rand is unclear.
     auto & socket = read_list[thread_local_rng() % read_list.size()];
     if (fd_to_replica_state_idx.empty())
     {

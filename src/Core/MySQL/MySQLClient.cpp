@@ -95,7 +95,7 @@ void MySQLClient::handshake()
     packet_endpoint->resetSequenceId();
 
     if (packet_response.getType() == PACKET_ERR)
-        throw Exception::createDeprecated(packet_response.err.error_message, ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
+        throw Exception(packet_response.err.error_message, ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
     else if (packet_response.getType() == PACKET_AUTH_SWITCH)
         throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Access denied for user {}", user);
 }
@@ -110,7 +110,7 @@ void MySQLClient::writeCommand(char command, String query)
     switch (packet_response.getType())
     {
         case PACKET_ERR:
-            throw Exception::createDeprecated(packet_response.err.error_message, ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
+            throw Exception(packet_response.err.error_message, ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
         case PACKET_OK:
             break;
         default:
@@ -128,7 +128,7 @@ void MySQLClient::registerSlaveOnMaster(UInt32 slave_id)
     packet_endpoint->receivePacket(packet_response);
     packet_endpoint->resetSequenceId();
     if (packet_response.getType() == PACKET_ERR)
-        throw Exception::createDeprecated(packet_response.err.error_message, ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
+        throw Exception(packet_response.err.error_message, ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
 }
 
 void MySQLClient::ping()

@@ -2,7 +2,6 @@
 #include <Common/logger_useful.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabasesCommon.h>
-#include <Databases/DDLDependencyVisitor.h>
 #include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -26,12 +25,7 @@ namespace ErrorCodes
 DatabaseMemory::DatabaseMemory(const String & name_, ContextPtr context_)
     : DatabaseWithOwnTablesBase(name_, "DatabaseMemory(" + name_ + ")", context_)
     , data_path("data/" + escapeForFileName(database_name) + "/")
-{
-    /// Temporary database should not have any data on the moment of its creation
-    /// In case of sudden server shutdown remove database folder of temporary database
-    if (name_ == DatabaseCatalog::TEMPORARY_DATABASE)
-        removeDataPath(context_);
-}
+{}
 
 void DatabaseMemory::createTable(
     ContextPtr /*context*/,
@@ -76,7 +70,8 @@ void DatabaseMemory::dropTable(
 
         if (table->storesDataOnDisk())
         {
-            fs::path table_data_dir{fs::path{getContext()->getPath()} / getTableDataPath(table_name)};
+            assert(getDatabaseName() != DatabaseCatalog::TEMPORARY_DATABASE);
+            fs::path table_data_dir{getTableDataPath(table_name)};
             if (fs::exists(table_data_dir))
                 fs::remove_all(table_data_dir);
         }
@@ -84,6 +79,7 @@ void DatabaseMemory::dropTable(
     catch (...)
     {
         std::lock_guard lock{mutex};
+        assert(database_name != DatabaseCatalog::TEMPORARY_DATABASE);
         attachTableUnlocked(table_name, table);
         throw;
     }
@@ -132,15 +128,10 @@ UUID DatabaseMemory::tryGetTableUUID(const String & table_name) const
     return UUIDHelpers::Nil;
 }
 
-void DatabaseMemory::removeDataPath(ContextPtr local_context)
-{
-    std::filesystem::remove_all(local_context->getPath() + data_path);
-}
-
 void DatabaseMemory::drop(ContextPtr local_context)
 {
     /// Remove data on explicit DROP DATABASE
-    removeDataPath(local_context);
+    std::filesystem::remove_all(local_context->getPath() + data_path);
 }
 
 void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
@@ -152,10 +143,8 @@ void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & tabl
 
     applyMetadataChangesToCreateQuery(it->second, metadata);
 
-    /// The create query of the table has been just changed, we need to update dependencies too.
-    auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), it->second);
-    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), it->second);
-    DatabaseCatalog::instance().updateDependencies(table_id, ref_dependencies, loading_dependencies);
+    auto new_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), it->second);
+    DatabaseCatalog::instance().updateDependencies(table_id, new_dependencies);
 }
 
 std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseMemory::getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context) const

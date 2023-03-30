@@ -81,11 +81,6 @@ namespace
             if ((level == 0) && (max_flags_with_children & create_table))
                 res |= create_temporary_table;
 
-            /// CREATE TABLE (on any database/table) => CREATE_ARBITRARY_TEMPORARY_TABLE (global)
-            static const AccessFlags create_arbitrary_temporary_table = AccessType::CREATE_ARBITRARY_TEMPORARY_TABLE;
-            if ((level == 0) && (max_flags_with_children & create_table))
-                res |= create_arbitrary_temporary_table;
-
             /// ALTER_TTL => ALTER_MATERIALIZE_TTL
             static const AccessFlags alter_ttl = AccessType::ALTER_TTL;
             static const AccessFlags alter_materialize_ttl = AccessType::ALTER_MATERIALIZE_TTL;
@@ -489,15 +484,13 @@ bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... arg
         return true;
     };
 
-    auto access_denied = [&]<typename... FmtArgs>(int error_code [[maybe_unused]],
-                                               FormatStringHelper<String, FmtArgs...> fmt_string [[maybe_unused]],
-                                               FmtArgs && ...fmt_args [[maybe_unused]])
+    auto access_denied = [&](const String & error_msg, int error_code [[maybe_unused]])
     {
         if (trace_log)
             LOG_TRACE(trace_log, "Access denied: {}{}", (AccessRightsElement{flags, args...}.toStringWithoutOptions()),
                       (grant_option ? " WITH GRANT OPTION" : ""));
         if constexpr (throw_if_denied)
-            throw Exception(error_code, std::move(fmt_string), getUserName(), std::forward<FmtArgs>(fmt_args)...);
+            throw Exception(getUserName() + ": " + error_msg, error_code);
         return false;
     };
 
@@ -507,17 +500,13 @@ bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... arg
     if (!flags)
         return true;
 
-    const auto parameter_type = flags.getParameterType();
-    if (parameter_type == AccessFlags::NONE)
-    {
-        /// Access to temporary tables is controlled in an unusual way, not like normal tables.
-        /// Creating of temporary tables is controlled by AccessType::CREATE_TEMPORARY_TABLES grant,
-        /// and other grants are considered as always given.
-        /// The DatabaseCatalog class won't resolve StorageID for temporary tables
-        /// which shouldn't be accessed.
-        if (getDatabase(args...) == DatabaseCatalog::TEMPORARY_DATABASE)
-            return access_granted();
-    }
+    /// Access to temporary tables is controlled in an unusual way, not like normal tables.
+    /// Creating of temporary tables is controlled by AccessType::CREATE_TEMPORARY_TABLES grant,
+    /// and other grants are considered as always given.
+    /// The DatabaseCatalog class won't resolve StorageID for temporary tables
+    /// which shouldn't be accessed.
+    if (getDatabase(args...) == DatabaseCatalog::TEMPORARY_DATABASE)
+        return access_granted();
 
     auto acs = getAccessRightsWithImplicit();
     bool granted;
@@ -530,16 +519,18 @@ bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... arg
     {
         if (grant_option && acs->isGranted(flags, args...))
         {
-            return access_denied(ErrorCodes::ACCESS_DENIED,
-                "{}: Not enough privileges. "
+            return access_denied(
+                "Not enough privileges. "
                 "The required privileges have been granted, but without grant option. "
-                "To execute this query it's necessary to have grant {} WITH GRANT OPTION",
-                AccessRightsElement{flags, args...}.toStringWithoutOptions());
+                "To execute this query it's necessary to have grant "
+                    + AccessRightsElement{flags, args...}.toStringWithoutOptions() + " WITH GRANT OPTION",
+                ErrorCodes::ACCESS_DENIED);
         }
 
-        return access_denied(ErrorCodes::ACCESS_DENIED,
-            "{}: Not enough privileges. To execute this query it's necessary to have grant {}",
-            AccessRightsElement{flags, args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""));
+        return access_denied(
+            "Not enough privileges. To execute this query it's necessary to have grant "
+                + AccessRightsElement{flags, args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""),
+            ErrorCodes::ACCESS_DENIED);
     }
 
     struct PrecalculatedFlags
@@ -566,34 +557,32 @@ bool ContextAccess::checkAccessImplHelper(AccessFlags flags, const Args &... arg
     if (params.readonly)
     {
         if constexpr (grant_option)
-            return access_denied(ErrorCodes::READONLY, "{}: Cannot change grants in readonly mode.");
+            return access_denied("Cannot change grants in readonly mode.", ErrorCodes::READONLY);
         if ((flags & precalc.not_readonly_flags) ||
             ((params.readonly == 1) && (flags & precalc.not_readonly_1_flags)))
         {
             if (params.interface == ClientInfo::Interface::HTTP && params.http_method == ClientInfo::HTTPMethod::GET)
             {
-                return access_denied(ErrorCodes::READONLY,
-                    "{}: Cannot execute query in readonly mode. "
-                    "For queries over HTTP, method GET implies readonly. "
-                    "You should use method POST for modifying queries");
+                return access_denied(
+                    "Cannot execute query in readonly mode. "
+                    "For queries over HTTP, method GET implies readonly. You should use method POST for modifying queries",
+                    ErrorCodes::READONLY);
             }
             else
-                return access_denied(ErrorCodes::READONLY, "{}: Cannot execute query in readonly mode");
+                return access_denied("Cannot execute query in readonly mode", ErrorCodes::READONLY);
         }
     }
 
     if (!params.allow_ddl && !grant_option)
     {
         if (flags & precalc.ddl_flags)
-            return access_denied(ErrorCodes::QUERY_IS_PROHIBITED,
-                                 "Cannot execute query. DDL queries are prohibited for the user {}");
+            return access_denied("Cannot execute query. DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
     }
 
     if (!params.allow_introspection && !grant_option)
     {
         if (flags & precalc.introspection_flags)
-            return access_denied(ErrorCodes::FUNCTION_NOT_ALLOWED, "{}: Introspection functions are disabled, "
-                                 "because setting 'allow_introspection_functions' is set to 0");
+            return access_denied("Introspection functions are disabled, because setting 'allow_introspection_functions' is set to 0", ErrorCodes::FUNCTION_NOT_ALLOWED);
     }
 
     return access_granted();
@@ -615,14 +604,7 @@ template <bool throw_if_denied, bool grant_option>
 bool ContextAccess::checkAccessImplHelper(const AccessRightsElement & element) const
 {
     assert(!element.grant_option || grant_option);
-    if (element.isGlobalWithParameter())
-    {
-        if (element.any_parameter)
-            return checkAccessImpl<throw_if_denied, grant_option>(element.access_flags);
-        else
-            return checkAccessImpl<throw_if_denied, grant_option>(element.access_flags, element.parameter);
-    }
-    else if (element.any_database)
+    if (element.any_database)
         return checkAccessImpl<throw_if_denied, grant_option>(element.access_flags);
     else if (element.any_table)
         return checkAccessImpl<throw_if_denied, grant_option>(element.access_flags, element.database);
@@ -697,13 +679,11 @@ void ContextAccess::checkGrantOption(const AccessRightsElements & elements) cons
 template <bool throw_if_denied, typename Container, typename GetNameFunction>
 bool ContextAccess::checkAdminOptionImplHelper(const Container & role_ids, const GetNameFunction & get_name_function) const
 {
-    auto show_error = []<typename... FmtArgs>(int error_code [[maybe_unused]],
-                                                  FormatStringHelper<FmtArgs...> fmt_string [[maybe_unused]],
-                                                  FmtArgs && ...fmt_args [[maybe_unused]])
+    auto show_error = [this](const String & msg, int error_code [[maybe_unused]])
     {
+        UNUSED(this);
         if constexpr (throw_if_denied)
-            throw Exception(error_code, std::move(fmt_string), std::forward<FmtArgs>(fmt_args)...);
-        return false;
+            throw Exception(getUserName() + ": " + msg, error_code);
     };
 
     if (is_full_access)
@@ -711,7 +691,7 @@ bool ContextAccess::checkAdminOptionImplHelper(const Container & role_ids, const
 
     if (user_was_dropped)
     {
-        show_error(ErrorCodes::UNKNOWN_USER, "User has been dropped");
+        show_error("User has been dropped", ErrorCodes::UNKNOWN_USER);
         return false;
     }
 
@@ -736,15 +716,14 @@ bool ContextAccess::checkAdminOptionImplHelper(const Container & role_ids, const
                 role_name = "ID {" + toString(role_id) + "}";
 
             if (info->enabled_roles.count(role_id))
-                show_error(ErrorCodes::ACCESS_DENIED,
-                           "Not enough privileges. "
-                           "Role {} is granted, but without ADMIN option. "
-                           "To execute this query it's necessary to have the role {} granted with ADMIN option.",
-                           backQuote(*role_name), backQuoteIfNeed(*role_name));
+                show_error("Not enough privileges. "
+                           "Role " + backQuote(*role_name) + " is granted, but without ADMIN option. "
+                           "To execute this query it's necessary to have the role " + backQuoteIfNeed(*role_name) + " granted with ADMIN option.",
+                           ErrorCodes::ACCESS_DENIED);
             else
-                show_error(ErrorCodes::ACCESS_DENIED, "Not enough privileges. "
-                           "To execute this query it's necessary to have the role {} granted with ADMIN option.",
-                           backQuoteIfNeed(*role_name));
+                show_error("Not enough privileges. "
+                           "To execute this query it's necessary to have the role " + backQuoteIfNeed(*role_name) + " granted with ADMIN option.",
+                           ErrorCodes::ACCESS_DENIED);
         }
 
         return false;

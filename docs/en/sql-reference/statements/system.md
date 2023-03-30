@@ -8,7 +8,7 @@ sidebar_label: SYSTEM
 
 ## RELOAD EMBEDDED DICTIONARIES
 
-Reload all [Internal dictionaries](../../sql-reference/dictionaries/index.md).
+Reload all [Internal dictionaries](../../sql-reference/dictionaries/internal-dicts.md).
 By default, internal dictionaries are disabled.
 Always returns `Ok.` regardless of the result of the internal dictionary update.
 
@@ -103,9 +103,9 @@ Its size can be configured using the server-level setting [uncompressed_cache_si
 Reset the compiled expression cache.
 The compiled expression cache is enabled/disabled with the query/user/profile-level setting [compile_expressions](../../operations/settings/settings.md#compile-expressions).
 
-## DROP QUERY CACHE
+## DROP QUERY RESULT CACHE
 
-Resets the [query cache](../../operations/query-cache.md).
+Resets the [query result cache](../../operations/query-result-cache.md).
 
 ## FLUSH LOGS
 
@@ -280,13 +280,13 @@ SYSTEM START REPLICATION QUEUES [[db.]replicated_merge_tree_family_table_name]
 
 ### SYNC REPLICA
 
-Wait until a `ReplicatedMergeTree` table will be synced with other replicas in a cluster, but no more than `receive_timeout` seconds.
+Wait until a `ReplicatedMergeTree` table will be synced with other replicas in a cluster. Will run until `receive_timeout` if fetches currently disabled for the table.
 
 ``` sql
-SYSTEM SYNC REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_family_table_name [STRICT]
+SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name
 ```
 
-After running this statement the `[db.]replicated_merge_tree_family_table_name` fetches commands from the common replicated log into its own replication queue, and then the query waits till the replica processes all of the fetched commands. If a `STRICT` modifier was specified then the query waits for the replication queue to become empty. The `STRICT` version may never succeed if new entries constantly appear in the replication queue.
+After running this statement the `[db.]replicated_merge_tree_family_table_name` fetches commands from the common replicated log into its own replication queue, and then the query waits till the replica processes all of the fetched commands.
 
 ### RESTART REPLICA
 
@@ -312,7 +312,7 @@ One may execute query after:
 Replica attaches locally found parts and sends info about them to Zookeeper.
 Parts present on a replica before metadata loss are not re-fetched from other ones if not being outdated (so replica restoration does not mean re-downloading all data over the network).
 
-:::note
+:::warning
 Parts in all states are moved to `detached/` folder. Parts active before data loss (committed) are attached.
 :::
 
@@ -361,16 +361,4 @@ Allows to drop filesystem cache.
 
 ```sql
 SYSTEM DROP FILESYSTEM CACHE
-```
-
-### SYNC FILE CACHE
-
-:::note
-It's too heavy and has potential for misuse.
-:::
-
-Will do sync syscall.
-
-```sql
-SYSTEM SYNC FILE CACHE
 ```

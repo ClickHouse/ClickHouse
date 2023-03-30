@@ -123,6 +123,7 @@ BackupEntries BackupEntriesCollector::run()
     runPostTasks();
 
     /// No more backup entries or tasks are allowed after this point.
+    setStage(Stage::WRITING_BACKUP);
 
     return std::move(backup_entries);
 }
@@ -132,22 +133,22 @@ Strings BackupEntriesCollector::setStage(const String & new_stage, const String 
     LOG_TRACE(log, fmt::runtime(toUpperFirst(new_stage)));
     current_stage = new_stage;
 
-    backup_coordination->setStage(new_stage, message);
+    backup_coordination->setStage(backup_settings.host_id, new_stage, message);
 
     if (new_stage == Stage::formatGatheringMetadata(1))
     {
-        return backup_coordination->waitForStage(new_stage, on_cluster_first_sync_timeout);
+        return backup_coordination->waitForStage(all_hosts, new_stage, on_cluster_first_sync_timeout);
     }
     else if (new_stage.starts_with(Stage::GATHERING_METADATA))
     {
         auto current_time = std::chrono::steady_clock::now();
         auto end_of_timeout = std::max(current_time, consistent_metadata_snapshot_end_time);
         return backup_coordination->waitForStage(
-            new_stage, std::chrono::duration_cast<std::chrono::milliseconds>(end_of_timeout - current_time));
+            all_hosts, new_stage, std::chrono::duration_cast<std::chrono::milliseconds>(end_of_timeout - current_time));
     }
     else
     {
-        return backup_coordination->waitForStage(new_stage);
+        return backup_coordination->waitForStage(all_hosts, new_stage);
     }
 }
 

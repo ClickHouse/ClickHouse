@@ -1,7 +1,4 @@
-SET allow_experimental_analyzer = 1;
-
 -- { echoOn }
-
 SELECT
     cutURLParameter('http://bigmir.net/?a=b&c=d', []),
     cutURLParameter('http://bigmir.net/?a=b&c=d', ['a']),

@@ -59,7 +59,7 @@ protected:
 
     QueryTreeNodePtr cloneImpl() const override;
 
-    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
+    ASTPtr toASTImpl() const override;
 
 private:
     static constexpr size_t expression_child_index = 0;

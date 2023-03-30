@@ -7,7 +7,6 @@
 #include <fmt/core.h>
 #include <Poco/URI.h>
 #include <Common/logger_useful.h>
-#include <Common/CurrentMetrics.h>
 
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
@@ -41,11 +40,6 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 
-namespace CurrentMetrics
-{
-    extern const Metric StorageHiveThreads;
-    extern const Metric StorageHiveThreadsActive;
-}
 
 namespace DB
 {
@@ -242,7 +236,7 @@ public:
 
                     raw_read_buf = get_raw_read_buf();
                     if (read_settings.remote_fs_prefetch)
-                        raw_read_buf->prefetch(DEFAULT_PREFETCH_PRIORITY);
+                        raw_read_buf->prefetch();
                 }
                 catch (Exception & e)
                 {
@@ -850,7 +844,7 @@ HiveFiles StorageHive::collectHiveFiles(
     Int64 hive_max_query_partitions = context_->getSettings().max_partitions_to_read;
     /// Mutext to protect hive_files, which maybe appended in multiple threads
     std::mutex hive_files_mutex;
-    ThreadPool pool{CurrentMetrics::StorageHiveThreads, CurrentMetrics::StorageHiveThreadsActive, max_threads};
+    ThreadPool pool{max_threads};
     if (!partitions.empty())
     {
         for (const auto & partition : partitions)
@@ -862,7 +856,7 @@ HiveFiles StorageHive::collectHiveFiles(
                         = collectHiveFilesFromPartition(partition, query_info, hive_table_metadata, fs, context_, prune_level);
                     if (!hive_files_in_partition.empty())
                     {
-                        std::lock_guard lock(hive_files_mutex);
+                        std::lock_guard<std::mutex> lock(hive_files_mutex);
                         hit_parttions_num += 1;
                         if (hive_max_query_partitions > 0 && hit_parttions_num > hive_max_query_partitions)
                         {
@@ -888,7 +882,7 @@ HiveFiles StorageHive::collectHiveFiles(
                     auto hive_file = getHiveFileIfNeeded(file_info, {}, query_info, hive_table_metadata, context_, prune_level);
                     if (hive_file)
                     {
-                        std::lock_guard lock(hive_files_mutex);
+                        std::lock_guard<std::mutex> lock(hive_files_mutex);
                         hive_files.push_back(hive_file);
                     }
                 });

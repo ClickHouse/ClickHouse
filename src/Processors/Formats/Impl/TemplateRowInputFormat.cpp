@@ -21,9 +21,9 @@ namespace ErrorCodes
 
 [[noreturn]] static void throwUnexpectedEof(size_t row_num)
 {
-    throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected EOF while parsing row {}. "
+    throw ParsingException("Unexpected EOF while parsing row " + std::to_string(row_num) + ". "
                            "Maybe last row has wrong format or input doesn't contain specified suffix before EOF.",
-                           std::to_string(row_num));
+                           ErrorCodes::CANNOT_READ_ALL_DATA);
 }
 
 static void updateFormatSettingsIfNeeded(FormatSettings::EscapingRule escaping_rule, FormatSettings & settings, const ParsedTemplateFormatString & row_format, char default_csv_delimiter, size_t file_column)

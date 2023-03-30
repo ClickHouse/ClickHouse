@@ -140,12 +140,9 @@ public:
         scheduleCloseSession(session, lock);
     }
 
-    void releaseAndCloseSession(const UUID & user_id, const String & session_id, std::shared_ptr<NamedSessionData> & session_data)
+    void closeSession(const UUID & user_id, const String & session_id)
     {
         std::unique_lock lock(mutex);
-        scheduleCloseSession(*session_data, lock);
-        session_data = nullptr;
-
         Key key{user_id, session_id};
         auto it = sessions.find(key);
         if (it == sessions.end())
@@ -473,7 +470,7 @@ std::shared_ptr<SessionLog> Session::getSessionLog() const
 ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_to_copy, ClientInfo * client_info_to_move) const
 {
     if (!user_id && getClientInfo().interface != ClientInfo::Interface::TCP_INTERSERVER)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query context must be created after authentication");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session context must be created after authentication");
 
     /// We can create a query context either from a session context or from a global context.
     bool from_session_context = static_cast<bool>(session_context);
@@ -562,7 +559,8 @@ void Session::closeSession(const String & session_id)
     if (!named_session)
         return;
 
-    NamedSessionsStorage::instance().releaseAndCloseSession(*user_id, session_id, named_session);
+    releaseSessionID();
+    NamedSessionsStorage::instance().closeSession(*user_id, session_id);
 }
 
 }

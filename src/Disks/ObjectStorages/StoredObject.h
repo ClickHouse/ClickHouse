@@ -1,6 +1,5 @@
 #pragma once
 
-#include <functional>
 #include <string>
 #include <Disks/ObjectStorages/IObjectStorage_fwd.h>
 
@@ -35,8 +34,6 @@ struct StoredObject
     /// because somecache hint implementation requires it.
     using PathKeyForCacheCreator = std::function<std::string(const std::string &)>;
     PathKeyForCacheCreator path_key_for_cache_creator;
-
-    StoredObject() = default;
 
     explicit StoredObject(
         const std::string & absolute_path_,

@@ -63,8 +63,7 @@ struct RowRefList : RowRef
                 return batch;
             }
 
-            row_refs[size] = std::move(row_ref);
-            ++size;
+            row_refs[size++] = std::move(row_ref);
             return this;
         }
     };

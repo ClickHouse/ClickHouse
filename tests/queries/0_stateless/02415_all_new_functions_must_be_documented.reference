@@ -421,7 +421,6 @@ mapContains
 mapContainsKeyLike
 mapExtractKeyLike
 mapFilter
-mapFromArrays
 mapKeys
 mapPopulateSeries
 mapSubtract
@@ -513,7 +512,6 @@ nullIf
 nullIn
 nullInIgnoreSet
 or
-parseDateTime
 parseDateTime32BestEffort
 parseDateTime32BestEffortOrNull
 parseDateTime32BestEffortOrZero
@@ -529,11 +527,6 @@ parseDateTimeBestEffortOrZero
 parseDateTimeBestEffortUS
 parseDateTimeBestEffortUSOrNull
 parseDateTimeBestEffortUSOrZero
-parseDateTimeInJodaSyntax
-parseDateTimeInJodaSyntaxOrNull
-parseDateTimeInJodaSyntaxOrZero
-parseDateTimeOrNull
-parseDateTimeOrZero
 parseTimeDelta
 partitionId
 path
@@ -653,9 +646,7 @@ simpleJSONHas
 sin
 sinh
 sipHash128
-sipHash128Keyed
 sipHash64
-sipHash64Keyed
 sleep
 sleepEachRow
 snowflakeToDateTime

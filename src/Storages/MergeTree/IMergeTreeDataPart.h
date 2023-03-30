@@ -17,7 +17,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
-#include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/ColumnsDescription.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
@@ -86,6 +85,13 @@ public:
         Type part_type_,
         const IMergeTreeDataPart * parent_part_);
 
+    IMergeTreeDataPart(
+        const MergeTreeData & storage_,
+        const String & name_,
+        const MutableDataPartStoragePtr & data_part_storage_,
+        Type part_type_,
+        const IMergeTreeDataPart * parent_part_);
+
     virtual MergeTreeReaderPtr getReader(
         const NamesAndTypesList & columns_,
         const StorageMetadataPtr & metadata_snapshot,
@@ -110,6 +116,8 @@ public:
 
     virtual bool isStoredOnRemoteDiskWithZeroCopySupport() const = 0;
 
+    virtual bool supportsVerticalMerge() const { return false; }
+
     /// NOTE: Returns zeros if column files are not found in checksums.
     /// Otherwise return information about column size on disk.
     ColumnSize getColumnSize(const String & column_name) const;
@@ -133,7 +141,6 @@ public:
     void accumulateColumnSizes(ColumnToSize & /* column_to_size */) const;
 
     Type getType() const { return part_type; }
-    MergeTreeDataPartFormat getFormat() const { return {part_type, getDataPartStorage().getType()}; }
 
     String getTypeName() const { return getType().toString(); }
 
@@ -219,10 +226,6 @@ public:
 
     /// Frozen by ALTER TABLE ... FREEZE ... It is used for information purposes in system.parts table.
     mutable std::atomic<bool> is_frozen {false};
-
-    /// Indicated that the part was marked Outdated because it's broken, not because it's actually outdated
-    /// See outdateBrokenPartAndCloneToDetached(...)
-    mutable bool outdated_because_broken = false;
 
     /// Flag for keep S3 data when zero-copy replication over S3 turned on.
     mutable bool force_keep_shared_data = false;
@@ -357,11 +360,15 @@ public:
 
     const std::map<String, std::shared_ptr<IMergeTreeDataPart>> & getProjectionParts() const { return projection_parts; }
 
-    MergeTreeDataPartBuilder getProjectionPartBuilder(const String & projection_name, bool is_temp_projection = false);
+    void addProjectionPart(const String & projection_name, std::shared_ptr<IMergeTreeDataPart> && projection_part)
+    {
+        projection_parts.emplace(projection_name, std::move(projection_part));
+    }
 
-    void addProjectionPart(const String & projection_name, std::shared_ptr<IMergeTreeDataPart> && projection_part);
-
-    bool hasProjection(const String & projection_name) const { return projection_parts.contains(projection_name); }
+    bool hasProjection(const String & projection_name) const
+    {
+        return projection_parts.find(projection_name) != projection_parts.end();
+    }
 
     void loadProjections(bool require_columns_checksums, bool check_consistency);
 
@@ -602,7 +609,6 @@ using MergeTreeMutableDataPartPtr = std::shared_ptr<IMergeTreeDataPart>;
 bool isCompactPart(const MergeTreeDataPartPtr & data_part);
 bool isWidePart(const MergeTreeDataPartPtr & data_part);
 bool isInMemoryPart(const MergeTreeDataPartPtr & data_part);
-
 inline String getIndexExtension(bool is_compressed_primary_key) { return is_compressed_primary_key ? ".cidx" : ".idx"; }
 std::optional<String> getIndexExtensionFromFilesystem(const IDataPartStorage & data_part_storage);
 bool isCompressedFromIndexExtension(const String & index_extension);

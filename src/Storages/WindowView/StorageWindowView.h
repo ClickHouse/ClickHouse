@@ -3,7 +3,7 @@
 #include <Common/SharedMutex.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <DataTypes/DataTypeInterval.h>
-#include <Parsers/ASTSelectQuery.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Storages/IStorage.h>
 #include <Poco/Logger.h>
 
@@ -134,7 +134,6 @@ public:
         bool final,
         bool deduplicate,
         const Names & deduplicate_by_columns,
-        bool cleanup,
         ContextPtr context) override;
 
     void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;

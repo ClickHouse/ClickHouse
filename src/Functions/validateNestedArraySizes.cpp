@@ -12,7 +12,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
+    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
 }
 
 /** Function validateNestedArraySizes is used to check the consistency of Nested DataType subcolumns's offsets when Update
@@ -106,7 +106,7 @@ ColumnPtr FunctionValidateNestedArraySizes::executeImpl(
             else if (first_length != length)
             {
                 throw Exception(
-                    ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
+                    ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH,
                     "Elements '{}' and '{}' of Nested data structure (Array columns) "
                     "have different array sizes ({} and {} respectively) on row {}",
                     arguments[1].name, arguments[args_idx].name, first_length, length, i);

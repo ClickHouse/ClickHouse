@@ -1,4 +1,3 @@
-import time
 import pytest
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
@@ -413,74 +412,3 @@ def test_function_current_roles():
         )
         == "['R1']\t['R1']\t['R1']\n"
     )
-
-
-def test_role_expiration():
-    instance.query("CREATE USER ure")
-    instance.query("CREATE ROLE rre")
-    instance.query("GRANT rre TO ure")
-
-    instance.query("CREATE TABLE IF NOT EXISTS tre (id Int) Engine=Log")
-    instance.query("INSERT INTO tre VALUES (0)")
-
-    assert "Not enough privileges" in instance.query_and_get_error(
-        "SELECT * FROM tre", user="ure"
-    )
-
-    instance.query("GRANT SELECT ON tre TO rre")
-
-    assert instance.query("SELECT * FROM tre", user="ure") == "0\n"
-
-    # access_control_improvements/role_cache_expiration_time_seconds value is 2 for the test
-    # so we wait >2 seconds until the role is expired
-    time.sleep(5)
-
-    instance.query("CREATE TABLE IF NOT EXISTS tre1 (id Int) Engine=Log")
-    instance.query("INSERT INTO tre1 VALUES (0)")
-    instance.query("GRANT SELECT ON tre1 TO rre")
-
-    assert instance.query("SELECT * from tre1", user="ure") == "0\n"
-
-    instance.query("DROP USER ure")
-    instance.query("DROP ROLE rre")
-    instance.query("DROP TABLE tre")
-    instance.query("DROP TABLE tre1")
-
-
-def test_two_roles_expiration():
-    instance.query("CREATE USER ure")
-    instance.query("CREATE ROLE rre")
-    instance.query("GRANT rre TO ure")
-
-    instance.query("CREATE ROLE rre_second")
-
-    instance.query("CREATE TABLE IF NOT EXISTS tre (id Int) Engine=Log")
-    instance.query("INSERT INTO tre VALUES (0)")
-
-    assert "Not enough privileges" in instance.query_and_get_error(
-        "SELECT * FROM tre", user="ure"
-    )
-
-    instance.query("GRANT SELECT ON tre TO rre")
-
-    assert instance.query("SELECT * FROM tre", user="ure") == "0\n"
-
-    # access_control_improvements/role_cache_expiration_time_seconds value is 2 for the test
-    # so we wait >2 seconds until the roles are expired
-    time.sleep(5)
-
-    instance.query(
-        "GRANT SELECT ON tre1 TO rre_second"
-    )  # we expect that both rre and rre_second are gone from cache upon this operation
-
-    instance.query("CREATE TABLE IF NOT EXISTS tre1 (id Int) Engine=Log")
-    instance.query("INSERT INTO tre1 VALUES (0)")
-    instance.query("GRANT SELECT ON tre1 TO rre")
-
-    assert instance.query("SELECT * from tre1", user="ure") == "0\n"
-
-    instance.query("DROP USER ure")
-    instance.query("DROP ROLE rre")
-    instance.query("DROP ROLE rre_second")
-    instance.query("DROP TABLE tre")
-    instance.query("DROP TABLE tre1")

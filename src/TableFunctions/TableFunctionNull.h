@@ -1,8 +1,7 @@
 #pragma once
 
-#include <Core/Types.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <TableFunctions/ITableFunction.h>
+#include <Core/Types.h>
 
 
 namespace DB
@@ -21,7 +20,6 @@ public:
     bool needStructureHint() const override { return structure == "auto"; }
 
     void setStructureHint(const ColumnsDescription & structure_hint_) override { structure_hint = structure_hint_; }
-
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const String & table_name, ColumnsDescription cached_columns) const override;
     const char * getStorageTypeName() const override { return "Null"; }
@@ -31,7 +29,6 @@ private:
 
     String structure = "auto";
     ColumnsDescription structure_hint;
-
-    const ColumnsDescription default_structure{NamesAndTypesList{{"dummy", std::make_shared<DataTypeUInt8>()}}};
 };
+
 }

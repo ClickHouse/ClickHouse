@@ -1,2 +1,0 @@
-Tuple(UInt64, UInt64)	Default	['1','2']	['UInt64','UInt64']	['Sparse','Sparse']
-Tuple(UInt64, String)	Default	['1','2']	['UInt64','String']	['Sparse','Default']

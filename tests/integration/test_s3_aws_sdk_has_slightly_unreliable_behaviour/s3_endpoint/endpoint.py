@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 from bottle import request, route, run, response
 
-
 # Handle for MultipleObjectsDelete.
 @route("/<_bucket>", ["POST"])
 def delete(_bucket):

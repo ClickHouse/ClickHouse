@@ -19,7 +19,7 @@ CREATE TABLE minmax_idx1
       idx_2 (u64 + toYear(dt), substring(s, 2, 4)) TYPE minmax GRANULARITY 3
 ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_00837/minmax', 'r1')
 ORDER BY u64
-SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
+SETTINGS index_granularity = 2;
 
 CREATE TABLE minmax_idx2
 (
@@ -36,7 +36,7 @@ CREATE TABLE minmax_idx2
       idx_2 (u64 + toYear(dt), substring(s, 2, 4)) TYPE minmax GRANULARITY 3
 ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_00837/minmax', 'r2')
 ORDER BY u64
-SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
+SETTINGS index_granularity = 2;
 
 
 /* many small inserts => table will make merges */

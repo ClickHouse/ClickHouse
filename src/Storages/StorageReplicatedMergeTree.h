@@ -149,7 +149,6 @@ public:
         bool final,
         bool deduplicate,
         const Names & deduplicate_by_columns,
-        bool cleanup,
         ContextPtr query_context) override;
 
     void alter(const AlterCommands & commands, ContextPtr query_context, AlterLockHolder & table_lock_holder) override;
@@ -179,9 +178,9 @@ public:
 
     void onActionLockRemove(StorageActionBlockType action_type) override;
 
-    /// Wait till replication queue's current last entry is processed or till size becomes 0
+    /// Wait when replication queue size becomes less or equal than queue_size
     /// If timeout is exceeded returns false
-    bool waitForProcessingQueue(UInt64 max_wait_milliseconds, bool strict);
+    bool waitForShrinkingQueueSize(size_t queue_size = 0, UInt64 max_wait_milliseconds = 0);
 
     /// Get the status of the table. If with_zk_fields = false - do not fill in the fields that require queries to ZK.
     void getStatus(ReplicatedTableStatus & res, bool with_zk_fields = true);
@@ -229,7 +228,7 @@ public:
     /** Remove a specific replica from zookeeper.
      */
     static void dropReplica(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path, const String & replica,
-                            Poco::Logger * logger, MergeTreeSettingsPtr table_settings = nullptr, std::optional<bool> * has_metadata_out = nullptr);
+                            Poco::Logger * logger, MergeTreeSettingsPtr table_settings = nullptr);
 
     /// Removes table from ZooKeeper after the last replica was dropped
     static bool removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr zookeeper, const String & zookeeper_path,
@@ -324,14 +323,11 @@ public:
         const String & replica_name, const String & zookeeper_path, const ContextPtr & local_context, const zkutil::ZooKeeperPtr & zookeeper);
 
     bool canUseZeroCopyReplication() const;
-
-    bool isTableReadOnly () { return is_readonly; }
+private:
+    std::atomic_bool are_restoring_replica {false};
 
     /// Get a sequential consistent view of current parts.
     ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock getMaxAddedBlocks() const;
-
-private:
-    std::atomic_bool are_restoring_replica {false};
 
     /// Delete old parts from disk and from ZooKeeper.
     void clearOldPartsAndRemoveFromZK();
@@ -483,16 +479,6 @@ private:
     std::mutex last_broken_disks_mutex;
     std::set<String> last_broken_disks;
 
-    std::mutex existing_zero_copy_locks_mutex;
-
-    struct ZeroCopyLockDescription
-    {
-        std::string replica;
-        std::shared_ptr<std::atomic<bool>> exists;
-    };
-
-    std::unordered_map<String, ZeroCopyLockDescription> existing_zero_copy_locks;
-
     static std::optional<QueryPipeline> distributedWriteFromClusterStorage(const std::shared_ptr<IStorageCluster> & src_storage_cluster, const ASTInsertQuery & query, ContextPtr context);
 
     template <class Func>
@@ -542,7 +528,7 @@ private:
     String getChecksumsForZooKeeper(const MergeTreeDataPartChecksums & checksums) const;
 
     /// Accepts a PreActive part, atomically checks its checksums with ones on other replicas and commit the part
-    DataPartsVector checkPartChecksumsAndCommit(Transaction & transaction, const MutableDataPartPtr & part, std::optional<HardlinkedFiles> hardlinked_files = {});
+    DataPartsVector checkPartChecksumsAndCommit(Transaction & transaction, const DataPartPtr & part, std::optional<HardlinkedFiles> hardlinked_files = {});
 
     bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;
 
@@ -553,6 +539,9 @@ private:
     /// Adds actions to `ops` that remove a part from ZooKeeper.
     /// Set has_children to true for "old-style" parts (those with /columns and /checksums child znodes).
     void getRemovePartFromZooKeeperOps(const String & part_name, Coordination::Requests & ops, bool has_children);
+
+    /// Just removes part from ZooKeeper using previous method
+    void removePartFromZooKeeper(const String & part_name);
 
     /// Quickly removes big set of parts from ZooKeeper (using async multi queries)
     void removePartsFromZooKeeper(zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names,
@@ -640,10 +629,9 @@ private:
         const DataPartsVector & parts,
         const String & merged_name,
         const UUID & merged_part_uuid,
-        const MergeTreeDataPartFormat & merged_part_format,
+        const MergeTreeDataPartType & merged_part_type,
         bool deduplicate,
         const Names & deduplicate_by_columns,
-        bool cleanup,
         ReplicatedMergeTreeLogEntryData * out_log_entry,
         int32_t log_version,
         MergeType merge_type);
@@ -688,7 +676,8 @@ private:
         bool to_detached,
         size_t quorum,
         zkutil::ZooKeeper::Ptr zookeeper_ = nullptr,
-        bool try_fetch_shared = true);
+        bool try_fetch_shared = true,
+        String entry_znode = "");
 
     /** Download the specified part from the specified replica.
       * Used for replace local part on the same s3-shared part in hybrid storage.
@@ -869,8 +858,7 @@ private:
     // Create table id if needed
     void createTableSharedID() const;
 
-    bool checkZeroCopyLockExists(const String & part_name, const DiskPtr & disk, String & lock_replica);
-    void watchZeroCopyLock(const String & part_name, const DiskPtr & disk);
+    bool checkZeroCopyLockExists(const String & part_name, const DiskPtr & disk);
 
     std::optional<String> getZeroCopyPartPath(const String & part_name, const DiskPtr & disk);
 

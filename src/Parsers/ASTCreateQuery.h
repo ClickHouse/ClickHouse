@@ -31,8 +31,6 @@ public:
 
     void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
 
-    bool isExtendedStorageDefinition() const;
-
     void forEachPointerToChild(std::function<void(void**)> f) override
     {
         f(reinterpret_cast<void **>(&engine));

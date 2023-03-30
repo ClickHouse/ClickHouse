@@ -2255,7 +2255,6 @@ std::vector<std::pair<const char *, Operator>> ParserExpressionImpl::operators_t
         {"ILIKE",         Operator("ilike",           8,  2)},
         {"NOT LIKE",      Operator("notLike",         8,  2)},
         {"NOT ILIKE",     Operator("notILike",        8,  2)},
-        {"REGEXP",        Operator("match",           8,  2)},
         {"IN",            Operator("in",              8,  2)},
         {"NOT IN",        Operator("notIn",           8,  2)},
         {"GLOBAL IN",     Operator("globalIn",        8,  2)},
