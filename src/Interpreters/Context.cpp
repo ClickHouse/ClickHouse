@@ -360,9 +360,6 @@ struct ContextSharedPart : boost::noncopyable
             std::cerr.flush();
             std::terminate();
         }
-
-        const Poco::Util::AbstractConfiguration & configuration = config ? *config : Poco::Util::Application::instance().config();
-        server_settings.loadSettingsFromConfig(configuration);
     }
 
 
@@ -3490,6 +3487,9 @@ void Context::setApplicationType(ApplicationType type)
 {
     /// Lock isn't required, you should set it at start
     shared->application_type = type;
+
+    if (type == ApplicationType::SERVER)
+        shared->server_settings.loadSettingsFromConfig(Poco::Util::Application::instance().config());
 }
 
 void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & config)
