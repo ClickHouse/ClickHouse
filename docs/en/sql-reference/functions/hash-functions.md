@@ -592,6 +592,44 @@ Calculates JumpConsistentHash form a UInt64.
 Accepts two arguments: a UInt64-type key and the number of buckets. Returns Int32.
 For more information, see the link: [JumpConsistentHash](https://arxiv.org/pdf/1406.2294.pdf)
 
+## kafkaMurmurHash
+
+Calculates a positive 32-bit [MurmurHash2](https://github.com/aappleby/smhasher) hash value using the same hash seed as [kafka](/// To be compatible with kafka: https://github.com/apache/kafka/blob/trunk/clients/src/main/java/org/apache/kafka/common/utils/Utils.java#L480).
+
+**Syntax**
+
+```sql
+kafkaMurmurHash(par1, ...)
+```
+
+**Arguments**
+
+-   `par1, ...` — A variable number of parameters that can be any of the [supported data types](/docs/en/sql-reference/data-types/index.md/#data_types).
+
+**Returned value**
+
+-   Calculated hash value.
+
+Type: [UInt64](/docs/en/sql-reference/data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT
+    kafkaMurmurHash(1, 2, 3) AS res1,
+    kafkaMurmurHash(('a', [1, 2, 3], 4, (4, ['foo', 'bar'], 1, (1, 2)))) AS res2
+```
+
+Result:
+
+```response
+┌──────res1─┬───────res2─┐
+│ 2467651416│ 1808784617 │
+└───────────┴────────────┘
+```
+
 ## murmurHash2_32, murmurHash2_64
 
 Produces a [MurmurHash2](https://github.com/aappleby/smhasher) hash value.

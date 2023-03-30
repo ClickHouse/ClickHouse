@@ -32,5 +32,9 @@ SELECT gccMurmurHash('foo');
 SELECT gccMurmurHash('\x01');
 SELECT gccMurmurHash(1);
 
+SELECT kafkaMurmurHash('foo');
+SELECT kafkaMurmurHash('\x01');
+SELECT kafkaMurmurHash(1);
+
 SELECT hex(murmurHash3_128('foo'));
 SELECT hex(murmurHash3_128('\x01'));

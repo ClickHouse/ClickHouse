@@ -666,6 +666,7 @@
 "JSONType"
 "JSON_VALUE"
 "jumpConsistentHash"
+"kafkaMurmurHash"
 "KEY"
 # Key words (based on keywords from antlr parser)
 "KILL"

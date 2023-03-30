@@ -465,6 +465,25 @@ struct GccMurmurHashImpl
     static constexpr bool use_int_hash_for_pods = false;
 };
 
+/// To be compatible with kafka: https://github.com/apache/kafka/blob/trunk/clients/src/main/java/org/apache/kafka/common/utils/Utils.java#L480
+struct KafkaMurmurHashImpl
+{
+    static constexpr auto name = "kafkaMurmurHash";
+    using ReturnType = UInt32;
+
+    static UInt32 apply(const char * data, const size_t size)
+    {
+        return MurmurHash2(data, size, 0x9747b28cUL) & 0x7fffffff;
+    }
+
+    static UInt32 combineHashes(UInt32 h1, UInt32 h2)
+    {
+        return IntHash32Impl::apply(h1) ^ h2;
+    }
+
+    static constexpr bool use_int_hash_for_pods = false;
+};
+
 struct MurmurHash3Impl32
 {
     static constexpr auto name = "murmurHash3_32";
@@ -1698,6 +1717,7 @@ using FunctionMetroHash64 = FunctionAnyHash<ImplMetroHash64>;
 using FunctionMurmurHash2_32 = FunctionAnyHash<MurmurHash2Impl32>;
 using FunctionMurmurHash2_64 = FunctionAnyHash<MurmurHash2Impl64>;
 using FunctionGccMurmurHash = FunctionAnyHash<GccMurmurHashImpl>;
+using FunctionKafkaMurmurHash = FunctionAnyHash<KafkaMurmurHashImpl>;
 using FunctionMurmurHash3_32 = FunctionAnyHash<MurmurHash3Impl32>;
 using FunctionMurmurHash3_64 = FunctionAnyHash<MurmurHash3Impl64>;
 using FunctionMurmurHash3_128 = FunctionAnyHash<MurmurHash3Impl128>;

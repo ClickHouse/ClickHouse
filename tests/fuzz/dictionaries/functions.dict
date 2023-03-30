@@ -363,6 +363,7 @@
 "arrayMap"
 "polygonsSymDifferenceCartesian"
 "gccMurmurHash"
+"kafkaMurmurHash"
 "exp2"
 "polygonPerimeterCartesian"
 "SHA384"

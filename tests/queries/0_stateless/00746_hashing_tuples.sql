@@ -32,3 +32,7 @@ SELECT hex(murmurHash3_128('foo', 'foo', 'foo'));
 SELECT gccMurmurHash(1, 2, 3);
 SELECT gccMurmurHash(1, 3, 2);
 SELECT gccMurmurHash(('a', [1, 2, 3], 4, (4, ['foo', 'bar'], 1, (1, 2))));
+
+SELECT kafkaMurmurHash(1, 2, 3);
+SELECT kafkaMurmurHash(1, 3, 2);
+SELECT kafkaMurmurHash(('a', [1, 2, 3], 4, (4, ['foo', 'bar'], 1, (1, 2))));
